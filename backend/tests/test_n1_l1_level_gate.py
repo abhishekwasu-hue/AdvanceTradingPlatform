@@ -7,6 +7,8 @@ grade, evidence, ticket lines, the one-line description), the trend context and 
 real-break rule (`break_from`, time acceptance) and the settings defaults."""
 import ast
 import gzip
+import subprocess
+import sys
 import json
 import math
 from functools import lru_cache
@@ -182,6 +184,45 @@ def test_misc_parity():
     same(misc["safe_evaluate_error"], norm(G.safe_evaluate(df.drop(columns=["close"]), (1.0, 2.0), {"ok": True}, (), 0)), "safe")
 
 
+def test_prefix_replays_parity_and_no_look_ahead():
+    """The live cycle replays the session's closed bars up to bar m: every prefix matches Trade (immediate entries and
+    break_pending included), and a live entry at m happens exactly when the full replay has a CONFIRMED event at m."""
+    cases = golden()["prefix"]
+    assert golden()["prefix_entries"] >= 10 and golden()["prefix_break_pending"] >= 50
+    groups: Dict[tuple, Dict[int, Any]] = {}
+    for i, c in enumerate(cases):
+        sid = c["series"]
+        start = golden()["series"][sid]["session_start"]
+        ctx = ctx_for(sid, c["ctx"])
+        others = [tuple(a) for a in c["others"]]
+        out = G.evaluate(series(sid).iloc[:c["m"] + 1], tuple(c["area"]), ctx, others, start, c["settings"])
+        same(c["out"], norm(out), f"prefix[{i}]")
+        key = (sid, tuple(c["area"]), c["ctx"], json.dumps(c["settings"], sort_keys=True))
+        groups.setdefault(key, {})[c["m"]] = out
+    entries = 0
+    for (sid, area, cname, over), by_m in groups.items():
+        start = golden()["series"][sid]["session_start"]
+        others = next([tuple(a) for a in c["others"]] for c in cases if c["series"] == sid and tuple(c["area"]) == area)
+        full = G.evaluate(series(sid), area, ctx_for(sid, cname), others, start, json.loads(over))
+        confirmed = {e[0] for e in full["events"] if e[1] == G.CONFIRMED}
+        live = {m for m, out in by_m.items() if out["entry"]}
+        assert live == confirmed & set(by_m), (sid, area, cname, over, sorted(live), sorted(confirmed))
+        entries += len(live)
+    assert entries == golden()["prefix_entries"]
+
+
+def test_edge_cases_parity():
+    misc = golden()["misc"]
+    A = arrays(series(0))
+    same(misc["t0"]["commitment"], norm(M.commitment(A, 0, M.UP, {"lo": 0.0, "hi": 1e9}, LS.METHOD_DEFAULTS, None, win=0)), "t0")
+    same(misc["t0"]["reversal_form"], norm(M.reversal_form(A, 0, M.DOWN, LS.METHOD_DEFAULTS)), "t0.form")
+    df = frame(misc["closed_bars"]["bars"])
+    err = G.safe_evaluate(df.drop(columns=["close"]), (1.0, 2.0), {"ok": True}, (), 0)
+    assert [G.describe(err), G.describe(err, (100.0, 200.0))] == misc["describe_error"]
+    kinds = {s_["volume"] for s_ in golden()["series"]}
+    assert {"holes", "gap", "short"} <= {k for k in kinds if isinstance(k, str)}
+
+
 # --- decision3 functions -------------------------------------------------------------------------------------------------
 
 def test_method_parity():
@@ -230,19 +271,34 @@ def test_break_parity():
         p = f"breaks[{i}]"
         assert BR.break_from(df, j, level, side, es) == c["break_from"], p
         assert BR.break_from(df, j, level, side, dict(es, break_accept_closes=0)) == c["break_from_no_accept"], p
+        assert BR.break_from(df, j, level, side, dict(es, break_no_reclaim_bars=3)) == c["break_from_k3"], p
         assert BR.first_real_break(df, max(0, j - 10), level, side, es, end=min(n - 1, j + 6)) == c["first_real_break"], p
         assert BR.time_accepted(df["close"].to_numpy(float), j, level, side, 3, max(0, j - 10)) is c["time_accepted"], p
 
 
 # --- the guard: a pure library -------------------------------------------------------------------------------------------
 
+ALLOWED_IMPORTS = ("typing", "numpy", "pandas", "app.price_action.breaks", "app.price_action.level_gate")
+
+
 def test_the_level_gate_is_pure():
-    """No I/O, orders, brokers or database: the gate only reads the arrays it is given."""
-    forbidden = ("app.execution", "app.brokers", "app.trading", "app.db", "app.market_data", "app.workers", "sqlalchemy", "requests",
-                 "httpx", "os", "time", "json")
+    """No I/O, orders, brokers or database: an allow-list of imports (review), checked on the source ..."""
     for path in sorted(PACKAGE.glob("*.py")):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
-                modules = [node.module or ""] if isinstance(node, ast.ImportFrom) else [a.name for a in node.names]
-                assert not any(m == f or m.startswith(f + ".") for m in modules for f in forbidden), (path.name, modules)
+                if isinstance(node, ast.ImportFrom):              # "from app.price_action import breaks" -> app.price_action.breaks
+                    modules = [f"{node.module}.{alias.name}" for alias in node.names]
+                    modules = [m for m in modules if not any(m.split(".")[0] == p_ for p_ in ("typing",))] or [node.module or ""]
+                else:
+                    modules = [alias.name for alias in node.names]
+                for m in modules:
+                    assert any(m == a or m.startswith(a + ".") for a in ALLOWED_IMPORTS), (path.name, m)
+
+
+def test_importing_the_gate_loads_nothing_else_from_the_app():
+    """... and at run time: a fresh interpreter importing the gate loads no app module outside app.price_action."""
+    code = ("import sys; import app.price_action.level_gate.gate, app.price_action.level_gate.method; "
+            "print(sorted(m for m in sys.modules if m.startswith('app.') and not m.startswith('app.price_action')))")
+    out = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == "[]", out.stdout

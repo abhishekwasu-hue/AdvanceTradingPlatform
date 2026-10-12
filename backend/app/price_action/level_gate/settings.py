@@ -4,6 +4,8 @@
 * `METHOD_DEFAULTS` - the keys of Trade `decision3/settings.py::DEFAULTS` the gate's decision3 functions read.
 * `BREAK_DEFAULTS`  - the keys of Trade `elliott/settings.py::DEFAULTS` `break_from` reads. `break_accept_closes` (3) is
   Trade's newer time-acceptance rule; ATP's other break callers keep it off (`pa_settings.DEFAULTS` has no such key).
+  Inside the gate it is inert, as in Trade: `break_from` looks only at [j, j + break_no_reclaim_bars] = [j, j + 1], and three
+  closes beyond the level need bar j + 2. It takes effect only with `break_no_reclaim_bars` >= 2 (a golden case covers 3).
 """
 from typing import Any, Dict, Mapping, Optional
 

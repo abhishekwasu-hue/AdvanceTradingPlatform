@@ -1,7 +1,7 @@
 """Regenerates golden.json.gz from the Trade repo's OWN level-gate code (run by hand; the tests only read the file).
 
     git -C /path/to/trade archive <rev> | tar -x -C /tmp/trade_export        # a read-only export, never the repo itself
-    python make_golden.py /tmp/trade_export <rev> golden.json.gz
+    python make_golden.py /tmp/trade_export <the full 40-character SHA of rev> golden.json.gz
 
 Inputs are synthetic and seeded (no market data): multi-day 5-minute IST sessions with trends, pullbacks, impulsive
 drives and volume (some series without volume), candidate areas around the session's own swing extremes, Daily states
@@ -10,6 +10,11 @@ for every trend case. Recorded, from Trade's functions:
   `median_ranges`, `session_start_index`, `closed_bars`, `safe_evaluate`;
 * `decision3.method`: `candle_read`, `contraction`, `power_shift`, `zone_study`, `zone_pattern`, `reversal_form`, `commitment`;
 * `elliott.breaks`: `time_accepted`, `first_real_break` (with time acceptance), `break_from`;
+* prefix replays (the live cycle: the session's closed bars up to every bar m) for the up / down / range contexts with the
+  default and min R:R 1 settings - the immediate entry, `break_pending` and the no-look-ahead invariant;
+* edge cases: volume partly zero / NaN, an overnight gap through the far edge at the session start, a one-session series
+  (median range not yet finite), `describe` of the ERROR state, `commitment` / `reversal_form` at t = 0, `break_from` with
+  `break_no_reclaim_bars` = 3 (time acceptance can only complete when the window is at least 3 bars);
 * the defaults of the three settings modules for the keys ATP ports.
 
 Trade's few non-English texts are translated with TRANSLATE below (the only place they appear); generation fails if any
@@ -18,6 +23,7 @@ non-ASCII letter outside the known symbols is left, so a new Trade message is no
 import gzip
 import json
 import math
+import re
 import sys
 from types import SimpleNamespace
 
@@ -27,6 +33,8 @@ import pandas as pd
 if len(sys.argv) != 4:
     raise SystemExit(__doc__)
 TRADE_DIR, TRADE_REV, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
+if not re.fullmatch(r"[0-9a-f]{40}", TRADE_REV):
+    raise SystemExit("give the full 40-character Trade commit SHA (git -C <trade> rev-parse <rev>), not a short one")
 sys.path.insert(0, TRADE_DIR)
 from bots_common import level_reaction as LR  # noqa: E402
 from decision3 import method as M  # noqa: E402
@@ -116,12 +124,46 @@ def session_bars(seed, days=3, per_day=75, volume=True, start="2026-09-21"):
     return df if volume else df.drop(columns=["volume"])
 
 
+def holes_bars(seed):
+    """Volume partly zero and NaN (a feed gap)."""
+    df = session_bars(seed)
+    rng = np.random.default_rng(seed)
+    vol = df["volume"].to_numpy(float)
+    vol[rng.choice(len(vol), 40, replace=False)] = 0.0
+    vol[rng.choice(len(vol), 25, replace=False)] = np.nan
+    return df.assign(volume=vol), []
+
+
+def gap_bars(seed):
+    """An overnight gap through a demand area's far edge at the session start (the arrival candle opens below it)."""
+    base = session_bars(seed, days=2)
+    rng = np.random.default_rng(seed)
+    prev = float(base["close"].iloc[-1])
+    mr = float((base["high"] - base["low"]).median())
+    lo, hi = round(prev - 2.0 * mr, 2), round(prev - 1.0 * mr, 2)
+    day = pd.Timestamp(base["timestamp"].iloc[-1]).normalize() + pd.Timedelta(days=1)
+    rows, price = [], lo - 0.5 * mr
+    first = {"timestamp": day + pd.Timedelta(hours=9, minutes=15), "open": round(lo - 0.6 * mr, 2), "high": round((lo + hi) / 2, 2),
+             "low": round(lo - mr, 2), "close": round(price, 2), "volume": 5000.0}
+    rows.append(first)
+    for i in range(1, 75):
+        o = price + rng.standard_normal() * 2.0
+        c = o + rng.standard_normal() * 9.0
+        rows.append({"timestamp": day + pd.Timedelta(hours=9, minutes=15 + 5 * i), "open": round(o, 2),
+                     "high": round(max(o, c) + abs(rng.standard_normal()) * 5, 2), "low": round(min(o, c) - abs(rng.standard_normal()) * 5, 2),
+                     "close": round(c, 2), "volume": round((1000 + 80 * abs(c - o)) * rng.uniform(0.5, 1.6), 0)})
+        price = c
+    gap_area = (lo, hi)
+    return pd.concat([base, pd.DataFrame(rows)], ignore_index=True), [gap_area, (round(lo + 0.3 * mr, 2), round(hi + 0.3 * mr, 2))]
+
+
 def candidate_areas(df, start, rng, k=10):
     """Areas around swing extremes BEFORE today's session and inside today's range: demand under lows, supply over highs."""
     hist = df.iloc[:start]
     today = df.iloc[start:]
     lo_t, hi_t = float(today["low"].min()), float(today["high"].max())
-    mr = float((hist["high"] - hist["low"]).median())
+    ref = hist if len(hist) else today                                   # a one-session series has no history
+    mr = float((ref["high"] - ref["low"]).median())
     out = []
     picks = rng.choice(len(today), size=min(k, len(today)), replace=False)
     for p in sorted(int(x) for x in picks):
@@ -169,19 +211,27 @@ def main():
     golden = {"trade_revision": TRADE_REV, "source": "Trade bots_common/level_reaction.py, decision3/method.py, elliott/breaks.py",
               "settings": {"gate": norm(LR.DEFAULTS), "method": norm({k: S3.DEFAULTS[k] for k in METHOD_KEYS}),
                            "breaks": norm({k: ES.DEFAULTS[k] for k in BREAK_KEYS})},
-              "series": [], "contexts": [], "side_allowed": [], "evaluate": [], "methods": [], "breaks": [], "misc": {}}
+              "series": [], "contexts": [], "side_allowed": [], "evaluate": [], "prefix": [], "methods": [], "breaks": [], "misc": {}}
     es = ES.DEFAULTS
     s3 = S3.DEFAULTS
     series_specs = [(11, True), (12, True), (13, True), (14, False), (15, True), (16, True), (17, False), (18, True),
-                    (19, True), (20, True)]
+                    (19, True), (20, True), (21, "holes"), (22, "gap"), (23, "short")]
     for sid, (seed, vol) in enumerate(series_specs):
-        df = session_bars(seed, volume=vol)
+        extra = []
+        if vol == "holes":
+            df, extra = holes_bars(seed)
+        elif vol == "gap":
+            df, extra = gap_bars(seed)
+        elif vol == "short":
+            df = session_bars(seed, days=1)                           # one session: the median range is NaN at first
+        else:
+            df = session_bars(seed, volume=vol)
         start = LR.session_start_index(df)
         golden["series"].append({"seed": seed, "volume": vol, "session_start": start,
                                  "bars": {k: [str(x) for x in df["timestamp"]] if k == "timestamp" else [float(x) for x in df[k]]
                                           for k in df.columns}})
         rng = np.random.default_rng(seed + 1000)
-        areas = candidate_areas(df, start, rng)
+        areas = extra + candidate_areas(df, start, rng)
         sts = states_for(df)
         ctxs = {name: LR.context_from_state(st, {}, asof="2026-09-22") for name, st in sts.items()}
         for name, st in sts.items():
@@ -208,9 +258,27 @@ def main():
                 r = LR.evaluate(df, area, ctxs[cname], [], start, {"min_rr": 1.0}, s3, es)
                 golden["evaluate"].append({"series": sid, "area": list(area), "others": [], "ctx": cname, "ctx_value": norm(ctxs[cname]),
                                            "settings": {"min_rr": 1.0}, "out": norm(r), "describe": tr(LR.describe(r))})
+        # Prefix replays (the live cycle: today's closed bars up to m), for every bar of the session: the immediate entry,
+        # break_pending and the no-look-ahead invariant "entry at m <=> a CONFIRMED event at m in the full replay".
+        n = len(df)
+        for cname in ("up", "down", "range"):
+            for sname, over in (("default", {}), ("rr1", {"min_rr": 1.0})):
+                ranked = []                                              # one area per group: a confirmation first, else armed
+                for ai, area in enumerate(areas):
+                    others = [a for j, a in enumerate(areas) if j != ai]
+                    full = LR.evaluate(df, area, ctxs[cname], others, start, over, s3, es)
+                    kinds = {e[1] for e in full["events"]}
+                    score = 3 if (extra and ai == 0) else (2 if LR.CONFIRMED in kinds else (1 if LR.ARMED in kinds else 0))
+                    if score:
+                        ranked.append((-score, ai, area, others))
+                picked = [(area, others) for _, _, area, others in sorted(ranked)[:1]]
+                for area, others in picked:
+                    for m in range(start, n):
+                        r = LR.evaluate(df.iloc[:m + 1], area, ctxs[cname], others, start, over, s3, es)
+                        golden["prefix"].append({"series": sid, "area": list(area), "others": [list(a) for a in others], "ctx": cname,
+                                                 "settings": over, "m": m, "out": norm(r)})
         A = arrays(df)
         mr = LR.median_ranges(A, 20)
-        n = len(df)
         lv = {"lo": float(areas[0][0]), "hi": float(areas[0][1])}
         for t in range(start + 2, n, 3):
             a = max(start, t - int(rng.integers(2, 12)))
@@ -241,6 +309,7 @@ def main():
                     golden["breaks"].append({
                         "series": sid, "j": j, "level": level, "side": side,
                         "break_from": norm(BR.break_from(frame, j, level, side, es)),
+                        "break_from_k3": norm(BR.break_from(frame, j, level, side, dict(es, break_no_reclaim_bars=3))),
                         "break_from_no_accept": norm(BR.break_from(frame, j, level, side, dict(es, break_accept_closes=0))),
                         "first_real_break": norm(BR.first_real_break(frame, max(0, j - 10), level, side, es, end=min(n - 1, j + 6))),
                         "time_accepted": bool(BR.time_accepted(frame["close"].to_numpy(float), j, level, side, 3, max(0, j - 10)))})
@@ -256,16 +325,24 @@ def main():
         "aware_last": str(LR.closed_bars(aware, 5, pd.Timestamp("2026-09-22 10:02:00+05:30"))["timestamp"].iloc[-1]),
         "session_start_last": LR.session_start_index(df), "session_start_day1": LR.session_start_index(df, "2026-09-21"),
         "session_start_missing": LR.session_start_index(df, "2026-10-01")}
+    A0 = arrays(df)
+    golden["misc"]["t0"] = {"commitment": norm(M.commitment(A0, 0, M.UP, {"lo": 0.0, "hi": 1e9}, s3, None, win=0)),
+                            "reversal_form": norm(M.reversal_form(A0, 0, M.DOWN, s3))}
+    err = LR.safe_evaluate(df.drop(columns=["close"]), (1.0, 2.0), {"ok": True}, (), 0)
+    golden["misc"]["describe_error"] = [tr(LR.describe(err)), tr(LR.describe(err, (100.0, 200.0)))]
     golden["misc"]["no_bars"] = norm(LR.evaluate(df.iloc[:0], (1.0, 2.0), {"ok": True, "sides": {LR.BULL}}, (), 0))
     golden["misc"]["safe_evaluate_error"] = norm(LR.safe_evaluate(df.drop(columns=["close"]), (1.0, 2.0), {"ok": True}, (), 0))
     counts = {}
     for case in golden["evaluate"]:
         counts[case["out"]["state"]] = counts.get(case["out"]["state"], 0) + 1
     golden["state_counts"] = counts
+    golden["prefix_entries"] = sum(1 for c in golden["prefix"] if c["out"]["entry"])
+    golden["prefix_break_pending"] = sum(1 for c in golden["prefix"] if c["out"].get("break_pending"))
     payload = json.dumps(golden, sort_keys=True, separators=(",", ":")).encode("utf-8")
     with open(OUT, "wb") as raw, gzip.GzipFile(fileobj=raw, mode="wb", mtime=0, filename="") as fh:   # same bytes every run
         fh.write(payload)
-    print(json.dumps({"evaluate": len(golden["evaluate"]), "states": counts, "methods": len(golden["methods"]),
+    print(json.dumps({"prefix": len(golden["prefix"]), "prefix_entries": golden["prefix_entries"],
+                      "prefix_break_pending": golden["prefix_break_pending"], "evaluate": len(golden["evaluate"]), "states": counts, "methods": len(golden["methods"]),
                       "breaks": len(golden["breaks"])}))
 
 

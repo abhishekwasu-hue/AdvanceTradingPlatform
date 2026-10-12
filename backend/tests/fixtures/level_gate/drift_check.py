@@ -1,7 +1,7 @@
 """Drift check: does a newer Trade revision still give the outputs ATP's level-gate port is pinned to?
 
     git -C /path/to/trade archive <new rev> | tar -x -C /tmp/trade_new        # a read-only export, never the repo itself
-    python drift_check.py /tmp/trade_new <new rev>
+    python drift_check.py /tmp/trade_new <the full 40-character SHA of that rev>
 
 Regenerates the goldens from that export with make_golden.py (same seeded inputs) into a temporary file and compares
 them with golden.json.gz case by case. Prints one line per changed section with the first changed cases, and exits 1

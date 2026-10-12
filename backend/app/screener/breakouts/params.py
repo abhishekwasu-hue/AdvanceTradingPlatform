@@ -185,7 +185,7 @@ PARAMS: Tuple[Param, ...] = (
           "(indices without volume need False)",
           "Minervini: volume contracts with the price contractions and dries up in the last one.", group="B3"),
     Param("vcp_ready_pct", 5.0, "watchlist: a ready base closes at most this % below the pivot",
-          "The pivot buy point sits at the top of the last contraction; within about 5 % of it the base is 'ready'.", 0.1, 50.0, group="B3"),
+          "The pivot level sits at the top of the last contraction; within about 5 % of it the base is 'ready'.", 0.1, 50.0, group="B3"),
     Param("tt_filter", True, "B3 trend template (prerequisite): close above the fast, mid and slow SMAs in that order (fast > mid > slow), "
           "the slow SMA rising, the close near the year's high and well above the year's low",
           "Minervini's trend template (2013), without the RS rating (open question BK3-1).", group="B3"),

@@ -128,10 +128,33 @@ def _intraday_gap(screen: str, signal_tf: str) -> bool:
     return screen == "B8" and bp.TF_MINUTES[signal_tf] < bp.TF_MINUTES["1d"]
 
 
+def _windows(screen: str, params: Dict[str, Any]) -> List[int]:
+    """The screen's own bar-count parameters (its group's integers), largest first - U6 BK3."""
+    p, _ = bp.validate(params)
+    unused = ("ma_stack_",) if not p.get("ma_stack") else ()          # the MA stack's lines are read only when it is on
+    return sorted((int(p[q.name]) for q in bp.PARAMS if q.group == screen and isinstance(q.default, int)
+                   and not isinstance(q.default, bool) and not q.choices and not (unused and q.name.startswith(unused))), reverse=True)
+
+
+def min_signal_bars(screen: str, params: Dict[str, Any]) -> int:
+    """U6 BK3 review L4: the fewest signal bars on which the screen can read anything with these parameters (its longest
+    window plus the bar itself) - a shorter history is reported as such, never run to a silent "no match"."""
+    if screen not in BK3_SCREENS:
+        return 0
+    w = _windows(screen, params)
+    return (w[0] if w else 0) + 1
+
+
 def history_bars(screen: str, signal_tf: str, params: Dict[str, Any]) -> int:
     """Signal bars to fetch. U6 BK2: an intraday screen needs whole sessions - the time-of-day average reads the same slot
     in the previous `tod_sessions` sessions - so it asks for that many sessions plus the current one. U6 BK4: an intraday
-    gap screen needs the sessions its level reads (the previous one, or `gap_base_n`) plus the current one."""
+    gap screen needs the sessions its level reads (the previous one, or `gap_base_n`) plus the current one. U6 BK3: a BK3
+    screen asks for its two longest windows end to end plus the ATR warm-up (the trend template's 200-day line read over
+    its one-month slope and the 52-week range; a band-width low over the band's own length; ...), at least the default."""
+    if screen in BK3_SCREENS:
+        w = _windows(screen, params)
+        p, _ = bp.validate(params)
+        return max(SIGNAL_HISTORY_BARS, sum(w[:2]) + int(p["atr_n"]) + 1)
     if screen not in INTRADAY_SCREENS and not _intraday_gap(screen, signal_tf):
         return SIGNAL_HISTORY_BARS
     p, _ = bp.validate(params)
@@ -143,7 +166,7 @@ def history_bars(screen: str, signal_tf: str, params: Dict[str, Any]) -> int:
 
 
 async def _frames(session: AsyncSession, user: User, symbols: List[str], exchange: str, signal_tf: str,
-                  context: tuple, tier: Optional[Dict[str, Any]] = None, bars: int = SIGNAL_HISTORY_BARS) -> tuple:
+                  context: tuple, tier: Optional[Dict[str, Any]] = None, bars: int = SIGNAL_HISTORY_BARS, daily_bars: int = SIGNAL_HISTORY_BARS) -> tuple:
     """Closed bars per symbol for the signal timeframe and every context timeframe.
 
     * A daily-or-coarser signal: one daily fetch; the signal and every context frame are built from the daily bars (L8: a
@@ -155,7 +178,8 @@ async def _frames(session: AsyncSession, user: User, symbols: List[str], exchang
     daily_tf = bp.TF_MINUTES["1d"]
     frames: Dict[str, Dict[str, pd.DataFrame]] = {}
     if bp.TF_MINUTES[signal_tf] >= daily_tf:
-        daily, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, "1d", {"1d": SIGNAL_HISTORY_BARS},
+        # U6 BK3 review L4: `daily_bars` - the daily bars the signal bars asked for need (a BK3 screen's windows)
+        daily, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, "1d", {"1d": max(SIGNAL_HISTORY_BARS, daily_bars)},
                                                      user_id=user.id, tier_out=tier)
         for d in daily:
             base = d.frames["1d"]
@@ -207,11 +231,12 @@ def _grade_all(spec: Dict[str, Any], frames: Dict[str, Dict[str, pd.DataFrame]],
 async def run(body: RunBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """One breakout screen (a template or screen + timeframe + parameters) over up to 50 symbols, graded."""
     await _flags(session, user)
-    spec = _resolve(body)
-    if spec["screen"] in BK3_SCREENS:                              # U6 BK3: VCP / indicator breakouts need their own flag too
+    asked = templates.BY_ID[body.template_id].screen if body.template_id in templates.BY_ID else body.screen
+    if asked in BK3_SCREENS:                    # U6 BK3: VCP / indicator breakouts need their own flag too - checked first (review L5)
         await require_flag(session, gate.BK3_FLAG, user.tenant_id)
-    if spec["screen"] in BK4_SCREENS:                              # U6 BK4: trendline / pattern / gap / retest likewise
+    if asked in BK4_SCREENS:                    # U6 BK4: trendline / pattern / gap / retest likewise
         await require_flag(session, gate.BK4_FLAG, user.tenant_id)
+    spec = _resolve(body)
     symbols = list(dict.fromkeys(body.symbols))
     if body.within * len(symbols) > MAX_WORK:
         raise HTTPException(status_code=422, detail=f"within x symbols is at most {MAX_WORK} per run ({body.within} x {len(symbols)})")
@@ -222,8 +247,17 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
     bars = history_bars(spec["screen"], spec["signal_tf"], spec["params"])
+    # a daily-or-coarser BK3 signal: its signal bars in sessions (a week is 5) - the BK1 / BK2 fetch is unchanged
+    per_bar = 5 if spec["signal_tf"] == "1w" else 1
+    daily_bars = bars * per_bar if spec["screen"] in BK3_SCREENS else SIGNAL_HISTORY_BARS
     tier: Dict[str, Any] = {}
-    frames, problems, source = await _frames(session, user, symbols, body.exchange, spec["signal_tf"], spec["context"], tier, bars)
+    frames, problems, source = await _frames(session, user, symbols, body.exchange, spec["signal_tf"], spec["context"], tier, bars,
+                                             daily_bars)
+    least = min_signal_bars(spec["screen"], spec["params"])
+    for sym in [k for k, fr in frames.items() if len(fr.get(spec["signal_tf"], ())) < least]:
+        have = len(frames.pop(sym)[spec["signal_tf"]])
+        problems[sym] = (f"not enough history: {have} {spec['signal_tf']} bars, these {spec['screen']} parameters need at least {least}"
+                         " (shorten a window, or use a longer-history data source)")
     notes: List[str] = []
     rows, graded, hidden = await run_in_threadpool(_grade_all, spec, frames, body.within, body.include_htf_failed, calendar, notes)
     reasons: Dict[str, str] = {**dict(problems), **graded}

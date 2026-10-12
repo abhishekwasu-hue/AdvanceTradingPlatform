@@ -46,6 +46,10 @@ def test_hidden_and_refused_while_the_bk3_flag_is_off(screener_on):
     assert r.status_code == 503 and r.headers.get("x-feature-disabled") == "screener_breakouts_bk3"
     r = client.post("/api/screener/breakouts/run", json={"template_id": "daily_vcp", "symbols": ["ABC"]}, headers=headers)
     assert r.status_code == 503
+    # BK3 review L5: the flag is checked before the request is resolved - bad BK3 parameters still read "not enabled"
+    r = client.post("/api/screener/breakouts/run", json={"screen": "B10", "signal_tf": "1d", "params": {"donchian_n": 99999}, "symbols": ["ABC"]},
+                    headers=headers)
+    assert r.status_code == 503 and r.headers.get("x-feature-disabled") == "screener_breakouts_bk3"
     r = client.post("/api/alerts/rules", json={"name": "b", "kind": "instrument", "symbol": "ABC", "condition": 'SqueezeBreakout("up")',
                                                "base_tf": "15m"}, headers=headers)
     assert r.status_code == 422 and "screener_breakouts_bk3" in str(r.json())
@@ -78,12 +82,19 @@ def test_listed_validated_catalogued_and_run_when_both_are_on(screener_on, monke
     from tests.breakout_bk3_fixtures import vcp
     f = vcp()
 
+    asked = []
+
     async def fake_fetch(session, tenant_id, symbols, exchange, base_tf, lookback, now=None, include_forming=False, **kw):
-        return [SymbolData(s, {base_tf: f}) for s in symbols], {}, "broker:fake"
+        asked.append(dict(lookback))
+        return [SymbolData(s, {base_tf: f.iloc[-60:] if s == "SHORT" else f}) for s in symbols], {}, "broker:fake"
     from app.screener.breakouts import routes as bk_routes
     monkeypatch.setattr(bk_routes, "fetch_frames", fake_fetch)
-    out = client.post("/api/screener/breakouts/run", json={"template_id": "daily_vcp", "symbols": ["abc"]}, headers=headers)
+    out = client.post("/api/screener/breakouts/run", json={"template_id": "daily_vcp", "symbols": ["abc", "short"]}, headers=headers)
     assert out.status_code == 200, out.text
+    # BK3 review L4: the fetch covers the trend template's windows end to end (250 + 200 + ATR 14 + 1), and a short history is
+    # reported as such instead of running to a silent "no match"
+    assert asked[-1] == {"1d": 465}
+    assert "not enough history: 60 1d bars" in out.json()["problems"]["SHORT"] and "at least 251" in out.json()["problems"]["SHORT"]
     rows = out.json()["rows"]
     assert [r["symbol"] for r in rows] == ["ABC"] and rows[0]["event"] == "VCP3" and rows[0]["side"] == "up"
     out = client.post("/api/screener/breakouts/run", json={"template_id": "daily_vcp_watchlist", "symbols": ["ABC"], "within": 10}, headers=headers)

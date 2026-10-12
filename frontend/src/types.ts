@@ -2387,6 +2387,19 @@ export interface PaperAccount {
 export interface LadderCriterion {
   key: string; label: string; value: number | null; target: number | null;
   comparison: "at_least" | "at_most" | null; met: boolean | null; note?: string;
+  /** N2-1 (flag `ladder_evidence`), discipline criterion only: the scored completed weeks, oldest first. */
+  weeks?: { week: string; score: number }[]; weeks_needed?: number;
+  status?: "ok" | "engine_off" | "no_weeks" | "too_few_weeks";
+}
+
+/** N2-1: the user's own figures from closed PAPER trades (net after charges). Figures only when `enough`. */
+export interface LadderEvidence {
+  trades: number; wins: number; losses: number; flat: number; min_trades: number; enough: boolean; basis: string;
+  status: "ok" | "too_few"; note?: string;
+  net?: number | null; win_rate?: number | null; avg_win?: number | null; avg_loss?: number | null; payoff_ratio?: number | null;
+  expectancy?: number | null; profit_factor?: number | null;
+  kelly?: { fraction: number | null; status: "ok" | "negative" | "no_losses" | "no_wins"; formula: string; note: string };
+  ruin?: { probability: number | null; status: "ok" | "certain" | "no_losses"; ruin_pct: number; distance: number | null; method: string; note: string };
 }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
@@ -2395,6 +2408,8 @@ export interface PaperLadder {
   stages: { key: string; label: string; status: "current" | "locked" | "done"; note?: string }[];
   criteria: LadderCriterion[]; met: number; measured: number;
   summary: Record<string, number | null>; as_of: string;
+  /** N2-1: present only while `ladder_evidence` is on. */
+  evidence?: LadderEvidence;
 }
 
 /** Z5 / P1-d: the ticket's cost line (server estimate; a contract note replaces it). */

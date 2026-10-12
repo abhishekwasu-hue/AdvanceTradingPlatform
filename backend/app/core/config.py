@@ -531,6 +531,16 @@ PAPER_MAX_CAPITAL = 100_000_000.0
 PAPER_LADDER_MIN_SESSIONS = _bounded_int("PAPER_LADDER_MIN_SESSIONS", 20, 1, 1000)
 PAPER_LADDER_MIN_TRADES = _bounded_int("PAPER_LADDER_MIN_TRADES", 30, 1, 10_000)
 PAPER_LADDER_MAX_DRAWDOWN_PCT = _bounded_float("PAPER_LADDER_MAX_DRAWDOWN_PCT", 10.0, 0.5, 100.0)
+# N2-1 (P1 §1.4 / §1.5, flag `ladder_evidence`, docs/design/N2_P1FGH.md): the ladder's discipline criterion is the mean
+# Z6 weekly score of the last PAPER_LADDER_DISCIPLINE_WEEKS completed IST weeks with a PAPER trade (looking back at most
+# PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS weeks), met at PAPER_LADDER_MIN_DISCIPLINE or more. The "your figures" block
+# needs PAPER_EVIDENCE_MIN_TRADES closed trades; its risk-of-ruin bound is for a fall of PAPER_EVIDENCE_RUIN_PCT % below
+# the starting capital.
+PAPER_LADDER_MIN_DISCIPLINE = _bounded_int("PAPER_LADDER_MIN_DISCIPLINE", 70, 0, 100)
+PAPER_LADDER_DISCIPLINE_WEEKS = _bounded_int("PAPER_LADDER_DISCIPLINE_WEEKS", 4, 1, 12)
+PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS = _bounded_int("PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS", 12, 1, 52)
+PAPER_EVIDENCE_MIN_TRADES = _bounded_int("PAPER_EVIDENCE_MIN_TRADES", 20, 2, 10_000)
+PAPER_EVIDENCE_RUIN_PCT = _bounded_float("PAPER_EVIDENCE_RUIN_PCT", 50.0, 1.0, 100.0)
 
 # Z3 (review V2): "Exit now" without a live quote may book at the monitor's last price for the position only when that
 # price is at most this many minutes old and from today's session (IST); otherwise it refuses (the stop and target keep

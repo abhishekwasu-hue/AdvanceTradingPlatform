@@ -430,6 +430,16 @@ class TradingWorker:
                     logger.exception("Expiring proposals failed")
                     await session.rollback()
                     report.errors.append(f"ai expiry: {exc}")
+                # N1 E1 (ADR-0014, flag execution_core): queued entry intents -> a notification or a PAPER entry proposal
+                # (never an order), before the outbox drain so they go out this cycle. Market open or not; an intent
+                # nobody dispatched in time expires. One flags read when the flag is off everywhere.
+                try:
+                    from app.execution.core import dispatcher as intent_dispatcher
+                    await intent_dispatcher.drain(session, now)
+                except Exception as exc:  # noqa: BLE001 - the core must never break trading or delivery
+                    logger.exception("Execution intent drain failed")
+                    await session.rollback()
+                    report.errors.append(f"execution intents: {exc}")
                 try:
                     await dispatch_pending(session)
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading

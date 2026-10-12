@@ -191,13 +191,19 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    "execution_core": "Execution core (N1 E1): entry intents from scans are queued and routed by one policy to a notification or a PAPER entry proposal (never a broker order)",
+    # N2-1 (P1 spec 1.4 / 1.5, docs/design/N2_P1FGH.md): the progression ladder's discipline-score criterion (from the Z6
+    # journal, when `discipline_engine` is on too) and the user's own figures on the ladder card - expectancy, profit
+    # factor, payoff ratio, a Kelly reference and a risk-of-ruin bound from their own closed PAPER trades. OFF: the ladder
+    # answers exactly as before. Information only: never used for sizing, never a recommendation.
+    "ladder_evidence": "Ladder evidence: the discipline-score criterion and your own figures (expectancy, profit factor, Kelly reference, risk-of-ruin bound) on the PAPER ladder card (information only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

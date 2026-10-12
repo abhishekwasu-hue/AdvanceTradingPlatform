@@ -43,7 +43,7 @@ def alert_clock_refusal(ast: Any, exchange: Optional[str]) -> Optional[str]:
     from app.screener.breakouts.session import calendar_for
     names = session_calls(ast)
     try:
-        family = calendar_for(exchange).name                          # CDS has its own clock in the screener only
+        family = calendar_for(exchange).name                          # CDS has its own 09:00-17:00 clock
     except ValueError:
         family = "CRYPTO"
     if not names or family == "NSE":

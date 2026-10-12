@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
@@ -99,6 +100,7 @@ from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
 from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
+from app.market_lake.import_routes import intraday_router as history_intraday_admin_router
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
@@ -122,12 +124,16 @@ from app.alerts.links_routes import router as alert_links_router
 from app.alerts.outbox_admin import router as alert_outbox_admin_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
+from app.charts.layouts import router as chart_layouts_router
 from app.charts.zones_layer import router as chart_zones_layer_router
+from app.charts.price_action_layer import router as chart_price_action_layer_router
+from app.charts.studies import router as chart_studies_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
 from app.journal.routes import router as journal_router
 from app.legal.routes import router as legal_router
 from app.support.routes import router as support_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
+from app.platform.deployment_phase import on_startup as deployment_phase_startup
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -138,6 +144,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with _startup_session_factory() as session:
         await promote_configured_super_admins(session)
         await warm_tenant_keys(session)  # Phase N1: tenant data keys into the process key ring
+        # Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0): seed live_trading OFF / phase0_paper_only ON where unset, then
+        # log why LIVE entry paths are (not) started. Never stops the API from coming up.
+        try:
+            await deployment_phase_startup(session, "api")
+        except Exception:  # noqa: BLE001 - never stops the API from coming up (Phase 0 defaults still apply)
+            logging.getLogger(__name__).exception("Phase 0 start-up check failed")
     yield
 
 
@@ -225,6 +237,7 @@ app.include_router(market_candles_router)  # Phase AA: broker candles for the re
 app.include_router(market_lake_router)  # Part B5: point-in-time history from the market data lake
 app.include_router(history_import_admin_router)  # HB0: R2 history import progress (SUPER_ADMIN, read-only)
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
+app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
@@ -243,7 +256,10 @@ app.include_router(alert_links_router)
 app.include_router(alert_outbox_admin_router)  # Z10-b: alert outbox state, dead letters and replay (SUPER_ADMIN)
 app.include_router(compliance_router)
 app.include_router(chart_drawings_router)
+app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace layouts per user (flag chart_workspace)
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
+app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
+app.include_router(chart_studies_router)  # N4 CH6: ScreenQL studies on charts from the screener runtime (flag chart_studies, off)
 app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)

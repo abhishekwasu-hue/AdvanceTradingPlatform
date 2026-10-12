@@ -27,7 +27,7 @@ Standing rules for every slice:
 | **N2-1** | §1.4, §1.5 | **Ladder evidence** (this PR, `claude/n2-p1f`): adds the discipline-score criterion from the Z6 journal, plus the user's own figures (expectancy, profit factor, payoff ratio, Kelly reference, risk-of-ruin bound) on the ladder card. | `ladder_evidence` | none / none (`GET /api/paper/ladder` gains keys while on) | ~1.2k |
 | **N2-2** | §1.4 | **Experience levels** (`claude/n2-2`): Beginner / Intermediate / Advanced, derived from the user's own PAPER record. They gate futures (Intermediate) and naked short options (Advanced), single-leg and structures, in the order pipeline. An explicit opt-out for the IST day, with a reason, is logged (audit) and counted. Exits are never gated. | `experience_levels` | table `experience_opt_outs` (`ROLLBACK_SAFE = True`) / `GET /api/paper/experience`, `POST /api/paper/experience/opt-out` (tenancy table) | ~1.3k |
 | **N2-3** | §1.5 | **Decision tools I** (`claude/n2-3`): a risk-of-ruin and Kelly calculator with editable inputs, prefilled from N2-1's figures, and a what-if for the user's own open positions grouped by underlying (price / IV / days forward; now, scenario and expiry curves) on the builder's model. | `decision_tools` | none / `POST /api/decision/ruin`, `GET /api/decision/positions`, `POST /api/decision/what-if` (tenancy table) | ~1.6k |
-| N2-4 | §1.5 | **Decision tools II**: a correlation and exposure view across open positions (by underlying, sector, beta to NIFTY from lake EOD bars), plus a probability cone and expected-move overlay on the main chart (a CHARTING layer, the builder's cone maths). | `decision_tools` | none / `GET /api/decision/exposure` | ~1.6k |
+| **N2-4** | §1.5 | **Decision tools II** (`claude/n2-4`): an exposure and correlation view across the user's own open positions (by underlying and sector, risk at stops, beta to the NIFTY 50 and pairs that move together, from the daily lake), plus an expected-move cone (±1 / ±2 sd from historical volatility or a typed IV) as a chart layer. | `decision_tools` | none / `GET /api/decision/exposure`, `GET /api/decision/expected-move` | ~1.3k |
 | N2-5 | §1.5 | **Market context panel**: one tile each for regime (Dow on W / D, `ai.regime`), breadth (advance / decline from the lake EOD), India VIX and IV rank (the vix_gate reading, chain IV history), FII / DII flows (NSE provider, daily cache), global cues (`ai/global_cues`) and events today / this week (`news_events`). Each tile shows its source, as-of time and stale state, and says NA on its own failure. | `context_panel` | none / `GET /api/context/panel` | ~2.0k |
 | N2-6 | §2.4 | **Positions v2**: live P&L in ₹ and R, Greeks per position and for the portfolio, SL / target status, time in trade, plan vs current (a drifted stop is highlighted) and an exit ladder. Exits stay available during a lockout (a test covers this). | `positions_v2` | none / none | ~1.8k |
 | N2-7 | §3.2 | **Builder adjustments**: roll a leg (up / down / out), add a hedge, convert to an iron condor, close one side. Each shows the before / after payoff and Greeks. Pure functions with golden tests. Fills the P1-c "Adjustments and compare" drawer. | `builder_adjustments` | none / `POST /api/options-builder/adjust` | ~1.8k |
@@ -174,6 +174,45 @@ risk per trade r (% of capital) and the ruin level D (% of capital). Each trade 
 **UI**: a "Decision tools" card on the Positions page (`src/progression/DecisionToolsCard.tsx`) holds the calculator
 table and the what-if SVG chart (now, scenario, expiry), with a story.
 
+## N2-4 Decision tools II
+
+Same flag (`decision_tools`). Both routes answer 404 while it is off (tested). Information only.
+
+**Exposure** (`app/decision_tools/exposure.py`, `GET /api/decision/exposure?days=90`) covers the caller's own open
+positions, grouped by underlying as in the what-if. For each underlying it gives:
+
+- the legs and modes;
+- the cash and futures notional at entry, and the net option premium;
+- the risk at the stops, with the legs that have no stop listed;
+- the NSE sector (`classifications`, through `securities`); indices read "Index";
+- the beta to the NIFTY 50.
+
+It also gives sector totals and every pair's Pearson r over the aligned daily log returns, needing at least 20 common
+days. Pairs at |r| ≥ 0.7 are listed as moving together.
+
+Daily closes come from the shared lake (`app/decision_tools/market.py`):
+
+- a share with a known ISIN reads the split-adjusted company history (`by_isin.isin_candles`);
+- anything else reads the raw `NSE:<SYMBOL>` bars;
+- an index reads `NSE_INDEX:<code>`.
+
+This is reference data, so no broker session or BT1b check is involved.
+
+**Expected-move cone** (`GET /api/decision/expected-move?instrument=NSE:RELIANCE&horizon=5`):
+
+- It works from the last daily close and σ, either HV20 (the annualised sample standard deviation of 20 daily log
+  returns) or a typed IV.
+- It returns rows for 1 / 5 / 10 / 20 sessions and the chosen horizon, with the 1-sd move and the ±1 / ±2 sd prices
+  (close × e^(±k·σ·√(h/252))).
+- It answers 404 with no closes, and 422 with too few to compute the HV.
+
+The chart window shows an "Expected move" toggle when the organisation has the flag
+(`src/progression/ExpectedMoveLayer.tsx`). It draws two bands and the close line through `ChartEngine.setLayer`, beside
+the market-zones layer.
+
+**UI**: the Decision tools card gains "Exposure and correlation", loaded on demand
+(`src/progression/ExposureSection.tsx`).
+
 ## Open questions
 
-These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-13), each with a provisional default.
+These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-16), each with a provisional default.

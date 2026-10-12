@@ -5,6 +5,8 @@ import ProChart, { useLiveLtp } from "../components/ProChart";
 import { SymbolTierBadge } from "../components/DataTierBadge";
 import type { ChartEngine } from "../charting/engine";
 import { MarketZonesLayer } from "../charting/MarketZonesLayer";
+import { api } from "../api/client";
+import ExpectedMoveLayer from "../progression/ExpectedMoveLayer";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -29,6 +31,12 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   const live = useLiveLtp(!!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
+  // N2-4: the expected-move cone (flag decision_tools; the toggle shows only when the organisation has it)
+  const [decisionTools, setDecisionTools] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    api.myFeatures().then((f) => setDecisionTools(Boolean(f.decision_tools))).catch(() => setDecisionTools(false));
+  }, [user]);
   const lastClose = chart.candles.length ? chart.candles[chart.candles.length - 1].close : null;
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
@@ -51,6 +59,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
                 onLoadOlder={chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} onEngine={setEngine} />
       {/* Z7a-3: stored market zones (flag market_zones; nothing shows while it is off) */}
       <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} /></div>
+      <div className="mt-2"><ExpectedMoveLayer engine={engine} instrument={`${exchange}:${symbol}`} enabled={decisionTools} /></div>
     </div>
   );
 }

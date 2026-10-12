@@ -15,3 +15,4 @@ dist/
 
 # Redis dump files (a local redis-server writes these into the cwd)
 *.rdb
+.coverage

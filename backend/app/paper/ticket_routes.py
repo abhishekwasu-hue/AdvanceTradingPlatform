@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
@@ -67,7 +68,7 @@ async def risk(user: User = Depends(get_current_user), session: AsyncSession = D
     return await ticket.risk_status(session, user)
 
 
-@router.put("/risk")
+@router.put("/risk", dependencies=[Depends(require_scope("risk:write"))])
 async def set_risk(body: RiskSettingsBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     await _enabled(session, user)
     values = {k: v for k, v in body.model_dump().items() if v is not None}

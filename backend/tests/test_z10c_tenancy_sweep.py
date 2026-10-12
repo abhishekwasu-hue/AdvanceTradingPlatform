@@ -53,7 +53,7 @@ CROSS_TENANT_2XX: Dict[Tuple[str, str], str] = {
 # Catalogue scope each kind of write must honour (docs: app/auth/scopes.py SCOPES). Exits are never gated by a scope,
 # so approving an AI exit proposal (/api/ai/actions) is deliberately not here.
 SCOPE_BY_PREFIX: List[Tuple[str, str]] = [
-    ("/api/risk-settings", "risk:write"), ("/api/risk/limits", "risk:write"), ("/api/risk-guardian/events", "risk:write"),
+    ("/api/risk-settings", "risk:write"), ("/api/paper/risk", "risk:write"), ("/api/risk/limits", "risk:write"), ("/api/risk-guardian/events", "risk:write"),
     ("/api/alert-channels", "alerts:write"), ("/api/alerts/rules", "alerts:write"), ("/api/alerts/policy", "alerts:write"),
     ("/api/alerts/deliveries", "alerts:write"), ("/api/alerts/email-opt-outs", "alerts:write"),
     ("/api/custom-strategies", "strategies:write"), ("/api/options-builder/strategies", "strategies:write"),
@@ -63,17 +63,10 @@ SCOPE_BY_PREFIX: List[Tuple[str, str]] = [
     ("/api/option-chain/{underlying}/alerts", "alerts:write"),
 ]
 
-# Known gaps in files owned by open PRs (Z10-c does not edit them): route -> the status a member denied the scope gets
-# today. The test asserts exactly that status, so the day the route honours its scope (403) the test fails and the
-# entry is removed.
-_GAP_178 = "OPEN_QUESTIONS Z10c-2: the scope is not checked; alerts/rules_routes.py belongs to open PR #178 - fix after it merges"
-KNOWN_SCOPE_GAPS: Dict[Tuple[str, str], Tuple[int, str]] = {
-    ("POST", "/api/alerts/rules"): (422, _GAP_178),
-    ("POST", "/api/alerts/rules/{rule_id}/{action}"): (404, _GAP_178),
-    ("PUT", "/api/alerts/policy"): (200, _GAP_178),
-    ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): (409, _GAP_178),
-    ("DELETE", "/api/alerts/email-opt-outs/{opt_out_id}"): (200, _GAP_178),
-}
+# Known gaps in files owned by open PRs: route -> (the status a member denied the scope gets today, why). The test
+# asserts exactly that status, so the day the route honours its scope (403) the test fails and the entry is removed.
+# None today.
+KNOWN_SCOPE_GAPS: Dict[Tuple[str, str], Tuple[int, str]] = {}
 # Trader writes a member denied every scope can still make (role gate without a scope), same rule as above.
 KNOWN_UNSCOPED_WRITES: Dict[Tuple[str, str], str] = {}
 

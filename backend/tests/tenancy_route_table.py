@@ -39,6 +39,10 @@ P_TELEGRAM_WEBHOOK = "public: Telegram inbound webhook, authenticated by the sec
 P_TV_WEBHOOK = "public: TradingView webhook, authenticated by the secret token in the path"
 P_UNSUBSCRIBE = "public: signed one-click unsubscribe link"
 P_REGIMES = "public: the market regime catalogue"
+P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the sign-up form links them before an account exists"
+P_STATUS_PAGE = "public: the public status page (component states and the incident banner only; rate limited)"
+S_OWN_LEGAL = "self: records the caller's own acceptance of the legal documents' current versions"
+S_SUPPORT = "self: the support bot answers how-to questions from the docs; no tools, reads no positions or orders (rate limited)"
 S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor settings"
 S_OWN_AI_KEY = "self: the caller's own AI key, prefs and Vision reports (per user)"
 S_OWN_AI_LANGUAGE = "self: the caller's own AI language preference"
@@ -67,8 +71,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/accounts/{account_id}/disable"): "trader",
     ("POST", "/api/accounts/{account_id}/enable"): "trader",
     ("POST", "/api/accounts/{account_id}/sync"): "trader",
+    ("GET", "/api/admin/alerts/dead-letters"): "admin",
+    ("POST", "/api/admin/alerts/dead-letters/replay"): "admin",
+    ("GET", "/api/admin/alerts/outbox"): "admin",
     ("GET", "/api/admin/audit-logs"): "admin",
     ("GET", "/api/admin/beta/cohort"): "admin",
+    ("PUT", "/api/admin/beta/cohort/stage"): "admin",
     ("GET", "/api/admin/beta/feedback"): "admin",
     ("GET", "/api/admin/beta/invite-codes"): "admin",
     ("POST", "/api/admin/beta/invite-codes"): "admin",
@@ -169,6 +177,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/strategist/build"): S_COPILOT,
     ("POST", "/api/ai/strategist/parse"): S_COPILOT,
     ("POST", "/api/ai/strategist/study"): S_COPILOT,
+    ("POST", "/api/ai/support/ask"): S_SUPPORT,
     ("GET", "/api/ai/thesis/history"): "member",
     ("GET", "/api/ai/thesis/report"): "member",
     ("GET", "/api/ai/thesis/{symbol}"): "member",
@@ -355,6 +364,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/kill-switch/strategy/{strategy_id}/engage"): "trader",
     ("POST", "/api/kill-switch/tenant/disengage"): "trader",
     ("POST", "/api/kill-switch/tenant/engage"): "trader",
+    ("GET", "/api/legal/acceptance"): "member",
+    ("POST", "/api/legal/acceptance"): S_OWN_LEGAL,
+    ("GET", "/api/legal/documents"): P_LEGAL,
+    ("GET", "/api/legal/documents/{slug}"): P_LEGAL,
     ("GET", "/api/live/stream"): "member",
     ("POST", "/api/market-data/candles"): S_OWN_MARKET_DATA,
     ("GET", "/api/market-data/data-tier"): "member",
@@ -419,17 +432,17 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/options-builder/template"): S_COMPUTE,
     ("GET", "/api/orders"): "member",
     ("GET", "/api/orders/{order_id}/events"): "member",
-    ("GET", "/api/portfolio/exposure"): "member",
     ("GET", "/api/paper/account"): "member",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",
-    ("GET", "/api/paper/plans"): "member",
     ("POST", "/api/paper/pause"): "trader",
+    ("GET", "/api/paper/plans"): "member",
+    ("POST", "/api/paper/resume"): "trader",
     ("GET", "/api/paper/risk"): "member",
     ("PUT", "/api/paper/risk"): "trader",
-    ("POST", "/api/paper/resume"): "trader",
     ("POST", "/api/paper/ticket"): "trader",
     ("POST", "/api/paper/ticket/preview"): "trader",
+    ("GET", "/api/portfolio/exposure"): "member",
     ("GET", "/api/positions"): "member",
     ("GET", "/api/positions/greeks"): "member",
     ("POST", "/api/positions/{trade_id}/exit-now"): "trader",
@@ -472,6 +485,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/scanner/ai/plan"): "trader",
     ("POST", "/api/scanner/ai/read"): "trader",
     ("POST", "/api/scanner/run"): S_COMPUTE,
+    ("GET", "/api/screener/breakouts/catalog"): "member",
+    ("POST", "/api/screener/breakouts/run"): "trader",
     ("GET", "/api/screener/registry"): "member",
     ("POST", "/api/screener/run"): "trader",
     ("GET", "/api/screener/runs/{run_id}"): "member",
@@ -482,6 +497,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/taxonomy"): "member",
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("GET", "/api/signal-history"): "member",
+    ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,
     ("POST", "/api/strategies/{strategy_id}/chart-run"): P_STRATEGY_CATALOGUE,

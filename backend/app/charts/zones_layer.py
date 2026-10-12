@@ -33,6 +33,8 @@ from app.price_action.zones.store import normalise_key
 router = APIRouter(prefix="/api/charts/layers", tags=["charts"])
 FLAG = "market_zones"
 NOTE = "Zones are reference levels from past prices, not signals or recommendations."
+NO_ZONES = "no zones for this instrument"
+FAR_ZONES = f"no zones within {chart.MAX_DISTANCE_PCT:g} % of the price"
 FALLBACK_NOTE = "platform default settings (none stored with your organisation's zone settings yet)"
 
 
@@ -41,19 +43,23 @@ def _iso(t: Optional[datetime]) -> Optional[str]:
 
 
 @router.get("/market-zones")
-async def market_zones_layer(instrument: str = Query(..., min_length=3, max_length=64), at: Optional[datetime] = None,
+async def market_zones_layer(instrument: str = Query(..., min_length=1, max_length=100), at: Optional[datetime] = None,
                              price: Optional[float] = Query(default=None, gt=0),
                              family: Literal["all", "zones", "levels"] = "all",
                              max_bands: int = Query(default=chart.MAX_BANDS, ge=1, le=chart.MAX_BANDS),
                              user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
-    try:
-        key = normalise_key(instrument)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    if key == "*":
-        raise HTTPException(status_code=422, detail="give an instrument key such as NSE:BANKNIFTY")
     now = datetime.now(timezone.utc)
+    try:
+        key: Optional[str] = normalise_key(instrument)
+    except ValueError:
+        key = None
+    if key is None or key == "*":
+        # not an instrument the lake keys (an option contract, a symbol with characters keys never hold): the chart just
+        # has no zones - never an error on the chart
+        return {"instrument": instrument, "at": _iso(now), "as_of": None, "scope": None, "fallback": False, "settings_note": None,
+                "price": price, "price_source": None, "bands": [], "zones": [], "live_count": 0, "max_bands": max_bands,
+                "reason": NO_ZONES, "note": NOTE}
     if at is not None and at.tzinfo is None:
         raise HTTPException(status_code=422, detail="`at` must carry its time zone (for example 2026-10-09T15:30:00+05:30)")
     when = now if at is None or at > now else at.astimezone(timezone.utc)
@@ -62,7 +68,7 @@ async def market_zones_layer(instrument: str = Query(..., min_length=3, max_leng
     snap = await read.read_as_of(session, key, when, user.tenant_id, allow_platform_fallback=True)
     if snap is None:
         return {"instrument": key, "at": _iso(when), "as_of": None, "scope": None, "fallback": False, "settings_note": None, "price": price,
-                "price_source": None, "bands": [], "zones": [], "live_count": 0, "max_bands": max_bands, "note": NOTE}
+                "price_source": None, "bands": [], "zones": [], "live_count": 0, "max_bands": max_bands, "reason": NO_ZONES, "note": NOTE}
     ref, source = (price, "request") if price is not None else (snap.price, "snapshot")
     cands = chart.candidates(snap.rows, family)
     bands = chart.select_bands(cands, ref, max_bands=max_bands) if ref is not None else []
@@ -70,7 +76,7 @@ async def market_zones_layer(instrument: str = Query(..., min_length=3, max_leng
     return {"instrument": key, "at": _iso(when), "as_of": _iso(snap.as_of), "scope": scope, "fallback": snap.fallback,
             "settings_note": FALLBACK_NOTE if snap.fallback else None, "price": ref, "price_source": source,
             "price_text": None if ref is None else chart.price_text(ref), "bands": bands, "zones": cands, "live_count": len(cands),
-            "max_bands": max_bands, "note": NOTE}
+            "max_bands": max_bands, "reason": None if bands else (NO_ZONES if not cands else FAR_ZONES), "note": NOTE}
 
 
 __all__ = ["router", "FLAG"]

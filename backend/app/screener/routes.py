@@ -9,6 +9,7 @@ saved screens and runs on server data.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import json
@@ -392,10 +393,12 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
                                                                user_id=user.id, tier_out=tier)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
-        await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), validated.lookback)
+        await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
-    matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
-    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches, vectorized=vectorized)
+    # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
+    matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
+    stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
+                                     vectorized=vectorized)
     results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),

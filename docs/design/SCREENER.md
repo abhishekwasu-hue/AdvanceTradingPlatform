@@ -855,6 +855,11 @@ with the indicator block, and the result table.
   FLIPPED), `ZoneStrength(role, tolerance_pct, family)` (0-100). Role by the close; missing (never matches) when no zone
   is near; a symbol with no stored snapshot is reported with the reason.
 - `Spec.needs = ("zones",)`: the run path loads the timelines (`RUN_PROVIDES` has "zones"), the bar-close engine too.
+- Perf follow-up (before the flag is turned on): one batched read per universe (`read.timelines`: one settings query,
+  the runs before and inside the window, their live rows in one `run_id IN (...)` - a fixed query count, tested), the
+  window from the zone calls' own history (`zones.zone_lookback`), the bar-close engine reads zones only when the cycle
+  has not evaluated the same screen, the series are vectorised per snapshot segment (about 35x faster than per bar on
+  3,000 bars x 300 zones, equal bar by bar), and `/run` evaluates in a worker thread.
 - Flag `market_zones` (off by default), the U6 BK1 pattern: hidden from the registry, refused in validate / save / run
   and in alert rules while off; an active rule pauses with the reason and resumes when the flag is back; zone rules fire
   on bar close only (intrabar refused at save and skipped by the engine). Research only - no order path.

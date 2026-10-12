@@ -54,6 +54,8 @@ export interface MarketZonesLayerResponse {
   zones: ZoneCandidate[];
   live_count: number;
   max_bands: number;
+  /** Why there are no bands ("no zones for this instrument" - also for a symbol that is not a lake instrument). */
+  reason?: string | null;
   note: string;
 }
 

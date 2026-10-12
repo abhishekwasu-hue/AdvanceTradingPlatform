@@ -300,9 +300,15 @@ def test_timeline_reads_the_latest_runs_only_up_to_its_cap():
     _run(many())
     tl = _timeline(KEY, None, ist(D0, 9, 0), ist(D0, 9, 0) + timedelta(days=12))
     assert len(tl.snapshots) == 11 and tl.snapshots[0] is None and not tl.empty
-    capped = _run(_capped(4))                                                            # the latest four only
-    assert len(capped.snapshots) == 4 and [s.run_id for s in capped.snapshots] == [s.run_id for s in tl.snapshots[-4:]]
+    assert not tl.truncated
+    capped = _run(_capped(4))                                                            # the latest four only, marked
+    assert capped.truncated and len(capped.snapshots) == 4
+    assert [s.run_id for s in capped.snapshots] == [s.run_id for s in tl.snapshots[-4:]]
     assert capped.at(ist(D0, 15, 30) + timedelta(days=2)) is None                        # before its window: nothing read
+    # F3: a truncated timeline never reads as "no zone near" - the zone functions refuse with the reason
+    ast, v = compile_screen("NearZone()", base_tf="5m")
+    out = run_screen(ast, v, [SymbolData("ZCHARTA", {"5m": _bars([D1])}, zones=capped)], base_tf="5m")
+    assert not out[0].matched and "shorten their window" in out[0].reason
     assert _timeline(OTHER, None, ist(D0, 9, 0), ist(D3, 9, 0)).empty
 
 
@@ -536,8 +542,9 @@ def test_chart_layer_reads_as_of_per_tenant_with_at_most_six_bands(screener_on):
     assert _read(KEY, ist(D2, 12, 0), third["tenant_id"]) is None                                   # the strict read sees nothing
     # input checks
     assert client.get(url, params={"instrument": KEY, "at": "2026-03-11T12:00:00"}, headers=headers).status_code == 422
-    assert client.get(url, params={"instrument": "bad key!"}, headers=headers).status_code == 422
-    assert client.get(url, params={"instrument": "*"}, headers=headers).status_code == 422
+    for odd in ("bad key!", "*", "X"):                                     # F4: not a lake instrument - no zones, never an error
+        r = client.get(url, params={"instrument": odd}, headers=headers)
+        assert r.status_code == 200 and r.json()["bands"] == [] and r.json()["reason"] == "no zones for this instrument", (odd, r.text)
     assert client.get(url, params={"instrument": KEY, "max_bands": 7}, headers=headers).status_code == 422
     assert client.get(url, params={"instrument": KEY, "price": -1}, headers=headers).status_code == 422
     assert client.get(url, params={"instrument": OTHER}, headers=headers).json()["bands"] == []

@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.price_action.zones.chart import FAMILIES, nearest_zone
+from app.price_action.zones.chart import FAMILIES
 from app.screener import nodes
 from app.screener.registry import ZONES_FLAG as FLAG
 ROLE_CHOICES = ("any", "demand", "supply")
@@ -76,15 +76,43 @@ def instrument_key(symbol: str, exchange: str = "NSE") -> Optional[str]:
         return None
 
 
+def zone_lookback(ast: Any, base_tf: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, int]:
+    """The bars the ZONE calls of a screen are read over, per timeframe - the window of snapshots to load. Each top-level
+    ALL / ANY / NOT branch that holds a zone call is measured on its own (so `Count(5, NearZone()) AND SMA(close, 200) >
+    close` loads 5 bars of zones, not 200); a branch that mixes is measured whole (a safe over-estimate)."""
+    from app.screener.validator import validate
+    out: Dict[str, int] = {}
+
+    def visit(node: Any) -> None:
+        if not flagged_calls(node):
+            return
+        if isinstance(node, nodes.Logic):
+            for item in node.items:
+                visit(item)
+            return
+        if isinstance(node, nodes.Not):
+            visit(node.item)
+            return
+        for tf, bars in validate(node, base_tf=base_tf, params=params).lookback.items():
+            out[tf] = max(out.get(tf, 0), int(bars))
+    visit(ast)
+    return out or {base_tf: 1}
+
+
 async def attach_zones(session: AsyncSession, tenant_id: Optional[int], exchange: str, universe: List[Any], end: Any,
-                       lookback: Dict[str, int]) -> None:
-    """Loads each symbol's zone timeline (the tenant's scope; the snapshots its bars can see, as of `end`) onto its
-    SymbolData. A symbol that cannot be an instrument key gets an empty timeline (its zone functions then explain)."""
+                       ast: Any, base_tf: str, params: Optional[Dict[str, Any]] = None) -> None:
+    """Loads every symbol's zone timeline in one batched read (read.timelines: the tenant's scope, the snapshots its bars
+    can see, as of `end`, over the zone calls' own window) onto its SymbolData. A symbol that cannot be an instrument
+    key gets an empty timeline (its zone functions then explain)."""
     from app.price_action.zones import read
-    start = read.window_start(lookback, end)
+    start = read.window_start(zone_lookback(ast, base_tf, params), end)
+    keys = {data.symbol: instrument_key(data.symbol, exchange) for data in universe}
+    found = await read.timelines(session, sorted({k for k in keys.values() if k}), tenant_id, start, end)
     for data in universe:
-        key = instrument_key(data.symbol, exchange)
-        data.zones = read.ZoneTimeline(data.symbol) if key is None else await read.timeline(session, key, tenant_id, start, end)
+        key = keys[data.symbol]
+        data.zones = found.get(key) if key else None
+        if data.zones is None:
+            data.zones = read.ZoneTimeline(key or data.symbol)
 
 
 # ------------------------------------------------------------------------------------------------------- the runtime
@@ -113,6 +141,9 @@ def zone_series(data: Any, f: pd.DataFrame, tf: str, what: str, role: str = "any
         raise ScreenRuntimeError(f"{data.symbol}: market zones were not loaded for this run")
     if timeline.empty:
         raise ScreenRuntimeError(f"{data.symbol}: no stored market zones (the zone job does not follow this instrument yet)")
+    if timeline.truncated:
+        raise ScreenRuntimeError(f"{data.symbol}: the zone calls read more stored snapshots than a run loads "
+                                 f"({len(timeline.snapshots)} at most) - shorten their window")
     idx = timeline.index_at(_closes_ns(f.index, tf)) if len(f) else np.array([], dtype=int)
     closes = f["close"].astype(float).to_numpy()
     if what == "near":
@@ -121,22 +152,41 @@ def zone_series(data: Any, f: pd.DataFrame, tf: str, what: str, role: str = "any
         out = np.full(len(f), np.nan)
     else:
         out = np.full(len(f), None, dtype=object)
-    for j in range(len(f)):
-        i = int(idx[j])
-        snap = timeline.snapshots[i] if i >= 0 else None
-        if snap is None or not np.isfinite(closes[j]):
+    # vectorised per snapshot segment: the bars that see one snapshot against all its zones at once (chart.nearest_zone's
+    # rule - distance, then strength, then zone_key - with the zones pre-ordered so argmin's first minimum is that pick)
+    for i in np.unique(idx[idx >= 0]):
+        snap = timeline.snapshots[int(i)]
+        if snap is None:
             continue
-        z = nearest_zone(snap.rows, float(closes[j]), role, tol, family)
-        if z is None:
+        a = snap.arrays(family)
+        if not len(a["low"]):
             continue
+        bars = np.flatnonzero((idx == i) & np.isfinite(closes) & (closes > 0))
+        if not len(bars):
+            continue
+        c = closes[bars][:, None]
+        low, high = a["low"][None, :], a["high"][None, :]
+        gap = np.where(c < low, low - c, np.where(c > high, c - high, 0.0))
+        dist = gap / c * 100.0
+        supply = (low + high) / 2 > c
+        ok = dist <= tol
+        if role == "demand":
+            ok &= ~supply
+        elif role == "supply":
+            ok &= supply
+        hit = ok.any(axis=1)
+        if not hit.any():
+            continue
+        best = np.argmin(np.where(ok, dist, np.inf), axis=1)
+        rows_hit, cols = bars[hit], best[hit]
         if what == "near":
-            out[j] = True
+            out[rows_hit] = True
         elif what == "role":
-            out[j] = str(z["role"]).upper()
+            out[rows_hit] = np.where(supply[hit, cols], "SUPPLY", "DEMAND")
         elif what == "state":
-            out[j] = str(z["state"]).upper()
+            out[rows_hit] = a["state"][cols]
         else:
-            out[j] = float(z["strength"])
+            out[rows_hit] = a["strength"][cols]
     if what == "near":
         return pd.Series(out, index=f.index, dtype=bool)
     if what == "strength":
@@ -145,4 +195,4 @@ def zone_series(data: Any, f: pd.DataFrame, tf: str, what: str, role: str = "any
 
 
 __all__ = ["FLAG", "flagged_calls", "refusal", "intrabar_refusal", "enabled", "blocked_calls", "attach_zones", "zone_series",
-           "instrument_key"]
+           "zone_lookback", "instrument_key"]

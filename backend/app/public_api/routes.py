@@ -181,8 +181,11 @@ async def submit_signal(body: PublicSignal, p: ApiPrincipal = Depends(api_key_au
     if await approval.required(session, p.tenant.id):
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; the PAPER order waits for Approve in the app.
         key = f"api:{p.key.id}:{body.idempotency_key}" if body.idempotency_key else f"api:{p.key.id}:{uuid.uuid4().hex}"
-        row = await approval.propose_entry(session, p.tenant.id, signal=signal, strategy_id=body.strategy_id, source="public_api",
-                                           idempotency_key=key, requested_mode=body.mode, user_id=p.user.id)
+        try:
+            row = await approval.propose_entry(session, p.tenant.id, signal=signal, strategy_id=body.strategy_id, source="public_api",
+                                               idempotency_key=key, requested_mode=body.mode, user_id=p.user.id)
+        except approval.EntriesPaused as exc:
+            return {"order_id": None, "status": "PAUSED", "executed": False, "trade_id": None, "proposal_id": None, "reasons": [str(exc)]}
         return {"order_id": None, "status": "PROPOSED" if row is not None else "DUPLICATE", "executed": False, "trade_id": None,
                 "proposal_id": row.id if row is not None else None,
                 "reasons": ["Approval-only mode: the signal was raised as an entry proposal - approve it to place the PAPER order"]}

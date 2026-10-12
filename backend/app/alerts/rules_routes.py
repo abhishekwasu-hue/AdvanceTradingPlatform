@@ -134,8 +134,17 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
             "universe_json": None, "exchange": body.exchange}
 
 
+async def _own_rules_only(session: AsyncSession, user: User) -> bool:
+    """BT1b: with `byob_data_tier` on a rule is evaluated on its creator's own broker feed, so its events (live values),
+    its last problem (the creator's session state) and the rule itself are the creator's only."""
+    return await flag_enabled(session, "byob_data_tier", user.tenant_id)
+
+
 async def _owned(session: AsyncSession, user: User, rule_id: int) -> AlertRuleRecord:
-    row = await session.scalar(select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id, AlertRuleRecord.tenant_id == user.tenant_id))
+    query = select(AlertRuleRecord).where(AlertRuleRecord.id == rule_id, AlertRuleRecord.tenant_id == user.tenant_id)
+    if await _own_rules_only(session, user):
+        query = query.where(AlertRuleRecord.created_by == user.id)
+    row = await session.scalar(query)
     if row is None:
         raise HTTPException(status_code=404, detail="Rule not found")
     return row
@@ -144,8 +153,10 @@ async def _owned(session: AsyncSession, user: User, rule_id: int) -> AlertRuleRe
 @router.get("/rules")
 async def list_rules(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
     await require_flag(session, FLAG, user.tenant_id)
-    return [_rule_dict(r) for r in await session.scalars(select(AlertRuleRecord).where(AlertRuleRecord.tenant_id == user.tenant_id)
-                                                          .order_by(AlertRuleRecord.id.desc()))]
+    query = select(AlertRuleRecord).where(AlertRuleRecord.tenant_id == user.tenant_id)
+    if await _own_rules_only(session, user):
+        query = query.where(AlertRuleRecord.created_by == user.id)
+    return [_rule_dict(r) for r in await session.scalars(query.order_by(AlertRuleRecord.id.desc()))]
 
 
 @router.post("/rules", status_code=201)

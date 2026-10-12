@@ -198,6 +198,9 @@ async def evaluate_tenant(session: AsyncSession, tenant_id: int, underlying: str
     settings = await snapshots.settings_for(session, tenant_id, underlying)
     if not settings.alerts.enabled or not market_open:
         return []
+    from app.market_data import live_access
+    if await live_access.byob_on(session, tenant_id):
+        return []        # BT1b: no alerts from the shared OI collector while the bring-your-own-broker data tier is on
     _, own = await snapshots.settings_rows(session, tenant_id, underlying)
     snoozed = own.snoozed_until if own is not None else None
     day = now.astimezone(IST).date()

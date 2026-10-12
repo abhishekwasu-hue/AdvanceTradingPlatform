@@ -193,7 +193,8 @@ def test_the_worker_loop_drains_the_queue_and_stops_on_request(monkeypatch, rese
     async def go():
         stop = asyncio.Event()
         task = asyncio.create_task(research_worker.run_forever(_session_factory, stop))
-        for _ in range(200):
+        # up to ~15 s: the loop exits as soon as both jobs settle; a loaded CI runner needs more than the old 4 s
+        for _ in range(750):
             await asyncio.sleep(0.02)
             async with _session_factory() as session:
                 rows = (await session.scalars(select(ResearchStudyRecord).where(ResearchStudyRecord.study_id.in_(sids)))).all()

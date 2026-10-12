@@ -21,7 +21,7 @@ from app.core.config import FRONTEND_URL
 from app.core.enums import UserRole
 from app.db.models import Tenant, TenantInviteRecord, User
 from app.db.session import get_session
-from app.execution.tagging import valid_algo_id
+from app.execution.tagging import ALGO_ID_MAX_SAVED, valid_algo_id
 from app.retention.service import erase_user
 from app.plans.limits import check_can_add_member, limits as plan_limits, usage as plan_usage
 from app.plans.registry import get_plan
@@ -167,6 +167,11 @@ async def rename_tenant(
         algo_id = request.algo_id.strip()
         if algo_id and not valid_algo_id(algo_id):
             raise HTTPException(status_code=400, detail="Algo id must be 1-32 letters, digits, '-' or '_' (as issued by the exchange)")
+        if len(algo_id) > ALGO_ID_MAX_SAVED:
+            # Z10c-6: it would not fit the broker's order tag whole - the exchange could not match the orders to the algo.
+            raise HTTPException(status_code=422, detail=(
+                f"Algo id is {len(algo_id)} characters; at most {ALGO_ID_MAX_SAVED} fit the broker order tag "
+                f"(<algo id>-<leg>, 20 characters) - a longer id would reach the broker cut short. Nothing was saved."))
         tenant.algo_id = algo_id or None
         await write_audit_log(session, user.tenant_id, user.id, "tenant_algo_id_changed", algo_id or "(cleared)")
     if request.require_mfa_for_live is not None:

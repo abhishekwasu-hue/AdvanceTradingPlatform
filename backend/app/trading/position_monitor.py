@@ -90,6 +90,71 @@ def exchange_for_trade(trade: TradeRecord) -> str:
     return trade.exchange or exchange_for_symbol(trade.symbol)
 
 
+def trade_venue(trade, deployment_exchange: Optional[str] = None) -> str:
+    """BK2-8: the exchange whose session clock a position follows (monitoring, square-off, its quote). The trade's own
+    exchange - stamped at entry since BK2-8; for an older row without one, the symbol registry's (MCX / crypto
+    contracts), else its deployment's exchange when that is another family than NSE (a currency deployment's trade is
+    CDS), else NSE - as before for every equity / F&O row."""
+    if trade.exchange:
+        return trade.exchange
+    spec = get_contract_spec(trade.symbol)
+    if spec is not None:
+        return spec.exchange
+    return venue_beyond_nse(deployment_exchange) or "NSE"
+
+
+def venue_beyond_nse(exchange: Optional[str]) -> Optional[str]:
+    """`exchange` (upper case) when its session family is not NSE's, else None: an NSE / BSE / NFO name keeps meaning the
+    NSE venue the platform has always used for an equity row; a CDS / MCX / crypto one is a different clock."""
+    from app.market_data.calendar import session_family
+    if exchange and session_family(exchange) != "NSE":
+        return exchange.upper()
+    return None
+
+
+async def venue_for(session: AsyncSession, trade) -> str:
+    """`trade_venue` for one trade, reading its deployment's exchange only when it is needed (a legacy row without an
+    exchange and not in the registry). Every exit path uses it - the clock, the exit order, the stop and its tick - so a
+    legacy CDS row is closed with the CDS venue at the CDS time (BK2-8 review LOW-2)."""
+    if trade.exchange or get_contract_spec(trade.symbol) is not None or trade.deployment_id is None:
+        return trade_venue(trade)
+    dep_exchange = await session.scalar(select(StrategyDeploymentRecord.exchange).where(StrategyDeploymentRecord.id == trade.deployment_id))
+    return trade_venue(trade, dep_exchange)
+
+
+async def deployment_exchanges(session: AsyncSession, trades) -> Dict[int, str]:
+    """{deployment id: exchange} for the trades whose venue falls back to their deployment (one query)."""
+    ids = {t.deployment_id for t in trades if not t.exchange and t.deployment_id is not None and get_contract_spec(t.symbol) is None}
+    if not ids:
+        return {}
+    rows = await session.execute(select(StrategyDeploymentRecord.id, StrategyDeploymentRecord.exchange)
+                                 .where(StrategyDeploymentRecord.id.in_(ids)))
+    return {dep_id: exchange for dep_id, exchange in rows.all() if exchange}
+
+
+async def trade_venues(session: AsyncSession, trades) -> Dict[int, str]:
+    """{trade id: venue} (`trade_venue`) for a batch of trades."""
+    deps = await deployment_exchanges(session, trades)
+    return {t.id: trade_venue(t, deps.get(t.deployment_id)) for t in trades}
+
+
+async def open_trade_families(session: AsyncSession, tenant_ids: Optional[set] = None) -> set:
+    """BK2-8: the session families of the open positions of `tenant_ids` (None: every tenant) - the worker always keeps
+    these clocks, so a position is monitored and squared off on its own venue's session even when no ACTIVE / PAUSED
+    deployment trades there any more (ADR-0004: an exit is never skipped because a clock was not looked at)."""
+    from types import SimpleNamespace
+
+    from app.market_data.calendar import session_family
+    query = select(TradeRecord.id, TradeRecord.symbol, TradeRecord.exchange, TradeRecord.deployment_id).where(TradeRecord.exit_time.is_(None))
+    if tenant_ids is not None:
+        if not tenant_ids:
+            return set()
+        query = query.where(TradeRecord.tenant_id.in_(tenant_ids))
+    rows = (await session.execute(query)).all()
+    trades = [SimpleNamespace(id=i, symbol=sym, exchange=ex, deployment_id=dep) for i, sym, ex, dep in rows]
+    return {session_family(venue) for venue in (await trade_venues(session, trades)).values()}
+
+
 async def broker_for_trade(session: AsyncSession, trade: TradeRecord) -> Optional[BrokerInterface]:
     """The authenticated adapter that can square off this LIVE trade: the broker account the
     position sits in (Phase T), else the broker its deployment trades through, else - for a trade
@@ -183,14 +248,14 @@ def _partial_aware() -> bool:
 
 async def _square_off_live(
     trade: TradeRecord, broker: BrokerInterface, reason: str, reference_price: float, outcome: CloseOutcome,
-    algo_id: Optional[str] = None, stop_dead: bool = False,
+    algo_id: Optional[str] = None, stop_dead: bool = False, exchange: Optional[str] = None,
 ) -> Optional[float]:
     """Places whatever the broker needs to flatten this position and returns the realised exit
     price, or None when the position could not be flattened (the trade must then stay open).
 
     `stop_dead` (G-LIVE, LIVE_EXIT_IF_NO_STOP): the caller has just seen the stop missing / rejected and the broker
     clearly refuse a new one - there is no stop to cancel, so the exit must not wait on a cancel."""
-    exchange = exchange_for_trade(trade)
+    exchange = exchange or exchange_for_trade(trade)       # the caller passes venue_for(): the trade's session venue
     exit_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
     stop_after: Optional[BrokerOrderStatus] = None
     cancelled_stop = False
@@ -316,6 +381,7 @@ async def close_position(
         realised = await _square_off_live(
             trade, broker, reason, exit_price, outcome,
             algo_id=order_algo_id(tenant.algo_id if tenant is not None else None, broker.name), stop_dead=stop_dead,
+            exchange=await venue_for(session, trade),
         )
         if outcome.broker_exit_order_id:
             await audit_order(session, trade.tenant_id, user_id, leg="EXIT", broker_name=broker.name, symbol=trade.symbol,
@@ -463,7 +529,7 @@ async def _monitor_group(
     prices: Dict[int, float] = {}
     for leg in legs:
         try:
-            prices[leg.id] = await price_lookup(leg.symbol, exchange_for_trade(leg))
+            prices[leg.id] = await price_lookup(leg.symbol, await venue_for(session, leg))
             _mark(leg, prices[leg.id])
         except Exception as exc:  # noqa: BLE001 - no decision on a group with a missing leg price
             logger.warning("No price for leg %s of group %s: %s", leg.symbol, leg.leg_group_id, exc)
@@ -530,8 +596,9 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                 # P0.5 / T2: a stop placed as SL (limit) moves its limit with the trigger; SL-M has no limit. The exchange
                 # takes only whole ticks: the trigger moves to the tick farther from the market.
                 stop_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
-                trigger = round_stop_trigger(update.stop_loss, stop_side, symbol=trade.symbol, exchange=exchange_for_trade(trade))
-                if trigger == round_stop_trigger(old_stop, stop_side, symbol=trade.symbol, exchange=exchange_for_trade(trade)):
+                venue = await venue_for(session, trade)
+                trigger = round_stop_trigger(update.stop_loss, stop_side, symbol=trade.symbol, exchange=venue)
+                if trigger == round_stop_trigger(old_stop, stop_side, symbol=trade.symbol, exchange=venue):
                     raise _SameTrigger()           # on the tick it has not moved: a no-op modify some brokers reject
                 stop_type, stop_limit = live_broker.stop_order_params(trade.symbol, stop_side, trigger,
                                                                       is_option=(trade.instrument_kind or "UNDERLYING") == "OPTION")
@@ -574,10 +641,11 @@ async def monitor_open_positions(
         select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         .order_by(TradeRecord.id)
     ))
+    venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
     if families is not None:
         # Phase O2: only venues whose session is open right now; a closed venue's quote is stale anyway.
         from app.market_data.calendar import session_family
-        open_trades = [t for t in open_trades if session_family(exchange_for_trade(t)) in families]
+        open_trades = [t for t in open_trades if session_family(venues[t.id]) in families]
     outcomes: List[CloseOutcome] = []
     asks: List[tuple] = []          # Z3: (trade, target reason, price) - "Exit now?" questions, raised after every exit
     # Phase H2: legs of one structure are judged together, never one by one.
@@ -593,7 +661,7 @@ async def monitor_open_positions(
         if trade.leg_group_id:
             continue
         try:
-            price = await price_lookup(trade.symbol, exchange_for_trade(trade))
+            price = await price_lookup(trade.symbol, venues[trade.id])
         except Exception as exc:  # noqa: BLE001 - one bad quote must not stop the sweep
             logger.warning("No price for %s while monitoring trade %s: %s", trade.symbol, trade.id, exc)
             outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"Price unavailable: {exc}"]))

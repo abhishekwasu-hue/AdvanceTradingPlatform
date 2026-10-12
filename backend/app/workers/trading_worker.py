@@ -29,8 +29,8 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, time as dtime, timedelta, timezone
-from typing import Callable, Dict, List, Optional, Tuple
+from datetime import date, datetime, time as dtime, timedelta, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -82,7 +82,8 @@ from app.secrets_store.envelope import ensure_tenant_key
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
 from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
 from app.notifications.service import notify
-from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
+from app.trading.position_monitor import (close_position, monitor_open_positions, open_trade_families,
+                                          trade_venues)
 from app.trading.stop_guard import verify_protective_stops
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,7 @@ class CycleReport:
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
+    intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -226,6 +228,12 @@ class TradingWorker:
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
         self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
         self._market_zones_task: Optional["asyncio.Task[None]"] = None
+        # HB2: the IST date the owner's intraday-history pass last COMPLETED, its task, and when an unfinished pass may
+        # be started again (monotonic seconds).
+        self._last_intraday_day: Optional[date] = None
+        self._intraday_task: Optional["asyncio.Task[None]"] = None
+        self._intraday_retry_at = 0.0
+        self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -262,6 +270,8 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._intraday_task is not None and not self._intraday_task.done():
+            self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -333,11 +343,14 @@ class TradingWorker:
                 # Z10-c: the broker-order chokepoint reads the PAPER-only lock from this process; refresh it every cycle.
                 await phase0_lock.is_on(session, None)
                 self._note_lock_state()
-                # Phase O2: one clock per exchange family. NSE is always considered; MCX/CRYPTO only
+                # Phase O2: one clock per exchange family. NSE is always considered; MCX/CDS/CRYPTO only
                 # when a deployment actually trades there, so a pure-equity platform behaves as before.
-                wanted = {"NSE"} | {session_family(ex) for ex in await session.scalars(
-                    select(StrategyDeploymentRecord.exchange).where(
-                        StrategyDeploymentRecord.status.in_([DeploymentStatus.ACTIVE.value, DeploymentStatus.PAUSED.value])).distinct())}
+                # BK2-8: and always the family of every open position of the tenants this cycle processes (those with an
+                # ACTIVE / PAUSED deployment), so its exits run on its own clock.
+                live_deps = (await session.execute(select(StrategyDeploymentRecord.tenant_id, StrategyDeploymentRecord.exchange).where(
+                    StrategyDeploymentRecord.status.in_([DeploymentStatus.ACTIVE.value, DeploymentStatus.PAUSED.value])).distinct())).all()
+                wanted = {"NSE"} | {session_family(ex) for _, ex in live_deps}
+                wanted |= await open_trade_families(session, {tenant for tenant, _ in live_deps})
                 statuses = {name: st for name, st in (await all_session_statuses(session, now)).items() if name in wanted}
                 self._open_families = {name for name, st in statuses.items() if st.is_open}
                 nse = statuses["NSE"]
@@ -563,6 +576,16 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Market zones job not started")
                         report.errors.append(f"market zones: {exc}")
+                        await session.rollback()
+                # HB2: the owner's intraday history (flag `history_intraday`, off by default) - after the close, through the
+                # owner's own broker session, drawing from that session's rate budget only while a reserve stays free for
+                # exits. Its own task with its own sessions and a time budget; never during NSE hours.
+                if not nse.is_open:
+                    try:
+                        report.intraday_history_started = await self._maybe_start_intraday_history(session, now)
+                    except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                        logger.exception("Intraday history pass not started")
+                        report.errors.append(f"intraday history: {exc}")
                         await session.rollback()
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
@@ -950,7 +973,7 @@ class TradingWorker:
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
             try:
-                report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user.id)
+                report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user.id, families=open_families)
             except Exception as exc:  # noqa: BLE001 - advisory safety net; never stops the cycle
                 logger.warning("Tenant %s: stop guard failed: %s", tenant_id, exc)
         tenant_started = time.monotonic()
@@ -1040,7 +1063,10 @@ class TradingWorker:
             open_dep_ids = set(await session.scalars(select(TradeRecord.deployment_id).where(
                 TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.deployment_id.is_not(None))))
             self._regime_wanted = open_dep_ids
-            proposals = await ai_monitor.observe(session, tenant_id, deployments, now, regime_lookup=lambda d: self._regimes.get(d.id))
+            # BK2-8 review LOW-3: only deployments whose own venue is trading now (no CDS "exit?" question at 20:00 because
+            # MCX is open). Advisory only - the monitor and square-off above already judged every open position.
+            observed = [d for d in deployments if session_family(d.exchange) in open_families]
+            proposals = await ai_monitor.observe(session, tenant_id, observed, now, regime_lookup=lambda d: self._regimes.get(d.id))
             if proposals:
                 created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
                 report.ai_proposals += len(created)
@@ -1075,6 +1101,38 @@ class TradingWorker:
                 await fetcher.aclose()
 
         self._history_eod_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_intraday_history(self, session: AsyncSession, now: datetime) -> bool:
+        """HB2: starts an owner intraday-history pass when one is due (from HISTORY_INTRADAY_HOUR_IST, NSE closed), the
+        flag is on for the owner's tenant and no pass is running. An unfinished pass (time budget, no session yet, rate
+        limited) is started again at most every HISTORY_INTRADAY_RETRY_MINUTES; the day counts as done only when a pass
+        worked through everything. The pass shares this worker's RateBudget for the owner's session."""
+        from app.market_lake import intraday_history
+
+        day = intraday_history.nightly_due(now, self._last_intraday_day)
+        if day is None or (self._intraday_task is not None and not self._intraday_task.done()):
+            return False
+        if time.monotonic() < self._intraday_retry_at:
+            return False
+        if not await intraday_history.enabled(session):
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+        self._intraday_retry_at = time.monotonic() + app_config.HISTORY_INTRADAY_RETRY_MINUTES * 60
+
+        async def run() -> None:
+            try:
+                result = await intraday_history.run_pass(self.session_factory, budget_for=self._budget_for,
+                                                         adapter_cache=self._intraday_adapters)
+                if result.complete:
+                    self._last_intraday_day = day
+                elif result.status == "request_cap":     # at most one capped pass per 30 minutes (Upstox: 2,000 / 30 min)
+                    self._intraday_retry_at = max(self._intraday_retry_at, time.monotonic() + 30 * 60)
+            except intraday_history.IntradayConfigError as exc:
+                logger.warning("Intraday history pass did not run: %s", exc)
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Intraday history pass failed")
+
+        self._intraday_task = asyncio.get_running_loop().create_task(run())
         return True
 
     async def _maybe_start_market_zones(self, session: AsyncSession, now: datetime) -> bool:
@@ -1250,6 +1308,7 @@ class TradingWorker:
             contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
             account_id=account_id, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
             order_style=getattr(dep, "order_style", None) or "MARKET", market_protection_pct=getattr(dep, "market_protection_pct", None),
+            exchange=dep.exchange,
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -1442,11 +1501,18 @@ class TradingWorker:
             return None
         return self._rate_limited(tenant_id, f"{broker_name}@{account_label}", build_adapter(record))
 
-    def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:
+    def _budget_for(self, tenant_id: int, budget_key: str) -> RateBudget:
+        """The one RateBudget of a (tenant, "<broker>@<account>") session - shared by the trading calls and HB2's history
+        reads (which take tokens only from what is spare, app/brokers/rate_budget.py)."""
         key = (tenant_id, budget_key)
         budget = self._budgets.get(key)
         if budget is None:
             budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
+        return budget
+
+    def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:
+        key = (tenant_id, budget_key)
+        budget = self._budget_for(tenant_id, budget_key)
         ops = None
         if app_config.OPS_THROTTLE_ENABLED:      # Part D2: one OPS throttle per (tenant, broker account), kept across cycles
             ops = self._ops.get(key)
@@ -1470,14 +1536,15 @@ class TradingWorker:
         open_trades = list(await session.scalars(
             select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         ))
+        venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
         closed = 0
         for trade in open_trades:
-            if families is not None and session_family(exchange_for_trade(trade)) not in families:
+            if families is not None and session_family(venues[trade.id]) not in families:
                 continue
             if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
                 continue   # Phase AS: a swing position is held overnight by design
             try:
-                price = await market_data.get_ltp(trade.symbol, exchange_for_trade(trade))
+                price = await market_data.get_ltp(trade.symbol, venues[trade.id])
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Square-off: no price for %s (%s) - left open", trade.symbol, exc)
                 continue
@@ -1506,7 +1573,7 @@ class TradingWorker:
         await session.commit()
 
     async def _guard_stops(self, session: AsyncSession, tenant: Tenant, accounts: List, adapters: Dict[str, BrokerInterface],
-                           user_id: int) -> int:
+                           user_id: int, families: Optional[set] = None) -> int:
         """Phase P1 per account (Phase T): one session holds one order book, so each account's open
         LIVE trades are checked against its own; trades recorded before accounts were tracked go
         with the default account of their broker. An account without a usable session this cycle
@@ -1517,7 +1584,7 @@ class TradingWorker:
             if adapter is None:
                 continue
             guard = await verify_protective_stops(session, tenant, adapter, user_id=user_id, account_id=account.id,
-                                                  include_unassigned=bool(account.is_default) or len(accounts) == 1)
+                                                  include_unassigned=bool(account.is_default) or len(accounts) == 1, families=families)
             rearmed += guard["rearmed"]
         return rearmed
 
@@ -1592,9 +1659,10 @@ class TradingWorker:
         that symbol on REST polling; nothing else changes."""
         key = next((k for k, a in adapters.items() if a is data_broker), data_broker.name)
         wanted: set = {(d.symbol, d.exchange or "NSE") for d in deployments}
-        open_trades = await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None)))
+        open_trades = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))))
+        venues = await trade_venues(session, open_trades)
         for trade in open_trades:
-            wanted.add((trade.symbol, exchange_for_trade(trade)))
+            wanted.add((trade.symbol, venues[trade.id]))
             if trade.underlying_symbol:
                 from app.trading.position_monitor import underlying_exchange
                 wanted.add((trade.underlying_symbol, underlying_exchange(trade.underlying_symbol)))

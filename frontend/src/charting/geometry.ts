@@ -6,7 +6,7 @@
  * Every number in a label comes from the anchors (prices, ratios), never from pixels.
  */
 import type { DrawingV1 } from "./drawings";
-import type { LayerBand } from "./engine";
+import type { LayerBand, LayerData, LayerLabel, LayerSegment } from "./engine";
 
 /** Pane coordinates for one paint: `x` maps an anchor time (epoch seconds), `y` a price; null = cannot place it. */
 export interface Converters {
@@ -225,4 +225,37 @@ export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] 
     if (b.label) out.push({ type: "text", x: c.width - 4, y: top - 2, text: b.label, color, align: "right", baseline: "bottom" });
   }
   return out;
+}
+
+/** CH3: layer segments (legs) between two data points; one end that cannot be placed drops the segment. */
+export function segmentShapes(segments: readonly LayerSegment[], c: Converters): Shape[] {
+  const out: Shape[] = [];
+  for (const s of segments) {
+    const x1 = c.x(s.t1), y1 = c.y(s.p1), x2 = c.x(s.t2), y2 = c.y(s.p2);
+    if (x1 == null || y1 == null || x2 == null || y2 == null) continue;
+    const color = s.color ?? DEFAULT_COLOR;
+    out.push({ type: "segment", x1, y1, x2, y2, color, width: Math.min(4, Math.max(1, s.width ?? 1)), dash: s.style ?? "solid" });
+    if (s.label) out.push({ type: "text", x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 3, text: s.label, color, align: "center", baseline: "bottom" });
+  }
+  return out;
+}
+
+const LABEL_GAP = 6;
+
+/** CH3: texts at data points (swing labels, breaks), a few pixels above or below the point. */
+export function labelShapes(labels: readonly LayerLabel[], c: Converters): Shape[] {
+  const out: Shape[] = [];
+  for (const l of labels) {
+    const x = c.x(l.time), y = c.y(l.price);
+    if (x == null || y == null || !l.text) continue;
+    const below = l.position === "below";
+    out.push({ type: "text", x, y: below ? y + LABEL_GAP : y - LABEL_GAP, text: l.text, color: l.color ?? DEFAULT_COLOR, align: "center",
+               baseline: below ? "top" : "bottom" });
+  }
+  return out;
+}
+
+/** Everything a layer paints as one primitive: bands first (underneath), then segments, then labels on top. */
+export function layerShapes(data: Pick<LayerData, "bands" | "segments" | "labels">, c: Converters): Shape[] {
+  return [...bandShapes(data.bands ?? [], c), ...segmentShapes(data.segments ?? [], c), ...labelShapes(data.labels ?? [], c)];
 }

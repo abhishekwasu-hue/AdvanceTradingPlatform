@@ -344,6 +344,10 @@ It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEE
   non-superuser role that owns the scratch database. It gets a one-run random password and is set back to NOLOGIN
   afterwards. Archive SQL cannot get superuser rights back (a `SET ROLE` would not do, because `RESET ROLE` undoes
   it), so even a bad dump cannot run `COPY ... TO PROGRAM` on the cluster.
+- Every check that reads the copy afterwards (row counts, `alembic_version`, the audit hash chain) logs in as
+  `atp_restore` too, never as the superuser: a view or function the dump created runs with the rights of whoever
+  queries it. `restore-check` gives the role a fresh password for the chain check and sets it back to NOLOGIN right
+  after; if the role cannot log in, the chain is reported `not_checked` (a failure), never re-run as the superuser.
 
 **Seal.** `openssl enc` has no authenticated mode. A `.sha256` file can be recomputed by whoever changed the dump, so
 `scripts/backup/backup.sh` seals every dump where it is made, and `atp.sh` seals the files archive. A seal is a

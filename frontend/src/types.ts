@@ -2455,6 +2455,8 @@ export interface ExposureView {
   pairs: ExposurePair[]; move_together: ExposurePair[]; move_together_threshold: number; min_points: number; lookback_days: number;
   totals: { underlyings: number; legs: number; risk_at_stop: number; notional: number };
   market: string; market_days: number; note: string;
+  /** review: beta and pairs only for the `max_computed` largest risks; the rest are listed here */
+  not_computed?: string[]; max_computed?: number;
 }
 
 export interface ConeRow { sessions: number; move_1sd: number; low_1sd: number; high_1sd: number; low_2sd: number; high_2sd: number }

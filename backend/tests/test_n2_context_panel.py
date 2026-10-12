@@ -118,7 +118,25 @@ def test_flag_off_is_404():
     assert r.status_code == 404 and r.headers.get("X-Feature-Disabled") == "context_panel"
 
 
-def test_panel_tiles_from_the_lake_events_and_seams():
+@pytest.fixture
+def own_index_bars():
+    """Review: other tests seed the same index keys (NSE_INDEX:NIFTY50); this test's values come from its own seed, so
+    the keys' daily rows are cleared before it seeds (and after it, for the next test)."""
+    from sqlalchemy import delete
+
+    def clear():
+        async def go():
+            async with _session_factory() as session:
+                await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.in_(["NSE_INDEX:NIFTY50", "NSE_INDEX:INDIAVIX"]),
+                                                                   MdCandleRecord.timeframe == "day"))
+                await session.commit()
+        _run(go())
+    clear()
+    yield
+    clear()
+
+
+def test_panel_tiles_from_the_lake_events_and_seams(own_index_bars):
     end = _today() - timedelta(days=1)
     days = _sessions(300, end)
     nifty = [20000 + 10 * i + 150 * math.sin(i / 3.0) for i in range(300)]
@@ -185,3 +203,24 @@ def test_a_failing_tile_is_na_on_its_own(monkeypatch):
     body = client.get("/api/context/panel", headers=t["headers"]).json()
     assert body["tiles"]["breadth"] == {"status": "na", "reason": "Could not be read (RuntimeError)", "source": "breadth", "as_of": None}
     assert body["tiles"]["events"]["status"] == "ok"
+
+
+def test_a_failed_global_fetch_is_not_retried_on_every_panel_load(monkeypatch):
+    from app.ai import global_cues
+    calls = []
+
+    async def failing(*args, **kwargs):
+        calls.append(1)
+        return [], ["SP500: yahoo: timeout"]
+    monkeypatch.setattr(global_cues, "enabled", lambda: True)
+    monkeypatch.setattr(global_cues, "fetch_all", failing)
+    service.reset_global_backoff()
+    viewer = service.Viewer(id=1, tenant_id=1)
+    first = _run(service.global_tile(None, viewer, _today(), []))
+    second = _run(service.global_tile(None, viewer, _today(), []))
+    assert first["status"] == "na" and "(1 failed)" in first["reason"] and second["status"] == "na" and "a moment ago" in second["reason"]
+    assert len(calls) == 1
+    monkeypatch.setattr(service, "GLOBAL_FAIL_BACKOFF_SECONDS", 0)
+    _run(service.global_tile(None, viewer, _today(), []))
+    assert len(calls) == 2
+    service.reset_global_backoff()

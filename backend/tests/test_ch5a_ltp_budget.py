@@ -7,10 +7,11 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List, Optional
 
 from app.brokers.models import Quote
+from app.cache.client import cache_set
 from app.core import rate_limit
 from app.db.models import BrokerCredentialRecord
 from app.market_data import api_budget, candles_routes
-from app.market_data.stream import Tick, tick_cache
+from app.market_data.stream import Tick, _tick_key, tick_cache
 from tests.test_phase_aa_market_data_api import _store_credentials
 from tests.test_phase_an_ltp import _QuoteBroker, client_get
 from tests.test_phase_k_commercial import _owner
@@ -170,10 +171,15 @@ def test_every_broker_call_takes_a_token_and_none_left_answers_429(monkeypatch):
     assert second.status_code == 429 and second.headers.get("retry-after") == "5"
     assert _Counting.calls == 1                                                    # the refused request never reached the broker
     now = datetime.now(timezone.utc)
-    run(tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol=sym, ltp=2875.0, exchange_ts=now, received_at=now)))
-    assert client_get(headers, sym).json()["source"] == "tick"               # a fresh tick costs no token
-    tick_cache.clear()
-    api_budget.reset()
+    try:
+        run(tick_cache.put(Tick(broker="upstox", exchange="NSE", symbol=sym, ltp=2875.0, exchange_ts=now, received_at=now)))
+        assert client_get(headers, sym).json()["source"] == "tick"           # a fresh tick costs no token
+    finally:
+        # tick_cache.clear() empties only the process-local dict; the Redis mirror (CI, 180 s TTL) is overwritten too
+        # (an empty value reads as no tick) - see claude/n4-ch5 1e3425c, where a RELIANCE tick leaked into the exit tests
+        tick_cache.clear()
+        run(cache_set(_tick_key("upstox", "NSE", sym), "", 1))
+        api_budget.reset()
 
 
 def test_ltp_is_limited_per_user(monkeypatch):

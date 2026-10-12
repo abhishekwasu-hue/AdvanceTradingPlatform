@@ -28,6 +28,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
+from app.observability.metrics import SCREEN_CACHE_LOOKUPS
 from app.screener import nodes
 from app.screener.runtime import Match, SymbolData, run_screen
 from app.screener.validator import Validated
@@ -117,6 +118,7 @@ class ResultCache:
                 self.hits += 1
             else:
                 self.misses += 1
+        SCREEN_CACHE_LOOKUPS.labels(outcome="hit" if cached is not None else "miss").inc()     # U3: §5 cache hit rate
         if cached is not None:
             return cached, True
         matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)

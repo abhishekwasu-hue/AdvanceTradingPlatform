@@ -84,7 +84,47 @@ checked against the backend by a pytest) is compared in a vitest.
 
 ## Not in Z10
 
-- Full U3 gates (N3).
+- Full U3 gates (N3): see "U3 full gates" below.
 - New indicators.
 - Changing any indicator's definition. Where the harness or a golden test finds a mismatch, the fix makes the
   code match its documented formula; a definition change goes to OPEN_QUESTIONS instead.
+
+## U3 full gates (N3)
+
+The U3 gates still have no spec text (Z10-1). U3 gathers the screener spec's own requirements into one manifest,
+`backend/app/quality/gates.py`, with the tests that enforce each row:
+- G1-G7 (the freeze's names);
+- SCREENER_SPEC §1.5 (performance), §5 (quality, observability, reproducibility, pitfalls) and the §7 acceptance rows (ACC);
+- the evidence addendum's per-entry definition of done (DoD).
+
+`python -m app.quality.gates` prints the report.
+
+- **Rows.** Each row names its tests as `path::test` (a pytest function, or a vitest title).
+  `tests/test_u3_gates.py` fails when a named test does not exist.
+- **Gaps.** A row that is not met declares a gap, which must be an OPEN_QUESTIONS id (U3-2 … U3-7).
+- **Measured rows.** A measured row fails once its target is met while its gap is still declared. The count of
+  pre-built screens is 23 of 50.
+- **G3 (provisional, U3-1)** is §5 "Reproducibility" plus §7 "every number traceable to a data timestamp".
+  - A run now stores its AST (checked against `ast_sha256`), its parameters and exchange, `data_as_of` (the newest bar
+    close it read) and each symbol's last bar. Migration `d7f1a3c5e9b2` adds five nullable columns (ROLLBACK_SAFE).
+  - `POST /api/screener/runs/{id}/replay` (flag `screener_run_replay`, off) re-fetches the run's symbols through the
+    caller's own source and keeps only the bars closed by `data_as_of`. It evaluates the same AST and parameters and
+    reports each symbol as reproduced, a different last bar, or the same last bar with a different answer (a correction).
+  - A replay stores nothing. Runs stored before U3 answer 409.
+- **DoD.** `definition_of_done()` checks every registry entry: a doc string, a flag in DEFAULT_OFF_FLAGS, and a Z10-a
+  causal case or a named exemption. Once EV3 puts `evidence.DRAWN_AS` on main, it also checks the drawn-as
+  declaration (U3-6). Runtime fixtures stay enforced by `test_s1b_screen_runtime.py`.
+- **G1 price action.** The ScreenQL `Pattern` and `SwingHigh` / `SwingLow` functions are compared bar by bar with the
+  price_action engine on the frozen 15m fixture (BANKNIFTY-like synthetic data, SC-12).
+- **G7 metrics.** Two new metrics:
+  - `atp_screen_run_duration_seconds{path=run|preview|barclose}`;
+  - `atp_screen_cache_lookups_total{outcome=hit|miss}`.
+
+  Ingest lag and tracing are U3-5.
+- **Open rows:**
+  - G2.fundamentals (U3-4, LG3);
+  - G4.live_latency and G4.alert_load (U3-3);
+  - G7.ingest_lag (U3-5);
+  - DoD.drawn (U3-6, EV3);
+  - ACC.prebuilt (U3-2);
+  - ACC.fo_rrg_breadth and ACC.pitfalls (U3-7).

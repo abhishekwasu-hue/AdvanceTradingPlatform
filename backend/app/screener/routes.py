@@ -35,6 +35,8 @@ from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
+from app.observability.metrics import SCREEN_RUN_SECONDS
+from app.screener import replay
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
@@ -406,6 +408,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                "funnel": {"universe": len(symbols), **stages}, "disclaimer": DISCLAIMER}
     if tier:
         payload["data_tier"] = tier["data_tier"]          # BT1b: the tier the run actually used (flag byob_data_tier)
+    SCREEN_RUN_SECONDS.labels(path="preview" if body.preview else "run").observe(time.monotonic() - started)   # U3: §5 scan latency
     if body.preview:
         # U5 D2 review: a preview is not stored, so it returns counts only - the match list itself comes from a Run,
         # which is stored and can be reproduced.
@@ -417,10 +420,13 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
             preview["data_tier"] = tier["data_tier"]
         return preview
     ast_json = json.dumps(nodes.to_json(ast), sort_keys=True)
+    times = replay.bar_times(universe, base_tf)          # U3 G3: what a replay needs (the AST, params, data time per symbol)
     run_row = ScreenRunRecord(tenant_id=user.tenant_id, user_id=user.id, screen_id=screen_id, ast_sha256=hashlib.sha256(ast_json.encode()).hexdigest(),
                               ast_version=nodes.VERSION, base_tf=base_tf, universe_json=json.dumps(symbols), data_source=data_source,
                               scanned=len(symbols), matched=sum(1 for r in results if r["matched"]), result_json=json.dumps(results),
-                              duration_ms=int((time.monotonic() - started) * 1000))
+                              duration_ms=int((time.monotonic() - started) * 1000), ast_json=ast_json,
+                              params_json=json.dumps(params, sort_keys=True, default=str), data_as_of=replay.data_as_of(times),
+                              bar_times_json=json.dumps(times), exchange=body.exchange)
     session.add(run_row)
     from app.screener import evidence_store
     matched_symbols = [str(r["symbol"]) for r in results if r["matched"]]
@@ -438,9 +444,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     return {"run_id": run_row.id, "preview": False, **payload}
 
 
-@router.get("/runs/{run_id}")
-async def get_run(run_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    await _flag(session, user)
+async def _readable_run(session: AsyncSession, user: User, run_id: int) -> ScreenRunRecord:
     query = select(ScreenRunRecord).where(ScreenRunRecord.id == run_id, ScreenRunRecord.tenant_id == user.tenant_id)
     from app.market_data import live_access
     if await live_access.byob_on(session, user.tenant_id):
@@ -448,9 +452,52 @@ async def get_run(run_id: int, user: User = Depends(get_current_user), session: 
     row = await session.scalar(query)
     if row is None:
         raise HTTPException(status_code=404, detail="Run not found")
+    return row
+
+
+@router.get("/runs/{run_id}")
+async def get_run(run_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flag(session, user)
+    row = await _readable_run(session, user, run_id)
     return {"run_id": row.id, "screen_id": row.screen_id, "ast_sha256": row.ast_sha256, "version": row.ast_version, "base_tf": row.base_tf,
             "universe": json.loads(row.universe_json), "data_source": row.data_source, "scanned": row.scanned, "matched": row.matched,
-            "results": json.loads(row.result_json), "created_at": row.created_at.isoformat() if row.created_at else None, "disclaimer": DISCLAIMER}
+            "results": json.loads(row.result_json), "created_at": row.created_at.isoformat() if row.created_at else None,
+            # U3 G3: the run's inputs and data time (None on runs stored before U3)
+            "params": json.loads(row.params_json) if row.params_json else None,
+            "data_as_of": row.data_as_of.isoformat() if row.data_as_of else None,
+            "bar_times": json.loads(row.bar_times_json) if row.bar_times_json else None,
+            "replayable": bool(row.ast_json and row.data_as_of), "disclaimer": DISCLAIMER}
+
+
+@router.post("/runs/{run_id}/replay", dependencies=[Depends(run_rate_limit)])
+async def replay_run(run_id: int, user: User = Depends(require_trader),
+                     session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """U3 G3 (flag `screener_run_replay`, off by default): re-evaluates a stored run on the bars that had closed by its
+    `data_as_of`, through the caller's own data source, and says symbol by symbol whether it reproduces. Stores nothing."""
+    await _flag(session, user)
+    await require_flag(session, replay.REPLAY_FLAG, user.tenant_id)
+    row = await _readable_run(session, user, run_id)
+    try:
+        source, params, symbols, base_tf, as_of = replay.inputs(row)
+    except replay.NotReplayable as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    exchange = row.exchange or "NSE"
+    ast, validated = _compiled(source, base_tf, params)
+    await _gate(session, user, ast, validated)             # a function whose flag is now off is refused, as for a run
+    if not validated.ok:
+        raise HTTPException(status_code=409, detail={"message": "the stored screen no longer passes validation",
+                                                     "problems": [p.as_dict() for p in validated.problems]})
+    universe, problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
+                                                         now=as_of, user_id=user.id)
+    if zone_gate.flagged_calls(ast):
+        await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, as_of, ast, base_tf, params)
+    universe = replay.trim(universe, as_of)
+    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
+    matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
+    outcome = replay.compare(json.loads(row.result_json), json.loads(row.bar_times_json or "{}"), matches,
+                             replay.bar_times(universe, base_tf), problems)
+    return {"run_id": row.id, "data_as_of": as_of.isoformat(), "stored_source": row.data_source, "data_source": data_source,
+            **outcome, "disclaimer": DISCLAIMER}
 
 
 __all__ = ["router", "FLAG", "GALLERY_FLAG", "LEGENDS_FLAG", "fetch_frames"]

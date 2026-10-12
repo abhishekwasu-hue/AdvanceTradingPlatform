@@ -2884,6 +2884,14 @@ class ScreenRunRecord(Base):
     matched: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     result_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")  # [{symbol, matched, reason}]
     duration_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    # U3 G3 (SCREENER_SPEC §5 reproducibility): what a replay needs beyond the AST hash - the AST itself (checked against
+    # ast_sha256), the parameters, the newest bar close the run read (`data_as_of`) and each symbol's last closed bar.
+    # NULL on runs stored before U3 (those cannot be replayed).
+    ast_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    params_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    data_as_of: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    bar_times_json: Mapped[str | None] = mapped_column(Text, nullable=True)    # {symbol: close time of its last bar}
+    exchange: Mapped[str | None] = mapped_column(String(10), nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
 
 

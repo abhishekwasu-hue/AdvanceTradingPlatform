@@ -44,6 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.alerts import staleness
 from app.db.models import AlertRuleRecord, ScreenRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
+from app.observability.metrics import SCREEN_CACHE_LOOKUPS, SCREEN_RUN_SECONDS
 from app.screener import compile_screen, nodes
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.runtime import SymbolData, bar_close, closed_only, run_screen
@@ -323,7 +324,9 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                       tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar, rule.exchange or "NSE")
         if result_key in cache.results:
             cache.reused_results += 1
+            SCREEN_CACHE_LOOKUPS.labels(outcome="hit").inc()           # U3: §5 cache hit rate (the cycle's result cache)
         else:
+            SCREEN_CACHE_LOOKUPS.labels(outcome="miss").inc()
             if zone_calls:
                 # Z7a-3: the tenant's zone snapshots as of each bar's close (a bar never sees a zone computed after it
                 # closed) - one batched read for the rule's symbols over the zone calls' own window, only when the cycle
@@ -332,8 +335,10 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
             # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
             # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.
+            started = time_module.monotonic()
             cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params,
                                                                      vectorized=vectorized)
+            SCREEN_RUN_SECONDS.labels(path="barclose").observe(time_module.monotonic() - started)   # U3: §5 scan latency
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0

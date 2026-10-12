@@ -69,6 +69,12 @@ SUPPORT_BOT_ANSWERS = _counter("support_bot_answers", "Z10-f: support bot replie
 BILLING_PAYMENTS = _counter("billing_payments", "Payments recorded by source", ("source",))
 BILLING_TRANSITIONS = _counter("billing_transitions", "Subscription state transitions made by the daily sweep", ("transition",))
 
+# --- screener (U3, SCREENER_SPEC §5 observability) --------------------------------------------
+# path = run | preview | barclose; outcome = hit | miss. Process-local like the counters above.
+SCREEN_RUN_SECONDS = _histogram("screen_run_duration_seconds", "U3: screen evaluation wall time by path (run / preview / barclose)", ("path",),
+                                buckets=(0.01, 0.05, 0.1, 0.25, 0.5, 1, 2, 3, 5, 10, 30))
+SCREEN_CACHE_LOOKUPS = _counter("screen_cache_lookups", "U3: screen result-cache lookups by outcome (hit / miss)", ("outcome",))
+
 # --- worker ------------------------------------------------------------------------------------
 WORKER_CYCLES = _counter("worker_cycles", "Trading worker cycles by market state", ("market_open",))
 WORKER_CYCLE_SECONDS = _histogram("worker_cycle_duration_seconds", "Trading worker cycle wall time",

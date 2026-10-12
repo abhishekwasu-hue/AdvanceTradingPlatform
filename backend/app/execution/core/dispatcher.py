@@ -22,10 +22,10 @@ import json
 import logging
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Optional, Tuple
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config as app_config
@@ -77,13 +77,18 @@ async def drain(session: AsyncSession, now: Optional[datetime] = None, limit: Op
         if not rows:
             break
         report.claimed += len(rows)
-        await _dispatch_batch(session, [row.id for row in rows], now, report)
+        await _dispatch_batch(session, [row.id for row in rows], now, report, started)
     return report
 
 
-async def _dispatch_batch(session: AsyncSession, ids: List[int], now: datetime, report: DrainReport) -> None:
+async def _dispatch_batch(session: AsyncSession, ids: List[int], start_now: datetime, report: DrainReport,
+                          started: Optional[float] = None) -> None:
     # Ids first: a rollback after one intent's error expires every loaded row, so each is read again before it runs.
+    started = time.monotonic() if started is None else started
     for intent_id in ids:
+        # Review of X2 (L4): each intent's own clock - the drain's time plus what has passed since it began (the entry
+        # window and the limits are asked at the moment the intent is dispatched, not when the drain started).
+        now = start_now + timedelta(seconds=time.monotonic() - started)
         try:
             row = await session.get(ExecutionIntentRecord, intent_id, populate_existing=True)
             if row is None or row.status != intents.CLAIMED:
@@ -99,7 +104,7 @@ async def _dispatch_batch(session: AsyncSession, ids: List[int], now: datetime, 
             report.done += 1
         elif status == intents.REFUSED:
             report.refused += 1
-        else:
+        elif status != intents.CLAIMED:            # CLAIMED: left to the other attempt that is filling its order
             report.failed += 1
 
 
@@ -111,9 +116,16 @@ async def dispatch_one(session: AsyncSession, row: ExecutionIntentRecord, now: d
         # placed: never a proposal for a second one, whatever the switches say now), else its proposal.
         earlier = await intents.earlier_outcome(session, tenant_id, intent_id, now)
         if earlier is not None:
-            await intents.finish(session, intent_id, intents.DONE, route=earlier["route"], ai_action_id=earlier.get("ai_action_id"),
-                                 reason=earlier["reason"], now=now)
-            return intents.DONE
+            order = earlier.get("order")
+            done = await intents.finish(session, intent_id, earlier["status"], route=earlier["route"], ai_action_id=earlier.get("ai_action_id"),
+                                        reason=earlier["reason"], now=now)
+            if done and order is not None and earlier["status"] == intents.DONE:
+                from app.execution.core import announce
+                await announce.placed_once(session, intent_id, order)     # the crash came between the fill and _placed
+                await session.commit()
+            return str(earlier["status"])
+        if await intents.existing_order(session, tenant_id, intent_id) is not None:
+            return intents.CLAIMED                     # its order is still in flight in the other attempt: that one finishes it
     from app.plans.limits import tenant_is_active
     tenant = await session.get(Tenant, tenant_id)
     if tenant is None or not tenant_is_active(tenant):          # review L3
@@ -207,11 +219,21 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
     `execute_signal_for_user(` here). The checks read inside a savepoint; the pipeline commits on its own, so a failure
     there is rolled back here and the intent ends FAILED - the shared session is never left aborted. PAPER only: the
     pipeline is called without a broker."""
+    from app.db.models import OrderRecord
     from app.execution.signal_execution import execute_signal_for_user
     # Plain values first: the pipeline commits, which expires the row (an async session must not lazy-load it later).
     facts = _Facts(row.id, row.tenant_id, row.direction, row.symbol, row.strategy_id, row.source_ref)
     intent_id, tenant_id = facts.intent_id, facts.tenant_id
-    earlier = await intents.existing_order(session, tenant_id, intent_id)
+    taken = await session.scalar(select(OrderRecord).where(OrderRecord.tenant_id == tenant_id,
+                                                           OrderRecord.idempotency_key == intents.order_key(intent_id)))
+    if taken is not None and (taken.user_id != owner.id or taken.mode != "PAPER"):
+        # Review of X2 (L1): the key belongs to another order (another member's, or not PAPER): never link or replay it.
+        await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_REFUSE, now=now,
+                             reason=f"The order key of this intent is used by another order (#{taken.id}) - nothing was placed")
+        return intents.REFUSED
+    earlier = await intents.existing_order(session, tenant_id, intent_id, owner.id)
+    if earlier is not None and str(earlier.status) in intents.IN_FLIGHT_ORDER:
+        return intents.CLAIMED
     if earlier is not None:                          # a retried intent: its PAPER order was placed before an interruption
         await intents.finish(session, intent_id, intents.DONE, route=policy.ROUTE_PAPER, now=now,
                              reason=f"Auto PAPER: PAPER order #{earlier.id} was placed before an interruption")
@@ -244,6 +266,10 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
         await intents.finish(session, intent_id, intents.FAILED, route=policy.ROUTE_PAPER, now=now,
                              reason=f"Auto PAPER placement failed ({type(exc).__name__}) - see the worker log")
         return intents.FAILED
+    if not result.executed and str(order.status) in intents.IN_FLIGHT_ORDER:
+        # Review of X2 (L2): the stale-requeue overlap - another attempt of this intent placed the order and is still
+        # filling it; this one leaves the row to it instead of calling it refused.
+        return intents.CLAIMED
     if not result.executed:
         await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_PAPER, now=now,
                              reason=("PAPER order not placed: " + ("; ".join(result.reasons) or str(order.status)))[:300])
@@ -265,20 +291,15 @@ class _Facts:
 async def _placed(session: AsyncSession, f: _Facts, owner_id: int, signal: Signal, order_id: int, trade_id: Optional[int], price: float,
                   now: datetime) -> None:
     """DONE with the order, an audit row and one factual notification to the owner (no advice)."""
-    from app.audit.log import write_audit_log
-    from app.notifications.service import notify
+    from app.execution.core import announce
     trade = f"; position #{trade_id}" if trade_id else ""
-    await intents.finish(session, f.intent_id, intents.DONE, route=policy.ROUTE_PAPER, now=now, commit=False,
-                         reason=f"Auto PAPER: PAPER order #{order_id} at {price:g}{trade}")
-    await write_audit_log(session, f.tenant_id, owner_id, "scan_auto_paper_entry",
-                          f"intent #{f.intent_id} {f.direction} {f.symbol} at {price:g}: PAPER order #{order_id} ({f.source_ref})"[:500])
-    await notify(
-        session, f.tenant_id, NotificationType.SCREEN_ALERT, title=f"Auto PAPER entry: {f.direction} {f.symbol} (PAPER)",
-        message=(f"Auto PAPER entry placed: {f.direction} {f.symbol} at {_money(price)} (stop {_money(signal.stop_loss)}, "
-                 f"target {_money(signal.target1)}) from {f.strategy_id}. PAPER only. Exits run as usual; Exit now is on the "
-                 f"Positions page."),
-        severity=NotificationSeverity.WARNING, user_id=owner_id,
-        metadata_json=json.dumps({"execution_intent_id": f.intent_id, "source_ref": f.source_ref, "order_id": order_id}))
+    if not await intents.finish(session, f.intent_id, intents.DONE, route=policy.ROUTE_PAPER, now=now, commit=False,
+                                reason=f"Auto PAPER: PAPER order #{order_id} at {price:g}{trade}"):
+        await session.rollback()                       # another attempt settled the row; it announces the entry
+        return
+    await announce.write(session, tenant_id=f.tenant_id, owner_id=owner_id, intent_id=f.intent_id, direction=f.direction, symbol=f.symbol,
+                         strategy_id=f.strategy_id, source_ref=f.source_ref, order_id=order_id, price=price,
+                         stop_loss=signal.stop_loss, target1=signal.target1)
     await session.commit()
 
 

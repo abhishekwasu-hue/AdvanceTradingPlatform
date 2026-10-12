@@ -55,8 +55,8 @@ async def arm_state(session: AsyncSession, row: Optional[ScanThenTemplateRecord]
     days = int(app_config.SCAN_AUTO_PAPER_ARM_DAYS)
     if now - at > timedelta(days=days):
         return False, WHY_ARM_EXPIRED.format(days=days)
-    changed = await session.scalar(select(func.max(AuditLogRecord.created_at)).where(
-        AuditLogRecord.event == "feature_flag_set", AuditLogRecord.detail.like(f"{FLAG}:%")))
+    changed = await session.scalar(select(func.max(AuditLogRecord.created_at)).where(       # platform rows: tenant NULL (index)
+        AuditLogRecord.tenant_id.is_(None), AuditLogRecord.event == "feature_flag_set", AuditLogRecord.detail.like(f"{FLAG}:%")))
     if changed is not None:
         changed = changed if changed.tzinfo else changed.replace(tzinfo=timezone.utc)
         if at <= changed:
@@ -128,8 +128,10 @@ def _placed_orders(tenant_id: int):
     from app.db.models import OrderRecord
     key = literal("intent:") + cast(ExecutionIntentRecord.id, String)
     return (select(func.count()).select_from(OrderRecord)
-            .join(ExecutionIntentRecord, and_(ExecutionIntentRecord.tenant_id == OrderRecord.tenant_id, OrderRecord.idempotency_key == key))
-            .where(OrderRecord.tenant_id == tenant_id, OrderRecord.trade_id.is_not(None), ExecutionIntentRecord.source == SOURCE))
+            .join(ExecutionIntentRecord, and_(ExecutionIntentRecord.tenant_id == OrderRecord.tenant_id, OrderRecord.idempotency_key == key,
+                                              OrderRecord.user_id == ExecutionIntentRecord.user_id))      # review of X2 (L1): the owner's own
+            .where(OrderRecord.tenant_id == tenant_id, OrderRecord.mode == "PAPER", OrderRecord.trade_id.is_not(None),
+                   ExecutionIntentRecord.source == SOURCE))
 
 
 async def entries_today(session: AsyncSession, tenant_id: int, rule_id: int, now: datetime) -> int:
@@ -139,18 +141,22 @@ async def entries_today(session: AsyncSession, tenant_id: int, rule_id: int, now
         ExecutionIntentRecord.source_ref.like(f"rule:{rule_id}:symbol:%"), OrderRecord.created_at >= day_start(now))) or 0)
 
 
-WHY_CLOSED = "NSE is not open now - a proposal instead"
+WHY_CLOSED = "The {venue} session is not open now - a proposal instead"
 WHY_LATE = "After the last entry time ({cutoff} IST) - a proposal instead (exits run as usual)"
+WHY_VENUE = "Auto PAPER places NSE / BSE equity and F&O setups only in Phase 0 ({exchange} is not one) - a proposal instead"
+VENUES = frozenset({"NSE", "BSE", "NFO", "BFO"})      # review of X2 (L4, provisional X2-10): MCX and other venues -> proposals
 
 
 async def window_reason(session: AsyncSession, now: datetime, exchange: str = "NSE") -> Optional[str]:
     """Review of X2 (M2): Auto PAPER places only while the session is open and before the last entry time - the
     earliest of the venue's no-new-entries time, the intraday square-off and SCAN_AUTO_PAPER_LAST_ENTRY (session calendar
     with holidays)."""
-    from app.market_data.calendar import intraday_cutoffs, market_session_status, to_ist
+    from app.market_data.calendar import intraday_cutoffs, market_session_status, session_family, to_ist
+    if (exchange or "NSE").upper() not in VENUES:
+        return WHY_VENUE.format(exchange=(exchange or "?").upper())
     status = await market_session_status(session, now, exchange)
     if not status.is_open:
-        return WHY_CLOSED
+        return WHY_CLOSED.format(venue=session_family(exchange))
     no_new, square_off = intraday_cutoffs(exchange)
     configured = (app_config.SCAN_AUTO_PAPER_LAST_ENTRY or "").strip()
     limits = [t for t in (no_new, square_off) if t is not None]

@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi import Request, Depends, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -275,6 +275,14 @@ class SignalRequest(BaseModel):
 class PaperExecuteRequest(SignalRequest):
     risk_config: Optional[RiskConfig] = None
     idempotency_key: Optional[str] = None
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def not_reserved(cls, value: Optional[str]) -> Optional[str]:
+        """N1 X2 (review L1): `intent:` keys belong to the execution core's Auto PAPER orders - a caller may not claim one."""
+        if value is not None and value.strip().lower().startswith("intent:"):
+            raise ValueError("idempotency keys starting with 'intent:' are reserved")
+        return value
 
 
 class EnrichSignalRequest(SignalRequest):

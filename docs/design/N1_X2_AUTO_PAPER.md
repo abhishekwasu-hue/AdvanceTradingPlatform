@@ -135,3 +135,24 @@ the routes.
 - **L2:** the E1 AST guard rejects `**kwargs` and `*args` in the pipeline call.
 - **L3:** the drawer note reads "With the platform switch off or approval-only mode on, a setup is a proposal".
 
+## Re-review of X2 (LOWs)
+
+- **L1:**
+  - An intent's order is only ever the owner's own PAPER order with key `intent:<id>`. This applies to the linking
+    lookup and to the cap and cool-down counts.
+  - If the key is held by any other order, the intent is refused ("the order key is used by another order") and the
+    other order is never replayed.
+  - The console's `paper-execute` rejects caller keys starting with `intent:`. The webhook, public API, ticket,
+    approval and deployment keys are already namespaced (`tv:`, `api:`, `ticket:`, `approval:`, `deployment:`).
+- **L2:** when the other attempt's order is still in flight (CREATED ... PARTIAL_FILL), this attempt leaves the row to
+  it (returns CLAIMED, counted as neither failed nor done) instead of refusing it.
+- **L3:**
+  - A linked order that filled finishes DONE; a rejected or failed one finishes REFUSED (route PAPER) with that
+    status; one still in flight is left.
+  - The audit row and the notification are written exactly once (`app/execution/core/announce.py`), also when the
+    crash came between the fill and the announcement.
+- **L4:**
+  - Each intent is dispatched with its own clock: the drain's time plus what has passed since it began.
+  - Auto PAPER places NSE / BSE equity and F&O only in Phase 0 (X2-10); other venues get a proposal with the reason.
+- **L5:** the arming's audit lookup reads platform rows (`tenant_id IS NULL`, indexed).
+

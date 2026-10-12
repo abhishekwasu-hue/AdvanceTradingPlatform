@@ -493,9 +493,14 @@ def test_the_entry_window(monkeypatch):
     assert _run(why(at(10, 0))) is None
     assert "last entry time (15:00" in _run(why(at(15, 16)))
     assert "last entry time (15:00" in _run(why(at(15, 0)))
-    assert _run(why(at(15, 45))) == AP.WHY_CLOSED
+    assert _run(why(at(15, 45))) == AP.WHY_CLOSED.format(venue="NSE")
     saturday = NOW.astimezone(IST).date() + timedelta(days=(5 - NOW.astimezone(IST).weekday()) % 7)
-    assert _run(why(at(11, 0, saturday))) == AP.WHY_CLOSED
+    assert _run(why(at(11, 0, saturday))) == AP.WHY_CLOSED.format(venue="NSE")
+
+    async def venue(exchange):
+        async with _session_factory() as session:
+            return await AP.window_reason(session, at(10, 0), exchange)
+    assert "Phase 0" in _run(venue("MCX")) and _run(venue("NFO")) is None and _run(venue("BSE")) is None
     monkeypatch.setattr(app_config, "SCAN_AUTO_PAPER_LAST_ENTRY", "09:30")        # earlier, configured: the setup is late
     assert "09:30" in _run(why(at(10, 0)))
     monkeypatch.setattr(app_config, "SCAN_AUTO_PAPER_LAST_ENTRY", "bad")          # malformed never widens it
@@ -547,3 +552,103 @@ def test_an_owner_who_may_not_trade_is_refused(monkeypatch):
     _drain()
     row = _intent_of(t)
     assert row.status == intents.REFUSED and "may not trade" in row.reason and _trades(t) == []
+
+
+
+# --- re-review of X2 (LOWs) ------------------------------------------------------------------------------------------------------
+
+def _order(t, user_id, key, status="POSITION_OPEN", trade=True, mode="PAPER"):
+    async def go():
+        async with _session_factory() as session:
+            trade_id = None
+            if trade:
+                row = TradeRecord(tenant_id=t["tenant_id"], user_id=user_id, mode="PAPER", symbol="GATEDEMO", strategy_id="seed",
+                                  direction="LONG", entry_time=NOW.astimezone(UTC), entry_price=ENTRY, quantity=1.0, stop_loss=CASE["out"]["sl"])
+                session.add(row)
+                await session.flush()
+                trade_id = row.id
+            order = OrderRecord(tenant_id=t["tenant_id"], user_id=user_id, mode=mode, strategy_id="seed", symbol="GATEDEMO", direction="LONG",
+                                quantity=1.0, status=status, idempotency_key=key, trade_id=trade_id)
+            session.add(order)
+            await session.commit()
+            return order.id
+    return _run(go())
+
+
+def _next_intent_id():
+    async def go():
+        async with _session_factory() as session:
+            from sqlalchemy import func
+            return int(await session.scalar(select(func.max(ExecutionIntentRecord.id))) or 0) + 1
+    return _run(go())
+
+
+def test_another_member_cannot_pre_claim_an_intent_s_order(monkeypatch):
+    """L1: an order under the key text `intent:<id>` that is not the owner's own PAPER order is never linked, and the
+    console route refuses a caller-supplied `intent:` key."""
+    from tests.test_z10c_tenancy_fixes import _member
+    t, _ = _armed_setup("preclaim", monkeypatch)
+    member_headers = _member(_email("preclaim-m"), t["tenant_id"], "USER")
+    me = client.get("/api/auth/me", headers=member_headers).json()
+    upcoming = _next_intent_id()
+    _order(t, me["id"], f"intent:{upcoming}")                       # the member's own order under the reserved key text
+    row = _go(t)
+    # Never linked, never replayed: the intent is refused (the key is taken) and A has no order under B's.
+    assert row.id == upcoming and row.status == intents.REFUSED and "used by another order" in row.reason
+    assert {o.user_id for o in _rows(OrderRecord, t["tenant_id"])} == {me["id"]}
+    assert all(x.user_id != t["user_id"] for x in _trades(t))
+
+    async def outcome():
+        async with _session_factory() as session:
+            return await intents.earlier_outcome(session, t["tenant_id"], upcoming, NOW)
+    assert _run(outcome()) is None                                     # the member's order is not the intent's
+    r = client.post("/api/strategies/ema_rsi_scalper_1m/paper-execute", headers=member_headers,
+                    json={"symbol": "RELIANCE", "candles": [], "idempotency_key": f"intent:{upcoming + 1}"})
+    assert r.status_code == 422 and "reserved" in r.text
+
+
+def test_an_order_in_flight_in_another_attempt_is_left_to_it(monkeypatch):
+    """L2: the stale-requeue overlap - the other attempt's order is still being filled: this attempt neither refuses
+    the intent nor places a second order."""
+    t, _ = _armed_setup("inflight", monkeypatch)
+    assert _runner().submitted >= 1
+    intent = _intent_of(t)
+    _order(t, t["user_id"], f"intent:{intent.id}", status="VALIDATING", trade=False)
+    _drain()
+    row = _intent_of(t)
+    assert row.status == intents.CLAIMED and row.route is None and len(_rows(OrderRecord, t["tenant_id"])) == 1
+
+
+def test_a_retry_reports_a_rejected_order_and_announces_a_filled_one_once(monkeypatch):
+    """L3: an earlier attempt's order that was rejected makes the intent REFUSED (route PAPER); one that filled is
+    linked DONE and, when the crash came before the announcement, the audit row and the notification are written once."""
+    t, _ = _armed_setup("rejected", monkeypatch)
+    assert _runner().submitted >= 1
+    intent = _intent_of(t)
+    order_id = _order(t, t["user_id"], f"intent:{intent.id}", status="REJECTED", trade=False)
+    _reset_to_claimed(intent.id)
+
+    async def retry():
+        async with _session_factory() as session:
+            fresh = await session.get(ExecutionIntentRecord, intent.id, populate_existing=True)
+            return await dispatcher.dispatch_one(session, fresh, NOW + timedelta(minutes=1))
+    assert _run(retry()) == intents.REFUSED
+    row = _intent_of(t)
+    assert row.route == policy.ROUTE_PAPER and f"#{order_id} was not placed (rejected)" in row.reason
+    t2, _ = _armed_setup("filled", monkeypatch)
+    assert _runner().submitted >= 1
+    intent2 = _intent_of(t2)
+    _order(t2, t2["user_id"], f"intent:{intent2.id}")                  # filled, but the crash came before _placed
+    _reset_to_claimed(intent2.id)
+
+    async def retry2():
+        async with _session_factory() as session:
+            fresh = await session.get(ExecutionIntentRecord, intent2.id, populate_existing=True)
+            return await dispatcher.dispatch_one(session, fresh, NOW + timedelta(minutes=1))
+    assert _run(retry2()) == intents.DONE
+    audits = [a for a in _rows(AuditLogRecord, t2["tenant_id"]) if a.event == "scan_auto_paper_entry"]
+    notes = [n for n in _rows(NotificationRecord, t2["tenant_id"]) if n.title.startswith("Auto PAPER entry")]
+    assert len(audits) == 1 and len(notes) == 1 and f"intent #{intent2.id}" in audits[0].detail
+    _reset_to_claimed(intent2.id)
+    assert _run(retry2()) == intents.DONE                                # a second retry does not announce again
+    assert len([a for a in _rows(AuditLogRecord, t2["tenant_id"]) if a.event == "scan_auto_paper_entry"]) == 1

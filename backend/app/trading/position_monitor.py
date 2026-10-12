@@ -72,6 +72,10 @@ class CloseOutcome:
     # G-LIVE: what the broker holds is unknown (an exit order errored without a clear answer, or a stop's fill could
     # not be read before netting) - close_position flags the tenant broker-uncertain so reconciliation decides.
     broker_uncertain: Optional[str] = None
+    # Re-exit guard: an earlier exit order of this position that died (rejected / cancelled, nothing filled) and was replaced
+    # by a new one now - both ids are kept (the audit trail records the replacement).
+    previous_exit_order_id: Optional[str] = None
+    previous_exit_status: Optional[str] = None
 
 
 def exchange_for_symbol(symbol: str) -> str:
@@ -261,6 +265,33 @@ async def _square_off_live(
     stop_after: Optional[BrokerOrderStatus] = None
     cancelled_stop = False
 
+    # Re-exit guard: this position already sent an exit (its id was committed when the broker took it, but the booking did
+    # not happen). Never a second exit on top of a live or filled one - that would open a position the other way.
+    if getattr(trade, "exit_order_id", None):
+        earlier = await _find_order(broker, trade.exit_order_id)
+        status = (earlier.status or "").upper() if earlier is not None else ""
+        if earlier is None:
+            outcome.broker_uncertain = (f"trade {trade.id}: its earlier exit order {trade.exit_order_id} is not in the broker's book - "
+                                        "no second exit is sent until reconciliation says what the account holds")
+            outcome.warnings.append(outcome.broker_uncertain)
+            return None
+        if status in _FILLED_STATUSES:
+            outcome.broker_exit_order_id = trade.exit_order_id
+            outcome.warnings.append(f"Earlier exit order {trade.exit_order_id} had filled; booked at its fill")
+            return float(earlier.average_price) if earlier.average_price else reference_price
+        if not _stop_is_dead(status):
+            outcome.warnings.append(f"Earlier exit order {trade.exit_order_id} is still working ({earlier.status}) - waiting for it")
+            return None
+        if float(earlier.filled_quantity or 0) > 0:
+            outcome.broker_uncertain = (f"trade {trade.id}: its earlier exit order {trade.exit_order_id} ended {earlier.status} after "
+                                        f"filling {float(earlier.filled_quantity):g} - no second exit until reconciliation")
+            outcome.warnings.append(outcome.broker_uncertain)
+            return None
+        # Rejected / cancelled with nothing filled: a new exit goes out. Its stop was handled by that earlier attempt.
+        outcome.previous_exit_order_id, outcome.previous_exit_status = trade.exit_order_id, earlier.status
+        outcome.warnings.append(f"Earlier exit order {trade.exit_order_id} ended {earlier.status}; a new exit was sent")
+        stop_dead = True
+
     if trade.sl_order_id:
         sl_order = await _find_order(broker, trade.sl_order_id)
         if sl_order is not None and sl_order.status.upper() in _FILLED_STATUSES:
@@ -384,9 +415,15 @@ async def close_position(
             algo_id=order_algo_id(tenant.algo_id if tenant is not None else None, broker.name), stop_dead=stop_dead,
             exchange=await venue_for(session, trade),
         )
-        if outcome.broker_exit_order_id:
+        if outcome.broker_exit_order_id and outcome.broker_exit_order_id != trade.exit_order_id:
             await audit_order(session, trade.tenant_id, user_id, leg="EXIT", broker_name=broker.name, symbol=trade.symbol,
                               tag=outcome.exit_tag, broker_order_id=outcome.broker_exit_order_id, ref=f"trade {trade.id}: {reason}")
+            if outcome.previous_exit_order_id:
+                # Re-exit guard: the earlier exit id is never lost - the replacement is on the audit trail with both ids.
+                from app.audit.log import write_audit_log
+                await write_audit_log(session, trade.tenant_id, user_id, "exit_order_replaced",
+                                      f"trade {trade.id} {trade.symbol}: earlier exit {outcome.previous_exit_order_id} "
+                                      f"({outcome.previous_exit_status}) replaced by {outcome.broker_exit_order_id}")
             # Review LOW-1: the broker took the exit - its id and the audit row are committed now, so no later error
             # (the booking below, a caller's savepoint) can roll back the record that the order went out.
             trade.exit_order_id = outcome.broker_exit_order_id
@@ -556,14 +593,40 @@ async def close_group(
     broker: Optional[BrokerInterface], user_id: Optional[int], underlying_price: Optional[float] = None,
 ) -> List[CloseOutcome]:
     """Shorts first (risk off), then the wings. Each leg books its own P&L. `underlying_price`: the quote the exit was
-    judged on (journal IV at exit only)."""
+    judged on (journal IV at exit only).
+
+    Naked-short guard: when a SHORT leg did not close, the wings are NOT closed - selling the protection while the short is
+    still open would leave a naked short. The wings wait (recorded, CRITICAL notification); the next cycle tries the short
+    first again, then the wings."""
     outcomes: List[CloseOutcome] = []
+    stuck_short: Optional[TradeRecord] = None
     for leg in sorted(legs, key=lambda l: 0 if l.leg_role == "SHORT" else 1):
+        if stuck_short is not None and leg.leg_role != "SHORT":
+            outcomes.append(CloseOutcome(trade_id=leg.id, closed=False, warnings=[
+                f"Held: short leg #{stuck_short.id} ({stuck_short.symbol}) did not close - closing this wing now would leave a "
+                "naked short; the short is tried first again next cycle"]))
+            continue
         leg_broker = broker if leg.mode == ExecutionMode.LIVE.value else None
         if leg.mode == ExecutionMode.LIVE.value and leg_broker is None:
             leg_broker = await broker_for_trade(session, leg)
-        outcomes.append(await close_position(session, leg, prices[leg.id], reason, broker=leg_broker, user_id=user_id,
-                                             underlying_price=underlying_price))
+        outcome = await close_position(session, leg, prices[leg.id], reason, broker=leg_broker, user_id=user_id,
+                                       underlying_price=underlying_price)
+        outcomes.append(outcome)
+        if leg.leg_role == "SHORT" and not outcome.closed and leg.exit_time is None and stuck_short is None:
+            stuck_short = leg
+    if stuck_short is not None:
+        held = [o.trade_id for o in outcomes if not o.closed and o.trade_id != stuck_short.id]
+        why = "; ".join(next((o.warnings for o in outcomes if o.trade_id == stuck_short.id), []))[:300] or "no reason given"
+        from app.audit.log import write_audit_log
+        await write_audit_log(session, stuck_short.tenant_id, user_id, "group_wings_held",
+                              f"group {stuck_short.leg_group_id}: short #{stuck_short.id} {stuck_short.symbol} did not close ({why}); "
+                              f"wings {held} held to avoid a naked short")
+        await notify(session, stuck_short.tenant_id, NotificationType.SYSTEM_FAILURE,
+                     title=f"Short leg not closed: {stuck_short.symbol}",
+                     message=(f"Exit of the structure ({reason}): the short leg #{stuck_short.id} could not be closed ({why}). The "
+                              "protective wings were kept open so the short is never naked; the short is retried first on the "
+                              "next cycle. Check the position at the broker."),
+                     severity=NotificationSeverity.CRITICAL, user_id=user_id, related_trade_id=stuck_short.id)
     return outcomes
 
 

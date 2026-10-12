@@ -192,6 +192,9 @@ async def verify_protective_stops(
     return counts
 
 
+_DEAD_EXIT = frozenset({"REJECTED", "CANCELLED", "CANCELED", "CANCELLED AMO", "EXPIRED", "LAPSED"})
+
+
 async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterface, trade: TradeRecord, book: Dict, counts: Dict[str, int], *,
                      user_id: Optional[int], source: str, product: str) -> None:
     """One position of `verify_protective_stops`: re-arm its stop when the book has none standing."""
@@ -205,6 +208,15 @@ async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterf
             stop_state.rearm_rejects.pop(trade.id, None)
             stop_state.rearmed_order.pop(trade.id, None)
         return
+    if getattr(trade, "exit_order_id", None):
+        # Re-exit guard: an exit already went out for this position (its booking is pending). A new stop on a position
+        # that is closing - or already flat - could open one the other way. Re-arm only when that exit died unfilled.
+        exit_order = book.get(trade.exit_order_id)
+        exit_status = (exit_order.status or "").upper() if exit_order is not None else ""
+        if exit_order is None or exit_status not in _DEAD_EXIT or float(exit_order.filled_quantity or 0) > 0:
+            counts.setdefault("exit_pending", 0)
+            counts["exit_pending"] += 1
+            return
     if status in _FILLED:
         counts["filled_pending"] += 1   # the exchange closed us; the monitor books it this cycle
         return

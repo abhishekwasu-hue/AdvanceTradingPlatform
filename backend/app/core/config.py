@@ -520,6 +520,15 @@ APPROVAL_REQUOTE_MAX_DRIFT_PCT = _bounded_float("APPROVAL_REQUOTE_MAX_DRIFT_PCT"
 APPROVAL_REQUOTE_MAX_DRIFT_TICKS = _bounded_int("APPROVAL_REQUOTE_MAX_DRIFT_TICKS", 0, 0, 100_000)
 APPROVAL_MAX_REQUOTES = _bounded_int("APPROVAL_MAX_REQUOTES", 2, 0, 10)
 
+# N1 E1 (ADR-0014, flag `execution_core`, off by default): the execution core's intent queue. An intent not dispatched
+# within EXECUTION_INTENT_TTL_SECONDS is EXPIRED (a setup is never proposed late); the worker claims at most
+# EXECUTION_CORE_DRAIN_LIMIT per cycle; a claim older than EXECUTION_CORE_CLAIM_STALE_SECONDS (an interrupted worker) is
+# queued again - safe, every route is idempotent on "intent:<id>" - and FAILED after EXECUTION_CORE_MAX_ATTEMPTS claims.
+EXECUTION_INTENT_TTL_SECONDS = _bounded_int("EXECUTION_INTENT_TTL_SECONDS", 300, 30, 24 * 3600)
+EXECUTION_CORE_DRAIN_LIMIT = _bounded_int("EXECUTION_CORE_DRAIN_LIMIT", 50, 1, 1000)
+EXECUTION_CORE_CLAIM_STALE_SECONDS = _bounded_int("EXECUTION_CORE_CLAIM_STALE_SECONDS", 120, 30, 3600)
+EXECUTION_CORE_MAX_ATTEMPTS = _bounded_int("EXECUTION_CORE_MAX_ATTEMPTS", 3, 1, 10)
+
 # Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). A new account starts
 # with PAPER_STARTING_CAPITAL (the user may change it within the bounds). The progression ladder card shows the PAPER
 # stage's criteria from the user's own PAPER trades: at least PAPER_LADDER_MIN_SESSIONS sessions with a PAPER trade, at

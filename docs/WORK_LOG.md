@@ -1928,3 +1928,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   performance-claim phrases.
 - Tests: `src/progression/learn.test.tsx` (6: wording, keys, links, render); `tests/test_n2_education_pages.py` (2:
   flag, drift against the ticket / journal / taxonomy). Open question N2-26.
+### 2026-10-12 IST - N2-10 risk note source; N2-11 learn from your journal (`claude/n2-11`, stacked on `claude/n2-10`)
+- N2-10: the risk note cites SEBI's "Analysis of Profit and Loss of Individual Traders dealing in Equity F&O Segment"
+  (25 Jan 2023), with SEBI's official research list as the link (OPEN_QUESTIONS N2-27).
+- N2-11, flag `journal_lessons` (off): `GET /api/journal/lessons` returns cards for the behaviour tags on the caller's
+  own losing trades (counts and net P&L), each linked to its method-library lesson. Cards sit on the Journal page.
+- Tests: `tests/test_n2_journal_lessons.py` (3: counting rules, own data only, flags, drift with learn.ts); vitest
+  `src/progression/lessons.test.tsx` (3).
+- This completes the N2 plan's slices N2-1..N2-11.

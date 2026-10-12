@@ -232,6 +232,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Education only (no advice, no performance claims; official NSE / SEBI / CBDT links only). Static frontend content,
     # no route. OFF: the page says it is not turned on and Coach & Guide shows no link.
     "education_pages": "Method library and glossary: trend, level, pullback, commitment, reward to risk (education only, no advice)",
+    # N2-11 (P1 spec 1.6, docs/design/N2_P1FGH.md): "learn from your journal" cards - a behaviour tag on the trader's own
+    # losing trades linked to the method-library lesson about it, with the trades' own counts and net P&L. Own data
+    # only; no advice, no promises. Needs discipline_engine too. OFF: GET /api/journal/lessons answers 404.
+    "journal_lessons": "Learn from your journal: cards linking a behaviour tag on your own losing trades to its lesson (your own data only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -241,7 +245,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "experience_levels",
                                "decision_tools", "context_panel", "positions_board",
                                "builder_adjustments", "builder_compare",
-                               "trade_workspace", "education_pages"})
+                               "trade_workspace", "education_pages", "journal_lessons"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

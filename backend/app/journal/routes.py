@@ -175,3 +175,18 @@ async def decide_tag(tag_id: int, body: TagDecision, user: User = Depends(get_cu
     if row is None:
         raise HTTPException(status_code=404, detail="No such tag")
     return service.tag_dict(row)
+
+
+# --- N2-11: learn from your journal (flag journal_lessons) ------------------------------------------------------------
+
+@router.get("/lessons")
+async def journal_lessons(weeks: int = Query(default=8, ge=1, le=26), user: User = Depends(get_current_user),
+                          session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Cards linking a behaviour tag on the caller's own losing trades to the method-library lesson about it. 404 while
+    `journal_lessons` is off; 503 while the discipline engine is off (as every journal route)."""
+    from app.journal import lessons
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, lessons.FLAG, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": lessons.FLAG})
+    await _flag(session, user)
+    return await lessons.lessons(session, user, weeks=weeks)

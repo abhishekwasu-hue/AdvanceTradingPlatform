@@ -141,3 +141,8 @@ export interface JournalSettingsResponse {
   components: Record<string, string[]>;
   tags: string[];
 }
+
+/** N2-11 (flag `journal_lessons`): a behaviour tag on the trader's own losing trades and the lesson about it. */
+export interface LessonCard { tag: string; lesson: "trend" | "level" | "pullback" | "commitment" | "rr" | null; trades: number; losing_trades: number;
+                              losing_net_pnl: number; last_date: string | null }
+export interface JournalLessons { cards: LessonCard[]; weeks: number; since: string; count_unconfirmed: boolean; basis: string; as_of: string }

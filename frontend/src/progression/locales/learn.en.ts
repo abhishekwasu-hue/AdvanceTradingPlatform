@@ -107,6 +107,15 @@ export const LEARN_EN = {
     lot_size: { term: "Lot size", def: "The number of units in one futures or options contract, set by the exchange." },
     charges: { term: "Charges", def: "Brokerage, STT, exchange and SEBI fees, stamp duty and GST on a trade; ATP's ticket and journal show them." },
   },
+  lessons: {
+    title: "Learn from your journal",
+    intro: "Behaviour tags on your own losing trades, each linked to the lesson about that step.",
+    card: "{{trades}} of your trades in the last {{weeks}} weeks carried this tag; {{losing}} of them closed at a loss, {{pnl}} net together.",
+    last: "Last on {{date}}.",
+    read: "Read the lesson: {{title}}",
+    none: "No behaviour tag on a losing trade of yours in the last {{weeks}} weeks.",
+    unconfirmed: "Suggested tags count until you confirm or dismiss them (journal settings).",
+  },
   links: {
     sebiStudy: "SEBI research reports (official list)",
     sebi: "SEBI investor website",

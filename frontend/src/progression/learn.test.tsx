@@ -28,7 +28,8 @@ function strings(node: unknown, prefix = ""): [string, string][] {
   return [];
 }
 const lookup = (path: string): unknown => path.split(".").reduce<unknown>((n, k) => (n && typeof n === "object" ? (n as Record<string, unknown>)[k] : undefined), LEARN_EN);
-const RAW = import.meta.glob<string>(["./learn.ts", "./locales/learn.en.ts", "../pages/LearnPage.tsx"], { query: "?raw", import: "default", eager: true });
+const RAW = import.meta.glob<string>(["./learn.ts", "./locales/learn.en.ts", "./LessonsCard.tsx", "../pages/LearnPage.tsx"],
+                                     { query: "?raw", import: "default", eager: true });
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
 
 describe("method library wording (N2-10)", () => {

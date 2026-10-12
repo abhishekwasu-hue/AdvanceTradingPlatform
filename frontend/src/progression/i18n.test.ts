@@ -28,7 +28,8 @@ function strings(node: unknown, prefix = ""): [string, string][] {
 }
 
 describe("progression i18n (N2)", () => {
-  const files = Object.entries(RAW);
+  // Files on the `learn` namespace (useLearnT) are checked against LEARN_EN by learn.test.tsx.
+  const files = Object.entries(RAW).filter(([, text]) => !text.includes("useLearnT("));
 
   it("finds the sources", () => {
     expect(files.length).toBeGreaterThanOrEqual(4);

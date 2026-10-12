@@ -5,6 +5,7 @@ import { Card, StatTile, signTone } from "../components/ui";
 import { Badge, Button, EmptyState, Input, PageHeader, Signed, Skeleton, Tabs } from "../components/primitives";
 import { useToast } from "../components/Toast";
 import { journalApi } from "../journal/api";
+import LessonsCard from "../progression/LessonsCard";
 import {
   COMPONENT_LABELS, EVENT_KINDS, SETTING_LABELS, TAG_HELP, chase, countsInScore, isoWeekOf, minutesText, money, parseSettingNumber, rText,
   settingsProblems, shiftWeek, tagLabel,
@@ -286,6 +287,8 @@ export default function JournalPage(_props: PageProps) {
       <PageHeader title="Journal & discipline"
         description="Every trade journaled automatically, behaviour tags you confirm or dismiss, and a weekly discipline score. Your own data only; numbers, not advice."
         actions={off ? undefined : nav} />
+      {/* N2-11 (flag journal_lessons): hidden while off */}
+      {!off && <LessonsCard />}
       {off ? <EmptyState icon={<NotebookPen size={20} />} title="Not enabled" body={OFF_TEXT} /> : !data ? <Skeleton className="h-40 w-full" /> : (
         <Tabs value={tab} onChange={setTab} items={[
           { value: "week", label: "Week", content: <WeekTab data={data} onDecide={decide} /> },

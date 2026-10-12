@@ -34,7 +34,7 @@ Standing rules for every slice:
 | **N2-8** | §3.2 | **Builder compare** (`claude/n2-8`): up to three strategies side by side (net premium, max profit / loss, reward : risk, PoP, margin estimate, theta per day, breakevens, expected move) and their expiry curves on one scale. It covers the page's current legs and saved strategies when `options_builder_saved` is on, each evaluated by the engine at the same spot, date and range. | `builder_compare` | none / none (client-side over `/evaluate`) | ~0.6k |
 | **N2-9** | §2.1, §2.5 | **Trade workspace** (`claude/n2-9`): a `/trade` page with the chart on the left, the P1-d PAPER ticket on the right and the positions board below. Keyboard: t ticket, c chart, x exits the focused position, Shift+F flattens all after one confirmation, ? help. On a phone the ticket is a bottom sheet. It shows market, lockout and stale-data states, and keeps the layout per viewer (localStorage, try/catch). It uses existing routes only. | `trade_workspace` | none / none | ~0.8k |
 | **N2-10** | §1.6 | **Education pages** (`claude/n2-10`): the method library at `/learn` (trend -> level -> pullback -> commitment -> reward to risk). Each step is linked to where ATP draws it (price-action layer, market zones, evidence charts, the ticket), the screener setups that look for it, the P1-d checklist item that records it and the Z6 tags that show it skipped. It has a 21-term glossary and official NSE / SEBI / CBDT links only. Static English content through i18n, with an advice / claim check. | `education_pages` | none / none | ~0.7k |
-| N2-11 | §1.6, §1.3 | **Learn from your journal**: cards that link a Z6 behaviour tag on the user's own losing trades to its lesson (N2-10). The weekly review itself shipped in Z6-b (#172); this slice links it to the lessons. | `journal_lessons` | none / `GET /api/journal/lessons` | ~1.0k |
+| **N2-11** | §1.6, §1.3 | **Learn from your journal** (`claude/n2-11`): cards on the Journal page. Each takes a Z6 behaviour tag on the user's own losing trades (last 8 IST weeks; counted as Z6 counts) with the tagged trades, the losing ones and their net P&L, and links the method-library step about it (`/learn#learn-<step>`). The weekly review itself shipped in Z6-b (#172). | `journal_lessons` | none / `GET /api/journal/lessons` | ~0.5k |
 
 N2-J (the journal module, `docs/journal/PLAN.md`) runs next to N2. N2-11 reads only the Z6 tables, so the two do not
 collide.
@@ -363,6 +363,23 @@ it is not turned on. **No new route.**
   `rel="noopener noreferrer"`.
 - **Drift check** (`tests/test_n2_education_pages.py`): the library's checklist keys, journal tags and screener setup
   keys exist in the P1-d ticket, the Z6 journal and the screener taxonomy.
+
+## N2-11 Learn from your journal
+
+**Flag** `journal_lessons` (off by default). `GET /api/journal/lessons?weeks=8` ("member") answers 404 while it is off,
+then 503 while `discipline_engine` is off, like every journal route (tested). The service is
+`app/journal/lessons.py`.
+
+- **Data**: the caller's own journal tags (tenant + user, on their own trades) whose trade entered in the last `weeks`
+  IST weeks. Tags count as Z6 counts them: CONFIRMED and trader-added always, SUGGESTED while `count_unconfirmed` is on,
+  DISMISSED never. The tags are the journal's as of its last refresh; nothing is detected here.
+- **A card per tag with at least one closed losing trade**: the tagged trades, the losing ones, their net P&L together
+  and the last date. Cards are sorted costliest first.
+- **Lesson**: `LESSON_FOR_TAG` gives the method-library step whose "what the journal tags" list holds the tag. A test
+  keeps it in step with `src/progression/learn.ts`.
+- **UI**: `src/progression/LessonsCard.tsx` at the top of the Journal page. Its strings are in the `learn` namespace, so
+  they pass the same advice / claim check as the library. It states counts and links "Read the lesson: 3. Pullback";
+  there is no instruction and no promise.
 
 ## Open questions
 

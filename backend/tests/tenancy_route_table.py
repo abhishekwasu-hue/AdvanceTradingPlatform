@@ -359,6 +359,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/instrument-master/sync"): "admin",
     ("GET", "/api/instruments"): P_INSTRUMENTS,
     ("GET", "/api/instruments/{symbol}"): P_INSTRUMENTS,
+    ("GET", "/api/journal/lessons"): "member",
     ("GET", "/api/journal/review"): "member",
     ("GET", "/api/journal/settings"): "member",
     ("PUT", "/api/journal/settings"): S_OWN_JOURNAL,

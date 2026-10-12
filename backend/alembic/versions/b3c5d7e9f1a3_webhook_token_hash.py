@@ -14,6 +14,7 @@ revision: str = 'b3c5d7e9f1a3'
 down_revision: Union[str, Sequence[str], None] = 'a2b4c6d8e0f2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z11: execute: risky SQL, unique create_index on an existing table - a code-only rollback past it is refused; use --restore-db
 
 
 def upgrade() -> None:

@@ -9,7 +9,7 @@
 #   * tenants / orders / trades / audit_logs row counts are within the source's (a backup taken
 #     earlier can legitimately have fewer rows, never more)
 #   * the audit hash chain in the copy verifies (python -m app.audit.verify_chain, when the
-#     backend code is available - skipped with a notice otherwise)
+#     backend code is available - "not_run" otherwise; deploy/atp.sh then runs it in the backend image)
 # Prints a one-line JSON report to stdout for the operator's log / the monthly DR record.
 . "$(dirname "$0")/common.sh"
 need psql; need pg_restore
@@ -18,22 +18,48 @@ FILE="${1:-latest}"
 [ "$FILE" = "latest" ] && FILE="$BACKUP_DIR/$(readlink "$BACKUP_DIR/latest")"
 [ -f "$FILE" ] || die "no such file: $FILE"
 
-SRC_URL="$(pg_url)"
+pg_setup
+SRC_URL="$PG_URL"
 SRC_DB="$(db_name_of "$SRC_URL")"
 SCRATCH="${SRC_DB}_verify_$(date -u +%Y%m%d%H%M%S)"
 SCRATCH_URL="$(with_db "$SRC_URL" "$SCRATCH")"
 ADMIN_URL="$(with_db "$SRC_URL" postgres)"
 
-psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\"" >/dev/null || die "could not create scratch database $SCRATCH"
-cleanup() { psql "$ADMIN_URL" -qAtc "DROP DATABASE IF EXISTS \"$SCRATCH\"" >/dev/null 2>&1 || true; }
+ROLE="${VERIFY_RESTORE_ROLE-atp_restore}"
+cleanup() {
+  [ -z "$ROLE" ] || psql "$ADMIN_URL" -qAtc "ALTER ROLE \"$ROLE\" NOLOGIN PASSWORD NULL" >/dev/null 2>&1 || true
+  [ "${VERIFY_KEEP_SCRATCH:-0}" = "1" ] || psql "$ADMIN_URL" -qAtc "DROP DATABASE IF EXISTS \"$SCRATCH\"" >/dev/null 2>&1 || true
+}
 trap cleanup EXIT INT TERM
+
+# Z11 / N1: the copy is restored over a connection that logs in AS a non-superuser role (atp_restore) owning the scratch
+# database - not `SET ROLE`, which archive SQL could undo with RESET ROLE. A dump swapped in the bucket therefore cannot
+# run superuser-only SQL (COPY ... TO PROGRAM, untrusted functions) on the cluster. The role gets a fresh random password
+# for this run only (sent to psql on stdin, handed to pg_restore through PGPASSWORD) and is NOLOGIN again afterwards.
+# The seal (restore.sh refuses unsealed dumps) is the first line; this is the second. VERIFY_RESTORE_ROLE= (empty)
+# restores as the connecting user, as before.
+RESTORE_URL="$SCRATCH_URL"
+RESTORE_PW=""
+if [ -n "$ROLE" ]; then
+  need openssl
+  RESTORE_PW="$(openssl rand -hex 24)"
+  printf "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%s') THEN CREATE ROLE \"%s\" NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT; END IF; END \$\$;\nALTER ROLE \"%s\" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '%s';\n" \
+    "$ROLE" "$ROLE" "$ROLE" "$RESTORE_PW" | psql "$ADMIN_URL" -q -v ON_ERROR_STOP=1 >/dev/null \
+    || die "could not prepare the restore role $ROLE (VERIFY_RESTORE_ROLE= restores as the connecting user)"
+  psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\" OWNER \"$ROLE\"" >/dev/null || die "could not create scratch database $SCRATCH"
+  RESTORE_URL="$(printf '%s' "$SCRATCH_URL" | sed "s#^\(postgresql://\)[^@/]*@#\1$ROLE@#")"
+else
+  psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\"" >/dev/null || die "could not create scratch database $SCRATCH"
+fi
+# VERIFY_KEEP_SCRATCH=1: leave the restored copy for one more check from outside (deploy/atp.sh runs the audit-chain
+# check in the backend image, then drops it); the report names it.
 
 STATUS="ok"; NOTES=""
 # The first failure names the status; later checks only add notes.
 fail() { [ "$STATUS" = "ok" ] && STATUS="$1"; NOTES="$NOTES $2;"; }
 
 RESTORE_LOG="$(mktemp "${TMPDIR:-/tmp}/atp_verify.XXXXXX")"
-if RESTORE_CONFIRM=yes "$(dirname "$0")/restore.sh" "$FILE" "$SCRATCH_URL" >"$RESTORE_LOG" 2>&1; then
+if RESTORE_CONFIRM=yes RESTORE_PASSWORD="$RESTORE_PW" sh "$(dirname "$0")/restore.sh" "$FILE" "$RESTORE_URL" >"$RESTORE_LOG" 2>&1; then
   sed 's/^/  /' "$RESTORE_LOG" >&2
 else
   sed 's/^/  /' "$RESTORE_LOG" >&2
@@ -48,16 +74,22 @@ SRC_VER="$(q "$SRC_URL" 'select version_num from alembic_version')"
 CPY_VER="$(q "$SCRATCH_URL" 'select version_num from alembic_version')"
 [ "$SRC_VER" = "$CPY_VER" ] || fail schema_mismatch "alembic $CPY_VER != $SRC_VER"
 
+# Z11 / L7: a copy may hold fewer rows than the live database (it is older), never more - and never far fewer:
+# below VERIFY_MIN_RATIO (default 0.5) of the live count it is not a usable restore point.
+MIN_RATIO="${VERIFY_MIN_RATIO:-0.5}"
 COUNTS=""
 for t in tenants orders trades audit_logs; do
   S="$(q "$SRC_URL" "select count(*) from $t")"; C="$(q "$SCRATCH_URL" "select count(*) from $t")"
   COUNTS="$COUNTS\"$t\":{\"source\":$S,\"copy\":$C},"
   if [ "$C" = null ]; then fail table_missing "$t unreadable in copy"
-  elif [ "$S" != null ] && [ "$C" -gt "$S" ]; then fail count_mismatch "$t copy>source"; fi
+  elif [ "$S" != null ] && [ "$C" -gt "$S" ]; then fail count_mismatch "$t copy>source"
+  elif [ "$S" != null ] && [ "$(awk -v c="$C" -v s="$S" -v r="$MIN_RATIO" 'BEGIN { print (c < s * r) ? 1 : 0 }')" = 1 ]; then
+    fail count_too_low "$t copy $C < $MIN_RATIO x source $S"
+  fi
 done
 COUNTS="{${COUNTS%,}}"
 
-CHAIN="skipped"
+CHAIN="not_run"     # no backend code here (the backup container): deploy/atp.sh runs it in the backend image
 BACKEND_DIR="${BACKEND_DIR:-$(dirname "$0")/../../backend}"
 if [ -f "$BACKEND_DIR/app/audit/verify_chain.py" ] && command -v python3 >/dev/null 2>&1; then
   if [ "$STATUS" = "restore_failed" ] || [ "$STATUS" = "table_missing" ]; then

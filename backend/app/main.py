@@ -112,6 +112,7 @@ from app.tax.routes import router as tax_router
 from app.fx.routes import admin_router as fx_admin_router, router as fx_router
 from app.incidents.routes import router as incidents_router
 from app.screener.routes import router as screener_router
+from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.alerts.links_routes import router as alert_links_router
 from app.compliance.routes import router as compliance_router
@@ -229,6 +230,7 @@ app.include_router(fx_router)
 app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 app.include_router(screener_router)
+app.include_router(screener_breakouts_router)
 app.include_router(alert_rules_router)
 app.include_router(alert_links_router)
 app.include_router(compliance_router)

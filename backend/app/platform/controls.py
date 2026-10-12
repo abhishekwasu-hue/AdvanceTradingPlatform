@@ -149,16 +149,23 @@ FEATURE_FLAGS: Dict[str, str] = {
     # team join, and the acceptance banner. OFF: the routes answer 404 and sign-up is unchanged. Refused while a document
     # still has an open [PLACEHOLDER] unless the operator overrides (`override_open_placeholders`).
     "legal_pages": "Legal pages (Privacy notice, Terms of use, Risk disclosure), acceptance at sign-up and the acceptance banner",
+    # U6 BK1 (docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md): the breakout screens (B1/B2/B4/B7/B13/B14), the quality
+    # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
+    # Research only - matches, never orders.
+    "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
     # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
     # answers 404 and the page says it is not enabled.
     "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
+    # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
+    # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
+    "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory (stored, read-only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "risk_by_default", "vix_gate", "public_status_page", "support_bot", "legal_pages"})
+                               "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts", "support_bot", "legal_pages"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

@@ -51,6 +51,12 @@ class RetentionPolicy:
     market_snapshots_days: int = 90   # Phase AR: the Copilot's market memory (reference data, not personal)
     news_feed_days: int = 365         # Phase BB: unverified FEED rows in news_events (MANUAL entries are never deleted here)
     ai_candidates_days: int = 30      # P0.8: expired, never adopted strategist/interview candidates (adopted/deployed rows are kept)
+    # Z7a-2: market-zone snapshots - every nightly run for this many days, then the last run of each ISO week until the
+    # weekly age, then none; a tenant's own scope is dropped once it has had no new run for the idle age (unfollowed, flag
+    # lost or settings back to the platform's).
+    market_zones_daily_days: int = 90
+    market_zones_weekly_days: int = 730
+    market_zones_tenant_idle_days: int = 30
     # H-C1 e: days after which an llm_calls row's text is scrubbed (the row, its hashes, model, cost stay). 0 = keep the
     # text (the default: removing it is the operator's data-retention decision, OPEN_QUESTIONS H-6).
     llm_text_days: int = 0
@@ -63,7 +69,8 @@ class RetentionPolicy:
             "invites_days": self.invites_days, "batch_size": self.batch_size, "chain_snapshots_days": self.chain_snapshots_days,
             "oi_snapshots_days": self.oi_snapshots_days,
             "market_snapshots_days": self.market_snapshots_days, "news_feed_days": self.news_feed_days, "ai_candidates_days": self.ai_candidates_days,
-            "llm_text_days": self.llm_text_days,
+            "llm_text_days": self.llm_text_days, "market_zones_daily_days": self.market_zones_daily_days,
+            "market_zones_weekly_days": self.market_zones_weekly_days, "market_zones_tenant_idle_days": self.market_zones_tenant_idle_days,
             "never_deleted": list(NEVER_DELETED),
         }
 
@@ -84,6 +91,9 @@ def load_policy() -> RetentionPolicy:
         news_feed_days=_days("RETENTION_NEWS_FEED_DAYS", 365),
         ai_candidates_days=_days("RETENTION_AI_CANDIDATES_DAYS", 30),
         llm_text_days=_llm_text_days(),
+        market_zones_daily_days=_days("RETENTION_MARKET_ZONES_DAILY_DAYS", 90),
+        market_zones_weekly_days=_days("RETENTION_MARKET_ZONES_WEEKLY_DAYS", 730),
+        market_zones_tenant_idle_days=_days("RETENTION_MARKET_ZONES_TENANT_IDLE_DAYS", 30),
     )
 
 

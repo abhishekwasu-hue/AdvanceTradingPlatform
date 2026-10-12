@@ -14,6 +14,11 @@
 #   ATP_DIR     install dir (default /opt/atp)          ATP_REF   git ref to deploy (default origin/main)
 #   ATP_REPO    git@github.com:abhishekwasu-hue/AdvanceTradingPlatform.git
 set -euo pipefail
+# Z11: this server is managed by deploy/atp.sh once it has recorded a release - the old blocks would build untagged
+# images and skip its checks, so they refuse (runbook docs/deploy/HOSTINGER_RUNBOOK.md).
+if [ -f "${ATP_DIR:-/opt/atp}/.deploy/releases.log" ]; then
+  echo "this server is managed by /opt/atp/deploy/atp.sh (see docs/deploy/HOSTINGER_RUNBOOK.md) - use it instead" >&2; exit 2
+fi
 
 ATP_DIR="${ATP_DIR:-/opt/atp}"
 ATP_REF="${ATP_REF:-origin/main}"

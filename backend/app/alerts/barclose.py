@@ -38,12 +38,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import AlertRuleRecord, ScreenRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
 from app.screener import compile_screen, nodes
-from app.screener.runtime import SymbolData, run_screen
+from app.screener.runtime import SymbolData, bar_close, closed_only, run_screen
 
 logger = logging.getLogger(__name__)
 
 FLAG = "screener_v2"
 INTRABAR_FLAG = "screener_intrabar"
+BREAKOUT_FLAG = "screener_breakouts"                 # U6 BK1: rules using breakout functions pause (stay active) while it is off
 RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
 MAX_SYMBOLS = 50
@@ -137,7 +138,9 @@ class CycleCache:
     """S4b-1: one worker cycle's shared work. Rules that need the same symbol, timeframe and bar fetch it once (a
     longer lookback than the cached one fetches again); the same screen over the same current symbols, bar and
     params is evaluated once. Lives for one cycle only, so nothing stale survives into the next bar."""
-    frames: Dict[Tuple[int, Optional[int], str, str, datetime, str, bool], Tuple[int, Optional[SymbolData]]] = field(default_factory=dict)
+    # value: (the lookback the frames were fetched for, per timeframe; the frames). BK1 verification F1: an entry is reused
+    # only when it covers EVERY timeframe asked for - a frame fetched for a plain 15m rule has no daily context.
+    frames: Dict[Tuple[int, Optional[int], str, str, datetime, str, bool], Tuple[Dict[str, int], Optional[SymbolData]]] = field(default_factory=dict)
     results: Dict[Tuple[Any, ...], List[Any]] = field(default_factory=dict)
     fetched_symbols: int = 0
     reused_symbols: int = 0
@@ -187,13 +190,20 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
     """The symbols whose bars reach `bar` (closed, or forming for an intrabar rule), fetching only what the cycle cache
     does not already hold. `per_user` (BT1b): fetched through the rule creator's own session, cached per user."""
     exchange, tf = rule.exchange or "NSE", rule.base_tf
-    need = max([*lookback.values(), 1])
     owner = rule.created_by if per_user else None
     extra: Dict[str, Any] = {"user_id": owner} if per_user else {}
     key = lambda sym: (rule.tenant_id, owner, exchange, tf, bar, sym, forming)  # noqa: E731
-    missing = [s for s in symbols if key(s) not in cache.frames or cache.frames[key(s)][0] < need]
+    def covers(have: Dict[str, int]) -> bool:
+        return all(have.get(t, 0) >= bars for t, bars in lookback.items())
+    missing = [s for s in symbols if key(s) not in cache.frames or not covers(cache.frames[key(s)][0])]
     problems: Dict[str, str] = {}
     if missing:
+        # one fetch that covers both the cached entries' needs and this rule's (later rules keep reusing it)
+        merged = dict(lookback)
+        for sym in missing:
+            for t, bars in (cache.frames[key(sym)][0] if key(sym) in cache.frames else {}).items():
+                merged[t] = max(merged.get(t, 0), bars)
+        lookback = merged
         if forming:
             universe, problems, _source = await fetch(session, rule.tenant_id, missing, exchange, tf, lookback, forming=True, **extra)
         else:
@@ -203,15 +213,19 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
         for sym in missing:
             data = got.get(sym)
             frame = closed_frame(data.frames.get(tf, pd.DataFrame()), tf, bar) if data is not None else None
-            closed = SymbolData(sym, {tf: frame}, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
-            cache.frames[key(sym)] = (need, closed)
+            kept: Dict[str, pd.DataFrame] = {tf: frame} if frame is not None else {}
+            daily = data.frames.get("1d") if data is not None and tf != "1d" else None
+            if frame is not None and daily is not None:               # U6 BK1: daily context, sessions closed by this bar's close
+                kept["1d"] = closed_only(daily, "1d", bar_close(pd.DatetimeIndex([pd.Timestamp(bar)]), tf)[0])
+            closed = SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
+            cache.frames[key(sym)] = (dict(lookback), closed)
     cache.reused_symbols += len(symbols) - len(missing)
     return [d for s in symbols if (d := cache.frames[key(s)][1]) is not None], problems
 
 
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
-                        per_user: bool = False) -> Tuple[str, int]:
+                        breakouts_enabled: bool = True, per_user: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error."""
     from app.alerts.engine import record_event
     now = _utc(now)
@@ -237,7 +251,15 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
-        current, problems = await _current_universe(session, rule, symbols, bar, validated.lookback, fetch, cache, forming=intrabar, per_user=per_user)
+        from app.screener.breakouts.gate import flagged_calls
+        blocked = flagged_calls(ast)
+        if blocked and (not breakouts_enabled or intrabar):
+            # U6 BK1: the rule stays active and resumes when the flag is back; breakout rules fire on bar close only
+            rule.last_problem = (f"{', '.join(n + '()' for n in blocked)}: the breakout screens are off for this organisation (flag {BREAKOUT_FLAG})"
+                                 if not breakouts_enabled else "breakout rules fire on bar close only, not intrabar")
+            return "unsupported", 0
+        current, problems = await _current_universe(session, rule, symbols, bar, validated.fetch_lookback, fetch, cache, forming=intrabar,
+                                                    per_user=per_user)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
@@ -278,6 +300,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
                                        .order_by(AlertRuleRecord.last_checked_at.is_not(None), AlertRuleRecord.last_checked_at, AlertRuleRecord.id)))
     enabled: Dict[int, bool] = {}
     intrabar_on: Dict[int, bool] = {}
+    breakouts_on: Dict[int, bool] = {}
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     started = time_module.monotonic()
     for rule in rules:
@@ -293,10 +316,13 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             continue
         if rule.fire_on == "intrabar" and rule.tenant_id not in intrabar_on:
             intrabar_on[rule.tenant_id] = await flag_enabled(session, INTRABAR_FLAG, rule.tenant_id)
+        if rule.tenant_id not in breakouts_on:
+            breakouts_on[rule.tenant_id] = await flag_enabled(session, BREAKOUT_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
             per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
-                                           intrabar_enabled=intrabar_on.get(rule.tenant_id, False), per_user=per_user[rule.tenant_id])
+                                           intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
+                                           breakouts_enabled=breakouts_on[rule.tenant_id], per_user=per_user[rule.tenant_id])
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired

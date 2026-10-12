@@ -11,11 +11,19 @@ DEST="${1:?usage: offsite_fetch.sh <dest dir>}"
 log() { printf '%s offsite-fetch: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 
 # Names carry a UTC stamp (atp_<db>_<YYYYmmddTHHMMSSZ>.dump[.enc], scripts/backup/backup.sh): the last by name is the newest.
-NEWEST="$(rclone lsf "$REMOTE/backups" --files-only --include 'atp_*.dump' --include 'atp_*.dump.enc' | sort | tail -n 1)"
+# Z11 / N1: OFFSITE_REQUIRE_ENCRYPTED=1 (deploy/atp.sh sets it - the passphrase is required there) fetches only encrypted
+# dumps: a plain .dump in the bucket is never picked, whoever put it there.
+if [ "${OFFSITE_REQUIRE_ENCRYPTED:-0}" = "1" ]; then
+  NEWEST="$(rclone lsf "$REMOTE/backups" --files-only --include 'atp_*.dump.enc' | sort | tail -n 1)"
+else
+  NEWEST="$(rclone lsf "$REMOTE/backups" --files-only --include 'atp_*.dump' --include 'atp_*.dump.enc' | sort | tail -n 1)"
+fi
 [ -n "$NEWEST" ] || { log "no dump under $REMOTE/backups"; exit 1; }
 mkdir -p "$DEST"
 find "$DEST" -maxdepth 1 -name 'atp_*' -type f -exec rm -f {} + 2>/dev/null || true   # only the previous test copy
 rclone copyto "$REMOTE/backups/$NEWEST" "$DEST/$NEWEST"
 rclone copyto "$REMOTE/backups/$NEWEST.sha256" "$DEST/$NEWEST.sha256" || log "WARNING: no .sha256 sidecar off-site for $NEWEST"
+# Z11 / L6: the HMAC sidecar (deploy/atp.sh seals each dump) - authenticates the ciphertext; absent for older dumps.
+rclone copyto "$REMOTE/backups/$NEWEST.hmac" "$DEST/$NEWEST.hmac" 2>/dev/null || log "no .hmac sidecar off-site for $NEWEST (not sealed)"
 log "fetched $NEWEST from $REMOTE"
 printf '%s\n' "$DEST/$NEWEST"

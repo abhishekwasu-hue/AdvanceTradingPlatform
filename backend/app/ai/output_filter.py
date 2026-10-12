@@ -62,7 +62,7 @@ def _bounded(words: List[str]) -> str:
 @lru_cache(maxsize=4)
 def _load(path: str) -> Terms:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    blocked = [w for kind in ("guarantee", "advice") for lang in ("en", "mr") for w in data.get(kind, {}).get(lang, [])]
+    blocked = [w for kind in ("guarantee", "advice") for lang in ("en", "mr", "hi") for w in data.get(kind, {}).get(lang, [])]
     neg = data.get("negations", {})
     verbs = data["action_verbs"]["en"] + data["action_verbs"]["mr"]
     # A specific call: an action verb and, in the same clause and within a few words either side, a price, a strike or an

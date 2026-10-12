@@ -36,18 +36,22 @@ from app.auth.dependencies import get_current_user
 from app.db.models import MdCandleRecord, User
 from app.db.session import get_session
 from app.platform.controls import require_flag
+from app.charts import price_action_concepts as PC
 from app.price_action import causal_swings as cs
 from app.price_action.breaks import first_real_break, median_range
 from app.price_action.pa_settings import settings as pa_defaults
 
 router = APIRouter(prefix="/api/charts/layers", tags=["charts"])
 FLAG = "chart_price_action"
-SCHEMA = "pa-layer/1"
-NOTE = "Swings, legs, breaks and levels from past prices only - reference, not signals or recommendations."
+SCHEMA = "pa-layer/2"
+NOTE = "Swings, legs, structure, liquidity, trendlines and levels from past prices only - reference, not signals or recommendations."
 NO_BARS = "no lake bars for this instrument and timeframe in the window"
 TIMEFRAMES = ("1m", "3m", "5m", "15m", "30m", "1h", "1d")
 Timeframe = Literal["1m", "3m", "5m", "15m", "30m", "1h", "1d"]
-LAKE_LABELS = {"1m": ("1m",), "3m": ("3m",), "5m": ("5m",), "15m": ("15m",), "30m": ("30m",), "1h": ("60m", "1h"), "1d": ("1d", "day")}
+LAKE_LABELS = {"1m": ("1m",), "3m": ("3m",), "5m": ("5m",), "15m": ("15m",), "30m": ("30m",), "1h": ("60m", "1h"), "1d": ("1d", "day"),
+               "1w": ("1w", "week")}
+# CH3b top-down panel: each timeframe's own history as of the same `at` (the weekly from daily bars when the lake has none)
+MTF_DAYS = {"1w": 3650, "1d": 1095, "1h": 180, "15m": 45}
 INTRADAY_MINUTES = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1h": 60}
 # history read by default (about 800-1,100 bars of a regular NSE session) and the most a request may ask for
 DEFAULT_DAYS = {"1m": 3, "3m": 7, "5m": 15, "15m": 45, "30m": 90, "1h": 180, "1d": 1095}
@@ -56,7 +60,7 @@ MAX_BARS = 5000
 DEFAULT_DEGREE = 2                    # 6 x ATR on the default settings: the significant swings only
 MAX_BREAK_PIVOTS = 40                 # the newest confirmed pivots per degree whose break is looked for
 MAX_LEVELS_PER_SIDE = 3               # unbroken swing levels drawn above and below the last close (debug: all)
-CONCEPTS = ("swings", "legs", "breaks", "levels", "trend")
+CONCEPTS = ("swings", "legs", "structure", "liquidity", "trendlines", "breaks", "levels", "trend")
 FETCH_PARTITION = 5000
 
 
@@ -120,18 +124,22 @@ def _pivot_row(p: cs.Pivot, label: str) -> Dict[str, Any]:
             "text": f"{label} {price_text(p.price)}" if p.status == "confirmed" else f"{word} so far {price_text(p.price)} (not confirmed)"}
 
 
-def _leg_row(a: cs.Pivot, b: cs.Pivot) -> Dict[str, Any]:
+def _leg_row(a: cs.Pivot, b: cs.Pivot, cls: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     change = b.price - a.price
     pct = change / a.price * 100.0 if a.price else 0.0
     bars = b.bar_idx - a.bar_idx
-    return {"degree": b.degree, "direction": "up" if change > 0 else "down" if change < 0 else "flat", "status": b.status,
-            "from": {"time": _epoch(a.ts), "price": _num(a.price)}, "to": {"time": _epoch(b.ts), "price": _num(b.price)},
-            "change": _num(change), "change_pct": round(pct, 2), "bars": int(bars),
-            "text": f"{'+' if change >= 0 else ''}{pct:.2f}% · {bars} bars"}
+    move = f"{'+' if change >= 0 else ''}{pct:.2f}% · {bars} bars"
+    row = {"degree": b.degree, "direction": "up" if change > 0 else "down" if change < 0 else "flat", "status": b.status,
+           "from": {"time": _epoch(a.ts), "price": _num(a.price)}, "to": {"time": _epoch(b.ts), "price": _num(b.price)},
+           "change": _num(change), "change_pct": round(pct, 2), "bars": int(bars), "text": move}
+    if cls is not None:
+        row.update(cls)
+        row["text"] = f"{cls['class_text']} {'↑' if change > 0 else '↓'} · {move}"
+    return row
 
 
 def compute_layer(frame: pd.DataFrame, tf: str, *, degree: int = DEFAULT_DEGREE, debug: bool = False,
-                  settings: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+                  settings: Optional[Dict[str, Any]] = None, tz: str = "Asia/Kolkata") -> Dict[str, Any]:
     """Closed bars (timestamp = bar start, bar_end, OHLC; ascending, nothing after the as-of time) -> the layer content.
     A pure function of the bars it is given: the caller cuts them at `at`, so a later bar can never reach it."""
     s = settings or pa_defaults()
@@ -145,7 +153,8 @@ def compute_layer(frame: pd.DataFrame, tf: str, *, degree: int = DEFAULT_DEGREE,
                            "last_bar": _epoch(frame["timestamp"].iloc[-1]) if n else None,
                            "as_of": _iso(frame["bar_end"].iloc[-1]) if n else None,
                            "last_close": _num(frame["close"].iloc[-1]) if n else None,
-                           "swings": [], "legs": [], "breaks": [], "levels": [], "trend": []}
+                           "swings": [], "legs": [], "breaks": [], "levels": [], "trend": [], "structure": [], "structure_state": None,
+                           "liquidity": [], "sweeps": [], "trendlines": []}
     if n == 0:
         return out
     shown = list(range(levels_n)) if debug else [degree]
@@ -153,8 +162,10 @@ def compute_layer(frame: pd.DataFrame, tf: str, *, degree: int = DEFAULT_DEGREE,
     last_close = float(frame["close"].iloc[-1])
     ts, be = frame["timestamp"].to_numpy(), frame["bar_end"].to_numpy()
     degrees_dbg: List[Dict[str, Any]] = []
+    by_degree: Dict[int, List[cs.Pivot]] = {}
     for d in range(levels_n):
         confirmed = cs.degree_pivots(frame, d, s, tf)
+        by_degree[d] = confirmed
         tentative = cs.tentative_pivot(frame, confirmed, d, tf=tf)
         trend, basis = _trend(confirmed)
         out["trend"].append({"degree": d, "tf": tf, "trend": trend, "basis": basis, "confirmed": len(confirmed),
@@ -173,12 +184,14 @@ def compute_layer(frame: pd.DataFrame, tf: str, *, degree: int = DEFAULT_DEGREE,
         for p in confirmed:
             out["swings"].append(_pivot_row(p, _swing_label(p.kind, p.price, last_price[p.kind])))
             last_price[p.kind] = p.price
-        for a, b in zip(confirmed, confirmed[1:]):
-            out["legs"].append(_leg_row(a, b))
+        # CH3b: each leg's class (impulse vs corrective) from the ported leg classifier; internal swings = one degree lower
+        classes, tent_class = PC.leg_classes(frame, confirmed, by_degree.get(d - 1), tentative if debug else None)
+        for (a, b), cls in zip(zip(confirmed, confirmed[1:]), classes):
+            out["legs"].append(_leg_row(a, b, cls))
         if debug and tentative is not None:
             out["swings"].append(_pivot_row(tentative, _swing_label(tentative.kind, tentative.price, last_price[tentative.kind])))
             if confirmed:
-                out["legs"].append(_leg_row(confirmed[-1], tentative))
+                out["legs"].append(_leg_row(confirmed[-1], tentative, tent_class))
         # real breaks of the newest confirmed swings (searched from the bar after the one that confirmed the swing)
         live: List[Dict[str, Any]] = []
         for p in confirmed[-MAX_BREAK_PIVOTS:]:
@@ -206,6 +219,10 @@ def compute_layer(frame: pd.DataFrame, tf: str, *, degree: int = DEFAULT_DEGREE,
             above = sorted((lv for lv in live if lv["price"] >= last_close), key=lambda lv: (lv["price"], -lv["pivot_time"]))[:MAX_LEVELS_PER_SIDE]
             below = sorted((lv for lv in live if lv["price"] < last_close), key=lambda lv: (-lv["price"], -lv["pivot_time"]))[:MAX_LEVELS_PER_SIDE]
             out["levels"].extend(above + below)
+    # CH3b: structure (BOS / CHoCH), liquidity on the chart degree's swings, trendlines and channels
+    out["structure"], out["structure_state"] = PC.structure(frame, tf, debug)
+    out["liquidity"], out["sweeps"] = PC.liquidity(frame, by_degree[degree], debug, tz)
+    out["trendlines"] = PC.trendlines(frame)
     out["levels"].sort(key=lambda lv: (-lv["price"], lv["degree"], lv["pivot_time"]))
     out["breaks"].sort(key=lambda b: (b["time"], b["degree"], b["pivot_time"]))
     if debug:
@@ -264,11 +281,15 @@ def _to_frame(rows: List[RowTuple], tf: str, key: str, end: datetime, rebuild: b
 
 
 async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime) -> Tuple[pd.DataFrame, Optional[str]]:
-    """The lake's own `tf` bars, else `tf` rebuilt from its 1-minute bars (intraday). (frame, source label)."""
+    """The lake's own `tf` bars, else `tf` rebuilt from its 1-minute bars (intraday) or, weekly, from its daily bars.
+    (frame, source label)."""
     for label in LAKE_LABELS[tf]:
         rows = await _fetch(session, key, label, start, end)
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, False), f"lake:{label}"
+    if tf == "1w":
+        daily, src = await load_frame(session, key, "1d", start, end)
+        return (await asyncio.to_thread(PC.weekly_from_daily, daily), src) if len(daily) else (daily, None)
     if tf in INTRADAY_MINUTES and tf != "1m":
         rows = await _fetch(session, key, "1m", start, end)
         if rows:
@@ -276,10 +297,22 @@ async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, 
     return pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"]), None
 
 
-def build(frame: pd.DataFrame, tf: str, degree: int, debug: bool) -> Dict[str, Any]:
+def build(frame: pd.DataFrame, tf: str, degree: int, debug: bool,
+          mtf: Optional[Sequence[Tuple[str, Optional[pd.DataFrame], Optional[str]]]] = None) -> Dict[str, Any]:
+    """The layer content plus (CH3b) the top-down rows for `mtf` [(tf, frame, source)], fingerprinted together."""
     content = compute_layer(frame, tf, degree=degree, debug=debug)
+    content["mtf"] = [PC.mtf_row(f, t, src) for t, f, src in (mtf or [])]
     content["fingerprint"] = fingerprint(content)
     return content
+
+
+async def load_mtf(session: AsyncSession, key: str, when: datetime) -> List[Tuple[str, Optional[pd.DataFrame], Optional[str]]]:
+    """Each top-down timeframe's own bars ending by `when` (never later), over MTF_DAYS."""
+    out: List[Tuple[str, Optional[pd.DataFrame], Optional[str]]] = []
+    for t in PC.MTF_TFS:
+        f, src = await load_frame(session, key, t, when - timedelta(days=MTF_DAYS[t]), when)
+        out.append((t, f.tail(MAX_BARS).reset_index(drop=True) if len(f) else None, src))
+    return out
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -294,7 +327,7 @@ def _aware(t: Optional[datetime], name: str) -> Optional[datetime]:
 @router.get("/price-action")
 async def price_action_layer(instrument: str = Query(..., min_length=1, max_length=100), tf: Timeframe = "15m",
                              at: Optional[datetime] = None, start: Optional[datetime] = None,
-                             degree: int = Query(default=DEFAULT_DEGREE, ge=0, le=3), debug: bool = False,
+                             degree: int = Query(default=DEFAULT_DEGREE, ge=0, le=3), debug: bool = False, mtf: bool = True,
                              user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
     from app.price_action.zones.store import normalise_key
@@ -317,8 +350,9 @@ async def price_action_layer(instrument: str = Query(..., min_length=1, max_leng
     frame, source = await load_frame(session, key, tf, begin, when)
     if len(frame) > MAX_BARS:
         raise HTTPException(status_code=422, detail=f"the window holds {len(frame)} bars, more than {MAX_BARS}; choose a later `start`")
-    content = await asyncio.to_thread(build, frame, tf, degree, debug)
+    panel = await load_mtf(session, key, when) if mtf else None
+    content = await asyncio.to_thread(build, frame, tf, degree, debug, panel)
     return {**head, "instrument": key, "source": source, **content, "reason": None if len(frame) else NO_BARS}
 
 
-__all__ = ["router", "FLAG", "compute_layer", "build", "load_frame", "canonical", "fingerprint"]
+__all__ = ["router", "FLAG", "compute_layer", "build", "load_frame", "load_mtf", "canonical", "fingerprint"]

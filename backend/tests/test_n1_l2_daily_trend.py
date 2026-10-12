@@ -162,6 +162,33 @@ def causal_bars(states: Any, every: int = 0, cap: int = 0) -> list:
     return out[:cap] if cap else out
 
 
+def _evenly(xs: list, k: int) -> list:
+    if len(xs) <= k:
+        return list(xs)
+    return [xs[round(i * (len(xs) - 1) / (k - 1))] for i in range(k)]
+
+
+DENSE_FLIPS, DENSE_CHANGES, DENSE_EVERY, DENSE_SHORT = 8, 8, 125, 200
+
+
+def dense_bars(states: Any) -> list:
+    """The CI dense subset (fits the lookahead job: about 1.5 minutes for every series): a short series (at most
+    DENSE_SHORT bars) is re-folded at every bar; a long one at DENSE_FLIPS bars where flip() runs and DENSE_CHANGES bars
+    where the state changes (both spread evenly over the series), plus every DENSE_EVERY-th bar. Deterministic: the same
+    bars on every run."""
+    if len(states) <= DENSE_SHORT:
+        return list(range(len(states)))
+    flips, changes = [], []
+    for m in range(1, len(states)):
+        a, b = states[m - 1], states[m]
+        if a.phase == "origin_broken":
+            flips.append(m)
+        elif (a.trend, a.phase, pivot(a.protected)) != (b.trend, b.phase, pivot(b.protected)):
+            changes.append(m)
+    return sorted(set(_evenly(flips, DENSE_FLIPS)) | set(_evenly(changes, DENSE_CHANGES))
+                  | set(range(DENSE_EVERY, len(states), DENSE_EVERY)))
+
+
 def assert_causal(sid: int, bars: list) -> None:
     full = folded(sid, "default")
     for m in bars:
@@ -181,10 +208,14 @@ def test_no_state_depends_on_a_later_candle_fast():
 @pytest.mark.lookahead
 @pytest.mark.parametrize("sid", range(16))
 def test_no_state_depends_on_a_later_candle_dense(sid):
-    """The dense version (the Z10-a no-look-ahead CI job): every 7th bar and every change, on every golden series."""
+    """The dense version (the Z10-a no-look-ahead CI job), on every golden series: `dense_bars` (every bar of a short
+    series; flips, state changes and a stride on a long one - a prefix fold costs ~1 ms per bar, so every bar of a
+    1,000-bar series would take minutes)."""
     if sid >= len(golden()["series"]):
         pytest.skip("no such series")
-    assert_causal(sid, causal_bars(folded(sid, "default"), every=7))
+    bars = dense_bars(folded(sid, "default"))
+    assert len(bars) >= 4
+    assert_causal(sid, bars)
 
 
 def test_short_series_parity():

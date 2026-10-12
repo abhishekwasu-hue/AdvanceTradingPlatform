@@ -58,9 +58,13 @@ services:
       args:
         BASE_IMAGE: atp-backend:${ATP_RELEASE:-latest}
     pull_policy: never
+    # The image's own CMD, with the number of API processes as a knob for the load test's lever run
+    # (ATP_CI_API_WORKERS, default 1 = exactly what production runs).
+    command: ["sh", "-c", "python scripts/migrate_guard.py && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"$${FORWARDED_ALLOW_IPS:-127.0.0.1}\" --workers $${ATP_CI_API_WORKERS:-1}"]
     environment:
       <<: *faketime
       GLOBAL_CUES_ENABLED: "false"
+      ATP_CI_API_WORKERS: ${ATP_CI_API_WORKERS:-1}
     extra_hosts: *broker_hosts
     volumes:
       - ci_tls:/ci-tls:ro

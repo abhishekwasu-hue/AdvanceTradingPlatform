@@ -9,6 +9,7 @@
 #   deploy/ci/stack.sh seed N             N load-test users (deploy/ci/seed_users.py) -> $STATE/load_accounts.csv
 #   deploy/ci/stack.sh load [options]     the sharded load test (backend/scripts/loadtest.py); see cmd_load
 #   deploy/ci/stack.sh run ARGS...        python ARGS in the ci-runner tool container
+#   deploy/ci/stack.sh api-workers N      restart the API with N processes (the load test's lever run; production: 1)
 #   deploy/ci/stack.sh logs | ps | diag   container logs / state; diag writes them under $STATE/diag
 #   deploy/ci/stack.sh down               stop and delete the stack and its volumes
 #
@@ -168,7 +169,10 @@ cmd_load() {
   local rc=0
   cmd_run /ci-scripts/loadtest.py --merge "${files[@]}" --json-out "/state/$name/result.json" --markdown "/state/$name/result.md" \
     --label "${label:-$PROJECT on $(hostname)}" --stats "/state/$name/docker-stats.csv" || rc=$?
-  if [ -n "$report" ] && [ -f "$STATE/$name/result.md" ]; then cp "$STATE/$name/result.md" "$report"; fi
+  if [ -f "$STATE/$name/result.md" ]; then
+    echo; cat "$STATE/$name/result.md"
+    if [ -n "$report" ]; then cp "$STATE/$name/result.md" "$report"; fi
+  fi
   return "$rc"
 }
 
@@ -181,6 +185,17 @@ sample_stats() {
       | grep "^${PROJECT}-" | sed "s/^/$(date -u +%H:%M:%S),/" >> "$out" || true
     sleep 10
   done
+}
+
+# The load test's lever run: restart the API with N processes (uvicorn --workers N; production runs 1).
+cmd_api_workers() {
+  ensure_env
+  local n="${1:?api-workers N}"
+  case "$n" in *[!0-9]*|"") die "api-workers takes a number" 2 ;; esac
+  sed -i '/^ATP_CI_API_WORKERS=/d' "$ENV_FILE"
+  echo "ATP_CI_API_WORKERS=$n" >> "$ENV_FILE"
+  step "API with $n process(es)"
+  dc up -d --wait --wait-timeout 300 backend
 }
 
 cmd_diag() {
@@ -210,6 +225,7 @@ main() {
     logs) ensure_env; dc logs --no-color --tail "${1:-200}" ;;
     ps) ensure_env; dc ps -a ;;
     diag) ensure_env; cmd_diag ;;
+    api-workers) cmd_api_workers "$@" ;;
     down) cmd_down ;;
     env) ensure_env; grep -E '^(DOMAIN|ATP_CI_)' "$ENV_FILE" ;;
     help|-h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;

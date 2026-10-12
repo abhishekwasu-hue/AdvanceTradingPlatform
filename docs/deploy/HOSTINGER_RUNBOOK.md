@@ -29,6 +29,7 @@ Run these as the `atp` user on the server (`ssh atp@<SERVER_IP>`). Each one is s
 | Back up now (database and files), copy to R2, then verify | `/opt/atp/deploy/atp.sh backup --verify` |
 | Prove the newest R2 backup restores (scratch database, row counts, audit chain) | `/opt/atp/deploy/atp.sh restore-check` |
 | Release history | `/opt/atp/deploy/atp.sh releases` |
+| The 500-user load test against this server (its own copy of the stack, section 12a) | `/opt/atp/deploy/ci/loadtest_500.sh` |
 
 Exit codes:
 
@@ -377,6 +378,26 @@ Production is never written to. The market data lake is in Postgres (ADR-0013 ho
 database, follow `docs/OPERATIONS.md` 1.2 and 1.2a (`restore.sh` or the PITR drill) with the backup service's
 entrypoint overridden:
 `docker compose ... run --rm --entrypoint sh backup /scripts/restore.sh <file>`.
+
+## 12a. The 500-user load test on this server (one command)
+
+CI runs the 500-user load test on every push to main against a copy of the stack on a GitHub runner
+(`docs/reports/load_test_500.md`). To measure this server itself - its CPU, its disk, its Caddy - run, as `atp`:
+
+```
+/opt/atp/deploy/ci/loadtest_500.sh
+```
+
+- It brings up its own copy of the stack beside production: compose project `atp-ci`, the release's images, a
+  throwaway database and settings, a fake Upstox / Dhan broker, ports on 127.0.0.1 only (28000, 28443). Production
+  (project `atp`), its `.env`, database, flags and ports are never touched.
+- 500 synthetic users (an organisation and a fake Dhan session each) log in over 150 s from 25 client IPs, then use the
+  app for 5 minutes (a page load every 30 s on average). The per-IP login limit applies, as for real users.
+- The copy and its volumes are removed at the end (`--keep` leaves them up; `deploy/ci/stack.sh down` removes them).
+- Run it when no beta user is on: it shares the CPU with production. It needs about 3 GB of free memory.
+- The report is `~/atp-loadtest/load-hostinger.md`: p95 per route, server errors, the SLO verdict and the CPU per
+  container. Send it, or paste it into `docs/reports/load_test_500.md`.
+- `--think 10` runs the busier profile CI also runs; `--users N` another size.
 
 ## 12. Troubleshooting
 

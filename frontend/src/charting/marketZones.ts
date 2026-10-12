@@ -5,7 +5,7 @@
  * at most six bands. Every number and text drawn comes from that response (bounds, label prices, touches, strength);
  * the browser only re-picks bands when the price on screen moves, with `selectBands` - a line-for-line port of
  * backend/app/price_action/zones/chart.py `select_bands`, checked against the same cases
- * (backend/tests/fixtures/zones/chart_bands_cases.json) so the two cannot drift. The U8 evidence charts draw the same
+ * (backend/tests/fixtures/zones/chart_bands_cases.json, copied byte for byte to ./__fixtures__/) so the two cannot drift. The U8 evidence charts draw the same
  * bands server-side (Telegram images) from the Python rule.
  *
  * Reference levels from past prices - nothing here places, changes or proposes an order.

@@ -27,7 +27,7 @@ from app.screener import compile_screen, nodes, parse, validate
 from app.screener.runtime import ScreenRuntimeError, SymbolData, bar_close, evaluate, run_screen
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import _owner
-from tests.zones_chart_cases import PATH as CASES_PATH, build as build_cases
+from tests.zones_chart_cases import FRONTEND_PATH as CASES_FRONTEND_PATH, PATH as CASES_PATH, build as build_cases
 
 KEY, OTHER = "NSE:ZCHARTA", "NSE:ZCHARTB"
 IST = "Asia/Kolkata"
@@ -242,6 +242,8 @@ def test_band_cases_file_matches_the_rule_shared_with_the_browser():
     stored = json.loads(CASES_PATH.read_text())
     assert stored == json.loads(json.dumps(build_cases()))
     assert len(stored["cases"]) >= 20 and len(CASES_PATH.read_text().splitlines()) < 1000
+    # the browser's copy (inside the frontend build context) is byte-identical, so the two rules test the same cases
+    assert CASES_FRONTEND_PATH.read_bytes() == CASES_PATH.read_bytes()
     for case in stored["cases"]:
         got = chart.select_bands(case["candidates"], case["price"], max_bands=case["max_bands"], max_distance_pct=case["max_distance_pct"])
         assert [(b["zone_key"], b["label"], b["touch_text"]) for b in got] == [(e["zone_key"], e["label"], e["touch_text"]) for e in case["expected"]]

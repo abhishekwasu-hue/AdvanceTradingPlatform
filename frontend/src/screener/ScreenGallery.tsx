@@ -6,10 +6,16 @@
  *
  * Keyboard: the rail and the chips are toggle buttons (aria-pressed) in reading order; the result count is a polite
  * live region; every card's "Open" names its screen.
+ *
+ * U7 LG1: with the Legends library (flag `screener_legends`), a Legends screen's card carries the disclaimer and an
+ * "About" button that opens its full card (LegendCard) in place of the grid; the library header (the disclaimer for
+ * the people named) is shown above any grid that lists a Legends screen.
  */
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button, cx } from "../components/primitives";
+import { LegendCard } from "./LegendCard";
+import { cardFor, withLegendCards, type LegendCardData, type LegendsLibrary } from "./legends";
 import {
   cellCount, chipCount, emptyText, filterScreens, NO_FILTER, placeText, railCount, tagLabel,
   type GalleryFilter, type TaxAxis, type Taxonomy, type TaxScreen,
@@ -21,12 +27,23 @@ export interface ScreenGalleryProps {
   canOpen: (screen: TaxScreen) => boolean;
   onOpen: (screen: TaxScreen) => void;
   initial?: Partial<GalleryFilter>;
+  /** U7 LG1: the Legends cards (null while the flag is off - Legends screens then show no card text). */
+  legends?: LegendsLibrary | null;
+  /** A Legends card shown in full when the gallery opens (stories and tests). */
+  initialDetail?: string | null;
 }
 
-export function ScreenGallery({ taxonomy, canOpen, onOpen, initial }: ScreenGalleryProps) {
+export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null }: ScreenGalleryProps) {
+  // L1: a Legends screen is shown only with its card (and so its disclaimer); without the library they leave the counts too.
+  const taxonomy = useMemo(() => withLegendCards(served, legends), [served, legends]);
   const [filter, setFilter] = useState<GalleryFilter>({ ...NO_FILTER, ...initial });
+  const [detail, setDetail] = useState<{ id: string; focus: boolean } | null>(initialDetail ? { id: initialDetail, focus: false } : null);
   const shown = useMemo(() => filterScreens(taxonomy, filter), [taxonomy, filter]);
-  const pick = (next: Partial<GalleryFilter>) => setFilter((f) => ({ ...f, ...next }));
+  const detailCard = detail ? cardFor(legends, detail.id) : null;
+  const detailScreen = detail ? taxonomy.screens.find((s) => s.id === detail.id) : undefined;
+  const showsLegends = !!legends && shown.some((s) => cardFor(legends, s.id));
+  // A new rail / chip / search pick closes an open Legends card, so the grid it changes is the one shown.
+  const pick = (next: Partial<GalleryFilter>) => { setDetail(null); setFilter((f) => ({ ...f, ...next })); };
   const methods = taxonomy.methods;
   const setups = taxonomy.setups;
 
@@ -65,13 +82,29 @@ export function ScreenGallery({ taxonomy, canOpen, onOpen, initial }: ScreenGall
           </p>
         </div>
 
-        {shown.length === 0 ? (
+        {legends && showsLegends && !detailCard && (
+          <p role="note" className="mt-3 rounded-control border border-border bg-surface-2 px-3 py-2 text-t12 text-fg" data-testid="legends-header">
+            {legends.header}
+          </p>
+        )}
+
+        {detailCard ? (
+          <div className="mt-3">
+            <LegendCard card={detailCard} focusOnMount={detail?.focus ?? false} onBack={() => setDetail(null)}
+                        canOpen={!!detailScreen && canOpen(detailScreen)} onOpen={detailScreen ? () => onOpen(detailScreen) : undefined} />
+          </div>
+        ) : shown.length === 0 ? (
           <p className="mt-3 rounded-control border border-dashed border-border px-4 py-8 text-center text-t13 text-fg-muted" data-testid="gallery-empty">
             {emptyText(taxonomy, filter)}
           </p>
         ) : (
           <ul aria-label="Screens" className="screen-gallery-cards mt-3">
-            {shown.map((s) => <li key={s.id}><ScreenCard taxonomy={taxonomy} screen={s} canOpen={canOpen(s)} onOpen={() => onOpen(s)} /></li>)}
+            {shown.map((s) => (
+              <li key={s.id}>
+                <ScreenCard taxonomy={taxonomy} screen={s} canOpen={canOpen(s)} onOpen={() => onOpen(s)}
+                            legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} />
+              </li>
+            ))}
           </ul>
         )}
 
@@ -118,7 +151,9 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function ScreenCard({ taxonomy, screen, canOpen, onOpen }: { taxonomy: Taxonomy; screen: TaxScreen; canOpen: boolean; onOpen: () => void }) {
+function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout }: {
+  taxonomy: Taxonomy; screen: TaxScreen; canOpen: boolean; onOpen: () => void; legend: LegendCardData | null; onAbout: () => void;
+}) {
   const method = taxonomy.methods.find((m) => m.id === screen.method);
   const setup = taxonomy.setups.find((s) => s.id === screen.setup);
   const t = screen.tags;
@@ -127,6 +162,7 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen }: { taxonomy: Taxonomy;
       <p className="text-t12 text-fg-muted">{method?.label ?? screen.method} → {setup?.label ?? screen.setup}</p>
       <h4 id={`screen-${screen.id}`} className="mt-1 text-t15 font-semibold text-fg">{screen.name}</h4>
       <p className="mt-1 flex-1 text-t13 text-fg-muted">{screen.definition}</p>
+      {legend && <p className="mt-1 text-t12 text-fg-muted" data-testid="legend-card-disclaimer">{legend.disclaimer}</p>}
       <ul aria-label="Tags" className="mt-2 flex flex-wrap gap-1">
         {t.timeframe_family.map((tf) => <Tag key={tf}>{tagLabel(taxonomy, "timeframe_family", tf)}</Tag>)}
         <Tag>{tagLabel(taxonomy, "direction", t.direction)}</Tag>
@@ -137,8 +173,11 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen }: { taxonomy: Taxonomy;
       </ul>
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className="text-t12 text-fg-muted">{tagLabel(taxonomy, "universe_default", t.universe_default)}</span>
-        <Button size="sm" onClick={onOpen} disabled={!canOpen} aria-label={`Open ${screen.name} in the builder`}
-                title={canOpen ? undefined : "This screen's family is not available on this page yet"}>Open</Button>
+        <div className="flex items-center gap-1">
+          {legend && <Button size="sm" variant="ghost" onClick={onAbout} aria-label={`About ${screen.name}: the method, its sources and the screen`}>About</Button>}
+          <Button size="sm" onClick={onOpen} disabled={!canOpen} aria-label={`Open ${screen.name} in the builder`}
+                  title={canOpen ? undefined : "This screen's family is not available on this page yet"}>Open</Button>
+        </div>
       </div>
     </article>
   );

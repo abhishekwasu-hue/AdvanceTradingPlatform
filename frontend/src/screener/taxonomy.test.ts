@@ -6,8 +6,10 @@ import { cellCount, chipCount, emptyText, filterScreens, isTaxonomy, NO_FILTER, 
 
 /** The server's real taxonomy (backend tests/test_z8_tx1_taxonomy.py fails when this sample drifts from the data file). */
 const tax = sample as unknown as Taxonomy;
+/** What the server sends while the Legends flag (U7 LG1, `screener_legends`) is off: the starters only. */
+const starters = tax.screens.filter((s) => s.source === "starter");
 const withScreens = (extra: Partial<Taxonomy["screens"][number]>[]): Taxonomy => {
-  const screens = [...tax.screens, ...extra.map((e, i) => ({ ...tax.screens[0], id: `test.s${i}`, source: "test", ...e }))];
+  const screens = [...starters, ...extra.map((e, i) => ({ ...tax.screens[0], id: `test.s${i}`, source: "test", ...e }))];
   const matrix = Object.fromEntries(tax.methods.map((m) => [m.id, Object.fromEntries(tax.setups.map((s) => [s.id, 0]))]));
   for (const s of screens) matrix[s.method][s.setup] += 1;
   return { ...tax, screens, matrix, total: screens.length };

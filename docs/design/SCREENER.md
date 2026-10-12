@@ -1132,15 +1132,18 @@ notes, sources and the parameter table: `docs/research/breakouts.md`. Open quest
   - The VCP zigzag: when a swing is confirmed at bar t, it now tracks the new opposite extreme from the most extreme bar
     after the pivot (up to t), as `causal_swings.zigzag_pivots` does. It used to start from bar t, which skipped a deeper
     low or higher high in between, so contractions came out too shallow and the base low too high. It also starts from
-    the first bar with prices. Tests: a regression case, plus equality with `zigzag_pivots` on random series.
+    the first bar with prices. An equal high or low moves the extreme to the later bar, and no reversal is read on a bar
+    that ties it, as in `zigzag_pivots`. Tests: a regression case, plus equality with `zigzag_pivots` on random series
+    and on tick-rounded (0.05) series with ties, in both orientations.
   - `Bars.pivots` returns no swings on fewer than 3 bars, as `degree_pivots` does. The parity test now covers the
     percentage swing mode as well.
   - `/api/screener/breakouts/run`:
     - It checks the BK3 flag before reading the request.
-    - A BK3 screen fetches its two longest windows end to end plus the ATR warm-up (465 daily bars for the VCP
-      defaults; a week counts as 5 sessions).
-    - A symbol with fewer bars than the screen's longest window is listed as "not enough history" instead of running
-      to a silent no-match.
+    - A BK3 screen fetches its two longest look-backs end to end plus the ATR warm-up (486 daily bars for the VCP
+      defaults; a week counts as 5 sessions). Only the look-backs the chosen mode reads count: the trend template
+      only when `tt_filter` is on, Bollinger or TTM, and the MA stack only when it is on.
+    - A symbol with fewer bars than the screen's longest look-back is listed as "not enough history" instead of
+      running to a silent no-match.
   - Evidence packs draw the BK3 breakouts from the engine (`evidence.BREAKOUT_ARGS`: the pivot, channel, band, line or
     window high, with the same parity test). BK2's intraday screens read the session clock, so they stay in the strip.
   - `barclose.evaluate_rule` defaults every flag argument to off. `run_due` passes each organisation's own flags.

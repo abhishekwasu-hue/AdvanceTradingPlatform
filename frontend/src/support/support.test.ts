@@ -75,7 +75,7 @@ describe("support bot wiring", () => {
   it("flag legal_pages off (the server answers 404): no consent box, nothing required, no banner, no page", () => {
     expect(accountSource).toContain("{needsLegal && legalDocs && <LegalConsentField");
     expect(accountSource).toContain("(needsLegal && legalDocs !== null && !legalAccepted)");
-    expect(accountSource).toContain("legalDocs && legalAccepted ? versionsFor(legalDocs) : undefined");
+    expect(accountSource).toContain("legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined");
     expect(bannerSource).toMatch(/api\.legalAcceptance\(\)\.then\(\(s\) => \{ if \(live\) setStatus\(s\); \}\)\.catch/);
     expect(legalPageSource).toContain('e.status === 404 ? "This page does not exist."');
   });

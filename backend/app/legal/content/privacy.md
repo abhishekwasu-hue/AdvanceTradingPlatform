@@ -1,7 +1,7 @@
 ---
 slug: privacy
 title: Privacy notice
-version: 2026-10-11
+version: 2026-10-12
 ---
 > **Draft — to be reviewed by a lawyer before launch.** Text in [SQUARE BRACKETS] is a placeholder that the company fills in once it is registered.
 
@@ -34,6 +34,7 @@ We do not sell personal data, we do not show advertising, and we do not use your
 - **AI features (only if you use them):** the questions you ask and the answers given. The stored copy has email addresses, mobile numbers, PAN, Aadhaar and account numbers masked. If you add your own AI provider key, it is stored encrypted and never shown again.
 - **Notification channels (only if you set them up):** your Telegram chat id, push subscription or alert email.
 - **Feedback:** the message you send, the app version, the screen you sent it from and your browser's user agent.
+- **Your acceptance of these documents:** which version of the Terms of use, this notice and the Risk disclosure you accepted, when, and the IP address and browser (user agent) it came from.
 
 ## Who receives your data
 

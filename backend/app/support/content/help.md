@@ -141,7 +141,7 @@ Use the theme button in the top bar, or the Appearance card in Settings, which a
 keywords: feedback, bug, report problem, contact support, human, help, complaint, issue
 page: /
 
-Select the speech-bubble button ("Send feedback") in the top bar, describe what happened and send it. Only the app version and the screen you were on are attached. A person on the team reads every message.
+Select the speech-bubble button ("Send feedback") in the top bar, describe what happened and send it. The app version and the screen you were on are attached, and your account and browser type (user agent) are recorded with it so the team can follow up. A person on the team reads every message.
 
 ## How do I download my organisation's records?
 keywords: export, download data, csv, json, audit log, records, my data

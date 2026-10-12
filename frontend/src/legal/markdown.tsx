@@ -16,7 +16,7 @@ export function slugify(text: string): string {
 
 export function safeHref(href: string): string | null {
   const h = href.trim();
-  if (/^\/(?!\/)/.test(h) || /^https:\/\//i.test(h) || /^mailto:[^\s]+$/i.test(h)) return h;
+  if (/^\/(?![/\\])/.test(h) || /^https:\/\//i.test(h) || /^mailto:[^\s]+$/i.test(h)) return h;
   return null;
 }
 

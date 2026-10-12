@@ -10,7 +10,7 @@ Nothing else depends on these: an unaccepted document never blocks a route (exit
 keep working while the prompt is open). Behind the flag `legal_pages` (OFF by default): while it is off every route
 here answers 404, exactly as before this feature existed.
 """
-from typing import Dict
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Path, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,13 +27,15 @@ router = APIRouter(prefix="/api/legal", tags=["legal"])
 
 # Module-level so tests can target it through `app.dependency_overrides`. Public pages: per IP, generous.
 legal_read_rate_limit = rate_limit("legal_read", limit=120, window_seconds=60)
-_CACHE = "public, max-age=300"
+# Review L2: always revalidated (a stale copy would offer an old version to accept); the ETag makes that cheap.
+_CACHE = "no-cache"
 
 
 class AcceptBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    documents: Dict[str, str] = Field(description="slug -> the version the user read, e.g. {\"terms\": \"2026-10-11\"}",
-                                      min_length=1, max_length=len(documents.SLUGS))
+    documents: acceptance.LegalAcceptance = Field(
+        description="slug -> {version, sha256} of the text the user read (or just the version)",
+        min_length=1, max_length=len(documents.SLUGS))
 
 
 def _not_found() -> HTTPException:
@@ -58,19 +60,32 @@ def version_conflict(exc: acceptance.LegalVersionError) -> HTTPException:
                          detail={"code": "legal_version_changed", "slug": exc.slug, "current": exc.current, "message": str(exc)})
 
 
-@router.get("/documents", dependencies=[Depends(legal_read_rate_limit), Depends(pages_on)])
-async def list_documents(response: Response) -> dict:
+def _etag(text: str) -> str:
+    import hashlib
+    return '"' + hashlib.sha256(text.encode("utf-8")).hexdigest()[:32] + '"'
+
+
+def _cached(request: Request, response: Response, payload: dict) -> Any:
+    import json
+    tag = _etag(json.dumps(payload, sort_keys=True))
+    if request.headers.get("if-none-match") == tag:
+        return Response(status_code=304, headers={"ETag": tag, "Cache-Control": _CACHE})
     response.headers["Cache-Control"] = _CACHE
-    return {"documents": [documents.get(s).summary() for s in documents.SLUGS]}
+    response.headers["ETag"] = tag
+    return payload
+
+
+@router.get("/documents", dependencies=[Depends(legal_read_rate_limit), Depends(pages_on)])
+async def list_documents(request: Request, response: Response) -> Any:
+    return _cached(request, response, {"documents": [documents.get(s).summary() for s in documents.SLUGS]})
 
 
 @router.get("/documents/{slug}", dependencies=[Depends(legal_read_rate_limit), Depends(pages_on)])
-async def get_document(response: Response, slug: str = Path(pattern=r"^[a-z]{2,20}$")) -> dict:
+async def get_document(request: Request, response: Response, slug: str = Path(pattern=r"^[a-z]{2,20}$")) -> Any:
     if slug not in documents.SLUGS:
         raise HTTPException(status_code=404, detail="No such legal document")
     doc = documents.get(slug)
-    response.headers["Cache-Control"] = _CACHE
-    return {**doc.summary(), "body": documents.render(doc), "open_placeholders": doc.open_placeholders()}
+    return _cached(request, response, {**doc.summary(), "body": documents.render(doc), "open_placeholders": doc.open_placeholders()})
 
 
 @router.get("/acceptance")

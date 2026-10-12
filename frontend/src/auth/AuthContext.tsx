@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, clearToken, setToken, tryRefresh } from "../api/client";
 import type { UserResponse } from "../types";
+import type { LegalAckBody } from "../legal/legal";
 
 interface AuthState {
   user: UserResponse | null;
@@ -9,9 +10,9 @@ interface AuthState {
    * calls `completeMfaLogin`. Resolves to null when the login is complete. */
   login: (email: string, password: string) => Promise<string | null>;
   completeMfaLogin: (mfaToken: string, code: string) => Promise<void>;
-  /** Z10-f: `legal` is {slug: version} of the legal documents accepted on the form. */
-  register: (email: string, password: string, inviteCode?: string, legal?: Record<string, string>) => Promise<void>;
-  acceptInvite: (token: string, password: string, legal?: Record<string, string>) => Promise<void>;
+  /** Z10-f: `legal` is {slug: {version, sha256}} of the legal documents accepted on the form. */
+  register: (email: string, password: string, inviteCode?: string, legal?: Record<string, LegalAckBody>) => Promise<void>;
+  acceptInvite: (token: string, password: string, legal?: Record<string, LegalAckBody>) => Promise<void>;
   resetPassword: (token: string, password: string) => Promise<void>;
   logout: () => void;
   /** Re-reads /auth/me (after email verification, scope changes, ...). */
@@ -47,7 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.me());
   }
 
-  async function acceptInvite(token: string, password: string, legal?: Record<string, string>) {
+  async function acceptInvite(token: string, password: string, legal?: Record<string, LegalAckBody>) {
     const response = await api.acceptInvite(token, password, legal);
     setToken(response.access_token, response.refresh_token);
     setUser(await api.me());
@@ -67,7 +68,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(await api.me());
   }
 
-  async function register(email: string, password: string, inviteCode?: string, legal?: Record<string, string>) {
+  async function register(email: string, password: string, inviteCode?: string, legal?: Record<string, LegalAckBody>) {
     const response = await api.register(email, password, inviteCode, legal);
     setToken(response.access_token, response.refresh_token);
     setUser(await api.me());

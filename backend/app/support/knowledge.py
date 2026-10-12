@@ -25,10 +25,13 @@ from pathlib import Path
 from typing import Dict, List, Set, Tuple
 
 from app.legal import documents
+from app.support.normalize import normalize
 
 HELP_FILE = Path(__file__).resolve().parent / "content" / "help.md"
 DEFAULT_MIN_CONFIDENCE = 0.5
-_WORD = re.compile(r"[a-z0-9]+(?:&[a-z0-9]+)?")
+# Words in every script (\w covers Devanagari letters; its vowel signs are added explicitly): a word the corpus does not
+# have - Hindi, Marathi, anything - counts against the confidence instead of being dropped (review H1).
+_WORD = re.compile(r"[\w\u0900-\u097F]+(?:&[\w]+)?")
 STOPWORDS = frozenset("""
 a an the i me my mine we our us you your yours it its this that these those is are was were be been being am do does did
 doing have has had how what where when why which who whom can could would should will shall may might must to of in on
@@ -49,8 +52,9 @@ def _stem(word: str) -> str:
 
 
 def tokens(text: str) -> List[str]:
-    """Lower-cased, stemmed content words (stop words dropped), in order."""
-    return [_stem(w) for w in _WORD.findall((text or "").lower().replace("'", "")) if w not in STOPWORDS]
+    """Lower-cased, stemmed content words in any script (stop words and underscores dropped), in order."""
+    words = _WORD.findall(normalize((text or "").lower()).replace("'", "").replace("_", " "))
+    return [_stem(w) if w.isascii() else w for w in words if w not in STOPWORDS]
 
 
 @dataclass(frozen=True)

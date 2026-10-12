@@ -19,13 +19,27 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.ai import output_filter
+from app.support.normalize import compact, normalize
 
 _HOWTO = re.compile(r"^\s*(?:how\s+(?:do|can|does|should|to|would)|how\s+is|where\b|is\s+there\b|can\s+i\b|could\s+i\b|do\s+i\b|"
                     r"does\b|what\s+(?:is|are)\s+(?:a|an|the)\b|what\s+does\b|why\s+(?:does|do|is|can)\b|help\s+me\s+(?:find|understand)\b)",
                     re.I)
 
+_SHOULD = r"(?:should|shoud|shuld|shud|shld|shall|must)"
 _ADVICE = [re.compile(p, re.I) for p in (
-    r"\bshould\s+(?:i|we)\s+(?:buy|sell|hold|short|invest|trade|exit|enter|book|average|add|keep)\b",
+    rf"\b{_SHOULD}\s+(?:i|we)\s+(?:buy|sell|hold|short|invest|trade|exit|enter|book|average|add|keep|accumulate)\b",
+    r"\bis\s+\S+(?:\s+\S+)?\s+a\s+(?:good\s+|strong\s+|safe\s+)?(?:buy|sell|short|hold)\b",
+    r"\b(?:stocks?|shares?|scrips?|coins?|options?|strikes?|names|tickers?)\s+to\s+(?:buy|sell|short|pick|invest|trade|hold|accumulate)\b",
+    r"\b(?:going\s+to|gonna)\s+(?:go\s+up|go\s+down|rise|fall|rally|crash|move\s+up|move\s+down)\b",
+    r"\b(?:outlook|forecast|prediction|predict|bullish|bearish)\b",
+    r"\b(?:will|would)\s+(?:make|give|earn)\s+(?:me\s+)?(?:a\s+)?(?:profit|money|returns?)\b",
+    # Hinglish (Latin script) and Hindi
+    r"\b(?:kaun|kon|kaunsa|konsa|kaunse|konse|kaun\s*sa|kon\s*sa|kaun\s*se|kon\s*se)\s+(?:share|stock|scrip|option|strike|coin)s?\b",
+    r"\b(?:kharid\w*|khareed\w*|bechu|bechun|bechna|beche|bechein|becho|bech\s+du|bech\s+doon|le\s+lu|le\s+loon|lena\s+chahiye|"
+    r"lu\s+kya|loon\s+kya|kya\s+lu|kya\s+loon|munafa|pakka\s+profit|paisa\s+double)\b",
+    r"\b(?:tips?|target|call)\s+(?:do|dijiye|batao|bataiye|chahiye|bolo)\b",
+    r"कौन\s*सा\s+शेयर|कौन\s*से\s+शेयर|कौनसा|खरीद(?:ना|ें|ूं|ूँ|ू|े|ो|नी)|बेच(?:ना|ें|ूं|ूँ|ू|े|ो|नी)|शेयर\s+ल(?:े|ें|ूं|ूँ)|"
+    r"सलाह|टिप्स?|लक्ष्य|मुनाफ़?ा|फायदा\s+होगा",
     r"\b(?:which|what)\s+(?:stocks?|shares?|scrips?|options?|strikes?|coins?|crypto(?:s|currency)?|mutual\s+funds?|funds?|sectors?|"
     r"ipos?|futures?)\b.{0,40}\b(?:buy|sell|hold|invest|pick|trade|choose|short|go\s+up|rise|rally)\b",
     r"\b(?:stock|share|trading|intraday|option|options|f&o|crypto)\s+tips?\b",
@@ -41,8 +55,18 @@ _ADVICE = [re.compile(p, re.I) for p in (
     r"\b(?:recommend|suggest|advise)\b.{0,40}\b(?:buy|sell|invest)\b",
     r"\bhow\s+much\s+(?:should|to|must|can)\s+(?:i\s+)?(?:invest|buy|put|allocate|risk)\b",
     r"\bsure[- ]?shot\b|\bmultibagger\b|\bjackpot\b",
-    r"शिफारस|कोणता\s+शेअर|घ्यावा\s+का|विकू\s+का|खरेदी\s+करू\s+का|टिप्स",
+    r"शिफारस|कोणता\s+शेअर|कोणते\s+शेअर|घ्यावा\s+का|घेऊ\s+का|विकू\s+का|खरेदी\s+करू\s+का|टिप्स",
 )]
+# Only outside a how-to clause: "RELIANCE: buy or sell?" is advice, "how do I buy or sell in paper mode?" is not.
+_ADVICE_CLAUSE = [re.compile(p, re.I) for p in (
+    r"\b(?:buy|sell|short)\s+or\s+(?:sell|hold|buy|not|wait|short)\b",
+    r"^\s*[A-Za-z][A-Za-z0-9&.-]*\s*[:,-]?\s*(?:buy|sell|short|hold)\s*$",          # "TCS: buy?"
+)]
+# The same questions with the spaces taken out ("s h o u l d I b u y", "buy-or-sell").
+_ADVICE_COMPACT = ("shouldibuy", "shouldisell", "shouldwebuy", "shouldwesell", "shouldiinvest", "shouldishort", "buyorsell",
+                   "sellorbuy", "whichstocktobuy", "whichsharetobuy", "stockstobuy", "sharestobuy", "isitagoodbuy",
+                   "targetprice", "pricetarget", "stocktips", "intradaytips", "kaunsashare", "konsashare", "konsastock",
+                   "kaunsastock")
 
 _ACT = r"(?:buy|sell|short|place|cancel|modify|amend|exit|close|square\s*-?\s*off|execute|book)"
 _ORDERS = [re.compile(p, re.I) for p in (
@@ -63,6 +87,8 @@ _ACCOUNT = [re.compile(p, re.I) for p in (
     r"\b(?:am|are)\s+(?:i|we)\s+(?:in\s+)?(?:profit|loss|up|down)\b",
     r"\b(?:did|has|have)\s+(?:my|our)\s+(?:orders?|trades?|stop|target)\b",
     r"\bwhy\s+did\s+(?:my|our)\s+(?:orders?|trades?|positions?)\b",
+    rf"^\s*(?:my|our)\s+{_ACCOUNT_THING}\b",
+    rf"^\s*(?:show|list|display|fetch|give|get)\s+(?:me\s+)?(?:all\s+)?(?:the\s+)?(?:my\s+|our\s+)?{_ACCOUNT_THING}\b",
 )]
 
 REPLIES = {
@@ -91,17 +117,34 @@ class Refusal:
         return [dict(link) for link in LINKS[self.kind] if include_legal or not link["url"].startswith("/legal/")]
 
 
+_SPACED = re.compile(r"(?:(?<![^\W_])[^\W\d_](?:[\s._*-]+|$)){4,}")
+_CLAUSES = re.compile(r"[.?!;\n]+|\balso\b|\band\s+then\b|\bthen\b|\bplus\b", re.I)
+
+
 def classify(question: str) -> Optional[str]:
-    """'advice', 'orders', 'account' or None (a question the bot may try to answer)."""
-    q = re.sub(r"\s+", " ", question or "").strip()
-    if output_filter.blocked_terms(q) or any(p.search(q) for p in _ADVICE):
+    """'advice', 'orders', 'account' or None (a question the bot may try to answer).
+
+    The question is normalised first (`normalize`: NFKC, no zero-width characters, Latin look-alikes mapped). Advice is
+    looked for in the whole question, with and without spaces. Orders and account questions are looked for clause by
+    clause, so a how-to opening ("How do I run a backtest?") never covers a request in the next clause ("Also tell me
+    my P&L today")."""
+    q = normalize(question)
+    flat = compact(q)
+    spaced = bool(_SPACED.search(q))       # "s h o u l d I b u y": read it without the spaces
+    if output_filter.blocked_terms(q) or any(p.search(q) for p in _ADVICE) or (spaced and any(w in flat for w in _ADVICE_COMPACT)):
         return "advice"
-    howto = bool(_HOWTO.search(q))
-    if not howto and any(p.search(q) for p in _ORDERS):
-        return "orders"
-    if not howto and any(p.search(q) for p in _ACCOUNT):
-        return "account"
-    return None
+    clauses = [c.strip() for c in _CLAUSES.split(q) if c and c.strip()] or [q]
+    found: Optional[str] = None
+    for clause in clauses:
+        if _HOWTO.search(clause):
+            continue
+        if any(p.search(clause) for p in _ADVICE_CLAUSE):
+            return "advice"
+        if any(p.search(clause) for p in _ORDERS):
+            found = found or "orders"
+        elif any(p.search(clause) for p in _ACCOUNT) and found is None:
+            found = "account"
+    return found
 
 
 def check(question: str) -> Optional[Refusal]:

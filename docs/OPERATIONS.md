@@ -1381,12 +1381,14 @@ retention policy (section 2.3, `RETENTION_*`) and the breach-notice hours and lo
 To change a document: edit its file, bump its `version` (a date), ship it. Everyone is asked again on their next
 sign-in - also when the text changes without a version bump (the acceptance is bound to the text's SHA-256).
 
-**Acceptance.** The sign-up form (and the team-join form) has a required box; the versions accepted go with the
-request and are recorded with the account. Anyone without a current acceptance (accounts created before Z10-f, API
-sign-ups that sent none, everyone after a change) sees a banner after signing in: "I have read and accept" records it,
-"Later" hides it until the next sign-in. It is a banner, never a modal or a route gate: positions, exits and every other
-screen keep working. Each acceptance is a row in `ai_acknowledgements` (`kind` = `legal_terms` / `legal_privacy` /
-`legal_risk`, `version`, `text_sha256`, IP, browser, `accepted_at`; kept for good) plus a `legal_accepted` audit row.
+**Acceptance.** With the flag on, sign-up and team join require the acceptance (400 `legal_acceptance_required`
+without it): the form's box sends each document's version and the SHA-256 of the text it showed, and a version or text
+that is no longer current gets 409 `legal_version_changed` (the form reloads the text - the documents are served
+`no-cache` with an ETag). Accounts created before the flag was on, and everyone after a document changes, see a banner
+after signing in: "I have read and accept" records it, "Later" hides it until the next sign-in (no limit on how often -
+OPEN_QUESTIONS Z10F-7). It is a banner, never a modal or a route gate: positions, exits and every other screen keep
+working. Each acceptance is a row in `ai_acknowledgements` (`kind` = `legal_terms` / `legal_privacy` / `legal_risk`,
+`version`, `text_sha256`, IP, browser, `accepted_at`; kept for good) plus a `legal_accepted` audit row.
 
 **Support bot** (flag `support_bot`, **off by default**; off = `POST /api/ai/support/ask` answers 404 and the help
 button is hidden). How-to answers from `backend/app/support/content/help.md` and, while `legal_pages` is on, the legal
@@ -1397,9 +1399,16 @@ tool that can). Below the confidence floor (`SUPPORT_BOT_MIN_CONFIDENCE`, defaul
 feedback form instead of guessing. With the organisation's own AI provider configured (Settings > AI provider, data
 consent accepted, the user has accepted the AI Copilot acknowledgement, `ai_copilot` on) the provider may reword the
 matching help passage; the reworded text is shown only if it passes the advice / guarantee filter, the banned-word and
-the numbers checks, else the help text is shown. There is no platform key: one organisation's key is never used for
-another. Limits: the AI endpoints' per-user / per-organisation units plus `SUPPORT_BOT_RATE_PER_MINUTE` (default 20)
-per user. Metric: `atp_support_bot_answers_total{outcome,source}`.
+the numbers checks, else the help text is shown. Review H1 hardening: the question is normalised first (NFKC, no
+zero-width characters, Cyrillic/Greek look-alikes mapped); advice is also recognised in Hindi, Hinglish and Marathi and
+in spaced-out words; order and account requests are checked clause by clause; a question with letters outside English
+never goes to the model; and a model text is rejected when it has letters outside English, a ticker or number that is
+not in the help passages (the question is not trusted), a trade verb the top passage does not use, a claimed action
+("I closed", "has been placed"), or fewer than 80 % of its words from the passages. Personal data in the question is
+masked before it is sent. There is no platform key: one organisation's key is never used for
+another. Limits (checked after the flag, so a 404 spends nothing): the AI endpoints' per-user / per-organisation units
+(`AI_RATE_WEIGHTS` "POST support/ask" = 1) plus `SUPPORT_BOT_RATE_PER_MINUTE` (default 20) per user; model tier: the
+`support` task (cheap). Metric: `atp_support_bot_answers_total{outcome,source}`.
 
 To add or fix a help answer, edit `help.md` (one `## ` question per entry, `keywords:`, `page:` = an app path). The
 tests screen every entry through the advice filter.

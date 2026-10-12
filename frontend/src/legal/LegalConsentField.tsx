@@ -12,7 +12,7 @@ export default function LegalConsentField({ checked, onChange, id = "legal-conse
       <input id={id} type="checkbox" required checked={checked} onChange={(e) => onChange(e.target.checked)}
              className="mt-0.5 h-4 w-4 shrink-0 accent-[rgb(var(--brand))]" />
       <label htmlFor={id}>
-        I have read and accept the{" "}
+        I am 18 or older, and I have read and accept the{" "}
         {LEGAL_SLUGS.map((slug, i) => (
           <span key={slug}>
             {i > 0 && (i === LEGAL_SLUGS.length - 1 ? " and " : ", ")}

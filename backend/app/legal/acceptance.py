@@ -13,9 +13,10 @@ locks anyone out: no route depends on it, so positions, exits and every other sc
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Dict, List, Mapping, Optional
+from typing import Any, Dict, List, Mapping, Optional, Tuple, Union
 
 from fastapi import Request
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,9 +36,38 @@ class LegalVersionError(ValueError):
         self.slug, self.sent, self.current = slug, sent, current
 
 
-def check_versions(versions: Mapping[str, str], *, require_all: bool) -> None:
-    """Raises ValueError for an unknown document, LegalVersionError for a stale version; with `require_all`, every
-    document must be in `versions` (sign-up accepts all three at once)."""
+class LegalAck(BaseModel):
+    """What the client read: the version and (review L1) the SHA-256 of the text it showed. A text edited without a
+    version bump then fails the check instead of being accepted under the old reading."""
+    model_config = ConfigDict(extra="forbid")
+    version: str = Field(min_length=1, max_length=24)
+    sha256: Optional[str] = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+
+# slug -> "version" (older clients) or {"version", "sha256"}
+LegalAcceptance = Dict[str, Union[str, LegalAck]]
+
+
+def _split(entries: Mapping[str, Any]) -> Tuple[Dict[str, str], Dict[str, str]]:
+    versions: Dict[str, str] = {}
+    hashes: Dict[str, str] = {}
+    for slug, value in entries.items():
+        if isinstance(value, LegalAck):
+            value = value.model_dump()
+        if isinstance(value, dict):
+            versions[slug] = str(value.get("version") or "")
+            if value.get("sha256"):
+                hashes[slug] = str(value["sha256"])
+        else:
+            versions[slug] = str(value)
+    return versions, hashes
+
+
+def check_versions(entries: Mapping[str, Any], *, require_all: bool) -> Dict[str, str]:
+    """{slug: version} once every named document is known and current. Raises ValueError for an unknown document,
+    LegalVersionError for a stale version or a text hash that is not the current text; with `require_all`, every
+    document must be named (sign-up accepts all three at once)."""
+    versions, hashes = _split(entries)
     docs = documents.documents()
     unknown = sorted(set(versions) - set(docs))
     if unknown:
@@ -49,8 +79,9 @@ def check_versions(versions: Mapping[str, str], *, require_all: bool) -> None:
     if not versions:
         raise ValueError("Name at least one legal document and the version you read")
     for slug, version in versions.items():
-        if version != docs[slug].version:
+        if version != docs[slug].version or (slug in hashes and hashes[slug] != docs[slug].sha256):
             raise LegalVersionError(slug, version, docs[slug].version)
+    return versions
 
 
 async def latest(session: AsyncSession, user: User, slug: str) -> Optional[AiAcknowledgementRecord]:
@@ -75,13 +106,13 @@ async def status(session: AsyncSession, user: User) -> dict:
     return {"documents": rows, "pending": pending, "all_accepted": not pending}
 
 
-async def accept(session: AsyncSession, user: User, versions: Mapping[str, str], *, source: str,
+async def accept(session: AsyncSession, user: User, entries: Mapping[str, Any], *, source: str,
                  request: Optional[Request] = None, require_all: bool = False) -> List[AiAcknowledgementRecord]:
     """Records the acceptance of each named document at its current version (idempotent: a document already accepted at
     this version and text is not recorded twice). Writes one audit row per new acceptance; does not commit."""
     if source not in SOURCES:
         raise ValueError(f"source must be one of {SOURCES}")
-    check_versions(versions, require_all=require_all)
+    versions = check_versions(entries, require_all=require_all)
     ip = request.client.host if request is not None and request.client else None
     agent = (request.headers.get("user-agent") or "")[:300] if request is not None else None
     now = datetime.now(timezone.utc)
@@ -103,4 +134,4 @@ def current_versions() -> Dict[str, str]:
     return {slug: documents.get(slug).version for slug in documents.SLUGS}
 
 
-__all__ = ["LegalVersionError", "accept", "check_versions", "current_versions", "latest", "status"]
+__all__ = ["LegalAck", "LegalAcceptance", "LegalVersionError", "accept", "check_versions", "current_versions", "latest", "status"]

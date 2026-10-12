@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Button } from "../components/primitives";
-import { clearLater, deferLater, deferredFor, laterKey, legalPath, listTitles, versionsFor, type LegalAcceptanceStatus } from "./legal";
+import { clearLater, deferLater, deferredFor, laterKey, legalPath, listTitles, acceptanceFor, type LegalAcceptanceStatus } from "./legal";
 
 /** Z10-f: asks a signed-in user to accept the current Terms of use, Privacy notice and Risk disclosure when they have
  * not yet (accounts from before the pages existed, or after a new version). A notice above the page - never a modal:
@@ -26,7 +26,7 @@ export default function LegalAcceptanceBanner() {
   }, [user, loading]);
 
   if (!user || !status || status.all_accepted || hidden) return null;
-  const versions = versionsFor(status.documents, status.pending);
+  const versions = acceptanceFor(status.documents, status.pending);
   const key = laterKey(user.id, status.pending, versions);
   if (deferredFor(key)) return null;
 

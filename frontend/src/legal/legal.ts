@@ -39,10 +39,13 @@ export function legalPath(slug: LegalSlug): string {
   return `/legal/${slug}`;
 }
 
-/** {slug: version} for the documents named - what the sign-up form and the banner send. */
-export function versionsFor(docs: Pick<LegalSummary, "slug" | "version">[], only?: readonly LegalSlug[]): Record<string, string> {
-  const out: Record<string, string> = {};
-  for (const d of docs) if (!only || only.includes(d.slug)) out[d.slug] = d.version;
+/** What the client read: the version and the SHA-256 of the text it showed (the server refuses a mismatch with 409). */
+export interface LegalAckBody { version: string; sha256: string }
+
+/** {slug: {version, sha256}} for the documents named - what the sign-up form and the banner send. */
+export function acceptanceFor(docs: Pick<LegalSummary, "slug" | "version" | "sha256">[], only?: readonly LegalSlug[]): Record<string, LegalAckBody> {
+  const out: Record<string, LegalAckBody> = {};
+  for (const d of docs) if (!only || only.includes(d.slug)) out[d.slug] = { version: d.version, sha256: d.sha256 };
   return out;
 }
 
@@ -56,8 +59,8 @@ export function listTitles(slugs: readonly LegalSlug[]): string {
 // The banner's "Later" lasts for this browser session only: the next sign-in asks again.
 const LATER_KEY = "atp_legal_later";
 
-export function laterKey(userId: number, pending: readonly LegalSlug[], versions: Record<string, string>): string {
-  return `${userId}:${pending.map((s) => `${s}@${versions[s] ?? ""}`).join(",")}`;
+export function laterKey(userId: number, pending: readonly LegalSlug[], acks: Record<string, LegalAckBody>): string {
+  return `${userId}:${pending.map((s) => `${s}@${acks[s]?.version ?? ""}:${(acks[s]?.sha256 ?? "").slice(0, 12)}`).join(",")}`;
 }
 
 export function deferredFor(key: string): boolean {

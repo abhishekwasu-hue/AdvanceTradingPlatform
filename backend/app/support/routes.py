@@ -2,9 +2,10 @@
 
 * Flag `support_bot` (OFF by default): while it is off for the caller's organisation the route answers 404, like a route
   that does not exist (the frontend hides the help button from `/api/system/features`).
-* Signed-in users only. Rate-limited twice: the AI endpoints' per-user and per-organisation units (`ai_rate_limit`,
-  the router dependency, as on every `/api/ai/*` route) and the bot's own per-user window (`support_rate_limit`,
-  `SUPPORT_BOT_RATE_PER_MINUTE`, default 20).
+* Signed-in users only. The flag is checked first; then it is rate-limited twice: the AI endpoints' per-user and
+  per-organisation units (`ai_rate_limit`, as on every `/api/ai/*` route; `AI_RATE_WEIGHTS` "POST support/ask") and
+  the bot's own per-user window (`support_rate_limit`, `SUPPORT_BOT_RATE_PER_MINUTE`, default 20). Model tier: the
+  `support` task (cheap).
 * BYOK rule, the same as the Copilot's: the only model the bot may use is the caller's organisation's own configured
   provider (`ai.settings.provider_for`: the organisation's key, its data-sharing consent, its plan and AI budget), and
   only once the caller accepted the AI Copilot acknowledgement and the `ai_copilot` flag is on. There is no platform
@@ -37,16 +38,17 @@ def _rate() -> int:
         return 20
 
 
-router = APIRouter(prefix="/api/ai/support", tags=["support"], dependencies=[Depends(ai_rate_limit)])
-# Module-level so tests can target it through `app.dependency_overrides`.
-support_rate_limit = user_rate_limit("support_bot", limit=_rate(), window_seconds=60)
-
-
 async def support_user(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> User:
     """The caller, when the operator has turned `support_bot` on for their organisation; 404 otherwise."""
     if not await flag_enabled(session, FLAG, user.tenant_id):
         raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": FLAG})
     return user
+
+
+# Review L4: the flag is checked first, so a 404 never spends AI or support-bot units.
+router = APIRouter(prefix="/api/ai/support", tags=["support"], dependencies=[Depends(support_user), Depends(ai_rate_limit)])
+# Module-level so tests can target it through `app.dependency_overrides`.
+support_rate_limit = user_rate_limit("support_bot", limit=_rate(), window_seconds=60)
 
 
 class AskBody(BaseModel):
@@ -63,7 +65,7 @@ async def organisation_provider(session: AsyncSession, user: User):
     tenant = await session.get(Tenant, user.tenant_id)
     if tenant is None:
         return None
-    provider = await ai_settings.provider_for(session, tenant, task="knowledge", user_id=user.id)
+    provider = await ai_settings.provider_for(session, tenant, task="support", user_id=user.id)
     return None if getattr(provider, "name", "rule_based") == "rule_based" else provider
 
 
@@ -71,7 +73,8 @@ async def organisation_provider(session: AsyncSession, user: User):
 async def ask(body: AskBody, user: User = Depends(support_user), session: AsyncSession = Depends(get_session)) -> dict:
     provider = await organisation_provider(session, user)
     out = await bot.reply(body.question, provider=provider, include_legal=await legal.enabled(session, user.tenant_id))
-    if provider is not None and (out.get("source") == "ai" or out.get("note")):      # the provider was called
-        await ai_settings.mark_used(session, user.tenant_id, error=None if out.get("source") == "ai" else out.get("note"))
+    called, error = out.pop("_ai_called", False), out.pop("_ai_error", None)
+    if provider is not None and called:
+        await ai_settings.mark_used(session, user.tenant_id, error=error)
         await session.commit()
     return out

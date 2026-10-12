@@ -31,6 +31,7 @@ from app.secrets_store.envelope import ensure_tenant_key
 from app.auth import verification
 from app.platform.controls import flag_enabled
 from app.legal import acceptance as legal_acceptance
+from app.legal.acceptance import LegalAcceptance
 from app.legal import enabled as legal_enabled
 from app.legal.routes import version_conflict as legal_version_conflict
 
@@ -62,22 +63,22 @@ class RegisterRequest(BaseModel):
     # Z10-f: {slug: version} of the Terms of use, Privacy notice and Risk disclosure the person read and accepted on the
     # sign-up form (all three, current versions). Read only while the `legal_pages` flag is on (ignored otherwise);
     # recorded with the account; without it the next sign-in asks.
-    legal_acceptance: Optional[Dict[str, str]] = Field(default=None, max_length=3)
+    legal_acceptance: Optional[LegalAcceptance] = Field(default=None, max_length=3)
 
 
-async def _legal_versions(session: AsyncSession, versions: Optional[Dict[str, str]], tenant_id: Optional[int] = None) -> Optional[Dict[str, str]]:
+async def _legal_versions(session: AsyncSession, entries: Optional[LegalAcceptance], tenant_id: Optional[int] = None) -> Optional[Dict[str, str]]:
     """Z10-f: the acceptance to record with a new account, or None. While the `legal_pages` flag is off it is ignored
-    (not checked, not recorded - sign-up is exactly as before). When on, it must name all three documents at their
-    current versions - checked before anything is written (a stale page gets 409 and reloads the text)."""
-    if versions is None or not await legal_enabled(session, tenant_id):
+    (not checked, not recorded - sign-up is exactly as before). While it is on it is required (review M1: 400
+    `legal_acceptance_required`) and must name all three documents at their current versions and text - checked before
+    anything is written (a stale page gets 409 and reloads the text)."""
+    if not await legal_enabled(session, tenant_id):
         return None
-    _check_legal(versions)
-    return versions
-
-
-def _check_legal(versions: Dict[str, str]) -> None:
+    if entries is None:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={
+            "code": "legal_acceptance_required",
+            "message": "Read and accept the Terms of use, Privacy notice and Risk disclosure to create an account"})
     try:
-        legal_acceptance.check_versions(versions, require_all=True)
+        return legal_acceptance.check_versions(entries, require_all=True)
     except legal_acceptance.LegalVersionError as exc:
         raise legal_version_conflict(exc) from None
     except ValueError as exc:
@@ -309,7 +310,7 @@ class InviteInfoResponse(BaseModel):
 
 class AcceptInviteRequest(BaseModel):
     password: str = Field(min_length=MIN_LENGTH, max_length=MAX_LENGTH)
-    legal_acceptance: Optional[Dict[str, str]] = Field(default=None, max_length=3)     # Z10-f, as on RegisterRequest
+    legal_acceptance: Optional[LegalAcceptance] = Field(default=None, max_length=3)     # Z10-f, as on RegisterRequest
 
 
 def _as_utc(value: datetime) -> datetime:

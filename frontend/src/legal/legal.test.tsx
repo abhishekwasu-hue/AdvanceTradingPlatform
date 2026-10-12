@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 import LegalConsentField from "./LegalConsentField";
 import { LegalNav, LegalView } from "./LegalPage";
-import { LEGAL_SLUGS, isLegalSlug, laterKey, legalPath, listTitles, versionsFor, type LegalDocument } from "./legal";
+import { LEGAL_SLUGS, isLegalSlug, laterKey, legalPath, listTitles, acceptanceFor, type LegalDocument } from "./legal";
 import { Markdown, parseBlocks, parseInline, safeHref } from "./markdown";
 
 const BODY = `> **Draft — to be reviewed by a lawyer before launch.** Text in [SQUARE BRACKETS] is a placeholder.
@@ -37,10 +37,11 @@ describe("legal helpers (Z10-f)", () => {
     expect(isLegalSlug(undefined)).toBe(false);
   });
 
-  it("sends the version of each accepted document, optionally only the pending ones", () => {
-    const docs = [{ slug: "terms" as const, version: "2026-10-11" }, { slug: "risk" as const, version: "2026-10-12" }];
-    expect(versionsFor(docs)).toEqual({ terms: "2026-10-11", risk: "2026-10-12" });
-    expect(versionsFor(docs, ["risk"])).toEqual({ risk: "2026-10-12" });
+  it("sends the version and text hash of each accepted document, optionally only the pending ones", () => {
+    const docs = [{ slug: "terms" as const, version: "2026-10-11", sha256: "a".repeat(64) },
+                  { slug: "risk" as const, version: "2026-10-12", sha256: "b".repeat(64) }];
+    expect(acceptanceFor(docs)).toEqual({ terms: { version: "2026-10-11", sha256: "a".repeat(64) }, risk: { version: "2026-10-12", sha256: "b".repeat(64) } });
+    expect(acceptanceFor(docs, ["risk"])).toEqual({ risk: { version: "2026-10-12", sha256: "b".repeat(64) } });
   });
 
   it("names the pending documents in a sentence", () => {
@@ -48,10 +49,12 @@ describe("legal helpers (Z10-f)", () => {
     expect(listTitles(["risk"])).toBe("Risk disclosure");
   });
 
-  it("'Later' is tied to the user and the versions, so a new version asks again", () => {
-    const a = laterKey(7, ["terms"], { terms: "2026-10-11" });
-    expect(a).not.toBe(laterKey(7, ["terms"], { terms: "2026-12-01" }));
-    expect(a).not.toBe(laterKey(8, ["terms"], { terms: "2026-10-11" }));
+  it("'Later' is tied to the user, the version and the text, so a new version or an edit asks again", () => {
+    const ack = (version: string, sha256 = "a".repeat(64)) => ({ terms: { version, sha256 } });
+    const a = laterKey(7, ["terms"], ack("2026-10-11"));
+    expect(a).not.toBe(laterKey(7, ["terms"], ack("2026-12-01")));
+    expect(a).not.toBe(laterKey(7, ["terms"], ack("2026-10-11", "c".repeat(64))));
+    expect(a).not.toBe(laterKey(8, ["terms"], ack("2026-10-11")));
   });
 });
 
@@ -70,6 +73,7 @@ describe("the legal Markdown subset", () => {
     expect(safeHref("javascript:alert(1)")).toBeNull();
     expect(safeHref("//evil.example")).toBeNull();
     expect(safeHref("http://plain.example")).toBeNull();
+    expect(safeHref("/\\evil.example")).toBeNull();          // "/\host" is protocol-relative in browsers
     const parts = parseInline("[click](javascript:void0) and [ok](/legal/terms)");
     expect(parts.filter((p) => p.kind === "link")).toEqual([{ kind: "link", text: "ok", href: "/legal/terms" }]);
     expect(parts[0]).toEqual({ kind: "text", text: "click" });
@@ -122,6 +126,7 @@ describe("legal page render and accessibility", () => {
     for (const slug of LEGAL_SLUGS) expect(box).toContain(`href="/legal/${slug}"`);
     expect(box.match(/target="_blank"/g)).toHaveLength(3);
     expect(box.match(/rel="noopener"/g)).toHaveLength(3);
+    expect(box).toContain("I am 18 or older");
     expect(box).toContain("paper only");
     expect(box).toContain("no investment advice");
   });

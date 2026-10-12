@@ -8,7 +8,7 @@ import MfaCard from "../components/MfaCard";
 import { Card } from "../components/ui";
 import { LogoMark } from "../components/Logo";
 import LegalConsentField from "../legal/LegalConsentField";
-import { versionsFor, type LegalSummary } from "../legal/legal";
+import { acceptanceFor, type LegalSummary } from "../legal/legal";
 
 export default function AccountPage() {
   const { user, login, completeMfaLogin, register, acceptInvite, resetPassword, logout, refreshUser } = useAuth();
@@ -206,19 +206,20 @@ export default function AccountPage() {
       } else if (mode === "mfa" && mfaToken) {
         await completeMfaLogin(mfaToken, mfaCode);
       } else if (mode === "invite" && inviteToken) {
-        await acceptInvite(inviteToken, password, legalDocs && legalAccepted ? versionsFor(legalDocs) : undefined);
+        await acceptInvite(inviteToken, password, legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined);
       } else if (mode === "reset" && resetToken) {
         await resetPassword(resetToken, password);
       } else if (mode === "forgot") {
         const result = await api.forgotPassword(email);
         setNotice(result.detail);
       } else {
-        await register(email, password, betaCode.trim() || undefined, legalDocs && legalAccepted ? versionsFor(legalDocs) : undefined);
+        await register(email, password, betaCode.trim() || undefined, legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined);
       }
     } catch (err) {
       if (mode === "register" && err instanceof ApiError && /"code"\s*:\s*"beta_(invite|cohort)_/.test(err.body)) setBetaField(true);
       // Z10-f: a document changed while the form was open - load the new versions and ask to read them again.
-      if (err instanceof ApiError && err.body.includes("legal_version_changed")) {
+      // (or the list did not load although the server now requires the acceptance - load it and show the box).
+      if (err instanceof ApiError && (err.body.includes("legal_version_changed") || err.body.includes("legal_acceptance_required"))) {
         setLegalAccepted(false);
         setLegalDocs(null);
       }

@@ -182,3 +182,42 @@ def test_weekly_bars_leave_the_forming_week_out():
     assert (weeks["bar_end"].diff().dropna() > pd.Timedelta(days=3)).all() and weeks["high"].max() == d[
         d["timestamp"] < weeks["bar_end"].iloc[-1] + pd.Timedelta(minutes=1)]["high"].max()
     assert len(G.load("session_15m")) == len(F)
+
+
+def test_replay_steps_reuse_the_top_down_rows(headers, monkeypatch):
+    """Each top-down row is cached by its own bars: stepping 15 minutes recomputes the 15m row (a new bar), the 1H row
+    only when an hour closed, and the D / W rows not at all within the session."""
+    calls = []
+    real = PC.mtf_row
+
+    def spy(frame, tf, source):
+        calls.append(tf)
+        return real(frame, tf, source)
+    monkeypatch.setattr(PC, "mtf_row", spy)
+    day = F["timestamp"].dt.tz_convert(IST).dt.date
+    same_day = F.index[day == day.iloc[300]]
+    steps = [i for i in range(int(same_day[4]), int(same_day[4]) + 8)]
+    first = None
+    for i in steps:
+        body = _get(headers, at=_iso(F["bar_end"].iloc[i]), mtf="true")
+        first = first or body["mtf"]
+    assert calls.count("15m") == len(steps)                                       # a new 15m bar every step
+    assert calls.count("1d") == 1 and calls.count("1w") == 1                       # no daily / weekly bar closed meanwhile
+    assert 1 <= calls.count("1h") <= 3                                             # 8 x 15m spans at most 3 hours
+    # a cached row is the same row: the later steps' D / W rows equal the first step's
+    assert body["mtf"][0] == first[0] and body["mtf"][1] == first[1]
+
+
+def test_a_daily_chart_reads_the_daily_bars_once(headers, monkeypatch):
+    from app.charts import price_action_layer as PAL
+    seen = []
+    real = PAL._fetch
+
+    async def spy(session, key, label, start, end, limit):
+        seen.append(label)
+        return await real(session, key, label, start, end, limit)
+    monkeypatch.setattr(PAL, "_fetch", spy)
+    body = _get(headers, tf="1d", at=_iso(F["bar_end"].iloc[-1]), start=_iso(F["timestamp"].iloc[0] - pd.Timedelta(days=2)))
+    assert body["source"] == "lake:1d" and seen.count("1d") == 1, seen
+    rows = {r["tf"]: r for r in body["mtf"]}
+    assert rows["1d"]["source"] == "lake:1d" and rows["1w"]["source"] == "lake:1d" and rows["1d"]["bars"] > 0

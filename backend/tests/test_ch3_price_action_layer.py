@@ -355,8 +355,8 @@ def test_requests_are_rate_limited_per_user(owner, monkeypatch):
     headers, _ = owner
     other, _ = _owner(f"ch3-rate-{uuid.uuid4().hex[:10]}@example.com")
     params = {"instrument": EMPTY, "at": _iso(F["bar_end"].iloc[-1])}
-    codes = [client.get(URL, params=params, headers=headers).status_code for _ in range(122)]
-    assert codes.count(200) == 120 and codes[-1] == 429
+    codes = [client.get(URL, params=params, headers=headers).status_code for _ in range(62)]
+    assert codes.count(200) == 60 and codes[-1] == 429
     assert client.get(URL, params=params, headers=other).status_code == 200
 
 

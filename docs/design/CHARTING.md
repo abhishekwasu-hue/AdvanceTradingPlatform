@@ -382,6 +382,11 @@ own output on the frozen fixtures, checked against Trade live when the repositor
 - No look-ahead: the truncation-invariance test now also covers leg classes and structure events; the API test alters
   and adds later bars on every top-down timeframe and the whole answer at `at` stays byte-identical; replay only adds
   structure events and a confirmed leg keeps its class. Open questions CH3-4, CH3-7, CH3-8.
+- **Review follow-up (#218).** Each top-down row is cached by (instrument, timeframe, window start on a fixed grid, the
+  lake label and a probe of its rows: newest END, count, highest version), so a replay step recomputes only the rows
+  whose bars changed (tested: 8 x 15m steps compute D and W once); at most 2 layer / row computations at once per
+  process; the layer cache is bounded by bytes and never holds debug answers; 60 requests a minute per user; a
+  top-down row over 5,000 bars is refused, not cut; a daily chart reads its daily bars once for the chart and D / W.
 
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:

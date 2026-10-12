@@ -162,3 +162,29 @@ def test_container_command_and_sizes():
     assert workers == 2                                                       # KVM 2: one per vCPU
     # API pools + the trading worker's and the research worker's default pools (5 + 10 each) + Postgres' 3 reserved
     assert workers * (pool + overflow) + 2 * 15 + 3 <= max_connections
+
+
+# --- the public status: a few seconds per process ----------------------------------------------------------------------
+
+def test_public_status_is_cached_briefly_and_dropped_on_an_admin_change(monkeypatch):
+    from sqlalchemy import event
+
+    from app.platform import routes as platform_routes
+    from tests.test_auth_api import _engine
+    statements: list = []
+
+    def count(conn, cursor, statement, params, context, many):
+        statements.append(statement)
+    event.listen(_engine.sync_engine, "before_cursor_execute", count)
+    try:
+        first = client.get("/api/system/status").json()
+        assert statements                                          # read from the database
+        statements.clear()
+        assert client.get("/api/system/status").json() == first
+        assert statements == []                                    # served from the cache
+        monkeypatch.setattr(platform_routes, "STATUS_CACHE_SECONDS", 0.0)
+        client.get("/api/system/status")
+        assert statements                                          # expired: read again
+    finally:
+        event.remove(_engine.sync_engine, "before_cursor_execute", count)
+

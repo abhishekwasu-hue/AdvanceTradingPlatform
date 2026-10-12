@@ -220,7 +220,7 @@ async def login(request: LoginRequest, http_request: Request, response: Response
         await session.commit()
         raise HTTPException(status_code=refused.status_code, detail=refused.reason,
                             headers={"Retry-After": str(refused.retry_after)} if refused.retry_after else None)
-    if captcha.required(await recent_failures(session, email)):
+    if captcha.configured() and captcha.required(await recent_failures(session, email)):   # LD-7: no count without a captcha
         ip = http_request.client.host if http_request.client else None
         if not await captcha.verify(request.captcha_token, ip):
             await record_login_event(session, email=email, user=None, success=False, reason="captcha", request=http_request)

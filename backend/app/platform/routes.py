@@ -1,5 +1,7 @@
 """Phase M / V4.13 endpoints: public status, admin controls, per-user trading disable."""
-from typing import Dict, List, Optional
+import copy
+import time
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -47,13 +49,28 @@ class RiskCeilingsBody(BaseModel):
     values: Dict[str, float] = Field(default_factory=dict, max_length=10)
 
 
+# LD-7: every open page polls the public status (7 queries: two controls, five holiday lists), and the answer is the same
+# for everyone. Each API process keeps it for a few seconds; an admin change made through this process drops it at once,
+# the other processes follow within the TTL. Display only: the maintenance gate itself (entries) reads the control.
+STATUS_CACHE_SECONDS = 5.0
+_status_cache: Dict[str, Any] = {}
+
+
+def forget_status() -> None:
+    _status_cache.clear()
+
+
 @status_router.get("/status")
 async def system_status(session: AsyncSession = Depends(get_session)) -> dict:
     """Unauthenticated: the frontend banner reads it before login too."""
+    hit = _status_cache.get("body")
+    if hit is not None and time.monotonic() - _status_cache["at"] < STATUS_CACHE_SECONDS:
+        return copy.deepcopy(hit)
     from app.market_data.calendar import all_session_statuses
     result = await controls.status(session)
     result["sessions"] = {name: {"is_open": st.is_open, "reason": st.reason, "next_open": st.next_open.isoformat() if st.next_open else None}
                           for name, st in (await all_session_statuses(session)).items()}
+    _status_cache.update(at=time.monotonic(), body=copy.deepcopy(result))
     return result
 
 
@@ -64,12 +81,20 @@ async def get_controls(session: AsyncSession = Depends(get_session)) -> dict:
 
 @admin_router.put("/maintenance")
 async def put_maintenance(body: MaintenanceBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
-    return await controls.set_maintenance(session, user, on=body.on, message=body.message)
+    forget_status()
+    try:
+        return await controls.set_maintenance(session, user, on=body.on, message=body.message)
+    finally:
+        forget_status()
 
 
 @admin_router.put("/brokers")
 async def put_brokers(body: BrokersBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
-    return await controls.set_disabled_brokers(session, user, body.names)
+    forget_status()
+    try:
+        return await controls.set_disabled_brokers(session, user, body.names)
+    finally:
+        forget_status()
 
 
 @admin_router.get("/risk-ceilings")

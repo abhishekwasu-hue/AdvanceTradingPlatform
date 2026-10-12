@@ -74,13 +74,17 @@ def _add(*rows):
 def test_brief_endpoint_explains_the_day_and_the_deployments():
     headers, tenant_id, user_id = _tenant("copilot-brief@example.com")
     now = datetime.now(UTC)
+    ist = timezone(timedelta(hours=5, minutes=30))
+    ist_midnight = datetime.now(ist).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
+    entry_at = max(now - timedelta(minutes=30), ist_midnight + timedelta(seconds=1))   # both inside today's IST day, even
+    exit_at = max(now - timedelta(minutes=5), min(entry_at + timedelta(seconds=1), now))  # just after IST midnight
     _add(MarketSnapshotRecord(tenant_id=tenant_id, kind="SYMBOL", symbol="NIFTY 50", exchange="NSE", timeframe="5min", source="upstox",
                               bias="NEUTRAL", regime="RANGING", higher_regime="RANGING", structure="RANGE", last_price=25000, change_pct=0.1,
                               payload_json="{}", captured_at=now),
          StrategyDeploymentRecord(tenant_id=tenant_id, strategy_id="ema_rsi_scalper_1m", symbol="NIFTY 50", exchange="NSE", timeframe="1min",
                                   mode="PAPER", status="ACTIVE"),
          TradeRecord(tenant_id=tenant_id, user_id=user_id, mode="PAPER", symbol="NIFTY 50", strategy_id="x", direction="LONG",
-                     entry_time=now - timedelta(minutes=30), entry_price=100, quantity=10, stop_loss=99, exit_time=now - timedelta(minutes=5),
+                     entry_time=entry_at, entry_price=100, quantity=10, stop_loss=99, exit_time=exit_at,
                      exit_price=98, pnl=-500.0))
     r = client.get("/api/ai/brief?language=mr", headers=headers)
     assert r.status_code == 200, r.text

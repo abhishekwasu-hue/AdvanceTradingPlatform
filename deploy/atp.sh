@@ -28,9 +28,12 @@
 #     that is not ROLLBACK_SAFE (backend/scripts/migration_rollback_safety.py);
 #   * the worker is not restarted while any exchange session is open and positions are open (the app's own calendar,
 #     backend/scripts/session_check.py), unless ATP_ALLOW_SESSION_RESTART=1;
-#   * feature flags and every LIVE switch are left exactly as they are (compared before and after a deploy); `health`
-#     and `install` ask the owner to act (exit 10) while live_trading is on or phase0_paper_only is off; profiles come
-#     only from COMPOSE_PROFILES in .env;
+#   * feature flags and every LIVE switch are left exactly as they are (compared before and after a deploy - the one
+#     change allowed is the release's own Phase 0 first-boot seed of a flag that had no entry: live_trading OFF,
+#     phase0_paper_only ON); the host runs with ATP_DEPLOYMENT_PHASE=phase0 (default; .env may name another mode only
+#     when the owner ends Phase 0), so a fresh install starts PAPER-only with nothing for the owner to set; `health`
+#     and `install` still ask the owner to act (exit 10) if live_trading is on or phase0_paper_only is off; profiles
+#     come only from COMPOSE_PROFILES in .env;
 #   * idempotent: running a command again converges on the same state.
 #
 # Exit codes: 0 ok | 1 failed | 2 usage | 3 refused: market session (migration / restart) | 10 owner action needed |
@@ -59,6 +62,8 @@ RELEASE=""          # image tag compose uses (ATP_RELEASE)
 DB_AHEAD=""         # MIGRATION_ALLOW_DB_AHEAD for compose: the exact database revision an older image may start on
 RESTORE_CHECKOUT="" # on a failed exit, the checkout goes back to this commit (the release that still runs)
 SCRATCH_DB=""       # a verify copy to drop on exit
+VERIFY_ROLE="atp_restore"  # the non-superuser role verify_backup.sh restores the copy as (its VERIFY_RESTORE_ROLE default)
+VERIFY_ROLE_LOGIN=0 # 1 while that role can log in for the audit-chain check; NOLOGIN again on exit
 WORKER_STARTED=0    # epoch when this run restarted the worker; health then wants a heartbeat newer than that
 OWNER_ACTION=""     # what health found that only the owner can do (exit 10)
 WARNS=0
@@ -77,6 +82,7 @@ on_err() { [ "$BASHPID" = "$$" ] || return 0; printf '\nFAILED: a command failed
 on_exit() {
   local rc=$?
   [ "$BASHPID" = "$$" ] || return 0
+  if [ "$VERIFY_ROLE_LOGIN" = "1" ]; then verify_role_login "" || true; fi
   if [ -n "$SCRATCH_DB" ]; then
     dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres -c "DROP DATABASE IF EXISTS \"$SCRATCH_DB\"" >/dev/null 2>&1 || true
   fi
@@ -129,6 +135,8 @@ is_true() { case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in 1|true|ye
 pg_user() { local v; v="$(env_get POSTGRES_USER)"; printf '%s' "${v:-atp_user}"; }
 pg_db()   { local v; v="$(env_get POSTGRES_DB)"; printf '%s' "${v:-advance_trading_platform}"; }
 research_on() { case ",$(env_get COMPOSE_PROFILES)," in *,research,*) return 0 ;; esac; return 1; }
+# Phase 0 deployment defaults (backend/app/platform/deployment_phase.py): phase0 unless .env names another mode.
+deployment_phase() { local v; v="$(env_get ATP_DEPLOYMENT_PHASE)"; printf '%s' "${v:-phase0}"; }
 
 # --- state (.deploy/, never secret) ------------------------------------------------------------------------------
 state_init() { [ "$DRY_RUN" = "1" ] || mkdir -p "$STATE_DIR/logs"; }
@@ -153,7 +161,7 @@ log_release() { [ "$DRY_RUN" = "1" ] || { state_init; printf '%s %s\n' "$(date -
 dc() {
   local ahead="$DB_AHEAD"
   if [ -z "$ahead" ] && db_ahead_marker; then ahead="$(cat "$STATE_DIR/db_ahead")"; fi
-  (cd "$ATP_DIR" && ATP_RELEASE="${RELEASE:-latest}" MIGRATION_ALLOW_DB_AHEAD="$ahead" \
+  (cd "$ATP_DIR" && ATP_RELEASE="${RELEASE:-latest}" MIGRATION_ALLOW_DB_AHEAD="$ahead" ATP_DEPLOYMENT_PHASE="$(deployment_phase)" \
     docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
     -f deploy/compose.release.yml -p "$PROJECT" "$@")
 }
@@ -164,6 +172,15 @@ dc_as() { local keep="$RELEASE" rc=0; RELEASE="$1"; shift; dc "$@" || rc=$?; REL
 psql_q() {
   dc exec -T postgres psql -X -A -t -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d "${2:-$(pg_db)}" -c "$1" 2>/dev/null
 }
+# Z11: lets the verify role log in with a one-run password ($1), or makes it NOLOGIN again ($1 empty). The SQL goes to
+# psql on stdin, so the password never reaches an argv.
+verify_role_login() {
+  if [ -n "$1" ]; then
+    printf 'ALTER ROLE "%s" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '"'"'%s'"'"';\n' "$VERIFY_ROLE" "$1"
+  else
+    printf 'ALTER ROLE "%s" NOLOGIN PASSWORD NULL;\n' "$VERIFY_ROLE"
+  fi | dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres >/dev/null 2>&1
+}
 # "-" = no schema yet; "unknown" = the database could not be read (callers fail closed on it).
 db_revision() {
   local db="${1:-$(pg_db)}" reg r
@@ -173,13 +190,42 @@ db_revision() {
   printf '%s' "${r:--}"
 }
 code_head() { { dc run --rm --no-deps -T backend python -m alembic heads 2>/dev/null || true; } | awk '/\(head\)/ {print $1}' | sort | paste -sd, -; }
-# no-table | none (no flags row) | <md5 of the flags row> | unknown (could not read - a failure, never "unchanged")
-flags_fingerprint() {
+# no-table | none (no flags row) | the flags row as stored (JSON; flag names and switches, never a secret) |
+# unknown (could not read - a failure, never "unchanged")
+flags_snapshot() {
   local reg h
   reg="$(psql_q "select coalesce(to_regclass('public.platform_controls')::text, '')")" || { printf 'unknown'; return 0; }
   [ -n "$reg" ] || { printf 'no-table'; return 0; }
-  h="$(psql_q "select md5(value_json) from platform_controls where key = 'feature_flags'")" || { printf 'unknown'; return 0; }
+  h="$(psql_q "select value_json from platform_controls where key = 'feature_flags'")" || { printf 'unknown'; return 0; }
   printf '%s' "${h:-none}"
+}
+# Before/after a deploy: "unchanged", "seeded <names>" (only the Phase 0 first-boot seed added entries that were absent:
+# live_trading {"on": false}, phase0_paper_only {"on": true}, no organisation list - the restrictive direction), or
+# "changed" (anything else, including an unreadable row).
+flags_change() {
+  FLAGS_BEFORE="$1" FLAGS_AFTER="$2" python3 -c 'import json, os
+SEED = {"live_trading": {"on": False, "tenants": []}, "phase0_paper_only": {"on": True, "tenants": []}}
+def load(v):
+    if v in ("no-table", "none", ""):
+        return {}
+    d = json.loads(v)
+    if not isinstance(d, dict):
+        raise ValueError(v)
+    return d
+try:
+    b, a = load(os.environ["FLAGS_BEFORE"]), load(os.environ["FLAGS_AFTER"])
+except Exception:
+    print("changed"); raise SystemExit(0)
+if a == b:
+    print("unchanged"); raise SystemExit(0)
+bf, af = dict(b.get("flags") or {}), dict(a.get("flags") or {})
+added = sorted(k for k in af if k not in bf)
+same_rest = {k: v for k, v in b.items() if k != "flags"} == {k: v for k, v in a.items() if k != "flags"}
+kept = all(af.get(k) == v for k, v in bf.items())
+if same_rest and kept and added and all(af[k] == SEED.get(k) for k in added):
+    print("seeded " + ",".join(added))
+else:
+    print("changed")'
 }
 images_exist() {
   local img imgs=(atp-backend atp-worker atp-frontend atp-backup)
@@ -534,11 +580,17 @@ report_flags() {
     OWNER_ACTION="${OWNER_ACTION:+$OWNER_ACTION; }confirm in Admin > Controls that live_trading is off"
     report_settings; return 0
   fi
-  read -r live live_tenants po_known po_on stored < <(printf '%s' "$js" | python3 -c 'import json, sys
+  read -r live live_tenants po_known po_on stored phase < <(printf '%s' "$js" | python3 -c 'import json, sys
 d = json.load(sys.stdin)
 lt, po = d.get("live_trading") or {}, d.get("phase0_paper_only") or {}
-print(int(bool(lt.get("on", True))), int(lt.get("tenants") or 0), int(bool(po.get("known"))), int(bool(po.get("on"))), ",".join(d.get("stored_on") or []) or "none")')
+print(int(bool(lt.get("on", True))), int(lt.get("tenants") or 0), int(bool(po.get("known"))), int(bool(po.get("on"))), ",".join(d.get("stored_on") or []) or "none",
+      "".join(ch for ch in str(d.get("deployment_phase") or "-") if ch.isalnum() or ch in "_-")[:20] or "-")')
   info "flags stored on: $stored"
+  case "$phase" in
+    phase0) ok "deployment phase: phase0 (first boot seeds live_trading OFF and phase0_paper_only ON - nothing for the owner to set)" ;;
+    -) info "deployment phase: not reported by this release" ;;
+    *) warn "deployment phase: $phase (ATP_DEPLOYMENT_PHASE in .env) - the Phase 0 defaults are not seeded on this host" ;;
+  esac
   if [ "$live" = "1" ] || [ "$live_tenants" != "0" ]; then
     if [ "$live" = "1" ]; then warn "live_trading is ON for everyone: Phase 0 has no LIVE"; else warn "live_trading is ON for $live_tenants organisation(s): Phase 0 has no LIVE"; fi
     OWNER_ACTION="${OWNER_ACTION:+$OWNER_ACTION; }turn live_trading OFF in Admin > Controls"
@@ -559,7 +611,8 @@ health_summary() {
   printf 'health: OK - %s warning(s)\n' "$WARNS"
 }
 
-# Owner action left (exit 10): flags only the owner may change. Nothing here changes them.
+# Owner action left (exit 10): flags only the owner may change. Nothing here changes them (the Phase 0 seed is the
+# release's own first boot, not this script).
 owner_action_exit() {
   [ -n "$OWNER_ACTION" ] || return 0
   printf '\nOWNER ACTION NEEDED: %s (runbook section 4a). This script never changes a flag.\n' "$OWNER_ACTION"
@@ -666,7 +719,7 @@ cmd_deploy() {
     before="$(db_revision)"; head="$(code_head)"
     [ "$before" != "unknown" ] || die "cannot read the database revision - nothing was changed" 1
     [ -n "$head" ] || die "could not read the alembic head from atp-backend:$RELEASE" 1
-    flags_before="$(flags_fingerprint)"
+    flags_before="$(flags_snapshot)"
     [ "$flags_before" != "unknown" ] || die "cannot read the feature flags - nothing was changed" 1
     info "database at ${before}, code head ${head}"
     if [ "$before" = "$head" ]; then
@@ -742,10 +795,16 @@ cmd_deploy() {
   step "health"
   if [ "$DRY_RUN" != "1" ]; then
     health_until_ok
-    local flags_after; flags_after="$(flags_fingerprint)"
+    local flags_after change; flags_after="$(flags_snapshot)"
     if [ "$flags_before" = "unknown" ] || [ "$flags_after" = "unknown" ]; then bad "could not read the feature flags before/after the deploy - check Admin > Controls"
-    elif [ "$flags_before" = "$flags_after" ] || { [ "$flags_before" = "no-table" ] && [ "$flags_after" = "none" ]; }; then ok "feature flags unchanged by the deploy"
-    else bad "feature flags CHANGED during the deploy ($flags_before -> $flags_after) - check Admin > Controls and the audit log"; fi
+    else
+      change="$(flags_change "$flags_before" "$flags_after")"
+      case "$change" in
+        unchanged) ok "feature flags unchanged by the deploy" ;;
+        seeded\ *) ok "feature flags unchanged by the deploy, except the Phase 0 first-boot seed of ${change#seeded } (live_trading OFF, phase0_paper_only ON; audited as phase0_flag_seeded)" ;;
+        *) bad "feature flags CHANGED during the deploy - check Admin > Controls and the audit log" ;;
+      esac
+    fi
   else
     info "would run every health check and compare the feature flags before/after"
   fi
@@ -1118,13 +1177,25 @@ except Exception:
     c = {}
 if c:
     print("    rows (copy / live): " + ", ".join("%s %s/%s" % (t, v.get("copy"), v.get("source")) for t, v in c.items()))'
-  local chain="not_run"
+  local chain="not_run" verify_pw
   if [ -n "$SCRATCH_DB" ] && [ "$status" != "restore_failed" ] && [ "$status" != "none" ]; then
-    # shellcheck disable=SC2016  # expands inside the backend container (its own DATABASE_URL, never printed)
-    if dc run --rm --no-deps -T -e ATP_VERIFY_DB="$SCRATCH_DB" backend sh -c \
-      'DATABASE_URL="${DATABASE_URL%/*}/$ATP_VERIFY_DB" python -m app.audit.verify_chain' >/dev/null 2>&1; then
-      chain="intact"; ok "audit hash chain intact in the restored copy"
-    else chain="broken"; bad "audit hash chain does NOT verify in the restored copy"; fi
+    # Z11: the chain check reads the copy logged in AS the role that restored it (owner of every object in it), never as
+    # the superuser: a view or function the archive created runs with the reader's rights. The role gets a fresh password
+    # for this check only (handed to the container through the environment, not argv) and is NOLOGIN again right after.
+    verify_pw="$(openssl rand -hex 24)"
+    VERIFY_ROLE_LOGIN=1   # before the call: if it half-succeeds (or the run stops there), on_exit still sets NOLOGIN
+    if verify_role_login "$verify_pw"; then
+      # shellcheck disable=SC2016  # expands inside the backend container (its own DATABASE_URL, never printed)
+      if ATP_VERIFY_PW="$verify_pw" dc run --rm --no-deps -T -e ATP_VERIFY_DB="$SCRATCH_DB" -e ATP_VERIFY_ROLE="$VERIFY_ROLE" -e ATP_VERIFY_PW \
+        backend sh -c 'u="${DATABASE_URL%/*}"; case "$u" in *@*) ;; *) exit 1 ;; esac
+          DATABASE_URL="${u%%://*}://$ATP_VERIFY_ROLE@${u##*@}/$ATP_VERIFY_DB" PGPASSWORD="$ATP_VERIFY_PW" python -m app.audit.verify_chain' >/dev/null 2>&1; then
+        chain="intact"; ok "audit hash chain intact in the restored copy (read as $VERIFY_ROLE)"
+      else chain="broken"; bad "audit hash chain does NOT verify in the restored copy"; fi
+      if verify_role_login ""; then VERIFY_ROLE_LOGIN=0; else warn "could not make $VERIFY_ROLE NOLOGIN again - retried on exit"; fi
+    else
+      chain="not_checked"; bad "audit chain: could not let $VERIFY_ROLE log in to read the restored copy - not checked as the superuser"
+      if verify_role_login ""; then VERIFY_ROLE_LOGIN=0; fi
+    fi
   else info "audit chain: not run (nothing restored)"; fi
   if [ -n "$SCRATCH_DB" ]; then
     dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres -c "DROP DATABASE IF EXISTS \"$SCRATCH_DB\"" >/dev/null 2>&1 || true

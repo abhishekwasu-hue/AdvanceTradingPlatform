@@ -106,6 +106,12 @@ _DONE = re.compile(
     r"modified|booked|submitted|filled|opened|entered)\b"
     r"|\b(?:is|are)\s+now\s+(?:closed|open|placed|cancel{1,2}ed|squared|flat)\b|^\W*done\b|\b(?:your|the)\s+(?:p\s*&\s*l|pnl)\s+(?:is|was)\b",
     re.I)
+# Support only: evaluative wording an answer about using the platform never needs ("a good idea", "worth it", "the
+# upside", "pick the strongest", "go all in"). The help pages have none of it; an AI rewording with it is dropped and
+# the help text shown instead - so the list errs wide: "all in" counts even in "all in one place" (the cost is only that
+# the help text is shown verbatim; the question guard reads "all in" narrowly, since there a match is a refusal).
+_EVALUATIVE = re.compile(r"\bgood\s+idea\b|\bupside\b|\bpick\s+the\b|\bworth\w*\b|\battractive\w*\b"
+                         r"|\b(?:go\s+)?all[\s-]+in\b", re.I)
 MIN_PASSAGE_WORDS = 0.8          # share of the answer's content words that must come from the passages
 
 
@@ -125,6 +131,9 @@ def check_ai_text(text: str, passages: str, top_passage: str) -> Optional[str]:
         ok, bad = wording.check_wording(text)
     if not ok:
         return f"AI answer failed the checks ({', '.join(bad[:5])})"
+    evaluative = sorted({re.sub(r"\s+", " ", m.group(0).lower()) for m in _EVALUATIVE.finditer(text)})
+    if evaluative:
+        return f"AI answer uses evaluative wording ({', '.join(evaluative[:5])})"
     extra = _verbs(text) - _verbs(top_passage)
     if extra:
         return f"AI answer uses trade verbs the help passage does not ({', '.join(sorted(extra)[:5])})"

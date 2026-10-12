@@ -1151,20 +1151,40 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
 
 ### 1.6aj Phase 0 PAPER-only lock (Z10-c)
 
-- **Owner step at install - turn it on yourself.** Admin Console -> Feature flags (Admin > Controls) -> `phase0_paper_only`
-  -> on. The flag is OFF by default and nothing turns it on for you: no code, migration, script or deploy step (the
-  bootstrap, `deploy.sh` and `atp.sh` included) ever changes it. A health report may show "phase0_paper_only off" as
-  an owner action; it never flips it. Turning it on (or off) is an audit event (`feature_flag_set`).
+- **Nothing to set at install (Phase 0 deployment defaults, owner decision 2026-10-12).** The Hostinger host runs with
+  `ATP_DEPLOYMENT_PHASE=phase0`, the default of `docker-compose.hostinger.yml` and `deploy/atp.sh`, so `.env` needs no
+  line for it. On first boot the API and the worker store `live_trading` OFF and `phase0_paper_only` ON wherever the
+  stored flags have no entry yet (`app/platform/deployment_phase.py`). Each write is audited as `phase0_flag_seeded`.
+  Until the seed is written, the same two values are the defaults in this mode.
+- **Re-boots never override.** Only absent entries are seeded. An owner's later change in Admin Console -> Feature
+  flags (Admin > Controls) survives every restart and deploy. Changing the flag there is an audit event
+  (`feature_flag_set`).
+- **Outside that mode nothing changes.** The flag is OFF by default (`DEFAULT_OFF_FLAGS`), `live_trading` stays a
+  kill flag, and no other code, migration or script turns either one on. `atp.sh` itself never writes a flag; its
+  deploy check accepts only the release's own first-boot seed of an absent entry.
+- **Why the exception is allowed.** It is the owner's instruction (Admin is unreachable before the app is deployed),
+  it applies only in this explicit deployment mode, and both writes are restrictive: they refuse new LIVE entries and
+  new LIVE deployments. Neither can enable anything, place an order or block an exit.
+- **Admin refusal (Phase 0 mode).** Turning `live_trading` on, globally or for any organisation, is refused with
+  "live_trading cannot be turned on while phase0_paper_only is on" (HTTP 400, audited as `feature_flag_refused`).
+  To leave Phase 0, the owner first sets `ATP_DEPLOYMENT_PHASE=standard` and turns `phase0_paper_only` off
+  ([runbook section 4a](deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-nothing-to-set)).
 - **What it does while on**: every new LIVE entry is refused - at the entry checks (the reason
   "Phase 0 PAPER-only lock ..." on the order trail, single-leg and multi-leg alike) and again at the broker-order
   chokepoint in the worker (an order the platform built as an entry - `intent` ENTRY - gets a REJECTED answer without
   reaching the broker; the worker re-reads the flag every cycle). PAPER is
   untouched. With the flag off and tenants listed in its allow-list, only those tenants are locked.
+- **No LIVE entry path started**: the worker does not evaluate a LIVE deployment while the lock holds for its
+  organisation. Its `last_error` reads "... (LIVE deployment not evaluated)", and the worker log says so at start-up
+  and whenever the lock changes. `GET /api/system/health/deep` shows `checks.live_paths` (`paper_only`, why, and
+  "exits: always allowed"). No long-lived LIVE order client exists to stop: broker sessions are opened per cycle
+  for market data and exits only.
 - **What it never does**: block an exit. Exits of an existing LIVE position, protective stops, stop moves and cancels
   pass (ADR-0004). It does not change the `live_trading` flag (still a kill flag, ON by default - owner decision
   Z10-3 / Z11-7), a plan, or a deployment's mode.
-- **Check it**: Admin Console -> Feature flags shows the state; a LIVE deployment's refused entry names the lock in
-  its order trail and its `last_error`.
+- **Check it**: Admin Console -> Feature flags shows the state. `atp.sh health` prints
+  "deployment phase: phase0" and passes with no owner action. A LIVE deployment's `last_error` and any refused
+  entry's order trail name the lock.
 - **"No API order path reachable"** (Phase 0 exit criterion) is also a test: `tests/test_z10c_order_paths.py` fails
   when any API route or process entry point can reach a broker order method outside its allow-list, and no API route
   may reach an entry at all. The allow-listed routes are exits only (close a position, emergency exit, an approved
@@ -1327,7 +1347,7 @@ Phase 0 is PAPER only. Nothing below places, modifies or blocks an exit: exits a
 | `/status` (`GET /api/status`) | anyone, no login; flag `public_status_page`, off by default | API, trading engine, market data (EOD date, NSE open, number of live sessions through users' own brokers), alert delivery lag, maintenance and incident banner. States and short sentences only. |
 | `GET /api/system/health/deep`, `/health/dependencies` | operator (unauthenticated, no secrets) | database, migrations, worker heartbeat, Redis, broker circuits, broker-uncertain organisations |
 | `deploy/atp.sh health` | owner, on the server | containers, API, HTTPS, release, key, flags, backups, host ([runbook section 10](deploy/HOSTINGER_RUNBOOK.md#10-health)); `OWNER ACTION NEEDED` (exit 10) names a flag to set |
-| `backend/scripts/flag_posture.py` | owner (run by `atp.sh health` inside the API container) | the stored feature flags against the Phase 0 posture ([runbook section 4a](deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-owner-step-in-admin--controls)): `live_trading` off, `phase0_paper_only` on. Read-only. |
+| `backend/scripts/flag_posture.py` | owner (run by `atp.sh health` inside the API container) | the stored feature flags against the Phase 0 posture ([runbook section 4a](deploy/HOSTINGER_RUNBOOK.md#4a-phase-0-flags-nothing-to-set)): `live_trading` off, `phase0_paper_only` on (seeded at first boot in Phase 0 mode), and the deployment phase. Read-only. |
 | `backend/scripts/session_check.py` | owner (run by `atp.sh deploy` / `rollback`) | whether any exchange session is open with open positions; a deploy or restart stops with exit 3 while it is ([runbook section 8](deploy/HOSTINGER_RUNBOOK.md#8-what-deploy-does-step-by-step)) |
 | Prometheus rules `scripts/monitoring/prometheus-alerts.yml` | operator | each rule's `runbook` annotation points to a page below |
 | Admin console | SUPER_ADMIN | incidents, maintenance mode, flags, beta rollout stage |

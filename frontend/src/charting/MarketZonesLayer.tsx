@@ -40,9 +40,11 @@ export function MarketZonesLegend({ bands, asOf, note, settingsNote }: { bands: 
 
 /**
  * Fetches the layer for `instrument` (lake key, "NSE:BANKNIFTY"), draws the bands on `engine` and shows the legend.
- * `price` is the last close on screen (from the candles the backend served).
+ * `price` is the last close on screen (from the candles the backend served); `at` (CH3 replay) reads the snapshot as of
+ * the replayed bar instead of now.
  */
-export function MarketZonesLayer({ engine, instrument, price }: { engine: ChartEngine | null; instrument: string; price?: number | null }) {
+export function MarketZonesLayer({ engine, instrument, price, at = null }: { engine: ChartEngine | null; instrument: string; price?: number | null;
+                                                                            at?: string | null }) {
   const [layer, setLayer] = useState<MarketZonesLayerResponse | null>(null);
   const [failed, setFailed] = useState(false);
 
@@ -51,13 +53,13 @@ export function MarketZonesLayer({ engine, instrument, price }: { engine: ChartE
     setLayer(null);
     setFailed(false);
     if (!instrument) return () => { live = false; };
-    marketZonesApi.layer(instrument).then(
+    marketZonesApi.layer(instrument, at ? { at } : {}).then(
       (r) => { if (live) setLayer(r); },
       // 503: flag off; 404 / 422: no zones for this instrument - nothing to show, never an error on the chart
       (e: unknown) => { if (live) setFailed(!(e instanceof ApiError && [404, 422, 503].includes(e.status))); },
     );
     return () => { live = false; };
-  }, [instrument]);
+  }, [instrument, at]);
 
   const bands = useMemo(() => (layer ? bandsAt(layer, price) : []), [layer, price]);
 

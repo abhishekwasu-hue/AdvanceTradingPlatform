@@ -323,6 +323,43 @@ chart's pointer events and a toolbar to it.
   low == high, the label at the right edge). `MarketZonesLayer` fetches, draws and shows a one-line legend; mounted on
   the full-window chart. Open questions Z7a3-1, Z7a3-2, Z7a3-8 (`docs/OPEN_QUESTIONS.md`).
 
+## CH3a (built): the price-action layer and replay
+
+- **Backend.** `GET /api/charts/layers/price-action?instrument=&tf=&at=&start=&degree=&debug=` (`app/charts/price_action_layer.py`;
+  flag `chart_price_action`, off -> 503, per organisation; classified "member" in the tenancy table).
+  - Reads the shared lake's bars ending in (`start`, `at`] - the timeframe's own bars, else rebuilt from 1-minute bars
+    with the market-zones job's conversions - so a bar after `at` (or still forming at `at`) is never read.
+  - Computes, in a worker thread, with the existing engine: causal swings per degree (`causal_swings`; a swing exists
+    from the bar that confirmed it), legs, real breaks of the newest swings (`breaks.first_real_break`), live swing
+    levels (nearest 3 above and below the last close) and the Dow trend per degree (HH + HL up, LH + LL down).
+  - Default view: degree 2 only ("significant"). Debug: every degree, the tentative swing, broken levels, thresholds.
+  - Every number has its text; `fingerprint` (SHA-256 of the canonical content) - the same bars give the same bytes.
+  - Window: default days per timeframe, at most 4x and 5,000 bars, refused rather than cut. A future `at` reads as now.
+- **Frontend.** `charting/priceAction.ts` turns the response into `LayerData` by the toggles (swings, legs, breaks,
+  levels, trend). `LayerData` gains `segments` and `labels`, painted with the bands in the one `LayerPrimitive`
+  (`geometry.layerShapes`); levels are price lines. `PriceActionLayer.tsx`: the panel with the toggles (kept per browser),
+  Debug, and the trend per degree (top first). Mounted on the full-window chart (`ChartWindow`).
+- **Replay** (`charting/replay.ts`, `ReplayBar.tsx`): start 100 bars back, step back / forward, play (one bar a second),
+  exit. The chart shows candles up to the replay bar only; the price-action layer and the market zones are asked for as
+  of that bar's end; the window start is fixed at the first step so each step only adds; the live price is off.
+- **Tests.** `backend/tests/test_ch3_price_action_layer.py` (8): golden (byte-identical, and the frontend copy), no
+  look-ahead through the API (later bars added, later bars re-versioned, another source - the layer at `at` is
+  unchanged) and on the pure function at every 7th bar, replay only adds and shows nothing later than its bar, native
+  15m == 15m rebuilt from 1m (and a mid-bar `at` ignores the forming bar), flag per organisation, input checks.
+  A mutation that reads bars up to two hours past `at` fails two of them. Frontend: `priceAction.test.ts` (10) on the
+  same golden (the replay as-of time equals the backend's `as_of`), plus the engine test for segments and labels.
+- **Review follow-up (#212).**
+  - Look-ahead test of the engine itself: the layer over bars[:n] equals the layer over all bars filtered to what was
+    confirmed by bar n's end (swings, legs, breaks), at every 7th n. A ZigZag reading the next bar's threshold fails it.
+  - No stale layer in replay: every new request clears the layer first (`LayerLoader`); a late answer to an older step
+    is dropped; a failure leaves no layer and says why; the replay never sends `start >= at` (`windowStart`); the live
+    layer is asked again when a new candle starts; a candle time without an offset is read as IST.
+  - Reads are bounded: 1-minute rebuilds at most 180 days, every read row-capped (422, never cut), a 30 s cache per
+    (instrument, timeframe, window, as-of minute) and 120 requests a minute per user.
+  - Provenance: shared-licensed sources only (`nse_bhav:`, `vendor:`, `r2:`; never `stream:` / `broker:`), source
+    preference before version; corrections point-in-time (CH3-3, CH3-6). `at` / `start` before 1990 -> 422.
+- Open questions CH3-1 .. CH3-6 (`docs/OPEN_QUESTIONS.md`); CH3-4 lists what is left for later.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

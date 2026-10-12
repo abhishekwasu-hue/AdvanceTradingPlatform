@@ -103,6 +103,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/admin/history-backfill/holidays/remove"): "admin",
     ("GET", "/api/admin/history-backfill/progress"): "admin",
     ("POST", "/api/admin/history-backfill/upload"): "admin",
+    ("GET", "/api/admin/history-intraday/progress"): "admin",
     ("GET", "/api/admin/history-import/progress"): "admin",
     ("GET", "/api/admin/incidents"): "admin",
     ("POST", "/api/admin/incidents"): "admin",
@@ -276,6 +277,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("POST", "/api/charts/drawings/{drawing_id}/lock"): S_OWN_DRAWINGS,
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
+    ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
     ("GET", "/api/compliance/golive"): "admin",
     ("PUT", "/api/compliance/golive/evidence"): "admin",
     ("GET", "/api/compliance/static-ips"): "member",
@@ -449,6 +451,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/ticket"): "trader",
     ("POST", "/api/paper/ticket/preview"): "trader",
     ("GET", "/api/portfolio/exposure"): "member",
+    ("GET", "/api/portfolio/risk"): "member",               # N1 F1: the caller's own PAPER book only
     ("GET", "/api/positions"): "member",
     ("GET", "/api/positions/greeks"): "member",
     ("POST", "/api/positions/{trade_id}/exit-now"): "trader",

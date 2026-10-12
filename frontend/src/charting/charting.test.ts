@@ -216,3 +216,26 @@ describe("LightweightEngine layer bands (Z7a-3)", () => {
     expect(f.layerPrimitives.length).toBe(0);
   });
 });
+
+describe("LightweightEngine price-action layer (CH3)", () => {
+  it("draws segments and labels with the bands in one primitive, built from the data at paint time", () => {
+    const f = fakes();
+    const engine = new LightweightEngine(f.chart, f.candles);
+    f.candles.setData([{ time: 100 }, { time: 200 }, { time: 300 }]);
+    engine.setLayer("price_action", { lines: [{ price: 120, title: "swing high 120.00 · D2" }],
+                                      segments: [{ t1: 100, p1: 110, t2: 300, p2: 130, color: "#16a34a" }],
+                                      labels: [{ time: 300, price: 130, text: "HH", position: "above" }] });
+    expect(f.layerPrimitives.length).toBe(1);
+    expect(f.priceLines).toEqual([{ price: 120, title: "swing high 120.00 · D2" }]);
+    const shapes = f.layerPrimitives[0].build({ x: (t) => t / 10, y: (p) => 1000 - p * 5, width: 400, height: 300 });
+    expect(shapes).toEqual([
+      { type: "segment", x1: 10, y1: 450, x2: 30, y2: 350, color: "#16a34a", width: 1, dash: "solid" },
+      { type: "text", x: 30, y: 344, text: "HH", color: "#2962ff", align: "center", baseline: "bottom" },
+    ]);
+    engine.setLayer("price_action", { labels: [] });
+    expect(f.layerPrimitives.length).toBe(0);                      // nothing to paint: no primitive left behind
+    engine.setLayer("price_action", { segments: [{ t1: 1, p1: 1, t2: 2, p2: 2 }] });
+    engine.dispose();
+    expect(f.layerPrimitives.length).toBe(0);
+  });
+});

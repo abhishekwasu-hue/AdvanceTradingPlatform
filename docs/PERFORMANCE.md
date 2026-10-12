@@ -13,7 +13,7 @@ a staging host.
 | Target (§1.5) | CI runner, median of 5 | Budget | Per-symbol runtime (flag off) |
 |---|---|---|---|
 | EOD screen, 2,500 symbols x 50 factors, daily bars | **0.38-0.67 s** | 3 s | 50-82 s (estimated: 50 symbols timed, then x 50) |
-| The same screen again, from the result cache (**not wired yet**: no route or job calls the cache; OPEN_QUESTIONS Z10-d2) | **2-3 ms** (key: universe + as_of); **14-26 ms** before full-block hashing (key: bar fingerprints) | 0.2 s | same |
+| The same screen again, from the result cache (**not wired yet**: no route or job calls the cache; OPEN_QUESTIONS Z10-d2) | **2-3 ms** (key: universe + as_of); **69 ms** (key: bar fingerprints, every value hashed; 14-26 ms when only the last bar was) | 0.2 s | same |
 | Bar-close scan, 200 symbols (4 rules x 50), 5-minute bars, through the bar-close engine | **0.10-0.20 s** | 1 s | **0.66-1.44 s** (over the target on the slower runners) |
 
 These are the ranges over the CI runs of 2026-10-11 (GitHub-hosted `ubuntu-latest`). The calibration took 0.057-0.083 s,

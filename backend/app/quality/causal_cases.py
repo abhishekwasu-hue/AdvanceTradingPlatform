@@ -47,6 +47,9 @@ BASE_TF = "5m"
 SCREENQL_EXEMPT: Dict[str, str] = {
     "Rank": "cross-sectional: the universe's last bars, run through run_screen only (not a per-symbol series)",
     "PercentileRank": "cross-sectional: the universe's last bars, run through run_screen only (not a per-symbol series)",
+    "RankScore": ("cross-sectional: a ranking system over the universe's last bars, run through run_screen only; each factor is a "
+                  "daily ScreenQL number with its own causal cases, and tests/test_n3_s7a_rankings.py checks the rank at each date "
+                  "equals a run on bars cut there (no look-ahead)"),
     "PCR": "the supplied option-chain snapshot, not bars",
     "ChainBias": "the supplied option-chain snapshot, not bars",
     "MaxPainDistancePct": "the supplied option-chain snapshot, not bars",

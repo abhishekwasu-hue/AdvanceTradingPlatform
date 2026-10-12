@@ -2860,6 +2860,25 @@ class ScreenRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class RankingSystemRecord(Base):
+    """N3 S7a (spec §2.5): a saved ranking system - a weighted tree of ScreenQL factors (higher / lower is better,
+    optionally sector-neutral) that turns a universe into a 0-100 rank. Tenant-scoped, named (unique per organisation),
+    archived, never hard-deleted (a screen may refer to it by name through RankScore)."""
+
+    __tablename__ = "ranking_systems"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_ranking_systems_tenant_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    tree_json: Mapped[str] = mapped_column(Text, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class ScreenRunRecord(Base):
     """S1d (ADR-0021 §6): one screen run - what ran (AST hash and version), on which universe and data source, and what
     matched. Append-only: a match list someone acted on can be reproduced."""

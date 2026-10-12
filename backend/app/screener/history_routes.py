@@ -91,11 +91,16 @@ async def _screen(session: AsyncSession, user: User, body: Screen) -> Tuple[Any,
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, H.BASE_TF, params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation",
                                                      "problems": [p.as_dict() for p in validated.problems]})
+    from app.screener import ranking as ranking_gate
     from app.screener import zones as zone_gate
+    if ranking_gate.uses_rankscore(ast):
+        # N3 S7a (provisional S7-5): history runs RankScore as the backtest's sort key (rank_system), not inside a screen yet
+        raise HTTPException(status_code=422, detail="screen history does not run RankScore() inside a screen yet: rank the backtest's "
+                                                    "matches with rank_system instead")
     extra = missing_data(ast) + [c for c in zone_gate.flagged_calls(ast)]
     if extra or any(tf != H.BASE_TF for tf in (validated.lookback or {})):
         raise HTTPException(status_code=422, detail="screen history runs daily screens on end-of-day bars only: "
@@ -283,6 +288,8 @@ async def fitness(body: FitnessBody, user: User = Depends(require_trader), sessi
 class BacktestBody(FitnessBody):
     top_n: Optional[int] = Field(default=None, ge=1, le=50, description="hold the best N matches (by rank_by); all matches when unset")
     rank_by: Optional[str] = Field(default=None, max_length=500, description="a ScreenQL factor read at each rebalance date, e.g. PctChange(close, 20)")
+    rank_system: Optional[str] = Field(default=None, max_length=80, description="N3 S7a: rank by a ranking system (a saved one by name, or "
+                                                                                 "platform:Momentum etc.; flag screener_rankings) - its 0-100 rank at each date")
     descending: bool = True
     weighting: str = Field(default="equal", pattern=r"^(equal|rank)$")
     capital: float = Field(default=1_000_000.0, ge=10_000.0, le=1_000_000_000.0)
@@ -291,8 +298,10 @@ class BacktestBody(FitnessBody):
 
     @model_validator(mode="after")
     def ranked_when_capped(self) -> "BacktestBody":
-        if self.top_n is not None and not self.rank_by:
-            raise ValueError("top_n needs rank_by (the order the matches are taken in)")
+        if self.rank_by and self.rank_system:
+            raise ValueError("give rank_by or rank_system, not both")
+        if self.top_n is not None and not (self.rank_by or self.rank_system):
+            raise ValueError("top_n needs rank_by or rank_system (the order the matches are taken in)")
         return self
 
 
@@ -335,6 +344,15 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
         if rank_ast is None or others or rank_validated.cross_sectional or any(tf != H.BASE_TF for tf in (rank_validated.lookback or {})):
             raise HTTPException(status_code=422, detail="rank_by must be a daily factor of one symbol's bars (no Rank / PercentileRank)")
         rank_lookback = int((rank_validated.lookback or {}).get(H.BASE_TF, 1) or 1)
+    system = None
+    if body.rank_system:
+        from app.screener import ranking as RK
+        await need(session, RK.FLAG, user.tenant_id)
+        found, problems = await RK.resolve(session, user.tenant_id, [body.rank_system])
+        if problems:
+            raise HTTPException(status_code=422, detail="; ".join(problems))
+        system = found[body.rank_system]
+        rank_lookback = system.lookback
     lookback = max(int((validated.lookback or {}).get(H.BASE_TF, 1) or 1), rank_lookback)
     first, last = H.window_days(body.start, body.end, lookback, 1)
     last = min(last, body.end + timedelta(days=7))                          # one session after the last rebalance is enough
@@ -354,6 +372,12 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
     except H.HistoryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     ranks = await asyncio.to_thread(B.rank_table, rank_ast, frames, dates, params, rank_validated) if rank_ast is not None else None
+    if system is not None:
+        sectors = None
+        if system.sector_neutral:                             # each date's sector AS OF that date (U1-b classifications)
+            ranges = await RK.sector_ranges(session, sorted(frames), min(dates), max(dates))
+            sectors = {d: {s: RK.sector_on(r, d) for s, r in ranges.items()} for d in dates}
+        ranks = await asyncio.to_thread(RK.rank_at_dates, system, frames, dates, sectors, eligible)
     nifty = await _index_closes(session, "NSE_INDEX:NIFTY50", first, body.end)
     settings = B.Settings(top_n=body.top_n, weighting=body.weighting, descending=body.descending, capital=body.capital,
                           slippage_pct=body.slippage_pct, brokerage=body.brokerage_per_order)
@@ -364,6 +388,7 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
         notes.append("NIFTY 50 closes are not in the lake for this window: the equal-weight universe is the only benchmark.")
     label = (f"index:{body.universe.index}" if body.universe.index else f"list:{len(frames)}")[:40]
     dsl = {"kind": "screen_backtest", "text": nodes.to_text(ast), "rank_by": body.rank_by, "params": params, "universe": label,
+           "rank_system": None if system is None else {"name": system.name, "tree": system.tree()},
            "start": str(body.start), "end": str(body.end), "every": body.every, "settings": out["settings"]}
     since = datetime.now(timezone.utc) - timedelta(days=LEDGER_DAYS)
     earlier = await _backtest_trials(session, user.tenant_id, since)
@@ -374,7 +399,7 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
                            data_to=H.utc_close(result.days[-1]), metrics=out["strategy"], returns=result.returns)
         await session.commit()
         deflation = deflated_sharpe(result.returns, earlier + [sharpe(result.returns)])
-    return {**out, "text": nodes.to_text(ast), "rank_by": body.rank_by, "universe": label, "start": str(body.start), "end": str(body.end),
+    return {**out, "text": nodes.to_text(ast), "rank_by": body.rank_by, "rank_system": body.rank_system, "universe": label, "start": str(body.start), "end": str(body.end),
             "every": body.every, "symbols": len(frames), "equity": [{"day": str(d), "equity": round(e, 2)} for d, e in zip(result.days, result.equity)],
             "rebalance_log": result.rebalances[-20:],
             "deflation": {**deflation, "note": f"Deflated for {deflation.get('n_trials', 1)} screen backtests by this organisation in the "

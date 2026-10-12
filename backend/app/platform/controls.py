@@ -211,6 +211,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N3 S6b: the rolling screen backtest - rebalance weekly / 4-weekly / monthly, top N by a rank expression, equal or rank
     # weights, next-open fills with the part C slippage and India's delivery charges, against the equal-weight universe and
     # NIFTY 50; deflated through the research trial ledger. Needs screener_history. OFF: 503. A simulation only.
+    # N3 S7a: ranking systems - weighted factor trees (weights, higher / lower is better, sector-neutral percentiles) that
+    # rank a universe 0-100 with every component shown; a column, a sort key (the S6b backtest's rank_system) and a filter
+    # (ScreenQL RankScore("name") > 80). Platform systems with documented formulas. OFF: the routes answer 503 and a screen
+    # using RankScore is refused with the reason. Information only - places nothing.
+    "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
@@ -221,7 +226,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "screener_history", "screener_backtest"})
+                               "chart_price_action", "screener_history", "screener_backtest", "screener_rankings"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

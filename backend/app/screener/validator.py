@@ -427,4 +427,10 @@ def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] 
     return checker.out
 
 
-__all__ = ["validate", "Validated", "Problem", "MAX_OFFSET", "DEFAULT_COST_CAP"]
+def kind_of(ast: Any, *, base_tf: str = "1d") -> str:
+    """N3 S7a: the type an expression yields (NUM / BOOL / CAT / STR) - a ranking factor must be a number."""
+    kind, _ = _Checker(base_tf, {}).check(ast)
+    return str(kind)
+
+
+__all__ = ["validate", "kind_of", "Validated", "Problem", "MAX_OFFSET", "DEFAULT_COST_CAP"]

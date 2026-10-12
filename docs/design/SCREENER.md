@@ -1217,6 +1217,39 @@ broker's and C2's default) and `brokerage_per_order` (default 20). It is a trade
 - **No migration**, and no new ScreenQL function, so no new Z10-a causal cases. It is a simulation: nothing is
   placed. The disclaimer is in every answer.
 
+## N3 S7a (built): ranking systems (flag `screener_rankings`, off; needs `screener_v2`)
+
+Spec §2.5, the first of S7's two PRs (S7b: categories B and D with the fundamental rankings). A ranking system is a
+tree of weighted factors that ranks a universe 0-100, with every component shown (`app/screener/ranking.py`).
+
+- **The tree.** Nodes are leaves `{name, factor, weight, higher_is_better, neutral}` or groups `{name, weight,
+  children}`. Weights are percentages adding up to 100 at every level; at most 3 levels and 30 factors. A factor is a
+  daily ScreenQL number of one symbol's bars (not a condition, no Rank / PercentileRank / RankScore, no other
+  timeframe). `neutral: "sector"` takes the percentile within the sector.
+- **Scoring.** Each factor's percentile across the universe (ties averaged, reversed when lower is better, within the
+  sector when neutral); a group is the weighted mean of its children (a missing child is left out and the rest
+  re-weighted, S7-2); the rank is the composite's percentile (100 = best). The answer carries each factor's value and
+  score and each group's score per symbol: no black box.
+- **Platform systems** (`platform:Momentum`, `platform:Low volatility`, `platform:Trend quality`), read-only, with their
+  formulas in `GET /api/screener/rankings` (S7-4).
+- **Use.**
+  - A column / sort key: `POST /api/screener/rankings/run` ranks up to 50 symbols on their last closed daily bar,
+    read through the same path as a screen run (the organisation's session, or the runner's own under BT1b).
+  - A filter: ScreenQL `RankScore("<name>") > 80` (cross-sectional, daily, `needs: rankings`, flag-gated like the zone
+    functions; the system must be a platform one or the organisation's own). `/run` loads the systems and, for a
+    sector-neutral one, today's sectors.
+  - A backtest sort key: S6b's `rank_system` (instead of `rank_by`): the rank at each rebalance date over the symbols
+    eligible then, sectors as of that date; the ledger trial keeps the tree.
+- **Routes** (tenancy table): `GET /api/screener/rankings` (member), `POST` / `PUT /{system_id}` / `POST
+  /{system_id}/archive` (trader, tenant-scoped, archived never deleted), `POST /run` (trader, rate-limited). Table
+  `ranking_systems` (migration `c3d5e7f9a1b2`, additive, ROLLBACK_SAFE).
+- **No look-ahead.** A history rank is each factor's S6a causal series read at the date, then scored on that date's
+  cross-section; tests check it equals ranking bars cut at each date, and that rewriting every later bar leaves it
+  unchanged. Z10-a: `RankScore` is exempt as cross-sectional (like Rank) and LAST_BAR_ONLY (refused inside SMA, Count...).
+- **Perf.** 50 symbols x 60 dates of `platform:Momentum` (four factors) take about 1.5 s; the test bound is 10 s.
+- **Refused for now:** RankScore inside a screen-history run (S7-5) and in alert rules (S7-6). Information only:
+  nothing is placed, and every answer carries the disclaimer.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

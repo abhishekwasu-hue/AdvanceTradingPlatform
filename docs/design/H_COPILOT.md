@@ -34,7 +34,7 @@ In code, docs and PR titles the Copilot parts are called **H-C1 .. H-C12** (open
 - H-C5 (memory)
 - H-C6 (explain and coach)
 - H-C8 (UX)
-- H-C4 (multi-view analysis)
+- H-C4 (multi-view analysis) - built behind `ai_multiview` (off)
 - H-C7 (retrieval)
 - H-C11 (governance)
 - H-C12 (MCP)
@@ -400,3 +400,25 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - 59 frontend tests pass and `tsc` is clean.
 - **Headless check.** Against a mocked API: the list renders; "Open" shows the report (DSR 0.31, PBO "n/a" with its
   note); queueing sends one POST with the Lab's symbol; the worker hint shows for an old queued study; no page errors.
+
+## H-C4 (built, flag `ai_multiview` off): multi-view analysis
+- **`POST /api/ai/analyze`** (`{symbol, exchange, language?}`; acknowledged AI user; flags `ai_copilot` + `ai_multiview`;
+  tenancy S_COPILOT; 8 AI rate units). `app/ai/multiview.py`.
+- **Views by tools, no model.** Technical (`get_market_regime` + `get_candles`, daily), options (`get_option_chain`: PCR,
+  max pain, ATM, the largest OI strikes), news (`get_news`, 24 h, the symbol's headlines - untrusted) and macro
+  (`get_market_snapshot`). Each tool call is an `agent_steps` row of one `agent_runs` row (`limits_json.kind =
+  "multiview"`); each view keeps its `as_of` and sources.
+- **Cheap tier gathers, strong tier synthesises.** Each view's facts are worded by the cheap tier (task
+  `classification`), the summary (situation, readings that lean up / down, risks, possibilities, claims with their view)
+  by the strong tier (task `general`). Every AI text is checked: numbers from the view(s) it uses, a claim's numbers
+  from the view it cites, a direction the facts carry, and the H-C1 c output filter. One rewrite, then the rules'
+  wording with a note. With the rules provider everything is deterministic.
+- **Caps.** At most 6 model calls and 60 s per analysis; the plan's AI budget through the metered provider.
+- **No action.** The model is offered no tool - it can neither place an order nor file a proposal (ADR-0006). Headlines
+  reach it only inside `<untrusted_data>`. The answer is "the situation and the possibilities", never advice.
+- **Keys.** The organisation's provider, metered under the asking user; no BYOK key (OPEN_QUESTIONS HC4-2).
+- **UI.** `MultiViewPanel` on Copilot > Ask: symbol + exchange, progress with Cancel, the summary (AI / rules badge,
+  cost chip, fallback note), the four view cards (report, facts used, headlines as plain text marked third-party,
+  data time and sources), and the disclaimer. A flag off (503) shows that the analysis is off.
+- **Tests.** `tests/test_hc4_multiview.py` (8); vitest `copilot/tabs/analyze/multiview.test.ts` (5). Open questions
+  HC4-1..HC4-4.

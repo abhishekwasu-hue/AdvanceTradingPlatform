@@ -1861,3 +1861,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
+
+## N5 H-C4: multi-view analysis (flag `ai_multiview`, off)
+
+- Branch `claude/n5-hc4` (from main). Design: `docs/design/H_COPILOT.md` "H-C4".
+- Backend: `app/ai/multiview.py` (four views by the platform's read tools, each audited; cheap tier words the views,
+  strong tier the summary, every text number- / direction- / advice-checked with one rewrite then the rules; at most 6
+  model calls and 60 s; the model gets no tool) and `POST /api/ai/analyze` (flags `ai_copilot` + `ai_multiview`, 8 AI
+  rate units, tenancy table S_COPILOT). Flag in DEFAULT_OFF_FLAGS. No migration.
+- Frontend: `MultiViewPanel` on Copilot > Ask (`copilot/tabs/analyze/`), English strings, compliance lint clean.
+- Tests: `tests/test_hc4_multiview.py`; vitest `multiview.test.ts`. Open questions HC4-1..HC4-4.

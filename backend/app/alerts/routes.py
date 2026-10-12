@@ -82,25 +82,13 @@ async def _get_channel(session: AsyncSession, tenant_id: int, channel_type: str)
     )
 
 
-S10_FLAG = "alerts_whatsapp_dlt"
-
-
 async def _s10_gate(session: AsyncSession, user: User, kind: str, config: Any) -> None:
-    """S10 seam: the WhatsApp channel and the SMS DLT fields need the `alerts_whatsapp_dlt` flag; WhatsApp needs a paid
-    plan (every message is billed by the provider). Existing SMS channels without DLT fields are untouched."""
-    from app.platform.controls import flag_enabled
-    from app.plans.registry import get_plan
-    whatsapp = kind == AlertChannelType.WHATSAPP.value
-    dlt = kind == AlertChannelType.SMS.value and bool(getattr(config, "uses_dlt", lambda: False)())
-    if not (whatsapp or dlt):
-        return
-    if not await flag_enabled(session, S10_FLAG, user.tenant_id):
-        raise HTTPException(status_code=403, detail="WhatsApp and SMS DLT settings are not turned on for this organisation",
-                            headers={"X-Feature-Disabled": S10_FLAG})
-    if whatsapp:
-        plan = get_plan((await load_tenant(session, user.tenant_id)).plan)
-        if not plan.price_monthly:
-            raise HTTPException(status_code=402, detail=f"WhatsApp alerts need a paid plan; the {plan.name} plan does not include them.")
+    """S10 seam (app/alerts/s10_gate.py): refused while the flag is off (403) or, for WhatsApp, on an unpaid plan (402)."""
+    from app.alerts import s10_gate
+    refused = await s10_gate.blocked(session, user.tenant_id, kind, config)
+    if refused is not None:
+        status_code, reason = refused
+        raise HTTPException(status_code=status_code, detail=reason, headers={"X-Feature-Disabled": s10_gate.FLAG} if status_code == 403 else None)
 
 
 @router.get("/push/public-key")
@@ -192,6 +180,8 @@ async def test_alert_channel(
         message=f"If you can read this, {kind.lower()} alerts for your account are working. Sent by {user.email}.",
         created_at=datetime.now(timezone.utc),
     )
+    from app.alerts.channels import decrypt_config
+    await _s10_gate(session, user, kind, decrypt_config(record))      # S10: the flag and the plan, as at save time
     try:
         await send_via_channel(record, probe)
     except Exception as exc:  # noqa: BLE001 - the whole point is to surface the error

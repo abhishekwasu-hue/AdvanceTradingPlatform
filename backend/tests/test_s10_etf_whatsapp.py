@@ -131,6 +131,8 @@ def test_etf_rows_from_the_shared_history(seeded):
 
 
 def test_the_etf_route_is_flagged_and_member_readable(seeded):
+    from app.screener import etf_routes
+    etf_routes._CACHE.clear()
     headers, _ = _user("s10-etf@example.com")
     _set_flags(screener_v2=True)
     try:
@@ -140,6 +142,19 @@ def test_the_etf_route_is_flagged_and_member_readable(seeded):
         body = client.get("/api/screener/etf?q=TXSTEN&sessions=20", headers=headers).json()
         assert [r["symbol"] for r in body["rows"]] == ["TXSTENETF"] and body["note"] == etf.NOTE
         assert client.get("/api/screener/etf?sort=best", headers=headers).status_code == 422
+        computed = []
+        real = etf.etf_rows
+
+        async def counting(session, sessions=20, now=None):
+            computed.append(sessions)
+            return await real(session, sessions=sessions, now=now)
+        etf_routes._CACHE.clear()
+        import unittest.mock as um
+        with um.patch.object(etf, "etf_rows", counting):
+            client.get("/api/screener/etf?sessions=7", headers=headers)
+            client.get("/api/screener/etf?sessions=7&q=x", headers=headers)
+        assert computed == [7]                                                            # served from the short cache
+        assert any(d.dependency is etf_routes.etf_rate_limit for d in etf_routes.router.routes[0].dependencies)   # the per-user limit
     finally:
         _set_flags(screener_v2=False, **{etf.FLAG: False})
     from app.screener.taxonomy import advice_words
@@ -226,5 +241,58 @@ def test_the_channels_are_gated_by_the_flag_and_whatsapp_by_a_paid_plan():
         assert wa["template"]["name"] == "atp_alert" and wa["to"] == "+919812345678"
         sms = next(json.loads(r.content) for r in seen if "msg91" in str(r.url))
         assert sms["template_id"] == "1107160000000000001"
+    finally:
+        _set_flags(alerts_whatsapp_dlt=False)
+
+
+def test_whatsapp_opt_in_is_required_not_defaulted():
+    missing = {k: v for k, v in WA.items() if k != "opt_in_confirmed"}
+    with pytest.raises(ValueError):
+        parse_config("WHATSAPP", missing)
+    with pytest.raises(ValueError):
+        parse_config("WHATSAPP", {**WA, "headers": {"Authorization": "Bearer x\r\nX: y"}})
+
+
+def test_a_plan_downgrade_or_the_flag_turned_off_stops_delivery_with_a_reason():
+    paid, me = _user("s10-kill@example.com", plan="pro")
+    _set_flags(alerts_whatsapp_dlt=True)
+    try:
+        assert _put(paid, "whatsapp", WA).status_code == 200
+        assert _put(paid, "sms", SMS_DLT).status_code == 200
+    finally:
+        _set_flags(alerts_whatsapp_dlt=False)
+    seen: List[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    async def raise_alert():
+        async with _session_factory() as session:
+            await notify(session, me["tenant_id"], NotificationType.SYSTEM_FAILURE, title="T", message="m", severity=NotificationSeverity.CRITICAL)
+
+    async def suppressed():
+        from sqlalchemy import select
+
+        from app.db.models import AlertDeliveryRecord
+        async with _session_factory() as session:
+            return [(d.status, d.reason_code, d.last_error) for d in await session.scalars(
+                select(AlertDeliveryRecord).where(AlertDeliveryRecord.tenant_id == me["tenant_id"]).order_by(AlertDeliveryRecord.id))]
+    _run(raise_alert())                                                    # flag off: the kill switch
+    _dispatch(me["tenant_id"], httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    rows = _run(suppressed())
+    assert not seen and len(rows) == 2 and all(s == "SUPPRESSED" and code == "feature_off" and "not turned on" in why for s, code, why in rows)
+    assert client.post("/api/alert-channels/whatsapp/test", headers=paid).status_code == 403
+
+    _set_flags(alerts_whatsapp_dlt=True)                                   # flag on, plan downgraded to Free
+    try:
+        _upgrade_plan(me["tenant_id"], "free")
+        _run(raise_alert())
+        _dispatch(me["tenant_id"], httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+        rows = _run(suppressed())[2:]
+        whatsapp = [r for r in rows if "paid plan" in (r[2] or "")]
+        assert len(whatsapp) == 1 and whatsapp[0][0] == "SUPPRESSED"
+        assert [h for h in seen if "graph.facebook.com" in str(h.url)] == []   # WhatsApp sent nothing; DLT SMS may go
+        assert client.post("/api/alert-channels/whatsapp/test", headers=paid).status_code == 402
     finally:
         _set_flags(alerts_whatsapp_dlt=False)

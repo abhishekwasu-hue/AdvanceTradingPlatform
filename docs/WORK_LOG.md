@@ -1870,4 +1870,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   at channel save. No migration (channel types and config are stored as text / encrypted JSON); no new ScreenQL function.
 - Frontend: "ETFs" dialog on the Screener page (`EtfPanel`); WhatsApp section and DLT fields in the alert channels card.
 - Tests: `tests/test_s10_etf_whatsapp.py`; vitest `src/screener/etf.test.tsx`. Open questions S10-1..S10-5.
+- Security review round: `app/alerts/s10_gate.py` is the one gate (flag + paid plan for WhatsApp) used on save, on
+  `POST /api/alert-channels/{type}/test` (403 / 402) and on every delivery in `dispatch_pending` - a flag turned off or a
+  plan downgrade after the channel was created SUPPRESSES the delivery with `reason_code=feature_off` and the reason in
+  `last_error`; nothing is sent. `WhatsAppConfig.opt_in_confirmed` is required (no default) and its headers are validated
+  like SMS. `GET /api/screener/etf`: per-user rate limit (30 / min) and a 120 s per-process cache by window.
+  Merges `claude/fix-alert-gateway-injection`.
+
+## Fix: SMS gateway template injection and header handling (S10 security review)
+
+- Branch `claude/fix-alert-gateway-injection` (from main).
+- `dispatcher.render_sms`: the content type is compared case-insensitively; JSON bodies get JSON-escaped values, every
+  other body (form, query, text) percent-encoded values - an alert title like `x&To=+1555...&Body=spam` stays one value.
+  The GET path decodes the query once with `parse_qsl` (duplicates kept, nothing silently overridden; httpx encodes).
+- `channels.merge_secrets`: the stored write-only SMS headers are kept only when the gateway URL keeps its scheme, host
+  and port; a moved gateway gets no stored header (the user types it again).
+- `SmsConfig.headers`: names must be HTTP tokens, values carry no CR / LF / control characters, at most 20 headers. (The
+  webhook channel has no free-form headers - its secret signs the body and is never sent.)
+- Tests: `tests/test_alert_gateway_injection.py`.
 

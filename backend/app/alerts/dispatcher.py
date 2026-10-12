@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from urllib.parse import parse_qsl, quote
 import html
 import logging
 import os
@@ -43,7 +44,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.observability.metrics import ALERT_DELIVERIES
 from app.alerts.channels import (DLT_FIELDS, EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, WhatsAppConfig, decrypt_config,
                                  decrypt_raw, encrypt_config, severity_reaches)
-from app.alerts import staleness, webpush
+from app.alerts import s10_gate, staleness, webpush
 from app.alerts.deeplink import app_path, open_in_app_row, push_wanted
 from app.core.enums import NotificationType, AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
@@ -286,8 +287,12 @@ def render_sms(config: Union[SmsConfig, WhatsAppConfig], notification: Notificat
         values.update(template=config.template_name, language=config.language)
     else:
         values.update(template="", language="")
-    if "json" in config.content_type:
+    if "json" in (config.content_type or "").lower():
         values = {k: json.dumps(v)[1:-1] for k, v in values.items()}  # escape for insertion inside JSON strings
+    else:
+        # Form bodies, query strings and anything else: every substituted value is percent-encoded, so an alert title
+        # such as "x&To=+1555...&Body=spam" stays ONE value and cannot add or override a parameter.
+        values = {k: quote(str(v), safe="") for k, v in values.items()}
     return _fill_template(config.body_template, values), None
 
 
@@ -309,7 +314,8 @@ async def send_sms(config: Union[SmsConfig, WhatsAppConfig], notification: Notif
                 headers["Idempotency-Key"] = hashlib.sha256(f"{idempotency_key}|{number}".encode()).hexdigest()  # one per recipient
             try:
                 if method == "GET":
-                    response = await client.get(str(config.url), params=dict(p.split("=", 1) for p in body.split("&") if "=" in p), headers=headers)
+                    # decoded once here (httpx encodes again); duplicates kept as sent, so nothing is silently overridden
+                    response = await client.get(str(config.url), params=parse_qsl(body, keep_blank_values=True), headers=headers)
                 else:
                     response = await client.post(str(config.url), content=body.encode(), headers=headers)
                 if response.status_code >= 300:
@@ -637,6 +643,16 @@ async def dispatch_pending(
                           last_error="Channel disabled or removed before delivery")
             await session.commit()
             failed += 1
+            continue
+        refused = await s10_gate.blocked(session, channel.tenant_id, channel.channel_type, decrypt_config(channel)) \
+            if channel.channel_type in (AlertChannelType.WHATSAPP.value, AlertChannelType.SMS.value) else None
+        if refused is not None:
+            # S10: the flag was turned off or the plan no longer pays for WhatsApp - nothing is sent, the reason is kept
+            channel.last_error = refused[1][:500]
+            if await _finish(session, delivery, claim, status=AlertDeliveryStatus.SUPPRESSED.value, reason_code=s10_gate.REASON_CODE,
+                             last_error=refused[1][:500]):
+                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=AlertDeliveryStatus.SUPPRESSED.value).inc()
+            await session.commit()
             continue
         if notification.event_type in staleness.SUPPRESSIBLE and delivery.digest_bucket is None \
                 and await staleness.guard_on(session, delivery.tenant_id, guard):

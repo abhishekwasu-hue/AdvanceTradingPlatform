@@ -1,6 +1,7 @@
 """Per-tenant alert channel configuration: validated shapes, encryption at rest, masking for
 the API, and the severity floor that decides what gets queued."""
 import json
+import re
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator, model_validator
@@ -131,6 +132,36 @@ def e164_numbers(value: List[str]) -> List[str]:
     return clean
 
 
+# RFC 9110 field-name token; a value may hold visible ASCII, spaces and tabs - never CR / LF / NUL (header injection).
+_HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,100}$")
+_HEADER_VALUE = re.compile(r"^[\t\x20-\x7e\x80-\uffff]{0,2000}$")
+MAX_HEADERS = 20
+
+
+def valid_headers(value: Dict[str, str]) -> Dict[str, str]:
+    """Gateway headers as typed, refused when a name is not a token or a value carries a line break / control char."""
+    if len(value) > MAX_HEADERS:
+        raise ValueError(f"at most {MAX_HEADERS} headers")
+    for name, val in value.items():
+        if not _HEADER_NAME.match(str(name)):
+            raise ValueError(f"header name {str(name)[:40]!r} is not a valid HTTP header name")
+        if not isinstance(val, str) or not _HEADER_VALUE.match(val):
+            raise ValueError(f"header {name!r} has a value with a line break or a control character")
+    return value
+
+
+def same_origin(a: Any, b: Any) -> bool:
+    """Scheme, host and port of two URLs match (the default port of the scheme when none is given)."""
+    from urllib.parse import urlsplit
+    try:
+        ua, ub = urlsplit(str(a or "")), urlsplit(str(b or ""))
+        default = {"https": 443, "http": 80}
+        return (ua.scheme.lower(), (ua.hostname or "").lower(), ua.port or default.get(ua.scheme.lower())) == \
+               (ub.scheme.lower(), (ub.hostname or "").lower(), ub.port or default.get(ub.scheme.lower()))
+    except ValueError:
+        return False
+
+
 class SmsConfig(BaseModel):
     """Phase O3: a request template for any HTTP SMS gateway, so no vendor SDK is baked in.
     `body_template` is JSON (or form text) with `{to}`, `{text}`, `{title}`, `{severity}`
@@ -159,6 +190,11 @@ class SmsConfig(BaseModel):
         except EgressBlocked as exc:
             raise ValueError(f"SMS gateway URL refused: {exc}") from exc
         return value
+
+    @field_validator("headers")
+    @classmethod
+    def _headers(cls, value: Dict[str, str]) -> Dict[str, str]:
+        return valid_headers(value)
 
     @model_validator(mode="after")
     def _dlt_fields_set(self) -> "SmsConfig":
@@ -197,7 +233,7 @@ class WhatsAppConfig(BaseModel):
     template_name: str = Field(min_length=1, max_length=512, pattern=r"^[a-z0-9_]+$")
     language: str = Field(default="en", pattern=r"^[a-z]{2}(_[A-Z]{2})?$")
     to_numbers: List[str] = Field(min_length=1, max_length=10)
-    opt_in_confirmed: bool = False
+    opt_in_confirmed: bool                              # required: the organisation confirms it holds every recipient's opt-in
     max_length: int = Field(default=300, ge=60, le=1000)
 
     @field_validator("url")
@@ -213,6 +249,11 @@ class WhatsAppConfig(BaseModel):
     @classmethod
     def _numbers(cls, value: List[str]) -> List[str]:
         return e164_numbers(value)
+
+    @field_validator("headers")
+    @classmethod
+    def _headers(cls, value: Dict[str, str]) -> Dict[str, str]:
+        return valid_headers(value)
 
     @field_validator("body_template")
     @classmethod
@@ -277,8 +318,14 @@ def merge_secrets(channel_type: str, incoming: Dict[str, Any], existing: Optiona
     recipient list without re-typing the SMTP password the API never showed them."""
     merged = dict(incoming)
     if existing:
+        moved = "url" in merged and not same_origin(merged.get("url"), existing.get("url"))
         for field in SECRET_FIELDS.get(channel_type, ()):
             if not merged.get(field):
+                if moved and field == "headers":
+                    # A gateway moved to another scheme / host / port: the stored (write-only) headers - an API key, a
+                    # bearer token - are never sent to the new destination; they must be typed again.
+                    merged[field] = {}
+                    continue
                 merged[field] = existing.get(field)
     return merged
 

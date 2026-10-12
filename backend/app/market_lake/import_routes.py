@@ -13,6 +13,10 @@ HB1: /api/admin/history-backfill/...
                           from today on are refused unless `allow_future`; the form's exchange is the only one loaded
 - POST holidays/remove    undo: the same CSV removes exactly the dates it lists
 Every upload needs the `history_backfill` flag on, is size-capped and is written to the audit log.
+
+HB2: GET /api/admin/history-intraday/progress - what the owner's intraday capture / backfill has done (per instrument:
+days by status, first / last day done, bars stored; days needing attention). Read-only; counts and names only, never
+bars. The capture itself runs in the trading worker after the close or from the CLI (`app.market_lake.intraday_history`).
 """
 from datetime import date
 from typing import Optional
@@ -24,12 +28,14 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import require_mfa_session, require_role
 from app.db.models import User
 from app.db.session import get_session
-from app.market_lake import bhavcopy_backfill, r2_import
+from app.market_lake import bhavcopy_backfill, intraday_history, r2_import
 from app.platform.controls import flag_enabled
 
 router = APIRouter(prefix="/api/admin/history-import", tags=["admin"],
                    dependencies=[Depends(require_role()), Depends(require_mfa_session)])
 backfill_router = APIRouter(prefix="/api/admin/history-backfill", tags=["admin"],
+                            dependencies=[Depends(require_role()), Depends(require_mfa_session)])
+intraday_router = APIRouter(prefix="/api/admin/history-intraday", tags=["admin"],
                             dependencies=[Depends(require_role()), Depends(require_mfa_session)])
 
 MAX_UPLOAD_BYTES = 64 * 1024 * 1024
@@ -48,6 +54,13 @@ async def import_progress(dataset: Optional[str] = Query(None, pattern="^(daily|
 async def backfill_progress(limit: int = Query(200, ge=1, le=5000), session: AsyncSession = Depends(get_session)) -> dict:
     result = await bhavcopy_backfill.progress(session, limit=limit)
     result["flag_on"] = await flag_enabled(session, bhavcopy_backfill.FLAG)
+    return result
+
+
+@intraday_router.get("/progress")
+async def intraday_progress(limit: int = Query(200, ge=1, le=5000), session: AsyncSession = Depends(get_session)) -> dict:
+    result = await intraday_history.progress(session, limit=limit)
+    result["flag_on"] = await intraday_history.enabled(session)
     return result
 
 

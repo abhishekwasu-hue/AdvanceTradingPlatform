@@ -1626,6 +1626,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   IV gate is already ported; `charges.py` has not been checked against ATP on golden fixtures; ATP has no VIX risk gate
   and no Stocko adapter.
 - `docs/ROADMAP_STATUS.md`: a standalone "Trade port map" section with the counts (move under Phase 0 once #165 merges).
+
+### 2026-10-11 - Z7 / U6 BK1 breakout screens (flag screener_breakouts, off)
+- `app/screener/breakouts/`: B1 range / consolidation, B2 swing break (BOS / CHoCH on causal swings), B4 inside / NR4 / NR7
+  (mother-bar rule), B7 N-week high, B13 range expansion, B14 volume breakout. All are causal series on closed bars,
+  with one signal per leg.
+- Quality overlay: grade A / B / C with the reasons. Checks: higher-timeframe Dow trend on the two context timeframes,
+  volume expansion, base dry-up, ATR-percentile regime, room to the next opposing level (swings plus zones S/R).
+  Hard filter: the liquidity floor. Follow-up: failed / accepted status and the retest flag.
+- Style / timeframe selector: Intraday or Swing, signal timeframe -> context ladder, aligned by close time.
+- ScreenQL functions over the same series. Pre-built templates whose ScreenQL text matches the engine bar by bar.
+- Catalog and run API. The flag gate also covers the registry, validate, saved screens, `/run` and alert rules.
+- Every threshold is a parameter with a default and a research note (`docs/research/breakouts.md`).
+- Open questions: BK1-1..BK1-7.
 ### 2026-10-12 02:30 IST - Z5 P1-d: plan-before-trade PAPER ticket, risk by default, strike breach and VIX gate ports
 - Branch `claude/z5-p1d-ticket-risk`, stacked on Z3-b (#174). Flags `risk_by_default` and `vix_gate`, both off.
   Design note: `docs/design/RISK_BY_DEFAULT.md`.
@@ -1712,6 +1725,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   close; hidden / refused while the flag is off (BK1 pattern), alert rules refused, paused at bar close, never intrabar.
 - Frontend: `LayerData.bands` drawn as a `LayerPrimitive` by the lightweight engine; `MarketZonesLayer` + legend on the
   full-window chart. Open questions Z7a3-1 .. Z7a3-8. No order path, no flag turned on.
+
+### 2026-10-11 - Z10-f: legal pages + acceptance, support bot (flag support_bot, off)
+- Privacy notice (DPDP 2023), Terms of use, Risk disclosure as versioned Markdown (`backend/app/legal/content/`), each
+  headed "Draft — to be reviewed by a lawyer before launch"; retention / breach-notice figures read from
+  `app/retention` and `in_sebi.json`; company, address and grievance officer stay placeholders (owner blocker).
+- Public pages `/legal/<slug>` (no shell, no sign-in) and `GET /api/legal/documents[/{slug}]`; acceptance (version +
+  text hash + time + IP/browser) recorded at sign-up / team join, else asked by a non-blocking banner after sign-in.
+  Stored in `ai_acknowledgements` (kind `legal_*`): no migration.
+- Support bot `POST /api/ai/support/ask` (404 while off): help + legal retrieval, refuses advice / account / order
+  questions, hands low confidence to the feedback form, optional rewording only through the organisation's own
+  provider and the advice filter; AI rate units + its own per-user limit. Questions Z10F-1..Z10F-6.
+- Follow-up (coordinator): legal pages, the sign-up/invite consent box and the acceptance banner behind the new flag
+  `legal_pages` (default off: 404, sign-up unchanged, bot leaves legal out); turning it on is refused while placeholders
+  are open unless `override_open_placeholders` (audited). Z10F-5 updated.
 ### 2026-10-11 - Z10-e (G7 + rollout): staged beta cohort, public status page, on-call runbooks
 - Staged rollout: `BETA_COHORT_STAGES` 50 / 200 / 500; the PW6 gate stops at min(stage, `BETA_COHORT_CAP`). The stage is
   stored in `platform_controls` (`beta_cohort_stage`, no migration), moved in Admin > Beta rollout or
@@ -1745,3 +1772,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: the chart's Supertrend refuses a fractional period.
 - CI: a `lookahead` marker; the harness runs as its own job (`backend-lookahead`) and the main run skips it.
 - Open: OPEN_QUESTIONS Z10-6 (VWAP without volume).
+### 2026-10-12 - Z5 P1-d follow-up (verification findings on #179)
+- India VIX gate readings are no longer Copilot market memory: `latest()` shows SYMBOL rows only.
+- BT1b: a VIX reading records whose own session took it. Only that member sees India VIX's values (status strip and
+  refusal wording); every other member gets the same verdict and reason without the values.
+- With byob on, each active member's Tier A session is tried in turn until one reads.
+- A capture that raises before reading stores a failed reading, or is retried on the next cycle.
+- An approved ticket proposal whose time stop has come is not placed (FAILED with the reason).
+- The ticket's cash-underlying check uses the instrument master when it knows the symbol.
+- CI exports `Z5_TEST_PG_URL`: the entry-slot race test runs on Postgres in a scratch database it creates and drops.
+- The clock fix (time exits judged on the cycle's clock) is merged in from `claude/z5-p1d-clockfix`.

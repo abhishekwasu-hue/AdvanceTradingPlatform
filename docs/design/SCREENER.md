@@ -905,6 +905,96 @@ Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1");
   gallery render (rail, chips, cards, empty cell, matrix, disabled Open, no advice wording, no Devanagari), a Playwright
   spec (flag off: no button; rail -> chip -> empty cell -> card -> Open loads the starter), Storybook stories.
 
+## U6 BK1 (built): breakout screens, quality overlay, style / timeframe selector (flag `screener_breakouts`, off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`. Code: `app/screener/breakouts/`. Research notes and every
+parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 are in `docs/OPEN_QUESTIONS.md`.
+- **Screens.** B1 range / consolidation (fixed N bars or the auto base), B2 swing high / low with BOS / CHoCH / BREAK (causal
+  swings of a chosen degree, confirmed by the bar before the break), B4 inside bar / NR4 / NR7 (mother-bar failure
+  rule), B7 N-week high (calendar weeks; Daily / Weekly only; fresh vs extended in calendar days), B13 range expansion, B14 volume shock at or through
+  the range edge.
+  - Each is a causal per-bar series on closed bars. ATR is read on the bar before the signal.
+  - The down side is the up rule on mirrored prices.
+  - One signal per leg: a side re-arms after a confirmed swing against it, a failed break, or `leg_rearm_bars`
+    bars without a new extreme.
+- **Quality overlay.** An equal-weight checklist sets the grade at the signal bar:
+  - higher-timeframe Dow trend, one point for each context timeframe;
+  - volume expansion;
+  - base dry-up;
+  - a low ATR-percentile regime;
+  - room to the next opposing level (confirmed swings plus the zones port's classical S/R) of at least `room_min_r` R.
+
+  A = 5+, B = 3+, else C. A break against every context timeframe is C. The liquidity floor is a hard filter. Each
+  result also gets a follow-up status (failed / accepted / pending / unconfirmed) and a retest flag (held / failed)
+  for the journal.
+- **Style / timeframe.** Intraday (1m-15m) or Swing (30m-1w). The signal timeframe maps to its context timeframes
+  through `context_ladder` (15m -> 1h + 1d, 1h -> 1d + 1w). A context value reaches a signal bar by close time, using
+  the runtime's own alignment, so a day's trend is never seen before that day closes (tested). 2h / 4h bars are built
+  09:15-anchored for the engine; screenql/1 has no @2h / @4h (BK1-1).
+- **ScreenQL.** The same series are available as functions:
+  - `RangeBreakout`, `SwingBreakout`, `SwingBreakType`, `NRBreakout`, `NewHighBreakout`, `RangeExpansion`,
+    `VolumeBreakout`;
+  - `RelVolume`, `ATRPercentile`, `DowTrend` (use it with `@tf` for the higher timeframe).
+
+  Their argument defaults are the parameter defaults (tested). A template's text is the screen call AND
+  `DowTrend(degree)@ctx` per context timeframe, built as one AST. It is checked against the engine bar by bar, and on
+  the last bar through `run_screen`.
+- **API.** `GET /api/screener/breakouts/catalog` returns the selector, the "Breakout" and "Breakout quality" block
+  families, the templates with their text, and every parameter. `POST /api/screener/breakouts/run` runs a template or a
+  screen over at most 50 symbols on the organisation's broker bars, with daily context from daily history.
+  - Both endpoints need `screener_v2` and `screener_breakouts`.
+  - While `screener_breakouts` is off, `/registry` hides the breakout functions, and `/validate`, saved screens,
+    `/run` and instrument alert rules refuse them, with the reason.
+  - Research only: nothing places, changes or blocks an order.
+- **Not in BK1.** These need the Trade engine port, the events calendar or BK2's time-of-day series:
+  - the maturity flag (a 5th-leg break into a major level);
+  - the event-day filter;
+  - the time-of-day window.
+
+  The fitness statistics by grade, timeframe and regime come in BK5.
+
+### U6 BK1 review follow-up
+- **Templates on the history the platform fetches (H1, then verification A).**
+  - A Dow trend is read after `dow_min_bars` (40 at D0, measured) and is missing before.
+  - `DowTrend` asks the validator for 1 bar, so a short frame is never refused. The fetch is sized separately, through
+    `Spec.fetch_degree_bars` -> `Validated.fetch_lookback` (100 / 250 / 600 / 1200 bars by degree). The screener run and
+    alert rules size their fetch with `fetch_lookback`.
+  - An intraday screen that reads a daily-or-coarser timeframe gets the broker's daily history as its "1d" frame
+    (`fetch_frames._attach_daily`). The runtime builds @1w / @1M from that frame. Alert rules keep it, cut to the
+    sessions closed by the evaluated bar.
+  - `not_against` BLOCKS on an unknown trend: `DowTrend(0)@tf != "DOWN"` is false on a missing value, and
+    `quality.htf_pass` matches it. An alert therefore never fires on context it could not read. Reviewer repro: 121
+    counter-trend NR7 breaks hidden by /run, 0 matched by the template on the alert window.
+  - Daily and weekly signals have one context timeframe (1d -> 1w, 1w -> 1M). The weekly 52-week template has no
+    context filter (BK1-2).
+  - A test runs every template on the alert fetch window (fetch-sized intraday bars plus the daily history) with the
+    history check on. No "not enough history", and every template matches.
+- **Fetch cost and the cycle cache (verification F1-F3).**
+  - **F1, cycle cache:** a cache entry records the lookback per timeframe it was fetched for, and is reused only when it
+    covers every timeframe a rule asks for. A plain 15m rule's frame (no daily context) is never served to a breakout
+    rule, so the result no longer depends on rule order. A refetch merges both needs.
+  - **F2, daily history:** completed-session daily history for context is cached per user namespace, symbol and
+    session date (`HISTORY_CACHE_TTL_SECONDS`), not fetched again every cycle.
+  - **F3, intraday window:** with the daily history attached, only intraday timeframes size the intraday window.
+  - **Breakout run:** the run reports refused daily-context fetches (BYOB) as problems.
+- **Z10-a harness:** the 10 breakout functions have `SCREENQL_SERIES` / daily cases in `app/quality/causal_cases.py`.
+  Their numeric settings are `literal_only`: a literal or a $parameter, never a per-bar expression.
+- **Months (verification B).** `runtime.bar_close` counts a month in exchange time. A month labelled 1 Aug 00:00 IST
+  (31 Jul 18:30 UTC) used to close on 30 Aug in UTC arithmetic, a session early. Tested on UTC 03:45, UTC 18:30 and
+  IST-aware daily stamps.
+- **Alerts (M1-M3).** A screen rule on a saved breakout screen is gated like an instrument rule. While the flag is off,
+  a breakout rule stays active and is skipped with `last_problem` (flag read once per tenant per cycle); it resumes when
+  the flag is back. Breakout rules fire on bar close only: `fire_on = "intrabar"` is refused at creation and skipped by
+  the engine.
+- **Buckets (M5, M6).** Intraday buckets start at 09:15 IST whatever the index's time zone (an IST-aware index used to
+  start them at 09:45). Daily-and-coarser buckets are made in Asia/Kolkata, so a daily bar stamped 00:00 IST (18:30
+  UTC the day before) falls in its own week and month. Both are in `runtime.resample`, so every screen gets them.
+- **/run (M7, M8, L6-L8).** Rows that fail the template's higher-timeframe filter are hidden (counted in
+  `htf_failed_hidden`; `include_htf_failed` lists them). Grading runs in a worker thread; `within x symbols` is capped at
+  2,500. B7 on a wrong timeframe and malformed symbols are refused before any fetch. A daily-or-coarser signal builds
+  every frame from one daily fetch.
+- **Validation (L1, L2).** Breakout arguments carry their parameter's range. `NewHighBreakout` runs on @1d / @1w only
+  and asks for weeks x 5 daily bars. `ATRPercentile` asks for n + lookback bars.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

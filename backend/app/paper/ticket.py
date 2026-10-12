@@ -40,7 +40,7 @@ from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import RiskConfig, Signal
-from app.db.models import AiActionRecord, Tenant, TradePlanRecord, TradeRecord, User
+from app.db.models import AiActionRecord, InstrumentRecord, Tenant, TradePlanRecord, TradeRecord, User
 from app.execution import approval
 from app.instruments.registry import get_contract_spec
 from app.market_data.calendar import to_ist
@@ -96,6 +96,21 @@ async def _org_config(session: AsyncSession, tenant_id: int) -> RiskConfig:
     return cfg
 
 
+CASH_TYPES = ("EQ", "INDEX")
+CASH_EXCHANGES = ("NSE", "BSE")
+
+
+async def is_cash_underlying(session: AsyncSession, symbol: str) -> bool:
+    """Whether the ticket may take `symbol`: by the instrument master when it knows the symbol (an NSE/BSE EQ or INDEX
+    row, any broker's master), else - a master not synced yet - not a registry contract (MCX, crypto) and not shaped
+    like an option or future trading symbol."""
+    rows = list(await session.execute(select(InstrumentRecord.exchange, InstrumentRecord.instrument_type)
+                                      .where(InstrumentRecord.tradingsymbol == symbol.upper()).limit(50)))
+    if rows:
+        return any((ex or "").upper() in CASH_EXCHANGES and (kind or "").upper() in CASH_TYPES for ex, kind in rows)
+    return get_contract_spec(symbol) is None and not DERIVATIVE.search(symbol.upper())
+
+
 async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[datetime] = None) -> Dict[str, Any]:
     """Everything the ticket shows for this plan, checked: sizing, refusals, warnings, checklist, cost line. Reads only
     (a daily loss lockout seen for the first time is recorded, as the order pipeline would)."""
@@ -119,7 +134,7 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
         earliest = (to_ist(asked_at or wall_clock()) + timedelta(minutes=app_config.TICKET_TIME_STOP_MIN_LEAD_MINUTES)).strftime("%H:%M")
         if plan.time_stop <= earliest:
             errors.append(f"Time stop {plan.time_stop} IST is already past (it must be after {earliest} IST): the position would close at once")
-    if get_contract_spec(symbol) is not None or DERIVATIVE.search(symbol):
+    if not await is_cash_underlying(session, symbol):
         errors.append("The PAPER ticket covers NSE/BSE cash underlyings in Phase 0 (no futures, options, commodities or crypto)")
 
     ceilings = await risk_ceilings(session)
@@ -129,7 +144,8 @@ async def assess(session: AsyncSession, user: User, plan: Plan, now: Optional[da
     cap_info = by_default.risk_cap(basis, settings)
     cfg = await _org_config(session, user.tenant_id)
     org_cap = round(cfg.capital * cfg.risk_per_trade_pct / 100.0, 2)
-    guard = await guard_entry(session, user.tenant_id, mode=by_default.MODE, underlying=symbol, cfg=cfg, now=asked_at, direction=direction)
+    guard = await guard_entry(session, user.tenant_id, mode=by_default.MODE, underlying=symbol, cfg=cfg, now=asked_at, direction=direction,
+                              user_id=user.id)
     refusals.extend(guard.reasons)
     warnings.extend(guard.notes)
     multiplier = max(0.0, float(guard.size_multiplier))
@@ -383,7 +399,7 @@ async def risk_status(session: AsyncSession, user: User, now: Optional[datetime]
                   "entries": act["entries_today"], "max_entries": settings.max_trades_per_day},
         "lockout": locked, "overrides": await by_default.override_counts(session, user, now),
         "override_max_multiple": app_config.RISK_OVERRIDE_MAX_MULTIPLE, "override_min_reason_chars": app_config.RISK_OVERRIDE_MIN_REASON_CHARS,
-        "vix_gate": await vix_gate.status(session, user.tenant_id, asked_at),
+        "vix_gate": await vix_gate.status(session, user.tenant_id, asked_at, viewer_id=user.id),
         "setups": SETUPS, "checklist": CHECKLIST, "exits": "Exits are never locked: stops, targets, time stops and Exit now always work.",
         "as_of": now.isoformat(),
     }

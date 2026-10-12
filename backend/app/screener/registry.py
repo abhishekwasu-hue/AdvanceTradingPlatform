@@ -24,6 +24,7 @@ class Arg:
     required: bool = True
     choices: Tuple[object, ...] = ()  # S5-A: the only values allowed (a literal or a parameter); empty = any
     literal_only: bool = False      # Z10-a: a setting read once (a literal or a $parameter), never an expression per bar
+    bounds: Optional[Tuple[float, float]] = None   # U6 BK1: inclusive range of a number (checked at validation)
 
 
 @dataclass(frozen=True)
@@ -46,7 +47,11 @@ class Spec:
     price_args: Tuple[int, ...] = ()  # S5-A2: positions that must be prices (a level), not an oscillator or a count
     needs: Tuple[str, ...] = ()       # U5 D2: data beyond bars - "reference" (sector, index, F&O lists) or "option_chain"
     degree_min_bars: Tuple[int, ...] = ()  # S5-A4: min_bars by the `degree` argument (swings need more history per degree)
-    flag: Optional[str] = None             # an operator flag that must be on for a screen to use it (API layer; U6 BK1 / Z7a-3)
+    flag: Optional[str] = None             # U6 BK1: an operator flag that must be on for a screen to use it (API layer)
+    timeframes: Tuple[str, ...] = ()       # U6 BK1: the only timeframes it runs on (empty = any)
+    window_bars: Tuple[Tuple[str, int], ...] = ()   # U6 BK1: bars per window unit by timeframe (weeks -> 5 daily bars)
+    window_sum: bool = False               # U6 BK1: the window arguments add up (ATR warm-up + percentile lookback)
+    fetch_degree_bars: Tuple[int, ...] = ()  # U6 BK1: bars to FETCH by degree (fetch sizing only; min_bars decides refusal)
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -74,6 +79,22 @@ REVERSAL_MIN_BARS = 25                            # the median range of 20 bars 
 BREAK_EXTRA_BARS = 21                             # RealBreak: the median range (20 bars) before the earliest candidate, plus one
 
 _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
+_DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
+_SIDE = Arg("side", STR, choices=("up", "down"))
+BREAKOUT_FLAG = "screener_breakouts"
+
+
+def _bk(name: str, arg: str, type_: str, required: bool = False, choices: Tuple[object, ...] = ()) -> Arg:
+    """A breakout argument whose default and range are the breakout parameter's (app/screener/breakouts/params.py)."""
+    from app.screener.breakouts.params import BY_NAME
+    p = BY_NAME[name]
+    bounds = (float(p.low), float(p.high)) if p.low is not None and p.high is not None else None
+    # a NUM setting is read once for the whole series (Z10-a literal_only): a literal or a $parameter, never an expression
+    return Arg(arg, type_, None if required else p.default, required, choices=choices or p.choices, bounds=bounds,
+               literal_only=type_ == NUM)
+
+
+BREAKOUT_MIN_BARS = 50                            # ATR warm-up plus a leg pivot before the first signal
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
 # Z7a-3: market-zone functions (app/screener/zones.py) - the stored zone snapshots, behind the `market_zones` flag
@@ -168,6 +189,45 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),
     Spec("IndexMember", "filter", BOOL, None, (Arg("index", STR),), timeframed=False, doc="member of the index on the run date", needs=("reference",)),
     Spec("IsFnO", "filter", BOOL, None, (), timeframed=False, doc="in the F&O segment on the run date", needs=("reference",)),
+    # U6 BK1: breakout screens (app/screener/breakouts) - one signal per leg, closed bars only; behind `screener_breakouts`.
+    # The defaults below are the breakout parameters' defaults (app/screener/breakouts/params.py, tested equal).
+    Spec("RangeBreakout", "filter", BOOL, None, (_SIDE, _bk("range_n", "n", "window"), _bk("min_break_atr", "k", NUM), _bk("vol_mult", "v", NUM),
+                                                 _bk("range_mode", "mode", STR)),
+         cost=4.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B1: close beyond the n-bar range (mode auto: the consolidation before the bar) by k ATR on volume >= v x average"),
+    Spec("SwingBreakout", "filter", BOOL, None, (_SIDE, _DEGREE1, _bk("min_break_atr", "k", NUM)), cost=4.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B2: close beyond the last CONFIRMED swing high (up) / low (down) of the degree by k ATR"),
+    Spec("SwingBreakType", "classifier", CAT, None, (_SIDE, _DEGREE1, _bk("min_break_atr", "k", NUM)), cost=4.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, values=("BOS", "CHOCH", "BREAK", ""), flag=BREAKOUT_FLAG,
+         doc="B2: on a SwingBreakout bar, BOS (with the swing trend), CHOCH (against it) or BREAK (range / no trend yet); empty on"
+             " other bars"),
+    Spec("NRBreakout", "filter", BOOL, None, (_SIDE, _bk("nr_setup", "setup", STR), _bk("vol_mult", "v", NUM), _bk("min_break_atr", "k", NUM)),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B4: the bar after an inside / NR4 / NR7 bar closes beyond it by k ATR on volume >= v x average"),
+    Spec("NewHighBreakout", "filter", BOOL, None, (_SIDE, _bk("high_weeks", "weeks", "window"), _bk("vol_mult", "v", NUM), _bk("min_break_atr", "k", NUM)),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG, timeframes=("1d", "1w"), window_bars=(("1d", 5), ("1w", 1)),
+         doc="B7 (Daily / Weekly): close beyond the high (up) / low (down) of the previous N calendar weeks by k ATR on volume >= v x"
+             " average; no match until the history covers the N weeks"),
+    Spec("RangeExpansion", "filter", BOOL, None, (_SIDE, _bk("expansion_k", "k", NUM), _bk("vol_mult", "v", NUM)), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B13: bar range >= k x ATR with the close in the top (up) / bottom (down) third, volume >= v x average"),
+    Spec("VolumeBreakout", "filter", BOOL, None, (_SIDE, _bk("shock_mult", "v", NUM), _bk("range_n", "n", "window")), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B14: volume >= v x average with a directional candle at or through the n-bar high (up) / low (down)"),
+    Spec("RelVolume", "factor", NUM, "ratio", (_bk("vol_avg_n", "n", "window"),), extra_bars=1, flag=BREAKOUT_FLAG,
+         doc="volume / the mean volume of the n bars before this one"),
+    Spec("ATRPercentile", "factor", NUM, "pct", (_bk("atr_n", "n", "window"), _bk("atr_pct_lookback", "lookback", "window")), cost=2.0,
+         window_sum=True, flag=BREAKOUT_FLAG,
+         doc="percentile (0-100) of the previous bar's ATR / close among the last `lookback` bars (needs n + lookback bars)"),
+    # Refusal vs fetch: min_bars 1 - a context frame shorter than the trend's warm-up (dow_min_bars, 40 at D0) reads as
+    # missing (unknown), which `DowTrend(0)@tf != "DOWN"` treats as not passing (cautious); the fetch is sized for the
+    # swing history (100 / 250 / 600 / 1200 bars by degree) so the trend can be read.
+    Spec("DowTrend", "classifier", CAT, None, (_DEGREE,), cost=2.0, min_bars=1, fetch_degree_bars=SWING_DEGREE_MIN_BARS,
+         values=("UP", "DOWN", "RANGE"), flag=BREAKOUT_FLAG,
+         doc="Dow trend from CONFIRMED swings: UP (higher high + higher low), DOWN (lower high + lower low), RANGE; missing before"
+             " both are labelled and on the frame's first 40 (dow_min_bars) / 250 / 600 / 1200 bars (by degree). With @tf it is the higher"
+             " timeframe's trend from its closed bars"),
     # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
     Spec("NearZone", "filter", BOOL, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
          doc="true when there is a zone of that role" + _ZDOC),
@@ -180,6 +240,7 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
+BREAKOUT_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == BREAKOUT_FLAG)
 
 
 # Z10-a (U3 G2): functions answered for the LAST bar only - the structure / pattern / zone filters, the option chain,
@@ -204,5 +265,6 @@ def describe() -> Dict[str, Dict[str, object]]:
     return out
 
 
-__all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "ZONE_FUNCTIONS", "ZONES_FLAG", "MAX_WINDOW",
+__all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
+           "ZONES_FLAG", "MAX_WINDOW",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

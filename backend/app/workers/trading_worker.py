@@ -708,10 +708,11 @@ class TradingWorker:
         for tenant_id in tenant_ids:
             if not vix_gate.due(self._last_vix.get(tenant_id), now):
                 continue
-            self._last_vix[tenant_id] = now
             with bind_log_context(tenant_id=tenant_id):
                 try:
                     user = await self._acting_user(session, tenant_id, [])
+                    members = list(await session.scalars(select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True))
+                                                         .order_by(User.id)))
                     broker = None
                     if user is not None:
                         for account in await list_accounts(session, tenant_id):
@@ -719,11 +720,19 @@ class TradingWorker:
                                 broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
                                 if broker is not None:
                                     break
-                    await vix_gate.capture_for_tenant(session, tenant_id, user, org_adapter=broker, market_data_factory=self.market_data_factory, now=now)
+                    await vix_gate.capture_for_tenant(session, tenant_id, user, org_adapter=broker, market_data_factory=self.market_data_factory,
+                                                      now=now, members=members)
+                    self._last_vix[tenant_id] = now          # a reading (good or failed) is stored: the next one is due later
                     taken += 1
-                except Exception:  # noqa: BLE001 - one organisation's reading must not stop the others
+                except Exception as exc:  # noqa: BLE001 - one organisation's reading must not stop the others
                     logger.exception("India VIX reading for tenant %s failed", tenant_id)
                     await session.rollback()
+                    try:                                     # store why, so the gate can say it; else retry next cycle
+                        await vix_gate.capture(session, tenant_id, None, now=now, source="none", error=f"reading failed: {type(exc).__name__}: {exc}"[:150])
+                        self._last_vix[tenant_id] = now
+                    except Exception:  # noqa: BLE001 - no reading stored: due again on the next cycle
+                        logger.exception("Storing the failed India VIX reading for tenant %s failed", tenant_id)
+                        await session.rollback()
         return taken
 
     async def _keep_lock(self, session: AsyncSession, report: CycleReport, where: str) -> bool:

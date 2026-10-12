@@ -38,6 +38,9 @@ _DURATION: Dict[str, Any] = {"1m": timedelta(minutes=1), "3m": timedelta(minutes
                              "1M": DateOffset(months=1)}
 
 
+EXCHANGE_TZ = "Asia/Kolkata"
+
+
 class ScreenRuntimeError(ValueError):
     """The screen cannot run as given (not validated, missing base data)."""
 
@@ -63,6 +66,11 @@ class Match:
 
 
 def bar_close(index: pd.DatetimeIndex, tf: str) -> pd.DatetimeIndex:
+    """When a bar that starts at `index` has closed. Months are counted in exchange time (BK1 verification B): a month
+    labelled 1 Aug 00:00 IST is 31 Jul 18:30 UTC, and one calendar month on from the UTC stamp clipped to 30 Aug -
+    a day before the month's last session - so the month was visible early."""
+    if tf == "1M" and getattr(index, "tz", None) is not None:
+        return (index.tz_convert(EXCHANGE_TZ) + _DURATION[tf]).tz_convert(index.tz)
     return index + _DURATION[tf]
 
 
@@ -74,6 +82,17 @@ def closed_only(df: pd.DataFrame, tf: str, now: datetime) -> pd.DataFrame:
     return df[bar_close(df.index, tf) <= pd.Timestamp(now)]
 
 
+def session_origin(index: pd.DatetimeIndex) -> pd.Timestamp:
+    """09:15 IST on the first bar's date, in the index's own time zone. U6 BK1 review (M5): normalising an IST-aware stamp
+    gave IST midnight, so 03:45 later was 03:45 IST and 1h bars started at 09:45 / 2h at 11:45 (Fyers / Dhan / Kite
+    frames are IST-aware). A naive index is read as UTC, as before."""
+    from app.strategy_engine.declarative import _IST_OPEN_UTC
+    first = index[0]
+    if first.tzinfo is None:
+        return first.normalize() + _IST_OPEN_UTC
+    return (first.tz_convert("UTC").normalize() + _IST_OPEN_UTC).tz_convert(first.tzinfo)
+
+
 def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = False) -> pd.DataFrame:
     """Coarser bars from base bars (bar start labels), dropping a trailing bucket that had not closed (kept only for
     S4b-2 intrabar alerts, `keep_forming`). Intraday buckets start at the exchange open, like the broker's charts and
@@ -82,13 +101,20 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = Fal
     if "oi" in base.columns:
         agg["oi"] = "last"
     kwargs: Dict[str, Any] = {"label": "left", "closed": "left"}
+    tz = getattr(base.index, "tz", None)
+    src = base
     if n.TF_MINUTES[tf] < n.TF_MINUTES["1d"] and len(base):
-        from app.strategy_engine.declarative import _IST_OPEN_UTC
-        kwargs["origin"] = base.index[0].normalize() + _IST_OPEN_UTC
-    out = base.resample(_RESAMPLE[tf], **kwargs).agg(agg).dropna(subset=["close"])
+        kwargs["origin"] = session_origin(base.index)
+    elif tz is not None and len(base):
+        # U6 BK1 review (M6): sessions, weeks and months are exchange-calendar buckets. Daily bars stamped 00:00 IST are
+        # 18:30 UTC the day before; bucketing them in UTC put a Monday into the previous week (a week seen a day early).
+        src = base.tz_convert(EXCHANGE_TZ)
+    out = src.resample(_RESAMPLE[tf], **kwargs).agg(agg).dropna(subset=["close"])
+    if src is not base:
+        out.index = out.index.tz_convert(tz)
     if len(out) and len(base) and not keep_forming:
-        last_base_close = base.index[-1] + _DURATION[base_tf]
-        if out.index[-1] + _DURATION[tf] > last_base_close:
+        last_base_close = bar_close(base.index[-1:], base_tf)[0]
+        if bar_close(out.index[-1:], tf)[0] > last_base_close:
             out = out.iloc[:-1]
     return out
 
@@ -102,7 +128,11 @@ class _Eval:
 
     def frame(self, tf: str) -> pd.DataFrame:
         if tf not in self.frames:
-            self.frames[tf] = resample(self.frames[self.base_tf], self.base_tf, tf)
+            src = self.base_tf
+            # U6 BK1 verification (A): weekly / monthly from a given daily frame (the deeper history) on an intraday screen
+            if "1d" in self.frames and n.TF_MINUTES[self.base_tf] < n.TF_MINUTES["1d"] < n.TF_MINUTES[tf]:
+                src = "1d"
+            self.frames[tf] = resample(self.frames[src], src, tf)
         return self.frames[tf]
 
     def align(self, value: Any, src_tf: str, dst_tf: str) -> Any:
@@ -112,7 +142,8 @@ class _Eval:
         avail = pd.Series(value.to_numpy(), index=bar_close(value.index, src_tf))
         avail = avail[~avail.index.duplicated(keep="last")].sort_index()
         dst_close = bar_close(self.frame(dst_tf).index, dst_tf)
-        out = avail.reindex(avail.index.union(dst_close)).ffill().reindex(dst_close)
+        with pd.option_context("future.no_silent_downcasting", True):       # a category series stays object (no dtype guess)
+            out = avail.reindex(avail.index.union(dst_close)).ffill().reindex(dst_close)
         return pd.Series(out.to_numpy(), index=self.frame(dst_tf).index)
 
     def ev(self, node: Any, tf: str) -> Any:  # noqa: C901 - one switch over the node kinds
@@ -225,6 +256,21 @@ class _Eval:
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
+            # U6 BK1: breakout screens (app/screener/breakouts) - the same series the breakout engine and templates use
+            "RangeBreakout": lambda: _breakout(f, "B1", str(self.ev(args[0], tf)), {"range_n": win(1, 20), "min_break_atr": num(2, 0.2),
+                                                                                       "vol_mult": num(3, 1.5), "range_mode": _text(4, "fixed")}),
+            "SwingBreakout": lambda: _breakout(f, "B2", str(self.ev(args[0], tf)), {"swing_degree": int(num(1, 1)), "min_break_atr": num(2, 0.2)}),
+            "SwingBreakType": lambda: _breakout(f, "B2", str(self.ev(args[0], tf)), {"swing_degree": int(num(1, 1)), "min_break_atr": num(2, 0.2)},
+                                                "type"),
+            "NRBreakout": lambda: _breakout(f, "B4", str(self.ev(args[0], tf)), {"nr_setup": _text(1, "nr7"), "vol_mult": num(2, 1.5),
+                                                                                 "min_break_atr": num(3, 0.2)}),
+            "NewHighBreakout": lambda: _breakout(f, "B7", str(self.ev(args[0], tf)), {"high_weeks": win(1, 52), "vol_mult": num(2, 1.5),
+                                                                                      "min_break_atr": num(3, 0.2)}),
+            "RangeExpansion": lambda: _breakout(f, "B13", str(self.ev(args[0], tf)), {"expansion_k": num(1, 2.0), "vol_mult": num(2, 1.5)}),
+            "VolumeBreakout": lambda: _breakout(f, "B14", str(self.ev(args[0], tf)), {"shock_mult": num(1, 2.0), "range_n": win(2, 20)}),
+            "RelVolume": lambda: _rel_volume(f, win(0, 20)),
+            "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
+            "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
             # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
             "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
@@ -454,6 +500,48 @@ def break_scan_start(closes: np.ndarray, j: int, level: float, side: str, n_: in
     return None if hit.size == 0 else lo + int(hit[0]) + 1
 
 
+def _breakout_params(overrides: Dict[str, Any]) -> Dict[str, Any]:
+    from app.screener.breakouts import params as bp
+    try:
+        return bp.settings(**overrides)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+
+
+def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any], what: str = "signal") -> pd.Series:
+    """U6 BK1: one breakout screen's per-leg signal on each bar (or, `type`, BOS / CHOCH on B2 signal bars), from
+    app/screener/breakouts/screens.py with every other parameter at its default (closed bars, causal)."""
+    from app.screener.breakouts.screens import evaluate_screen
+    if side not in ("up", "down"):
+        raise ScreenRuntimeError(f"unknown breakout side {side!r}")
+    p = _breakout_params(overrides)
+    try:
+        out = evaluate_screen(f, screen, p, sides=(side,))[side]
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    if what == "type":
+        return out["event"].where(out["signal"], "").astype(object)
+    return out["signal"].astype(bool)
+
+
+def _rel_volume(f: pd.DataFrame, n_: int) -> pd.Series:
+    from app.screener.breakouts.screens import Bars
+    return pd.Series(Bars(f, _breakout_params({"vol_avg_n": n_})).rvol, index=f.index)
+
+
+def _atr_percentile(f: pd.DataFrame, atr_n: int, lookback: int) -> pd.Series:
+    from app.screener.breakouts.quality import atr_percentile_series
+    from app.screener.breakouts.screens import Bars
+    b = Bars(f, _breakout_params({"atr_n": atr_n}))
+    return pd.Series(atr_percentile_series(b.atr_prev, b.c, lookback), index=f.index, dtype=float)
+
+
+def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
+    from app.screener.breakouts.screens import Bars
+    try:
+        return pd.Series(Bars(f, _breakout_params({})).dow(degree), index=f.index, dtype=object)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
 def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:
     from app.screener.zones import zone_series
     return zone_series(data, f, tf, what, role, tolerance_pct, family)

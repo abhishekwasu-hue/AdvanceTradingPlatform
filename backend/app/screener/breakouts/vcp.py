@@ -54,14 +54,29 @@ class Pivot:
 def zigzag(h: np.ndarray, lo: np.ndarray, size: np.ndarray) -> List[Pivot]:
     """Causal zigzag on (oriented) highs and lows, in confirmation order (alternating H / L): a reversal of at least
     size[t] (a price distance known at bar t; NaN: no reversal is read on that bar). A reversal on the bar that also
-    made the new extreme is not counted (the order inside a bar is unknown)."""
+    made the new extreme is not counted (the order inside a bar is unknown). When a swing is confirmed at bar t, the new
+    opposite extreme is the most extreme bar AFTER the pivot up to t (as app.price_action.causal_swings.zigzag_pivots
+    re-scans) - never just bar t, which would skip a deeper low / higher high between the pivot and t (BK3 review M1)."""
     out: List[Pivot] = []
     n = len(h)
-    if n == 0:
+    finite = np.flatnonzero(np.isfinite(h) & np.isfinite(lo))
+    if not len(finite):
         return out
+    start = int(finite[0])                      # seeded from the first bar with prices (a NaN bar 0 would stall it)
     mode = 0                                    # 0: no swing yet, 1: tracking a high, -1: tracking a low
-    hi, hi_i, lw, lw_i = float(h[0]), 0, float(lo[0]), 0
-    for t in range(1, n):
+
+    def lowest_after(i: int, t: int) -> Tuple[float, int]:
+        seg = lo[i + 1:t + 1]
+        j = int(np.nanargmin(seg))              # bar t is finite, so the segment has a value
+        return float(seg[j]), i + 1 + j
+
+    def highest_after(i: int, t: int) -> Tuple[float, int]:
+        seg = h[i + 1:t + 1]
+        j = int(np.nanargmax(seg))
+        return float(seg[j]), i + 1 + j
+
+    hi, hi_i, lw, lw_i = float(h[start]), start, float(lo[start]), start
+    for t in range(start + 1, n):
         ht, lt, thr = float(h[t]), float(lo[t]), float(size[t])
         if not (np.isfinite(ht) and np.isfinite(lt)):
             continue
@@ -78,22 +93,26 @@ def zigzag(h: np.ndarray, lo: np.ndarray, size: np.ndarray) -> List[Pivot]:
                 lw, lw_i = lt, t
             if hi_i < t and lt <= hi - thr:
                 out.append(Pivot(t, hi_i, "H", hi))
-                mode, lw, lw_i = -1, lt, t
+                mode = -1
+                lw, lw_i = lowest_after(hi_i, t)
             elif lw_i < t and ht >= lw + thr:
                 out.append(Pivot(t, lw_i, "L", lw))
-                mode, hi, hi_i = 1, ht, t
+                mode = 1
+                hi, hi_i = highest_after(lw_i, t)
         elif mode == 1:
             if ht > hi:
                 hi, hi_i = ht, t
             elif lt <= hi - thr:
                 out.append(Pivot(t, hi_i, "H", hi))
-                mode, lw, lw_i = -1, lt, t
+                mode = -1
+                lw, lw_i = lowest_after(hi_i, t)
         else:
             if lt < lw:
                 lw, lw_i = lt, t
             elif ht >= lw + thr:
                 out.append(Pivot(t, lw_i, "L", lw))
-                mode, hi, hi_i = 1, ht, t
+                mode = 1
+                hi, hi_i = highest_after(lw_i, t)
     return out
 
 

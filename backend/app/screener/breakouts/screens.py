@@ -199,7 +199,9 @@ class Bars:
             s = pa_settings.settings()
             if not 0 <= degree < len(s["swing_atr_mult"]):
                 raise ValueError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
-            if s["swing_mode"] != "fractal":
+            if self.n < 3:
+                self._pivots[degree] = []                            # as cs.degree_pivots: no swing on fewer than 3 bars
+            elif s["swing_mode"] != "fractal":
                 # U6 BK3 perf: the same zigzag as cs.degree_pivots (tested equal) on the bars' own arrays - the screens read a
                 # pivot's kind, price, bar and confirmation bar only, so no frame and no timestamps are built
                 frame = pd.DataFrame({"high": self.h, "low": self.l, "close": self.c})

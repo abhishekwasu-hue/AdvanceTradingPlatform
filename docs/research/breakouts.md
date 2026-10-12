@@ -209,7 +209,7 @@ How BK3 uses them:
 | `vcp_min_bars` | B3 | 15 | Three weeks on Daily, the shortest VCP base in Minervini's range (3 to 65 weeks). |
 | `vcp_max_bars` | B3 | 125 | About six months on Daily; bounds the walk (raise it for the longer bases in Minervini's 3-65 week range). |
 | `vcp_vol_dryup` | B3 | True | Minervini: volume contracts with the price contractions and dries up in the last one. |
-| `vcp_ready_pct` | B3 | 5 | The pivot buy point sits at the top of the last contraction; within about 5 % of it the base is 'ready'. |
+| `vcp_ready_pct` | B3 | 5 | The pivot level sits at the top of the last contraction; within about 5 % of it the base is 'ready'. |
 | `tt_filter` | B3 | True | Minervini's trend template (2013), without the RS rating (open question BK3-1). |
 | `tt_ma_fast` | B3 | 50 | Minervini's trend template: the 50-day line. |
 | `tt_ma_mid` | B3 | 150 | Minervini's trend template: the 150-day line. |

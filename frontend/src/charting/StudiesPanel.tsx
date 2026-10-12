@@ -1,14 +1,14 @@
 /**
  * N4 CH6: the study list on a chart - add a ScreenQL expression ("SMA(close, 20)", "RSI(14)", "close > EMA(close, 9)"),
  * see each study's value or why it was refused, remove it. The values are the server's (the screener runtime, as of
- * `at`); the WebWorker only turns them into chart series. Flag `chart_studies`: while it is off nothing is shown.
+ * `at`); the browser only turns them into chart series (condition marks through the study WebWorker). Flag `chart_studies`: while it is off nothing is shown.
  */
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChartEngine } from "./engine";
 import { layerTf } from "./priceAction";
 import { windowStart } from "./replay";
 import { createStudyMath, type StudyMath } from "./studyClient";
-import type { LinePoint } from "./studyMath";
+import { toLineData, type LinePoint } from "./studyMath";
 import {
   MAX_STUDIES, STUDY_COLORS, StudiesLoader, loadStudyList, saveStudyList, studiesApi, type StudiesResponse, type StudiesState,
 } from "./studies";
@@ -48,12 +48,20 @@ export function StudiesPanel({ engine, instrument, timeframe, at = null, start =
   const ownMath = useMemo(() => math ?? createStudyMath(), [math]);
   useEffect(() => () => { if (!math) ownMath.dispose(); }, [math, ownMath]);
   const drawn = useRef<string[]>([]);
+  const [drawnCount, setDrawnCount] = useState(0);        // studies on the chart now (data-drawn, for the render checks)
 
-  useEffect(() => loader.load(instrument && tf ? { instrument, tf, exprs, at, start: windowStart(at, start), } : null),
-            [loader, instrument, tf, exprs, at, start, refreshKey]);
+  // live view: ask once the chart has its candles (refreshKey = the newest candle), then again when a new candle starts
+  const ready = at != null || refreshKey != null;
+  useEffect(() => loader.load(instrument && tf && ready ? { instrument, tf, exprs, at, start: windowStart(at, start) } : null),
+            [loader, instrument, tf, exprs, at, start, refreshKey, ready]);
 
   // draw: every new answer replaces what was drawn; no answer (loading, failed, off) draws nothing
   const { result } = state;
+  // condition marks sit on the candles' closes; lines do not need the candles, so a candle refresh redraws them only
+  // when a condition study is on the chart
+  const hasFires = !!result?.studies.some((st) => st.ok && st.kind === "bool");
+  const marksOn = hasFires ? candleTimes : null;
+  const marksClose = hasFires ? closes : null;
   useEffect(() => {
     if (!engine) return;
     let live = true;
@@ -62,25 +70,29 @@ export function StudiesPanel({ engine, instrument, timeframe, at = null, start =
       drawn.current = [];
     };
     clear();
+    setDrawnCount(0);
     if (result) {
+      const work: Promise<void>[] = [];
       result.studies.forEach((st, i) => {
         if (!st.ok) return;
         const color = STUDY_COLORS[i % STUDY_COLORS.length];
         const id = `study-${i}`;
         drawn.current.push(id);
         if (st.kind === "num" && st.values) {
-          void ownMath.run({ op: "line", times: result.times, values: st.values }).then((data) => {
-            if (live) engine.setStudy?.(id, { data: data as LinePoint[], color, pane: st.pane, title: st.text });
-          });
+          // the line conversion is one O(n) pass: on the main thread it costs less than copying 50,000 points out of
+          // the worker and back (measured in the CH6-2 render check); the worker keeps the kernels
+          engine.setStudy?.(id, { data: toLineData(result.times, st.values), color, pane: st.pane, title: st.text });
         } else if (st.kind === "bool" && st.fires) {
-          void ownMath.run({ op: "fires", fires: st.fires, candleTimes: [...candleTimes], closes: [...closes] }).then((marks) => {
+          work.push(ownMath.run({ op: "fires", fires: st.fires, candleTimes: [...(marksOn ?? [])], closes: [...(marksClose ?? [])] }).then((marks) => {
             if (live) engine.setLayer(id, { asOf: result.as_of ?? undefined, labels: (marks as LinePoint[]).map((m) => ({ time: m.time, price: m.value, text: "▲", color, position: "below" as const })) });
-          });
+          }));
         }
       });
+      const count = drawn.current.length;
+      void Promise.allSettled(work).then(() => { if (live) setDrawnCount(count); });
     }
     return () => { live = false; clear(); };
-  }, [engine, result, ownMath, candleTimes, closes]);
+  }, [engine, result, ownMath, marksOn, marksClose]);
 
   const update = (next: string[]) => { setExprs(next); saveStudyList(next); };
   const add = () => {
@@ -92,7 +104,7 @@ export function StudiesPanel({ engine, instrument, timeframe, at = null, start =
 
   if (state.available === false) return null;
   return (
-    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted" data-testid="studies-panel" title={result?.note}>
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-muted" data-testid="studies-panel" data-drawn={drawnCount} title={result?.note}>
       <span className="font-semibold text-fg">Studies</span>
       <StudiesList exprs={exprs} result={result} onRemove={(i) => update(exprs.filter((_, k) => k !== i))} />
       {exprs.length < MAX_STUDIES && (

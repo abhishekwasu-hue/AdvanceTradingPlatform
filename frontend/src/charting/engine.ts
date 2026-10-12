@@ -32,7 +32,9 @@ export interface StudyLine { data: { time: number; value: number }[]; color?: st
 export interface EngineLayout { engine: string; symbol: string | null; timeframe: string | null; studies: StudySpec[]; drawings: Record<string, DrawingV1> }
 
 export type EngineEvent =
-  | { type: "crosshair"; time: number | null; price: number | null }
+  /** `synthetic`: set by `setCrosshair` (a linked chart moved it), not by the pointer - lightweight-charts raises no event
+   *  for a crosshair it was told to show, so the engine says so itself (the legend follows; links do not pass it on). */
+  | { type: "crosshair"; time: number | null; price: number | null; synthetic?: boolean }
   | { type: "click"; time: number | null; price: number | null }
   | { type: "drawingChanged"; id: string; drawing: DrawingV1 }
   | { type: "visibleRangeChanged"; from: number; to: number };

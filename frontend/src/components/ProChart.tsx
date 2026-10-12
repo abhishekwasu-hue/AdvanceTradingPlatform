@@ -9,6 +9,7 @@ import type { LtpResponse, OHLCVBar, SRZone } from "../types";
 import {
   DEFAULT_SETTINGS, INDICATOR_LABELS, OVERLAYS, PANES, adx, applyLivePrice, bollinger, closes, ema, indicatorsForStrategy, rsi, sma,
   supertrend, vwap, type IndicatorId, type IndicatorSettings, type Series,
+  istDayNumber,
 } from "../utils/indicators";
 import type { ChartMarker, PriceLineSpec } from "./CandleChart";
 import { THEME_EVENT, chartColors, resolveChartColor } from "../theme";
@@ -326,6 +327,8 @@ export default function ProChart({
       { add: (pane, color, title) => mainChart.addSeries(LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title,
                                                                       crosshairMarkerVisible: false }, pane) as unknown as { setData(d: { time: number; value: number }[]): void },
         remove: (line) => mainChart.removeSeries(line as unknown as ISeriesApi<"Line">) });
+    // CH5: a crosshair a linked chart put here (engine.setCrosshair) feeds this chart's legend as the pointer's does
+    const offSynthetic = engine.on((e) => { if (e.type === "crosshair" && e.synthetic) setHover(e.time); });
     onEngineRef.current?.(engine);
     setToolEngine(engine);
 
@@ -371,6 +374,7 @@ export default function ProChart({
       window.removeEventListener("resize", onResize);
       for (const u of unsubs) u();
       setToolEngine(null);
+      offSynthetic();
       engine.dispose();
       onEngineRef.current?.(null);
       for (const c of all) c.remove();
@@ -467,9 +471,11 @@ export default function ProChart({
   const prev = idx != null && idx > 0 ? display[idx - 1] : undefined;
   const dayOpen = useMemo(() => {
     if (display.length === 0) return null;
-    const lastDay = new Date(display[display.length - 1].timestamp).toLocaleDateString("en-IN", { timeZone: IST });
-    const first = display.find((c) => new Date(c.timestamp).toLocaleDateString("en-IN", { timeZone: IST }) === lastDay);
-    return first?.open ?? null;
+    // the last IST day's first bar, scanning back from the end (a day number, not a locale string per bar: CH6-2)
+    const lastDay = istDayNumber(display[display.length - 1].timestamp);
+    let i = display.length - 1;
+    while (i > 0 && istDayNumber(display[i - 1].timestamp) === lastDay) i--;
+    return display[i]?.open ?? null;
   }, [display]);
   const lastClose = display.length ? display[display.length - 1].close : null;
   const change = lastClose != null && dayOpen ? lastClose - dayOpen : null;
@@ -494,7 +500,9 @@ export default function ProChart({
   );
 
   return (
-    <div className={expanded ? "fixed inset-0 z-50 overflow-auto bg-surface p-4" : "w-full"}>
+    // data-bars / data-hover: what is on screen, for the browser render checks (e2e/charts.e2e.ts, e2e/render.perf.ts)
+    <div className={expanded ? "fixed inset-0 z-50 overflow-auto bg-surface p-4" : "w-full"} data-testid="pro-chart" data-bars={display.length}
+         data-hover={hover ?? ""}>
       {/* Header: symbol, last price, change, live badge, timeframe pills, indicator toggles */}
       <div className={`flex flex-wrap items-center gap-2 ${compact ? "mb-1" : "mb-2"} text-xs`}>
         {(title || symbol) && <span className={`font-bold text-fg ${compact ? "text-sm" : "text-base"}`}>{title ?? symbol}</span>}

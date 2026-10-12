@@ -251,13 +251,16 @@ export class LightweightEngine implements ChartEngine {
   setCrosshair(time: number | null) {
     if (this.disposed) return;
     const times = this.times();
-    if (time == null || times.length === 0 || time < times[0]) { this.chart.clearCrosshairPosition?.(); return; }
+    const hide = () => { this.chart.clearCrosshairPosition?.(); this.emit({ type: "crosshair", time: null, price: null, synthetic: true }); };
+    if (time == null || times.length === 0 || time < times[0]) { hide(); return; }
     let lo = 0, hi = times.length - 1;
     while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (times[mid] <= time) lo = mid; else hi = mid - 1; }
     const bar = this.candles.data()[lo] as { close?: number; value?: number } | undefined;
     const price = bar?.close ?? bar?.value;
-    if (price == null || !Number.isFinite(price)) { this.chart.clearCrosshairPosition?.(); return; }
+    if (price == null || !Number.isFinite(price)) { hide(); return; }
     this.chart.setCrosshairPosition?.(price, times[lo] as never, this.candles as never);
+    // lightweight-charts raises no crosshairMove for a position it was given: say it, so this chart's legend follows
+    this.emit({ type: "crosshair", time: times[lo], price, synthetic: true });
   }
 
   on(listener: (event: EngineEvent) => void) {

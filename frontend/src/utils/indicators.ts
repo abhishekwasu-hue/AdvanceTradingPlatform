@@ -148,12 +148,20 @@ export function supertrend(c: OHLCVBar[], period = 10, multiplier = 3): { line: 
   return { line, direction };
 }
 
+const IST_OFFSET_MS = 330 * 60_000;     // Asia/Kolkata is UTC+05:30 all year (no daylight saving since 1945)
+
+/** The IST calendar day of a timestamp as a day number - arithmetic, not `toLocaleDateString` (which costs tens of
+ * microseconds a call: 50,000 bars took seconds; N4 CH6-2 render check). Equal day numbers = the same IST date. */
+export function istDayNumber(timestamp: string): number {
+  return Math.floor((Date.parse(timestamp) + IST_OFFSET_MS) / 86_400_000);
+}
+
 /** Session VWAP: cumulative typical-price × volume over volume, restarted on each IST calendar day. */
 export function vwap(c: OHLCVBar[]): Series {
   const out: Series = [];
-  let pv = 0, vol = 0, day = "";
+  let pv = 0, vol = 0, day = NaN;
   for (const b of c) {
-    const d = new Date(b.timestamp).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata" });
+    const d = istDayNumber(b.timestamp);
     if (d !== day) { day = d; pv = 0; vol = 0; }
     const tp = (b.high + b.low + b.close) / 3;
     pv += tp * (b.volume || 0); vol += b.volume || 0;

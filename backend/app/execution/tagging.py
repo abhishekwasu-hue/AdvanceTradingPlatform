@@ -23,16 +23,17 @@ from typing import Optional
 DEFAULT_MAX_TAG_LENGTH = 20
 
 ALGO_ID_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,32}$")
-# Z10c-6: the longest algo id the Team page saves. On the default 20-character tag `<algo id>-ENT` fits whole up to
-# 16 characters; a longer id would reach the broker cut short (build_order_tag keeps the leg whole and cuts the id), and
-# the exchange could not attribute those orders to the registered algo. (An EXIT tag fits 15 - open question Z10c-6.)
-ALGO_ID_MAX_SAVED = 16
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9_-]+")
 
 LEG_ENTRY = "ENT"
 LEG_STOP = "SL"
 LEG_EXIT = "EXIT"
+
+# Z10c-6: the longest algo id the Team page saves - the one that fits the longest leg's tag `<algo id>-EXIT` whole on
+# the default 20-character limit (15). A longer id would reach the broker cut short on some legs (build_order_tag keeps
+# the leg whole and cuts the id), and the exchange could not attribute those orders to the registered algo.
+ALGO_ID_MAX_SAVED = DEFAULT_MAX_TAG_LENGTH - len("-" + LEG_EXIT)
 
 
 def sanitize_tag_part(value: str) -> str:

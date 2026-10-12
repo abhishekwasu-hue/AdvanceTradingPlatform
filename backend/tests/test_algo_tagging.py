@@ -161,25 +161,27 @@ def test_exit_order_carries_algo_id():
     assert exits[-1].transaction_type == OrderSide.SELL
 
 
-def test_an_algo_id_longer_than_16_characters_is_refused_on_save():
-    """Z10c-6: an id that would not fit `<algo id>-ENT` in the 20-character tag whole is refused with a clear 422, and the
-    saved id is left as it was."""
+def test_an_algo_id_longer_than_15_characters_is_refused_on_save():
+    """Z10c-6: an id that would not fit `<algo id>-EXIT` (the longest leg) in the 20-character tag whole is refused with
+    a clear 422, and the saved id is left as it was."""
     from app.execution.tagging import ALGO_ID_MAX_SAVED, DEFAULT_MAX_TAG_LENGTH
+    assert ALGO_ID_MAX_SAVED == 15
     headers = _headers("algo-length@example.com")
     assert client.patch("/api/team/tenant", json={"algo_id": "NSE4242"}, headers=headers).status_code == 200
 
-    too_long = "A" * (ALGO_ID_MAX_SAVED + 1)
-    res = client.patch("/api/team/tenant", json={"algo_id": too_long}, headers=headers)
-    assert res.status_code == 422
-    detail = res.json()["detail"]
-    assert "17 characters" in detail and "at most 16" in detail and "cut short" in detail and "Nothing was saved" in detail
+    for too_long in ("A" * (ALGO_ID_MAX_SAVED + 1), "B" * 20, "D" * 32):
+        res = client.patch("/api/team/tenant", json={"algo_id": too_long}, headers=headers)
+        assert res.status_code == 422, too_long
+        detail = res.json()["detail"]
+        assert f"{len(too_long)} characters" in detail and "at most 15" in detail and "cut short" in detail and "Nothing was saved" in detail
     assert client.get("/api/team/tenant", headers=headers).json()["algo_id"] == "NSE4242"
-    assert client.patch("/api/team/tenant", json={"algo_id": "B" * 32}, headers=headers).status_code == 422   # the pattern's max
 
     exactly = "C" * ALGO_ID_MAX_SAVED
     ok = client.patch("/api/team/tenant", json={"algo_id": f" {exactly} "}, headers=headers)
     assert ok.status_code == 200 and ok.json()["algo_id"] == exactly
-    # 16 is the length that reaches the broker whole on an entry tag at the default limit
-    tag = build_order_tag(strategy_id="ema_rsi_scalper_1m", leg=LEG_ENTRY, algo_id=exactly, max_length=DEFAULT_MAX_TAG_LENGTH)
-    assert tag == f"{exactly}-ENT" and len(tag) == DEFAULT_MAX_TAG_LENGTH
+    # 15 reaches the broker whole on every leg at the default limit, the EXIT tag included
+    for leg in (LEG_ENTRY, LEG_STOP, LEG_EXIT):
+        tag = build_order_tag(strategy_id="ema_rsi_scalper_1m", leg=leg, algo_id=exactly, max_length=DEFAULT_MAX_TAG_LENGTH)
+        assert tag.startswith(exactly + "-") and tag.endswith("-" + leg) and len(tag) <= DEFAULT_MAX_TAG_LENGTH
+    assert build_order_tag(strategy_id="s", leg=LEG_EXIT, algo_id="E" * 16, max_length=DEFAULT_MAX_TAG_LENGTH) == "E" * 15 + "-EXIT"   # why 16 is too long
     assert client.patch("/api/team/tenant", json={"algo_id": "not valid!"}, headers=headers).status_code == 400   # charset: as before

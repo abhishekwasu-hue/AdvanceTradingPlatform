@@ -226,7 +226,11 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     from app.market_data.fanin import Priority
     from app.market_data.service import MarketDataService
     interval = _FETCH[base_tf]
-    days = fetch_days(lookback, base_tf) if interval != "day" else 5
+    attach_daily = interval != "day" and any(nodes.TF_MINUTES.get(tf, 0) >= nodes.TF_MINUTES["1d"] for tf in lookback)
+    # BK1 verification F3: with the daily history attached, @1d / @1w / @1M come from it, so only the intraday timeframes
+    # size the intraday window (a 15m screen with daily context fetches days, not the 60-day cap)
+    window = {tf: b for tf, b in lookback.items() if nodes.TF_MINUTES.get(tf, 0) < nodes.TF_MINUTES["1d"]} if attach_daily else lookback
+    days = fetch_days(window or {base_tf: 1}, base_tf) if interval != "day" else 5
     problems: Dict[str, str] = {}
     own = None
     if await live_access.byob_on(session, tenant_id):
@@ -266,7 +270,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
         newest.append(df.index[-1].to_pydatetime())
-    if interval != "day" and universe and any(nodes.TF_MINUTES.get(tf, 0) >= nodes.TF_MINUTES["1d"] for tf in lookback):
+    if attach_daily and universe:
         daily_service = own.market_data(lookback_days=5) if own is not None else MarketDataService(build_adapter(record), lookback_days=5)
         await _attach_daily(daily_service, universe, exchange, now)        # U6 BK1: through the same (BT1b) source
     if own is not None and tier_out is not None:
@@ -282,12 +286,27 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
     (completed sessions, about 400 calendar days) as its "1d" frame; the runtime builds @1d / @1w / @1M from it instead of
     from the short intraday window (60 days at most), so a higher-timeframe trend can be read. Closed bars only. A symbol
     whose daily fetch fails keeps the intraday-built context (shorter; a trend there may read as unknown)."""
+    from app.cache.client import cache_get, cache_set
+    from app.core.models import OHLCVBar
+    from app.market_data.calendar import IST
+    from app.market_data.service import HISTORY_CACHE_TTL_SECONDS
+    session_day = (now or datetime.now(timezone.utc)).astimezone(IST).date().isoformat()
+    scope = f"{getattr(service, 'cache_namespace', None) or 'shared'}:{getattr(getattr(service, 'broker', None), 'name', 'broker')}"
     for data in universe:
-        try:
-            bars = await service.get_candles(data.symbol, exchange, "day")
-        except Exception:  # noqa: BLE001 - the screen still runs on the intraday-built context
-            logger.warning("daily context fetch failed for %s", data.symbol, exc_info=True)
-            continue
+        # BK1 verification F2: completed sessions do not change during the day - one fetch per symbol per session date
+        # (kept HISTORY_CACHE_TTL_SECONDS), under the session's own namespace (BT1b), not every alert cycle
+        key = f"md:dailyctx:{scope}:{exchange}:{data.symbol}:{session_day}"
+        cached = await cache_get(key)
+        if cached:
+            bars = [OHLCVBar.model_validate(b) for b in json.loads(cached)]
+        else:
+            try:
+                bars = await service.get_candles(data.symbol, exchange, "day")
+            except Exception:  # noqa: BLE001 - the screen still runs on the intraday-built context
+                logger.warning("daily context fetch failed for %s", data.symbol, exc_info=True)
+                continue
+            if bars:
+                await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), HISTORY_CACHE_TTL_SECONDS)
         df = bars_to_dataframe(bars) if bars else pd.DataFrame()
         if df.empty:
             continue

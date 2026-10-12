@@ -23,8 +23,8 @@ class Arg:
     default: Optional[object] = None
     required: bool = True
     choices: Tuple[object, ...] = ()  # S5-A: the only values allowed (a literal or a parameter); empty = any
-    bounds: Optional[Tuple[float, float]] = None   # U6 BK1: inclusive range of a number (checked at validation)
     literal_only: bool = False      # Z10-a: a setting read once (a literal or a $parameter), never an expression per bar
+    bounds: Optional[Tuple[float, float]] = None   # U6 BK1: inclusive range of a number (checked at validation)
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,9 @@ def _bk(name: str, arg: str, type_: str, required: bool = False, choices: Tuple[
     from app.screener.breakouts.params import BY_NAME
     p = BY_NAME[name]
     bounds = (float(p.low), float(p.high)) if p.low is not None and p.high is not None else None
-    return Arg(arg, type_, None if required else p.default, required, choices=choices or p.choices, bounds=bounds)
+    # a NUM setting is read once for the whole series (Z10-a literal_only): a literal or a $parameter, never an expression
+    return Arg(arg, type_, None if required else p.default, required, choices=choices or p.choices, bounds=bounds,
+               literal_only=type_ == NUM)
 
 
 BREAKOUT_MIN_BARS = 50                            # ATR warm-up plus a leg pivot before the first signal

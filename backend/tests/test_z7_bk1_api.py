@@ -311,3 +311,101 @@ def test_alert_rules_fetch_the_trend_history_they_read():
         return [SymbolData(s, {base_tf: _bars(ist(TUE, 9, 15), [100.0, 101.0])}) for s in symbols], {}, "test"
     _evaluate(rid, ist(TUE, 9, 27), fetch)
     assert seen and seen[0]["1h"] == 100                                                         # sized for the trend, not 1 bar
+
+
+# --------------------------------------------------------------------------------- BK1 verification F1-F3
+def test_cycle_cache_reuses_a_frame_only_when_it_covers_every_timeframe():
+    from app.alerts import barclose
+    from tests.sample_market import generate
+    from tests.test_s4a_barclose import TUE, _bars, _rule, ist, utc
+    _, me = _owner("bk1-cycle@example.com")
+    rid = _rule(me["tenant_id"], tf="15m")
+    intraday = _bars(ist(TUE, 9, 15), [100.0] * 4, minutes=15)
+    daily = generate(272, 100.0, 5, daily=True, end=ist(TUE, 0, 0))
+    calls = []
+
+    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback):
+        calls.append(dict(lookback))
+        frames = {base_tf: intraday}
+        if any(t in ("1d", "1w", "1M") for t in lookback):                     # what fetch_frames does
+            frames["1d"] = daily
+        return [SymbolData(s, dict(frames)) for s in symbols], {}, "test"
+
+    async def go():
+        async with _session_factory() as session:
+            from app.db.models import AlertRuleRecord
+            rule = await session.get(AlertRuleRecord, rid)
+            cache, bar = barclose.CycleCache(), utc(ist(TUE, 9, 45))
+            plain, _ = await barclose._current_universe(session, rule, ["TCS"], bar, {"15m": 200}, fetch, cache)       # a plain rule first
+            breakout, _ = await barclose._current_universe(session, rule, ["TCS"], bar, {"15m": 1, "1d": 100}, fetch, cache)
+            again, _ = await barclose._current_universe(session, rule, ["TCS"], bar, {"15m": 200}, fetch, cache)
+            return plain, breakout, again
+    plain, breakout, again = _run(go())
+    assert "1d" not in plain[0].frames and "1d" in breakout[0].frames                # not served the plain rule's frame
+    assert calls == [{"15m": 200}, {"15m": 200, "1d": 100}] and "1d" in again[0].frames   # the merged fetch serves both after
+
+
+def test_daily_context_is_fetched_once_per_symbol_per_session(monkeypatch):
+    from datetime import datetime, timezone
+
+    import pandas as pd
+
+    from app.cache import client as cache_client
+    from app.core.models import OHLCVBar
+    from app.screener import routes
+    store = {}
+
+    async def get(key):
+        return store.get(key)
+
+    async def put(key, value, ttl):
+        store[key] = value
+    monkeypatch.setattr(cache_client, "cache_get", get)
+    monkeypatch.setattr(cache_client, "cache_set", put)
+    calls = []
+
+    class Service:
+        cache_namespace = "u7"
+
+        async def get_candles(self, symbol, exchange, interval):
+            calls.append(symbol)
+            idx = pd.date_range("2025-01-01 18:30", periods=60, freq="B", tz="UTC")
+            return [OHLCVBar(timestamp=t.to_pydatetime(), open=1.0, high=2.0, low=0.5, close=1.5, volume=10.0) for t in idx]
+    now = datetime(2026, 3, 10, 9, 0, tzinfo=timezone.utc)
+    for _ in range(3):                                                               # three alert cycles
+        universe = [SymbolData("ABC", {"15m": pd.DataFrame()})]
+        _run(routes._attach_daily(Service(), universe, "NSE", now))
+        assert len(universe[0].frames["1d"]) == 60
+    assert calls == ["ABC"] and any(":u7:" in k and k.endswith(":2026-03-10") for k in store)
+
+
+def test_intraday_window_ignores_daily_timeframes_when_daily_is_attached(monkeypatch):
+    import types
+    from datetime import datetime, timezone
+
+    from app.brokers import token_lifecycle
+    from app.market_data import candles_routes, service
+    from app.screener.routes import fetch_frames
+    windows = []
+    real_init = service.MarketDataService.__init__
+
+    def init(self, broker, *a, lookback_days=5, **kw):
+        windows.append(lookback_days)
+        real_init(self, broker, *a, lookback_days=lookback_days, **kw)
+
+    async def pick(session, tenant_id, broker, label):
+        return types.SimpleNamespace(broker_name="fake")
+
+    async def candles(self, symbol, exchange="NSE", interval="1min", now=None, fresh=False):
+        return []
+    monkeypatch.setattr(candles_routes, "_pick_record", pick)
+    monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
+    monkeypatch.setattr(service.MarketDataService, "__init__", init)
+    monkeypatch.setattr(service.MarketDataService, "get_candles", candles)
+
+    async def go(lookback):
+        async with _session_factory() as session:
+            return await fetch_frames(session, 1, ["ABC"], "NSE", "15m", lookback, now=datetime(2026, 3, 10, 9, 0, tzinfo=timezone.utc))
+    _run(go({"15m": 50, "1h": 100, "1d": 100}))
+    _run(go({"15m": 50, "1h": 100}))
+    assert windows[0] == windows[1] < 30                                           # days, not the 60-day cap

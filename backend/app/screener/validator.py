@@ -349,11 +349,11 @@ class _Checker:
                 self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
             elif sig.choices:
                 self.choice(arg_node, sig, node)
-            elif sig.bounds or sig.literal_only:
-                if sig.bounds:
-                    self.bounded(arg_node, sig, node)
+            elif sig.literal_only or sig.bounds:
                 if sig.literal_only:
                     self.literal(arg_node, sig, node)
+                if sig.bounds:
+                    self.bounded(arg_node, sig, node)
         for key, arg_node in node.kwargs.items():
             kw_sig = known_kw.get(key)
             if kw_sig is None:

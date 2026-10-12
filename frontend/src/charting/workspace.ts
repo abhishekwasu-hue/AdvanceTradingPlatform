@@ -185,13 +185,15 @@ export class LayoutConflict extends Error {
 function conflictFrom(error: unknown): never {
   if (error instanceof ApiError && error.status === 404) throw new LayoutConflict(null);
   if (error instanceof ApiError && error.status === 409) {
-    let current: StoredLayout | null = null;
+    let detail: { message?: string; current?: StoredLayout | null } | string | undefined;
     try {
-      current = (JSON.parse(error.body) as { detail?: { current?: StoredLayout } }).detail?.current ?? null;
+      detail = (JSON.parse(error.body) as { detail?: { message?: string; current?: StoredLayout | null } | string }).detail;
     } catch {
-      current = null;
+      detail = undefined;
     }
-    if (current) throw new LayoutConflict(current);
+    // A version conflict carries an object (with the stored layout, or null when it changed again or was deleted);
+    // a duplicate name or the cap is a plain sentence and stays an ordinary error.
+    if (detail && typeof detail === "object") throw new LayoutConflict(detail.current ?? null);
   }
   throw error;
 }

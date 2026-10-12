@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -123,6 +123,10 @@ async def _mine(session: AsyncSession, user: User, layout_id: int) -> ChartLayou
     return row
 
 
+async def _count(session: AsyncSession, user: User) -> int:
+    return int(await session.scalar(select(func.count()).select_from(ChartLayoutRecord).where(ChartLayoutRecord.user_id == user.id)) or 0)
+
+
 async def _commit_named(session: AsyncSession, name: str) -> None:
     try:
         await session.commit()
@@ -144,13 +148,21 @@ async def list_layouts(user: User = Depends(get_current_user), session: AsyncSes
 @router.post("", status_code=201)
 async def create_layout(body: CreateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
-    count = int(await session.scalar(select(func.count()).select_from(ChartLayoutRecord).where(ChartLayoutRecord.user_id == user.id)) or 0)
-    if count >= MAX_PER_USER:
+    if await _count(session, user) >= MAX_PER_USER:
         raise HTTPException(status_code=409, detail=f"at most {MAX_PER_USER} saved layouts per user - delete one first")
     now = datetime.now(timezone.utc)
     row = ChartLayoutRecord(tenant_id=user.tenant_id, user_id=user.id, name=body.name, layout_json=json.dumps(body.layout.to_json()),
                             version=1, created_at=now, updated_at=now)
     session.add(row)
+    try:
+        await session.flush()
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=f"you already have a layout named {body.name!r}") from None
+    # Two creates racing past the count above: re-counted with this row in place, the one over the cap is undone.
+    if await _count(session, user) > MAX_PER_USER:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=f"at most {MAX_PER_USER} saved layouts per user - delete one first")
     await _commit_named(session, body.name)
     return _as_dict(row)
 
@@ -162,11 +174,25 @@ async def update_layout(layout_id: int, body: UpdateBody, user: User = Depends(g
     row = await _mine(session, user, layout_id)
     if body.version != row.version:
         raise HTTPException(status_code=409, detail={"message": "the layout changed since this edit was made", "current": _as_dict(row)})
-    if body.name is not None:
-        row.name = body.name
-    row.layout_json = json.dumps(body.layout.to_json())
-    row.version, row.updated_at = row.version + 1, datetime.now(timezone.utc)
-    await _commit_named(session, row.name)
+    name = body.name if body.name is not None else row.name
+    uid = user.id                                              # read now: a rollback below expires the user object
+    # Conditional on the version read: of two saves racing from two tabs exactly one wins; the other gets 409.
+    try:
+        result = await session.execute(update(ChartLayoutRecord).where(
+            ChartLayoutRecord.id == layout_id, ChartLayoutRecord.user_id == user.id, ChartLayoutRecord.tenant_id == user.tenant_id,
+            ChartLayoutRecord.version == body.version).values(
+            name=name, layout_json=json.dumps(body.layout.to_json()), version=body.version + 1, updated_at=datetime.now(timezone.utc))
+            .execution_options(synchronize_session=False))
+    except IntegrityError:
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=f"you already have a layout named {name!r}") from None
+    if getattr(result, "rowcount", 0) != 1:
+        await session.rollback()
+        current = await session.scalar(select(ChartLayoutRecord).where(ChartLayoutRecord.id == layout_id, ChartLayoutRecord.user_id == uid))
+        raise HTTPException(status_code=409, detail={"message": "the layout changed since this edit was made",
+                                                     "current": _as_dict(current) if current is not None else None})
+    await _commit_named(session, name)
+    await session.refresh(row)
     return _as_dict(row)
 
 
@@ -177,7 +203,12 @@ async def delete_layout(layout_id: int, version: int, user: User = Depends(get_c
     row = await _mine(session, user, layout_id)
     if version != row.version:
         raise HTTPException(status_code=409, detail={"message": "the layout changed since it was shown", "current": _as_dict(row)})
-    await session.delete(row)
+    result = await session.execute(delete(ChartLayoutRecord).where(
+        ChartLayoutRecord.id == layout_id, ChartLayoutRecord.user_id == user.id, ChartLayoutRecord.tenant_id == user.tenant_id,
+        ChartLayoutRecord.version == version).execution_options(synchronize_session=False))
+    if getattr(result, "rowcount", 0) != 1:                     # saved from another tab in between
+        await session.rollback()
+        raise HTTPException(status_code=409, detail={"message": "the layout changed since it was shown", "current": None})
     await session.commit()
     return {"deleted": layout_id}
 

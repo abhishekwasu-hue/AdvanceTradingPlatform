@@ -1,7 +1,7 @@
 """CH5: chart_layouts - saved multi-chart workspace layouts per user (flag chart_workspace, off by default).
 
 Revision ID: b8d0f2a4c6e9
-Revises: a7d3e9c1b5f2 (N1 E1 execution_intents, main's head)
+Revises: f3b5d7a9c1e2 (HB2 history_intraday_days, main's head)
 Create Date: 2026-10-12 18:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b8d0f2a4c6e9'
-down_revision: Union[str, Sequence[str], None] = 'a7d3e9c1b5f2'
+down_revision: Union[str, Sequence[str], None] = 'f3b5d7a9c1e2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - one new table that no earlier release reads or writes, so the previous release runs unchanged

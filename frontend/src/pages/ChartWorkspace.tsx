@@ -3,7 +3,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
-import ProChart, { useLiveLtp } from "../components/ProChart";
+import ProChart from "../components/ProChart";
+import { ACTIVE_LTP_MS, INACTIVE_LTP_MS, LtpHub, type LtpUpdate } from "../charting/ltpHub";
 import type { ChartEngine } from "../charting/engine";
 import { CHART_TYPE_LABELS } from "../charting/chartTypes";
 import type { IndicatorId } from "../utils/indicators";
@@ -106,6 +107,9 @@ function Workspace({ params }: { params: URLSearchParams }) {
     return () => { live = false; };
   }, [params]);
 
+  // CH5-a review (ADR-0004): one last-price poll per symbol for the whole workspace, shared by the charts showing it.
+  const ltpHub = useMemo(() => new LtpHub((symbol, exchange) => api.marketDataLtp(symbol, exchange)), []);
+  useEffect(() => () => ltpHub.dispose(), [ltpHub]);
   // Crosshair link: one per workspace; the peers follow the layout's groups.
   const link = useMemo(() => new CrosshairLink(() => []), []);
   useEffect(() => { link.setPeers((i) => linkedPeers(layoutRef.current, i, "crosshair")); }, [link, layout]);
@@ -214,7 +218,7 @@ function Workspace({ params }: { params: URLSearchParams }) {
             <option value="">Unsaved layout</option>
             {saved.map((r) => <option key={r.id} value={String(r.id)}>{r.name}</option>)}
           </select>
-          <button onClick={() => void save(false)} title="Save the layout (Alt+S)" className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 font-semibold text-fg hover:bg-surface-2"><Save size={11} /> Save</button>
+          <button onClick={() => void save(false)} title="Save the layout (Alt+Shift+S)" className="flex items-center gap-1 rounded border border-border px-1.5 py-0.5 font-semibold text-fg hover:bg-surface-2"><Save size={11} /> Save</button>
           <button onClick={() => void save(true)} title="Save under a new name" className="rounded border border-border px-1.5 py-0.5 text-fg hover:bg-surface-2">Save as…</button>
           {current && <button onClick={() => void remove()} title="Delete this saved layout" aria-label="Delete this saved layout" className="rounded p-1 text-fg-muted hover:text-down"><Trash2 size={12} /></button>}
           <button onClick={() => setHelp((h) => !h)} title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts" className="rounded p-1 text-fg-muted hover:text-fg"><HelpCircle size={14} /></button>
@@ -233,7 +237,7 @@ function Workspace({ params }: { params: URLSearchParams }) {
       <div className="grid flex-1 gap-1 p-1" style={{ gridTemplateColumns: `repeat(${maximized ? 1 : cols}, minmax(0, 1fr))` }}>
         {layout.cells.map((c, i) => (maximized && i !== layout.active ? null : (
           <WorkspaceCell key={i} index={i} cell={c} active={i === layout.active} compact={!maximized && layout.grid >= 4 && i !== layout.active}
-                         height={cellHeight} maximized={maximized} link={link}
+                         height={cellHeight} maximized={maximized} link={link} ltpHub={ltpHub}
                          symbolBox={(el) => { symbolBoxes.current[i] = el; }}
                          onFocus={() => apply((x) => setActive(x, i))}
                          onSymbol={(s) => apply((x) => setSymbol(x, i, s))}
@@ -248,15 +252,15 @@ function Workspace({ params }: { params: URLSearchParams }) {
 }
 
 interface CellProps {
-  index: number; cell: CellV1; active: boolean; compact: boolean; height: number; maximized: boolean; link: CrosshairLink;
+  index: number; cell: CellV1; active: boolean; compact: boolean; height: number; maximized: boolean; link: CrosshairLink; ltpHub: LtpHub;
   symbolBox: (el: HTMLInputElement | null) => void;
   onFocus: () => void; onSymbol: (symbol: string) => void; onTimeframe: (tf: Timeframe) => void; onGroup: (g: Group | null) => void; onMaximize: () => void;
   onChartType: (t: ChartType) => void;
 }
 
-function WorkspaceCell({ index, cell: c, active, compact, height, maximized, link, symbolBox, onFocus, onSymbol, onTimeframe, onGroup, onMaximize, onChartType }: CellProps) {
+function WorkspaceCell({ index, cell: c, active, compact, height, maximized, link, ltpHub, symbolBox, onFocus, onSymbol, onTimeframe, onGroup, onMaximize, onChartType }: CellProps) {
   const chart = useBrokerChart({ enabled: true, symbol: c.symbol, timeframe: c.timeframe, exchange: c.exchange });
-  const live = useLiveLtp(c.timeframe !== "day", c.symbol, c.exchange);
+  const live = useSharedLtp(ltpHub, c.timeframe !== "day", c.symbol, c.exchange, active ? ACTIVE_LTP_MS : INACTIVE_LTP_MS);
   const [draft, setDraft] = useState(c.symbol);
   useEffect(() => { setDraft(c.symbol); }, [c.symbol]);
   const onEngine = useCallback((engine: ChartEngine | null) => link.register(index, engine), [link, index]);
@@ -289,4 +293,15 @@ function WorkspaceCell({ index, cell: c, active, compact, height, maximized, lin
                 onLoadOlder={chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} onEngine={onEngine} />
     </section>
   );
+}
+
+/** The cell's share of the workspace's last-price poll (nothing while disabled, e.g. daily charts). */
+function useSharedLtp(hub: LtpHub, enabled: boolean, symbol: string, exchange: string, intervalMs: number): LtpUpdate {
+  const [state, setState] = useState<LtpUpdate>({ ltp: null, error: null });
+  useEffect(() => {
+    setState({ ltp: null, error: null });
+    if (!enabled || !symbol) return;
+    return hub.subscribe(symbol, exchange, intervalMs, setState);
+  }, [hub, enabled, symbol, exchange, intervalMs]);
+  return state;
 }

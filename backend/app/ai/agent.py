@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 from app.ai import grounding, output_filter
 from app.ai.prompt_versions import version_of
 from app.ai.providers import ProviderError
-from app.ai.tools import ToolContext, ToolResult, names, proposals, registry, run_tool, specs
+from app.ai.tools import ToolContext, ToolResult, available, names, proposals, registry, run_tool, specs
 from app.audit.log import write_audit_log
 from app.db.models import AgentRunRecord, AgentStepRecord
 
@@ -151,8 +151,8 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
     limits = limits or AgentLimits()
     started = time.monotonic()
     system = SYSTEM.replace("{lang}", lang)
-    allowed_proposals = proposals.allowed_for(question)
-    tools = specs(names("read") + allowed_proposals)
+    allowed_proposals = await available(ctx, proposals.allowed_for(question))      # N3 S9: flagged tools only while on
+    tools = specs(await available(ctx, names("read")) + allowed_proposals)
     kinds = {n: t.kind for n, t in registry().items()}
     run = AgentRunRecord(tenant_id=ctx.tenant_id, user_id=ctx.user.id, question_sha256=_sha(question), prompt_version=PROMPT_VERSION,
                          model=str(getattr(provider, "model", "") or ""), limits_json=json.dumps(limits.__dict__), outcome="running",

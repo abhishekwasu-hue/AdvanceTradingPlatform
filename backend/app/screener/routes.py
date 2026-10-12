@@ -38,6 +38,8 @@ from app.screener import ownership as ownership_gate
 from app.screener import venues as venue_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
+from app.ai.compliance_terms import ai_acknowledged as _ai_acknowledged
+from app.ai.rate_limit import ai_rate_limit as _ai_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
@@ -384,6 +386,21 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
             data.frames["1d"] = df
 
 
+async def load_universe(session: AsyncSession, user: User, ast: Any, validated: Any, params: Dict[str, Any], symbols: List[str],
+                        exchange: str, base_tf: str, tier: Optional[Dict[str, Any]] = None
+                        ) -> Tuple[List[SymbolData], Dict[str, str], str, Dict[str, Any]]:
+    """A validated screen's universe on server bars with the data its functions read: (universe, per-symbol fetch
+    problems, data source, RankScore's systems). The run route and the N3 S9 Copilot tools share it."""
+    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
+                                                               user_id=user.id, tier_out=tier)
+    if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
+        await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+    if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
+        await ownership_gate.attach(session, universe, exchange, datetime.now(timezone.utc))
+    systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
+    return universe, fetch_problems, data_source, systems
+
+
 async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: Dict[str, Any], universe: List[SymbolData]
                        ) -> Dict[str, Any]:
     """N3 S7a: the ranking systems a screen's RankScore names (validated by `_gate`), and - when one is sector-neutral -
@@ -437,13 +454,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     tier: Dict[str, Any] = {}
-    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
-                                                               user_id=user.id, tier_out=tier)
-    if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
-        await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
-    if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
-        await ownership_gate.attach(session, universe, body.exchange, datetime.now(timezone.utc))
-    systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
+    universe, fetch_problems, data_source, systems = await load_universe(session, user, ast, validated, params, symbols, body.exchange,
+                                                                         base_tf, tier)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     matches = await asyncio.to_thread(ranking_gate.within, systems, run_screen, ast, validated, universe, base_tf=base_tf, params=params,
@@ -491,6 +503,74 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         run_row.result_json = json.dumps(results)
     await session.commit()
     return {"run_id": run_row.id, "preview": False, **payload}
+
+
+class NLBody(BaseModel):
+    text: str = Field(min_length=5, max_length=1000, description="The screen in plain language")
+    base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
+    language: str = Field(default="en", pattern=r"^(en|mr)$")
+
+
+@router.post("/copilot/nl")
+async def natural_language(body: NLBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                           _ack: None = Depends(_ai_acknowledged), _limit: None = Depends(_ai_rate_limit)) -> Dict[str, Any]:
+    """N3 S9: plain language -> a ScreenQL draft the trader checks, edits and runs (app/screener/nl.py). Nothing runs and
+    nothing is stored here; flags `screener_copilot` and `ai_copilot`."""
+    from app.ai import settings as ai_settings
+    from app.ai.prompt_versions import stamp
+    from app.ai.providers import ProviderError, RuleBasedProvider
+    from app.audit.log import write_audit_log
+    from app.billing.service import meter
+    from app.db.models import Tenant
+    from app.screener import nl
+    await _flag(session, user)
+    await require_flag(session, nl.FLAG, user.tenant_id)
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    tenant = await session.get(Tenant, user.tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    provider = await ai_settings.provider_for(session, tenant, task="screener_nl", user_id=user.id)
+    if isinstance(provider, RuleBasedProvider):
+        raise HTTPException(status_code=409, detail="No AI provider is set up for this organisation (Settings > AI); write the screen in the "
+                                                    "builder or the query editor instead" + (f" ({provider.reason})" if provider.reason else ""))
+    stamp(provider, nl.PROMPT_VERSION)
+    system = nl.system_prompt(body.language, sorted(await _flags_off(session, user)))
+    prompt = f"REQUEST:\n{body.text.strip()}"
+    draft: Optional[Dict[str, Any]] = None
+    problems: List[Dict[str, Any]] = []
+    ast: Any = None
+    validated: Any = None
+    for attempt in range(2):                                  # one repair turn with the validator's problems
+        try:
+            draft = nl.parse(await provider.complete(system, prompt, max_tokens=1200))
+        except (ProviderError, ValueError, json.JSONDecodeError) as exc:
+            await ai_settings.mark_used(session, user.tenant_id, error=str(exc)[:200])
+            raise HTTPException(status_code=502, detail=f"The AI did not answer usably ({str(exc)[:120]}); write the screen in the builder") from exc
+        ast, validated = _compiled(draft["text"], body.base_tf, {})
+        await _gate(session, user, ast, validated, {})
+        problems = [p.as_dict() for p in validated.problems]
+        if validated.ok:
+            break
+        prompt = (f"REQUEST:\n{body.text.strip()}\n\nYour screen {draft['text']!r} has problems: "
+                  + "; ".join(p["message"] for p in problems)[:800] + "\nAnswer again with a corrected screen, same JSON shape.")
+    await ai_settings.mark_used(session, user.tenant_id)
+    if draft is None or validated is None:
+        raise HTTPException(status_code=502, detail="The AI did not answer; write the screen in the builder")
+    explanation = nl.screened(draft["explanation"], body.language)
+    await write_audit_log(session, user.tenant_id, user.id, "screener_nl_drafted",
+                          f"{getattr(provider, 'name', 'ai')}: {'valid' if validated.ok else 'invalid'} screen from {len(body.text)} chars")
+    await meter(session, user.tenant_id, "ai_screener_nl", 1, source="api", metadata={"provider": getattr(provider, "name", "ai")}, commit=False)
+    await session.commit()
+    stages = []
+    if ast is not None:
+        items = list(ast.items) if isinstance(ast, nodes.Logic) and ast.op == "ALL" else [ast]
+        stages = [nodes.to_text(i) for i in items]
+    return {"ok": bool(validated.ok), "text": nodes.to_text(ast) if ast is not None else draft["text"], "stages": stages,
+            "ast": nodes.to_json(ast) if ast is not None and validated.ok else None, "problems": problems, "base_tf": body.base_tf,
+            "explanation": explanation, "explanation_withheld": explanation is None and bool(draft["explanation"]),
+            "assumptions": [a for a in (nl.screened(x, body.language) for x in draft["assumptions"]) if a],
+            "provider": getattr(provider, "name", None), "model": getattr(provider, "model", None), "prompt_version": nl.PROMPT_VERSION,
+            "disclaimer": nl.DISCLAIMER}
 
 
 @router.get("/runs/{run_id}")

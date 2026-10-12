@@ -186,8 +186,9 @@ async def list_rules(user: User = Depends(get_current_user), session: AsyncSessi
     return [_rule_dict(r) for r in await session.scalars(query.order_by(AlertRuleRecord.id.desc()))]
 
 
-@router.post("/rules", status_code=201, dependencies=[Depends(require_scope("alerts:write"))])
-async def create_rule(body: RuleBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+async def build_rule(session: AsyncSession, user: User, body: RuleBody) -> AlertRuleRecord:
+    """The checked rule for `user` (added to the session, not committed). Raises HTTPException with the reason. The create
+    route and an approved N3 S9 alert proposal (`monitor.execute`, CREATE_ALERT) share it."""
     await require_flag(session, FLAG, user.tenant_id)
     if body.fire_on == "intrabar" and not await flag_enabled(session, INTRABAR_FLAG, user.tenant_id):
         raise HTTPException(status_code=409, detail="Intrabar alerts are off for this organisation; bar-close rules work as before")
@@ -197,6 +198,12 @@ async def create_rule(body: RuleBody, user: User = Depends(require_trader), sess
                           cooldown_minutes=body.cooldown_minutes, mode=body.mode, digest_every=body.digest_every, status="active",
                           expires_at=body.expires_at, created_at=now, updated_at=now, fire_on=body.fire_on, **target)
     session.add(row)
+    return row
+
+
+@router.post("/rules", status_code=201, dependencies=[Depends(require_scope("alerts:write"))])
+async def create_rule(body: RuleBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    row = await build_rule(session, user, body)
     await session.commit()
     return _rule_dict(row)
 

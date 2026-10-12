@@ -1807,7 +1807,7 @@ export interface AiAction {
   deployment_id: number | null;
   trade_id: number | null;
   /** ENTRY (Z3): an approval-only entry signal; Approve places a PAPER order at a re-quoted price. */
-  action: "PAUSE_DEPLOYMENT" | "EXIT_POSITION" | "REDUCE_RISK" | "REVIEW_STRATEGY" | "ENTRY";
+  action: "PAUSE_DEPLOYMENT" | "EXIT_POSITION" | "REDUCE_RISK" | "REVIEW_STRATEGY" | "ENTRY" | "CREATE_ALERT";   // CREATE_ALERT: N3 S9
   rule: string;
   reason: string;
   evidence: Record<string, unknown>;

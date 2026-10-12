@@ -1287,6 +1287,23 @@ runnable) with its bar fields, the data families (`Spec.needs`) its data carries
   (crypto derivatives screens) waits for a funding / OI / liquidation feed (S8-6).
 - No migration. Information only.
 
+## N3 S9 (built): the screener in the Copilot, and the plain-language box (flag `screener_copilot`, off)
+
+Spec §5's Copilot tools, on the H-C2 tool registry (`app/ai/tools/screener.py`). A tool now carries an optional flag:
+while it is off for the organisation the tool is neither offered to the model nor run.
+- `build_screen` - the Screener's own validation and flag gates: canonical text, stages, problems, plan. Runs nothing.
+- `run_screen` - live on server bars (the Screener's stored run, BT1b-aware) or, with `as_of`, S6's who-passed-on-a-date
+  on the lake (S9-2).
+- `explain_results` - per symbol, each stage's pass / fail and each condition's numbers from the evidence pack (S9-3).
+- `propose_alert` (the spec's create_alert, S9-1) - a PROPOSED `CREATE_ALERT` for the asker, only through the agent's
+  injection guard (allow-listed by "alert me" and similar in the trader's own message); on approval `monitor.execute`
+  creates the alert rule through the same checks as the Alerts API. An alert notifies; it never places an order.
+- `POST /api/screener/copilot/nl` (trader, tenancy table; also needs `ai_copilot` and the AI acknowledgement):
+  plain language -> a validated ScreenQL draft with stages, assumptions and an explanation through the H-C1 c output
+  filter; one repair turn with the validator's problems; nothing run or stored (S9-4, S9-5). The page box waits for
+  the builder to load text (TX1-7).
+- `/run`'s universe loading is now `routes.load_universe`, shared by the run route and the tools. No migration.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

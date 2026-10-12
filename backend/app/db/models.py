@@ -1259,6 +1259,42 @@ class AiActionRecord(Base):
     owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
+class ExecutionIntentRecord(Base):
+    """N1 E1 (ADR-0014): one entry intent on the execution core's queue - "this setup, for this person, in this mode".
+    A producer (a scan's "Then" template, X1) only writes the row; the trading worker claims it and the core's policy
+    routes it: NOTIFY (a notification), PROPOSE (a Z3 entry proposal, decided by a person) or REFUSE (with why). The
+    row never holds a broker or an order: in N1 nothing on this queue reaches a broker (PAPER only, ADR-0006). Personal
+    (tenant + user); kept as the trail of what the core decided and why."""
+
+    __tablename__ = "execution_intents"
+    # Per person (review M1): two members' intents for the same organisation-wide setup are two rows, never one shared row.
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "idempotency_key", name="uq_execution_intents_tenant_user_key"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    source: Mapped[str] = mapped_column(String(24), nullable=False)                 # scan (E1); more with review
+    source_ref: Mapped[str] = mapped_column(String(120), nullable=False)            # e.g. "rule:12:event:345"
+    idempotency_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    requested_mode: Mapped[str] = mapped_column(String(12), nullable=False)         # NOTIFY / ONE_CLICK / AUTO_PAPER / AUTO_LIVE
+    route: Mapped[str | None] = mapped_column(String(10), nullable=True)            # NOTIFY / PROPOSE / PAPER / REFUSE
+    status: Mapped[str] = mapped_column(String(10), nullable=False, default="QUEUED", index=True)   # QUEUED / CLAIMED / DONE / REFUSED / FAILED / EXPIRED
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    exchange: Mapped[str] = mapped_column(String(12), nullable=False, default="NSE")
+    direction: Mapped[str] = mapped_column(String(8), nullable=False)
+    strategy_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    signal_json: Mapped[str] = mapped_column(Text, nullable=False)                  # the Signal (levels, reasons, bar time)
+    evidence_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")  # e.g. the level gate's ticket (L3)
+    reason: Mapped[str | None] = mapped_column(String(300), nullable=True)          # the policy's / the outcome's why
+    ai_action_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="SET NULL"), nullable=True)
+    notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    claimed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+
+
 class AiCandidateRecord(Base):
     """P0.8 / A3: a strategy candidate the *server* produced and validated - the strategist's rule sets with their
     in-sample / out-of-sample simulation, or the interview's pick with its evidence - held here so "adopt" and

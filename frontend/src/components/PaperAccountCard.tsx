@@ -3,11 +3,13 @@ import { api } from "../api/client";
 import type { PaperAccount, PaperLadder } from "../types";
 import { Card, StatTile, signClass } from "./ui";
 import { criterionProgress, criterionText, signedMoney } from "./paperLadder";
+import LadderEvidence, { DisciplineWeeks } from "../progression/LadderEvidence";
 
 /**
  * Z3-b (beta spec, Phase 0): the signed-in user's own PAPER account - balance, equity, P&L after charges, the
  * PAPER-scope pause - and the progression ladder card (PAPER stage; LIVE is locked in Phase 0). Every number comes from
  * the server, computed from this user's own PAPER trades. Hidden when the `paper_account` flag is off (the API answers 404).
+ * N2-1 (flag `ladder_evidence`): the discipline criterion's weekly scores and the "Your figures" block, when sent.
  */
 export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
   const [account, setAccount] = useState<PaperAccount | null>(null);
@@ -101,10 +103,12 @@ export default function PaperAccountCard({ canTrade }: { canTrade: boolean }) {
                         <div className={`h-1.5 rounded ${c.met ? "bg-up" : "bg-info"}`} style={{ width: `${Math.round(p * 100)}%` }} />
                       </div>
                     )}
+                    {c.key === "discipline_score" && c.status && <DisciplineWeeks criterion={c} />}
                   </li>
                 );
               })}
             </ul>
+            {ladder.evidence && <LadderEvidence evidence={ladder.evidence} />}
             <p className="text-[11px] text-fg-muted">Figures from your own PAPER trades, as of {new Date(ladder.as_of).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" })} IST. Phase 0 has PAPER only.</p>
           </div>
         )}

@@ -7,7 +7,7 @@ Golden worked examples (hand-computed, then checked against `india_costs.round_t
   option bought  (LONG):  buy 65 @ 50, sell @ 40         -> gross  -650, premium sold 2600
   future         (LONG):  buy 75 @ 25000, sell @ 25100   -> gross +7500, sell value 1,882,500
 
-  STT          before 1 Apr 2026 (FY 2025-26)       from 1 Apr 2026 (FY 2026-27, "verify" rows - TX-1)
+  STT          before 1 Apr 2026 (FY 2025-26)       from 1 Apr 2026 (FY 2026-27, Finance Act 2026: NSE/FATAX/73524)
   written      9000 x 0.1%   =   9.00               9000 x 0.15%   =  13.50
   bought       2600 x 0.1%   =   2.60               2600 x 0.15%   =   3.90
   future   1,882,500 x 0.02% = 376.50          1,882,500 x 0.05%   = 941.25
@@ -152,6 +152,22 @@ def test_the_report_has_no_rate_table_of_its_own_and_shows_the_dated_one():
     changed = {(c["class"], c["from"]): (c["before_pct"], c["pct"]) for c in mid_year["rate_changes"]}
     assert changed == {("FNO_OPTION", "2024-10-01"): (0.0625, 0.1), ("FNO_FUTURE", "2024-10-01"): (0.0125, 0.02)}
     assert any(n.startswith("Rates changed during this year") for n in mid_year["notes"])
+
+
+def test_the_report_names_the_source_of_every_rate_it_shows():
+    """TX-1: each rate in `rates` has its `india_costs` source in `rate_sources` (same keys), as of the FY's first day."""
+    before = tax.build_report([], "2025-26", mode="LIVE")
+    after = tax.build_report([], "2026-27", mode="LIVE")
+    for body in (before, after):
+        assert {k: set(v) for k, v in body["rate_sources"].items()} == {k: set(v) for k, v in body["rates"].items()}
+    option, future = after["rate_sources"]["FNO_OPTION"]["stt_sell_pct"], after["rate_sources"]["FNO_FUTURE"]["stt_sell_pct"]
+    for src in (option, future):
+        assert src["ref"].startswith("NSE/FATAX/73524") and src["date"] == "2026-03-31" and src["verify"] == ""
+        assert src["url"] == "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
+    assert before["rate_sources"]["FNO_OPTION"]["stt_sell_pct"]["ref"].startswith("NSE/FATAX/63809")
+    assert after["rate_sources"]["MCX_FUTURE"]["ctt_sell_pct"]["verify"] == ""
+    assert after["rate_sources"]["CRYPTO"]["tds_pct"]["verify"] == ""
+    assert "Income-tax Act 2025" in after["rate_sources"]["CRYPTO"]["tax_pct"]["verify"]        # still to settle (TX-1)
 
 
 def test_notes_say_not_tax_advice_and_carry_no_advice_wording():

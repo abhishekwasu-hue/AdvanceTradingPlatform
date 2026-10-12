@@ -94,6 +94,9 @@ services:
       CAPTCHA_PROVIDER: ${CAPTCHA_PROVIDER:-}
       CAPTCHA_SECRET: ${CAPTCHA_SECRET:-}
       EGRESS_ALLOWED_HOSTS: ${EGRESS_ALLOWED_HOSTS:-}
+      # The platform administrators (app/admin/bootstrap.py): promoted to SUPER_ADMIN at startup and when they register.
+      # Without it nobody can open Admin -> Controls (the Phase 0 flags, invite codes) on a compose host.
+      SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS:-}
     depends_on:
       postgres:
         condition: service_healthy

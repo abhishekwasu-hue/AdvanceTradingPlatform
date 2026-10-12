@@ -94,6 +94,7 @@ Also set:
 
 ```
 ENVIRONMENT=production
+SUPER_ADMIN_EMAILS=<the email you will register with>   # your account gets Admin -> Controls (section 4a)
 CADDYFILE=Caddyfile.ip            # Caddyfile once DNS points at the server (section 5)
 OFFSITE_REMOTE=offsite:atp-backups
 OFFSITE_S3_PROVIDER=Cloudflare
@@ -117,7 +118,8 @@ Then run `/opt/atp/deploy/atp.sh install`.
 
 `atp.sh` never turns a feature flag on or off. It reads them with `scripts/flag_posture.py` inside the API container.
 While LIVE can still be entered, `health` and the end of `install` stop with **exit 10** (owner action needed). Once
-you have registered (the first user of an organisation becomes its owner; a platform admin sees Admin → Controls):
+you have registered with the email in `SUPER_ADMIN_EMAILS` (section 4; that account is the platform admin and sees
+Admin → Controls once two-factor authentication is on for it - admin pages need a session signed in with the authenticator code):
 
 1. Admin → Controls → feature flags → **`live_trading` OFF**, for everyone and with no organisation exceptions. It
    is on by default because it is a kill flag.

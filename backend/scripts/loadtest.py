@@ -29,6 +29,12 @@ Access tokens live 15 minutes: keep `--ramp` + `--seconds` under 14 minutes, or 
 suite's rate-limit overrides) with no server and no network. `--slo-factor auto` (CI) scales the p95 limits by the
 machine's CI factor (scripts/bench_screener.py calibration, never below 1); a staging run keeps the plain limits.
 Results go into docs/PERFORMANCE.md.
+
+Sharded (Lane D, deploy/ci/stack.sh load): many processes, each on its own client IP, each driving a slice of the users
+with its own accounts (`--accounts FILE --account-offset K`, one account per user, so every user logs in), each writing
+its raw samples (`--raw-out FILE`); then `--merge FILE...` judges them together and writes `--json-out` / `--markdown`.
+The per-IP login limit is never bypassed: more client IPs carry the login wave, as real users' do. `--cacert` verifies
+an HTTPS edge with its own CA (the CI stack's Caddy).
 """
 from __future__ import annotations
 
@@ -99,10 +105,24 @@ def check_host(base: str) -> None:
 class Stats:
     latency: Dict[str, List[float]] = field(default_factory=lambda: defaultdict(list))
     outcomes: Dict[str, Dict[str, int]] = field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))
+    sessions: Dict[str, int] = field(default_factory=lambda: defaultdict(int))      # logged_in / no_login
 
     def add(self, scenario: str, ms: float, outcome: str) -> None:
         self.latency[scenario].append(ms)
         self.outcomes[scenario][outcome] += 1
+
+    def raw(self) -> Dict[str, Any]:
+        return {"latency": {k: [round(v, 2) for v in vals] for k, vals in self.latency.items()},
+                "outcomes": {k: dict(v) for k, v in self.outcomes.items()}, "sessions": dict(self.sessions)}
+
+    def absorb(self, raw: Dict[str, Any]) -> None:
+        for scenario, values in (raw.get("latency") or {}).items():
+            self.latency[scenario].extend(float(v) for v in values)
+        for scenario, counts in (raw.get("outcomes") or {}).items():
+            for outcome, n in counts.items():
+                self.outcomes[scenario][outcome] += int(n)
+        for key, n in (raw.get("sessions") or {}).items():
+            self.sessions[key] += int(n)
 
 
 @dataclass
@@ -146,6 +166,7 @@ async def _session(i: int, make_client: Callable[[], httpx.AsyncClient], account
         else:
             await account.ready.wait()
         token = account.token
+        stats.sessions["logged_in" if token else "no_login"] += 1
         if not token:
             return
         client.headers["Authorization"] = f"Bearer {token}"
@@ -191,7 +212,8 @@ def report(stats: Stats, users: int, elapsed: float, slo_factor: float = 1.0) ->
     total = sum(len(v) for v in stats.latency.values())
     errors = sum(o.get("server_error", 0) + o.get("transport", 0) for o in stats.outcomes.values())
     out: Dict[str, Any] = {"users": users, "seconds": round(elapsed, 1), "requests": total, "rps": round(total / elapsed, 1) if elapsed else 0.0,
-                           "error_rate": round(errors / total, 4) if total else 0.0, "slo_factor": round(slo_factor, 2), "scenarios": {}}
+                           "error_rate": round(errors / total, 4) if total else 0.0, "slo_factor": round(slo_factor, 2), "scenarios": {},
+                           "sessions": dict(stats.sessions)}
     slo = True
     for scenario in sorted(stats.latency):
         values = stats.latency[scenario]
@@ -235,13 +257,20 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
     else:
         check_host(base)
 
+    verify: Any = True
+    if getattr(args, "cacert", None):
+        import ssl
+        verify = ssl.create_default_context(cafile=args.cacert)
+
     def make_client() -> httpx.AsyncClient:
-        return httpx.AsyncClient(base_url=base, timeout=args.timeout, transport=transport)
+        return httpx.AsyncClient(base_url=base, timeout=args.timeout, transport=transport, verify=verify)
 
     if args.token:
         accounts = [Account(token=args.token)]
     elif args.accounts:
-        accounts = _read_accounts(args.accounts)
+        accounts = _read_accounts(args.accounts)[getattr(args, "account_offset", 0):]
+        if not accounts:
+            raise SystemExit(f"{args.accounts}: no account at offset {args.account_offset}")
     else:
         accounts = await _register(make_client, max(1, min(args.register, args.users)))
     if harness is not None:
@@ -251,7 +280,55 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
     deadline = started + args.ramp + args.seconds
     await asyncio.gather(*(_session(i, make_client, accounts[i % len(accounts)], i < len(accounts), stats, args.ramp * i / max(1, args.users), deadline,
                                     args.think, args.seed) for i in range(args.users)))
-    return report(stats, args.users, time.monotonic() - started, slo_factor=_slo_factor(args.slo_factor))
+    elapsed = time.monotonic() - started
+    if getattr(args, "raw_out", None):
+        Path(args.raw_out).write_text(json.dumps({"users": args.users, "seconds": round(elapsed, 2), "base": base, **stats.raw()}))
+    return report(stats, args.users, elapsed, slo_factor=_slo_factor(args.slo_factor))
+
+
+def merge(paths: List[str], slo_factor: float = 1.0) -> Dict[str, Any]:
+    """One verdict over several shards' raw samples (`--raw-out`): every sample counts, the users add up, the duration
+    is the longest shard's."""
+    stats = Stats()
+    users, elapsed = 0, 0.0
+    for path in paths:
+        raw = json.loads(Path(path).read_text())
+        stats.absorb(raw)
+        users += int(raw.get("users") or 0)
+        elapsed = max(elapsed, float(raw.get("seconds") or 0.0))
+    out = report(stats, users, elapsed, slo_factor=slo_factor)
+    out["shards"] = len(paths)
+    return out
+
+
+def markdown(r: Dict[str, Any], label: str = "", stats_csv: Optional[str] = None) -> str:
+    """The result as the Markdown block docs/reports/load_test_500.md carries."""
+    sessions = r.get("sessions") or {}
+    lines = [f"**{r['users']} users** ({sessions.get('logged_in', 0)} logged in, {sessions.get('no_login', 0)} without a login)"
+             + (f", {r['shards']} shards (client IPs)" if r.get("shards") else "") + f" on {label or 'this host'}: "
+             f"{r['requests']:,} requests in {r['seconds']:.0f} s ({r['rps']} requests/s), server errors {r['error_rate']:.2%}. "
+             f"**SLO {'PASS' if r['slo_pass'] else 'FAIL'}** (p95 limits x {r.get('slo_factor', 1.0)}, server errors <= {ERROR_LIMIT:.1%}).",
+             "", "| Route / scenario | n | p50 ms | p95 ms | p99 ms | p95 limit | verdict | outcomes |", "|---|---|---|---|---|---|---|---|"]
+    for name, s in r["scenarios"].items():
+        verdict = "pass" if s["pass"] else "**over**"
+        if not s["outcomes"].get("ok"):
+            verdict = "not measured"
+        outcomes = ", ".join(f"{k} {v}" for k, v in sorted(s["outcomes"].items()))
+        lines.append(f"| {name} | {s['n']} | {s['p50_ms']} | {s['p95_ms']} | {s['p99_ms']} | {s['p95_limit_ms']:.0f} | {verdict} | {outcomes} |")
+    if stats_csv and Path(stats_csv).exists():
+        peaks: Dict[str, List[float]] = {}
+        for row in Path(stats_csv).read_text().splitlines()[1:]:
+            parts = row.split(",")
+            if len(parts) >= 3 and parts[2].endswith("%"):
+                try:
+                    peaks.setdefault(parts[1], []).append(float(parts[2].rstrip("%")))
+                except ValueError:
+                    continue
+        if peaks:
+            lines += ["", "| Container | CPU % mean | CPU % peak |", "|---|---|---|"]
+            for name, values in sorted(peaks.items()):
+                lines.append(f"| {name} | {statistics.fmean(values):.0f} | {max(values):.0f} |")
+    return "\n".join(lines) + "\n"
 
 
 def _slo_factor(value: str) -> float:
@@ -280,10 +357,25 @@ def main() -> int:
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--annotate", action="store_true", help="also print a GitHub Actions notice with the summary")
     parser.add_argument("--slo-factor", default="1", help='scale the p95 limits (>= 1), or "auto" for the CI factor (CI only)')
+    parser.add_argument("--cacert", default=None, help="CA file that verifies an HTTPS --base (the CI stack's Caddy)")
+    parser.add_argument("--account-offset", type=int, default=0, help="start at this line of --accounts (a shard's slice)")
+    parser.add_argument("--raw-out", default=None, help="also write the raw samples here, for --merge")
+    parser.add_argument("--merge", nargs="+", default=None, help="judge these --raw-out files together instead of running")
+    parser.add_argument("--json-out", default=None, help="write the report as JSON here")
+    parser.add_argument("--markdown", default=None, help="write the report as a Markdown table here")
+    parser.add_argument("--label", default="", help="where it ran (for --markdown)")
+    parser.add_argument("--stats", default=None, help="docker stats CSV to summarise in --markdown")
     args = parser.parse_args()
     if args.ramp is None:
         args.ramp = args.seconds / 10
-    result = asyncio.run(run(args))
+    if args.merge:
+        result = merge(args.merge, slo_factor=_slo_factor(args.slo_factor))
+    else:
+        result = asyncio.run(run(args))
+    if args.json_out:
+        Path(args.json_out).write_text(json.dumps(result, indent=2))
+    if args.markdown:
+        Path(args.markdown).write_text(markdown(result, args.label, args.stats))
     if args.json:
         print(json.dumps(result, indent=2))
     if not args.json or args.annotate:

@@ -2476,6 +2476,79 @@ class HistoryImportFileRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
+# --- Z7a-2: market zones (demand / supply, order blocks, S/R, gaps) with lifecycle and level memory ------------------------
+class MarketZoneSettingRecord(Base):
+    """Z7a-2: a tenant's market-zone settings for one instrument ("*" = the tenant's default for every instrument), the
+    OI banner pattern. `enabled` asks the nightly zone job to follow the instrument; `overrides` is a JSON object of
+    ZoneSettings fields layered over the platform defaults (zones/store.py PLATFORM_DEFAULTS + MARKET_ZONES_DEFAULTS)."""
+
+    __tablename__ = "market_zone_settings"
+    __table_args__ = (UniqueConstraint("tenant_id", "instrument_key", name="uq_market_zone_setting"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)                    # lake key "NSE:BANKNIFTY" or "*"
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    overrides: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    updated_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+
+
+class MarketZoneRunRecord(Base):
+    """Z7a-2: one stored snapshot of an instrument's zones, computed from the shared lake bars that closed by `as_of`
+    (never later bars, never a tenant's private data). scope "platform" = the default settings (shared by every tenant
+    without overrides); "tenant:<id>" = that tenant's own settings (`settings_hash` tells them apart). Append-only: the
+    zones as of T are the run with the latest as_of <= T."""
+
+    __tablename__ = "market_zone_runs"
+    __table_args__ = (UniqueConstraint("scope", "instrument_key", "as_of", name="uq_market_zone_run"),)   # also the as-of lookup index
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(24), nullable=False)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    as_of: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)                      # close of the last bar used
+    computed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+    settings_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bars: Mapped[str] = mapped_column(Text, nullable=False, default="{}")                       # JSON {timeframe: bars read}
+    zone_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    previous_run_id: Mapped[int | None] = mapped_column(Integer, nullable=True)                 # the run level memory merged with
+    source_last_ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)        # newest bar END it read
+    source_ingested_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)    # newest ingest it read
+
+
+class MarketZoneRecord(Base):
+    """Z7a-2: one zone of a stored snapshot - its bounds, role by price, ATP lifecycle state (fresh / tested / flipped /
+    invalidated) and counters, and the tracker the next run continues from (JSON)."""
+
+    __tablename__ = "market_zones"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    run_id: Mapped[int] = mapped_column(ForeignKey("market_zone_runs.id", ondelete="CASCADE"), nullable=False, index=True)
+    zone_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    zone_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    timeframe: Mapped[str] = mapped_column(String(8), nullable=False)
+    zone_low: Mapped[float] = mapped_column(Float, nullable=False)
+    zone_high: Mapped[float] = mapped_column(Float, nullable=False)
+    strength: Mapped[float | None] = mapped_column(Float, nullable=True)
+    role: Mapped[str | None] = mapped_column(String(20), nullable=True)                        # RESISTANCE_SUPPLY / SUPPORT_DEMAND
+    origin_role: Mapped[str] = mapped_column(String(12), nullable=False)                       # SUPPORT / RESISTANCE
+    state: Mapped[str] = mapped_column(String(12), nullable=False)
+    formed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    first_touch_event: Mapped[str | None] = mapped_column(String(12), nullable=True)          # Trade's FILLED moment (parity)
+    first_touch_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    touches: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    flips: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    last_event: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_event_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    structure_level: Mapped[float | None] = mapped_column(Float, nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    remembered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    tracker: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+
 class HistoryBackfillFileRecord(Base):
     """HB1: one NSE daily file - a segment (`cm` cash bhavcopy, `fo` F&O bhavcopy, `index` all-indices closes) for one
     trade date - and what the backfill did with it. The resume point (a `done` day is never fetched again) and the

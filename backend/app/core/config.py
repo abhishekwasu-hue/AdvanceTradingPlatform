@@ -476,10 +476,27 @@ OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)
 OI_BANNER_COLLECT_SPAN = _bounded_int("OI_BANNER_COLLECT_SPAN", 15, 1, 60)
 OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
 
+# Z7a-2 market zones: the operator's ZoneSettings fields over the platform's all-daily defaults (JSON object; see
+# app/price_action/zones/store.py PLATFORM_DEFAULTS), the lake instruments the nightly zone job always follows (comma list
+# of keys like "NSE:BANKNIFTY"; tenants add their own in market_zone_settings), the IST hour from which it runs once a day
+# (20: after HB1's 19:00 EOD ingest) and one pass's time budget (a pass that runs out resumes on the next cycle). Only with
+# the `market_zones` flag (off by default).
+MARKET_ZONES_DEFAULTS: dict = _json_object("MARKET_ZONES_DEFAULTS")
+MARKET_ZONES_SYMBOLS = [k.strip().upper() for k in os.environ.get("MARKET_ZONES_SYMBOLS", "").split(",") if k.strip()]
+MARKET_ZONES_HOUR_IST = _bounded_int("MARKET_ZONES_HOUR_IST", 20, 0, 23)
+MARKET_ZONES_BUDGET_SECONDS = _bounded_int("MARKET_ZONES_BUDGET_SECONDS", 1800, 10, 6 * 3600)
+
 # PW6: the closed-beta cohort cap. With the `beta_cohort_gate` flag on, registration needs an invite code and stops once
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes
 # included). The flag is off by default, so the cap does nothing until the operator turns the gate on.
 BETA_COHORT_CAP = _bounded_int("BETA_COHORT_CAP", 500, 1, 1_000_000)
+# Z10-e (staged rollout 50 -> 200 -> 500): the cohort grows in stages and the gate stops at min(stage, BETA_COHORT_CAP).
+# The SUPER_ADMIN moves the stage in the admin console (stored in platform_controls, every move audited); this setting is
+# only the stage used until a stage has been stored. Any value outside BETA_COHORT_STAGES falls back to 50.
+BETA_COHORT_STAGES = (50, 200, 500)
+BETA_COHORT_STAGE = _bounded_int("BETA_COHORT_STAGE", 50, 1, 1_000_000)
+if BETA_COHORT_STAGE not in BETA_COHORT_STAGES:
+    BETA_COHORT_STAGE = 50
 
 
 def _bounded_float(name: str, default: float, low: float, high: float) -> float:

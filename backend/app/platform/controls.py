@@ -149,12 +149,19 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z10-b: outbox reliability - a worker claims a delivery with a lease before sending, one idempotency key per
     # delivery, a DEAD state after the last attempt, operator replay of dead letters. OFF: the outbox is unchanged.
     "alerts_reliable_outbox": "Reliable alert outbox: claimed deliveries (never sent twice by two workers), idempotency keys, dead letters and replay",
+    # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
+    # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
+    # answers 404 and the page says it is not enabled.
+    "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
+    # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
+    # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
+    "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory (stored, read-only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "risk_by_default", "vix_gate"})
+                               "risk_by_default", "vix_gate", "public_status_page", "market_zones"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

@@ -34,10 +34,10 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 
 | Status | Rows |
 |---|---|
-| ported | 11 |
+| ported | 13 |
 | partial | 18 |
 | partial (unverified) | 9 |
-| in progress (Z7a) | 6 |
+| in progress (Z7a) | 4 |
 | missing | 49 (25 of them are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
 | **Total** | **192** |
@@ -45,7 +45,7 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 | Group | Rows | ported | partial | partial (unverified) | in progress (Z7a) | missing | not needed |
 |---|---|---|---|---|---|---|---|
 | 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 2 | 11 | 4 | 0 | 2 | 2 |
-| 2. Right after Phase 0 (N-list) | 29 | 2 | 3 | 3 | 6 | 15 | 0 |
+| 2. Right after Phase 0 (N-list) | 29 | 4 | 3 | 3 | 4 | 15 | 0 |
 | 3. Only when the owner marks it stable (G) | 25 | 0 | 0 | 0 | 0 | 25 (waiting) | 0 |
 | 4. Already ported or covered, outside the groups | 11 | 7 | 4 | 0 | 0 | 0 | 0 |
 | 5. Unscheduled (not in the owner's lists) | 9 | 0 | 0 | 2 | 0 | 7 | 0 |
@@ -108,12 +108,12 @@ The six safety checks the spec lists for `order_safety.py`:
 | `pnl_reports.py` | Daily / weekly / monthly P&L with real charges (net P&L) | `backend/app/trading/analytics.py`, `backend/app/tax/report.py` | partial (unverified) | none (Trade has `tests/test_pnl_reports.py`) |
 | `market_report.py` | 16:00 report for the next day's intraday and positional option selling (index levels, OI, VIX, ranges) | `backend/app/ai/briefing.py`, `backend/app/ai/global_cues.py` (pre-open) | missing: merge into the briefing / global cues (N2) | none |
 | `eod_market_report.py` | Runs `market_report` for NIFTY, BANKNIFTY and SENSEX and sends it | `backend/app/ai/briefing.py` | missing (as above) | none |
-| `level_memory.py` | Keeps levels across days: ATR-scaled tolerance, merge, retire after N days without a touch, max distance and count, role by price | none yet | in progress (Z7a) | Z7a adds golden parity (Trade has `tests/test_level_memory.py`) |
-| `market_zones.py` | Zone store: order blocks, demand / supply, role by price, mitigation, S/R on 1H, dynamic S/R, gaps, 5m/15m confluence | `backend/app/price_action/zones/detect.py`, `compute.py` | partial: detection ported (Z7a-1, #168); lifecycle fresh -> tested -> flipped -> invalidated, memory and storage in Z7a-2 | `backend/tests/test_zones_parity.py` (golden vs Trade@eafc872, #168) |
-| `sr_dynamic.py` | Python version of the Pine script "Support Resistance - Dynamic v2" (pivot clusters into S/R channels) | `backend/app/price_action/zones/levels.py` (`compute_dynamic_sr`) | ported (Z7a-1, #168) | `backend/tests/test_zones_parity.py` (golden vs Trade@eafc872, #168) |
-| `sr_levels_v3.py` | Experimental S/R v3: recency, reaction, MTF confluence, PDH / PDL / PWH / PWL, role reversal, gaps, graded | `backend/app/price_action/zones/sr_v3.py` | ported (Z7a-1, #168): level logic; the "S/R levels v3" template follows | `backend/tests/test_zones_parity.py` (golden vs Trade@eafc872, #168) |
-| `signals.py` | Price-action signal engine: RSI / Supertrend, market structure, break / pullback / retest, S/R levels, order blocks, trendlines | `backend/app/indicators/`, `backend/app/price_action/market_structure.py` (ATP's own) | partial: `filter_major_swings`, `find_support_resistance_levels`, `find_order_block`, `is_retesting_order_block` ported to `backend/app/price_action/zones/` (Z7a-1, #168); the rest is missing (group 5) | `backend/tests/test_zones_parity.py` (golden vs Trade@eafc872, #168) |
-| `refresh_market_zones.py` | Nightly job: one year of OHLC -> S/R, order blocks, demand / supply, gaps -> stored | none | in progress (Z7a): Z7a-2 storage job | none |
+| `level_memory.py` | Keeps levels across days: ATR-scaled tolerance, merge, retire after N days without a touch, max distance and count, role by price | `backend/app/price_action/zones/memory.py` (knobs in `ZoneSettings`; remembers dynamic S/R like Trade, classical S/R too when `memory_families` asks; role by price by default), used by `zones/snapshot.py` and the nightly job | ported (Z7a-2) | `backend/tests/test_zones_memory_parity.py` (golden: tolerance, last touch, day-by-day merge walks, remember / nightly apply) |
+| `market_zones.py` | Zone store: order blocks, demand / supply, role by price, mitigation, S/R on 1H, dynamic S/R, gaps, 5m/15m confluence | `backend/app/price_action/zones/` (`detect.py`, `compute.py`; lifecycle `lifecycle.py`; store `store.py` + `job.py`). `backend/app/support_resistance/zones.py` is ATP's own swing zones, not a port | ported (Z7a-1 detection, Z7a-2 lifecycle + storage). Deliberate change: Trade's FILLED (first touch) is ATP's fresh -> tested event; a zone dies only on a structural break; lifecycle tracked from confirmation. Chart layer / ScreenQL: Z7a-3 | `backend/tests/test_zones_parity.py` (detection, first touch); lifecycle `backend/tests/test_zones_lifecycle.py` (ATP rule, no Trade equivalent) |
+| `sr_dynamic.py` | Python version of the Pine script "Support Resistance - Dynamic v2" (pivot clusters into S/R channels) | `backend/app/price_action/zones/levels.py` (`compute_dynamic_sr`, `find_pivots_indexed`) | ported (Z7a-1); levels get memory and a lifecycle in Z7a-2 | `backend/tests/test_zones_parity.py` (`dynamic_sr`) |
+| `sr_levels_v3.py` | Experimental S/R v3: recency, reaction, MTF confluence, PDH / PDL / PWH / PWL, role reversal, gaps, graded | `backend/app/price_action/zones/sr_v3.py` (settings `ZoneSettings.sr_v3`); its break rule (0.10 % buffer, 2 closes) is the default of the ATP zone flip | ported (Z7a-1, level logic); the "S/R levels v3" template follows | `backend/tests/test_zones_parity.py` (`sr_v3`, `sr_v3_gaps`, `sr_v3_flip`) |
+| `signals.py` | Price-action signal engine: RSI / Supertrend, market structure, break / pullback / retest, S/R levels, order blocks, trendlines | `backend/app/price_action/zones/levels.py` + `detect.py` + `backend/app/price_action/swings.py` (the four functions below); `backend/app/indicators/`, `backend/app/price_action/market_structure.py` (ATP's own) | partial: `find_swings`, `filter_major_swings`, `find_support_resistance_levels`, `find_order_block` / `is_retesting_order_block` ported (Z7a-1); the rest is missing (group 5) | `backend/tests/test_zones_parity.py` (`swings`, `sr_levels`, `order_block_retest`) |
+| `refresh_market_zones.py` | Nightly job: one year of OHLC -> S/R, order blocks, demand / supply, gaps -> stored | `backend/app/price_action/zones/job.py` (worker, once per IST day, flag `market_zones` off by default) + `store.py` (as-of snapshots `market_zone_runs` / `market_zones`, tenant overrides `market_zone_settings`) | partial: built from the shared lake bars instead of a broker fetch, with lifecycle and memory; no read API yet (Z7a-3) | function level only (`test_zones_parity.py`, `test_zones_memory_parity.py`); job behaviour `backend/tests/test_zones_store_job.py` |
 | `refresh_market_zones_intraday.py` | Intraday refresh of dynamic S/R 15M / 30M / 60M zones | none | in progress (Z7a): Z7a-2 bar-close job | none |
 | `refresh_market_zones_mcx.py` | Dynamic S/R 30M / 60M for MCX futures | none | in progress (Z7a): same job; MCX symbols wait for the MCX template | none |
 | `refresh_dynamic_sr_1m.py` | Refreshes 1-minute dynamic S/R levels with the 5-minute cron | none | in progress (Z7a): same job | none |

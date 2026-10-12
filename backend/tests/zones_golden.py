@@ -3,14 +3,16 @@ through ATP, both normalised to one JSON shape.
 
   * `trade_outputs(T)` - Trade@eafc872 functions on the fixtures (T = the imported Trade modules, see `import_trade`).
   * `atp_outputs()`    - the ATP port on the same fixtures with the equivalent settings.
-  * GOLDEN             - the frozen `trade_outputs` (tests/fixtures/zones/golden_trade_eafc872.json), so CI checks
+  * GOLDEN             - the frozen `trade_outputs` (tests/fixtures/zones/golden_trade_eafc872.json.gz), so CI checks
                          ATP == Trade without the Trade repository on disk.
 
 Normalisation only absorbs the deliberate, documented differences: ATP timeframe labels ("15m" for Trade's "15M" /
 "15minute", "1h" for "60M" / "1hour" / "1H" frames), ASCII tags in sr_v3, zone status FILLED/ACTIVE -> state
-tested/fresh, and a dynamic S/R row's formed time (not compared). Regenerate the golden file (after a deliberate Trade
+tested/fresh (compared on ATP's `first_touch` event - its `state` is the ATP lifecycle since Z7a-2), and a dynamic S/R
+row's formed time (not compared). Regenerate the golden file (after a deliberate Trade
 re-sync) from backend/ with:  python -m tests.zones_golden --write
 """
+import gzip
 import importlib
 import importlib.util
 import json
@@ -25,7 +27,7 @@ import pandas as pd
 TRADE_COMMIT = "eafc872"
 TRADE_PATH = os.environ.get("TRADE_REPO_PATH", "/home/user/trade")
 FIXTURE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fixtures", "zones")
-GOLDEN = os.path.join(FIXTURE_DIR, f"golden_trade_{TRADE_COMMIT}.json")
+GOLDEN = os.path.join(FIXTURE_DIR, f"golden_trade_{TRADE_COMMIT}.json.gz")
 TRADE_MODULES = ("market_zones", "signals", "sr_dynamic", "sr_levels_v3", "mtf_pullback_strategy")
 
 
@@ -133,7 +135,8 @@ def _atp_row(r: Dict[str, Any]) -> Dict[str, Any]:
     dyn = r["zone_type"].startswith("DYNAMIC_SR_")
     return {"zone_type": r["zone_type"], "timeframe": r["timeframe"], "zone_low": _num(r["zone_low"]), "zone_high": _num(r["zone_high"]),
             "strength": None if r["strength"] is None else int(r["strength"]), "formed": None if dyn else _iso(r["formed_at"]),
-            "state": r["state"]}
+            # Trade's ACTIVE / FILLED is ATP's first-touch event (Z7a-2: `state` is the ATP lifecycle, tracked from confirmation)
+            "state": "tested" if r["first_touch"] is not None else "fresh"}
 
 
 def _tag(t: str) -> str:
@@ -451,9 +454,22 @@ def diff(expected: Any, actual: Any, path: str = "", rel: float = 1e-9, out: Opt
     return out
 
 
-def load_golden() -> Dict[str, Any]:
-    with open(GOLDEN, encoding="utf-8") as fh:
+def read_golden(path: str) -> Dict[str, Any]:
+    """A golden file: gzip-compressed JSON (working rule: golden fixtures over ~1,000 lines are stored compressed)."""
+    with gzip.open(path, "rt", encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def write_golden(path: str, data: Any) -> None:
+    """Deterministic gzip JSON: sorted keys, fixed layout, no name or time in the gzip header (mtime 0) - the same
+    output gives byte-identical files, so a re-sync that changes nothing shows no diff."""
+    body = (json.dumps(data, indent=1, sort_keys=True, ensure_ascii=False) + "\n").encode("utf-8")
+    with open(path, "wb") as raw, gzip.GzipFile(filename="", mode="wb", fileobj=raw, compresslevel=9, mtime=0) as fh:
+        fh.write(body)
+
+
+def load_golden() -> Dict[str, Any]:
+    return read_golden(GOLDEN)
 
 
 if __name__ == "__main__":
@@ -462,9 +478,7 @@ if __name__ == "__main__":
         sys.exit(f"Trade checkout not found at {TRADE_PATH} (set TRADE_REPO_PATH)")
     data = to_json(trade_outputs(T))
     if "--write" in sys.argv:
-        with open(GOLDEN, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=1, sort_keys=True, ensure_ascii=False)
-            fh.write("\n")
+        write_golden(GOLDEN, data)
         print("wrote", GOLDEN)
     st: Dict[str, int] = {"exact": 0, "approx": 0}
     problems = diff(data, to_json(atp_outputs()), stats=st)

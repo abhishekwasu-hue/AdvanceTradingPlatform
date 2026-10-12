@@ -403,6 +403,9 @@ class _Checker:
         return spec.returns, None
 
 
+NOT_A_CONDITION = "a screen must be a condition (true/false), e.g. close > SMA(close, 20)"
+
+
 def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP,
              strict_units: bool = True) -> Validated:
     """Every check, all problems at once (not only the first). `strict_units=False` is only for screens translated from
@@ -412,7 +415,7 @@ def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] 
     checker = _Checker(base_tf, dict(params or {}), strict_units)
     kind, _ = checker.check(ast)
     if kind != BOOL:
-        checker.err("a screen must be a condition (true/false), e.g. close > SMA(close, 20)", ast)
+        checker.err(NOT_A_CONDITION, ast)
     unused = set((params or {}).keys()) - checker.out.params_used
     if unused:
         checker.err(f"unknown parameter(s): {', '.join(sorted('$' + u for u in unused))}", None)

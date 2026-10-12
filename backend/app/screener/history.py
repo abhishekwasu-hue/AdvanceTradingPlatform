@@ -106,26 +106,6 @@ def passers_on(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], day: d
             "universe": len(universe)}
 
 
-def _series_at(values: Any, frame: pd.DataFrame, dates: Sequence[date], lookback: int) -> Dict[date, bool]:
-    """A full-series evaluation read at each date: True only where the bar of that date exists, the screen holds on it,
-    and at least `lookback` bars had closed by then."""
-    days = session_dates(frame.index)
-    pos = {d: i for i, d in enumerate(days)}
-    if isinstance(values, pd.Series):
-        arr = values.to_numpy()
-    else:
-        arr = np.full(len(frame), values, dtype=object)
-    out: Dict[date, bool] = {}
-    for d in dates:
-        i = pos.get(d)
-        if i is None or i + 1 < lookback:
-            out[d] = False
-            continue
-        v = arr[i]
-        out[d] = bool(v) if not (isinstance(v, float) and math.isnan(v)) and v is not None else False
-    return out
-
-
 def signals(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: Sequence[date], params: Optional[Dict[str, Any]] = None,
             eligible: Optional[Dict[date, Set[str]]] = None) -> pd.DataFrame:
     """[dates x symbols] -> True where the symbol passed the screen at that date (on bars closed by then). Ineligible
@@ -136,7 +116,6 @@ def signals(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: Se
     table = pd.DataFrame(False, index=pd.Index(dates, name="date"), columns=symbols, dtype=bool)
     if not dates or not symbols:
         return table
-    lookback = int((validated.lookback or {}).get(BASE_TF, 1) or 1)
     if validated.cross_sectional:
         if len(dates) > MAX_CROSS_SECTIONAL_DATES:
             raise HistoryError(f"a cross-sectional screen (a rank across the universe) runs date by date: at most "
@@ -146,18 +125,43 @@ def signals(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: Se
             for s in matched:
                 table.at[d, s] = True
         return table
+    values = series_at_dates(ast, validated, frames, dates, params)
+    for s in values.columns:
+        col = values[s]
+        for d in dates:
+            v = col.at[d]
+            if v is not None and not (isinstance(v, float) and math.isnan(v)) and bool(v) and (eligible is None or s in eligible.get(d, set())):
+                table.at[d, s] = True
+    return table
+
+
+def series_at_dates(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: Sequence[date],
+                    params: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+    """[dates x symbols] an expression's value at each date, on bars closed by then: one causal series per symbol (or
+    per group of symbols sharing a bar index - the Z10-d panel) read at the date. NaN where the symbol has no bar that
+    date or fewer bars than the expression's lookback. Used for the screen's matches and for S6b's rank values."""
+    params = dict(params or {})
+    dates = sorted(dates)
+    symbols = sorted(frames)
+    out = pd.DataFrame(np.nan, index=pd.Index(dates), columns=symbols, dtype=object)
+    if not dates or not symbols:
+        return out
+    lookback = int((validated.lookback or {}).get(BASE_TF, 1) or 1)
     last = dates[-1]
     cut_frames = {s: cut(frames[s], last) for s in symbols}
     cut_frames = {s: f for s, f in cut_frames.items() if f is not None and not f.empty}
 
     def mark(s: str, values: Any, frame: pd.DataFrame) -> None:
-        for d, ok in _series_at(values, frame, dates, lookback).items():
-            if ok and (eligible is None or s in eligible.get(d, set())):
-                table.at[d, s] = True
+        days = session_dates(frame.index)
+        pos = {d: i for i, d in enumerate(days)}
+        arr = values.to_numpy() if isinstance(values, pd.Series) else np.full(len(frame), values, dtype=object)
+        for d in dates:
+            i = pos.get(d)
+            if i is not None and i + 1 >= lookback:
+                out.at[d, s] = arr[i]
     rest = list(cut_frames)
     from app.screener import panel as P
     if P.supported(ast, validated, BASE_TF):
-        # Z10-d: symbols sharing one bar index are evaluated at once (bit for bit the per-symbol series).
         universe = [SymbolData(symbol=s, frames={BASE_TF: f}) for s, f in cut_frames.items()]
         rest = []
         for members in P._groups(universe, BASE_TF):
@@ -178,10 +182,10 @@ def signals(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: Se
         frame = cut_frames[s]
         try:
             values = evaluate(ast, SymbolData(symbol=s, frames={BASE_TF: frame}), base_tf=BASE_TF, params=params)
-        except Exception:  # noqa: BLE001 - one symbol's bad data never fails the run (it simply never matches)
+        except Exception:  # noqa: BLE001 - one symbol's bad data never fails the run (it simply has no value)
             continue
         mark(s, values, frame)
-    return table
+    return out
 
 
 # --- fitness --------------------------------------------------------------------------------------------------------------

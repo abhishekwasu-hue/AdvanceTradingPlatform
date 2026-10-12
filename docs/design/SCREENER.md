@@ -1177,6 +1177,46 @@ weighting, the part C cost and slippage models, and the benchmark comparison.
 - **Perf (Z10-d):** `screen_fitness` covers the 50-factor EOD screen over 300 symbols, weekly over a year, with
   1 / 5 / 20-session statistics. The target is 3 s, times the CI factor, in the `perf` job; locally it took 1.6 s.
 
+## N3 S6b (built): the rolling screen backtest (flag `screener_backtest`, off; needs `screener_history`)
+
+Spec §2.7, the second of S6's two PRs. `POST /api/screener/history/backtest` takes S6a's body plus `top_n` (1-50,
+which needs `rank_by`), `rank_by` (a daily ScreenQL factor of one symbol's bars, e.g. `PctChange(close, 20)`; no Rank
+/ PercentileRank), `descending`, `weighting` (equal / rank), `capital`, `slippage_pct` (default 0.02, the paper
+broker's and C2's default) and `brokerage_per_order` (default 20). It is a trader route in the tenancy table.
+
+- **No look-ahead.**
+  - Matches and rank values come from S6a's causal series read at each rebalance date: bars closed by then, and a
+    symbol counts only if it traded that day.
+  - The portfolio is decided at that date's close and filled at the **next session's open**.
+  - The equity is marked at each close.
+  - Tests: rewriting every bar after a day leaves the equity and the rebalance log up to that day unchanged. The rank
+    value equals the expression on the cut bars.
+- **Fills and costs (part C).**
+  - The fixed-% slippage model against the trade (C2 default).
+  - India's dated equity-delivery charges on every order (`india_costs.leg_cost`: STT, exchange, SEBI, stamp, GST,
+    brokerage).
+  - Whole shares, with 0.5 % of the equity kept back for charges.
+  - A holding that stops trading is marked at its last close and sold at it at the next rebalance.
+- **Choice.**
+  - The matches ranked by `rank_by`: NaN last, ties by symbol.
+  - The top N, or every match when there is no `top_n`.
+  - Equal weights, or rank weights N, N-1, ..., 1.
+- **Benchmarks.**
+  - The equal-weight eligible universe, as of the last rebalance, no costs.
+  - NIFTY 50 closes from the lake (`NSE_INDEX:NIFTY50`) when they are there; otherwise the answer says so.
+- **Report.**
+  - Total return, CAGR, annualised volatility and Sharpe, and maximum drawdown, for the strategy and each benchmark,
+    plus the excess.
+  - Costs paid, turnover per rebalance, average holdings.
+  - The equity curve, and the last 20 rebalances (decided, filled, matches, held).
+- **Ledger.** Each run is one `research_trials` row (`kind: screen_backtest`, daily returns). Its Sharpe is deflated
+  against the organisation's screen backtests of the last 30 days.
+- **Perf (Z10-d).** `screen_backtest`: the 50-factor screen over 300 symbols, top 20 by `PctChange(close, 20)`, rank
+  weights, weekly over a year. The target is 3 s, times the CI factor; locally it took 1.8 s. The rank values use the
+  Z10-d panel where it covers the expression.
+- **No migration**, and no new ScreenQL function, so no new Z10-a causal cases. It is a simulation: nothing is
+  placed. The disclaimer is in every answer.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

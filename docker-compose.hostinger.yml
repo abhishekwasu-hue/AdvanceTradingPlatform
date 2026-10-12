@@ -14,6 +14,9 @@
 #   * the off-site copy (H-2): Cloudflare R2 by default (`offsite:` remote, OFFSITE_S3_*), Backblaze B2 as the
 #     alternative (`b2:` remote, OFFSITE_B2_*), or a local directory (/offsite_local) on a box without a provider.
 #
+#   * ATP_DEPLOYMENT_PHASE=phase0 for the API and the worker: a Phase 0 install starts PAPER-only (live_trading OFF,
+#     phase0_paper_only ON, seeded at first boot) - nothing for the owner to set.
+#
 # Numbers live here and in .env, not in code (MEM_* / PG_* / REDIS_MAXMEMORY override every limit).
 x-limits: &small
   deploy:
@@ -50,6 +53,11 @@ services:
     restart: unless-stopped
 
   backend:
+    environment:
+      # Phase 0 deployment defaults (owner decision 2026-10-12, backend/app/platform/deployment_phase.py): this host starts
+      # PAPER-only with nothing for the owner to set - first boot seeds live_trading OFF and phase0_paper_only ON where no
+      # entry is stored (never overwriting a later owner change). Leaving Phase 0 is a later owner decision (.env).
+      ATP_DEPLOYMENT_PHASE: ${ATP_DEPLOYMENT_PHASE:-phase0}
     deploy:
       resources:
         limits:
@@ -57,6 +65,8 @@ services:
     restart: unless-stopped
 
   worker:
+    environment:
+      ATP_DEPLOYMENT_PHASE: ${ATP_DEPLOYMENT_PHASE:-phase0}     # the same mode as the API (see backend above)
     deploy:
       replicas: 1          # H-1: exactly one trading worker (ADR-0010); the Redis lock is the backstop, not the plan
       resources:

@@ -125,6 +125,7 @@ from app.journal.routes import router as journal_router
 from app.legal.routes import router as legal_router
 from app.support.routes import router as support_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
+from app.platform.deployment_phase import on_startup as deployment_phase_startup
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -135,6 +136,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with _startup_session_factory() as session:
         await promote_configured_super_admins(session)
         await warm_tenant_keys(session)  # Phase N1: tenant data keys into the process key ring
+        # Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0): seed live_trading OFF / phase0_paper_only ON where unset, then
+        # log why LIVE entry paths are (not) started. Never stops the API from coming up.
+        await deployment_phase_startup(session, "api")
     yield
 
 

@@ -308,3 +308,14 @@ def test_snapshot_memory_families_carry_forward_and_unseen_bars():
     tr = ZoneTracker.from_dict(stale[0]["tracker"])
     track_zone(tr, late["15m"], s)
     assert tr.unseen and tr.unseen[-1]["after"] == stale[0]["tracker"]["last_bar_at"]
+
+
+def test_the_structural_swing_is_looked_for_within_a_bounded_look_back():
+    # the only swing low below the zone is ~10 bars before tracking starts: found with a long look-back, not with a short one
+    closes = [95, 92, 90, 93, 97, 101, 108, 115, 120, 121, 122, 123, 124, 125, 126]
+    df = path(closes)
+    long_ = track_zone(new_tracker(100.0, 105.0, SUPPORT_SIDE), df, resolve_settings({"structure_lookback_bars": 50}),
+                       start_after=df["timestamp"].iloc[12])
+    short = track_zone(new_tracker(100.0, 105.0, SUPPORT_SIDE), df, resolve_settings({"structure_lookback_bars": 5}),
+                       start_after=df["timestamp"].iloc[12])
+    assert long_.structure == 89.5 and short.structure is None

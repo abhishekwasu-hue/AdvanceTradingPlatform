@@ -236,6 +236,7 @@ class TradingWorker:
         self.streams = StreamManager()
         # BT1: per-user broker sessions for the bring-your-own-broker data tier (flag byob_data_tier, off by default).
         self.byob = UserSessionFanIn()
+        self._last_vix: Dict[int, datetime] = {}    # Z5: when each organisation's India VIX reading was last taken
         # Part B2: ticks from those streams also become lake bars (LAKE_TICK_WRITER_ENABLED, off by default).
         self.lake = None
         if app_config.LAKE_TICK_WRITER_ENABLED:
@@ -332,6 +333,23 @@ class TradingWorker:
                         logger.exception("BYOB session sync failed")
                         report.errors.append(f"byob sessions: {exc}")
                         await byob_session.rollback()
+                # Z5 / P1-d: the daily loss lockout is recorded when a user's PAPER day reaches the limit through open marks,
+                # not only when something reads it (closes record it themselves). After the exits; never blocks one.
+                try:
+                    from app.risk_engine import by_default as risk_by_default
+                    await risk_by_default.sweep(session, now)
+                except Exception as exc:  # noqa: BLE001 - bookkeeping; never breaks trading
+                    logger.exception("Daily loss lockout sweep failed")
+                    report.errors.append(f"lockout sweep: {exc}")
+                    await session.rollback()
+                # Z5 (Trade check_vix_spike_halt): the India VIX reading for each organisation with the gate on, from 09:20 IST.
+                if nse.is_open:
+                    try:
+                        await self._vix_readings(session, now)
+                    except Exception as exc:  # noqa: BLE001 - a missing reading makes the gate fail safe for bullish entries only
+                        logger.exception("India VIX reading failed")
+                        report.errors.append(f"vix reading: {exc}")
+                        await session.rollback()
                 if self.lake is not None:
                     try:
                         report.lake_bars = (await self.lake.drain(session, now)).inserted
@@ -675,6 +693,39 @@ class TradingWorker:
                     await session.rollback()
         return written
 
+    async def _vix_readings(self, session: AsyncSession, now: datetime) -> int:
+        """Z5: one India VIX reading per organisation with the `vix_gate` flag on, when due (from 09:20 IST, then every
+        VIX_GATE_CAPTURE_MINUTES), through its entitled data path (app/risk_engine/vix_gate.py). A failed read is stored
+        with its reason. Returns the readings taken."""
+        from app.platform.controls import feature_flags
+        from app.risk_engine import vix_gate
+        entry = (await feature_flags(session)).get(vix_gate.FLAG) or {}
+        if entry.get("on"):
+            tenant_ids = sorted(set(await session.scalars(select(User.tenant_id).where(User.is_active.is_(True)).distinct())))
+        else:
+            tenant_ids = sorted(int(t) for t in entry.get("tenants") or [])
+        taken = 0
+        for tenant_id in tenant_ids:
+            if not vix_gate.due(self._last_vix.get(tenant_id), now):
+                continue
+            self._last_vix[tenant_id] = now
+            with bind_log_context(tenant_id=tenant_id):
+                try:
+                    user = await self._acting_user(session, tenant_id, [])
+                    broker = None
+                    if user is not None:
+                        for account in await list_accounts(session, tenant_id):
+                            if account.status == "ACTIVE":
+                                broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
+                                if broker is not None:
+                                    break
+                    await vix_gate.capture_for_tenant(session, tenant_id, user, org_adapter=broker, market_data_factory=self.market_data_factory, now=now)
+                    taken += 1
+                except Exception:  # noqa: BLE001 - one organisation's reading must not stop the others
+                    logger.exception("India VIX reading for tenant %s failed", tenant_id)
+                    await session.rollback()
+        return taken
+
     async def _keep_lock(self, session: AsyncSession, report: CycleReport, where: str) -> bool:
         """P0.1 / S2 renewal + H-1 fail-closed. False when the cycle must stop here (another replica holds the lock).
 
@@ -837,7 +888,7 @@ class TradingWorker:
             # Z3 / BT2: on approval-only positions a target asks "Exit now?"; the stop and time exits stay automatic.
             exit_approval = await approval.exit_approval_predicate(session, tenant_id, deployments)
             outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored,
-                                                    exit_approval=exit_approval)
+                                                    exit_approval=exit_approval, now=now)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
@@ -974,6 +1025,8 @@ class TradingWorker:
             return False
         if not await zones_job.any_enabled(session):
             return False                                 # asked again next cycle: turning the flag on tonight still runs
+        if not await zones_job.eod_ready(session, day, now):
+            return False                                 # HB1's EOD ingest for the day is still running: asked again next cycle
 
         async def run() -> None:
             try:

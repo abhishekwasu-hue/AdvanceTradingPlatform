@@ -108,6 +108,19 @@ def test_new_user_starts_in_paper_with_the_default_capital_and_can_change_it_wit
     assert client.get("/api/paper/account", headers=t["headers"]).json()["starting_capital"] == 250_000
 
 
+def _numbers(value):
+    """Every number anywhere in a JSON body."""
+    if isinstance(value, bool):
+        return set()
+    if isinstance(value, (int, float)):
+        return {float(value)}
+    if isinstance(value, dict):
+        return set().union(*(_numbers(v) for v in value.values())) if value else set()
+    if isinstance(value, list):
+        return set().union(*(_numbers(v) for v in value)) if value else set()
+    return set()
+
+
 def test_balance_pnl_after_charges_positions_and_journal_are_the_users_own():
     owner = _tenant(_email("owner"))
     _paper_flag(owner["tenant_id"])
@@ -137,8 +150,8 @@ def test_balance_pnl_after_charges_positions_and_journal_are_the_users_own():
     assert mine["realised"]["net"] == 5_000.0 and mine["closed_trades"] == 1 and mine["starting_capital"] == app_config.PAPER_STARTING_CAPITAL
     theirs = client.get("/api/paper/account", headers=stranger["headers"]).json()
     assert theirs["realised"]["net"] == -7_000.0 and theirs["closed_trades"] == 1
-    serialized = json.dumps(body)
-    assert "5000" not in serialized and "7000" not in serialized and "9000" not in serialized
+    # Compare numbers, not substrings: ids and timestamps in the body can contain "5000" by chance.
+    assert {5_000.0, -7_000.0, 9_000.0}.isdisjoint(_numbers(body))
 
 
 def test_equity_drawdown_is_peak_to_trough_of_the_closed_trade_curve():

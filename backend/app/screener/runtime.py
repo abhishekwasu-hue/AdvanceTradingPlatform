@@ -184,6 +184,8 @@ class _Eval:
             return int(self.ev(args[i], tf)) if len(args) > i else default
 
         def num(i: int, default: float) -> float:
+            # one value for the whole series: only a literal or a $parameter reaches here (the validator refuses an
+            # expression for a literal_only argument - its last-bar value would be applied to every earlier bar)
             return float(_last(self.ev(args[i], tf))) if len(args) > i else default
 
         def _text(i: int, default: str) -> str:

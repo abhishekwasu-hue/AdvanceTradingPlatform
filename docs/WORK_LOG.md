@@ -1626,6 +1626,72 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   IV gate is already ported; `charges.py` has not been checked against ATP on golden fixtures; ATP has no VIX risk gate
   and no Stocko adapter.
 - `docs/ROADMAP_STATUS.md`: a standalone "Trade port map" section with the counts (move under Phase 0 once #165 merges).
+### 2026-10-12 02:30 IST - Z5 P1-d: plan-before-trade PAPER ticket, risk by default, strike breach and VIX gate ports
+- Branch `claude/z5-p1d-ticket-risk`, stacked on Z3-b (#174). Flags `risk_by_default` and `vix_gate`, both off.
+  Design note: `docs/design/RISK_BY_DEFAULT.md`.
+- Plan ticket (`app/paper/ticket.py`, `/api/paper/ticket[/preview]`, `/api/paper/risk`, `/api/paper/plans`):
+  - the plan: setup, levels, minimum reward:risk, time stop, invalidation, checklist (a skip is allowed and counted);
+  - sizing from the user's cap, strictest wins with the organisation's limit and the guardian's cuts;
+  - an override that is logged, bounded (2x) and counted;
+  - the cost line with the break-even move;
+  - placement re-priced at the live price, stored as `trade_plans`.
+- Risk by default (`app/risk_engine/by_default.py`): the user's cap on every PAPER entry; a daily loss lockout
+  (`risk_lockouts`, kept for the day) and an entries-per-day limit in `entry_refusals`; no proposal for a locked user.
+  Exits are never locked: tests close a locked user's position with Exit now and at its stop.
+- Trade ports:
+  - `strike_breach_model.py` -> `app/options_builder/strike_breach.py`: golden parity on Trade's own functions;
+    builder `evaluate` and the proposal card;
+  - `check_vix_spike_halt.py` -> `app/risk_engine/vix_gate.py`, applied in `guard_entry`; parity cases from Trade's
+    tests.
+- Frontend:
+  - "Plan before trade (PAPER)" card on Positions: risk strip, lockout line, plan form, server-sized ticket with the
+    risk gauge and cost line;
+  - risk check and breach lines on the proposal card.
+- Migration `612f572d7ad2` (revises `a7d3e9f1c5b8`): upgrade, downgrade, upgrade and `alembic check` on local Postgres.
+- Open questions Z5D-1 to Z5D-6.
+### 2026-10-12 - Z5 P1-d review fixes (#179)
+- H1: the India VIX gate now reads its own live reading: the LTP plus the close of the last completed session before
+  today, stamped today. The trading worker takes it from 09:20 IST every 15 minutes, through the entitled data path
+  (the user's own Tier A session under BT1). Trade timing applies: the gate is open before 09:20, and no valid reading
+  after a 10-minute grace pauses bullish index entries. An end-to-end test goes from the worker's capture to the gate.
+- M2: a loosening of the user's limits takes effect the next IST day; a tightening at once. The lockout is recorded
+  after each PAPER close and by a worker sweep (open marks).
+- M3: a time stop must be at least 5 minutes after now.
+- L1: entries per day are atomic slots on the PAPER account row, given back if the order is refused later.
+- L2: the proposal card's risk check is computed for the proposal's owner only.
+- L3: a ticket proposal's plan becomes PLACED (counted as an override) or FAILED when its approval runs.
+- L4: every plan row carries a reason (a duplicate proposal, an exception = FAILED).
+- L6: the strike breach docstring now says where the structure input comes from.
+- L7: the ticket takes cash underlyings only; the cost line reads the paper broker's own brokerage and slippage.
+- L8: `.coverage` is untracked and ignored.
+- L9: the ticket card says "Sent for approval: proposal #N" for a proposed plan.
+- M1: already fixed in Z3 (merged).
+- The reviewer's adversarial cases are ported into `tests/test_z5_p1d_review.py`.
+- The migration `612f572d7ad2` gains `paper_accounts.entries_day` / `entries_count` and `trade_plans.proposal_id`, and
+  still revises `a7d3e9f1c5b8`.
+### 2026-10-11 21:30 IST - Z10 design note + Z10-a (U3 G2 no-look-ahead harness, G1 golden correctness)
+- `docs/design/Z10_LAUNCH_HARDENING.md`: Z10 split into Z10-a..f, each mapped to existing code. The pieces: the alert
+  outbox and dispatcher, BT1 `alerts_suppressed`, the PW6 invite gate + `BETA_COHORT_CAP`, the feature flags,
+  `scripts/loadtest.py`, the health probes and incidents, the retention / compliance rules, and the Copilot advice filter.
+- Z10-a (branch `claude/z10a-lookahead-correctness`, draft PR #187):
+  * the harness, `app/quality/lookahead.py`: truncation, future mutation (up-spike, down-spike, walk) and immutability
+    checks; 161 registered cases in `app/quality/causal_cases.py`; a coverage test for every ScreenQL function,
+    operand and pattern.
+- Bugs found and fixed:
+  1. Market-structure BOS / CHoCH events used swings `window` bars before they were confirmed. This was a look-ahead
+     in ScreenQL `StructureEvent`, the scanner's BOS / CHoCH filters and signal scoring. `Trend` and the swing list
+     do not change; about 7.5 % of symbols' latest event moves.
+  2. The validator accepted last-bar-only functions inside history-reading ones (`Count(5, PatternBullish())`), so
+     today's answer was repeated on earlier bars.
+  3. `session_vwap` raised TypeError on a session without volume, which crashed the S/R engine on indices. It also
+     reset at UTC midnight, not on the IST date.
+  4. The Pro Chart's Supertrend and ADX / DI differed from the engine's values for the same bars.
+- Tests:
+  * golden reference loops for every shipped indicator and session operand;
+  * a canonical shape and a near miss for each of the 14 patterns;
+  * a Wilder-seed convergence check;
+  * chart parity (vitest against a backend-generated fixture).
+- Open: OPEN_QUESTIONS Z10-1..Z10-5.
 ### 2026-10-11 - Z8 U9 TX1: screen taxonomy (method x setup) + gallery rail and chips
 - Taxonomy as a reviewed data file (`backend/app/screener/data/taxonomy.json`: methods A-F, setups 1-8, tag vocabulary,
   the three U5 starters filed), linted on load (both axes, vocabulary, definition <= 160 characters, no advice wording).
@@ -1646,3 +1712,36 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   close; hidden / refused while the flag is off (BK1 pattern), alert rules refused, paused at bar close, never intrabar.
 - Frontend: `LayerData.bands` drawn as a `LayerPrimitive` by the lightweight engine; `MarketZonesLayer` + legend on the
   full-window chart. Open questions Z7a3-1 .. Z7a3-8. No order path, no flag turned on.
+### 2026-10-11 - Z10-e (G7 + rollout): staged beta cohort, public status page, on-call runbooks
+- Staged rollout: `BETA_COHORT_STAGES` 50 / 200 / 500; the PW6 gate stops at min(stage, `BETA_COHORT_CAP`). The stage is
+  stored in `platform_controls` (`beta_cohort_stage`, no migration), moved in Admin > Beta rollout or
+  `PUT /api/admin/beta/cohort/stage`: up one stage at a time with a reason, down to any lower stage; every move audited
+  (`beta_cohort_stage_raised` / `_lowered`). `BETA_COHORT_STAGE` (default 50) applies until a stage is stored.
+  `GET /api/admin/beta/cohort` adds stage, stages, next stage, env cap, headroom. Gate flag `beta_cohort_gate` still off.
+- Public status: `GET /api/status` (no login, new flag `public_status_page`, off = 404) and the standalone `/status`
+  page: API, trading engine, market data (EOD date, NSE open, Tier A session count), alert outbox lag, maintenance and
+  platform-wide incidents (impact, state, start only). Built from the deep-health probes, BT1 EOD helpers, the fan-in
+  eligibility rule (`fanin.eligible_sessions`, shared with the worker) and `app/incidents`. Cached 15 s, 60/min per IP,
+  503 outage body when the database is down. No tenant data, no internal detail.
+- Runbooks: `docs/OPERATIONS.md` 1.9 (data stale, worker stale, outbox backlog, broker down, rollback, staged rollout),
+  linking the Z11 runbook (PR #186) instead of copying it; `runbook` annotations on the Prometheus rules, with a test that
+  every link resolves. Open questions Z10e-1..Z10e-8.
+### 2026-10-12 IST - Z10-a review follow-ups (#187)
+- Merged origin/main (9c4c16a).
+- H1: Supertrend / Bollinger `k` and the zone filters' `tolerance_pct` are read once by the runtime, so an expression
+  there took its last-bar value for every bar (`Count(5, close > Supertrend(10, ATR(5) / 2))` read the future). Such
+  an argument (`Arg.literal_only`) must now be a literal or a numeric $parameter. Tests: the validator refuses, and the
+  harness flags the expression when the validator is bypassed.
+- M1: `causal_cases.py` documents how to add a case, and each coverage failure names the exact entry to add. Coverage
+  now enumerates the indicator modules' functions (macd, bollinger, true_range), checks that each ScreenQL case calls
+  its own function, and requires last-bar cases to answer.
+- M2: `app/screener/audit.py`, `scripts/audit_screens.py` and `GET /api/admin/screener/audit` list stored screens and
+  instrument alert rules that no longer validate.
+- Market structure:
+  * a crossing made before two swings are known marks the level broken, so the first event is never late;
+  * swings and events share one NaN-aware source (`swings.fractal_positions`);
+  * trend and swings are pinned against base-code outputs (gzip fixture, 48 frames).
+- Tests: hand-checked ADX / Supertrend / VWAP / MACD; denser event sampling; chart parity compared at 1e-12 relative.
+- Frontend: the chart's Supertrend refuses a fractional period.
+- CI: a `lookahead` marker; the harness runs as its own job (`backend-lookahead`) and the main run skips it.
+- Open: OPEN_QUESTIONS Z10-6 (VWAP without volume).

@@ -57,13 +57,14 @@ ORIGIN_APPROVAL = "approval"       # the execution of an APPROVED entry proposal
 TARGET_RULES = ("TARGET_1_REACHED", "TARGET_2_REACHED")
 
 SOURCE_LABELS = {"deployment": "Deployment signal", "tradingview": "TradingView alert", "public_api": "API signal",
-                 "manual": "Manual setup", "requote": "Re-quoted entry", "console": "Console signal"}
+                 "manual": "Manual setup", "ticket": "PAPER ticket", "requote": "Re-quoted entry", "console": "Console signal"}
 
 PriceLookup = Callable[..., Awaitable[float]]       # (symbol, exchange="NSE") -> last price
 
 
 class EntriesPaused(ValueError):
-    """Z3-b: the user the proposal is for paused their PAPER entries (/pause): no proposal is raised."""
+    """Z3-b: the user the proposal is for paused their PAPER entries (/pause), or (Z5 / P1-d, flag risk_by_default) is
+    locked out for the day by their daily loss limit or entries-per-day limit: no proposal is raised."""
 
 
 def _utc(dt: datetime) -> datetime:
@@ -184,11 +185,14 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                         idempotency_key: str, deployment: Optional[StrategyDeploymentRecord] = None, requested_mode: str = "PAPER",
                         exit_rules: Optional[str] = None, holding: str = "INTRADAY", user_id: Optional[int] = None,
                         now: Optional[datetime] = None, requotes: int = 0, requoted_from: Optional[int] = None,
-                        exchange: str = "NSE") -> Optional[AiActionRecord]:
+                        exchange: str = "NSE", strike_breach: Optional[Dict] = None, ticket: Optional[Dict] = None) -> Optional[AiActionRecord]:
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
     for a deployment, another open entry proposal) is already there. `user_id` is the proposal's owner; raises
-    EntriesPaused when that user paused their PAPER entries (Z3-b). Places nothing."""
+    EntriesPaused when that user paused their PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d).
+    `strike_breach` (Z5): the short strikes' breach chances of an option proposal (app/options_builder/strike_breach.py
+    ::report), shown on the card. `ticket` (Z5 / P1-d): a PAPER ticket's checked limits ({plan_id, max_quantity,
+    risk_cap_amount}) - the approved order keeps them. Places nothing."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
     if signal.entry is None or signal.entry <= 0:
         raise ValueError("An entry proposal needs the signal's entry price")
@@ -196,6 +200,10 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     paused = await paused_reason(session, user_id)
     if paused:
         raise EntriesPaused(paused)
+    from app.risk_engine.by_default import proposal_refusal
+    locked = await proposal_refusal(session, tenant_id, user_id, now)      # Z5 / P1-d: daily loss lockout, entries per day
+    if locked:
+        raise EntriesPaused(locked)
     if deployment is not None:
         await _free_deployment_slot(session, tenant_id, deployment.id, now)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
@@ -210,7 +218,7 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                 "strategy_id": strategy_id, "mode": "PAPER", "requested_mode": requested_mode, "exit_rules": exit_rules,
                 "holding": holding, "requotes": requotes, "requoted_from": requoted_from, "data_as_of": _utc(signal.timestamp).isoformat(),
                 "exchange": (exchange or "NSE").upper(),
-                "signal": signal.model_dump(mode="json")}
+                "signal": signal.model_dump(mode="json"), "strike_breach": strike_breach, "ticket": ticket}
     row = AiActionRecord(tenant_id=tenant_id, deployment_id=deployment.id if deployment is not None else None, trade_id=None,
                          action=ACTION_ENTRY, rule=RULE_ENTRY, reason=reason, evidence_json=json.dumps(evidence, default=str),
                          status="PROPOSED", expires_at=expires, idempotency_key=idempotency_key[:200], owner_user_id=user_id)
@@ -301,6 +309,8 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             session, owner, mode="PAPER", strategy_id=str(evidence.get("strategy_id") or signal.strategy_id), signal=signal,
             idempotency_key=f"approval:{action.id}", deployment_id=action.deployment_id, exit_rules=evidence.get("exit_rules"),
             holding=str(evidence.get("holding") or "INTRADAY"), origin=ORIGIN_APPROVAL, approval_action_id=action.id,
+            # Z5 / P1-d: a ticket's proposal keeps the plan's quantity as a ceiling and its checked cap (override included).
+            max_quantity=(evidence.get("ticket") or {}).get("max_quantity"), risk_cap_amount=(evidence.get("ticket") or {}).get("risk_cap_amount"),
             journal_source="PROPOSAL",            # Z6 L2: the journal records where the trade came from
         )
         if not result.executed:
@@ -309,7 +319,14 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
                   "result": f"PAPER order #{order.id} placed at the re-quoted price {price:g}" + (f"; position #{order.trade_id}" if order.trade_id else "")}
     except Exception as exc:  # noqa: BLE001 - recorded on the row, shown to the person
         values = {"status": "FAILED", "executed_at": now, "result": str(exc)[:300]}
+        order = None
     await _settle(session, action, values)
+    plan_id = (evidence.get("ticket") or {}).get("plan_id") if isinstance(evidence, dict) else None
+    if plan_id is not None:
+        # Z5 / P1-d: the ticket's plan follows its proposal (PLACED with the order, or FAILED with why), so an override
+        # placed through an approval is counted like a direct one.
+        from app.paper.ticket import settle_from_proposal
+        await settle_from_proposal(session, action.tenant_id, int(plan_id), values, order)
     return action
 
 
@@ -343,7 +360,8 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
                                         idempotency_key=f"requote:{action.id}", deployment=deployment,
                                         requested_mode=str(evidence.get("requested_mode") or "PAPER"), exit_rules=evidence.get("exit_rules"),
                                         holding=str(evidence.get("holding") or "INTRADAY"), user_id=owner_id, now=now,
-                                        requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"))
+                                        requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"),
+                                        ticket=evidence.get("ticket"))
         except EntriesPaused:
             fresh = None
             result = f"Not placed: {why}. No re-quote: PAPER entries are paused"

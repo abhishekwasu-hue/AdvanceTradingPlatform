@@ -71,10 +71,12 @@ def _single_literal(call: ast.Call) -> Optional[str]:
     return None
 
 
-def _reachable_bodies(tree: ast.Module, upgrade: ast.FunctionDef) -> List[ast.FunctionDef]:
+def _reachable_bodies(tree: ast.Module, upgrade: ast.FunctionDef) -> List[ast.FunctionDef | ast.AsyncFunctionDef]:
     """upgrade() and every module-level function it calls, directly or through another one (a helper doing the work)."""
     defs = {n.name: n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))}
-    seen, todo, out = {upgrade.name}, [upgrade], []
+    seen = {upgrade.name}
+    todo: List[ast.FunctionDef | ast.AsyncFunctionDef] = [upgrade]
+    out: List[ast.FunctionDef | ast.AsyncFunctionDef] = []
     while todo:
         fn = todo.pop()
         out.append(fn)

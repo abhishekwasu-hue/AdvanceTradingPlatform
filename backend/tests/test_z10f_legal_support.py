@@ -880,6 +880,7 @@ def test_the_evaluative_list_is_support_only():
     # review LOW-7: / , + separators, partial splits, "purchase"
     "b/u/y TCS", "s,e,l,l INFY", "b+u+y RELIANCE", "bu y TCS", "should I s ell TCS", "8u y RELIANCE", "pur chase TCS?",
     "Should I purchase TCS?", "ex it all now",
+    "should I go all in the market?", "go all in stocks now?", "is it time to go all in shares", "all in the stock market?",
 ])
 def test_spaced_leetspeak_and_all_in_questions_are_refused(question):
     assert guard.classify(bot.clean_question(question)) == "advice", question

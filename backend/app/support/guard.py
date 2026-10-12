@@ -58,6 +58,7 @@ _ADVICE = [re.compile(p, re.I) for p in (
     # "should I go all in on TCS?", "all-in on banks?" - not "see them all in one place"
     r"\b(?:go|goes|going|went|gone|be|bet|put\s+(?:it|everything|my\s+\w+))\s+all[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)",
     r"\ball[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)\s+(?:on|with|into)\b|^\s*all[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)\s*[?!.]*\s*$",
+    r"\ball[\s-]+in\s+(?:the\s+)?(?:(?:stock\s+)?markets?|stocks?|shares?|equit(?:y|ies)|crypto|f\s*&\s*o|options?|futures?)\b",
     r"शिफारस|कोणता\s+शेअर|कोणते\s+शेअर|घ्यावा\s+का|घेऊ\s+का|विकू\s+का|खरेदी\s+करू\s+का|टिप्स",
 )]
 # Only outside a how-to clause: "RELIANCE: buy or sell?" is advice, "how do I buy or sell in paper mode?" is not.

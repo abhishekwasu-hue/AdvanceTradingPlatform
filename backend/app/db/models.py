@@ -256,6 +256,11 @@ class TradeRecord(Base):
     """
 
     __tablename__ = "trades"
+    # #221: the worker reads the open positions of every organisation every cycle (ADR-0004); this index keeps that read
+    # on the open rows only, however many closed trades accumulate.
+    __table_args__ = (
+        Index("ix_trades_open", "tenant_id", postgresql_where=text("exit_time IS NULL"), sqlite_where=text("exit_time IS NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)

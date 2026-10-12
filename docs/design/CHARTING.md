@@ -360,6 +360,99 @@ chart's pointer events and a toolbar to it.
     preference before version; corrections point-in-time (CH3-3, CH3-6). `at` / `start` before 1990 -> 422.
 - Open questions CH3-1 .. CH3-6 (`docs/OPEN_QUESTIONS.md`); CH3-4 lists what is left for later.
 
+## CH3b (built): impulse vs corrective legs, BOS / CHoCH, liquidity, trendlines, the top-down panel
+
+Ported from Trade@1e6c9ac with golden parity (`backend/tests/ch3b_golden.py`, `test_ch3b_trade_parity.py`: Trade's
+own output on the frozen fixtures, checked against Trade live when the repository is on disk), never rewritten:
+- `app/price_action/legs.py` (Trade `price_action/legs.py`): strong / weak impulse, healthy / mixed / dangerous
+  pullback, reversal, range, from efficiency, overlap, displacement / FVG, depth, speed, CHoCH. The layer classifies the
+  legs between its own degree swings (internal swings one degree lower).
+- `app/price_action/structure_tracker.py` (Trade `opportunity_engine/structure.py`): the bar-by-bar structure state
+  machine - BOS, CHoCH, reversal, recovery, range, sweeps, the protected level.
+- `app/price_action/liquidity.py` (Trade `decision3/liquidity.py`: pools, sweeps, marks; not the trapped zones): pools
+  at swing highs / lows, equal highs / lows, PDH / PDL, PWH / PWL; a sweep is a wick or a short stay beyond and back.
+- `app/price_action/trendlines.py` (Trade `price_action/trendlines.py` + `find_trendline` + `ref_range`): the newest
+  falling resistance and rising support; the channel is the parallel through the farthest opposite extreme (ATP).
+- `app/charts/price_action_concepts.py` puts them on the layer (schema `pa-layer/2`): `legs[].class`, `structure`,
+  `structure_state`, `liquidity`, `sweeps`, `trendlines`, and `mtf` - the structure state on W / D / 1H / 15m, each
+  from its own lake bars as of the same `at` (weekly from daily when the lake has none). Same flag, same provenance.
+- Frontend: toggles BOS/CHoCH, Liquidity, Trendlines (Breaks now off by default); impulses drawn bolder with their class;
+  events as labels with a dotted run from the broken swing; the protected level, pools (BSL / SSL) as lines; sweeps
+  marked; trendlines with a dashed channel; the top-down row in the panel.
+- No look-ahead: the truncation-invariance test now also covers leg classes and structure events; the API test alters
+  and adds later bars on every top-down timeframe and the whole answer at `at` stays byte-identical; replay only adds
+  structure events and a confirmed leg keeps its class. Open questions CH3-4, CH3-7, CH3-8.
+- **Review follow-up (#218).** Each top-down row is cached by (instrument, timeframe, window start on a fixed grid, the
+  lake label and a probe of its rows: newest END, count, highest version), so a replay step recomputes only the rows
+  whose bars changed (tested: 8 x 15m steps compute D and W once); at most 2 layer / row computations at once per
+  process; the layer cache is bounded by bytes and never holds debug answers; 60 requests a minute per user; a
+  top-down row over 5,000 bars is refused, not cut; a daily chart reads its daily bars once for the chart and D / W.
+
+## CH6a (built): ScreenQL studies on charts from the screener runtime, a study WebWorker, 50k-bar performance
+
+- **Backend.** `GET /api/charts/studies?instrument=&tf=&at=&start=&expr=...` (`app/charts/studies.py`; flag `chart_studies`,
+  off -> 503, per organisation; "member" in the tenancy table; 60 requests a minute per user).
+  - Up to 6 ScreenQL expressions, each a number (a line) or a condition (marks where it turns true), checked like a
+    screen plus `validator.validate_study`: no cross-sectional and no last-bar-only function, no data a chart does not
+    load. A refused study says why; the others are still drawn.
+  - Review fixes (CH6a review):
+    - **HIGH, compute budget.** Each request is estimated as the sum, over its studies' function calls, of each
+      call's weight × the bars read. Weights (`CALL_WEIGHT`) are ms per 1,000 bars, about twice the measured times
+      of the per-bar-loop functions (swing, structure, zones, breakouts); everything else weighs 1.
+      - Studies are admitted in order up to 8 s estimated (about 4 s real).
+      - A study with a function of weight 50 or more (Trend, StructureEvent, ReversalAt, RealBreak, the
+        swing-zone and support functions) is refused above 20,000 bars.
+      - A refused study says "too heavy for this window".
+      - The computation runs inside CH3b's build semaphore (`_slots`). Answers are cached for 30 s in the
+        layer's byte-bounded cache, keyed by (instrument, timeframe, read start, window, `at`, studies and their
+        flag refusals).
+    - **MED, function flags.** A study using a U6 breakout function while `screener_breakouts` is off, or a
+      market-zone function while `market_zones` is off, is refused with the flag's reason, as a screen is
+      (`studies.gate`, the screener's own gates).
+    - **Re-review MED, build slots (`price_action_layer.build_slot`, used by the layer, the top-down rows and the
+      studies).**
+      - Every bar is read first. The request's DB session is then closed, so its pooled connection is back in the
+        pool before any wait (the top-down rows split into `mtf_frames`, the DB half, and `mtf_build`, the
+        computation).
+      - One build is in flight per user; that user's next request waits for it.
+      - At most 2 builds run per process.
+      - The whole wait is bounded at 2 s, after which the answer is 503 "busy, retry" with Retry-After: 2.
+      - The chart's loaders ask again after 2 s (three times at most), and still treat a 503 without "busy" as the
+        flag being off.
+      - Tested: a waiting request holds no pool connection, on a one-connection pool (CI's Postgres when
+        `Z5_TEST_PG_URL` is set).
+    - **Re-review LOW.** The studies cache key carries each study's refusal messages word for word, so one
+      organisation's refusal text is never served to another.
+    - **Re-review LOWs (2):**
+      - A cancelled request (the client went away) keeps its slot and the user's lock until its worker thread has
+        finished, because a thread cannot be stopped. The cancellation then goes on, so the builds actually running
+        never exceed 2, nor one per user.
+      - `owner` is required: `mtf_rows(..., *, owner)`, and `build_slot` refuses `None`, so there is no shared lock.
+      - The layer loader's busy-retry is tested.
+    - **LOW, read caps per study.** When the warm-up read is refused (the 180-day 1-minute rebuild cap, the row
+      cap), the study whose own warm-up reaches furthest back is refused with the reason and the read is retried.
+      Only a window too large on its own refuses the request.
+  - Values: `app.screener.runtime.evaluate` - the screener's own engine (screens, alert rules, the screener backtest),
+    so a chart study and a screen of the same expression cannot disagree (tested against `run_screen`).
+  - As of `at` with the CH3 loader (bars that ended by `at`, shared-licensed sources, corrections point-in-time, row
+    caps); the studies' look-back before `start` is read too (per timeframe, `@1d` included), so the first drawn value
+    is a full one. Columnar answer: `times` once, `values` per line study, `fires` per condition; `fingerprint`.
+  - A price-unit study that lives at the price (median |value / close - 1| < 25 %) draws on the price pane; distances
+    (ATR) and other units in the study pane.
+- **Frontend.** `studies.ts` (API, loader that clears on every new question), `StudiesPanel.tsx` (add / remove,
+  each study's last value or refusal, kept per browser), `LightweightEngine.setStudy` (one line series per study, on
+  pane 0 or the study pane 1), `studyMath.ts` + `studyWorker.ts` + `studyClient.ts` (the WebWorker that turns values
+  into chart series and runs SMA / EMA / Wilder RSI kernels; main-thread fallback). Mounted on the full-window chart,
+  following replay (`at`) like the price-action layer.
+- **Tests.** `backend/tests/test_ch6_chart_studies.py`: values = the runtime's, conditions fire where a screen matches;
+  truncation invariance over every ScreenQL series expression of the Z10-a harness; later bars added / altered (and a
+  `stream:` row) leave the answer at `at` byte-identical; warm-up; refusals and caps; flag; 50,000 bars x 6 studies +
+  JSON < 1 s x CI factor in the perf job (0.4 s locally) and < 5 s in the normal suite. Frontend `studies.test.ts`: the
+  kernels equal the backend on `__fixtures__/study_parity.json` (a byte-identical copy of the backend's) to 1e-9;
+  50,000 bars of three kernels + the line conversion < 1 s; the worker protocol and its fallback; the loader; the
+  engine's study lines.
+- **No new ScreenQL function**, so no new Z10-a causal case. Open questions CH6-1 .. CH6-3.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

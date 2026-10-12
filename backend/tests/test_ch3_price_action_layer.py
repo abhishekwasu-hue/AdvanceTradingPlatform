@@ -142,11 +142,11 @@ def test_golden_files_are_current_and_byte_identical():
 def test_the_api_serves_the_golden_layer(owner):
     headers, _ = owner
     want = golden()
-    body = _get(headers, at=_iso(golden_cut()))
+    body = _get(headers, at=_iso(golden_cut()), mtf="false")
     assert body["source"] == "lake:15m" and body["instrument"] == NATIVE and body["reason"] is None and "not signals" in body["note"]
     assert dumps(_content(body)) == dumps({k: v for k, v in want["default"].items() if k != "fingerprint"})
     assert body["fingerprint"] == want["default"]["fingerprint"] == L.fingerprint(_content(body))
-    dbg = _get(headers, at=_iso(golden_cut()), debug="true")
+    dbg = _get(headers, at=_iso(golden_cut()), debug="true", mtf="false")
     assert dbg["fingerprint"] == want["debug"]["fingerprint"] and dbg["debug_info"] == want["debug"]["debug_info"]
     # default view: the chosen degree only, nearest live levels; debug: every degree, tentative pivots, broken levels
     assert {s["degree"] for s in body["swings"]} == {L.DEFAULT_DEGREE} and all(s["status"] == "confirmed" for s in body["swings"])
@@ -194,7 +194,8 @@ def _known(body, cutoff: int, searched=None):
     ends = {(s["degree"], s["time"]) for s in swings}
     legs = [g for g in body["legs"] if g["status"] == "confirmed" and (g["degree"], g["to"]["time"]) in ends]
     breaks = [b for b in body["breaks"] if b["confirmed_time"] <= cutoff and (searched is None or (b["degree"], b["pivot_time"]) in searched)]
-    return swings, legs, breaks
+    structure = [e for e in body.get("structure", []) if e["confirmed_time"] <= cutoff]          # CH3b: BOS / CHoCH events
+    return swings, legs, breaks, structure
 
 
 def _searched(body):
@@ -247,12 +248,12 @@ def test_lake_15m_and_15m_rebuilt_from_1m_give_the_same_layer(owner):
     headers, _ = owner
     for i in (99, GOLDEN_SESSIONS * 25 - 1, len(F) - 1):
         at = _iso(F["bar_end"].iloc[i])
-        native, rebuilt = _get(headers, NATIVE, at=at), _get(headers, FROM_1M, at=at)
+        native, rebuilt = _get(headers, NATIVE, at=at, mtf="false"), _get(headers, FROM_1M, at=at, mtf="false")
         assert rebuilt["source"] == "lake:1m" and native["source"] == "lake:15m"
         assert rebuilt["fingerprint"] == native["fingerprint"] and _content(rebuilt) == _content(native)
     # mid-bar: the forming 15m bar (only some of its minutes are in) is not read
     mid = _iso(F["bar_end"].iloc[99] + pd.Timedelta(minutes=7))
-    assert _get(headers, FROM_1M, at=mid)["fingerprint"] == _get(headers, NATIVE, at=_iso(F["bar_end"].iloc[99]))["fingerprint"]
+    assert _get(headers, FROM_1M, at=mid, mtf="false")["fingerprint"] == _get(headers, NATIVE, at=_iso(F["bar_end"].iloc[99]), mtf="false")["fingerprint"]
 
 
 def test_input_checks_and_empty_answers(owner, monkeypatch):
@@ -354,8 +355,8 @@ def test_requests_are_rate_limited_per_user(owner, monkeypatch):
     headers, _ = owner
     other, _ = _owner(f"ch3-rate-{uuid.uuid4().hex[:10]}@example.com")
     params = {"instrument": EMPTY, "at": _iso(F["bar_end"].iloc[-1])}
-    codes = [client.get(URL, params=params, headers=headers).status_code for _ in range(122)]
-    assert codes.count(200) == 120 and codes[-1] == 429
+    codes = [client.get(URL, params=params, headers=headers).status_code for _ in range(62)]
+    assert codes.count(200) == 60 and codes[-1] == 429
     assert client.get(URL, params=params, headers=other).status_code == 200
 
 

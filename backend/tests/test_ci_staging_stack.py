@@ -186,3 +186,21 @@ def test_the_overlay_leaves_production_alone():
     assert "SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS:-}" in (ROOT / "docker-compose.yml").read_text()
     stack = (CI / "stack.sh").read_text()
     assert '[ "$PROJECT" != "atp" ]' in stack                                            # refuses the production project
+
+
+def test_after_ramp_split_is_a_diagnostic_beside_the_verdict(tmp_path):
+    """LD-7: requests started after the login ramp are also reported on their own; the verdict still covers every
+    request (a slow ramp keeps failing the run)."""
+    paths = []
+    for i in range(2):
+        stats = loadtest.Stats(ramp_end=100.0)
+        for at, ms in ((50.0, 3000.0), (150.0, 20.0), (160.0, 30.0)):
+            stats.add("dashboard /api/auth/me", ms, "ok", at)
+        path = tmp_path / f"shard-{i}.json"
+        path.write_text(json.dumps({"users": 1, "seconds": 200, **stats.raw()}))
+        paths.append(str(path))
+    merged = loadtest.merge(paths)
+    assert merged["after_ramp"]["dashboard /api/auth/me"]["n"] == 4 and merged["after_ramp"]["dashboard /api/auth/me"]["p95_ms"] == 30.0
+    assert merged["scenarios"]["dashboard /api/auth/me"]["n"] == 6 and not merged["slo_pass"]   # the ramp's 3 s still counts
+    md = loadtest.markdown(merged, "test host")
+    assert "**SLO FAIL**" in md and "After the login ramp only (diagnostic" in md

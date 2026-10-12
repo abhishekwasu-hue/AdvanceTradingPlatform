@@ -9,6 +9,12 @@ KEEP = re.compile(r"\(app/|sqlalchemy/(orm|engine|pool)|asyncpg|starlette|fastap
                   r"pandas|logging|anyio|jwt|prometheus")
 
 
+# Leaves where a thread waits rather than works (py-spy cannot always tell from outside): the event loop's select, the
+# thread pool's queue, uvicorn's supervisor pipe, multiprocessing's resource tracker. Left out of the busy total.
+IDLE_LEAVES = {"run (asyncio/runners.py)", "_worker (concurrent/futures/thread.py)", "_recv (multiprocessing/connection.py)",
+               "main (multiprocessing/resource_tracker.py)", "select (selectors.py)", "wait (threading.py)"}
+
+
 def frame_key(frame: str) -> str:
     name, _, where = frame.partition(" (")
     return f"{name} ({where.split(':')[0]}" + ")" if where else name
@@ -17,8 +23,10 @@ def frame_key(frame: str) -> str:
 def main(path: str) -> None:
     inclusive: collections.Counter = collections.Counter()
     own: collections.Counter = collections.Counter()
-    total = 0
-    for line in open(path, encoding="utf-8", errors="replace"):
+    total = idle = 0
+    with open(path, encoding="utf-8", errors="replace") as handle:
+        lines = handle.read().splitlines()
+    for line in lines:
         line = line.rstrip()
         if not line or " " not in line:
             continue
@@ -26,15 +34,18 @@ def main(path: str) -> None:
         if not count_text.isdigit():
             continue
         count = int(count_text)
-        total += count
         frames = [frame_key(f) for f in stack.split(";")]
+        if frames[-1] in IDLE_LEAVES:
+            idle += count
+            continue
+        total += count
         for key in set(frames):
             inclusive[key] += count
         own[frames[-1]] += count
     if not total:
         print("no samples")
         return
-    print(f"samples: {total}")
+    print(f"busy samples: {total} (idle samples left out: {idle}); percentages are of the busy samples")
     print("== inclusive (application and key libraries)")
     shown = 0
     for key, count in inclusive.most_common():

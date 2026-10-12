@@ -106,14 +106,21 @@ class Stats:
     latency: Dict[str, List[float]] = field(default_factory=lambda: defaultdict(list))
     outcomes: Dict[str, Dict[str, int]] = field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))
     sessions: Dict[str, int] = field(default_factory=lambda: defaultdict(int))      # logged_in / no_login
+    # LD-7 diagnostics: the latencies of requests started after the login ramp (time.monotonic() >= ramp_end) as well,
+    # so a report can say whether the tail comes from the ramp. The verdict always covers every request.
+    ramp_end: Optional[float] = None
+    after_ramp: Dict[str, List[float]] = field(default_factory=lambda: defaultdict(list))
 
-    def add(self, scenario: str, ms: float, outcome: str) -> None:
+    def add(self, scenario: str, ms: float, outcome: str, started_at: Optional[float] = None) -> None:
         self.latency[scenario].append(ms)
         self.outcomes[scenario][outcome] += 1
+        if self.ramp_end is not None and started_at is not None and started_at >= self.ramp_end:
+            self.after_ramp[scenario].append(ms)
 
     def raw(self) -> Dict[str, Any]:
         return {"latency": {k: [round(v, 2) for v in vals] for k, vals in self.latency.items()},
-                "outcomes": {k: dict(v) for k, v in self.outcomes.items()}, "sessions": dict(self.sessions)}
+                "outcomes": {k: dict(v) for k, v in self.outcomes.items()}, "sessions": dict(self.sessions),
+                "after_ramp": {k: [round(v, 2) for v in vals] for k, vals in self.after_ramp.items()}}
 
     def absorb(self, raw: Dict[str, Any]) -> None:
         for scenario, values in (raw.get("latency") or {}).items():
@@ -123,6 +130,8 @@ class Stats:
                 self.outcomes[scenario][outcome] += int(n)
         for key, n in (raw.get("sessions") or {}).items():
             self.sessions[key] += int(n)
+        for scenario, values in (raw.get("after_ramp") or {}).items():
+            self.after_ramp[scenario].extend(float(v) for v in values)
 
 
 @dataclass
@@ -134,13 +143,13 @@ class Account:
 
 
 async def _timed(stats: Stats, scenario: str, call: Callable[[], Any]) -> Optional[httpx.Response]:
-    started = time.perf_counter()
+    started, at = time.perf_counter(), time.monotonic()
     try:
         response = await call()
     except httpx.HTTPError:
-        stats.add(scenario, (time.perf_counter() - started) * 1000, "transport")
+        stats.add(scenario, (time.perf_counter() - started) * 1000, "transport", at)
         return None
-    stats.add(scenario, (time.perf_counter() - started) * 1000, classify(response.status_code, response.headers))
+    stats.add(scenario, (time.perf_counter() - started) * 1000, classify(response.status_code, response.headers), at)
     return response
 
 
@@ -227,6 +236,10 @@ def report(stats: Stats, users: int, elapsed: float, slo_factor: float = 1.0) ->
                                       "p99_ms": round(percentile(values, 99), 1), "mean_ms": round(statistics.fmean(values), 1) if values else 0.0,
                                       "p95_limit_ms": limit, "pass": passed, "outcomes": outcomes}
     out["slo_pass"] = slo and out["error_rate"] <= ERROR_LIMIT and total > 0
+    if stats.after_ramp:
+        # Diagnostic only (LD-7): the same scenarios over the requests started after the login ramp.
+        out["after_ramp"] = {name: {"n": len(values), "p50_ms": round(percentile(values, 50), 1), "p95_ms": round(percentile(values, 95), 1)}
+                             for name, values in sorted(stats.after_ramp.items())}
     return out
 
 
@@ -277,6 +290,7 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
         await harness.prepare([a.email for a in accounts if a.email])
     stats = Stats()
     started = time.monotonic()
+    stats.ramp_end = started + args.ramp
     deadline = started + args.ramp + args.seconds
     await asyncio.gather(*(_session(i, make_client, accounts[i % len(accounts)], i < len(accounts), stats, args.ramp * i / max(1, args.users), deadline,
                                     args.think, args.seed) for i in range(args.users)))
@@ -315,6 +329,10 @@ def markdown(r: Dict[str, Any], label: str = "", stats_csv: Optional[str] = None
             verdict = "not measured"
         outcomes = ", ".join(f"{k} {v}" for k, v in sorted(s["outcomes"].items()))
         lines.append(f"| {name} | {s['n']} | {s['p50_ms']} | {s['p95_ms']} | {s['p99_ms']} | {s['p95_limit_ms']:.0f} | {verdict} | {outcomes} |")
+    if r.get("after_ramp"):
+        lines += ["", "After the login ramp only (diagnostic - the verdict above covers every request):", "",
+                  "| Route / scenario | n | p50 ms | p95 ms |", "|---|---|---|---|"]
+        lines += [f"| {name} | {s['n']} | {s['p50_ms']} | {s['p95_ms']} |" for name, s in r["after_ramp"].items()]
     if stats_csv and Path(stats_csv).exists():
         peaks: Dict[str, List[float]] = {}
         for row in Path(stats_csv).read_text().splitlines()[1:]:

@@ -7,6 +7,8 @@ Spec: `docs/specs/ATP_TRADE_PORT_MAP_SPEC.md` (arrives with PR #165).
 - **Trade revision read:** `origin/main` at **eafc872** ("Elliott correction fixture library + acceptance set", #290).
   Earlier ports cite Trade@0df3e09 (price action, contracts, costs, order safety, validation), Trade@73f652c
   (options builder) and the OI banner capture; those files may have moved on in Trade since.
+- **N1 level-gate rows** (`bots_common/`, `decision3/method.py`, `level_bots_replay.py`) were read at Trade `origin/main`
+  **1e6c9ac** (after #292-#297 and #302), for N1 (`docs/design/N1_EXECUTION_CORE.md`).
 - **ATP revision read:** `main` at 2741dec (#163); the Phase 0 rows (section "Phase 0 ports: status on 2026-10-12") and the
   rows they name were re-read on `main` at 399eda3 (#200), and the level-bot gate row on Trade `origin/main` at 1e6c9ac.
 - **What a port means here:** the logic, plus golden-parity tests against the Trade functions (same input, same
@@ -29,9 +31,12 @@ Spec: `docs/specs/ATP_TRADE_PORT_MAP_SPEC.md` (arrives with PR #165).
 ## Summary
 
 One row per top-level `.py` file (140) and per folder (35: 25 code packages and 10 others such as `tests/`,
-`research/`, `data/`), except three folders that are split because their parts have different statuses: `paper/`
-(9 rows), `price_action/` (8 rows) and `elliott/` (2 rows: the ported part and the rest), plus one planned Trade module
-(the level-bot confirmation gate, added 2026-10-11). 140 + 32 + 9 + 8 + 2 + 1 = **192 rows**.
+`research/`, `data/`), except five folders that are split because their parts have different statuses: `paper/`
+(9 rows), `price_action/` (8 rows), `elliott/` (2 rows: the ported part and the rest), `bots_common/` (3 rows, the
+level-bot gate; it was one planned row until Trade #292 added it) and `decision3/` (2 rows: the `method.py` functions
+the level gate calls, and the rest). N1 (2026-10-12) adds `level_bots_replay.py` (Trade #295) as a top-level file:
+141 + 31 + 9 + 8 + 2 + 3 + 2 = **196 rows**. Other Trade
+additions after eafc872 (for example `reader2/`, #296) are not mapped yet.
 
 | Status | Rows |
 |---|---|
@@ -39,18 +44,18 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 | partial | 18 |
 | partial (unverified) | 9 |
 | in progress (Z7a) | 4 |
-| missing | 49 (25 of them are G rows that wait for the owner's "stable" mark) |
-| not needed | 99 |
-| **Total** | **192** |
+| missing | 52 (25 of them are G rows that wait for the owner's "stable" mark) |
+| not needed | 100 |
+| **Total** | **196** |
 
 | Group | Rows | ported | partial | partial (unverified) | in progress (Z7a) | missing | not needed |
 |---|---|---|---|---|---|---|---|
 | 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 2 | 11 | 4 | 0 | 2 | 2 |
-| 2. Right after Phase 0 (N-list) | 29 | 4 | 3 | 3 | 4 | 15 | 0 |
+| 2. Right after Phase 0 (N-list) | 32 | 4 | 3 | 3 | 4 | 18 | 0 |
 | 3. Only when the owner marks it stable (G) | 25 | 0 | 0 | 0 | 0 | 25 (waiting) | 0 |
 | 4. Already ported or covered, outside the groups | 11 | 7 | 4 | 0 | 0 | 0 | 0 |
 | 5. Unscheduled (not in the owner's lists) | 9 | 0 | 0 | 2 | 0 | 7 | 0 |
-| 6. Not needed | 97 | 0 | 0 | 0 | 0 | 0 | 97 |
+| 6. Not needed | 98 | 0 | 0 | 0 | 0 | 0 | 98 |
 
 ## Phase 0 port list (targets)
 
@@ -142,7 +147,10 @@ The six safety checks the spec lists for `order_safety.py`:
 | `dynamic_sr_instant_trader.py` | Template: 1-min / 5-min instant reversal at dynamic S/R levels | none | missing: template | none (Trade has `tests/test_dynamic_sr_instant_trader.py`) |
 | `srv2_momentum_reversal_strategy.py` | Template: 15 / 30 / 60-minute dynamic S/R reversal with a momentum filter | none | missing: template | none (Trade has `tests/test_srv2_momentum_reversal_strategy.py`) |
 | `classic_sr_reversal_trader.py` | Template: classic S/R reversal | none | missing: template | none (Trade has `tests/test_classic_sr_reversal_trader.py`) |
-| `bots_common/level_reaction.py` (level-bot confirmation gate, Trade TRADE_SESSION_LEVEL_BOTS_CONFIRMATION.md; on Trade `origin/main` since ca2fe23 with `bots_common/level_gate_bot.py`, `level_visibility.py`, the MCX gate (L4) and the replay `level_bots_replay.py` (L6)) | One shared gate for the level bots: trend first -> stored level is only a candidate area -> handover study inside the area (trend-side vs counter-side candle size and volume, wedge / channel / double-top patterns) -> dominant commitment candle on higher volume -> Vision -> Telegram approval. State machine IDLE -> ARMED -> CONFIRMED / DISARMED on closed candles, fail-closed | none | missing: N-list (N1 / U4 proposal engine uses the same rules). The Trade replay report (touch vs confirmation, `docs/reports/level_bots_confirmation.md`, 120426f, 11 Oct 2026) is in: NIFTY in-sample the gate improves Classic (net expectancy -0.05 vs -5.60 points per trade, n 143) but not 5M Instant or 15M SRv2, and on the validation period Classic is worse (-8.09 vs -1.67, n 36); BANKNIFTY / MCX are illustration only. Not a clear case yet: the owner decides whether to port before N1 | none yet (Trade has `tests/test_level_bots_replay.py`) |
+| `bots_common/level_reaction.py` (level-bot confirmation gate; Trade #292 / #293, `docs/LEVEL_BOTS_CONFIRMATION.md`) | One shared gate for the level bots: Daily trend first (`decision3.daily.fold`) -> the stored level is only a candidate area -> arrival from the trade side arms it -> handover study inside the area (trend-side vs counter-side candle size and volume; absorption blocks; wedge / channel / double-top patterns as evidence; impulsive approach blocks) -> dominant commitment candle (body >= 1.5 x window average) on higher volume (NA => grade <= B) -> real break disarms -> SL beyond the far edge, target = next opposite area, R:R >= 3 -> Vision -> Telegram approval | none | missing: N1 L1 (state machine, `decision3.method` gate functions, `break_from`) -> `backend/app/price_action/level_gate/` + `backend/app/price_action/breaks.py`; L2a / L2b (the Daily fold, pinned revision, OPEN_QUESTIONS N1-2); wired to scans in X1 through the E1 execution core (`backend/app/execution/core/`). The L6 replay report is in (Trade #295; OPEN_QUESTIONS N1-3) | planned: golden parity from Trade's own functions on fixed bars (`backend/tests/fixtures/level_gate/make_golden.py`, `.json.gz`) |
+| `bots_common/level_gate_bot.py` | Thin layer for the bots: `entry_mode` (confirmation for PAPER, touch for LIVE), gate settings from the dashboard, one cycle gate per symbol (trend + closed bars + all areas), signal-log codes `SKIPPED_GATE_*`, confirmation TF per bot (5m / 15m) | none | missing: N1 X1 (the scan Then template: `confirm_tf`, gate settings, reason codes on the intent; touch mode not ported - ATP has no touch-mode level bots) | none yet (Trade has `tests/test_level_bots_5m.py`, `test_level_bots_classic_srv2.py`, `test_level_bots_mcx.py`) |
+| `bots_common/level_visibility.py` | L5 visibility: today's armed / confirmed / ignored areas per bot (dashboard tab) and the gate section of the 15:45 summary | none | missing: N1 X1 (the intents list and the rule's `last_problem`; the summary line goes to the EOD summary) | none yet (Trade has `tests/test_level_bots_visibility.py`) |
+| `decision3/method.py` (the functions the level gate calls) | `zone_study`, `zone_pattern`, `commitment`, `reversal_form`, `power_shift`, `contraction`, `candle_read` and their helpers. The rest of `method.py` (risk, plans, conviction) stays with the `decision3/` G row | none | missing: N1 L1 -> `backend/app/price_action/level_gate/method.py` (ported because the owner's level-bot rules call them; `method.py` unchanged since #292) | planned: golden parity, every check mirrored for both directions |
 | `gap_fill_reversal_strategy.py` | Template: 1H Supertrend trend -> opening gap -> gap fill -> reversal | `backend/app/price_action/gap_context.py` (placeholder only) | missing: template | none |
 | `mtf_pullback_strategy.py` | Template: multi-timeframe pullback (with overnight gaps) | `backend/app/strategy_engine/mtf_strategy.py` is ATP's own MTF pullback, not a port | missing: template; `find_overnight_gaps` ported to `backend/app/price_action/zones/detect.py` (Z7a-1, #168) | none (Trade has `tests/test_page_mtf_multi.py`) |
 | `oi_greeks_vix_strategy.py` | Template: OI + Greeks + India VIX decision tree | `backend/app/option_chain/oi_regime.py` (the OI part) | missing: template | none |
@@ -163,7 +171,7 @@ ATP's `price_action` follows their behaviour specs, not their code. All rows: AT
 
 | Trade module | Purpose | Note |
 |---|---|---|
-| `decision3/` | v2.2 method-first engine (Abhi's six steps): daily legs / swings, levels, liquidity, trendline, advisory, vision audit, Telegram view | owner's G list |
+| `decision3/` (rest) | v2.2 method-first engine (Abhi's six steps): daily legs / swings, levels, liquidity, trendline, advisory, vision audit, Telegram view | owner's G list. The level gate's Daily trend (`daily.fold` with `daily_legs`, `legs2`, `patterns2`) is ported at a pinned revision in N1 L2 unless the owner says otherwise (OPEN_QUESTIONS N1-2); `method.py`'s gate functions are their own row in group 2 |
 | `swings2/` | Layer 1 v2.1: nested directional-change swing engine + market structure (BOS / CHoCH / sweep) | owner's G list |
 | `legs2/` | Layer 2: role and character of each leg -> labels I and K | owner's G list |
 | `patterns2/` | Layer 3: correction pattern inside I and K (hypotheses, rules, scores) | owner's G list |
@@ -322,6 +330,7 @@ These hold logic that is in none of the spec's groups. The owner decides whether
 | `fonts/` | DejaVu and Noto Devanagari fonts for PDFs | none | asset (needed only with `pdf_reports.py`) |
 | `lib/` | `lightweight-charts.js` for Streamlit | `frontend/` | asset |
 | `live_chart_component/` | HTML component for the live chart | none | Streamlit |
+| `level_bots_replay.py` (+ `scripts/level_bots_replay.py`, Trade #295) | L6 replay: touch vs confirmation on the same days, levels, position rules and costs; writes `docs/reports/level_bots_confirmation.md` | none | research replay: its findings set N1's stance (OPEN_QUESTIONS N1-3); ATP's own backtests come with C2-C6 |
 
 Non-Python files at the top level (`config.yaml`, `PRE_LIVE_CHECKLIST.md`, `requirements*.txt`, `packages.txt`,
 `pytest.ini`, `run_*.bat`) are Trade's own setup and are not mapped.

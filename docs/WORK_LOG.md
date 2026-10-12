@@ -1842,3 +1842,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   instance (`src/progression/i18n.ts`); there is a story.
 - No migration and no new route. Flag off returns the Z3-b answer unchanged.
 - Tests: backend `tests/test_n2_ladder_evidence.py` (9); vitest `src/progression` (12). Open questions N2-1..N2-5.
+### 2026-10-12 IST - N2-2 experience levels (`claude/n2-2`, cut from `claude/n2-p1f` because N2-1 was not merged yet)
+- Flag `experience_levels` (off). Levels come from the user's own PAPER record. They gate futures (Intermediate) and
+  naked short options (Advanced, single legs and structures with an unhedged short side) in
+  `execute_signal_for_user` / `execute_structure`. Exits are never gated.
+- A day's opt-out with a reason is logged and counted (`experience_opt_outs`, migration `a4c6e8f0b2d1` on
+  `e8a1c4d2f9b7`, ROLLBACK_SAFE).
+- Routes `GET /api/paper/experience` (member) and `POST /api/paper/experience/opt-out` (trader) are classified in the
+  tenancy table.
+- Frontend: "Experience level" card on Positions (progression i18n), with a story.
+- Tests: backend `tests/test_n2_experience_levels.py` (11); vitest `src/progression` (16). Open questions N2-6..N2-9.

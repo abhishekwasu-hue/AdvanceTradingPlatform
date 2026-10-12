@@ -165,6 +165,10 @@ async def execute_signal_for_user(
                 kill_switch_reasons.append(ban)
             elif ban_note:
                 fo_notes.append(ban_note)
+            # N2-2 (flag experience_levels): futures / naked short options open with the user's experience level or a
+            # logged opt-out for the day. New entries only - exits never come here (ADR-0004).
+            from app.paper import experience
+            kill_switch_reasons.extend(await experience.entry_refusals(session, user, experience.contract_gates(contract)))
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(

@@ -309,7 +309,13 @@ class TradingWorker:
         """Phase 0 deployment defaults (app/platform/deployment_phase.py): seed the two Phase 0 flags where unset
         (ATP_DEPLOYMENT_PHASE=phase0 only) and log why LIVE entry paths are not started while `phase0_paper_only` is on.
         The worker always comes up: exits, stops, square-off and reconciliation of LIVE positions run regardless."""
+        from app.ai import instrument_names
         from app.platform import deployment_phase
+        try:
+            async with self.session_factory() as session:
+                await instrument_names.refresh(session)        # H-C1 c: instrument names for the AI output filter (never raises)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting
+            logger.warning("instrument names not loaded", exc_info=True)
         try:
             async with self.session_factory() as session:
                 state = await deployment_phase.on_startup(session, "worker")

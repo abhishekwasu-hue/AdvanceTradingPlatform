@@ -119,9 +119,9 @@ def sources() -> Dict[str, Source]:
 
 def advice_words(text: str) -> List[str]:
     """Advice / guarantee wording in a label or definition (empty when clean)."""
-    from app.ai.output_filter import blocked_terms, is_specific_call
+    from app.ai.output_filter import findings, is_specific_call
     found = [w.lower() for w in _SCREENER_WORDS.findall(text or "")]
-    found += blocked_terms(text or "")
+    found += findings(text or "")
     if is_specific_call(text or ""):
         found.append("a specific buy / sell call")
     return list(dict.fromkeys(found))

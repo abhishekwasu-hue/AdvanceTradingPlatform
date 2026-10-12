@@ -8,6 +8,7 @@ import asyncio
 import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
+
 from sqlalchemy import select
 
 from app.db.models import OrderRecord, TradeRecord, User
@@ -166,7 +167,10 @@ def test_the_caps_are_checked_again_at_approve(monkeypatch):
 EXIT_PATHS = ("app.trading.position_monitor.close_position", "app.trading.position_monitor.close_group",
               "app.trading.position_monitor.monitor_open_positions", "app.trading.position_monitor._square_off_live",
               "app.trading.stop_guard.verify_protective_stops", "app.kill_switch.routes.emergency_exit",
-              "app.workers.trading_worker.TradingWorker._square_off_all", "app.ai.monitor.execute")
+              "app.workers.trading_worker.TradingWorker._square_off_all", "app.ai.monitor.execute",
+              # review L3: Exit now, the exit proposal, the manual close (mark price) and Telegram /exit
+              "app.execution.approval.exit_now", "app.execution.approval.propose_exit", "app.trading.routes.exit_now",
+              "app.trading.routes.mark_price", "app.telegram_inbound.service._exit_text")
 ENTRY_ONLY = "app.execution.approval.execute_entry"      # app.ai.monitor.execute hands an approved ENTRY to it (and only it)
 
 
@@ -207,3 +211,132 @@ def test_a_position_over_every_cap_still_closes():
                 out.append((await close_position(session, await session.get(TradeRecord, trade_id), 97.0, "Stop Loss")).closed)
             return out
     assert _run(go()) == [True, True]
+
+
+# --- review of #219 ------------------------------------------------------------------------------------------------------------
+
+def test_a_failed_read_rolls_back_its_savepoint_only_and_the_session_stays_usable(monkeypatch):
+    """M1: the caps run on the worker's shared session; a failed read must not leave it aborted (Postgres)."""
+    from sqlalchemy import text
+    from app.portfolio import risk_data
+    t = _tenant(_email("m1"), with_credentials=False)
+    for name in (C.FLAG, C.BASE_FLAG):
+        _flag(name, t["tenant_id"])
+    _limits(t, max_open_positions=3)
+    seen = []
+
+    async def broken(session, user):
+        seen.append(session.in_nested_transaction())
+        await session.execute(text("SELECT * FROM no_such_table_f2"))
+    monkeypatch.setattr(risk_data, "open_book", broken)
+
+    async def go():
+        async with _session_factory() as session:
+            pending = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="PAPER", symbol="F2M1", strategy_id="f2", direction="LONG",
+                                  entry_time=datetime.now(UTC), entry_price=100.0, quantity=1.0, stop_loss=99.0)
+            session.add(pending)
+            await session.flush()
+            user = await session.get(User, t["user_id"])
+            out = await C.entry_refusals(session, user, C.candidate_of("RELIANCE", 100.0, 95.0))
+            assert (await session.execute(select(TradeRecord.id).where(TradeRecord.id == pending.id))).scalar() == pending.id
+            await session.commit()                                  # the outer transaction is intact
+            return out, pending.id
+    out, trade_id = _run(go())
+    assert seen == [True] and len(out) == 1 and "could not be checked" in out[0]
+
+    async def still_there():
+        async with _session_factory() as session:
+            return await session.get(TradeRecord, trade_id)
+    assert _run(still_there()) is not None
+
+
+def test_the_largest_size_uses_the_organisation_s_risk_per_trade_when_it_is_larger():
+    """M2: with risk_by_default off the organisation's RiskConfig sizes the entry, which can be above the user's cap."""
+    from app.core.models import RiskConfig
+    from app.risk_engine.routes import get_tenant_risk_config
+    t = _tenant(_email("m2"), with_credentials=False)
+
+    async def go(pct):
+        async with _session_factory() as session:
+            from app.db.models import RiskSettingsRecord
+            row = await session.scalar(select(RiskSettingsRecord).where(RiskSettingsRecord.tenant_id == t["tenant_id"]))
+            if row is None:
+                row = RiskSettingsRecord(tenant_id=t["tenant_id"], updated_by=t["user_id"])
+                base = RiskConfig()
+                for key in ("max_daily_loss_pct", "max_trades_per_day", "max_open_positions", "max_consecutive_losses", "min_risk_reward",
+                            "lot_size", "max_portfolio_risk_pct", "stop_cooldown_minutes", "dd_level_1_pct", "dd_level_2_pct", "event_size_cut_pct"):
+                    setattr(row, key, getattr(base, key))
+                session.add(row)
+            row.capital, row.risk_per_trade_pct = 2_000_000.0, pct
+            await session.commit()
+            user = await session.get(User, t["user_id"])
+            settings = await by_default.user_settings(session, user)
+            capital = await by_default.capital_basis(session, user)
+            user_cap = by_default.risk_cap(capital, settings)["amount"]
+            cfg = await get_tenant_risk_config(t["tenant_id"], session)
+            return user_cap, await C.largest_risk_amount(session, user, capital, settings), cfg
+    user_cap, largest, cfg = _run(go(1.5))
+    assert user_cap == 10_000.0 and largest == 30_000.0                  # the organisation's 1.5% of 20 lakh sizes above the user's 1%
+    user_cap, largest, _ = _run(go(5.0))                      # above the platform ceiling (2%): clamped
+    assert largest == 40_000.0                                           # 5% clamped to the 2% ceiling
+
+
+def test_a_contract_counts_under_its_underlying_or_is_refused(monkeypatch):
+    """L1: a contract symbol is pooled with its underlying's bucket (instrument master, else the index it starts with);
+    an unknown non-index derivative is refused."""
+    from app.db.models import InstrumentRecord
+    from app.portfolio import risk_data
+    stock = f"F2L{uuid.uuid4().hex[:4].upper()}"
+    contract = f"{stock}24OCT1500CE"
+
+    async def seed():
+        async with _session_factory() as session:
+            session.add(InstrumentRecord(broker="test", exchange="NFO", instrument_key=f"NFO:{contract}", tradingsymbol=contract, name=stock,
+                                         underlying=stock, instrument_type="CE", lot_size=1))
+            await session.commit()
+    _run(seed())
+
+    async def resolve(*args):
+        async with _session_factory() as session:
+            return await risk_data.resolve_underlying(session, *args)
+    assert _run(resolve(contract)) == stock
+    assert _run(resolve("BANKNIFTY24OCT52000PE")) == "BANKNIFTY" and _run(resolve("NIFTY24OCTFUT")) == "NIFTY"
+    assert _run(resolve("NIFTY 50")) == "NIFTY" and _run(resolve("RELIANCE")) == "RELIANCE"
+    assert _run(resolve("ZZUNKNOWN24OCT100CE")) is None
+    assert _run(resolve("ZZUNKNOWN24OCT100CE", "INFY")) == "INFY"                 # a stored underlying wins
+    t = _tenant(_email("l1"), with_credentials=False)
+    for name in (C.FLAG, C.BASE_FLAG):
+        _flag(name, t["tenant_id"])
+    _limits(t, max_correlated_risk_pct=1.0)
+
+    async def caps_for(symbol):
+        async with _session_factory() as session:
+            return await C.entry_refusals(session, await session.get(User, t["user_id"]), C.candidate_of(symbol, 100.0, 99.0, quantity=1))
+    assert _run(caps_for("NIFTY24OCT25000CE")) == []
+    out = _run(caps_for("ZZUNKNOWN24OCT100CE"))
+    assert len(out) == 1 and "underlying of ZZUNKNOWN24OCT100CE cannot be told" in out[0]
+
+
+def test_a_failed_beta_read_is_retried_after_a_few_minutes(monkeypatch):
+    """L2: an error is not cached for the IST day."""
+    from app.portfolio import risk_data
+    risk_data.clear_cache()
+    calls = []
+    clock = [1000.0]
+    monkeypatch.setattr(risk_data.time, "monotonic", lambda: clock[0])
+
+    async def broken(session, key, start, end):
+        calls.append(key)
+        raise RuntimeError("lake down")
+    monkeypatch.setattr(risk_data, "_index_closes", broken)
+
+    async def beta():
+        async with _session_factory() as session:
+            return await risk_data.beta_of(session, "F2BETA", date(2026, 10, 12))
+    first = _run(beta())
+    assert not first.known and "RuntimeError" in first.source and len(calls) == 1
+    assert "tried again" in _run(beta()).source and len(calls) == 1
+    clock[0] += risk_data.ERROR_RETRY_SECONDS
+    _run(beta())
+    assert len(calls) == 2
+    risk_data.clear_cache()

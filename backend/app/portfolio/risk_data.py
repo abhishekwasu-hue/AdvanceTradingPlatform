@@ -11,6 +11,8 @@ company's adjusted history by ISIN (`by_isin.isin_candles`), else the symbol's o
 """
 from __future__ import annotations
 
+import re
+import time
 from collections import OrderedDict
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -31,12 +33,37 @@ BETA_WINDOW = 250                     # daily returns (about a year)
 BETA_MIN_SESSIONS = 120
 LOOKBACK_DAYS = 400                   # calendar days read for BETA_WINDOW sessions
 MAX_CACHE = 512
+ERROR_RETRY_SECONDS = 300             # a failed beta read is tried again after this (review L2), not the next day
+DERIVATIVE = re.compile(r"\d.*(CE|PE|FUT)$")
 
 _BETAS: "OrderedDict[Tuple[str, date], R.Beta]" = OrderedDict()
+_BETA_FAILED: Dict[Tuple[str, date], float] = {}
 
 
 def clear_cache() -> None:
     _BETAS.clear()
+    _BETA_FAILED.clear()
+
+
+async def resolve_underlying(session: AsyncSession, symbol: str, underlying: Optional[str] = None) -> Optional[str]:
+    """The underlying a symbol's risk counts under (review L1): a cash or index symbol is its own (`underlying_of`); a
+    derivative contract (`...CE`, `...PE`, `...FUT` with digits) is resolved through the instrument master, else to the
+    index name it starts with; None when that cannot be told."""
+    from app.db.models import InstrumentRecord
+    from app.instruments.master import underlying_of
+    from app.risk_engine.guardian import INDEX_UNDERLYINGS
+    sym = (symbol or "").strip().upper()
+    known = underlying_of(underlying or sym)
+    if not DERIVATIVE.search(sym) or (underlying and not DERIVATIVE.search(underlying.strip().upper())):
+        return known
+    row = await session.scalar(select(InstrumentRecord.underlying).where(InstrumentRecord.tradingsymbol == sym,
+                                                                         InstrumentRecord.underlying.is_not(None)).limit(1))
+    if row:
+        return underlying_of(row)
+    for index in sorted(INDEX_UNDERLYINGS, key=len, reverse=True):
+        if sym.startswith(index):
+            return index
+    return None
 
 
 def _today(now: Optional[datetime]) -> date:
@@ -97,26 +124,32 @@ async def beta_of(session: AsyncSession, underlying: str, day: date) -> R.Beta:
     if hit is not None:
         _BETAS.move_to_end((underlying, day))
         return hit
+    failed_at = _BETA_FAILED.get((underlying, day))
+    if failed_at is not None and time.monotonic() - failed_at < ERROR_RETRY_SECONDS:
+        return R.Beta(1.0, 0, False, "error (tried again in a few minutes)")
     if underlying == BETA_INDEX:
         beta = R.Beta(1.0, 0, True, "definition")
     else:
         end = datetime.combine(day, dtime(9, 15), IST).astimezone(timezone.utc)
         start = end - timedelta(days=LOOKBACK_DAYS)
         try:
-            index = await _index_closes(session, INDEX_KEYS[BETA_INDEX], start, end)
-            from app.risk_engine.guardian import INDEX_UNDERLYINGS
-            if underlying in INDEX_UNDERLYINGS:
-                key = INDEX_KEYS.get(underlying)
-                own, how = (await _index_closes(session, key, start, end), "index") if key else ({}, "no NSE index series")
-            else:
-                own, how = await _stock_closes(session, underlying, day, start, end)
-            beta = R.beta_from_closes(own, index, BETA_WINDOW, BETA_MIN_SESSIONS)
-            if beta.known:
-                beta = R.Beta(beta.value, beta.sessions, True, f"lake ({how})")
-            elif not own:
-                beta = R.Beta(1.0, 0, False, how if how.startswith("no ") else "no Daily bars in the lake")
-        except Exception as exc:  # noqa: BLE001 - unknown beta, never a failed view
-            beta = R.Beta(1.0, 0, False, f"error: {type(exc).__name__}")
+            async with session.begin_nested():       # review M1: a failed read rolls back its savepoint only
+                index = await _index_closes(session, INDEX_KEYS[BETA_INDEX], start, end)
+                from app.risk_engine.guardian import INDEX_UNDERLYINGS
+                if underlying in INDEX_UNDERLYINGS:
+                    key = INDEX_KEYS.get(underlying)
+                    own, how = (await _index_closes(session, key, start, end), "index") if key else ({}, "no NSE index series")
+                else:
+                    own, how = await _stock_closes(session, underlying, day, start, end)
+                beta = R.beta_from_closes(own, index, BETA_WINDOW, BETA_MIN_SESSIONS)
+                if beta.known:
+                    beta = R.Beta(beta.value, beta.sessions, True, f"lake ({how})")
+                elif not own:
+                    beta = R.Beta(1.0, 0, False, how if how.startswith("no ") else "no Daily bars in the lake")
+        except Exception as exc:  # noqa: BLE001 - unknown beta, never a failed view; not cached for the day (review L2)
+            _BETA_FAILED[(underlying, day)] = time.monotonic()
+            return R.Beta(1.0, 0, False, f"error: {type(exc).__name__}")
+    _BETA_FAILED.pop((underlying, day), None)
     _BETAS[(underlying, day)] = beta
     while len(_BETAS) > MAX_CACHE:
         _BETAS.popitem(last=False)
@@ -129,6 +162,8 @@ async def risk_view(session: AsyncSession, user: User, now: Optional[datetime] =
     from app.risk_engine import by_default
     day = _today(now)
     positions = R.positions_of(await open_book(session, user)) + list(extra or [])
+    for p in positions:                                  # review L1: a contract counts under its underlying
+        p.underlying = await resolve_underlying(session, p.underlying, p.underlying) or p.underlying
     underlyings = sorted({p.underlying for p in positions})
     buckets = {u: await bucket_of(session, u, day) for u in underlyings}
     betas = {u: await beta_of(session, u, day) for u in underlyings}

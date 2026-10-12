@@ -1069,8 +1069,11 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
   person and no quotation marks (a card never speaks for a person); no trademarked method name in a title
   (`TRADEMARK_TERMS`); English only, sources included; the screen compiles with its defaults, every parameter is used
   and its default lies inside its range. Source titles are cited verbatim and are not linted (LG1-6).
-- **Disclaimer.** The spec's wording is fixed in code (`legends.DISCLAIMER`): the API adds it, naming the person, to
-  every card and, for "the people named", as the library header. Living persons: name and public source only.
+- **Disclaimer.** The spec's wording is fixed in code (`legends.DISCLAIMER`): the API adds it to every card, naming
+  `legend`, and, for "the people named", as the library header. `legend` must name every person the card names (lint:
+  `people_named` - capitalised names outside the cited titles, and cited authors named by surname). In the gallery a
+  Legends screen is listed only with its card (`withLegendCards`): if `/legends` fails, the Legends screens and their
+  counts leave the gallery rather than show without a disclaimer. Living persons: name and public source only.
 - **Link to the taxonomy.** A card's id is a pre-built screen id (`legends.<name>`) filed in `taxonomy.json` under
   source and method `legends` with the card's name and its "looks for" line as the definition. `legends.py`
   registers the source with the flag (`register_source("legends", ..., flag="screener_legends")`), so the TX1 guard

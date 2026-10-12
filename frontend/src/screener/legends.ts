@@ -7,6 +7,11 @@
  * Educational only: a card describes a published method; it never ranks, scores or recommends anything.
  */
 
+import { keepScreens, type Taxonomy } from "./taxonomy";
+
+/** The template source the Legends screens come from (backend `app/screener/legends.py`). */
+export const LEGENDS_SOURCE = "legends";
+
 export type LegendLineKey = "who" | "style" | "looks_for" | "timeframe";
 export const LINE_KEYS: LegendLineKey[] = ["who", "style", "looks_for", "timeframe"];
 /** How each line is introduced on a card (the visible term of the description list). */
@@ -57,4 +62,10 @@ export function rangeText(p: LegendParam): string {
 export function filledSource(card: LegendCardData): string {
   const byName = new Map(card.screen.params.map((p) => [p.name, p.default]));
   return card.screen.source.replace(/\$([A-Za-z_][A-Za-z0-9_]*)/g, (whole, name: string) => (byName.has(name) ? String(byName.get(name)) : whole));
+}
+
+/** L1 (review): a Legends screen is listed only with its card, so it always carries its disclaimer. While the library
+ * is missing (its call failed, an older server) the Legends screens leave the gallery and its counts. */
+export function withLegendCards(tax: Taxonomy, lib: LegendsLibrary | null | undefined): Taxonomy {
+  return keepScreens(tax, (s) => s.source !== LEGENDS_SOURCE || cardFor(lib, s.id) !== null);
 }

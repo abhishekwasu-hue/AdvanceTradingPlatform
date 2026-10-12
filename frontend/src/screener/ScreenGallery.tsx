@@ -15,7 +15,7 @@ import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button, cx } from "../components/primitives";
 import { LegendCard } from "./LegendCard";
-import { cardFor, type LegendCardData, type LegendsLibrary } from "./legends";
+import { cardFor, withLegendCards, type LegendCardData, type LegendsLibrary } from "./legends";
 import {
   cellCount, chipCount, emptyText, filterScreens, NO_FILTER, placeText, railCount, tagLabel,
   type GalleryFilter, type TaxAxis, type Taxonomy, type TaxScreen,
@@ -33,7 +33,9 @@ export interface ScreenGalleryProps {
   initialDetail?: string | null;
 }
 
-export function ScreenGallery({ taxonomy, canOpen, onOpen, initial, legends = null, initialDetail = null }: ScreenGalleryProps) {
+export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null }: ScreenGalleryProps) {
+  // L1: a Legends screen is shown only with its card (and so its disclaimer); without the library they leave the counts too.
+  const taxonomy = useMemo(() => withLegendCards(served, legends), [served, legends]);
   const [filter, setFilter] = useState<GalleryFilter>({ ...NO_FILTER, ...initial });
   const [detail, setDetail] = useState<{ id: string; focus: boolean } | null>(initialDetail ? { id: initialDetail, focus: false } : null);
   const shown = useMemo(() => filterScreens(taxonomy, filter), [taxonomy, filter]);

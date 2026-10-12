@@ -118,12 +118,37 @@ def _first(data):
     (lambda c, s: s["sources"][0].update(title="शेअर बाजार"), "English only"),
     (lambda c, s: s["sources"].append(dict(s["sources"][0], id="uncited_book")), "source 'uncited_book' is listed but no card cites it"),
     (lambda c, s: c.update(cards=[]), "cards: none defined"),
+    (lambda c, s: c["cards"][3].update(legend="Richard Dennis and the Turtle traders"),
+     "names 'William Eckhardt', so the disclaimer must too"),
+    (lambda c, s: c["cards"][4].update(legend="Linda Bradford Raschke"), "names 'Laurence Connors', so the disclaimer must too"),
+    (lambda c, s: _first(c).update(approximation="Compared with the list Paul Tudor Jones describes."),
+     "names 'Paul Tudor Jones', so the disclaimer must too"),
+    (lambda c, s: c["cards"][4].update(legend="Linda Bradford Raschke", who={"text": "Futures trader; co-author with Connors of the 1995 book Street Smarts.", "cite": ["raschke_connors_1995"]}),
+     "names 'Laurence A. Connors', so the disclaimer must too"),
 ])
 def test_the_lint_rules_refuse_a_broken_library(change, expect):
     cards, sources = _cards(), _sources()
     change(cards, sources)
     _, problems = lg.parse(cards, sources)
     assert any(expect in p for p in problems), problems
+
+
+def test_every_person_a_card_names_is_named_in_its_disclaimer():
+    """L2: the disclaimer ("Not affiliated with, endorsed by, or representing <legend>") covers every person the card
+    names - co-authors and the people a method is credited to - not just the card's main name."""
+    lib = lg.load()
+    for card in lib.cards:
+        texts = [card.lines[k].text for k in lg.LINES] + [card.approximation] + [p.doc for p in card.params]
+        named = lg.people_named(texts, [lib.sources[c] for c in card.cited()])
+        disclaimer = lg.DISCLAIMER.format(name=card.legend)
+        assert all(person in disclaimer for person in named), (card.id, named)
+    turtles, raschke = lib.card("legends.turtle_channel_breakout"), lib.card("legends.raschke_adx_pullback")
+    assert "William Eckhardt" in turtles.legend and "Richard Dennis" in turtles.legend
+    assert "Laurence Connors" in raschke.legend
+    street_smarts = [lib.sources["raschke_connors_1995"]]                  # a cited title is not a person
+    assert lg.people_named(["Co-author with Laurence Connors of the 1995 book Street Smarts."], street_smarts) == ["Laurence Connors"]
+    assert lg.people_named(["Co-author with Connors of Street Smarts."], street_smarts) == ["Laurence A. Connors"]
+    assert lg.people_named(["Daily bars; System 1 used 20 days."], []) == []
 
 
 def test_negated_and_neutral_wording_passes():
@@ -185,8 +210,8 @@ def _darvas():
 
 
 def _weinstein():
-    close = list(np.linspace(130, 100, 30)) + [100.0] * 29 + [108.0]
-    vol = [1000.0] * 59
+    close = list(np.linspace(130, 100, 30)) + [100.0] * 40 + [108.0]
+    vol = [1000.0] * 70
     weekly = dict(freq="7D")
     return [_frame(close, vol=vol + [3000.0], **weekly)], [_frame(close, vol=vol + [1100.0], **weekly)]
 
@@ -225,6 +250,21 @@ def _williams():
     reach = _frame(close + [101.2], open_=[99.8] * 30 + [100.0], high=high + [101.5], low=low + [99.9])
     short = _frame(close + [100.3], open_=[99.8] * 30 + [100.0], high=high + [100.5], low=low + [99.9])
     return [reach], [short]
+
+
+def test_weinstein_needs_more_than_a_one_week_uptick_in_a_falling_average():
+    """L3: a 30-week average that has fallen for months and ticks up for one week is not "flat or rising"."""
+    card = lg.load().card("legends.weinstein_stage2_breakout")
+    close = list(np.linspace(160, 100, 61)) + [131.0]                 # a long decline, then one strong week
+    frame = _frame(close, vol=[1000.0] * 61 + [3000.0], freq="7D")
+    sma = frame["close"].rolling(30).mean()
+    assert sma.iloc[-1] >= sma.iloc[-2] and sma.iloc[-1] < sma.iloc[-5]  # the one-week uptick, still below 4 weeks ago
+    one_week = card.source.replace(" AND SMA(close, 30) >= SMA(close, 30)[4]", "")
+    assert one_week != card.source
+    ast, validated = compile_screen(one_week, base_tf="1w", params=card.defaults())
+    loose = run_screen(ast, validated, [SymbolData("S", {"1w": frame})], base_tf="1w", params=card.defaults())[0]
+    assert loose.matched                                                    # the old rule let it through
+    assert not _run_card(card, [frame])[0].matched
 
 
 FIXTURES: Dict[str, Callable[[], tuple]] = {
@@ -348,6 +388,19 @@ def test_the_taxonomy_hides_the_legends_screens_while_the_flag_is_off():
         _set_flags(screener_legends=True)
         on = client.get("/api/screener/taxonomy?method=legends", headers=headers).json()
         assert [s["id"] for s in on["screens"]] == LG1_CARDS and sum(on["matrix"]["legends"].values()) == len(LG1_CARDS)
+    finally:
+        _set_flags(screener_v2=False, screener_gallery=False, screener_legends=False)
+
+
+def test_the_legends_on_taxonomy_sample_is_what_the_route_serves():
+    """Drift check through HTTP: with only screener_v2, screener_gallery and screener_legends on, GET
+    /api/screener/taxonomy returns src/screener/taxonomyLegendsSample.json exactly."""
+    headers, _ = _owner("lg1-taxsample@example.com")
+    _set_flags(screener_v2=True, screener_gallery=True, screener_legends=True)
+    try:
+        served = client.get("/api/screener/taxonomy", headers=headers)
+        assert served.status_code == 200
+        assert served.json() == json.loads(TAXONOMY_SAMPLE.read_text(encoding="utf-8"))
     finally:
         _set_flags(screener_v2=False, screener_gallery=False, screener_legends=False)
 

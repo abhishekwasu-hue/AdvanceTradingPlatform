@@ -146,7 +146,7 @@
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Nicolas Darvas. Educational tool, not investment advice.",
    "screen": {
     "id": "legends.darvas_box_breakout",
-    "source": "close > Max(high, $box_bars)[1] AND Min(low, $box_bars)[1] >= $box_floor * Max(high, $box_bars)[1] AND volume > $vol_mult * SMA(volume, 50)[1] AND close >= $near_high * Max(high, 250)",
+    "source": "close > Max(high, $box_bars)[1] AND Min(low, $box_bars)[1] >= $box_floor * Max(high, $box_bars)[1] AND volume >= $vol_mult * SMA(volume, 50)[1] AND close >= $near_high * Max(high, 250)",
     "base_tf": "1d",
     "params": [
      {
@@ -242,11 +242,11 @@
      "citation": "Stan Weinstein's Secrets for Profiting in Bull and Bear Markets (1988), Stan Weinstein"
     }
    ],
-   "approximation": "The base here is the high of the previous 10 weeks and volume is compared with the 4 weeks before; the book's relative-strength check is not included yet.",
+   "approximation": "The base here is the high of the previous 10 weeks; flat or rising = the 30-week average not below its value 1 and 4 weeks ago; volume vs the 4 weeks before; no relative-strength check yet.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Stan Weinstein. Educational tool, not investment advice.",
    "screen": {
     "id": "legends.weinstein_stage2_breakout",
-    "source": "close > SMA(close, 30) AND SMA(close, 30) >= SMA(close, 30)[1] AND close > Max(high, $base_weeks)[1] AND volume >= $vol_mult * SMA(volume, 4)[1]",
+    "source": "close > SMA(close, 30) AND SMA(close, 30) >= SMA(close, 30)[1] AND SMA(close, 30) >= SMA(close, 30)[4] AND close > Max(high, $base_weeks)[1] AND volume >= $vol_mult * SMA(volume, 4)[1]",
     "base_tf": "1w",
     "params": [
      {
@@ -283,7 +283,7 @@
   },
   {
    "id": "legends.turtle_channel_breakout",
-   "legend": "Richard Dennis and the Turtle traders",
+   "legend": "Richard Dennis, William Eckhardt and the Turtle traders",
    "name": "Turtle-style 20-day channel breakout",
    "lines": {
     "who": {
@@ -343,7 +343,7 @@
     }
    ],
    "approximation": "Long side only here (the rules were symmetric); System 1's filter that skips a breakout after a winning one is not included.",
-   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Richard Dennis and the Turtle traders. Educational tool, not investment advice.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Richard Dennis, William Eckhardt and the Turtle traders. Educational tool, not investment advice.",
    "screen": {
     "id": "legends.turtle_channel_breakout",
     "source": "high > Max(high, $entry_days)[1]",
@@ -377,7 +377,7 @@
   },
   {
    "id": "legends.raschke_adx_pullback",
-   "legend": "Linda Bradford Raschke",
+   "legend": "Linda Bradford Raschke and Laurence Connors",
    "name": "Raschke-style ADX pullback to the 20 EMA",
    "lines": {
     "who": {
@@ -422,8 +422,8 @@
      "citation": "Street Smarts: High Probability Short-Term Trading Strategies (1995), Laurence A. Connors and Linda Bradford Raschke"
     }
    ],
-   "approximation": "An uptrend here is a 20-period EMA above its value 5 bars ago; the screen lists the touch, and the trigger bar is left for the trader to watch.",
-   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Linda Bradford Raschke. Educational tool, not investment advice.",
+   "approximation": "An uptrend here is a 20-period EMA above its value 5 bars ago; ADX rising beforehand is not checked; long side only; the screen lists the touch, and the trigger bar is left for the trader to watch.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Linda Bradford Raschke and Laurence Connors. Educational tool, not investment advice.",
    "screen": {
     "id": "legends.raschke_adx_pullback",
     "source": "ADX(14) > $adx_min AND EMA(close, 20) > EMA(close, 20)[5] AND low <= EMA(close, 20) AND low[1] > EMA(close, 20)[1]",
@@ -534,7 +534,7 @@
   },
   {
    "id": "legends.connors_rsi2_pullback",
-   "legend": "Larry Connors",
+   "legend": "Larry Connors and Cesar Alvarez",
    "name": "Connors-style 2-period RSI pullback",
    "lines": {
     "who": {
@@ -580,7 +580,7 @@
     }
    ],
    "approximation": "The book examines several RSI(2) thresholds and exits; the screen lists the setup only, with the threshold editable.",
-   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Larry Connors. Educational tool, not investment advice.",
+   "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Larry Connors and Cesar Alvarez. Educational tool, not investment advice.",
    "screen": {
     "id": "legends.connors_rsi2_pullback",
     "source": "close > SMA(close, 200) AND RSI(2) < $rsi_max",
@@ -657,7 +657,7 @@
      "citation": "Long-Term Secrets to Short-Term Trading (1999), Larry Williams"
     }
    ],
-   "approximation": "On end-of-day bars the screen checks the day's high; the book examines several fractions and range measures (editable here).",
+   "approximation": "On end-of-day bars the screen checks the day's high; long side only; the book examines several fractions and range measures (editable here).",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Larry Williams. Educational tool, not investment advice.",
    "screen": {
     "id": "legends.williams_volatility_breakout",

@@ -33,7 +33,7 @@
    "timeframe": {"text": "Daily bars; positions held while price keeps forming higher boxes.", "cite": ["darvas_1960"]},
    "approximation": "The box here is the high and low of the previous 20 bars, at most 15% deep; the book draws its boxes by eye from daily highs and lows.",
    "screen": {
-    "source": "close > Max(high, $box_bars)[1] AND Min(low, $box_bars)[1] >= $box_floor * Max(high, $box_bars)[1] AND volume > $vol_mult * SMA(volume, 50)[1] AND close >= $near_high * Max(high, 250)",
+    "source": "close > Max(high, $box_bars)[1] AND Min(low, $box_bars)[1] >= $box_floor * Max(high, $box_bars)[1] AND volume >= $vol_mult * SMA(volume, 50)[1] AND close >= $near_high * Max(high, 250)",
     "base_tf": "1d",
     "params": [
      {"name": "box_bars", "default": 20, "min": 5, "max": 60, "doc": "Bars that make up the box before today."},
@@ -52,9 +52,9 @@
    "style": {"text": "Stage analysis: a stock moves through four stages (base, advance, top, decline), read on the weekly chart and its 30-week moving average.", "cite": ["weinstein_1988"]},
    "looks_for": {"text": "A weekly close above the prior base high and above a flat or rising 30-week average, on volume well above its recent average.", "cite": ["weinstein_1988"]},
    "timeframe": {"text": "Weekly bars; positional holding periods of months.", "cite": ["weinstein_1988"]},
-   "approximation": "The base here is the high of the previous 10 weeks and volume is compared with the 4 weeks before; the book's relative-strength check is not included yet.",
+   "approximation": "The base here is the high of the previous 10 weeks; flat or rising = the 30-week average not below its value 1 and 4 weeks ago; volume vs the 4 weeks before; no relative-strength check yet.",
    "screen": {
-    "source": "close > SMA(close, 30) AND SMA(close, 30) >= SMA(close, 30)[1] AND close > Max(high, $base_weeks)[1] AND volume >= $vol_mult * SMA(volume, 4)[1]",
+    "source": "close > SMA(close, 30) AND SMA(close, 30) >= SMA(close, 30)[1] AND SMA(close, 30) >= SMA(close, 30)[4] AND close > Max(high, $base_weeks)[1] AND volume >= $vol_mult * SMA(volume, 4)[1]",
     "base_tf": "1w",
     "params": [
      {"name": "base_weeks", "default": 10, "min": 4, "max": 52, "doc": "Weeks of base before this week."},
@@ -64,7 +64,7 @@
   },
   {
    "id": "legends.turtle_channel_breakout",
-   "legend": "Richard Dennis and the Turtle traders",
+   "legend": "Richard Dennis, William Eckhardt and the Turtle traders",
    "short": "Turtle",
    "name": "Turtle-style 20-day channel breakout",
    "who": {"text": "Traders trained in the 1980s by Richard Dennis and William Eckhardt; former Turtles later published the rules.", "cite": ["faith_2007", "covel_2007"]},
@@ -82,14 +82,14 @@
   },
   {
    "id": "legends.raschke_adx_pullback",
-   "legend": "Linda Bradford Raschke",
+   "legend": "Linda Bradford Raschke and Laurence Connors",
    "short": "Raschke",
    "name": "Raschke-style ADX pullback to the 20 EMA",
    "who": {"text": "Futures trader; co-author with Laurence Connors of the 1995 book Street Smarts.", "cite": ["raschke_connors_1995"]},
    "style": {"text": "Short-term pullbacks in strong trends, with the ADX used to judge trend strength.", "cite": ["raschke_connors_1995"]},
    "looks_for": {"text": "ADX(14) above 30 and a pullback whose low touches the 20-period EMA after trading above it; the trigger is a move above the pullback bar's high.", "cite": ["raschke_connors_1995"]},
    "timeframe": {"text": "Daily bars; a short-term setup lasting days.", "cite": ["raschke_connors_1995"]},
-   "approximation": "An uptrend here is a 20-period EMA above its value 5 bars ago; the screen lists the touch, and the trigger bar is left for the trader to watch.",
+   "approximation": "An uptrend here is a 20-period EMA above its value 5 bars ago; ADX rising beforehand is not checked; long side only; the screen lists the touch, and the trigger bar is left for the trader to watch.",
    "screen": {
     "source": "ADX(14) > $adx_min AND EMA(close, 20) > EMA(close, 20)[5] AND low <= EMA(close, 20) AND low[1] > EMA(close, 20)[1]",
     "base_tf": "1d",
@@ -118,7 +118,7 @@
   },
   {
    "id": "legends.connors_rsi2_pullback",
-   "legend": "Larry Connors",
+   "legend": "Larry Connors and Cesar Alvarez",
    "short": "Connors",
    "name": "Connors-style 2-period RSI pullback",
    "who": {"text": "Author of books on short-term trading, including a 2008 study written with Cesar Alvarez.", "cite": ["connors_alvarez_2008"]},
@@ -143,7 +143,7 @@
    "style": {"text": "Short-term volatility breakouts: a move away from the day's open by part of the previous day's range.", "cite": ["williams_1999"]},
    "looks_for": {"text": "The day's high reaching the open plus a fraction (default 0.5) of the previous day's high-low range.", "cite": ["williams_1999"]},
    "timeframe": {"text": "Daily bars; very short-term trades of one to a few days.", "cite": ["williams_1999"]},
-   "approximation": "On end-of-day bars the screen checks the day's high; the book examines several fractions and range measures (editable here).",
+   "approximation": "On end-of-day bars the screen checks the day's high; long side only; the book examines several fractions and range measures (editable here).",
    "screen": {
     "source": "high >= open + $k * (high[1] - low[1])",
     "base_tf": "1d",

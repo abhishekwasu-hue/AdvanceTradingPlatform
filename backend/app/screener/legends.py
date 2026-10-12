@@ -67,6 +67,8 @@ _FIRST_PERSON = re.compile(r"(?<![\w'])(?:I|I'm|I've|I'd|I'll|me|my|mine|myself|
 _QUOTE = re.compile(r"[\"“”«»]")
 _DEVANAGARI = re.compile(r"[ऀ-ॿ]")
 _CARD_ID = re.compile(r"^legends\.[a-z][a-z0-9_]*$")
+# A capitalised run of two or more words ("Richard Dennis", "Linda Bradford Raschke") reads as a person's name.
+_NAME = re.compile(r"(?<![\w-])[A-Z][a-z]+(?:\s+(?:[A-Z]\.\s*)?[A-Z][a-z]+)+(?![\w-])")
 _SOURCE_ID = re.compile(r"^[a-z][a-z0-9_]*$")
 _PARAM = re.compile(r"^[a-z][a-z0-9_]*$")
 
@@ -200,6 +202,23 @@ def _text(where: str, raw: Any, limit: int, problems: List[str]) -> str:
     return text.strip()
 
 
+def people_named(texts: Sequence[str], cited: Sequence[Source]) -> List[str]:
+    """Every person a card's text names (L2: the disclaimer must name each of them): capitalised runs of two or more
+    words outside the cited works' titles, and any cited author named by surname alone."""
+    titles = sorted({t for s in cited for t in (s.title, s.title.split(":")[0])}, key=len, reverse=True)
+    found: List[str] = []
+    for text in texts:
+        rest = text
+        for title in titles:
+            rest = rest.replace(title, " ")
+        found += _NAME.findall(rest)
+        for author in (a for s in cited for a in s.authors):
+            surname = author.split()[-1]
+            if re.search(rf"(?<![\w-]){re.escape(surname)}(?![\w-])", rest) and not any(surname in f for f in found):
+                found.append(author)
+    return list(dict.fromkeys(found))
+
+
 def _sources(raw: Any, problems: List[str]) -> Dict[str, Source]:
     out: Dict[str, Source] = {}
     rows = raw.get("sources") if isinstance(raw, dict) else None
@@ -317,6 +336,10 @@ def _cards(raw: Any, sources: Dict[str, Source], problems: List[str]) -> Tuple[C
             lines[key] = Line(text, tuple(str(c) for c in cite))
         approximation = _text(f"{where} approximation", row.get("approximation"), MAX_NOTE_CHARS, problems)
         source, base_tf, params = _screen(where, row.get("screen"), problems)
+        texts = [lines[k].text for k in LINES] + [approximation] + [p.doc for p in params]
+        cited = [sources[c] for c in dict.fromkeys(c for k in LINES for c in lines[k].cite) if c in sources]
+        problems += [f"{where}: names {who!r}, so the disclaimer must too - add them to `legend`"
+                     for who in people_named(texts, cited) if who.split()[-1].lower() not in legend.lower()]
         unknown = set(row) - {"id", "legend", "short", "name", "approximation", "screen", *LINES}
         if unknown:
             problems.append(f"{where}: unknown fields {', '.join(sorted(unknown))}")
@@ -420,7 +443,7 @@ tx.register_source(SOURCE, _ids, flag=FLAG)
 
 __all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "SOURCES_FILE", "Card", "Library",
            "LegendsError", "Line", "Param", "Source", "card_payload", "english_problems", "link_problems", "lint", "load", "parse",
-           "payload", "wording_problems"]
+           "payload", "people_named", "wording_problems"]
 
 
 if __name__ == "__main__":

@@ -1798,3 +1798,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - The ticket's cash-underlying check uses the instrument master when it knows the symbol.
 - CI exports `Z5_TEST_PG_URL`: the entry-slot race test runs on Postgres in a scratch database it creates and drops.
 - The clock fix (time exits judged on the cycle's clock) is merged in from `claude/z5-p1d-clockfix`.
+- Review Lows (#199): Legends screens leave the gallery when the cards are missing (never shown without the
+  disclaimer); every person a card names is in its disclaimer (lint); approximation notes for Raschke (ADX rising not
+  checked, long only), Weinstein (30-week average compared over 1 and 4 weeks) and Williams (long only); Darvas volume
+  `>=`; an HTTP drift check for `taxonomyLegendsSample.json`; merged main (f06c5df).

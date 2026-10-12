@@ -7,13 +7,14 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ChartEngine } from "./engine";
 import {
-  CONCEPTS, CONCEPT_LABELS, LayerLoader, PA_COLORS, PA_LAYER_ID, layerTf, loadToggles, paApi, saveToggles, toLayerData, trendRows,
+  CONCEPTS, CONCEPT_LABELS, LayerLoader, PA_COLORS, PA_LAYER_ID, layerTf, loadToggles, paApi, saveToggles, mtfRows, toLayerData, trendRows,
   type Concept, type LayerState, type PaLayerResponse, type Toggles,
 } from "./priceAction";
 import { windowStart } from "./replay";
 
 const IST = "Asia/Kolkata";
 const btn = "rounded px-1.5 py-0.5 text-[10px] font-semibold";
+const MTF_LABEL: Record<string, string> = { "1w": "W", "1d": "D", "1h": "1H", "15m": "15m" };
 
 function asOfText(iso: string | null): string {
   if (!iso) return "";
@@ -47,6 +48,17 @@ export function PriceActionPanel({ layer, toggles, debug, onToggle, onDebug }: {
           D{t.degree} {t.trend}
         </span>
       ))}
+      {mtfRows(layer).length > 0 && (
+        <span className="inline-flex flex-wrap gap-x-2" data-testid="price-action-topdown" title="Each timeframe's own structure, as of the same time">
+          <span className="opacity-70">Top-down</span>
+          {mtfRows(layer).map((m) => (
+            <span key={m.tf} data-direction={m.direction} title={m.last_event?.text ?? m.text}
+                  style={{ color: m.direction.startsWith("up") ? PA_COLORS.up : m.direction.startsWith("down") ? PA_COLORS.down : undefined }}>
+              {MTF_LABEL[m.tf] ?? m.tf} {m.state == null ? "–" : m.direction}
+            </span>
+          ))}
+        </span>
+      )}
       {layer.as_of && <span className="opacity-70">as of {asOfText(layer.as_of)} IST · {layer.bars} bars{layer.source ? ` · ${layer.source}` : ""}</span>}
       {layer.reason && <span className="opacity-70">{layer.reason}</span>}
       {layer.debug && <span className="opacity-70" data-testid="price-action-debug">debug · {layer.swings.length} swings · {layer.breaks.length} breaks · {layer.levels.length} levels</span>}

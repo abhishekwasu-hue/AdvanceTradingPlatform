@@ -48,18 +48,28 @@ Area = Tuple[float, float]
 
 
 class Pivot(Protocol):
-    price: float
+    """Read-only members (review of #213): a frozen dataclass such as `daily_trend.fold.DPivot` satisfies them."""
+    @property
+    def price(self) -> float: ...
 
 
 class DailyState(Protocol):
-    """The Daily trend state the gate reads (Trade `decision3.daily.DState`; the fold itself is N1 L2)."""
-    trend: str
-    band: Optional[Tuple[float, float]]
-    phase: Optional[str]
-    counter: Optional[str]
-    protected: Optional[Pivot]
-    origin_risk: bool
-    mature: bool
+    """The Daily trend state the gate reads (Trade `decision3.daily.DState`; `daily_trend.fold.DState` in ATP). Read-only
+    members, so a state whose `protected` is a narrower pivot type still matches (attributes would be invariant)."""
+    @property
+    def trend(self) -> str: ...
+    @property
+    def band(self) -> Optional[Tuple[float, float]]: ...
+    @property
+    def phase(self) -> Optional[str]: ...
+    @property
+    def counter(self) -> Optional[str]: ...
+    @property
+    def protected(self) -> Optional[Pivot]: ...
+    @property
+    def origin_risk(self) -> bool: ...
+    @property
+    def mature(self) -> bool: ...
 
 
 def form_name(form: Optional[str], side: Optional[str]) -> str:

@@ -360,6 +360,34 @@ chart's pointer events and a toolbar to it.
     preference before version; corrections point-in-time (CH3-3, CH3-6). `at` / `start` before 1990 -> 422.
 - Open questions CH3-1 .. CH3-6 (`docs/OPEN_QUESTIONS.md`); CH3-4 lists what is left for later.
 
+## CH3b (built): impulse vs corrective legs, BOS / CHoCH, liquidity, trendlines, the top-down panel
+
+Ported from Trade@1e6c9ac with golden parity (`backend/tests/ch3b_golden.py`, `test_ch3b_trade_parity.py`: Trade's
+own output on the frozen fixtures, checked against Trade live when the repository is on disk), never rewritten:
+- `app/price_action/legs.py` (Trade `price_action/legs.py`): strong / weak impulse, healthy / mixed / dangerous
+  pullback, reversal, range, from efficiency, overlap, displacement / FVG, depth, speed, CHoCH. The layer classifies the
+  legs between its own degree swings (internal swings one degree lower).
+- `app/price_action/structure_tracker.py` (Trade `opportunity_engine/structure.py`): the bar-by-bar structure state
+  machine - BOS, CHoCH, reversal, recovery, range, sweeps, the protected level.
+- `app/price_action/liquidity.py` (Trade `decision3/liquidity.py`: pools, sweeps, marks; not the trapped zones): pools
+  at swing highs / lows, equal highs / lows, PDH / PDL, PWH / PWL; a sweep is a wick or a short stay beyond and back.
+- `app/price_action/trendlines.py` (Trade `price_action/trendlines.py` + `find_trendline` + `ref_range`): the newest
+  falling resistance and rising support; the channel is the parallel through the farthest opposite extreme (ATP).
+- `app/charts/price_action_concepts.py` puts them on the layer (schema `pa-layer/2`): `legs[].class`, `structure`,
+  `structure_state`, `liquidity`, `sweeps`, `trendlines`, and `mtf` - the structure state on W / D / 1H / 15m, each
+  from its own lake bars as of the same `at` (weekly from daily when the lake has none). Same flag, same provenance.
+- Frontend: toggles BOS/CHoCH, Liquidity, Trendlines (Breaks now off by default); impulses drawn bolder with their class;
+  events as labels with a dotted run from the broken swing; the protected level, pools (BSL / SSL) as lines; sweeps
+  marked; trendlines with a dashed channel; the top-down row in the panel.
+- No look-ahead: the truncation-invariance test now also covers leg classes and structure events; the API test alters
+  and adds later bars on every top-down timeframe and the whole answer at `at` stays byte-identical; replay only adds
+  structure events and a confirmed leg keeps its class. Open questions CH3-4, CH3-7, CH3-8.
+- **Review follow-up (#218).** Each top-down row is cached by (instrument, timeframe, window start on a fixed grid, the
+  lake label and a probe of its rows: newest END, count, highest version), so a replay step recomputes only the rows
+  whose bars changed (tested: 8 x 15m steps compute D and W once); at most 2 layer / row computations at once per
+  process; the layer cache is bounded by bytes and never holds debug answers; 60 requests a minute per user; a
+  top-down row over 5,000 bars is refused, not cut; a daily chart reads its daily bars once for the chart and D / W.
+
 ## CH6a (built): ScreenQL studies on charts from the screener runtime, a study WebWorker, 50k-bar performance
 
 - **Backend.** `GET /api/charts/studies?instrument=&tf=&at=&start=&expr=...` (`app/charts/studies.py`; flag `chart_studies`,

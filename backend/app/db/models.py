@@ -2644,6 +2644,42 @@ class MdIsinSymbolRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
+class HistoryIntradayDayRecord(Base):
+    """HB2: one (tenant, session holder, instrument, trade date) of the owner's 1-minute history and what the capture / backfill did with
+    it - the resume point (a `done` day is never asked for again) and the progress source. Status: pending | running |
+    done | no_data (the broker returned no bar: beyond its depth, not traded, or a holiday without a calendar) | refused
+    (a check failed; nothing written) | failed (unexpected error or a broker error; retried on the next pass). The bars
+    themselves live in `md_tenant_candles` (tenant-private); `credential_id` records whose session they came from."""
+
+    __tablename__ = "history_intraday_days"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "instrument_key", "trade_date", name="uq_history_intraday_day"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    instrument_key: Mapped[str] = mapped_column(String(64), nullable=False)
+    trade_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)
+    source: Mapped[str | None] = mapped_column(String(30), nullable=True)            # broker:<name>
+    credential_id: Mapped[int | None] = mapped_column(ForeignKey("broker_credentials.id", ondelete="SET NULL"), nullable=True)
+    # The account holder whose own session the bars came from: the only member who may read `broker:*` rows (BT1b).
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    endpoint: Mapped[str | None] = mapped_column(String(16), nullable=True)          # intraday (today) | historical
+    bars: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    corrected: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    dropped_forming: Mapped[int] = mapped_column(Integer, nullable=False, default=0)  # bars not closed at fetch time
+    quality_events: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    first_ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    last_ts: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 # --- Screener addendum U1: NSE universe reference data (as-of)------------------------------------------------------------
 class SecurityRecord(Base):
     """U1-a: one listed security, keyed by ISIN (stable across renames). The broker `instruments` master stays the

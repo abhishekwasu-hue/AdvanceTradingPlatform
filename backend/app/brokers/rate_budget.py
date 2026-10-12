@@ -29,6 +29,8 @@ class RateLimits:
 
 # Conservative: about a third of each broker's published allowance, leaving headroom for the
 # tenant's own manual use of the same API key (their broker app, TradingView, ...).
+# Upstox also caps a user at 2,000 standard API requests per 30 minutes, which these buckets do not model; HB2's history
+# reads therefore stop at HISTORY_INTRADAY_MAX_REQUESTS (600) in any rolling 30 minutes (counted from the database).
 BROKER_RATE_LIMITS: Dict[str, RateLimits] = {
     "upstox": RateLimits(per_second=8.0, burst=10, per_minute=200),
     "zerodha": RateLimits(per_second=2.0, burst=3, per_minute=100),
@@ -55,10 +57,15 @@ class _TokenBucket:
         self.updated = now
 
     def time_until_token(self) -> float:
+        return self.time_until(1.0)
+
+    def time_until(self, tokens: float) -> float:
+        """Seconds until the bucket holds `tokens` (capped at its capacity)."""
         self._refill()
-        if self.tokens >= 1:
+        tokens = min(tokens, self.capacity)
+        if self.tokens >= tokens:
             return 0.0
-        return (1 - self.tokens) / self.rate
+        return (tokens - self.tokens) / self.rate
 
     def take(self) -> None:
         self.tokens -= 1
@@ -72,9 +79,11 @@ class RateBudget:
         self._second = _TokenBucket(limits.per_second, limits.burst, clock)
         self._minute = _TokenBucket(limits.per_minute / 60.0, limits.per_minute, clock)
         self._lock = asyncio.Lock()
+        self._clock = clock
         self._sleep = sleep
         self.calls = 0
         self.waited_seconds = 0.0
+        self.spare_calls = 0          # HB2: tokens taken by background readers through `acquire_spare`
 
     async def acquire(self) -> None:
         async with self._lock:
@@ -87,6 +96,32 @@ class RateBudget:
                     return
                 self.waited_seconds += wait
                 await self._sleep(wait)
+
+    def now(self) -> float:
+        """This budget's clock (monotonic seconds) - what `acquire_spare`'s deadline is measured in."""
+        return self._clock()
+
+    async def acquire_spare(self, reserve: float, *, deadline: Optional[float] = None) -> bool:
+        """A token for a BACKGROUND reader (HB2 intraday history) that shares this budget with the trading worker.
+
+        It is taken only while both buckets still hold `reserve` (0..0.95) of their capacity on top of it, so the
+        worker's exits always find tokens left; and the lock is never held while waiting, so an exit's `acquire()` is
+        never queued behind a background read. Returns False, without a token, when `deadline` (in this budget's clock
+        seconds) would pass first."""
+        reserve = min(max(float(reserve), 0.0), 0.95)
+        while True:
+            async with self._lock:
+                wait = max(self._second.time_until(1 + reserve * self._second.capacity),
+                           self._minute.time_until(1 + reserve * self._minute.capacity))
+                if wait <= 0:
+                    self._second.take()
+                    self._minute.take()
+                    self.calls += 1
+                    self.spare_calls += 1
+                    return True
+            if deadline is not None and self._clock() + wait > deadline:
+                return False
+            await self._sleep(wait)                  # outside the lock: the worker's acquire() goes first
 
 
 class RateLimitedBroker(BrokerInterface):

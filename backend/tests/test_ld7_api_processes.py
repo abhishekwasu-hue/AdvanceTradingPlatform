@@ -188,3 +188,80 @@ def test_public_status_is_cached_briefly_and_dropped_on_an_admin_change(monkeypa
     finally:
         event.remove(_engine.sync_engine, "before_cursor_execute", count)
 
+
+
+# --- the chart path's pandas: faster, the same frames and bars ---------------------------------------------------------
+
+def _old_bars_to_dataframe(bars):
+    import pandas as pd
+    df = pd.DataFrame([b.model_dump() for b in bars])
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    df = df.set_index("timestamp").sort_index()
+    return df[["open", "high", "low", "close", "volume"]]
+
+
+def _old_frame_to_bars(df):
+    from app.core.models import OHLCVBar
+    df = df.dropna(subset=["open", "close"])
+    return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close),
+                     volume=float(r.volume) if "volume" in df and r.volume == r.volume else 0.0) for ts, r in df.iterrows()]
+
+
+_ZONES = {
+    "kolkata": lambda: __import__("zoneinfo").ZoneInfo("Asia/Kolkata"),
+    "zoneinfo-utc": lambda: __import__("zoneinfo").ZoneInfo("UTC"),
+    "timezone-utc": lambda: __import__("datetime").timezone.utc,
+    "fixed+0530": lambda: __import__("datetime").timezone(__import__("datetime").timedelta(hours=5, minutes=30)),
+    "new-york-dst": lambda: __import__("zoneinfo").ZoneInfo("America/New_York"),
+    "naive": lambda: None,
+}
+
+
+@pytest.mark.parametrize("zone", sorted(_ZONES))
+def test_bars_to_dataframe_and_frame_to_bars_are_unchanged(zone):
+    import random
+    from datetime import datetime, timedelta
+
+    import numpy as np
+    import pandas as pd
+
+    from app.core.models import OHLCVBar, bars_to_dataframe
+    from app.market_data.candles_routes import _frame_to_bars
+    from app.market_data.service import build_frames
+    rng = random.Random(7)
+    tz = _ZONES[zone]()
+    # 2026-03-05 .. : the New York zone crosses its DST change (2026-03-08) inside the series
+    start = datetime(2026, 3, 5, 9, 15, tzinfo=tz)
+    bars = [OHLCVBar(timestamp=start + timedelta(minutes=i + (1440 * (i // 375)), microseconds=rng.choice([0, 0, 250])),
+                     open=100 + rng.random(), high=101 + rng.random(), low=99 - rng.random(), close=100 + rng.random(),
+                     volume=float(rng.randint(0, 5000))) for i in range(1875)]
+    bars[10], bars[11] = bars[11], bars[10]                              # out of order: both sort
+    bars.append(bars[5].model_copy())                                    # a duplicate timestamp
+    new, old = bars_to_dataframe(bars), _old_bars_to_dataframe(bars)
+    pd.testing.assert_frame_equal(new, old)
+    assert str(new.index.dtype) == str(old.index.dtype) and new.index.name == old.index.name
+    if tz is not None:
+        frame = build_frames(bars, "1min", ["5min"])["5min"]
+        frame.iloc[3, frame.columns.get_loc("volume")] = np.nan           # a missing volume reads as 0
+        frame.iloc[4, frame.columns.get_loc("close")] = np.nan            # a bar without a close is dropped
+        assert [b.model_dump(mode="json") for b in _frame_to_bars(frame)] == [b.model_dump(mode="json") for b in _old_frame_to_bars(frame)]
+        no_volume = frame.drop(columns=["volume"])
+        assert [b.model_dump() for b in _frame_to_bars(no_volume)] == [b.model_dump() for b in _old_frame_to_bars(no_volume)]
+
+
+def test_bars_to_dataframe_mixed_zones_take_the_old_path():
+    from datetime import datetime, timedelta, timezone
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+
+    from app.core.models import OHLCVBar, bars_to_dataframe
+    stamps = [datetime(2026, 9, 21, 9, 15, tzinfo=ZoneInfo("Asia/Kolkata")), datetime(2026, 9, 21, 3, 46, tzinfo=timezone.utc)]
+    bars = [OHLCVBar(timestamp=t + timedelta(minutes=i), open=1, high=2, low=0.5, close=1.5) for i, t in enumerate(stamps)]
+    try:
+        old = _old_bars_to_dataframe(bars)
+    except Exception as exc:  # noqa: BLE001 - whatever pandas does with mixed zones, the new code does the same
+        with pytest.raises(type(exc)):
+            bars_to_dataframe(bars)
+        return
+    pd.testing.assert_frame_equal(bars_to_dataframe(bars), old)

@@ -174,14 +174,64 @@ Upstox / Dhan broker), built from the commit. Results and analysis: `docs/report
 - **The login wave and the rate limit.** Nothing is bypassed. The generator runs as 25 shards, each its own container
   and so its own client IP on the stack network, through Caddy, which passes that IP on; each IP logs in at most
   8 times a minute against the limit of 10. `backend/scripts/loadtest.py --account-offset / --raw-out / --merge`.
-- **Profiles.** Primary: a page load every 30 s on average (the Dashboard page's own refresh), 5 minutes after the
-  ramp; it decides the job. Busy: every 10 s, 3 minutes, for comparison. Lever: the primary profile again with 2 API
-  processes (an experiment; production runs one).
+- **Profiles.**
+  - Primary: a page load every 30 s on average (the Dashboard page's own refresh), for 5 minutes after the ramp.
+    It decides the job.
+  - Busy: a page load every 10 s, for 3 minutes, for comparison.
+  - Hostinger-shaped: the primary profile again with the API as the KVM 2 runs it: 2 processes, capped at 2 CPUs
+    with `docker update --cpus 2`. It is an approximation. On the real host, the worker, Postgres and Caddy share
+    those 2 vCPUs.
+- **Diagnostics.**
+  - Every report also lists the requests started after the login ramp on their own. This table is diagnostic only;
+    the verdict covers every request.
+  - The CI job samples the API processes with py-spy for 60 s inside the ramp and 60 s after it, and prints a summary
+    (`deploy/ci/profile_api.sh`).
 - **Clock.** The real clock: the load needs no market session, and libfaketime (used by the acceptance flow) costs the
   API about half its throughput in a local comparison.
 
 The manual form against any staging host still works (`--base https://<staging host> --accounts accounts.csv`); keep
 `--ramp` + `--seconds` under 14 minutes (access tokens live 15).
+
+### API processes (LD-7)
+
+The API runs `API_WORKERS` uvicorn processes (`backend/scripts/serve_api.sh`, the image's command):
+
+| Where | Default | Why |
+|---|---|---|
+| `docker-compose.yml` (dev, plain compose) | 1 | as before |
+| `docker-compose.hostinger.yml` | 2 | one per vCPU on the KVM 2 |
+| `deploy/ci/compose.ci.yml` | 3 | 4-vCPU runner, shared with the load generator, the fake broker and Postgres |
+| `deploy/ci/loadtest_500.sh` (owner, on the host) | 2 | the API as production runs it there |
+
+One process is one event loop, so it uses about one core however many the host has.
+
+What each process keeps for itself, checked for N processes:
+- **Shared already (Postgres / Redis):** the rate limits, the worker replica lock, the Phase 0 lock (re-read on use),
+  sessions and token revocation, the market-data caches, and the start-up flag seed (a second process's insert race is
+  handled).
+- **Per process, safe as a copy:**
+  - the tenant key ring: a key never changes once created, and a master-key rotation re-wraps it without changing it;
+  - the journal flag cache (10 s TTL);
+  - the status-page cache (15 s);
+  - the chart layer caches (keyed by their data);
+  - the public `/api/system/status` (5 s, dropped by an admin change in the process that made it).
+- **Shared out:** bcrypt's thread limit is the CPU count divided by `API_WORKERS` (at least 1), so a login wave still
+  runs about one check per CPU on the host.
+- **Merged:** with more than one process, `PROMETHEUS_MULTIPROC_DIR` is set and emptied at start-up. `/metrics`
+  (whichever process answers) sums the counters and histograms, and gives each gauge its most recently set value.
+- **Pools:** each process has its own database pool (`DB_POOL_SIZE` 5 + `DB_MAX_OVERFLOW`, 10 by default, 5 on
+  Hostinger). On Hostinger that is API 2 x 10 + trading worker 15 + research worker 15 = 50, under Postgres'
+  `max_connections` of 60.
+
+**No pool connection is held across a slow step.** `app.db.session.release_connection` ends a read-only transaction
+before bcrypt (login, sign-up, invite, password reset/change, MFA disable), before a chart's broker calls, and before a
+screener run's broker calls and its evaluation. Before this, a login held its connection through the bcrypt queue,
+and a chart held its connection through the broker. A local 500-user run ended with all 15 connections "idle in
+transaction" and 1,411 pool time-outs.
+
+**The event loop does no pandas work for a chart or a screen.** The chart's resampling and serialising, and the
+screener's per-symbol frames, run on worker threads. The request-body cap is a pure ASGI middleware, not
+`BaseHTTPMiddleware`.
 
 ### Bottlenecks found and fixed
 

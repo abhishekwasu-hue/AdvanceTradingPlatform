@@ -136,8 +136,11 @@ def _shaped(bars: List[OHLCVBar], timeframe: str) -> tuple:
 
 def _frame_to_bars(df) -> List[OHLCVBar]:
     df = df.dropna(subset=["open", "close"])
-    return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close),
-                     volume=float(r.volume) if "volume" in df and r.volume == r.volume else 0.0) for ts, r in df.iterrows()]
+    # LD-7: plain column iteration instead of iterrows (a Series per row); the same bars.
+    volumes = df["volume"] if "volume" in df else [None] * len(df)
+    return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(o), high=float(h), low=float(lo), close=float(c),
+                     volume=float(v) if v is not None and v == v else 0.0)
+            for ts, o, h, lo, c, v in zip(df.index, df["open"], df["high"], df["low"], df["close"], volumes)]
 
 
 @router.get("/sources")

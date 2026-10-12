@@ -67,6 +67,14 @@ def _parsed(name: str, tree: Any, description: str = "") -> RK.System:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+async def _gated(session: AsyncSession, user: User, system: RK.System) -> RK.System:
+    """Review of S7a (MED-2): a factor from a flagged family (e.g. the breakout factors) needs that flag on."""
+    off = await RK.blocked_flags(session, user.tenant_id, system)
+    if off:
+        raise HTTPException(status_code=422, detail=f"factors of this system are not enabled for this organisation (flag {', '.join(off)})")
+    return system
+
+
 def _dict(row: RankingSystemRecord) -> Dict[str, Any]:
     return {"id": row.id, "name": row.name, "description": row.description, "tree": json.loads(row.tree_json or "{}"),
             "archived": row.archived, "platform": False, "created_by": row.created_by,
@@ -118,7 +126,7 @@ async def list_systems(include_archived: bool = False, user: User = Depends(get_
 @router.post("", status_code=201)
 async def create_system(body: SystemBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
-    system = _parsed(_name(body.name), body.tree, body.description)
+    system = await _gated(session, user, _parsed(_name(body.name), body.tree, body.description))
     row = RankingSystemRecord(tenant_id=user.tenant_id, created_by=user.id, name=system.name, description=system.description,
                               tree_json=json.dumps(system.tree()))
     session.add(row)
@@ -131,7 +139,7 @@ async def update_system(system_id: int, body: SystemBody, user: User = Depends(r
                         session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
     row = await _owned(session, user, system_id)
-    system = _parsed(_name(body.name), body.tree, body.description)
+    system = await _gated(session, user, _parsed(_name(body.name), body.tree, body.description))
     row.name, row.description, row.tree_json = system.name, system.description, json.dumps(system.tree())
     row.updated_at = datetime.now(timezone.utc)
     await _save(session, row)
@@ -143,6 +151,11 @@ async def archive_system(system_id: int, user: User = Depends(require_trader), s
     """Archived, never hard-deleted (a backtest's ledger entry keeps the tree it ran)."""
     await _flags(session, user)
     row = await _owned(session, user, system_id)
+    if not row.archived:
+        # review of S7a (LOW): the name is freed for a new system (names are unique per organisation); a backtest's ledger
+        # entry keeps the tree it ran, so nothing refers to the archived one by name
+        suffix = f" (archived #{row.id})"
+        row.name = row.name[:60 - len(suffix)] + suffix
     row.archived, row.updated_at = True, datetime.now(timezone.utc)
     await session.commit()
     return _dict(row)
@@ -150,10 +163,10 @@ async def archive_system(system_id: int, user: User = Depends(require_trader), s
 
 async def _system(session: AsyncSession, user: User, body: RunBody) -> RK.System:
     if body.tree is not None:
-        return _parsed("unsaved", body.tree)
+        return await _gated(session, user, _parsed("unsaved", body.tree))
     if body.system_id is not None:
         row = await _owned(session, user, body.system_id)
-        return _parsed(row.name, json.loads(row.tree_json or "{}"), row.description)
+        return await _gated(session, user, _parsed(row.name, json.loads(row.tree_json or "{}"), row.description))
     found, problems = await RK.resolve(session, user.tenant_id, [str(body.system)])
     if problems:
         raise HTTPException(status_code=422, detail="; ".join(problems))

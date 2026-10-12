@@ -35,6 +35,8 @@ import pandas as pd
 FLAG = "screener_rankings"
 MAX_DEPTH = 3
 MAX_LEAVES = 30
+MAX_LEAF_LOOKBACK = 260          # a factor's daily bars: the live run fetches about 270 sessions (DAILY_MIN_LOOKBACK_DAYS)
+MAX_HISTORY_WORK = 600_000       # leaves x cost x symbols x dates of one history ranking (30 x 300 x 260 took 83 s)
 NEUTRALS = (None, "sector")
 NO_SECTOR = "__none__"
 
@@ -110,6 +112,8 @@ def _node(raw: Any, depth: int, path: str) -> Node:
     name = str(raw.get("name") or "").strip()
     if not name or len(name) > 60:
         raise RankingError(f"{path}: a node needs a name (at most 60 characters)")
+    if "/" in name:
+        raise RankingError(f"{path} ({name}): a node name has no '/' (it separates the parts of a component's path)")
     weight = _number(raw.get("weight"), f"{path} ({name}): weight")
     if not 0 < weight <= 100:
         raise RankingError(f"{path} ({name}): weight is a percentage above 0 and at most 100")
@@ -170,9 +174,59 @@ def parse(name: str, tree: Mapping[str, Any], description: str = "") -> System:
             raise RankingError(f"{leaf.name}: a factor is one symbol's number (no Rank / PercentileRank / RankScore inside)")
         if any(tf != "1d" for tf in (validated.lookback or {})):
             raise RankingError(f"{leaf.name}: a factor reads daily bars only")
+        # review of S7a (MED-2): a factor reads bars only - no function needing other data (it would be NaN for every
+        # symbol), none answered for the last bar only (it cannot be read at each date of a history ranking)
+        bad = _leaf_refusals(ast)
+        if bad:
+            raise RankingError(f"{leaf.name}: {bad}")
         leaf.ast, leaf.validated = ast, validated
         leaf.lookback = int((validated.lookback or {}).get("1d", 1) or 1)
+        if leaf.lookback > MAX_LEAF_LOOKBACK:
+            raise RankingError(f"{leaf.name}: a factor reads at most {MAX_LEAF_LOOKBACK} daily bars (this one needs {leaf.lookback})")
     return system
+
+
+def _leaf_refusals(ast: Any) -> str:
+    from app.screener import nodes as n
+    from app.screener.registry import FUNCTIONS, LAST_BAR_ONLY
+    needs, last = [], []
+    for node in n.walk(ast):
+        spec = FUNCTIONS.get(node.name) if isinstance(node, n.Call) else None
+        if spec is None:
+            continue
+        if spec.needs and node.name not in needs:
+            needs.append(node.name)
+        if node.name in LAST_BAR_ONLY and node.name not in last:
+            last.append(node.name)
+    if needs:
+        return f"{', '.join(x + '()' for x in needs)} need data a ranking does not load (a factor reads bars only)"
+    if last:
+        return f"{', '.join(x + '()' for x in last)} are answered for the last bar only (a factor must be a series)"
+    return ""
+
+
+def leaf_flags(system: System) -> List[str]:
+    """The operator flags the system's factors use (a flagged family, e.g. the breakout factors)."""
+    from app.screener import nodes as n
+    from app.screener.registry import FUNCTIONS
+    out: List[str] = []
+    for leaf in system.leaves():
+        for node in n.walk(leaf.ast):
+            spec = FUNCTIONS.get(node.name) if isinstance(node, n.Call) else None
+            if spec is not None and spec.flag and spec.flag not in out:
+                out.append(spec.flag)
+    return out
+
+
+async def blocked_flags(session: Any, tenant_id: Any, system: System) -> List[str]:
+    """Review of S7a (MED-2): the flags of the system's factors that are off for the organisation (empty: none)."""
+    from app.platform.controls import flag_enabled
+    return [f for f in leaf_flags(system) if not await flag_enabled(session, f, tenant_id)]
+
+
+def history_work(system: System, symbols: int, dates: int) -> float:
+    """Review of S7a (MED-3): the work of one history ranking - each factor's cost over every symbol and date."""
+    return sum(max(1.0, float(getattr(leaf.validated, "cost", 1.0) or 1.0)) for leaf in system.leaves()) * max(1, symbols) * max(1, dates)
 
 
 # --- scoring (pure) ---------------------------------------------------------------------------------------------------------
@@ -415,6 +469,12 @@ async def resolve(session: Any, tenant_id: int, names: Sequence[str]) -> Tuple[D
             systems[name] = parse(row.name, json.loads(row.tree_json or "{}"), row.description)
         except (RankingError, ValueError) as exc:
             problems.append(f"RankScore: the ranking system {name!r} no longer validates ({exc})")
+    for name, system in list(systems.items()):
+        off = await blocked_flags(session, tenant_id, system)
+        if off:
+            problems.append(f"RankScore: the ranking system {name!r} uses factors that are not enabled for this organisation "
+                            f"(flag {', '.join(off)})")
+            del systems[name]
     return systems, problems
 
 
@@ -435,22 +495,44 @@ async def sector_ranges(session: Any, symbols: Sequence[str], start: Any, end: A
 
     from app.db.models import ClassificationRecord
     from app.universe.asof import isin_for
-    isins: Dict[str, str] = {}
+    import re
+    from datetime import timedelta
+    periods: Dict[str, List[Tuple[str, Any, Any]]] = {}       # symbol -> (isin, from, to exclusive): the ISIN it had then
     for sym in symbols:
-        isin = await isin_for(session, sym, end)
-        if isin is None and len(sym) == 12 and sym[:2].isalpha():
-            isin = sym
-        if isin is not None:
-            isins[sym] = isin
+        tagged = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)$", sym)          # a label "SYM (ISIN)" (a reused symbol, S6a)
+        if tagged or (len(sym) == 12 and sym[:2].isalpha() and await isin_for(session, sym, end) is None):
+            periods[sym] = [(tagged.group(1) if tagged else sym, start, None)]
+            continue
+        first, last = await isin_for(session, sym, start), await isin_for(session, sym, end)
+        if first == last or first is None or last is None:
+            if last or first:
+                periods[sym] = [(last or first, start, None)]       # type: ignore[list-item]
+            continue
+        lo, hi = start, end                                       # review of S7a (LOW): the ISIN changed - find when
+        while (hi - lo).days > 1:
+            mid = lo + timedelta(days=(hi - lo).days // 2)
+            if await isin_for(session, sym, mid) == first:
+                lo = mid
+            else:
+                hi = mid
+        periods[sym] = [(first, start, hi), (last, hi, None)]
+    isins = {sym: [p[0] for p in ps] for sym, ps in periods.items()}
     out: Dict[str, List[Tuple[Any, Optional[Any], Optional[str]]]] = {s: [] for s in symbols}
     if not isins:
         return out
     rows = await session.scalars(select(ClassificationRecord).where(
-        ClassificationRecord.isin.in_(sorted(set(isins.values()))), ClassificationRecord.scheme == "NSE",
+        ClassificationRecord.isin.in_(sorted({i for v in isins.values() for i in v})), ClassificationRecord.scheme == "NSE",
         and_(ClassificationRecord.valid_from <= end, or_(ClassificationRecord.valid_to.is_(None), ClassificationRecord.valid_to > start))))
     by_isin: Dict[str, List[Tuple[Any, Optional[Any], Optional[str]]]] = {}
     for r in rows:
         by_isin.setdefault(r.isin, []).append((r.valid_from, r.valid_to, r.sector))
-    for sym, isin in isins.items():
-        out[sym] = sorted(by_isin.get(isin, []), key=lambda x: x[0])
+    for sym, ps in periods.items():
+        ranges: List[Tuple[Any, Optional[Any], Optional[str]]] = []
+        for isin, frm, to in ps:
+            for vf, vt, sector in by_isin.get(isin, []):
+                lo_d = max(vf, frm)
+                hi_d = vt if to is None else (to if vt is None else min(vt, to))
+                if hi_d is None or lo_d < hi_d:
+                    ranges.append((lo_d, hi_d, sector))
+        out[sym] = sorted(ranges, key=lambda x: x[0])
     return out

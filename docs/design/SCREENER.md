@@ -1267,6 +1267,14 @@ tree of weighted factors that ranks a universe 0-100, with every component shown
 - **Refused for now:** RankScore inside a screen-history run (S7-5) and in alert rules (S7-6). Information only:
   nothing is placed, and every answer carries the disclaimer.
 
+### Review of S7a (fixed)
+- MED-2: factors read bars only and need their family's flag everywhere (S7-8). MED-3: a history work budget (S7-9).
+  MED-4: a sector-neutral backtest test with a reclassification between rebalances. MED-1: the migration is re-chained
+  at merge (S7-10).
+- LOW: no '/' in node names; sector ranges follow the ISIN the symbol had in each period; factors longer than the
+  fetch window are refused; editing a screen that an alert rule runs is checked against that rule; archiving frees the
+  name; the result cache key carries the ranking trees.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

@@ -148,6 +148,11 @@ Leaving Phase 0 is a later owner decision, not an install step:
 
 `health` then warns "the Phase 0 defaults are not seeded on this host".
 
+Set both flags explicitly in Admin when you leave Phase 0. If the first-boot seed never stored them (for example, the
+stored flags row was unreadable and the seed skipped it), switching the mode puts any absent entry back on the normal
+default: `live_trading` ON (it is a kill flag) and `phase0_paper_only` OFF. In Phase 0 mode those absent entries
+resolved to the safe values only because of the mode.
+
 ## 5. DNS and TLS
 
 - **No domain yet:** `DOMAIN=<SERVER_IP>`, `ACME_EMAIL=ops@localhost`, `CADDYFILE=Caddyfile.ip`. Caddy serves HTTPS

@@ -48,6 +48,7 @@ PAPER_ONLY = "phase0_paper_only"
 SEED: Dict[str, bool] = {LIVE_TRADING: False, PAPER_ONLY: True}
 
 SEED_AUDIT_EVENT = "phase0_flag_seeded"
+SEED_ATTEMPTS = 3
 REFUSAL_AUDIT_EVENT = "feature_flag_refused"
 LIVE_TRADING_REFUSAL = ("Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0): live_trading cannot be turned on while "
                         "phase0_paper_only is on - Phase 0 is PAPER only. Nothing was changed.")
@@ -85,9 +86,14 @@ async def _seed_once(session: AsyncSession, process: str) -> List[str]:
     try:
         current = json.loads(row.value_json or "{}") if row is not None else {}
     except ValueError:
-        current = {}
-    if not isinstance(current, dict):
-        current = {}
+        current = None
+    if not isinstance(current, dict) or not isinstance(current.get("flags") or {}, dict):
+        # An unreadable row is never overwritten (it may hold the owner's flags): no seed, the Phase 0 defaults
+        # (`default_for`) apply to the absent entries, and the operator repairs the row in Admin -> Controls.
+        await session.rollback()
+        logger.error("Phase 0 flag seed skipped in the %s: the stored feature-flag row is not a JSON object with a "
+                     "'flags' object - left untouched; the Phase 0 defaults apply until it is repaired", process)
+        return []
     flags = dict(current.get("flags") or {})
     missing = [name for name in SEED if name not in flags]
     if not missing:
@@ -114,12 +120,14 @@ async def seed_flags(session: AsyncSession, process: str = "api") -> List[str]:
     names written (empty when nothing was missing or the mode is not Phase 0). Idempotent; never overwrites."""
     if not is_phase0():
         return []
-    for _ in range(3):
+    for _ in range(SEED_ATTEMPTS):
         try:
             return await _seed_once(session, process)
         except IntegrityError:
             # The other process inserted the flags row first: read it again and seed only what is still missing.
             await session.rollback()
+    logger.warning("Phase 0 flag seed in the %s gave up after %d attempts (the flags row kept conflicting) - the Phase 0 "
+                   "defaults apply to absent entries; the next start seeds them", process, SEED_ATTEMPTS)
     return []
 
 
@@ -141,6 +149,13 @@ async def live_paths(session: AsyncSession) -> Dict[str, object]:
     }
 
 
+async def _safe_rollback(session: AsyncSession) -> None:
+    try:
+        await session.rollback()
+    except Exception:  # noqa: BLE001 - a broken connection must not turn a logged start-up problem into a crash
+        logger.exception("Rollback after a Phase 0 start-up failure failed")
+
+
 async def on_startup(session: AsyncSession, process: str) -> Dict[str, object]:
     """Start-up check of the API and the worker: seed (Phase 0 mode), then log why LIVE entry paths are (not) started.
     Never raises: a failure is logged and the process comes up (in Phase 0 mode `default_for` keeps the safe values)."""
@@ -149,7 +164,7 @@ async def on_startup(session: AsyncSession, process: str) -> Dict[str, object]:
         seeded = await seed_flags(session, process)
     except Exception:  # noqa: BLE001 - start-up must not fail on it; the defaults stay safe in Phase 0 mode
         logger.exception("Phase 0 flag seed failed in the %s - the Phase 0 defaults still apply until it is written", process)
-        await session.rollback()
+        await _safe_rollback(session)
     if seeded:
         logger.warning("Phase 0 deployment: seeded %s (live_trading OFF, phase0_paper_only ON) - owner decision, audited",
                        ", ".join(seeded))
@@ -157,7 +172,7 @@ async def on_startup(session: AsyncSession, process: str) -> Dict[str, object]:
         state = await live_paths(session)
     except Exception:  # noqa: BLE001
         logger.exception("Could not read the LIVE path state in the %s", process)
-        await session.rollback()
+        await _safe_rollback(session)
         return {"deployment_phase": current_phase() or "none", "seeded": seeded, "error": "unreadable"}
     state["seeded"] = seeded
     if state["phase0_paper_only"]:

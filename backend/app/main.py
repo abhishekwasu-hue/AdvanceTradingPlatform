@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import logging
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
@@ -138,7 +139,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         await warm_tenant_keys(session)  # Phase N1: tenant data keys into the process key ring
         # Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0): seed live_trading OFF / phase0_paper_only ON where unset, then
         # log why LIVE entry paths are (not) started. Never stops the API from coming up.
-        await deployment_phase_startup(session, "api")
+        try:
+            await deployment_phase_startup(session, "api")
+        except Exception:  # noqa: BLE001 - never stops the API from coming up (Phase 0 defaults still apply)
+            logging.getLogger(__name__).exception("Phase 0 start-up check failed")
     yield
 
 

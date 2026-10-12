@@ -26,9 +26,10 @@ async def _get(session: AsyncSession, key: str) -> Dict:
     if row is None:
         return {}
     try:
-        return json.loads(row.value_json or "{}")
+        value = json.loads(row.value_json or "{}")
     except ValueError:
         return {}
+    return value if isinstance(value, dict) else {}       # a malformed row reads as unset (never a crash)
 
 
 async def _set(session: AsyncSession, key: str, value: Dict, user: Optional[User]) -> None:
@@ -201,6 +202,8 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
     stored = (await _get(session, KEY_FEATURE_FLAGS)).get("flags") or {}
+    if not isinstance(stored, dict):
+        stored = {}
     result: Dict[str, Dict] = {}
     for name, description in FEATURE_FLAGS.items():
         entry = stored.get(name) or {}

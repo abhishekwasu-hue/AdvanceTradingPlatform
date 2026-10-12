@@ -973,8 +973,9 @@ class TradingWorker:
             if dep.mode == ExecutionMode.LIVE.value and phase0_lock.locked(tenant_id):
                 # Z10-c / Phase 0 defaults: the LIVE entry path is not started at all while the PAPER-only lock is on
                 # (layers 1 and 2 would refuse the entry anyway). Exits, stops and square-off above already ran.
-                dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
-                await session.commit()
+                if dep.last_error != phase0_lock.WORKER_NOT_EVALUATED:     # written once, not every cycle
+                    dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
+                    await session.commit()
                 continue
             if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"

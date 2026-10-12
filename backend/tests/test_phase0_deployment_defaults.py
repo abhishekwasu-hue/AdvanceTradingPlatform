@@ -178,6 +178,64 @@ def test_a_partly_stored_row_gets_only_the_missing_entry(monkeypatch):
     assert _stored()["live_trading"] == {"on": True, "tenants": []} and _stored()["phase0_paper_only"]["on"] is True
 
 
+@pytest.mark.parametrize("malformed", ["not json {", "[1, 2]", '{"flags": [1]}', '"text"'])
+def test_a_malformed_row_is_never_overwritten_and_the_phase0_defaults_apply(monkeypatch, caplog, malformed):
+    _phase0(monkeypatch)
+    _run(_write_row(malformed))
+    before = len(_audit(deployment_phase.SEED_AUDIT_EVENT))
+    with caplog.at_level("ERROR", logger="app.platform.deployment_phase"):
+        state = _startup()
+    assert state["seeded"] == [] and _run(_row()) == malformed                                     # untouched
+    assert len(_audit(deployment_phase.SEED_AUDIT_EVENT)) == before
+    assert any("seed skipped" in r.getMessage() for r in caplog.records)
+    flags = _flags()                                                                              # reads as unset: the safe defaults
+    assert flags["live_trading"]["on"] is False and flags["phase0_paper_only"]["on"] is True
+    assert state["phase0_paper_only"] is True and state["live_entries"] == "refused"
+
+
+def test_seed_retries_after_an_integrity_error_and_warns_when_every_attempt_conflicts(monkeypatch, caplog):
+    from sqlalchemy.exc import IntegrityError
+    _phase0(monkeypatch)
+    _run(_write_row(None))
+    original = deployment_phase._seed_once
+    calls: List[int] = []
+
+    async def conflict_then(session, process):
+        calls.append(1)
+        if len(calls) <= conflicts:
+            raise IntegrityError("INSERT INTO platform_controls", {}, Exception("duplicate key"))
+        return await original(session, process)
+    monkeypatch.setattr(deployment_phase, "_seed_once", conflict_then)
+
+    conflicts = 2                                                                                 # the other process won twice
+    assert sorted(_startup()["seeded"]) == sorted(SEEDED) and len(calls) == 3
+    assert _stored()["phase0_paper_only"] == {"on": True, "tenants": []}
+
+    _run(_write_row(None))
+    calls.clear()
+    conflicts = deployment_phase.SEED_ATTEMPTS                                                    # every attempt conflicts
+    with caplog.at_level("WARNING", logger="app.platform.deployment_phase"):
+        state = _startup()
+    assert state["seeded"] == [] and len(calls) == deployment_phase.SEED_ATTEMPTS
+    assert any("gave up after 3 attempts" in r.getMessage() for r in caplog.records)
+    assert state["phase0_paper_only"] is True                                                     # still safe: Phase 0 defaults
+
+
+def test_startup_never_raises_even_when_the_rollback_fails(monkeypatch):
+    _phase0(monkeypatch)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("database gone")
+
+    class _Broken:
+        async def rollback(self):
+            raise RuntimeError("connection closed")
+    monkeypatch.setattr(deployment_phase, "seed_flags", boom)
+    monkeypatch.setattr(deployment_phase, "live_paths", boom)
+    state = _run(deployment_phase.on_startup(_Broken(), "api"))                                  # type: ignore[arg-type]
+    assert state["error"] == "unreadable" and state["seeded"] == []
+
+
 # --- Admin -> Controls ----------------------------------------------------------------------------------------------
 
 def test_admin_refuses_live_trading_on_while_the_lock_is_on_and_audits_it(monkeypatch):
@@ -247,6 +305,8 @@ def test_worker_startup_seeds_and_does_not_evaluate_live_deployments(monkeypatch
     assert broker.placed == []                                                                    # nothing reached the broker
     assert _get(StrategyDeploymentRecord, live_id).last_error == phase0_lock.WORKER_NOT_EVALUATED
     assert report.signals_executed == 1 and [tr.mode for tr in _trades(t["tenant_id"])] == ["PAPER"]
+    _run(worker.run_cycle(now=OPEN_NOW + timedelta(minutes=1)))                                   # the same reason, not rewritten
+    assert evaluated == [paper_id, paper_id] and _get(StrategyDeploymentRecord, live_id).last_error == phase0_lock.WORKER_NOT_EVALUATED
 
 
 def test_worker_still_squares_off_an_existing_live_position(monkeypatch):

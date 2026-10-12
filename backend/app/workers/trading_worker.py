@@ -263,6 +263,10 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._then_warm_task is not None and not self._then_warm_task.done():
+            self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
+        if self._vision_task is not None and not self._vision_task.done():
+            self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -1116,8 +1120,7 @@ class TradingWorker:
         async def run() -> None:
             from app.screener.then import runner as scan_then
             try:
-                async with self.session_factory() as own:
-                    await scan_then.warm_due(own, now)
+                await scan_then.warm_due(self.session_factory, now)
             except Exception:  # noqa: BLE001 - a missing context only means "trend pending"; never reaches trading
                 logger.exception("Scan Then trend warm-up failed")
 

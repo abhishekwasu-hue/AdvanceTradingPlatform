@@ -44,7 +44,8 @@ WAITING_DATA = "WAITING_DATA"
 DATA_LATE = "DATA_LATE"                # given up for this bar after MAX_LAG_TRIES cycles of short data
 TREND_PENDING = "TREND_PENDING"        # the Daily trend is being computed (the warm task); retried
 MAX_LAG_TRIES = 3
-COLD_FOLDS_PER_CYCLE = 1               # cold Daily folds the cycle itself may run (the warm task does the rest)
+COLD_FOLDS_PER_CYCLE = 0               # cold Daily folds the cycle itself may run: none, the warm-up task folds (re-review)
+CONFLICT = "SKIPPED_GATE_CONFLICT"     # both sides confirmed on the same candle: neither is sent
 
 
 @dataclass
@@ -226,6 +227,10 @@ async def evaluate_template(session: AsyncSession, tpl: ScanThenTemplateRecord, 
             if code != "SKIPPED_GATE_NOT_AT_AREA":
                 rank = 0 if code == CONFIRMED_ENTRY else (1 if r.get("state") == G.ARMED else 2)
                 lines.append((rank, code, G.describe(r)))
+        if len(entries) > 1:                                       # re-review: long and short on one candle - refuse both
+            sides = " and ".join(sorted(entries))
+            lines.insert(0, (0, CONFLICT, f"{sides} both confirmed on the same candle (conflicting areas) - no entry"))
+            entries = {}
         for side, found in entries.items():
             area, r = _pick(found)
             evidence = ticket_of(r, ctx, tf, rule.id)
@@ -270,33 +275,45 @@ async def _enabled_templates(session: AsyncSession) -> List[ScanThenTemplateReco
 
 
 async def watched_keys(session: AsyncSession, now: datetime) -> List[str]:
-    """The lake keys every enabled template may watch today: its rule's own symbols and today's matches."""
+    """The lake keys enabled templates may watch today, in warm-up order (re-review W2): every template's matches today
+    first (those are the symbols the gate evaluates), then the rules' own symbols (matches still to come)."""
     from app.screener.zones import instrument_key
     today = _utc(now).astimezone(IST).date()
-    keys: List[str] = []
+    matched: List[str] = []
+    later: List[str] = []
+
+    def add(into: List[str], sym: str, exchange: str) -> None:
+        key = instrument_key(sym, exchange)
+        if key and key not in matched and key not in into:
+            into.append(key)
     for tpl in await _enabled_templates(session):
         rule = await session.get(AlertRuleRecord, tpl.rule_id)
         if rule is None or rule.tenant_id != tpl.tenant_id or rule.status != "active":
             continue
+        exchange = rule.exchange or "NSE"
+        for sym in await _symbols_today(session, rule, today):
+            add(matched, sym, exchange)
         try:
             own = json.loads(rule.universe_json) if rule.universe_json else []
         except ValueError:
             own = []
-        symbols = [str(x) for x in own if isinstance(x, str)] + ([rule.symbol] if rule.symbol else []) + await _symbols_today(session, rule, today)
-        for sym in symbols[: MAX_SYMBOLS * 3]:
-            key = instrument_key(sym, rule.exchange or "NSE")
-            if key and key not in keys:
-                keys.append(key)
-    return keys
+        for sym in ([str(x) for x in own if isinstance(x, str)] + ([rule.symbol] if rule.symbol else []))[: MAX_SYMBOLS * 2]:
+            add(later, sym, exchange)
+    return matched + [k for k in later if k not in matched]
 
 
-async def warm_due(session: AsyncSession, now: Optional[datetime] = None) -> int:
-    """Review of #214 (H1): computes today's Daily contexts for every watched symbol not cached yet - run by the worker
-    as a background task outside the trading cycle (pre-open and whenever a new symbol is watched). Returns the folds run."""
+async def warm_due(session_factory: Any, now: Optional[datetime] = None, limit: int = trend.WARM_PER_RUN) -> "trend.WarmReport":
+    """Review of #214 (H1): computes today's Daily contexts for the watched symbols not cached yet - run by the worker as a
+    background task outside the trading cycle. Re-review: the key list is read with one short session (closed before any
+    fold), each key with its own (W1); at most `limit` folds per run, the rest reported and left for the next run (W2)."""
     now = _utc(now or datetime.now(timezone.utc))
-    keys = await watched_keys(session, now)
-    today = now.astimezone(IST).date()
-    return await trend.warm(session, [k for k in keys if trend.is_cold(k, today)], today)
+    async with session_factory() as session:
+        keys = await watched_keys(session, now)
+    report = await trend.warm(session_factory, keys, now.astimezone(IST).date(), limit=limit)
+    if report.skipped:
+        logger.warning("Scan Then warm-up: %d keys folded, %d left for the next run (limit %d): %s", report.folded,
+                       len(report.skipped), limit, ", ".join(report.skipped[:10]))
+    return report
 
 
 async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: Any = None,

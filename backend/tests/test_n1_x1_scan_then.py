@@ -84,9 +84,13 @@ def _fetch(upto=None, calls=None):
 
 
 def _patch_market(monkeypatch, ctx=None, areas=None, warm=None):
-    """`warm`: a set of keys whose Daily context is computed (None: every key is warm)."""
+    """`warm`: a set of keys whose Daily context is computed (None: every key is warm); a key the real warm-up cached
+    counts as computed too."""
+    def cold(key, today, clock=None):
+        return warm is not None and key not in warm and (key, today) not in trend._CACHE
+
     async def context(session, key, today, gs=None, clock=None, allow_cold=True):
-        if warm is not None and key not in warm:
+        if cold(key, today):
             if not allow_cold:
                 return {**trend._failed(trend.R_PENDING), "pending": True}
             warm.add(key)
@@ -95,7 +99,7 @@ def _patch_market(monkeypatch, ctx=None, areas=None, warm=None):
     async def zones(session, key, tenant_id, at):
         return list(areas if areas is not None else [AREA] + OTHERS)
     monkeypatch.setattr(trend, "daily_context", context)
-    monkeypatch.setattr(trend, "is_cold", lambda key, today, clock=None: warm is not None and key not in warm)
+    monkeypatch.setattr(trend, "is_cold", cold)
     monkeypatch.setattr(A, "areas_for", zones)
 
 
@@ -431,6 +435,11 @@ def test_many_cold_symbols_stop_at_the_cycle_s_fold_and_time_budget(monkeypatch)
     deadline; the background warm-up computes the rest, then the next cycle evaluates them all."""
     names = ["GATEDEMO", "GATEDEMOB", "GATEDEMOC", "GATEDEMOD", "GATEDEMOE"]
     warm: set = set()
+    trend.clear_cache()
+
+    async def lake(session, key, today):
+        return _short_daily()
+    monkeypatch.setattr(trend, "lake_daily", lake)
     _patch_market(monkeypatch, warm=warm)
     t, rule_id = _setup("cold", symbols=names)
     assert _evaluate(rule_id, _fetch(), _cycle(cold=1)).submitted == 1
@@ -440,12 +449,142 @@ def test_many_cold_symbols_stop_at_the_cycle_s_fold_and_time_budget(monkeypatch)
     report = _evaluate(rule_id, _fetch(), _cycle(seconds=0.0, cold=1))              # out of time: nothing evaluated
     assert report.deferred == 1 and report.submitted == 0 and warm == {"NSE:GATEDEMO"}
 
-    async def warm_up():
-        async with _session_factory() as session:
-            return await runner.warm_due(session, NOW)
-    assert _run(warm_up()) >= 4 and {f"NSE:{n}" for n in names} <= warm             # outside the cycle
+    folded = _run(runner.warm_due(_session_factory, NOW))                           # outside the cycle
+    assert folded.folded >= 4 and all((f"NSE:{n}", NOW.date()) in trend._CACHE for n in names[1:])
     assert _evaluate(rule_id, _fetch(), _cycle(cold=0)).submitted == 4
     assert _template(rule_id).last_bar_at is not None and len(_rows(ExecutionIntentRecord, t["tenant_id"])) == 5
+
+
+def _short_daily():
+    return pd.DataFrame({"timestamp": pd.to_datetime(["2026-09-01 10:00"], utc=True), "open": [1.0], "high": [1.0], "low": [1.0],
+                         "close": [1.0]})
+
+
+class _CountingFactory:
+    """A session factory that knows how many of its sessions are open."""
+    def __init__(self):
+        self.open = 0
+        self.made = 0
+
+    def __call__(self):
+        factory = self
+
+        class _Ctx:
+            async def __aenter__(self):
+                factory.open += 1
+                factory.made += 1
+                self.session = _session_factory()
+                return await self.session.__aenter__()
+
+            async def __aexit__(self, *exc):
+                factory.open -= 1
+                return await self.session.__aexit__(*exc)
+        return _Ctx()
+
+
+def test_the_warm_up_reads_each_key_in_its_own_closed_session_and_is_bounded(monkeypatch):
+    """Re-review W1: every key is read with its own session, closed before the fold; W2: at most `limit` folds per run,
+    the rest reported in order and folded by the next run."""
+    trend.clear_cache()
+    factory = _CountingFactory()
+    at_read, at_fold = [], []
+
+    async def lake(session, key, today):
+        at_read.append(factory.open)
+        return _short_daily()
+
+    def last_state(bars, today):
+        at_fold.append(factory.open)
+        return None, None, "too short (test)"
+    monkeypatch.setattr(trend, "lake_daily", lake)
+    monkeypatch.setattr(trend, "_last_state", last_state)
+    keys = [f"NSE:W{i}" for i in range(10)]
+    today = date(2026, 9, 23)
+    first = _run(trend.warm(factory, keys, today, limit=4))
+    assert first.folded == 4 and first.skipped == keys[4:] and at_read == [1] * 4 and at_fold == [0] * 4 and factory.made == 4
+    second = _run(trend.warm(factory, keys, today, limit=4))
+    assert second.folded == 4 and second.skipped == keys[8:]
+    assert _run(trend.warm(factory, keys, today, limit=4)).skipped == [] and factory.open == 0
+    assert trend.WARM_PER_RUN <= trend.MAX_ENTRIES // 2
+
+
+def test_the_trend_cache_is_lru_and_drops_other_days_first(monkeypatch):
+    trend.clear_cache()
+    monkeypatch.setattr(trend, "MAX_ENTRIES", 3)
+    today, before = date(2026, 9, 23), date(2026, 9, 22)
+    entry = trend._Entry(None, None, "x", 0.0)
+    trend._store(("A", before), entry)
+    trend._store(("B", today), entry)
+    trend._store(("C", today), entry)
+    trend._store(("D", today), entry)                                   # full: yesterday's goes first
+    assert ("A", before) not in trend._CACHE
+    trend._get(("B", today))                                             # B used: C is now the least recent
+    trend._store(("E", today), entry)
+    assert list(trend._CACHE) == [("D", today), ("B", today), ("E", today)]
+
+
+def test_a_key_being_folded_is_pending_for_the_cycle_and_never_folded_twice(monkeypatch):
+    trend.clear_cache()
+    reads = []
+
+    async def lake(session, key, today):
+        reads.append(key)
+        return _short_daily()
+    monkeypatch.setattr(trend, "lake_daily", lake)
+    today = date(2026, 9, 23)
+    trend._INFLIGHT.add(("NSE:BUSY", today))
+    try:
+        out = _run(trend.daily_context(None, "NSE:BUSY", today, allow_cold=True))
+        assert out["pending"] is True and out["sides"] == set()
+        assert _run(trend.warm(_session_factory, ["NSE:BUSY"], today)).folded == 0 and reads == []
+    finally:
+        trend.clear_cache()
+
+
+def test_the_warm_up_takes_today_s_matches_first(monkeypatch):
+    _patch_market(monkeypatch)
+    t, rule_id = _setup("order")
+
+    async def universe():
+        async with _session_factory() as session:
+            rule = await session.get(AlertRuleRecord, rule_id)
+            rule.universe_json = json.dumps(["AAAORDER", "GATEDEMO"])
+            await session.commit()
+    _run(universe())
+
+    async def keys():
+        async with _session_factory() as session:
+            return await runner.watched_keys(session, NOW)
+    got = _run(keys())
+    assert "NSE:AAAORDER" in got and got.index("NSE:GATEDEMO") < got.index("NSE:AAAORDER") and got.count("NSE:GATEDEMO") == 1
+
+
+def test_long_and_short_on_the_same_candle_are_both_refused(monkeypatch):
+    """Re-review: two areas confirming opposite sides on one candle conflict - neither is sent, with the reason."""
+    _patch_market(monkeypatch)
+    t, rule_id = _setup("conflict")
+    real = G.safe_evaluate
+
+    def both(bars, area, ctx, others, start, gs):
+        r = real(bars, AREA, ctx, others, start, gs)
+        return {**r, "side": G.BEAR} if area != AREA and r.get("entry") else r
+    monkeypatch.setattr(G, "safe_evaluate", both)
+    assert _evaluate(rule_id, _fetch(), _cycle()).submitted == 0 and _rows(ExecutionIntentRecord, t["tenant_id"]) == []
+    st = json.loads(_template(rule_id).last_status_json)["GATEDEMO"]
+    assert st["code"] == runner.CONFLICT and "both confirmed on the same candle" in st["lines"][0]
+
+
+def test_stop_cancels_the_warm_up_and_the_vision_drain():
+    from app.workers.trading_worker import TradingWorker
+
+    async def go():
+        worker = TradingWorker(_session_factory, cycle_seconds=60)
+        worker._then_warm_task = asyncio.get_running_loop().create_task(asyncio.sleep(60))
+        worker._vision_task = asyncio.get_running_loop().create_task(asyncio.sleep(60))
+        worker.stop()
+        await asyncio.sleep(0)
+        return worker._then_warm_task.cancelled(), worker._vision_task.cancelled()
+    assert _run(go()) == (True, True)
 
 
 def test_a_template_owner_who_may_not_trade_is_skipped(monkeypatch):
@@ -467,10 +606,11 @@ def test_a_template_owner_who_may_not_trade_is_skipped(monkeypatch):
 
 def test_nothing_runs_without_both_flags(monkeypatch):
     _patch_market(monkeypatch)
-    t, _ = _setup("noflag", flags=("scan_then",))
-    assert _runner().submitted == 0 and _rows(ExecutionIntentRecord, t["tenant_id"]) == []
-    t2, _ = _setup("nocore", flags=("execution_core",))
-    assert _runner().submitted == 0 and _rows(ExecutionIntentRecord, t2["tenant_id"]) == []
+    t, rule1 = _setup("noflag", flags=("scan_then",))
+    t2, rule2 = _setup("nocore", flags=("execution_core",))
+    _runner()                                   # other tests' templates may still run; these two never do
+    for tenant, rule_id in ((t, rule1), (t2, rule2)):
+        assert _rows(ExecutionIntentRecord, tenant["tenant_id"]) == [] and _template(rule_id).last_status_json is None
 
 
 # --- the routes -----------------------------------------------------------------------------------------------------------

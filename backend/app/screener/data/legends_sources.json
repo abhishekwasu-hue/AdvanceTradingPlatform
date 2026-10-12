@@ -1,5 +1,5 @@
 {
- "_comment": "U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md §1 'Source discipline'): the public sources the Legends cards cite. Every line of a card names at least one id here, and app/screener/legends.py refuses a card that cites anything else. Only published, publicly available works (books, papers); no paywalled course material, no private notes, no hearsay. Bibliographic details are first editions as commonly catalogued; 'review' stays 'pending' until the owner (legal review of the card texts before Phase 1, spec §1) has checked each entry against a copy. English only.",
+ "_comment": "U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md §1 'Source discipline'): the public sources the Legends cards cite. Every line of a card names at least one id here, and app/screener/legends.py refuses a card that cites anything else. Only published, publicly available works (books, papers); no paywalled course material, no private notes, no hearsay. English only. Bibliographic details are the first editions as public catalogues record them (LG1-2): 'review' is 'verified' when title, authors, first-edition year and publisher were checked against the catalogue / ISBN records in 'evidence' (each a public URL), and 'unverified' with a 'review_note' saying what is unsettled. This is a bibliographic check only; the owner's legal review of the card texts against copies of the books (spec §1, before Phase 1) is separate.",
  "version": "lg1/1",
  "sources": [
   {
@@ -10,7 +10,12 @@
    "year": 2013,
    "publisher": "McGraw-Hill Education",
    "covers": "The trend template: price and moving-average order (50, 150, 200-day), a rising 200-day average, distance from the 52-week high and low, and a relative-strength ranking.",
-   "review": "pending"
+   "review": "verified",
+   "review_note": "WorldCat OCLC 850605831: McGraw-Hill Education, New York, 2013 (ISBN 9780071807227, LCCN 2013005165).",
+   "evidence": [
+    "https://search.worldcat.org/title/Trade-like-a-stock-market-wizard-:-how-to-achieve-super-performance-in-stocks-in-any-market/oclc/850605831",
+    "https://openlibrary.org/books/OL26101648M/Trade_Like_a_Stock_Market_Wizard"
+   ]
   },
   {
    "id": "darvas_1960",
@@ -18,9 +23,14 @@
    "title": "How I Made $2,000,000 in the Stock Market",
    "authors": ["Nicolas Darvas"],
    "year": 1960,
-   "publisher": "",
+   "publisher": "American Research Council",
    "covers": "The box theory: rising stocks moving through a series of price boxes, action only when price leaves the top of the latest box, attention to volume, and the author's background as a professional dancer.",
-   "review": "pending"
+   "review": "verified",
+   "review_note": "Internet Archive catalogue record: Larchmont, N.Y., American Research Council, 1960, 178 p.; Lyle Stuart editions followed. Library of Congress name authority: ballroom dancer who began investing in 1952.",
+   "evidence": [
+    "https://archive.org/details/howimade2000000i0000darv",
+    "https://id.loc.gov/authorities/names/n97868916.html"
+   ]
   },
   {
    "id": "weinstein_1988",
@@ -30,7 +40,12 @@
    "year": 1988,
    "publisher": "Dow Jones-Irwin",
    "covers": "Stage analysis on weekly charts: four stages (basing, advancing, top, declining), the 30-week moving average, the stage 2 breakout above resistance with expanding volume, and relative strength.",
-   "review": "pending"
+   "review": "verified",
+   "review_note": "WorldCat and Open Library: Dow Jones-Irwin, Homewood, Ill., 1988 (ISBN 1556230796; LC HG4910 .W363 1988).",
+   "evidence": [
+    "https://www.worldcat.org/title/stan-weinsteins-secrets-for-profiting-in-bull-and-bear-markets/oclc/1244479714",
+    "https://openlibrary.org/works/OL5092573W/Stan_Weinstein's_Secrets_for_profiting_in_bull_and_bear_markets"
+   ]
   },
   {
    "id": "faith_2007",
@@ -40,7 +55,12 @@
    "year": 2007,
    "publisher": "McGraw-Hill",
    "covers": "The Turtle program run by Richard Dennis and William Eckhardt, and its rules: channel breakouts of 20 days (System 1) and 55 days (System 2), volatility (N, an average true range) for position size and stops, futures markets.",
-   "review": "pending"
+   "review": "verified",
+   "review_note": "WorldCat OCLC 154806327 and Internet Archive: McGraw-Hill, New York, 2007 (ISBN 9780071486644).",
+   "evidence": [
+    "https://www.worldcat.org/title/way-of-the-turtle-the-secret-methods-that-turned-ordinary-people-into-legendary-traders/oclc/154806327",
+    "https://archive.org/details/wayofturtle0000fait"
+   ]
   },
   {
    "id": "covel_2007",
@@ -50,7 +70,12 @@
    "year": 2007,
    "publisher": "Collins",
    "covers": "The history of the Turtle program (Richard Dennis, William Eckhardt, the traders they trained in the 1980s) and its breakout rules.",
-   "review": "pending"
+   "review": "verified",
+   "review_note": "WorldCat OCLC 145379622: Collins (HarperCollins imprint), New York, 2007, 1st ed. (ISBN 9780061241703).",
+   "evidence": [
+    "https://www.worldcat.org/title/complete-turtletrader-the-legend-the-lessons-the-results/oclc/145379622",
+    "https://openlibrary.org/books/OL9244148M/The_Complete_TurtleTrader"
+   ]
   },
   {
    "id": "raschke_connors_1995",
@@ -60,7 +85,12 @@
    "year": 1995,
    "publisher": "M. Gordon Publishing Group",
    "covers": "Short-term setups, including the ADX pullback to the 20-period exponential moving average (14-period ADX above 30 marking a strong trend, entry trigger above the high of the pullback bar).",
-   "review": "pending"
+   "review": "verified",
+   "review_note": "WorldCat OCLC 36390149: M. Gordon Pub. Group, Malibu, Calif., 1995 (ISBN 0965046109). Open Library shows a 1996 date for the same ISBN; the catalogue's 1995 copyright date is kept.",
+   "evidence": [
+    "https://search.worldcat.org/title/street-smarts-high-probability-short-term-trading-strategies/oclc/36390149",
+    "https://openlibrary.org/works/OL16920438W/Street_smarts"
+   ]
   },
   {
    "id": "crabel_1990",
@@ -70,7 +100,12 @@
    "year": 1990,
    "publisher": "Traders Press",
    "covers": "Statistical study of short-term price patterns: range contraction (narrow-range days such as NR4 and NR7, inside days) and the opening-range breakout.",
-   "review": "pending"
+   "review": "verified",
+   "review_note": "WorldCat OCLC 23103747 and Open Library: Traders Press, Greenville, S.C., 1990 (ISBN 0934380171).",
+   "evidence": [
+    "https://search.worldcat.org/title/day-trading-with-short-term-price-patterns-and-opening-range-breakout/oclc/23103747",
+    "https://openlibrary.org/books/OL1611959M/Day_trading_with_short_term_price_patterns_and_opening_range_breakout"
+   ]
   },
   {
    "id": "connors_alvarez_2008",
@@ -80,7 +115,12 @@
    "year": 2008,
    "publisher": "TradingMarkets Publishing Group",
    "covers": "Short-term pullbacks within long-term uptrends: price above the 200-day moving average and the 2-period RSI at low (oversold) readings, with several thresholds examined.",
-   "review": "pending"
+   "review": "unverified",
+   "review_note": "First-edition year unsettled: Google Books lists TradingMarkets Publishing Group, 2008; Open Library (OCLC 428113377) lists 2009, and a copyright line of 2009 is reported. Kept at 2008 until checked against a copy's copyright page.",
+   "evidence": [
+    "https://books.google.com/books/about/Short_Term_Trading_Strategies_that_Work.html?id=t4BdPgAACAAJ",
+    "https://openlibrary.org/works/OL19901979W/Short_term_trading_strategies_that_work"
+   ]
   },
   {
    "id": "williams_1999",
@@ -90,7 +130,12 @@
    "year": 1999,
    "publisher": "John Wiley & Sons",
    "covers": "Short-term trading and volatility breakouts: a move from the open by a percentage of the previous day's range.",
-   "review": "pending"
+   "review": "verified",
+   "review_note": "Open Library (LC record) and the publisher's catalogue page: John Wiley & Sons, 1999, Wiley Trading Advantage series (ISBN 0471297224); catalogued as Larry R. Williams.",
+   "evidence": [
+    "https://openlibrary.org/books/OL382546M/Long-term_secrets_to_short-term_trading",
+    "https://catalogimages.wiley.com/images/db/pdf/0471297224.pdf"
+   ]
   }
  ]
 }

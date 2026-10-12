@@ -7,7 +7,10 @@ Spec: `docs/specs/ATP_TRADE_PORT_MAP_SPEC.md` (arrives with PR #165).
 - **Trade revision read:** `origin/main` at **eafc872** ("Elliott correction fixture library + acceptance set", #290).
   Earlier ports cite Trade@0df3e09 (price action, contracts, costs, order safety, validation), Trade@73f652c
   (options builder) and the OI banner capture; those files may have moved on in Trade since.
-- **ATP revision read:** `main` at 2741dec (#163).
+- **N1 level-gate rows** (`bots_common/`, `decision3/method.py`, `level_bots_replay.py`) were read at Trade `origin/main`
+  **1e6c9ac** (after #292-#297 and #302), for N1 (`docs/design/N1_EXECUTION_CORE.md`).
+- **ATP revision read:** `main` at 2741dec (#163); the Phase 0 rows (section "Phase 0 ports: status on 2026-10-12") and the
+  rows they name were re-read on `main` at 399eda3 (#200), and the level-bot gate row on Trade `origin/main` at 1e6c9ac.
 - **What a port means here:** the logic, plus golden-parity tests against the Trade functions (same input, same
   output), English names, settings-driven (no hard-coded symbols, strike steps or times), multi-tenant safe.
 - **Never ported:** Streamlit pages and widgets, Trade's own DB layers (`cloud_db.py`, `database.py`), broker
@@ -28,9 +31,12 @@ Spec: `docs/specs/ATP_TRADE_PORT_MAP_SPEC.md` (arrives with PR #165).
 ## Summary
 
 One row per top-level `.py` file (140) and per folder (35: 25 code packages and 10 others such as `tests/`,
-`research/`, `data/`), except three folders that are split because their parts have different statuses: `paper/`
-(9 rows), `price_action/` (8 rows) and `elliott/` (2 rows: the ported part and the rest), plus one planned Trade module
-(the level-bot confirmation gate, added 2026-10-11). 140 + 32 + 9 + 8 + 2 + 1 = **192 rows**.
+`research/`, `data/`), except five folders that are split because their parts have different statuses: `paper/`
+(9 rows), `price_action/` (8 rows), `elliott/` (2 rows: the ported part and the rest), `bots_common/` (3 rows, the
+level-bot gate; it was one planned row until Trade #292 added it) and `decision3/` (2 rows: the `method.py` functions
+the level gate calls, and the rest). N1 (2026-10-12) adds `level_bots_replay.py` (Trade #295) as a top-level file:
+141 + 31 + 9 + 8 + 2 + 3 + 2 = **196 rows**. Other Trade
+additions after eafc872 (for example `reader2/`, #296) are not mapped yet.
 
 | Status | Rows |
 |---|---|
@@ -38,18 +44,18 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 | partial | 18 |
 | partial (unverified) | 9 |
 | in progress (Z7a) | 4 |
-| missing | 49 (25 of them are G rows that wait for the owner's "stable" mark) |
-| not needed | 99 |
-| **Total** | **192** |
+| missing | 52 (25 of them are G rows that wait for the owner's "stable" mark) |
+| not needed | 100 |
+| **Total** | **196** |
 
 | Group | Rows | ported | partial | partial (unverified) | in progress (Z7a) | missing | not needed |
 |---|---|---|---|---|---|---|---|
 | 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 2 | 11 | 4 | 0 | 2 | 2 |
-| 2. Right after Phase 0 (N-list) | 29 | 4 | 3 | 3 | 4 | 15 | 0 |
+| 2. Right after Phase 0 (N-list) | 32 | 4 | 3 | 3 | 4 | 18 | 0 |
 | 3. Only when the owner marks it stable (G) | 25 | 0 | 0 | 0 | 0 | 25 (waiting) | 0 |
 | 4. Already ported or covered, outside the groups | 11 | 7 | 4 | 0 | 0 | 0 | 0 |
 | 5. Unscheduled (not in the owner's lists) | 9 | 0 | 0 | 2 | 0 | 7 | 0 |
-| 6. Not needed | 97 | 0 | 0 | 0 | 0 | 0 | 97 |
+| 6. Not needed | 98 | 0 | 0 | 0 | 0 | 0 | 98 |
 
 ## Phase 0 port list (targets)
 
@@ -62,6 +68,23 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 | 5 | `paper/` + Telegram commands | `backend/app/execution/paper_broker.py`, `backend/app/trading/`, `backend/app/telegram_inbound/service.py` | partial | Z3 (BT2 / BT3) |
 | 6 | `position_stream_monitor.py` + `trade_monitor.py` exit logic (+ `price_stream.py`) | `backend/app/trading/position_monitor.py`, `backend/app/market_data/stream.py`, `backend/app/workers/trading_worker.py` | partial | Z3 (PAPER exit engine) |
 | 7 | Expiry rule (`weekly_dual_expiry_option_seller.py`; next-expiry choice from `elliott/contracts.py`) | `backend/app/instruments/expiry_calendar.py` (`ExpiryBook.choose`, already ported) -> wire into `backend/app/options_builder/` and proposals | partial | Z5 |
+
+## Phase 0 ports: status on 2026-10-12
+
+What Phase 0 ported (or built next to a Trade row), as merged on `main` at 399eda3. Every flag named is off by default.
+
+| Item | Trade source | ATP on `main` | PRs | Flag | Status | Parity / tests |
+|---|---|---|---|---|---|---|
+| Z7a-1 zone detection | `market_zones.py`, `signals.py` (swings, S/R, order blocks), `sr_dynamic.py`, `sr_levels_v3.py` (Trade@eafc872) | `backend/app/price_action/zones/` (`detect.py`, `compute.py`, `levels.py`, `sr_v3.py`, `settings.py`) | #168 | `market_zones` | ported | `backend/tests/test_zones_parity.py` (golden from Trade's functions), `test_zones_detection.py` |
+| Z7a-2 lifecycle, level memory, nightly store | `level_memory.py`, `refresh_market_zones.py` | `zones/lifecycle.py`, `zones/memory.py`, `zones/store.py`, `zones/job.py` (worker, once per IST day after the EOD ingest; built from the shared lake bars) | #176 | `market_zones` | ported (memory); partial (nightly job: lake bars instead of a broker fetch; lifecycle is ATP's rule) | `test_zones_memory_parity.py` (golden), `test_zones_lifecycle.py`, `test_zones_store_job.py` |
+| Z7a-3 chart layer + ScreenQL zone functions | none in Trade for ScreenQL; `sr_v3_chart.py` is a UI helper (not needed) | `zones/chart.py` (band pick, strength), `zones/read.py` (as-of reads, batched since #200), `GET /api/charts/layers/market-zones`, `backend/app/screener/zones.py` (zone functions, vectorised series since #200) | #196, #200 | `market_zones` | done (ATP-side; no Trade equivalent to compare) | `test_zones_chart_screenql.py` (shared cases `zones_chart_cases.py`, frontend mirror), `test_zones_perf.py` |
+| Z7a intraday refresh | `refresh_market_zones_intraday.py`, `refresh_market_zones_mcx.py`, `refresh_dynamic_sr_1m.py`, `refresh_dynamic_sr_5m.py` | `zones/job.run_instrument` is the bar-close entry point; nothing triggers it yet | - | `market_zones` | in progress (Z7a): the bar-close trigger is not built | none |
+| U6 BK1 breakout screens | none: ATP-native (U6 spec, `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`); the related Trade rows are `price_action/level_strength.py` (ported earlier) and `opportunity_engine/` (G list) | `backend/app/screener/breakouts/` (`params.py`, `style.py`, `screens.py`, `quality.py`, `templates.py`, `gate.py`); ScreenQL RangeBreakout, SwingBreakout, NRBreakout, NewHighBreakout, RangeExpansion, VolumeBreakout, RelVolume, ATRPercentile, DowTrend | #178 | `screener_breakouts` | not a port (ATP's own); done | `backend/tests/test_z7_bk1_breakouts.py`, `test_z7_bk1_api.py` (fixtures `breakout_fixtures.py`) |
+| U6 BK2 intraday breakouts | none: ATP-native (same spec) | `breakouts/intraday.py` (opening range, first hour, previous day, new high / low of day), `breakouts/session.py` (session clock, session VWAP, time-of-day relative volume) | #181 | `screener_breakouts` | not a port (ATP's own); done | `backend/tests/test_z7_bk2_intraday.py` |
+| Z5 P1-d VIX gate | `check_vix_spike_halt.py`, `trading_engine.check_vix_spike_halt` | `backend/app/risk_engine/vix_gate.py`, applied in `guardian.guard_entry`; reading by the trading worker from 09:20 IST; per user under `byob_data_tier`, member fallback, kept out of the Copilot's memory (#195) | #179, #195 | `vix_gate` | ported (differences in the group 1 row below) | `test_z5_p1d_risk_by_default.py` (Trade's decision cases in English), `test_z5_p1d_review.py`, `test_z5_p1d_followup.py` |
+| Z5 P1-d strike breach | `strike_breach_model.py` | `backend/app/options_builder/strike_breach.py`, builder `POST /evaluate` (`strike_breach`), `backend/app/ai/proposal_card.py` | #179 | `risk_by_default` (the card) | ported: inference and inversion only; fitting stays in Trade | `test_z5_p1d_strike_breach.py` (golden `tests/fixtures/strike_breach/golden.json.gz` from Trade's functions) |
+| Level-bot confirmation gate | `bots_common/level_reaction.py` (+ `level_gate_bot.py`, `level_visibility.py`), replay `level_bots_replay.py` (Trade 1e6c9ac) | none | - | - | missing (waiting): the Trade replay is done but does not settle the port - see the group 2 row | none yet |
+| Charges table sources (TX-1) | `charges.py`, `elliott/costs.py` | `backend/app/execution/india_costs.py` (`SOURCES`: URL, circular / notification, date per row; `unverified()`), tax report `rate_sources` | this branch (`claude/sources-verify`) | - | partial: every row now cites its source; 1 Apr 2026 STT confirmed by NSE/FATAX/73524; five rows still "verify" (docs/OPEN_QUESTIONS.md TX-1); `charges.py` per-broker brokerage still not compared | `test_trade_port_contracts_costs.py` (sources, both sides of each circular), `test_tax_report_charges.py` |
 
 The six safety checks the spec lists for `order_safety.py`:
 
@@ -81,7 +104,7 @@ The six safety checks the spec lists for `order_safety.py`:
 | `order_safety.py` | Order-path safety: Upstox market protection, full-failure test, retry once, per-trade exit lock, in-flight exit state, exit re-send plan, failure counts and alerts | `backend/app/execution/order_safety.py` (market protection, full failure, pending ids, exit re-send plan, wing-fill check) | partial: not ported are the exit lock, the in-flight exit state (`mark_inflight` / `save_exit_state` / `merged_exit_prices`), failure counts with a blocked key, `retry_full_failure_once` and the alert texts. See the six-check table above. | `backend/tests/test_trade_port_order_safety.py` (Trade's `tests/test_order_safety.py`, in English) |
 | `process_lock.py` | One running process per bot (file lock), part of the duplicate-order guard | `backend/app/workers/redis_guard.py`, `backend/app/execution/order_persistence.py` | partial (unverified): ATP's guard is a worker lock plus order idempotency, not per bot | none |
 | `clear_exit_state.py` | Operator escape that clears a stuck partial-exit state after a manual check | none | missing: needed only if ATP adopts Trade's exit-state lock (row above) | none |
-| `charges.py` | Real charges per order: brokerage per broker (Upstox calculator, Stocko statutory), STT, exchange, SEBI, stamp, GST; by trade and per period | `backend/app/execution/india_costs.py` (dated statutory rates, ported from `elliott/costs.py`), `backend/app/execution/paper_broker.py` | partial: statutory rates are ported from `elliott/costs.py`; `charges.py` itself (per-broker brokerage, order-level turnover) has not been checked against ATP on golden fixtures | `backend/tests/test_trade_port_contracts_costs.py` covers `elliott/costs.py` only |
+| `charges.py` | Real charges per order: brokerage per broker (Upstox calculator, Stocko statutory), STT, exchange, SEBI, stamp, GST; by trade and per period | `backend/app/execution/india_costs.py` (dated statutory rates, ported from `elliott/costs.py`), `backend/app/execution/paper_broker.py` | partial: statutory rates are ported from `elliott/costs.py` and, since TX-1 (2026-10-12), every dated row cites its official source (`india_costs.SOURCES`; the 1 Apr 2026 STT rows by NSE/FATAX/73524; NSE transaction charges re-dated by circular, incl. 1 Mar 2026); `charges.py` itself (per-broker brokerage, order-level turnover) has not been checked against ATP on golden fixtures | `backend/tests/test_trade_port_contracts_costs.py` covers `elliott/costs.py` and the sources only |
 | `strike_breach_model.py` | Logistic model: chance that a short strike at distance z is breached before expiry (by DTE, weekday, ADX regime); required distance for a target breach risk | `backend/app/options_builder/strike_breach.py` (frozen NIFTY coefficients, features, `required_z`, per-leg report), builder `POST /evaluate` (`strike_breach`, with the underlying's daily bars), `backend/app/ai/proposal_card.py` | ported: inference and inversion only (the fitting/report code is research and stays in Trade); the daily market structure is an input (neutral unless the caller knows it) because Trade's `StructureTracker` is not ported | `backend/tests/test_z5_p1d_strike_breach.py` (golden cases from Trade's own functions: `tests/fixtures/strike_breach/make_golden.py`; plus Trade's no-look-ahead and inversion tests in English) |
 | `check_vix_spike_halt.py` | 09:20 IST job: India VIX % move against the previous close; above the threshold, new bullish index entries halt for the day | `backend/app/risk_engine/vix_gate.py`: `capture` / `capture_for_tenant` (the live LTP plus the close of the last completed session before today, stamped with today's IST date - Trade's `fetch_india_vix` + `fetch_india_vix_prev_close`; through the acting user's own Tier A session with `byob_data_tier` on, else the organisation's usable session), taken by the trading worker (`_vix_readings`) from 09:20 IST every 15 minutes; `spike_decision` / `evaluate` applied in `guardian.guard_entry` for both order pipelines and the PAPER ticket | ported (flag `vix_gate`, off): same threshold (5 %, `>=`), scope (NIFTY, BANKNIFTY, SENSEX; bullish only; PAPER and LIVE), timing (open before 09:20) and fail-safe (no valid reading after 09:20 + a 10-minute grace pauses bullish entries). Differences: any reading of the day counts (not one 09:20 run); an added high-level size cut (`VIX_GATE_HIGH_LEVEL`); no Telegram message per run | `backend/tests/test_z5_p1d_risk_by_default.py` (Trade's `tests/test_check_vix_spike_halt.py` decision cases in English, timing cases) and `backend/tests/test_z5_p1d_review.py` (the worker's capture to the gate, end to end; failed reads; BT1 path) |
 | `trading_engine.py` | Trade lifecycle: open and close LIVE and PAPER, SL / target / EOD / OI-reversal / trailing exits, broker reconciliation, VIX halt gate, max-loss caps | `backend/app/execution/router.py`, `backend/app/execution/multileg.py`, `backend/app/trading/position_monitor.py`, `backend/app/reconciliation/engine.py` | partial (unverified): ATP has its own lifecycle; the exit rules and the VIX gate are the parts to port (rows above and below) | none |
@@ -124,7 +147,10 @@ The six safety checks the spec lists for `order_safety.py`:
 | `dynamic_sr_instant_trader.py` | Template: 1-min / 5-min instant reversal at dynamic S/R levels | none | missing: template | none (Trade has `tests/test_dynamic_sr_instant_trader.py`) |
 | `srv2_momentum_reversal_strategy.py` | Template: 15 / 30 / 60-minute dynamic S/R reversal with a momentum filter | none | missing: template | none (Trade has `tests/test_srv2_momentum_reversal_strategy.py`) |
 | `classic_sr_reversal_trader.py` | Template: classic S/R reversal | none | missing: template | none (Trade has `tests/test_classic_sr_reversal_trader.py`) |
-| `bots_common/level_reaction.py` (level-bot confirmation gate, Trade TRADE_SESSION_LEVEL_BOTS_CONFIRMATION.md; in progress in Trade) | One shared gate for the level bots: trend first -> stored level is only a candidate area -> handover study inside the area (trend-side vs counter-side candle size and volume, wedge / channel / double-top patterns) -> dominant commitment candle on higher volume -> Vision -> Telegram approval | none | missing: N-list (N1 / U4 proposal engine uses the same rules); wait for the Trade replay report (touch vs confirmation) before porting | none yet |
+| `bots_common/level_reaction.py` (level-bot confirmation gate; Trade #292 / #293, `docs/LEVEL_BOTS_CONFIRMATION.md`) | One shared gate for the level bots: Daily trend first (`decision3.daily.fold`) -> the stored level is only a candidate area -> arrival from the trade side arms it -> handover study inside the area (trend-side vs counter-side candle size and volume; absorption blocks; wedge / channel / double-top patterns as evidence; impulsive approach blocks) -> dominant commitment candle (body >= 1.5 x window average) on higher volume (NA => grade <= B) -> real break disarms -> SL beyond the far edge, target = next opposite area, R:R >= 3 -> Vision -> Telegram approval | none | missing: N1 L1 (state machine, `decision3.method` gate functions, `break_from`) -> `backend/app/price_action/level_gate/` + `backend/app/price_action/breaks.py`; L2a / L2b (the Daily fold, pinned revision, OPEN_QUESTIONS N1-2); wired to scans in X1 through the E1 execution core (`backend/app/execution/core/`). The L6 replay report is in (Trade #295; OPEN_QUESTIONS N1-3) | planned: golden parity from Trade's own functions on fixed bars (`backend/tests/fixtures/level_gate/make_golden.py`, `.json.gz`) |
+| `bots_common/level_gate_bot.py` | Thin layer for the bots: `entry_mode` (confirmation for PAPER, touch for LIVE), gate settings from the dashboard, one cycle gate per symbol (trend + closed bars + all areas), signal-log codes `SKIPPED_GATE_*`, confirmation TF per bot (5m / 15m) | none | missing: N1 X1 (the scan Then template: `confirm_tf`, gate settings, reason codes on the intent; touch mode not ported - ATP has no touch-mode level bots) | none yet (Trade has `tests/test_level_bots_5m.py`, `test_level_bots_classic_srv2.py`, `test_level_bots_mcx.py`) |
+| `bots_common/level_visibility.py` | L5 visibility: today's armed / confirmed / ignored areas per bot (dashboard tab) and the gate section of the 15:45 summary | none | missing: N1 X1 (the intents list and the rule's `last_problem`; the summary line goes to the EOD summary) | none yet (Trade has `tests/test_level_bots_visibility.py`) |
+| `decision3/method.py` (the functions the level gate calls) | `zone_study`, `zone_pattern`, `commitment`, `reversal_form`, `power_shift`, `contraction`, `candle_read` and their helpers. The rest of `method.py` (risk, plans, conviction) stays with the `decision3/` G row | none | missing: N1 L1 -> `backend/app/price_action/level_gate/method.py` (ported because the owner's level-bot rules call them; `method.py` unchanged since #292) | planned: golden parity, every check mirrored for both directions |
 | `gap_fill_reversal_strategy.py` | Template: 1H Supertrend trend -> opening gap -> gap fill -> reversal | `backend/app/price_action/gap_context.py` (placeholder only) | missing: template | none |
 | `mtf_pullback_strategy.py` | Template: multi-timeframe pullback (with overnight gaps) | `backend/app/strategy_engine/mtf_strategy.py` is ATP's own MTF pullback, not a port | missing: template; `find_overnight_gaps` ported to `backend/app/price_action/zones/detect.py` (Z7a-1, #168) | none (Trade has `tests/test_page_mtf_multi.py`) |
 | `oi_greeks_vix_strategy.py` | Template: OI + Greeks + India VIX decision tree | `backend/app/option_chain/oi_regime.py` (the OI part) | missing: template | none |
@@ -145,7 +171,7 @@ ATP's `price_action` follows their behaviour specs, not their code. All rows: AT
 
 | Trade module | Purpose | Note |
 |---|---|---|
-| `decision3/` | v2.2 method-first engine (Abhi's six steps): daily legs / swings, levels, liquidity, trendline, advisory, vision audit, Telegram view | owner's G list |
+| `decision3/` (rest) | v2.2 method-first engine (Abhi's six steps): daily legs / swings, levels, liquidity, trendline, advisory, vision audit, Telegram view | owner's G list. The level gate's Daily trend (`daily.fold` with `daily_legs`, `legs2`, `patterns2`) is ported at a pinned revision in N1 L2 unless the owner says otherwise (OPEN_QUESTIONS N1-2); `method.py`'s gate functions are their own row in group 2 |
 | `swings2/` | Layer 1 v2.1: nested directional-change swing engine + market structure (BOS / CHoCH / sweep) | owner's G list |
 | `legs2/` | Layer 2: role and character of each leg -> labels I and K | owner's G list |
 | `patterns2/` | Layer 3: correction pattern inside I and K (hypotheses, rules, scores) | owner's G list |
@@ -304,6 +330,7 @@ These hold logic that is in none of the spec's groups. The owner decides whether
 | `fonts/` | DejaVu and Noto Devanagari fonts for PDFs | none | asset (needed only with `pdf_reports.py`) |
 | `lib/` | `lightweight-charts.js` for Streamlit | `frontend/` | asset |
 | `live_chart_component/` | HTML component for the live chart | none | Streamlit |
+| `level_bots_replay.py` (+ `scripts/level_bots_replay.py`, Trade #295) | L6 replay: touch vs confirmation on the same days, levels, position rules and costs; writes `docs/reports/level_bots_confirmation.md` | none | research replay: its findings set N1's stance (OPEN_QUESTIONS N1-3); ATP's own backtests come with C2-C6 |
 
 Non-Python files at the top level (`config.yaml`, `PRE_LIVE_CHECKLIST.md`, `requirements*.txt`, `packages.txt`,
 `pytest.ini`, `run_*.bat`) are Trade's own setup and are not mapped.

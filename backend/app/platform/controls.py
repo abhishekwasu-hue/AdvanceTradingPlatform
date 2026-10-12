@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.db.models import PlatformControlRecord, User
+from app.platform import deployment_phase
 
 KEY_MAINTENANCE = "maintenance_mode"
 KEY_DISABLED_BROKERS = "disabled_brokers"
@@ -25,9 +26,10 @@ async def _get(session: AsyncSession, key: str) -> Dict:
     if row is None:
         return {}
     try:
-        return json.loads(row.value_json or "{}")
+        value = json.loads(row.value_json or "{}")
     except ValueError:
         return {}
+    return value if isinstance(value, dict) else {}       # a malformed row reads as unset (never a crash)
 
 
 async def _set(session: AsyncSession, key: str, value: Dict, user: Optional[User]) -> None:
@@ -90,8 +92,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     "public_api": "Public REST API keys and /api/public/v1",
     "backtest_optimizer": "Parameter optimisation grid runs",
     "live_trading": "New LIVE deployments (PAPER unaffected; exits always work)",
-    # Z10-c (Phase 0): the PAPER-only lock (app/platform/phase0_lock.py). OFF by default; the owner turns it on for the beta
-    # host (docs/OPERATIONS.md 1.6aj) - no code, migration, script or deploy step does. It never changes `live_trading`.
+    # Z10-c (Phase 0): the PAPER-only lock (app/platform/phase0_lock.py). OFF by default. The one exception is the explicit
+    # Phase 0 deployment mode (ATP_DEPLOYMENT_PHASE=phase0, app/platform/deployment_phase.py, owner decision 2026-10-12):
+    # it seeds this flag ON and `live_trading` OFF where no entry is stored - the restrictive direction only.
     "phase0_paper_only": "Phase 0 PAPER-only lock: every new LIVE entry is refused, at entry checks and at the broker-order chokepoint (exits of LIVE positions always run)",
     "self_signup": "Public registration (off: invite-only)",
     "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
@@ -188,21 +191,32 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    "execution_core": "Execution core (N1 E1): entry intents from scans are queued and routed by one policy to a notification or a PAPER entry proposal (never a broker order)",
+    # N2-1 (P1 spec 1.4 / 1.5, docs/design/N2_P1FGH.md): the progression ladder's discipline-score criterion (from the Z6
+    # journal, when `discipline_engine` is on too) and the user's own figures on the ladder card - expectancy, profit
+    # factor, payoff ratio, a Kelly reference and a risk-of-ruin bound from their own closed PAPER trades. OFF: the ladder
+    # answers exactly as before. Information only: never used for sizing, never a recommendation.
+    "ladder_evidence": "Ladder evidence: the discipline-score criterion and your own figures (expectancy, profit factor, Kelly reference, risk-of-ruin bound) on the PAPER ladder card (information only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
     stored = (await _get(session, KEY_FEATURE_FLAGS)).get("flags") or {}
+    if not isinstance(stored, dict):
+        stored = {}
     result: Dict[str, Dict] = {}
     for name, description in FEATURE_FLAGS.items():
         entry = stored.get(name) or {}
-        result[name] = {"on": bool(entry.get("on", name not in DEFAULT_OFF_FLAGS)), "tenants": sorted(int(t) for t in entry.get("tenants") or []),
+        # Phase 0 deployment mode only: a seeded flag with no stored entry resolves to its (restrictive) seed value.
+        phase_default = deployment_phase.default_for(name)
+        default = (name not in DEFAULT_OFF_FLAGS) if phase_default is None else phase_default
+        result[name] = {"on": bool(entry.get("on", default)), "tenants": sorted(int(t) for t in entry.get("tenants") or []),
                         "description": description}
     return result
 
@@ -227,6 +241,9 @@ async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, te
                    override_open_placeholders: bool = False) -> Dict[str, Dict]:
     if name not in FEATURE_FLAGS:
         raise ValueError(f"Unknown feature flag '{name}' - known: {sorted(FEATURE_FLAGS)}")
+    if name == "live_trading":
+        # Phase 0 deployment mode: no live_trading while phase0_paper_only is on (audited refusal, ValueError -> 400).
+        await deployment_phase.refuse_live_trading_on(session, user.id, on=on, tenants=tenants)
     open_items = legal_open_placeholders() if name == "legal_pages" and (on or tenants) else {}
     if open_items and not override_open_placeholders:
         listed = "; ".join(f"{slug}: {', '.join(items)}" for slug, items in sorted(open_items.items()))

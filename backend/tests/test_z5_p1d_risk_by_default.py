@@ -60,13 +60,22 @@ def _org(t: dict, *, capital=1_000_000.0, risk_pct=1.0) -> None:
     assert out.status_code == 200, out.text
 
 
+def _earlier_today(minutes: float) -> datetime:
+    """`minutes` before now, but never before today's IST midnight: the risk checks count the IST day, and a test run
+    just after midnight must still see its trades as today's (the wall clock never decides a test)."""
+    from app.market_data.calendar import trading_day_start
+    now = datetime.now(UTC)
+    start = trading_day_start(now)
+    return max(now - timedelta(minutes=minutes), min(now, start + timedelta(seconds=max(1.0, 60 - minutes))))
+
+
 def _closed(t: dict, pnl: float, *, minutes_ago=30, symbol="RELIANCE", mode="PAPER", user_id=None) -> int:
     async def go():
         async with _session_factory() as session:
-            now = datetime.now(UTC)
+            exit_at = _earlier_today(minutes_ago)
             trade = TradeRecord(tenant_id=t["tenant_id"], user_id=user_id or t["user_id"], mode=mode, symbol=symbol, strategy_id="plan_other",
-                                direction="LONG", entry_time=now - timedelta(minutes=minutes_ago + 5), entry_price=100.0, quantity=1000.0,
-                                stop_loss=90.0, target1=120.0, exchange="NSE", pnl=pnl, charges=20.0, exit_time=now - timedelta(minutes=minutes_ago),
+                                direction="LONG", entry_time=max(exit_at - timedelta(minutes=5), _earlier_today(10_000)), entry_price=100.0,
+                                quantity=1000.0, stop_loss=90.0, target1=120.0, exchange="NSE", pnl=pnl, charges=20.0, exit_time=exit_at,
                                 exit_price=100.0 + pnl / 1000.0, exit_reason="Exit now (web)")
             session.add(trade)
             await session.commit()
@@ -78,7 +87,7 @@ def _open(t: dict, *, symbol="RELIANCE", stop=95.0, entry=100.0) -> int:
     async def go():
         async with _session_factory() as session:
             trade = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="PAPER", symbol=symbol, strategy_id="plan_other",
-                                direction="LONG", entry_time=datetime.now(UTC) - timedelta(minutes=5), entry_price=entry, quantity=10.0,
+                                direction="LONG", entry_time=_earlier_today(5), entry_price=entry, quantity=10.0,
                                 stop_loss=stop, target1=entry * 1.1, exchange="NSE")
             session.add(trade)
             await session.commit()

@@ -58,6 +58,9 @@ def test_a_failure_inside_paper_never_leaves_the_session_aborted(monkeypatch, wh
         seen.append(session.in_nested_transaction())
         await session.execute(text("SELECT * FROM no_such_table_x2pg"))          # aborts the transaction on Postgres
 
+    async def open_window(session, now, exchange="NSE"):
+        return None                                                            # the session clock is not what is tested here
+    monkeypatch.setattr(auto_paper, "window_reason", open_window)
     if where == "checks":
         async def broken_limit(session, intent, now):
             await bad_sql(session)

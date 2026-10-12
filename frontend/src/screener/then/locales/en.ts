@@ -43,7 +43,7 @@ export const SCAN_THEN_EN = {
     disarm: "Disarm",
     armed_ok: "Armed.",
     disarmed_ok: "Disarmed.",
-    note: "Arming is yours alone and is cleared by any change to this template. The platform's switch and approval-only mode still decide; with either off, a setup is a proposal.",
+    note: "Arming is yours alone, lasts 7 days and is cleared by any change to this template. With the platform switch off or approval-only mode on, a setup is a proposal.",
   },
   modes: {
     NOTIFY: "Notify - a notification only",

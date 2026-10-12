@@ -581,6 +581,10 @@ EXECUTION_CORE_DRAIN_SECONDS = _bounded_int("EXECUTION_CORE_DRAIN_SECONDS", 20, 
 # becomes a proposal instead.
 SCAN_AUTO_PAPER_MAX_PER_DAY = _bounded_int("SCAN_AUTO_PAPER_MAX_PER_DAY", 3, 1, 20)
 SCAN_AUTO_PAPER_COOLDOWN_MINUTES = _bounded_int("SCAN_AUTO_PAPER_COOLDOWN_MINUTES", 30, 0, 24 * 60)
+# Review of X2: an arming lasts this many days (then the owner arms again), and no Auto PAPER entry is placed at or after
+# this IST time (HH:MM; empty = the venue's own no-new-entries time, 15:00 on NSE, and never after the 15:15 square-off).
+SCAN_AUTO_PAPER_ARM_DAYS = _bounded_int("SCAN_AUTO_PAPER_ARM_DAYS", 7, 1, 90)
+SCAN_AUTO_PAPER_LAST_ENTRY = os.environ.get("SCAN_AUTO_PAPER_LAST_ENTRY", "").strip()
 
 # Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). A new account starts
 # with PAPER_STARTING_CAPITAL (the user may change it within the bounds). The progression ladder card shows the PAPER

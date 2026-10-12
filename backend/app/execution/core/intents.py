@@ -19,7 +19,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, FrozenSet, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -76,6 +76,32 @@ async def existing_proposal(session: AsyncSession, tenant_id: int, intent_id: in
     """The proposal an earlier (interrupted) attempt of this intent already raised, if any."""
     return await session.scalar(select(AiActionRecord).where(AiActionRecord.tenant_id == tenant_id,
                                                              AiActionRecord.idempotency_key == proposal_key(intent_id)))
+
+
+def order_key(intent_id: int) -> str:
+    """N1 X2: the PAPER order an Auto PAPER intent places carries this idempotency key."""
+    return f"intent:{intent_id}"
+
+
+async def existing_order(session: AsyncSession, tenant_id: int, intent_id: int) -> Optional[Any]:
+    """The PAPER order an earlier (interrupted) attempt of this intent already placed, if any (N1 X2)."""
+    from app.db.models import OrderRecord
+    return await session.scalar(select(OrderRecord).where(OrderRecord.tenant_id == tenant_id,
+                                                          OrderRecord.idempotency_key == order_key(intent_id)))
+
+
+async def earlier_outcome(session: AsyncSession, tenant_id: int, intent_id: int, now: datetime) -> Optional[Dict[str, Any]]:
+    """What an interrupted earlier attempt already did - a PAPER order (route PAPER) or a proposal (route PROPOSE) - as
+    the values that finish the row DONE, or None. An order wins: it is the entry itself."""
+    order = await existing_order(session, tenant_id, intent_id)
+    if order is not None:
+        return {"status": DONE, "route": policy.ROUTE_PAPER, "finished_at": now,
+                "reason": f"Auto PAPER: PAPER order #{order.id} was placed before an interruption"}
+    action = await existing_proposal(session, tenant_id, intent_id)
+    if action is not None:
+        return {"status": DONE, "route": policy.ROUTE_PROPOSE, "ai_action_id": action.id, "finished_at": now,
+                "reason": f"Proposal #{action.id} was raised before an interruption"}
+    return None
 
 
 def _utc(value: Optional[datetime]) -> datetime:
@@ -155,13 +181,11 @@ async def expire_overdue(session: AsyncSession, scope: Scope, now: datetime) -> 
                                                .where(ExecutionIntentRecord.status == QUEUED, ExecutionIntentRecord.expires_at <= now,
                                                       ExecutionIntentRecord.attempts > 0), scope))).all()
     for intent_id, tenant_id in retried:
-        action = await existing_proposal(session, tenant_id, intent_id)
-        if action is not None:
+        earlier = await earlier_outcome(session, tenant_id, intent_id, now)    # N1 X2 review M1: an order is linked too
+        if earlier is not None:
             await session.execute(update(ExecutionIntentRecord)
                                   .where(ExecutionIntentRecord.id == intent_id, ExecutionIntentRecord.status == QUEUED)
-                                  .values(status=DONE, route=policy.ROUTE_PROPOSE, ai_action_id=action.id, finished_at=now,
-                                          reason=f"Proposal #{action.id} was raised before an interruption")
-                                  .execution_options(synchronize_session=False))
+                                  .values(**earlier).execution_options(synchronize_session=False))
     query = update(ExecutionIntentRecord).where(ExecutionIntentRecord.status == QUEUED, ExecutionIntentRecord.expires_at <= now)
     if scope is not None:
         query = query.where(ExecutionIntentRecord.tenant_id.in_(sorted(scope)))
@@ -184,10 +208,9 @@ async def requeue_stale(session: AsyncSession, scope: Scope, now: datetime, limi
     for intent_id, tenant_id, attempts, claimed_at in rows:
         values: Dict[str, object]
         if int(attempts or 0) >= app_config.EXECUTION_CORE_MAX_ATTEMPTS:
-            action = await existing_proposal(session, tenant_id, intent_id)
-            if action is not None:              # review L1: its proposal exists - link it, do not call it failed
-                values = {"status": DONE, "route": policy.ROUTE_PROPOSE, "ai_action_id": action.id, "finished_at": now,
-                          "reason": f"Proposal #{action.id} was raised before an interruption"}
+            earlier = await earlier_outcome(session, tenant_id, intent_id, now)
+            if earlier is not None:             # review L1 (and X2 M1): its proposal or order exists - link it, not failed
+                values = dict(earlier)
             else:
                 values = {"status": FAILED, "finished_at": now, "reason": f"Interrupted {int(attempts)} times - nothing more is tried"}
         else:

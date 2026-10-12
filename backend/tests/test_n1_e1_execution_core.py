@@ -499,6 +499,8 @@ def test_the_core_names_no_broker_and_no_order_pipeline():
     assert len(pipeline_calls) == 1 and pipeline_calls[0][0] == "dispatcher.py"
     call = pipeline_calls[0][1]
     keywords = {k.arg: k.value for k in call.keywords}
+    # Review of X2 (L2): no **kwargs (a keyword with no name) and no *args could smuggle a broker in.
+    assert all(k.arg is not None for k in call.keywords) and not any(isinstance(a, ast.Starred) for a in call.args)
     assert "broker" not in keywords and "quote_broker" not in keywords and len(call.args) == 2      # (session, owner) only
     assert isinstance(keywords["mode"], ast.Constant) and keywords["mode"].value == "PAPER"
 

@@ -25,7 +25,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config as app_config
@@ -106,11 +106,13 @@ async def _dispatch_batch(session: AsyncSession, ids: List[int], now: datetime, 
 async def dispatch_one(session: AsyncSession, row: ExecutionIntentRecord, now: datetime) -> str:
     """Routes one CLAIMED intent and records the outcome. Returns its final status."""
     intent_id, tenant_id = row.id, row.tenant_id
-    if int(row.attempts or 0) > 1:                  # review L1: a retried intent links the proposal it already raised
-        action = await intents.existing_proposal(session, tenant_id, intent_id)
-        if action is not None:
-            await intents.finish(session, intent_id, intents.DONE, route=policy.ROUTE_PROPOSE, ai_action_id=action.id, now=now,
-                                 reason=f"Proposal #{action.id} was raised before an interruption")
+    if int(row.attempts or 0) > 1:
+        # Review L1 (E1) and X2 H1: a retried intent links what it already did - its PAPER order first (an entry was
+        # placed: never a proposal for a second one, whatever the switches say now), else its proposal.
+        earlier = await intents.earlier_outcome(session, tenant_id, intent_id, now)
+        if earlier is not None:
+            await intents.finish(session, intent_id, intents.DONE, route=earlier["route"], ai_action_id=earlier.get("ai_action_id"),
+                                 reason=earlier["reason"], now=now)
             return intents.DONE
     from app.plans.limits import tenant_is_active
     tenant = await session.get(Tenant, tenant_id)
@@ -127,7 +129,7 @@ async def dispatch_one(session: AsyncSession, row: ExecutionIntentRecord, now: d
         from app.screener.then import auto_paper
         try:
             async with session.begin_nested():         # reads on the worker's session: a failure rolls back this savepoint only
-                auto_paper_enabled = await auto_paper.intent_places(session, row)
+                auto_paper_enabled = await auto_paper.intent_places(session, row, now)
         except Exception:  # noqa: BLE001 - unknown means "not armed": a proposal
             logger.exception("Auto PAPER switches could not be read for intent %s", intent_id)
             auto_paper_enabled = False
@@ -166,6 +168,8 @@ async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner
     from app.portfolio import caps
     from app.risk_engine.by_default import proposal_refusal
     from app.screener.then import auto_paper
+    if not approval.can_trade(owner):                           # review of X2 (L1): a trading role and trading:write
+        return "refuse", "The template's owner may not trade (role or scope) - nothing was placed", None
     paused = await paused_reason(session, owner.id)
     if paused:
         return "refuse", paused, None
@@ -175,6 +179,9 @@ async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner
     refused = await caps.entry_refusals(session, owner, caps.candidate_of(row.symbol, signal.entry, signal.stop_loss), now)
     if refused:
         return "refuse", "; ".join(refused), None
+    late = await auto_paper.window_reason(session, now, row.exchange or "NSE")      # review of X2 (M2): the entry window
+    if late:
+        return "propose", late, None
     limit = await auto_paper.limit_reason(session, row, now)
     if limit:
         return "propose", limit, None
@@ -200,13 +207,11 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
     `execute_signal_for_user(` here). The checks read inside a savepoint; the pipeline commits on its own, so a failure
     there is rolled back here and the intent ends FAILED - the shared session is never left aborted. PAPER only: the
     pipeline is called without a broker."""
-    from app.db.models import OrderRecord
     from app.execution.signal_execution import execute_signal_for_user
     # Plain values first: the pipeline commits, which expires the row (an async session must not lazy-load it later).
     facts = _Facts(row.id, row.tenant_id, row.direction, row.symbol, row.strategy_id, row.source_ref)
     intent_id, tenant_id = facts.intent_id, facts.tenant_id
-    earlier = await session.scalar(select(OrderRecord).where(OrderRecord.tenant_id == tenant_id,
-                                                            OrderRecord.idempotency_key == f"intent:{intent_id}"))
+    earlier = await intents.existing_order(session, tenant_id, intent_id)
     if earlier is not None:                          # a retried intent: its PAPER order was placed before an interruption
         await intents.finish(session, intent_id, intents.DONE, route=policy.ROUTE_PAPER, now=now,
                              reason=f"Auto PAPER: PAPER order #{earlier.id} was placed before an interruption")
@@ -231,7 +236,7 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
                                        "reasons": list(signal.reasons) + [f"Auto PAPER (intent #{intent_id}), re-quoted at {price:g}"]})
     try:
         result, order = await execute_signal_for_user(
-            session, owner, mode="PAPER", strategy_id=facts.strategy_id, signal=placed, idempotency_key=f"intent:{intent_id}",
+            session, owner, mode="PAPER", strategy_id=facts.strategy_id, signal=placed, idempotency_key=intents.order_key(intent_id),
             origin=approval.ORIGIN_AUTOMATIC, journal_source="SCAN")
     except Exception as exc:  # noqa: BLE001 - the pipeline commits on its own: roll back what it left, record why
         logger.exception("Auto PAPER placement failed for intent %s", intent_id)

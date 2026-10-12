@@ -84,8 +84,9 @@ def _trades(t):
 
 
 def _go(t):
-    """The X1 runner raises the intent at the commitment candle's close; the worker's drain dispatches it a minute later."""
-    assert _runner().submitted == 1
+    """The X1 runner raises the intent at the commitment candle's close; the worker's drain dispatches it a minute later.
+    (Other tests' templates may raise theirs in the same run; only this organisation's intent is read.)"""
+    assert _runner().submitted >= 1
     _drain()
     return _intent_of(t)
 
@@ -216,15 +217,25 @@ def test_the_daily_limit_and_the_cool_down_make_a_proposal(monkeypatch):
     from app.core import config as app_config
     t, rule_id = _armed_setup("limits", monkeypatch)
 
-    async def seed(n, symbol, minutes_ago):
+    async def seed(n, symbol, minutes_ago, status="DONE"):
+        """Auto PAPER orders placed from this template's rule (key intent:<id>, with a position). The intents' own status
+        does not matter (review of X2, M1): a retried or expired intent still counts by its order."""
         async with _session_factory() as session:
             for i in range(n):
-                session.add(ExecutionIntentRecord(
+                at = NOW - timedelta(minutes=minutes_ago)
+                intent = ExecutionIntentRecord(
                     tenant_id=t["tenant_id"], user_id=t["user_id"], source="scan", source_ref=f"rule:{rule_id}:symbol:{symbol}",
-                    idempotency_key=f"scan:seed:{uuid.uuid4().hex}", requested_mode="AUTO_PAPER", route="PAPER", status="DONE",
+                    idempotency_key=f"scan:seed:{uuid.uuid4().hex}", requested_mode="AUTO_PAPER", route=None, status=status,
                     symbol=symbol, exchange="NSE", direction="LONG", strategy_id="seed", signal_json="{}", evidence_json="{}",
-                    expires_at=NOW + timedelta(minutes=5), created_at=NOW - timedelta(minutes=minutes_ago),
-                    finished_at=NOW - timedelta(minutes=minutes_ago)))
+                    expires_at=NOW + timedelta(minutes=5), created_at=at, finished_at=at)
+                session.add(intent)
+                trade = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="PAPER", symbol=symbol, strategy_id="seed",
+                                    direction="LONG", entry_time=at, entry_price=100.0, quantity=1.0, stop_loss=99.0)
+                session.add(trade)
+                await session.flush()
+                session.add(OrderRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="PAPER", strategy_id="seed", symbol=symbol,
+                                        direction="LONG", quantity=1.0, status="FILLED", idempotency_key=f"intent:{intent.id}",
+                                        trade_id=trade.id, created_at=at))
             await session.commit()
 
     async def reason():
@@ -237,10 +248,12 @@ def test_the_daily_limit_and_the_cool_down_make_a_proposal(monkeypatch):
     assert "cool-down" in _run(reason())
     monkeypatch.setattr(app_config, "SCAN_AUTO_PAPER_COOLDOWN_MINUTES", 5)
     assert _run(reason()) is None
-    _run(seed(2, "OTHER", 60))                                             # 3 today from this template: the limit
+    _run(seed(1, "OTHER", 60, status="EXPIRED"))                           # an expired intent's order still counts
+    _run(seed(1, "OTHER", 50, status="FAILED"))                            # 3 today from this template: the limit
     assert "limit reached: 3 entries" in _run(reason())
     row = _go(t)                                                           # the dispatcher makes it a proposal
-    assert row.route == policy.ROUTE_PROPOSE and "limit reached" in row.reason and _trades(t) == []
+    assert row.route == policy.ROUTE_PROPOSE and "limit reached" in row.reason
+    assert len([x for x in _trades(t) if x.strategy_id != "seed"]) == 0
 
 
 def test_a_failure_inside_the_checks_fails_the_intent_and_leaves_the_session_usable(monkeypatch):
@@ -409,3 +422,128 @@ def test_no_api_route_reaches_the_paper_route_and_the_core_reaches_no_order():
     assert reached == []
     callers = graph.callers.get("app.execution.core.dispatcher.drain", set())
     assert callers and all(c.startswith("app.workers.trading_worker.") for c in callers), callers
+
+
+# --- review of X2 ----------------------------------------------------------------------------------------------------------------
+
+def _reset_to_claimed(intent_id, attempts=2, status=intents.CLAIMED):
+    async def go():
+        async with _session_factory() as session:
+            await session.execute(update(ExecutionIntentRecord).where(ExecutionIntentRecord.id == intent_id)
+                                  .values(status=status, attempts=attempts, route=None, finished_at=None, reason=None,
+                                          claimed_at=NOW.astimezone(UTC), expires_at=(NOW + timedelta(minutes=5)).astimezone(UTC)))
+            await session.commit()
+    _run(go())
+
+
+def test_a_retried_intent_whose_order_was_placed_never_raises_a_proposal(monkeypatch):
+    """H1: crash after the order was placed (the row was never finished), the owner disarms, the worker retries: the
+    order is linked (DONE, route PAPER) - no proposal for a second entry, exactly one order."""
+    t, rule_id = _armed_setup("h1", monkeypatch)
+    row = _go(t)
+    assert row.route == policy.ROUTE_PAPER and len(_rows(OrderRecord, t["tenant_id"])) == 1
+    _reset_to_claimed(row.id)
+
+    async def disarm_and_retry():
+        async with _session_factory() as session:
+            tpl = await session.scalar(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.rule_id == rule_id))
+            T.set_arm(tpl, None, None)
+            await session.commit()
+            fresh = await session.get(ExecutionIntentRecord, row.id, populate_existing=True)
+            return await dispatcher.dispatch_one(session, fresh, NOW + timedelta(minutes=2))
+    assert _run(disarm_and_retry()) == intents.DONE
+    again = _intent_of(t)
+    assert again.route == policy.ROUTE_PAPER and "placed before an interruption" in again.reason
+    assert _rows(AiActionRecord, t["tenant_id"]) == [] and len(_rows(OrderRecord, t["tenant_id"])) == 1
+
+
+def test_the_expiry_and_the_stale_sweep_link_an_order_already_placed(monkeypatch):
+    """M1: an interrupted Auto PAPER intent whose order exists is DONE (route PAPER), never EXPIRED or FAILED."""
+    from app.core import config as app_config
+    t, _ = _armed_setup("m1", monkeypatch)
+    row = _go(t)
+    _reset_to_claimed(row.id, attempts=1, status=intents.QUEUED)
+
+    async def expire():
+        async with _session_factory() as session:
+            return await intents.expire_overdue(session, None, NOW + timedelta(minutes=10))
+    _run(expire())
+    assert _intent_of(t).status == intents.DONE and _intent_of(t).route == policy.ROUTE_PAPER
+    _reset_to_claimed(row.id, attempts=app_config.EXECUTION_CORE_MAX_ATTEMPTS)
+
+    async def sweep():
+        async with _session_factory() as session:
+            return await intents.requeue_stale(session, None, NOW + timedelta(hours=1))
+    _run(sweep())
+    assert _intent_of(t).status == intents.DONE and "placed before an interruption" in _intent_of(t).reason
+
+
+def test_the_entry_window(monkeypatch):
+    """M2: Auto PAPER places only while NSE is open and before the last entry time (15:00 on NSE, the session calendar);
+    otherwise a proposal."""
+    from app.core import config as app_config
+    from app.market_data.calendar import IST
+
+    def at(h, m, day=NOW.astimezone(IST).date()):
+        return datetime(day.year, day.month, day.day, h, m, tzinfo=IST).astimezone(UTC)
+
+    async def why(now):
+        async with _session_factory() as session:
+            return await AP.window_reason(session, now)
+    assert _run(why(at(10, 0))) is None
+    assert "last entry time (15:00" in _run(why(at(15, 16)))
+    assert "last entry time (15:00" in _run(why(at(15, 0)))
+    assert _run(why(at(15, 45))) == AP.WHY_CLOSED
+    saturday = NOW.astimezone(IST).date() + timedelta(days=(5 - NOW.astimezone(IST).weekday()) % 7)
+    assert _run(why(at(11, 0, saturday))) == AP.WHY_CLOSED
+    monkeypatch.setattr(app_config, "SCAN_AUTO_PAPER_LAST_ENTRY", "09:30")        # earlier, configured: the setup is late
+    assert "09:30" in _run(why(at(10, 0)))
+    monkeypatch.setattr(app_config, "SCAN_AUTO_PAPER_LAST_ENTRY", "bad")          # malformed never widens it
+    assert _run(why(at(10, 0))) is None and _run(why(at(15, 16))) is not None
+    monkeypatch.setattr(app_config, "SCAN_AUTO_PAPER_LAST_ENTRY", "09:30")
+    t, _ = _armed_setup("late", monkeypatch)
+    row = _go(t)
+    assert row.route == policy.ROUTE_PROPOSE and "last entry time" in row.reason and _trades(t) == []
+
+
+def test_an_arming_expires_and_a_switch_change_voids_it(monkeypatch):
+    """L1: valid only if made after the operator last changed the switch, and for SCAN_AUTO_PAPER_ARM_DAYS days."""
+    from app.audit.log import write_audit_log
+    t, rule_id = _armed_setup("arm-age", monkeypatch, arm=False)
+    _arm(rule_id, raw={"at": (NOW - timedelta(days=8)).isoformat(), "by": t["user_id"]})
+
+    async def state(now):
+        async with _session_factory() as session:
+            tpl = await session.scalar(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.rule_id == rule_id))
+            return await AP.arm_state(session, tpl, now)
+    armed, why = _run(state(NOW))
+    assert not armed and "expired after 7 days" in why
+    assert _run(state(NOW - timedelta(days=2)))[0] is True                  # 6 days old then: still valid
+    _arm(rule_id)                                                           # armed now
+
+    async def switch_changed():
+        async with _session_factory() as session:
+            await write_audit_log(session, None, t["user_id"], "feature_flag_set", f"{AP.FLAG}: on=True tenants=-")
+            await session.commit()
+    assert _run(state(datetime.now(UTC)))[0] is True
+    _run(switch_changed())
+    armed, why = _run(state(datetime.now(UTC)))
+    assert not armed and "predates the platform switch" in why
+    row = _go(t)
+    assert row.route == policy.ROUTE_PROPOSE and _trades(t) == []
+
+
+def test_an_owner_who_may_not_trade_is_refused(monkeypatch):
+    """L1: the role is asked again right before placing (the runner raised the intent while the owner could trade)."""
+    t, _ = _armed_setup("cantrade", monkeypatch)
+
+    async def demote():
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            user.role = "VIEWER"
+            await session.commit()
+    assert _runner().submitted >= 1
+    _run(demote())
+    _drain()
+    row = _intent_of(t)
+    assert row.status == intents.REFUSED and "may not trade" in row.reason and _trades(t) == []

@@ -113,3 +113,25 @@ One PR, about 700 lines excluding tests:
 
 The flag `scan_auto_paper` is off by default. Merge order: after #214 (X1), because it uses the template table and
 the routes.
+
+## Review of X2 (fixes)
+
+- **H1:** a retried intent links what it already did before it is routed again: its PAPER order first (DONE, route
+  PAPER, "placed before an interruption"), else its proposal. A crash after placing, then a disarm, then a retry,
+  never raises a proposal for a second entry.
+- **M1:**
+  - The expiry and the stale-claim sweep link an order already placed (DONE, route PAPER), never EXPIRED or FAILED.
+  - The daily limit and the cool-down count the PAPER orders that opened a position (order key `intent:<id>` joined to
+    the scan intents of the rule and user), whatever the intents' own status.
+- **M2:**
+  - Auto PAPER places only while NSE is open (the session calendar, with holidays) and before the last entry time.
+  - The last entry time is the earliest of the venue's no-new-entries time (15:00), the 15:15 square-off and
+    `SCAN_AUTO_PAPER_LAST_ENTRY`. A malformed setting never widens the window.
+  - Outside the window the setup becomes a proposal.
+- **L1:**
+  - An arming is valid only if made after the operator last changed `scan_auto_paper` (audit `feature_flag_set`) and
+    for `SCAN_AUTO_PAPER_ARM_DAYS` (7) days. The reason is shown in `auto_paper.why`.
+  - `approval.can_trade(owner)` is asked again in the checks.
+- **L2:** the E1 AST guard rejects `**kwargs` and `*args` in the pipeline call.
+- **L3:** the drawer note reads "With the platform switch off or approval-only mode on, a setup is a proposal".
+

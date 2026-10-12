@@ -9,7 +9,7 @@ saved screens and runs on server data.
 """
 from __future__ import annotations
 
-import asyncio
+import functools
 import hashlib
 import logging
 import json
@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_trader
 from app.core.models import bars_to_dataframe
 from app.db.models import ScreenRecord, ScreenRunRecord, User
+from app.core.cpu import run_cpu
 from app.db.session import get_session, release_connection
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
@@ -297,7 +298,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
             problems[symbol] = f"{type(exc).__name__}: {str(exc)[:120]}"
             continue
         # LD-7: the pandas work per symbol runs on a worker thread, so a screen does not hold the event loop.
-        df, frames, problem = await asyncio.to_thread(_symbol_frames, bars, interval, base_tf, include_forming, now)
+        df, frames, problem = await run_cpu(_symbol_frames, bars, interval, base_tf, include_forming, now)
         if problem:
             problems[symbol] = problem
             continue
@@ -409,9 +410,10 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
-    matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
-    stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
-                                     vectorized=vectorized)
+    # LD-7: a few CPU-bound threads at a time per API process (app/core/cpu.py)
+    matches = await run_cpu(functools.partial(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized))
+    stages = await run_cpu(functools.partial(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
+                                             vectorized=vectorized))
     results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),

@@ -23,7 +23,6 @@ session's namespace only (never shared across users); each response carries a `d
 timestamp, staleness). Anything else is Tier C (EOD): a 409 with the reason and an `X-Data-Tier: C` header.
 `GET /api/market-data/data-tier` is the badge API for a symbol or a market-wide page.
 """
-import asyncio
 import logging
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional
@@ -37,6 +36,7 @@ from app.auth.dependencies import get_current_user
 from app.core.rate_limit import user_rate_limit
 from app.billing.service import meter
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
+from app.core.cpu import run_cpu
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
@@ -214,7 +214,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                 bars = await service.get_history(symbol, exchange, base_interval, body.before)
             else:
                 bars = await service.get_candles(symbol, exchange, base_interval)
-            bars, shaped = await asyncio.to_thread(_shaped, bars, body.timeframe)
+            bars, shaped = await run_cpu(_shaped, bars, body.timeframe)
             out[symbol] = {"bars": shaped, "count": len(bars),
                            "first": bars[0].timestamp.isoformat() if bars else None, "last": bars[-1].timestamp.isoformat() if bars else None, "error": None}
             if bars:

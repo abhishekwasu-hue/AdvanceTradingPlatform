@@ -278,8 +278,10 @@ class DhanBroker(BrokerInterface):
         bars: List[OHLCVBar] = []
         for i, ts in enumerate(stamps):
             try:
-                bars.append(OHLCVBar(timestamp=datetime.fromtimestamp(int(float(ts)), tz=timezone.utc).astimezone(IST), open=float(opens[i]), high=float(highs[i]),
-                                     low=float(lows[i]), close=float(closes[i]), volume=float(volumes[i]) if i < len(volumes) else 0.0))
+                # LD-7: every field is converted here already, so the bar is built without a second validation pass.
+                bars.append(OHLCVBar.model_construct(timestamp=datetime.fromtimestamp(int(float(ts)), tz=timezone.utc).astimezone(IST),
+                                                     open=float(opens[i]), high=float(highs[i]), low=float(lows[i]), close=float(closes[i]),
+                                                     volume=float(volumes[i]) if i < len(volumes) else 0.0))
             except (TypeError, ValueError, IndexError):
                 continue
         return bars

@@ -105,7 +105,7 @@ def test_slow_routes_release_before_their_broker_calls():
     assert fetch.index("await release_connection(session)") < fetch.index("for symbol in symbols:")
     run = screener[screener.index("async def run("):]
     assert "release=True" in run[:run.index("run_screen")]
-    assert run.index("await release_connection(session)") < run.index("asyncio.to_thread(run_screen")
+    assert run.index("await release_connection(session)") < run.index("run_cpu(functools.partial(run_screen")
 
 
 # --- several processes -------------------------------------------------------------------------------------------------
@@ -265,3 +265,44 @@ def test_bars_to_dataframe_mixed_zones_take_the_old_path():
             bars_to_dataframe(bars)
         return
     pd.testing.assert_frame_equal(bars_to_dataframe(bars), old)
+
+
+# --- CPU-bound work: a few threads at a time per process ---------------------------------------------------------------
+
+def test_run_cpu_runs_on_threads_a_few_at_a_time(monkeypatch):
+    import threading
+    import time
+
+    from app.core import cpu
+    monkeypatch.setattr(cpu, "CPU_THREADS", 2)
+    state = {"now": 0, "peak": 0}
+    lock = threading.Lock()
+    main = threading.get_ident()
+
+    def work(i):
+        assert threading.get_ident() != main                    # never on the event loop's thread
+        with lock:
+            state["now"] += 1
+            state["peak"] = max(state["peak"], state["now"])
+        time.sleep(0.02)
+        with lock:
+            state["now"] -= 1
+        return i * 2
+
+    async def go():
+        return await asyncio.gather(*(cpu.run_cpu(work, i) for i in range(8)))
+    assert asyncio.run(go()) == [i * 2 for i in range(8)]
+    assert state["peak"] == 2
+
+
+def test_dhan_bars_are_the_same_as_validated_ones():
+    from datetime import datetime, timezone
+
+    from app.brokers.dhan import IST
+    from app.core.models import OHLCVBar
+    stamp = 1790000000
+    built = OHLCVBar.model_construct(timestamp=datetime.fromtimestamp(stamp, tz=timezone.utc).astimezone(IST), open=1.0, high=2.0,
+                                     low=0.5, close=1.5, volume=10.0)
+    validated = OHLCVBar(timestamp=datetime.fromtimestamp(stamp, tz=timezone.utc).astimezone(IST), open=1.0, high=2.0, low=0.5,
+                         close=1.5, volume=10.0)
+    assert built == validated and built.model_dump(mode="json") == validated.model_dump(mode="json")

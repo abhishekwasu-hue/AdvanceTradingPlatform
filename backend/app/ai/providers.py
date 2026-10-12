@@ -51,6 +51,7 @@ TASK_TIERS: Dict[str, str] = {
     "strategy_generation": "strong", "strategist": "strong", "scanner_plan": "strong", "general": "strong",
     "narration": "fast", "copilot": "fast", "knowledge": "fast", "thesis": "fast",
     "classification": "cheap", "scanner_read": "cheap",
+    "support": "cheap",          # Z10-f: the support bot rewording one help passage
 }
 EFFORT_FOR_TIER = {"strong": "medium", "fast": "low", "cheap": "low"}
 # C1: thinking headroom per effort level (tokens the model may spend reasoning before the text starts).

@@ -1713,6 +1713,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `GET /api/screener/taxonomy` (flags `screener_v2` + new `screener_gallery`, both default OFF) and the gallery sheet
   on the Screener page (rail, chips, search, cards, matrix; empty cells said out loud). Flag off: page unchanged.
 - BK1 (#178) is not a dependency: its templates register when it merges (OPEN_QUESTIONS TX1-6). Questions TX1-1..TX1-8.
+
+### 2026-10-11 - Z10-f: legal pages + acceptance, support bot (flag support_bot, off)
+- Privacy notice (DPDP 2023), Terms of use, Risk disclosure as versioned Markdown (`backend/app/legal/content/`), each
+  headed "Draft — to be reviewed by a lawyer before launch"; retention / breach-notice figures read from
+  `app/retention` and `in_sebi.json`; company, address and grievance officer stay placeholders (owner blocker).
+- Public pages `/legal/<slug>` (no shell, no sign-in) and `GET /api/legal/documents[/{slug}]`; acceptance (version +
+  text hash + time + IP/browser) recorded at sign-up / team join, else asked by a non-blocking banner after sign-in.
+  Stored in `ai_acknowledgements` (kind `legal_*`): no migration.
+- Support bot `POST /api/ai/support/ask` (404 while off): help + legal retrieval, refuses advice / account / order
+  questions, hands low confidence to the feedback form, optional rewording only through the organisation's own
+  provider and the advice filter; AI rate units + its own per-user limit. Questions Z10F-1..Z10F-6.
+- Follow-up (coordinator): legal pages, the sign-up/invite consent box and the acceptance banner behind the new flag
+  `legal_pages` (default off: 404, sign-up unchanged, bot leaves legal out); turning it on is refused while placeholders
+  are open unless `override_open_placeholders` (audited). Z10F-5 updated.
 ### 2026-10-11 - Z10-e (G7 + rollout): staged beta cohort, public status page, on-call runbooks
 - Staged rollout: `BETA_COHORT_STAGES` 50 / 200 / 500; the PW6 gate stops at min(stage, `BETA_COHORT_CAP`). The stage is
   stored in `platform_controls` (`beta_cohort_stage`, no migration), moved in Admin > Beta rollout or

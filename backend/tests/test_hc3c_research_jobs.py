@@ -189,22 +189,36 @@ def test_the_worker_loop_drains_the_queue_and_stops_on_request(monkeypatch, rese
     _, mb = _owner("hc3c-loop-b@example.com")
     sids = [_enqueue(ma["tenant_id"], ma.get("user_id", ma.get("id"))), _enqueue(mb["tenant_id"], mb.get("user_id", mb.get("id")))]
     monkeypatch.setattr(research_worker, "POLL_SECONDS", 0.01)
+    real_run_once = research_worker.run_once
 
     async def go():
-        stop = asyncio.Event()
+        # Wait on the worker's own report that both studies ran - not on database polls. The suite's database is ONE
+        # shared SQLite connection (StaticPool): a poll's SELECT is stepped in one aiosqlite call and fetched in the next,
+        # and the worker's UPDATE (claim / finish) can run on the same connection in between - SQLite leaves a query
+        # undefined when its table changes under it on the same connection, so a poll could miss a row (the old flake).
+        stop, both_ran = asyncio.Event(), asyncio.Event()
+        ran: list = []
+
+        async def run_once(factory):
+            study = await real_run_once(factory)
+            if study in sids:
+                ran.append(study)
+                if set(ran) >= set(sids):
+                    both_ran.set()
+            return study
+        monkeypatch.setattr(research_worker, "run_once", run_once)
         task = asyncio.create_task(research_worker.run_forever(_session_factory, stop))
-        # up to ~15 s: the loop exits as soon as both jobs settle; a loaded CI runner needs more than the old 4 s
-        for _ in range(750):
-            await asyncio.sleep(0.02)
-            async with _session_factory() as session:
-                rows = (await session.scalars(select(ResearchStudyRecord).where(ResearchStudyRecord.study_id.in_(sids)))).all()
-            if all(r.status not in research_jobs.ACTIVE for r in rows):
-                break
-        stop.set()
-        await asyncio.wait_for(task, timeout=2)
-        return {r.study_id: r.status for r in rows}
-    statuses = _run(go())
-    assert set(statuses) == set(sids) and all(s in ("done", "failed") for s in statuses.values())
+        try:
+            await asyncio.wait_for(both_ran.wait(), timeout=60)      # a bound for a stuck worker only, not a settle window
+        finally:
+            stop.set()
+            await asyncio.wait_for(task, timeout=10)
+        async with _session_factory() as session:                    # the worker has stopped: nothing else on the connection
+            rows = (await session.scalars(select(ResearchStudyRecord).where(ResearchStudyRecord.study_id.in_(sids)))).all()
+        return ran, {r.study_id: r.status for r in rows}
+    ran, statuses = _run(go())
+    assert sorted(ran) == sorted(sids)                                # each study ran once, oldest first does not matter here
+    assert set(statuses) == set(sids) and all(s in ("done", "failed") for s in statuses.values()), statuses
 
 
 def test_list_and_detail_are_scoped_and_old_ledger_only_studies_still_read(monkeypatch, research_on, no_ack_gate):

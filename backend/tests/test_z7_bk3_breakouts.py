@@ -108,6 +108,42 @@ def test_vcp_rules_can_be_turned_off():
     assert _sig(vcp(break_volume=500.0), "B3", vol_mult=0.0) == [len(vcp()) - 1]
 
 
+def _zz(piv):
+    return [(p.kind, p.bar, p.confirmed, p.price) for p in piv]
+
+
+def test_vcp_zigzag_reseeds_the_opposite_extreme_from_the_bars_after_the_pivot():
+    """BK3 review M1: the swing confirmed at bar 8 (110 - 8 >= 101.5) must track its low from the LOWEST bar after the
+    pivot (101 @ 6), not from bar 8 (101.5) - else the contraction is too shallow and the base low too high."""
+    h = np.array([100.0, 102, 104, 106, 110, 105, 103, 104, 103, 112, 111])
+    lo = np.array([99.0, 101, 103, 105, 109, 103, 101, 102, 101.5, 108, 104])
+    thr = np.array([np.nan, 10, 10, 10, 10, 10, 10, 10, 8, 8, 8])
+    piv = _zz(V.zigzag(h, lo, thr))
+    assert piv[:3] == [("L", 0, 4, 99.0), ("H", 4, 8, 110.0), ("L", 6, 9, 101.0)]      # not 101.5 @ 8
+    from app.price_action.causal_swings import zigzag_pivots
+    ref = [(p.kind, p.pivot_bar, p.confirm_bar, p.price) for p in zigzag_pivots(pd.DataFrame({"high": h, "low": lo}), thr)]
+    assert piv == ref
+
+
+def test_vcp_zigzag_equals_the_price_action_zigzag_and_starts_at_the_first_priced_bar():
+    from app.price_action.causal_swings import zigzag_pivots
+    for seed in range(60):
+        rng = np.random.default_rng(seed)
+        n = 160
+        c = 100 + np.cumsum(rng.normal(0, 1, n))
+        h, lo = c + rng.uniform(0.1, 1.5, n), c - rng.uniform(0.1, 1.5, n)
+        thr = np.full(n, rng.uniform(2, 6))
+        thr[:int(rng.integers(0, 15))] = np.nan
+        ref = [(p.kind, p.pivot_bar, p.confirm_bar, p.price) for p in zigzag_pivots(pd.DataFrame({"high": h, "low": lo}), thr)]
+        assert _zz(V.zigzag(h, lo, thr)) == ref, seed
+    # BK3 review L1: a NaN first bar does not stall the zigzag (it starts from the first bar with prices)
+    h = np.array([np.nan, 100.0, 104, 110, 104, 99, 103, 108])
+    lo = np.array([np.nan, 99.0, 103, 109, 100, 98, 102, 107])
+    piv = _zz(V.zigzag(h, lo, np.full(len(h), 5.0)))
+    assert piv == [("L", 1, 2, 99.0), ("H", 3, 4, 110.0), ("L", 5, 6, 98.0)]
+    assert V.zigzag(np.full(3, np.nan), np.full(3, np.nan), np.ones(3)) == []
+
+
 def test_vcp_watchlist_lists_ready_bases_until_the_break():
     f = vcp()
     w = evaluate_screen(f, "B3", bp.settings(vcp_mode="watchlist"))["up"]
@@ -362,15 +398,20 @@ def test_the_engine_indicators_equal_the_platform_indicators(m15):
     np.testing.assert_allclose(ib.rsi(-b.c, 14), 100.0 - rsi(f["close"], 14).to_numpy(float), equal_nan=True, atol=1e-9)
 
 
-def test_the_engine_swings_are_the_causal_swing_engine_s(m15):
-    """Bars.pivots builds the zigzag on its own arrays (performance); the swings are causal_swings.degree_pivots'."""
+@pytest.mark.parametrize("mode", ["atr", "pct"])
+def test_the_engine_swings_are_the_causal_swing_engine_s(m15, mode, monkeypatch):
+    """Bars.pivots builds the zigzag on its own arrays (performance); the swings are causal_swings.degree_pivots' - in
+    the ATR and the percentage swing modes, and none on fewer than 3 bars (BK3 review L2)."""
     from app.price_action import causal_swings as cs
     from app.price_action import pa_settings
-    s = pa_settings.settings()
-    frame = pd.DataFrame({k: m15[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
-    frame["timestamp"] = frame["bar_end"] = m15.index
-    b = Bars(m15, bp.settings())
-    for degree in range(4):
-        want = [(p.kind, p.price, p.bar_idx, p.confirmed_idx) for p in cs.degree_pivots(frame, degree, s)]
-        assert [(p.kind, p.price, p.bar_idx, p.confirmed_idx) for p in b.pivots(degree)] == want
-        assert want or degree == 3
+    s = {**pa_settings.settings(), "swing_mode": mode}
+    monkeypatch.setattr(pa_settings, "settings", lambda *a, **k: s)
+    for f in (m15, m15.iloc[:2], m15.iloc[:3]):
+        frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+        frame["timestamp"] = frame["bar_end"] = f.index
+        b = Bars(f, bp.settings())
+        for degree in range(4):
+            want = [(p.kind, p.price, p.bar_idx, p.confirmed_idx) for p in cs.degree_pivots(frame, degree, s)]
+            assert [(p.kind, p.price, p.bar_idx, p.confirmed_idx) for p in b.pivots(degree)] == want, (mode, len(f), degree)
+            assert want or degree == 3 or len(f) < 100
+    assert Bars(m15.iloc[:2], bp.settings()).pivots(0) == []

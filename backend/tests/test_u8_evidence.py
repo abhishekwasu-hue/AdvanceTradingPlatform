@@ -168,6 +168,21 @@ def test_breakout_box_and_terms_come_from_the_breakout_engine():
     assert row["terms"][2]["value_text"].endswith(" ATR") and "range high" in row["verify"]
 
 
+def test_a_bk3_breakout_draws_its_pivot_from_the_breakout_engine():
+    """BK3 review L6: the VCP breakout's evidence row is the engine's (signal, pivot level, ATR distance), not the generic one."""
+    from tests.breakout_bk3_fixtures import vcp
+    f = vcp()
+    data = SymbolData("VCP", {"1d": f})
+    src = 'VCPBreakout("up")'
+    _a, _v, pack = _pack(src, data)
+    row = pack["rows"][0]
+    assert row["engine_signal"] is True and row["passed"] is True and pack["matched"] is True
+    assert row["terms"][1]["text"] == "pivot" and row["terms"][1]["value"] == pytest.approx(f["high"].iloc[-12:-1].max(), abs=1e-4)
+    assert any(d["row"] == row["id"] for d in pack["drawables"]) and row["terms"][2]["value_text"].endswith(" ATR")
+    ready = _pack('VCPReady("up")', SymbolData("VCP", {"1d": vcp(break_bar=False)}))[2]["rows"][0]
+    assert ready["engine_signal"] == ready["passed"] is True
+
+
 @pytest.mark.parametrize("name", sorted(set(ev.BREAKOUT_ARGS) - {"SwingBreakType"}))
 def test_every_breakout_function_keeps_signal_parity_with_the_runtime(name):
     f = base_then([TRUE_BREAK])

@@ -263,11 +263,12 @@ def _fresh_only(current: List[SymbolData], tf: str, now: datetime, holidays: Ite
 
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
-                        breakouts_enabled: bool = True, zones_enabled: bool = True, per_user: bool = False,
+                        breakouts_enabled: bool = False, zones_enabled: bool = False, per_user: bool = False,
                         vectorized: bool = False, evidence_enabled: bool = False,
                         breakout_extra_flags: Optional[Dict[str, bool]] = None) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
-    (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time."""
+    (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time. Every flag
+    argument defaults to OFF (BK3 review L7): `run_due` passes each organisation's own flags; a direct caller opts in."""
     from app.alerts.engine import record_event
     now = _utc(now)
     intrabar = rule.fire_on == "intrabar"

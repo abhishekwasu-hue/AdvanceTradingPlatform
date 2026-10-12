@@ -1128,8 +1128,24 @@ notes, sources and the parameter table: `docs/research/breakouts.md`. Open quest
 - **Z10-a.** Each of the six functions has causal cases on 5m, with an `@1h` variant where the data allows, plus daily
   cases. Every case produces values, and the VCP cases run with the template off so that the synthetic bars form
   bases.
-- **Not in BK3.** Evidence-pack terms for the BK3 functions (EV1 maps BK1's; BK3-6) and frontend changes (the
-  builder reads the catalog, so the new blocks and templates show up when the flag is on).
+- **Review fixes (BK3 review).**
+  - The VCP zigzag: when a swing is confirmed at bar t, it now tracks the new opposite extreme from the most extreme bar
+    after the pivot (up to t), as `causal_swings.zigzag_pivots` does. It used to start from bar t, which skipped a deeper
+    low or higher high in between, so contractions came out too shallow and the base low too high. It also starts from
+    the first bar with prices. Tests: a regression case, plus equality with `zigzag_pivots` on random series.
+  - `Bars.pivots` returns no swings on fewer than 3 bars, as `degree_pivots` does. The parity test now covers the
+    percentage swing mode as well.
+  - `/api/screener/breakouts/run`:
+    - It checks the BK3 flag before reading the request.
+    - A BK3 screen fetches its two longest windows end to end plus the ATR warm-up (465 daily bars for the VCP
+      defaults; a week counts as 5 sessions).
+    - A symbol with fewer bars than the screen's longest window is listed as "not enough history" instead of running
+      to a silent no-match.
+  - Evidence packs draw the BK3 breakouts from the engine (`evidence.BREAKOUT_ARGS`: the pivot, channel, band, line or
+    window high, with the same parity test). BK2's intraday screens read the session clock, so they stay in the strip.
+  - `barclose.evaluate_rule` defaults every flag argument to off. `run_due` passes each organisation's own flags.
+- **Not in BK3.** Frontend changes: the builder reads the catalog, so the new blocks and templates appear when the flag
+  is on.
 
 ## U6 BK4 (built): trendline, pattern, gap and retest breakouts (flag `screener_breakouts_bk4` on top of `screener_breakouts`, both off)
 Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §8 BK4 (B5 / B6 / B8 / B9). Code: `app/screener/breakouts/lines.py`,

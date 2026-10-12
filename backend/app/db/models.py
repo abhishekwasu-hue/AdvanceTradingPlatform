@@ -2275,6 +2275,25 @@ class PaperAccountRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
 
 
+class ExperienceOptOutRecord(Base):
+    """N2-2 (P1 spec 1.4, flag `experience_levels`): a user's explicit opt-out of one experience gate (naked short options,
+    futures) for one IST day, with the reason they typed. Logged (audit) and counted on the level card; it lets that
+    user's own entries of that kind through until the day ends. Personal: tenant + user; exits never consult it."""
+
+    __tablename__ = "experience_opt_outs"
+    __table_args__ = (UniqueConstraint("user_id", "gate", "day", name="uq_experience_opt_outs_user_gate_day"),
+                      Index("ix_experience_opt_outs_user_day", "user_id", "day"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    gate: Mapped[str] = mapped_column(String(32), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)     # the user's level when they opted out
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)              # IST day it covers
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class TradePlanRecord(Base):
     """Z5 / P1-d (P1 spec 1.2): the plan behind a PAPER ticket - setup, direction, entry / stop / target, reward:risk,
     time stop, invalidation note and the pre-trade checklist - with the sizing it was checked against (the user's risk

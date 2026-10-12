@@ -131,6 +131,13 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z3-b / BT3: each user's own PAPER account (starting capital, balance, P&L after charges, positions, journal), the
     # progression ladder card (PAPER stage only in Phase 0) and the Telegram /status /pause /resume /paper commands.
     "paper_account": "Per-user PAPER account, progression ladder card and Telegram /status /pause /resume /paper",
+    # Z5 / P1-d (P1 spec 1.1, 1.2, 2.2): the plan-before-trade PAPER ticket (a plan, a checklist, quantity sized from the
+    # user's risk cap, a logged and counted override, the cost line), the per-user daily loss lockout (new PAPER entries
+    # only; exits are never locked) and the short-strike breach chance on proposal cards. OFF: nothing changes.
+    "risk_by_default": "Plan-before-trade PAPER ticket, per-user risk cap sizing with logged overrides, daily loss lockout (exits allowed) and cost line",
+    # Z5 (Trade port): India VIX gate - a spike against the previous close pauses new bullish index entries for the day;
+    # a high VIX level cuts the risk per trade. Exits are never gated. OFF: nothing changes.
+    "vix_gate": "India VIX gate: a VIX spike pauses new bullish index entries for the day, a high VIX cuts the size (exits never gated)",
     # U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library taxonomy (method x setup) and the gallery
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
@@ -144,7 +151,7 @@ FEATURE_FLAGS: Dict[str, str] = {
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "screener_breakouts"})
+                               "risk_by_default", "vix_gate", "screener_breakouts"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

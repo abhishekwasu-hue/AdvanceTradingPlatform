@@ -1849,8 +1849,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   under one acting user (`_acting_user`: the first deployment's creator, else the owner), so member B's automated trades
   could carry member A's user id (and land in A's own-trades tax report, #225 / OPEN_QUESTIONS TX-3).
 - Now `_deployment_user`: a deployment's entries (and its failure alert) act as `dep.created_by` when that user is an
-  active member of the same organisation; otherwise the organisation's acting user, as before. A creator from another
-  organisation is never used. Exits, square-off, stop guard and reconciliation are unchanged (ADR-0004).
+  active member of the same organisation with a trading role; no recorded creator keeps the organisation's acting user. Exits, square-off, stop guard and reconciliation are unchanged (ADR-0004).
+- Review: a creator who is removed, inactive, of another organisation, or without a trading role / `trading:write`
+  makes the deployment open NO new entries (skipped with `last_error`; OPEN_QUESTIONS TX-4) instead of re-attributing
+  them; exits untouched. The lookup sits inside the per-deployment try (a failure falls back to the acting user and the
+  loop goes on). Approval-only proposals use the same resolved user.
 - No backfill: existing rows keep the user id they were filed under. No flag (a correctness fix).
 - Tests: `tests/test_worker_acting_user.py` (owner and member deployments each file their own trades; square-off
-  still closes both; inactive or foreign creators fall back).
+  still closes both; removed / foreign / VIEWER creators open no entries while the removed member's open position is
+  still squared off; no creator and a failed lookup fall back; approval-only proposals go to the resolved user).

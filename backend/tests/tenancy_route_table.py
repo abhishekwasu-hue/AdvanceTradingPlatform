@@ -62,6 +62,8 @@ S_PREVIEW = "self: previews the contract a deployment would trade; stores nothin
 S_OWN_MARKET_DATA = ("self: reads candles / option chains through a broker session - the organisation's (its budget) or, with the "
                      "bring-your-own-broker tier on, the caller's own; nothing is stored; rate limited per user")
 S_COMPUTE = "self: computes over the request body or the organisation's data and returns it; stores nothing"
+S_OWN_EVIDENCE_TELEGRAM = ("self: sends the caller's OWN evidence image (a pack whose user is the caller) to the caller's own linked "
+                           "private Telegram chat; stores nothing, never another member's pack or chat (rate limited)")
 
 
 ROUTE_TABLE: Dict[Tuple[str, str], str] = {
@@ -488,6 +490,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/scanner/run"): S_COMPUTE,
     ("GET", "/api/screener/breakouts/catalog"): "member",
     ("POST", "/api/screener/breakouts/run"): "trader",
+    ("GET", "/api/screener/evidence/runs/{run_id}"): "member",
+    ("GET", "/api/screener/evidence/{evidence_id}"): "member",
+    ("GET", "/api/screener/evidence/{evidence_id}/image.png"): "member",
+    ("POST", "/api/screener/evidence/{evidence_id}/telegram"): S_OWN_EVIDENCE_TELEGRAM,
     ("GET", "/api/screener/registry"): "member",
     ("POST", "/api/screener/run"): "trader",
     ("GET", "/api/screener/runs/{run_id}"): "member",

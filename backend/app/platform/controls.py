@@ -171,6 +171,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
     # Research only - matches, never orders.
     "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
+    # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
+    # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
+    # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
+    "evidence_charts": "Evidence charts: each screen match drawn with only the screen's own conditions, a verify strip with the engine's numbers, and the image on Telegram (informational, places no orders)",
     # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
     # answers 404 and the page says it is not enabled.
@@ -186,7 +190,8 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages"})
+                               "support_bot", "legal_pages",
+                               "evidence_charts"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

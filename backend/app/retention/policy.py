@@ -57,6 +57,7 @@ class RetentionPolicy:
     market_zones_daily_days: int = 90
     market_zones_weekly_days: int = 730
     market_zones_tenant_idle_days: int = 30
+    screen_evidence_days: int = 90    # U8 EV1/EV2: evidence packs stored with screen runs and alert events
     # H-C1 e: days after which an llm_calls row's text is scrubbed (the row, its hashes, model, cost stay). 0 = keep the
     # text (the default: removing it is the operator's data-retention decision, OPEN_QUESTIONS H-6).
     llm_text_days: int = 0
@@ -71,6 +72,7 @@ class RetentionPolicy:
             "market_snapshots_days": self.market_snapshots_days, "news_feed_days": self.news_feed_days, "ai_candidates_days": self.ai_candidates_days,
             "llm_text_days": self.llm_text_days, "market_zones_daily_days": self.market_zones_daily_days,
             "market_zones_weekly_days": self.market_zones_weekly_days, "market_zones_tenant_idle_days": self.market_zones_tenant_idle_days,
+            "screen_evidence_days": self.screen_evidence_days,
             "never_deleted": list(NEVER_DELETED),
         }
 
@@ -94,6 +96,7 @@ def load_policy() -> RetentionPolicy:
         market_zones_daily_days=_days("RETENTION_MARKET_ZONES_DAILY_DAYS", 90),
         market_zones_weekly_days=_days("RETENTION_MARKET_ZONES_WEEKLY_DAYS", 730),
         market_zones_tenant_idle_days=_days("RETENTION_MARKET_ZONES_TENANT_IDLE_DAYS", 30),
+        screen_evidence_days=_days("RETENTION_SCREEN_EVIDENCE_DAYS", 90),
     )
 
 

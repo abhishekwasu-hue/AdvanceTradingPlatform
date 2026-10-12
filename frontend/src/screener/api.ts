@@ -6,7 +6,8 @@ import type { Taxonomy } from "./taxonomy";
 
 export interface Problem { message: string; pos: number | null }
 export interface ValidateResponse { ok: boolean; problems: Problem[]; text: string | null; plan: { cost: number; lookback: Record<string, number> } }
-export interface RunResult { symbol: string; matched: boolean; reason: string | null }
+/** U8: `evidence_id` - the stored evidence pack of a matched symbol (flag evidence_charts; absent while it is off). */
+export interface RunResult { symbol: string; matched: boolean; reason: string | null; evidence_id?: number | null }
 export interface RunResponse {
   run_id: number; text: string; base_tf: string; data_source: string; scanned: number; matched: string[];
   results: RunResult[]; funnel: FunnelResult; disclaimer: string;

@@ -1061,6 +1061,14 @@ questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
 - **Z10-a harness.** `app/quality/causal_cases.py` covers the 15 breakout functions (BK1 and BK2), each with an
   `@` variant where the data allows. Z10-6 records BK2's VWAP answer (NaN without volume).
 
+## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
+Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
+- Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own
+  evaluator builds it in the same pass, and bars after the match are dropped.
+- "Show on chart" draws ONLY the screen's conditions, with the verify strip (the engine's values and pass / fail).
+- EV2: the same chart as a deterministic PNG, sent to the user's own linked Telegram chat.
+- Open questions EV-1 .. EV-10.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

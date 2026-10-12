@@ -19,8 +19,12 @@ export const LINE_LABELS: Record<LegendLineKey, string> = { who: "Who", style: "
 
 export interface LegendLine { text: string; cite: string[] }
 export interface LegendSource {
-  id: string; kind: string; title: string; authors: string[]; year: number; publisher: string; covers: string; review: string; citation: string;
+  id: string; kind: string; title: string; authors: string[]; year: number; publisher: string; covers: string; citation: string;
+  /** LG1-2: the bibliographic check against public catalogue records - "verified" | "unverified", why, and the record URLs. */
+  review: string; review_note: string; evidence: string[];
 }
+/** LG1-2: "verified" when every source the card cites is verified; otherwise "unverified" and the note says why. */
+export interface LegendReview { status: "verified" | "unverified"; note: string }
 export interface LegendParam { name: string; default: number; min: number; max: number; doc: string }
 export interface LegendCardData {
   id: string;
@@ -31,6 +35,7 @@ export interface LegendCardData {
   sources: LegendSource[];
   approximation: string;
   disclaimer: string;
+  review: LegendReview;
   screen: { id: string; source: string; base_tf: string; params: LegendParam[] };
   filing: { method: string; setup: string; tags: Record<string, unknown> } | null;
 }

@@ -520,8 +520,10 @@ def run_panel(ast: Any, validated: Validated, universe: List[SymbolData], *, bas
             continue
         try:
             value = _PanelEval(panel, base_tf, params).ev(ast, base_tf)
-        except Exception:  # noqa: BLE001 - the per-symbol runtime gives each symbol its own reason
-            logger.info("Vectorised screen fell back to per-symbol evaluation for %d symbols", len(members), exc_info=True)
+        except Exception as exc:  # noqa: BLE001 - the per-symbol runtime gives each symbol its own reason
+            logger.warning("Vectorised screen fell back to per-symbol evaluation for %d symbols: %s: %s", len(members), type(exc).__name__,
+                           str(exc)[:200])
+            logger.debug("Vectorised screen fallback traceback", exc_info=True)
             rest.extend(members)
             continue
         last = value.iloc[-1].tolist() if isinstance(value, pd.DataFrame) else [value] * len(members)

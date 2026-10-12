@@ -1,12 +1,15 @@
 """Z10-d (ATP_SCREENER_SPEC §1.1, §1.5): the screen result cache - "cached < 200 ms".
 
 A screen's matches depend only on the screen (its AST and parameters), the base timeframe, the universe and the bars.
-The key is hash(AST, params, timeframe, universe, as_of) as the spec words it:
+The key is hash(namespace, AST, params, timeframe, universe, as_of) as the spec words it:
 
-* `as_of` given (an EOD batch knows the session it ran on, and the lake's bars for a closed session do not change):
-  the symbols and that stamp;
-* `as_of` not given: a fingerprint of each symbol's bars - bar count, first and last bar time and the last bar's
-  values - so a new bar, a revised last bar or a longer history is a different key.
+* `namespace` is required: whose data the bars are - (tenant id, user id when the data tier is per user (BT1
+  `byob_data_tier`) else None, data source / tier), see `namespace()`. One organisation's (or one user's) result is
+  never served to another, even for the same screen and symbols.
+* `as_of` given: the symbols and that stamp. Valid ONLY for the shared EOD lake, whose bars for a closed session never
+  change; bars read from a broker session must not pass `as_of`.
+* `as_of` not given: a fingerprint of each symbol's bars - count, first and last bar time, the columns and a hash of
+  every value - so a new bar or any revised value is a different key.
 
 Entries live for a short TTL (spec: live 15-30 s; EOD until the next bar - the caller says which) and the cache is
 bounded (least recently used out). It holds results only, never bars, and lives in the process (one per worker).
@@ -22,6 +25,7 @@ from collections import OrderedDict
 from dataclasses import replace
 from typing import Any, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 
 from app.screener import nodes
@@ -36,6 +40,14 @@ def _stamp(value: Any) -> str:
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
 
 
+def namespace(tenant_id: int, *, user_id: Optional[int] = None, per_user: bool = False, source: str) -> Tuple[Any, ...]:
+    """The cache namespace of a run: the organisation, the user when the data tier is per user, and the data source /
+    tier (e.g. "lake:eod", "broker:upstox")."""
+    if per_user and user_id is None:
+        raise ValueError("a per-user data tier needs the user id in the cache namespace")
+    return (int(tenant_id), int(user_id) if per_user and user_id is not None else None, str(source))
+
+
 def _fingerprint(data: SymbolData, base_tf: str) -> Tuple[Any, ...]:
     frame = data.frames.get(base_tf)
     if frame is None or frame.empty:
@@ -43,12 +55,21 @@ def _fingerprint(data: SymbolData, base_tf: str) -> Tuple[Any, ...]:
     index = frame.index
     ends = (int(index.asi8[0]), int(index.asi8[-1])) if isinstance(index, pd.DatetimeIndex) else (_stamp(index[0]), _stamp(index[-1]))
     values = frame.to_numpy()                                  # one float block: a view, not a copy
-    last = values[-1].tobytes() if values.dtype.kind == "f" else repr(values[-1].tolist())
-    return (data.symbol, len(frame), ends, tuple(frame.columns), last)
+    if values.dtype.kind == "f":                               # every value, hashed in memory order (no copy when contiguous)
+        by_column = bool(values.T.flags.c_contiguous)
+        block = values.T if by_column else np.ascontiguousarray(values)
+        digest = ("col" if by_column else "row") + hashlib.blake2b(np.ascontiguousarray(block).data, digest_size=16).hexdigest()
+    else:
+        digest = "repr" + hashlib.blake2b(repr(values.tolist()).encode(), digest_size=16).hexdigest()
+    return (data.symbol, len(frame), ends, tuple(frame.columns), digest)
 
 
-def cache_key(ast: Any, base_tf: str, params: Optional[Dict[str, Any]], universe: List[SymbolData], *, as_of: Optional[Any] = None) -> str:
-    head = json.dumps({"ast": nodes.to_json(ast), "version": nodes.VERSION, "tf": base_tf, "params": params or {}}, sort_keys=True, default=str)
+def cache_key(namespace: Tuple[Any, ...], ast: Any, base_tf: str, params: Optional[Dict[str, Any]], universe: List[SymbolData], *,
+              as_of: Optional[Any] = None) -> str:
+    if not namespace:
+        raise ValueError("a result cache key needs a namespace (tenant, user for a per-user tier, data source)")
+    head = json.dumps({"ns": list(namespace), "ast": nodes.to_json(ast), "version": nodes.VERSION, "tf": base_tf, "params": params or {}},
+                      sort_keys=True, default=str)
     body: Any = ([d.symbol for d in universe], _stamp(as_of)) if as_of is not None else [_fingerprint(d, base_tf) for d in universe]
     digest = hashlib.sha256(head.encode())
     digest.update(repr(body).encode())
@@ -84,15 +105,20 @@ class ResultCache:
             while len(self._entries) > self.max_entries:
                 self._entries.popitem(last=False)
 
-    def run(self, ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str, params: Optional[Dict[str, Any]] = None,
-            as_of: Optional[Any] = None, ttl_seconds: float = LIVE_TTL_SECONDS, vectorized: bool = False) -> Tuple[List[Match], bool]:
-        """(matches, served from the cache)."""
-        key = cache_key(ast, base_tf, params, universe, as_of=as_of)
+    def run(self, ast: Any, validated: Validated, universe: List[SymbolData], *, namespace: Tuple[Any, ...], base_tf: str,
+            params: Optional[Dict[str, Any]] = None, as_of: Optional[Any] = None, ttl_seconds: float = LIVE_TTL_SECONDS,
+            vectorized: bool = False) -> Tuple[List[Match], bool]:
+        """(matches, served from the cache). `namespace` is required (see `namespace()`); `as_of` only for the shared
+        EOD lake."""
+        key = cache_key(namespace, ast, base_tf, params, universe, as_of=as_of)
         cached = self.get(key)
+        with self._lock:
+            if cached is not None:
+                self.hits += 1
+            else:
+                self.misses += 1
         if cached is not None:
-            self.hits += 1
             return cached, True
-        self.misses += 1
         matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
         self.put(key, matches, ttl_seconds)
         return matches, False
@@ -102,4 +128,4 @@ class ResultCache:
             self._entries.clear()
 
 
-__all__ = ["ResultCache", "cache_key", "LIVE_TTL_SECONDS"]
+__all__ = ["ResultCache", "cache_key", "namespace", "LIVE_TTL_SECONDS"]

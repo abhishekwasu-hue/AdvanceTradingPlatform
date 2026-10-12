@@ -169,7 +169,7 @@ jobs:
 
   # Z10-d (G4 + load, docs/PERFORMANCE.md): the screener's performance targets (ATP_SCREENER_SPEC §1.5) on a synthetic
   # universe - each the median of 5 timed runs after a warm-up, the budget scaled by the printed CI factor - and the
-  # session-shaped load test with 20 users against the in-process test app (in-memory SQLite, never a deployed host).
+  # session-shaped load test with 20 users against the in-process test app (a temporary SQLite file, never a deployed host).
   # Numbers are written as check-run notices. Runs alongside the other jobs (about 1.5 minutes, most of it pip and the load test).
   perf:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
@@ -196,7 +196,7 @@ jobs:
         run: python -m pytest tests/test_z10d_perf.py -q -rA -s -p no:cacheprovider
 
       - name: Load test, 20 session-shaped users against the in-process test app (scripts/loadtest.py; SLO per scenario)
-        run: python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 1 --annotate
+        run: python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 1 --slo-factor auto --annotate
 
   frontend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository

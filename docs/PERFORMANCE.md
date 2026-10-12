@@ -13,7 +13,7 @@ a staging host.
 | Target (§1.5) | CI runner, median of 5 | Budget | Per-symbol runtime (flag off) |
 |---|---|---|---|
 | EOD screen, 2,500 symbols x 50 factors, daily bars | **0.38-0.67 s** | 3 s | 50-82 s (estimated: 50 symbols timed, then x 50) |
-| The same screen again, from the result cache | **2-3 ms** (key: universe + as_of); **14-26 ms** (key: bar fingerprints) | 0.2 s | same |
+| The same screen again, from the result cache (**not wired yet**: no route or job calls the cache; OPEN_QUESTIONS Z10-d2) | **2-3 ms** (key: universe + as_of); **14-26 ms** before full-block hashing (key: bar fingerprints) | 0.2 s | same |
 | Bar-close scan, 200 symbols (4 rules x 50), 5-minute bars, through the bar-close engine | **0.10-0.20 s** | 1 s | **0.66-1.44 s** (over the target on the slower runners) |
 
 These are the ranges over the CI runs of 2026-10-11 (GitHub-hosted `ubuntu-latest`). The calibration took 0.057-0.083 s,
@@ -67,7 +67,7 @@ symbols that share a bar index into one frame per field (one column per symbol) 
   screen's base timeframe. A call that appears twice in a screen is computed once.
 - **Not covered,** so these run per symbol unchanged: another timeframe, Rank / PercentileRank, price-action, option
   chain and classifier functions. A group whose evaluation raises also falls back, and each symbol then gets its own
-  reason. A symbol alone in its index group (a new listing, a suspension gap) also runs per symbol.
+  reason; the fallback is logged as a WARNING with the exception type, so a kernel problem does not go unseen. A symbol alone in its index group (a new listing, a suspension gap) also runs per symbol.
 - **Few symbols, many bars.** For a frame with fewer symbols than bars, the kernels hand the work to pandas column by
   column, which is cheaper there.
 - **Speed-up.** About 130x for the 2,500-symbol EOD screen and about 7x for a bar-close cycle (50 symbols per rule)
@@ -76,11 +76,16 @@ symbols that share a bar index into one frame per field (one column per symbol) 
   (`/api/screener/run`, including the U5 funnel) and the bar-close engine pass `vectorized=True`. OPEN_QUESTIONS Z10-d1
   proposes turning it on.
 
-**The result cache (`app/screener/result_cache.py`).** It works as the spec describes:
-- the key is a hash of the AST, params, timeframe, universe and as_of;
-- with no as_of, the key uses a fingerprint of each symbol's bars instead: count, first and last bar time, and the last
-  bar's values;
-- entries are bounded, expire after a TTL and are returned as copies.
+**The result cache (`app/screener/result_cache.py`).** It works as the spec describes, with a namespace in front:
+- the key is a hash of the namespace, AST, params, timeframe, universe and as_of;
+- the namespace is required by the API: (tenant id, the user id when the data tier is per user (BT1), the data source
+  / tier), so one organisation's or one user's result is never served to another;
+- `as_of` is valid only for the shared EOD lake, whose bars for a closed session never change. Bars read through a
+  broker session use the fingerprint instead;
+- with no as_of, the key uses a fingerprint of each symbol's bars: count, first and last bar time, the columns and a
+  hash of every value (so a revised old bar is a new key too);
+- entries are bounded, expire after a TTL and are returned as copies; the hit and miss counters are kept under the
+  lock.
 
 It is the "cached < 200 ms" path for an EOD batch screen. That batch run (a lake-backed screen over the full universe)
 does not exist yet. OPEN_QUESTIONS Z10-d2 covers where it plugs in.
@@ -125,8 +130,9 @@ The test app is `scripts/loadtest_app.py`:
 - synthetic broker bars;
 - `screener_v2` and `paper_account` on.
 
-The command is `python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 1 --annotate`.
-The job fails when the SLO is missed.
+The command is `python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 1 --slo-factor auto
+--annotate`. `--slo-factor auto` scales the p95 limits by the CI factor (the G4 calibration, never below 1), so a slow
+runner does not fail the job on noise; the server-error limit is never scaled. The job fails when the SLO is missed.
 
 Run of 2026-10-11 (GitHub-hosted runner): 20 users (5 accounts) for 30 s, 3,198 requests, 102 requests/s, 0 server
 errors, **SLO PASS**.
@@ -162,8 +168,10 @@ python scripts/loadtest.py --base https://<staging host> --users 500 --seconds 6
     --accounts accounts.csv --json > loadtest-500.json
 ```
 
-- **Hosts.** The script accepts localhost, or a host whose name contains `staging`. A staging host with another name
-  must be listed in `LOADTEST_ALLOWED_HOSTS=<host>`. Never list the production VPS.
+- **Hosts.** The script accepts localhost, or a host with a DNS label that is exactly `staging`
+  (`staging.example.org`, `api.staging.example.org`; not `api-staging.example.org` or `notstaging.example.com`). A
+  staging host with another name must be listed in `LOADTEST_ALLOWED_HOSTS=<host>`. Never list the production VPS.
+- **SLO.** Keep the plain limits against staging (no `--slo-factor`).
 - **Run length.** Keep `--ramp` + `--seconds` under 14 minutes. Access tokens live 15 minutes, and later requests
   would answer 401.
 - **Flags and data.** Turn `screener_v2` on for the staging tenants first, or the screener scenario is reported as
@@ -195,8 +203,9 @@ Measured in the test app with 4 logins at once while another client polled `/api
 | Before | 23 | 1,018 ms (a whole bcrypt check) |
 | After | 64 | 497 ms (CPU contention on a loaded 4-vCPU sandbox) |
 
-The checks now run on the thread pool (`security.verify_password_async` / `hash_password_async`). bcrypt releases the
-GIL while it works. The answers are unchanged, and the timing parity for unknown e-mails is kept: the dummy hash is
+The checks now run on worker threads (`security.verify_password_async` / `hash_password_async`) under bcrypt's own
+`anyio.CapacityLimiter`, sized to the CPUs the process may use: more checks at once than CPUs only slow each one, and
+a login wave no longer takes the shared thread pool that sync routes use. bcrypt releases the GIL while it works. The answers are unchanged, and the timing parity for unknown e-mails is kept: the dummy hash is
 still checked.
 
 At 500 users this matters most during the morning login wave.

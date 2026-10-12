@@ -17,7 +17,7 @@ import pandas as pd
 import pytest
 
 from app.screener import compile_screen, panel, parse
-from app.screener.result_cache import ResultCache, cache_key
+from app.screener.result_cache import ResultCache, cache_key, namespace
 from app.screener.runtime import Match, SymbolData, evaluate, run_screen
 
 
@@ -204,31 +204,48 @@ def test_symbols_are_grouped_by_identical_index_in_universe_order():
 
 # --- result cache ---------------------------------------------------------------------------------------------------
 
-def test_the_result_cache_key_follows_the_screen_the_universe_and_the_bars():
+def test_the_result_cache_key_follows_the_namespace_the_screen_the_universe_and_every_bar():
     data = _mixed_universe()
     ast, validated = compile_screen("close > SMA(close, 20)", base_tf="1d")
     other, _ = compile_screen("close > SMA(close, 21)", base_tf="1d")
-    base = cache_key(ast, "1d", {}, data)
-    assert base == cache_key(ast, "1d", {}, data)
-    assert base != cache_key(other, "1d", {}, data)
-    assert base != cache_key(ast, "1d", {"n": 1}, data)
-    assert base != cache_key(ast, "1d", {}, data[:-1])
-    revised = [SymbolData(d.symbol, {"1d": d.frames["1d"].copy()}) for d in data]
-    revised[0].frames["1d"].iloc[-1, revised[0].frames["1d"].columns.get_loc("close")] += 1.0     # a revised last bar
-    assert base != cache_key(ast, "1d", {}, revised)
-    stamped = cache_key(ast, "1d", {}, data, as_of="2026-10-09")
-    assert stamped == cache_key(ast, "1d", {}, revised, as_of="2026-10-09") != cache_key(ast, "1d", {}, data, as_of="2026-10-12")
+    ns = namespace(1, source="broker:upstox")
+    base = cache_key(ns, ast, "1d", {}, data)
+    assert base == cache_key(ns, ast, "1d", {}, data)
+    assert base != cache_key(namespace(2, source="broker:upstox"), ast, "1d", {}, data)                  # another organisation
+    assert base != cache_key(namespace(1, source="lake:eod"), ast, "1d", {}, data)                        # another source / tier
+    assert cache_key(namespace(1, user_id=7, per_user=True, source="broker:upstox"), ast, "1d", {}, data) != \
+        cache_key(namespace(1, user_id=8, per_user=True, source="broker:upstox"), ast, "1d", {}, data)    # BT1: per user
+    assert namespace(1, user_id=7, source="s") == namespace(1, source="s")                                # shared tier: the user does not split it
+    with pytest.raises(ValueError):
+        namespace(1, per_user=True, source="s")
+    with pytest.raises(ValueError):
+        cache_key((), ast, "1d", {}, data)
+    assert base != cache_key(ns, other, "1d", {}, data)
+    assert base != cache_key(ns, ast, "1d", {"n": 1}, data)
+    assert base != cache_key(ns, ast, "1d", {}, data[:-1])
+    for row in (-1, 5):                                                       # a revised last bar, and a revised OLD bar
+        revised = [SymbolData(d.symbol, {"1d": d.frames["1d"].copy()}) for d in data]
+        frame = revised[0].frames["1d"]
+        frame.iloc[row, frame.columns.get_loc("close")] += 0.01
+        assert base != cache_key(ns, ast, "1d", {}, revised), row
+    stamped = cache_key(ns, ast, "1d", {}, data, as_of="2026-10-09")
+    assert stamped == cache_key(ns, ast, "1d", {}, revised, as_of="2026-10-09") != cache_key(ns, ast, "1d", {}, data, as_of="2026-10-12")
 
 
 def test_the_result_cache_serves_copies_until_the_ttl_and_stays_bounded():
     data = _mixed_universe()
     ast, validated = compile_screen("close > SMA(close, 20)", base_tf="1d")
+    ns = namespace(1, source="broker:upstox")
     cache = ResultCache(max_entries=2)
-    first, hit = cache.run(ast, validated, data, base_tf="1d", vectorized=True)
-    again, hit2 = cache.run(ast, validated, data, base_tf="1d", vectorized=True)
+    first, hit = cache.run(ast, validated, data, namespace=ns, base_tf="1d", vectorized=True)
+    again, hit2 = cache.run(ast, validated, data, namespace=ns, base_tf="1d", vectorized=True)
     assert (hit, hit2) == (False, True) and _as_tuples(first) == _as_tuples(again) == _as_tuples(run_screen(ast, validated, data, base_tf="1d"))
+    assert (cache.hits, cache.misses) == (1, 1)
+    assert cache.run(ast, validated, data, namespace=namespace(2, source="broker:upstox"), base_tf="1d")[1] is False   # never across tenants
     again[0].matched = not again[0].matched                                  # a caller changing its copy changes nothing
-    assert _as_tuples(cache.run(ast, validated, data, base_tf="1d")[0]) == _as_tuples(first)
+    assert _as_tuples(cache.run(ast, validated, data, namespace=ns, base_tf="1d")[0]) == _as_tuples(first)
+    with pytest.raises(TypeError):
+        cache.run(ast, validated, data, base_tf="1d")                                                     # the namespace is required
     cache.put("k", [Match("X", True)], ttl_seconds=10, now=100.0)
     assert cache.get("k", now=105.0)[0].matched and cache.get("k", now=111.0) is None
     for key in ("a", "b", "c"):
@@ -271,3 +288,16 @@ def test_a_missing_column_is_missing_for_a_field_and_an_error_for_an_indicator_a
     for text in ("high > 0", "ATR(14) > 0", "close > SMA(close, 5)"):
         ast, validated = compile_screen(text, base_tf="1d")
         assert _as_tuples(run_screen(ast, validated, data, base_tf="1d", vectorized=True)) == _as_tuples(run_screen(ast, validated, data, base_tf="1d")), text
+
+
+def test_a_group_fallback_is_logged_as_a_warning_with_the_exception_type(monkeypatch, caplog):
+    data = _mixed_universe()
+    ast, validated = compile_screen("close > SMA(close, 20)", base_tf="1d")
+
+    def boom(self, node, tf):
+        raise ZeroDivisionError("kernel broke")
+    monkeypatch.setattr(panel._PanelEval, "ev", boom)
+    with caplog.at_level("WARNING", logger="app.screener.panel"):
+        run_screen(ast, validated, data, base_tf="1d", vectorized=True)
+    warnings = [r for r in caplog.records if r.name == "app.screener.panel" and r.levelname == "WARNING"]
+    assert warnings and all("ZeroDivisionError: kernel broke" in r.getMessage() for r in warnings)

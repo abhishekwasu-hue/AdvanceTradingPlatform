@@ -15,12 +15,15 @@ import loadtest  # noqa: E402
 from app.auth import security  # noqa: E402
 
 
-@pytest.mark.parametrize("base", ["http://localhost:8000", "http://127.0.0.1:9000", "https://staging.example.org", "https://api-staging.example.in"])
+@pytest.mark.parametrize("base", ["http://localhost:8000", "http://127.0.0.1:9000", "https://staging.example.org", "https://api.staging.example.in",
+                                  "https://STAGING.example.org."])
 def test_localhost_and_staging_hosts_are_allowed(base):
     loadtest.check_host(base)
 
 
-@pytest.mark.parametrize("base", ["https://example.org", "https://app.example.in", "http://203.0.113.7", "https://prod.example.com"])
+@pytest.mark.parametrize("base", ["https://example.org", "https://app.example.in", "http://203.0.113.7", "https://prod.example.com",
+                                  "https://api-staging.example.in", "https://notstaging.example.com", "https://example.com/staging",
+                                  "https://staging-prod.example.com"])
 def test_any_other_host_is_refused(base, monkeypatch):
     monkeypatch.delenv("LOADTEST_ALLOWED_HOSTS", raising=False)
     with pytest.raises(SystemExit) as refused:
@@ -62,6 +65,19 @@ def test_the_report_judges_each_scenario_against_its_own_p95_and_the_error_rate(
         errors.add("positions", 10.0, "server_error" if i < 2 else "ok")  # 1% server errors
     assert not loadtest.report(errors, 1, 1.0)["slo_pass"]
     assert not loadtest.report(loadtest.Stats(), 1, 1.0)["slo_pass"]       # nothing measured is not a pass
+
+
+def test_the_slo_factor_scales_the_p95_limits_never_the_error_limit():
+    stats = loadtest.Stats()
+    for _ in range(100):
+        stats.add("positions", 700.0, "ok")
+    assert not loadtest.report(stats, 1, 1.0)["slo_pass"]
+    scaled = loadtest.report(stats, 1, 1.0, slo_factor=1.5)
+    assert scaled["slo_pass"] and scaled["scenarios"]["positions"]["p95_limit_ms"] == 750.0 and scaled["slo_factor"] == 1.5
+    for _ in range(2):
+        stats.add("positions", 10.0, "server_error")
+    assert not loadtest.report(stats, 1, 1.0, slo_factor=10.0)["slo_pass"]
+    assert loadtest._slo_factor("0.5") == 1.0 and loadtest._slo_factor("1.7") == 1.7
 
 
 def test_percentile_is_nearest_rank():
@@ -132,3 +148,21 @@ def test_the_paper_account_proposal_counts_in_one_query_match_the_four_counts():
             return want, await service._proposal_counts(session, user)
     want, got = asyncio.run(go())
     assert got == want == {"approved_by_you": 3, "rejected_by_you": 1, "pending": 2, "expired_unanswered": 1}
+
+
+def test_bcrypt_runs_under_its_own_limiter_sized_to_the_cpus(monkeypatch):
+    import anyio.to_thread
+    seen = []
+    real = anyio.to_thread.run_sync
+
+    async def spy(fn, *args, limiter=None, **kwargs):
+        seen.append(limiter)
+        return await real(fn, *args, limiter=limiter, **kwargs)
+    monkeypatch.setattr(anyio.to_thread, "run_sync", spy)
+
+    async def go():
+        hashed = await security.hash_password_async("pw")
+        return await security.verify_password_async("pw", hashed)
+    assert asyncio.run(go()) is True
+    assert len(seen) == 2 and seen[0] is seen[1] and seen[0] is not None
+    assert seen[0].total_tokens == security.BCRYPT_CONCURRENCY >= 1

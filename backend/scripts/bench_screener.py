@@ -33,7 +33,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.screener import compile_screen  # noqa: E402
-from app.screener.result_cache import ResultCache  # noqa: E402
+from app.screener.result_cache import ResultCache, namespace  # noqa: E402
 from app.screener.runtime import SymbolData, run_screen  # noqa: E402
 
 EOD_SYMBOLS, EOD_BARS = 2_500, 300                # about 14 months of sessions: room for the 200-bar factors
@@ -147,14 +147,15 @@ def bench_eod(symbols: int = EOD_SYMBOLS, repeat: int = 5, vectorized: bool = Tr
     def once() -> None:
         matches[:] = run_screen(ast, validated, data, base_tf="1d", vectorized=vectorized)
     timed = median_time(once, repeat)
+    lake = namespace(1, source="lake:eod")                     # as_of keys are for the shared EOD lake only
     cache = ResultCache()
     as_of = data[0].frames["1d"].index[-1]
-    cache.run(ast, validated, data, base_tf="1d", as_of=as_of, ttl_seconds=3600, vectorized=vectorized)
-    cached = median_time(lambda: cache.run(ast, validated, data, base_tf="1d", as_of=as_of, ttl_seconds=3600, vectorized=vectorized), max(repeat, 5) * 4)
+    cache.run(ast, validated, data, namespace=lake, base_tf="1d", as_of=as_of, ttl_seconds=3600, vectorized=vectorized)
+    cached = median_time(lambda: cache.run(ast, validated, data, namespace=lake, base_tf="1d", as_of=as_of, ttl_seconds=3600, vectorized=vectorized), max(repeat, 5) * 4)
     assert cache.hits >= 1
     fingerprinted = ResultCache()
-    fingerprinted.run(ast, validated, data, base_tf="1d", ttl_seconds=3600, vectorized=vectorized)
-    by_bars = median_time(lambda: fingerprinted.run(ast, validated, data, base_tf="1d", ttl_seconds=3600, vectorized=vectorized), max(repeat, 5))
+    fingerprinted.run(ast, validated, data, namespace=namespace(1, source="broker:synthetic"), base_tf="1d", ttl_seconds=3600, vectorized=vectorized)
+    by_bars = median_time(lambda: fingerprinted.run(ast, validated, data, namespace=namespace(1, source="broker:synthetic"), base_tf="1d", ttl_seconds=3600, vectorized=vectorized), max(repeat, 5))
     return {"symbols": symbols, "bars": EOD_BARS, "factors": len(EOD_FACTORS), "vectorized": vectorized,
             "matched": sum(m.matched for m in matches), "with_reason": sum(1 for m in matches if m.reason),
             "eod_screen": timed, "eod_cached": cached, "eod_cached_by_bars": by_bars}

@@ -5,7 +5,10 @@ not in a bearer that crosses logs and proxies), and its header names the signing
 can be rotated: `JWT_SECRET_KEY` signs, `JWT_PREVIOUS_SECRET_KEYS` still verify. Tokens minted before P0.3 (no
 iss/aud) are accepted while `JWT_ACCEPT_LEGACY` is on - they expire within minutes anyway.
 """
+import asyncio
 import hashlib
+import os
+import weakref
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -40,18 +43,41 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(raw, hashed.encode())
 
 
+def _cpu_count() -> int:
+    try:
+        return max(1, len(os.sched_getaffinity(0)))           # the CPUs this process may use (a container's share)
+    except (AttributeError, OSError):
+        return max(1, os.cpu_count() or 1)
+
+
+BCRYPT_CONCURRENCY = _cpu_count()
+_bcrypt_limiters: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]" = weakref.WeakKeyDictionary()
+
+
+def _bcrypt_limiter() -> Any:
+    """bcrypt's own thread limit, one per event loop, sized to the CPU count: more checks at once than CPUs only make
+    every one of them slower, and they must not take the shared thread pool (40 threads) that sync routes and file I/O
+    use - a login wave would otherwise queue every sync endpoint behind it."""
+    import anyio
+    loop = asyncio.get_running_loop()
+    limiter = _bcrypt_limiters.get(loop)
+    if limiter is None:
+        limiter = _bcrypt_limiters[loop] = anyio.CapacityLimiter(BCRYPT_CONCURRENCY)
+    return limiter
+
+
 async def verify_password_async(password: str, hashed: str) -> bool:
     """`verify_password` on a worker thread. bcrypt is slow on purpose (a quarter of a second or more per check); run
     inline in an async route it holds the event loop, so every other request of that API process waits behind each
     login (Z10-d load test: dashboard p99 about 2 s while users logged in). bcrypt releases the GIL while it works."""
-    from starlette.concurrency import run_in_threadpool
-    return await run_in_threadpool(verify_password, password, hashed)
+    import anyio.to_thread
+    return await anyio.to_thread.run_sync(verify_password, password, hashed, limiter=_bcrypt_limiter())
 
 
 async def hash_password_async(password: str) -> str:
-    """`hash_password` on a worker thread (same reason as `verify_password_async`)."""
-    from starlette.concurrency import run_in_threadpool
-    return await run_in_threadpool(hash_password, password)
+    """`hash_password` on a worker thread (same reason and the same limiter as `verify_password_async`)."""
+    import anyio.to_thread
+    return await anyio.to_thread.run_sync(hash_password, password, limiter=_bcrypt_limiter())
 
 
 def create_access_token(user_id: int, email: Optional[str] = None, session_id: Optional[int] = None) -> str:

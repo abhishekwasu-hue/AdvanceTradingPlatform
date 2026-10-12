@@ -19,14 +19,16 @@ Responses that are not failures of the API are counted apart, never as errors: a
 X-Feature-Disabled), no broker session (409) and rate limiting (429).
 
 Safety: read paths plus login and a preview screen - it places, changes and approves nothing, and it never sends an
-order. `--base` must be localhost or a staging host (its name contains "staging", or it is listed in
-LOADTEST_ALLOWED_HOSTS): the script refuses anything else, so it is never pointed at the production VPS by mistake.
+order. `--base` must be localhost or a staging host (one of its DNS labels is exactly "staging", as in
+staging.example.org or api.staging.example.org, or it is listed in LOADTEST_ALLOWED_HOSTS): the script refuses anything else, so it is never pointed at the production VPS by mistake.
 Accounts: `--accounts FILE` (one `email,password` per line; user i uses account i mod n, and the first user of each
 account logs in for it - so keep the file to about 8 accounts: the login limit is 10 a minute per IP), `--token` (one
 shared access token, no login step), or neither: it registers `--register` throwaway accounts (needs self sign-up on).
 Access tokens live 15 minutes: keep `--ramp` + `--seconds` under 14 minutes, or late requests answer 401.
-`--in-process` runs the test app (scripts/loadtest_app.py: in-memory SQLite, synthetic broker bars, the test suite's
-rate-limit overrides) with no server and no network. Results go into docs/PERFORMANCE.md.
+`--in-process` runs the test app (scripts/loadtest_app.py: a temporary SQLite file, synthetic broker bars, the test
+suite's rate-limit overrides) with no server and no network. `--slo-factor auto` (CI) scales the p95 limits by the
+machine's CI factor (scripts/bench_screener.py calibration, never below 1); a staging run keeps the plain limits.
+Results go into docs/PERFORMANCE.md.
 """
 from __future__ import annotations
 
@@ -85,12 +87,12 @@ def classify(status: Optional[int], headers: Optional[httpx.Headers] = None) -> 
 
 def check_host(base: str) -> None:
     """Refuse anything but localhost or a staging host (never the production VPS)."""
-    host = (urlparse(base).hostname or "").lower()
-    allowed = {h.strip().lower() for h in os.environ.get("LOADTEST_ALLOWED_HOSTS", "").split(",") if h.strip()}
-    if host in SAFE_HOSTS or "staging" in host or host in allowed:
+    host = (urlparse(base).hostname or "").lower().rstrip(".")
+    allowed = {h.strip().lower().rstrip(".") for h in os.environ.get("LOADTEST_ALLOWED_HOSTS", "").split(",") if h.strip()}
+    if host in SAFE_HOSTS or "staging" in host.split(".") or host in allowed:          # a whole DNS label, never a substring
         return
     raise SystemExit(f"loadtest refuses {host!r}: only localhost or a staging host. It must never run against the production VPS; "
-                     "for a staging host without 'staging' in its name set LOADTEST_ALLOWED_HOSTS=<host>.")
+                     "for a staging host without a 'staging' label in its name set LOADTEST_ALLOWED_HOSTS=<host>.")
 
 
 @dataclass
@@ -184,16 +186,17 @@ def _read_accounts(path: str) -> List[Account]:
     return [Account(*row.split(",", 1)) for row in rows]
 
 
-def report(stats: Stats, users: int, elapsed: float) -> Dict[str, Any]:
+def report(stats: Stats, users: int, elapsed: float, slo_factor: float = 1.0) -> Dict[str, Any]:
+    """`slo_factor` scales the p95 limits (a slower CI machine), never the server-error limit."""
     total = sum(len(v) for v in stats.latency.values())
     errors = sum(o.get("server_error", 0) + o.get("transport", 0) for o in stats.outcomes.values())
     out: Dict[str, Any] = {"users": users, "seconds": round(elapsed, 1), "requests": total, "rps": round(total / elapsed, 1) if elapsed else 0.0,
-                           "error_rate": round(errors / total, 4) if total else 0.0, "scenarios": {}}
+                           "error_rate": round(errors / total, 4) if total else 0.0, "slo_factor": round(slo_factor, 2), "scenarios": {}}
     slo = True
     for scenario in sorted(stats.latency):
         values = stats.latency[scenario]
         p95 = percentile(values, 95)
-        limit = P95_LIMIT_MS.get(scenario, DEFAULT_P95_MS)
+        limit = P95_LIMIT_MS.get(scenario, DEFAULT_P95_MS) * slo_factor
         outcomes = dict(stats.outcomes[scenario])
         measured = outcomes.get("ok", 0) > 0                   # a scenario the deployment refuses as a whole is reported, not judged
         passed = (not measured) or p95 <= limit
@@ -206,7 +209,8 @@ def report(stats: Stats, users: int, elapsed: float) -> Dict[str, Any]:
 
 
 def print_report(r: Dict[str, Any], annotate: bool = False) -> None:
-    print(f"{r['users']} users x {r['seconds']}s: {r['requests']} requests, {r['rps']} rps, server errors {r['error_rate']:.2%}")
+    print(f"{r['users']} users x {r['seconds']}s: {r['requests']} requests, {r['rps']} rps, server errors {r['error_rate']:.2%}, "
+          f"p95 limits x {r.get('slo_factor', 1.0)}")
     print(f"{'scenario':38} {'n':>6} {'p50':>8} {'p95':>8} {'p99':>8} {'limit':>6}  outcomes")
     for name, s in r["scenarios"].items():
         print(f"{name:38} {s['n']:>6} {s['p50_ms']:>8} {s['p95_ms']:>8} {s['p99_ms']:>8} {s['p95_limit_ms']:>6.0f}  "
@@ -216,6 +220,7 @@ def print_report(r: Dict[str, Any], annotate: bool = False) -> None:
         lines = [f"{name} n {s['n']} p50 {s['p50_ms']} p95 {s['p95_ms']} ms ({'ok' if s['pass'] else 'OVER'} {s['p95_limit_ms']:.0f})"
                  for name, s in r["scenarios"].items()]
         print(f"::notice title=loadtest::{r['users']} users, {r['requests']} requests, {r['rps']} rps, server errors {r['error_rate']:.2%}, "
+              f"p95 limits x {r.get('slo_factor', 1.0)}, "
               f"SLO {'PASS' if r['slo_pass'] else 'FAIL'}; " + "; ".join(lines))
 
 
@@ -246,7 +251,17 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
     deadline = started + args.ramp + args.seconds
     await asyncio.gather(*(_session(i, make_client, accounts[i % len(accounts)], i < len(accounts), stats, args.ramp * i / max(1, args.users), deadline,
                                     args.think, args.seed) for i in range(args.users)))
-    return report(stats, args.users, time.monotonic() - started)
+    return report(stats, args.users, time.monotonic() - started, slo_factor=_slo_factor(args.slo_factor))
+
+
+def _slo_factor(value: str) -> float:
+    """A number, or "auto": the CI factor of scripts/bench_screener.py (this machine's time for a fixed workload over the
+    reference runner's, never below 1)."""
+    if value != "auto":
+        return max(1.0, float(value))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    import bench_screener
+    return float(bench_screener.ci_factor())
 
 
 def main() -> int:
@@ -264,6 +279,7 @@ def main() -> int:
     parser.add_argument("--seed", type=int, default=54)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--annotate", action="store_true", help="also print a GitHub Actions notice with the summary")
+    parser.add_argument("--slo-factor", default="1", help='scale the p95 limits (>= 1), or "auto" for the CI factor (CI only)')
     args = parser.parse_args()
     if args.ramp is None:
         args.ramp = args.seconds / 10

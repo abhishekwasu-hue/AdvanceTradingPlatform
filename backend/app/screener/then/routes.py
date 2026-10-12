@@ -26,6 +26,8 @@ class ThenBody(BaseModel):
     confirm_tf: str = Field(default=T.DEFAULT_TF, pattern=r"^(5m|15m)$")
     enabled: bool = True
     gate: Dict[str, Any] = Field(default_factory=dict, description="gate setting overrides (Trade's defaults otherwise)")
+    take_over: bool = Field(default=False, description="review of X1b: saving a template another member set makes you its owner - "
+                                                         "their setups then go to you; required to confirm that")
 
 
 async def _rule(session: AsyncSession, user: User, rule_id: int) -> AlertRuleRecord:
@@ -49,6 +51,15 @@ def _sees_status(user: User, row: Any) -> bool:
     return row is None or row.user_id == user.id or _is_owner_role(user)
 
 
+def _view(row: Any, rule: AlertRuleRecord, user: User, include_status: bool = True) -> Dict[str, Any]:
+    """The template plus what the caller may do with it: who set it (you / another member) and whether the server would
+    take the caller's save or removal (the panel hides what it would refuse)."""
+    out = T.as_dict(row, rule.id, include_status=include_status)
+    out["set_by_you"] = row is None or row.user_id == user.id
+    out["may_change"] = _may_change(user, rule)
+    return out
+
+
 async def _template(session: AsyncSession, rule: AlertRuleRecord) -> Any:
     return await session.scalar(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.rule_id == rule.id,
                                                                      ScanThenTemplateRecord.tenant_id == rule.tenant_id))
@@ -59,7 +70,7 @@ async def get_then(rule_id: int, user: User = Depends(get_current_user), session
     await require_flag(session, T.FLAG, user.tenant_id)
     rule = await _rule(session, user, rule_id)
     row = await _template(session, rule)
-    return T.as_dict(row, rule.id, include_status=_sees_status(user, row))
+    return _view(row, rule, user, include_status=_sees_status(user, row))
 
 
 @router.put("/rules/{rule_id}/then", dependencies=[Depends(require_scope("alerts:write"))])
@@ -75,6 +86,10 @@ async def put_then(rule_id: int, body: ThenBody, user: User = Depends(require_tr
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     now = datetime.now(timezone.utc)
     row = await _template(session, rule)
+    if row is not None and row.user_id is not None and row.user_id != user.id and not body.take_over:
+        # Review of X1b (MED): an OWNER saving a member's template would silently take it over (setups go to the saver).
+        raise HTTPException(status_code=409, detail="Another member set this Then. Saving makes you its owner: setups will go to you, not "
+                                                    "to them. Save again with take_over to confirm.")
     if row is None:
         row = ScanThenTemplateRecord(tenant_id=rule.tenant_id, rule_id=rule.id, created_at=now)
         session.add(row)
@@ -82,7 +97,7 @@ async def put_then(rule_id: int, body: ThenBody, user: User = Depends(require_tr
     row.gate_settings_json, row.updated_at = json.dumps(gate, sort_keys=True), now
     row.last_bar_at, row.last_status_json, row.last_problem = None, None, None
     await session.commit()
-    return T.as_dict(row, rule.id)
+    return _view(row, rule, user)
 
 
 @router.delete("/rules/{rule_id}/then", dependencies=[Depends(require_scope("alerts:write"))])
@@ -95,4 +110,4 @@ async def delete_then(rule_id: int, user: User = Depends(require_trader), sessio
     if row is not None:
         await session.delete(row)
         await session.commit()
-    return T.as_dict(None, rule.id)
+    return _view(None, rule, user)

@@ -163,7 +163,8 @@ def test_template_checks():
     with pytest.raises(T.TemplateError):
         T.check_mode("SOMETHING")
     assert T.check_gate({"min_rr": 2, "wait_next_candle": True}) == {"min_rr": 2.0, "wait_next_candle": True}
-    for bad in ({"min_rr": 0.5}, {"max_armed_bars": 99}, {"wait_next_candle": 1}, {"trend_retry_min": 5}, {"min_rr": "3"}):
+    for bad in ({"min_rr": 0.5}, {"max_armed_bars": 99}, {"wait_next_candle": 1}, {"trend_retry_min": 5}, {"min_rr": "3"},
+                {"max_armed_bars": 2.5}):                                       # review of X1b: an integer is never truncated
         with pytest.raises(T.TemplateError):
             T.check_gate(bad)
     assert T.FLAG in __import__("app.platform.controls", fromlist=["x"]).DEFAULT_OFF_FLAGS
@@ -649,6 +650,21 @@ def test_then_routes(monkeypatch):
     _run(set_status(created_by=None))
     assert client.put(url, headers=member, json={"mode": "NOTIFY"}).status_code == 403
     assert client.put(url, headers=t["headers"], json={"mode": "NOTIFY"}).status_code == 200
+    # Review of X1b (MED): the OWNER saving a template another member set must confirm the take-over.
+    async def set_template_user(user_id):
+        async with _session_factory() as session:
+            tpl = await session.scalar(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.rule_id == rule_id))
+            tpl.user_id = user_id
+            await session.commit()
+    member_id = client.get("/api/auth/me", headers=member).json()["id"]
+    _run(set_template_user(member_id))
+    seen = client.get(url, headers=t["headers"]).json()
+    assert seen["set_by_you"] is False and seen["may_change"] is True and seen["user_id"] == member_id
+    assert client.get(url, headers=member).json()["may_change"] is False                  # (the rule is ownerless now)
+    silent = client.put(url, headers=t["headers"], json={"mode": "NOTIFY"})
+    assert silent.status_code == 409 and "Saving makes you its owner" in silent.text and _template(rule_id).user_id == member_id
+    taken = client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "take_over": True})
+    assert taken.status_code == 200 and taken.json()["set_by_you"] is True and _template(rule_id).user_id == t["user_id"]
     other = _tenant(_email("other"), with_credentials=False)
     _flag("scan_then", other["tenant_id"])
     assert client.get(url, headers=other["headers"]).status_code == 404                  # another organisation's rule

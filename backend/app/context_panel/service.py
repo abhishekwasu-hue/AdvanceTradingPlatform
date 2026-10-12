@@ -21,6 +21,7 @@ broker session of anyone is used. The panel describes; it never says what to do.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Optional, Sequence
@@ -41,6 +42,7 @@ MARKET = "NIFTY 50"
 VIX = "INDIA VIX"
 REGIME_DAYS = 550          # calendar days of daily bars read for the weekly structure
 VIX_RANK_SESSIONS = 252
+GLOBAL_FAIL_BACKOFF_SECONDS = 60
 MAX_MISSING_SESSIONS = 1   # a daily file one session behind is normal (published in the evening); more is stale
 TILES = ("regime", "breadth", "vix", "fii_dii", "global", "events")
 
@@ -206,13 +208,25 @@ async def fii_dii_tile(session: AsyncSession, user: Viewer, today: date, holiday
     return {"status": "ok", "source": source, "as_of": data.get("as_of"), **{k: v for k, v in data.items() if k != "as_of"}}
 
 
+_global_failed_at: Dict[str, float] = {"at": 0.0}
+
+
+def reset_global_backoff() -> None:
+    _global_failed_at["at"] = 0.0
+
+
 async def global_tile(session: AsyncSession, user: Viewer, today: date, holidays: Sequence[date]) -> Dict[str, Any]:
     from app.ai import global_cues
     source = global_cues.SOURCE_NOTE_EN
     if not global_cues.enabled():
         return na("Global cues are switched off on this server (GLOBAL_CUES_ENABLED)", source)
+    # Review: during an outage a panel load does not fan out to every upstream again for GLOBAL_FAIL_BACKOFF_SECONDS
+    # (the shared cache keeps only successful reads).
+    if time.monotonic() - _global_failed_at["at"] < GLOBAL_FAIL_BACKOFF_SECONDS:
+        return na("No global market answered a moment ago; asked again shortly", source)
     quotes, errors = await global_cues.fetch_all()
     if not quotes:
+        _global_failed_at["at"] = time.monotonic()
         return na("No global market answered" + (f" ({len(errors)} failed)" if errors else ""), source)
     order = {m.key: i for i, m in enumerate(global_cues.MARKETS)}
     rows = sorted(({"key": q["key"], "name": global_cues.BY_KEY[q["key"]].en if q["key"] in global_cues.BY_KEY else q["key"],

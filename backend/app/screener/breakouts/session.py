@@ -47,19 +47,11 @@ class SessionCalendar:
     special: Mapping[date, Tuple[time, time]] = field(default_factory=dict)
 
 
-# Currency derivatives (NSE CDS / BSE BCD) trade 09:00-17:00 IST. The platform calendar still maps them to the equity
-# family (the trading worker's clock - BK2-8 records that change as separate work), so the SCREENER reads their session
-# from here; cut-offs keep the equity margins (30 / 15 minutes before the close).
-SCREENER_SESSIONS = {"CDS": ExchangeSession("CDS", time(9, 0), time(17, 0), time(16, 30), time(16, 45), holiday_calendar="NSE")}
-_SCREENER_ALIASES = {"CDS": "CDS", "NSE_CD": "CDS", "BCD": "CDS", "BSE_CD": "CDS"}
-
-
 def calendar_for(exchange: Optional[str] = "NSE", special: Optional[Mapping[date, Tuple[time, time]]] = None) -> SessionCalendar:
-    """The session clock of an exchange (segment aliases as in the calendar: NFO / BSE -> NSE, MCX_FO -> MCX; currency
-    derivatives -> their own 09:00-17:00 clock, screener only). A 24x7 venue has no session open, so the intraday session
+    """The session clock of an exchange (segment aliases as in the calendar: NFO / BSE -> NSE, MCX_FO -> MCX, CDS / BCD ->
+    CDS 09:00-17:00 - since BK2-8 the trading worker's clock too). A 24x7 venue has no session open, so the intraday session
     screens do not run on it."""
-    own = _SCREENER_ALIASES.get((exchange or "NSE").upper())
-    spec = SCREENER_SESSIONS[own] if own else EXCHANGE_SESSIONS[session_family(exchange)]
+    spec: ExchangeSession = EXCHANGE_SESSIONS[session_family(exchange)]
     if spec.always_open:
         raise ValueError(f"{spec.name} trades around the clock: the session screens need an exchange with an open and a close")
     return SessionCalendar(spec.name, spec.open, spec.close, spec.no_new_entries_after, IST, dict(special or {}))

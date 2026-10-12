@@ -4,8 +4,13 @@
    "breaks": 46,
    "legs": 68,
    "levels": 68,
+   "liquidity": 12,
+   "mtf": 0,
+   "structure": 52,
+   "sweeps": 0,
    "swings": 72,
-   "trend": 4
+   "trend": 4,
+   "trendlines": 2
   },
   "debug_info": {
    "degrees": [
@@ -116,7 +121,7 @@
     ]
    }
   },
-  "fingerprint": "2c14c6d9e025884c897652a4d090401f48761a2b811f46df191c79feb1432aad"
+  "fingerprint": "c11ef806768c1772562da0db39741327ed2fda11e8e019792203554d957e9dca"
  },
  "default": {
   "as_of": "2026-03-17T10:00:00+00:00",
@@ -169,7 +174,7 @@
   ],
   "debug": false,
   "degree": 2,
-  "fingerprint": "2de59fba2ee4e3c6628e112d93f2aa348d5a5e120149cb4f33c81b9b3d45087f",
+  "fingerprint": "b3bdf1d1dafaee76652acdeecfdd64863589077d27b19ded32402c4ca34393ea",
   "first_bar": 1772423100,
   "last_bar": 1773740700,
   "last_close": 47279.84,
@@ -178,14 +183,23 @@
     "bars": 64,
     "change": -1552.15,
     "change_pct": -3.23,
+    "choch": false,
+    "class": "WEAK_IMPULSE",
+    "class_text": "weak impulse",
     "degree": 2,
+    "depth": null,
     "direction": "down",
+    "efficiency": 0.372,
     "from": {
      "price": 48110.83,
      "time": 1772433900
     },
+    "overlap": 0.652,
+    "reasons": "efficiency 0.37, overlap 0.65, displacement 3, FVG 10",
+    "role": "impulse",
+    "score": 68.6,
     "status": "confirmed",
-    "text": "-3.23% · 64 bars",
+    "text": "weak impulse ↓ · -3.23% · 64 bars",
     "to": {
      "price": 46558.68,
      "time": 1772683200
@@ -195,14 +209,23 @@
     "bars": 38,
     "change": 799.53,
     "change_pct": 1.72,
+    "choch": false,
+    "class": "DANGEROUS_PULLBACK",
+    "class_text": "dangerous pullback",
     "degree": 2,
+    "depth": 0.515,
     "direction": "up",
+    "efficiency": 0.328,
     "from": {
      "price": 46558.68,
      "time": 1772683200
     },
+    "overlap": 0.62,
+    "reasons": "displacement 2 / FVG 8 in the pullback's direction",
+    "role": "pullback",
+    "score": 30.0,
     "status": "confirmed",
-    "text": "+1.72% · 38 bars",
+    "text": "dangerous pullback ↑ · +1.72% · 38 bars",
     "to": {
      "price": 47358.21,
      "time": 1772781300
@@ -212,14 +235,23 @@
     "bars": 36,
     "change": -766.61,
     "change_pct": -1.62,
+    "choch": false,
+    "class": "DANGEROUS_PULLBACK",
+    "class_text": "dangerous pullback",
     "degree": 2,
+    "depth": 0.959,
     "direction": "down",
+    "efficiency": 0.296,
     "from": {
      "price": 47358.21,
      "time": 1772781300
     },
+    "overlap": 0.607,
+    "reasons": "deep (96% > 80%); displacement 3 / FVG 9 in the pullback's direction",
+    "role": "pullback",
+    "score": 2.5,
     "status": "confirmed",
-    "text": "-1.62% · 36 bars",
+    "text": "dangerous pullback ↓ · -1.62% · 36 bars",
     "to": {
      "price": 46591.6,
      "time": 1773114300
@@ -229,14 +261,23 @@
     "bars": 23,
     "change": 465.4,
     "change_pct": 1.0,
+    "choch": false,
+    "class": "DANGEROUS_PULLBACK",
+    "class_text": "dangerous pullback",
     "degree": 2,
+    "depth": 0.607,
     "direction": "up",
+    "efficiency": 0.385,
     "from": {
      "price": 46591.6,
      "time": 1773114300
     },
+    "overlap": 0.681,
+    "reasons": "displacement 3 / FVG 4 in the pullback's direction",
+    "role": "pullback",
+    "score": 24.4,
     "status": "confirmed",
-    "text": "+1.00% · 23 bars",
+    "text": "dangerous pullback ↑ · +1.00% · 23 bars",
     "to": {
      "price": 47057.0,
      "time": 1773135000
@@ -246,14 +287,23 @@
     "bars": 31,
     "change": -724.82,
     "change_pct": -1.54,
+    "choch": false,
+    "class": "WEAK_IMPULSE",
+    "class_text": "weak impulse",
     "degree": 2,
+    "depth": 1.557,
     "direction": "down",
+    "efficiency": 0.292,
     "from": {
      "price": 47057.0,
      "time": 1773135000
     },
+    "overlap": 0.578,
+    "reasons": "efficiency 0.29, overlap 0.58, displacement 1, FVG 7",
+    "role": "impulse",
+    "score": 65.2,
     "status": "confirmed",
-    "text": "-1.54% · 31 bars",
+    "text": "weak impulse ↓ · -1.54% · 31 bars",
     "to": {
      "price": 46332.18,
      "time": 1773290700
@@ -263,14 +313,23 @@
     "bars": 43,
     "change": 815.68,
     "change_pct": 1.76,
+    "choch": false,
+    "class": "REVERSAL",
+    "class_text": "reversal",
     "degree": 2,
+    "depth": 1.125,
     "direction": "up",
+    "efficiency": 0.36,
     "from": {
      "price": 46332.18,
      "time": 1773290700
     },
+    "overlap": 0.644,
+    "reasons": "113% retrace of the previous impulse (> 100%); efficiency 0.36, overlap 0.64, displacement 4, FVG 7",
+    "role": "impulse",
+    "score": 68.2,
     "status": "confirmed",
-    "text": "+1.76% · 43 bars",
+    "text": "reversal ↑ · +1.76% · 43 bars",
     "to": {
      "price": 47147.86,
      "time": 1773393300
@@ -280,14 +339,23 @@
     "bars": 23,
     "change": -486.47,
     "change_pct": -1.03,
+    "choch": true,
+    "class": "DANGEROUS_PULLBACK",
+    "class_text": "dangerous pullback",
     "degree": 2,
+    "depth": 0.596,
     "direction": "down",
+    "efficiency": 0.374,
     "from": {
      "price": 47147.86,
      "time": 1773393300
     },
+    "overlap": 0.65,
+    "reasons": "displacement 0 / FVG 6 in the pullback's direction",
+    "role": "pullback",
+    "score": 28.8,
     "status": "confirmed",
-    "text": "-1.03% · 23 bars",
+    "text": "dangerous pullback ↓ · -1.03% · 23 bars",
     "to": {
      "price": 46661.39,
      "time": 1773650700
@@ -336,7 +404,196 @@
     "text": "swing low 46332.18 · D2"
    }
   ],
-  "schema": "pa-layer/1",
+  "liquidity": [
+   {
+    "beyond": false,
+    "label": "swing BSL",
+    "price": 47358.21,
+    "price_text": "47358.21",
+    "side": "buy",
+    "src": "swing",
+    "text": "buy-side liquidity · swing 47358.21"
+   },
+   {
+    "beyond": false,
+    "label": "PDL SSL",
+    "price": 46661.39,
+    "price_text": "46661.39",
+    "side": "sell",
+    "src": "PDL",
+    "text": "sell-side liquidity · previous day low 46661.39"
+   }
+  ],
+  "mtf": [],
+  "schema": "pa-layer/2",
+  "structure": [
+   {
+    "confirmed_time": 1773126000,
+    "direction": "up",
+    "name": "CHoCH",
+    "price": 46834.93,
+    "price_text": "46834.93",
+    "state": "DOWNTREND_WEAK",
+    "swing_time": null,
+    "text": "CHoCH ↑ 46834.93",
+    "time": 1773125100,
+    "type": "CHOCH"
+   },
+   {
+    "confirmed_time": 1773135900,
+    "direction": "up",
+    "name": "reversal",
+    "price": 47034.37,
+    "price_text": "47034.37",
+    "state": "UPTREND",
+    "swing_time": null,
+    "text": "reversal ↑ 47034.37",
+    "time": 1773135000,
+    "type": "REVERSAL_CONFIRMED"
+   },
+   {
+    "confirmed_time": 1773201600,
+    "direction": "down",
+    "name": "CHoCH",
+    "price": 46962.34,
+    "price_text": "46962.34",
+    "state": "UPTREND_WEAK",
+    "swing_time": null,
+    "text": "CHoCH ↓ 46962.34",
+    "time": 1773200700,
+    "type": "CHOCH"
+   },
+   {
+    "confirmed_time": 1773288000,
+    "direction": "down",
+    "name": "reversal",
+    "price": 46602.86,
+    "price_text": "46602.86",
+    "state": "DOWNTREND",
+    "swing_time": null,
+    "text": "reversal ↓ 46602.86",
+    "time": 1773287100,
+    "type": "REVERSAL_CONFIRMED"
+   },
+   {
+    "confirmed_time": 1773300600,
+    "direction": "up",
+    "name": "CHoCH",
+    "price": 46431.79,
+    "price_text": "46431.79",
+    "state": "DOWNTREND_WEAK",
+    "swing_time": null,
+    "text": "CHoCH ↑ 46431.79",
+    "time": 1773299700,
+    "type": "CHOCH"
+   },
+   {
+    "confirmed_time": 1773378900,
+    "direction": "flat",
+    "name": "range",
+    "price": 46836.86,
+    "price_text": "46836.86",
+    "state": "RANGE",
+    "swing_time": null,
+    "text": "range 46836.86",
+    "time": 1773378000,
+    "type": "RANGE_START"
+   },
+   {
+    "confirmed_time": 1773380700,
+    "direction": "up",
+    "name": "range exit",
+    "price": 47082.68,
+    "price_text": "47082.68",
+    "state": "UPTREND",
+    "swing_time": null,
+    "text": "range exit ↑ 47082.68",
+    "time": 1773379800,
+    "type": "RANGE_EXIT_UP"
+   },
+   {
+    "confirmed_time": 1773387900,
+    "direction": "down",
+    "name": "CHoCH",
+    "price": 47060.24,
+    "price_text": "47060.24",
+    "state": "UPTREND_WEAK",
+    "swing_time": null,
+    "text": "CHoCH ↓ 47060.24",
+    "time": 1773387000,
+    "type": "CHOCH"
+   },
+   {
+    "confirmed_time": 1773394200,
+    "direction": "up",
+    "name": "recovery",
+    "price": 47125.95,
+    "price_text": "47125.95",
+    "state": "UPTREND",
+    "swing_time": null,
+    "text": "recovery ↑ 47125.95",
+    "time": 1773393300,
+    "type": "RECOVERY"
+   },
+   {
+    "confirmed_time": 1773644400,
+    "direction": "down",
+    "name": "CHoCH",
+    "price": 46891.28,
+    "price_text": "46891.28",
+    "state": "UPTREND_WEAK",
+    "swing_time": null,
+    "text": "CHoCH ↓ 46891.28",
+    "time": 1773643500,
+    "type": "CHOCH"
+   },
+   {
+    "confirmed_time": 1773720900,
+    "direction": "up",
+    "name": "recovery",
+    "price": 47149.26,
+    "price_text": "47149.26",
+    "state": "UPTREND",
+    "swing_time": null,
+    "text": "recovery ↑ 47149.26",
+    "time": 1773720000,
+    "type": "RECOVERY"
+   },
+   {
+    "confirmed_time": 1773724500,
+    "direction": "up",
+    "name": "BOS",
+    "price": 47159.49,
+    "price_text": "47159.49",
+    "state": "UPTREND",
+    "swing_time": 1773720000,
+    "text": "BOS ↑ 47159.49",
+    "time": 1773723600,
+    "type": "BOS"
+   }
+  ],
+  "structure_state": {
+   "bars": 300,
+   "direction": "up",
+   "last_event": {
+    "direction": "up",
+    "name": "BOS",
+    "price": 47159.49,
+    "text": "BOS ↑ 47159.49",
+    "time": 1773723600,
+    "type": "BOS"
+   },
+   "protected": 47142.38,
+   "protected_label": "protected low 47142.38",
+   "protected_text": "47142.38",
+   "range_high": null,
+   "range_low": null,
+   "ref_range": 53.48,
+   "state": "UPTREND_PULLBACK",
+   "text": "15m up · BOS 47159.49",
+   "tf": "15m"
+  },
+  "sweeps": [],
   "swings": [
    {
     "confirmed_at": "2026-03-03T04:30:00+00:00",
@@ -468,6 +725,82 @@
     "text": "D3 down (LH 47358.21 + LL 46332.18)",
     "tf": "15m",
     "trend": "down"
+   }
+  ],
+  "trendlines": [
+   {
+    "a": {
+     "price": 48088.44,
+     "time": 1772444700
+    },
+    "b": {
+     "price": 47344.59,
+     "time": 1773726300
+    },
+    "channel": {
+     "anchor_time": 1772683200,
+     "from": {
+      "price": 46708.024402,
+      "time": 1772444700
+     },
+     "offset": -1380.415598,
+     "to": {
+      "price": 45918.222278,
+      "time": 1773740700
+     }
+    },
+    "end": {
+     "price": 47298.637876,
+     "time": 1773740700
+    },
+    "kind": "DESC_RESISTANCE",
+    "next_price": 47295.765869,
+    "next_price_text": "47295.77",
+    "side": "resistance",
+    "slope": -2.872008,
+    "text": "falling resistance · 2 touches · next 47295.77",
+    "touch_times": [
+     1772444700,
+     1773726300
+    ],
+    "touches": 2
+   },
+   {
+    "a": {
+     "price": 47129.89,
+     "time": 1773723600
+    },
+    "b": {
+     "price": 47142.38,
+     "time": 1773734400
+    },
+    "channel": {
+     "anchor_time": 1773726300,
+     "from": {
+      "price": 47341.4675,
+      "time": 1773723600
+     },
+     "offset": 211.5775,
+     "to": {
+      "price": 47361.243333,
+      "time": 1773740700
+     }
+    },
+    "end": {
+     "price": 47149.665833,
+     "time": 1773740700
+    },
+    "kind": "ASC_SUPPORT",
+    "next_price": 47150.706667,
+    "next_price_text": "47150.71",
+    "side": "support",
+    "slope": 1.040833,
+    "text": "rising support · 2 touches · next 47150.71",
+    "touch_times": [
+     1773723600,
+     1773734400
+    ],
+    "touches": 2
    }
   ]
  }

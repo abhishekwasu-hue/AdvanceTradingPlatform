@@ -17,10 +17,12 @@ import { ReplayBar } from "./ReplayBar";
 const layer = { ...(golden as unknown as { default: PaLayerResponse }).default, instrument: "NSE:X", at: "", start: "", source: "lake:15m",
                 note: "reference", reason: null };
 const only = (c: keyof Toggles): Toggles => ({ ...Object.fromEntries(CONCEPTS.map((k) => [k, false])), [c]: true } as Toggles);
+const CH3A: Toggles = { ...only("swings"), legs: true, breaks: true, levels: true, trend: true };                 // the CH3a concepts
+const NONE: Toggles = Object.fromEntries(CONCEPTS.map((k) => [k, false])) as Toggles;
 
 describe("price-action layer data (CH3)", () => {
   it("draws every swing, leg, break and live level of the golden layer, with the backend's numbers and texts", () => {
-    const d = toLayerData(layer, DEFAULT_TOGGLES)!;
+    const d = toLayerData(layer, CH3A)!;
     expect(layer.swings.length).toBeGreaterThan(3);
     expect(d.asOf).toBe(layer.as_of);
     expect(d.labels!.length).toBe(layer.swings.length + layer.breaks.length);
@@ -31,7 +33,9 @@ describe("price-action layer data (CH3)", () => {
     expect(swingLabels.every((l, i) => l.position === (layer.swings[i].kind === "H" ? "above" : "below"))).toBe(true);
     const legs = d.segments!.slice(0, layer.legs.length);
     expect(legs.map((g) => [g.t1, g.p1, g.t2, g.p2])).toEqual(layer.legs.map((g) => [g.from.time, g.from.price, g.to.time, g.to.price]));
-    expect(legs.every((g, i) => g.color === PA_COLORS[layer.legs[i].direction] && g.label === undefined)).toBe(true);
+    expect(legs.every((g, i) => g.color === PA_COLORS[layer.legs[i].direction]
+                                && g.label === (layer.legs[i].role === "impulse" ? layer.legs[i].text : undefined)
+                                && g.width === (layer.legs[i].role === "impulse" ? 2 : 1))).toBe(true);
     const b = layer.breaks[0];
     expect(d.segments).toContainEqual({ t1: b.pivot_time, p1: b.level, t2: b.time, p2: b.level, color: b.side === "above" ? PA_COLORS.up : PA_COLORS.down, style: "dotted" });
     expect(d.labels!.some((l) => l.text.endsWith(b.level_text) && l.time === b.time)).toBe(true);
@@ -43,7 +47,7 @@ describe("price-action layer data (CH3)", () => {
     expect(toLayerData(layer, only("levels"))!.segments).toEqual([]);
     expect(toLayerData(layer, only("breaks"))!.lines).toEqual([]);
     expect(toLayerData(layer, only("trend"))).toBeNull();
-    expect(toLayerData(layer, { swings: false, legs: false, breaks: false, levels: false, trend: false })).toBeNull();
+    expect(toLayerData(layer, NONE)).toBeNull();
   });
 
   it("debug: degree tags, unconfirmed swings marked, other degrees fainter, leg texts, broken levels dotted", () => {
@@ -53,7 +57,7 @@ describe("price-action layer data (CH3)", () => {
       legs: [{ ...layer.legs[0], status: "tentative" }],
       levels: [{ ...layer.levels[0], status: "broken" }],
     };
-    const d = toLayerData(dbg, DEFAULT_TOGGLES)!;
+    const d = toLayerData(dbg, CH3A)!;
     expect(d.labels![0].text).toBe(`D0 ${layer.swings[0].label}`);
     expect(d.labels![0].color).toMatch(/^#[0-9a-f]{6}99$/);                      // degree 0 is not the chosen degree
     expect(d.labels![1].text).toBe(`D${layer.degree} ${layer.swings[1].label}?`);
@@ -204,5 +208,52 @@ describe("no stale layer in replay (CH3a review MED-2)", () => {
     expect(parseCandleTime("2026-03-02")).toBe(Date.parse("2026-03-01T18:30:00Z"));
     expect(replayAt([{ timestamp: "2026-03-02T09:15:00" }], { active: true, index: 0, playing: false, start: null }, "15m"))
       .toBe("2026-03-02T04:00:00.000Z");
+  });
+});
+
+describe("CH3b concepts on the chart", () => {
+  it("the golden layer carries classified legs, BOS / CHoCH, liquidity, trendlines with channels (from the backend)", () => {
+    expect(layer.legs.every((g) => g.class && (g.role === "impulse" || g.role === "pullback") && g.text.startsWith(g.class_text!))).toBe(true);
+    expect((layer.structure ?? []).length).toBeGreaterThan(0);
+    expect(layer.structure_state?.state).toBeTruthy();
+    expect((layer.trendlines ?? []).length).toBeGreaterThan(0);
+    expect((layer.liquidity ?? []).length).toBeGreaterThan(0);
+  });
+
+  it("structure: a label per event at its price, a dotted run from the broken swing, the protected level as a line", () => {
+    const d = toLayerData(layer, only("structure"))!;
+    const ev = layer.structure!;
+    expect(d.labels!.map((l) => [l.time, l.price, l.text])).toEqual(ev.map((e) => [e.time, e.price, e.text]));
+    const runs = ev.filter((e) => e.swing_time != null && e.swing_time < e.time);
+    expect(d.segments!.map((g) => [g.t1, g.t2, g.p1, g.style])).toEqual(runs.map((e) => [e.swing_time, e.time, e.price, "dotted"]));
+    const st = layer.structure_state!;
+    expect(d.lines!).toEqual(st.protected == null ? [] : [{ price: st.protected, title: st.protected_label, color: PA_COLORS.structure, style: "dashed" }]);
+  });
+
+  it("liquidity: pools as dotted lines labelled BSL / SSL, sweeps marked; trendlines: the line and its dashed channel", () => {
+    const withSweep: PaLayerResponse = { ...layer, sweeps: [{ side: "buy", src: "PDH", price: 100, price_text: "100.00", time: 5, extreme: 101, text: "sweep of previous day high 100.00" }] };
+    const liq = toLayerData(withSweep, only("liquidity"))!;
+    expect(liq.lines!.map((l) => [l.price, l.title, l.style])).toEqual(layer.liquidity!.map((p) => [p.price, p.label, "dotted"]));
+    expect(liq.lines!.every((l) => /BSL|SSL/.test(l.title ?? ""))).toBe(true);
+    expect(liq.labels).toEqual([{ time: 5, price: 100, text: "⚡ sweep of previous day high 100.00", color: PA_COLORS.buySide, position: "above" }]);
+    const tl = toLayerData(layer, only("trendlines"))!;
+    const t = layer.trendlines![0];
+    expect(tl.segments![0]).toMatchObject({ t1: t.a.time, p1: t.a.price, t2: t.end.time, p2: t.end.price, width: 2, label: t.text });
+    expect(tl.segments![1]).toMatchObject({ t1: t.channel.from.time, p1: t.channel.from.price, t2: t.channel.to.time, style: "dashed" });
+    expect(t.channel.from.price - t.a.price).toBeCloseTo(t.channel.offset, 4);
+  });
+
+  it("the top-down panel lists W, D, 1H, 15m with each timeframe's own state", () => {
+    const mtf = [
+      { tf: "1w", state: "UPTREND", direction: "up", protected: 1, protected_text: "1.00", last_event: null, bars: 50, as_of: "x", source: "lake:1d", text: "1w up" },
+      { tf: "1d", state: "DOWNTREND_WEAK", direction: "down (weak)", protected: 2, protected_text: "2.00", last_event: null, bars: 300, as_of: "x", source: "lake:1d", text: "1d" },
+      { tf: "1h", state: null, direction: "none", protected: null, protected_text: null, last_event: null, bars: 0, as_of: null, source: null, text: "1h no bars" },
+      { tf: "15m", state: "RANGE", direction: "range", protected: null, protected_text: null, last_event: null, bars: 800, as_of: "x", source: "lake:15m", text: "15m range" },
+    ];
+    const html = renderToStaticMarkup(createElement(PriceActionPanel, { layer: { ...layer, mtf }, toggles: DEFAULT_TOGGLES, debug: false, onToggle: () => {}, onDebug: () => {} }));
+    expect(html).toContain("price-action-topdown");
+    for (const want of [">W up<", ">D down (weak)<", ">1H –<", ">15m range<"]) expect(html).toContain(want);
+    expect(html.indexOf(">W up<")).toBeLessThan(html.indexOf(">15m range<"));
+    expect(DEFAULT_TOGGLES.breaks).toBe(false);                                   // BOS / CHoCH name the breaks that matter
   });
 });

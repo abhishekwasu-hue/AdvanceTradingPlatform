@@ -5,15 +5,16 @@
  * Flag `chart_price_action`: while it is off the backend answers 503 and nothing is shown (`onAvailable(false)`).
  */
 import { useEffect, useMemo, useState } from "react";
-import { ApiError } from "../api/client";
 import type { ChartEngine } from "./engine";
 import {
-  CONCEPTS, CONCEPT_LABELS, PA_COLORS, PA_LAYER_ID, layerTf, loadToggles, paApi, saveToggles, toLayerData, trendRows,
-  type Concept, type PaLayerResponse, type Toggles,
+  CONCEPTS, CONCEPT_LABELS, LayerLoader, PA_COLORS, PA_LAYER_ID, layerTf, loadToggles, paApi, saveToggles, mtfRows, toLayerData, trendRows,
+  type Concept, type LayerState, type PaLayerResponse, type Toggles,
 } from "./priceAction";
+import { windowStart } from "./replay";
 
 const IST = "Asia/Kolkata";
 const btn = "rounded px-1.5 py-0.5 text-[10px] font-semibold";
+const MTF_LABEL: Record<string, string> = { "1w": "W", "1d": "D", "1h": "1H", "15m": "15m" };
 
 function asOfText(iso: string | null): string {
   if (!iso) return "";
@@ -47,6 +48,17 @@ export function PriceActionPanel({ layer, toggles, debug, onToggle, onDebug }: {
           D{t.degree} {t.trend}
         </span>
       ))}
+      {mtfRows(layer).length > 0 && (
+        <span className="inline-flex flex-wrap gap-x-2" data-testid="price-action-topdown" title="Each timeframe's own structure, as of the same time">
+          <span className="opacity-70">Top-down</span>
+          {mtfRows(layer).map((m) => (
+            <span key={m.tf} data-direction={m.direction} title={m.last_event?.text ?? m.text}
+                  style={{ color: m.direction.startsWith("up") ? PA_COLORS.up : m.direction.startsWith("down") ? PA_COLORS.down : undefined }}>
+              {MTF_LABEL[m.tf] ?? m.tf} {m.state == null ? "–" : m.direction}
+            </span>
+          ))}
+        </span>
+      )}
       {layer.as_of && <span className="opacity-70">as of {asOfText(layer.as_of)} IST · {layer.bars} bars{layer.source ? ` · ${layer.source}` : ""}</span>}
       {layer.reason && <span className="opacity-70">{layer.reason}</span>}
       {layer.debug && <span className="opacity-70" data-testid="price-action-debug">debug · {layer.swings.length} swings · {layer.breaks.length} breaks · {layer.levels.length} levels</span>}
@@ -58,32 +70,25 @@ export function PriceActionPanel({ layer, toggles, debug, onToggle, onDebug }: {
  * Fetches the layer for `instrument` ("NSE:BANKNIFTY") on the chart's timeframe as of `at`, draws it on `engine` and
  * shows the panel. `start` fixes the window's start (replay); `onWindow` reports the start the backend used.
  */
-export function PriceActionLayer({ engine, instrument, timeframe, at = null, start = null, onAvailable, onWindow }: {
+export function PriceActionLayer({ engine, instrument, timeframe, at = null, start = null, refreshKey = null, onAvailable, onWindow }: {
   engine: ChartEngine | null; instrument: string; timeframe: string; at?: string | null; start?: string | null;
+  /** Live view: changes when a new candle starts (the last one closed), so the layer is asked for again. */
+  refreshKey?: string | number | null;
   onAvailable?: (available: boolean) => void; onWindow?: (start: string) => void;
 }) {
   const tf = layerTf(timeframe);
-  const [layer, setLayer] = useState<PaLayerResponse | null>(null);
-  const [failed, setFailed] = useState<string | null>(null);
+  const [state, setState] = useState<LayerState>({ layer: null, failed: null, available: null });
   const [toggles, setToggles] = useState<Toggles>(() => loadToggles());
   const [debug, setDebug] = useState(false);
+  const loader = useMemo(() => new LayerLoader((q) => paApi.layer(q.instrument, q), setState), []);
 
-  useEffect(() => {
-    let live = true;
-    setFailed(null);
-    if (!instrument || !tf) { setLayer(null); onAvailable?.(false); return () => { live = false; }; }
-    paApi.layer(instrument, { tf, at, start, debug }).then(
-      (r) => { if (!live) return; setLayer(r); onAvailable?.(true); onWindow?.(r.start); },
-      (e: unknown) => {
-        if (!live) return;
-        // 503: flag off - nothing to show, never an error on the chart; anything else is said once, in the panel's place
-        if (e instanceof ApiError && e.status === 503) { setLayer(null); onAvailable?.(false); return; }
-        setFailed(e instanceof Error ? e.message : "Price action could not be loaded.");
-      },
-    );
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [instrument, tf, at, start, debug]);
+  // every new question clears the layer first: never a layer as of another bar on screen, nor after a failure
+  useEffect(() => loader.load(instrument && tf ? { instrument, tf, at, start: windowStart(at, start), debug } : null),
+            [loader, instrument, tf, at, start, debug, refreshKey]);
+
+  const { layer, failed, available } = state;
+  useEffect(() => { if (available != null) onAvailable?.(available); }, [available, onAvailable]);
+  useEffect(() => { if (layer) onWindow?.(layer.start); }, [layer, onWindow]);
 
   const data = useMemo(() => (layer ? toLayerData(layer, toggles) : null), [layer, toggles]);
 

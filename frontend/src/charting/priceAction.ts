@@ -10,16 +10,19 @@
  *
  * Reference levels from past prices - nothing here places, changes or proposes an order.
  */
-import { request } from "../api/client";
+import { ApiError, request } from "../api/client";
 import type { LayerData, LayerLabel, LayerLine, LayerSegment } from "./engine";
 import { withAlpha } from "./geometry";
 
 export const PA_LAYER_ID = "price_action";
-export const CONCEPTS = ["swings", "legs", "breaks", "levels", "trend"] as const;
+export const CONCEPTS = ["swings", "legs", "structure", "liquidity", "trendlines", "breaks", "levels", "trend"] as const;
 export type Concept = (typeof CONCEPTS)[number];
 export type Toggles = Record<Concept, boolean>;
-export const DEFAULT_TOGGLES: Toggles = { swings: true, legs: true, breaks: true, levels: true, trend: true };
-export const CONCEPT_LABELS: Record<Concept, string> = { swings: "Swings", legs: "Legs", breaks: "Breaks", levels: "Levels", trend: "Trend" };
+// CH3b: BOS / CHoCH (structure) name the breaks that matter, so the plain real-break marks start off
+export const DEFAULT_TOGGLES: Toggles = { swings: true, legs: true, structure: true, liquidity: true, trendlines: true, breaks: false, levels: true, trend: true };
+export const CONCEPT_LABELS: Record<Concept, string> = {
+  swings: "Swings", legs: "Legs", structure: "BOS/CHoCH", liquidity: "Liquidity", trendlines: "Trendlines", breaks: "Breaks", levels: "Levels", trend: "Trend",
+};
 
 export type LayerTf = "1m" | "3m" | "5m" | "15m" | "30m" | "1h" | "1d";
 const TF_ALIASES: Record<string, LayerTf> = {
@@ -49,6 +52,29 @@ export interface PaSwing {
 export interface PaLeg {
   degree: number; direction: "up" | "down" | "flat"; status: "confirmed" | "tentative"; from: PaPoint; to: PaPoint; change: number;
   change_pct: number; bars: number; text: string;
+  /** CH3b: impulse vs corrective (the ported leg classifier). */
+  role?: "impulse" | "pullback"; class?: string; class_text?: string; score?: number; depth?: number | null; choch?: boolean; reasons?: string;
+}
+/** CH3b: a structure event (BOS, CHoCH, reversal, recovery, range...) from the structure tracker. */
+export interface PaStructureEvent {
+  type: string; name: string; direction: "up" | "down" | "flat"; price: number; price_text: string; time: number; confirmed_time: number;
+  state: string | null; swing_time: number | null; text: string;
+}
+export interface PaStructureState {
+  tf: string; state: string; direction: string; protected: number | null; protected_text: string | null; protected_label: string | null;
+  range_high: number | null; range_low: number | null; ref_range: number | null; bars: number;
+  last_event: Pick<PaStructureEvent, "type" | "name" | "direction" | "price" | "time" | "text"> | null; text: string;
+}
+export interface PaPool { side: "buy" | "sell"; src: string; price: number; price_text: string; label: string; beyond: boolean; text: string }
+export interface PaSweep { side: "buy" | "sell"; src: string; price: number; price_text: string; time: number; extreme: number; text: string }
+export interface PaTrendline {
+  kind: string; side: "support" | "resistance"; slope: number; touches: number; a: PaPoint; b: PaPoint; end: PaPoint; next_price: number;
+  next_price_text: string; touch_times: number[]; channel: { offset: number; from: PaPoint; to: PaPoint; anchor_time: number }; text: string;
+}
+/** CH3b: one row of the top-down panel - that timeframe's own structure, as of the same time. */
+export interface PaMtfRow {
+  tf: string; state: string | null; direction: string; protected: number | null; protected_text: string | null;
+  last_event: PaStructureState["last_event"]; bars: number; as_of: string | null; source: string | null; text: string;
 }
 export interface PaBreak {
   degree: number; side: "above" | "below"; level: number; level_text: string; pivot_time: number; time: number; confirmed_time: number;
@@ -63,6 +89,8 @@ export interface PaLayerResponse {
   schema: string; instrument: string; tf: LayerTf; at: string; start: string; source: string | null; as_of: string | null; bars: number;
   degree: number; debug: boolean; first_bar: number | null; last_bar: number | null; last_close: number | null;
   swings: PaSwing[]; legs: PaLeg[]; breaks: PaBreak[]; levels: PaLevel[]; trend: PaTrend[];
+  structure?: PaStructureEvent[]; structure_state?: PaStructureState | null; liquidity?: PaPool[]; sweeps?: PaSweep[];
+  trendlines?: PaTrendline[]; mtf?: PaMtfRow[];
   debug_info?: Record<string, unknown>; fingerprint: string; note: string; reason: string | null; concepts?: string[];
 }
 
@@ -77,7 +105,10 @@ export const paApi = {
   },
 };
 
-export const PA_COLORS = { up: "#16a34a", down: "#dc2626", flat: "#64748b", high: "#b45309", low: "#0369a1", resistance: "#dc2626", support: "#16a34a" } as const;
+export const PA_COLORS = {
+  up: "#16a34a", down: "#dc2626", flat: "#64748b", high: "#b45309", low: "#0369a1", resistance: "#dc2626", support: "#16a34a",
+  structure: "#7c3aed", buySide: "#0891b2", sellSide: "#c2410c", trendline: "#2563eb",
+} as const;
 
 /** Debug view: a degree other than the chosen one is drawn fainter, so the significant swings still stand out. */
 function faint(color: string, degree: number, shown: number): string {
@@ -104,8 +135,10 @@ export function toLayerData(r: PaLayerResponse, toggles: Toggles): LayerData | n
   }
   if (toggles.legs) {
     for (const g of r.legs) {
+      // CH3b: an impulse is drawn bolder than a pullback; the class (e.g. "weak impulse ↑ · +0.49% · 3 bars") labels it
+      const width = g.role ? (g.role === "impulse" ? 2 : 1) : g.degree >= 2 ? 2 : 1;
       segments.push({ t1: g.from.time, p1: g.from.price, t2: g.to.time, p2: g.to.price, color: faint(PA_COLORS[g.direction], g.degree, r.degree),
-                      width: g.degree >= 2 ? 2 : 1, style: g.status === "tentative" ? "dashed" : "solid", label: r.debug ? g.text : undefined });
+                      width, style: g.status === "tentative" ? "dashed" : "solid", label: r.debug || g.role === "impulse" ? g.text : undefined });
     }
   }
   if (toggles.breaks) {
@@ -116,6 +149,31 @@ export function toLayerData(r: PaLayerResponse, toggles: Toggles): LayerData | n
                     color, position: b.side === "above" ? "below" : "above" });
     }
   }
+  if (toggles.structure) {
+    for (const e of r.structure ?? []) {
+      const color = e.type === "CHOCH" || e.type === "REVERSAL_CONFIRMED" ? PA_COLORS.structure : e.direction === "up" ? PA_COLORS.up : PA_COLORS.down;
+      if (e.swing_time != null && e.swing_time < e.time) segments.push({ t1: e.swing_time, p1: e.price, t2: e.time, p2: e.price, color, style: "dotted" });
+      labels.push({ time: e.time, price: e.price, text: e.text, color, position: e.direction === "up" ? "below" : "above" });
+    }
+    const st = r.structure_state;
+    if (st?.protected != null && st.protected_label) lines.push({ price: st.protected, title: st.protected_label, color: PA_COLORS.structure, style: "dashed" });
+  }
+  if (toggles.liquidity) {
+    for (const p of r.liquidity ?? []) {
+      lines.push({ price: p.price, title: p.label, color: p.side === "buy" ? PA_COLORS.buySide : PA_COLORS.sellSide, style: "dotted" });
+    }
+    for (const w of r.sweeps ?? []) {
+      labels.push({ time: w.time, price: w.price, text: `⚡ ${w.text}`, color: w.side === "buy" ? PA_COLORS.buySide : PA_COLORS.sellSide,
+                    position: w.side === "buy" ? "above" : "below" });
+    }
+  }
+  if (toggles.trendlines) {
+    for (const t of r.trendlines ?? []) {
+      const color = t.side === "resistance" ? PA_COLORS.resistance : PA_COLORS.support;
+      segments.push({ t1: t.a.time, p1: t.a.price, t2: t.end.time, p2: t.end.price, color, width: 2, label: t.text });
+      segments.push({ t1: t.channel.from.time, p1: t.channel.from.price, t2: t.channel.to.time, p2: t.channel.to.price, color: withAlpha(color, 0.6), style: "dashed" });
+    }
+  }
   if (toggles.levels) {
     for (const lv of r.levels) {
       lines.push({ price: lv.price, title: lv.text, color: lv.kind === "resistance" ? PA_COLORS.resistance : PA_COLORS.support,
@@ -124,6 +182,11 @@ export function toLayerData(r: PaLayerResponse, toggles: Toggles): LayerData | n
   }
   if (!labels.length && !segments.length && !lines.length) return null;
   return { asOf: r.as_of ?? undefined, labels, segments, lines };
+}
+
+/** CH3b: the top-down panel (W, D, 1H, 15m), each timeframe's own structure as of the same time. */
+export function mtfRows(r: PaLayerResponse): PaMtfRow[] {
+  return r.mtf ?? [];
 }
 
 /** The trend panel rows, top degree first (the top-down read). */
@@ -150,4 +213,36 @@ export function saveToggles(t: Toggles, storage: Pick<Storage, "setItem"> | null
 
 function safeStorage(): Storage | null {
   try { return typeof window !== "undefined" ? window.localStorage : null; } catch { return null; }
+}
+
+export interface PaQuery { instrument: string; tf: LayerTf; at: string | null; start: string | null; debug: boolean }
+/** What the chart shows: the layer (null while a request is out or after a failure - never an older answer), a failure
+ * message, and whether the layer exists for this organisation (false: flag off, 503; null: not known yet). */
+export interface LayerState { layer: PaLayerResponse | null; failed: string | null; available: boolean | null }
+
+/**
+ * One request at a time for the layer. A new request (a replay step, a toggle of Debug, a new candle) first clears the
+ * layer, so the chart never shows a layer computed as of another bar while the new one is on its way; an answer to an
+ * older request is dropped; a failure leaves no layer (and says why). 503 means the flag is off: nothing, no message.
+ */
+export class LayerLoader {
+  private seq = 0;
+  private available: boolean | null = null;
+
+  constructor(private readonly fetchLayer: (q: PaQuery) => Promise<PaLayerResponse>, private readonly emit: (s: LayerState) => void) {}
+
+  load(q: PaQuery | null): () => void {
+    const my = ++this.seq;
+    this.emit({ layer: null, failed: null, available: q ? this.available : false });
+    if (!q) return () => {};
+    this.fetchLayer(q).then(
+      (r) => { if (my === this.seq) { this.available = true; this.emit({ layer: r, failed: null, available: true }); } },
+      (e: unknown) => {
+        if (my !== this.seq) return;
+        if (e instanceof ApiError && e.status === 503) { this.available = false; this.emit({ layer: null, failed: null, available: false }); return; }
+        this.emit({ layer: null, failed: e instanceof Error ? e.message : "Price action could not be loaded.", available: this.available });
+      },
+    );
+    return () => { if (my === this.seq) this.seq++; };
+  }
 }

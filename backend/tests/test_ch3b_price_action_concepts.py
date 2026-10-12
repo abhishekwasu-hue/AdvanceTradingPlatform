@@ -47,7 +47,7 @@ def _bars(f: pd.DataFrame, rule: str) -> pd.DataFrame:
 H1, D1 = _bars(F, "1h"), _bars(F, "1D")
 
 
-def _rows(key, tf, f, version=1, source="test"):
+def _rows(key, tf, f, version=1, source="vendor:test"):
     return [MdCandleRecord(instrument_key=key, timeframe=tf, ts=pd.Timestamp(b.bar_end).to_pydatetime(), source=source, version=version,
                            open=float(b.open), high=float(b.high), low=float(b.low), close=float(b.close), volume=0,
                            ingested_at=pd.Timestamp(b.bar_end).to_pydatetime() + timedelta(seconds=30)) for b in f.itertuples()]
@@ -72,6 +72,15 @@ def _lake():
     _run(_put(_rows(KEY, "15m", F) + _rows(KEY, "60m", H1) + _rows(KEY, "1d", D1)))
     yield
     _run(_drop())
+
+
+@pytest.fixture(autouse=True)
+def _fresh():
+    from app.core import rate_limit
+    L.cache_clear()
+    rate_limit.reset("chart_price_action")
+    yield
+    L.cache_clear()
 
 
 @pytest.fixture
@@ -136,12 +145,14 @@ def test_top_down_panel_is_as_of_the_same_time(headers):
     bump = lambda f: f.assign(high=f["high"] * 1.04, close=f["close"] * 1.03)  # noqa: E731
     extra = []
     for tf, f in (("15m", F), ("60m", H1), ("1d", D1)):
-        extra += _rows(KEY, tf, bump(later(f)), version=2) + _rows(KEY, tf, later(f).assign(low=later(f)["low"] * 0.9), source="zz-other")
+        extra += _rows(KEY, tf, bump(later(f)), version=2) + _rows(KEY, tf, later(f).assign(low=later(f)["low"] * 0.9), source="r2:other")
     _run(_put(extra))
+    L.cache_clear()
     try:
         assert _get(headers, at=_iso(at)) == body
     finally:
-        _run(_drop((MdCandleRecord.version == 2) | (MdCandleRecord.source == "zz-other")))
+        _run(_drop((MdCandleRecord.version == 2) | (MdCandleRecord.source == "r2:other")))
+    L.cache_clear()
     assert _get(headers, at=_iso(at)) == body
 
 

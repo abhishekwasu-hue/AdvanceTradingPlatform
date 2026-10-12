@@ -27,10 +27,28 @@ export function visibleCandles<T>(candles: T[], state: ReplayState): T[] {
   return state.active ? candles.slice(0, Math.min(candles.length, state.index + 1)) : candles;
 }
 
+const HAS_OFFSET = /(?:[zZ]|[+-]\d{2}:?\d{2})$/;
+
+/** Epoch ms of a candle time. A time without an offset is taken as IST (NSE's clock), never as the browser's zone. */
+export function parseCandleTime(ts: string): number {
+  const s = ts.trim();
+  if (!s) return NaN;
+  if (HAS_OFFSET.test(s)) return Date.parse(s);
+  return Date.parse(`${s.includes("T") ? s : s.replace(" ", "T")}${s.length <= 10 ? "T00:00:00" : ""}+05:30`);
+}
+
 /** The as-of time of the replay bar (its end), or null outside replay (the layer then reads as of now). */
 export function replayAt(candles: readonly { timestamp: string }[], state: ReplayState, tf: LayerTf | null): string | null {
   if (!state.active || !tf || candles.length === 0) return null;
   const bar = candles[Math.min(candles.length - 1, state.index)];
-  const startSec = Math.floor(Date.parse(bar.timestamp) / 1000);
+  const startSec = Math.floor(parseCandleTime(bar.timestamp) / 1000);
   return Number.isFinite(startSec) ? barEndIso(startSec, tf) : null;
+}
+
+/** The window start to send with `at`: the replay's fixed start while it is before `at`; stepped back to or before it,
+ * none (the backend then uses its default window as of `at`) - a request never has start >= at. */
+export function windowStart(at: string | null, start: string | null): string | null {
+  if (!at || !start) return null;
+  const a = Date.parse(at), s = Date.parse(start);
+  return Number.isFinite(a) && Number.isFinite(s) && s < a ? start : null;
 }

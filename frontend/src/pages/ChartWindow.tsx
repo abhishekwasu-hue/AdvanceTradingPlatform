@@ -8,7 +8,7 @@ import { MarketZonesLayer } from "../charting/MarketZonesLayer";
 import { PriceActionLayer } from "../charting/PriceActionLayer";
 import { ReplayBar } from "../charting/ReplayBar";
 import { layerTf } from "../charting/priceAction";
-import { REPLAY_OFF, replayAt, visibleCandles, type ReplayState } from "../charting/replay";
+import { REPLAY_OFF, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -62,8 +62,9 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
                 onLoadOlder={replay.active ? undefined : chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} onEngine={setEngine} />
       {/* N4 CH3: price-action layer + replay (flag chart_price_action; nothing shows while it is off) */}
       {paAvailable && <div className="mt-2"><ReplayBar state={replay} count={chart.candles.length} at={at} onChange={setReplay} /></div>}
-      <div className="mt-2"><PriceActionLayer engine={engine} instrument={`${exchange}:${symbol}`} timeframe={timeframe} at={at} start={replay.start}
-                                              onAvailable={setPaAvailable} onWindow={onWindow} /></div>
+      <div className="mt-2"><PriceActionLayer engine={engine} instrument={`${exchange}:${symbol}`} timeframe={timeframe} at={at}
+                                              start={windowStart(at, replay.start)} onAvailable={setPaAvailable} onWindow={onWindow}
+                                              refreshKey={replay.active ? null : chart.candles[chart.candles.length - 1]?.timestamp ?? null} /></div>
       {/* Z7a-3: stored market zones (flag market_zones; nothing shows while it is off) - in replay, as of the replay bar */}
       <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} at={at} /></div>
     </div>

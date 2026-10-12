@@ -6,6 +6,7 @@
  * Every number in a label comes from the anchors (prices, ratios), never from pixels.
  */
 import type { DrawingV1 } from "./drawings";
+import type { LayerBand } from "./engine";
 
 /** Pane coordinates for one paint: `x` maps an anchor time (epoch seconds), `y` a price; null = cannot place it. */
 export interface Converters {
@@ -202,4 +203,26 @@ export function shapes(d: DrawingV1, c: Converters): Shape[] {
     default:
       return [];
   }
+}
+
+/** Z7a-3: layer bands as shapes - a tinted rectangle across the pane (a line when low == high, or when the band is
+ * thinner than a pixel) and the label at the right edge just above it. Bands off the price scale are skipped. */
+export function bandShapes(bands: readonly LayerBand[], c: Converters): Shape[] {
+  const out: Shape[] = [];
+  for (const b of bands) {
+    if (!Number.isFinite(b.low) || !Number.isFinite(b.high)) continue;
+    const yHigh = c.y(Math.max(b.low, b.high));
+    const yLow = c.y(Math.min(b.low, b.high));
+    if (yHigh == null || yLow == null) continue;
+    const color = b.color ?? DEFAULT_COLOR;
+    const top = Math.min(yHigh, yLow);
+    const height = Math.abs(yLow - yHigh);
+    if (b.low === b.high || height < 1) {
+      out.push({ type: "segment", x1: 0, y1: top, x2: c.width, y2: top, color, width: 1, dash: b.style ?? "solid" });
+    } else {
+      out.push({ type: "rect", x: 0, y: top, w: c.width, h: height, fill: withAlpha(color, b.opacity ?? 0.15), stroke: withAlpha(color, 0.5) });
+    }
+    if (b.label) out.push({ type: "text", x: c.width - 4, y: top - 2, text: b.label, color, align: "right", baseline: "bottom" });
+  }
+  return out;
 }

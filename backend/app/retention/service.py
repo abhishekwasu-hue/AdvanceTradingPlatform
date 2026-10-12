@@ -25,7 +25,7 @@ from app.auth.sessions import revoke_all_sessions
 from app.db.models import (
     AiCandidateRecord, MarketSnapshotRecord, NewsEventRecord,
     OIAlertLogRecord, OIBannerStateRecord, OIDayBaselineRecord, OISnapshotRecord, OptionChainSnapshotRecord, StrikeOISnapshotRecord,
-    AlertDeliveryRecord, FeedbackRecord, LlmCallRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
+    AlertDeliveryRecord, FeedbackRecord, ScreenEvidenceRecord, LlmCallRecord, LoginEventRecord, MfaBackupCodeRecord, NotificationRecord, PasswordResetRecord,
     TenantInviteRecord, User, UserAiKeyRecord, UserSessionRecord, UserVisionPrefsRecord, VisionReportRecord,
 )
 from app.retention.policy import RetentionPolicy, load_policy
@@ -87,6 +87,8 @@ def _rules(now: datetime, policy: RetentionPolicy):
         # P0.8 / A3: candidates nobody adopted age out after they expire; adopted and deployed ones stay as the record of
         # what the person chose from.
         ("ai_candidates_open", AiCandidateRecord, (AiCandidateRecord.status == "OPEN") & (AiCandidateRecord.expires_at < _cutoff(now, policy.ai_candidates_days))),
+        # U8 EV1/EV2: evidence packs (market bars and the screen's numbers, not personal data) age out
+        ("screen_evidence", ScreenEvidenceRecord, ScreenEvidenceRecord.created_at < _cutoff(now, policy.screen_evidence_days)),
     ]
 
 

@@ -843,6 +843,22 @@ with the indicator block, and the result table.
   group, a filter and a category; a preview before Run with the "live" mark; why chips after Run; no previews with
   live counts off; no page errors. Screenshots in `docs/screenshots/screener-u5d2/`.
 
+## Z7a-3 (built): market-zone functions `NearZone`, `ZoneRole`, `ZoneState`, `ZoneStrength`
+
+- Data: the stored market-zone snapshots (Z7a-2, `app/price_action/zones`), not the screen's bars. Each bar reads the
+  snapshot `zones_as_of` returns at the bar's CLOSE for the organisation (settings-hash scope rule), through
+  `read.timeline` (zones_as_of asked at every snapshot boundary in the window, so the two cannot disagree - tested bar by
+  bar). Appending or changing later bars or later snapshots leaves earlier values unchanged (tested).
+- Each reads the live zone (fresh / tested / flipped) nearest to the close within `tolerance_pct` % (default 0.5),
+  `chart.nearest_zone` - the chart layer's code: `NearZone(role="any", tolerance_pct=0.5, family="all")` (filter),
+  `ZoneRole(tolerance_pct, family)` (DEMAND / SUPPLY), `ZoneState(role, tolerance_pct, family)` (FRESH / TESTED /
+  FLIPPED), `ZoneStrength(role, tolerance_pct, family)` (0-100). Role by the close; missing (never matches) when no zone
+  is near; a symbol with no stored snapshot is reported with the reason.
+- `Spec.needs = ("zones",)`: the run path loads the timelines (`RUN_PROVIDES` has "zones"), the bar-close engine too.
+- Flag `market_zones` (off by default), the U6 BK1 pattern: hidden from the registry, refused in validate / save / run
+  and in alert rules while off; an active rule pauses with the reason and resumes when the flag is back; zone rules fire
+  on bar close only (intrabar refused at save and skipped by the engine). Research only - no order path.
+- Tests: `backend/tests/test_zones_chart_screenql.py`. Open questions Z7a3-3 .. Z7a3-7 (`docs/OPEN_QUESTIONS.md`).
 ## U9 TX1 (built): screen taxonomy (method x setup) and the gallery rail and chips
 
 Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1"); Phase 0 item Z8. Flag
@@ -1044,6 +1060,14 @@ questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
   confirmations must pass on the crossing bar.
 - **Z10-a harness.** `app/quality/causal_cases.py` covers the 15 breakout functions (BK1 and BK2), each with an
   `@` variant where the data allows. Z10-6 records BK2's VWAP answer (NaN without volume).
+
+## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
+Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
+- Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own
+  evaluator builds it in the same pass, and bars after the match are dropped.
+- "Show on chart" draws ONLY the screen's conditions, with the verify strip (the engine's values and pass / fail).
+- EV2: the same chart as a deterministic PNG, sent to the user's own linked Telegram chat.
+- Open questions EV-1 .. EV-10.
 
 ## U7 LG1 (prepared): the first eight Legends cards
 

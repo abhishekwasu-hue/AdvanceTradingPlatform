@@ -89,3 +89,31 @@ export class DrawingPrimitive implements ISeriesPrimitive<Time> {
     this.requestUpdate?.();
   }
 }
+
+/** Z7a-3: a layer's shapes (built from the converters at each paint, e.g. `bandShapes`) as one series primitive, drawn
+ * under the drawings. */
+export class LayerPrimitive implements ISeriesPrimitive<Time> {
+  private requestUpdate: (() => void) | null = null;
+  private readonly views: readonly IPrimitivePaneView[];
+
+  constructor(public build: (c: Converters) => Shape[], readonly converters: ConvertersFor) {
+    const renderer: IPrimitivePaneRenderer = {
+      draw: (target: CanvasRenderingTarget2D) => {
+        target.useMediaCoordinateSpace(({ context, mediaSize }) => {
+          const c = this.converters(mediaSize.width, mediaSize.height);
+          if (c) paint(context, this.build(c));
+        });
+      },
+    };
+    this.views = [{ zOrder: () => "bottom", renderer: () => renderer }];
+  }
+
+  attached(param: SeriesAttachedParameter<Time>) { this.requestUpdate = param.requestUpdate; }
+  detached() { this.requestUpdate = null; }
+  paneViews() { return this.views; }
+
+  setBuild(build: (c: Converters) => Shape[]) {
+    this.build = build;
+    this.requestUpdate?.();
+  }
+}

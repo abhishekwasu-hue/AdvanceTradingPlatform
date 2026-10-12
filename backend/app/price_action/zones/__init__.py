@@ -18,5 +18,11 @@ Storage and the job (Z7a-2, flag `market_zones`, off by default):
   store.py      tenant settings (market_zone_settings) and as-of snapshots (market_zone_runs / market_zones)
   job.py        the nightly worker job: shared lake bars closed by the run time -> snapshot -> stored
 
-The chart layer and ScreenQL functions are Z7a-3.
+Consumers (Z7a-3, same flag):
+  chart.py      the chart layer as pure functions: role by price, distance, 0-100 strength, at most 6 bands by role and
+                proximity, labels ("demand 512.30 (fresh)", touch count), the nearest zone (reused server-side by the
+                U8 evidence charts; the browser port frontend/src/charting/marketZones.ts is checked on the same cases)
+  read.py       zones as of a time per tenant (store.zones_as_of) and the bar-by-bar timeline the ScreenQL functions read
+API: app/charts/zones_layer.py (GET /api/charts/layers/market-zones); ScreenQL: app/screener/zones.py (NearZone, ZoneRole,
+ZoneState, ZoneStrength).
 """

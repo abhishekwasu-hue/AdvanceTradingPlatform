@@ -59,6 +59,7 @@ class SymbolData:
     indices: Set[str] = field(default_factory=set)
     option_chain: Optional[Any] = None                     # app.brokers.models.OptionChain for PCR / ChainBias / MaxPainDistancePct
     exchange: Optional[str] = None                         # U6 BK2: the session clock of the intraday breakout functions (None = NSE)
+    zones: Optional[Any] = None                            # Z7a-3: app.price_action.zones.read.ZoneTimeline for the zone functions
 
 
 @dataclass
@@ -311,6 +312,11 @@ class _Eval:
             "RelVolumeTOD": lambda: pd.Series(self.session_bars(tf, win(0, 20), min(5, win(0, 20)), _text(1, "bar")).tod_rvol(), index=f.index,
                                               dtype=float),
             "SessionVWAP": lambda: pd.Series(self.session_bars(tf).vwap(), index=f.index, dtype=float),
+            # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
+            "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
+            "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
+            "ZoneState": lambda: _zone(self.data, f, tf, "state", _text(0, "any"), num(1, 0.5), _text(2, "all")),
+            "ZoneStrength": lambda: _zone(self.data, f, tf, "strength", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -579,6 +585,9 @@ def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
         return pd.Series(Bars(f, _breakout_params({})).dow(degree), index=f.index, dtype=object)
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
+def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:
+    from app.screener.zones import zone_series
+    return zone_series(data, f, tf, what, role, tolerance_pct, family)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

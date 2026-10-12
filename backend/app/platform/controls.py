@@ -171,13 +171,19 @@ FEATURE_FLAGS: Dict[str, str] = {
     # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
     # Research only - matches, never orders.
     "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
+    # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
+    # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
+    # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
+    "evidence_charts": "Evidence charts: each screen match drawn with only the screen's own conditions, a verify strip with the engine's numbers, and the image on Telegram (informational, places no orders)",
     # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
     # answers 404 and the page says it is not enabled.
     "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
-    "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory (stored, read-only)",
+    # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,
+    # ZoneStrength). OFF: the layer answers 503, the functions are hidden and refused, zone alert rules pause.
+    "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory, the chart layer and the ScreenQL zone functions (read-only, places no orders)",
     # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
@@ -188,7 +194,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "screener_legends"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

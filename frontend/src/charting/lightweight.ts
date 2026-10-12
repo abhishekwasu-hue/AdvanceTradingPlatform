@@ -5,14 +5,15 @@
  * change); this adapter adds what sits above the interface:
  * - drawings: `hline` as a price line (it keeps its axis label); every other `drawing/1` kind as a v5 series primitive
  *   (CH2b, `primitives.ts` + `geometry.ts`), placed by time/price so it follows scroll, zoom and timeframe changes;
- * - layers: their lines as price lines (markers stay ProChart's job);
+ * - layers: their lines as price lines, their bands (Z7a-3 market zones) as one series primitive under the drawings
+ *   (markers stay ProChart's job);
  * - events: crosshair, click, visible range.
  * Studies are recorded in the layout; ProChart draws its own until CH6 moves them onto ScreenQL.
  */
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
 import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudySpec } from "./engine";
-import { timeToLogical, type Converters } from "./geometry";
-import { DrawingPrimitive } from "./primitives";
+import { bandShapes, timeToLogical, type Converters } from "./geometry";
+import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
 
 // The slice of the lightweight-charts API this adapter uses (structural, so tests can pass a fake).
@@ -28,8 +29,8 @@ export interface CandleSeriesLike {
   data(): readonly { time: unknown }[];
   subscribeDataChanged(handler: () => void): void;
   unsubscribeDataChanged(handler: () => void): void;
-  attachPrimitive(primitive: DrawingPrimitive): void;
-  detachPrimitive(primitive: DrawingPrimitive): void;
+  attachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
+  detachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
 }
 interface MouseParamsLike { time?: unknown; point?: { x: number; y: number } }
 export interface ChartLike {
@@ -61,7 +62,7 @@ export class LightweightEngine implements ChartEngine {
   private studies = new Map<string, StudySpec>();
   private drawings = new Map<string, DrawingV1>();
   private rendered = new Map<string, Rendered>();
-  private layers = new Map<string, PriceLineLike[]>();
+  private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null }>();
   private listeners = new Set<(e: EngineEvent) => void>();
   private unsubs: (() => void)[] = [];
   private disposed = false;
@@ -187,13 +188,21 @@ export class LightweightEngine implements ChartEngine {
   }
 
   setLayer(id: string, data: LayerData | null) {
-    for (const line of this.layers.get(id) ?? []) this.candles.removePriceLine(line);
+    const old = this.layers.get(id);
+    for (const line of old?.lines ?? []) this.candles.removePriceLine(line);
+    if (old?.bands) this.candles.detachPrimitive(old.bands);
     this.layers.delete(id);
     if (!data) return;
     const made = (data.lines ?? []).filter((l) => Number.isFinite(l.price)).map((l) => this.candles.createPriceLine({
       price: l.price, color: l.color ?? "#64748b", lineWidth: 1, lineStyle: LINE_STYLE[l.style ?? "dashed"], axisLabelVisible: false, title: l.title ?? "",
     }));
-    this.layers.set(id, made);
+    let bands: LayerPrimitive | null = null;
+    if (data.bands?.length) {
+      const list = [...data.bands];
+      bands = new LayerPrimitive((c) => bandShapes(list, c), (w, h) => this.converters(w, h));
+      this.candles.attachPrimitive(bands);
+    }
+    this.layers.set(id, { lines: made, bands });
   }
 
   serialize(): EngineLayout {

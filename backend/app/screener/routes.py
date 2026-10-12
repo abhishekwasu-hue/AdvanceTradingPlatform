@@ -31,6 +31,7 @@ from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
 from app.screener import legends as lg   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
+from app.screener import zones as zone_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
@@ -46,9 +47,9 @@ GALLERY_FLAG = "screener_gallery"   # U9 TX1: the taxonomy API and the gallery o
 LEGENDS_FLAG = lg.FLAG             # U7 LG1: the Legends cards (their screens are hidden from the taxonomy while off)
 # U5 D2 review: live previews make /run chattier; a per-user window keeps them (and Runs) to a sane rate.
 run_rate_limit = user_rate_limit("screener_run", limit=60, window_seconds=60)
-# Data the run path loads today: bars only. A screen using a function that needs more is refused with the reason
-# (the U1-d universe data and the option chain join here when they are wired in).
-RUN_PROVIDES: frozenset = frozenset()
+# Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
+# more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
+RUN_PROVIDES: frozenset = frozenset({"zones"})
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -108,9 +109,16 @@ async def _flag(session: AsyncSession, user: User) -> None:
 async def registry(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
     entries = describe()
-    if not await breakout_gate.enabled(session, user.tenant_id):            # U6 BK1: the breakout family stays hidden
-        entries = {k: v for k, v in entries.items() if not (k in FUNCTIONS and FUNCTIONS[k].flag)}
+    off = await _flags_off(session, user)
+    if off:                                       # Z7a-3 (the U6 BK1 pattern): a flagged family stays hidden while its flag is off
+        entries = {k: v for k, v in entries.items() if not (k in FUNCTIONS and FUNCTIONS[k].flag in off)}
     return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
+
+
+async def _flags_off(session: AsyncSession, user: User) -> set:
+    """The registry's function flags that are off for the user's organisation."""
+    flags = {spec.flag for spec in FUNCTIONS.values() if spec.flag}
+    return {f for f in flags if not await flag_enabled(session, f, user.tenant_id)}
 
 
 @router.get("/taxonomy")
@@ -162,11 +170,13 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
 
 
 async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
-    """U6 BK1: a screen using a breakout function while `screener_breakouts` is off fails validation, with the reason."""
-    blocked = await breakout_gate.blocked_calls(session, user.tenant_id, ast)
-    if blocked:
-        validated.ok = False
-        validated.problems.append(Problem(breakout_gate.refusal(blocked)))
+    """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
+    screens (`screener_breakouts`) and the Z7a-3 market-zone functions (`market_zones`)."""
+    for gate in (breakout_gate, zone_gate):
+        blocked = await gate.blocked_calls(session, user.tenant_id, ast)
+        if blocked:
+            validated.ok = False
+            validated.problems.append(Problem(gate.refusal(blocked)))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -358,8 +368,10 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     await _flag(session, user)
     started = time.monotonic()
     screen_id = None
+    screen_name: Optional[str] = None
     if body.screen_id is not None:
         row = await _owned(session, user, body.screen_id)
+        screen_name = row.name
         source: Union[str, Dict[str, Any]] = json.loads(row.ast_json)
         base_tf, params, screen_id = row.base_tf, {**json.loads(row.params_json or "{}"), **body.params}, row.id
     elif body.source is not None:
@@ -379,10 +391,12 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     tier: Dict[str, Any] = {}
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
                                                                user_id=user.id, tier_out=tier)
+    if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
+        await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), validated.lookback)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
     stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches, vectorized=vectorized)
-    results = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
+    results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
                "matched": [r["symbol"] for r in results if r["matched"]], "results": results,
@@ -405,6 +419,18 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                               scanned=len(symbols), matched=sum(1 for r in results if r["matched"]), result_json=json.dumps(results),
                               duration_ms=int((time.monotonic() - started) * 1000))
     session.add(run_row)
+    from app.screener import evidence_store
+    matched_symbols = [str(r["symbol"]) for r in results if r["matched"]]
+    if matched_symbols and await evidence_store.enabled(session, user.tenant_id):
+        # U8 EV1: the matched symbols' evidence packs, from the same bars, parameters and ranks the screen just ran on
+        await session.flush()
+        ids = await evidence_store.store_for_run(session, tenant_id=user.tenant_id, user_id=user.id, run_id=run_row.id, ast=ast,
+                                                 validated=validated, universe=universe, matched=matched_symbols, base_tf=base_tf,
+                                                 params=params, exchange=body.exchange, data_source=data_source,
+                                                 screen_name=screen_name, per_user=bool(tier))   # BT1b: read through the runner's own session
+        for r in results:
+            r["evidence_id"] = ids.get(str(r["symbol"]))
+        run_row.result_json = json.dumps(results)
     await session.commit()
     return {"run_id": run_row.id, "preview": False, **payload}
 

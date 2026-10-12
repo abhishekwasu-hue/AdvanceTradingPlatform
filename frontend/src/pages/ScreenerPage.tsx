@@ -16,6 +16,7 @@ import { screenerApi, type PreviewResponse, type RunResponse } from "../screener
 import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
+import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultBoard } from "../screener/ResultBoard";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
@@ -44,6 +45,7 @@ export default function ScreenerPage(_props: PageProps) {
   const [otherProblem, setOtherProblem] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [run, setRun] = useState<RunResponse | null>(null);
+  const [evidence, setEvidence] = useState<{ id: number; symbol: string } | null>(null);   // U8 EV1: "Show on chart"
   const [ran, setRan] = useState<RunStamp | null>(null);         // what the shown run was made of
   const [validating, setValidating] = useState(false);
   const [live, setLive] = useState(true);
@@ -252,7 +254,9 @@ export default function ScreenerPage(_props: PageProps) {
             </div>
           )}
           <ResultBoard results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh}
-                       why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined} />
+                       why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined}
+                       onShowEvidence={(r) => { if (r.evidence_id != null) setEvidence({ id: r.evidence_id, symbol: r.symbol }); }} />
+          <EvidencePanel evidenceId={evidence?.id ?? null} symbol={evidence?.symbol} onClose={() => setEvidence(null)} />
           {run && <p className="text-t12 text-fg-muted">{run.disclaimer}</p>}
         </div>
       </div>

@@ -125,3 +125,57 @@ def test_a_sealed_dump_cannot_be_replayed_under_another_name(tmp_path):
         (tmp_path / (dump.name + suffix)).rename(tmp_path / (newer.name + suffix))
     run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), str(newer)], env=env, capture_output=True, text=True)
     assert run.returncode == 1 and "does not match its seal" in run.stderr
+
+
+# --- Z11: every read of the restored copy logs in as the restore role, never as the superuser ------------------------
+
+_TRAP_SQL = """
+CREATE TABLE seen (tag text, who text);
+CREATE FUNCTION probe(tag text) RETURNS SETOF text LANGUAGE plpgsql AS $$
+BEGIN
+  INSERT INTO seen VALUES (tag, current_user);
+  RETURN NEXT 'trap_rev';
+END $$;
+CREATE VIEW alembic_version AS SELECT probe('alembic') AS version_num;
+CREATE VIEW tenants AS SELECT probe('count') AS id;
+CREATE TABLE orders (id int); CREATE TABLE trades (id int); CREATE TABLE audit_logs (id int);
+"""
+
+_CHAIN_PROBE = """import os, subprocess
+url = os.environ["DATABASE_URL"].replace("postgresql+asyncpg://", "postgresql://")
+who = subprocess.run(["psql", url, "-qAtc", "select current_user"], capture_output=True, text=True, check=True).stdout.strip()
+with open(os.environ["CHAIN_PROBE_OUT"], "w") as fh:
+    fh.write(os.environ["DATABASE_URL"] + "|" + who)
+"""
+
+
+def test_counts_alembic_and_audit_chain_on_the_copy_run_as_the_restore_role(tmp_path):
+    # A dump whose `tenants` / `alembic_version` are views over a plpgsql function that records who called it: the
+    # copy's function runs with the querying user's rights, so it must only ever see atp_restore.
+    src_db = f"lowfix_trap_{os.getpid()}"
+    _psql(f'DROP DATABASE IF EXISTS "{src_db}"'); _psql(f'CREATE DATABASE "{src_db}"')
+    src_url = DB_URL.rsplit("/", 1)[0] + "/" + src_db
+    backend = tmp_path / "backend"                                                  # a stand-in verify_chain that reports its login
+    (backend / "app" / "audit").mkdir(parents=True)
+    (backend / "app" / "audit" / "verify_chain.py").write_text(_CHAIN_PROBE)
+    probe = tmp_path / "chain_probe.txt"
+    report = {}
+    try:
+        subprocess.run(["psql", src_url.replace("postgresql+asyncpg://", "postgresql://"), "-q", "-v", "ON_ERROR_STOP=1", "-c", _TRAP_SQL],
+                       check=True, capture_output=True, text=True)
+        env = _env(tmp_path / "dumps", DATABASE_URL=src_url, VERIFY_KEEP_SCRATCH="1", BACKEND_DIR=str(backend), CHAIN_PROBE_OUT=str(probe))
+        assert subprocess.run(["sh", str(SCRIPTS / "backup.sh")], env=env, capture_output=True, text=True).returncode == 0
+        run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), "latest"], env=env, capture_output=True, text=True)
+        report = json.loads(run.stdout.strip().splitlines()[-1])
+        assert report["status"] == "ok", run.stderr + run.stdout
+        assert report["alembic"]["copy"] == "trap_rev" and report["counts"]["tenants"]["copy"] == 1
+        seen = _psql("select tag || ':' || who from seen order by 1", report["restored_into"]).splitlines()
+        assert sorted(set(seen)) == ["alembic:atp_restore", "count:atp_restore"]      # never the superuser
+        url, who = probe.read_text().split("|")
+        assert who == "atp_restore" and url.startswith("postgresql+asyncpg://atp_restore@") and ":" not in url.split("//", 1)[1].split("@")[0]
+        assert report["audit_chain"] == "intact"
+        assert _psql("select rolcanlogin::text from pg_roles where rolname = 'atp_restore'") == "false"   # NOLOGIN again
+    finally:
+        if report.get("restored_into"):
+            _psql(f'DROP DATABASE IF EXISTS "{report["restored_into"]}"')
+        _psql(f'DROP DATABASE IF EXISTS "{src_db}"')

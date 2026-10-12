@@ -69,9 +69,17 @@ rm -f "$RESTORE_LOG"
 
 # Prints the query result, or "null" when the table is missing - keeps the report valid JSON.
 q() { psql "$1" -qAtc "$2" 2>/dev/null || echo null; }
+# Z11: every read of the COPY logs in as the restore role too, never as the superuser. What the archive created there
+# (a view over a plpgsql function, a function named like a table) runs with the rights of whoever queries it - so a
+# superuser counting rows would run archive code as superuser. The role is still LOGIN with this run's password here
+# (cleanup makes it NOLOGIN). VERIFY_RESTORE_ROLE= (empty): RESTORE_URL is the scratch URL of the connecting user.
+qc() {
+  if [ -n "$RESTORE_PW" ]; then PGPASSWORD="$RESTORE_PW" psql "$RESTORE_URL" -qAtc "$1" 2>/dev/null || echo null
+  else q "$RESTORE_URL" "$1"; fi
+}
 jstr() { case "$1" in null) printf null;; *) printf '"%s"' "$1";; esac; }
 SRC_VER="$(q "$SRC_URL" 'select version_num from alembic_version')"
-CPY_VER="$(q "$SCRATCH_URL" 'select version_num from alembic_version')"
+CPY_VER="$(qc 'select version_num from alembic_version')"
 [ "$SRC_VER" = "$CPY_VER" ] || fail schema_mismatch "alembic $CPY_VER != $SRC_VER"
 
 # Z11 / L7: a copy may hold fewer rows than the live database (it is older), never more - and never far fewer:
@@ -79,7 +87,7 @@ CPY_VER="$(q "$SCRATCH_URL" 'select version_num from alembic_version')"
 MIN_RATIO="${VERIFY_MIN_RATIO:-0.5}"
 COUNTS=""
 for t in tenants orders trades audit_logs; do
-  S="$(q "$SRC_URL" "select count(*) from $t")"; C="$(q "$SCRATCH_URL" "select count(*) from $t")"
+  S="$(q "$SRC_URL" "select count(*) from $t")"; C="$(qc "select count(*) from $t")"
   COUNTS="$COUNTS\"$t\":{\"source\":$S,\"copy\":$C},"
   if [ "$C" = null ]; then fail table_missing "$t unreadable in copy"
   elif [ "$S" != null ] && [ "$C" -gt "$S" ]; then fail count_mismatch "$t copy>source"
@@ -94,7 +102,8 @@ BACKEND_DIR="${BACKEND_DIR:-$(dirname "$0")/../../backend}"
 if [ -f "$BACKEND_DIR/app/audit/verify_chain.py" ] && command -v python3 >/dev/null 2>&1; then
   if [ "$STATUS" = "restore_failed" ] || [ "$STATUS" = "table_missing" ]; then
     CHAIN="not_checked"
-  elif (cd "$BACKEND_DIR" && DATABASE_URL="$(printf '%s' "$SCRATCH_URL" | sed 's#^postgresql://#postgresql+asyncpg://#')" python3 -m app.audit.verify_chain >/dev/null 2>&1); then
+  elif (cd "$BACKEND_DIR" && if [ -n "$RESTORE_PW" ]; then PGPASSWORD="$RESTORE_PW"; export PGPASSWORD; fi \
+        && DATABASE_URL="$(printf '%s' "$RESTORE_URL" | sed 's#^postgresql://#postgresql+asyncpg://#')" python3 -m app.audit.verify_chain >/dev/null 2>&1); then
     CHAIN="intact"
   else
     CHAIN="broken"; fail audit_chain_broken "audit chain does not verify in copy"

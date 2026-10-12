@@ -40,8 +40,9 @@ async def accounts(user: User = Depends(get_current_user), session: AsyncSession
     return [await _with_status(session, a) for a in await list_accounts(session, user.tenant_id)]
 
 
-@router.post("/{account_id}/sync")
-async def sync(account_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+@router.post("/{account_id}/sync", dependencies=[Depends(require_scope("brokers:write"))])
+async def sync(account_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+    # Z10-c: rewrites the organisation's balance snapshot and spends the account's broker budget - a trading role.
     account = await _owned(session, user, account_id)
     record = await credential_for_account(session, account)
     if record is None:

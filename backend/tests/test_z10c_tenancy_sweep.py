@@ -15,15 +15,16 @@ Nothing leaves the process: outbound HTTP is refused for the whole module.
 """
 import asyncio
 import json
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 
 from app.ai.compliance_terms import ACK_VERSION
 from app.auth.scopes import SCOPES
-from app.auth.security import hash_password
+from app.auth.security import decode_access_token, hash_password
 from app.db.models import User
 from app.main import app
 from app.platform import controls
@@ -62,22 +63,16 @@ SCOPE_BY_PREFIX: List[Tuple[str, str]] = [
     ("/api/option-chain/{underlying}/alerts", "alerts:write"),
 ]
 
-# Known gaps in files owned by open PRs (Z10-c does not edit them). Each one is an expected failure, strict: the day
-# the route honours its scope the test passes, xfail(strict) turns that into a failure, and the entry is removed.
-_GAP_AI = "OPEN_QUESTIONS Z10c-2: the scope is not checked; ai/routes.py belongs to open PR #179 - fix after it merges"
+# Known gaps in files owned by open PRs (Z10-c does not edit them): route -> the status a member denied the scope gets
+# today. The test asserts exactly that status, so the day the route honours its scope (403) the test fails and the
+# entry is removed.
 _GAP_178 = "OPEN_QUESTIONS Z10c-2: the scope is not checked; alerts/rules_routes.py belongs to open PR #178 - fix after it merges"
-KNOWN_SCOPE_GAPS: Dict[Tuple[str, str], str] = {
-    ("POST", "/api/alerts/rules"): _GAP_178,
-    ("POST", "/api/alerts/rules/{rule_id}/{action}"): _GAP_178,
-    ("PUT", "/api/alerts/policy"): _GAP_178,
-    ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): _GAP_178,
-    ("DELETE", "/api/alerts/email-opt-outs/{opt_out_id}"): _GAP_178,
-    ("PUT", "/api/ai/provider"): _GAP_AI,
-    ("DELETE", "/api/ai/provider"): _GAP_AI,
-    ("POST", "/api/ai/drafts"): _GAP_AI,
-    ("POST", "/api/ai/drafts/{draft_id}/backtest"): _GAP_AI,
-    ("POST", "/api/ai/drafts/{draft_id}/approve"): _GAP_AI,
-    ("POST", "/api/ai/drafts/{draft_id}/reject"): _GAP_AI,
+KNOWN_SCOPE_GAPS: Dict[Tuple[str, str], Tuple[int, str]] = {
+    ("POST", "/api/alerts/rules"): (422, _GAP_178),
+    ("POST", "/api/alerts/rules/{rule_id}/{action}"): (404, _GAP_178),
+    ("PUT", "/api/alerts/policy"): (200, _GAP_178),
+    ("POST", "/api/alerts/deliveries/{delivery_id}/retry"): (409, _GAP_178),
+    ("DELETE", "/api/alerts/email-opt-outs/{opt_out_id}"): (200, _GAP_178),
 }
 # Trader writes a member denied every scope can still make (role gate without a scope), same rule as above.
 KNOWN_UNSCOPED_WRITES: Dict[Tuple[str, str], str] = {}
@@ -89,6 +84,39 @@ ROLE_ONLY_WRITE_PREFIXES = ("/api/fundamentals/", "/api/news-events")
 
 # 5xx another organisation's request may still get, and why it is not a tenancy failure (none today).
 KNOWN_5XX: Dict[Tuple[str, str], str] = {}
+
+# Bodies the schema alone cannot make valid (a model validator wants more than the required fields), so that a request
+# reaches the code that must refuse - or, for tenant A, serve - it.
+BODY_OVERRIDES: Dict[Tuple[str, str], dict] = {
+    ("PUT", "/api/custom-strategies/{strategy_id}"): {
+        "name": "Z10c", "timeframe": "1min", "short_conditions": [],
+        "long_conditions": [{"left": {"type": "indicator", "indicator": "RSI", "period": 14}, "operator": "CROSSES_ABOVE",
+                             "right": {"type": "value", "value": 50}}]},
+    ("PUT", "/api/charts/drawings/{drawing_id}"): {"version": 1, "drawing": {"kind": "hline", "anchors": [{"p": 100.0}]}},
+    ("POST", "/api/news-feed/items/{item_id}/feedback"): {"verdict": "useful"},
+    ("POST", "/api/ai/actions/{action_id}/snooze"): {"minutes": 30},
+    ("POST", "/api/journal/trades/{trade_id}/tags"): {"tag": "fomo_entry"},
+    ("PATCH", "/api/team/members/{member_id}"): {"role": "VIEWER"},
+    ("PUT", "/api/screener/screens/{screen_id}"): {"name": "Z10c", "source": "close > SMA(close, 20)"},
+}
+
+# Path parameters the planted rows cannot stand for: a real member, invite and login session of tenant A, made fresh
+# for each request (the request may remove them).
+REAL_ID_PARAMS = ("member_id", "invite_id", "target_id")
+
+# Id routes where tenant A's own request may still be a 404 / 422, and why the other organisation's 403/404 on them
+# still proves something (or what the route really keys on).
+A_CONTROL_EXCEPTIONS: Dict[Tuple[str, str], str] = {
+    ("POST", "/api/news-feed/items/{item_id}/feedback"):
+        "item_id names a shared news-feed item (platform data, not a tenant row) - each member's verdict is its own row",
+}
+
+# Id routes where the other organisation may get a status other than 403/404, and why nothing of tenant A's is exposed.
+CROSS_TENANT_STATUS: Dict[Tuple[str, str], Tuple[Tuple[int, ...], str]] = {
+    ("POST", "/api/marketplace/{listing_id}/subscribe"): (
+        (400,), "marketplace listings are meant to be discovered by every organisation; an unpublished one is refused "
+                "with 400 and nothing of it is returned or changed"),
+}
 
 ROUTES: List[Route] = iter_api_routes(app)
 OPENAPI = app.openapi()
@@ -125,9 +153,9 @@ def _suggest(route: Route) -> str:
     return "self: <why any member may>" if route.mutating else "member"
 
 
-def _request(sweep: TestClient, route: Route, headers: Dict[str, str]):
-    url = probe.path_for(route.path, probe.int_path_params(route.dependant))
-    body = probe.body_for(OPENAPI, route.method, route.path) if route.mutating else None
+def _request(sweep: TestClient, route: Route, headers: Dict[str, str], ids: Optional[Dict[str, int]] = None):
+    url = probe.path_for(route.path, probe.int_path_params(route.dependant), overrides=ids)
+    body = (BODY_OVERRIDES.get(route.key) or probe.body_for(OPENAPI, route.method, route.path)) if route.mutating else None
     return sweep.request(route.method, url, headers=headers, params=probe.query_for(OPENAPI, route.method, route.path),
                          json=body)
 
@@ -147,6 +175,13 @@ def _owner(email: str) -> Tuple[Dict[str, str], dict]:
     me = client.get("/api/auth/me", headers=headers).json()
     _upgrade_plan(me["tenant_id"])
     return headers, me
+
+
+def _user_id(email: str) -> int:
+    async def go():
+        async with _session_factory() as session:
+            return (await session.scalar(select(User).where(User.email == email))).id
+    return _run(go())
 
 
 def _member(email: str, tenant_id: int, role: str, deny: Tuple[str, ...] = ()) -> Dict[str, str]:
@@ -192,8 +227,42 @@ def world():
         created = client.post("/api/api-keys", headers=b_headers, json={"name": "z10c", "scopes": sorted(API_KEY_SCOPES)})
         b_key = created.json().get("key") if created.status_code in (200, 201) else None
         sweep = TestClient(app, raise_server_exceptions=False)
+        counter = iter(range(1, 10_000))
+
+        def real_ids(route: Route) -> Dict[str, int]:
+            """Fresh tenant-A ids for the parameters planted rows cannot stand for (only those the route names)."""
+            ids: Dict[str, int] = {}
+            if "{member_id}" in route.path:
+                email = f"z10c-sweep-member-{next(counter)}@example.com"
+                _member(email, a["tenant_id"], "USER")
+                ids["member_id"] = _user_id(email)
+            if "{invite_id}" in route.path:
+                made = client.post("/api/team/invites", headers=a_headers, json={"email": f"z10c-sweep-invite-{next(counter)}@example.com"})
+                assert made.status_code in (200, 201), made.text
+                ids["invite_id"] = made.json()["id"]
+            if "{version_number}" in route.path:
+                ids["version_number"] = 1                       # the planted version row of the planted strategy
+            if route.path.startswith("/api/news-events/{event_id}"):
+                made = client.post("/api/news-events", headers=a_headers, json={
+                    "category": "RBI_POLICY", "headline": "Z10c", "event_date": "2026-10-09", "sentiment": "Neutral",
+                    "source": {"source": "RBI", "source_url": "https://www.rbi.org.in/"}})
+                assert made.status_code == 201, made.text
+                ids["event_id"] = made.json()["id"]             # shared reference data: tenant A's own entry, not a planted row
+            if "{target_id}" in route.path:
+                response = client.post("/api/auth/login", json={"email": "z10c-sweep-a@example.com", "password": "S3cur3Pass!"})
+                ids["target_id"] = int(decode_access_token(response.json()["access_token"])["sid"])
+            return ids
+
+        def replant() -> None:
+            async def go():
+                async with _session_factory() as session:
+                    await probe.remove_rows(session, planted)
+                    again = await probe.plant_rows(session, tenant_id=a["tenant_id"], user_id=a["id"], marker=MARKER)
+                    assert again == planted
+            _run(go())
+
         yield {"a": a, "a_headers": a_headers, "b_headers": b_headers, "b_key": b_key, "members": members,
-               "planted": planted, "sweep": sweep}
+               "planted": planted, "sweep": sweep, "real_ids": real_ids, "replant": replant}
 
         async def teardown():
             async with _session_factory() as session:
@@ -289,14 +358,15 @@ def _scoped_writes() -> List[Tuple[Route, str]]:
     return found
 
 
-_SCOPED = [pytest.param(r, s, marks=pytest.mark.xfail(strict=True, reason=KNOWN_SCOPE_GAPS[r.key]))
-           if r.key in KNOWN_SCOPE_GAPS else pytest.param(r, s) for r, s in _scoped_writes()]
-
-
-@pytest.mark.parametrize("route,scope", _SCOPED, ids=[f"{r.method} {r.path} [{s}]" for r, s in _scoped_writes()])
+@pytest.mark.parametrize("route,scope", _scoped_writes(), ids=[f"{r.method} {r.path} [{s}]" for r, s in _scoped_writes()])
 def test_each_catalogue_scope_bites(world, route, scope):
     """An OWNER-role member denied only this scope is refused - and says which scope is missing."""
     response = _request(world["sweep"], route, world["members"][scope])
+    if route.key in KNOWN_SCOPE_GAPS:
+        status, why = KNOWN_SCOPE_GAPS[route.key]
+        assert response.status_code == status, (f"known gap ({why}) now answers {response.status_code} - if it is a 403 for "
+                                                f"'{scope}', remove it from KNOWN_SCOPE_GAPS")
+        return
     assert response.status_code == 403 and response.headers.get("X-Missing-Scope") == scope, \
         f"denied '{scope}' but got {response.status_code} {response.headers.get('X-Missing-Scope')}: {response.text[:200]}"
 
@@ -353,3 +423,33 @@ def test_another_organisation_never_sees_or_changes_tenant_a_rows(world):
     assert not changed, f"another organisation changed tenant A's rows in: {changed}"
     assert not opened, "a route with a row id answered another organisation's request for tenant A's row:\n" + "\n".join(opened)
     assert not errors, "5xx on another organisation's request (a refusal must be a 4xx):\n" + "\n".join(errors)
+
+
+_ID_ROUTES = [r for r in ROUTES if _cls(r) in ("member", "owner", "trader", "self") and r.key not in NOT_SENT_CROSS_TENANT
+              and (probe.int_path_params(r.dependant) or any("{" + p + "}" in r.path for p in REAL_ID_PARAMS))]
+
+
+@pytest.mark.parametrize("route", _ID_ROUTES, ids=_id)
+def test_an_id_route_refuses_another_organisation_and_serves_tenant_a(world, route):
+    """Per route, on freshly planted rows: the other organisation's OWNER is refused (403/404) and changes nothing;
+    then tenant A's OWNER sends the same request and is served - not a 404 or 422 - which proves the refusal was about
+    the organisation, not a row that was never there or a body that never got past validation."""
+    world["replant"]()
+    ids = world["real_ids"](route)
+
+    async def snap():
+        async with _session_factory() as session:
+            return await probe.snapshot(session, world["planted"])
+    before = _run(snap())
+    other = _request(world["sweep"], route, world["b_headers"], ids)
+    assert MARKER not in other.text, f"tenant A's data reached another organisation: {other.text[:200]}"
+    if route.key not in CROSS_TENANT_2XX:
+        allowed = (403, 404) + CROSS_TENANT_STATUS.get(route.key, ((), ""))[0]
+        assert other.status_code in allowed, f"another organisation got {other.status_code}: {other.text[:200]}"
+    after = _run(snap())
+    assert before == after, f"another organisation changed tenant A's rows in {[t for t in before if before[t] != after[t]]}"
+    own = _request(world["sweep"], route, world["a_headers"], ids)
+    if route.key in A_CONTROL_EXCEPTIONS:
+        return
+    assert own.status_code not in (404, 422), (f"tenant A's own request got {own.status_code} - the probe never reached a "
+                                               f"real row or a valid body: {own.text[:200]}")

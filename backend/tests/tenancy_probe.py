@@ -68,7 +68,9 @@ def _value(column, *, tenant_id: int, user_id: int, marker: str, now: datetime) 
     if isinstance(kind, Boolean):
         return False
     if isinstance(kind, DateTime):
-        return now
+        # A nullable timestamp marks a state (deleted_at, revoked_at, archived_at ...): left empty so the row is live and
+        # the routes find it - except a trade's exit, so no open position is planted.
+        return now if (not column.nullable or name == "exit_time") else None
     if isinstance(kind, Date):
         return now.date()
     if isinstance(kind, (Integer,)):
@@ -193,12 +195,15 @@ def body_for(openapi: Dict, method: str, path: str) -> Optional[Any]:
     return instance(schema, openapi.get("components", {}).get("schemas", {}))
 
 
-def path_for(path: str, int_params: Iterable[str] = (), probe_id: int = PROBE_ID) -> str:
-    """`int_params`: the route's integer path parameters (row ids) - they get PROBE_ID; the others a PATH_VALUES name."""
+def path_for(path: str, int_params: Iterable[str] = (), probe_id: int = PROBE_ID, overrides: Optional[Dict[str, Any]] = None) -> str:
+    """`int_params`: the route's integer path parameters (row ids) - they get PROBE_ID; the others a PATH_VALUES name.
+    `overrides`: a real id for a parameter the planted rows cannot provide (a member, an invite, a login session)."""
     ints = set(int_params)
 
     def fill(match: "re.Match[str]") -> str:
         name = match.group(1).split(":")[0]
+        if overrides and name in overrides:
+            return str(overrides[name])
         if name in ints:
             return str(probe_id)
         if name in PATH_VALUES:

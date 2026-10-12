@@ -1157,7 +1157,8 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
   an owner action; it never flips it. Turning it on (or off) is an audit event (`feature_flag_set`).
 - **What it does while on**: every new LIVE entry is refused - at the entry checks (the reason
   "Phase 0 PAPER-only lock ..." on the order trail, single-leg and multi-leg alike) and again at the broker-order
-  chokepoint in the worker (an order tagged as an entry gets a REJECTED answer without reaching the broker). PAPER is
+  chokepoint in the worker (an order the platform built as an entry - `intent` ENTRY - gets a REJECTED answer without
+  reaching the broker; the worker re-reads the flag every cycle). PAPER is
   untouched. With the flag off and tenants listed in its allow-list, only those tenants are locked.
 - **What it never does**: block an exit. Exits of an existing LIVE position, protective stops, stop moves and cancels
   pass (ADR-0004). It does not change the `live_trading` flag (still a kill flag, ON by default - owner decision

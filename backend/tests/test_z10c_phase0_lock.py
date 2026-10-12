@@ -6,7 +6,9 @@ import asyncio
 from datetime import timedelta
 from typing import List, Optional
 
-from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
+import pytest
+
+from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest, BrokerOrderResponse
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, RateLimits
 from app.core.enums import OrderSide
 from app.db.models import StrategyDeploymentRecord, User
@@ -45,8 +47,10 @@ def _flags() -> dict:
 
 
 def _order(leg: Optional[str], *, algo: Optional[str] = None, broker: Optional[str] = None) -> BrokerOrderRequest:
+    """An order as the platform builds it: the leg's tag, and intent ENTRY only on an entry (OrderRouter, multi-leg)."""
     tag = build_order_tag(strategy_id="ema_rsi", leg=leg, algo_id=algo, broker=broker) if leg else None
-    return BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.BUY, quantity=1, tag=tag)
+    return BrokerOrderRequest(symbol="RELIANCE", exchange="NSE", transaction_type=OrderSide.BUY, quantity=1, tag=tag,
+                              intent=ORDER_INTENT_ENTRY if leg == LEG_ENTRY else None)
 
 
 class _Inner:
@@ -82,12 +86,37 @@ def test_flag_is_registered_off_by_default_and_live_trading_keeps_its_default():
     assert "live_trading" not in controls.DEFAULT_OFF_FLAGS
 
 
-def test_entry_tags_are_recognised_and_exits_never_are():
+def test_only_a_stated_entry_intent_counts_as_an_entry():
     assert phase0_lock.is_entry_order(_order(LEG_ENTRY))
     assert phase0_lock.is_entry_order(_order(LEG_ENTRY, algo="ALGO42"))
     for leg in (LEG_EXIT, LEG_STOP, None):
         assert not phase0_lock.is_entry_order(_order(leg))
         assert not phase0_lock.is_entry_order(_order(leg, algo="ALGO42"))
+    # The tag alone never makes an entry (review M1): an exit tagged like an entry still passes.
+    looks_like_entry = BrokerOrderRequest(symbol="RELIANCE", transaction_type=OrderSide.SELL, quantity=1, tag="X-ENT")
+    assert not phase0_lock.is_entry_order(looks_like_entry)
+
+
+@pytest.mark.parametrize("algo", ["NSEALGO1234567890ENT", "NSEALGO1234567890ENTABCDEFGHIJKL"])   # 20 and 32 characters
+def test_a_long_algo_id_never_turns_an_exit_into_a_refused_entry(algo):
+    """Review M1: the tag used to be cut at 20 characters, so an algo id whose first 20 characters end in "ENT" made
+    every EXIT / SL tag read as an entry and the chokepoint refused the square-off (ADR-0004)."""
+    assert len(algo) in (20, 32)
+    for leg in (LEG_EXIT, LEG_STOP, LEG_ENTRY):
+        tag = build_order_tag(strategy_id="ema_rsi", leg=leg, algo_id=algo)
+        assert tag.endswith("-" + leg) and len(tag) <= 20        # the leg stays whole; the algo id is cut
+
+    async def go():
+        broker, inner = _wrapped()
+        phase0_lock.remember(True, ())
+        statuses = {leg: (await broker.place_order(_order(leg, algo=algo))).status for leg in (LEG_EXIT, LEG_STOP, LEG_ENTRY)}
+        return statuses, inner.calls
+    try:
+        statuses, calls = _run(go())
+    finally:
+        phase0_lock.reset_cache()
+    assert statuses == {LEG_EXIT: "OPEN", LEG_STOP: "OPEN", LEG_ENTRY: "REJECTED"}
+    assert len(calls) == 2 and all(not c.endswith("-ENT") for c in calls)
 
 
 def test_chokepoint_refuses_entries_only_while_locked():
@@ -204,3 +233,47 @@ def test_worker_exits_an_existing_live_position_while_locked(monkeypatch):
     assert exit_order.tag is not None and exit_order.tag.endswith(LEG_EXIT)
     assert exit_order.transaction_type == OrderSide.SELL and exit_order.order_type == "MARKET"
     assert broker.cancelled == ["ORD-2"]                                  # the standing stop was cancelled first
+
+
+def test_a_live_option_structure_is_refused_while_locked(monkeypatch):
+    """Multi-leg: layer 1 refuses the structure before any leg is sent; layer 2 refuses each leg on its own."""
+    from app.core.enums import OptionStrategy, SignalDirection
+    from app.core.models import RiskConfig
+    from app.execution.multileg import _place_live_legs, execute_structure
+    from app.instruments.spreads import resolve_structure
+    from tests.test_contract_rules import TODAY, _load_master
+    from tests.test_multileg import SPOT, _OptionBroker, _rules
+
+    monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
+    _load_master()
+    t = _tenant("z10c-lock-structure@example.com")
+
+    async def structure(session):
+        return await resolve_structure(session, "NIFTY 50", _rules(), OptionStrategy.BULL_PUT_SPREAD, SignalDirection.LONG,
+                                       spread_width=2, spot=SPOT, today=TODAY)
+
+    async def layer1(broker):
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            return await execute_structure(session, user, mode="LIVE", strategy_id="s", signal=_signal(), structure=await structure(session),
+                                           rules=_rules(), target_credit_pct=None, stop_credit_pct=None, idempotency_key="z10c-lock-ml",
+                                           broker=broker, quote_broker=broker, risk_config=RiskConfig(capital=1_000_000, risk_per_trade_pct=1.0))
+
+    async def layer2(broker):
+        async with _session_factory() as session:
+            wrapped = RateLimitedBroker(broker, RateBudget(RateLimits(100.0, 100, 1000)), tenant_id=t["tenant_id"])
+            phase0_lock.remember(True, ())
+            return await _place_live_legs(wrapped, await structure(session), 1, "s", None, {}, [])
+
+    broker = _OptionBroker()
+    _set_lock(True)
+    try:
+        result = _run(layer1(broker))
+    finally:
+        _set_lock(False)
+    assert not result.executed and phase0_lock.ENTRY_REASON in result.reasons and broker.placed == []
+    try:
+        ok, failure = _run(layer2(broker))
+    finally:
+        phase0_lock.reset_cache()
+    assert not ok and phase0_lock.REFUSAL in failure and broker.placed == []

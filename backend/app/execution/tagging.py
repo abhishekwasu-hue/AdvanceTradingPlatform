@@ -46,7 +46,8 @@ def build_order_tag(
 ) -> str:
     """`<algo_id>-<strategy>-<leg>` shortened to `max_length`, dropping strategy characters first
     (the algo id is the compliance value and the leg is what reconciliation keys on), then, if
-    the algo id and leg alone still do not fit, the leg is truncated last.
+    the algo id and leg alone still do not fit, the algo id is cut - the leg always stays whole
+    (Z10-c review M1: a cut leg made an exit tag end in whatever the algo id's characters were).
 
     D1: with `broker`, that broker's tag format from the rule-set applies (IN-SEBI.algo_id.tag `brokers`): a stricter
     length and/or charset (`alnum` drops the separators). Without an entry nothing changes."""
@@ -60,6 +61,9 @@ def build_order_tag(
     strategy = strip.sub("", sanitize_tag_part(strategy_id))
     sep = "-" if strip.sub("", "-") else ""
 
+    leg_part = leg_part[:max_length]
+    if algo and len(algo) + len(sep) + len(leg_part) > max_length:
+        algo = algo[:max(0, max_length - len(sep) - len(leg_part))]
     fixed = [p for p in (algo, leg_part) if p]
     fixed_len = sum(len(p) for p in fixed) + len(sep) * (len(fixed) - 1)  # separators between fixed parts
     room_for_strategy = max_length - fixed_len - len(sep)  # one more separator for the strategy part

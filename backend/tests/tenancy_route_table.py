@@ -54,9 +54,9 @@ S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
 S_FEEDBACK = "self: sends product feedback (rate limited)"
 S_NEWS_CLASSIFY = "self: classifies the organisation's pending feed items with its own AI key (metered, like a Copilot question)"
 S_OWN_VERDICTS = "self: the caller's own verdicts on feed items"
-S_ACCOUNT_SYNC = "self: refreshes the read-only balance snapshot from the broker; no order"
 S_PREVIEW = "self: previews the contract a deployment would trade; stores nothing"
-S_OWN_MARKET_DATA = "self: reads candles / option chains through the caller's own broker session"
+S_OWN_MARKET_DATA = ("self: reads candles / option chains through a broker session - the organisation's (its budget) or, with the "
+                     "bring-your-own-broker tier on, the caller's own; nothing is stored; rate limited per user")
 S_COMPUTE = "self: computes over the request body or the organisation's data and returns it; stores nothing"
 
 
@@ -66,7 +66,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/accounts/{account_id}/default"): "trader",
     ("POST", "/api/accounts/{account_id}/disable"): "trader",
     ("POST", "/api/accounts/{account_id}/enable"): "trader",
-    ("POST", "/api/accounts/{account_id}/sync"): S_ACCOUNT_SYNC,
+    ("POST", "/api/accounts/{account_id}/sync"): "trader",
     ("GET", "/api/admin/audit-logs"): "admin",
     ("GET", "/api/admin/beta/cohort"): "admin",
     ("GET", "/api/admin/beta/feedback"): "admin",
@@ -152,7 +152,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/interview/refine"): S_OWN_INTERVIEW,
     ("POST", "/api/ai/interview/start"): S_OWN_INTERVIEW,
     ("GET", "/api/ai/market-memory"): "member",
-    ("POST", "/api/ai/market-memory/refresh"): S_COPILOT,
+    ("POST", "/api/ai/market-memory/refresh"): "trader",
     ("GET", "/api/ai/preferences"): "member",
     ("PUT", "/api/ai/preferences"): S_OWN_AI_LANGUAGE,
     ("DELETE", "/api/ai/profile"): S_OWN_PROFILE,

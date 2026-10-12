@@ -19,6 +19,7 @@ from app.ai.compliance_terms import ai_acknowledged, require_ai_acknowledged
 from app.ai.providers import ProviderError
 from app.ai.regime import REGIMES, classify_regime
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_owner, require_trader
+from app.auth.scopes import require_scope
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.routes import _run_summary
 from app.core.models import OHLCVBar, RiskConfig, bars_to_dataframe
@@ -91,7 +92,7 @@ async def get_provider(user: User = Depends(get_current_user), session: AsyncSes
             "data_consent": consent}
 
 
-@router.put("/provider")
+@router.put("/provider", dependencies=[Depends(require_scope("ai:manage"))])
 async def put_provider(body: ProviderBody, request: Request, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
     tenant = await _tenant(session, user)
     if body.provider != "rule_based":
@@ -112,7 +113,7 @@ async def put_provider(body: ProviderBody, request: Request, user: User = Depend
     return {**ai_settings.as_dict(record, tenant, usage=await metering.budget_state(session, tenant)), "data_consent": consent}
 
 
-@router.delete("/provider", status_code=204)
+@router.delete("/provider", status_code=204, dependencies=[Depends(require_scope("ai:manage"))])
 async def delete_provider(user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> None:
     await ai_settings.delete_config(session, user)
 
@@ -169,7 +170,7 @@ async def accept_acknowledgement(body: AcknowledgementBody, request: Request, us
     return terms.status_dict(terms.KIND_COPILOT, row)
 
 
-@router.post("/drafts", status_code=201)
+@router.post("/drafts", status_code=201, dependencies=[Depends(require_scope("ai:manage"))])
 async def generate_draft(body: GenerateBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), _ack: None = Depends(ai_acknowledged)) -> dict:
     await require_flag(session, "ai_copilot", user.tenant_id)  # Phase N4 operator kill flag
     tenant = await _tenant(session, user)
@@ -211,7 +212,7 @@ async def get_draft(draft_id: int, user: User = Depends(require_ai_acknowledged)
     return generator.as_dict(await _draft(session, draft_id, user), include_raw=True)
 
 
-@router.post("/drafts/{draft_id}/backtest")
+@router.post("/drafts/{draft_id}/backtest", dependencies=[Depends(require_scope("ai:manage"))])
 async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = Depends(require_trader),
                          session: AsyncSession = Depends(get_session)) -> dict:
     """Runs the draft through the ordinary engine and records the run against the draft - the
@@ -245,7 +246,7 @@ async def backtest_draft(draft_id: int, body: DraftBacktestBody, user: User = De
     return {"draft": generator.as_dict(draft), "run": _run_summary(run), "result": result.model_dump()}
 
 
-@router.post("/drafts/{draft_id}/approve")
+@router.post("/drafts/{draft_id}/approve", dependencies=[Depends(require_scope("ai:manage"))])
 async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
                         _ack: None = Depends(ai_acknowledged)) -> dict:
     draft = await _draft(session, draft_id, user)
@@ -260,7 +261,7 @@ async def approve_draft(draft_id: int, body: ApproveBody, user: User = Depends(r
     return {"draft": generator.as_dict(draft), "custom_strategy_id": record.id, "strategy_id": f"custom:{record.id}", "origin": record.origin}
 
 
-@router.post("/drafts/{draft_id}/reject")
+@router.post("/drafts/{draft_id}/reject", dependencies=[Depends(require_scope("ai:manage"))])
 async def reject_draft(draft_id: int, body: NoteBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     draft = await _draft(session, draft_id, user)
     try:
@@ -503,9 +504,10 @@ async def get_market_memory(symbol: Optional[str] = Query(default=None, max_leng
 
 
 @router.post("/market-memory/refresh")
-async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     """Reads the market now through this tenant's broker session (the worker does the same on its own),
-    and the global cues. Without a broker session the global cues alone are read; with neither, 409."""
+    and the global cues. Without a broker session the global cues alone are read; with neither, 409.
+    Z10-c: it writes the organisation-wide market memory and spends its broker budget, so it needs a trading role."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record

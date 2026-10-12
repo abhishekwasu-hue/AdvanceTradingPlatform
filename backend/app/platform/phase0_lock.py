@@ -8,8 +8,8 @@ While it is on, no new LIVE entry is sent anywhere. Two layers:
 1. `platform.controls.entry_blocks` refuses every new LIVE entry (single-leg and multi-leg pipelines alike) before any
    sizing or routing, with a reason on the order trail;
 2. the broker-order chokepoint (`brokers.rate_budget.RateLimitedBroker.place_order`, the wrapper every worker LIVE
-   order goes through) refuses an order tagged as an entry before it reaches the broker - a REJECTED response the
-   router records as a refusal.
+   order goes through) refuses an order whose stated intent is ENTRY before it reaches the broker - a REJECTED
+   response the router records as a refusal.
 Exits of an existing LIVE position, protective stops, modifies and cancels always pass (ADR-0004). PAPER is untouched.
 The lock never changes the `live_trading` flag or a plan; it only adds a refusal.
 
@@ -21,8 +21,7 @@ from typing import Dict, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.brokers.models import BrokerOrderRequest, BrokerOrderResponse
-from app.execution.tagging import LEG_ENTRY
+from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest, BrokerOrderResponse
 
 FLAG = "phase0_paper_only"
 REFUSAL = "phase0_paper_only"
@@ -62,12 +61,11 @@ def locked(tenant_id: Optional[int]) -> bool:
 
 
 def is_entry_order(order: BrokerOrderRequest) -> bool:
-    """An order the platform built as a new entry. Every entry carries the entry leg last in its tag
-    (`execution.tagging.build_order_tag`: `<algo>-<strategy>-ENT`, or without separators for an alphanumeric-only
-    broker). Exits (`EXIT`), stops (`SL`) and untagged orders are never treated as entries: an exit must never be
+    """An order the platform built as a new entry: `intent == "ENTRY"`, set where entries are built (OrderRouter,
+    the multi-leg executor). Nothing is inferred from the tag (Z10-c review M1: a long algo id could make an exit's
+    tag look like an entry's). Exits, stops and any order with no stated intent always pass - an exit must never be
     refused here."""
-    tag = (order.tag or "").upper()
-    return tag.endswith(LEG_ENTRY)
+    return order.intent == ORDER_INTENT_ENTRY
 
 
 def refused_response() -> BrokerOrderResponse:

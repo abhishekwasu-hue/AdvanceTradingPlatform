@@ -84,8 +84,10 @@ def _flag(on, tenants=()):
 
 @pytest.fixture(autouse=True)
 def _fresh():
+    from app.charts import price_action_layer as PAL
     from app.core import rate_limit
     rate_limit.reset("chart_studies")
+    PAL.cache_clear()
     yield
 
 
@@ -188,14 +190,21 @@ def test_no_lookahead_through_the_api(headers):
     params = {"at": _iso(at), "start": _iso(F["bar_end"].iloc[200])}
     exprs = ["SMA(close, 20)", "close > EMA(close, 9)", "RSI(14)@1h", "Max(high, 30)"]
     before = _get(headers, exprs, **params)
+    # review LOW-1: a one-bar over-read would show here - the last bar drawn ended by `at`, and it started before it
+    assert pd.Timestamp(before["as_of"]) <= pd.Timestamp(at) and before["times"][-1] < pd.Timestamp(at).timestamp()
+    assert pd.Timestamp(before["as_of"]) == pd.Timestamp(at)                       # ... and the bar that ended at `at` is read
     later = F[F["bar_end"] > at]
     tail = F.tail(40).assign(timestamp=F.tail(40)["timestamp"] + pd.Timedelta(days=60), bar_end=F.tail(40)["bar_end"] + pd.Timedelta(days=60))
     _run(_put(_rows(later.assign(high=later["high"] * 1.05, close=later["close"] * 1.02), version=2) + _rows(later.assign(low=later["low"] * 0.9), source="r2:other")
               + _rows(tail) + _rows(later.assign(close=later["close"] * 2), source="stream:upstox", version=9)))
     try:
+        from app.charts import price_action_layer as PAL
+        PAL.cache_clear()                                                          # recomputed, not the cached answer
         assert _get(headers, exprs, **params) == before
     finally:
         _run(_drop((MdCandleRecord.version > 1) | (MdCandleRecord.source != "vendor:test") | (MdCandleRecord.ts > F["bar_end"].iloc[-1].to_pydatetime())))
+    from app.charts import price_action_layer as PAL
+    PAL.cache_clear()
     assert _get(headers, exprs, **params) == before
 
 
@@ -259,3 +268,144 @@ def test_fifty_thousand_bars_under_a_second_perf_job():
     took = _timed(50_000)
     print(f"ch6 studies: 50,000 bars x {len(PERF_EXPRS)} studies + JSON in {took:.3f} s (budget {factor:.2f} s)")
     assert took < 1.0 * factor
+
+
+# --------------------------------------------------------------------------------------------- CH6a review fixes
+HEAVY = ('RealBreak(SwingHigh(1), "above", 20) OR ReversalAt(SwingLow(1), "bullish") OR RealBreak(SwingLow(2), "below", 30) '
+         'OR ReversalAt(SwingHigh(2), "bearish") OR RealBreak(SwingHigh(0), "above", 10) OR ReversalAt(SwingLow(0), "bullish") '
+         'OR RealBreak(SwingLow(1), "below", 15)')
+
+
+def _flags(**flags):
+    async def go():
+        async with _session_factory() as session:
+            current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+            stored = dict(current.get("flags") or {})
+            for name, on in flags.items():
+                stored[name] = {"on": on, "tenants": []}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": stored}, None)
+            await session.commit()
+    _run(go())
+
+
+def test_heavy_studies_are_budgeted_per_request_and_refused_on_long_windows():
+    """Review HIGH: six ~290-character RealBreak / ReversalAt studies took 8 s at 5k bars and 44 s at 20k. The budget
+    admits what fits (about 4 s), refuses the rest as "too heavy for this window", and refuses the bar-by-bar functions
+    above HEAVY_MAX_BARS; what is admitted stays inside the bound."""
+    assert 250 <= len(HEAVY) <= S.MAX_EXPR_CHARS
+    checked = S.check([HEAVY] * 6, "15m")
+    assert all(st["ok"] for st in checked), checked[0]["problems"]
+    assert set(S.heavy_calls(checked[0]["ast"])) == {"RealBreak", "ReversalAt"}
+    single = S.check(['ReversalAt(SwingLow(0), "bullish")'] * 6, "15m")
+    for studies, n, bound in ((checked, 5_000, 6.0), (checked, 20_000, 2.0), (single, 20_000, 6.0), (checked, 50_000, 2.0)):
+        admitted = S.admit(studies, n)
+        took = [st for st in admitted if st["ok"]]
+        refused = [st for st in admitted if not st["ok"]]
+        assert refused and all("too heavy for this window" in st["problems"][-1]["message"] for st in refused)
+        assert sum(S.weight(st["ast"]) for st in took) * n / 1000 <= S.REQUEST_BUDGET
+        if n > S.HEAVY_MAX_BARS:
+            assert not took and "bar by bar" in refused[0]["problems"][-1]["message"]
+        elif studies is checked and n == 20_000:
+            assert not took and "s of computation" in refused[0]["problems"][-1]["message"]   # one alone is over the budget
+        else:
+            assert 1 <= len(took) < 6
+        f = _big(n)
+        t0 = time.perf_counter()
+        out = S.build(f, "15m", admitted, None)
+        took_s = time.perf_counter() - t0
+        assert [st["ok"] for st in out["studies"]] == [st["ok"] for st in admitted]
+        assert took_s < bound, (n, len(took), took_s)
+    # light studies are not held back by the budget at the 50k-bar target
+    assert all(st["ok"] for st in S.admit(S.check(PERF_EXPRS, "15m"), 52_000))
+
+
+def test_api_refuses_only_the_studies_over_the_budget(headers, monkeypatch):
+    params = {"at": _iso(F["bar_end"].iloc[-1]), "start": _iso(F["bar_end"].iloc[300])}
+    monkeypatch.setattr(S, "REQUEST_BUDGET", 600.0)
+    body = _get(headers, ["SMA(close, 20)", HEAVY, HEAVY, "RSI(14)"], **params)
+    ok = [st["ok"] for st in body["studies"]]
+    assert ok == [True, True, False, True], [st["problems"] for st in body["studies"]]
+    assert "too heavy for this window" in body["studies"][2]["problems"][-1]["message"]
+    assert body["studies"][3]["values"] and body["studies"][1]["fires"] is not None
+
+
+def test_sixty_requests_a_minute(headers):
+    params = {"instrument": KEY, "tf": "15m", "expr": "SMA(close, 20)", "at": _iso(F["bar_end"].iloc[-1]), "start": _iso(F["bar_end"].iloc[600])}
+    codes = [client.get(URL, params=params, headers=headers).status_code for _ in range(61)]
+    assert codes[:60] == [200] * 60 and codes[60] == 429
+
+
+def test_answers_are_cached_and_computed_inside_the_build_semaphore(headers, monkeypatch):
+    from app.charts import price_action_layer as PAL
+    calls = []
+    real = S.build
+
+    def counted(*a, **k):
+        calls.append(1)
+        return real(*a, **k)
+    monkeypatch.setattr(S, "build", counted)
+    slots = []
+    real_slot = PAL._in_slot
+
+    async def in_slot(fn, *a):
+        slots.append(fn)
+        return await real_slot(fn, *a)
+    monkeypatch.setattr(PAL, "_in_slot", in_slot)
+    params = {"at": _iso(F["bar_end"].iloc[-1]), "start": _iso(F["bar_end"].iloc[300])}
+    a = _get(headers, ["SMA(close, 20)", "RSI(14)"], **params)
+    b = _get(headers, ["SMA(close, 20)", "RSI(14)"], **params)
+    assert a == b and len(calls) == 1 and slots == [counted]
+    _get(headers, ["SMA(close, 21)"], **params)
+    assert len(calls) == 2
+
+
+def test_screener_function_flags_apply_per_study(headers):
+    """Review MED: RelVolume / SessionVWAP (U6 breakouts) and the market-zone functions follow their screener flags."""
+    params = {"at": _iso(F["bar_end"].iloc[-1]), "start": _iso(F["bar_end"].iloc[300])}
+    _flags(screener_breakouts=False, market_zones=False)
+    body = _get(headers, ["RelVolume(20)", "SessionVWAP()", "SMA(close, 20)", 'NearZone("demand", 0.5)'], **params)
+    by = {st["expr"]: st for st in body["studies"]}
+    for e in ("RelVolume(20)", "SessionVWAP()"):
+        assert not by[e]["ok"] and "screener_breakouts" in by[e]["problems"][-1]["message"] and by[e].get("values") is None
+    assert not by['NearZone("demand", 0.5)']["ok"] and "market_zones" in " ".join(p["message"] for p in by['NearZone("demand", 0.5)']["problems"])
+    assert by["SMA(close, 20)"]["ok"] and by["SMA(close, 20)"]["values"]
+    _flags(screener_breakouts=True)
+    try:
+        body = _get(headers, ["RelVolume(20)", "SessionVWAP()"], **params)
+        assert all(st["ok"] for st in body["studies"]), [st["problems"] for st in body["studies"]]
+    finally:
+        _flags(screener_breakouts=False)
+
+
+KEY_1M = "NSE:CH6STUDYM"
+
+
+def test_a_warmup_over_the_rebuild_cap_refuses_that_study_only(headers):
+    """Review LOW-3: 5m is rebuilt from 1-minute rows for at most REBUILD_MAX_DAYS days. A study whose own warm-up needs
+    more is refused with the reason; the others still draw."""
+    from app.charts import price_action_layer as PAL
+    day = pd.Timestamp("2026-04-09 03:45", tz="UTC")
+    starts = day + pd.to_timedelta(np.arange(375), unit="min")
+    rng = np.random.default_rng(3)
+    close = 500 + np.cumsum(rng.normal(0, 0.2, 375))
+    rows = [MdCandleRecord(instrument_key=KEY_1M, timeframe="1m", ts=(t + pd.Timedelta(minutes=1)).to_pydatetime(), source="vendor:test", version=1,
+                           open=float(c), high=float(c) + 0.3, low=float(c) - 0.3, close=float(c), volume=100,
+                           ingested_at=(t + pd.Timedelta(minutes=2)).to_pydatetime()) for t, c in zip(starts, close)]
+    _run(_put(rows))
+    try:
+        at = starts[-1] + pd.Timedelta(minutes=1)
+        params = {"instrument": KEY_1M, "tf": "5m", "at": _iso(at), "start": _iso(at - pd.Timedelta(days=PAL.REBUILD_MAX_DAYS - 20))}
+        r = client.get(URL, params={**params, "expr": ["SMA(close, 5)", "SMA(close, 150)@1d"]}, headers=headers)
+        assert r.status_code == 200, r.text
+        light, long_ = r.json()["studies"]
+        assert light["ok"] and any(v is not None for v in light["values"])
+        assert not long_["ok"] and "warm-up" in long_["problems"][-1]["message"] and "1-minute" in long_["problems"][-1]["message"]
+        # a window too large on its own still refuses the request
+        far = {**params, "start": _iso(at - pd.Timedelta(days=PAL.REBUILD_MAX_DAYS + 30))}
+        assert client.get(URL, params={**far, "expr": "SMA(close, 5)"}, headers=headers).status_code == 422
+    finally:
+        async def drop():
+            async with _session_factory() as session:
+                await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key == KEY_1M))
+                await session.commit()
+        _run(drop())

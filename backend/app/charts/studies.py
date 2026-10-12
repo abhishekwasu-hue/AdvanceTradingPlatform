@@ -14,16 +14,21 @@ GET /api/charts/studies?instrument=NSE:BANKNIFTY&tf=15m&at=<ISO time>&start=<ISO
     `values` aligned to them, NaN -> null; a condition study's `fires` (the bars it turns true). `fingerprint` = SHA-256 of
     the computed part (canonical JSON): the same bars give the same bytes.
   * A price-unit study draws on the price pane (`pane: "price"`), anything else in its own pane.
+  * Per study, also refused with the reason while the others still draw:
+    - a function whose screener flag is off for the organisation (`gate`: the U6 breakout and market-zone flags);
+    - a warm-up that cannot be read (the 1-minute rebuild cap, the row cap: `_load`);
+    - a study over the compute budget ("too heavy for this window": `admit`, CALL_WEIGHT).
+  * Computed inside the CH3b build semaphore, and cached for 30 s with the layer's byte-bounded cache. 60 requests
+    per minute per user.
 Behind the `chart_studies` flag (off by default -> 503). Reference only - nothing here places or proposes an order.
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import math
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -46,7 +51,25 @@ MAX_EXPR_CHARS = 300
 STUDY_MAX_BARS = 50_000                # bars drawn per study (the chart's 50k-bar target), warm-up included
 STUDY_MAX_DAYS = {"1m": 180, "3m": 365, "5m": 730, "15m": 1825, "30m": 3650, "1h": 3650, "1d": 36500}
 MAX_WARMUP_BARS = 2_000                # history read before `start` for the studies' look-back (at most)
-rate_limited = user_rate_limit("chart_studies", limit=120, window_seconds=60)
+rate_limited = user_rate_limit("chart_studies", limit=60, window_seconds=60)
+# Compute budget (CH6a review HIGH). A request is estimated as the sum, over its studies' function calls, of each call's
+# weight x the bars read (warm-up included). Weights are ms per 1,000 bars, about twice what was measured for the
+# functions that run a per-bar Python loop (swing / structure / zone and the breakout engines). Every other function
+# is vectorised and weighs DEFAULT_WEIGHT. Studies are admitted in order while the request stays within REQUEST_BUDGET.
+# A study with a function of HEAVY_WEIGHT or more is refused outright above HEAVY_MAX_BARS bars. A refused study says
+# "too heavy for this window" and the rest still draw.
+CALL_WEIGHT: Dict[str, float] = {
+    "SwingZoneStrength": 250.0, "SwingZoneDistance": 250.0, "Trend": 150.0, "StructureEvent": 130.0, "ReversalAt": 130.0,
+    "NearSupport": 100.0, "NearResistance": 100.0, "RealBreak": 60.0, "DowTrend": 40.0, "DayExtremeBreak": 40.0,
+    "SwingBreakType": 40.0, "NRBreakout": 30.0, "SwingBreakout": 30.0, "RangeBreakout": 30.0, "VolumeBreakout": 25.0,
+    "SwingHigh": 20.0, "SwingLow": 20.0, "SwingDirection": 20.0, "DayLevelBreak": 15.0, "RangeExpansion": 15.0,
+    "ORBreakout": 10.0, "SessionVWAP": 10.0, "ATRPercentile": 10.0, "RelVolumeTOD": 10.0, "VWAP": 10.0, "Supertrend": 5.0,
+}
+DEFAULT_WEIGHT = 1.0
+HEAVY_WEIGHT = 50.0
+HEAVY_MAX_BARS = 20_000
+REQUEST_BUDGET = 8_000.0               # estimated ms of computation per request (about 4 s measured)
+STUDY_CACHE_TAG = "studies"            # answers share the CH3 layer's byte-bounded 30 s cache under this tag
 
 
 def canonical(content: Dict[str, Any]) -> str:
@@ -112,6 +135,92 @@ def check(exprs: Sequence[str], tf: str) -> List[Dict[str, Any]]:
                    lookback_by_tf={k: int(v) for k, v in sc.validated.lookback.items()})
         out.append(row)
     return out
+
+
+def weight(ast: Any) -> float:
+    """ms per 1,000 bars of one study: its function calls' weights summed (a nested call counts on its own)."""
+    from app.screener import nodes
+    return sum(CALL_WEIGHT.get(node.name, DEFAULT_WEIGHT) for node in nodes.walk(ast) if isinstance(node, nodes.Call))
+
+
+def heavy_calls(ast: Any) -> List[str]:
+    from app.screener import nodes
+    out: List[str] = []
+    for node in nodes.walk(ast):
+        if isinstance(node, nodes.Call) and CALL_WEIGHT.get(node.name, DEFAULT_WEIGHT) >= HEAVY_WEIGHT and node.name not in out:
+            out.append(node.name)
+    return out
+
+
+def _refuse(st: Dict[str, Any], message: str) -> Dict[str, Any]:
+    return {**st, "ok": False, "problems": [*st["problems"], {"message": message, "pos": None}]}
+
+
+def admit(studies: Sequence[Dict[str, Any]], bars: int) -> List[Dict[str, Any]]:
+    """The compute budget over `bars` bars (see CALL_WEIGHT): each checked study is admitted in order, or refused with
+    "too heavy for this window" and why. The others still draw."""
+    out: List[Dict[str, Any]] = []
+    spent = 0.0
+    for st in studies:
+        if not st["ok"] or st["ast"] is None:
+            out.append(st)
+            continue
+        heavy = heavy_calls(st["ast"])
+        est = weight(st["ast"]) * bars / 1000.0
+        if heavy and bars > HEAVY_MAX_BARS:
+            out.append(_refuse(st, f"too heavy for this window: {', '.join(h + '()' for h in heavy)} is computed bar by bar, on at most "
+                                   f"{HEAVY_MAX_BARS:,} bars ({bars:,} here, warm-up included); choose a later `start`"))
+        elif spent + est > REQUEST_BUDGET:
+            out.append(_refuse(st, f"too heavy for this window: with the studies before it, this request would need about {(spent + est) / 1000:.1f} s "
+                                   f"of computation (the budget is {REQUEST_BUDGET / 1000:.0f} s); choose a later `start` or fewer studies"))
+        else:
+            spent += est
+            out.append(st)
+    return out
+
+
+async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The screener's function flags, per study (as `screener.routes._gate` does for a screen): a study using a U6
+    breakout function while `screener_breakouts` is off, or a market-zone function while `market_zones` is off, is
+    refused with the flag's reason. The others still draw."""
+    from app.screener import zones as zone_gate
+    from app.screener.breakouts import gate as breakout_gate
+    out: List[Dict[str, Any]] = []
+    for st in studies:
+        if st["ok"] and st["ast"] is not None:
+            for g in (breakout_gate, zone_gate):
+                blocked = await g.blocked_calls(session, tenant_id, st["ast"])
+                if blocked:
+                    st = _refuse(st, g.refusal(blocked))
+        out.append(st)
+    return out
+
+
+def _need(studies: Sequence[Dict[str, Any]]) -> Dict[str, int]:
+    need: Dict[str, int] = {}
+    for st in studies:
+        for tf_i, bars in (st.get("lookback_by_tf") or {}).items() if st["ok"] else ():
+            need[tf_i] = max(need.get(tf_i, 0), bars)
+    return need
+
+
+async def _load(session: AsyncSession, key: str, tf: str, begin: datetime, when: datetime,
+                studies: List[Dict[str, Any]]) -> Tuple[pd.DataFrame, Optional[str], datetime, List[Dict[str, Any]]]:
+    """The bars for the window plus the warm-up the studies need. When that read is refused (the 1-minute rebuild cap,
+    the row cap), the study whose own warm-up reaches furthest back is refused with the reason, and the read is tried
+    again without it. Only a window that is too large on its own refuses the request (422)."""
+    while True:
+        read_from = warmup_start(begin, _need(studies), key)
+        try:
+            frame, source = await PAL.load_frame(session, key, tf, read_from, when, max_bars=STUDY_MAX_BARS + MAX_WARMUP_BARS)
+            return frame, source, read_from, studies
+        except PAL.WindowTooLarge as exc:
+            starts = [warmup_start(begin, st.get("lookback_by_tf") or {}, key) for st in studies]
+            earliest = min([t for t, st in zip(starts, studies) if st["ok"]] or [begin])
+            if earliest >= begin:
+                raise HTTPException(status_code=422, detail=str(exc)) from None
+            studies = [_refuse(st, f"its warm-up needs history from {earliest.date().isoformat()}, which cannot be read here: {exc}")
+                       if st["ok"] and t == earliest else st for t, st in zip(starts, studies)]
 
 
 def compute(frame: pd.DataFrame, tf: str, studies: Sequence[Dict[str, Any]], begin: Optional[datetime], exchange: str = "NSE") -> Dict[str, Any]:
@@ -202,19 +311,21 @@ async def chart_studies(instrument: str = Query(..., min_length=1, max_length=10
         key = None
     if key is None or key == "*":
         return {**head, **build(pd.DataFrame(columns=PAL.FRAME_COLS), tf, studies, begin), "reason": PAL.NO_BARS}
-    need: Dict[str, int] = {}
-    for st in studies:
-        for tf_i, bars in (st.get("lookback_by_tf") or {}).items() if st["ok"] else ():
-            need[tf_i] = max(need.get(tf_i, 0), bars)
-    read_from = warmup_start(begin, need, key)
-    try:
-        frame, source = await PAL.load_frame(session, key, tf, read_from, when, max_bars=STUDY_MAX_BARS + MAX_WARMUP_BARS)
-    except PAL.WindowTooLarge as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
-    if len(frame) > STUDY_MAX_BARS + MAX_WARMUP_BARS:
-        raise HTTPException(status_code=422, detail=f"the window holds {len(frame)} bars, more than {STUDY_MAX_BARS}; choose a later `start`")
-    content = await asyncio.to_thread(build, frame, tf, studies, begin, key.split(":", 1)[0])
-    return {**head, "instrument": key, "source": source, **content, "reason": None if len(frame) else PAL.NO_BARS}
+    studies = await gate(session, user.tenant_id, studies)
+    # a short cache (the CH3 layer's, 30 s, byte-bounded): the answer is a function of the bars read (instrument,
+    # timeframe, read start, window, `at`) and of which studies run - the flags' refusals are in the key; the budget
+    # and the read refusals follow from the same bars
+    cache_key = (STUDY_CACHE_TAG, key, tf, warmup_start(begin, _need(studies), key), begin, when,
+                 tuple((st["text"], st["ok"], len(st["problems"])) for st in studies))
+    hit = PAL._cached(cache_key)
+    if hit is None:
+        frame, source, _read_from, studies = await _load(session, key, tf, begin, when, studies)
+        if len(frame) > STUDY_MAX_BARS + MAX_WARMUP_BARS:
+            raise HTTPException(status_code=422, detail=f"the window holds {len(frame)} bars, more than {STUDY_MAX_BARS}; choose a later `start`")
+        studies = admit(studies, len(frame))
+        content = await PAL._in_slot(build, frame, tf, studies, begin, key.split(":", 1)[0])     # CH3b's build semaphore
+        hit = {"source": source, **content, "reason": None if len(frame) else PAL.NO_BARS}
+        PAL._remember(cache_key, hit, len(canonical(hit)))
+    return {**head, "instrument": key, **hit}
 
-
-__all__ = ["router", "FLAG", "check", "compute", "build", "canonical", "fingerprint"]
+__all__ = ["router", "FLAG", "check", "gate", "admit", "weight", "heavy_calls", "compute", "build", "canonical", "fingerprint"]

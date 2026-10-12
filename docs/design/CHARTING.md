@@ -391,10 +391,27 @@ own output on the frozen fixtures, checked against Trade live when the repositor
 ## CH6a (built): ScreenQL studies on charts from the screener runtime, a study WebWorker, 50k-bar performance
 
 - **Backend.** `GET /api/charts/studies?instrument=&tf=&at=&start=&expr=...` (`app/charts/studies.py`; flag `chart_studies`,
-  off -> 503, per organisation; "member" in the tenancy table; 120 requests a minute per user).
+  off -> 503, per organisation; "member" in the tenancy table; 60 requests a minute per user).
   - Up to 6 ScreenQL expressions, each a number (a line) or a condition (marks where it turns true), checked like a
     screen plus `validator.validate_study`: no cross-sectional and no last-bar-only function, no data a chart does not
     load. A refused study says why; the others are still drawn.
+  - Review fixes (CH6a review):
+    - **HIGH, compute budget.** Each request is estimated as the sum, over its studies' function calls, of each
+      call's weight × the bars read. Weights (`CALL_WEIGHT`) are ms per 1,000 bars, about twice the measured times
+      of the per-bar-loop functions (swing, structure, zones, breakouts); everything else weighs 1.
+      - Studies are admitted in order up to 8 s estimated (about 4 s real).
+      - A study with a function of weight 50 or more (Trend, StructureEvent, ReversalAt, RealBreak, the
+        swing-zone and support functions) is refused above 20,000 bars.
+      - A refused study says "too heavy for this window".
+      - The computation runs inside CH3b's build semaphore (`_slots`). Answers are cached for 30 s in the
+        layer's byte-bounded cache, keyed by (instrument, timeframe, read start, window, `at`, studies and their
+        flag refusals).
+    - **MED, function flags.** A study using a U6 breakout function while `screener_breakouts` is off, or a
+      market-zone function while `market_zones` is off, is refused with the flag's reason, as a screen is
+      (`studies.gate`, the screener's own gates).
+    - **LOW, read caps per study.** When the warm-up read is refused (the 180-day 1-minute rebuild cap, the row
+      cap), the study whose own warm-up reaches furthest back is refused with the reason and the read is retried.
+      Only a window too large on its own refuses the request.
   - Values: `app.screener.runtime.evaluate` - the screener's own engine (screens, alert rules, the screener backtest),
     so a chart study and a screen of the same expression cannot disagree (tested against `run_screen`).
   - As of `at` with the CH3 loader (bars that ended by `at`, shared-licensed sources, corrections point-in-time, row

@@ -9,7 +9,7 @@ import { PriceActionLayer } from "../charting/PriceActionLayer";
 import { StudiesPanel } from "../charting/StudiesPanel";
 import { ReplayBar } from "../charting/ReplayBar";
 import { layerTf } from "../charting/priceAction";
-import { REPLAY_OFF, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
+import { REPLAY_OFF, parseCandleTime, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -42,7 +42,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const at = replayAt(chart.candles, replay, layerTf(timeframe));
   const onWindow = useCallback((start: string) => setReplay((r) => (r.active && !r.start ? { ...r, start } : r)), []);
   const lastClose = shown.length ? shown[shown.length - 1].close : null;
-  const candleTimes = useMemo(() => shown.map((c) => Math.floor(Date.parse(c.timestamp) / 1000)), [shown]);
+  const candleTimes = useMemo(() => shown.map((c) => Math.floor(parseCandleTime(c.timestamp) / 1000)), [shown]);
   const candleCloses = useMemo(() => shown.map((c) => c.close), [shown]);
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;

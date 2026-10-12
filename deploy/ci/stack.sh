@@ -128,15 +128,15 @@ cmd_seed() {
 
 # The load test, sharded: each shard is its own ci-runner container (its own IP on the stack network) running
 # backend/scripts/loadtest.py for its slice of users and accounts, through Caddy; the raw samples are merged after.
-#   --users 500 --seconds 450 --ramp 150 --think 10 --shards 25 --label "CI runner"
+#   --users 500 --seconds 300 --ramp 150 --think 30 [--shards N] [--name DIR] [--label TEXT] [--report FILE]
 cmd_load() {
   ensure_env
-  local users=500 seconds=450 ramp=150 think=10 shards=0 label="" report="$STATE/load/result.md"
+  local users=500 seconds=450 ramp=150 think=10 shards=0 label="" name="load" report=""
   while [ $# -gt 0 ]; do
     case "$1" in
       --users) users="$2"; shift 2 ;; --seconds) seconds="$2"; shift 2 ;; --ramp) ramp="$2"; shift 2 ;;
       --think) think="$2"; shift 2 ;; --shards) shards="$2"; shift 2 ;; --label) label="$2"; shift 2 ;;
-      --report) report="$2"; shift 2 ;;
+      --report) report="$2"; shift 2 ;; --name) name="$2"; shift 2 ;;
       *) die "unknown load option $1" 2 ;;
     esac
   done
@@ -145,16 +145,17 @@ cmd_load() {
   [ -s "$STATE/load_accounts.csv" ] || cmd_seed "$users"
   local have; have="$(grep -vc '^#' "$STATE/load_accounts.csv" || true)"
   [ "$have" -ge "$users" ] || die "$STATE/load_accounts.csv has $have accounts, $users needed (deploy/ci/stack.sh seed $users)"
-  rm -rf "$STATE/load"; mkdir -p "$STATE/load"
+  case "$name" in ""|*/*|.*) die "--name must be a plain directory name" 2 ;; esac
+  rm -rf "${STATE:?}/$name"; mkdir -p "$STATE/$name"
   local per=$(( (users + shards - 1) / shards )) i offset n pids=()
   step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s"
-  sample_stats "$STATE/load/docker-stats.csv" & local sampler=$!
+  sample_stats "$STATE/$name/docker-stats.csv" & local sampler=$!
   for i in $(seq 0 $((shards - 1))); do
     offset=$((i * per)); n=$(( users - offset < per ? users - offset : per ))
     [ "$n" -gt 0 ] || break
     dc --profile tools run --rm -T ci-runner /ci-scripts/loadtest.py --base "https://$(env_value DOMAIN)" --cacert /state/caddy-root.crt \
       --accounts /state/load_accounts.csv --account-offset "$offset" --users "$n" --seconds "$seconds" --ramp "$ramp" \
-      --think "$think" --seed "$((54 + i))" --raw-out "/state/load/shard-$i.json" > "$STATE/load/shard-$i.log" 2>&1 &
+      --think "$think" --seed "$((54 + i))" --raw-out "/state/$name/shard-$i.json" > "$STATE/$name/shard-$i.log" 2>&1 &
     pids+=("$!")
   done
   local failed=0 pid
@@ -162,12 +163,12 @@ cmd_load() {
   kill "$sampler" 2>/dev/null || true
   echo "    shards done ($failed reported an SLO miss or failed; the merged verdict below is the one that counts)"
   local files=() f
-  for f in "$STATE"/load/shard-*.json; do [ -e "$f" ] && files+=("/state/load/$(basename "$f")"); done
-  [ "${#files[@]}" -gt 0 ] || die "no shard wrote its samples - see $STATE/load/shard-*.log"
+  for f in "$STATE/$name"/shard-*.json; do [ -e "$f" ] && files+=("/state/$name/$(basename "$f")"); done
+  [ "${#files[@]}" -gt 0 ] || die "no shard wrote its samples - see $STATE/$name/shard-*.log"
   local rc=0
-  cmd_run /ci-scripts/loadtest.py --merge "${files[@]}" --json-out /state/load/result.json --markdown /state/load/result.md \
-    --label "${label:-$PROJECT on $(hostname)}" --stats /state/load/docker-stats.csv || rc=$?
-  [ "$report" = "$STATE/load/result.md" ] || cp "$STATE/load/result.md" "$report"
+  cmd_run /ci-scripts/loadtest.py --merge "${files[@]}" --json-out "/state/$name/result.json" --markdown "/state/$name/result.md" \
+    --label "${label:-$PROJECT on $(hostname)}" --stats "/state/$name/docker-stats.csv" || rc=$?
+  if [ -n "$report" ] && [ -f "$STATE/$name/result.md" ]; then cp "$STATE/$name/result.md" "$report"; fi
   return "$rc"
 }
 

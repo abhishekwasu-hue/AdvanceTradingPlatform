@@ -1,0 +1,211 @@
+# Lane D: Phase 0 exit criteria on a CI staging stack (docs/reports/PHASE0_EXIT_CRITERIA.md). Three jobs, each on its
+# own runner, each building the release's images from this commit:
+#   acceptance  the production compose files + deploy/ci/compose.ci.yml (fake Upstox/Dhan broker, clock shifted into an
+#               NSE session when needed): invite -> sign up -> broker -> screen -> proposal -> Approve PAPER ->
+#               protective exit -> journal; no order-API call reaches a broker; stale data -> no alert
+#   load-500    the same stack on the real clock: 500 synthetic sessions (backend/scripts/loadtest.py, sharded so the
+#               login wave comes from many client IPs) - p95 per route, server errors, SLO verdict
+#   rollback    deploy/atp.sh itself on a throwaway clone: deploy N -> N+1 (migration) -> rollback -> verify; then a
+#               non-rollback-safe migration: code-only rollback refused, --restore-db
+#
+# When: on push to main, on demand (Actions -> "Staging stack (Phase 0 exit criteria)" -> Run workflow), and on a push
+# to any branch that changes the stack itself. Not on pull requests: about 25-35 runner minutes per job, three jobs,
+# which would slow every PR; the ci.yml jobs stay the per-PR gate. Nothing here runs against a deployed host.
+name: Staging stack (Phase 0 exit criteria)
+
+on:
+  push:
+    branches: ["**"]          # main always; any other branch only when it changes the stack (job `gate`)
+  workflow_dispatch:
+    inputs:
+      users:
+        description: "load test: synthetic users"
+        default: "500"
+      seconds:
+        description: "load test: seconds after the ramp"
+        default: "300"
+      think:
+        description: "load test: mean seconds between a user's page loads (primary profile)"
+        default: "30"
+
+concurrency:
+  group: staging-stack-${{ github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+permissions:
+  contents: read
+
+env:
+  ATP_CI_PROJECT: atp-ci
+
+jobs:
+  # A few seconds on every push: main and manual runs go ahead; another branch only when it touches the stack, the
+  # deploy bundle or the load test - not every PR branch pays for three stacks.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.decide.outputs.run }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0
+      - id: decide
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+        run: |
+          if [ "$EVENT" = "workflow_dispatch" ] || [ "$REF" = "refs/heads/main" ]; then echo "run=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          changed="$(git diff --name-only "$(git merge-base origin/main HEAD)" HEAD)"
+          if printf '%s\n' "$changed" | grep -qE '^(deploy/ci/|deploy/atp\.sh|deploy/compose\.release\.yml|docker-compose[^/]*\.yml|backend/scripts/loadtest\.py|\.github/workflows/staging-stack\.yml)'; then
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=false" >> "$GITHUB_OUTPUT"; echo "no stack file changed on this branch - skipped"
+          fi
+
+  acceptance:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Free runner disk (the images need ~6 GB)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+
+      - name: Bring up the CI staging stack (build from this commit)
+        run: deploy/ci/stack.sh up
+
+      - name: Phase 0 acceptance flow (two users, Upstox and Dhan)
+        run: deploy/ci/stack.sh acceptance
+
+      - name: Summary
+        if: always()
+        run: |
+          python3 - <<'EOF' >> "$GITHUB_STEP_SUMMARY" || true
+          import json, os
+          r = json.load(open(os.path.join(os.environ["RUNNER_TEMP"], "atp-ci-state", "acceptance.json")))
+          print(f"## Phase 0 acceptance flow: {'PASS' if r['passed'] else 'FAIL'}\n\nStack clock: {r.get('clock')}\n")
+          print("| Step | Result | s | Detail |\n|---|---|---|---|")
+          for s in r["steps"]:
+              print(f"| {s['step']} | {s['status']} | {s.get('seconds', '')} | {s['detail'].splitlines()[0][:300] if s['detail'] else ''} |")
+          calls = r.get("broker_calls") or {}
+          print(f"\nBroker calls: {calls.get('total')}, order-API calls: {len(calls.get('orders') or [])}\n")
+          EOF
+
+      - name: Diagnostics
+        if: always()
+        run: deploy/ci/stack.sh diag || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: acceptance
+          path: |
+            ${{ runner.temp }}/atp-ci-state/acceptance.json
+            ${{ runner.temp }}/atp-ci-state/diag
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: deploy/ci/stack.sh down || true
+
+  load-500:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      ATP_CI_CLOCK: real            # the load test needs no market session; libfaketime costs the API CPU
+      USERS: ${{ github.event.inputs.users || '500' }}
+      SECONDS_STEADY: ${{ github.event.inputs.seconds || '300' }}
+      THINK: ${{ github.event.inputs.think || '30' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Free runner disk (the images need ~6 GB)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+
+      - name: Bring up the CI staging stack (build from this commit)
+        run: deploy/ci/stack.sh up
+
+      - name: Seed the synthetic users (own organisation and fake Dhan session each)
+        run: deploy/ci/stack.sh seed "$USERS"
+
+      - name: Load test, primary profile (think time = the app's own dashboard refresh)
+        id: primary
+        run: |
+          echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem/ {print $2}') GB"
+          deploy/ci/stack.sh load --name load-primary --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s" --report "$RUNNER_TEMP/atp-ci-state/load-primary.md"
+
+      - name: Load test, busy profile (think 10 s, for comparison - does not decide the job)
+        if: always() && steps.primary.outcome != 'skipped'
+        continue-on-error: true
+        run: |
+          deploy/ci/stack.sh load --name load-busy --users "$USERS" --seconds 180 --ramp 150 --think 10 \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think 10 s" --report "$RUNNER_TEMP/atp-ci-state/load-busy.md"
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Load test ($USERS users)"
+            for f in load-primary load-busy; do
+              [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && { echo; echo "### $f"; cat "$RUNNER_TEMP/atp-ci-state/$f.md"; }
+            done
+          } >> "$GITHUB_STEP_SUMMARY" || true
+          for f in load-primary load-busy; do
+            [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && echo "::notice title=$f::$(head -n 1 "$RUNNER_TEMP/atp-ci-state/$f.md" | cut -c1-900)"
+          done
+          true
+
+      - name: Diagnostics
+        if: always()
+        run: deploy/ci/stack.sh diag || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: load-test
+          path: |
+            ${{ runner.temp }}/atp-ci-state/load-*.md
+            ${{ runner.temp }}/atp-ci-state/load-*/result.*
+            ${{ runner.temp }}/atp-ci-state/load-*/*.csv
+            ${{ runner.temp }}/atp-ci-state/load-*/*.log
+            ${{ runner.temp }}/atp-ci-state/diag
+          if-no-files-found: ignore
+
+      - name: Tear down
+        if: always()
+        run: deploy/ci/stack.sh down || true
+
+  rollback:
+    needs: gate
+    if: needs.gate.outputs.run == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Free runner disk (three releases' images)
+        run: sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL && df -h /
+
+      - name: Rollback rehearsal with deploy/atp.sh (deploy N, N+1, rollback; N+2, refused, --restore-db)
+        run: deploy/ci/rollback_rehearsal.sh --down
+
+      - name: Summary
+        if: always()
+        run: |
+          { echo "## Rollback rehearsal"; cat "$RUNNER_TEMP/atp-rehearsal/rollback_report.md"; } >> "$GITHUB_STEP_SUMMARY" || true
+          grep -E '^\| ' "$RUNNER_TEMP/atp-rehearsal/rollback_report.md" | sed -n '3,40p' | while IFS= read -r line; do echo "::notice title=rollback::$line"; done || true
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: rollback-rehearsal
+          path: |
+            ${{ runner.temp }}/atp-rehearsal/rollback_report.md
+            ${{ runner.temp }}/atp-rehearsal/logs
+          if-no-files-found: ignore

@@ -16,7 +16,8 @@ writes (`SSL_CERT_FILE`), so a request can never reach a real broker from the st
     POST /__fake/state  {"stale_minutes": {"dhan": 60}, "ltp": {"RELIANCE": 2800.5}, "clear_ltp": ["RELIANCE"]}
     GET  /__fake/quote?symbol=RELIANCE&broker=dhan   the price a quote would show now
 
-Order-API calls are answered with an error and never "fill": nothing here models an order book.
+Order-API calls are answered with an error (400, never an authentication error: a token must not look expired) and never
+"fill": nothing here models an order book.
 
 Market data is synthetic and deterministic (a smooth function of the symbol and the minute, no randomness), on the
 NSE clock (09:15-15:30 IST, Monday-Friday). "Now" is the wall clock plus FAKE_OFFSET_SECONDS - the same shift the app
@@ -338,7 +339,7 @@ def route_upstox(method: str, path: str, query: Dict[str, List[str]], body: byte
     if path == "/v2/logout":
         return upstox_ok({})
     if classify("api.upstox.com", method, path) == "order":
-        return Reply(403, {"status": "error", "errors": [{"message": "fake broker: the CI stack accepts no orders"}]})
+        return Reply(400, {"status": "error", "errors": [{"message": "fake broker: the CI stack accepts no orders"}]})
     return Reply(404, {"status": "error", "errors": [{"message": f"fake broker: no route {method} {path}"}]}, kind="unknown")
 
 
@@ -395,7 +396,7 @@ def route_dhan(method: str, path: str, body: bytes, headers: Dict[str, str]) -> 
     if path == "/v2/optionchain" and method == "POST":
         return Reply(200, {"data": {"last_price": quote_price("NIFTY", "dhan")[0], "oc": {}}, "status": "success"})
     if classify("api.dhan.co", method, path) == "order":
-        return Reply(403, {"errorType": "Order_Error", "errorCode": "DH-906", "errorMessage": "fake broker: the CI stack accepts no orders"})
+        return Reply(400, {"errorType": "Order_Error", "errorCode": "DH-906", "errorMessage": "fake broker: the CI stack accepts no orders"})
     return Reply(404, {"errorCode": "DH-905", "errorMessage": f"fake broker: no route {method} {path}"}, kind="unknown")
 
 

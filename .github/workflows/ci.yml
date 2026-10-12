@@ -57,7 +57,7 @@ jobs:
         run: bandit -q -r app -ll -ii
 
       - name: shellcheck (Z11 deploy bundle; ShellCheck ships with the runner image)
-        run: shellcheck -x deploy/atp.sh deploy/hostinger/install.sh
+        run: shellcheck -x deploy/atp.sh deploy/hostinger/install.sh deploy/ci/*.sh
 
       - name: Migration rollback safety (every migration declares ROLLBACK_SAFE; risky upgrades are not marked safe)
         run: python backend/scripts/migration_rollback_safety.py lint

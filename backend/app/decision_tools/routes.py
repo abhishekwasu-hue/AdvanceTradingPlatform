@@ -8,7 +8,7 @@
 
 Every position read is the caller's own (tenant + user). Nothing here places, changes or closes an order.
 """
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Annotated, Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -32,19 +32,19 @@ async def _enabled(session: AsyncSession, user: User) -> None:
 
 class RuinBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    win_rate: float = Field(gt=0, lt=1)
-    payoff_ratio: float = Field(gt=0, le=1000)
-    risk_pct: float = Field(gt=0, lt=100)
-    ruin_pct: float = Field(gt=0, le=100)
-    compare: Optional[List[float]] = Field(default=None, max_length=calculators.MAX_COMPARE)
+    win_rate: float = Field(gt=0, lt=1, allow_inf_nan=False)
+    payoff_ratio: float = Field(gt=0, le=1000, allow_inf_nan=False)
+    risk_pct: float = Field(ge=0.01, lt=100, allow_inf_nan=False)
+    ruin_pct: float = Field(gt=0, le=100, allow_inf_nan=False)
+    compare: Optional[List[Annotated[float, Field(allow_inf_nan=False)]]] = Field(default=None, max_length=calculators.MAX_COMPARE)
 
 
 class WhatIfBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     underlying: str = Field(min_length=1, max_length=60)
-    spot: float = Field(gt=0)
-    iv: Optional[float] = Field(default=None, ge=0.01, le=3.0)
-    ivs: Optional[Dict[int, float]] = None
+    spot: float = Field(gt=0, le=1e7, allow_inf_nan=False)
+    iv: Optional[float] = Field(default=None, ge=0.01, le=3.0, allow_inf_nan=False)
+    ivs: Optional[Dict[int, Annotated[float, Field(ge=0.01, le=3.0, allow_inf_nan=False)]]] = Field(default=None, max_length=200)
     days_forward: float = Field(default=0.0, ge=0.0, le=366.0)
     iv_shift: float = Field(default=0.0, ge=-0.5, le=1.0)
     range_pct: float = Field(default=10.0, ge=0.5, le=50.0)

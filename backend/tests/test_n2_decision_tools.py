@@ -225,3 +225,29 @@ def test_positions_and_what_if_are_the_callers_own():
     # The member cannot model the owner's position, and a missing IV is a clear 422.
     assert client.post("/api/decision/what-if", headers=member["headers"], json=body).status_code == 404
     assert client.post("/api/decision/what-if", headers=owner["headers"], json={**body, "iv": None}).status_code == 422
+
+
+# --- review #211: inputs that used to answer 500 ------------------------------------------------------------------------
+
+def test_tiny_risk_and_non_finite_inputs_are_422_not_500():
+    with pytest.raises(calculators.CalculatorError):
+        calculators.calculate(0.6, 1.0, 1e-5, 20.0)
+    out = calculators.calculate(0.6, 1.0, 0.01, 20.0, compare=[1e-6, 0.5])
+    assert [r["risk_pct"] for r in out["rows"]] == [0.01, 0.5] and out["rows"][0]["chosen"]
+    with pytest.raises(whatif.WhatIfError):
+        whatif.what_if([{"trade_id": 1, "symbol": "X", "direction": "BUY", "option_type": "FUT", "strike": 0.0, "lots": 1.0, "lot_size": 1.0,
+                         "premium": 1.0}], spot=float("inf"))
+    t = _tenant(_email("bad"))
+    _flag(t["tenant_id"])
+    ruin = {"win_rate": 0.6, "payoff_ratio": 1, "risk_pct": 1e-5, "ruin_pct": 20}
+    assert client.post("/api/decision/ruin", headers=t["headers"], json=ruin).status_code == 422
+    assert client.post("/api/decision/ruin", headers=t["headers"], json={**ruin, "risk_pct": 0.01}).status_code == 200
+    exp = date.today() + timedelta(days=20)
+    _open_trade(t, "NIFTY26OCT24500PE", "OPTION", "SHORT", 75, 120.0, exp, "NIFTY 50")
+    body = {"underlying": "NIFTY 50", "spot": 24512.0, "iv": 0.14}
+    assert client.post("/api/decision/what-if", headers=t["headers"], json=body).status_code == 200
+    for bad in ({**body, "spot": 1e308}, {**body, "spot": 2e7}, {**body, "ivs": {str(i): 0.2 for i in range(201)}}, {**body, "ivs": {"1": 9.0}}):
+        assert client.post("/api/decision/what-if", headers=t["headers"], json=bad).status_code == 422, bad
+    raw = '{"underlying": "NIFTY 50", "spot": Infinity, "iv": 0.14}'
+    r = client.post("/api/decision/what-if", headers={**t["headers"], "Content-Type": "application/json"}, content=raw)
+    assert r.status_code == 422, r.text

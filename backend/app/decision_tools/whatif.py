@@ -16,6 +16,7 @@ left out. Reads only; nothing here changes, places or closes an order.
 """
 from __future__ import annotations
 
+import math
 import re
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -104,8 +105,10 @@ def what_if(legs: Sequence[Mapping[str, Any]], *, spot: float, iv: Optional[floa
     at the scenario."""
     if not legs:
         raise WhatIfError("No position to model")
-    if not spot > 0:
-        raise WhatIfError("Spot must be above 0")
+    if not (math.isfinite(spot) and 0 < spot <= 1e7):
+        raise WhatIfError("Spot must be above 0 and at most 10,000,000")
+    if not (math.isfinite(days_forward) and math.isfinite(iv_shift) and math.isfinite(range_pct)):
+        raise WhatIfError("Days forward, IV shift and range must be finite numbers")
     if not 0.5 <= range_pct <= 50.0:
         raise WhatIfError("Range must be between 0.5 and 50 % of spot")
     if not -0.5 <= iv_shift <= 1.0:
@@ -116,7 +119,7 @@ def what_if(legs: Sequence[Mapping[str, Any]], *, spot: float, iv: Optional[floa
         leg = dict(leg)
         if leg["option_type"] in ("CE", "PE"):
             value = (ivs or {}).get(int(leg["trade_id"]), iv)
-            if value is None or not 0.01 <= float(value) <= 3.0:
+            if value is None or not math.isfinite(float(value)) or not 0.01 <= float(value) <= 3.0:
                 raise WhatIfError(f"{leg['symbol']}: an IV between 0.01 and 3.00 is needed (annualised, 0.14 = 14 %)")
             leg["iv"] = float(value)
         priced.append(leg)

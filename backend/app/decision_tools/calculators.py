@@ -54,7 +54,8 @@ def ruin_probability(p: float, b: float, risk_pct: float, ruin_pct: float) -> Di
     if p * b - (1.0 - p) <= 0.0:
         return {"status": "certain", "probability": 1.0}
     r = weighted_adjustment_coefficient([(b * risk_pct, p), (-risk_pct, 1.0 - p)])
-    assert r is not None
+    if r is None:
+        raise CalculatorError("risk per trade is too small to model")
     return {"status": "ok", "probability": min(1.0, max(0.0, math.exp(-r * ruin_pct)))}
 
 
@@ -82,18 +83,21 @@ def calculate(win_rate: float, payoff_ratio: float, risk_pct: float, ruin_pct: f
     marked)."""
     p, b = float(win_rate), float(payoff_ratio)
     _check(p, b, float(risk_pct), float(ruin_pct))
+    chosen = round(float(risk_pct), 4)
+    if not chosen > 0.0:
+        raise CalculatorError("risk per trade must be at least 0.0001 % of capital")
     levels: List[float] = []
-    for x in [*(compare if compare is not None else DEFAULT_COMPARE), float(risk_pct)]:
+    for x in [*(compare if compare is not None else DEFAULT_COMPARE), chosen]:
         x = round(float(x), 4)
-        if 0.0 < x < 100.0 and x not in levels:
+        if math.isfinite(x) and 0.0 < x < 100.0 and x not in levels:
             levels.append(x)
     levels = sorted(levels)[: MAX_COMPARE + 1]
-    if round(float(risk_pct), 4) not in levels:
-        levels.append(round(float(risk_pct), 4))
+    if chosen not in levels:
+        levels.append(chosen)
         levels.sort()
     q = 1.0 - p
     kelly = p - q / b
-    rows = [{**_row(p, b, x, float(ruin_pct)), "chosen": x == round(float(risk_pct), 4)} for x in levels]
+    rows = [{**_row(p, b, x, float(ruin_pct)), "chosen": x == chosen} for x in levels]
     return {
         "inputs": {"win_rate": p, "payoff_ratio": b, "risk_pct": float(risk_pct), "ruin_pct": float(ruin_pct)},
         "expectancy_r": round(p * b - q, 4),

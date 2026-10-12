@@ -600,7 +600,7 @@ def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any]
         raise ScreenRuntimeError(f"unknown breakout side {side!r}")
     p = _breakout_params(overrides)
     try:
-        out = evaluate_screen(f, screen, p, sides=(side,), tf=tf, bars=bars)[side]
+        out = evaluate_screen(f, screen, p, sides=(side,), tf=tf, bars=bars, columns=("signal", "event"))[side]
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
     if what == "type":

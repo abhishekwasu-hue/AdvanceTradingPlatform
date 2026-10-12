@@ -330,3 +330,41 @@ def test_the_retest_reversal_is_reversal_at(daily):
         bars = list(range(20, len(daily)))
         got = _reversals(b, s, lv, bars)
         assert (got[20:] == want[20:]).all() and want.sum() > 3
+
+
+@pytest.mark.parametrize("seed", [1, 2, 3])
+def test_the_fast_zigzag_is_causal_swings_zigzag(seed):
+    """screens.zigzag_swings (the leg rule's swings, on Python floats) equals causal_swings.zigzag_pivots, holes and ties
+    included."""
+    from app.price_action import causal_swings as cs
+    from app.price_action import pa_settings
+    from app.screener.breakouts.screens import zigzag_swings
+    f = resample(generate(375 * 20, 100.0, seed), "1m", "5m").reset_index(drop=True)
+    f.iloc[[7, 40], f.columns.get_loc("high")] = np.nan
+    f.iloc[90, f.columns.get_loc("low")] = np.nan
+    f.iloc[120:124, f.columns.get_loc("high")] = f["high"].iloc[120]                  # a run of equal highs
+    s = pa_settings.settings()
+    seen = 0
+    for degree in range(3):
+        thr = cs.threshold(f, degree, s)
+        thr[[3, 55]] = np.nan
+        want = [(r.kind, r.pivot_bar, r.confirm_bar, r.price) for r in cs.zigzag_pivots(f, thr)]
+        got = [(p.kind, p.bar_idx, p.confirmed_idx, p.price) for p in zigzag_swings(f["high"].to_numpy(float), f["low"].to_numpy(float), thr)]
+        assert got == want
+        seen += len(want)
+    assert seen >= 3
+
+
+def test_the_array_median_range_and_swing_threshold_are_the_platforms(daily):
+    from app.price_action import causal_swings as cs
+    from app.price_action import pa_settings
+    from app.price_action.breaks import median_range
+    from app.screener.breakouts.retest import fast_median_range
+    f = daily.copy()
+    f.iloc[[10, 200], f.columns.get_loc("high")] = np.nan
+    frame = f[["open", "high", "low", "close"]].astype(float).reset_index(drop=True)
+    np.testing.assert_array_equal(fast_median_range(frame["high"].to_numpy(), frame["low"].to_numpy(), 20), median_range(frame, 20))
+    b = Bars(f, bp.settings())
+    s = pa_settings.settings()
+    for degree in range(4):
+        np.testing.assert_array_equal(b.swing_threshold(degree, s), cs.threshold(frame, degree, s))

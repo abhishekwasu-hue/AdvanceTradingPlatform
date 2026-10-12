@@ -30,10 +30,9 @@ The down side is the up rule on mirrored prices (high <-> -low): the falling res
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 import numpy as np
-import pandas as pd
 
 if TYPE_CHECKING:  # pragma: no cover - typing only (screens.py imports this module)
     from app.screener.breakouts.screens import Bars, _Side
@@ -59,8 +58,11 @@ def ref_ranges(h: np.ndarray, lo: np.ndarray, n: int = 20, min_bars: int = 10) -
     (NaN below min_bars)."""
     rng = h - lo
     out = np.full(len(h) + 1, np.nan)
-    if np.isfinite(rng).all():                                  # the common case: a rolling median of the bars before
-        out[1:] = pd.Series(rng).rolling(n, min_periods=min_bars).median().to_numpy(float)
+    if np.isfinite(rng).all():                                  # the common case: a median of the bars before
+        for t in range(min_bars, min(n, len(rng)) + 1):          # fewer than n bars yet: all of them
+            out[t] = float(np.median(rng[:t]))
+        if len(rng) >= n:
+            out[n:] = np.median(np.lib.stride_tricks.sliding_window_view(rng, n), axis=1)
         return out
     for t in range(len(h) + 1):
         arr = rng[max(0, t - 4 * n):t]
@@ -123,58 +125,76 @@ class Lines:
             with np.errstate(invalid="ignore"):
                 above = valid & (cx > lines + edge[:, None] + _EPS) & (span[None, :] > col[:, None])
             edge_broken = np.where(above.any(axis=1), a_arr + np.argmax(above, axis=1), np.inf)
-        rows = list(zip(a_arr.tolist(), b_arr.tolist(), m.tolist(), c0.tolist(), first.tolist(), edge.tolist(), edge_broken.tolist()))
-        self.pairs: Dict[Tuple[int, int], Line] = {}
-        self._rows = rows
-        self._index = {(r[0], int(r[1])): k for k, r in enumerate(rows)}
+        self.A, self.B, self.M, self.C0, self.BRK, self.EDGE, self.EDGE_BRK = a_arr, b_arr, m, c0, first, edge, edge_broken
+        self.absM = np.abs(m)
+        self._lines: Dict[int, Line] = {}
+
+    def line_at(self, k: int) -> Line:
+        if k not in self._lines:
+            self._lines[k] = Line(int(self.A[k]), int(self.B[k]), float(self.M[k]), float(self.C0[k]), float(self.BRK[k]),
+                                  float(self.EDGE[k]), float(self.EDGE_BRK[k]))
+        return self._lines[k]
 
     def line(self, a: int, b: int) -> Optional[Line]:
-        k = self._index.get((a, b))
-        if k is None:
-            return None
-        if (a, b) not in self.pairs:
-            r = self._rows[k]
-            self.pairs[(a, b)] = Line(r[0], int(r[1]), r[2], r[3], r[4], r[5], r[6])
-        return self.pairs[(a, b)]
+        hit = np.flatnonzero((self.A == a) & (self.B == b))
+        return self.line_at(int(hit[0])) if len(hit) else None
 
     def select(self, t: int) -> Optional[Line]:
-        """The line as of bar t (bars before t): trendlines.find_trendline's choice, with the age filter."""
+        """The line as of bar t (bars before t): trendlines.find_trendline's choice - the newest second anchor B and, for it,
+        the oldest valid first anchor A - with the age filter; evaluated over every anchor pair at once (tested equal to the
+        finder on each prefix)."""
         rr = self.rr[t]
-        if not np.isfinite(rr) or rr <= 0:
+        if not np.isfinite(rr) or rr <= 0 or not len(self.A):
             return None
-        known = self.idx[self.idx <= t - 1 - self.order]
+        last = t - 1 - self.order
+        cand = np.flatnonzero((self.B <= last) & (self.A >= t - self.max_bars) & (self.absM <= self.max_slope * rr) & (self.BRK >= t))
+        if not len(cand):
+            return None
+        lo = np.searchsorted(self.idx, t - self.max_bars)
+        known = self.idx[lo:np.searchsorted(self.idx, last, side="right")]   # touches count swings at or after A only
+        yk = self.y[known]
         tol = self.tol * rr
-        for bi in range(len(known) - 1, 0, -1):
-            bb = int(known[bi])
-            for a in known[:bi]:
-                a = int(a)
-                if bb - a < self.gap:
-                    break
-                if a < t - self.max_bars:
-                    continue
-                line = self.line(a, bb)
-                if line is None or abs(line.m) > self.max_slope * rr or line.broken <= t - 1:
-                    continue
-                on = known[known >= a]
-                if int(np.sum(np.abs(self.y[on] - (line.m * on + line.c0)) <= tol)) < self.touches:
-                    continue
-                return line
+        bs = self.B[cand]
+        while len(cand):                                   # the newest second anchor first, as the finder
+            top = bs.max()
+            sel = bs == top
+            group = cand[sel]
+            near = np.abs(yk[None, :] - (self.M[group, None] * known[None, :] + self.C0[group, None])) <= tol
+            touches = (near & (known[None, :] >= self.A[group, None])).sum(axis=1)
+            good = group[touches >= self.touches]
+            if len(good):
+                return self.line_at(int(good[np.argmin(self.A[good])]))   # and for it the oldest first anchor
+            cand, bs = cand[~sel], bs[~sel]
         return None
 
     def candidates(self, attr: str, close: np.ndarray, buf: np.ndarray) -> List[int]:
         """Bars where some line (attr broken) or channel edge (attr edge_broken) is first closed beyond by the buffer too: the
         only bars the chosen line can break on with a signal (the finder runs there only)."""
-        col = 4 if attr == "broken" else 6
-        out = set()
-        for r in self._rows:
-            t = r[col]
-            if not np.isfinite(t):
-                continue
-            t = int(t)
-            level = r[2] * t + r[3] + (r[5] if col == 6 else 0.0)
-            if np.isfinite(buf[t]) and close[t] > level + buf[t]:
-                out.add(t)
-        return sorted(out)
+        if not len(self.A):
+            return []
+        t = self.BRK if attr == "broken" else self.EDGE_BRK
+        fin = np.isfinite(t)
+        if not fin.any():
+            return []
+        k = np.flatnonzero(fin)
+        tt = t[k].astype(int)
+        level = self.M[k] * tt + self.C0[k] + (self.EDGE[k] if attr != "broken" else 0.0)
+        with np.errstate(invalid="ignore"):
+            hit = np.isfinite(buf[tt]) & (close[tt] > level + buf[tt])
+        k, tt = k[hit], tt[hit]
+        # the chosen line at t must be one of these pairs, so one of them must itself be a valid line at t (B known, the
+        # angle filter with t's median range, enough touches) - else the finder cannot return a line that signals
+        rr = self.rr[tt]
+        with np.errstate(invalid="ignore"):
+            ok = np.isfinite(rr) & (rr > 0) & (self.B[k] <= tt - 1 - self.order) & (self.absM[k] <= self.max_slope * rr)
+        k, tt, rr = k[ok], tt[ok], rr[ok]
+        if not len(k) or not len(self.idx):
+            return []
+        sw = self.idx[None, :]
+        near = np.abs(self.y[self.idx][None, :] - (self.M[k, None] * sw + self.C0[k, None])) <= (self.tol * rr)[:, None]
+        on = (sw >= self.A[k, None]) & (sw <= (tt - 1 - self.order)[:, None])
+        good = (near & on).sum(axis=1) >= self.touches
+        return sorted(set(tt[good].tolist()))
 
 
 def _lines(b: "Bars", s: "_Side", p: Dict[str, Any], kind: str, edges: bool = False) -> Lines:

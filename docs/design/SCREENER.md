@@ -1176,9 +1176,19 @@ Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §8 BK4 (B5 / B6 / B8 / B9
   The daily flag and range-retest templates are proven on an injected daily history within the broker's 272-session
   fetch.
 - **Perf (Z10-d).** The perf-job test (`test_bk3_breakout_screens_fit_the_bar_close_target`) now times the BK4 screens
-  too (200 symbols). The largest are the trendline-based ones and the retest of a trendline break (Daily). To get there:
-  vectorised line pairs, a candidate-bar filter, vectorised session aggregates and a shared reversal setup. Medians land
-  around 0.6-1.6 s against a 1 s x CI-factor budget (factor 1.3-1.9 on this shared machine).
+  too (200 symbols, 1 s x CI factor). Several changes speed it up. Each keeps values equal (tested) and most help every
+  breakout screen:
+  - the line finder is evaluated over all anchor pairs at once, only on bars where a pair that is itself a valid line is
+    closed beyond by the buffer;
+  - the reference range, the median range and the swing threshold are computed on arrays (equal to
+    `trendlines.ref_range`, `breaks.median_range` and `causal_swings.threshold`);
+  - the leg rule's zigzag and loop run on Python floats (equal to `causal_swings.zigzag_pivots`);
+  - relative volume is computed lazily;
+  - the runtime builds only the signal / event columns;
+  - the retest's reversal setup is built lazily, once per frame, and each watch stops at its first retest.
+
+  The daily trendline retest went from 1.3-1.6 s to 0.87-0.95 s (58-59 % of budget). Every BK3 / BK4 case now has a
+  median at or below 62 % of budget in two full runs.
 - **Z10-a.** Each of the five functions has causal cases on 5m (`@1h` / `@15m` variants) plus daily cases. All are
   non-vacuous; the gap cases use the down side because the synthetic 5m sessions gap mostly down, and the synthetic
   daily bars never gap, so the daily gap behaviour is covered by fixtures.

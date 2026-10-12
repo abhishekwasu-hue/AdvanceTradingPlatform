@@ -110,6 +110,14 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ATRPercentile": ["ATRPercentile(14, 50)", "ATRPercentile(14, 20)@1h"],
     "DowTrend": ["DowTrend(0)", "DowTrend(0)@15m"],                    # @1h: 50 bars here, too few confirmed swings to read
 }
+# Z7a-3 market-zone functions: they read stored zone snapshots as of each bar's close (`_screenql_zones` builds the
+# snapshots from the bars themselves, each from the bars up to its own as-of time, like the nightly job)
+SCREENQL_ZONES: Dict[str, List[str]] = {
+    "NearZone": ['NearZone("any", 3)', 'NearZone("demand", 5, "zones")', 'NearZone("supply", 5)'],
+    "ZoneRole": ["ZoneRole(5)"],
+    "ZoneState": ['ZoneState("any", 5)'],
+    "ZoneStrength": ['ZoneStrength("demand", 5)', 'ZoneStrength("any", 5, "levels")'],
+}
 SCREENQL_FIELDS: List[str] = ["close", "volume", "close@1h", "high@1d[1]", "low[2]"]
 # A daily screen: weekly and monthly bars built from the daily ones (W-MON / month-start buckets, close-time alignment).
 SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "close@1M[1]", "Max(high, 3)@1M", "PDH()",
@@ -130,6 +138,44 @@ def _screenql(text: str, base_tf: str = BASE_TF):
     from app.screener.runtime import SymbolData, evaluate
     ast = parse(text)
     return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}), base_tf=base_tf)
+
+
+ZONE_SNAPSHOT_EVERY = 12                     # one snapshot per hour of 5m bars
+ZONE_LOOKBACK = 24
+
+
+def zone_timeline(f: pd.DataFrame, base_tf: str = BASE_TF) -> Any:
+    """Causal zone snapshots for the zone functions' cases: every ZONE_SNAPSHOT_EVERY bars, a snapshot as of that bar's
+    close holding a demand band at the low of the last ZONE_LOOKBACK bars (fewer at the start), a supply band at their high
+    and a support line at their last close - built only from bars up to that bar (the nightly job's rule: a snapshot never uses a later bar)."""
+    from app.price_action.zones.memory import CLASSIC_PREFIX
+    from app.price_action.zones.read import Snapshot, ZoneTimeline
+    from app.screener.runtime import bar_close
+    closes = bar_close(pd.DatetimeIndex(f.index), base_tf)
+    times: List[int] = []
+    snaps: List[Any] = []
+    for k in range(0, len(f), ZONE_SNAPSHOT_EVERY):                  # from the first bar: every prefix has a snapshot
+        w = f.iloc[max(0, k - ZONE_LOOKBACK + 1):k + 1]
+        lo, hi, last = float(w["low"].min()), float(w["high"].max()), float(w["close"].iloc[-1])
+        band = max((hi - lo) * 0.15, 1e-6)
+        rows = [{"zone_key": f"d{k}", "zone_type": "DEMAND_ZONE", "timeframe": "1h", "zone_low": lo, "zone_high": lo + band,
+                 "state": "fresh", "touches": 0, "strength": None, "remembered": False},
+                {"zone_key": f"s{k}", "zone_type": "SUPPLY_ZONE", "timeframe": "1h", "zone_low": hi - band, "zone_high": hi,
+                 "state": "tested", "touches": 2, "strength": None, "remembered": False},
+                {"zone_key": f"l{k}", "zone_type": f"{CLASSIC_PREFIX}SUPPORT", "timeframe": "1h", "zone_low": last, "zone_high": last,
+                 "state": "fresh", "touches": 1, "strength": 2, "remembered": False}]
+        at = pd.Timestamp(closes[k])
+        at = at.tz_localize("UTC") if at.tzinfo is None else at.tz_convert("UTC")
+        times.append(int(at.value))
+        snaps.append(Snapshot(k, at.to_pydatetime(), "platform", last, rows))
+    return ZoneTimeline("NSE:S", np.array(times, dtype="int64"), snaps)
+
+
+def _screenql_zones(text: str, base_tf: str = BASE_TF):
+    from app.screener.parser import parse
+    from app.screener.runtime import SymbolData, evaluate
+    ast = parse(text)
+    return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}, zones=zone_timeline(f, base_tf)), base_tf=base_tf)
 
 
 def _zone_frame(f: pd.DataFrame) -> pd.DataFrame:
@@ -266,6 +312,9 @@ def _register_screenql() -> None:
         for text in exprs:
             heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
+    for exprs in SCREENQL_ZONES.values():
+        for text in exprs:
+            register(f"screenql.{text}", _screenql_zones(text), group="screenql")
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")
     for text in SCREENQL_DAILY:
@@ -303,7 +352,7 @@ def screenql_case_mismatches() -> List[str]:
     from app.screener import nodes
     from app.screener.parser import parse
     out: List[str] = []
-    for table, cases in (("SCREENQL_SERIES", SCREENQL_SERIES), ("SCREENQL_LAST_BAR", SCREENQL_LAST_BAR)):
+    for table, cases in (("SCREENQL_SERIES", SCREENQL_SERIES), ("SCREENQL_ZONES", SCREENQL_ZONES), ("SCREENQL_LAST_BAR", SCREENQL_LAST_BAR)):
         for name, exprs in cases.items():
             for text in exprs:
                 if not any(isinstance(node, nodes.Call) and node.name == name for node in nodes.walk(parse(text))):
@@ -317,7 +366,7 @@ def coverage_gaps() -> List[str]:
     from app.screener.registry import FUNCTIONS, LAST_BAR_ONLY, PATTERN_NAMES
     register_all()
     gaps: List[str] = []
-    covered_sql = set(SCREENQL_SERIES) | set(SCREENQL_LAST_BAR) | set(SCREENQL_EXEMPT)
+    covered_sql = set(SCREENQL_SERIES) | set(SCREENQL_ZONES) | set(SCREENQL_LAST_BAR) | set(SCREENQL_EXEMPT)
     for name in FUNCTIONS:
         if name in covered_sql:
             continue

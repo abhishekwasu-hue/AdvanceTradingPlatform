@@ -96,7 +96,15 @@ async def preview_retention(session: AsyncSession, now: Optional[datetime] = Non
     report = RetentionReport(started_at=now, dry_run=True)
     for table, model, predicate in _rules(now, policy):
         report.deleted[table] = int(await session.scalar(select(func.count()).select_from(model).where(predicate)) or 0)
+    report.deleted["market_zone_runs"] = len(await _zone_run_ids(session, now, policy))
     return report
+
+
+async def _zone_run_ids(session: AsyncSession, now: datetime, policy: RetentionPolicy, limit: Optional[int] = None) -> list:
+    """Z7a-2: market-zone snapshot runs past their keep (nightly for a while, then weekly, then none; idle tenant scopes)."""
+    from app.price_action.zones.store import retention_run_ids
+    return await retention_run_ids(session, now, daily_days=policy.market_zones_daily_days, weekly_days=policy.market_zones_weekly_days,
+                                   tenant_idle_days=policy.market_zones_tenant_idle_days, limit=limit)
 
 
 async def run_retention(session: AsyncSession, now: Optional[datetime] = None, policy: Optional[RetentionPolicy] = None) -> RetentionReport:
@@ -117,6 +125,13 @@ async def run_retention(session: AsyncSession, now: Optional[datetime] = None, p
             logger.exception("Retention failed for %s", table)
             report.errors.append(f"{table}: {exc}")
             report.deleted[table] = 0
+    try:                                            # Z7a-2: market-zone snapshots (their zone rows go with them)
+        from app.price_action.zones.store import delete_runs
+        report.deleted["market_zone_runs"] = await delete_runs(session, await _zone_run_ids(session, now, policy, limit=policy.batch_size))
+    except Exception as exc:  # noqa: BLE001 - one table's problem must not stop the others
+        logger.exception("Retention failed for market_zone_runs")
+        report.errors.append(f"market_zone_runs: {exc}")
+        report.deleted["market_zone_runs"] = 0
     if policy.llm_text_days > 0:                    # H-C1 e: scrub old LLM texts; the rows themselves are never deleted
         try:
             report.deleted["llm_calls_text_scrubbed"] = await scrub_llm_text(session, LlmCallRecord.created_at < _cutoff(now, policy.llm_text_days),

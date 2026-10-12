@@ -13,6 +13,7 @@ revision: str = 'f2b8d6e4a7c1'
 down_revision: Union[str, Sequence[str], None] = 'e1a7c5d3f6b0'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z11: create_unique_constraint on an existing table (not reviewed) - a code-only rollback past it is refused; use --restore-db
 
 
 def upgrade() -> None:

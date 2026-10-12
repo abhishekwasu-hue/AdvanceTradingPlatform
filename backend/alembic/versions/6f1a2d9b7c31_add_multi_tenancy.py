@@ -16,6 +16,7 @@ revision: str = '6f1a2d9b7c31'
 down_revision: Union[str, Sequence[str], None] = '7960f50fb635'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z11: alter_column new_column_name, alter_column nullable=False - a code-only rollback past it is refused; use --restore-db
 
 
 def upgrade() -> None:

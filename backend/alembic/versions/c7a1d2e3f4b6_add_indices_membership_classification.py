@@ -13,6 +13,7 @@ revision: str = 'c7a1d2e3f4b6'
 down_revision: Union[str, Sequence[str], None] = 'c7a1d2e3f4b5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
 
 
 def _provenance():

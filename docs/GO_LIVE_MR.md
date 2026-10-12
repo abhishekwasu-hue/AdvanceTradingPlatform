@@ -35,7 +35,7 @@ copy Spaces वर (≈ $5/मह), Caddy ने HTTPS. Trade repo चे bots �
 | 0.8 | Build + up | `scripts/deploy.sh production` | शेवटी `deploy[production]: healthy`; `curl -s https://<DOMAIN>/api/system/health` → `{"status":"ok"...}` | guard ने नाकारले (market open) → 15:30 नंतर; `docker compose logs backend` |
 | 0.9 | Migrations | deploy.sh स्वतः `migrate_guard.py` चालवतो (BB-BD2 च्या नव्या tables: news feed columns, `telegram_callbacks`, `thesis_records`, `news_feedback`) | `docker compose exec backend alembic current` = head (`d5e7f9a1b3c5` किंवा नंतरचे) | drift: `docker compose exec backend alembic upgrade head` (market बंद असताना) |
 | 0.10 | Holidays | पहिला owner बनल्यावर (१.१) Admin console → Exchange holidays → NSE यादी paste | पायरी 3 च्या check मध्ये ✅ holidays | - |
-| 0.11 | Backup drill | `docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm backup sh /scripts/verify_backup.sh latest` आणि `... run --rm offsite sh /scripts/offsite_sync.sh --once` | `verified` / `synced to spaces:atp-backups` | OPERATIONS 1.2 |
+| 0.11 | Backup drill | `docker compose -f docker-compose.yml -f docker-compose.prod.yml run --rm --entrypoint sh backup /scripts/verify_backup.sh latest` आणि `... run --rm offsite --once` | `verified` / `synced to spaces:atp-backups` | OPERATIONS 1.2 |
 
 ## 1. पहिली organisation (owner)
 
@@ -156,4 +156,4 @@ random पेक्षा edge दिसला नाही; strategies built-in
 ## 6. रोजचे (OPERATIONS 1.5)
 
 03:30 (Upstox) / 06:00 (Fyers) नंतर token expired → 09:00 पूर्वी login; worker heartbeat; Risk limits; alert channel; 15:15 square-off; backups
-verified (`docker compose ... run --rm backup sh /scripts/verify_backup.sh latest` आठवड्यातून एकदा).
+verified (`docker compose ... run --rm --entrypoint sh backup /scripts/verify_backup.sh latest` आठवड्यातून एकदा).

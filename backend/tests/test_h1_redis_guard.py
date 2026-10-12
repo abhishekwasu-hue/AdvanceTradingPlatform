@@ -260,7 +260,9 @@ def test_the_outbox_and_idempotency_keys_live_in_postgres_not_redis():
 
 def test_one_worker_replica_on_the_production_host():
     overlay = (ROOT / "docker-compose.hostinger.yml").read_text(encoding="utf-8")
-    assert re.search(r"^  worker:\n    deploy:\n      replicas: 1\b", overlay, flags=re.M)
+    # The worker block may carry other keys before `deploy:` (Z11 adds `stop_grace_period`); the replica count must
+    # still be exactly one, inside the worker service (every line between them is indented deeper than the service).
+    assert re.search(r"^  worker:\n(?:    .*\n)*?    deploy:\n      replicas: 1\b", overlay, flags=re.M)
     if not shutil.which("docker") or subprocess.run(["docker", "compose", "version"], capture_output=True).returncode:
         pytest.skip("docker compose not available for the merged check")
     env = ROOT / "backend/.pytest_env_h1"

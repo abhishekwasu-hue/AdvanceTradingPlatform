@@ -111,8 +111,51 @@ def test_the_goldens_cover_the_fold_s_branches():
     cov = golden()["coverage"]
     for key in ("trend:UP", "trend:DOWN", "trend:RANGE", "trend:NEUTRAL", "trend:UNKNOWN", "phase:impulse", "phase:correction",
                 "phase:origin_broken", "counter:pullback", "counter:candidate", "counter:correction", "wave_a", "sharp", "corr_zone",
-                "mature", "origin_risk", "target_passed", "q27_range_after_break", "q49_origin_moved_on_break", "flip"):
+                "mature", "origin_risk", "target_passed", "q27_range_after_break", "q49_origin_moved_on_break", "flip",
+                "q49_pool_trend_start"):
         assert cov.get(key, 0) > 0, key
+
+
+BRANCH_LINES = {"q49_pool_trend_start": "pool.append(tstart_org)"}
+
+
+def port_branch_bars(sid: int) -> Dict[str, list]:
+    """The fold bars `i` where the port runs each recorded branch line (a line tracer on fold.py)."""
+    import inspect
+    path = DD.__file__
+    lines = inspect.getsource(DD).split("\n")
+    where = {}
+    for name, text in BRANCH_LINES.items():
+        hits = [n + 1 for n, line in enumerate(lines) if line.strip() == text]
+        assert len(hits) == 1, (name, hits)
+        where[hits[0]] = name
+    seen: Dict[str, set] = {name: set() for name in BRANCH_LINES}
+
+    def tracer(frame: Any, event: str, arg: Any) -> Any:
+        if frame.f_code.co_filename != path:
+            return None
+
+        def local(fr: Any, ev: str, a: Any) -> Any:
+            if ev == "line" and fr.f_lineno in where:
+                seen[where[fr.f_lineno]].add(int(fr.f_locals.get("i", -1)))
+            return local
+        return local
+    old = sys.gettrace()
+    sys.settrace(tracer)
+    try:
+        DD.fold(daily(sid))
+    finally:
+        sys.settrace(old)
+    return {name: sorted(bars) for name, bars in seen.items()}
+
+
+def test_the_port_runs_the_recorded_branches_on_the_same_bars():
+    """Review of #213 (L2-6): branches a state does not show (Q49's pool getting the trend start appended) are recorded
+    from Trade's own fold by a line tracer; the port runs the same line on the same bars of the same series."""
+    recorded = golden()["branches"]
+    assert {b["branch"] for b in recorded} == set(BRANCH_LINES)
+    for b in recorded:
+        assert b["bars"] and port_branch_bars(b["series"])[b["branch"]] == b["bars"], b
 
 
 # --- the fold ------------------------------------------------------------------------------------------------------------

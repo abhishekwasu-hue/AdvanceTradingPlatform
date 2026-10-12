@@ -180,9 +180,45 @@ def _frame(rows, start):
 
 # Series that reach the branches the random walks above do not (found with a line tracer over the ATP port; parity with
 # Trade still comes from Trade's own fold on them): Q49's origin move, Q27's RANGE after an origin break, the counter-move
-# read as one leg, Q49's pool with the trend start, and flip() next to a spike.
+# read as one leg, Q49's pool with the trend start, flip() next to a spike, and Q49's pool that gets the trend start
+# appended (`pool.append(tstart_org)`; recorded in "branches").
 EXTRA = [("walk", (216, 700, 0.45, 0.4)), ("walk", (227, 700, 0.45, 0.4)), ("walk", (302, 1200, 0.15, 0.25)),
-         ("range_after_break", (3,)), ("range_after_break", (4,)), ("flip_spike", (2,)), ("flip_spike", (3,))]
+         ("range_after_break", (3,)), ("range_after_break", (4,)), ("flip_spike", (2,)), ("flip_spike", (3,)),
+         ("walk", (530, 1000, 0.1, 0.15))]
+
+# Branches a state does not show, recorded from Trade's own fold by a line tracer: name -> a line of decision3/daily.py.
+BRANCH_LINES = {"q49_pool_trend_start": "pool.append(tstart_org)"}
+
+
+def branch_bars(fn, *args):
+    """Runs fn(*args) under a line tracer on Trade's decision3/daily.py: {branch: sorted fold bars `i` where it ran}."""
+    import inspect
+    path = DD.__file__
+    lines = inspect.getsource(DD).split("\n")
+    where = {}
+    for name, text in BRANCH_LINES.items():
+        hits = [n + 1 for n, line in enumerate(lines) if line.strip() == text]
+        if len(hits) != 1:
+            raise SystemExit(f"branch {name}: {text!r} found {len(hits)} times in {path}")
+        where[hits[0]] = name
+    seen = {name: set() for name in BRANCH_LINES}
+
+    def tracer(frame, event, arg):
+        if frame.f_code.co_filename != path:
+            return None
+
+        def local(fr, ev, a):
+            if ev == "line" and fr.f_lineno in where:
+                seen[where[fr.f_lineno]].add(int(fr.f_locals.get("i", -1)))
+            return local
+        return local
+    old = sys.gettrace()
+    sys.settrace(tracer)
+    try:
+        out = fn(*args)
+    finally:
+        sys.settrace(old)
+    return out, {name: sorted(bars) for name, bars in seen.items()}
 
 
 def extra_series(kind, args):
@@ -238,7 +274,7 @@ def main():
                         "legs2/measure.py, patterns2/rules.py, rules2.py",
               "settings": {"fold": {k: S3.DEFAULTS[k] for k in FOLD_KEYS}, "legs": {k: LS2.DEFAULTS[k] for k in LEGS_KEYS},
                            "patterns": {k: PS2.DEFAULTS[k] for k in PATTERN_KEYS}},
-              "series": [], "folds": [], "trend_context": [], "truncated": [], "short": [], "state_at": [], "pivots": [], "legs": [], "read_counter": [], "rules": [], "misc": {}}
+              "series": [], "folds": [], "branches": [], "trend_context": [], "truncated": [], "short": [], "state_at": [], "pivots": [], "legs": [], "read_counter": [], "rules": [], "misc": {}}
     seeds = [101, 102, 103, 104, 105, 106]
     for sid, seed in enumerate(seeds):
         raw = daily_series(seed)
@@ -290,7 +326,10 @@ def main():
         raw = extra_series(kind, args)
         d = DS.prepare(raw)
         golden["series"].append({"seed": f"{kind}:{','.join(map(str, args))}", "bars": bars_json(raw)})
-        states = DD.fold(d)
+        states, hit = branch_bars(DD.fold, d)
+        for name, bars in hit.items():
+            if bars:
+                golden["branches"].append({"series": sid, "branch": name, "bars": bars})
         golden["folds"].append({"series": sid, "variant": "default", "settings": {}, "states": [state(st) for st in states],
                                 "final_pivots": [pivot(p) for p in states[-1].pivots]})
     # Trade `level_reaction.trend_context` (the gate's bridge): known at yesterday's close, < 30 bars -> trend unclear.
@@ -366,6 +405,8 @@ def main():
             for key in ("wave_a", "sharp", "corr_zone", "mature", "origin_risk", "target_passed"):
                 if st[key]:
                     counts[key] = counts.get(key, 0) + 1
+    for b in golden["branches"]:
+        counts[b["branch"]] = counts.get(b["branch"], 0) + len(b["bars"])
     golden["coverage"] = counts
     payload = json.dumps(golden, sort_keys=True, separators=(",", ":")).encode("utf-8")
     with open(OUT, "wb") as fh_raw, gzip.GzipFile(fileobj=fh_raw, mode="wb", mtime=0, filename="") as fh:

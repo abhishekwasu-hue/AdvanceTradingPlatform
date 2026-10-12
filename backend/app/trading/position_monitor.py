@@ -138,21 +138,35 @@ async def trade_venues(session: AsyncSession, trades) -> Dict[int, str]:
     return {t.id: trade_venue(t, deps.get(t.deployment_id)) for t in trades}
 
 
+async def open_trade_families_by_tenant(session: AsyncSession, tenant_ids: Optional[set] = None) -> Dict[int, set]:
+    """{tenant id: the session families of its open positions} for `tenant_ids` (None: every tenant), from one select of
+    the open trades. The worker reads it once per cycle with no tenant filter: the families decide which clocks it keeps
+    and the tenants which organisations get the exits part of the cycle - with or without an ACTIVE / PAUSED deployment
+    (#221: a PAPER ticket on MCX, CDS or crypto, or a deployment stopped while its position stayed open)."""
+    from types import SimpleNamespace
+
+    from app.market_data.calendar import session_family
+    query = select(TradeRecord.id, TradeRecord.tenant_id, TradeRecord.symbol, TradeRecord.exchange, TradeRecord.deployment_id).where(
+        TradeRecord.exit_time.is_(None))
+    if tenant_ids is not None:
+        if not tenant_ids:
+            return {}
+        query = query.where(TradeRecord.tenant_id.in_(tenant_ids))
+    rows = (await session.execute(query)).all()
+    trades = [SimpleNamespace(id=i, tenant_id=tenant, symbol=sym, exchange=ex, deployment_id=dep) for i, tenant, sym, ex, dep in rows]
+    venues = await trade_venues(session, trades)
+    out: Dict[int, set] = {}
+    for trade in trades:
+        out.setdefault(trade.tenant_id, set()).add(session_family(venues[trade.id]))
+    return out
+
+
 async def open_trade_families(session: AsyncSession, tenant_ids: Optional[set] = None) -> set:
     """BK2-8: the session families of the open positions of `tenant_ids` (None: every tenant) - the worker always keeps
     these clocks, so a position is monitored and squared off on its own venue's session even when no ACTIVE / PAUSED
     deployment trades there any more (ADR-0004: an exit is never skipped because a clock was not looked at)."""
-    from types import SimpleNamespace
-
-    from app.market_data.calendar import session_family
-    query = select(TradeRecord.id, TradeRecord.symbol, TradeRecord.exchange, TradeRecord.deployment_id).where(TradeRecord.exit_time.is_(None))
-    if tenant_ids is not None:
-        if not tenant_ids:
-            return set()
-        query = query.where(TradeRecord.tenant_id.in_(tenant_ids))
-    rows = (await session.execute(query)).all()
-    trades = [SimpleNamespace(id=i, symbol=sym, exchange=ex, deployment_id=dep) for i, sym, ex, dep in rows]
-    return {session_family(venue) for venue in (await trade_venues(session, trades)).values()}
+    by_tenant = await open_trade_families_by_tenant(session, tenant_ids)
+    return set().union(*by_tenant.values()) if by_tenant else set()
 
 
 async def broker_for_trade(session: AsyncSession, trade: TradeRecord) -> Optional[BrokerInterface]:

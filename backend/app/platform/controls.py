@@ -213,6 +213,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # bucket, max open positions; each 0 = no limit, set in the PAPER risk settings) refuse new PAPER entries before a
     # proposal and at Approve. Acts only while portfolio_risk is on too. Exits are never refused (ADR-0004).
     "portfolio_risk_caps": "Portfolio caps on new PAPER entries: sector exposure, open risk per bucket, open positions (entries only; exits never refused)",
+    # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
+    # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
+    # answers 503 and the chart shows no study panel. Reference only - places no orders.
+    "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
@@ -221,7 +225,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "portfolio_risk", "portfolio_risk_caps"})
+                               "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

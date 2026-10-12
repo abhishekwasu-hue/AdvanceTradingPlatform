@@ -47,7 +47,7 @@ class Spec:
     price_args: Tuple[int, ...] = ()  # S5-A2: positions that must be prices (a level), not an oscillator or a count
     needs: Tuple[str, ...] = ()       # U5 D2: data beyond bars - "reference" (sector, index, F&O lists) or "option_chain"
     degree_min_bars: Tuple[int, ...] = ()  # S5-A4: min_bars by the `degree` argument (swings need more history per degree)
-    flag: Optional[str] = None             # an operator flag that must be on for a screen to use it (API layer; U6 BK1 / Z7a-3)
+    flag: Optional[str] = None             # U6 BK1: an operator flag that must be on for a screen to use it (API layer)
     timeframes: Tuple[str, ...] = ()       # U6 BK1: the only timeframes it runs on (empty = any)
     window_bars: Tuple[Tuple[str, int], ...] = ()   # U6 BK1: bars per window unit by timeframe (weeks -> 5 daily bars)
     window_sum: bool = False               # U6 BK1: the window arguments add up (ATR warm-up + percentile lookback)
@@ -189,15 +189,6 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("McapBucket", "classifier", CAT, None, (), timeframed=False, doc="AMFI large / mid / small", needs=("reference",)),
     Spec("IndexMember", "filter", BOOL, None, (Arg("index", STR),), timeframed=False, doc="member of the index on the run date", needs=("reference",)),
     Spec("IsFnO", "filter", BOOL, None, (), timeframed=False, doc="in the F&O segment on the run date", needs=("reference",)),
-    # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
-    Spec("NearZone", "filter", BOOL, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
-         doc="true when there is a zone of that role" + _ZDOC),
-    Spec("ZoneRole", "classifier", CAT, None, (_ZTOL, _ZFAMILY), cost=3.0, min_bars=1, values=("DEMAND", "SUPPLY"), needs=("zones",),
-         flag=ZONES_FLAG, doc="DEMAND or SUPPLY: the role of that zone (missing when there is none)" + _ZDOC),
-    Spec("ZoneState", "classifier", CAT, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, values=("FRESH", "TESTED", "FLIPPED"),
-         needs=("zones",), flag=ZONES_FLAG, doc="FRESH / TESTED / FLIPPED: that zone's lifecycle state (missing when there is none)" + _ZDOC),
-    Spec("ZoneStrength", "factor", NUM, "index", (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
-         doc="0-100 strength of that zone (family, timeframe, state, touches; NaN when there is none)" + _ZDOC),
     # U6 BK1: breakout screens (app/screener/breakouts) - one signal per leg, closed bars only; behind `screener_breakouts`.
     # The defaults below are the breakout parameters' defaults (app/screener/breakouts/params.py, tested equal).
     Spec("RangeBreakout", "filter", BOOL, None, (_SIDE, _bk("range_n", "n", "window"), _bk("min_break_atr", "k", NUM), _bk("vol_mult", "v", NUM),
@@ -237,6 +228,15 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="Dow trend from CONFIRMED swings: UP (higher high + higher low), DOWN (lower high + lower low), RANGE; missing before"
              " both are labelled and on the frame's first 40 (dow_min_bars) / 250 / 600 / 1200 bars (by degree). With @tf it is the higher"
              " timeframe's trend from its closed bars"),
+    # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
+    Spec("NearZone", "filter", BOOL, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
+         doc="true when there is a zone of that role" + _ZDOC),
+    Spec("ZoneRole", "classifier", CAT, None, (_ZTOL, _ZFAMILY), cost=3.0, min_bars=1, values=("DEMAND", "SUPPLY"), needs=("zones",),
+         flag=ZONES_FLAG, doc="DEMAND or SUPPLY: the role of that zone (missing when there is none)" + _ZDOC),
+    Spec("ZoneState", "classifier", CAT, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, values=("FRESH", "TESTED", "FLIPPED"),
+         needs=("zones",), flag=ZONES_FLAG, doc="FRESH / TESTED / FLIPPED: that zone's lifecycle state (missing when there is none)" + _ZDOC),
+    Spec("ZoneStrength", "factor", NUM, "index", (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
+         doc="0-100 strength of that zone (family, timeframe, state, touches; NaN when there is none)" + _ZDOC),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
@@ -265,5 +265,6 @@ def describe() -> Dict[str, Dict[str, object]]:
     return out
 
 
-__all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "ZONE_FUNCTIONS", "ZONES_FLAG", "BREAKOUT_FUNCTIONS",
-           "BREAKOUT_FLAG", "MAX_WINDOW", "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]
+__all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
+           "ZONES_FLAG", "MAX_WINDOW",
+           "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

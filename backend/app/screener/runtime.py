@@ -256,11 +256,6 @@ class _Eval:
             "SwingZoneDistance": lambda: _swing_zone(f, str(self.ev(args[0], tf)), int(num(1, 0)), "distance"),
             "RealBreak": lambda: _real_break_series(f, self.series(args[0], tf), str(self.ev(args[1], tf)), win(2, 20)),
             "ReversalAt": lambda: _reversal_series(f, self.series(args[0], tf), str(self.ev(args[1], tf))),
-            # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
-            "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
-            "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
-            "ZoneState": lambda: _zone(self.data, f, tf, "state", _text(0, "any"), num(1, 0.5), _text(2, "all")),
-            "ZoneStrength": lambda: _zone(self.data, f, tf, "strength", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             # U6 BK1: breakout screens (app/screener/breakouts) - the same series the breakout engine and templates use
             "RangeBreakout": lambda: _breakout(f, "B1", str(self.ev(args[0], tf)), {"range_n": win(1, 20), "min_break_atr": num(2, 0.2),
                                                                                        "vol_mult": num(3, 1.5), "range_mode": _text(4, "fixed")}),
@@ -276,6 +271,11 @@ class _Eval:
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
+            # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
+            "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
+            "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
+            "ZoneState": lambda: _zone(self.data, f, tf, "state", _text(0, "any"), num(1, 0.5), _text(2, "all")),
+            "ZoneStrength": lambda: _zone(self.data, f, tf, "strength", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -500,11 +500,6 @@ def break_scan_start(closes: np.ndarray, j: int, level: float, side: str, n_: in
     return None if hit.size == 0 else lo + int(hit[0]) + 1
 
 
-def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:
-    from app.screener.zones import zone_series
-    return zone_series(data, f, tf, what, role, tolerance_pct, family)
-
-
 def _breakout_params(overrides: Dict[str, Any]) -> Dict[str, Any]:
     from app.screener.breakouts import params as bp
     try:
@@ -547,6 +542,9 @@ def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
         return pd.Series(Bars(f, _breakout_params({})).dow(degree), index=f.index, dtype=object)
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
+def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:
+    from app.screener.zones import zone_series
+    return zone_series(data, f, tf, what, role, tolerance_pct, family)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

@@ -142,11 +142,6 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
     "screener_gallery": "Screen gallery: browse pre-built screens by method and setup type on the Screener page (research only)",
-    # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
-    # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
-    # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,
-    # ZoneStrength). OFF: the layer answers 503, the functions are hidden and refused, zone alert rules pause.
-    "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory, the chart layer and the ScreenQL zone functions (read-only, places no orders)",
     # Z10-f (docs/design/Z10_LAUNCH_HARDENING.md): the how-to support bot over the help and legal pages. No tools (reads
     # no positions, touches no order), refuses advice, hands low-confidence questions to the feedback form. OFF: 404.
     "support_bot": "Support bot: how-to answers from the help and legal pages (no advice, no account data, no orders)",
@@ -166,6 +161,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
     # answers 404 and the page says it is not enabled.
     "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
+    # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
+    # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
+    # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,
+    # ZoneStrength). OFF: the layer answers 503, the functions are hidden and refused, zone alert rules pause.
+    "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory, the chart layer and the ScreenQL zone functions (read-only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",

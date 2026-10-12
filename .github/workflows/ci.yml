@@ -114,6 +114,9 @@ jobs:
       - name: Run test suite (in-memory SQLite, no DB dependency)
         env:
           REDIS_URL: redis://localhost:6379/0
+          # Z5 P1-d: the entry-slot race test also runs on Postgres (in its own scratch database, created and dropped by
+          # the test, so the migration steps below still start from an empty schema).
+          Z5_TEST_PG_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
         # P0.7: each failed test becomes a check-run annotation (`::error`), so the failure is readable from the API
         # without the job log (which GitHub serves from a host the session tooling cannot reach).
         # The default shell is `bash -e`: a failing pipeline would stop the script before the annotations are written,

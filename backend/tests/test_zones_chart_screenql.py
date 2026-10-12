@@ -597,3 +597,27 @@ def test_zone_rules_pause_while_off_resume_at_bar_close_and_skip_intrabar(screen
     assert status == "active" and problem is None and fired == 1                                # resumes on the same closed bar
     status, problem, fired = cycle(now + timedelta(minutes=4), ib)
     assert status == "active" and "bar close only" in problem and fired == 0                    # never intrabar
+
+
+def test_breakout_and_zone_gates_only_see_their_own_family():
+    """Z7a3-7: BK1's gate takes breakout functions only, the zone gate zone functions only."""
+    from app.screener import parse
+    from app.screener import zones as zone_gate
+    from app.screener.breakouts import gate as breakout_gate
+    ast = parse('NearZone() AND RangeBreakout("up") AND ZoneStrength() > 50')
+    assert breakout_gate.flagged_calls(ast) == ["RangeBreakout"]
+    assert zone_gate.flagged_calls(ast) == ["NearZone", "ZoneStrength"]
+
+
+def test_registry_hides_each_flagged_family_by_its_own_flag(screener_on):
+    headers, _ = _owner("z7a3-families@example.com")
+    _set(market_zones=True, screener_breakouts=False)
+    reg = client.get("/api/screener/registry", headers=headers).json()["entries"]
+    assert "NearZone" in reg and "RangeBreakout" not in reg
+    v = client.post("/api/screener/validate", json={"source": 'NearZone() AND RangeBreakout("up")', "base_tf": "1d"}, headers=headers).json()
+    assert not v["ok"] and any("screener_breakouts" in p["message"] for p in v["problems"])
+    assert not any("market_zones" in p["message"] for p in v["problems"])
+    _set(market_zones=False, screener_breakouts=True)
+    reg = client.get("/api/screener/registry", headers=headers).json()["entries"]
+    assert "NearZone" not in reg and "RangeBreakout" in reg
+    _set(screener_breakouts=False)

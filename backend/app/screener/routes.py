@@ -145,9 +145,9 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
 
 
 async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
-    """Z7a-3 / U6 BK1: a screen using a flagged function (market zones, breakouts) while its flag is off fails
-    validation, with the reason."""
-    for gate in (zone_gate, breakout_gate):
+    """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
+    screens (`screener_breakouts`) and the Z7a-3 market-zone functions (`market_zones`)."""
+    for gate in (breakout_gate, zone_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False

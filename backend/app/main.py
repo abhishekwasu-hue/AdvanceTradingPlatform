@@ -97,6 +97,7 @@ from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
 from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
+from app.market_lake.import_routes import intraday_router as history_intraday_admin_router
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
@@ -230,6 +231,7 @@ app.include_router(market_candles_router)  # Phase AA: broker candles for the re
 app.include_router(market_lake_router)  # Part B5: point-in-time history from the market data lake
 app.include_router(history_import_admin_router)  # HB0: R2 history import progress (SUPER_ADMIN, read-only)
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
+app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)

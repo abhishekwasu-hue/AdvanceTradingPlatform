@@ -55,14 +55,18 @@ async def history(
             raise live_access.LiveDataRefused("Intraday bars in the shared history were recorded through other sessions' broker feeds, so "
                                               "they are not shown while the bring-your-own-broker data tier is on; daily (EOD) bars are.")
     if store == "tenant":
+        # HB2 / BT1b: bars read through one member's own broker session (source `broker:<name>:u<id>`) are that member's
+        # only - every other member (a teammate, a VIEWER, a co-owner, the next pinned owner) gets the rest without them.
         try:
             bars = await tenant_store.candles(session, user.tenant_id, instrument_key, timeframe, start, end, symbol=sym,
-                                              exchange=exchange, kind=kind, adjusted=adjusted, as_of=as_of, sources=preferred)
+                                              exchange=exchange, kind=kind, adjusted=adjusted, as_of=as_of, sources=preferred,
+                                              reader_user_id=user.id)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from None
-        owner = DataQualityEventRecord.tenant_id == user.tenant_id
+        owner = (DataQualityEventRecord.tenant_id == user.tenant_id) & \
+            tenant_store.holder_visible(DataQualityEventRecord.source, user.id)
     else:
         bars = await adjust.candles(session, instrument_key, timeframe, start, end, symbol=sym,
                                     exchange=exchange, kind=kind, adjusted=adjusted, as_of=as_of, sources=preferred)

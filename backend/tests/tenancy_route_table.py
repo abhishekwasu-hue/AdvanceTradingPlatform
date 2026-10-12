@@ -103,6 +103,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/admin/history-backfill/holidays/remove"): "admin",
     ("GET", "/api/admin/history-backfill/progress"): "admin",
     ("POST", "/api/admin/history-backfill/upload"): "admin",
+    ("GET", "/api/admin/history-intraday/progress"): "admin",
     ("GET", "/api/admin/history-import/progress"): "admin",
     ("GET", "/api/admin/incidents"): "admin",
     ("POST", "/api/admin/incidents"): "admin",

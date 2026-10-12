@@ -279,6 +279,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
     ("POST", "/api/screener/board/context"): S_COMPUTE,          # U5 D3a: reference data + shared closes for the caller's symbols; stores nothing
+    ("POST", "/api/screener/board/rrg"): S_COMPUTE,              # U5 D3b: shared closes for the caller's symbols; stores nothing
+    ("POST", "/api/screener/board/template-runs"): S_COMPUTE,    # U5 D3b: the organisation's own stored runs (BT1b: own only); stores nothing
     ("GET", "/api/compliance/golive"): "admin",
     ("PUT", "/api/compliance/golive/evidence"): "admin",
     ("GET", "/api/compliance/static-ips"): "member",

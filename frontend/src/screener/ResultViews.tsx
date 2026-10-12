@@ -9,7 +9,9 @@ import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { cx } from "../components/primitives";
 import type { RunResult } from "./api";
-import { BOARD_VIEWS, boardApi, gridSymbols, heatmapLayout, sparkPath, tileFill, type BoardContext, type BoardView, type ContextRow } from "./boardViews";
+import {
+  BOARD_VIEWS, boardApi, gridSymbols, heatmapLayout, rrgScale, sparkPath, tileFill, type BoardContext, type BoardView, type ContextRow, type RrgResponse,
+} from "./boardViews";
 import { EvidenceChart } from "./EvidenceChart";
 import { evidenceApi, visibleDrawables, type EvidencePack } from "./evidence";
 import { ResultBoard, type ResultBoardProps } from "./ResultBoard";
@@ -77,6 +79,46 @@ export function ChartGridView({ results, context, packs }: { results: RunResult[
   );
 }
 
+const QUAD_COLOR = { Leading: "rgb(var(--up))", Weakening: "rgb(var(--warn))", Lagging: "rgb(var(--down))", Improving: "rgb(var(--info))" } as const;
+
+export function RrgView({ rrg, width = 360, height = 300 }: { rrg: RrgResponse; width?: number; height?: number }) {
+  const sc = rrgScale(rrg.symbols, width, height);
+  const c = { x: sc.x(100), y: sc.y(100) };
+  const plotted = rrg.symbols.filter((r) => r.tail.length);
+  return (
+    <figure className="m-0" data-testid="rrg-view">
+      <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img"
+           aria-label={`Relative rotation against ${rrg.benchmark}: ${plotted.map((r) => `${r.symbol} ${r.quadrant}`).join(", ") || "no symbol has enough history"}`}>
+        <line x1={c.x} x2={c.x} y1={0} y2={height} stroke="rgb(var(--border))" />
+        <line x1={0} x2={width} y1={c.y} y2={c.y} stroke="rgb(var(--border))" />
+        {(["Improving", "Leading", "Lagging", "Weakening"] as const).map((q, i) => (
+          <text key={q} x={i % 2 ? width - 4 : 4} y={i < 2 ? 12 : height - 4} textAnchor={i % 2 ? "end" : "start"} fontSize={10} fill={QUAD_COLOR[q]}>{q}</text>
+        ))}
+        {plotted.map((r) => {
+          const pts = r.tail.map((p) => `${sc.x(p.rs_ratio).toFixed(1)},${sc.y(p.rs_momentum).toFixed(1)}`);
+          const last = r.tail[r.tail.length - 1];
+          const col = r.quadrant ? QUAD_COLOR[r.quadrant] : "rgb(var(--fg-muted))";
+          return (
+            <g key={r.symbol} data-symbol={r.symbol} data-quadrant={r.quadrant}>
+              <polyline points={pts.join(" ")} fill="none" stroke={col} strokeWidth={1.2} opacity={0.7} />
+              <circle cx={sc.x(last.rs_ratio)} cy={sc.y(last.rs_momentum)} r={3} fill={col} />
+              <text x={sc.x(last.rs_ratio) + 4} y={sc.y(last.rs_momentum) - 4} fontSize={9} fontFamily="var(--font-mono)" fill="rgb(var(--fg))">{r.symbol}</text>
+            </g>
+          );
+        })}
+      </svg>
+      <figcaption className="mt-1 text-t12 text-fg-muted">
+        x: RS-Ratio, y: RS-Momentum against {rrg.benchmark}, weekly, with a {rrg.symbols[0]?.tail.length ?? 0}-week tail.{rrg.reason ? ` ${rrg.reason}.` : ""}
+      </figcaption>
+      <table className="mt-1 w-full text-t12">
+        <caption className="sr-only">Quadrant of each symbol</caption>
+        <thead><tr><th scope="col" className="text-left font-medium text-fg-muted">Symbol</th><th scope="col" className="text-left font-medium text-fg-muted">Quadrant</th></tr></thead>
+        <tbody>{rrg.symbols.map((r) => <tr key={r.symbol}><td className="font-mono text-fg">{r.symbol}</td><td className="text-fg">{r.quadrant ?? "not enough history"}</td></tr>)}</tbody>
+      </table>
+    </figure>
+  );
+}
+
 /** The board with its views: fetches the context once per run (its 404 means the flag is off: the table alone). */
 export function ResultViews(props: ResultBoardProps) {
   const { results } = props;
@@ -85,6 +127,7 @@ export function ResultViews(props: ResultBoardProps) {
   const [ctx, setCtx] = useState<BoardContext | null>(null);
   const [available, setAvailable] = useState(false);
   const [packs, setPacks] = useState<Record<number, EvidencePack>>({});
+  const [rrg, setRrg] = useState<RrgResponse | null>(null);
   const key = symbols.join(",");
   useEffect(() => {
     setCtx(null);
@@ -96,6 +139,13 @@ export function ResultViews(props: ResultBoardProps) {
     );
     return () => { live = false; };
   }, [results, key]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (view !== "rrg" || !results || !symbols.length) return;
+    let live = true;
+    setRrg(null);
+    boardApi.rrg(symbols).then((r) => { if (live) setRrg(r); }, () => undefined);
+    return () => { live = false; };
+  }, [view, results]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (view !== "grid" || !results) return;
     let live = true;
@@ -120,11 +170,13 @@ export function ResultViews(props: ResultBoardProps) {
       </div>
       {view === "table" && <ResultBoard {...props} />}
       {view !== "table" && (
-        <section aria-label={view === "heatmap" ? "Heatmap" : "Chart grid"} className={cx("rounded-panel border border-border bg-surface-1 p-2", props.stale && "opacity-50")}>
-          {ctx == null ? <p className="px-4 py-8 text-center text-t13 text-fg-muted">Loading…</p>
-            : view === "heatmap" ? <HeatmapView results={results} context={ctx.symbols} />
-              : <ChartGridView results={results} context={ctx.symbols} packs={packs} />}
-          {ctx && <p className="mt-1 text-t12 text-fg-muted">{ctx.note}</p>}
+        <section aria-label={BOARD_VIEWS.find((v) => v.id === view)?.label} className={cx("rounded-panel border border-border bg-surface-1 p-2", props.stale && "opacity-50")}>
+          {view === "rrg" ? (rrg ? <><RrgView rrg={rrg} /><p className="mt-1 text-t12 text-fg-muted">{rrg.note}</p></>
+                                 : <p className="px-4 py-8 text-center text-t13 text-fg-muted">Loading…</p>)
+            : ctx == null ? <p className="px-4 py-8 text-center text-t13 text-fg-muted">Loading…</p>
+              : view === "heatmap" ? <HeatmapView results={results} context={ctx.symbols} />
+                : <ChartGridView results={results} context={ctx.symbols} packs={packs} />}
+          {ctx && view !== "rrg" && <p className="mt-1 text-t12 text-fg-muted">{ctx.note}</p>}
         </section>
       )}
     </div>

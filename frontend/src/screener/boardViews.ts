@@ -7,9 +7,9 @@
 import { request } from "../api/client";
 import type { RunResult } from "./api";
 
-export type BoardView = "table" | "heatmap" | "grid";
+export type BoardView = "table" | "heatmap" | "grid" | "rrg";
 export const BOARD_VIEWS: { id: BoardView; label: string }[] = [
-  { id: "table", label: "Table" }, { id: "heatmap", label: "Heatmap" }, { id: "grid", label: "Chart grid" },
+  { id: "table", label: "Table" }, { id: "heatmap", label: "Heatmap" }, { id: "grid", label: "Chart grid" }, { id: "rrg", label: "RRG" },
 ];
 export const GRID_MAX = 12;                       // mini charts in the grid (the spec's 12 / 20; 12 keeps evidence reads small)
 
@@ -19,10 +19,45 @@ export interface ContextRow {
 }
 export interface BoardContext { as_of: string; exchange: string; symbols: ContextRow[]; note: string }
 
+export interface RrgPoint { week: string; rs_ratio: number; rs_momentum: number }
+export type Quadrant = "Leading" | "Weakening" | "Lagging" | "Improving";
+export interface RrgResponse {
+  as_of: string; benchmark: string; benchmark_key: string; weeks: number; reason: string | null; note: string;
+  symbols: { symbol: string; tail: RrgPoint[]; quadrant: Quadrant | null }[];
+}
+export interface TemplateRun { run_id: number; at: string | null; base_tf: string; scanned: number; matched: number; evidence_id: number | null }
+
 export const boardApi = {
   context: (symbols: string[], exchange = "NSE") =>
     request<BoardContext>("/screener/board/context", { method: "POST", body: JSON.stringify({ symbols, exchange }) }),
+  /** D3b: relative rotation against a benchmark index (weekly, shared daily closes). */
+  rrg: (symbols: string[], benchmark = "Nifty 50", exchange = "NSE") =>
+    request<RrgResponse>("/screener/board/rrg", { method: "POST", body: JSON.stringify({ symbols, benchmark, exchange }) }),
+  /** D3b: the organisation's latest stored run of each template (null when none) - the sheet's counts and thumbnail. */
+  templateRuns: (templates: { id: string; source: string }[]) =>
+    request<{ runs: Record<string, TemplateRun | null> }>("/screener/board/template-runs", { method: "POST", body: JSON.stringify({ templates }) }),
 };
+
+/** RRG plot scale: both axes symmetric around 100 so the quadrants meet in the middle (at least +/- 2 points). */
+export function rrgScale(rows: RrgResponse["symbols"], w: number, h: number, pad = 18) {
+  let span = 2;
+  for (const r of rows) for (const p of r.tail) span = Math.max(span, Math.abs(p.rs_ratio - 100), Math.abs(p.rs_momentum - 100));
+  span *= 1.1;
+  return {
+    span,
+    x: (v: number) => pad + ((v - (100 - span)) / (2 * span)) * (w - 2 * pad),
+    y: (v: number) => h - pad - ((v - (100 - span)) / (2 * span)) * (h - 2 * pad),
+  };
+}
+
+/** "3 of 10 matched · 12 Oct, 15:30 IST" for a template's last run; null when it was never run. */
+export function lastRunText(run: TemplateRun | null | undefined): string | null {
+  if (!run) return null;
+  const d = run.at ? new Date(run.at) : null;
+  const when = d && !Number.isNaN(d.getTime())
+    ? ` · ${d.toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false })} IST` : "";
+  return `${run.matched} of ${run.scanned} matched${when}`;
+}
 
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Sized<T> { item: T; value: number }

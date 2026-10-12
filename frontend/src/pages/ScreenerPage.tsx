@@ -5,7 +5,7 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { LayoutGrid, Play, Save } from "lucide-react";
+import { LayoutGrid, Play, Rows3, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
@@ -19,7 +19,9 @@ import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TI
 import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultViews } from "../screener/ResultViews";
 import { ScreenGallery } from "../screener/ScreenGallery";
-import { isLegends, type LegendsLibrary } from "../screener/legends";
+import { filledSource, isLegends, type LegendsLibrary } from "../screener/legends";
+import { boardApi } from "../screener/boardViews";
+import { TemplateSheet, type SheetTemplate } from "../screener/TemplateSheet";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 
@@ -62,16 +64,35 @@ export default function ScreenerPage(_props: PageProps) {
   // U7 LG1 (flag `screener_legends`): the Legends cards load with the taxonomy; while the flag is off the call fails,
   // the taxonomy hides the Legends screens and nothing changes.
   const [legends, setLegends] = useState<LegendsLibrary | null>(null);
+  // U5 D3b (flag `screener_board_views`): the template sheet; a probe of its endpoint says whether the flag is on.
+  const [sheetOn, setSheetOn] = useState(false);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
+    boardApi.templateRuns([{ id: "probe", source: "close > 0" }]).then(() => setSheetOn(true), () => setSheetOn(false));
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
   // breakout family joins with U6 BK1).
   const canOpen = useCallback((s: TaxScreen) => !!registry && s.source === "starter" && STARTERS.some((t) => t.id === s.id), [registry]);
+  // D3b: the templates with a ScreenQL text - the starters (built here) and the Legends cards (their own source)
+  const sheetTemplates = useMemo<SheetTemplate[]>(() => {
+    if (!registry || !taxonomy) return [];
+    const filed = new Map(taxonomy.screens.map((s) => [s.id, s]));
+    const out: SheetTemplate[] = [];
+    for (const st of STARTERS) {
+      const f = filed.get(st.id);
+      if (f) out.push({ id: st.id, name: f.name, definition: f.definition, setup: f.setup, source: screenText(registry, st.build(registry)), canOpen: true });
+    }
+    for (const c of legends?.cards ?? []) {
+      const f = filed.get(c.id);
+      if (f) out.push({ id: c.id, name: c.name, definition: f.definition, setup: f.setup, source: filledSource(c), canOpen: false });
+    }
+    return out;
+  }, [registry, taxonomy, legends]);
   const openScreen = (s: TaxScreen) => {
     const starter = STARTERS.find((t) => t.id === s.id);
     if (!registry || !starter) return;
@@ -196,6 +217,9 @@ export default function ScreenerPage(_props: PageProps) {
         {taxonomy && (
           <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
         )}
+        {taxonomy && sheetOn && registry && (
+          <Button size="sm" onClick={() => setSheetOpen(true)} data-testid="template-sheet-open"><Rows3 size={14} /> Templates</Button>
+        )}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
           <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
@@ -261,6 +285,15 @@ export default function ScreenerPage(_props: PageProps) {
         </div>
       </div>
 
+      {taxonomy && sheetOn && registry && (
+        <Dialog wide open={sheetOpen} onOpenChange={setSheetOpen} title="Templates"
+                description="Each template with your organisation's last run of it and a chart from that run.">
+          <TemplateSheet taxonomy={taxonomy} templates={sheetTemplates} onOpen={(id) => {
+            const s = taxonomy.screens.find((x) => x.id === id);
+            if (s && canOpen(s)) { openScreen(s); setSheetOpen(false); }
+          }} />
+        </Dialog>
+      )}
       {taxonomy && (
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
                 description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">

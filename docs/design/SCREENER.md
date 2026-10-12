@@ -1148,8 +1148,17 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
 - **Tests:** `tests/test_u5_d3_board.py` (reference data, shared closes only - no `stream:` row, no correction
   before its ingestion - the flag and limits); `boardViews.test.tsx` (treemap areas and bounds, sector sizing and
   the median fill, colours, accessible labels, grid limits).
-- **Next (D3b):** RRG (relative rotation against a benchmark from the shared lake) and the template sheet with live
-  thumbnails; the F&O dashboard waits for chain data on the run path (EV-11 / CH4-1).
+- **D3b (built, same flag):**
+  - **RRG view** (`POST /api/screener/board/rrg`): weekly RS-Ratio / RS-Momentum against a benchmark index (default
+    Nifty 50, the lake key `NSE_INDEX:<catalogue code>`) from the shared daily closes, with a 5-week tail and the
+    quadrant (Leading / Weakening / Lagging / Improving) per symbol, also as a table. It is an open approximation, not
+    the proprietary JdK formulas (D3-2).
+  - **Template sheet** (`POST /api/screener/board/template-runs`; the "Templates" button). It covers the starters and
+    the Legends cards, grouped by setup, each with its definition and the organisation's last stored run of the same
+    screen (matched of scanned, when; BT1b: the user's own runs with `byob_data_tier`). The live thumbnail is the
+    evidence chart of that run's first readable matched symbol, else a note that it never ran.
+  - Tests: `tests/test_u5_d3b_rrg_templates.py`, `d3b.test.tsx`.
+  - The F&O dashboard view waits for chain data on the run path (EV-11 / CH4-1).
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

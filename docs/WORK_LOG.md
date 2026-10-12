@@ -1886,3 +1886,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
+
+## Fix: contributed reference data is the contributing organisation's own (security)
+
+- Branch `claude/fix-shared-fundamentals-writes` (from main). Found in the S8 review: shared tables writable by any
+  trading member of any organisation (`require_contributor`), unbounded dates, self-cited publication dates.
+- `tenant_id` (NULL = shared) on companies, financial_periods, shareholding_snapshots, corporate_actions,
+  qualitative_factors, earnings_calendar_events, sector_metrics, news_events; migration `d7f9a1c3e5b7` (ROLLBACK_SAFE
+  with reason; backfill by creator; `uq_company_period` widened with tenant_id; upgrade / check / downgrade run on
+  Postgres).
+- Every reader takes the viewer: fundamentals pages and analyses, the upcoming calendar, the fundamentals screener,
+  sector rotation and peers, the Factor Lab fill (`quant/fundamentals_bridge.py`), news events list / get / delete.
+  The financials import updates only the organisation's own periods. Provider refresh rows stay shared.
+- Shared company profiles: PUT only by SUPER_ADMIN; an organisation's own company becomes shared from the provider
+  refresh (hand fields cleared). Date checks on every contributed row (`visibility.check_dates`).
+- Tests: `tests/test_shared_fundamentals_scope.py` (cross-tenant poisoning attempt on every kind of row, dates, the
+  private company, the Factor Lab fill, manual news); fundamentals / news / quant tests read with the caller's token.
+  OPEN_QUESTIONS SF-1.

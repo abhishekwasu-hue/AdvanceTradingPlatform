@@ -26,9 +26,11 @@ P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
 P_BROKER_CATALOGUE = "public: the broker catalogue"
 P_PARSE_ONLY = "public: parses the strategy text in the request; stores nothing"
-P_FUNDAMENTALS = "public: shared market reference data and computations over it (no organisation data)"
+P_FUNDAMENTALS = ("public: shared market reference data and computations over it; a logged-in caller also reads its own organisation's "
+                  "contributed rows, never another organisation's (app/fundamentals/visibility.py)")
 P_INSTRUMENTS = "public: the instrument catalogue"
-P_NEWS_EVENTS = "public: shared cited news events (reference data)"
+P_NEWS_EVENTS = ("public: the shared news feed; a logged-in caller also reads its own organisation's manual entries, never "
+                 "another organisation's (app/fundamentals/visibility.py)")
 P_API_DOCS = "public: public API documentation"
 P_API_SCOPES = "public: public API scope catalogue"
 P_PWA = "public: PWA install/update counters only (rate limited)"

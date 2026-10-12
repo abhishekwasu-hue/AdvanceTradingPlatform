@@ -356,7 +356,7 @@ class UserSessionFanIn:
         from sqlalchemy import select
 
         from app.db.models import TradeRecord
-        from app.trading.position_monitor import exchange_for_trade, underlying_exchange
+        from app.trading.position_monitor import trade_venues, underlying_exchange
 
         report = FanInReport()
         wanted = await eligible_sessions(db, now) if market_open else {}
@@ -375,8 +375,10 @@ class UserSessionFanIn:
                 trades = await db.scalars(select(TradeRecord).where(
                     TradeRecord.tenant_id == record.tenant_id, TradeRecord.user_id == record.user_id, TradeRecord.exit_time.is_(None)))
                 positions: set = set()
-                for trade in trades:
-                    positions.add((trade.symbol, exchange_for_trade(trade)))
+                open_rows = list(trades)
+                venues = await trade_venues(db, open_rows)       # BK2-8: a legacy row follows its deployment's venue
+                for trade in open_rows:
+                    positions.add((trade.symbol, venues[trade.id]))
                     if trade.underlying_symbol:
                         positions.add((trade.underlying_symbol, underlying_exchange(trade.underlying_symbol)))
                 await self.symbols.replace(namespace, Priority.POSITION, sorted(positions), now)

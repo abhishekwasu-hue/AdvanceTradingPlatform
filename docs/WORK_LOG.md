@@ -1909,3 +1909,37 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on one scale. No new route.
 - Tests: `tests/test_n2_builder_compare.py` (2: the flag per organisation through `/api/system/features`; evaluate's
   numbers on one grid); vitest `src/progression/compare.test.tsx` (3).
+
+## Fix: the trading worker acts per deployment as its creator (TX-3)
+
+- Branch `claude/fix-worker-acting-user` (from main). The worker filed every deployment's entries of an organisation
+  under one acting user (`_acting_user`: the first deployment's creator, else the owner), so member B's automated trades
+  could carry member A's user id (and land in A's own-trades tax report, #225 / OPEN_QUESTIONS TX-3).
+- Now `_deployment_user`: a deployment's entries (and its failure alert) act as `dep.created_by` when that user is an
+  active member of the same organisation with a trading role; no recorded creator keeps the organisation's acting user. Exits, square-off, stop guard and reconciliation are unchanged (ADR-0004).
+- Review: a creator who is removed, inactive, of another organisation, or without a trading role / `trading:write`
+  makes the deployment open NO new entries (skipped with `last_error`; OPEN_QUESTIONS TX-4) instead of re-attributing
+  them; exits untouched. The lookup sits inside the per-deployment try (a failure falls back to the acting user and the
+  loop goes on). Approval-only proposals use the same resolved user.
+- No backfill: existing rows keep the user id they were filed under. No flag (a correctness fix).
+- Tests: `tests/test_worker_acting_user.py` (owner and member deployments each file their own trades; square-off
+  still closes both; removed / foreign / VIEWER creators open no entries while the removed member's open position is
+  still squared off; no creator and a failed lookup fall back; approval-only proposals go to the resolved user).
+## Fix: tax report reads only the caller's own trades (BT1b) + FY-dependent statute (TX-1 follow-up)
+
+- Branch `claude/fix-tax-report-own` (from main). Phase 0 bug: `/api/tax/report`, `/api/tax/report.csv` and
+  `/api/tax/years` read every trade of the organisation, so a member saw colleagues' trades. `closed_trades` and
+  `available_years` now filter on the caller's user id too. No flag: this is the only behaviour.
+- Tenancy table: the three routes are `M_OWN_TAX` ("member: the caller's own closed trades only"); the class docstring
+  now allows "member: <why>" for own-rows reads.
+- TX-1 follow-up: `report.statute(fy)` / `report.disclaimer(fy)`. FY up to 2025-26 cites ss.115BBH / 194S / 44AB of the
+  1961 Act; FY 2026-27 onwards cites the Income-tax Act 2025 (TDS s.393(1); the 30% section and the tax-audit section
+  "to be verified"). Each cited section has an incometaxindia.gov.in URL or a verify note; the CSV lists them as
+  `source` rows. The "a chartered accountant should confirm" / "Verify with a chartered accountant" wording is gone.
+  TX-2 (MCX commodity-option CTT) stays open.
+- Tests: `tests/test_tax_report_own.py` (members A and B and the owner each see only their own trades in the report,
+  the CSV and the years; statute by year; disclaimer wording); `test_phase_p_closure.py` updated for FY 2026-27.
+- #225 review fixes: chartered-accountant referral restored (backend disclaimer and the Analytics banner; for FY 2026-27
+  on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
+  `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
+  "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).

@@ -65,7 +65,26 @@ def test_every_source_is_a_published_work_with_its_details():
     for source in lg.load().sources.values():
         assert source.kind in lg.SOURCE_KINDS and source.title and source.authors and 1800 <= source.year <= 2100
         assert source.covers, source.id                                                  # what a reviewer checks the card against
-        assert source.review in ("pending", "checked")
+        assert source.review in lg.REVIEW_STATUSES
+        assert source.evidence and all(u.startswith("https://") for u in source.evidence), source.id
+        assert source.publisher and source.review_note, source.id
+
+
+def test_lg1_2_the_bibliographic_check_against_public_catalogues():
+    """LG1-2: each source checked against catalogue / ISBN records (the URLs in `evidence`); only Connors and Alvarez's
+    first-edition year is unsettled (2008 or 2009), so that source and its one card are unverified, with the reason."""
+    lib = lg.load()
+    status = {s.id: s.review for s in lib.sources.values()}
+    assert status == {**{i: "verified" for i in status}, "connors_alvarez_2008": "unverified"}
+    darvas = lib.sources["darvas_1960"]
+    assert (darvas.publisher, darvas.year) == ("American Research Council", 1960)
+    assert any("archive.org" in u for u in darvas.evidence)
+    assert "2009" in lib.sources["connors_alvarez_2008"].review_note
+    cards = {c.id: (c.review, c.review_note) for c in lib.cards}
+    assert {i for i, (r, _) in cards.items() if r == "unverified"} == {"legends.connors_rsi2_pullback"}
+    assert "connors_alvarez_2008" in cards["legends.connors_rsi2_pullback"][1]
+    for card in lib.cards:                                     # verified = every source it cites is verified
+        assert (card.review == "verified") == all(lib.sources[c].review == "verified" for c in card.cited()), card.id
 
 
 def test_the_files_are_english_only():
@@ -118,6 +137,16 @@ def _first(data):
     (lambda c, s: s["sources"][0].update(title="शेअर बाजार"), "English only"),
     (lambda c, s: s["sources"].append(dict(s["sources"][0], id="uncited_book")), "source 'uncited_book' is listed but no card cites it"),
     (lambda c, s: c.update(cards=[]), "cards: none defined"),
+    (lambda c, s: s["sources"][0].update(review="pending"), "review must be one of verified, unverified ('pending' given)"),
+    (lambda c, s: s["sources"][0].update(evidence=[]), "a verified source lists its evidence"),
+    (lambda c, s: s["sources"][0].update(evidence=["see the library"]), "evidence must be a list of public https:// URLs"),
+    (lambda c, s: s["sources"][1].update(publisher=""), "a verified source names its publisher"),
+    (lambda c, s: s["sources"][0].update(review="unverified", review_note=""), "an unverified entry says why in review_note"),
+    (lambda c, s: s["sources"][0].update(review="unverified"), "verified, but it cites unverified sources (minervini_2013)"),
+    (lambda c, s: _first(c).pop("review"), "review must be one of verified, unverified"),
+    (lambda c, s: _first(c).update(review="unverified"), "an unverified entry says why in review_note"),
+    (lambda c, s: c["cards"][6].update(review="verified"), "verified, but it cites unverified sources (connors_alvarez_2008)"),
+    (lambda c, s: _first(c).update(review_note="x" * 401), "review_note: at most 400 characters"),
     (lambda c, s: c["cards"][3].update(legend="Richard Dennis and the Turtle traders"),
      "names 'William Eckhardt', so the disclaimer must too"),
     (lambda c, s: c["cards"][4].update(legend="Linda Bradford Raschke"), "names 'Laurence Connors', so the disclaimer must too"),
@@ -359,7 +388,10 @@ def test_the_api_shape_carries_the_disclaimer_the_sources_and_the_screen(legends
                               "named. Educational tool, not investment advice.")
     assert [c["id"] for c in body["cards"]] == LG1_CARDS
     for card in body["cards"]:
-        assert set(card) == {"id", "legend", "name", "lines", "source_line", "sources", "approximation", "disclaimer", "screen", "filing"}
+        assert set(card) == {"id", "legend", "name", "lines", "source_line", "sources", "approximation", "disclaimer", "review", "screen",
+                             "filing"}
+        assert card["review"]["status"] in lg.REVIEW_STATUSES and (card["review"]["status"] == "verified" or card["review"]["note"])
+        assert all(s["review"] in lg.REVIEW_STATUSES and s["evidence"] for s in card["sources"])
         assert card["disclaimer"] == (f"Inspired by publicly described methods. Not affiliated with, endorsed by, or representing "
                                       f"{card['legend']}. Educational tool, not investment advice.")
         assert list(card["lines"]) == list(lg.LINES) and len(card["lines"]) + 1 <= lg.MAX_CARD_LINES

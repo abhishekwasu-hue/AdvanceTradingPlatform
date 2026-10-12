@@ -4,7 +4,8 @@
 * `GET /api/system/health/deep`  - readiness with detail: database round-trip, Redis (optional
   component - "disabled"/"unreachable" degrade but do not fail), migrations at head, trading
   worker heartbeat age against its cycle. 200 when the database answers, 503 otherwise, and the
-  body says which component is why. Unauthenticated, no secrets in the body.
+  body says which component is why. Unauthenticated, no secrets in the body. `checks.live_paths` (informational) says
+  whether LIVE entry paths run and why not (Phase 0: `phase0_paper_only` on - exits always run).
 * `GET /metrics`                 - Prometheus text format. Outside `/api` so the nginx front does
   not expose it to browsers; when `METRICS_TOKEN` is set the scraper must send it as a bearer.
 """
@@ -81,6 +82,19 @@ async def _check_worker(session: AsyncSession, now: datetime) -> Dict[str, objec
             "market_open": market.is_open, "last_error": record.last_error}
 
 
+async def _check_live_paths(session: AsyncSession) -> Dict[str, object]:
+    """Phase 0 deployment defaults: whether LIVE entry paths run, and why not. Informational - never changes the overall
+    status. Says nothing about any organisation (global posture only)."""
+    from app.platform import deployment_phase
+    try:
+        state = await deployment_phase.live_paths(session)
+    except Exception as exc:  # noqa: BLE001
+        await session.rollback()
+        return {"status": "unknown", "error": type(exc).__name__}
+    return {"status": "paper_only" if state["phase0_paper_only"] else "flag_controlled", "deployment_phase": state["deployment_phase"],
+            "live_entries": state["live_entries"], "exits": state["exits"], "detail": state["detail"]}
+
+
 @router.get("/api/system/health/deep")
 async def deep_health(response: Response, session: AsyncSession = Depends(get_session)) -> Dict[str, object]:
     now = datetime.now(timezone.utc)
@@ -89,6 +103,7 @@ async def deep_health(response: Response, session: AsyncSession = Depends(get_se
     if db["status"] == "ok":
         checks["migrations"] = await _check_migrations(session)
         checks["worker"] = await _check_worker(session, now)
+        checks["live_paths"] = await _check_live_paths(session)
     checks["redis"] = await _check_redis()
 
     if db["status"] != "ok":

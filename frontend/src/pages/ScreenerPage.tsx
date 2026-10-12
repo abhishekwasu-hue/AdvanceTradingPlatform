@@ -5,7 +5,7 @@
  *
  * Research only: a scan lists symbols that meet the trader's own conditions - never a recommendation, never an order.
  */
-import { LayoutGrid, Play, Save } from "lucide-react";
+import { Layers, LayoutGrid, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ApiError } from "../api/errors";
@@ -20,6 +20,8 @@ import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultBoard } from "../screener/ResultBoard";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
+import { isMirrors, isWatchLists, mirrorsByScreen, type MirrorsResponse, type WatchListsResponse } from "../screener/library";
+import { LibraryTools } from "../screener/LibraryTools";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 
@@ -62,11 +64,18 @@ export default function ScreenerPage(_props: PageProps) {
   // U7 LG1 (flag `screener_legends`): the Legends cards load with the taxonomy; while the flag is off the call fails,
   // the taxonomy hides the Legends screens and nothing changes.
   const [legends, setLegends] = useState<LegendsLibrary | null>(null);
+  // U9 TX2 (flag `screener_tx2`): mirrors and watch lists; while the flag is off the calls fail and nothing shows.
+  const [mirrors, setMirrors] = useState<MirrorsResponse | null>(null);
+  const [watchLists, setWatchLists] = useState<WatchListsResponse | null>(null);
+  const [toolsOpen, setToolsOpen] = useState(false);
+  const mirrorMap = useMemo(() => mirrorsByScreen(mirrors), [mirrors]);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
+    screenerApi.libraryMirrors().then((m) => setMirrors(isMirrors(m) ? m : null)).catch(() => setMirrors(null));
+    screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
@@ -196,6 +205,9 @@ export default function ScreenerPage(_props: PageProps) {
         {taxonomy && (
           <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
         )}
+        {taxonomy && mirrors && (
+          <Button size="sm" onClick={() => setToolsOpen(true)} data-testid="library-tools-open"><Layers size={14} /> Library tools</Button>
+        )}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
           <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
@@ -264,7 +276,13 @@ export default function ScreenerPage(_props: PageProps) {
       {taxonomy && (
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
                 description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">
-          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} legends={legends} />
+          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} legends={legends} mirrors={mirrorMap} />
+        </Dialog>
+      )}
+      {taxonomy && mirrors && (
+        <Dialog wide open={toolsOpen} onOpenChange={setToolsOpen} title="Library tools"
+                description="Run several screens together to see where they agree, or watch a list for a ready-then-triggered move.">
+          <LibraryTools taxonomy={taxonomy} mirrors={mirrors} watchLists={watchLists} symbolsText={symbolsText} />
         </Dialog>
       )}
 

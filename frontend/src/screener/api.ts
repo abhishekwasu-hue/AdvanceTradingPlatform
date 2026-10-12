@@ -3,6 +3,7 @@ import { request } from "../api/client";
 import type { DataTierBadgeInfo } from "../types";
 import type { FunnelResult, Registry } from "./model";
 import type { LegendsLibrary } from "./legends";
+import type { ConfluenceResponse, MirrorsResponse, WatchListsResponse, WatchResponse } from "./library";
 import type { Taxonomy } from "./taxonomy";
 
 export interface Problem { message: string; pos: number | null }
@@ -35,6 +36,13 @@ export const screenerApi = {
   taxonomy: () => request<Taxonomy>("/screener/taxonomy"),
   /** U7 LG1: the Legends cards (flag `screener_legends`; 503 while it is off - the gallery then shows no card text). */
   legends: () => request<LegendsLibrary>("/screener/legends"),
+  /** U9 TX2 (flag `screener_tx2`; 503 while it is off - the page then shows no library tools). */
+  libraryMirrors: () => request<MirrorsResponse>("/screener/library/mirrors"),
+  watchLists: () => request<WatchListsResponse>("/screener/library/watch-lists"),
+  confluence: (screens: string[], symbols: string[], exchange = "NSE") =>
+    request<ConfluenceResponse>("/screener/library/confluence", { method: "POST", body: JSON.stringify({ screens, symbols, exchange }) }),
+  watchTrigger: (body: { list_id?: string; ready?: string; trigger?: string; base_tf?: string; symbols: string[]; exchange?: string }) =>
+    request<WatchResponse>("/screener/library/watch-trigger", { method: "POST", body: JSON.stringify(body) }),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

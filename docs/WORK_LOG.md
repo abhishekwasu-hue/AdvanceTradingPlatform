@@ -1842,3 +1842,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   instance (`src/progression/i18n.ts`); there is a story.
 - No migration and no new route. Flag off returns the Z3-b answer unchanged.
 - Tests: backend `tests/test_n2_ladder_evidence.py` (9); vitest `src/progression` (12). Open questions N2-1..N2-5.
+
+## U9 TX2: confluence view, mirror screens, watch-then-trigger lists (flag `screener_tx2`, off)
+
+- Branch `claude/n3-tx2` (from main). Spec: ATP_SCREENER_TAXONOMY_ADDENDUM §3 / §4. Design: SCREENER.md "U9 TX2".
+- Backend: `app/screener/mirror.py` (AST mirror under price reflection, every rule checked on synthetic bars),
+  `app/screener/library.py` (pre-built screens as text, `<id>.short` mirrors, confluence ranking, watch lists and the
+  transition screen), `app/screener/library_routes.py` (4 routes, classified in the tenancy table). New flag in
+  DEFAULT_OFF_FLAGS. No migration, no new ScreenQL function (Z10-a case added for the `Count(...)[1]` transition).
+- Frontend: "Library tools" dialog on the Screener page (Confluence / Watch -> trigger tabs) and the mirror line on
+  gallery cards; `starters.json` carries each starter's text (checked against the builds by a vitest). Stories.
+- Tests: backend `tests/test_tx2_library.py`; vitest `src/screener/library.test.tsx`. Open questions TX2-1..TX2-5.
+

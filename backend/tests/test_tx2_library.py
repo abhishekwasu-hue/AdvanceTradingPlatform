@@ -1,0 +1,332 @@
+"""U9 TX2 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md §4): mirror screens, the confluence view and watch-then-trigger
+lists (`app/screener/mirror.py`, `app/screener/library.py`, `app/screener/library_routes.py`; flag `screener_tx2`, off).
+
+The mirror is checked, not trusted: every rule is evaluated bar by bar on synthetic bars against the original on the
+reflected bars, and so is every generated pre-built mirror."""
+import asyncio
+import json
+import types
+import warnings
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+import pytest
+
+from app.core.models import OHLCVBar
+from app.platform import controls
+from app.quality.lookahead import synthetic_bars
+from app.screener import library as lib
+from app.screener import mirror as mr
+from app.screener import nodes as n
+from app.screener import taxonomy as tx
+from app.screener.parser import parse
+from app.screener.runtime import SymbolData, evaluate
+from tests.test_auth_api import _session_factory, client
+from tests.test_phase_l_ai import _owner
+
+STARTERS_FILE = Path(__file__).resolve().parents[2] / "frontend" / "src" / "screener" / "starters.json"
+FLAGS = ("screener_v2", "screener_gallery", lib.FLAG)
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+def _set_flags(**flags):
+    async def go():
+        async with _session_factory() as session:
+            current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+            stored = dict(current.get("flags") or {})
+            for name, on in flags.items():
+                stored[name] = {"on": on, "tenants": []}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": stored}, None)
+            await session.commit()
+    _run(go())
+
+
+@pytest.fixture
+def tx2_on():
+    _set_flags(**{f: True for f in FLAGS})
+    yield
+    _set_flags(**{f: False for f in FLAGS})
+
+
+# --- the mirror: every rule exact on reflected bars ------------------------------------------------------------------
+
+def _value(ast, frame, tf):
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        out = evaluate(ast, SymbolData("S", {tf: frame}), base_tf=tf)
+    return out if isinstance(out, pd.Series) else pd.Series([out] * len(frame), index=frame.index)
+
+
+def _same_on_reflection(text, tf="5m", bars=600):
+    """mirror(e) on the bars, mapped back by its class, equals e on the reflected bars - bar by bar."""
+    frame = synthetic_bars(bars, tf=tf, seed=3)
+    level = float(frame["high"].max() + frame["low"].min())
+    ast = parse(text)
+    cls, expr = mr.rewrite(ast)
+    mine, theirs = _value(expr, frame, tf), _value(ast, mr.reflect_bars(frame, level), tf)
+    if cls == mr.REFL:
+        mine = level - mine
+    elif cls == mr.NEG:
+        mine = -mine
+    elif cls == mr.COMP:
+        mine = 100 - mine
+    elif cls.startswith("cat:"):
+        table = mr.CATEGORIES[cls[4:]]
+        mine = mine.map(lambda v: table.get(v, v) if isinstance(v, str) else v)
+    if mine.dtype == object or theirs.dtype == object or mine.dtype == bool:
+        diff = [i for i, (a, b) in enumerate(zip(mine, theirs)) if not ((pd.isna(a) and pd.isna(b)) or a == b)]
+        assert not diff, f"{text}: differs at bars {diff[:5]}"
+    else:
+        a, b = mine.to_numpy(float), theirs.to_numpy(float)
+        assert (np.isnan(a) == np.isnan(b)).all(), f"{text}: missing values differ"
+        both = ~np.isnan(a) & np.isfinite(a)
+        assert both.sum() > 0 and np.allclose(a[both], b[both], atol=1e-9), f"{text}: values differ"
+    return cls, n.to_text(expr)
+
+
+CASES_5M = [
+    "close", "open", "high", "low", "volume", "SMA(close, 10)", "EMA(close, 20)", "Lag(close, 3)", "Max(high, 20)", "Min(low, 20)",
+    "Greatest(open, close)", "Least(open, close, low)", "RSI(14)", "ATR(14)", "ADX(14)", "PlusDI(14)", "MinusDI(14)", "VWAP()",
+    "SessionVWAP()", "DayOpen()", "PDH()", "PDL()", "PDC()", "ORHigh(30)", "ORLow(15)", "BBUpper(20, 2)", "BBMid(20, 2)",
+    "BBLower(20, 2)", "SwingHigh(0)", "SwingLow(1)", "SwingDirection(0)", "ZScore(close, 20)", "MedianRange(20)",
+    "RelVolume(20)", "RelVolumeTOD(5)", "Count(10, close > open)", "CountStreak(close > open)", "CrossAbove(close, SMA(close, 10))",
+    "CrossBelow(close, EMA(close, 10))", "CrossAbove(RSI(14), 30)", "PctChange(volume, 5)", "high - low", "(close - open) / ATR(14)",
+    "-(close - open)", "close - open + ATR(14)", "ATR(14) + (close - open)", "low <= EMA(close, 20) + 0.25 * ATR(14)",
+    "RSI(14) <= 30", "RSI(14) BETWEEN 30 AND 50", "close BETWEEN SMA(close, 10) AND EMA(close, 20)", "ZScore(close, 20) > 1",
+    'SwingDirection(0) == "UP"', 'SwingDirection(0) IN ("UP")', "NOT close > open",
+    'Pattern("bullish_engulfing")', 'Pattern("morning_star")', 'Pattern("inside_bar")', 'Pattern("doji")', 'Pattern("bullish_pin_bar")',
+    'Pattern("bullish_rejection")', 'SwingZoneStrength("low", 0)', 'SwingZoneDistance("low", 0)', 'ReversalAt(SwingLow(0), "bullish")',
+    'RealBreak(SwingHigh(0), "above", 20)', 'RangeBreakout("up", 20, 0, 0)', 'RangeBreakout("down", 10, 0.1, 0, "auto")',
+    'SwingBreakout("up", 0, 0)', 'NRBreakout("up", "nr7", 0, 0)', 'NRBreakout("down", "inside", 0, 0)', 'RangeExpansion("up", 1.5, 0)',
+    'VolumeBreakout("up", 1.5)', 'ORBreakout("up", 15, 0, FALSE, 15, 0)', 'DayLevelBreak("up", "prev_day", 0, FALSE, 15, 0)',
+    'DayLevelBreak("down", "first_hour", 0, FALSE, 0, 0)', 'DayExtremeBreak("up", 0, FALSE, 15, 0)',
+    "Count(1, close > EMA(close, 20))[1] >= 1 AND close > high[1]",
+]
+CASES_1D = ['NewHighBreakout("up", 4, 0, 0)', "SwingDirection(1)", 'SwingBreakout("up", 1, 0)', "close@1w > SMA(close, 5)@1w"]
+# Read no bars (reference data as of the run date): direction-free, passed through; nothing to evaluate here.
+REFERENCE = {"IsFnO", "IndexMember", "Sector", "Industry", "McapBucket"}
+NOT_IN_SYNTHETIC_BARS = {"oi"}                     # open interest: passed through unchanged like volume
+
+
+@pytest.mark.parametrize("text", CASES_5M)
+def test_each_mirror_rule_is_exact_on_reflected_bars(text):
+    _same_on_reflection(text)
+
+
+@pytest.mark.parametrize("text", CASES_1D)
+def test_each_daily_mirror_rule_is_exact_on_reflected_bars(text):
+    _same_on_reflection(text, "1d", 400)
+
+
+def test_every_mirror_rule_has_an_exactness_case():
+    named = set(mr.FIELD_RULES) | set(mr.LEVELS) | set(mr.LINEAR) | set(mr.EXTREMES) | set(mr.SIDED_FILTERS) | set(mr.CATEGORIES)
+    named |= {"Count", "CountStreak", "CrossAbove", "CrossBelow", "ZScore", "PctChange", "RealBreak", "ReversalAt", "SwingZoneStrength",
+              "SwingZoneDistance", "Pattern"}
+    covered = {getattr(node, "name", None) for text in CASES_5M + CASES_1D for node in n.walk(parse(text))}
+    assert named - REFERENCE - NOT_IN_SYNTHETIC_BARS - covered == set()
+    swaps = {f'Pattern("{k}")' for k in mr.PATTERN_SWAP if k.startswith("bullish") or k in ("doji", "inside_bar", "morning_star")}
+    assert swaps <= set(CASES_5M)
+
+
+@pytest.mark.parametrize("text,why", [
+    ("close > 100", "not a price"),
+    ("close >= 0.9 * Max(high, 250)", "ratio or a multiple of a price"),
+    ("PctChange(close, 5) > 2", "percentage change of a price"),
+    ('DowTrend(0)@1d != "DOWN"', "ties do not mirror"),
+    ('SwingBreakType("up", 1, 0) == "BOS"', "ties do not mirror"),
+    ("ATRPercentile(14, 50) < 20", "price level"),
+    ("Supertrend(10, 3) < close", "not checked"),
+    ('Pattern("hammer")', "no mirrored twin"),
+    ("PCR() > 1", "no mirror rule"),
+    ("close + close > open", "not symmetric"),
+])
+def test_asymmetric_logic_has_no_mirror_and_says_why(text, why):
+    got = mr.mirror(parse(text))
+    assert got.text is None and why in got.reason and got.reason.startswith("No mirror:")
+
+
+def test_a_screen_that_reads_both_sides_alike_is_its_own_mirror():
+    got = mr.mirror(parse("high - low < Min(high - low, 6)[1]"))                # Crabel NR7: a range, no direction
+    assert got.symmetric and got.text is None and "its own mirror" in got.reason
+    assert mr.mirror(parse("RSI(14) <= 30")).text == "RSI(14) >= 70"
+    assert mr.mirror(parse("RSI(2) < $rsi_max")).text == "RSI(2) > 100 - $rsi_max"
+
+
+# --- the pre-built library ---------------------------------------------------------------------------------------------
+
+def test_every_pre_built_screen_resolves_to_valid_screenql():
+    import app.main  # noqa: F401 - registers the breakouts and Legends sources
+    from app.screener import compile_screen
+    for screen in tx.load().screens:
+        resolved, why = lib.resolve(screen)
+        assert resolved is not None, f"{screen.id}: {why}"
+        _, validated = compile_screen(resolved.text, base_tf=resolved.base_tf, params=resolved.params)
+        assert validated.ok, (screen.id, [p.message for p in validated.problems])
+
+
+def test_the_starters_text_matches_the_frontend_contract():
+    rows = json.loads(STARTERS_FILE.read_text(encoding="utf-8"))["starters"]
+    assert {r["id"]: (r["text"], r["base_tf"]) for r in rows} == {k: tuple(v) for k, v in lib.STARTERS.items()}
+
+
+def test_every_long_screen_has_a_checked_mirror_or_a_reason():
+    import app.main  # noqa: F401
+    from app.screener import compile_screen
+    taxonomy = tx.load()
+    entries = {m["mirror_of"]: m for m in lib.mirrors(taxonomy)}
+    long_ids = {s.id for s in taxonomy.screens if s.tags.get("direction") == "long"}
+    assert set(entries) == long_ids
+    frame = synthetic_bars(400, tf="1d", seed=5)
+    level = float(frame["high"].max() + frame["low"].min())
+    for screen in taxonomy.screens:
+        if screen.id not in entries:
+            continue
+        m = entries[screen.id]
+        assert m["id"] == screen.id + ".short" and m["direction"] == "short" and (m["text"] is None) != (m["reason"] is None)
+        assert tx.advice_words(m["name"]) == []
+        if m["text"] is None:
+            continue
+        _, validated = compile_screen(m["text"], base_tf=m["base_tf"])
+        assert validated.ok, (m["id"], [p.message for p in validated.problems])
+        if m["how"] == "template_down_side":
+            assert '"down"' in m["text"] and '"up"' not in m["text"]
+            continue
+        resolved, _ = lib.resolve(screen)
+        original = lib.inline_params(parse(resolved.text), resolved.params)
+        mine, theirs = _value(parse(m["text"]), frame, "1d"), _value(original, mr.reflect_bars(frame, level), "1d")
+        assert mine.fillna(False).astype(bool).tolist() == theirs.fillna(False).astype(bool).tolist(), m["id"]
+    # what the reviewed filing expects (OPEN_QUESTIONS TX2-2): the starters and five Legends mirror; two Legends do not
+    assert entries["starter.oversold"]["text"] == "RSI(14) >= 70"
+    assert entries["legends.turtle_channel_breakout"]["text"] == "low < Min(low, 20)[1]"
+    assert entries["legends.minervini_trend_template"]["text"] is None and entries["legends.darvas_box_breakout"]["text"] is None
+
+
+# --- watch-then-trigger lists ------------------------------------------------------------------------------------------
+
+def test_the_library_lint_passes():
+    assert lib.lint() == []
+
+
+def test_the_transition_is_the_trigger_after_a_ready_bar_and_reads_no_future_bar():
+    frame = synthetic_bars(600, tf="5m", seed=7)
+    ready, trigger = parse("close > EMA(close, 20)"), parse("close > high[1]")
+    r, t = _value(ready, frame, "5m").fillna(False).astype(bool), _value(trigger, frame, "5m").fillna(False).astype(bool)
+    hit = _value(lib.transition_ast(ready, trigger), frame, "5m").fillna(False).astype(bool)
+    assert hit.tolist() == (t & r.shift(1, fill_value=False)).tolist() and hit.sum() > 0
+    cut = 400                                                             # no look-ahead: the past does not change
+    assert _value(lib.transition_ast(ready, trigger), frame.iloc[:cut], "5m").fillna(False).astype(bool).tolist() == hit.iloc[:cut].tolist()
+
+
+def test_watch_split_and_confluence_ranking():
+    split = lib.watch_split({"A": (True, None), "B": (True, None), "C": (False, "not enough history on 1d")},
+                            {"A": (True, None), "B": (False, None)}, ["A", "B", "C", "D"])
+    assert split["triggered"] == ["A"] and split["ready"] == ["B"] and split["neither"] == ["C", "D"]
+    assert split["not_evaluated"] == {"C": "not enough history on 1d"}
+    s = [lib.Resolved("p", "P", "price_action", "breakout", "long", "x", "close > 1", "1d"),
+         lib.Resolved("i", "I", "indicator", "momentum", "long", "x", "close > 1", "1d"),
+         lib.Resolved("i2", "I2", "indicator", "pullback", "long", "x", "close > 1", "1d")]
+    results = {"p": {"X": (True, None), "Y": (False, None)}, "i": {"Y": (True, None), "Z": (True, None)}, "i2": {"Z": (True, None)}}
+    out = lib.confluence(s, results, ["Y", "X", "Z", "W"])
+    assert [(r["symbol"], r["method_count"], r["screen_count"]) for r in out["rows"]] == [("Z", 1, 2), ("X", 1, 1), ("Y", 1, 1)]
+    results["p"]["Z"] = (True, None)
+    out = lib.confluence(s, results, ["Y", "X", "Z", "W"])
+    assert out["rows"][0]["symbol"] == "Z" and out["rows"][0]["methods"] == ["indicator", "price_action"]
+    assert out["unflagged"] == ["W"] and tx.advice_words(out["note"]) == []
+
+
+# --- API ---------------------------------------------------------------------------------------------------------------
+
+def _bars(step, days=120):
+    idx = pd.date_range("2026-01-01", periods=days, freq="1D", tz="UTC")
+    closes = 300 + np.arange(days) * step
+    return [OHLCVBar(timestamp=t.to_pydatetime(), open=c - 0.5, high=c + 1, low=c - 1, close=float(c), volume=1000.0) for t, c in zip(idx, closes)]
+
+
+@pytest.fixture
+def fake_bars(monkeypatch):
+    from app.brokers import token_lifecycle
+    from app.market_data import candles_routes, service
+
+    async def pick(session, tenant_id, broker, label):
+        return types.SimpleNamespace(broker_name="fake")
+
+    async def candles(self, symbol, exchange="NSE", interval="1min", now=None):
+        return _bars({"UP": 2.0, "DOWN": -2.0}.get(symbol, 0.0))
+    monkeypatch.setattr(candles_routes, "_pick_record", pick)
+    monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
+    monkeypatch.setattr(service.MarketDataService, "get_candles", candles)
+
+
+def test_the_routes_are_off_by_default():
+    headers, _ = _owner("tx2-off@example.com")
+    _set_flags(screener_v2=True, screener_gallery=True)
+    try:
+        for r in (client.get("/api/screener/library/mirrors", headers=headers),
+                  client.get("/api/screener/library/watch-lists", headers=headers),
+                  client.post("/api/screener/library/confluence", json={"screens": ["a", "b"], "symbols": ["X"]}, headers=headers),
+                  client.post("/api/screener/library/watch-trigger", json={"list_id": "watch.rsi_oversold_turn", "symbols": ["X"]},
+                              headers=headers)):
+            assert r.status_code == 503 and r.headers.get("X-Feature-Disabled") == lib.FLAG
+    finally:
+        _set_flags(screener_v2=False, screener_gallery=False)
+    assert lib.FLAG in controls.DEFAULT_OFF_FLAGS and lib.FLAG in controls.FEATURE_FLAGS
+
+
+def test_mirrors_and_watch_lists_endpoints(tx2_on):
+    headers, _ = _owner("tx2-lists@example.com")
+    body = client.get("/api/screener/library/mirrors", headers=headers).json()
+    ids = {m["id"] for m in body["mirrors"]}
+    assert "starter.momentum.short" in ids and not any(i.startswith(("legends.", "breakouts.")) for i in ids)   # their flags are off
+    lists = client.get("/api/screener/library/watch-lists", headers=headers).json()["lists"]
+    assert {w["id"] for w in lists} == set(lib.WATCH_BY_ID) and all("Count(1, " in w["transition"] for w in lists)
+
+
+def test_confluence_ranks_symbols_by_methods_with_each_screens_result(tx2_on, fake_bars):
+    headers, _ = _owner("tx2-confluence@example.com")
+    saved = client.post("/api/screener/screens", json={"name": "New 10-day high", "source": "close > Max(high, 10)[1]"}, headers=headers).json()
+    body = {"screens": ["starter.momentum", "starter.daily_trend", "starter.daily_trend.short", f"saved:{saved['id']}"],
+            "symbols": ["up", "DOWN", "FLAT"]}
+    r = client.post("/api/screener/library/confluence", json=body, headers=headers)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert [row["symbol"] for row in out["rows"]] == ["UP", "DOWN"]
+    up = out["rows"][0]
+    assert up["methods"] == ["indicator", "my_screens"] and up["screen_count"] == 3
+    assert {s["ref"] for s in up["screens"]} == {"starter.momentum", "starter.daily_trend", f"saved:{saved['id']}"}
+    down = out["rows"][1]
+    assert [s["ref"] for s in down["screens"]] == ["starter.daily_trend.short"]
+    assert out["sources"]["1d"]["data_source"] == "broker:fake" and "recommendation" in out["disclaimer"]
+    other, _ = _owner("tx2-confluence-other@example.com")
+    assert client.post("/api/screener/library/confluence", json=body, headers=other).status_code == 404     # not their saved screen
+    hidden = client.post("/api/screener/library/confluence", json={"screens": ["starter.momentum", "legends.turtle_channel_breakout"],
+                                                                   "symbols": ["UP"]}, headers=headers)
+    assert hidden.status_code == 422 and "feature is off" in hidden.text                                   # Legends flag off
+    nomirror = client.post("/api/screener/library/confluence", json={"screens": ["starter.momentum", "starter.momentum.short.short"],
+                                                                     "symbols": ["UP"]}, headers=headers)
+    assert nomirror.status_code == 422
+    assert client.post("/api/screener/library/confluence", json={"screens": ["starter.momentum", "starter.momentum"], "symbols": ["UP"]},
+                       headers=headers).status_code == 422
+
+
+def test_watch_trigger_lists_ready_and_triggered(tx2_on, fake_bars):
+    headers, _ = _owner("tx2-watch@example.com")
+    r = client.post("/api/screener/library/watch-trigger", json={"ready": "close > SMA(close, 5)", "trigger": "close > high[1]",
+                                                                 "symbols": ["UP", "DOWN"]}, headers=headers)
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["triggered"] == ["UP"] and out["ready"] == [] and out["neither"] == ["DOWN"]
+    assert out["transition_text"] == "Count(1, close > SMA(close, 5))[1] >= 1 AND close > high[1]"
+    saved = client.post("/api/screener/screens", json={"name": "alert me", "source": out["transition_text"]}, headers=headers)
+    assert saved.status_code == 201                                                # the transition saves as a screen to alert on
+    waiting = client.post("/api/screener/library/watch-trigger", json={"ready": "close > SMA(close, 5)", "trigger": "close > high[1] + 100",
+                                                                       "symbols": ["UP"]}, headers=headers).json()
+    assert waiting["ready"] == ["UP"] and waiting["triggered"] == []
+    listed = client.post("/api/screener/library/watch-trigger", json={"list_id": "watch.pullback_ema20", "symbols": ["UP"]}, headers=headers)
+    assert listed.status_code == 200 and "$" not in listed.json()["transition_text"]
+    assert client.post("/api/screener/library/watch-trigger", json={"list_id": "nope", "symbols": ["UP"]}, headers=headers).status_code == 404
+    bad = client.post("/api/screener/library/watch-trigger", json={"ready": "close >", "trigger": "close > 1", "symbols": ["UP"]}, headers=headers)
+    assert bad.status_code == 422

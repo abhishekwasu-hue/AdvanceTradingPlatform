@@ -226,3 +226,16 @@ def test_smtp_starttls_verifies_the_server_certificate(monkeypatch):
     assert isinstance(context, ssl.SSLContext)
     assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname is True
     assert seen.get("sent") is True
+
+
+def test_content_type_header_cannot_override_the_escaping_choice():
+    """S10 re-check LOW-5: a `Content-Type` header overrode content_type after escaping was chosen from content_type,
+    so JSON-escaped values could reach a form-parsing gateway (`&To=` injection). The header is now reserved."""
+    import pytest
+
+    from app.alerts.channels import valid_headers
+
+    for name in ("Content-Type", "content-type", "CONTENT-TYPE"):
+        with pytest.raises(ValueError):
+            valid_headers({name: "application/x-www-form-urlencoded"})
+    assert valid_headers({"Authorization": "Bearer x"}) == {"Authorization": "Bearer x"}

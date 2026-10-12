@@ -146,7 +146,7 @@ class PushConfig(BaseModel):
 _HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,100}$")
 _HEADER_VALUE = re.compile(r"^[\t\x20-\x7e]{0,2000}$")
 # Framing / routing headers the HTTP client owns: a user value would smuggle a second request or retarget this one.
-RESERVED_HEADERS = {"host", "content-length", "transfer-encoding", "connection", "te", "trailer", "upgrade", "keep-alive",
+RESERVED_HEADERS = {"host", "content-type", "content-length", "transfer-encoding", "connection", "te", "trailer", "upgrade", "keep-alive",
                     "proxy-connection", "proxy-authorization"}
 MAX_HEADERS = 20
 _SMTP_HOST = re.compile(r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$|^[0-9a-f:.]{2,45}$")

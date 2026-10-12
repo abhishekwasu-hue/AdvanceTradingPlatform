@@ -706,10 +706,12 @@ def _mcx_frame():
     return sessions_frame(days, starts={k: "03:30" for k in range(22)})  # 09:00 IST
 
 
-def test_currency_derivatives_have_their_own_clock():
-    assert mcal.session_family("CDS") == mcal.session_family("BCD") == "CDS" and mcal.session_family("NFO") == "NSE"
+def test_currency_derivatives_have_their_own_clock_in_the_screener_only():
     cds = ses.calendar_for("CDS")
-    assert (cds.open, cds.close) == (time(9, 0), time(17, 0))
+    assert (cds.name, cds.open, cds.close) == ("CDS", time(9, 0), time(17, 0)) and ses.calendar_for("BCD").name == "CDS"
+    # the platform calendar - the trading worker's clock - is untouched (ADR-0004): CDS stays on the equity family
+    assert mcal.session_family("CDS") == mcal.session_family("NSE_CD") == "NSE" and "CDS" not in mcal.EXCHANGE_SESSIONS
+    assert mcal.intraday_cutoffs("CDS") == mcal.intraday_cutoffs("NSE") == (time(15, 0), time(15, 15))
 
 
 def test_mcx_screenql_and_the_breakout_run_read_the_same_exchange_clock(monkeypatch):
@@ -813,3 +815,36 @@ def test_the_range_must_be_a_whole_number_of_bars_at_validation():
     assert problems('ORBreakout("up", 20)', "15m") == ['ORBreakout: minutes 20 is not a whole number of @15m bars (15 minutes each)']
     assert problems('ORBreakout("up", 20)', "5m") == [] and problems('ORBreakout("up")', "15m") == []
     assert problems('ORBreakout("up", 30)', "15m") == [] and problems('ORBreakout("up", 15)', "3m") == []
+
+
+def test_the_alert_engine_rechecks_the_clock_and_keeps_a_failing_screen_on_its_rule(monkeypatch):
+    from app.alerts import barclose
+    from app.db.models import AlertRuleRecord
+    from tests.test_auth_api import _session_factory
+    from tests.test_phase_l_ai import _owner
+    from tests.test_s4a_barclose import FakeFetch, _rule
+
+    _, me = _owner("bk2-engine-guards@example.com")
+    f = sessions_frame(history() + [orb_day()])
+    fetch = FakeFetch({"TCS": f.iloc[:ORB_BAR + 1]})
+    now = (f.index[ORB_BAR] + timedelta(minutes=6)).to_pydatetime()
+
+    def evaluate_once(rid):
+        async def go():
+            async with _session_factory() as session:
+                rule = await session.get(AlertRuleRecord, rid)
+                out = await barclose.evaluate_rule(session, rule, now, fetch)
+                problem = rule.last_problem
+                rule.status = "paused"
+                await session.commit()
+                return out, problem
+        return asyncio.run(go())
+    # a rule stored before the API refused it (or edited in the database): the engine refuses MCX session functions too
+    mcx = _rule(me["tenant_id"], symbol="TCS", condition='ORBreakout("up")', tf="5m", exchange="MCX")
+    (state, fired), problem = evaluate_once(mcx)
+    assert (state, fired) == ("unsupported", 0) and "NSE session clock" in problem
+    # a screen that fails at run time is that rule's problem (state error), not an exception out of the cycle
+    monkeypatch.setattr(barclose, "run_screen", lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom")))
+    nse = _rule(me["tenant_id"], symbol="TCS", condition='ORBreakout("up")', tf="5m")
+    (state, fired), problem = evaluate_once(nse)
+    assert (state, fired) == ("error", 0) and "boom" in problem

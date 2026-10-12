@@ -46,20 +46,16 @@ class ExchangeSession:
 EXCHANGE_SESSIONS = {
     "NSE": ExchangeSession("NSE", time(9, 15), time(15, 30), time(15, 0), time(15, 15), holiday_calendar="NSE"),
     "MCX": ExchangeSession("MCX", time(9, 0), time(23, 30), time(23, 0), time(23, 15), holiday_calendar="MCX"),
-    # Currency derivatives (NSE CDS / BSE BCD) trade 09:00-17:00 IST - not the equity clock. Cut-offs keep the equity
-    # margins (30 / 15 minutes before the close; open question BK2-8); holidays follow the NSE calendar.
-    "CDS": ExchangeSession("CDS", time(9, 0), time(17, 0), time(16, 30), time(16, 45), holiday_calendar="NSE"),
     "CRYPTO": ExchangeSession("CRYPTO", time(0, 0), time(23, 59, 59), None, None, weekdays_only=False, always_open=True,
                               holiday_calendar="CRYPTO"),
 }
 # Segments that trade on an exchange family's clock and calendar.
 _SESSION_ALIASES = {"NSE": "NSE", "BSE": "NSE", "NFO": "NSE", "BFO": "NSE", "NSE_EQ": "NSE", "NSE_FO": "NSE", "BSE_EQ": "NSE",
-                    "MCX": "MCX", "MCX_FO": "MCX", "CDS": "CDS", "NSE_CD": "CDS", "BCD": "CDS", "CRYPTO": "CRYPTO", "BINANCE": "CRYPTO", "COINDCX": "CRYPTO", "WAZIRX": "CRYPTO"}
+                    "MCX": "MCX", "MCX_FO": "MCX", "CRYPTO": "CRYPTO", "BINANCE": "CRYPTO", "COINDCX": "CRYPTO", "WAZIRX": "CRYPTO"}
 
 
 def session_family(exchange: Optional[str]) -> str:
-    """NFO/BFO/BSE -> NSE clock; MCX segments -> MCX; currency derivatives (CDS / BCD) -> CDS; crypto venues -> CRYPTO;
-    unknown -> NSE."""
+    """NFO/BFO/BSE -> NSE clock; MCX segments -> MCX; crypto venues -> CRYPTO; unknown -> NSE."""
     return _SESSION_ALIASES.get((exchange or "NSE").upper(), "NSE")
 
 

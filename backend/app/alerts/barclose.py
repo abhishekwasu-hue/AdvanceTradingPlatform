@@ -253,31 +253,36 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
-        from app.screener.breakouts.gate import flagged_calls
+        from app.screener.breakouts.gate import alert_clock_refusal, flagged_calls
         blocked = flagged_calls(ast)
         if blocked and (not breakouts_enabled or intrabar):
             # U6 BK1: the rule stays active and resumes when the flag is back; breakout rules fire on bar close only
             rule.last_problem = (f"{', '.join(n + '()' for n in blocked)}: the breakout screens are off for this organisation (flag {BREAKOUT_FLAG})"
                                  if not breakouts_enabled else "breakout rules fire on bar close only, not intrabar")
             return "unsupported", 0
+        clock = alert_clock_refusal(ast, rule.exchange) if blocked else None
+        if clock:                                                 # U6 BK2: session functions on the NSE clock only (BK2-5)
+            rule.last_problem = clock
+            return "unsupported", 0
         current, problems = await _current_universe(session, rule, symbols, bar, validated.fetch_lookback, fetch, cache, forming=intrabar,
                                                     per_user=per_user)
+        if not current:
+            rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
+            return "waiting", 0
+        frames = {d.symbol: d.frames[rule.base_tf] for d in current}
+        result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
+                      tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar)
+        if result_key in cache.results:
+            cache.reused_results += 1
+        else:
+            # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
+            # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
+            # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.
+            cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
-    if not current:
-        rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
-        return "waiting", 0
     fired = 0
-    frames = {d.symbol: d.frames[rule.base_tf] for d in current}
-    result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar, tuple(frames),
-                  json.dumps(params, sort_keys=True, default=str), intrabar)
-    if result_key in cache.results:
-        cache.reused_results += 1
-    else:
-        # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
-        # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
-        cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params)
     for match in cache.results[result_key]:
         values = _values(frames[match.symbol])
         if intrabar:

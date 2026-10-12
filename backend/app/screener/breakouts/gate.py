@@ -40,9 +40,12 @@ def session_calls(ast: Any) -> List[str]:
 def alert_clock_refusal(ast: Any, exchange: Optional[str]) -> Optional[str]:
     """U6 BK2 (review M1): the bar-close alert engine keeps the NSE clock (expected bars 09:15-15:30), so an alert rule
     on another exchange's session (MCX, currency) cannot use the session functions yet - refused with the reason."""
-    from app.market_data.calendar import session_family
+    from app.screener.breakouts.session import calendar_for
     names = session_calls(ast)
-    family = session_family(exchange)
+    try:
+        family = calendar_for(exchange).name                          # CDS has its own clock in the screener only
+    except ValueError:
+        family = "CRYPTO"
     if not names or family == "NSE":
         return None
     return (f"{', '.join(n + '()' for n in names)}: bar-close alerts follow the NSE session clock; on {family} these session "

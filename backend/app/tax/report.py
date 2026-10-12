@@ -54,28 +54,40 @@ _ACT_2025_SOURCE = {"url": "https://www.incometaxindia.gov.in/w/income-tax-act-2
                     "reference": "CBDT: Income-tax Act, 2025 comes into force from 1st April, 2026 (s.1(3) of the Act; text as amended by "
                                  "the Finance Act 2026: https://www.incometaxindia.gov.in/documents/d/guest/"
                                  "income_tax_act_2025_as_amended_by_fa_act_2026-pdf)", "date": "2026-04-01", "verify": ""}
+_URL_UNCONFIRMED = "The page URL was not confirmed to carry this section (the site has several pages per section)."
 STATUTES: Dict[str, Dict[str, Any]] = {
     "1961": {
         "act": "Income-tax Act, 1961",
-        "vda_tax": {"section": "s.115BBH", "url": "https://www.incometaxindia.gov.in/w/section-115bbh-1",
-                    "reference": "s.115BBH Income-tax Act 1961 (Finance Act 2022)", "verify": ""},
+        "year_word": "financial year",
+        "vda_tax": {"section": "s.115BBH", "url": "https://www.incometaxindia.gov.in/w/section-115bbh",
+                    "reference": "s.115BBH Income-tax Act 1961 (Finance Act 2022; explained in CBDT Circular 23/2022)", "verify": ""},
         "vda_tds": {"section": "s.194S", "url": "https://www.incometaxindia.gov.in/w/section-194s",
-                    "reference": "s.194S Income-tax Act 1961 (CBDT Circular 23/2022)", "verify": ""},
+                    "reference": "s.194S Income-tax Act 1961 (guidelines: CBDT Circular 13/2022 of 22 Jun 2022, https://www.incometaxindia"
+                                 ".gov.in/w/circular-no.-13/2022-guidelines-for-removal-of-difficulties-under-sub-section-6-of-section-"
+                                 "194s-of-the-income-tax-act-1961, and Circular 14/2022 of 28 Jun 2022)", "verify": ""},
         "tax_audit": {"section": "s.44AB", "url": "", "reference": "s.44AB Income-tax Act 1961 (10 crore turnover when receipts and "
                                                                   "payments are digital)",
                       "verify": "No official page for s.44AB and its 10 crore proviso was read."},
     },
     "2025": {
         "act": "Income-tax Act, 2025",
+        "year_word": "tax year",
         "vda_tax": {"section": "the Income-tax Act 2025 section on income from transfer of a VDA", "url": "",
                     "reference": "Income-tax Act 2025 (the successor of s.115BBH)",
                     "verify": "The section of the Income-tax Act 2025 that carries the 30% rate was not found in an official text."},
         "vda_tds": {"section": "s.393(1) (Table, Sl. 8(vi))", "url": "https://www.incometaxindia.gov.in/w/section-393-5",
-                    "reference": "s.393(1) Table Sl. 8(vi) Income-tax Act 2025", "verify": ""},
+                    "reference": "s.393(1) Table Sl. 8(vi) Income-tax Act 2025", "verify": _URL_UNCONFIRMED},
         "tax_audit": {"section": "the Income-tax Act 2025 tax-audit section", "url": "", "reference": "Income-tax Act 2025 (the successor of s.44AB)",
                       "verify": "The section and threshold of the tax audit in the Income-tax Act 2025 were not found in an official text."},
     },
 }
+# A professional referral is a protective line, not advice (#225 review); the 2025 wording is fixed by that review.
+CA_REFERRAL = {"1961": "Verify with a chartered accountant before filing.",
+               "2025": "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."}
+# Fix (BT1b) limitation: the trading worker files a deployment's trades under one acting user per organisation, so an
+# automated trade can carry another member's user id (OPEN_QUESTIONS TX-3; fixed on claude/fix-worker-acting-user).
+AUTOMATED_NOTE = ("{count} of these trades came from automated deployments: automated trades are attributed to the deployment's "
+                  "acting user, which may not be the member who set the deployment up (OPEN_QUESTIONS TX-3).")
 
 
 def statute(fy: str) -> Dict[str, Any]:
@@ -91,10 +103,11 @@ def disclaimer(fy: str) -> str:
         vda = (f"crypto (VDA) gains are taxed at a flat rate under {s['vda_tax']['section']} of the {s['act']} with no loss set-off, "
                f"and TDS under {s['vda_tds']['section']} is withheld by the exchange.")
     else:
-        vda = (f"for this year the {s['act']} applies (in force from 1 Apr 2026): VDA gains are taxed at a flat rate with no loss "
+        vda = (f"for this tax year the {s['act']} applies (in force from 1 Apr 2026): VDA gains are taxed at a flat rate with no loss "
                f"set-off (section to be verified) and TDS under {s['vda_tds']['section']} is withheld by the exchange.")
     return ("This report is not tax advice. Estimates for reconciliation with your broker's tax P&L statement; it is not a return and "
-            "files nothing. Equity intraday and F&O are business income (speculative / non-speculative); " + vda)
+            "files nothing. Equity intraday and F&O are business income (speculative / non-speculative); " + vda + " "
+            + CA_REFERRAL[s["key"]])
 
 
 
@@ -265,6 +278,7 @@ def build_report(trades: List[TradeRecord], fy: str, *, mode: Optional[str], met
     """`method`: the F&O turnover method (`TURNOVER_METHODS`); None = the configured `TAX_FNO_TURNOVER_METHOD`."""
     method = turnover_method(method)
     law = statute(fy)
+    automated = sum(1 for t in trades if getattr(t, "deployment_id", None) is not None)
     fy_start, fy_end = (_ist_day(t) for t in fy_bounds(fy))
     totals = {kind: ClassTotals() for kind in CLASSES}
     for trade in trades:
@@ -302,7 +316,8 @@ def build_report(trades: List[TradeRecord], fy: str, *, mode: Optional[str], met
                    "when receipts and payments are digital; " if law["key"] == "1961" else
                    f"Tax audit: the {law['act']} has a tax-audit provision (section and threshold to be verified; under s.44AB of the "
                    "1961 Act the line was 10 crore of turnover when receipts and payments are digital); ")
-                  + ("this report's turnover crosses 10 crore." if audit_requirement else "this report's turnover is below 10 crore.")],
+                  + ("this report's turnover crosses 10 crore." if audit_requirement else "this report's turnover is below 10 crore."),
+                  *([AUTOMATED_NOTE.format(count=automated)] if automated else [])],
         "statute": law, "scope": "your own trades",
         "rates": rates_on(fy_start), "rate_sources": sources_on(fy_start), "rates_as_of": fy_start.isoformat(),
         "rate_changes": changes,
@@ -332,7 +347,7 @@ def to_csv(report: Dict) -> str:
     for key in ("vda_tax", "vda_tds", "tax_audit"):
         cited = law.get(key)
         if cited:
-            writer.writerow(["source", law["act"], cited["section"], cited["url"] or "verify: " + cited["verify"]])
+            writer.writerow(["source", law["act"], cited["section"], cited["url"], ("verify: " + cited["verify"]) if cited["verify"] else ""])
     return out.getvalue()
 
 

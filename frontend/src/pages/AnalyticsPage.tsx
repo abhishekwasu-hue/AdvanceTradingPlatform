@@ -34,7 +34,7 @@ function TaxReportCard() {
         {report && <span className="text-fg-muted">{report.trades} closed trades · net {money(report.net_pnl)}</span>}
         {report && <span className="text-fg-muted" title={report.turnover_method_label}>F&amp;O turnover: {report.turnover_method === "ABS_PNL" ? "absolute P&L" : "absolute P&L + option premium sold"}</span>}
       </div>
-      <div className="text-[11px] text-fg-muted mb-2">Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement.</div>
+      <div className="text-[11px] text-fg-muted mb-2">Not tax advice. Estimates from your own trades only, to reconcile with your broker&apos;s statement; verify with a chartered accountant.</div>
       {error && <div className="text-xs text-down">{error}</div>}
       {report && (
         <table className="w-full text-xs">

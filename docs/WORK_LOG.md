@@ -1857,3 +1857,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   TX-2 (MCX commodity-option CTT) stays open.
 - Tests: `tests/test_tax_report_own.py` (members A and B and the owner each see only their own trades in the report,
   the CSV and the years; statute by year; disclaimer wording); `test_phase_p_closure.py` updated for FY 2026-27.
+- #225 review fixes: chartered-accountant referral restored (backend disclaimer and the Analytics banner; for FY 2026-27
+  on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
+  `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
+  "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).

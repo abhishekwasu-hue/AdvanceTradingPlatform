@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 
 from app.ai.wording import banned_terms
 from app.market_data.calendar import IST
+from app.screener.taxonomy import advice_words
 from app.tax import report as tax
 from tests.test_auth_api import client
 from tests.test_phase_p_closure import _seed
-from tests.test_trading_worker import _tenant
+from tests.test_trading_worker import _deploy, _tenant
 from tests.test_z3_members import member
 
 
@@ -74,8 +75,11 @@ def test_disclaimer_cites_1961_sections_up_to_fy_2025_26_and_the_2025_act_after(
     assert "115BBH" not in new and "194S" not in new and "Income-tax Act, 2025" in new and "s.393(1)" in new
     assert "to be verified" in new
     for text in (old, new):
-        assert text.startswith("This report is not tax advice.") and banned_terms(text) == []
-        assert "chartered accountant before" not in text
+        assert text.startswith("This report is not tax advice.") and banned_terms(text) == [] and advice_words(text) == []
+    # #225 review: the professional referral stays; from FY 2026-27 it says the 2025 sections are not yet confirmed.
+    assert old.endswith("Verify with a chartered accountant before filing.")
+    assert new.endswith("Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed.")
+    assert "tax year" in new
 
 
 def test_report_notes_and_csv_carry_the_years_statute():
@@ -88,6 +92,23 @@ def test_report_notes_and_csv_carry_the_years_statute():
     for body in (old, new):
         assert all(banned_terms(n) == [] for n in body["notes"]) and not any("should confirm" in n for n in body["notes"])
     csv_new = tax.to_csv(new)
-    assert 'source,"Income-tax Act, 2025","s.393(1) (Table, Sl. 8(vi))",https://www.incometaxindia.gov.in/w/section-393-5' in csv_new
+    assert ('source,"Income-tax Act, 2025","s.393(1) (Table, Sl. 8(vi))",https://www.incometaxindia.gov.in/w/section-393-5,'
+            'verify: The page URL was not confirmed') in csv_new
     assert "verify: The section of the Income-tax Act 2025 that carries the 30% rate" in csv_new
-    assert "https://www.incometaxindia.gov.in/w/section-115bbh-1" in tax.to_csv(old)
+    csv_old = tax.to_csv(old)
+    assert "https://www.incometaxindia.gov.in/w/section-115bbh," in csv_old and "Circular 13/2022" not in csv_old
+    assert "Circular 13/2022" in old["statute"]["vda_tds"]["reference"] and "23/2022" not in old["statute"]["vda_tds"]["reference"]
+
+
+def test_automated_trades_carry_the_attribution_limitation():
+    owner = _org()
+    _seed(owner["tenant_id"], owner["user_id"], symbol="TCS", entry=100.0, exit_=101.0, qty=10, pnl=10.0, exit_at=_at(2026, 7, 1))
+    manual = client.get("/api/tax/report?fy=2026-27", headers=owner["headers"]).json()
+    assert not any("acting user" in n for n in manual["notes"])
+    dep = _deploy(owner, mode="LIVE")
+    _seed(owner["tenant_id"], owner["user_id"], symbol="INFY", entry=100.0, exit_=101.0, qty=10, pnl=10.0, exit_at=_at(2026, 7, 2),
+          deployment_id=dep)
+    body = client.get("/api/tax/report?fy=2026-27", headers=owner["headers"]).json()
+    note = next(n for n in body["notes"] if "acting user" in n)
+    assert note.startswith("1 of these trades came from automated deployments") and "OPEN_QUESTIONS TX-3" in note
+    assert banned_terms(note) == []

@@ -1128,6 +1128,40 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
   (P1 §1.6), the Turtles "Then" template (ATR sizing, 2N stop), short mirrors (TX2), the remaining catalogue (LG2,
   LG3), search by style chips beyond the taxonomy's setup chips.
 
+## U7 LG2: five more Legends cards (flag `screener_legends_lg2`)
+
+The spec's "LG2 remaining trend / pullback / options" (U7 §6), limited to cards whose rules a published work states
+and that run on bars alone (OPEN_QUESTIONS LG2-1 lists what is left out and why).
+
+- **The five cards.** They are in `legends.json` with `"slice": "lg2"`, and the same lint as LG1 applies to the whole
+  library.
+  - Livermore-style pivotal-point breakout (*How to Trade in Stocks*, 1940; `unverified`: no catalogue record found).
+  - Wyckoff-style trading-range spring (Pruden, *The Three Skills of Top Trading*, 2007).
+  - Raschke-style false 20-day breakdown reversal (the second *Street Smarts* card; the branded name stays out of the
+    title).
+  - Crabel-style opening-range breakout (5-minute bars, `ORHigh`).
+  - Tudor Jones-style 200-day regime filter (the interview in Robbins, *Money: Master the Game*, 2014).
+  - The screens use only plain registry functions: no breakout or zone family and no new function, so there is no
+    new Z10-a causal case.
+- **The flag.** `screener_legends_lg2` is default OFF, on top of `screener_legends`.
+  - API: `GET /api/screener/legends` adds the LG2 cards only while it is on (`legends.payload(..., slices=)`), and
+    `/legends/{id}` answers 404 for an LG2 card while it is off.
+  - Taxonomy: a per-screen flag (`taxonomy.register_screen_flags`; route `hidden_ids`) hides the LG2 screens and their
+    counts. The cards keep the `legends.` ids and source, so the gallery's card rule is unchanged.
+  - No new route.
+- **Sources.** `legends_sources.json` adds `livermore_1940`, `pruden_2007` and `robbins_2014`, each with its public
+  record URLs and a review note (LG2-3). The `covers` of `raschke_connors_1995` now also names the false-breakout
+  reversal.
+- **Tests.** `tests/test_n3_lg2_legends.py` covers:
+  - the slice, lint and links;
+  - the review status of the new sources;
+  - no new or flagged function;
+  - a positive and a negative bar fixture per card through `run_screen`;
+  - the flag: off hides the cards and taxonomy entries, on shows them, LG2 alone shows nothing;
+  - per-screen hiding in the taxonomy.
+
+  The LG1 tests read the LG1 slice. The frontend samples are regenerated (the LG1 view; LG2 stays hidden in them).
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

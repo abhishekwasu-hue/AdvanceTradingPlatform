@@ -8,7 +8,8 @@ Classes (the sweep checks each against the route's dependencies and with real re
 - "admin"          SUPER_ADMIN only (a tenant OWNER gets 403);
 - "owner"          the organisation's OWNER (team:manage); a plain member and a VIEWER get 403;
 - "trader"         a write that needs a trading role and scope; a VIEWER and a member denied every scope get 403;
-- "member"         a read by any logged-in member of the organisation;
+- "member"         a read by any logged-in member of the organisation; "member: <why>" names a read that returns only the
+                   caller's own rows (never another member's, BT1b);
 - "self: <why>"    a write any member may make, because it touches only the caller's own data or computes and stores
                    nothing (a VIEWER may do it).
 Every route except "public" refuses an anonymous request, and none lets another organisation read or change this
@@ -41,6 +42,8 @@ P_UNSUBSCRIBE = "public: signed one-click unsubscribe link"
 P_REGIMES = "public: the market regime catalogue"
 P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the sign-up form links them before an account exists"
 P_STATUS_PAGE = "public: the public status page (component states and the incident banner only; rate limited)"
+M_OWN_TAX = ("member: the caller's own closed trades only (tenant and user) - a member never sees another member's trades and "
+             "the organisation owner sees only their own (BT1b; tests/test_tax_report_own.py)")
 S_OWN_LEGAL = "self: records the caller's own acceptance of the legal documents' current versions"
 S_SUPPORT = "self: the support bot answers how-to questions from the docs; no tools, reads no positions or orders (rate limited)"
 S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor settings"
@@ -526,9 +529,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/system/ready"): P_HEALTH,
     ("GET", "/api/system/status"): P_HEALTH,
     ("GET", "/api/system/worker-status"): "member",
-    ("GET", "/api/tax/report"): "member",
-    ("GET", "/api/tax/report.csv"): "member",
-    ("GET", "/api/tax/years"): "member",
+    ("GET", "/api/tax/report"): M_OWN_TAX,
+    ("GET", "/api/tax/report.csv"): M_OWN_TAX,
+    ("GET", "/api/tax/years"): M_OWN_TAX,
     ("GET", "/api/team/invites"): "owner",
     ("POST", "/api/team/invites"): "owner",
     ("DELETE", "/api/team/invites/{invite_id}"): "owner",

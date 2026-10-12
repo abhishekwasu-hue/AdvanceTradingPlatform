@@ -258,3 +258,52 @@ def test_history_and_alerts_refuse_ownership_functions():
     ast, _ = compile_screen('HoldingChange("fii") > 1')
     with pytest.raises(HTTPException, match="422"):
         _ownership_check(ast)
+
+
+# --- review of S8 ----------------------------------------------------------------------------------------------------------------
+
+def test_a_correction_never_reaches_back_and_a_backfill_is_as_published():
+    """MED-1: rows in stored order; a later row for a quarter is known from when it was stored even when it cites an
+    earlier publication; a quarter loaded late (a backfill) is known from its cited publication - "as published" - and
+    fills in bars that had no pattern for it. Ties are broken by id."""
+    sym = f"OWC{uuid.uuid4().hex[:5].upper()}"
+    cid = _company(sym)
+    _seed(ShareholdingSnapshotRecord(company_id=cid, as_of_date=date(2025, 3, 31), promoter_pct=50.0, promoter_pledge_pct=0.0,
+                                     source_json=_cite(date(2025, 4, 20)), created_at=datetime(2025, 4, 25, tzinfo=UTC)),
+          ShareholdingSnapshotRecord(company_id=cid, as_of_date=date(2025, 3, 31), promoter_pct=40.0, promoter_pledge_pct=0.0,
+                                     source_json=_cite(date(2025, 4, 20)), created_at=datetime(2025, 8, 1, tzinfo=UTC)),       # a correction
+          ShareholdingSnapshotRecord(company_id=cid, as_of_date=date(2024, 12, 31), promoter_pct=45.0, promoter_pledge_pct=0.0,
+                                     source_json=_cite(date(2025, 1, 20)), created_at=datetime(2025, 9, 1, tzinfo=UTC)))       # a backfill
+
+    async def go(until):
+        async with _session_factory() as session:
+            return (await O.load(session, [sym], "NSE", until=until))[sym]
+    own = _run(go(None))
+    by_value = {p.stakes["promoter"]: p for p in own.patterns}
+    assert by_value[50.0].known_from == datetime(2025, 4, 21, 3, 45, tzinfo=UTC)
+    assert by_value[40.0].known_from == datetime(2025, 8, 1, tzinfo=UTC)                         # not 21 Apr
+    assert by_value[45.0].known_from == datetime(2025, 1, 21, 3, 45, tzinfo=UTC)                 # as published
+    days = _days(date(2025, 1, 1), 200)
+    held = pd.Series(_ev('Holding("promoter")', SymbolData(sym, {"1d": _frame(days)}, ownership=own)).to_numpy(), index=days)
+    assert held[date(2025, 5, 2)] == 50.0 and held[date(2025, 8, 1)] == 40.0 and held[date(2025, 2, 3)] == 45.0
+    early = _run(go(datetime(2025, 7, 1, tzinfo=UTC)))                                             # what was stored by then
+    held_then = pd.Series(_ev('Holding("promoter")', SymbolData(sym, {"1d": _frame(days)}, ownership=early)).to_numpy(), index=days)
+    assert held_then[date(2025, 5, 2)] == held[date(2025, 5, 2)]                                  # the correction never reaches back
+    tie = [O.Pattern(date(2025, 3, 31), datetime(2025, 4, 21, tzinfo=UTC), {"promoter": v}, datetime(2025, 4, 21, tzinfo=UTC), i)
+           for i, v in ((7, 30.0), (3, 20.0))]
+    assert O._known_patterns(tie, pd.Timestamp("2025-05-01", tz="UTC").value)[0].stakes["promoter"] == 30.0   # the higher id wins
+
+
+def test_days_to_event_vectorised_matches_the_bar_by_bar_rule():
+    days = _days(date(2025, 3, 1), 80)
+    rng = np.random.default_rng(5)
+    events = [O.Event("results", date(2025, 3, 1) + timedelta(days=int(d)), _at(date(2025, 3, 1) + timedelta(days=int(k))))
+              for d, k in zip(rng.integers(0, 120, 25), rng.integers(0, 100, 25))]
+    f = _frame(days)
+    got = O.days_to_event_series(SymbolData("S", {"1d": f}, ownership=O.Ownership([], events)), f, "1d", "results").to_numpy()
+    from app.screener.zones import _closes_ns
+    closes = _closes_ns(f.index, "1d")
+    for i, d in enumerate(days):
+        ahead = [e.day for e in events if pd.Timestamp(e.known_from).value <= closes[i] and e.day >= d]
+        expect = float((min(ahead) - d).days) if ahead else np.nan
+        assert (np.isnan(got[i]) and np.isnan(expect)) or got[i] == expect, (d, got[i], expect)

@@ -338,3 +338,120 @@ def test_sector_ranges_read_the_classification_history():
     ranges = _run(go())[isin]
     assert RK.sector_on(ranges, date(2025, 6, 30)) == "IT" and RK.sector_on(ranges, date(2025, 7, 1)) == "SERVICES"
     assert RK.sector_on(ranges, date(2025, 7, 1) - timedelta(days=200)) is None
+
+
+# --- review of S7a -----------------------------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("tree, why", [
+    ({"nodes": [{"name": "chain", "factor": "PCR()", "weight": 100}]}, "need data a ranking does not load"),
+    ({"nodes": [{"name": "zone", "factor": "ZoneStrength()", "weight": 100}]}, "need data a ranking does not load"),
+    ({"nodes": [{"name": "a/b", "factor": "close", "weight": 100}]}, "no '/'"),
+    ({"nodes": [{"name": "long", "factor": "PctChange(close, 300)", "weight": 100}]}, "at most 260 daily bars"),
+])
+def test_factors_read_bars_only_within_the_fetch_window(tree, why):
+    with pytest.raises(RK.RankingError, match=why):
+        _system(tree)
+
+
+def test_a_flagged_factor_needs_its_flag_everywhere():
+    t = _org("leafflag")
+    tree = {"nodes": [{"name": "relvol", "factor": "RelVolume(20)", "weight": 100}]}
+    refused = client.post("/api/screener/rankings", headers=t["headers"], json={"name": "Vol", "tree": tree})
+    assert refused.status_code == 422 and "screener_breakouts" in refused.text
+    run = client.post("/api/screener/rankings/run", headers=t["headers"], json={"tree": tree, "symbols": ["X"]})
+    assert run.status_code == 422 and "screener_breakouts" in run.text
+    _flag("screener_breakouts", t["tenant_id"])
+    assert client.post("/api/screener/rankings", headers=t["headers"], json={"name": "Vol", "tree": tree}).status_code == 201
+    _flag("screener_breakouts", t["tenant_id"], on=False)
+    gone = client.post("/api/screener/validate", headers=t["headers"], json={"source": 'RankScore("Vol") > 50'}).json()
+    assert not gone["ok"] and "screener_breakouts" in json.dumps(gone["problems"])
+
+
+def test_archiving_frees_the_name():
+    t = _org("rename")
+    sid = client.post("/api/screener/rankings", headers=t["headers"], json={"name": "Again", "tree": TREE}).json()["id"]
+    archived = client.post(f"/api/screener/rankings/{sid}/archive", headers=t["headers"]).json()
+    assert archived["name"] == f"Again (archived #{sid})"
+    assert client.post("/api/screener/rankings", headers=t["headers"], json={"name": "Again", "tree": TREE}).status_code == 201
+
+
+def test_the_history_ranking_has_a_work_budget(monkeypatch):
+    system = _system()
+    assert RK.history_work(system, 300, 260) == pytest.approx(sum(max(1.0, l.validated.cost) for l in system.leaves()) * 300 * 260)
+    from app.screener import backtest as B
+    t = _org("budget")
+    for name in (H.FLAG, B.FLAG):
+        _flag(name, t["tenant_id"])
+    stem = f"W{uuid.uuid4().hex[:4].upper()}"
+    frames, days = _universe(n=3, bars=200, seed=41)
+    for i, f in enumerate(frames.values()):
+        _seed(*_lake_rows(f"{stem}{i}", f))
+    monkeypatch.setattr(RK, "MAX_HISTORY_WORK", 10)
+    body = {"source": "close > 0", "start": str(days[110]), "end": str(days[190]), "universe": {"symbols": [f"{stem}{i}" for i in range(3)]},
+            "top_n": 1, "rank_system": "platform:Momentum"}
+    r = client.post("/api/screener/history/backtest", headers=t["headers"], json=body)
+    assert r.status_code == 422 and "more work than one backtest takes" in r.text
+
+
+def test_a_sector_neutral_backtest_reads_each_date_s_sector(monkeypatch):
+    """MED-4: a reclassification between rebalances - each date ranks within the sector the symbol had then."""
+    from app.screener import backtest as B
+    t = _org("reclass")
+    for name in (H.FLAG, B.FLAG):
+        _flag(name, t["tenant_id"])
+    stem = f"N{uuid.uuid4().hex[:4].upper()}"
+    frames, days = _universe(n=4, bars=200, seed=43)
+    names = [f"{stem}{i}" for i in range(4)]
+    for s, f in zip(names, frames.values()):
+        _seed(*_lake_rows(s, f))
+    switch = days[150]
+
+    async def ranges(session, symbols, start, end):
+        out = {s: [(date(2000, 1, 1), None, "IT" if i % 2 else "BANK")] for i, s in enumerate(symbols)}
+        out[names[0]] = [(date(2000, 1, 1), switch, "IT"), (switch, None, "BANK")]
+        return out
+    monkeypatch.setattr(RK, "sector_ranges", ranges)
+    seen = {}
+    real = RK.rank_at_dates
+
+    def spy(system, frames_, dates, sectors=None, eligible=None, scales=None):
+        seen.update(sectors or {})
+        return real(system, frames_, dates, sectors, eligible, scales)
+    monkeypatch.setattr(RK, "rank_at_dates", spy)
+    sid = client.post("/api/screener/rankings", headers=t["headers"], json={"name": "Neutral", "tree": {"nodes": [
+        {"name": "mom", "factor": "PctChange(close, 20)", "weight": 100, "neutral": "sector"}]}}).json()["id"]
+    assert sid
+    body = {"source": "close > 0", "start": str(days[120]), "end": str(days[190]), "universe": {"symbols": names}, "top_n": 1,
+            "rank_system": "Neutral"}
+    r = client.post("/api/screener/history/backtest", headers=t["headers"], json=body)
+    assert r.status_code == 200, r.text
+    before = [d for d in seen if d < switch]
+    after = [d for d in seen if d >= switch]
+    assert before and after
+    assert all(seen[d][names[0]] == "IT" for d in before) and all(seen[d][names[0]] == "BANK" for d in after)
+    # and the per-date sectors change that date's neutral percentile
+    rs = {"/mom": pd.DataFrame({n: [float(i)] for i, n in enumerate(names)}, index=[after[0]])}
+    sys_ = _system({"nodes": [{"name": "mom", "factor": "PctChange(close, 20)", "weight": 100, "neutral": "sector"}]})
+    a = RK.table(sys_, rs, [after[0]], {after[0]: seen[before[0]]}).loc[after[0], names[0]]
+    b = RK.table(sys_, rs, [after[0]], {after[0]: seen[after[0]]}).loc[after[0], names[0]]
+    assert a != b
+
+
+def test_a_screen_edit_is_checked_against_the_rules_that_run_it():
+    t = _org("ruleedit")
+    screen = client.post("/api/screener/screens", headers=t["headers"], json={"name": "s", "source": "close > SMA(close, 20)"}).json()
+    rule = client.post("/api/alerts/rules", headers=t["headers"], json={"name": "r", "kind": "screen", "screen_id": screen["id"], "symbols": ["X"]})
+    assert rule.status_code == 201, rule.text
+    edit = client.put(f"/api/screener/screens/{screen['id']}", headers=t["headers"], json={"name": "s", "source": 'RankScore("platform:Momentum") > 80'})
+    assert edit.status_code == 422 and f"alert rule #{rule.json()['id']}" in edit.text
+    still = client.get("/api/screener/screens", headers=t["headers"]).json()
+    assert still[0]["text"] == "close > SMA(close, 20)"
+
+
+def test_the_cache_key_carries_the_ranking_tree():
+    from app.screener.result_cache import cache_key
+    ast, _ = compile_screen('RankScore("Mine") > 50')
+    one, two = _system(name="Mine"), _system({"nodes": [{"name": "c", "factor": "close", "weight": 100}]}, name="Mine")
+    k1 = RK.within({"Mine": one}, cache_key, ("t", 1), ast, "1d", {}, [], as_of="x")
+    k2 = RK.within({"Mine": two}, cache_key, ("t", 1), ast, "1d", {}, [], as_of="x")
+    assert k1 != k2

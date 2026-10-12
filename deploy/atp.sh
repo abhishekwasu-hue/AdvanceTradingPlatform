@@ -254,7 +254,8 @@ host_mac_state() {
   local f="$1" want
   [ -s "$f.hmac" ] || { printf 'missing'; return 0; }
   want="$(tr -d '\r\n' < "$f.hmac")"
-  if [ "$(mac_stream "$(basename "$f")" < "$f")" = "$want" ]; then printf 'ok'; else printf 'mismatch'; fi
+  local name; name="$(basename "$f")"
+  if [ "$(mac_stream "$name" < "$f")" = "$want" ]; then printf 'ok'; else printf 'mismatch'; fi
 }
 
 # --- R2 / off-site -----------------------------------------------------------------------------------------------
@@ -1014,7 +1015,8 @@ backup_files() {
   fi
   mv "$out.part" "$out"
   sha256sum "$out" | cut -d' ' -f1 > "$out.sha256"
-  mac_stream "$(basename "$out")" < "$out" > "$out.hmac"
+  local name; name="$(basename "$out")"
+  mac_stream "$name" < "$out" > "$out.hmac"
   ok "$(basename "$out") ($(wc -c < "$out" | tr -d ' ') bytes, sealed)"
   local keep="${BACKUP_FILES_KEEP:-14}" old
   while read -r old; do

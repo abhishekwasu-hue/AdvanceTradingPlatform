@@ -120,6 +120,7 @@ export const PROGRESSION_EN = {
       pair: "{{a}} and {{b}}: r = {{r}} ({{days}} days)",
       totals: "{{count}} underlyings · {{legs}} legs · risk at stops {{risk}}",
       noBeta: "-",
+      notComputed: "Beta and correlation are computed for the {{max}} largest risks; not computed: {{list}}",
     },
     cone: {
       toggle: "Expected move",

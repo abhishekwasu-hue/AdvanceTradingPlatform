@@ -57,6 +57,8 @@ describe("exposure views (N2-4)", () => {
     expect(words.indexOf("AAA and NIFTY 50: r = -0.92")).toBeLessThan(words.indexOf("AAA and CCC: r = 0.75"));
     expect(html).not.toMatch(/<button|<input/);
     expect(text(renderToStaticMarkup(<ExposureViewPanel view={{ ...VIEW, underlyings: [] }} />))).toContain("No open position of yours.");
+    expect(text(renderToStaticMarkup(<ExposureViewPanel view={{ ...VIEW, not_computed: ["ZZZ"], max_computed: 40 }} />)))
+      .toContain("computed for the 40 largest risks; not computed: ZZZ");
     expect(text(renderToStaticMarkup(<ExposureViewPanel view={{ ...VIEW, move_together: [] }} />))).toContain("No pair of your underlyings moved together at |r| ≥ 0.7.");
   });
 

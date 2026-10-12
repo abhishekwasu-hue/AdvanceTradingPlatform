@@ -490,6 +490,13 @@ MARKET_ZONES_BUDGET_SECONDS = _bounded_int("MARKET_ZONES_BUDGET_SECONDS", 1800, 
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes
 # included). The flag is off by default, so the cap does nothing until the operator turns the gate on.
 BETA_COHORT_CAP = _bounded_int("BETA_COHORT_CAP", 500, 1, 1_000_000)
+# Z10-e (staged rollout 50 -> 200 -> 500): the cohort grows in stages and the gate stops at min(stage, BETA_COHORT_CAP).
+# The SUPER_ADMIN moves the stage in the admin console (stored in platform_controls, every move audited); this setting is
+# only the stage used until a stage has been stored. Any value outside BETA_COHORT_STAGES falls back to 50.
+BETA_COHORT_STAGES = (50, 200, 500)
+BETA_COHORT_STAGE = _bounded_int("BETA_COHORT_STAGE", 50, 1, 1_000_000)
+if BETA_COHORT_STAGE not in BETA_COHORT_STAGES:
+    BETA_COHORT_STAGE = 50
 
 
 def _bounded_float(name: str, default: float, low: float, high: float) -> float:

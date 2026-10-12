@@ -142,6 +142,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
     "screener_gallery": "Screen gallery: browse pre-built screens by method and setup type on the Screener page (research only)",
+    # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
+    # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
+    # answers 404 and the page says it is not enabled.
+    "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
     # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
     # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
     "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory (stored, read-only)",
@@ -150,7 +154,7 @@ FEATURE_FLAGS: Dict[str, str] = {
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "risk_by_default", "vix_gate", "market_zones"})
+                               "risk_by_default", "vix_gate", "public_status_page", "market_zones"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

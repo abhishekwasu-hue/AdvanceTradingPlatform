@@ -2,6 +2,8 @@ import { Bot, Building2, OctagonX, ScrollText, ShieldEllipsis, Users } from "luc
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import type { BetaCohort } from "../beta/rollout";
+import BetaRolloutCard from "../components/BetaRolloutCard";
 import ExportCard from "../components/ExportCard";
 import { Card, StatTile } from "../components/ui";
 import GoLiveChecklist from "../components/GoLiveChecklist";
@@ -24,6 +26,7 @@ export default function AdminPage() {
   const [maintMsg, setMaintMsg] = useState("");
   const [brokerList, setBrokerList] = useState("");
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [cohort, setCohort] = useState<BetaCohort | null>(null);
   const [flags, setFlags] = useState<FeatureFlags | null>(null);
   const [flagTenants, setFlagTenants] = useState<Record<string, string>>({});
   const [encryption, setEncryption] = useState<EncryptionStatus | null>(null);
@@ -42,6 +45,7 @@ export default function AdminPage() {
     api.adminOverview().then(setOverview).catch((e) => setError(String(e)));
     api.adminControls().then((c) => { setControls(c); setBrokerList(c.disabled_brokers.join(", ")); setMaintMsg(c.maintenance_message ?? ""); }).catch(() => {});
     api.adminIncidents().then(setIncidents).catch(() => {});
+    api.adminBetaCohort().then(setCohort).catch(() => {});
     api.adminFlags().then((f) => { setFlags(f); setFlagTenants(Object.fromEntries(Object.entries(f).map(([k, v]) => [k, v.tenants.join(", ")]))); }).catch(() => {});
     api.adminEncryptionStatus().then(setEncryption).catch(() => {});
     api.adminRiskCeilings().then((c) => { setCeilings(c); setCeilingDraft(Object.fromEntries(Object.entries(c).map(([k, v]) => [k, String(v)]))); }).catch(() => {});
@@ -133,6 +137,9 @@ export default function AdminPage() {
           </div>
         </div>
       </Card>
+
+      <BetaRolloutCard cohort={cohort} busy={busy}
+        onSetStage={(stage, reason) => void act(`Beta cohort moved to stage ${stage}.`, () => api.adminSetBetaStage(stage, reason).then(setCohort))} />
 
       <Card title="Risk ceilings (Risk Guardian)">
         <p className="text-xs text-fg-muted mb-3">Hard limits every tenant's risk settings stay under: a tenant cannot save a value above a ceiling, and the engine clamps older settings at runtime. Risk per trade 2% is the spec's hard ceiling; the minimum cool-down forces every tenant to wait at least this long after a stop-out.</p>

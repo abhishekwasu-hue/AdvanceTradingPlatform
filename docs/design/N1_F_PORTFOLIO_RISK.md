@@ -9,8 +9,8 @@ provisional default.
 - PAPER only. F reads books and refuses **entries**. It never places, modifies or exits an order. The Z10-c graph
   must show no F function in `reaching()`.
 - Exits are never blocked (ADR-0004). No exit path consults an F cap; a call-graph test enforces this.
-- BT1b: the book is the user's own (`trades.user_id`). Prices come only from that user's own session, and nothing
-  of one user is shown to, or used for, another.
+- BT1b: the book is the user's own (`trades.user_id`), valued at its own marks. No broker session is read, and
+  nothing of one user is shown to, or used for, another.
 - Every F flag goes in `DEFAULT_OFF_FLAGS`. Every new route goes in `tests/tenancy_route_table.py`. No migration is
   planned (see F2).
 
@@ -63,11 +63,10 @@ I/O, so the API, the caps (F2) and the cards (F3) share one implementation, as `
   - Computed once per symbol per IST day, in memory.
 - **Beta-weighted exposure:** net and gross, in NIFTY-equivalent rupees.
 - **Direction:** counts by side, and the one-sided warning from Trade's rule.
-- **Prices:**
-  - With `byob_data_tier` on: the user's own session only (the `exposure` route's BT1b branch, moved into a
-    helper both routes use).
-  - With it off: the tenant session as today.
-  - With no price: the entry price, flagged per symbol.
+- **Prices** (as built in F1): each trade's own `mark_price`, which the worker keeps on open PAPER trades; with no
+  mark, the entry price, flagged per symbol (`priced_at_entry`). No broker session is read, so the view needs no
+  live-data entitlement and cannot use another user's session. This replaces the planned live quotes: the caps
+  compare risk at the stops, which does not depend on the price.
 
 **Route:** `GET /api/portfolio/risk` returns the caller's own book only. It is a member route in the tenancy table
 and answers 503 when `portfolio_risk` is off. It is read-only, reaches no sink, and leaves the Z10-c allow-lists

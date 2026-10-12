@@ -16,6 +16,16 @@ from app.risk_engine.routes import get_tenant_risk_config
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
 
+@router.get("/risk")
+async def risk(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """N1 F1 (flag `portfolio_risk`): the caller's own PAPER book as a risk view - exposure, open risk at the stops by
+    bucket, beta to NIFTY 50, direction. Read-only; another member's book is never included."""
+    from app.platform.controls import require_flag
+    from app.portfolio import risk_data
+    await require_flag(session, risk_data.FLAG, user.tenant_id)
+    return await risk_data.risk_view(session, user)
+
+
 @router.get("/exposure")
 async def exposure(live_prices: bool = Query(default=True), user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)) -> dict:

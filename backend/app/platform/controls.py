@@ -205,6 +205,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # the Dow trend per degree from the shared lake bars as of a time, with toggles, a debug mode and bar replay that
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart
     # shows no layer. Reference only - places no orders.
+    # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices
+    # in one), beta to NIFTY 50 from the lake's Daily closes, and the one-sided direction warning. OFF:
+    # GET /api/portfolio/risk answers 503. Read-only: it refuses nothing and places no orders.
+    "portfolio_risk": "Portfolio risk view of the user's own PAPER book: exposure, open risk by sector bucket, beta to NIFTY 50, one-sided warning (read-only)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
@@ -213,7 +217,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action"})
+                               "chart_price_action", "portfolio_risk"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

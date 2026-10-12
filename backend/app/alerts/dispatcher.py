@@ -536,6 +536,15 @@ async def _claim(session: AsyncSession, delivery: AlertDeliveryRecord) -> Claim:
     return Claim(state, delivery_id, token, lease_until) if state == "ok" else Claim(state, delivery_id)
 
 
+def _send_budget(claim: Claim) -> float:
+    """Seconds this claim may still spend sending: from now to its lease's end, less `LEASE_MARGIN_SECONDS`. Raises
+    TimeoutError when nothing is left, so the row is retried (with the attempt counted) instead of sent late."""
+    left = (claim.lease_until - _utcnow()).total_seconds() - LEASE_MARGIN_SECONDS if claim.lease_until is not None else 0.0
+    if left <= 0:
+        raise TimeoutError("lease nearly over before the send started")
+    return left
+
+
 async def _finish(session: AsyncSession, delivery: AlertDeliveryRecord, claim: Optional[Claim], **values: Any) -> bool:
     """Writes a delivery's outcome. Without the flag (`claim` None): on the loaded row, as before. With it: one
     conditional UPDATE that only the claim's holder can make (`claimed_by` = this claim's token, still PENDING) - a
@@ -628,13 +637,14 @@ async def dispatch_pending(
                 continue
         attempts = delivery.attempts if claim is not None else delivery.attempts + 1   # reliable: counted at the claim
         try:
-            send = _send_one(session, channel, notification, delivery, client, delivery.idem_key if claim is not None else None)
             if claim is not None:
                 # The send must end while the lease is still ours: a send still running at the lease's end could be
-                # repeated by the worker that takes the row over.
-                await asyncio.wait_for(send, timeout=max(1.0, LEASE_SECONDS - LEASE_MARGIN_SECONDS))
+                # repeated by the worker that takes the row over. The budget is what is left of the lease now (slow DB
+                # steps since the claim have used part of it), less a margin; none left = no send this round.
+                budget = _send_budget(claim)
+                await asyncio.wait_for(_send_one(session, channel, notification, delivery, client, delivery.idem_key), timeout=budget)
             else:
-                await send
+                await _send_one(session, channel, notification, delivery, client, None)
         except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
             error = (str(exc) or type(exc).__name__)[:500]
             channel.last_error = error

@@ -578,6 +578,43 @@ def test_a_send_is_cut_off_before_its_lease_ends(monkeypatch):
     assert (row.status, row.attempts, row.last_error, row.lease_until) == ("PENDING", 1, "TimeoutError", None)
 
 
+def test_the_send_budget_is_what_is_left_of_the_lease(monkeypatch, clock):
+    """Slow steps between the claim and the send (loading the channel, the stale-data check) use up the lease: the send
+    gets only what is left, less the margin, and none at all once that is gone."""
+    ctx = _plain("z10b-budget@example.com", dispatcher.OUTBOX_FLAG)
+    budgets: List[float] = []
+    real_wait_for = asyncio.wait_for
+
+    async def wait_for(aw, timeout):
+        budgets.append(timeout)
+        return await real_wait_for(aw, timeout)
+    monkeypatch.setattr(dispatcher.asyncio, "wait_for", wait_for)
+    real_get = dispatcher.ensure_tenant_key
+
+    async def slow_db(session, tenant_id):                                       # 90 s of DB work after the claim
+        clock.at = clock.at + timedelta(seconds=90)
+        return await real_get(session, tenant_id)
+    monkeypatch.setattr(dispatcher, "ensure_tenant_key", slow_db)
+    sent: List[str] = []
+
+    async def send(*args, **kw):
+        sent.append("x")
+    monkeypatch.setattr(dispatcher, "send_via_channel", send)
+    assert _dispatch(ctx["tid"], None, BAR) == (1, 0)
+    assert budgets == [dispatcher.LEASE_SECONDS - 90 - dispatcher.LEASE_MARGIN_SECONDS] and sent == ["x"]
+
+    late = _plain("z10b-budget-late@example.com", dispatcher.OUTBOX_FLAG)
+
+    async def slower_db(session, tenant_id):                                     # past the lease less its margin
+        clock.at = clock.at + timedelta(seconds=dispatcher.LEASE_SECONDS - dispatcher.LEASE_MARGIN_SECONDS + 1)
+        return await real_get(session, tenant_id)
+    monkeypatch.setattr(dispatcher, "ensure_tenant_key", slower_db)
+    sent.clear()
+    assert _dispatch(late["tid"], None, clock.at) == (0, 1) and sent == []
+    row = _rows(late["tid"])[0]
+    assert (row.status, row.attempts, row.lease_until) == ("PENDING", 1, None) and "lease nearly over" in row.last_error
+
+
 def test_only_the_claim_holder_writes_the_outcome(monkeypatch):
     """A worker whose lease ran out and was taken over (here: the row's claim token changed under it) writes nothing."""
     ctx = _plain("z10b-holder@example.com", dispatcher.OUTBOX_FLAG)

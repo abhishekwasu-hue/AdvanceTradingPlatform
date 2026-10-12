@@ -46,7 +46,8 @@ STATE = os.environ["FAKE_STATE"]
 with open(STATE) as fh:
     st = json.load(fh)
 argv = sys.argv[1:]
-st["calls"].append({"argv": argv, "release": os.environ.get("ATP_RELEASE", ""), "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", "")})
+st["calls"].append({"argv": argv, "release": os.environ.get("ATP_RELEASE", ""), "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", ""),
+                   "phase": os.environ.get("ATP_DEPLOYMENT_PHASE", "")})
 rc = 0
 out = []
 APP = {"backend": "atp-backend", "worker": "atp-worker", "frontend": "atp-frontend", "research-worker": "atp-research-worker", "backup": "atp-backup"}
@@ -126,6 +127,14 @@ if sub == "up":
             print(f"pull access denied for {APP[svc]}", file=sys.stderr); rc = 1; finish()
     for svc in targets:
         st["running"][svc] = {"release": rel if svc in APP else "infra", "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", "")}
+    if "backend" in targets and st.get("seed_on_boot") and os.environ.get("ATP_DEPLOYMENT_PHASE") == "phase0":
+        # the API's own Phase 0 first boot (app/platform/deployment_phase.py): absent entries only
+        st["flags_table"] = True
+        row = json.loads(st["flags_json"] or "{}")
+        flags = row.setdefault("flags", {})
+        for name, on in (("live_trading", False), ("phase0_paper_only", True)):
+            flags.setdefault(name, {"on": on, "tenants": []})
+        st["flags_json"] = json.dumps(row)
     finish()
 if sub == "stop":
     for svc in args:
@@ -180,6 +189,9 @@ def run_sql(target, sqls):
                 rc = 1
             else:
                 out.append(r)
+        elif "select value_json from platform_controls" in low:
+            if st["flags_json"] is not None:
+                out.append(st["flags_json"])
         elif "md5(value_json)" in low:
             if st["flags_json"] is not None:
                 import hashlib
@@ -197,6 +209,13 @@ if sub == "exec":
                 target = cmd[k + 1]
             elif cmd[k] == "-c":
                 sqls.append(cmd[k + 1])
+        if not sqls and "-c" not in cmd:                     # SQL on stdin (Z11: the verify role's one-run password)
+            piped = sys.stdin.read().strip()
+            if piped.lower().startswith("alter role"):
+                st.setdefault("role_sql", []).append(piped)
+                if st.get("role_login_fails") and " login " in f" {piped.lower()} ":
+                    rc = 1
+                finish()
         run_sql(target, sqls)
         finish()
     if svc == "backup" and cmd[:2] == ["cat", "/backups/LAST_BACKUP_OK"]:
@@ -222,7 +241,7 @@ if sub == "run":
     flags, pos = opts_and_services(args)
     svc, cmd = pos[0], pos[1:]
     entry = (flags.get("--entrypoint") or [""])[0]
-    envs = dict(e.split("=", 1) for e in flags.get("-e", []))
+    envs = dict(e.split("=", 1) if "=" in e else (e, os.environ.get(e, "")) for e in flags.get("-e", []))   # -e NAME: from the environment
     if svc == "backend" and cmd[:4] == ["python", "-m", "alembic", "heads"]:
         out.append(f"{st['heads'][rel]} (head)"); finish()
     if svc == "backend" and cmd[:2] == ["python", "scripts/migrate_guard.py"]:
@@ -247,6 +266,11 @@ if sub == "run":
             rc = 0 if ok else 1; finish()
         if "verify_chain" in script:
             st["chain_checked"].append(envs.get("ATP_VERIFY_DB"))
+            import subprocess as sp                                  # the container's own sh: what DATABASE_URL / login it builds
+            probe = sp.run(["sh", "-c", script.replace("python -m app.audit.verify_chain", """sh -c 'printf "%s|%s" "$DATABASE_URL" "${PGPASSWORD:-}"'""")],
+                           env={"PATH": "/usr/bin:/bin", "DATABASE_URL": "postgresql+asyncpg://atp_user:app-db-pw@postgres:5432/" + db, **envs},
+                           capture_output=True, text=True)
+            st.setdefault("chain_login", []).append(probe.stdout if probe.returncode == 0 else None)
             rc = 1 if st.get("chain_broken") else 0; finish()
     if svc == "backup" and entry == "cat":
         path = cmd[0].replace("/backups/", "", 1)
@@ -741,6 +765,55 @@ def test_flags_changed_during_a_deploy_fail_the_run(host):
     assert res.returncode == 1 and "feature flags CHANGED during the deploy" in res.stdout and "rollback" in res.stdout
 
 
+def test_phase0_first_boot_seed_is_the_one_flag_change_a_deploy_accepts(host):
+    """Phase 0 deployment defaults: the API's first boot stores live_trading OFF / phase0_paper_only ON where no entry was
+    stored - the deploy accepts exactly that (restrictive) change; any other value is still a failed deploy."""
+    host.state["flags_table"] = True; host.state["flags_json"] = json.dumps({"flags": {"news_feed": {"on": True, "tenants": []}}})
+    host.state["seed_on_boot"] = True; host.save()
+    res = host.run("deploy")
+    assert res.returncode == 0, res.all
+    assert "except the Phase 0 first-boot seed of live_trading,phase0_paper_only" in res.stdout
+    flags = json.loads(host.state["flags_json"])["flags"]
+    assert flags == {"news_feed": {"on": True, "tenants": []}, "live_trading": {"on": False, "tenants": []},
+                     "phase0_paper_only": {"on": True, "tenants": []}}
+    assert {c["phase"] for c in host.state["calls"] if c["argv"][:2] == ["compose", "-f"]} == {"phase0"}   # no .env key needed
+    again = host.run("deploy")                                                       # re-boot: nothing absent, nothing seeded
+    assert again.returncode == 0 and "feature flags unchanged by the deploy" in again.stdout and "first-boot seed" not in again.stdout
+
+
+def test_a_seed_shaped_change_to_an_existing_entry_still_fails_the_deploy(host):
+    """Only ABSENT entries may be seeded: an owner's stored live_trading / phase0_paper_only is never overwritten."""
+    host.state["flags_table"] = True
+    host.state["flags_json"] = json.dumps({"flags": {"phase0_paper_only": {"on": False, "tenants": []}}}); host.save()
+    assert host.run("deploy", host.sha_a).returncode == 0
+    host.state["heads"][host.sha_b[:12]] = "rev2"; host.save()
+    fake = (host.bin / "docker").read_text().replace(
+        'st["databases"][db]["rev"] = st["heads"][rel]; finish()',
+        'st["databases"][db]["rev"] = st["heads"][rel]; st["flags_json"] = "{\\"flags\\": {\\"phase0_paper_only\\": {\\"on\\": true, \\"tenants\\": []}}}"; finish()')
+    (host.bin / "docker").write_text(fake)
+    res = host.run("deploy")
+    assert res.returncode == 1 and "feature flags CHANGED during the deploy" in res.stdout
+
+
+def test_health_passes_on_a_phase0_install_with_nothing_for_the_owner_to_set(host):
+    """The seeded posture (what a Phase 0 first boot leaves) is healthy: exit 0, no OWNER ACTION."""
+    host.state["posture"] = {"live_trading": {"on": False, "tenants": 0, "stored": True},
+                             "phase0_paper_only": {"known": True, "on": True, "stored": True}, "stored_on": ["phase0_paper_only"],
+                             "deployment_phase": "phase0"}
+    host.save()
+    res = host.run("install")
+    assert res.returncode == 0, res.all
+    assert "OWNER ACTION" not in res.all and "deployment phase: phase0" in res.stdout
+    res = host.run("health")
+    assert res.returncode == 0 and "OWNER ACTION" not in res.all and "nothing for the owner to set" in res.stdout
+    host.write_env(extra={"ATP_DEPLOYMENT_PHASE": "standard"})
+    host.state["posture"]["deployment_phase"] = "standard"; host.save()
+    before = len(host.state["calls"])
+    res = host.run("health")
+    assert res.returncode == 0 and "deployment phase: standard" in res.stdout and "not seeded" in res.stdout
+    assert {c["phase"] for c in host.state["calls"][before:] if c["argv"][:2] == ["compose", "-f"]} == {"standard"}
+
+
 def test_release_overlay_pins_images_to_the_commit():
     text = (ROOT / "deploy/compose.release.yml").read_text()
     for img in ("atp-backend", "atp-worker", "atp-research-worker", "atp-frontend"):
@@ -759,6 +832,8 @@ def test_release_overlay_pins_images_to_the_commit():
     services = json.loads(out)["services"]
     assert services["backend"]["image"] == "atp-backend:0123456789ab" and services["worker"]["image"] == "atp-worker:0123456789ab"
     assert services["worker"]["deploy"]["replicas"] == 1
+    # Phase 0 deployment defaults: the API and the worker run as phase0 on this host without any .env key
+    assert services["backend"]["environment"]["ATP_DEPLOYMENT_PHASE"] == "phase0" == services["worker"]["environment"]["ATP_DEPLOYMENT_PHASE"]
 
 
 def test_migrate_guard_starts_an_older_image_on_a_newer_database_only_when_told_that_exact_revision(monkeypatch):
@@ -986,6 +1061,35 @@ def test_restore_check_runs_the_audit_chain_and_tolerates_a_backup_from_before_t
     assert host.run("restore-check").returncode == 1
 
 
+def test_restore_check_reads_the_copy_as_the_restore_role_with_a_one_run_password(host):
+    assert host.run("deploy").returncode == 0
+    assert host.run("backup").returncode == 0
+    res = host.run("restore-check")
+    assert res.returncode == 0, res.all
+    scratch = host.state["chain_checked"][-1]
+    url, pw = host.state["chain_login"][-1].split("|")
+    assert url == f"postgresql+asyncpg://atp_restore@postgres:5432/{scratch}"           # not the app / superuser login
+    assert len(pw) == 48 and "app-db-pw" not in url
+    login, nologin = host.state["role_sql"][-2:]
+    assert login.startswith('ALTER ROLE "atp_restore" LOGIN NOSUPERUSER') and f"PASSWORD '{pw}'" in login
+    assert nologin == 'ALTER ROLE "atp_restore" NOLOGIN PASSWORD NULL;'                  # NOLOGIN again right after
+    assert not any(pw in a for c in host.state["calls"] for a in c["argv"])               # the password never reaches argv
+    chain_call = next(c for c in host.calls() if "verify_chain" in c)
+    assert "-e ATP_VERIFY_PW " in chain_call + " " and "ATP_VERIFY_PW=" not in chain_call
+    assert "read as atp_restore" in res.stdout
+
+    host.run("restore-check")                                                        # a second run: a new password each time
+    assert host.state["chain_login"][-1].split("|")[1] != pw
+
+    host.state["role_login_fails"] = True; host.save()                               # cannot log in as the role: fail, never superuser
+    before = len(host.state["chain_checked"])
+    res = host.run("restore-check")
+    assert res.returncode == 1 and "not checked as the superuser" in res.stdout
+    assert len(host.state["chain_checked"]) == before and "chain=not_checked" in (host.dir / ".deploy/last_restore_check").read_text()
+    assert host.state["role_sql"][-1] == 'ALTER ROLE "atp_restore" NOLOGIN PASSWORD NULL;'   # a failed LOGIN is still undone
+    assert "VERIFY_ROLE_LOGIN=1   # before the call" in ATP_SH.read_text()
+
+
 def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_ones(tmp_path):
     import importlib.util
     spec = importlib.util.spec_from_file_location("migration_rollback_safety", ROOT / "backend/scripts/migration_rollback_safety.py")
@@ -1015,6 +1119,30 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
                         "    op.create_table('u', sa.Column('id', sa.Integer(), nullable=False))\n\ndef downgrade():\n    op.drop_table('u')\n", False),
         "marked_unsafe.py": (head + "ROLLBACK_SAFE = False\n\ndef upgrade():\n    op.drop_table('t')\n", False),
         "reviewed.py": (head + "ROLLBACK_SAFE = True\nROLLBACK_SAFE_REASON = 'column unused since #120'\n\ndef upgrade():\n    op.drop_column('t', 'c')\n", False),
+        # SQL built at run time: the literal parts ("UPDATE ", " SET c = 1") do not show what runs - review needed
+        "fstring.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    for t in ('a', 'b'):\n        op.execute(f\"UPDATE {t} SET c = 1\")\n", True),
+        "fstring_text.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(sa.text(f\"DELETE FROM {T} WHERE x\"))\n", True),
+        "format.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE {} SET c = 1'.format(T))\n", True),
+        "percent.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE %s SET c = 1' % T)\n", True),
+        "concat.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE ' + T + ' SET c = 1')\n", True),
+        "fstring_select.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(f\"SELECT create_hypertable('{t}', 'ts')\")\n", True),
+        "fstring_reviewed.py": (head + "ROLLBACK_SAFE = True\nROLLBACK_SAFE_REASON = 'hypertables on tables made here'\n\ndef upgrade():\n"
+                                "    op.execute(f\"SELECT create_hypertable('{t}', 'ts')\")\n", False),
+        "fstring_plain.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(f\"CREATE INDEX ix ON n (a)\")\n"
+                             "    op.execute('CREATE INDEX ' 'iy ON n (b)')\n", False),   # no placeholder, implicit concatenation: literal
+        # review LOW-6: any statement that is not ONE literal, exec_driver_sql too, and the helpers upgrade() calls
+        "driver_sql.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.get_bind().exec_driver_sql(STATEMENT)\n", True),
+        "driver_sql_update.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.get_bind().exec_driver_sql('UPDATE t SET c = 1')\n", True),
+        "core_construct.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.get_bind().execute(t.update().values(c=1))\n", True),
+        "helper_sql.py": (head + "ROLLBACK_SAFE = True\n\ndef _sql(t):\n    return 'UPDATE ' + t + ' SET c = 1'\n\n"
+                          "def upgrade():\n    op.execute(_sql('t'))\n", True),
+        "helper_drop.py": (head + "ROLLBACK_SAFE = True\n\ndef _inner():\n    op.drop_column('t', 'c')\n\ndef _outer():\n    _inner()\n\n"
+                           "def upgrade():\n    _outer()\n", True),
+        "helper_unused.py": (head + "ROLLBACK_SAFE = True\n\ndef _never_called():\n    op.drop_column('t', 'c')\n\n"
+                             "def upgrade():\n    op.create_table('n', sa.Column('id', sa.Integer()))\n", False),
+        "text_literal.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute(sa.text('CREATE INDEX ix ON n (a)'))\n"
+                            "    op.get_bind().execute(text('SELECT 1').bindparams())\n", False),
+        "text_update.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.get_bind().execute(sa.text('UPDATE t SET c = :v').bindparams(v=1))\n", True),
     }
     for name, (src, _) in cases.items():
         (tmp_path / name).write_text(src)
@@ -1023,6 +1151,9 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
     message = "\n".join(mod.lint(tmp_path))
     assert "missing.py: missing ROLLBACK_SAFE (Z11). Add ONE of these lines" in message and "ROLLBACK_SAFE = True     # the previous" in message
     assert "ROLLBACK_SAFE = False    # it does not" in message and "unsure means False" in message
+    assert "fstring.py: ROLLBACK_SAFE = True but upgrade() has execute with SQL that is not a single literal (built at run time): review needed" in message
+    assert "driver_sql.py: ROLLBACK_SAFE = True but upgrade() has exec_driver_sql with SQL that is not a single literal" in message
+    assert "helper_drop.py: ROLLBACK_SAFE = True but upgrade() has drop_column" in message
 
 
 # --- N1: only encrypted, sealed dumps are ever restored; the gate runs before Postgres / Redis are touched -----------

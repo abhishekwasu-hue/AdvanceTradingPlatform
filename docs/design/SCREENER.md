@@ -1128,6 +1128,55 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
   (P1 §1.6), the Turtles "Then" template (ATR sizing, 2N stop), short mirrors (TX2), the remaining catalogue (LG2,
   LG3), search by style chips beyond the taxonomy's setup chips.
 
+## N3 S6a (built): screen history - who passed on a date, and screen fitness (flag `screener_history`, off)
+
+Spec §2.6 and §2.7, the first of S6's two PRs. S6b is the rolling screen backtest: rebalance, top-N by rank,
+weighting, the part C cost and slippage models, and the benchmark comparison.
+
+- **Routes.** Both are behind `screener_v2` and `screener_history` (503 while either is off), are trader routes, use
+  the run rate limit and are classified in the tenancy table:
+  - `POST /api/screener/history/asof`: a saved screen or a source, a date, and a universe (an index code or up to 300
+    symbols); returns the matches on that date.
+  - `POST /api/screener/history/fitness`: start, end, a step (daily / weekly / 4-weekly / monthly) and horizons
+    (default 1 / 5 / 20 sessions).
+  - Daily screens on bars only. Another timeframe, the zone functions and the functions that need data the run does
+    not load are refused with the reason.
+- **Data.**
+  - Only the shared lake's end-of-day bars (NSE bhavcopies). A company's bars come by ISIN across renames, adjusted
+    (`by_isin.isin_candles`); without ISIN runs, the symbol's own bars are used and the result notes "unadjusted".
+  - An index universe is the U1-b membership **as of each date**, so leavers and delisted names are included while
+    they were members. Dates before the first membership file are refused.
+  - The sealed holdout is refused, including for the forward-return window.
+- **No look-ahead.**
+  - The screen at date d sees bars that closed on or before d. A symbol is evaluated only if it traded that session.
+  - A screen's history starts with a warm-up: max(3 x lookback, lookback + 100) sessions before the first date, so
+    smoothed indicators have settled.
+  - The fast path evaluates the full series once per symbol (or once per group of symbols sharing a bar index, the
+    Z10-d panel) and reads it at each date. That is valid because every ScreenQL function is causal (Z10-a). The
+    tests check it against the cut-bars run at each date, and check that changing every bar after a date changes
+    nothing at that date.
+  - A cross-sectional screen (Rank / PercentileRank) runs date by date on cut bars, at most 60 dates.
+  - No new ScreenQL function, so no new Z10-a causal cases.
+- **Fitness.** For each horizon:
+  - the passers' mean forward return against the eligible universe's equal-weight mean on the same dates;
+  - the hit rate (a passer beating that mean);
+  - the per-date excess and its t-statistic.
+  Also reported:
+  - turnover and the average number of passers;
+  - a breadth regime split at the main horizon (5): more or fewer than half the universe above its 50-session
+    average, known at d;
+  - a "low sample" flag below 30 observations, and a confidence note in plain words.
+  Forward returns are taken at d + h sessions on the trading calendar, at the last close on or before that day: a
+  delisted name keeps its last price, and a date whose horizon has not finished is left out.
+- **Deflation (trial ledger).**
+  - Each fitness run is one trial in `research_trials`, with `kind: screen_fitness` and the per-date excess returns.
+  - The result's Deflated Sharpe is taken against every screen fitness trial of the organisation in the last 30 days,
+    and it says how many there were.
+- **Not modelled here:** costs and execution (S6b). It is information, never a recommendation; the disclaimer is in
+  every answer.
+- **Perf (Z10-d):** `screen_fitness` covers the 50-factor EOD screen over 300 symbols, weekly over a year, with
+  1 / 5 / 20-session statistics. The target is 3 s, times the CI factor, in the `perf` job; locally it took 1.6 s.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

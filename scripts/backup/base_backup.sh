@@ -11,7 +11,8 @@
 . "$(dirname "$0")/common.sh"
 need pg_basebackup
 
-URL="$(pg_url)"
+pg_setup
+URL="$PG_URL"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 DEST="$BACKUP_DIR/base/$STAMP"
 mkdir -p "$DEST"

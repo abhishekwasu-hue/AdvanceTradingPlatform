@@ -1177,6 +1177,15 @@ weighting, the part C cost and slippage models, and the benchmark comparison.
 - **Perf (Z10-d):** `screen_fitness` covers the 50-factor EOD screen over 300 symbols, weekly over a year, with
   1 / 5 / 20-session statistics. The target is 3 s, times the CI factor, in the `perf` job; locally it took 1.6 s.
 
+### Review of S6a (fixed)
+- HIGH: a screen with a last-bar-only function runs date by date on cut bars (the fast path read a single last-date
+  answer onto every date); the fast path refuses a non-series; a test compares the fast path with the cut-bar run for
+  every registry function the history path takes.
+- MED: prices as known at each date (S6-9); non-overlapping dates for the t-statistic and deflation (S6-10).
+- LOW: a symbol reused by another company gets its ISIN in the label; picks with no bar at d + h are counted
+  (`no_bar_at_horizon`); unadjusted bars across a split leave those dates out; the deflation family is keyed by step and
+  horizon; a forward window into the holdout is refused (tested).
+
 ## N3 S6b (built): the rolling screen backtest (flag `screener_backtest`, off; needs `screener_history`)
 
 Spec §2.7, the second of S6's two PRs. `POST /api/screener/history/backtest` takes S6a's body plus `top_n` (1-50,
@@ -1216,6 +1225,14 @@ broker's and C2's default) and `brokerage_per_order` (default 20). It is a trade
   Z10-d panel where it covers the expression.
 - **No migration**, and no new ScreenQL function, so no new Z10-a causal cases. It is a simulation: nothing is
   placed. The disclaimer is in every answer.
+
+### Review of S6b (fixed)
+- HIGH (inherited): matches and rank_by values read at each date come from the fixed series path (last-bar-only refused,
+  prices as known at each date).
+- MED: rank_by passes the screen's gates (flagged families, data the run does not load, last-bar-only) and must be a
+  number; day 1 counts from the capital, benchmarks on the same basis (S6-12).
+- LOW: no stale-close sells (S6-13); the equal-weight universe keeps delisted names at their last price; a missing
+  NIFTY close is skipped and counted.
 
 ## N3 S7a (built): ranking systems (flag `screener_rankings`, off; needs `screener_v2`)
 

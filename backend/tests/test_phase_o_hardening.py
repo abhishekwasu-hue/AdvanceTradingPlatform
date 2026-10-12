@@ -30,6 +30,8 @@ from tests.test_trading_worker import (
     OPEN_NOW, STRATEGY, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker,
 )
 
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+
 FRIDAY_2000 = datetime(2026, 9, 25, 20, 0, tzinfo=IST)     # NSE closed, MCX open
 FRIDAY_2320 = datetime(2026, 9, 25, 23, 20, tzinfo=IST)    # MCX square-off window
 SUNDAY_0300 = datetime(2026, 9, 27, 3, 0, tzinfo=IST)
@@ -113,7 +115,7 @@ def test_square_off_is_per_venue(monkeypatch):
 
 def test_system_status_lists_exchange_sessions():
     body = client.get("/api/system/status").json()
-    assert set(body["sessions"]) == {"NSE", "MCX", "CRYPTO"}
+    assert set(body["sessions"]) == {"NSE", "MCX", "CDS", "CRYPTO"}
     assert body["sessions"]["CRYPTO"]["is_open"] is True
     assert {"is_open", "reason", "next_open"} <= set(body["sessions"]["NSE"])
 

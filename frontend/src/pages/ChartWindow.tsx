@@ -5,6 +5,7 @@ import ProChart, { useLiveLtp } from "../components/ProChart";
 import { SymbolTierBadge } from "../components/DataTierBadge";
 import type { ChartEngine } from "../charting/engine";
 import { MarketZonesLayer } from "../charting/MarketZonesLayer";
+import { api } from "../api/client";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -29,6 +30,14 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   const live = useLiveLtp(!!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
+  // CH5: "Open in workspace" only while the multi-chart workspace is on for this organisation.
+  const [workspaceOn, setWorkspaceOn] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    let live = true;
+    api.myFeatures().then((f) => { if (live) setWorkspaceOn(f.chart_workspace === true); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [user]);
   const lastClose = chart.candles.length ? chart.candles[chart.candles.length - 1].close : null;
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
@@ -43,6 +52,10 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
         <SymbolTierBadge symbol={symbol} exchange={exchange} live={live.ltp?.data_tier} />
         {broker && <span>candles via {broker}</span>}
         <span>refreshes every minute · live price every 5 s · scroll left for older history</span>
+        {workspaceOn && (
+          <a href={`${window.location.pathname}?${new URLSearchParams({ workspace: "1", chart: symbol, tf: timeframe, exchange }).toString()}`}
+             className="rounded border border-border px-1.5 py-0.5 font-semibold text-fg hover:bg-surface-2">Open in workspace</a>
+        )}
         {error && <span className="text-down">{error}</span>}
       </div>
       <ProChart candles={chart.candles} symbol={symbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}

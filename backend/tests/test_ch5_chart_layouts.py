@@ -160,3 +160,92 @@ def test_a_create_locks_the_users_row_before_counting(monkeypatch):
     assert "with_for_update()" in source and source.index("with_for_update()") < source.index("_count(session, user) >= MAX_PER_USER")
     stmt = sa_select(User.id).where(User.id == 1).with_for_update()
     assert "FOR UPDATE" in str(stmt.compile(dialect=postgresql.dialect()))
+
+
+@pytest.fixture
+def pg_url():
+    """A scratch Postgres database (`Z5_TEST_PG_URL`, set in CI next to the redis / postgres services), created for the
+    test and dropped after it. Skipped without it (SQLite has no row locks)."""
+    import os
+    import uuid
+
+    url = os.environ.get("Z5_TEST_PG_URL")
+    if not url:
+        pytest.skip("Z5_TEST_PG_URL not set")
+    from sqlalchemy import text
+    from sqlalchemy.engine import make_url
+    from sqlalchemy.ext.asyncio import create_async_engine
+    base = make_url(url)
+    name = f"ch5_layouts_{uuid.uuid4().hex[:10]}"
+
+    async def ddl(statement: str) -> None:
+        engine = create_async_engine(base, isolation_level="AUTOCOMMIT")
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text(statement))
+        finally:
+            await engine.dispose()
+    asyncio.run(ddl(f'CREATE DATABASE "{name}"'))
+    try:
+        yield base.set(database=name).render_as_string(hide_password=False)
+    finally:
+        asyncio.run(ddl(f'DROP DATABASE IF EXISTS "{name}"'))
+
+
+def test_two_racing_creates_on_postgres_never_pass_the_cap(pg_url, monkeypatch):
+    """Two creates of one user at the same moment with one slot left: the row lock (SELECT ... FOR UPDATE on the user)
+    makes the second wait for the first's commit, then count it - exactly one layout is stored."""
+    import uuid
+
+    from fastapi import HTTPException
+    from sqlalchemy import func, select
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from sqlalchemy.pool import AsyncAdaptedQueuePool
+
+    from app.db.base import Base
+    from app.db.models import ChartLayoutRecord, Tenant
+
+    monkeypatch.setattr(layouts, "MAX_PER_USER", 1)
+
+    async def no_flag(session, name, tenant_id):
+        return None
+    monkeypatch.setattr(layouts, "require_flag", no_flag)
+    real_count = layouts._count
+
+    async def slow_count(session, user):                     # widen the gap between the count and the insert
+        n = await real_count(session, user)
+        await asyncio.sleep(0.3)
+        return n
+    monkeypatch.setattr(layouts, "_count", slow_count)
+
+    async def go():
+        engine = create_async_engine(pg_url, poolclass=AsyncAdaptedQueuePool, pool_size=3, max_overflow=0)
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            factory = async_sessionmaker(engine, expire_on_commit=False)
+            async with factory() as s:
+                tenant = Tenant(name="ch5 race")
+                s.add(tenant)
+                await s.flush()
+                user = User(tenant_id=tenant.id, email=f"ch5-pg-{uuid.uuid4().hex[:10]}@example.com", hashed_password="x")
+                s.add(user)
+                await s.commit()
+                uid = user.id
+
+            async def create(name):
+                async with factory() as s:
+                    me = await s.get(User, uid)
+                    try:
+                        await layouts.create_layout(layouts.CreateBody(name=name, layout=Layout.model_validate(_layout(1))), me, s)
+                        return 201
+                    except HTTPException as exc:
+                        return exc.status_code
+            codes = sorted(await asyncio.gather(create("one"), create("two")))
+            async with factory() as s:
+                stored = int(await s.scalar(select(func.count()).select_from(ChartLayoutRecord).where(ChartLayoutRecord.user_id == uid)))
+            return codes, stored
+        finally:
+            await engine.dispose()
+    codes, stored = asyncio.run(go())
+    assert codes == [201, 409] and stored == 1

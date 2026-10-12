@@ -468,7 +468,11 @@ class TradingWorker:
                             except Exception:
                                 await vision_session.rollback()
                                 raise
-                    if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1)) is not None:
+                    # On the cycle's session: in a savepoint, so a failed read never leaves that session's transaction
+                    # aborted for the steps after it (ADR-0004).
+                    async with session.begin_nested():
+                        pending = await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1))
+                    if pending is not None:
                         self._spawn_vision_drain()
                 except Exception as exc:  # noqa: BLE001 - Vision is advisory; never breaks trading
                     logger.warning("Vision audit check failed: %s", exc.__class__.__name__)

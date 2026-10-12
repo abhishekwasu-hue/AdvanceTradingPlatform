@@ -46,7 +46,7 @@ dcp() {
     -f deploy/compose.release.yml -p atp "$@")
 }
 sql() { dcp exec -T postgres psql -X -A -t -q -v ON_ERROR_STOP=1 -U atp_user -d advance_trading_platform -c "$1"; }
-current() { cat "$CLONE/.deploy/current" 2>/dev/null | cut -c1-12; }
+current() { cut -c1-12 "$CLONE/.deploy/current" 2>/dev/null; }
 revision() { sql "select string_agg(version_num, ',') from alembic_version"; }
 register() {   # email -> HTTP status of a self sign-up through the API
   curl -s -o /dev/null -w '%{http_code}' -m 30 -H 'Content-Type: application/json' \

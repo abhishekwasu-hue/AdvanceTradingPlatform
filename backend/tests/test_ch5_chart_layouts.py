@@ -147,3 +147,16 @@ def test_concurrent_saves_and_deletes_never_overwrite_and_the_cap_holds_under_a_
     assert over.status_code == 409 and "at most 2" in over.json()["detail"]
     assert len(client.get("/api/charts/layouts", headers=me).json()) == 2
     _flag(False)
+
+
+def test_a_create_locks_the_users_row_before_counting(monkeypatch):
+    """Postgres: SELECT ... FOR UPDATE on the user's row serialises one user's creates (SQLite in the tests has no row
+    locks, so the statement is checked as compiled for Postgres)."""
+    import inspect
+
+    from sqlalchemy import select as sa_select
+    from sqlalchemy.dialects import postgresql
+    source = inspect.getsource(layouts.create_layout)
+    assert "with_for_update()" in source and source.index("with_for_update()") < source.index("_count(session, user) >= MAX_PER_USER")
+    stmt = sa_select(User.id).where(User.id == 1).with_for_update()
+    assert "FOR UPDATE" in str(stmt.compile(dialect=postgresql.dialect()))

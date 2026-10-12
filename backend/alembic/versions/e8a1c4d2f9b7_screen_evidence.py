@@ -31,6 +31,7 @@ def upgrade() -> None:
         sa.Column('schema', sa.String(length=20), nullable=False, server_default='evidence/1'),
         sa.Column('pack_json', sa.Text(), nullable=False),
         sa.Column('pack_sha256', sa.String(length=64), nullable=False),
+        sa.Column('per_user', sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
         sa.UniqueConstraint('run_id', 'symbol', name='uq_screen_evidence_run_symbol'),
         sa.UniqueConstraint('alert_event_id', name='uq_screen_evidence_alert_event'),

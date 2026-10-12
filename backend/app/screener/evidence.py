@@ -357,6 +357,8 @@ def _zone(ctx: _Ctx, call: n.Call, row: Dict[str, Any]) -> None:
         row["terms"] = row["terms"] + zone_terms[1:]
         row["verify"] = f"{row['verify']} ({words})"
     row["zone_as_of"] = snap.as_of.astimezone(timezone.utc).isoformat() if snap is not None else None
+    stored: Dict[str, Any] = next((r for r in snap.rows if str(r.get("zone_key")) == zone["zone_key"]), {}) if snap is not None else {}
+    zone["formed_at"] = stored.get("formed_at")            # the zone's own start: the band is drawn from there
     ctx.zone_cands.append((row["id"], zone))
 
 
@@ -419,6 +421,7 @@ def _zone_bands(ctx: _Ctx, rows: Dict[str, Dict[str, Any]], drawables: List[Dict
         by_key.setdefault(zone["zone_key"], []).append(row_id)
     bands = select_bands(cands, close, max_bands=MAX_ZONE_BANDS, max_distance_pct=None)
     kept = {b["zone_key"]: b for b in bands}
+    formed = {zone["zone_key"]: zone.get("formed_at") for _r, zone in ctx.zone_cands}
     for key, row_ids in by_key.items():
         band = kept.get(key)
         if band is None:
@@ -430,12 +433,29 @@ def _zone_bands(ctx: _Ctx, rows: Dict[str, Dict[str, Any]], drawables: List[Dict
         if not eligible:
             continue
         owner = next((r for r in eligible if rows[r]["passed"]), eligible[0])
+        start, formed_iso = _band_start(ctx, formed.get(key))
         d = {"id": f"d{len(drawables) + 1}", "row": owner, "kind": "band", "pane": "price", "label": band["label"],
-             "low": _num(band["low"]), "high": _num(band["high"]), "from": 0, "to": ctx.j, "role": band["role"], "state": band["state"],
-             "touch_text": band["touch_text"], "failed": not rows[owner]["passed"]}
+             "low": _num(band["low"]), "high": _num(band["high"]), "from": start, "to": ctx.j, "role": band["role"], "state": band["state"],
+             "touch_text": band["touch_text"], "formed_at": formed_iso, "failed": not rows[owner]["passed"]}
         drawables.append(d)
         for row_id in eligible:
             rows[row_id]["drawable"] = d["id"]
+
+
+def _band_start(ctx: _Ctx, formed_at: Any) -> Tuple[int, Optional[str]]:
+    """The first window bar at or after the zone's own start (`formed_at` of the stored row); 0 when it formed before the
+    window or the row has no start time (then the band runs from the window's first bar)."""
+    if formed_at is None:
+        return 0, None
+    try:
+        t = pd.Timestamp(formed_at)
+    except (TypeError, ValueError):
+        return 0, None
+    t = t.tz_localize("UTC") if t.tzinfo is None else t.tz_convert("UTC")
+    idx = pd.DatetimeIndex(ctx.frame.index[-ctx.window:])
+    idx = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+    pos = int(idx.searchsorted(t, side="left"))
+    return min(max(pos, 0), ctx.j), t.isoformat()
 
 
 def _trim(data: SymbolData, base_tf: str, as_of: Optional[datetime]) -> SymbolData:

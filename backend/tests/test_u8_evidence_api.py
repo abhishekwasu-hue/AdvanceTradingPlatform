@@ -325,3 +325,62 @@ def test_an_evidence_failure_never_fails_the_run(screener_on, monkeypatch):
     body = _screen_run(headers, symbols=["UP", "DOWN"])
     assert body["matched"] == ["UP"] and body["results"][0].get("evidence_id") is None
     assert client.get(f"/api/screener/runs/{body['run_id']}", headers=headers).json()["matched"] == 1
+
+
+def test_only_deliverable_events_get_a_pack_and_the_daily_cap_holds(screener_on, monkeypatch):
+    """M1: a cooldown-suppressed event is never sent, so it gets no pack; an organisation stores at most
+    MAX_PER_TENANT_DAY packs a day (runs and alerts together)."""
+    from app.screener import evidence_store
+    _set(evidence_charts=True)
+    _h, me, rid = _alert_setup("u8-pending@example.com")
+    frame = _frame()
+
+    async def go():
+        async with _session_factory() as session:
+            rule = await session.get(AlertRuleRecord, rid)
+            events = []
+            for i, status in enumerate(("pending", "suppressed", "pending")):
+                e = AlertEventRecord(tenant_id=me["tenant_id"], rule_id=rid, symbol=f"S{i}", condition_hash="h", bar_time=frame.index[-1].to_pydatetime(),
+                                     idem_key=f"u8-pending-{i}", priority="normal", values_json="{}", status=status,
+                                     created_at=datetime.now(timezone.utc))
+                session.add(e)
+                events.append(e)
+            await session.flush()
+            from app.screener import compile_screen
+            ast, validated = compile_screen(SCREEN, base_tf="1d")
+            data = [SymbolData(f"S{i}", {"1d": frame}) for i in range(3)]
+            stored = await evidence_store.store_for_events(session, rule, list(zip(events, data)), ast=ast, validated=validated,
+                                                           universe=data, params={}, data_source="broker:organisation")
+            await session.commit()
+            rows = list(await session.scalars(select(ScreenEvidenceRecord).where(ScreenEvidenceRecord.tenant_id == me["tenant_id"])))
+            return stored, sorted(r.symbol for r in rows), {e.status for e in events}
+    stored, symbols, _ = _run(go())
+    assert stored == 2 and symbols == ["S0", "S2"]                                   # the suppressed S1 has none
+
+    monkeypatch.setattr(evidence_store, "MAX_PER_TENANT_DAY", 3)                     # 2 already stored today: room for 1
+    _serve_bars(monkeypatch)
+    body = _screen_run(_h, symbols=["UP", "UP2"])
+    assert sum(1 for r in body["results"] if r.get("evidence_id")) == 1
+    again = _screen_run(_h, symbols=["UP", "UP2"])
+    assert not any(r.get("evidence_id") for r in again["results"]) and again["matched"] == ["UP", "UP2"]   # the run itself is unchanged
+
+
+def test_per_user_packs_stay_owner_only_after_the_flag_is_turned_off(screener_on, monkeypatch):
+    """L3: a pack read through the runner's own broker session (BT1b) is recorded as such and stays owner-only."""
+    _set(evidence_charts=True)
+    headers, _me = _owner("u8-peruser@example.com")
+    member = _teammate(headers, "u8-peruser-member@example.com")
+    _serve_bars(monkeypatch)
+    body = _screen_run(headers, symbols=["UP"])
+    eid = body["results"][0]["evidence_id"]
+
+    async def mark():
+        async with _session_factory() as session:
+            row = await session.get(ScreenEvidenceRecord, eid)
+            assert row.per_user is False                                              # flag off: the organisation's session
+            row.per_user = True                                                       # as stored with byob_data_tier on
+            await session.commit()
+    _run(mark())
+    assert client.get(f"/api/screener/evidence/{eid}", headers=member).status_code == 404   # flag off now, still owner-only
+    assert client.get(f"/api/screener/evidence/runs/{body['run_id']}", headers=member).json()["evidence"] == {}
+    assert client.get(f"/api/screener/evidence/{eid}", headers=headers).status_code == 200

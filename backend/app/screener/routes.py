@@ -401,7 +401,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         ids = await evidence_store.store_for_run(session, tenant_id=user.tenant_id, user_id=user.id, run_id=run_row.id, ast=ast,
                                                  validated=validated, universe=universe, matched=matched_symbols, base_tf=base_tf,
                                                  params=params, exchange=body.exchange, data_source=data_source,
-                                                 screen_name=screen_name)
+                                                 screen_name=screen_name, per_user=bool(tier))   # BT1b: read through the runner's own session
         for r in results:
             r["evidence_id"] = ids.get(str(r["symbol"]))
         run_row.result_json = json.dumps(results)

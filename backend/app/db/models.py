@@ -2831,6 +2831,9 @@ class ScreenEvidenceRecord(Base):
     schema: Mapped[str] = mapped_column(String(20), nullable=False, default="evidence/1")
     pack_json: Mapped[str] = mapped_column(Text, nullable=False)
     pack_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    # BT1b: the bars came through the user's own broker session (byob_data_tier on at store time) - such a pack stays
+    # owner-only even if the flag is turned off later
+    per_user: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
 
 

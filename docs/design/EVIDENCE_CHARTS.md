@@ -31,7 +31,7 @@ constants. Every number is the engine's number at the matched bar, not a re-comp
   | `overlay` | price comparisons | the compared series (at most 2) and literal levels on the price pane |
   | `pane` | non-price comparisons | the series on a lower pane: `volume` (histogram) or `oscillator` (with its threshold line) |
   | `box` | breakout base | from / to bars, low / high and the level |
-  | `band` | zone | the zone a zone condition read at the matched bar, through the Z7a-3 `select_bands` (at most 6, one band per zone however many conditions read it) |
+  | `band` | zone | the zone a zone condition read at the matched bar, through the Z7a-3 `select_bands` (at most 6, one band per zone however many conditions read it), drawn from the zone's own start (`formed_at`, or the window's first bar when older or unknown) |
   | `bars` | pattern candles, B13 | the candles a pattern reads (1-3), the B13 bar with its midpoint level |
 
   Other filters and category conditions (`Trend`, `IsFnO`, `NearSupport`, a value on another timeframe or an earlier
@@ -57,8 +57,12 @@ constants. Every number is the engine's number at the matched bar, not a re-comp
 - Bar-close alerts (`alerts/barclose.evaluate_rule`): one pack per fired event (at most 10 per evaluation), from the
   closed frames the rule was just evaluated on. Never on an intrabar rule. The `alert_event_id` is kept, with the
   event's own bar label.
-- The record holds the canonical JSON (sorted keys) and its SHA-256, tenant, user, run or alert event, symbol, bar time
-  and schema. Retention: `RETENTION_SCREEN_EVIDENCE_DAYS` (default 90). Migration `e8a1c4d2f9b7` is reversible.
+- Only alert events that will be delivered (`pending`) get a pack; a cooldown-suppressed event never does. An
+  organisation stores at most `MAX_PER_TENANT_DAY` (500) packs per IST day, runs and alerts together; beyond that the
+  run or alert goes on without evidence.
+- The record holds the canonical JSON (sorted keys) and its SHA-256, tenant, user, run or alert event, symbol, bar time,
+  schema, and `per_user`: the bars came through the user's own broker session (BT1b, `byob_data_tier` on at store
+  time). A `per_user` pack stays owner-only even if the flag is turned off later. Retention: `RETENTION_SCREEN_EVIDENCE_DAYS` (default 90). Migration `e8a1c4d2f9b7` is reversible.
 
 ## 3. Reading (tenancy, BT1)
 
@@ -67,12 +71,15 @@ constants. Every number is the engine's number at the matched bar, not a re-comp
 
 - Behind `screener_v2` (503 while off, like the whole screener) and `evidence_charts` (404 while off: hidden).
 - The record's organisation only; another organisation gets 404 (tested).
-- BT1: with `byob_data_tier` on, only the user whose run or alert rule read the bars can read the record. A broker
+- BT1: with `byob_data_tier` on, or for any `per_user` record, only the user whose run or alert rule read the bars can
+  read the record. A broker
   entitlement is personal (`docs/BROKER_DATA_TERMS.md`). With the flag off, the organisation's members can read it
   (that is today's run visibility). Sending is always the owner's own: `can_send` is true only for them.
 
 ## 4. Images (EV2, `app/screener/evidence_png.py`)
 
+- Rendering runs in a worker thread (image route, Telegram send, alert photos); the image route is rate-limited to 30
+  per minute per user.
 - The Vision chart's renderer (`app/ai/chart_png.py`): a standard-library PNG, no network, no clock and no font files.
   It adds a fuller 3x5 bitmap font. Characters it cannot draw (another script) become "?"; the caption carries the
   exact text. The same pack gives the same bytes. The test pins the SHA-256 of the raw pixels, which does not depend

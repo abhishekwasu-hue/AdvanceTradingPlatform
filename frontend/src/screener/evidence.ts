@@ -17,7 +17,7 @@ export interface EvidenceDrawable {
   id: string; row: string; kind: DrawableKind; pane: "price" | "volume" | "oscillator"; label: string; failed: boolean;
   unit?: string | null; series?: EvidenceSeries[]; levels?: EvidenceLevel[]; marker?: { index: number; text: string };
   from?: number; to?: number; low?: number; high?: number; level?: number; index?: number[];
-  role?: "demand" | "supply"; state?: string; touch_text?: string;
+  role?: "demand" | "supply"; state?: string; touch_text?: string; formed_at?: string | null;
 }
 export interface EvidenceTerm { text: string; value: number | string | boolean | null; value_text: string; unit: string | null; literal: boolean; note?: string }
 export interface EvidenceRow {

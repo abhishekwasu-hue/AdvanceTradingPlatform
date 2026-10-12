@@ -11,6 +11,7 @@ on, the user whose broker session read the bars). Informational: nothing here pl
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any, Dict, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response
@@ -25,6 +26,7 @@ from app.screener import evidence_store
 
 router = APIRouter(prefix="/api/screener/evidence", tags=["screener"])
 telegram_rate_limit = user_rate_limit("evidence_telegram", limit=10, window_seconds=60)
+image_rate_limit = user_rate_limit("evidence_image", limit=30, window_seconds=60)      # rendering is CPU work
 NOT_FOUND = "Evidence not found"
 
 
@@ -57,12 +59,12 @@ async def get_evidence(evidence_id: int, debug: bool = False, user: User = Depen
             "can_send": row.user_id == user.id}
 
 
-@router.get("/{evidence_id}/image.png")
+@router.get("/{evidence_id}/image.png", dependencies=[Depends(image_rate_limit)])
 async def evidence_image(evidence_id: int, theme: Literal["light", "dark"] = "light", user: User = Depends(get_current_user),
                          session: AsyncSession = Depends(get_session)) -> Response:
     row = await _row(session, user, evidence_id)
     try:
-        png, _caption = evidence_store.image_and_caption(row, theme=theme)
+        png, _caption = await asyncio.to_thread(evidence_store.image_and_caption, row, theme)       # off the event loop
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return Response(content=png, media_type="image/png", headers={"Cache-Control": "private, no-store"})

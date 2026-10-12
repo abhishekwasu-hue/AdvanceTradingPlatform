@@ -339,7 +339,8 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         # U8 EV1/EV2: each fired symbol's evidence pack from the closed bars the rule was just evaluated on (never a bar
         # still forming); the Telegram delivery sends its image to the rule creator's own linked chat
         from app.screener import evidence_store
-        await evidence_store.store_for_events(session, rule, fired_events, ast=ast, validated=validated, universe=current, params=params)
+        await evidence_store.store_for_events(session, rule, fired_events, ast=ast, validated=validated, universe=current, params=params,
+                                              data_source="broker:own-session" if per_user else "broker:organisation", per_user=per_user)
     if not intrabar:
         rule.last_bar_at = bar                                    # intrabar: other symbols may still match later in the bar
     rule.last_problem = None

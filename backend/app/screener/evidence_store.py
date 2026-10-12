@@ -24,7 +24,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import AlertChannelRecord, AlertEventRecord, ScreenEvidenceRecord, User
@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 FLAG = "evidence_charts"
 MAX_PER_RUN = 25
 MAX_PER_RULE = 10
+MAX_PER_TENANT_DAY = 500           # evidence rows an organisation stores per IST day (runs and alerts together)
 IMAGES_PER_ALERT = 3
 
 
@@ -62,26 +63,38 @@ def view(pack: Dict[str, Any], debug: bool = False) -> Dict[str, Any]:
 
 
 def _record(pack: Dict[str, Any], *, tenant_id: int, user_id: Optional[int], run_id: Optional[int] = None,
-            alert_event_id: Optional[int] = None, now: Optional[datetime] = None) -> ScreenEvidenceRecord:
+            alert_event_id: Optional[int] = None, now: Optional[datetime] = None, per_user: bool = False) -> ScreenEvidenceRecord:
     text, sha = canonical(pack)
     return ScreenEvidenceRecord(tenant_id=tenant_id, user_id=user_id, run_id=run_id, alert_event_id=alert_event_id, symbol=pack["symbol"],
                                 base_tf=pack["base_tf"], bar_time=datetime.fromisoformat(pack["as_of"]["bar_start"]), schema=pack["schema"],
-                                pack_json=text, pack_sha256=sha, created_at=now or datetime.now(timezone.utc))
+                                pack_json=text, pack_sha256=sha, per_user=per_user, created_at=now or datetime.now(timezone.utc))
+
+
+async def daily_room(session: AsyncSession, tenant_id: int, now: Optional[datetime] = None) -> int:
+    """How many more evidence rows the organisation may store today (IST day; MAX_PER_TENANT_DAY across runs and alerts)."""
+    from app.market_data.calendar import IST
+    now = now or datetime.now(timezone.utc)
+    day_start = datetime.combine(now.astimezone(IST).date(), datetime.min.time(), IST).astimezone(timezone.utc)
+    used = await session.scalar(select(func.count()).select_from(ScreenEvidenceRecord).where(
+        ScreenEvidenceRecord.tenant_id == tenant_id, ScreenEvidenceRecord.created_at >= day_start))
+    return max(0, MAX_PER_TENANT_DAY - int(used or 0))
 
 
 async def store_for_run(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], run_id: int, ast: Any, validated: Any,
                         universe: List[Any], matched: List[str], base_tf: str, params: Dict[str, Any], exchange: str,
-                        data_source: Optional[str], screen_name: Optional[str] = None) -> Dict[str, int]:
-    """Packs for the run's matched symbols (the first MAX_PER_RUN) -> {symbol: evidence id}. Never raises."""
+                        data_source: Optional[str], screen_name: Optional[str] = None, per_user: bool = False) -> Dict[str, int]:
+    """Packs for the run's matched symbols (the first MAX_PER_RUN, within the organisation's daily room) -> {symbol:
+    evidence id}. `per_user`: the bars came through the runner's own broker session (BT1b). Never raises."""
     try:
         wanted = set(matched)
         chosen = [d for d in universe if d.symbol in wanted]
-        if not chosen:
+        limit = min(MAX_PER_RUN, await daily_room(session, tenant_id))
+        if not chosen or limit <= 0:
             return {}
         # the cross-sectional ranks need the whole universe; the packs are built for the matched symbols only
         packs = await asyncio.to_thread(_build_for, ast, validated, universe, chosen, base_tf, params, exchange, data_source, run_id,
-                                        screen_name, MAX_PER_RUN)
-        rows = [_record(p, tenant_id=tenant_id, user_id=user_id, run_id=run_id) for p in packs.values()]
+                                        screen_name, limit)
+        rows = [_record(p, tenant_id=tenant_id, user_id=user_id, run_id=run_id, per_user=per_user) for p in packs.values()]
         async with session.begin_nested():               # a failed insert rolls back the packs only, never the run
             for row in rows:
                 session.add(row)
@@ -108,24 +121,32 @@ def _build_for(ast: Any, validated: Any, universe: List[Any], chosen: List[Any],
 
 
 async def store_for_events(session: AsyncSession, rule: Any, events: List[Tuple[Any, Any]], *, ast: Any, validated: Any,
-                           universe: List[Any], params: Dict[str, Any], data_source: Optional[str] = None) -> int:
-    """Bar-close alerts: one pack per fired event (`events` = [(AlertEventRecord, SymbolData)], at most MAX_PER_RULE),
-    from the frames the rule was just evaluated on. Never raises; returns how many were stored."""
+                           universe: List[Any], params: Dict[str, Any], data_source: Optional[str] = None,
+                           per_user: bool = False) -> int:
+    """Bar-close alerts: one pack per fired event that will be delivered (`events` = [(AlertEventRecord, SymbolData)];
+    status "pending" only - a cooldown-suppressed event is never sent, so its pack would be unreachable), at most
+    MAX_PER_RULE and within the organisation's daily room, from the frames the rule was just evaluated on. Never raises;
+    returns how many were stored."""
     try:
+        events = [(e, d) for e, d in events if getattr(e, "status", None) == "pending"]
         if not events:
             return 0
-        chosen = [data for _e, data in events][:MAX_PER_RULE]
+        limit = min(MAX_PER_RULE, await daily_room(session, rule.tenant_id))
+        if limit <= 0:
+            return 0
+        events = events[:limit]
+        chosen = [data for _e, data in events]
         name = None
         if getattr(rule, "name", None):
             name = str(rule.name)
         packs = await asyncio.to_thread(_build_for, ast, validated, universe, chosen, rule.base_tf, params, rule.exchange or "NSE",
-                                        data_source, None, name, MAX_PER_RULE)
+                                        data_source, None, name, limit)
         rows = []
-        for event, data in events[:MAX_PER_RULE]:
+        for event, data in events:
             pack = packs.get(data.symbol)
             if pack is None:
                 continue
-            row = _record(pack, tenant_id=rule.tenant_id, user_id=rule.created_by, alert_event_id=event.id)
+            row = _record(pack, tenant_id=rule.tenant_id, user_id=rule.created_by, alert_event_id=event.id, per_user=per_user)
             row.bar_time = event.bar_time                 # the alert's own bar label (the session open for a daily bar)
             rows.append(row)
         if rows:
@@ -144,20 +165,22 @@ async def readable(session: AsyncSession, user: User, evidence_id: int) -> Optio
     row = await session.get(ScreenEvidenceRecord, evidence_id)
     if row is None or row.tenant_id != user.tenant_id:
         return None
-    from app.platform.controls import flag_enabled
-    if await flag_enabled(session, "byob_data_tier", user.tenant_id) and row.user_id != user.id:
-        return None
+    if row.user_id != user.id and (row.per_user or await _byob(session, user)):
+        return None                                   # per-user data stays its owner's, whatever the flag says now
     return row
+
+
+async def _byob(session: AsyncSession, user: User) -> bool:
+    from app.platform.controls import flag_enabled
+    return await flag_enabled(session, "byob_data_tier", user.tenant_id)
 
 
 async def for_run(session: AsyncSession, user: User, run_id: int) -> List[ScreenEvidenceRecord]:
     rows = list(await session.scalars(select(ScreenEvidenceRecord).where(ScreenEvidenceRecord.run_id == run_id,
                                                                           ScreenEvidenceRecord.tenant_id == user.tenant_id)
                                       .order_by(ScreenEvidenceRecord.symbol)))
-    from app.platform.controls import flag_enabled
-    if await flag_enabled(session, "byob_data_tier", user.tenant_id):
-        rows = [r for r in rows if r.user_id == user.id]
-    return rows
+    byob = await _byob(session, user)
+    return [r for r in rows if r.user_id == user.id or not (r.per_user or byob)]
 
 
 def load(row: ScreenEvidenceRecord) -> Dict[str, Any]:
@@ -171,7 +194,8 @@ async def _bot(session: AsyncSession, tenant_id: int) -> Optional[str]:
     from app.alerts.channels import decrypt_config
     from app.secrets_store.envelope import ensure_tenant_key
     channel = await session.scalar(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == tenant_id,
-                                                                   AlertChannelRecord.channel_type == "TELEGRAM"))
+                                                                   AlertChannelRecord.channel_type == "TELEGRAM")
+                                   .order_by(AlertChannelRecord.id).limit(1))
     if channel is None or not channel.enabled:
         return None
     await ensure_tenant_key(session, tenant_id)
@@ -203,7 +227,7 @@ async def send_to_own_chat(session: AsyncSession, row: ScreenEvidenceRecord, use
     if token is None:
         return {"sent": False, "reason": "Your organisation's Telegram bot is not set up or is off."}
     from app.ai.vision_audit import send_photo
-    png, caption = image_and_caption(row)
+    png, caption = await asyncio.to_thread(image_and_caption, row)
     try:
         await send_photo(token, chat, png, caption, client)
     except RuntimeError as exc:
@@ -229,12 +253,17 @@ async def alert_photos(session: AsyncSession, channel: AlertChannelRecord, bot_t
             return 0
         rows = list(await session.scalars(select(ScreenEvidenceRecord).where(ScreenEvidenceRecord.alert_event_id.in_(events),
                                                                              ScreenEvidenceRecord.tenant_id == channel.tenant_id)
-                                          .order_by(ScreenEvidenceRecord.symbol).limit(IMAGES_PER_ALERT)))
+                                          .order_by(ScreenEvidenceRecord.symbol, ScreenEvidenceRecord.id)))
         from app.ai.vision_audit import send_photo
-        for row in rows:
-            if await own_chat(session, row.tenant_id, row.user_id) != str(address):
-                continue                                  # only the evidence owner's own chat
-            png, caption = image_and_caption(row)
+        chats: Dict[Optional[int], Optional[str]] = {}
+        owned = []
+        for row in rows:                                  # only the evidence owner's own chat - filtered before the cap
+            if row.user_id not in chats:
+                chats[row.user_id] = await own_chat(session, row.tenant_id, row.user_id)
+            if chats[row.user_id] == str(address):
+                owned.append(row)
+        for row in owned[:IMAGES_PER_ALERT]:
+            png, caption = await asyncio.to_thread(image_and_caption, row)
             await send_photo(bot_token, str(address), png, caption, client)
             sent += 1
     except Exception as exc:  # noqa: BLE001 - the alert text is delivered; images are best effort
@@ -243,4 +272,4 @@ async def alert_photos(session: AsyncSession, channel: AlertChannelRecord, bot_t
 
 
 __all__ = ["FLAG", "enabled", "canonical", "view", "store_for_run", "store_for_events", "readable", "for_run", "load", "send_to_own_chat",
-           "alert_photos", "image_and_caption", "MAX_PER_RUN", "MAX_PER_RULE", "IMAGES_PER_ALERT"]
+           "alert_photos", "image_and_caption", "daily_room", "MAX_PER_RUN", "MAX_PER_RULE", "MAX_PER_TENANT_DAY", "IMAGES_PER_ALERT"]

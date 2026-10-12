@@ -342,3 +342,16 @@ def test_ranks_in_the_pack_are_the_runs_ranks_over_the_same_universe():
     assert set(packs) == {"A", "B"}
     assert {s: p["matched"] for s, p in packs.items()} == {"A": True, "B": True}
     assert packs["B"]["rows"][0]["terms"][0]["value"] == 1.0 and packs["A"]["rows"][0]["terms"][0]["value"] == 2.0
+
+
+def test_a_zone_band_starts_at_the_zones_own_start():
+    df = _daily()
+    tl = _timeline(df)
+    formed = df.index[-15]
+    for row in tl.snapshots[0].rows:
+        row["formed_at"] = formed.to_pydatetime() if row["zone_key"] == "z0" else None
+    data = SymbolData("ABC", {"1d": df}, zones=tl)
+    _a, _v, pack = _pack('NearZone("demand", 20) AND NearZone("supply", 20)', data, window=60)
+    bands = {d["role"]: d for d in pack["drawables"] if d["kind"] == "band"}
+    assert bands["demand"]["from"] == 60 - 15 and bands["demand"]["formed_at"] == formed.isoformat()
+    assert bands["supply"]["from"] == 0 and bands["supply"]["formed_at"] is None            # no start stored: the whole window

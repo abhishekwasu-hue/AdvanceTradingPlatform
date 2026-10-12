@@ -214,6 +214,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # and R, stop / target status, time in trade, plan vs current stop (a widened stop flagged) and how each exits.
     # Read-only; exits stay on the existing one-click Exit now and are never gated. OFF: /api/positions/board is 404.
     "positions_board": "Positions board: your open positions with P&L in ₹ and R, stop and target status, time in trade, plan vs current stop (read-only; exits never gated)",
+    # N2-7 (P1 spec 3.2, docs/design/N2_P1FGH.md): builder adjustments - roll a leg, add a hedge, convert a short strangle
+    # to an iron condor, close one side - with the before / after payoff and Greeks. Computes only: no order is placed,
+    # staged or proposed. OFF: POST /api/options-builder/adjust answers 404 (503 first while the builder is off).
+    "builder_adjustments": "Builder adjustments: roll, add a hedge, convert to an iron condor, close one side - before / after payoff and Greeks (models only, places nothing)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -221,7 +225,8 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "experience_levels",
-                               "decision_tools", "context_panel", "positions_board"})
+                               "decision_tools", "context_panel", "positions_board",
+                               "builder_adjustments"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

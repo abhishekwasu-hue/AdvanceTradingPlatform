@@ -431,6 +431,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/option-chain/{underlying}/settings"): "member",
     ("PUT", "/api/option-chain/{underlying}/settings"): "owner",
     ("GET", "/api/option-chain/{underlying}/strikes"): "member",
+    ("POST", "/api/options-builder/adjust"): S_COMPUTE,
     ("POST", "/api/options-builder/basket"): S_COMPUTE,
     ("GET", "/api/options-builder/catalog"): "member",
     ("POST", "/api/options-builder/evaluate"): S_COMPUTE,

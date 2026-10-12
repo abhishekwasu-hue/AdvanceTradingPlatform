@@ -1895,3 +1895,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_n2_positions_board.py` (5); vitest `src/progression/board.test.tsx` (2). Open questions
   N2-20..N2-21.
 - Global cues check for N2-5: an existing source (Phase AU, 27c758a; `docs/DATA_SOURCES.md` row), reused unchanged.
+### 2026-10-12 IST - N2-7 builder adjustments (`claude/n2-7`, stacked on `claude/n2-6`)
+- Flag `builder_adjustments` (off). `POST /api/options-builder/adjust` (S_COMPUTE): roll / add a hedge / iron condor /
+  close one side, with the changes at model prices, P&L locked in, premium today, and the before / after payoff, PoP
+  and Greeks.
+- Models only: `placeable: false`, no order rows (tested).
+- Frontend: the builder's drawer (progression i18n); "use the legs after" replaces the page's legs.
+- Tests: `tests/test_n2_builder_adjust.py` (5); vitest `src/progression/adjust.test.tsx` (3). Open questions
+  N2-22..N2-23.

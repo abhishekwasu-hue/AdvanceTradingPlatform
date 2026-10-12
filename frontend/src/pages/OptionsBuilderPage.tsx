@@ -15,7 +15,9 @@ import { ApiError } from "../api/errors";
 import { Button, Input, PageHeader } from "../components/primitives";
 import { useToast } from "../components/Toast";
 import type { PageProps } from "../routes";
-import { builderApi, wireLegs, type SavedStrategy } from "../optionsBuilder/api";
+import { api } from "../api/client";
+import { builderApi, wireLegs, type AdjustResult, type SavedStrategy } from "../optionsBuilder/api";
+import AdjustDrawer from "../progression/AdjustDrawer";
 import { BasketDialog } from "../optionsBuilder/BasketDialog";
 import { LegTable } from "../optionsBuilder/LegTable";
 import { MetricsCard } from "../optionsBuilder/MetricsCard";
@@ -85,6 +87,11 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const wide = useMediaQuery(WIDE_QUERY);
   const phone = useMediaQuery("(max-width: 767px)");
   const asOf = useMemo(todayIst, []);
+  // N2-7: the adjustment drawer, when the organisation has builder_adjustments
+  const [adjustOn, setAdjustOn] = useState(false);
+  useEffect(() => { api.myFeatures().then((f) => setAdjustOn(Boolean(f.builder_adjustments))).catch(() => setAdjustOn(false)); }, []);
+  const takeAdjusted = (after: AdjustResult["after_legs"]) =>
+    setLegs(hedgeFirst(after.map((l) => ({ ...l, id: legId(), iv: l.iv ?? null, premium_source: "manual" as const }))));
   const brokerage = Math.min(nonNegative(brokerageText) ?? Number(DEFAULT_BROKERAGE), MAX_BROKERAGE);   // the API caps it
 
   const spot = positive(spotText);
@@ -260,12 +267,17 @@ export default function OptionsBuilderPage(_props: PageProps) {
         <details style={{ gridArea: "drawer" }} className="group rounded-xl border border-border bg-surface-1" data-testid="adjust-drawer">
           <summary className="flex cursor-pointer list-none items-center justify-between px-4 py-3 text-sm font-semibold text-fg">
             Adjustments and compare
-            <span className="text-xs font-normal text-fg-muted group-open:hidden">Coming later</span>
+            {!adjustOn && <span className="text-xs font-normal text-fg-muted group-open:hidden">Coming later</span>}
           </summary>
-          <p className="border-t border-border px-4 py-3 text-xs text-fg-muted">
-            Roll a leg, add a hedge, convert to an iron condor or close one side - each with its before and after payoff - and compare up to three
-            strategies side by side. These arrive in a later release.
-          </p>
+          {adjustOn ? (
+            // N2-7 (flag builder_adjustments): models only; "use the legs after" replaces this page's legs, nothing is placed
+            <AdjustDrawer legs={legs} spot={spot} step={step} asOf={asOf} onUse={takeAdjusted} />
+          ) : (
+            <p className="border-t border-border px-4 py-3 text-xs text-fg-muted">
+              Roll a leg, add a hedge, convert to an iron condor or close one side - each with its before and after payoff - and compare up to three
+              strategies side by side. These arrive in a later release.
+            </p>
+          )}
         </details>
       </div>
 

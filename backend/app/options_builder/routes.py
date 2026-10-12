@@ -10,6 +10,9 @@ the platform's execution and risk layers).
 - `POST /api/options-builder/suggest`   a selector rule (P1-a, ported) on a broker chain through the adapter.
 - `POST /api/options-builder/basket`    Z5: the legs in placement order (hedge first) with quantities and builder keys,
                                         for review before "Place as basket"; nothing is placed or staged.
+- `POST /api/options-builder/adjust`    N2-7 (flag builder_adjustments): roll a leg, add a hedge, convert a short strangle to
+                                        an iron condor, close one side - the legs after, the changes at model prices and the
+                                        before / after payoff and Greeks. Computes only: nothing is placed, staged or proposed.
 
 Z5 adds the metrics card's money lines to `evaluate` (`metrics.py`): net premium, reward to risk, a labelled margin
 estimate and the charges to open (and to close at today's premiums), so the page computes no number itself.
@@ -35,6 +38,7 @@ from app.core.rate_limit import user_rate_limit
 from app.db.models import User
 from app.db.session import get_session
 from app.option_chain.greeks import IST
+from app.options_builder import adjust as adjust_mod
 from app.options_builder import catalog, chain, metrics, model, selectors, strike_breach
 from app.options_builder.greeks import leg_with_model_greeks
 from app.options_builder.payoff import build_default_price_range, compute_strategy_payoff_curve
@@ -338,3 +342,49 @@ def _suggest(body: SuggestBody) -> Dict[str, Any]:
                                                        step=body.step, hedge_enabled=body.hedge_enabled)
     return {"rule": body.rule, "atm_strike": atm, "pop_source": chain.POP_SOURCE, "result": result,
             "found": result is not None, "disclaimer": DISCLAIMER}
+
+
+# --- N2-7: adjustments (flag builder_adjustments) ------------------------------------------------------------------------
+
+ADJUST_FLAG = "builder_adjustments"
+
+
+async def _adjust_on(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, ADJUST_FLAG, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": ADJUST_FLAG})
+
+
+class AdjustBody(EvaluateBody):
+    kind: Literal["roll", "add_hedge", "iron_condor", "close_side"]
+    strike_step: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    index: Optional[int] = Field(default=None, ge=0, lt=MAX_LEGS)
+    steps: int = Field(default=0, ge=-50, le=50)
+    expiry: Optional[date] = None
+    width_steps: int = Field(default=2, ge=1, le=50)
+    side: Optional[Literal["CE", "PE"]] = None
+    new_iv: Optional[float] = Field(default=None, gt=0, lt=5, allow_inf_nan=False, description="IV for the new legs; default: the leg they come from")
+
+
+@router.post("/adjust", dependencies=[Depends(_adjust_on), Depends(compute_rate_limit)])
+async def adjust(body: AdjustBody) -> Dict[str, Any]:
+    return await run_in_threadpool(_adjust, body)
+
+
+def _adjust(body: AdjustBody) -> Dict[str, Any]:
+    as_of: Union[date, datetime] = body.as_of or datetime.now().astimezone()
+    legs = _legs(body, as_of)
+    prices = build_default_price_range(body.spot, num_points=body.points, range_pct=body.range_pct)
+    try:
+        result = adjust_mod.adjust(legs, body.kind, spot=body.spot, as_of=as_of, strike_step=body.strike_step, r=body.rate, index=body.index,
+                                   steps=body.steps, expiry=body.expiry.isoformat() if body.expiry else None, width_steps=body.width_steps,
+                                   side=body.side, iv=body.new_iv)
+        views = adjust_mod.compare(legs, result, prices, spot=body.spot, as_of=as_of, r=body.rate)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"kind": body.kind, "description": result["description"], "changes": result["changes"], "realised": result["realised"],
+            "cash": result["cash"], "after_legs": [adjust_mod._public(leg) for leg in result["after"]], "prices": prices, **views,
+            "placeable": False,
+            "why_not": "An adjustment is a model on this page. To act on it, load the legs after into the builder and go through the "
+                       "PAPER ticket / basket; nothing is placed, staged or proposed from here.",
+            "disclaimer": DISCLAIMER}

@@ -7,6 +7,23 @@ export interface TemplateRequest {
   lot_size: number; spot: number; iv: number; as_of: string;
 }
 type WireLeg = Omit<Leg, "id" | "premium_source" | "priced_for">;
+/** N2-7: one adjustment's request (flag builder_adjustments) - the evaluate fields plus the adjustment. */
+export interface AdjustRequest {
+  legs: WireLeg[]; spot: number; as_of: string; range_pct?: number; points?: number;
+  kind: "roll" | "add_hedge" | "iron_condor" | "close_side"; strike_step: number;
+  index?: number; steps?: number; expiry?: string; width_steps?: number; side?: "CE" | "PE"; new_iv?: number;
+}
+export interface AdjustSide {
+  legs: WireLeg[]; at_expiry: number[]; single_expiry: boolean;
+  extremes: { max_profit: number | null; max_loss: number | null; unbounded_profit: boolean; unbounded_loss: boolean } | null;
+  breakevens: number[]; pop: number | null; pop_basis: string; greeks: Record<"delta" | "gamma" | "theta" | "vega" | "rho", number>; net_premium: number;
+}
+export interface AdjustResult {
+  kind: AdjustRequest["kind"]; description: string; realised: number; cash: number; prices: number[];
+  changes: { action: "open" | "close"; leg: WireLeg; price: number; realised?: number }[];
+  after_legs: WireLeg[]; before: AdjustSide; after: AdjustSide; greeks_change: AdjustSide["greeks"];
+  placeable: false; why_not: string; disclaimer: string;
+}
 export interface EvaluateRequest {
   legs: WireLeg[]; spot: number; as_of: string; days_forward: number; iv_shift: number; range_pct: number; points: number;
   brokerage_per_order?: number;
@@ -30,6 +47,8 @@ export const builderApi = {
   template: (body: TemplateRequest) =>
     request<{ name: string; legs: Omit<Leg, "id">[]; priced_by_model: boolean }>("/options-builder/template", { method: "POST", body: JSON.stringify(body) }),
   evaluate: (body: EvaluateRequest) => request<Evaluation>("/options-builder/evaluate", { method: "POST", body: JSON.stringify(body) }),
+  // N2-7: 404 while the flag builder_adjustments is off. Models only: nothing is placed, staged or proposed.
+  adjust: (body: AdjustRequest) => request<AdjustResult>("/options-builder/adjust", { method: "POST", body: JSON.stringify(body) }),
   basket: (underlying: string, legs: Leg[]) =>
     request<Basket>("/options-builder/basket", { method: "POST", body: JSON.stringify({ underlying, legs: wireLegs(legs) }) }),
   // "Save strategy": 404 while the operator flag options_builder_saved is off

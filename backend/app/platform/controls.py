@@ -67,6 +67,11 @@ async def entry_blocks(session: AsyncSession, *, user: Optional[User], mode: str
     current = await status(session)
     if current["maintenance_mode"]:
         reasons.append("Platform maintenance: no new entries" + (f" - {current['maintenance_message']}" if current["maintenance_message"] else ""))
+    if mode == "LIVE":
+        # Z10-c: the Phase 0 PAPER-only lock (flag phase0_paper_only, off by default). Entries only - exits never come here.
+        from app.platform import phase0_lock
+        if await phase0_lock.is_on(session, user.tenant_id if user is not None else None):
+            reasons.append(phase0_lock.ENTRY_REASON)
     if mode == "LIVE" and broker_name and broker_name.lower() in current["disabled_brokers"]:
         reasons.append(f"Broker {broker_name} is disabled by the platform operator - LIVE entries refused")
     if user is not None and user.trading_disabled_reason:
@@ -85,6 +90,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     "public_api": "Public REST API keys and /api/public/v1",
     "backtest_optimizer": "Parameter optimisation grid runs",
     "live_trading": "New LIVE deployments (PAPER unaffected; exits always work)",
+    # Z10-c (Phase 0): the PAPER-only lock (app/platform/phase0_lock.py). OFF by default; the owner turns it on for the beta
+    # host (docs/OPERATIONS.md 1.6aj) - no code, migration, script or deploy step does. It never changes `live_trading`.
+    "phase0_paper_only": "Phase 0 PAPER-only lock: every new LIVE entry is refused, at entry checks and at the broker-order chokepoint (exits of LIVE positions always run)",
     "self_signup": "Public registration (off: invite-only)",
     "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
     "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
@@ -171,7 +179,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory, the chart layer and the ScreenQL zone functions (read-only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
+DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts", "support_bot", "legal_pages"})

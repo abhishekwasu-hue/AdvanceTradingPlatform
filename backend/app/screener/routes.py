@@ -278,7 +278,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
             problems[symbol] = "no closed bars from the broker"
             continue
         frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
-        universe.append(SymbolData(symbol, frames))
+        universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
         newest.append(df.index[-1].to_pydatetime())
     if attach_daily and universe:
         daily_service = own.market_data(lookback_days=5) if own is not None else MarketDataService(build_adapter(record), lookback_days=5)

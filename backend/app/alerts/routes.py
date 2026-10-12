@@ -13,6 +13,7 @@ from app.core.validation_errors import safe_validation_message
 from app.alerts.dispatcher import send_via_channel
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.core.enums import AlertChannelType, NotificationSeverity, NotificationType
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord, User
 from app.db.session import get_session
@@ -97,7 +98,7 @@ async def list_alert_channels(
     return [AlertChannelResponse.from_record(r) for r in rows]
 
 
-@router.put("/{channel_type}", response_model=AlertChannelResponse)
+@router.put("/{channel_type}", response_model=AlertChannelResponse, dependencies=[Depends(require_scope("alerts:write"))])
 async def upsert_alert_channel(
     channel_type: str, request: AlertChannelUpsertRequest,
     user: User = Depends(can_manage), session: AsyncSession = Depends(get_session),
@@ -140,7 +141,7 @@ async def upsert_alert_channel(
     return AlertChannelResponse.from_record(record)
 
 
-@router.delete("/{channel_type}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{channel_type}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("alerts:write"))])
 async def delete_alert_channel(
     channel_type: str, user: User = Depends(can_manage), session: AsyncSession = Depends(get_session),
 ) -> None:
@@ -153,7 +154,7 @@ async def delete_alert_channel(
     await session.commit()
 
 
-@router.post("/{channel_type}/test", response_model=TestSendResponse)
+@router.post("/{channel_type}/test", response_model=TestSendResponse, dependencies=[Depends(require_scope("alerts:write"))])
 async def test_alert_channel(
     channel_type: str, user: User = Depends(can_manage), session: AsyncSession = Depends(get_session),
 ) -> TestSendResponse:

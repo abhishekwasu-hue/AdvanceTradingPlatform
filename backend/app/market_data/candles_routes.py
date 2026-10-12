@@ -33,6 +33,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
+from app.core.rate_limit import user_rate_limit
 from app.billing.service import meter
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.models import OHLCVBar
@@ -141,7 +142,13 @@ async def sources(user: User = Depends(get_current_user), session: AsyncSession 
             "max_symbols": MAX_SYMBOLS, "intraday_max_lookback_days": INTRADAY_MAX_LOOKBACK_DAYS, "daily_max_lookback_days": DAILY_MAX_LOOKBACK_DAYS}
 
 
-@router.post("/candles")
+# Z10-c: every call reads through a broker session and spends that session's rate budget (shared by the organisation
+# unless the bring-your-own-broker tier is on), so a member - a VIEWER included - is limited per user.
+candles_rate_limit = user_rate_limit("market_data_candles", limit=120, window_seconds=60)
+chains_rate_limit = user_rate_limit("market_data_chains", limit=30, window_seconds=60)
+
+
+@router.post("/candles", dependencies=[Depends(candles_rate_limit)])
 async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     if body.timeframe not in SUPPORTED_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {', '.join(SUPPORTED_TIMEFRAMES)}")
@@ -282,7 +289,7 @@ class ChainsBody(BaseModel):
     account_label: str = Field(default="primary", max_length=50)
 
 
-@router.post("/option-chains")
+@router.post("/option-chains", dependencies=[Depends(chains_rate_limit)])
 async def option_chains(body: ChainsBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """Phase AD: the broker's live option chain for up to 20 underlyings through the tenant's own
     session, in the same `OptionChain` shape the scanner, the chain analyser and the strike

@@ -30,7 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.brokers.base import BrokerInterface
 from app.brokers.circuit_breaker import breaker_for
-from app.brokers.models import BrokerOrderRequest
+from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide, OrderStatus, SignalDirection
 from app.core.models import RiskConfig, Signal, Trade
@@ -401,6 +401,7 @@ async def _place_live_legs(
                 symbol=leg.contract.tradingsymbol, exchange=leg.contract.exchange, transaction_type=leg.side,
                 quantity=quantity * leg.ratio, order_type="MARKET", product="MIS",
                 tag=build_order_tag(strategy_id=strategy_id, leg=LEG_ENTRY, algo_id=algo_id, max_length=max_tag, broker=broker.name),
+                intent=ORDER_INTENT_ENTRY,
             )
             try:
                 response = await broker.place_order(request)

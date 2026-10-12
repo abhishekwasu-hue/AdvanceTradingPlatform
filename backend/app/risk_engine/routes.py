@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.core.models import RiskConfig
 from app.db.models import RiskSettingsRecord, User
 from app.db.session import get_session
@@ -53,7 +54,7 @@ async def get_risk_settings(
     return config if config is not None else RiskConfig()
 
 
-@router.put("", response_model=RiskConfig)
+@router.put("", response_model=RiskConfig, dependencies=[Depends(require_scope("risk:write"))])
 async def update_risk_settings(
     config: RiskConfig, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> RiskConfig:

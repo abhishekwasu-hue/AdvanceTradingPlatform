@@ -111,6 +111,9 @@ TRADING_ROLES = (UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR)
 require_trader = require_role(*TRADING_ROLES, active_tenant=True, scope="trading:write")
 # Team management (invites, roles, removing members): the tenant's owner(s) only.
 require_owner = require_role(UserRole.OWNER, active_tenant=True, scope="team:manage")
+# Z10-c: shared reference data every organisation sees (fundamentals, cited news events). Writes are attributed
+# (`created_by`) and need a trading role of an active organisation; VIEWER and platform SUPPORT read only.
+require_contributor = require_role(*TRADING_ROLES, active_tenant=True)
 
 
 class MfaRequired(HTTPException):

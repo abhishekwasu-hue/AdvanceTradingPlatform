@@ -16,7 +16,7 @@ from app.screener import compile_screen, parse
 from app.screener.breakouts import params as bp
 from app.screener.breakouts import style, templates
 from app.screener.breakouts.quality import atr_percentile, atr_percentile_series, context_trends, htf_pass, run_breakout
-from app.screener.breakouts.screens import SCREENS, Bars, evaluate_screen
+from app.screener.breakouts.screens import INTRADAY_SCREENS, SCREENS, Bars, evaluate_screen
 from app.screener.registry import BREAKOUT_FUNCTIONS, FUNCTIONS
 from app.screener.runtime import SymbolData, evaluate, resample, run_screen
 from tests.breakout_fixtures import (HTF_DOWN, HTF_UP, LOW_VOLUME_BREAK, TRUE_BREAK, UPTREND, WICK_ONLY, base_then, box, context_frame,
@@ -71,7 +71,8 @@ def test_screenql_argument_defaults_are_the_parameter_defaults():
             "NewHighBreakout": {"weeks": "high_weeks", "v": "vol_mult", "k": "min_break_atr"},
             "RangeExpansion": {"k": "expansion_k", "v": "vol_mult"}, "VolumeBreakout": {"v": "shock_mult", "n": "range_n"},
             "RelVolume": {"n": "vol_avg_n"}, "ATRPercentile": {"n": "atr_n", "lookback": "atr_pct_lookback"}, "DowTrend": {"degree": "htf_degree"}}
-    assert set(want) == set(BREAKOUT_FUNCTIONS)
+    bk2 = {"ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP"}   # tests/test_z7_bk2_intraday.py
+    assert set(want) | bk2 == set(BREAKOUT_FUNCTIONS)
     for fn, args in want.items():
         spec = {a.name: a for a in FUNCTIONS[fn].args}
         for arg, param in args.items():
@@ -497,6 +498,8 @@ def test_every_template_can_match_on_the_alert_fetch_window(tid):
         m = run_screen(ast, validated, [data], base_tf=t.signal_tf, check_history=True)[0]
         assert m.reason is None, (tid, m.reason)                        # never "not enough history"
         matched += int(evaluate(ast, data, base_tf=t.signal_tf).fillna(False).astype(bool).sum())
+    if t.screen in INTRADAY_SCREENS:
+        return    # U6 BK2: these need a break on time-of-day volume; tests/test_z7_bk2_intraday.py injects one and proves the match
     assert matched > 0, tid
 
 

@@ -202,6 +202,18 @@ def test_breakout_series_u6_bk1():
     assert set(_ev("DowTrend(0)", data).dropna().unique()) <= {"UP", "DOWN", "RANGE"}
 
 
+def test_intraday_breakout_series_u6_bk2():
+    # deeper checks (fixtures per screen, half days, no look-ahead, parity with the engine) are in tests/test_z7_bk2_intraday.py
+    days = pd.bdate_range("2026-03-02", periods=8, tz="UTC")
+    frame = pd.concat([_bars([100 + 2 * np.sin(i / 9) for i in range(75)], start=str(d + pd.Timedelta(hours=3, minutes=45)), vol=[1000.0] * 75)
+                       for d in days])                                          # eight 09:15-15:30 sessions
+    data = SymbolData("S", {"5m": frame})
+    for text in ('ORBreakout("up", 15, 0, FALSE, 15, 0)', 'DayLevelBreak("down", "prev_day", 0, FALSE)', 'DayExtremeBreak("up", 0, FALSE, 0, 0)'):
+        assert _ev(text, data).dtype == bool, text
+    assert _ev("RelVolumeTOD(5)", data).dropna().eq(1.0).all()                # constant volume
+    assert _ev("SessionVWAP()", data).notna().any()
+
+
 def test_market_zone_functions_z7a3():
     # deeper checks (as-of per bar, no look-ahead, text vs engine, tenant scope) are in tests/test_zones_chart_screenql.py
     from datetime import datetime, timezone

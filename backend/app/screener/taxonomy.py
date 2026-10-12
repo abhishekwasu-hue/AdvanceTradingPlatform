@@ -325,5 +325,13 @@ __all__ = ["NOTE", "DATA_FILE", "FRONTEND_SOURCES", "TAG_KEYS", "Axis", "Screen"
            "visible"]
 
 
+def default_hidden() -> List[str]:
+    """Registered sources whose flag starts OFF (U6 breakouts): what a new organisation's gallery leaves out."""
+    from app.platform.controls import DEFAULT_OFF_FLAGS
+    return [name for name, src in _SOURCES.items() if src.flag in DEFAULT_OFF_FLAGS]
+
+
 if __name__ == "__main__":      # regenerates the frontend's sample: python -m app.screener.taxonomy > ../frontend/src/screener/taxonomySample.json
-    print(json.dumps(payload(load()), indent=1, ensure_ascii=False))
+    import app.main  # noqa: F401 - registers every template source (into the imported module, not this __main__ copy)
+    from app.screener import taxonomy as _tx
+    print(json.dumps(_tx.payload(_tx.load(), hidden_sources=_tx.default_hidden()), indent=1, ensure_ascii=False))

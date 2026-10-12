@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_trader
 from app.brokers.models import BrokerCredentials
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.db.models import BrokerCredentialRecord, Tenant, User
@@ -21,7 +21,7 @@ from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
 router = APIRouter(prefix="/api/reconciliation", tags=["reconciliation"])
 
 
-@router.post("/{broker_name}", response_model=ReconciliationReport)
+@router.post("/{broker_name}", response_model=ReconciliationReport, dependencies=[Depends(require_trader)])
 async def reconcile_broker_positions(
     broker_name: str, account_label: Optional[str] = Query(default=None, max_length=50),
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),

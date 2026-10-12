@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.accounts.service import ensure_account_for_credential
 from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.brokers.exceptions import BrokerError
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
@@ -251,7 +252,7 @@ async def list_broker_token_status(
     return [_token_status_response(r, request) for r in records]
 
 
-@router.delete("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("brokers:write"))])
 async def delete_broker_credentials(
     name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
 ) -> None:
@@ -263,7 +264,7 @@ async def delete_broker_credentials(
         await session.commit()
 
 
-@router.post("/{name}/disconnect", status_code=status.HTTP_204_NO_CONTENT)
+@router.post("/{name}/disconnect", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("brokers:write"))])
 async def disconnect_broker(
     name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
 ) -> None:
@@ -293,7 +294,7 @@ async def disconnect_broker(
     await session.commit()
 
 
-@router.post("/{name}/smoke-test")
+@router.post("/{name}/smoke-test", dependencies=[Depends(require_scope("brokers:write"))])
 async def smoke_test_broker(
     name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
 ) -> dict:
@@ -324,7 +325,7 @@ async def smoke_test_broker(
     return out
 
 
-@router.post("/{name}/authenticate", response_model=BrokerProfile)
+@router.post("/{name}/authenticate", response_model=BrokerProfile, dependencies=[Depends(require_scope("brokers:write"))])
 async def authenticate_broker(
     name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> BrokerProfile:

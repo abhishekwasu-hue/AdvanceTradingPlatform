@@ -13,6 +13,7 @@ revision: str = 'e6f8a0b2c4d6'
 down_revision: Union[str, Sequence[str], None] = 'd5e7f9a1b3c5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z11: execute: risky SQL, unique create_index on an existing table - a code-only rollback past it is refused; use --restore-db
 
 _OPEN = "status IN ('PROPOSED', 'APPROVED')"
 

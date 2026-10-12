@@ -18,6 +18,7 @@ revision: str = 'b1c2d3e4f5a6'
 down_revision: Union[str, Sequence[str], None] = 'e6a1b2c3d4f5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
 
 PRICE = sa.Numeric(18, 4)
 HYPERTABLES = {"md_candles": "ts", "md_ticks": "ts", "md_option_chain_snapshots": "ts", "md_position_limits": "trade_date"}

@@ -149,7 +149,8 @@ def test_cohort_cap_is_enforced(gate, monkeypatch):
     used = client.get(f"{ADMIN}/cohort", headers=gate).json()["used"]
     monkeypatch.setattr(app_config, "BETA_COHORT_CAP", used + 1)
     cohort = client.get(f"{ADMIN}/cohort", headers=gate).json()
-    assert cohort == {"gate_on": True, "cap": used + 1, "used": used, "remaining": 1}
+    # Z10-e: `cap` is the effective cap, min(stage, BETA_COHORT_CAP); here the env cap binds.
+    assert {k: cohort[k] for k in ("gate_on", "cap", "used", "remaining")} == {"gate_on": True, "cap": used + 1, "used": used, "remaining": 1}
     assert _signup("pw6-cap-last@example.com", code=issued["code"]).status_code == 201
     assert _refusal(_signup("pw6-cap-over@example.com", code=issued["code"])) == "beta_cohort_full"
     assert client.get(f"{ADMIN}/cohort", headers=gate).json()["remaining"] == 0

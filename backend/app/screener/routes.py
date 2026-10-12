@@ -10,6 +10,7 @@ saved screens and runs on server data.
 from __future__ import annotations
 
 import hashlib
+import logging
 import json
 import math
 import time
@@ -29,11 +30,14 @@ from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
 from app.screener import taxonomy as tx
+from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
+from app.screener.validator import Problem
 from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 
 FLAG = "screener_v2"
@@ -101,7 +105,10 @@ async def _flag(session: AsyncSession, user: User) -> None:
 @router.get("/registry")
 async def registry(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
-    return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": describe()}
+    entries = describe()
+    if not await breakout_gate.enabled(session, user.tenant_id):            # U6 BK1: the breakout family stays hidden
+        entries = {k: v for k, v in entries.items() if not (k in FUNCTIONS and FUNCTIONS[k].flag)}
+    return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
 
 
 @router.get("/taxonomy")
@@ -125,7 +132,17 @@ async def taxonomy(method: Optional[str] = None, setup: Optional[str] = None, us
 async def validate_screen(body: ValidateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""
     await _flag(session, user)
-    return _view(*_compiled(body.source, body.base_tf, body.params))
+    ast, validated = _compiled(body.source, body.base_tf, body.params)
+    await _gate(session, user, ast, validated)
+    return _view(ast, validated)
+
+
+async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
+    """U6 BK1: a screen using a breakout function while `screener_breakouts` is off fails validation, with the reason."""
+    blocked = await breakout_gate.blocked_calls(session, user.tenant_id, ast)
+    if blocked:
+        validated.ok = False
+        validated.problems.append(Problem(breakout_gate.refusal(blocked)))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -145,8 +162,9 @@ async def list_screens(include_archived: bool = False, user: User = Depends(get_
     return [_screen_dict(r) for r in await session.scalars(q.order_by(ScreenRecord.id.desc()))]
 
 
-def _apply(row: ScreenRecord, body: ScreenBody) -> None:
+async def _apply(session: AsyncSession, user: User, row: ScreenRecord, body: ScreenBody) -> None:
     ast, validated = _compiled(body.source, body.base_tf, body.params)
+    await _gate(session, user, ast, validated)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     row.name, row.source_text, row.ast_json = body.name.strip(), nodes.to_text(ast), json.dumps(nodes.to_json(ast))
@@ -158,7 +176,7 @@ def _apply(row: ScreenRecord, body: ScreenBody) -> None:
 async def create_screen(body: ScreenBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
     row = ScreenRecord(tenant_id=user.tenant_id, created_by=user.id, name="", source_text="", ast_json="{}")
-    _apply(row, body)
+    await _apply(session, user, row, body)
     session.add(row)
     await session.commit()
     return _screen_dict(row)
@@ -168,7 +186,7 @@ async def create_screen(body: ScreenBody, user: User = Depends(require_trader), 
 async def update_screen(screen_id: int, body: ScreenBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flag(session, user)
     row = await _owned(session, user, screen_id)
-    _apply(row, body)
+    await _apply(session, user, row, body)
     await session.commit()
     return _screen_dict(row)
 
@@ -209,7 +227,11 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     from app.market_data.fanin import Priority
     from app.market_data.service import MarketDataService
     interval = _FETCH[base_tf]
-    days = fetch_days(lookback, base_tf) if interval != "day" else 5
+    attach_daily = interval != "day" and any(nodes.TF_MINUTES.get(tf, 0) >= nodes.TF_MINUTES["1d"] for tf in lookback)
+    # BK1 verification F3: with the daily history attached, @1d / @1w / @1M come from it, so only the intraday timeframes
+    # size the intraday window (a 15m screen with daily context fetches days, not the 60-day cap)
+    window = {tf: b for tf, b in lookback.items() if nodes.TF_MINUTES.get(tf, 0) < nodes.TF_MINUTES["1d"]} if attach_daily else lookback
+    days = fetch_days(window or {base_tf: 1}, base_tf) if interval != "day" else 5
     problems: Dict[str, str] = {}
     own = None
     if await live_access.byob_on(session, tenant_id):
@@ -249,12 +271,51 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames))
         newest.append(df.index[-1].to_pydatetime())
+    if attach_daily and universe:
+        daily_service = own.market_data(lookback_days=5) if own is not None else MarketDataService(build_adapter(record), lookback_days=5)
+        await _attach_daily(daily_service, universe, exchange, now)        # U6 BK1: through the same (BT1b) source
     if own is not None and tier_out is not None:
         # Timed by the data (the stalest symbol's newest bar); nothing read = age unknown = stale.
         oldest = min(newest) if newest else None
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
                                           now=now or datetime.now(timezone.utc))
     return universe, problems, f"broker:{record.broker_name}"
+
+
+async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str, now: Optional[datetime]) -> None:
+    """U6 BK1 verification (A): an intraday screen that reads a daily-or-coarser timeframe gets the broker's daily history
+    (completed sessions, about 400 calendar days) as its "1d" frame; the runtime builds @1d / @1w / @1M from it instead of
+    from the short intraday window (60 days at most), so a higher-timeframe trend can be read. Closed bars only. A symbol
+    whose daily fetch fails keeps the intraday-built context (shorter; a trend there may read as unknown)."""
+    from app.cache.client import cache_get, cache_set
+    from app.core.models import OHLCVBar
+    from app.market_data.calendar import IST
+    from app.market_data.service import HISTORY_CACHE_TTL_SECONDS
+    session_day = (now or datetime.now(timezone.utc)).astimezone(IST).date().isoformat()
+    scope = f"{getattr(service, 'cache_namespace', None) or 'shared'}:{getattr(getattr(service, 'broker', None), 'name', 'broker')}"
+    for data in universe:
+        # BK1 verification F2: completed sessions do not change during the day - one fetch per symbol per session date
+        # (kept HISTORY_CACHE_TTL_SECONDS), under the session's own namespace (BT1b), not every alert cycle
+        key = f"md:dailyctx:{scope}:{exchange}:{data.symbol}:{session_day}"
+        cached = await cache_get(key)
+        if cached:
+            bars = [OHLCVBar.model_validate(b) for b in json.loads(cached)]
+        else:
+            try:
+                bars = await service.get_candles(data.symbol, exchange, "day")
+            except Exception:  # noqa: BLE001 - the screen still runs on the intraday-built context
+                logger.warning("daily context fetch failed for %s", data.symbol, exc_info=True)
+                continue
+            if bars:
+                await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), HISTORY_CACHE_TTL_SECONDS)
+        df = bars_to_dataframe(bars) if bars else pd.DataFrame()
+        if df.empty:
+            continue
+        if df.index.tz is None:
+            df.index = df.index.tz_localize("UTC")
+        df = closed_only(df, "1d", now or datetime.now(timezone.utc))
+        if not df.empty:
+            data.frames["1d"] = df
 
 
 def missing_data(ast: Any) -> List[str]:
@@ -282,6 +343,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, base_tf, params)
+    await _gate(session, user, ast, validated)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     missing = missing_data(ast)
@@ -291,7 +353,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     tier: Dict[str, Any] = {}
-    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.lookback,
+    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
                                                                user_id=user.id, tier_out=tier)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)

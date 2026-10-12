@@ -202,7 +202,7 @@ services:
   # Phase E3: daily logical backups of the database into the `backups` volume (pg_dump custom
   # format, optional AES-256 encryption, SHA-256 sidecars, retention). Same Postgres major as the
   # database so pg_dump/pg_restore match. Rehearse a restore with:
-  #   docker compose run --rm backup sh /scripts/verify_backup.sh latest
+  #   docker compose run --rm --entrypoint sh backup /scripts/verify_backup.sh latest
   backup:
     logging: *default-logging
     image: postgres:17-alpine

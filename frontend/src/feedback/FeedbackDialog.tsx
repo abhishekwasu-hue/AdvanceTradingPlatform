@@ -7,7 +7,11 @@ import { FEEDBACK_MAX_CHARS, feedbackMessage, feedbackScreen, feedbackVersion } 
 
 /** PW6: "Send feedback". Shows exactly what is attached (the app version and the screen path) before anything is sent;
  * no account data, market data, tokens or settings go with it. */
-export default function FeedbackDialog({ open, onOpenChange, pathname }: { open: boolean; onOpenChange: (open: boolean) => void; pathname: string }) {
+export default function FeedbackDialog({ open, onOpenChange, pathname, initialText }: {
+  open: boolean; onOpenChange: (open: boolean) => void; pathname: string;
+  /** Z10-f: the support bot's hand-off fills the form with the question it could not answer (editable before sending). */
+  initialText?: string;
+}) {
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
@@ -18,7 +22,8 @@ export default function FeedbackDialog({ open, onOpenChange, pathname }: { open:
 
   useEffect(() => {
     if (open) { setSent(false); setError(null); }
-  }, [open]);
+    if (open && initialText) setText(initialText.slice(0, FEEDBACK_MAX_CHARS));
+  }, [open, initialText]);
 
   async function send() {
     if (!message) return;

@@ -14,7 +14,10 @@ need pg_restore
 FILE="${1:-}"; [ -n "$FILE" ] || die "usage: restore.sh <file|latest> [target-url]"
 [ "$FILE" = "latest" ] && FILE="$BACKUP_DIR/$(readlink "$BACKUP_DIR/latest")"
 [ -f "$FILE" ] || die "no such file: $FILE"
-TARGET="${2:-$(pg_url)}"
+pg_setup
+TARGET="${2:-$PG_URL}"
+# verify_backup.sh restores the scratch copy logged in as its non-superuser role: that role's one-run password.
+if [ -n "${RESTORE_PASSWORD:-}" ]; then PGPASSWORD="$RESTORE_PASSWORD"; export PGPASSWORD; fi
 
 if [ -f "$FILE.sha256" ]; then
   EXPECTED="$(cat "$FILE.sha256")"; ACTUAL="$(sha256_file "$FILE")"
@@ -22,6 +25,18 @@ if [ -f "$FILE.sha256" ]; then
   log "sha256 verified"
 else
   log "WARNING: no .sha256 sidecar next to $FILE - integrity not verified"
+fi
+
+# Z11 / N1: with a passphrase configured only an encrypted AND sealed dump is restored - a plain or unsealed file could
+# come from anyone with write access to the bucket, and pg_restore runs SQL from it (RESTORE_ALLOW_UNSEALED=1 is for a
+# dump taken before sealing existed, read by hand first).
+if [ -n "$BACKUP_ENCRYPTION_PASSPHRASE" ] && [ "${RESTORE_ALLOW_UNSEALED:-0}" != "1" ]; then
+  case "$FILE" in *.enc) ;; *) die "refusing $FILE: not an encrypted dump (.enc) while BACKUP_ENCRYPTION_PASSPHRASE is set" ;; esac
+  case "$(seal_state "$FILE")" in
+    ok) log "seal verified" ;;
+    missing) die "refusing $FILE: no .hmac seal (every dump is sealed by backup.sh)" ;;
+    *) die "refusing $FILE: it does not match its seal - changed after it was written" ;;
+  esac
 fi
 
 if [ "${RESTORE_CONFIRM:-}" != "yes" ]; then

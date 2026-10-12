@@ -98,10 +98,22 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ReversalAt": ['ReversalAt(SwingLow(0), "bullish")', 'ReversalAt(SMA(close, 20), "bearish")'],
     "RealBreak": ['RealBreak(SwingHigh(0), "above", 20)', 'RealBreak(PDL(), "below")'],
     "MedianRange": ["MedianRange(20)", "MedianRange(10)@1h"],
+    # U6 BK1 breakout screens (one signal per leg) and their factors; volume and distance conditions off so they fire
+    "RangeBreakout": ['RangeBreakout("up", 20, 0, 0)', 'RangeBreakout("down", 10, 0.1, 0, "auto")', 'RangeBreakout("up", 10, 0, 0)@1h'],
+    "SwingBreakout": ['SwingBreakout("up", 0, 0)', 'SwingBreakout("down", 0, 0)@1h'],
+    "SwingBreakType": ['SwingBreakType("up", 0, 0)', 'SwingBreakType("down", 0, 0)'],
+    "NRBreakout": ['NRBreakout("up", "nr7", 0, 0)', 'NRBreakout("down", "inside", 0, 0)', 'NRBreakout("up", "nr4", 0, 0)@1h'],
+    "NewHighBreakout": ['NewHighBreakout("down", 1, 0, 0)'],          # Daily / Weekly in screens; daily cases below
+    "RangeExpansion": ['RangeExpansion("up", 1.5, 0)', 'RangeExpansion("down", 1.5, 0)@1h'],
+    "VolumeBreakout": ['VolumeBreakout("up", 1.5)', 'VolumeBreakout("down", 1.5, 10)'],
+    "RelVolume": ["RelVolume(20)", "RelVolume(10)@1h"],
+    "ATRPercentile": ["ATRPercentile(14, 50)", "ATRPercentile(14, 20)@1h"],
+    "DowTrend": ["DowTrend(0)", "DowTrend(0)@15m"],                    # @1h: 50 bars here, too few confirmed swings to read
 }
 SCREENQL_FIELDS: List[str] = ["close", "volume", "close@1h", "high@1d[1]", "low[2]"]
 # A daily screen: weekly and monthly bars built from the daily ones (W-MON / month-start buckets, close-time alignment).
-SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "close@1M[1]", "Max(high, 3)@1M", "PDH()"]
+SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "close@1M[1]", "Max(high, 3)@1M", "PDH()",
+                             'NewHighBreakout("up", 4, 0, 0)', 'NewHighBreakout("down", 26, 0, 0)', "DowTrend(0)@1w"]   # U6 BK1
 # Answered for the last bar only (not series): causal by construction, kept out of history-reading functions.
 SCREENQL_LAST_BAR: Dict[str, List[str]] = {
     "Trend": ["Trend(3)"],
@@ -252,7 +264,7 @@ def _register_zones() -> None:
 def _register_screenql() -> None:
     for exprs in SCREENQL_SERIES.values():
         for text in exprs:
-            heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak"))
+            heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")

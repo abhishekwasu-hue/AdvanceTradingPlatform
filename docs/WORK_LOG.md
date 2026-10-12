@@ -1626,6 +1626,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   IV gate is already ported; `charges.py` has not been checked against ATP on golden fixtures; ATP has no VIX risk gate
   and no Stocko adapter.
 - `docs/ROADMAP_STATUS.md`: a standalone "Trade port map" section with the counts (move under Phase 0 once #165 merges).
+
+### 2026-10-11 - Z7 / U6 BK1 breakout screens (flag screener_breakouts, off)
+- `app/screener/breakouts/`: B1 range / consolidation, B2 swing break (BOS / CHoCH on causal swings), B4 inside / NR4 / NR7
+  (mother-bar rule), B7 N-week high, B13 range expansion, B14 volume breakout. All are causal series on closed bars,
+  with one signal per leg.
+- Quality overlay: grade A / B / C with the reasons. Checks: higher-timeframe Dow trend on the two context timeframes,
+  volume expansion, base dry-up, ATR-percentile regime, room to the next opposing level (swings plus zones S/R).
+  Hard filter: the liquidity floor. Follow-up: failed / accepted status and the retest flag.
+- Style / timeframe selector: Intraday or Swing, signal timeframe -> context ladder, aligned by close time.
+- ScreenQL functions over the same series. Pre-built templates whose ScreenQL text matches the engine bar by bar.
+- Catalog and run API. The flag gate also covers the registry, validate, saved screens, `/run` and alert rules.
+- Every threshold is a parameter with a default and a research note (`docs/research/breakouts.md`).
+- Open questions: BK1-1..BK1-7.
 ### 2026-10-12 02:30 IST - Z5 P1-d: plan-before-trade PAPER ticket, risk by default, strike breach and VIX gate ports
 - Branch `claude/z5-p1d-ticket-risk`, stacked on Z3-b (#174). Flags `risk_by_default` and `vix_gate`, both off.
   Design note: `docs/design/RISK_BY_DEFAULT.md`.
@@ -1700,6 +1713,34 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `GET /api/screener/taxonomy` (flags `screener_v2` + new `screener_gallery`, both default OFF) and the gallery sheet
   on the Screener page (rail, chips, search, cards, matrix; empty cells said out loud). Flag off: page unchanged.
 - BK1 (#178) is not a dependency: its templates register when it merges (OPEN_QUESTIONS TX1-6). Questions TX1-1..TX1-8.
+
+### 2026-10-11 - Z10-f: legal pages + acceptance, support bot (flag support_bot, off)
+- Privacy notice (DPDP 2023), Terms of use, Risk disclosure as versioned Markdown (`backend/app/legal/content/`), each
+  headed "Draft — to be reviewed by a lawyer before launch"; retention / breach-notice figures read from
+  `app/retention` and `in_sebi.json`; company, address and grievance officer stay placeholders (owner blocker).
+- Public pages `/legal/<slug>` (no shell, no sign-in) and `GET /api/legal/documents[/{slug}]`; acceptance (version +
+  text hash + time + IP/browser) recorded at sign-up / team join, else asked by a non-blocking banner after sign-in.
+  Stored in `ai_acknowledgements` (kind `legal_*`): no migration.
+- Support bot `POST /api/ai/support/ask` (404 while off): help + legal retrieval, refuses advice / account / order
+  questions, hands low confidence to the feedback form, optional rewording only through the organisation's own
+  provider and the advice filter; AI rate units + its own per-user limit. Questions Z10F-1..Z10F-6.
+- Follow-up (coordinator): legal pages, the sign-up/invite consent box and the acceptance banner behind the new flag
+  `legal_pages` (default off: 404, sign-up unchanged, bot leaves legal out); turning it on is refused while placeholders
+  are open unless `override_open_placeholders` (audited). Z10F-5 updated.
+### 2026-10-11 - Z10-e (G7 + rollout): staged beta cohort, public status page, on-call runbooks
+- Staged rollout: `BETA_COHORT_STAGES` 50 / 200 / 500; the PW6 gate stops at min(stage, `BETA_COHORT_CAP`). The stage is
+  stored in `platform_controls` (`beta_cohort_stage`, no migration), moved in Admin > Beta rollout or
+  `PUT /api/admin/beta/cohort/stage`: up one stage at a time with a reason, down to any lower stage; every move audited
+  (`beta_cohort_stage_raised` / `_lowered`). `BETA_COHORT_STAGE` (default 50) applies until a stage is stored.
+  `GET /api/admin/beta/cohort` adds stage, stages, next stage, env cap, headroom. Gate flag `beta_cohort_gate` still off.
+- Public status: `GET /api/status` (no login, new flag `public_status_page`, off = 404) and the standalone `/status`
+  page: API, trading engine, market data (EOD date, NSE open, Tier A session count), alert outbox lag, maintenance and
+  platform-wide incidents (impact, state, start only). Built from the deep-health probes, BT1 EOD helpers, the fan-in
+  eligibility rule (`fanin.eligible_sessions`, shared with the worker) and `app/incidents`. Cached 15 s, 60/min per IP,
+  503 outage body when the database is down. No tenant data, no internal detail.
+- Runbooks: `docs/OPERATIONS.md` 1.9 (data stale, worker stale, outbox backlog, broker down, rollback, staged rollout),
+  linking the Z11 runbook (PR #186) instead of copying it; `runbook` annotations on the Prometheus rules, with a test that
+  every link resolves. Open questions Z10e-1..Z10e-8.
 ### 2026-10-12 IST - Z10-a review follow-ups (#187)
 - Merged origin/main (9c4c16a).
 - H1: Supertrend / Bollinger `k` and the zone filters' `tolerance_pct` are read once by the runtime, so an expression

@@ -145,12 +145,31 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z10-d (G4, docs/PERFORMANCE.md): screener runs and bar-close alert rules evaluate the symbols that share a bar index
     # together (app/screener/panel.py) - the same matches, computed once over the universe. OFF: per symbol, as before.
     "screener_vectorized": "Vectorised screens: screener runs and bar-close alerts evaluate the whole universe at once (same matches, less time)",
+    # Z10-f (docs/design/Z10_LAUNCH_HARDENING.md): the how-to support bot over the help and legal pages. No tools (reads
+    # no positions, touches no order), refuses advice, hands low-confidence questions to the feedback form. OFF: 404.
+    "support_bot": "Support bot: how-to answers from the help and legal pages (no advice, no account data, no orders)",
+    # Z10-f: the public legal pages (Privacy notice, Terms of use, Risk disclosure), the acceptance box on sign-up and
+    # team join, and the acceptance banner. OFF: the routes answer 404 and sign-up is unchanged. Refused while a document
+    # still has an open [PLACEHOLDER] unless the operator overrides (`override_open_placeholders`).
+    "legal_pages": "Legal pages (Privacy notice, Terms of use, Risk disclosure), acceptance at sign-up and the acceptance banner",
+    # U6 BK1 (docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md): the breakout screens (B1/B2/B4/B7/B13/B14), the quality
+    # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
+    # Research only - matches, never orders.
+    "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
+    # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
+    # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
+    # answers 404 and the page says it is not enabled.
+    "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
+    # Z7a-2 (docs/specs/ATP_MARKET_ZONES_PORT.md): the nightly market-zones job - demand / supply, order blocks, S/R and
+    # gaps with their lifecycle and level memory, computed from the shared lake bars and stored as-of. Reference data only.
+    "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory (stored, read-only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "screener_vectorized", "risk_by_default", "vix_gate"})
+                               "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
+                               "support_bot", "legal_pages"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
@@ -173,9 +192,24 @@ async def flag_enabled(session: AsyncSession, name: str, tenant_id: Optional[int
     return tenant_id is not None and tenant_id in entry["tenants"]
 
 
-async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, tenants: Optional[List[int]] = None) -> Dict[str, Dict]:
+def legal_open_placeholders() -> Dict[str, List[str]]:
+    """Z10-f: {slug: [placeholder, ...]} for every legal document that still has an unfilled [PLACEHOLDER]."""
+    from app.legal import documents
+    return {slug: doc.open_placeholders() for slug, doc in documents.documents().items() if doc.open_placeholders()}
+
+
+async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, tenants: Optional[List[int]] = None,
+                   override_open_placeholders: bool = False) -> Dict[str, Dict]:
     if name not in FEATURE_FLAGS:
         raise ValueError(f"Unknown feature flag '{name}' - known: {sorted(FEATURE_FLAGS)}")
+    open_items = legal_open_placeholders() if name == "legal_pages" and (on or tenants) else {}
+    if open_items and not override_open_placeholders:
+        listed = "; ".join(f"{slug}: {', '.join(items)}" for slug, items in sorted(open_items.items()))
+        raise ValueError(f"The legal pages still have open placeholders ({listed}). Fill them in (and have the text reviewed) "
+                         "first, or switch the flag on with override_open_placeholders = true")
+    if open_items:
+        await write_audit_log(session, None, user.id, "legal_pages_placeholder_override",
+                              ", ".join(f"{slug}:{len(items)}" for slug, items in sorted(open_items.items())))
     current = await _get(session, KEY_FEATURE_FLAGS)
     flags = current.get("flags") or {}
     flags[name] = {"on": on, "tenants": sorted({int(t) for t in (tenants or [])})}

@@ -8,6 +8,7 @@ index universe with its membership as of each date, a symbol list), write one tr
 the sealed holdout and anything that is not a daily bars-only screen."""
 import asyncio
 import json
+import math
 import uuid
 from datetime import date, datetime, time as dtime, timedelta, timezone
 
@@ -297,3 +298,107 @@ def test_refusals_holdout_timeframe_and_data(monkeypatch):
     both = client.post("/api/screener/history/asof", headers=t["headers"], json={"source": SCREEN, "date": base["date"],
                                                                                   "universe": {"index": "NIFTY50", "symbols": ["A"]}})
     assert both.status_code == 422
+
+
+# --- review of S6a ---------------------------------------------------------------------------------------------------------------
+
+def _sweep_cases():
+    """One daily screen per registry function the history path runs (no data needs, not cross-sectional, daily): its own
+    Z10-a case made a condition."""
+    from app.quality import causal_cases as C
+    from app.screener.registry import BOOL, CAT, FUNCTIONS
+    out = []
+    for name, spec in sorted(FUNCTIONS.items()):
+        if spec.needs or spec.cross_sectional or (spec.timeframes and "1d" not in spec.timeframes):
+            continue
+        texts = [t for t in (C.SCREENQL_SERIES.get(name, []) + C.SCREENQL_LAST_BAR.get(name, [])) if "@" not in t]
+        if not texts:
+            continue
+        e = texts[0]
+        _, v = compile_screen(e, base_tf="1d")
+        if spec.returns == BOOL or v.ok:
+            cond = e
+        elif spec.returns == CAT:
+            if not spec.values:
+                continue
+            cond = f'{e} == "{spec.values[0]}"'
+        elif spec.timeframed and e.endswith(")"):
+            cond = f"{e} > {e}[1]"
+        else:
+            cond = f"({e}) > 0"
+        out.append(pytest.param(name, cond, id=name))
+    return out
+
+
+@pytest.mark.parametrize("name, cond", _sweep_cases())
+def test_every_registry_function_reads_the_same_fast_as_on_cut_bars(name, cond):
+    """HIGH: the fast path (one series read at each date) equals the as-of run on bars cut at each date, for every
+    function the history path takes - including the last-bar-only ones, which now run date by date."""
+    frames, days = _universe(n=3, bars=260, seed=17)
+    ast, validated = compile_screen(cond, base_tf="1d")
+    assert validated.ok, (cond, validated.problems)
+    dates = days[200::6]
+    sig = H.signals(ast, validated, frames, dates)
+    for d in dates:
+        assert sorted(sig.columns[sig.loc[d].to_numpy()]) == H.passers_on(ast, validated, frames, d)["matched"], (name, d)
+
+
+def test_a_last_bar_only_screen_runs_date_by_date_and_the_fast_path_refuses_a_scalar():
+    frames, days = _universe(n=4, bars=300, seed=4)
+    ast, validated = _compiled("PatternBullish()")
+    assert H.last_bar_only_calls(ast) == ["PatternBullish"]
+    dates = days[-30:]
+    sig = H.signals(ast, validated, frames, dates)
+    for d in dates:
+        assert sorted(sig.columns[sig.loc[d].to_numpy()]) == H.passers_on(ast, validated, frames, d)["matched"]
+    with pytest.raises(H.HistoryError, match="per-bar series"):
+        H._series_at(True, frames["S00"], dates, 1)
+    with pytest.raises(H.HistoryError, match="last bar only"):
+        H.signals(ast, validated, frames, days[:H.MAX_CROSS_SECTIONAL_DATES + 1])
+
+
+def test_a_screen_reads_the_prices_known_at_each_date():
+    """MED: a split after d is not known at d - an absolute-level screen reads the bars as of d (scales), a scale-free one
+    is unchanged."""
+    days = _sessions(80)
+    adjusted = _walk(2, days, start=100.0, vol=0.001)                # one share of today: ~100 all along
+    split_at = days[60]                                               # 1:2 split - before it a share traded at ~200
+    scales = {"X": {d: ((0.5, 2.0) if d < split_at else (1.0, 1.0)) for d in days}}
+    frames = {"X": adjusted}
+    level, lv = _compiled("close > 150")
+    dates = [days[50], days[70]]
+    assert not H.signals(level, lv, frames, dates).loc[days[50], "X"]           # fully adjusted: ~100, a level not known then
+    sig = H.signals(level, lv, frames, dates, scales=scales)
+    assert sig.loc[days[50], "X"] and not sig.loc[days[70], "X"]                # ~200 before the split, ~100 after
+    assert H.passers_on(level, lv, frames, days[50], scales=scales)["matched"] == ["X"]
+    ratio, rv = _compiled("close > SMA(close, 5) * 0.5")
+    assert H.signals(ratio, rv, frames, dates).equals(H.signals(ratio, rv, frames, dates, scales=scales))
+
+
+def test_overlapping_horizons_use_independent_dates_and_delistings_are_counted():
+    """MED: with daily dates and a 5-session horizon the t-statistic uses one date in five; LOW: a pick with no bar at
+    d + h is counted; excluded pairs (a split inside unadjusted bars) are left out."""
+    frames, days = _universe(n=6, bars=160, seed=8)
+    frames["S05"] = frames["S05"].iloc[:120]                          # delisted inside the window
+    ast, validated = _compiled("close > 0")
+    dates = days[100:140]
+    sig = H.signals(ast, validated, frames, dates)
+    stats = H.fitness(sig, frames, days, horizons=[5])
+    st = stats["horizons"][0]
+    assert len(st.independent_excess) == math.ceil(len(st.excess_by_date) / 5) or len(st.independent_excess) <= len(st.excess_by_date) // 5 + 1
+    assert st.as_dict()["independent_dates"] == len(st.independent_excess) and st.no_bar_at_horizon > 0
+    excluded = {("S00", d) for d in dates}
+    st2 = H.fitness(sig, frames, days, horizons=[5], excluded=excluded)["horizons"][0]
+    assert st2.observations == st.observations - sum(1 for d in dates if days.index(d) + 5 < len(days))
+
+
+def test_a_forward_window_that_crosses_the_holdout_is_refused(monkeypatch):
+    """LOW: the dates end before the holdout, but their 20-session horizon would read into it - refused."""
+    t = _org("holdfwd")
+    frames, days = _symbols(2, "H")
+    monkeypatch.setenv("BACKTEST_HOLDOUT_START", str(days[150]))
+    body = {"source": SCREEN, "universe": {"symbols": list(frames)}, "start": str(days[120]), "end": str(days[145]), "horizons": [20]}
+    r = client.post("/api/screener/history/fitness", headers=t["headers"], json=body)
+    assert r.status_code == 422 and "horizon" in r.text and "holdout" in r.text
+    short = client.post("/api/screener/history/fitness", headers=t["headers"], json={**body, "end": str(days[125]), "horizons": [1]})
+    assert short.status_code != 422 or "holdout" not in short.text

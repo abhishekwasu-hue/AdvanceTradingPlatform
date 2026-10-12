@@ -1177,6 +1177,15 @@ weighting, the part C cost and slippage models, and the benchmark comparison.
 - **Perf (Z10-d):** `screen_fitness` covers the 50-factor EOD screen over 300 symbols, weekly over a year, with
   1 / 5 / 20-session statistics. The target is 3 s, times the CI factor, in the `perf` job; locally it took 1.6 s.
 
+### Review of S6a (fixed)
+- HIGH: a screen with a last-bar-only function runs date by date on cut bars (the fast path read a single last-date
+  answer onto every date); the fast path refuses a non-series; a test compares the fast path with the cut-bar run for
+  every registry function the history path takes.
+- MED: prices as known at each date (S6-9); non-overlapping dates for the t-statistic and deflation (S6-10).
+- LOW: a symbol reused by another company gets its ISIN in the label; picks with no bar at d + h are counted
+  (`no_bar_at_horizon`); unadjusted bars across a split leave those dates out; the deflation family is keyed by step and
+  horizon; a forward window into the holdout is refused (tested).
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

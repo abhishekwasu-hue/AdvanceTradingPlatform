@@ -91,9 +91,13 @@ def adjust(legs: List[Dict[str, Any]], kind: str, *, spot: float, as_of: When, s
         raise AdjustError(f"unknown adjustment {kind!r} - one of {', '.join(KINDS)}")
     if not strike_step > 0:
         raise AdjustError("the strike step must be above 0")
+    for leg in legs:                                        # review: lots are whole numbers (the API's LegIn says so too)
+        lots = leg.get("lots")
+        if isinstance(lots, bool) or not isinstance(lots, (int, float)) or not float(lots).is_integer() or lots < 1:
+            raise AdjustError(f"lots must be a whole number of at least 1 (got {lots!r})")
     changes: List[Dict[str, Any]] = []
     realised = cash = 0.0
-    after = [dict(leg) for leg in legs]
+    after = [{**leg, "lots": int(leg["lots"])} for leg in legs]
 
     def pick(i: Optional[int]) -> Dict[str, Any]:
         if i is None or not 0 <= i < len(after):
@@ -143,8 +147,8 @@ def adjust(legs: List[Dict[str, Any]], kind: str, *, spot: float, as_of: When, s
             raise AdjustError("the wings are at least one strike away")
         top = max(sold_ce, key=lambda leg: float(leg["strike"]))
         bottom = min(sold_pe, key=lambda leg: float(leg["strike"]))
-        lots_ce = sum(int(leg["lots"]) for leg in sold_ce)
-        lots_pe = sum(int(leg["lots"]) for leg in sold_pe)
+        lots_ce = sum(leg["lots"] for leg in sold_ce)        # validated whole numbers above
+        lots_pe = sum(leg["lots"] for leg in sold_pe)
         wing_ce = _new_leg({**top, "lots": lots_ce}, direction="BUY", strike=float(top["strike"]) + width_steps * strike_step, iv=iv,
                            spot=spot, as_of=as_of, r=r)
         wing_pe = _new_leg({**bottom, "lots": lots_pe}, direction="BUY", strike=float(bottom["strike"]) - width_steps * strike_step, iv=iv,

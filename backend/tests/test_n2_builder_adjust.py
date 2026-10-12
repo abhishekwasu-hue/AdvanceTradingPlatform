@@ -149,3 +149,12 @@ def test_adjust_route_models_and_places_nothing(flag_on):
     assert client.post("/api/options-builder/adjust", json=_body(kind="roll", index=0, steps=1, strike_step=0), headers=h).status_code == 422
     assert client.post("/api/options-builder/adjust", json=_body(kind="roll", index=0, steps=-500), headers=h).status_code == 422
     assert asyncio.run(orders()) == before
+
+
+
+def test_lots_must_be_whole_numbers():
+    for bad in (1.5, 0, -1, "2", True, None):
+        with pytest.raises(adj.AdjustError, match="whole number"):
+            adj.adjust([{**STRANGLE[0], "lots": bad}, STRANGLE[1]], "iron_condor", spot=SPOT, as_of=AS_OF, strike_step=STEP, r=0.065)
+    ok = adj.adjust([{**STRANGLE[0], "lots": 2.0}, STRANGLE[1]], "iron_condor", spot=SPOT, as_of=AS_OF, strike_step=STEP, r=0.065)
+    assert [leg["lots"] for leg in ok["after"]] == [2, 1, 2, 1] and all(isinstance(leg["lots"], int) for leg in ok["after"])

@@ -462,6 +462,10 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
         raise HTTPException(status_code=422, detail="no trading sessions with data in the window")
     if len(dates) > H.MAX_DATES:
         raise HTTPException(status_code=422, detail=f"at most {H.MAX_DATES} rebalance dates - use a longer step or a shorter window")
+    if system is not None and RK.history_work(system, len(frames), len(dates)) > RK.MAX_HISTORY_WORK:
+        # review of S7a (MED-3): a cost budget for ranking every symbol at every date
+        raise HTTPException(status_code=422, detail=f"ranking {len(system.leaves())} factors over {len(frames)} symbols and {len(dates)} dates "
+                                                    "is more work than one backtest takes - use fewer factors, symbols or dates")
     try:
         sig = await asyncio.to_thread(H.signals, ast, validated, frames, dates, params, eligible, scales, excluded)
         ranks = await asyncio.to_thread(B.rank_table, rank_ast, frames, dates, params, rank_validated, scales) if rank_ast is not None else None

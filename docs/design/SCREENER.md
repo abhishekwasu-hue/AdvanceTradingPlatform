@@ -1267,6 +1267,14 @@ tree of weighted factors that ranks a universe 0-100, with every component shown
 - **Refused for now:** RankScore inside a screen-history run (S7-5) and in alert rules (S7-6). Information only:
   nothing is placed, and every answer carries the disclaimer.
 
+### Review of S7a (fixed)
+- MED-2: factors read bars only and need their family's flag everywhere (S7-8). MED-3: a history work budget (S7-9).
+  MED-4: a sector-neutral backtest test with a reclassification between rebalances. MED-1: the migration is re-chained
+  at merge (S7-10).
+- LOW: no '/' in node names; sector ranges follow the ISIN the symbol had in each period; factors longer than the
+  fetch window are refused; editing a screen that an alert rule runs is checked against that rule; archiving frees the
+  name; the result cache key carries the ranking trees.
+
 ## N3 S8a (built): ownership and events, category E (flag `screener_ownership`, off; needs `screener_v2`)
 
 Spec §2.4 category E, the first S8 slice (H crypto and I global follow, S8-6). Three ScreenQL functions
@@ -1303,6 +1311,14 @@ runnable) with its bar fields, the data families (`Spec.needs`) its data carries
 - The same engine runs every venue; the venue's clock already drives the session functions (U6 BK2). Category H
   (crypto derivatives screens) waits for a funding / OI / liquidation feed (S8-6).
 - No migration. Information only.
+
+### Review of S8 (fixed / noted)
+- MED-1: corrections are known from when they were stored, never earlier; deterministic order (stored time, id);
+  "as published" semantics documented and tested with a backfill (S8-8). HIGH-1 (cross-organisation rows) waits for the
+  main fix (S8-9).
+- LOW: ex-dates de-duplicated per (symbol, ex-date, action) from the first version; DaysToEvent vectorised (tested
+  against the bar-by-bar rule); the S8c venue check also covers alert rules (screen and instrument) and ranking
+  factors. As-of company / symbol mapping stays with S8-1.
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

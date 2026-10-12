@@ -253,8 +253,26 @@ async def update_screen(screen_id: int, body: ScreenBody, user: User = Depends(r
     await _flag(session, user)
     row = await _owned(session, user, screen_id)
     await _apply(session, user, row, body)
+    await _rules_still_valid(session, user, row)
     await session.commit()
     return _screen_dict(row)
+
+
+async def _rules_still_valid(session: AsyncSession, user: User, row: ScreenRecord) -> None:
+    """N3 S7a review (LOW): the alert rules running this screen are checked against the edited screen - an edit that a
+    rule could not run (RankScore, a zone function on an intrabar rule...) is refused with the rule named."""
+    from app.alerts.rules_routes import screen_rule_checks
+    from app.db.models import AlertRuleRecord
+    rules = [(r.id, r.fire_on, r.exchange) for r in await session.scalars(
+        select(AlertRuleRecord).where(AlertRuleRecord.tenant_id == row.tenant_id, AlertRuleRecord.screen_id == row.id))]
+    ast = json.loads(row.ast_json)
+    for rule_id, fire_on, exchange in rules:
+        try:
+            await screen_rule_checks(session, user, ast, fire_on, exchange)
+        except HTTPException as exc:
+            await session.rollback()
+            detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail
+            raise HTTPException(status_code=422, detail=f"alert rule #{rule_id} runs this screen and could not after this change: {detail}") from exc
 
 
 @router.post("/screens/{screen_id}/archive")

@@ -9,10 +9,16 @@ Functions (flag `screener_ownership`, off by default; `needs: ownership`):
                                       agm / buyback / dividend / ex_date / any.
 
 Point in time - what a bar may know is decided by `known_from`, never by the row's own date:
-* a shareholding pattern (`shareholding_snapshots`, append-only): from 09:15 IST on the day after its cited
-  publication date when that date is on or after the quarter end and not after the row was stored; otherwise from the
-  time it was stored (`created_at`). Two rows for one quarter: the later one is a correction, known from its own time
-  (the LG3 rule for reported figures). A pattern whose quarter ended more than STALE_DAYS before the bar is not used.
+* a shareholding pattern (`shareholding_snapshots`, append-only): the FIRST row stored for a quarter is known from
+  09:15 IST on the day after its cited publication date when that date is on or after the quarter end and not after
+  the row was stored; otherwise from the time it was stored (`created_at`). Any LATER row for the same quarter is a
+  correction, known only from the time it was stored - a correction never reaches back, whatever date it cites (review
+  of S8, MED-1; the LG3 rule for reported figures). Rows are ordered by (stored time, id); among rows known at a bar
+  the latest stored wins - deterministic.
+  Semantics (provisional, OPEN_QUESTIONS S8-7): "as published" - a quarter first loaded late (a backfill) is known
+  from its cited publication date, so a backfill fills in past bars that had no pattern; it never changes a value a
+  bar already had from an earlier-stored row of that quarter (tested). A pattern whose quarter ended more than
+  STALE_DAYS before the bar is not used.
 * a calendar event (`earnings_calendar_events`, append-only, entered with a citation): the same rule, without the
   quarter-end condition - it is known from the day after its cited publication, or from when it was stored.
 * an ex-date (`md_corporate_actions`, the lake's splits / bonuses / dividends): from its ingestion (`ingested_at`).
@@ -26,7 +32,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -50,6 +56,8 @@ class Pattern:
     quarter_end: date
     known_from: datetime
     stakes: Dict[str, Optional[float]]
+    stored_at: Optional[datetime] = None     # tie-break: the later stored row of a quarter wins (review of S8)
+    row_id: int = 0
 
 
 @dataclass(frozen=True)
@@ -138,11 +146,19 @@ async def load(session: AsyncSession, symbols: Sequence[str], exchange: str = "N
     rows = await session.execute(select(CompanyRecord.symbol, ShareholdingSnapshotRecord)
                                  .join(CompanyRecord, CompanyRecord.id == ShareholdingSnapshotRecord.company_id)
                                  .where(func.upper(CompanyRecord.symbol).in_(names)))
-    for sym, r in rows.all():
-        kf = known_from(publication_date=_publication(r.source_json), stored_at=r.created_at, not_before=r.as_of_date)
+    seen_quarters: set = set()
+    for sym, r in sorted(rows.all(), key=lambda x: (_utc(x[1].created_at), x[1].id)):           # stored order (review of S8)
+        stored = _utc(r.created_at)
+        key = (sym.upper(), r.company_id, r.as_of_date)
+        if key in seen_quarters:
+            kf = stored                                    # a correction: known only from when it was stored
+        else:
+            seen_quarters.add(key)
+            kf = known_from(publication_date=_publication(r.source_json), stored_at=stored, not_before=r.as_of_date)
         if until is None or kf <= until:
             out[sym.upper()].patterns.append(Pattern(r.as_of_date, kf, {"promoter": r.promoter_pct, "pledge": r.promoter_pledge_pct,
-                                                                        "fii": r.fii_pct, "dii": r.dii_pct, "public": r.public_pct}))
+                                                                        "fii": r.fii_pct, "dii": r.dii_pct, "public": r.public_pct},
+                                                     stored, int(r.id)))
     by_type = {t: kind for kind, types in CALENDAR_KINDS.items() for t in types}
     events = await session.execute(select(CompanyRecord.symbol, EarningsCalendarEventRecord)
                                  .join(CompanyRecord, CompanyRecord.id == EarningsCalendarEventRecord.company_id)
@@ -156,12 +172,17 @@ async def load(session: AsyncSession, symbols: Sequence[str], exchange: str = "N
             out[sym.upper()].events.append(Event(kind, ev.event_date, kf))
     actions = await session.execute(select(MdCorporateActionRecord).where(func.upper(MdCorporateActionRecord.symbol).in_(names),
                                                                        MdCorporateActionRecord.exchange == exchange))
-    for ca in actions.scalars():
-        kf = ca.ingested_at if ca.ingested_at.tzinfo else ca.ingested_at.replace(tzinfo=timezone.utc)
+    first_seen: Dict[Any, datetime] = {}
+    for ca in actions.scalars():                       # review of S8 (LOW): one event per (symbol, ex-date, action), from its first version
+        ca_key = (ca.symbol.upper(), ca.ex_date, ca.action)
+        kf = _utc(ca.ingested_at)
+        if ca_key not in first_seen or kf < first_seen[ca_key]:
+            first_seen[ca_key] = kf
+    for (sym, ex_date, _), kf in first_seen.items():
         if until is None or kf <= until:
-            out[ca.symbol.upper()].events.append(Event("ex_date", ca.ex_date, kf))
+            out[sym].events.append(Event("ex_date", ex_date, kf))
     for own in out.values():
-        own.patterns.sort(key=lambda p: (p.known_from, p.quarter_end))
+        own.patterns.sort(key=lambda p: (p.known_from, p.stored_at or p.known_from, p.row_id, p.quarter_end))
         own.events.sort(key=lambda e: (e.known_from, e.day))
     return out
 
@@ -174,11 +195,20 @@ async def attach(session: AsyncSession, universe: List[Any], exchange: str = "NS
 
 
 # ---------------------------------------------------------------------------------------------------------- the series
+def _utc(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+def _order(p: Pattern) -> Tuple[Any, ...]:
+    return (p.stored_at or p.known_from, p.row_id, p.known_from)
+
+
 def _known_patterns(patterns: Sequence[Pattern], t_ns: int) -> List[Pattern]:
-    """Per quarter, the latest pattern known by t (a later row for a quarter is its correction), oldest quarter first."""
+    """Per quarter, the latest STORED pattern known by t (a later row for a quarter is its correction; ties by id - never
+    an arbitrary pick), oldest quarter first."""
     best: Dict[date, Pattern] = {}
     for p in patterns:
-        if pd.Timestamp(p.known_from).value <= t_ns and (p.quarter_end not in best or p.known_from >= best[p.quarter_end].known_from):
+        if pd.Timestamp(p.known_from).value <= t_ns and (p.quarter_end not in best or _order(p) >= _order(best[p.quarter_end])):
             best[p.quarter_end] = p
     return [best[k] for k in sorted(best)]
 
@@ -233,10 +263,17 @@ def days_to_event_series(data: Any, f: pd.DataFrame, tf: str, kind: str) -> pd.S
     days = np.array([(ts + IST_OFFSET).date().toordinal() for ts in starts], dtype="int64")      # the bar's session date
     known_ns = np.array([pd.Timestamp(e.known_from).value for e in events], dtype="int64")
     event_day = np.array([e.day.toordinal() for e in events], dtype="int64")
-    for i in range(len(f)):
-        ahead = event_day[(known_ns <= closes_ns[i]) & (event_day >= days[i])]
-        if ahead.size:
-            out[i] = float(ahead.min() - days[i])
+    # review of S8 (LOW): vectorised - the events become known in steps; between two steps the known set is fixed, so
+    # each step's sorted event days answer every bar in it with one searchsorted
+    order = np.argsort(known_ns, kind="stable")
+    steps = np.unique(known_ns[order])
+    seg = np.searchsorted(steps, closes_ns, side="right") - 1
+    for k in np.unique(seg[seg >= 0]):
+        known_days = np.sort(event_day[known_ns <= steps[k]])
+        rows = np.flatnonzero(seg == k)
+        j = np.searchsorted(known_days, days[rows], side="left")
+        hit = j < len(known_days)
+        out[rows[hit]] = (known_days[j[hit]] - days[rows[hit]]).astype(float)
     return pd.Series(out, index=f.index, dtype=float)
 
 

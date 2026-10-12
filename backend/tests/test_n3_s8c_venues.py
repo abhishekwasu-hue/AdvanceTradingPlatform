@@ -71,3 +71,19 @@ def test_the_routes_follow_the_flag():
     assert client.post("/api/screener/validate", headers=on["headers"], json={"source": "oi > 0"}).json()["ok"]   # no venue named
     run = client.post("/api/screener/run", headers=on["headers"], json={"source": "oi > 0", "symbols": ["X"], "exchange": "NSE"})
     assert run.status_code == 422 and "has no oi" in run.text
+
+
+def test_the_venue_check_also_covers_alert_rules_and_ranking_factors():
+    """Review of S8 (LOW): with the flag on, an alert rule's condition and a ranking's factors are checked against the
+    venue's data too."""
+    t = _org("rules")
+    rule = client.post("/api/alerts/rules", headers=t["headers"], json={"name": "oi", "kind": "instrument", "symbol": "RELIANCE",
+                                                                         "condition": "oi > 0", "base_tf": "1d", "exchange": "NSE"})
+    assert rule.status_code == 422 and "has no oi" in rule.text
+    ok = client.post("/api/alerts/rules", headers=t["headers"], json={"name": "oi", "kind": "instrument", "symbol": "NIFTY24OCTFUT",
+                                                                       "condition": "oi > 0", "base_tf": "1d", "exchange": "NFO"})
+    assert ok.status_code == 201, ok.text
+    _flag("screener_rankings", t["tenant_id"])
+    ranked = client.post("/api/screener/rankings/run", headers=t["headers"],
+                         json={"tree": {"nodes": [{"name": "oi", "factor": "oi", "weight": 100}]}, "symbols": ["X"], "exchange": "NSE"})
+    assert ranked.status_code == 422 and "has no oi" in ranked.text

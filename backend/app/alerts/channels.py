@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, EmailStr, Field, HttpUrl, field_validator, model_validator
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, TypeAdapter, ValidationError, field_validator, model_validator
 
 from app.core.egress import EgressBlocked, check_url_literal
 from app.core.enums import AlertChannelType, NotificationSeverity
@@ -65,6 +65,20 @@ class EmailConfig(BaseModel):
     from_address: EmailStr
     to_addresses: List[EmailStr] = Field(min_length=1, max_length=10)
 
+    @field_validator("smtp_host")
+    @classmethod
+    def _public_host(cls, value: str) -> str:
+        # The same egress policy as the gateway URLs (P0.2 / S5): a host name or a public address, never a private,
+        # loopback or link-local one in production / staging; the resolved address is checked again on send.
+        host = value.strip().lower().rstrip(".")
+        if not _SMTP_HOST.fullmatch(host):
+            raise ValueError("smtp_host must be a host name or an IP address")
+        try:
+            check_url_literal(f"https://[{host}]" if ":" in host else f"https://{host}")
+        except EgressBlocked as exc:
+            raise ValueError(f"SMTP host refused: {exc}") from exc
+        return host
+
 
 class WebhookConfig(BaseModel):
     """Phase K4: a JSON POST to the tenant's own endpoint (their bot, Zapier, n8n, a Slack relay).
@@ -88,6 +102,11 @@ class WebhookConfig(BaseModel):
         except EgressBlocked as exc:
             raise ValueError(f"Webhook URL refused: {exc}") from exc
         return value
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _plain_url(cls, value: Any) -> Any:
+        return plain_gateway_url(value)
 
 
 class PushSubscription(BaseModel):
@@ -132,10 +151,15 @@ def e164_numbers(value: List[str]) -> List[str]:
     return clean
 
 
-# RFC 9110 field-name token; a value may hold visible ASCII, spaces and tabs - never CR / LF / NUL (header injection).
+# RFC 9110 field-name token; a value holds printable ASCII, spaces and tabs only - never CR / LF / NUL (header injection)
+# and never a non-ASCII character (httpx cannot encode it, which would stop the send for the remaining recipients).
 _HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,100}$")
-_HEADER_VALUE = re.compile(r"^[\t\x20-\x7e\x80-\uffff]{0,2000}$")
+_HEADER_VALUE = re.compile(r"^[\t\x20-\x7e]{0,2000}$")
+# Framing / routing headers the HTTP client owns: a user value would smuggle a second request or retarget this one.
+RESERVED_HEADERS = {"host", "content-length", "transfer-encoding", "connection", "te", "trailer", "upgrade", "keep-alive",
+                    "proxy-connection", "proxy-authorization"}
 MAX_HEADERS = 20
+_SMTP_HOST = re.compile(r"^(?=.{1,253}$)[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$|^[0-9a-f:.]{2,45}$")
 
 
 def valid_headers(value: Dict[str, str]) -> Dict[str, str]:
@@ -143,23 +167,49 @@ def valid_headers(value: Dict[str, str]) -> Dict[str, str]:
     if len(value) > MAX_HEADERS:
         raise ValueError(f"at most {MAX_HEADERS} headers")
     for name, val in value.items():
-        if not _HEADER_NAME.match(str(name)):
+        if not _HEADER_NAME.fullmatch(str(name)):
             raise ValueError(f"header name {str(name)[:40]!r} is not a valid HTTP header name")
-        if not isinstance(val, str) or not _HEADER_VALUE.match(val):
-            raise ValueError(f"header {name!r} has a value with a line break or a control character")
+        if str(name).lower() in RESERVED_HEADERS:
+            raise ValueError(f"header {name!r} is set by the platform and cannot be configured")
+        if not isinstance(val, str) or not _HEADER_VALUE.fullmatch(val):
+            raise ValueError(f"header {name!r} must be printable ASCII without line breaks or control characters")
     return value
 
 
-def same_origin(a: Any, b: Any) -> bool:
-    """Scheme, host and port of two URLs match (the default port of the scheme when none is given)."""
-    from urllib.parse import urlsplit
+def valid_content_type(value: str) -> str:
+    """The Content-Type header the gateway gets: printable ASCII, no line break (header injection)."""
+    if not re.fullmatch(r"[\x21-\x7e][\x20-\x7e]{0,79}", value):
+        raise ValueError("content_type must be printable ASCII without line breaks")
+    return value
+
+
+def plain_gateway_url(value: Any) -> Any:
+    """Refuse a backslash or a control character in a gateway URL before it is parsed: WHATWG parsing (pydantic, httpx)
+    reads `\\` as `/`, so `https://evil.example\\@api.example.com/` means evil.example to them and api.example.com to
+    other parsers - the stored-secret check must never disagree with the client that sends."""
+    if isinstance(value, str) and ("\\" in value or any(ord(c) < 0x21 or ord(c) == 0x7f for c in value)):
+        raise ValueError("the URL must not contain a backslash, a space or a control character")
+    return value
+
+
+_URL = TypeAdapter(HttpUrl)
+
+
+def url_origin(url: Any) -> Optional[Tuple[str, str, int]]:
+    """Scheme, host and port as the sending client sees them: parsed by the same WHATWG parser that validated the URL
+    on save (pydantic), not by urllib (which reads `\\` differently). None when it is not a valid gateway URL."""
     try:
-        ua, ub = urlsplit(str(a or "")), urlsplit(str(b or ""))
-        default = {"https": 443, "http": 80}
-        return (ua.scheme.lower(), (ua.hostname or "").lower(), ua.port or default.get(ua.scheme.lower())) == \
-               (ub.scheme.lower(), (ub.hostname or "").lower(), ub.port or default.get(ub.scheme.lower()))
-    except ValueError:
-        return False
+        plain_gateway_url(str(url or ""))
+        parsed = _URL.validate_python(str(url or ""))
+    except (ValueError, ValidationError):
+        return None
+    return parsed.scheme.lower(), (parsed.host or "").lower().rstrip("."), int(parsed.port or 0)
+
+
+def same_origin(a: Any, b: Any) -> bool:
+    """Scheme, host and port of two URLs match (the scheme's default port when none is given)."""
+    origin = url_origin(a)
+    return origin is not None and origin == url_origin(b)
 
 
 class SmsConfig(BaseModel):
@@ -191,6 +241,11 @@ class SmsConfig(BaseModel):
             raise ValueError(f"SMS gateway URL refused: {exc}") from exc
         return value
 
+    @field_validator("url", mode="before")
+    @classmethod
+    def _plain_url(cls, value: Any) -> Any:
+        return plain_gateway_url(value)
+
     @field_validator("headers")
     @classmethod
     def _headers(cls, value: Dict[str, str]) -> Dict[str, str]:
@@ -205,6 +260,11 @@ class SmsConfig(BaseModel):
 
     def uses_dlt(self) -> bool:
         return any(getattr(self, f) for f in DLT_FIELDS)
+
+    @field_validator("content_type")
+    @classmethod
+    def _content_type(cls, value: str) -> str:
+        return valid_content_type(value)
 
     @field_validator("to_numbers")
     @classmethod
@@ -244,6 +304,16 @@ class WhatsAppConfig(BaseModel):
         except EgressBlocked as exc:
             raise ValueError(f"WhatsApp gateway URL refused: {exc}") from exc
         return value
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _plain_url(cls, value: Any) -> Any:
+        return plain_gateway_url(value)
+
+    @field_validator("content_type")
+    @classmethod
+    def _content_type(cls, value: str) -> str:
+        return valid_content_type(value)
 
     @field_validator("to_numbers")
     @classmethod
@@ -318,16 +388,28 @@ def merge_secrets(channel_type: str, incoming: Dict[str, Any], existing: Optiona
     recipient list without re-typing the SMTP password the API never showed them."""
     merged = dict(incoming)
     if existing:
-        moved = "url" in merged and not same_origin(merged.get("url"), existing.get("url"))
+        moved = secret_destination_changed(channel_type, merged, existing)
         for field in SECRET_FIELDS.get(channel_type, ()):
             if not merged.get(field):
-                if moved and field == "headers":
-                    # A gateway moved to another scheme / host / port: the stored (write-only) headers - an API key, a
-                    # bearer token - are never sent to the new destination; they must be typed again.
-                    merged[field] = {}
+                if moved and field in ("headers", "password"):
+                    # The destination moved (another gateway scheme / host / port, another SMTP server, port or login, or
+                    # TLS turned off): the stored write-only secret - an API key, a bearer token, the SMTP password - is
+                    # never sent there; it must be typed again.
+                    merged[field] = {} if field == "headers" else None
                     continue
                 merged[field] = existing.get(field)
     return merged
+
+
+def secret_destination_changed(channel_type: str, incoming: Dict[str, Any], existing: Dict[str, Any]) -> bool:
+    """True when an update would send a stored secret somewhere (or in a way) it was not entered for."""
+    if channel_type == AlertChannelType.EMAIL.value:
+        def server(raw: Dict[str, Any]) -> Tuple[str, int, str]:
+            return (str(raw.get("smtp_host") or "").strip().lower().rstrip("."), int(raw.get("smtp_port") or 587),
+                    str(raw.get("username") or "").strip())
+        tls_dropped = existing.get("use_tls", True) is not False and incoming.get("use_tls", True) is False
+        return server(incoming) != server(existing) or tls_dropped
+    return "url" in incoming and not same_origin(incoming.get("url"), existing.get("url"))
 
 
 def encrypt_config(config: ChannelConfig, tenant_id: Optional[int] = None) -> str:

@@ -251,6 +251,13 @@ def test_whatsapp_opt_in_is_required_not_defaulted():
         parse_config("WHATSAPP", missing)
     with pytest.raises(ValueError):
         parse_config("WHATSAPP", {**WA, "headers": {"Authorization": "Bearer x\r\nX: y"}})
+    for bad in ({"url": "https://evil.example\\@graph.facebook.com/v19.0/1/messages"}, {"content_type": "application/json\r\nX: y"},
+                {"headers": {"Host": "graph.facebook.com"}}):
+        with pytest.raises(ValueError):
+            parse_config("WHATSAPP", {**WA, **bad})
+    from app.alerts.channels import merge_secrets
+    moved = merge_secrets("WHATSAPP", {**WA, "url": "https://collector.example/x", "headers": {}}, dict(WA))
+    assert moved["headers"] == {}                                    # the stored token never follows a moved gateway
 
 
 def test_a_plan_downgrade_or_the_flag_turned_off_stops_delivery_with_a_reason():

@@ -168,7 +168,9 @@ def test_tax_report_classifies_and_estimates_by_income_head():
     assert fno["stt_estimate"] == pytest.approx(2000 * 0.15 / 100, abs=0.01) and fno["income_head"].startswith("Non-speculative")
     assert crypto["trades"] == 2 and crypto["taxable_gains"] == 10.0 and crypto["disallowed_losses"] == 5.0 and crypto["tax_estimate"] == 3.0
     assert crypto["tds_estimate"] == pytest.approx((110 + 95) * 1.0 / 100, abs=0.01)
-    assert any("115BBH" in n for n in body["notes"]) and body["rates"]["CRYPTO"]["tax_pct"] == 30.0
+    # FY 2026-27 falls under the Income-tax Act 2025 (in force 1 Apr 2026): the 1961 sections are not cited for it.
+    assert body["statute"]["key"] == "2025" and not any("115BBH" in n or "194S" in n for n in body["notes"])
+    assert crypto["income_head"].startswith("Income from transfer of VDA (Income-tax Act, 2025") and body["rates"]["CRYPTO"]["tax_pct"] == 30.0
 
     years = client.get("/api/tax/years", headers=headers).json()
     assert "2026-27" in years["years"] and "2025-26" in years["years"]

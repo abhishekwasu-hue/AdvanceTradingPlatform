@@ -413,6 +413,15 @@ class TradingWorker:
                     logger.exception("Alert rule flush failed")
                     await session.rollback()
                     report.errors.append(f"alert flush: {exc}")
+                # N1 U4 X1 (flag scan_then): scan Then templates - the level gate on each matched symbol's closed bars; a
+                # confirmed setup becomes an execution-core intent (drained below into a notification or a PAPER proposal).
+                try:
+                    from app.screener.then import runner as scan_then
+                    await scan_then.run_due(session, now)
+                except Exception as exc:  # noqa: BLE001 - a Then template must never stop the alerts or the outbox
+                    logger.exception("Scan Then run failed")
+                    await session.rollback()
+                    report.errors.append(f"scan then: {exc}")
                 # PW5: snoozed proposals whose time is up are announced once more (in-app, push, Telegram) before the
                 # outbox drain, market open or not - a snooze "until 09:00" must ring at 09:00.
                 try:

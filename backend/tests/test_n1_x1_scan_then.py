@@ -1,0 +1,395 @@
+"""N1 U4 X1: scan Then - Notify / One-click (flag scan_then off by default; intents need execution_core).
+
+A scan rule's match is watched by the ported level gate (Daily trend from the lake, Z7a zones as areas, closed
+confirmation bars); a CONFIRMED setup becomes an execution-core intent with the gate's ticket, which the core routes to
+a notification or a PAPER entry proposal. Nothing on this path reaches an order: the guard at the bottom walks the Z10-c
+call graph. The gate run here is the L1 golden case of a live entry (Trade's own output), so the setup is a real one."""
+import ast
+import asyncio
+import gzip
+import json
+import uuid
+from datetime import date, datetime, timedelta, timezone
+from pathlib import Path
+from types import SimpleNamespace
+
+import pandas as pd
+import pytest
+from sqlalchemy import select
+
+from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, ExecutionIntentRecord, MdCandleRecord, NotificationRecord,
+                           OrderRecord, ScanThenTemplateRecord)
+from app.execution.core import dispatcher, intents
+from app.market_data.calendar import IST
+from app.price_action.daily_trend import fold as daily_fold
+from app.price_action.level_gate import gate as G
+from app.price_action.level_gate import status as ST
+from app.screener.runtime import SymbolData
+from app.screener.then import areas as A
+from app.screener.then import runner, templates as T, trend
+from tests.order_path_graph import CallGraph
+from tests.test_auth_api import _session_factory, client
+from tests.test_trading_worker import _tenant
+from tests.test_z10c_order_paths import GATED
+from tests.test_z10c_tenancy_fixes import _member
+from tests.test_n1_e1_execution_core import _flag
+
+UTC = timezone.utc
+BACKEND = Path(__file__).resolve().parents[1]
+GOLDEN = BACKEND / "tests" / "fixtures" / "level_gate" / "golden.json.gz"
+
+
+def _run(coro):
+    return asyncio.run(coro)
+
+
+def _email(tag):
+    return f"n1x1-{tag}-{uuid.uuid4().hex[:6]}@example.com"
+
+
+# --- the L1 golden live entry the runner replays ----------------------------------------------------------------------
+
+def _golden():
+    with gzip.open(GOLDEN, "rt", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+GOLD = _golden()
+CASE = next(c for c in GOLD["prefix"] if c["out"]["entry"] and c["series"] == 0 and c["ctx"] == "up" and not c["settings"])
+STATE = next(c["state"] for c in GOLD["contexts"] if c["series"] == 0 and c["name"] == "up" and not c["settings"])
+CTX = G.context_from_state(SimpleNamespace(trend=STATE["trend"], band=None, phase=STATE["phase"], counter=STATE["counter"],
+                                           protected=SimpleNamespace(price=STATE["protected"]), origin_risk=STATE["origin_risk"],
+                                           mature=STATE["mature"]), {}, asof="2026-09-22")
+AREA = tuple(CASE["area"])
+OTHERS = [tuple(a) for a in CASE["others"]]
+
+
+def _bars(upto: int) -> pd.DataFrame:
+    bars = GOLD["series"][0]["bars"]
+    df = pd.DataFrame({k: v[:upto + 1] for k, v in bars.items() if k != "timestamp"})
+    df.index = pd.to_datetime(bars["timestamp"][:upto + 1]).tz_localize(IST)          # a broker frame: IST-aware bar starts
+    return df
+
+
+LAST = pd.Timestamp(GOLD["series"][0]["bars"]["timestamp"][CASE["m"]]).tz_localize(IST)
+NOW = (LAST + pd.Timedelta(minutes=5, seconds=20)).to_pydatetime()                     # the commitment candle has just closed
+
+
+def _fetch(upto=None, calls=None):
+    async def fetch(session, tenant_id, symbols, exchange, tf, lookback, user_id=None):
+        if calls is not None:
+            calls.append((tenant_id, tuple(symbols), tf, user_id))
+        return [SymbolData(symbol=s, frames={tf: _bars(CASE["m"] if upto is None else upto)}) for s in symbols], {}, "test"
+    return fetch
+
+
+def _patch_market(monkeypatch, ctx=None, areas=None):
+    async def context(session, key, today, gs=None, clock=None):
+        return dict(ctx if ctx is not None else CTX)
+
+    async def zones(session, key, tenant_id, at):
+        return list(areas if areas is not None else [AREA] + OTHERS)
+    monkeypatch.setattr(trend, "daily_context", context)
+    monkeypatch.setattr(A, "areas_for", zones)
+
+
+def _setup(tag, mode="ONE_CLICK", flags=("scan_then", "execution_core"), symbol="GATEDEMO"):
+    t = _tenant(_email(tag), with_credentials=False)
+    for name in flags:
+        _flag(name, t["tenant_id"])
+
+    async def go():
+        async with _session_factory() as session:
+            rule = AlertRuleRecord(tenant_id=t["tenant_id"], created_by=t["user_id"], name="Demand scan", kind="screen", base_tf="5m",
+                                   status="active", exchange="NSE")
+            session.add(rule)
+            await session.flush()
+            session.add(AlertEventRecord(tenant_id=t["tenant_id"], rule_id=rule.id, symbol=symbol, condition_hash="x" * 8,
+                                         bar_time=(LAST - pd.Timedelta(minutes=10)).to_pydatetime(), idem_key=uuid.uuid4().hex,
+                                         priority="normal", values_json="{}", status="sent"))
+            session.add(ScanThenTemplateRecord(tenant_id=t["tenant_id"], rule_id=rule.id, user_id=t["user_id"], mode=mode, confirm_tf="5m",
+                                               gate_settings_json=json.dumps(CASE["settings"]), enabled=True))
+            await session.commit()
+            return rule.id
+    return t, _run(go())
+
+
+def _runner(now=NOW, fetch=None):
+    async def go():
+        async with _session_factory() as session:
+            return await runner.run_due(session, now, fetch=fetch or _fetch())
+    return _run(go())
+
+
+def _rows(model, tenant_id):
+    async def go():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(model).where(model.tenant_id == tenant_id).order_by(model.id)))
+    return _run(go())
+
+
+def _template(rule_id):
+    async def go():
+        async with _session_factory() as session:
+            return await session.scalar(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.rule_id == rule_id))
+    return _run(go())
+
+
+def _drain(now=None):
+    """Within the intent's time window: it was raised at the commitment candle's close (NOW)."""
+    async def go():
+        async with _session_factory() as session:
+            return await dispatcher.drain(session, now or (NOW + timedelta(minutes=1)))
+    return _run(go())
+
+
+# --- pure pieces --------------------------------------------------------------------------------------------------------
+
+def test_template_checks():
+    assert T.check_mode("one_click") == "ONE_CLICK" and T.check_mode("AUTO_PAPER") == "AUTO_PAPER"
+    with pytest.raises(T.TemplateError, match="Auto LIVE"):
+        T.check_mode("AUTO_LIVE")
+    with pytest.raises(T.TemplateError):
+        T.check_mode("SOMETHING")
+    assert T.check_gate({"min_rr": 2, "wait_next_candle": True}) == {"min_rr": 2.0, "wait_next_candle": True}
+    for bad in ({"min_rr": 0.5}, {"max_armed_bars": 99}, {"wait_next_candle": 1}, {"trend_retry_min": 5}, {"min_rr": "3"}):
+        with pytest.raises(T.TemplateError):
+            T.check_gate(bad)
+    assert T.FLAG in __import__("app.platform.controls", fromlist=["x"]).DEFAULT_OFF_FLAGS
+
+
+def test_area_of_widens_a_level_and_orders_the_edges():
+    assert A.area_of(102.0, 100.0) == (100.0, 102.0)
+    lo, hi = A.area_of(20000.0, 20000.0)
+    assert hi > lo and abs((hi - lo) - 20000.0 * A.LEVEL_WIDTH) < 0.02 and (lo + hi) / 2 == pytest.approx(20000.0, abs=0.01)
+    assert A.area_of(0.0, 5.0) is None
+
+
+def test_status_codes_follow_trade():
+    assert ST.status_of({"entry": True, "state": G.CONFIRMED}) == ST.CONFIRMED_ENTRY
+    assert ST.status_of({"state": G.ARMED, "absorbing": True}) == "SKIPPED_GATE_ABSORPTION"
+    assert ST.status_of({"state": G.ARMED, "low_volume": True}) == "SKIPPED_GATE_LOW_VOLUME"
+    assert ST.status_of({"state": G.ARMED, "reason": G.R_NO_COMMIT}) == "SKIPPED_GATE_WAITING_COMMITMENT"
+    assert ST.status_of({"state": G.DISARMED, "reason": f"{G.R_RR} (1.2 < 3)"}) == "SKIPPED_GATE_RR"
+    assert ST.status_of({"state": G.DISARMED, "reason": G.R_AGAINST}) == "SKIPPED_GATE_AGAINST_TREND"
+    assert ST.status_of({"state": G.CONFIRMED, "entry": False}) == "SKIPPED_GATE_ALREADY_CONFIRMED"
+    assert ST.status_of({"state": "ERROR", "reason": "x"}) == "SKIPPED_GATE_ERROR"
+    assert ST.status_of({"state": G.IDLE, "reason": "price not at area"}) == "SKIPPED_GATE_NOT_AT_AREA"
+
+
+# --- the Daily trend bridge (L2-5) ----------------------------------------------------------------------------------------
+
+def _daily_rows(key, days=260, seed=5):
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    price, rows = 1000.0, []
+    for i, day in enumerate(pd.bdate_range("2025-09-01", periods=days)):
+        drift = 0.004 if (i // 25) % 3 != 2 else -0.006
+        o = price
+        c = o * (1 + drift + rng.normal(0, 0.008))
+        end = pd.Timestamp(day).tz_localize(IST) + pd.Timedelta(hours=15, minutes=30)
+        rows.append(MdCandleRecord(instrument_key=key, timeframe="1d", ts=end.tz_convert(UTC).to_pydatetime(), source="test", version=1,
+                                   open=round(o, 2), high=round(max(o, c) * 1.004, 2), low=round(min(o, c) * 0.996, 2), close=round(c, 2),
+                                   volume=1000, ingested_at=datetime(2025, 1, 1, tzinfo=UTC)))
+        price = c
+    return rows
+
+
+def test_daily_context_from_the_lake_matches_the_ported_fold_and_is_computed_once_per_day(monkeypatch):
+    key = f"NSE:X1T{uuid.uuid4().hex[:5].upper()}"
+    rows = _daily_rows(key)
+    today = (rows[-1].ts.astimezone(IST) + timedelta(days=1)).date()
+
+    async def seed():
+        async with _session_factory() as session:
+            session.add_all(rows)
+            await session.commit()
+    _run(seed())
+    trend.clear_cache()
+    reads = []
+    real = trend.lake_daily
+
+    async def counting(session, k, d):
+        reads.append(k)
+        return await real(session, k, d)
+    monkeypatch.setattr(trend, "lake_daily", counting)
+
+    async def go():
+        async with _session_factory() as session:
+            first = await trend.daily_context(session, key, today)
+            second = await trend.daily_context(session, key, today, {"allow_parent_correction": True})
+            bars = await real(session, key, today)
+            return first, second, bars
+    first, second, bars = _run(go())
+    assert reads == [key]                                                       # one read for the day
+    expected = G.context_from_state(daily_fold.fold(daily_fold.prepare_daily(bars, pd.Timestamp(today)))[-1], {},
+                                    asof=first.get("asof"))
+    assert first == expected and first["asof"] == str(rows[-1].ts.astimezone(IST).date())
+    assert second["trend"] == first["trend"]
+    # Today's own bar is never read (known at yesterday's close): a row ending today changes nothing.
+    assert len(bars) == len(rows)
+
+
+def test_daily_context_fails_closed_and_retries_later(monkeypatch):
+    trend.clear_cache()
+    clock = [1000.0]
+
+    async def broken(session, k, d):
+        raise RuntimeError("lake down")
+    monkeypatch.setattr(trend, "lake_daily", broken)
+
+    async def go(key):
+        async with _session_factory() as session:
+            return await trend.daily_context(session, key, date(2026, 9, 23), clock=lambda: clock[0])
+    out = _run(go("NSE:BROKEN"))
+    assert out["ok"] is False and out["sides"] == set() and "RuntimeError" in out["reason"]
+    calls = []
+
+    async def short(session, k, d):
+        calls.append(k)
+        return pd.DataFrame({"timestamp": pd.to_datetime(["2026-09-01 10:00"], utc=True), "open": [1.0], "high": [1.0], "low": [1.0],
+                             "close": [1.0]})
+    monkeypatch.setattr(trend, "lake_daily", short)
+    assert _run(go("NSE:BROKEN"))["ok"] is False and calls == []                # negative cache: not retried yet
+    clock[0] += trend.RETRY_SECONDS
+    out = _run(go("NSE:BROKEN"))
+    assert calls == ["NSE:BROKEN"] and out["ok"] is False and "too short" in out["reason"]
+    assert _run(go(None))["ok"] is False
+
+
+def test_areas_come_from_the_organisation_s_live_zones(monkeypatch):
+    from app.price_action.zones import read
+    rows = [{"zone_key": "a", "zone_type": "demand", "timeframe": "1h", "zone_low": 100.0, "zone_high": 101.0, "strength": 2.0, "state": "FRESH"},
+            {"zone_key": "b", "zone_type": "sr_level", "timeframe": "1h", "zone_low": 110.0, "zone_high": 110.0, "strength": 1.0, "state": "TESTED"}]
+    seen = []
+
+    async def as_of(session, key, at, tenant_id, allow_platform_fallback=False):
+        seen.append((key, tenant_id, allow_platform_fallback))
+        return read.Snapshot(1, datetime(2026, 9, 23, tzinfo=UTC), None, None, rows)
+    monkeypatch.setattr(read, "read_as_of", as_of)
+    out = _run(A.areas_for(None, "NSE:ABC", 7, datetime.now(UTC)))
+    assert (100.0, 101.0) in out and any(lo < 110.0 < hi for lo, hi in out) and seen == [("NSE:ABC", 7, False)]
+    assert _run(A.areas_for(None, None, 7, datetime.now(UTC))) == []
+
+
+# --- the runner -----------------------------------------------------------------------------------------------------------
+
+def test_a_confirmed_setup_becomes_one_one_click_intent_then_a_paper_proposal(monkeypatch):
+    _patch_market(monkeypatch)
+    t, rule_id = _setup("oneclick")
+    calls = []
+    report = _runner(fetch=_fetch(calls=calls))
+    assert report.submitted == 1 and calls and calls[0][2] == "5m" and calls[0][3] is None
+    [intent] = _rows(ExecutionIntentRecord, t["tenant_id"])
+    assert intent.status == intents.QUEUED and intent.requested_mode == "ONE_CLICK" and intent.user_id == t["user_id"]
+    assert intent.source == "scan" and intent.symbol == "GATEDEMO" and intent.direction == "LONG"
+    assert intent.idempotency_key.startswith(f"scan:{rule_id}:GATEDEMO:{AREA[0]:.2f}-{AREA[1]:.2f}:")
+    evidence = json.loads(intent.evidence_json)
+    assert evidence["gate_status"] == ST.CONFIRMED_ENTRY and evidence["ticket"]["entry_price"] == CASE["out"]["entry_price"]
+    assert evidence["ticket"]["sl"] == CASE["out"]["sl"] and evidence["ticket"]["study"].startswith("inside demand")
+    signal = json.loads(intent.signal_json)
+    assert signal["stop_loss"] == CASE["out"]["sl"] and signal["target1"] == CASE["out"]["target"] and signal["timeframe_combo"] == "5m"
+    tpl = _template(rule_id)
+    assert tpl.last_bar_at is not None and json.loads(tpl.last_status_json)["GATEDEMO"]["code"] == ST.CONFIRMED_ENTRY
+    # The same bar again: nothing new (once per closed bar; the key would dedupe anyway).
+    assert _runner(fetch=_fetch()).submitted == 0 and len(_rows(ExecutionIntentRecord, t["tenant_id"])) == 1
+    _drain()
+    [action] = _rows(AiActionRecord, t["tenant_id"])
+    assert action.action == "ENTRY" and action.status == "PROPOSED" and action.owner_user_id == t["user_id"]
+    assert _rows(OrderRecord, t["tenant_id"]) == []
+
+
+def test_notify_mode_sends_a_notification_only(monkeypatch):
+    _patch_market(monkeypatch)
+    t, _ = _setup("notify", mode="NOTIFY")
+    assert _runner().submitted == 1
+    _drain()
+    notes = [n for n in _rows(NotificationRecord, t["tenant_id"]) if n.event_type == "SCREEN_ALERT"]
+    assert len(notes) == 1 and "Notify only" in notes[0].message
+    assert _rows(AiActionRecord, t["tenant_id"]) == [] and _rows(OrderRecord, t["tenant_id"]) == []
+
+
+def test_auto_paper_stays_a_proposal(monkeypatch):
+    _patch_market(monkeypatch)
+    t, _ = _setup("autopaper", mode="AUTO_PAPER")
+    assert _runner().submitted == 1
+    _drain()
+    [intent] = _rows(ExecutionIntentRecord, t["tenant_id"])
+    assert intent.route == "PROPOSE" and len(_rows(AiActionRecord, t["tenant_id"])) == 1 and _rows(OrderRecord, t["tenant_id"]) == []
+
+
+def test_no_entry_off_the_commitment_candle_against_the_trend_or_without_areas(monkeypatch):
+    # One bar later the commitment candle is no longer the last closed bar: confirmed earlier, no live entry.
+    _patch_market(monkeypatch)
+    t, rule_id = _setup("later")
+    later = (LAST + pd.Timedelta(minutes=10, seconds=20)).to_pydatetime()
+    assert _runner(now=later, fetch=_fetch(upto=CASE["m"] + 1)).submitted == 0
+    assert json.loads(_template(rule_id).last_status_json)["GATEDEMO"]["code"] == "SKIPPED_GATE_ALREADY_CONFIRMED"
+    # Trend unclear (fail-closed context): the arrival is refused.
+    _patch_market(monkeypatch, ctx={"ok": False, "trend": "UNKNOWN", "sides": set(), "reason": "no entry: trend unclear (test)"})
+    t2, rule2 = _setup("notrend")
+    assert _runner().submitted == 0 and _rows(ExecutionIntentRecord, t2["tenant_id"]) == []
+    assert json.loads(_template(rule2).last_status_json)["GATEDEMO"]["code"] == "SKIPPED_GATE_NO_TREND"
+    _patch_market(monkeypatch, areas=[])
+    t3, rule3 = _setup("noareas")
+    assert _runner().submitted == 0 and json.loads(_template(rule3).last_status_json)["GATEDEMO"]["code"] == runner.NO_AREAS
+
+
+def test_data_short_of_the_expected_bar_is_not_evaluated_and_retried(monkeypatch):
+    _patch_market(monkeypatch)
+    t, rule_id = _setup("lag")
+    assert _runner(fetch=_fetch(upto=CASE["m"] - 1)).submitted == 0              # the broker has not delivered the bar yet
+    tpl = _template(rule_id)
+    assert tpl.last_bar_at is None and json.loads(tpl.last_status_json)["GATEDEMO"]["code"] == runner.WAITING_DATA
+    assert _runner().submitted == 1                                              # retried next cycle, the bar is in
+
+
+def test_nothing_runs_without_both_flags(monkeypatch):
+    _patch_market(monkeypatch)
+    t, _ = _setup("noflag", flags=("scan_then",))
+    assert _runner().submitted == 0 and _rows(ExecutionIntentRecord, t["tenant_id"]) == []
+    t2, _ = _setup("nocore", flags=("execution_core",))
+    assert _runner().submitted == 0 and _rows(ExecutionIntentRecord, t2["tenant_id"]) == []
+
+
+# --- the routes -----------------------------------------------------------------------------------------------------------
+
+def test_then_routes(monkeypatch):
+    t, rule_id = _setup("routes", flags=("execution_core",))
+    url = f"/api/alerts/rules/{rule_id}/then"
+    assert client.get(url, headers=t["headers"]).status_code == 503                # flag off
+    _flag("scan_then", t["tenant_id"])
+    got = client.get(url, headers=t["headers"]).json()
+    assert got["configured"] is True and got["mode"] == "ONE_CLICK"
+    live = client.put(url, headers=t["headers"], json={"mode": "AUTO_LIVE"})
+    assert live.status_code == 422 and "Auto LIVE" in live.text
+    assert client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "gate": {"min_rr": 0.1}}).status_code == 422
+    assert client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "confirm_tf": "1h"}).status_code == 422
+    ok = client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "confirm_tf": "15m", "gate": {"min_rr": 2.5}})
+    assert ok.status_code == 200 and ok.json()["gate"] == {"min_rr": 2.5} and ok.json()["confirm_tf"] == "15m"
+    member = _member(_email("member"), t["tenant_id"], "USER")
+    assert client.put(url, headers=member, json={"mode": "NOTIFY"}).status_code == 403   # not the rule's creator
+    viewer = _member(_email("viewer"), t["tenant_id"], "VIEWER")
+    assert client.put(url, headers=viewer, json={"mode": "NOTIFY"}).status_code == 403
+    other = _tenant(_email("other"), with_credentials=False)
+    _flag("scan_then", other["tenant_id"])
+    assert client.get(url, headers=other["headers"]).status_code == 404                  # another organisation's rule
+    assert client.delete(url, headers=t["headers"]).json()["configured"] is False
+    assert _template(rule_id) is None
+
+
+# --- the guard ------------------------------------------------------------------------------------------------------------
+
+def test_scan_then_is_not_an_order_path():
+    """No function of the scan Then package reaches a broker order method (Z10-c graph), and the package names no order
+    pipeline or broker; its routes write template rows only."""
+    graph = CallGraph(gated=GATED)
+    mine = {name for name in graph.functions if name.startswith("app.screener.then.")}
+    assert "app.screener.then.runner.run_due" in mine and "app.screener.then.routes.put_then" in mine
+    assert not mine & graph.reaching()
+    forbidden = {"place_order", "modify_order", "place_stop_loss_order", "exit_position", "execute_signal_for_user", "execute_structure",
+                 "OrderRouter", "get_broker_adapter", "build_adapter", "propose_entry", "dispatch_one", "drain"}
+    for path in sorted((BACKEND / "app" / "screener" / "then").glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text())):
+            name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
+            assert name not in forbidden, (path.name, name)

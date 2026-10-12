@@ -576,6 +576,11 @@ EXECUTION_CORE_CLAIM_STALE_SECONDS = _bounded_int("EXECUTION_CORE_CLAIM_STALE_SE
 EXECUTION_CORE_MAX_ATTEMPTS = _bounded_int("EXECUTION_CORE_MAX_ATTEMPTS", 3, 1, 10)
 # The drain stops claiming new intents once it has run this long in one cycle (the rest wait for the next cycle).
 EXECUTION_CORE_DRAIN_SECONDS = _bounded_int("EXECUTION_CORE_DRAIN_SECONDS", 20, 1, 300)
+# N1 X2 (flag scan_auto_paper, off; N1-3 is the owner's decision): limits on Auto PAPER entries from one armed scan
+# template - at most this many per IST day, and a cool-down per symbol for the same person. Over either, the setup
+# becomes a proposal instead.
+SCAN_AUTO_PAPER_MAX_PER_DAY = _bounded_int("SCAN_AUTO_PAPER_MAX_PER_DAY", 3, 1, 20)
+SCAN_AUTO_PAPER_COOLDOWN_MINUTES = _bounded_int("SCAN_AUTO_PAPER_COOLDOWN_MINUTES", 30, 0, 24 * 60)
 
 # Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). A new account starts
 # with PAPER_STARTING_CAPITAL (the user may change it within the bounds). The progression ladder card shows the PAPER

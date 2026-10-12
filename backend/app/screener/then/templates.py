@@ -55,25 +55,70 @@ def check_gate(over: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
     return out
 
 
-def settings_of(row: ScanThenTemplateRecord) -> Dict[str, Any]:
+# N1 X2: the template owner's Auto PAPER arming, kept in `gate_settings_json` under this key (no migration). Disarmed
+# is the safe default: a missing, malformed or foreign key (another user, another mode) is "not armed".
+ARM_KEY = "_auto_paper_arm"
+ARM_CONFIRM = "AUTO_PAPER"
+
+
+def _stored(row: Optional[ScanThenTemplateRecord]) -> Dict[str, Any]:
+    if row is None:
+        return {}
     try:
         stored = json.loads(row.gate_settings_json or "{}")
-    except ValueError:
+    except (TypeError, ValueError):
         stored = {}
-    return gate_settings(stored if isinstance(stored, dict) else {})
+    return stored if isinstance(stored, dict) else {}
 
 
-def as_dict(row: Optional[ScanThenTemplateRecord], rule_id: int, include_status: bool = True) -> Dict[str, Any]:
+def gate_overrides(row: Optional[ScanThenTemplateRecord]) -> Dict[str, Any]:
+    """The person's gate overrides (the arming key left out)."""
+    return {k: v for k, v in _stored(row).items() if k != ARM_KEY}
+
+
+def settings_of(row: ScanThenTemplateRecord) -> Dict[str, Any]:
+    return gate_settings(gate_overrides(row))
+
+
+def arm_of(row: Optional[ScanThenTemplateRecord]) -> Optional[Dict[str, Any]]:
+    """The arming ({at, by}) when it is valid: an AUTO_PAPER template, armed by its own owner. Anything else is None."""
+    if row is None or row.mode != "AUTO_PAPER" or row.user_id is None:
+        return None
+    arm = _stored(row).get(ARM_KEY)
+    if not isinstance(arm, dict):
+        return None
+    at, by = arm.get("at"), arm.get("by")
+    if not isinstance(at, str) or not at or isinstance(by, bool) or not isinstance(by, int) or by != row.user_id:
+        return None
+    return {"at": at, "by": by}
+
+
+def is_armed(row: Optional[ScanThenTemplateRecord]) -> bool:
+    return arm_of(row) is not None
+
+
+def set_arm(row: ScanThenTemplateRecord, user_id: Optional[int], at: Optional[str]) -> None:
+    """Arms (user_id and at given) or disarms (None) the template, keeping its gate overrides."""
+    stored = gate_overrides(row)
+    if user_id is not None and at:
+        stored[ARM_KEY] = {"at": at, "by": int(user_id)}
+    row.gate_settings_json = json.dumps(stored, sort_keys=True)
+
+
+def as_dict(row: Optional[ScanThenTemplateRecord], rule_id: int, include_status: bool = True,
+            auto_paper: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     if row is None:
         return {"rule_id": rule_id, "configured": False, "enabled": False, "mode": "NOTIFY", "confirm_tf": DEFAULT_TF, "gate": {},
-                "gate_defaults": dict(GATE_DEFAULTS), "modes": list(MODES), "confirm_tfs": list(CONFIRM_TFS)}
+                "gate_defaults": dict(GATE_DEFAULTS), "modes": list(MODES), "confirm_tfs": list(CONFIRM_TFS),
+                "auto_paper": auto_paper or {"available": False, "armed": False, "why": "no template", "today": 0, "max_per_day": 0}}
     try:
         status = json.loads(row.last_status_json) if (row.last_status_json and include_status) else {}
     except ValueError:
         status = {}
     return {"rule_id": rule_id, "configured": True, "enabled": bool(row.enabled), "mode": row.mode, "confirm_tf": row.confirm_tf,
-            "gate": json.loads(row.gate_settings_json or "{}"), "gate_defaults": dict(GATE_DEFAULTS), "modes": list(MODES),
+            "gate": gate_overrides(row), "gate_defaults": dict(GATE_DEFAULTS), "modes": list(MODES),
             "confirm_tfs": list(CONFIRM_TFS), "user_id": row.user_id,
             "last_bar_at": row.last_bar_at.isoformat() if row.last_bar_at else None,
             "last_problem": row.last_problem if include_status else None,
-            "status": status, "updated_at": row.updated_at.isoformat() if row.updated_at else None}
+            "status": status, "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            "auto_paper": auto_paper or {"available": False, "armed": is_armed(row), "why": "", "today": 0, "max_per_day": 0}}

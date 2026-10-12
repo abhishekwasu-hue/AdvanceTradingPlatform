@@ -8,7 +8,10 @@ the owner still an active member), `policy.decide` picks the route, and:
   its proposal instead of raising a second one). Vision (BYOK-V2), Telegram buttons and push ride on the proposal as
   for any other. Approve places a PAPER order through the existing approval path - never from here;
 * REFUSE  -> nothing; the reason is on the row;
-* PAPER   -> refused until U4 X2 (Auto PAPER) - this module never calls an order pipeline.
+* PAPER   -> N1 X2 (Auto PAPER from an armed scan template, flag `scan_auto_paper` off by default; N1-3 is the owner's
+  decision): `_paper` asks approval-only mode again, the owner's pause / P1-d / F2 caps, the scan limits and a
+  re-quote through the owner's own price, then places one PAPER order through `execute_signal_for_user` **without a
+  broker** (a GATED callee: no broker order can come from here). Any fallback is a proposal; nothing else is placed.
 
 Fail-closed: any error on an intent marks it FAILED with the error's type and moves on; the drain never raises into
 the worker cycle. Exits never come here (ADR-0004).
@@ -20,7 +23,7 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,7 +38,7 @@ from app.platform import phase0_lock
 
 logger = logging.getLogger(__name__)
 
-WHY_PAPER_LATER = "Auto PAPER placement arrives with U4 X2 - nothing was placed"
+WHY_PAPER_NOT_SCAN = "Auto PAPER is placed only for an armed scan template - nothing was placed"
 WHY_OWNER_GONE = "The person this intent is for is no longer an active member - nothing was raised"
 CLAIM_BATCH = 10            # intents claimed at a time, so the drain's deadline is checked between small batches
 
@@ -119,9 +122,18 @@ async def dispatch_one(session: AsyncSession, row: ExecutionIntentRecord, now: d
     if owner is None or owner.tenant_id != tenant_id or not owner.is_active:
         await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_REFUSE, reason=WHY_OWNER_GONE, now=now)
         return intents.REFUSED
+    auto_paper_enabled = False
+    if (row.requested_mode or "").upper() == policy.AUTO_PAPER:
+        from app.screener.then import auto_paper
+        try:
+            async with session.begin_nested():         # reads on the worker's session: a failure rolls back this savepoint only
+                auto_paper_enabled = await auto_paper.intent_places(session, row)
+        except Exception:  # noqa: BLE001 - unknown means "not armed": a proposal
+            logger.exception("Auto PAPER switches could not be read for intent %s", intent_id)
+            auto_paper_enabled = False
     decision = policy.decide(policy.PolicyInputs(
         mode=row.requested_mode, approval_required=await approval.required(session, tenant_id),
-        phase0_locked=await phase0_lock.is_on(session, tenant_id), auto_paper_enabled=False))
+        phase0_locked=await phase0_lock.is_on(session, tenant_id), auto_paper_enabled=auto_paper_enabled))
     if decision.route == policy.ROUTE_REFUSE:
         await intents.finish(session, intent_id, intents.REFUSED, route=decision.route, reason=decision.reason, now=now)
         return intents.REFUSED
@@ -135,8 +147,114 @@ async def dispatch_one(session: AsyncSession, row: ExecutionIntentRecord, now: d
         return await _notify(session, row, signal, decision, now)
     if decision.route == policy.ROUTE_PROPOSE:
         return await _propose(session, row, signal, decision, now)
-    await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_REFUSE, reason=WHY_PAPER_LATER, now=now)
+    if decision.route == policy.ROUTE_PAPER and auto_paper_enabled:
+        return await _paper(session, row, owner, signal, now)
+    await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_REFUSE, reason=WHY_PAPER_NOT_SCAN, now=now)
     return intents.REFUSED
+
+
+async def _fallback(session: AsyncSession, row: ExecutionIntentRecord, signal: Signal, why: str, now: datetime) -> str:
+    """An Auto PAPER setup that may not be placed now becomes a proposal (with why) - never a silent skip."""
+    return await _propose(session, row, signal, policy.Decision(policy.ROUTE_PROPOSE, why), now)
+
+
+async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner: User, signal: Signal,
+                        now: datetime) -> Tuple[str, str, Optional[float]]:
+    """("refuse" | "propose" | "place", why, re-quoted price). Reads only (the caller holds a savepoint)."""
+    from app.ai.worker_bridge import price_lookup_for_user
+    from app.paper.service import paused_reason
+    from app.portfolio import caps
+    from app.risk_engine.by_default import proposal_refusal
+    from app.screener.then import auto_paper
+    paused = await paused_reason(session, owner.id)
+    if paused:
+        return "refuse", paused, None
+    locked = await proposal_refusal(session, row.tenant_id, owner.id, now)
+    if locked:
+        return "refuse", locked, None
+    refused = await caps.entry_refusals(session, owner, caps.candidate_of(row.symbol, signal.entry, signal.stop_loss), now)
+    if refused:
+        return "refuse", "; ".join(refused), None
+    limit = await auto_paper.limit_reason(session, row, now)
+    if limit:
+        return "propose", limit, None
+    lookup = await price_lookup_for_user(session, owner)
+    if lookup is None:
+        return "propose", "No live price on your own broker session to re-quote the Auto PAPER entry - a proposal instead", None
+    try:
+        price = float(await lookup(row.symbol, row.exchange or "NSE"))
+    except Exception as exc:  # noqa: BLE001 - no price, no placement
+        return "propose", f"No live price for {row.symbol} to re-quote the Auto PAPER entry ({type(exc).__name__}) - a proposal instead", None
+    verdict, why = approval.requote_check(row.direction, float(signal.entry or 0.0), price, stop_loss=signal.stop_loss, target1=signal.target1,
+                                          max_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT,
+                                          max_drift_ticks=app_config.APPROVAL_REQUOTE_MAX_DRIFT_TICKS, tick_size=approval.tick_size_for(row.symbol))
+    if verdict != "ok":
+        return "propose", f"The price moved since the setup ({why}) - a proposal instead", None
+    return "place", "", price
+
+
+async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User, signal: Signal, now: datetime) -> str:
+    """N1 X2: one Auto PAPER entry for an armed scan template's owner, or a proposal / refusal with why.
+
+    Approval-only mode is asked again right before anything else (Z3 census: `approval.required(` comes before
+    `execute_signal_for_user(` here). The checks read inside a savepoint; the pipeline commits on its own, so a failure
+    there is rolled back here and the intent ends FAILED - the shared session is never left aborted. PAPER only: the
+    pipeline is called without a broker."""
+    from app.execution.signal_execution import execute_signal_for_user
+    intent_id, tenant_id = row.id, row.tenant_id
+    if await approval.required(session, tenant_id):
+        return await _fallback(session, row, signal, policy.WHY_AUTO_APPROVAL, now)
+    try:
+        async with session.begin_nested():
+            outcome, why, price = await _paper_checks(session, row, owner, signal, now)
+    except Exception as exc:  # noqa: BLE001 - fail closed: nothing placed (the savepoint is rolled back)
+        logger.exception("Auto PAPER checks failed for intent %s", intent_id)
+        await intents.finish(session, intent_id, intents.FAILED, route=policy.ROUTE_PAPER, now=now,
+                             reason=f"Auto PAPER checks could not run ({type(exc).__name__}) - nothing was placed")
+        return intents.FAILED
+    if outcome == "refuse":
+        await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_REFUSE, reason=why[:300], now=now)
+        return intents.REFUSED
+    if outcome == "propose" or price is None:
+        return await _fallback(session, row, signal, why, now)
+    placed = signal.model_copy(update={"entry": price, "timestamp": now,
+                                       "reasons": list(signal.reasons) + [f"Auto PAPER (intent #{intent_id}), re-quoted at {price:g}"]})
+    try:
+        result, order = await execute_signal_for_user(
+            session, owner, mode="PAPER", strategy_id=row.strategy_id, signal=placed, idempotency_key=f"intent:{intent_id}",
+            origin=approval.ORIGIN_AUTOMATIC, journal_source="SCAN")
+    except Exception as exc:  # noqa: BLE001 - the pipeline commits on its own: roll back what it left, record why
+        logger.exception("Auto PAPER placement failed for intent %s", intent_id)
+        await session.rollback()
+        await intents.finish(session, intent_id, intents.FAILED, route=policy.ROUTE_PAPER, now=now,
+                             reason=f"Auto PAPER placement failed ({type(exc).__name__}) - see the worker log")
+        return intents.FAILED
+    if not result.executed:
+        await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_PAPER, now=now,
+                             reason=("PAPER order not placed: " + ("; ".join(result.reasons) or str(order.status)))[:300])
+        return intents.REFUSED
+    await _placed(session, row, owner, placed, order, price, now)
+    return intents.DONE
+
+
+async def _placed(session: AsyncSession, row: ExecutionIntentRecord, owner: User, signal: Signal, order: Any, price: float,
+                  now: datetime) -> None:
+    """DONE with the order, an audit row and one factual notification to the owner (no advice)."""
+    from app.audit.log import write_audit_log
+    from app.notifications.service import notify
+    trade = f"; position #{order.trade_id}" if getattr(order, "trade_id", None) else ""
+    await intents.finish(session, row.id, intents.DONE, route=policy.ROUTE_PAPER, now=now, commit=False,
+                         reason=f"Auto PAPER: PAPER order #{order.id} at {price:g}{trade}")
+    await write_audit_log(session, row.tenant_id, owner.id, "scan_auto_paper_entry",
+                          f"intent #{row.id} {row.direction} {row.symbol} at {price:g}: PAPER order #{order.id} ({row.source_ref})"[:500])
+    await notify(
+        session, row.tenant_id, NotificationType.SCREEN_ALERT, title=f"Auto PAPER entry: {row.direction} {row.symbol} (PAPER)",
+        message=(f"Auto PAPER entry placed: {row.direction} {row.symbol} at {_money(price)} (stop {_money(signal.stop_loss)}, "
+                 f"target {_money(signal.target1)}) from {row.strategy_id}. PAPER only. Exits run as usual; Exit now is on the "
+                 f"Positions page."),
+        severity=NotificationSeverity.WARNING, user_id=owner.id,
+        metadata_json=json.dumps({"execution_intent_id": row.id, "source_ref": row.source_ref, "order_id": order.id}))
+    await session.commit()
 
 
 async def _notify(session: AsyncSession, row: ExecutionIntentRecord, signal: Signal, decision: policy.Decision,

@@ -436,10 +436,14 @@ def test_cap_reached_skips_with_the_reason_and_still_sends_the_chart(flag_on, mo
     _run(_telegram_bot(me["tenant_id"], me["id"]))
 
     async def spend_to_the_cap():
+        # Caps reset at 00:00 UTC (byok.day_start). "5 minutes ago" falls on the previous UTC day when the suite runs
+        # between 00:00 and 00:05 UTC, and the spend then no longer counts - so never earlier than today's start.
+        now = datetime.now(timezone.utc)
+        spent_at = max(byok.day_start(now), now - timedelta(minutes=5))
         async with _session_factory() as session:
             session.add(LlmCallRecord(tenant_id=me["tenant_id"], user_id=me["id"], feature="vision_audit", provider="anthropic", model="claude-haiku-5-5",
                                       system_sha256="x", user_sha256="y", system_text="", user_text="", status="ok", cost_usd=1.0, billed_to_user_key=True,
-                                      created_at=datetime.now(timezone.utc) - timedelta(minutes=5)))
+                                      created_at=spent_at))
             await session.commit()
     _run(spend_to_the_cap())
     action_id = _run(_proposal(me["tenant_id"], me["id"], "V2CAP"))

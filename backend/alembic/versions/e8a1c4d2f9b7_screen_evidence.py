@@ -1,12 +1,8 @@
 """U8 EV1/EV2: screen_evidence - the evidence pack (evidence/1) of a matched symbol, stored with its screen run or alert
 event (flag evidence_charts, off by default).
 
-Also the merge point of the two heads this branch carries: Z7a-2's market zones (b476873844dd) and main's Z3-a
-entry mode (f3a9c1e7b2d4), both on 039888cda9b1. When Z7a-2 is re-chained onto f3a9c1e7b2d4 before it merges, this
-down_revision becomes 'b476873844dd' alone (OPEN_QUESTIONS EV-10).
-
 Revision ID: e8a1c4d2f9b7
-Revises: b476873844dd, f3a9c1e7b2d4
+Revises: b476873844dd
 Create Date: 2026-10-11 23:00:00
 """
 from typing import Sequence, Union
@@ -15,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e8a1c4d2f9b7'
-down_revision: Union[str, Sequence[str], None] = ('b476873844dd', 'f3a9c1e7b2d4')
+down_revision: Union[str, Sequence[str], None] = 'b476873844dd'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: additive (one new table) - the previous release runs on this schema (code-only rollback ok)

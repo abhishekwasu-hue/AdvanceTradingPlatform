@@ -32,7 +32,7 @@ from __future__ import annotations
 
 import typing
 from functools import partial
-from typing import Any, Callable, Dict, List, cast
+from typing import Any, Callable, Dict, List, Optional, cast
 
 import numpy as np
 import pandas as pd
@@ -98,6 +98,11 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ReversalAt": ['ReversalAt(SwingLow(0), "bullish")', 'ReversalAt(SMA(close, 20), "bearish")'],
     "RealBreak": ['RealBreak(SwingHigh(0), "above", 20)', 'RealBreak(PDL(), "below")'],
     "MedianRange": ["MedianRange(20)", "MedianRange(10)@1h"],
+    # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
+    "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
+    "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],
+    "ZoneState": ['ZoneState("any", 1.0)', 'ZoneState("demand", 0.8, "levels")@1h'],
+    "ZoneStrength": ['ZoneStrength("any", 1.0)', 'ZoneStrength("supply", 2.0)@1h'],
 }
 SCREENQL_FIELDS: List[str] = ["close", "volume", "close@1h", "high@1d[1]", "low[2]"]
 # A daily screen: weekly and monthly bars built from the daily ones (W-MON / month-start buckets, close-time alignment).
@@ -114,10 +119,56 @@ SCREENQL_LAST_BAR: Dict[str, List[str]] = {
 
 
 def _screenql(text: str, base_tf: str = BASE_TF):
+    from app.screener import nodes
     from app.screener.parser import parse
+    from app.screener.registry import FUNCTIONS
     from app.screener.runtime import SymbolData, evaluate
     ast = parse(text)
+    zones = any(isinstance(node, nodes.Call) and "zones" in getattr(FUNCTIONS.get(node.name), "needs", ())
+                for node in nodes.walk(ast))
+    if zones:
+        return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}, zones=_zone_timeline(f, base_tf)), base_tf=base_tf)
     return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}), base_tf=base_tf)
+
+
+ZONE_SNAPSHOT_EVERY = 25          # bars between the synthetic zone snapshots (plus each session's last bar)
+
+
+def _zone_timeline(f: pd.DataFrame, tf: str) -> Any:
+    """Z7a-3: stored zone snapshots stand-in for the zone functions - a snapshot at the close of every 25th bar and of each
+    session's last bar, built ONLY from the bars up to that one (a demand band at the recent low, a supply band at the
+    recent high, a support line at the close, their touches in the window). Like the stored snapshots, each is known
+    from its as_of on; the case then proves the runtime never shows a bar a snapshot from after its close (the zone
+    job's own causality is tested in tests/test_zones_store_job.py)."""
+    from app.price_action.zones.read import Snapshot, ZoneTimeline
+    from app.screener.runtime import bar_close
+    if not len(f):
+        return ZoneTimeline("NSE:S")
+    closes = bar_close(f.index, tf)
+    ist = pd.DatetimeIndex(closes).tz_convert("Asia/Kolkata")
+    last_of_day = np.asarray((ist.hour * 60 + ist.minute) >= 15 * 60 + 30)   # by the clock, never by looking at the next bar
+    # an empty snapshot from before the first bar: the instrument is followed, nothing is known yet (no bars read)
+    times: List[int] = [pd.Timestamp(f.index[0]).value]
+    snaps: List[Optional[Snapshot]] = [Snapshot(-1, pd.Timestamp(f.index[0]).to_pydatetime(), "platform", None, [])]
+    lo_, hi_, c_ = (f[k].astype(float).to_numpy() for k in ("low", "high", "close"))
+    for i in range(len(f)):
+        if not (last_of_day[i] or (i + 1) % ZONE_SNAPSHOT_EVERY == 0):
+            continue
+        w = slice(max(0, i - ZONE_SNAPSHOT_EVERY + 1), i + 1)
+        low, high, close = float(lo_[w].min()), float(hi_[w].max()), float(c_[i])
+        demand = (low, low * 1.0015)
+        supply = (high * 0.9985, high)
+        touches_d = int((lo_[w] <= demand[1]).sum()) - 1
+        touches_s = int((hi_[w] >= supply[0]).sum()) - 1
+        rows: List[Dict[str, Any]] = [{"zone_key": f"d{i}", "zone_type": "DEMAND_ZONE", "timeframe": tf, "zone_low": demand[0], "zone_high": demand[1],
+                 "state": "tested" if touches_d > 0 else "fresh", "touches": max(0, touches_d), "strength": None, "remembered": False},
+                {"zone_key": f"s{i}", "zone_type": "SUPPLY_ZONE", "timeframe": tf, "zone_low": supply[0], "zone_high": supply[1],
+                 "state": "flipped" if i % 2 else "fresh", "touches": max(0, touches_s), "strength": None, "remembered": False},
+                {"zone_key": f"l{i}", "zone_type": "SUPPORT", "timeframe": tf, "zone_low": close, "zone_high": close,
+                 "state": "fresh", "touches": 0, "strength": 3, "remembered": i % 3 == 0}]
+        times.append(pd.Timestamp(closes[i]).value)
+        snaps.append(Snapshot(i, pd.Timestamp(closes[i]).to_pydatetime(), "platform", close, rows))
+    return ZoneTimeline("NSE:S", np.array(times, dtype="int64"), snaps)
 
 
 def _zone_frame(f: pd.DataFrame) -> pd.DataFrame:

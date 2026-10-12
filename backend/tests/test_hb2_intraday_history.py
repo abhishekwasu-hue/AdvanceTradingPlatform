@@ -218,12 +218,12 @@ def test_capture_stores_closed_bars_by_end_with_ingest_stamp_and_as_of_hides_the
                 MdTenantCandleRecord.tenant_id == owner.tenant_id, MdTenantCandleRecord.instrument_key == "NSE:HBIC1")
                 .order_by(MdTenantCandleRecord.ts)))
             before = await tenant_store.candles(session, owner.tenant_id, "NSE:HBIC1", "5m", utc_now - timedelta(hours=8), utc_now,
-                                                symbol="HBIC1", as_of=utc_now - timedelta(minutes=1))
+                                                symbol="HBIC1", as_of=utc_now - timedelta(minutes=1), reader_user_id=owner.user.id)
             after = await tenant_store.candles(session, owner.tenant_id, "NSE:HBIC1", "5m", utc_now - timedelta(hours=8), utc_now,
-                                               symbol="HBIC1")
+                                               symbol="HBIC1", reader_user_id=owner.user.id)
             return rows, before, after
     rows, before, after = _run(read())
-    assert len(rows) == 375 and {r.source for r in rows} == {"broker:upstox"} and {r.timeframe for r in rows} == {"1m"}
+    assert len(rows) == 375 and {r.source for r in rows} == {f"broker:upstox:u{owner.user.id}"} and {r.timeframe for r in rows} == {"1m"}
     first, last = rows[0], rows[-1]
     assert first.ts.replace(tzinfo=timezone.utc).astimezone(IST).time() == time(9, 16)      # START 09:15 -> END 09:16
     assert last.ts.replace(tzinfo=timezone.utc).astimezone(IST).time() == time(15, 30)
@@ -410,8 +410,10 @@ def test_only_the_owners_own_session_is_used_and_no_other_tenant_sees_the_bars()
         async with _session_factory() as session:
             evening = EVENING.astimezone(timezone.utc)
             window = (evening - timedelta(hours=9), evening)
-            mine = await tenant_store.candles(session, owner.tenant_id, "NSE:HBIT1", "1m", *window, symbol="HBIT1")
-            theirs = await tenant_store.candles(session, other.tenant_id, "NSE:HBIT1", "1m", *window, symbol="HBIT1")
+            mine = await tenant_store.candles(session, owner.tenant_id, "NSE:HBIT1", "1m", *window, symbol="HBIT1",
+                                              reader_user_id=owner.user.id)
+            theirs = await tenant_store.candles(session, other.tenant_id, "NSE:HBIT1", "1m", *window, symbol="HBIT1",
+                                                reader_user_id=other.id)
             with pytest.raises(PermissionError):
                 await tenant_store.candles(session, None, "NSE:HBIT1", "1m", *window, symbol="HBIT1")
             return len(mine), len(theirs)
@@ -563,7 +565,7 @@ def test_the_session_user_is_pinned_to_one_user():
 def test_broker_rows_are_readable_only_by_the_session_holder():
     _flag(True)
     owner = Owner("hb2-read-owner@example.com")
-    owner.run(FakeBroker({"HBIV1": day_bars(FRI)}), symbols=["NSE:HBIV1"], start=FRI)
+    owner.run(FakeBroker({"HBIV1": day_bars(FRI, skip=(30, 31))}), symbols=["NSE:HBIV1"], start=FRI)   # one gap event
     _teammate(owner.user, "hb2-read-viewer@example.com", role="VIEWER")
     _teammate(owner.user, "hb2-read-coowner@example.com", role="OWNER")
     params = {"instrument_key": "NSE:HBIV1", "timeframe": "1m", "store": "tenant", "symbol": "HBIV1",
@@ -572,15 +574,49 @@ def test_broker_rows_are_readable_only_by_the_session_holder():
     def read(token):
         res = client.get("/api/market-data/history", params=params, headers={"Authorization": f"Bearer {token}"})
         assert res.status_code == 200, res.text
-        return len(res.json()["candles"])
+        return len(res.json()["candles"]), res.json()["quality_events"]
 
     def login(email):
         res = client.post("/api/auth/login", json={"email": email, "password": "S3cur3Pass!"})
         assert res.status_code == 200, res.text
         return res.json()["access_token"]
-    assert read(TOKENS["hb2-read-owner@example.com"]) == 375
-    assert read(login("hb2-read-viewer@example.com")) == 0             # same organisation, not the session holder
-    assert read(login("hb2-read-coowner@example.com")) == 0
+    assert read(TOKENS["hb2-read-owner@example.com"]) == (373, 1)
+    assert read(login("hb2-read-viewer@example.com")) == (0, 0)        # same organisation, not the session holder: no bars,
+    assert read(login("hb2-read-coowner@example.com")) == (0, 0)       # and no quality events about them either
+
+
+def test_a_pin_change_never_shows_one_holders_bars_to_the_other():
+    _flag(True)
+    a = Owner("hb2-pinchange-a@example.com")
+    a.run(FakeBroker({"HBIQ1": day_bars(FRI)}), symbols=["NSE:HBIQ1"], start=FRI)
+    b = _teammate(a.user, "hb2-pinchange-b@example.com", role="OWNER")
+    b_cred = _credential(b, label="b")
+    b_broker = FakeBroker({"HBIQ1": day_bars(FRI, base=200.0)})
+    report = a.run(b_broker, symbols=["NSE:HBIQ1"], start=FRI, owner_user_id=b.id)        # the pin moves to B
+    assert report.complete and report.days_done == 1 and b_broker.calls                    # B keeps its own copy
+    assert a.used[-1] == b_cred
+
+    async def reads():
+        async with _session_factory() as session:
+            evening = EVENING.astimezone(timezone.utc)
+            window = (evening - timedelta(hours=9), evening)
+            as_a = await tenant_store.candles(session, a.tenant_id, "NSE:HBIQ1", "1m", *window, symbol="HBIQ1", reader_user_id=a.user.id)
+            as_b = await tenant_store.candles(session, a.tenant_id, "NSE:HBIQ1", "1m", *window, symbol="HBIQ1", reader_user_id=b.id)
+            nobody = await tenant_store.candles(session, a.tenant_id, "NSE:HBIQ1", "1m", *window, symbol="HBIQ1")
+            return as_a, as_b, nobody
+    as_a, as_b, nobody = _run(reads())
+    assert len(as_a) == 375 and all(bar.open < 200 for bar in as_a)                       # A sees only A's bars
+    assert len(as_b) == 375 and all(bar.open >= 200 for bar in as_b)                      # B sees only B's bars
+    assert nobody == []
+
+    def read(token):
+        params = {"instrument_key": "NSE:HBIQ1", "timeframe": "1m", "store": "tenant", "symbol": "HBIQ1",
+                  "start": (EVENING - timedelta(hours=9)).isoformat(), "end": EVENING.isoformat()}
+        res = client.get("/api/market-data/history", params=params, headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 200, res.text
+        return [c["open"] for c in res.json()["candles"]]
+    login = client.post("/api/auth/login", json={"email": "hb2-pinchange-b@example.com", "password": "S3cur3Pass!"})
+    assert min(read(login.json()["access_token"])) >= 200 and max(read(TOKENS["hb2-pinchange-a@example.com"])) < 200
 
 
 def test_mcx_session_request_cap_and_blackout_dates(monkeypatch):
@@ -592,6 +628,9 @@ def test_mcx_session_request_cap_and_blackout_dates(monkeypatch):
     report = owner.run(capped, symbols=["NSE:HBIM1"], start=FRI - timedelta(days=11), max_requests=2)
     assert report.status == "request_cap" and not report.complete and report.requests == 2 == len(capped.calls)
     assert report.pending > 0
+    again = FakeBroker(bars)                                 # the cap is a rolling 30-minute count from the database:
+    report = owner.run(again, symbols=["NSE:HBIM1"], start=FRI - timedelta(days=11), max_requests=2)
+    assert report.status == "request_cap" and again.calls == [] and _run(hb2.recent_requests(_session_factory, owner.tenant_id)) == 2
 
     from app.db.models import StrategyDeploymentRecord
 
@@ -608,7 +647,7 @@ def test_mcx_session_request_cap_and_blackout_dates(monkeypatch):
                      clock=lambda: datetime(2023, 3, 10, 23, 45, tzinfo=IST))           # MCX closed at 23:30
     assert late.complete and held.calls
 
-    monkeypatch.setattr(config, "HISTORY_INTRADAY_BLACKOUT_DATES", frozenset({"2023-03-11"}))   # e.g. a budget Saturday
+    monkeypatch.setattr(config, "HISTORY_INTRADAY_BLACKOUT_DATES", frozenset({date(2023, 3, 11)}))   # e.g. a budget Saturday
     assert not hb2.quiet_hours(datetime(2023, 3, 11, 20, 0, tzinfo=IST), set())
     with pytest.raises(hb2.IntradayConfigError, match="blackout"):
         owner.run(held, symbols=["NSE:HBIM1"], clock=lambda: datetime(2023, 3, 11, 20, 0, tzinfo=IST))
@@ -676,3 +715,16 @@ def test_one_bad_day_refuses_only_that_day_and_progress_marks_stale_running(monk
     entry = next(a for a in body["attention"] if a["instrument_key"] == "NSE:HBIS1")
     assert entry["status"] == "running" and entry["stale"] is True and entry["started_at"].startswith("2023-03-10T12:00")
     assert body["stale_running"] >= 1
+
+
+def test_blackout_dates_are_parsed_and_a_typo_refuses_the_job(monkeypatch):
+    monkeypatch.setenv("HB2_TEST_DATES", "2026-11-08, 2027-02-01,2026-13-01,nov-8")
+    dates, bad = config._iso_dates("HB2_TEST_DATES")
+    assert dates == frozenset({date(2026, 11, 8), date(2027, 2, 1)}) and bad == ["2026-13-01", "nov-8"]
+    owner = Owner("hb2-blackout@example.com")
+    _flag(True)
+    monkeypatch.setattr(config, "HISTORY_INTRADAY_BLACKOUT_ERRORS", bad)
+    broker = FakeBroker({"HBIY1": day_bars(FRI)})
+    with pytest.raises(hb2.IntradayConfigError, match="2026-13-01"):
+        owner.run(broker, symbols=["NSE:HBIY1"], start=FRI)
+    assert broker.calls == []

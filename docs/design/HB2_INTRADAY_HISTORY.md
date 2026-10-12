@@ -14,15 +14,19 @@ a resumable backfill, both read through the owner's own broker session and writt
   rule: a mistyped id refuses instead of loading another customer's tenant).
 - Same lake format as HB0's 1-minute import: timeframe `1m`, key `EXCHANGE:SYMBOL`, bar END in UTC (the broker labels by
   START; END = START + 1 minute), unadjusted prices (B4 adjusts on read), B1 versions (an identical bar is skipped, a
-  changed one becomes the next version), source `broker:<name>` (e.g. `broker:upstox`).
+  changed one becomes the next version), source `broker:<name>:u<holder user id>` (e.g. `broker:upstox:u7`): the member
+  whose own session the bars came through is part of the row.
 - `ingested_at` = the time the bar was written. Only bars whose END is at or before the fetch time are stored; a forming
   bar is dropped and counted (`dropped_forming`). So an as-of replay never sees a bar before it was really known.
 - Read path: `tenant_store.candles` and `GET /api/market-data/history?store=tenant` (the caller's own tenant only),
   3/5/15/30/60-minute bars resampled on read. Nothing is written to the shared lake (`md_candles`).
-- Who may read them (BT1b, review M3): the bars came through ONE member's own broker session, so `store=tenant` serves
-  `broker:*` rows only to that member (the `user_id` recorded on the tenant's `history_intraday_days`). Every other
-  member - a teammate, a VIEWER, another OWNER - gets the private store without them (`tenant_store`'s
-  `exclude_prefixes`), and the quality-event count leaves them out too. Open question HB2-11.
+- Who may read them (BT1b, review M3 and re-review): the bars came through ONE member's own session, so a read shows a
+  `broker:*` row only when its source ends in the reader's own `:u<id>` (`tenant_store.holder_visible`, applied to the
+  bars, the 1-minute row count that guards memory, and the quality-event count). Every other member - a teammate, a
+  VIEWER, another OWNER - gets the private store without them, and when the pin moves from A to B, A keeps seeing only
+  A's bars and B only B's (each holder's day state is its own too: `history_intraday_days` is unique per tenant,
+  holder, instrument and day, so B's pass fills B's copy). A read without a reader (`reader_user_id=None`) sees no
+  `broker:*` row. Open question HB2-11.
 - Checks per day (HB0's): labels must be whole minutes inside 09:15-15:30 IST (a START-labelled batch is refused, never
   shifted), two different bars with one END refuse the day, a price that is not a positive number or a volume that is
   not a count refuses the batch. Quality events (B3): duplicates, bar problems and per-session gaps, recorded with the
@@ -45,8 +49,10 @@ endpoints are called (`get_historical_data` for past days, `get_intraday_candles
   `RateBudget.acquire_spare(reserve)`: only while both buckets still hold `HISTORY_INTRADAY_RESERVE` (50%) of their
   capacity on top of it, and without holding the budget's lock while it waits, so an exit's `acquire()` is never
   queued behind a history read. If the time budget would run out while waiting, the pass stops.
-- Request volume (review M1): at most `HISTORY_INTRADAY_MAX_REQUESTS` (600) broker requests per pass; a capped pass
-  ends `request_cap` and the worker starts the next one 30 minutes later at the earliest. Upstox caps a user at 2,000
+- Request volume (review M1): at most `HISTORY_INTRADAY_MAX_REQUESTS` (600) broker requests in any rolling 30 minutes,
+  counted from the database (each request claims its window's days with one `started_at`), so the cap holds across
+  passes, worker restarts, the CLI and a second replica; a capped pass ends `request_cap` and the worker starts the next
+  one 30 minutes later at the earliest. Upstox caps a user at 2,000
   standard API requests per 30 minutes, which the per-second / per-minute buckets do not model, so history takes under
   a third of that window and leaves the rest to the worker and the owner's own apps.
 - MCX (review M1): while the owner tenant has a non-stopped MCX deployment and the MCX session is open (to 23:30 IST),
@@ -71,7 +77,8 @@ unfinished pass (time budget, no session yet, rate limited) is started again at 
 (credential, its last update, IST day) and reuses it across that evening's passes (review L3), so the instrument master
 is not reloaded every 15 minutes; a re-login or a new day builds a new one. `HISTORY_INTRADAY_BLACKOUT_DATES` lists IST
 dates on which HB2 never calls the broker: special sessions the holiday calendar does not know (Muhurat evening, a
-budget-day Saturday), which would otherwise look like closed days (review L2). The MCX evening session may still be
+budget-day Saturday), which would otherwise look like closed days (review L2). Each entry is parsed as YYYY-MM-DD; a bad
+entry is logged as an error at start-up and the job refuses to run until it is fixed (a typo is never ignored). The MCX evening session may still be
 trading on the same broker account: that is what the 50% reserve is for. Stopping the worker cancels the task.
 
 ## Capture, backfill, resume
@@ -95,8 +102,9 @@ trading on the same broker account: that is what the 50% reserve is for. Stoppin
 ## Admin and CLI
 - `GET /api/admin/history-intraday/progress` (SUPER_ADMIN with an MFA session; classified `admin` in
   `tests/tenancy_route_table.py`): per instrument the days by status, first / last day done and bars stored, and the
-  days that need attention with `started_at`; a `running` day claimed more than 2 hours ago is flagged `stale` (its pass
-  died; the next pass asks for it again) and counted in `stale_running` (review L4). Counts and names only, never bars.
+  days that need attention with `started_at` and the holder; a `running` day claimed more than 2 hours ago is flagged
+  `stale` (its pass died; the next pass asks for it again), and `stale_running` counts all of them with its own query
+  (review L4). Counts and names only, never bars.
 - `python -m app.market_lake.intraday_history run [--from D] [--to D] [--symbols ...] [--redo] [--budget-seconds N]`,
   `progress`, `purge --tenant ID --confirm-name NAME` (removes HB2's `broker:*` rows, their quality events and day rows
   of a wrongly configured tenant). Exit codes: 0 complete, 1 something left, 2 refused (flag off, owner not confirmed,
@@ -125,7 +133,8 @@ tenants and the shared lake see nothing, also through the history API); never du
 the morning; the worker hook shares the worker's RateBudget and is cancelled on stop; admin progress is SUPER_ADMIN only.
 Review follow-ups: one pinned session user (a co-owner's credential is never used; `HISTORY_OWNER_USER_ID` checked
 against the tenant); `broker:*` rows readable only by the session holder (a VIEWER and a co-owner of the same
-organisation get none through the history API); the request cap; MCX in session stops the pass; blackout dates; hours
+organisation get no bars and no quality events through the history API); after a pin change A and B each see only their
+own bars; the rolling request cap holds for a second pass; a bad blackout entry refuses the job; the request cap; MCX in session stops the pass; blackout dates; hours
 and flag re-checked after the token wait; one adapter per IST day; a bad day refuses only itself; stale `running` days
 in progress.
 

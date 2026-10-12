@@ -45,7 +45,7 @@ def upgrade() -> None:
         sa.Column('started_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('done_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint('tenant_id', 'instrument_key', 'trade_date', name='uq_history_intraday_day'),
+        sa.UniqueConstraint('tenant_id', 'user_id', 'instrument_key', 'trade_date', name='uq_history_intraday_day'),
     )
     op.create_index('ix_history_intraday_days_tenant_id', 'history_intraday_days', ['tenant_id'])
     op.create_index('ix_history_intraday_days_trade_date', 'history_intraday_days', ['trade_date'])

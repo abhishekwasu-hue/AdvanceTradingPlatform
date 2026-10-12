@@ -2609,14 +2609,14 @@ class MdIsinSymbolRecord(Base):
 
 
 class HistoryIntradayDayRecord(Base):
-    """HB2: one (tenant, instrument, trade date) of the owner's 1-minute history and what the capture / backfill did with
+    """HB2: one (tenant, session holder, instrument, trade date) of the owner's 1-minute history and what the capture / backfill did with
     it - the resume point (a `done` day is never asked for again) and the progress source. Status: pending | running |
     done | no_data (the broker returned no bar: beyond its depth, not traded, or a holiday without a calendar) | refused
     (a check failed; nothing written) | failed (unexpected error or a broker error; retried on the next pass). The bars
     themselves live in `md_tenant_candles` (tenant-private); `credential_id` records whose session they came from."""
 
     __tablename__ = "history_intraday_days"
-    __table_args__ = (UniqueConstraint("tenant_id", "instrument_key", "trade_date", name="uq_history_intraday_day"),)
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "instrument_key", "trade_date", name="uq_history_intraday_day"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)

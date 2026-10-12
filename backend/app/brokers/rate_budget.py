@@ -30,7 +30,7 @@ class RateLimits:
 # Conservative: about a third of each broker's published allowance, leaving headroom for the
 # tenant's own manual use of the same API key (their broker app, TradingView, ...).
 # Upstox also caps a user at 2,000 standard API requests per 30 minutes, which these buckets do not model; HB2's history
-# reads therefore stop at HISTORY_INTRADAY_MAX_REQUESTS (600) per pass and at most one capped pass per 30 minutes.
+# reads therefore stop at HISTORY_INTRADAY_MAX_REQUESTS (600) in any rolling 30 minutes (counted from the database).
 BROKER_RATE_LIMITS: Dict[str, RateLimits] = {
     "upstox": RateLimits(per_second=8.0, burst=10, per_minute=200),
     "zerodha": RateLimits(per_second=2.0, burst=3, per_minute=100),

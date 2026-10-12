@@ -55,21 +55,18 @@ async def history(
             raise live_access.LiveDataRefused("Intraday bars in the shared history were recorded through other sessions' broker feeds, so "
                                               "they are not shown while the bring-your-own-broker data tier is on; daily (EOD) bars are.")
     if store == "tenant":
-        # HB2 / BT1b: bars read through one member's own broker session (`broker:*`) are that member's only - another
-        # member of the organisation (a teammate, a VIEWER, a co-owner) gets the rest of the private store without them.
-        from app.market_lake.intraday_history import BROKER_SOURCE_PREFIX, broker_rows_readable
-        hidden = () if await broker_rows_readable(session, user) else (BROKER_SOURCE_PREFIX,)
+        # HB2 / BT1b: bars read through one member's own broker session (source `broker:<name>:u<id>`) are that member's
+        # only - every other member (a teammate, a VIEWER, a co-owner, the next pinned owner) gets the rest without them.
         try:
             bars = await tenant_store.candles(session, user.tenant_id, instrument_key, timeframe, start, end, symbol=sym,
                                               exchange=exchange, kind=kind, adjusted=adjusted, as_of=as_of, sources=preferred,
-                                              exclude_prefixes=hidden)
+                                              reader_user_id=user.id)
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from None
         except PermissionError as exc:
             raise HTTPException(status_code=403, detail=str(exc)) from None
-        owner = DataQualityEventRecord.tenant_id == user.tenant_id
-        for prefix in hidden:
-            owner = owner & DataQualityEventRecord.source.not_like(f"{prefix}%")
+        owner = (DataQualityEventRecord.tenant_id == user.tenant_id) & \
+            tenant_store.holder_visible(DataQualityEventRecord.source, user.id)
     else:
         bars = await adjust.candles(session, instrument_key, timeframe, start, end, symbol=sym,
                                     exchange=exchange, kind=kind, adjusted=adjusted, as_of=as_of, sources=preferred)

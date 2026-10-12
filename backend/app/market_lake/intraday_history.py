@@ -13,9 +13,10 @@ Rules (hard):
   and are read only through a credential that ONE pinned user of THAT tenant (HISTORY_OWNER_USER_ID, else the lowest-id
   active OWNER) linked themselves (BT1 "own session") at a broker whose data terms are confirmed (Tier A), with a usable
   token today. Another tenant's, a teammate's or a co-owner's session is never used, the bars never reach the shared
-  lake, and within the tenant only that user may read the `broker:*` rows (BYOK / BT1b).
-- Volume: at most HISTORY_INTRADAY_MAX_REQUESTS requests per pass, and no pass while the owner's MCX deployments are
-  in session (the same account's exits may need the API until 23:30 IST).
+  lake, and the holder is in each row's source (`broker:<name>:u<id>`): within the tenant only that user reads them
+  (BYOK / BT1b), whoever is pinned later.
+- Volume: at most HISTORY_INTRADAY_MAX_REQUESTS requests in any rolling 30 minutes (counted from the database), and no
+  pass while the owner's MCX deployments are in session (the same account's exits may need the API until 23:30 IST).
 - Rate budget: when the trading worker runs the job it hands over the SAME RateBudget its exits draw from, and every
   request takes a token through `acquire_spare` - only while HISTORY_INTRADAY_RESERVE of both buckets stays free for
   the worker, never holding the budget's lock while waiting. A 429 ends the pass. Broker errors here are not reported
@@ -71,7 +72,14 @@ PERIOD = timedelta(minutes=1)
 # Brokers whose adapter serves BOTH 1-minute endpoints (past days and today's session). Also must be Tier A confirmed.
 SUPPORTED_BROKERS = ("upstox",)
 OWNER_ROLE = "OWNER"                        # without HISTORY_OWNER_USER_ID: the lowest-id active OWNER, and only them
-BROKER_SOURCE_PREFIX = "broker:"            # HB2's sources; readable only by the member whose session produced them
+BROKER_SOURCE_PREFIX = "broker:"            # HB2's sources: broker:<name>:u<holder user id>, readable only by that user
+CAP_WINDOW = timedelta(minutes=30)          # HISTORY_INTRADAY_MAX_REQUESTS counts the requests of this rolling window
+
+
+def holder_source(broker: str, user_id: int) -> str:
+    """The lake source of bars read through `user_id`'s own session at `broker` - the holder is IN the row, so a read
+    can show each member exactly their own (BT1b), whoever is pinned later."""
+    return f"{BROKER_SOURCE_PREFIX}{broker}:u{int(user_id)}"
 EXCHANGES = ("NSE", "BSE")                  # cash and indices on the NSE clock (F&O / MCX: open question HB2-6)
 MCX_SESSION = EXCHANGE_SESSIONS["MCX"]
 STALE_RUNNING = timedelta(hours=2)          # a `running` day older than this belongs to a pass that died (progress)
@@ -157,7 +165,7 @@ def quiet_hours(now: datetime, holidays: Set[date]) -> bool:
     Never on a HISTORY_INTRADAY_BLACKOUT_DATES date (a special session the calendar does not know: Muhurat, a budget-day
     Saturday)."""
     ist = now.astimezone(IST)
-    if ist.date().isoformat() in config.HISTORY_INTRADAY_BLACKOUT_DATES:
+    if ist.date() in config.HISTORY_INTRADAY_BLACKOUT_DATES:
         return False
     if not is_trading_day(ist.date(), holidays):
         return True
@@ -248,13 +256,6 @@ async def owner_session(session: AsyncSession, tenant_id: int, now: datetime,
     return None
 
 
-async def broker_rows_readable(session: AsyncSession, user: User) -> bool:
-    """BT1b for the private store: `broker:*` rows were read through one member's own session, so only that member (the
-    user recorded on the tenant's HB2 days) may read them - not a teammate, a VIEWER or another co-owner."""
-    holder = await session.scalar(select(D.id).where(D.tenant_id == user.tenant_id, D.user_id == user.id).limit(1))
-    return holder is not None
-
-
 async def mcx_in_session(session: AsyncSession, tenant_id: int, now: datetime) -> bool:
     """True while the owner tenant has a non-stopped MCX deployment and the MCX session is open (it trades to 23:30 IST):
     its exits may need the same broker account's rate limit, so HB2 neither starts nor continues a pass then."""
@@ -299,11 +300,13 @@ def _windows(days: Sequence[date], span: int) -> List[List[date]]:
     return out
 
 
-async def _pending_days(session: AsyncSession, tenant_id: int, inst: Instrument, first: date, last: date, holidays: Set[date],
+async def _pending_days(session: AsyncSession, tenant_id: int, user_id: int, inst: Instrument, first: date, last: date,
+                        holidays: Set[date],
                         *, redo: bool) -> Tuple[List[date], int]:
     """Trading days in [first, last] not done yet (and `no_data` days only while recent) -> (days, skipped count)."""
     states = {d: s for d, s in await session.execute(select(D.trade_date, D.status).where(
-        D.tenant_id == tenant_id, D.instrument_key == inst.key, D.trade_date >= first, D.trade_date <= last))}
+        D.tenant_id == tenant_id, D.user_id == user_id, D.instrument_key == inst.key, D.trade_date >= first,
+        D.trade_date <= last))}
     days, skipped, day = [], 0, first
     while day <= last:
         if is_trading_day(day, holidays):
@@ -370,11 +373,11 @@ async def _claim(session_factory: Any, tenant_id: int, inst: Instrument, days: S
     now = _wall()
     async with session_factory() as session:
         existing = {s.trade_date: s for s in await session.scalars(select(D).where(
-            D.tenant_id == tenant_id, D.instrument_key == inst.key, D.trade_date.in_(list(days))))}
+            D.tenant_id == tenant_id, D.user_id == user_id, D.instrument_key == inst.key, D.trade_date.in_(list(days))))}
         for day in days:
             state = existing.get(day)
             if state is None:
-                state = D(tenant_id=tenant_id, instrument_key=inst.key, trade_date=day, status="pending", attempts=0,
+                state = D(tenant_id=tenant_id, user_id=user_id, instrument_key=inst.key, trade_date=day, status="pending", attempts=0,
                           inserted=0, corrected=0, skipped=0, dropped_forming=0, quality_events=0)
                 session.add(state)
             state.status, state.error, state.started_at = "running", None, now
@@ -383,9 +386,9 @@ async def _claim(session_factory: Any, tenant_id: int, inst: Instrument, days: S
         await session.commit()
 
 
-async def _set(session_factory: Any, tenant_id: int, inst: Instrument, days: Sequence[date], **values: Any) -> None:
+async def _set(session_factory: Any, tenant_id: int, user_id: int, inst: Instrument, days: Sequence[date], **values: Any) -> None:
     async with session_factory() as session:
-        await session.execute(update(D).where(D.tenant_id == tenant_id, D.instrument_key == inst.key,
+        await session.execute(update(D).where(D.tenant_id == tenant_id, D.user_id == user_id, D.instrument_key == inst.key,
                                               D.trade_date.in_(list(days))).values(updated_at=_wall(), **values))
         await session.commit()
 
@@ -430,7 +433,8 @@ async def run_pass(session_factory: Any, *, budget_for: Optional[BudgetFor] = No
     """One pass: today's capture (once the bars are final) and the backfill, newest days first, until everything in
     range is done or the time budget, the quiet hours, the rate budget or the flag ends it. See the module docstring.
     `budget_for(tenant_id, "<broker>@<account>")` returns the trading worker's own RateBudget for that session; without
-    it the pass makes its own (CLI). At most `max_requests` (HISTORY_INTRADAY_MAX_REQUESTS) broker requests per pass.
+    it the pass makes its own (CLI). At most `max_requests` (HISTORY_INTRADAY_MAX_REQUESTS) broker requests in any
+    rolling 30 minutes.
     `adapter_cache` (a dict the caller keeps) reuses one adapter across the passes of one IST day. `complete` is True
     only when nothing in range is left to ask for."""
     clock = clock or _wall
@@ -438,6 +442,10 @@ async def run_pass(session_factory: Any, *, budget_for: Optional[BudgetFor] = No
     seconds = float(config.HISTORY_INTRADAY_BUDGET_SECONDS if budget_seconds is None else budget_seconds)
     deadline = monotonic_clock.monotonic() + seconds
     report = PassReport()
+    if config.HISTORY_INTRADAY_BLACKOUT_ERRORS:
+        raise IntradayConfigError("HISTORY_INTRADAY_BLACKOUT_DATES has entries that are not YYYY-MM-DD dates: "
+                                  f"{', '.join(config.HISTORY_INTRADAY_BLACKOUT_ERRORS)} - fix them (a typo would let HB2 "
+                                  "run during a special session)")
     async with session_factory() as session:
         tenant_id = await owner_tenant(session, owner_tenant_id, owner_tenant_name)
         report.tenant_id = tenant_id
@@ -474,7 +482,7 @@ async def run_pass(session_factory: Any, *, budget_for: Optional[BudgetFor] = No
     budget = budget_for(tenant_id, f"{record.broker_name}@{record.account_label or 'primary'}") if budget_for else \
         RateBudget(limits_for(record.broker_name))
     adapter = _adapter(record, adapter_factory or _default_adapter, adapter_cache, now.astimezone(IST).date())
-    source = f"{BROKER_SOURCE_PREFIX}{record.broker_name}"
+    source = holder_source(record.broker_name, session_user.id)
     cap = max(1, int(config.HISTORY_INTRADAY_MAX_REQUESTS if max_requests is None else max_requests))
     async with session_factory() as lock_session:
         if not await _try_lock(lock_session):
@@ -501,7 +509,7 @@ async def _run_targets(session_factory: Any, report: PassReport, tenant_id: int,
     today_ist = clock().astimezone(IST).date()
     async with session_factory() as session:
         for inst in targets:
-            days, skipped = await _pending_days(session, tenant_id, inst, first_day, last_day, holidays, redo=redo)
+            days, skipped = await _pending_days(session, tenant_id, user_id, inst, first_day, last_day, holidays, redo=redo)
             report.skipped += skipped
             if today_ist in days:                        # today comes from the intraday endpoint, alone in its request
                 plan.append((inst, [today_ist]))
@@ -526,10 +534,10 @@ async def _run_targets(session_factory: Any, report: PassReport, tenant_id: int,
         remaining = deadline - monotonic_clock.monotonic()
         got = await budget.acquire_spare(reserve, deadline=budget.now() + max(0.0, remaining))
         # The wait may have been long: hours, the flag and MCX are looked at again before the request goes out.
-        stop = (None if not got else await _should_stop(session_factory, report, tenant_id, clock, holidays, None, cap)) or \
+        stop = (None if not got else await _should_stop(session_factory, report, tenant_id, clock, holidays, None, None)) or \
             (None if got else ("partial", "time budget used while the trading worker held the rate budget"))
         if stop:
-            await _set(session_factory, tenant_id, inst, window, status="pending", note=f"{stop[1]} - asked again next pass")
+            await _set(session_factory, tenant_id, user_id, inst, window, status="pending", note=f"{stop[1]} - asked again next pass")
             report.status = stop[0]
             report.pending += sum(len(w) for _, w in plan[i:])
             report.notes.append(stop[1])
@@ -546,19 +554,19 @@ async def _run_targets(session_factory: Any, report: PassReport, tenant_id: int,
             fetched_status = _classify(exc)
             why = f"{type(exc).__name__}: {exc}"[:2000]
             if fetched_status in ("rate_limited", "auth_failed"):
-                await _set(session_factory, tenant_id, inst, window, status="pending", error=why)
+                await _set(session_factory, tenant_id, user_id, inst, window, status="pending", error=why)
                 report.status = fetched_status
                 report.pending += sum(len(w) for _, w in plan[i:])
                 report.errors.append(f"{inst.key}: {why}"[:500])
                 return
             logger.warning("HB2: %s %s..%s failed: %s", inst.key, min(window), max(window), why)
-            await _set(session_factory, tenant_id, inst, window, status="failed", error=why)
+            await _set(session_factory, tenant_id, user_id, inst, window, status="failed", error=why)
             report.failed += len(window)
             report.errors.append(f"{inst.key} {min(window)}..{max(window)}: {why}"[:500])
             broken.add(inst.key)                         # its other windows wait for the next pass (no wasted requests)
             continue
         fetched_at = clock()
-        await _store_window(session_factory, report, tenant_id, inst, window, list(raw or []), source=source,
+        await _store_window(session_factory, report, tenant_id, user_id, inst, window, list(raw or []), source=source,
                             fetched_at=fetched_at, clock=clock, last_day=last_day)
 
 
@@ -572,13 +580,25 @@ def _classify(exc: BaseException) -> str:
     return "failed"
 
 
+async def recent_requests(session_factory: Any, tenant_id: int) -> int:
+    """Broker requests HB2 made for the tenant in the last 30 minutes, from the database (each request claims its
+    window's days with one `started_at`), so the cap holds across passes, worker restarts, the CLI and replicas."""
+    async with session_factory() as session:
+        claims = select(D.instrument_key, D.user_id, D.started_at).where(
+            D.tenant_id == tenant_id, D.started_at >= _wall() - CAP_WINDOW).distinct().subquery()
+        return int(await session.scalar(select(func.count()).select_from(claims)) or 0)
+
+
 async def _should_stop(session_factory: Any, report: PassReport, tenant_id: int, clock: Clock, holidays: Set[date],
-                       deadline: Optional[float], cap: int) -> Optional[Tuple[str, str]]:
-    """(status, why) when the pass must stop before its next request; None to go on."""
+                       deadline: Optional[float], cap: Optional[int]) -> Optional[Tuple[str, str]]:
+    """(status, why) when the pass must stop before its next request; None to go on. `deadline` / `cap` None skip
+    those checks (the re-check after the token wait: the window is already claimed and counted)."""
     if deadline is not None and monotonic_clock.monotonic() >= deadline:
         return "partial", "time budget used - the rest is asked for on the next pass"
-    if report.requests >= cap:
-        return "request_cap", f"{cap} requests made (HISTORY_INTRADAY_MAX_REQUESTS) - the rest is asked for on the next pass"
+    made = 0 if cap is None else max(report.requests, await recent_requests(session_factory, tenant_id))
+    if cap is not None and made >= cap:
+        return "request_cap", (f"{made} requests in the last 30 minutes (HISTORY_INTRADAY_MAX_REQUESTS={cap}) - the rest is "
+                               "asked for on a later pass")
     now = clock()
     if not quiet_hours(now, holidays):
         return "partial", "NSE trading hours (or a blackout date) reached - stopped so live reads keep the broker API"
@@ -590,8 +610,8 @@ async def _should_stop(session_factory: Any, report: PassReport, tenant_id: int,
     return None
 
 
-async def _store_window(session_factory: Any, report: PassReport, tenant_id: int, inst: Instrument, window: Sequence[date],
-                        raw: List[Any], *, source: str, fetched_at: datetime, clock: Clock, last_day: date) -> None:
+async def _store_window(session_factory: Any, report: PassReport, tenant_id: int, user_id: int, inst: Instrument,
+                        window: Sequence[date], raw: List[Any], *, source: str, fetched_at: datetime, clock: Clock, last_day: date) -> None:
     from app.brokers.timestamps import parse_broker_timestamp
     # One refused bar refuses only ITS day: the window's bars are split by their IST date before they are checked (a bar
     # whose time cannot be read cannot be placed in a day, so it still refuses the whole window).
@@ -600,7 +620,7 @@ async def _store_window(session_factory: Any, report: PassReport, tenant_id: int
         start = parse_broker_timestamp(getattr(b, "timestamp", None))
         if start is None:
             why = f"a bar without a readable time ({getattr(b, 'timestamp', None)!r})"
-            await _set(session_factory, tenant_id, inst, window, status="refused", error=why[:2000])
+            await _set(session_factory, tenant_id, user_id, inst, window, status="refused", error=why[:2000])
             report.refused += len(window)
             report.errors.append(f"{inst.key} {min(window)}..{max(window)}: refused - {why}"[:500])
             return
@@ -614,7 +634,7 @@ async def _store_window(session_factory: Any, report: PassReport, tenant_id: int
             refused_days[day] = str(exc)
     for day, why in sorted(refused_days.items()):
         if day in window:
-            await _set(session_factory, tenant_id, inst, [day], status="refused", error=why[:2000])
+            await _set(session_factory, tenant_id, user_id, inst, [day], status="refused", error=why[:2000])
             report.refused += 1
             report.errors.append(f"{inst.key} {day}: refused - {why}"[:500])
     closed = [b for b in bars if _utc(b.ts) <= _utc(fetched_at)]     # no look-ahead: a forming bar is never stored
@@ -630,7 +650,7 @@ async def _store_window(session_factory: Any, report: PassReport, tenant_id: int
         day_bars = by_day.get(day, [])
         extra = {"dropped_forming": forming if day == max(window) else 0}
         if not day_bars:
-            await _set(session_factory, tenant_id, inst, [day], status="no_data", bars=0, error=None, done_at=None,
+            await _set(session_factory, tenant_id, user_id, inst, [day], status="no_data", bars=0, error=None, done_at=None,
                        note="the broker returned no closed 1-minute bar for this day (beyond its depth, not traded, or a "
                             "holiday)", **extra)
             report.no_data += 1
@@ -640,19 +660,20 @@ async def _store_window(session_factory: Any, report: PassReport, tenant_id: int
                 out = await _store_day(session, tenant_id, inst, day, day_bars, source, stamp=max(clock(), _utc(fetched_at)),
                                        complete_day=day < last_day or _utc(fetched_at) >= _utc(datetime.combine(day, BARS_FINAL, tzinfo=IST)))
                 note = f"{outside} bar(s) outside the asked days ignored" if outside and day == max(window) else None
-                await session.execute(update(D).where(D.tenant_id == tenant_id, D.instrument_key == inst.key, D.trade_date == day)
+                await session.execute(update(D).where(D.tenant_id == tenant_id, D.user_id == user_id, D.instrument_key == inst.key,
+                                                             D.trade_date == day)
                                       .values(status="done", error=None, note=note, done_at=_wall(), updated_at=_wall(), **out, **extra))
                 await session.commit()
             except ImportRefused as exc:
                 await session.rollback()
-                await _set(session_factory, tenant_id, inst, [day], status="refused", error=str(exc)[:2000])
+                await _set(session_factory, tenant_id, user_id, inst, [day], status="refused", error=str(exc)[:2000])
                 report.refused += 1
                 report.errors.append(f"{inst.key} {day}: refused - {exc}"[:500])
                 continue
             except Exception as exc:  # noqa: BLE001 - one bad day must not stop the pass; it stays retryable
                 await session.rollback()
                 logger.exception("HB2: storing %s %s failed", inst.key, day)
-                await _set(session_factory, tenant_id, inst, [day], status="failed", error=f"{type(exc).__name__}: {exc}"[:2000])
+                await _set(session_factory, tenant_id, user_id, inst, [day], status="failed", error=f"{type(exc).__name__}: {exc}"[:2000])
                 report.failed += 1
                 report.errors.append(f"{inst.key} {day}: failed - {exc}"[:500])
                 continue
@@ -684,13 +705,16 @@ async def progress(session: AsyncSession, *, tenant_id: Optional[int] = None, li
     attention = list(await session.scalars(select(D).where(D.tenant_id == tenant, D.status.in_(("failed", "refused", "running")))
                                            .order_by(D.trade_date.desc()).limit(max(1, limit))))
     stale_before = (now or _wall()) - STALE_RUNNING
+    stale_running = int(await session.scalar(select(func.count()).select_from(D).where(
+        D.tenant_id == tenant, D.status == "running", (D.started_at.is_(None)) | (D.started_at < stale_before))) or 0)
 
     def stale(s: Any) -> bool:
         """A `running` day claimed longer ago than any pass lasts: its pass died (it is asked again by the next one)."""
         return s.status == "running" and (s.started_at is None or _utc(s.started_at) < stale_before)
     return {"tenant_id": tenant, "instruments": per,
-            "stale_running": sum(1 for s in attention if stale(s)),
-            "attention": [{"instrument_key": s.instrument_key, "trade_date": s.trade_date.isoformat(), "status": s.status,
+            "stale_running": stale_running,
+            "attention": [{"instrument_key": s.instrument_key, "user_id": s.user_id, "trade_date": s.trade_date.isoformat(),
+                           "status": s.status,
                            "started_at": _utc(s.started_at).isoformat() if s.started_at else None, "stale": stale(s),
                            "error": s.error, "attempts": s.attempts} for s in attention]}
 

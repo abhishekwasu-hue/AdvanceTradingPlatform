@@ -274,8 +274,8 @@ HISTORY_INTRADAY_RETRY_MINUTES = max(1, int(os.environ.get("HISTORY_INTRADAY_RET
 HISTORY_INTRADAY_BUDGET_SECONDS = max(10, int(os.environ.get("HISTORY_INTRADAY_BUDGET_SECONDS", "1800") or 1800))
 # Share of the owner's broker RateBudget (both buckets) a history request must leave untouched for the trading worker.
 HISTORY_INTRADAY_RESERVE = min(0.95, max(0.0, float(os.environ.get("HISTORY_INTRADAY_RESERVE", "0.5") or 0.5)))
-# Most broker requests one pass makes (Upstox also caps a user at 2,000 standard API requests per 30 minutes; a 30-minute
-# pass at 600 leaves the rest to the trading worker and the owner's own apps). A pass that hits it is resumed later.
+# Most HB2 broker requests in any rolling 30 minutes, counted from the database (Upstox caps a user at 2,000 standard
+# API requests per 30 minutes; 600 leaves the rest to the trading worker and the owner's own apps). Resumed later.
 HISTORY_INTRADAY_MAX_REQUESTS = max(1, int(os.environ.get("HISTORY_INTRADAY_MAX_REQUESTS", "600") or 600))
 # The one user whose own broker session HB2 reads (must be an active user of HISTORY_OWNER_TENANT_ID). Unset: the
 # lowest-id active OWNER of that tenant - never another co-owner, and no session at all if that user has none.
@@ -283,8 +283,23 @@ _intraday_user = os.environ.get("HISTORY_OWNER_USER_ID", "").strip()
 HISTORY_OWNER_USER_ID = int(_intraday_user) if _intraday_user.isdigit() and int(_intraday_user) > 0 else None
 # IST dates on which HB2 never calls the broker (special sessions the calendar does not know: Muhurat, a budget-day
 # Saturday, a DR drill) - "2026-11-08,2027-02-01".
-HISTORY_INTRADAY_BLACKOUT_DATES = frozenset(
-    d.strip() for d in os.environ.get("HISTORY_INTRADAY_BLACKOUT_DATES", "").split(",") if d.strip())
+def _iso_dates(name: str) -> "tuple[frozenset, list]":
+    """(dates, bad entries) of a comma-separated YYYY-MM-DD list; a bad entry is reported loudly, never dropped silently."""
+    import datetime as _dt
+    import logging as _logging
+    good, bad = set(), []
+    for raw in os.environ.get(name, "").split(","):
+        if raw.strip():
+            try:
+                good.add(_dt.date.fromisoformat(raw.strip()))
+            except ValueError:
+                bad.append(raw.strip())
+    if bad:
+        _logging.getLogger(__name__).error("%s: not YYYY-MM-DD dates: %s - HB2 refuses to run until they are fixed", name, bad)
+    return frozenset(good), bad
+
+
+HISTORY_INTRADAY_BLACKOUT_DATES, HISTORY_INTRADAY_BLACKOUT_ERRORS = _iso_dates("HISTORY_INTRADAY_BLACKOUT_DATES")
 TICK_MAX_AGE_SECONDS = int(os.environ.get("TICK_MAX_AGE_SECONDS", str(QUOTE_MAX_STALE_SECONDS)))
 # BT1 (beta spec §2/§4): bring-your-own-broker data tier, read only with the `byob_data_tier` flag on (off by default).
 # The ATP budget of symbols one user's broker session carries (positions > open charts > watchlist > screener universe);

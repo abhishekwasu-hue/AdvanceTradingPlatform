@@ -5,14 +5,14 @@
  * change); this adapter adds what sits above the interface:
  * - drawings: `hline` as a price line (it keeps its axis label); every other `drawing/1` kind as a v5 series primitive
  *   (CH2b, `primitives.ts` + `geometry.ts`), placed by time/price so it follows scroll, zoom and timeframe changes;
- * - layers: their lines as price lines, their bands (Z7a-3 market zones) as one series primitive under the drawings
- *   (markers stay ProChart's job);
+ * - layers: their lines as price lines; their bands (Z7a-3 market zones), segments and labels (CH3 price action) as one
+ *   series primitive under the drawings (markers stay ProChart's job);
  * - events: crosshair, click, visible range.
  * Studies are recorded in the layout; ProChart draws its own until CH6 moves them onto ScreenQL.
  */
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
 import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudySpec } from "./engine";
-import { bandShapes, timeToLogical, type Converters } from "./geometry";
+import { layerShapes, timeToLogical, type Converters } from "./geometry";
 import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
 
@@ -203,9 +203,9 @@ export class LightweightEngine implements ChartEngine {
       price: l.price, color: l.color ?? "#64748b", lineWidth: 1, lineStyle: LINE_STYLE[l.style ?? "dashed"], axisLabelVisible: false, title: l.title ?? "",
     }));
     let bands: LayerPrimitive | null = null;
-    if (data.bands?.length) {
-      const list = [...data.bands];
-      bands = new LayerPrimitive((c) => bandShapes(list, c), (w, h) => this.converters(w, h));
+    if (data.bands?.length || data.segments?.length || data.labels?.length) {
+      const shapes = { bands: [...(data.bands ?? [])], segments: [...(data.segments ?? [])], labels: [...(data.labels ?? [])] };
+      bands = new LayerPrimitive((c) => layerShapes(shapes, c), (w, h) => this.converters(w, h));
       this.candles.attachPrimitive(bands);
     }
     this.layers.set(id, { lines: made, bands });

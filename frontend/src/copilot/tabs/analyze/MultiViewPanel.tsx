@@ -118,6 +118,7 @@ export default function MultiViewPanel({ initialSymbol = "NIFTY 50" }: { initial
             )}
           </div>
           <div className="grid gap-2 md:grid-cols-2">{result.views.map((v) => <ViewCard key={v.id} view={v} />)}</div>
+          {result.limits_note && <p className="text-[11px] text-fg-muted">{result.limits_note}</p>}
           <p className="text-[11px] text-fg-muted">{result.note}</p>
         </div>
       )}

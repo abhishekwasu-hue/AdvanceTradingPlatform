@@ -3,7 +3,7 @@ regime classifier and the monitoring agent's action queue. Every mutating call i
 import copy
 import json
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -879,11 +879,18 @@ class AnalyzeBody(BaseModel):
 
 
 @router.post("/analyze")
-async def analyze_symbol(body: AnalyzeBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
+async def analyze_symbol(body: AnalyzeBody, request: Request, user: User = Depends(require_ai_acknowledged),
+                         session: AsyncSession = Depends(get_session)) -> Any:
     """H-C4 (behind `ai_multiview`, off by default): "analyze <symbol>" - technical, options, news and macro views from the
     platform's read tools, then the readings that lean up / down, the risks and the possibilities (cheap tier words the
     views, strong tier the summary, both checked; the rules without an AI provider). The model is given no tool: it can
-    neither place an order nor file a proposal. The situation and possibilities - never advice."""
+    neither place an order nor file a proposal. The situation and possibilities - never advice.
+
+    Review of H-C4: one 60 s budget covers the tools and the model calls (each call bounded by the time left), the plan's
+    AI budget is checked before every model call, a client that disconnects stops the analysis, and the usage is metered
+    as `multiview` (not under the tier's task name)."""
+    from fastapi.responses import JSONResponse
+
     from app.ai import metering, multiview
     from app.ai.tools import ToolContext
     await require_flag(session, "ai_copilot", user.tenant_id)
@@ -892,8 +899,19 @@ async def analyze_symbol(body: AnalyzeBody, user: User = Depends(require_ai_ackn
     tenant = await _tenant(session, user)
     cheap = await ai_settings.provider_for(session, tenant, task="classification", user_id=user.id)
     strong = await ai_settings.provider_for(session, tenant, task="general", user_id=user.id)
-    out = await multiview.analyze(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange, lang=lang,
-                                  gather_provider=cheap, synth_provider=strong)
+    for provider in (cheap, strong):
+        if isinstance(provider, metering.MeteredProvider):
+            provider.feature = multiview.FEATURE                 # usage shows "multiview", not "classification" / "general"
+
+    async def budget_spent() -> bool:
+        return await metering.budget_exhausted(session, tenant)
+
+    try:
+        out = await multiview.analyze(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange, lang=lang,
+                                      gather_provider=cheap, synth_provider=strong, budget_spent=budget_spent,
+                                      client_gone=request.is_disconnected)
+    except multiview.Cancelled:
+        return JSONResponse(status_code=499, content={"detail": "the client went away; the analysis was stopped"})
     reason = getattr(strong, "reason", "")
     if reason:
         out["ai_note"] = f"AI not used ({reason}); worded by the rules"

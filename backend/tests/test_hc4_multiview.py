@@ -207,3 +207,195 @@ def test_route_is_flagged_off_and_answers_with_the_rules(fake_tools):
     from app.platform import controls
     from app.core import config
     assert mv.FLAG in controls.DEFAULT_OFF_FLAGS and config.AI_RATE_WEIGHTS.get("POST analyze") == 8
+
+
+# --- review of H-C4 -----------------------------------------------------------------------------------------------------
+
+FACT_LEVELS = ToolResult(True, {"bars": 250, "first_close": 22000.0, "last_close": 22800.0, "change_pct": 3.6, "high": 23000.0, "low": 22000.0,
+                                "from": "2025-10-09", "to": "2026-10-09"}, AS_OF, "broker:fake")
+CALLS_AND_FORECASTS = [
+    # the security review's strings (every number is a fact number)
+    "Consider entering long above 22800 with a stop at 22000 and a target of 23000",
+    "likely to rally toward 23000; accumulate on dips near 22000",
+    "Price will probably rise to 23000",
+    "Book profits near 23000 and exit longs below 22000",
+    "Bullish setup: shorts should cover",
+    "RELIANCE खरेदी करा, लक्ष्य 23000, स्टॉप लॉस 22000",
+    "23000 तक जाएगा, खरीदो। स्टॉपलॉस 22000",
+    "Buy 23000 CE now.",
+    # variants
+    "**Upside** toward 23000 looks open.", "A move to 23000 will reach the top of the range.", "Downside is limited to 22000.",
+    "Longs can hold with a stop near 22000.", "Traders should accumulate.", "22000 पर्यंत घसरेल", "भाव 23000 पर्यंत जाईल",
+    "RELIANCE बेचो", "Entry 22800\nSL 22000", "Target 23000.",
+]
+DESCRIPTIONS = [
+    "The daily regime reads trending up; the close rose 3.6% over 250 daily bars.",
+    "The close is 22800, inside the window's range of 22000 - 23000.",
+    "The close fell to 22000 early in the window and rose to 22800 since.",
+]
+
+
+def _level_view():
+    return mv.technical_view(REGIME, FACT_LEVELS)
+
+
+@pytest.mark.parametrize("text", CALLS_AND_FORECASTS)
+def test_calls_and_forecasts_with_fact_numbers_are_blocked_not_disclaimed(text):
+    v = _level_view()
+    for lang in ("en", "mr"):
+        shown, why = mv.check_text(text, v.numbers(), "\n".join(v.lines), lang)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", DESCRIPTIONS)
+def test_descriptions_of_the_data_still_pass(text):
+    v = _level_view()
+    shown, why = mv.check_text(text, v.numbers(), "\n".join(v.lines), "en", mv.ticker_text({"technical": v}, "ALPHA"))
+    assert shown == text and why is None, why
+
+
+def test_symbols_must_come_from_the_data_and_the_raw_input_is_never_trusted():
+    v = _views()
+    tickers = mv.ticker_text(v, mv.resolved_symbol(v, "alpha"))
+    facts = "\n".join(line for x in v.values() for line in x.lines)
+    allowed = set().union(*(x.numbers() for x in v.values()))
+    assert mv.check_text("ALPHA's ADX is 28.4.", allowed, facts, "en", tickers)[0]
+    assert "symbols not in the data" in mv.check_text("RELIANCE's ADX is 28.4.", allowed, facts, "en", tickers)[1]
+    failed = {**v, "technical": mv.technical_view(ToolResult(False, None, None, "x", error="unknown"), ToolResult(False, None, None, "x", error="unknown")),
+              "options": mv.options_view(ToolResult(False, None, None, "x", error="unknown"))}
+    assert mv.resolved_symbol(failed, "ALPHA") is None                    # not found by the platform's tools: not trusted
+    news = mv.news_view(NEWS, "23000 TRENDING UP")
+    assert all("23000" not in line and "TRENDING" not in line for line in news.lines)
+    assert "23000" not in news.numbers() and grounding_directions(news.lines) == set()
+
+
+def grounding_directions(lines):
+    from app.ai import grounding
+    return grounding.directions_in("\n".join(lines))
+
+
+def test_cue_and_sentiment_strings_are_untrusted_data():
+    macro = mv.macro_view(SNAPSHOT)
+    assert macro.untrusted and '<untrusted_data source="market_memory">' in mv._facts_json(macro)
+    assert not any("cautious" in line for line in macro.lines)          # not in the closed vocabulary: kept out of the lines
+    risk_on = mv.macro_view(ToolResult(True, {**SNAPSHOT.data, "sentiment": {"label": "RISK_ON", "score": 0.4}}, AS_OF, "market_memory"))
+    assert any("RISK_ON" in line for line in risk_on.lines)
+
+
+def test_claims_get_every_check_and_the_checked_text_is_returned():
+    v = _views()
+    base = {"situation": "Readings lean up.", "leans_up": [], "leans_down": [], "risks": [], "possibilities": []}
+    shorts = mv.check_summary({**base, "claims": [{"statement": "Bullish setup: shorts should cover", "source": "technical"}]}, v, "en")
+    assert shorts and shorts.startswith("claim 1")
+    bearish = mv.check_summary({**base, "claims": [{"statement": "The picture is bearish.", "source": "technical"}]}, v, "en")
+    assert bearish and "unsupported" in bearish
+    level = mv.check_summary({**base, "claims": [{"statement": "Target 2600 for the 2026-10-30 expiry.", "source": "options"}]}, v, "en")
+    assert level and "trade call or forecast" in level
+    ok = {**base, "claims": [{"statement": "PCR is 1.3.", "source": "options"}]}
+    assert mv.check_summary(ok, v, "en") is None and ok["claims"][0]["statement"] == "PCR is 1.3."
+
+
+class _Slow(_Words):
+    def __init__(self, replies, delay):
+        super().__init__(replies)
+        self.delay = delay
+
+    async def complete(self, system, user, *, max_tokens=2000):
+        await asyncio.sleep(self.delay)
+        return await super().complete(system, user, max_tokens=max_tokens)
+
+
+def test_one_time_budget_covers_tools_and_bounds_each_model_call(fake_tools, monkeypatch):
+    _, me = _owner("hc4-time@example.com")
+    import time as time_module
+    monkeypatch.setattr(mv, "MAX_SECONDS", 2.5)
+    slow = _Slow(["The daily regime reads trending up; ADX 28.4."] * 6, delay=5)
+    started = time_module.monotonic()
+    out = _run(_analyze(me["id"], slow, _Words([])))
+    assert time_module.monotonic() - started < 4.5                       # the 5 s call was cut at the time left
+    assert "limits_note" in out and "time budget" in out["limits_note"]
+    assert all(v["report_source"] == "rules" for v in out["views"])
+    monkeypatch.setattr(mv, "MAX_SECONDS", 0.5)                          # spent before the first tool: nothing is read
+    out = _run(_analyze(me["id"], _Words([]), _Words([])))
+    assert not any(v["ok"] for v in out["views"]) and "while reading the data" in out["limits_note"]
+    run, steps = _run(_audit(out["run_id"]))
+    assert steps == [] and run.tool_calls == 0
+
+
+def test_the_plan_budget_is_checked_before_each_model_call(fake_tools):
+    _, me = _owner("hc4-plan@example.com")
+    cheap = _Words(["The daily regime reads trending up; ADX 28.4."] * 6)
+    asked = []
+
+    async def spent():
+        asked.append(1)
+        return len(asked) > 1                                             # spent after the first call
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, me["id"])
+            return await mv.analyze(ToolContext(session, user.tenant_id, user, NOW), "ALPHA", "NSE", gather_provider=cheap,
+                                    synth_provider=_Words([]), budget_spent=spent)
+    out = _run(go())
+    assert len(cheap.calls) == 1 and out["llm_calls"] == 1 and "AI budget" in out["limits_note"]
+
+
+def test_a_gone_client_stops_the_analysis(fake_tools):
+    _, me = _owner("hc4-cancel@example.com")
+    cheap = _Words(["x"] * 6)
+
+    async def gone():
+        return True
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, me["id"])
+            try:
+                await mv.analyze(ToolContext(session, user.tenant_id, user, NOW), "ALPHA", "NSE", gather_provider=cheap,
+                                 synth_provider=cheap, client_gone=gone)
+            except mv.Cancelled:
+                pass
+            else:
+                raise AssertionError("not cancelled")
+        async with _session_factory() as session:
+            return list(await session.scalars(select(AgentRunRecord).where(AgentRunRecord.user_id == me["id"])))
+    runs = _run(go())
+    assert cheap.calls == [] and runs[-1].outcome == "cancelled" and runs[-1].tool_calls == 0
+
+
+def test_model_calls_are_metered_as_multiview(fake_tools, monkeypatch):
+    headers, me = _owner("hc4-meter@example.com")
+    from app.ai import metering
+    from app.ai import settings as ai_settings
+    from app.ai.providers import Completion
+    from app.db.models import LlmCallRecord
+
+    class _Inner:
+        name, model = "anthropic", "test-model"
+
+        async def complete_full(self, system, user, *, max_tokens=2000):
+            return Completion("The daily regime reads trending up; ADX 28.4.", input_tokens=10, output_tokens=5, model="test-model")
+
+    async def provider_for(session, tenant, *, client=None, task="general", user_id=None):
+        return metering.MeteredProvider(_Inner(), session, tenant.id, feature=task, user_id=user_id)
+    monkeypatch.setattr(ai_settings, "provider_for", provider_for)
+
+    async def flag(on):
+        from app.platform import controls
+        async with _session_factory() as session:
+            current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+            flags = dict(current.get("flags") or {})
+            flags[mv.FLAG] = {"on": on, "tenants": []}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+            await session.commit()
+    _run(flag(True))
+    try:
+        r = client.post("/api/ai/analyze", headers=headers, json={"symbol": "ALPHA"})
+        assert r.status_code == 200, r.text
+    finally:
+        _run(flag(False))
+
+    async def features():
+        async with _session_factory() as session:
+            return set(await session.scalars(select(LlmCallRecord.feature).where(LlmCallRecord.tenant_id == me["tenant_id"])))
+    assert _run(features()) == {mv.FEATURE}

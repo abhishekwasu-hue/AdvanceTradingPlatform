@@ -420,5 +420,21 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 - **UI.** `MultiViewPanel` on Copilot > Ask: symbol + exchange, progress with Cancel, the summary (AI / rules badge,
   cost chip, fallback note), the four view cards (report, facts used, headlines as plain text marked third-party,
   data time and sources), and the disclaimer. A flag off (503) shows that the analysis is off.
-- **Tests.** `tests/test_hc4_multiview.py` (8); vitest `copilot/tabs/analyze/multiview.test.ts` (5). Open questions
-  HC4-1..HC4-4.
+- **Review of H-C4 (security).**
+  - **Calls and forecasts are blocked, never disclaimed.** `advice_problems` blocks an action or forecast word next to a
+    number in one clause ("entering long above 22800", "rally toward 23000", "लक्ष्य 23000", "23000 तक जाएगा"). It also
+    blocks a sentence that tells traders what to do ("shorts should cover") and a Marathi / Hindi imperative trade verb.
+    The text is normalised first (`call_detect.normalise`). Past-tense descriptions ("rose 3.6%") pass.
+  - **Other checks.** The platform filter (#230) also applies, and a text it would frame is blocked here. Symbols must
+    come from the views' data (`grounding.check_tickers`). The analysed symbol counts only once a platform tool found it.
+  - **Claims.** Each claim gets the same checks, against the view it cites, and the checked text is what is returned.
+  - **Untrusted strings stay out of trusted lines.** The user's symbol is never written into a trusted line, so its
+    words and figures cannot loosen the checks. Cue and sentiment strings reach the model as `<untrusted_data
+    source="market_memory">`. Only the closed sentiment vocabulary (RISK_ON / RISK_OFF / NEUTRAL) appears in a line.
+  - **One `Budget` for the whole analysis.** Its clock starts before the tool reads, and a read is skipped once the
+    time is spent. Every model call runs inside `asyncio.wait_for(time left)`. The plan's AI budget is checked before
+    each call. A client that disconnects stops the analysis (`Cancelled`, run outcome `cancelled`, HTTP 499). The
+    answer carries `limits_note` when the analysis stopped early.
+  - **Metering.** Model calls are metered under the feature `multiview`.
+- **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
+  `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

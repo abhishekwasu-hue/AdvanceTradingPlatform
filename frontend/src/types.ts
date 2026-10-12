@@ -2378,6 +2378,8 @@ export interface MultiViewAnalysis {
   llm_calls: number;
   prompt_version: string;
   ai_note?: string;
+  /** H-C4 review: the analysis stopped early (time, call cap, plan budget); the rest is worded by the rules. */
+  limits_note?: string;
   usage?: { cheap: MultiViewUsage | null; strong: MultiViewUsage | null };
 }
 

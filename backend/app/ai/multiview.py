@@ -21,13 +21,14 @@ answer is "the situation and the possibilities", never trade advice. Behind the 
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from app.ai import grounding, output_filter
 from app.ai.prompt_versions import stamp, version_of
@@ -36,11 +37,13 @@ from app.ai.tools import ToolContext, ToolResult, run_tool
 from app.db.models import AgentRunRecord, AgentStepRecord
 
 FLAG = "ai_multiview"
+FEATURE = "multiview"            # the metering label of every model call of an analysis
 VIEWS: Tuple[str, ...] = ("technical", "options", "news", "macro")
 LABELS = {"technical": "Technical", "options": "Options and volatility", "news": "News and sentiment", "macro": "Macro and global"}
 MAX_LLM_CALLS = 6
 MAX_SECONDS = 60.0
 MAX_HEADLINES = 5
+SENTIMENT_LABELS = frozenset({"RISK_ON", "RISK_OFF", "NEUTRAL"})      # app/ai/sentiment.label_for
 NOTE = ("The situation and the possibilities, from the platform's own data and tools. Not a trade recommendation and not "
         "advice; past and present readings do not say what will happen.")
 
@@ -102,7 +105,7 @@ def _r(x: Any, nd: int = 2) -> Optional[float]:
 
 def technical_view(regime: ToolResult, candles: ToolResult) -> View:
     v = View("technical", regime.ok or candles.ok, sources=[r.source for r in (regime, candles) if r.ok],
-             as_of=max([r.as_of for r in (regime, candles) if r.ok and r.as_of] or [None], key=lambda x: x or ""))
+             as_of=max((r.as_of for r in (regime, candles) if r.ok and r.as_of), default=None))
     if regime.ok:
         d = regime.data
         v.facts.update(regime=d.get("regime"), confidence=d.get("confidence"), adx=d.get("adx"), ema_slope_pct=d.get("ema_slope_pct"),
@@ -142,7 +145,9 @@ def news_view(news: ToolResult, symbol: str) -> View:
     facts = {"headlines": [{"headline": n.get("headline"), "source": n.get("source"), "published_at": n.get("published_at"),
                             "severity": n.get("severity"), "verified": n.get("verified")} for n in mine],
              "count": len(mine), "high_severity": severe, "window_hours": (news.data_timestamps or {}).get("window_hours")}
-    lines = [f"{len(mine)} headline(s) on {sym} in the feed's last {facts['window_hours']} hours, {severe} of high severity (third-party, unverified unless marked)."]
+    # Review of H-C4 (LOW): the user's symbol stays out of this trusted line (its words and figures would loosen the checks).
+    lines = [f"{len(mine)} headline(s) on the symbol in the feed's last {facts['window_hours']} hours, {severe} of high severity "
+             "(third-party, unverified unless marked)."]
     return View("news", True, facts, news.as_of, [news.source], untrusted=True, lines=lines)
 
 
@@ -164,9 +169,12 @@ def macro_view(snapshot: ToolResult) -> View:
         lines.append(f"India VIX {vix.get('last_price')}.")
     if glob:
         lines.append("Global markets: " + ", ".join(f"{g['symbol']} {g['change_pct']}%" for g in glob if g.get("change_pct") is not None) + ".")
-    if sent and sent.get("label"):
-        lines.append(f"Market sentiment read: {sent.get('label')}.")
-    return View("macro", True, facts, d.get("updated_at"), [snapshot.source], lines=lines or ["Market cues are present without changes."])
+    if sent and str(sent.get("label")) in SENTIMENT_LABELS:
+        lines.append(f"Market sentiment read: {sent.get('label')}.")       # a closed vocabulary only (review of H-C4)
+    # Review of H-C4 (LOW): cue and sentiment strings are stored text, not the platform's own wording - the model gets
+    # them inside <untrusted_data>.
+    return View("macro", True, facts, d.get("updated_at"), [snapshot.source], untrusted=True,
+                lines=lines or ["Market cues are present without changes."])
 
 
 # --- the deterministic summary -----------------------------------------------------------------------------------------
@@ -221,23 +229,86 @@ def rules_summary(views: Dict[str, View]) -> Dict[str, Any]:
 def _facts_json(view: View) -> str:
     body = json.dumps(view.facts, default=str, ensure_ascii=False)
     if view.untrusted:
-        body = "<untrusted_data source=\"news_feed\">" + body.replace("<", "&lt;").replace(">", "&gt;") + "</untrusted_data>"
+        source = "news_feed" if view.id == "news" else "market_memory"
+        body = f"<untrusted_data source=\"{source}\">" + body.replace("<", "&lt;").replace(">", "&gt;") + "</untrusted_data>"
     return body
 
 
-def check_text(text: str, allowed: set, facts_text: str, lang: str) -> Tuple[Optional[str], Optional[str]]:
-    """(text to show, None) or (None, why not): numbers from the facts, a direction the facts carry, no advice."""
+# Review of H-C4 (HIGH): the platform filter (H-C1 c) frames a "specific call" with a disclaimer and lets plain forecasts
+# through; a research screen must show neither. A text is BLOCKED (never disclaimed) when an action or forecast word sits
+# next to a number in the same clause ("entering long above 22800", "rally toward 23000", "लक्ष्य 23000", "23000 तक
+# जाएगा"), when it tells a group of traders what to do ("shorts should cover"), or when it uses an imperative trade verb
+# in Marathi / Hindi. Past-tense descriptions ("rose 1.2%", "fell to 22000") stay allowed: they describe the data.
+_DEVA = "\\w\u0900-\u097F"
+_ACTION_WORDS = (
+    # English: entries, exits and levels
+    "enter", "enters", "entering", "entry", "entries", "long", "longs", "short", "shorts", "go long", "go short", "target", "targets",
+    "stop", "stops", "stop loss", "stop-loss", "stoploss", "sl", "exit", "exits", "exiting", "book profit", "book profits",
+    "booking profits", "profit booking", "accumulate", "accumulating", "buy", "buying", "sell", "selling", "cover", "covering",
+    "add", "adding", "trim", "average",
+    # English: forecasts
+    "rally", "rallies", "rallying", "rise", "rises", "rising", "fall", "falls", "falling", "upside", "downside", "will reach",
+    "reach", "reaches", "will hit", "will touch", "will test", "will go", "will move", "will climb", "will drop", "breakout above",
+    "breakdown below", "head toward", "heads toward", "headed toward", "towards", "toward",
+    # Marathi
+    "लक्ष्य", "टार्गेट", "स्टॉप", "स्टॉपलॉस", "स्टॉप लॉस", "एन्ट्री", "प्रवेश", "खरेदी", "विक्री", "विका", "घ्या", "जाईल", "वाढेल",
+    "घसरेल", "पोहोचेल",
+    # Hindi
+    "टारगेट", "खरीदो", "खरीदें", "खरीद", "बेचो", "बेचें", "बेच", "जाएगा", "जाएगी", "जायेगा", "बढ़ेगा", "बढ़ेगी", "गिरेगा", "गिरेगी",
+    "पहुंचेगा", "पहुँचेगा", "स्टॉपलॉस",
+)
+_ACTION = "(?:" + "|".join(re.escape(w) for w in sorted(set(_ACTION_WORDS), key=len, reverse=True)) + ")"
+_NUM = r"(?<![\w.])[-+]?₹?\d[\d,]*(?:\.\d+)?"
+_GAP = r"[^!?\n;।]{0,40}?"                    # same clause: no sentence end in between (a decimal point is allowed)
+_ACTION_NEAR_NUMBER = re.compile(
+    rf"(?<![{_DEVA}-])(?P<a>{_ACTION})(?![{_DEVA}-]){_GAP}{_NUM}|{_NUM}{_GAP}(?<![{_DEVA}-])(?P<b>{_ACTION})(?![{_DEVA}-])", re.IGNORECASE)
+_TRADE_VERB = ("buy", "sell", "cover", "exit", "enter", "add", "book", "hold", "accumulate", "short", "go long", "go short", "trim",
+               "average", "initiate", "take profits", "take profit", "square off", "stay long", "stay short")
+_VERB = "(?:" + "|".join(re.escape(w) for w in sorted(_TRADE_VERB, key=len, reverse=True)) + r")\b"
+_MODAL_ADVICE = re.compile(
+    rf"\b(?:should|must|ought to|need to|needs to|had better|may want to|might want to|could consider|consider|would do well to)\s+"
+    rf"(?:\w+\s+){{0,2}}?{_VERB}|\b(?:longs|shorts|bulls|bears|buyers|sellers|traders|investors|holders)\s+(?:should|must|could|may|might|can|need to)\b",
+    re.IGNORECASE)
+_IMPERATIVE_DEVA = re.compile(rf"(?<![{_DEVA}])(?:खरीदो|खरीदें|खरीद लो|खरीद लें|बेचो|बेचें|बेच दो|बेच दें|खरेदी करा|विक्री करा|विकून टाका|घेऊन टाका)(?![{_DEVA}])")
+
+
+def advice_problems(text: str) -> List[str]:
+    """Why `text` reads as a trade call or a forecast (empty = it does not). Blocked by the multi-view checks."""
+    from app.ai.call_detect import normalise
+    text = normalise(text or "")                       # markdown, zero-width characters and look-alikes undone first
+    found: List[str] = []
+    for m in _ACTION_NEAR_NUMBER.finditer(text):
+        found.append(f"'{(m.group('a') or m.group('b')).lower()}' next to a number")
+    if _MODAL_ADVICE.search(text):
+        found.append("tells traders what to do")
+    if _IMPERATIVE_DEVA.search(text):
+        found.append("an imperative trade verb")
+    return list(dict.fromkeys(found))
+
+
+def check_text(text: str, allowed: set, facts_text: str, lang: str, ticker_text: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+    """(text to show, None) or (None, why not): numbers from the facts, no trade call or forecast (blocked, never
+    disclaimed), only symbols the data names, a direction the facts carry, and the platform filter (H-C1 c)."""
     if not text.strip():
         return None, "empty"
     ok, bad = grounding.check_numbers(text, allowed)
     if not ok:
         return None, f"numbers not in the facts: {', '.join(bad[:5])}"
+    problems = advice_problems(text)
+    if problems:
+        return None, "a trade call or forecast: " + "; ".join(problems[:3])
+    if ticker_text is not None:
+        ok, bad = grounding.check_tickers(text, ticker_text)
+        if not ok:
+            return None, f"symbols not in the data: {', '.join(bad[:5])}"
     ok, bad = grounding.check_direction(text, facts_text)
     if not ok:
         return None, f"unsupported {', '.join(bad)}"
     passed, shown, reason = output_filter.check(text, lang, where="multiview")
     if not passed or shown is None:
         return None, reason or "advisory wording"
+    if shown != text:
+        return None, "a specific trade call (blocked here, not disclaimed)"
     return shown, None
 
 
@@ -259,14 +330,24 @@ def parse_summary(raw: str) -> Optional[Dict[str, Any]]:
     return {"situation": obj["situation"][:1200], **lists, "claims": claims}
 
 
-def check_summary(summary: Dict[str, Any], views: Dict[str, View], lang: str) -> Optional[str]:
-    """None when every part of the AI summary may be shown; else why not."""
+def ticker_text(views: Dict[str, View], resolved_symbol: Optional[str]) -> str:
+    """The symbols an AI text may name: those in the views' own lines and facts, plus the analysed symbol only once a
+    platform tool resolved it (never the raw input on its own)."""
+    parts = [line for v in views.values() for line in v.lines]
+    parts += [json.dumps(v.facts, default=str, ensure_ascii=False) for v in views.values() if v.ok]
+    if resolved_symbol:
+        parts.append(resolved_symbol)
+    return "\n".join(parts)
+
+
+def check_summary(summary: Dict[str, Any], views: Dict[str, View], lang: str, tickers: Optional[str] = None) -> Optional[str]:
+    """None when every part of the AI summary may be shown (the parts are replaced by what is shown); else why not."""
     allowed = set().union(*(v.numbers() for v in views.values() if v.ok)) if views else set()
     facts_text = "\n".join(line for v in views.values() for line in v.lines)
     for key in ("situation", "leans_up", "leans_down", "risks", "possibilities"):
         parts = [summary[key]] if key == "situation" else summary[key]
         for i, part in enumerate(parts):
-            shown, why = check_text(part, allowed, facts_text, lang)
+            shown, why = check_text(part, allowed, facts_text, lang, tickers)
             if shown is None:
                 return f"{key}[{i}]: {why}"
             if key == "situation":
@@ -277,42 +358,77 @@ def check_summary(summary: Dict[str, Any], views: Dict[str, View], lang: str) ->
         view = views.get(claim["source"])
         if view is None or not view.ok:
             return f"claim {i + 1} cites {claim['source'] or 'no view'}, which was not read"
-        ok, bad = grounding.check_numbers(claim["statement"], view.numbers())
-        if not ok:
-            return f"claim {i + 1} has numbers not in the {claim['source']} view: {', '.join(bad[:5])}"
-        passed, _, reason = output_filter.check(claim["statement"], lang, where="multiview")
-        if not passed:
-            return reason or "advisory wording"
+        # Review of H-C4 (LOW): a claim gets every check a summary line gets (numbers from the view it cites, direction,
+        # no call or forecast, symbols, the platform filter), and what is shown is the checked text.
+        shown, why = check_text(claim["statement"], view.numbers(), "\n".join(view.lines), lang, tickers)
+        if shown is None:
+            return f"claim {i + 1}: {why}"
+        claim["statement"] = shown
     return None
+
+
+class Cancelled(Exception):
+    """The client went away: the analysis stops between steps (nothing more is called or spent)."""
 
 
 @dataclass
 class Budget:
+    """Review of H-C4 (MED): one budget for the whole analysis - the clock starts before the tools run, every model call
+    is bounded by the time left, the plan's AI budget is checked before each call, and a gone client stops it."""
     calls: int = 0
+    tool_calls: int = 0
     started: float = field(default_factory=time.monotonic)
+    exhausted: Optional[Callable[[], Awaitable[bool]]] = None        # the plan's monthly AI budget is spent
+    cancelled: Optional[Callable[[], Awaitable[bool]]] = None        # the client disconnected
+    stopped: str = ""
 
-    def take(self) -> bool:
-        if self.calls >= MAX_LLM_CALLS or time.monotonic() - self.started > MAX_SECONDS:
+    def remaining(self) -> float:
+        return MAX_SECONDS - (time.monotonic() - self.started)
+
+    async def check_client(self) -> None:
+        if self.cancelled is not None and await self.cancelled():
+            self.stopped = "the client went away"
+            raise Cancelled(self.stopped)
+
+    async def take(self) -> bool:
+        await self.check_client()
+        if self.calls >= MAX_LLM_CALLS:
+            self.stopped = self.stopped or f"the {MAX_LLM_CALLS}-call cap was reached"
+            return False
+        if self.remaining() <= 1.0:
+            self.stopped = self.stopped or f"the {MAX_SECONDS:.0f} s time budget was spent"
+            return False
+        if self.exhausted is not None and await self.exhausted():
+            self.stopped = self.stopped or "the plan's AI budget is spent"
             return False
         self.calls += 1
         return True
 
+    async def complete(self, provider: Any, system: str, user: str, *, max_tokens: int) -> Optional[str]:
+        """One model call bounded by the time left (None when it timed out)."""
+        try:
+            return await asyncio.wait_for(provider.complete(system, user, max_tokens=max_tokens), timeout=max(1.0, self.remaining()))
+        except asyncio.TimeoutError:
+            self.stopped = self.stopped or f"a model call ran past the {MAX_SECONDS:.0f} s time budget"
+            return None
 
-async def word_view(provider: Any, view: View, lang: str, budget: Budget) -> None:
+
+async def word_view(provider: Any, view: View, lang: str, budget: Budget, tickers: Optional[str] = None) -> None:
     """The cheap tier words one view; the deterministic lines stay when it is unavailable or fails a check."""
-    if not view.ok or getattr(provider, "name", "rule_based") == "rule_based" or not budget.take():
+    if not view.ok or getattr(provider, "name", "rule_based") == "rule_based" or not await budget.take():
         return
     stamp(provider, PROMPT_VERSION)
     try:
-        raw = await provider.complete(VIEW_SYSTEM.replace("{lang}", lang), f"View: {LABELS[view.id]}\nFacts:\n{_facts_json(view)}", max_tokens=400)
+        raw = await budget.complete(provider, VIEW_SYSTEM.replace("{lang}", lang), f"View: {LABELS[view.id]}\nFacts:\n{_facts_json(view)}",
+                                    max_tokens=400)
     except ProviderError:
         return
-    shown, _ = check_text(raw or "", view.numbers(), "\n".join(view.lines), lang)
+    shown, _ = check_text(raw or "", view.numbers(), "\n".join(view.lines), lang, tickers)
     if shown:
         view.report, view.report_source = shown.strip(), "ai"
 
 
-async def synthesise(provider: Any, views: Dict[str, View], lang: str, budget: Budget) -> Dict[str, Any]:
+async def synthesise(provider: Any, views: Dict[str, View], lang: str, budget: Budget, tickers: Optional[str] = None) -> Dict[str, Any]:
     fallback = rules_summary(views)
     if getattr(provider, "name", "rule_based") == "rule_based":
         return fallback
@@ -320,18 +436,20 @@ async def synthesise(provider: Any, views: Dict[str, View], lang: str, budget: B
     payload = "\n".join(f"{k}: " + (_facts_json(v) if v.ok else json.dumps({"not_read": v.error})) for k, v in views.items())
     user = f"Views JSON:\n{payload}"
     for attempt in range(2):
-        if not budget.take():
+        if not await budget.take():
             break
         try:
-            raw = await provider.complete(SYNTH_SYSTEM.replace("{lang}", lang), user, max_tokens=1500)
+            raw = await budget.complete(provider, SYNTH_SYSTEM.replace("{lang}", lang), user, max_tokens=1500)
         except ProviderError:
             break
-        parsed = parse_summary(raw or "")
-        why = "not the JSON object asked for" if parsed is None else check_summary(parsed, views, lang)
+        if raw is None:
+            break
+        parsed = parse_summary(raw)
+        why = "not the JSON object asked for" if parsed is None else check_summary(parsed, views, lang, tickers)
         if parsed is not None and why is None:
             return {**parsed, "source": "ai"}
         user = (f"Views JSON:\n{payload}\n\nYour previous summary cannot be shown ({why}). Rewrite it using only figures from the views, "
-                "cite only views that were read, and describe the situation and risks without advice.")
+                "cite only views that were read, and describe the situation and risks without advice, levels to act at or forecasts.")
     return {**fallback, "note": "The AI summary could not be checked against the data; showing the rules summary."}
 
 
@@ -346,40 +464,73 @@ async def _step(ctx: ToolContext, run_id: int, step: int, name: str, args: Dict[
     return res
 
 
-async def gather(ctx: ToolContext, run_id: int, symbol: str, exchange: str) -> Dict[str, View]:
+async def gather(ctx: ToolContext, run_id: int, symbol: str, exchange: str, budget: Optional[Budget] = None) -> Dict[str, View]:
+    """The five tool reads (audited). With a `budget`, its clock covers them: a read that would start with the time spent
+    is skipped (that view is "not read"), and a gone client stops the analysis between reads."""
     sym = symbol.strip().upper()
-    regime = await _step(ctx, run_id, 1, "get_market_regime", {"symbol": sym, "exchange": exchange, "timeframe": "day"})
-    candles = await _step(ctx, run_id, 2, "get_candles", {"symbol": sym, "exchange": exchange, "timeframe": "day"})
-    chain = await _step(ctx, run_id, 3, "get_option_chain", {"underlying": sym})
-    news = await _step(ctx, run_id, 4, "get_news", {"hours": 24, "min_severity": 1})
-    snapshot = await _step(ctx, run_id, 5, "get_market_snapshot", {"symbol": sym})
+    calls: List[Tuple[str, Dict[str, Any]]] = [("get_market_regime", {"symbol": sym, "exchange": exchange, "timeframe": "day"}),
+             ("get_candles", {"symbol": sym, "exchange": exchange, "timeframe": "day"}),
+             ("get_option_chain", {"underlying": sym}),
+             ("get_news", {"hours": 24, "min_severity": 1}),
+             ("get_market_snapshot", {"symbol": sym})]
+    results: List[ToolResult] = []
+    for n, (name, args) in enumerate(calls, start=1):
+        if budget is not None:
+            await budget.check_client()
+            if budget.remaining() <= 1.0:
+                budget.stopped = budget.stopped or f"the {MAX_SECONDS:.0f} s time budget was spent while reading the data"
+                results.append(ToolResult(False, None, None, name, error="not read: the time budget was spent"))
+                continue
+        results.append(await _step(ctx, run_id, n, name, args))
+        if budget is not None:
+            budget.tool_calls += 1
+    regime, candles, chain, news, snapshot = results
     return {"technical": technical_view(regime, candles), "options": options_view(chain), "news": news_view(news, sym),
             "macro": macro_view(snapshot)}
 
 
+def resolved_symbol(views: Dict[str, View], symbol: str) -> Optional[str]:
+    """The analysed symbol once the platform's own price or option tools found it (else None: the raw input is never
+    trusted as a symbol the AI may name)."""
+    return symbol.strip().upper() if (views["technical"].ok or views["options"].ok) else None
+
+
 async def analyze(ctx: ToolContext, symbol: str, exchange: str, *, lang: str = "en", gather_provider: Any = None,
-                  synth_provider: Any = None) -> Dict[str, Any]:
-    """The four views, each worded (AI checked, or the rules), and the summary. Audited as one agent run."""
+                  synth_provider: Any = None, budget_spent: Optional[Callable[[], Awaitable[bool]]] = None,
+                  client_gone: Optional[Callable[[], Awaitable[bool]]] = None) -> Dict[str, Any]:
+    """The four views, each worded (AI checked, or the rules), and the summary. Audited as one agent run. One `Budget`
+    covers the tools and the model calls (time, call cap, the plan's AI budget per call, a gone client)."""
     sym = symbol.strip().upper()
+    budget = Budget(exhausted=budget_spent, cancelled=client_gone)          # the clock starts before the tools run
     run = AgentRunRecord(tenant_id=ctx.tenant_id, user_id=ctx.user.id, question_sha256=hashlib.sha256(f"analyze:{exchange}:{sym}".encode()).hexdigest(),
                          prompt_version=PROMPT_VERSION, model=str(getattr(synth_provider, "model", "") or ""),
                          limits_json=json.dumps({"kind": "multiview", "max_llm_calls": MAX_LLM_CALLS, "max_seconds": MAX_SECONDS}),
                          outcome="running", created_at=datetime.now(timezone.utc))
     ctx.session.add(run)
     await ctx.session.flush()
-    views = await gather(ctx, run.id, sym, exchange)
-    budget = Budget()
-    for v in views.values():
-        await word_view(gather_provider, v, lang, budget)
-    summary = await synthesise(synth_provider, views, lang, budget)
-    run.outcome, run.steps, run.tool_calls = "answered", budget.calls, 5
+    try:
+        views = await gather(ctx, run.id, sym, exchange, budget)
+        tickers = ticker_text(views, resolved_symbol(views, sym))
+        for v in views.values():
+            await word_view(gather_provider, v, lang, budget, tickers)
+        summary = await synthesise(synth_provider, views, lang, budget, tickers)
+    except Cancelled:
+        run.outcome, run.steps, run.tool_calls = "cancelled", budget.calls, budget.tool_calls
+        run.finished_at = datetime.now(timezone.utc)
+        await ctx.session.commit()
+        raise
+    run.outcome, run.steps, run.tool_calls = "answered", budget.calls, budget.tool_calls
     run.finished_at = datetime.now(timezone.utc)
     await ctx.session.commit()
-    as_of = max([v.as_of for v in views.values() if v.ok and v.as_of] or [None], key=lambda x: x or "")
-    return {"symbol": sym, "exchange": exchange, "as_of": as_of, "views": [views[k].as_dict() for k in VIEWS], "summary": summary,
-            "note": NOTE, "run_id": run.id, "llm_calls": budget.calls, "prompt_version": PROMPT_VERSION}
+    as_of = max((v.as_of for v in views.values() if v.ok and v.as_of), default=None)
+    out = {"symbol": sym, "exchange": exchange, "as_of": as_of, "views": [views[k].as_dict() for k in VIEWS], "summary": summary,
+           "note": NOTE, "run_id": run.id, "llm_calls": budget.calls, "prompt_version": PROMPT_VERSION}
+    if budget.stopped:
+        out["limits_note"] = f"Stopped early: {budget.stopped}; the rest is worded by the rules."
+    return out
 
 
-__all__ = ["FLAG", "VIEWS", "NOTE", "MAX_LLM_CALLS", "PROMPT_VERSION", "View", "Budget", "analyze", "gather", "rules_summary",
+__all__ = ["FLAG", "FEATURE", "VIEWS", "NOTE", "MAX_LLM_CALLS", "PROMPT_VERSION", "View", "Budget", "Cancelled", "analyze", "gather", "rules_summary",
+           "advice_problems", "ticker_text", "resolved_symbol",
            "technical_view", "options_view", "news_view", "macro_view", "check_text", "check_summary", "parse_summary", "synthesise",
            "word_view"]

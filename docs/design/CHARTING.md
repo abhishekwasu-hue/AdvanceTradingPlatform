@@ -388,6 +388,56 @@ own output on the frozen fixtures, checked against Trade live when the repositor
   process; the layer cache is bounded by bytes and never holds debug answers; 60 requests a minute per user; a
   top-down row over 5,000 bars is refused, not cut; a daily chart reads its daily bars once for the chart and D / W.
 
+## CH4a (built): the trades layer - your own PAPER trades on the chart
+
+The first CH4 slice that the data ATP has supports (dependency check below; OPEN_QUESTIONS CH4-1 .. CH4-3). Flag
+`chart_trades_layer`, off by default.
+
+- **Backend.** `GET /api/charts/layers/trades?instrument=&at=&start=` (`app/charts/trades_layer.py`).
+  - Off -> 503, per organisation. Tenancy: "member", but the rows are the caller's own (`user_id` = the caller and
+    `tenant_id` = the caller's organisation), never a teammate's, never another organisation's. The trade list itself
+    is organisation-wide; a chart layer is personal.
+  - PAPER rows only.
+  - The instrument's own trades are drawn at their prices; a derived contract (an option or future on this underlying)
+    at its times only (`on_price_axis: false`). Its premium never goes on the underlying's axis.
+  - As of `at`: no trade entered after it, no exit after it (the trade is open then, without P&L), so replay shows
+    nothing before it happened.
+  - The window is the trades active in (`start`, `at`], at most 200. Read-only: it writes nothing and offers no
+    action.
+- **Frontend.** `charting/tradesLayer.ts` (API, bar snapping, `toTradesLayer`, a loader that clears on every new
+  question) and `TradesLayer.tsx`, a read-only panel ("My trades": count, open count, show / hide). They are mounted on
+  the full-window chart, following replay.
+  - Each entry and exit is a label in the bar it falls in.
+  - A closed trade on its own chart has a dashed entry-to-exit segment.
+  - An open trade on its own chart has its stop and target as price lines.
+  - Colours are Okabe-Ito, by side.
+- **Tests.** `tests/test_ch4a_trades_layer.py` covers:
+  - own trades only (a teammate's and another organisation's are never drawn, a LIVE row never);
+  - instrument, exchange and contract matching;
+  - as-of (no trade and no exit before it happened) and the window;
+  - flag off / per organisation;
+  - writes nothing.
+
+  Frontend `tradesLayer.test.tsx` covers snapping, shapes, the contract case, the loader and the read-only panel.
+- **Dependencies of the rest of CH4, checked on main 53c54ee:**
+  - **Part B lake.** The shared lake has daily F&O contract bars with OI from the F&O bhavcopy (HB1,
+    `nse_bhav:fo`, keys `NFO:<SYM>:FUT:<expiry>` and `NFO:<SYM>:<CE|PE>:<expiry>:<strike>`), once the backfill has
+    run. There is no IV history and no intraday chain history: the `md_option_chain_snapshots` table exists but
+    nothing writes it, and `option_chain_snapshots` (Phase W) holds only near-the-money samples of running option
+    deployments plus uploads, trimmed by retention.
+  - **U1-c.** Lots (`instrument_master_versions`, `instruments.lot_size`) and the exchange ban list
+    (`fo_ban_history`) exist (`app/universe/fo_eod.py`).
+  - **S3 Notification Service.** It exists (`app/notifications/service.notify` with the alert dispatcher).
+- **Next (CH4b, data-ready):**
+  - option and future contract charts and synthetic spreads from the lake's daily `NFO:` bars (sum of legs with sign
+    and quantity);
+  - an OI pane from the same rows;
+  - option symbol search from `instruments`;
+  - chain -> chart linking.
+
+  Intraday contract charts, IV / Greeks panes and IV / PCR / max-pain history wait for an intraday chain store
+  (CH4-1).
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

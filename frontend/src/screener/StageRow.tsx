@@ -4,11 +4,13 @@
  * a rank across the universe ("Rank of PctChange(close, 5) at or below 10") - and the group: ANY of its blocks or
  * NOT all of them, drawn as a bracket with its own label, its blocks nested inside (they have no trail of their own:
  * the funnel counts top-level stages). The advanced fold shows the block in plain words and as ScreenQL.
+ * U2 (flag `screener_builder_u2`): the formula block - a condition in ScreenQL text (offsets, arithmetic), the form that
+ * holds what the other blocks cannot, so Legends and breakout screens open in the builder.
  *
  * Keyboard: the handle moves the stage with Alt+Up / Alt+Down and keeps the focus as the stage moves; every control is
  * a native button, input or select.
  */
-import { ChevronDown, Copy, Filter, GripVertical, Layers, LineChart, ListOrdered, Plus, Tags, Trash2 } from "lucide-react";
+import { Braces, ChevronDown, Copy, Filter, GripVertical, Layers, LineChart, ListOrdered, Plus, Tags, Trash2 } from "lucide-react";
 import { useEffect, useId, useRef, useState, type DragEvent, type ReactNode } from "react";
 import { cx } from "../components/primitives";
 import {
@@ -21,8 +23,8 @@ import { SurvivorTrail } from "./SurvivorTrail";
 import { TimeframeChip } from "./TimeframeChip";
 
 const OP_LABEL: Record<Op, string> = { ">": "above", ">=": "at or above", "<": "below", "<=": "at or below", "crosses above": "crosses above", "crosses below": "crosses below" };
-export const KIND_LABEL: Record<StageKind, string> = { indicator: "Indicator", filter: "Filter", category: "Category", rank: "Rank", group: "Group" };
-const KIND_ICON: Record<StageKind, typeof LineChart> = { indicator: LineChart, filter: Filter, category: Tags, rank: ListOrdered, group: Layers };
+export const KIND_LABEL: Record<StageKind, string> = { indicator: "Indicator", filter: "Filter", category: "Category", rank: "Rank", group: "Group", formula: "Formula" };
+const KIND_ICON: Record<StageKind, typeof LineChart> = { indicator: LineChart, filter: Filter, category: Tags, rank: ListOrdered, group: Layers, formula: Braces };
 
 export interface StageRowProps {
   stage: Stage;
@@ -135,6 +137,14 @@ function BlockBody({ stage, registry, scanTf, onChange }: { stage: Stage; regist
                         onChange={(op) => onChange({ ...stage, op: op as typeof stage.op })} />
           <NumberInline value={stage.value} label="Rank limit" min={stage.fn === "Rank" ? 1 : 0} onChange={(value) => onChange({ ...stage, value })} />
           <span className="text-t12 text-fg-muted">across the universe</span>
+        </>
+      );
+    case "formula":
+      return (
+        <>
+          <span className="text-t12 text-fg-muted">ScreenQL</span>
+          <TextInline value={stage.text} label="Formula condition in ScreenQL" placeholder="high - low < Min(high - low, 6)[1]"
+                      onChange={(text) => onChange({ ...stage, text })} />
         </>
       );
     case "group":

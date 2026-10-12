@@ -128,7 +128,7 @@ describe("the builder-text contract with the server (builderTexts.json; tests/te
       expect(stageText(reg, { id: "x", enabled: true, ...c.stage } as unknown as Stage)).toBe(c.text);
     }
     const kinds = new Set(contract.cases.map((c) => (c.stage as { kind: string }).kind));
-    expect([...kinds].sort()).toEqual(["category", "filter", "group", "indicator", "rank"]);
+    expect([...kinds].sort()).toEqual(["category", "filter", "formula", "group", "indicator", "rank"]);
   });
 });
 

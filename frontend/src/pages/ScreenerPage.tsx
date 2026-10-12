@@ -8,6 +8,7 @@
 import { LayoutGrid, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
@@ -20,6 +21,7 @@ import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultBoard } from "../screener/ResultBoard";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
+import { stagesFromServer } from "../screener/importStages";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 
@@ -62,23 +64,37 @@ export default function ScreenerPage(_props: PageProps) {
   // U7 LG1 (flag `screener_legends`): the Legends cards load with the taxonomy; while the flag is off the call fails,
   // the taxonomy hides the Legends screens and nothing changes.
   const [legends, setLegends] = useState<LegendsLibrary | null>(null);
+  // U2 (flag `screener_builder_u2`): formula blocks, and Legends / breakout screens open in the builder.
+  const [builderU2, setBuilderU2] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
+    api.myFeatures().then((f) => setBuilderU2(Boolean(f.screener_builder_u2))).catch(() => setBuilderU2(false));
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
   // breakout family joins with U6 BK1).
-  const canOpen = useCallback((s: TaxScreen) => !!registry && s.source === "starter" && STARTERS.some((t) => t.id === s.id), [registry]);
+  const canOpen = useCallback((s: TaxScreen) => !!registry && ((s.source === "starter" && STARTERS.some((t) => t.id === s.id))
+    || (builderU2 && (s.source === "legends" || s.source === "breakouts"))), [registry, builderU2]);
   const openScreen = (s: TaxScreen) => {
     const starter = STARTERS.find((t) => t.id === s.id);
-    if (!registry || !starter) return;
+    if (!registry || !canOpen(s)) return;
     if (stages.length > 0 && !window.confirm(`Replace the current conditions with "${s.name}"?`)) return;
-    setStages(starter.build(registry));
-    setName(s.name);
-    setGalleryOpen(false);
+    if (starter) {
+      setStages(starter.build(registry));
+      setName(s.name);
+      setGalleryOpen(false);
+      return;
+    }
+    // U2: a Legends or breakout screen - its conjuncts as blocks (a formula block where no other form writes the same text)
+    screenerApi.stages({ library_id: s.id }).then((res) => {
+      setStages(stagesFromServer(registry, res.stages));
+      setScanTf(res.base_tf);
+      setName(s.name);
+      setGalleryOpen(false);
+    }).catch((e: unknown) => setOtherProblem(errorText(e)));
   };
 
   const symbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
@@ -235,7 +251,7 @@ export default function ScreenerPage(_props: PageProps) {
         <div className="screener-canvas">
           {registry ? (
             <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={shown?.funnel ?? null}
-                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} />
+                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} formula={builderU2} />
           ) : (
             <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-1" aria-label="Loading the conditions" />
           )}

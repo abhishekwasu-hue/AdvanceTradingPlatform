@@ -161,6 +161,42 @@ async def legend_card(card_id: str, user: User = Depends(get_current_user), sess
     return {**lg.card_payload(card, library, tx.load()), "header": lg.HEADER}
 
 
+class StagesBody(BaseModel):
+    source: Optional[Union[str, Dict[str, Any]]] = Field(default=None, description="ScreenQL text or the builder's JSON tree")
+    library_id: Optional[str] = Field(default=None, max_length=120, description="a pre-built Legends or breakout screen")
+    base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
+    params: Dict[str, Union[float, int, str, bool]] = Field(default_factory=dict)
+
+
+@router.post("/stages")
+async def screen_stages(body: StagesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """U2 (flag `screener_builder_u2`): a screen -> the funnel's stages (top-level conjuncts, parameters inlined), so the
+    builder can open it; validated and gated like `/validate`. Nothing runs, nothing is stored."""
+    from app.screener import stages as st
+    await _flag(session, user)
+    await require_flag(session, st.FLAG, user.tenant_id)
+    name: Optional[str] = None
+    source: Union[str, Dict[str, Any]]
+    if body.library_id is not None:
+        src = tx.sources().get(body.library_id.split(".", 1)[0])
+        if src is not None and src.flag and not await flag_enabled(session, src.flag, user.tenant_id):
+            raise HTTPException(status_code=404, detail="that screen's family is turned off for this organisation")
+        found, why = st.library_source(body.library_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail=why)
+        source, base_tf, params, name = found
+    elif body.source is not None:
+        source, base_tf, params = body.source, body.base_tf, dict(body.params)
+    else:
+        raise HTTPException(status_code=422, detail="give a source or a library_id")
+    ast, validated = _compiled(source, base_tf, params)
+    await _gate(session, user, ast, validated)
+    if ast is None or not validated.ok:
+        raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
+    flat = st.inline(ast, params)
+    return {"name": name, "base_tf": base_tf, "text": nodes.to_text(flat), "stages": st.split(flat), "version": nodes.VERSION}
+
+
 @router.post("/validate")
 async def validate_screen(body: ValidateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""

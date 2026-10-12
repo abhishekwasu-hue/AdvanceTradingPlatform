@@ -1861,3 +1861,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
+
+## U2 remaining blocks: the formula block and opening shipped screens (flag `screener_builder_u2`, off)
+
+- Branch `claude/n3-u2` (from main). Phase 0 scope per ATP_PHASE0_FREEZE: the blocks the shipped screens use.
+- Backend: `app/screener/stages.py` + `POST /api/screener/stages` (S_COMPUTE): a screen or a Legends / breakout id ->
+  validated, gated, parameters inlined, split into the funnel's stages. New flag in DEFAULT_OFF_FLAGS. No migration, no
+  new ScreenQL function.
+- Frontend: `FormulaStage` (bracketed to stay one stage), the formula block in StageRow and the kind picker (flag on),
+  `importStages.ts` (block form only on an exact text round trip, else formula), Open for Legends / breakout cards.
+- Tests: `tests/test_u2_stages.py`; vitest `importStages.test.ts` and the contract cases. Open questions U2-1..U2-3.
+

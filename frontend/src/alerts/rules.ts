@@ -27,7 +27,7 @@ export interface NotificationPolicy {
 
 export interface DeadLetter {
   id: number; notification_id: number; channel: string; attempts: number; reason: string | null; last_error: string | null;
-  group_id: string | null; created_at: string | null;
+  group_id: string | null; created_at: string | null; status?: "FAILED" | "DEAD";
 }
 
 export interface EmailOptOut { id: number; address: string; scope: string; created_at: string }
@@ -42,6 +42,10 @@ const REASONS: Record<string, string> = {
   digest: "Waiting for the digest",
   dead_letter: "Gave up after every retry",
   channel_disabled: "Channel was off or removed",
+  stale_data: "Not sent - the market data behind it was no longer current",
+  worker_lost: "Its last attempt never finished (the sender stopped); it may or may not have arrived",
+  replayed: "Put back in the outbox by an operator",
+  duplicate: "Not sent - the same delivery was already queued",
 };
 
 /** A plain sentence for a reason code; unknown codes are shown as they are. */

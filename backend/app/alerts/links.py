@@ -103,9 +103,13 @@ async def add_linked_delivery(session: AsyncSession, tenant_id: int, notificatio
         AlertChannelRecord.channel_type == "TELEGRAM", AlertChannelRecord.enabled.is_(True)).limit(1))
     if base is None:
         return None
+    from app.alerts.dispatcher import delivery_key, outbox_hardened
+    key = delivery_key(notification_id, base.channel_id, link.chat_id) if await outbox_hardened(session, tenant_id) else None
+    if key is not None and await session.scalar(select(AlertDeliveryRecord.id).where(AlertDeliveryRecord.idem_key == key)) is not None:
+        return None                                       # Z10-b: already queued (a flush completed after a crash)
     row = AlertDeliveryRecord(tenant_id=tenant_id, notification_id=notification_id, channel_id=base.channel_id, status="PENDING", attempts=0,
                               next_attempt_at=base.next_attempt_at, priority=priority, group_id=group_id,
-                              digest_bucket=digest_bucket, address=link.chat_id)
+                              digest_bucket=digest_bucket, address=link.chat_id, idem_key=key)
     session.add(row)
     return row
 

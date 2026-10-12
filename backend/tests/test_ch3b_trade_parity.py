@@ -15,7 +15,6 @@ import pytest
 from app.price_action import legs as LG
 from app.price_action import liquidity as LQ
 from app.price_action import structure_tracker as ST
-from app.price_action import trendlines as TL
 from tests import ch3b_golden as H
 
 

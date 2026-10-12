@@ -296,19 +296,11 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
             problems[symbol] = f"{type(exc).__name__}: {str(exc)[:120]}"
             continue
-        df = bars_to_dataframe(bars) if bars else pd.DataFrame()
-        if df.empty:
-            problems[symbol] = "no bars from the broker"
+        # LD-7: the pandas work per symbol runs on a worker thread, so a screen does not hold the event loop.
+        df, frames, problem = await asyncio.to_thread(_symbol_frames, bars, interval, base_tf, include_forming, now)
+        if problem:
+            problems[symbol] = problem
             continue
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC")
-        fetched_tf = _FETCH_TF[interval]
-        if not include_forming:
-            df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
-        if df.empty:
-            problems[symbol] = "no closed bars from the broker"
-            continue
-        frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
         newest.append(df.index[-1].to_pydatetime())
     if attach_daily and universe:
@@ -320,6 +312,21 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
                                           now=now or datetime.now(timezone.utc))
     return universe, problems, f"broker:{record.broker_name}"
+
+
+def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool, now: Optional[datetime]) -> Tuple[Any, Dict[str, Any], str]:
+    """(closed bars as a frame, {base_tf: frame}, problem) for one symbol's fetched bars - `fetch_frames`' pandas step."""
+    df = bars_to_dataframe(bars) if bars else pd.DataFrame()
+    if df.empty:
+        return df, {}, "no bars from the broker"
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    fetched_tf = _FETCH_TF[interval]
+    if not include_forming:
+        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
+    if df.empty:
+        return df, {}, "no closed bars from the broker"
+    return df, {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}, ""
 
 
 async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str, now: Optional[datetime]) -> None:

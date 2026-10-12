@@ -133,12 +133,23 @@ jobs:
       - name: Seed the synthetic users (own organisation and fake Dhan session each)
         run: deploy/ci/stack.sh seed "$USERS"
 
+      - name: Profile the API during the primary run (diagnostics, LD-7; py-spy from the host, 90 s after the ramp)
+        continue-on-error: true
+        run: |
+          pipx install py-spy==0.4.0
+          nohup deploy/ci/profile_api.sh 200 90 "$RUNNER_TEMP/atp-ci-state/load-profile" > /dev/null 2>&1 &
+
       - name: Load test, primary profile (think time = the app's own dashboard refresh)
         id: primary
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem/ {print $2}') GB"
           deploy/ci/stack.sh load --name load-primary --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
             --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s" --report "$RUNNER_TEMP/atp-ci-state/load-primary.md"
+
+      - name: Where the API's time went in the primary run (py-spy summary)
+        if: always() && steps.primary.outcome != 'skipped'
+        continue-on-error: true
+        run: cat "$RUNNER_TEMP/atp-ci-state/load-profile.txt" "$RUNNER_TEMP/atp-ci-state/load-profile.log" || true
 
       - name: Load test, busy profile (think 10 s, for comparison - does not decide the job)
         if: always() && steps.primary.outcome != 'skipped'
@@ -183,6 +194,7 @@ jobs:
             ${{ runner.temp }}/atp-ci-state/load-*/result.*
             ${{ runner.temp }}/atp-ci-state/load-*/*.csv
             ${{ runner.temp }}/atp-ci-state/load-*/*.log
+            ${{ runner.temp }}/atp-ci-state/load-profile.*
             ${{ runner.temp }}/atp-ci-state/diag
           if-no-files-found: ignore
 

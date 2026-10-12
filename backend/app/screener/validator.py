@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.screener import nodes as n
-from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, MAX_WINDOW, NUM, STR, Spec
+from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, LAST_BAR_ONLY, MAX_WINDOW, NUM, READS_HISTORY, STR, Spec
 
 MAX_OFFSET = 500
 DEFAULT_COST_CAP = 200.0
@@ -54,6 +54,7 @@ class _Checker:
     def __init__(self, base_tf: str, params: Dict[str, Any], strict_units: bool = True) -> None:
         self.base_tf, self.params, self.strict_units = base_tf, params, strict_units
         self.out = Validated(True)
+        self.last_bar_reported: Set[int] = set()
 
     def err(self, message: str, node: Any) -> None:
         self.out.ok = False
@@ -111,6 +112,33 @@ class _Checker:
             value = int(value)
         if isinstance(value, bool) or value not in sig.choices:
             self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg)
+
+    def literal(self, arg: Any, sig: Any, owner: Any) -> None:
+        """Z10-a (U3 G2): a setting of the function (Supertrend / Bollinger `k`, the zone filters' `tolerance_pct`) is
+        one number for the whole series. The runtime reads it once, so an expression there (`ATR(5) / 2`) would take
+        its value on the LAST bar and apply it to every earlier bar - a look-ahead inside Count, CrossAbove, Lag ...
+        Only a literal (optionally negated) or a numeric $parameter is accepted."""
+        node = arg.operand if isinstance(arg, n.Unary) else arg
+        if isinstance(node, n.Num):
+            return
+        if isinstance(node, n.Param):
+            value = self.params.get(node.name)
+            if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
+                self.err(f"{owner.name}: {sig.name} must be a number, got ${node.name} = {value!r}", arg)
+            return
+        self.err(f"{owner.name}: {sig.name} must be a number or a $parameter (one value for the whole series), not an expression", arg)
+
+    def history_of_last_bar(self, owner: n.Call) -> None:
+        """Z10-a (U3 G2): a function answered for the last bar only cannot be read back in time - `Count(5,
+        PatternBullish())` would repeat today's answer on the four bars before and count 5 (a look-ahead into those
+        bars). Reported once per inner call, by the outermost history-reading function around it."""
+        for arg in (*owner.args, *owner.kwargs.values()):
+            for inner in n.walk(arg):
+                if isinstance(inner, n.Call) and inner.name in LAST_BAR_ONLY and id(inner) not in self.last_bar_reported:
+                    self.last_bar_reported.add(id(inner))
+                    self.err(f"{inner.name} is known for the last bar only, so {owner.name} cannot read its earlier values; "
+                             f"use it outside {owner.name}" + (' (Pattern("name") is the bar-by-bar form)' if inner.name.startswith("Pattern") else ""),
+                             inner)
 
     def degree_bars(self, node: Any, spec: Any) -> int:
         """The bars a swing degree needs: the literal (or parameter) degree, the default when it is left out, and the
@@ -266,6 +294,8 @@ class _Checker:
         elif not len(needed) <= len(node.args) <= len(spec.args):
             want = f"{len(needed)}" if len(needed) == len(spec.args) else f"{len(needed)}-{len(spec.args)}"
             self.err(f"{node.name} takes {want} argument(s), got {len(node.args)}", node)
+        if spec.name in READS_HISTORY:
+            self.history_of_last_bar(node)
         known_kw = {a.name: a for a in spec.kwargs}
         for key in node.kwargs:
             if key not in known_kw:
@@ -284,6 +314,8 @@ class _Checker:
                 self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
             elif sig.choices:
                 self.choice(arg_node, sig, node)
+            elif sig.literal_only:
+                self.literal(arg_node, sig, node)
         for key, arg_node in node.kwargs.items():
             kw_sig = known_kw.get(key)
             if kw_sig is None:

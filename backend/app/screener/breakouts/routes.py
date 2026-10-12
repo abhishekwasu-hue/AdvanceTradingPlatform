@@ -129,11 +129,28 @@ def _intraday_gap(screen: str, signal_tf: str) -> bool:
 
 
 def _windows(screen: str, params: Dict[str, Any]) -> List[int]:
-    """The screen's own bar-count parameters (its group's integers), largest first - U6 BK3."""
+    """U6 BK3: the bar look-backs the screen reads with these parameters - only the ones its chosen mode uses (the
+    trend template only when `tt_filter` is on; Bollinger or TTM; the MA stack only when on) - largest first. A window
+    read over another's output counts as one look-back (the band width's low over `squeeze_lookback` bars of a `bb_n`
+    band; the slow SMA against its value `tt_slow_rising_n` bars ago; ...)."""
     p, _ = bp.validate(params)
-    unused = ("ma_stack_",) if not p.get("ma_stack") else ()          # the MA stack's lines are read only when it is on
-    return sorted((int(p[q.name]) for q in bp.PARAMS if q.group == screen and isinstance(q.default, int)
-                   and not isinstance(q.default, bool) and not q.choices and not (unused and q.name.startswith(unused))), reverse=True)
+    w: List[int] = []
+    if screen == "B3":
+        w = [int(p["vcp_max_bars"])]
+        if p["tt_filter"]:
+            w += [int(p["tt_year_bars"]), int(p["tt_ma_slow"]) + int(p["tt_slow_rising_n"]), int(p["tt_ma_mid"]), int(p["tt_ma_fast"])]
+    elif screen == "B10":
+        w = [int(p["donchian_n"])]
+    elif screen == "B11":
+        w = ([int(p["bb_n"]) + int(p["squeeze_lookback"]), int(p["squeeze_within"])] if p["squeeze_mode"] == "bollinger"
+             else [int(p["bb_n"]), int(p["kc_n"])])
+    elif screen == "B12":
+        w = [int(p["ma_n"]) + int(p["ma_slope_n"]), int(p["ma_consol_n"])]
+        if p["ma_stack"]:
+            w += [int(p["ma_stack_fast"]), int(p["ma_stack_slow"])]
+    elif screen == "B15":
+        w = [int(p["rsi_n"]) + int(p["regime_n"]), 2 * int(p["adx_n"])]      # Wilder's ADX: two smoothings
+    return sorted(w, reverse=True)
 
 
 def min_signal_bars(screen: str, params: Dict[str, Any]) -> int:

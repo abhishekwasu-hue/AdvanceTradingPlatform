@@ -136,6 +136,19 @@ def test_vcp_zigzag_equals_the_price_action_zigzag_and_starts_at_the_first_price
         thr[:int(rng.integers(0, 15))] = np.nan
         ref = [(p.kind, p.pivot_bar, p.confirm_bar, p.price) for p in zigzag_pivots(pd.DataFrame({"high": h, "low": lo}), thr)]
         assert _zz(V.zigzag(h, lo, thr)) == ref, seed
+    # BK3 re-check: equal highs / lows on tick-rounded prices (0.05) - the later bar holds the extreme, no reversal on a tie
+    ties = 0
+    for seed in range(200):
+        rng = np.random.default_rng(1000 + seed)
+        n = 160
+        c = np.round((100 + np.cumsum(rng.normal(0, 0.4, n))) / 0.05) * 0.05
+        h, lo = np.round((c + rng.integers(0, 6, n) * 0.05) / 0.05) * 0.05, np.round((c - rng.integers(0, 6, n) * 0.05) / 0.05) * 0.05
+        thr = np.round(np.full(n, rng.uniform(0.5, 2.0)) / 0.05) * 0.05
+        ties += int(len(h) - len(np.unique(h)))
+        for sh, sl in ((h, lo), (-lo, -h)):                                   # both orientations, as the screens read them
+            ref = [(p.kind, p.pivot_bar, p.confirm_bar, p.price) for p in zigzag_pivots(pd.DataFrame({"high": sh, "low": sl}), thr)]
+            assert _zz(V.zigzag(sh, sl, thr)) == ref, seed
+    assert ties > 1000                                                        # the series really do tie
     # BK3 review L1: a NaN first bar does not stall the zigzag (it starts from the first bar with prices)
     h = np.array([np.nan, 100.0, 104, 110, 104, 99, 103, 108])
     lo = np.array([np.nan, 99.0, 103, 109, 100, 98, 102, 107])

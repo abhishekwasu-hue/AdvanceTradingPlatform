@@ -1842,3 +1842,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   instance (`src/progression/i18n.ts`); there is a story.
 - No migration and no new route. Flag off returns the Z3-b answer unchanged.
 - Tests: backend `tests/test_n2_ladder_evidence.py` (9); vitest `src/progression` (12). Open questions N2-1..N2-5.
+
+## Fix: the trading worker acts per deployment as its creator (TX-3)
+
+- Branch `claude/fix-worker-acting-user` (from main). The worker filed every deployment's entries of an organisation
+  under one acting user (`_acting_user`: the first deployment's creator, else the owner), so member B's automated trades
+  could carry member A's user id (and land in A's own-trades tax report, #225 / OPEN_QUESTIONS TX-3).
+- Now `_deployment_user`: a deployment's entries (and its failure alert) act as `dep.created_by` when that user is an
+  active member of the same organisation; otherwise the organisation's acting user, as before. A creator from another
+  organisation is never used. Exits, square-off, stop guard and reconciliation are unchanged (ADR-0004).
+- No backfill: existing rows keep the user id they were filed under. No flag (a correctness fix).
+- Tests: `tests/test_worker_acting_user.py` (owner and member deployments each file their own trades; square-off
+  still closes both; inactive or foreign creators fall back).

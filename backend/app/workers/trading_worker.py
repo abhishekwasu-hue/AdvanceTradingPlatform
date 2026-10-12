@@ -992,6 +992,7 @@ class TradingWorker:
         start = self._tenant_cursor.get(tenant_id, 0) % max(1, len(active))
         ordered = active[start:] + active[:start]
         evaluated = 0
+        members: Dict[int, Optional[User]] = {user.id: user}      # per-cycle cache of the deployments' creators
         for dep in ordered:
             if evaluated > 0 and (time.monotonic() - tenant_started) > self.max_seconds_per_tenant:
                 logger.warning(
@@ -1031,15 +1032,18 @@ class TradingWorker:
             no_new_after = intraday_cutoffs(family)[0]
             entries_allowed = no_new_after is None or now_ist.time() < no_new_after
             with bind_log_context(strategy_id=dep.strategy_id, deployment_id=dep.id):
+                # TX-3 / BT1b: a deployment's entries act as the member who set it up (its trades carry their user id),
+                # not as the organisation's acting user; exits above keep the organisation's acting user (ADR-0004).
+                dep_user = await self._deployment_user(session, tenant_id, dep, user, members)
                 try:
                     executed = await self._evaluate_deployment(
-                        session, dep, user, market_data, adapters, now, entries_allowed,
+                        session, dep, dep_user, market_data, adapters, now, entries_allowed,
                     )
                     report.deployments_evaluated += 1
                     if executed:
                         report.signals_executed += 1
                 except Exception as exc:  # noqa: BLE001 - recorded on the deployment, never fatal
-                    await self._record_failure(session, dep, exc, user.id)
+                    await self._record_failure(session, dep, exc, dep_user.id)
                     report.errors.append(f"deployment {dep.id}: {exc}")
         self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
 
@@ -1473,6 +1477,22 @@ class TradingWorker:
         return await session.scalar(
             select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True)).order_by(User.id).limit(1)
         )
+
+    async def _deployment_user(
+        self, session: AsyncSession, tenant_id: int, dep: StrategyDeploymentRecord, fallback: User,
+        cache: Dict[int, Optional[User]],
+    ) -> User:
+        """TX-3: the user a deployment's entries act as - its creator when that user is an active member of the same
+        organisation, otherwise `fallback` (the organisation's acting user, as before). Never another organisation's user."""
+        creator_id = dep.created_by
+        if creator_id is None:
+            return fallback
+        if creator_id not in cache:
+            cache[creator_id] = await session.get(User, creator_id)
+        creator = cache[creator_id]
+        if creator is not None and creator.tenant_id == tenant_id and creator.is_active:
+            return creator
+        return fallback
 
     async def _usable_adapter(
         self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: int, now: datetime, account_label: str = "primary",

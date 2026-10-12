@@ -54,6 +54,10 @@ describe("BYOK-V3 scan-alert and daily-review reports", () => {
     expect(byNotification(null).size).toBe(0);
   });
 
+  it("shows no scan-alert report in the app while in-app delivery is off", () => {
+    expect(byNotification(resp([scan(9, 100)], { in_app: false })).size).toBe(0);
+  });
+
   it("groups the daily review by date, newest first, symbols A-Z, and one report renders on its own", () => {
     const r = resp([daily(1, "2026-06-09", "TCS"), daily(2, "2026-06-10", "SBIN"), daily(3, "2026-06-10", "INFY"), scan(4, 5)]);
     expect(dailyGroups(r).map((g) => [g.date, g.reports.map((x) => x.symbol)])).toEqual([["2026-06-10", ["INFY", "SBIN"]], ["2026-06-09", ["TCS"]]]);

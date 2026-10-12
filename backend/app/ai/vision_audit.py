@@ -95,6 +95,7 @@ VISION_OFF_SCOPE = "Vision off for proposals - turn it on in Settings"
 VISION_OFF_SCOPE_KIND = {KIND_SCAN: "Vision off for scan alerts - turn it on in Settings",
                          KIND_DAILY: "Vision daily review off - turn it on in Settings"}
 V3_NOT_ENABLED = "Vision for scan alerts and the daily review is not enabled for your organisation"
+SCAN_LIMIT_REASON = "scan audit limit"      # the skipped row's reason prefix (one such row per user per rolling hour)
 NOT_CREATOR = "Vision reviews proposals on deployments you created"
 PENDING_LINE = "Vision report pending"
 WITHHELD = "(comment withheld)"
@@ -437,7 +438,15 @@ async def enqueue_for_scan_alert(session: AsyncSession, rule: AlertRuleRecord, n
                 VisionReportRecord.user_id == owner.id, VisionReportRecord.subject_kind == KIND_SCAN,
                 VisionReportRecord.created_at > now - timedelta(hours=1), VisionReportRecord.status != STATUS_SKIPPED))
             if int(recent or 0) >= config.BYOK_SCAN_AUDITS_PER_HOUR:
-                _finish(row, STATUS_SKIPPED, reason=f"scan audit limit ({config.BYOK_SCAN_AUDITS_PER_HOUR} per hour)")
+                # Review LOW-1: one "limit reached" row per user per rolling hour tells the user why; the next matches of
+                # a noisy screen within that hour write nothing (skipped rows also age out: retention, 90 days).
+                told = await session.scalar(select(VisionReportRecord.id).where(
+                    VisionReportRecord.user_id == owner.id, VisionReportRecord.subject_kind == KIND_SCAN,
+                    VisionReportRecord.status == STATUS_SKIPPED, VisionReportRecord.reason.like(f"{SCAN_LIMIT_REASON}%"),
+                    VisionReportRecord.created_at > now - timedelta(hours=1)).limit(1))
+                if told is not None:
+                    return None
+                _finish(row, STATUS_SKIPPED, reason=f"{SCAN_LIMIT_REASON} ({config.BYOK_SCAN_AUDITS_PER_HOUR} per hour)")
                 row.finished_at = now
             session.add(row)
             await session.flush()

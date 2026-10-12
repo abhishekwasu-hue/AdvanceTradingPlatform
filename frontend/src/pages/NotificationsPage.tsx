@@ -76,6 +76,7 @@ export default function NotificationsPage() {
   }
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+  // Review LOW-2: byNotification is empty while the in-app channel is off (Telegram may still carry the report).
   const scanReports = byNotification(scanVision);
   const feed = (
       <Card className="mt-3">
@@ -100,7 +101,7 @@ export default function NotificationsPage() {
                 </div>
                 <div className="mt-1 text-sm font-medium text-fg">{n.title}</div>
                 {n.message && <div className="mt-0.5 text-xs text-fg-muted">{n.message}</div>}
-                {scanVision && scanReports.has(n.id) && (
+                {scanVision && scanVision.in_app && scanReports.has(n.id) && (
                   <div className="mt-1.5"><VisionReportView resp={single(scanVision, scanReports.get(n.id)!)} onChanged={refresh} /></div>
                 )}
                 {!n.read && (

@@ -172,7 +172,101 @@ def test_the_hourly_scan_limit_writes_skipped_rows_without_a_call(flags_on, monk
     assert rows[2].reason == "scan audit limit (2 per hour)" and rows[2].notification_id == notes[2]
     _run(_drain())
     assert len(vision.seen) == 2
-    assert _run(_alert(rule, ["V3LIM0"])) != notes[0]            # a new notification is a new subject
+    # review LOW-1: one "limit reached" row per user per rolling hour - further matches that hour write nothing
+    more = [_run(_alert(rule, [f"V3LIMX{i}"])) for i in range(3)]
+    assert more[0] != notes[0]                                   # a new notification is a new subject
+    rows = _run(_rows(VisionReportRecord.user_id == me["id"]))
+    assert len(rows) == 3 and [r.status for r in rows].count("skipped") == 1
+    assert _run(_rows(VisionReportRecord.notification_id.in_(more))) == []
+    later = datetime.now(timezone.utc) + timedelta(hours=1, minutes=1)   # an hour on, the limit counts afresh
+    late_note = _run(_alert(rule, ["V3LIMLATE"], now=later))
+    assert [r.status for r in _run(_rows(VisionReportRecord.notification_id == late_note))] == ["pending"]
+    _run(_drain(now=later))
+
+
+def test_skipped_vision_rows_age_out_after_90_days_and_audited_ones_stay():
+    """Review LOW-1: retention removes SKIPPED Vision rows (no call was made) after RETENTION_VISION_SKIPPED_DAYS (90);
+    reports that were audited are the user's own and are not touched; vision_reports is not a never-deleted table."""
+    from app.retention import policy as retention_policy
+    from app.retention import service as retention_service
+    assert "vision_reports" not in retention_policy.NEVER_DELETED
+    pol = retention_policy.load_policy()
+    assert pol.vision_skipped_days == 90 and pol.as_dict()["vision_skipped_days"] == 90
+    _, me = _user("v3-retention@example.com")
+    old = datetime.now(timezone.utc) - timedelta(days=91)
+
+    async def seed():
+        async with _session_factory() as session:
+            for status, created, key in (("skipped", old, "r-old-skip"), ("ok", old, "r-old-ok"), ("failed", old, "r-old-fail"),
+                                         ("skipped", datetime.now(timezone.utc), "r-new-skip")):
+                session.add(VisionReportRecord(tenant_id=me["tenant_id"], user_id=me["id"], subject_kind="scan_alert", subject_key=key,
+                                               status=status, created_at=created))
+            await session.commit()
+            report = await retention_service.run_retention(session, policy=pol)
+            await session.commit()
+            return report
+    report = _run(seed())
+    assert report.deleted.get("vision_reports_skipped", 0) >= 1
+    left = {r.subject_key for r in _run(_rows(VisionReportRecord.user_id == me["id"]))}
+    assert left == {"r-old-ok", "r-old-fail", "r-new-skip"}
+
+
+# --- review LOW-3: the creator is the only user a scan alert is ever audited for, checked again at run time -------------
+
+async def _deactivate(user_id):
+    async with _session_factory() as session:
+        (await session.get(User, user_id)).is_active = False
+        await session.commit()
+
+
+async def _move(user_id, tenant_id):
+    async with _session_factory() as session:
+        (await session.get(User, user_id)).tenant_id = tenant_id
+        await session.commit()
+
+
+async def _set_creator(rule_id, creator_id):
+    async with _session_factory() as session:
+        (await session.get(AlertRuleRecord, rule_id)).created_by = creator_id
+        await session.commit()
+
+
+@pytest.mark.parametrize("case", ["deactivated_creator", "ownerless_rule", "creator_moved_org", "teammates_rule",
+                                  "creator_changed_after_queue", "creator_deactivated_after_queue", "creator_moved_after_queue"])
+def test_a_scan_alert_is_never_audited_with_the_wrong_users_key(flags_on, monkeypatch, case):
+    Vision().install(monkeypatch)
+    _run(_drain())                                                 # what earlier tests left pending is not this case's
+    vision = Vision().install(monkeypatch)
+    _, me = _user(f"v3-iso-{case}@example.com")
+    _run(_setup(me["id"], key=A_KEY))                              # my key and my scope: on
+    mate = _run(_member(me["tenant_id"], f"v3-iso-mate-{case}@example.com"))
+    _, elsewhere = _user(f"v3-iso-other-{case}@example.com")
+    creator = None if case == "ownerless_rule" else (mate if case == "teammates_rule" else me["id"])
+    rule = _run(_rule(me["tenant_id"], creator if creator is not None else me["id"]))
+    if case == "ownerless_rule":
+        _run(_set_creator(rule, None))
+    if case == "deactivated_creator":
+        _run(_deactivate(me["id"]))
+    if case == "creator_moved_org":
+        _run(_move(me["id"], elsewhere["tenant_id"]))
+    note = _run(_alert(rule, ["V3ISO"]))
+    queued = _run(_rows(VisionReportRecord.notification_id == note))
+    if case.endswith("_after_queue"):
+        assert [r.user_id for r in queued] == [me["id"]]           # queued for me, the creator at the time
+        if case == "creator_changed_after_queue":
+            _run(_set_creator(rule, mate))
+        elif case == "creator_deactivated_after_queue":
+            _run(_deactivate(me["id"]))
+        else:
+            _run(_move(me["id"], elsewhere["tenant_id"]))
+        _run(_drain())
+        row = _run(_rows(VisionReportRecord.notification_id == note))[0]
+        assert row.status == "skipped" and row.reason in ("alert rule not available", "subject not available"), row.reason
+    else:
+        assert [r for r in queued if r.user_id == me["id"]] == []  # no row for me
+        assert all(r.user_id == creator for r in queued)           # at most the creator's own (a teammate without prefs: none)
+        _run(_drain())
+    assert vision.seen == []                                       # my key is never used for someone else's subject
 
 
 def test_the_daily_review_queues_the_users_own_symbols_once_per_trading_day(flags_on, monkeypatch):
@@ -231,6 +325,31 @@ def test_vision_never_changes_orders_trades_deployments_or_rules(flags_on, monke
     assert _run(snapshot()) == before
     row = _run(_rows(VisionReportRecord.user_id == me["id"]))[0]
     assert row.status == "failed" and "could not be read" in row.reason
+
+
+def test_the_worker_queues_the_daily_review_in_its_own_session(monkeypatch):
+    """Review LOW-4: enqueue_daily_reviews commits - it gets a session of its own, never the cycle's."""
+    from app.workers import trading_worker as tw
+    seen = []
+
+    async def fake(session, now=None):
+        seen.append(session)
+        return 0
+    monkeypatch.setattr(vision_audit, "enqueue_daily_reviews", fake)
+    from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _worker
+    worker = _worker(monkeypatch, _FakeBroker())
+    used = []
+    real_factory = worker.session_factory
+
+    def counting_factory():
+        s = real_factory()
+        used.append(s)
+        return s
+    worker.session_factory = counting_factory
+    _run(worker.run_cycle(now=OPEN_NOW))
+    assert seen and seen[0] is not used[0]                       # not the cycle's main session
+    assert any(seen[0] is s for s in used[1:])
+    assert tw is not None
 
 
 def test_scan_notification_and_migration_details():

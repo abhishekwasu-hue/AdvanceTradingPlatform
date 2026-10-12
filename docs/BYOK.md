@@ -196,7 +196,7 @@ order" and JSON with `status` / `decision` fields, and checks that `ai_actions`,
 
 | Table | Row | Contents |
 |---|---|---|
-| `vision_reports` | one per (user, proposal) | `tenant_id`, `user_id`, `ai_action_id`, `status` (pending / running / ok / skipped / failed), `provider`, `model`, `reason` (sanitised, max 200 characters, never the key), `report_text` (at most 12 lines), `image_sha256`, `cost_usd`, `telegram_status`, `telegram_error`, `created_at`, `started_at`, `finished_at` |
+| `vision_reports` | one per (user, subject); SKIPPED rows are deleted by retention after 90 days (`RETENTION_VISION_SKIPPED_DAYS`), audited ones stay | `tenant_id`, `user_id`, `ai_action_id`, `status` (pending / running / ok / skipped / failed), `provider`, `model`, `reason` (sanitised, max 200 characters, never the key), `report_text` (at most 12 lines), `image_sha256`, `cost_usd`, `telegram_status`, `telegram_error`, `created_at`, `started_at`, `finished_at` |
 
 **The chart image is not stored** - only its SHA-256, which identifies exactly what was sent (the renderer is
 deterministic). The platform has no journal setting that keeps chart images yet; when one exists, keeping the image

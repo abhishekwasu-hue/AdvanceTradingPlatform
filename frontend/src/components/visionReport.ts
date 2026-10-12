@@ -40,7 +40,8 @@ export function single(resp: VisionReportsResponse, report: VisionReport): Visio
 /** The caller's scan-alert reports by notification id (the newest per notification). */
 export function byNotification(resp: VisionReportsResponse | null): Map<number, VisionReport> {
   const out = new Map<number, VisionReport>();
-  for (const r of resp?.reports ?? []) {
+  if (!resp || !resp.in_app) return out;   // in-app delivery off: no report in the app (BYOK-V3 review LOW-2)
+  for (const r of resp.reports) {
     if (r.kind === "scan_alert" && r.notification_id != null && !out.has(r.notification_id)) out.set(r.notification_id, r);
   }
   return out;

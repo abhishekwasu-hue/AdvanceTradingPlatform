@@ -461,12 +461,17 @@ class TradingWorker:
                     if self._last_vision_daily_check is None or now - self._last_vision_daily_check >= timedelta(minutes=15):
                         self._last_vision_daily_check = now
                         from app.ai import vision_audit
-                        await vision_audit.enqueue_daily_reviews(session, now)
+                        # Review LOW-4: its own session - it commits, and must neither commit nor roll back the cycle's.
+                        async with self.session_factory() as vision_session:
+                            try:
+                                await vision_audit.enqueue_daily_reviews(vision_session, now)
+                            except Exception:
+                                await vision_session.rollback()
+                                raise
                     if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1)) is not None:
                         self._spawn_vision_drain()
                 except Exception as exc:  # noqa: BLE001 - Vision is advisory; never breaks trading
                     logger.warning("Vision audit check failed: %s", exc.__class__.__name__)
-                    await session.rollback()
                 # Phase AR: the Copilot's market memory - every 15 minutes while NSE is open and in
                 # the hour after the close (the day's final read); before the open only the global
                 # cues (no broker read). Never blocks trading.

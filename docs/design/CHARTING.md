@@ -343,21 +343,32 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
 - **Crosshair link** (`charting/crosshairLink.ts`). Each chart's engine reports its crosshair time; the link moves the
   crosshair of the charts its group links by crosshair to the same time. `ChartEngine.setCrosshair(time)` is new
   (optional on the interface); the lightweight engine puts it on its own bar at or before that time, at that bar's
-  close, so a 5m and a 1h chart line up. The echo of a crosshair the link set is recognised and dropped, synchronous or
-  not, so charts never ping-pong.
-- **Charts.** Each cell is the same ProChart as the single-chart window (own candles, live price, older history on
-  scroll back). The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
+  close, so a 5m and a 1h chart line up. Only moves the user made are passed on: the engine marks a crosshair event
+  without a pointer event behind it `user: false` (lightweight-charts 5.2 does not report a programmatic
+  `setCrosshairPosition` at all), so the link keeps no echo bookkeeping that could swallow a real move.
+- **Charts.** Each cell is the same ProChart as the single-chart window (own candles, older history on scroll back).
+- **Last price, without starving exits (review HIGH, ADR-0004).** The workspace polls each (symbol, exchange) once
+  (`charting/ltpHub.ts`), shared by every chart showing it: every 5 s for the active chart's symbol, every 20 s for the
+  others, only while the tab is visible; a chart that gets focus again reuses a recent price. On the server
+  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`), and every broker call it makes (when no
+  fresh tick answers) first takes a token from the session's API budget (`app/market_data/api_budget.py`: per
+  tenant + broker + account, at half the conservative per-broker limits the worker's own budget uses, in the API
+  process); with none within 2 s it answers 429 (Retry-After 5) and the chart keeps its last price, instead of a queue
+  that grows while the worker's exits need the same API key. The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
   window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
   cell's button) shows the active chart at full size.
 - **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and
-  tenant, a unique name per user, at most 50, versioned (a stale save gets 409 with the current layout and the page
-  says so; another tab never overwrites). `GET/POST /api/charts/layouts`, `PUT/DELETE /api/charts/layouts/{id}` (the
+  tenant, a unique name per user, at most 50 (re-counted after the insert, so two racing creates cannot pass it),
+  versioned: the save and the delete are a conditional `UPDATE` / `DELETE ... WHERE id, user, tenant AND version`
+  with a row-count check, so of two tabs saving at once exactly one wins and the other gets 409 with the current
+  layout; the page says so. `GET/POST /api/charts/layouts`, `PUT/DELETE /api/charts/layouts/{id}` (the
   delete names its version), classified in `tests/tenancy_route_table.py` (list "member", writes "self"). The unsaved
   layout is kept in the browser (`localStorage`), and the last layout used is opened again.
 - **Shortcuts** (`charting/shortcuts.ts`, all with Alt so none collides with the drawing tools or the browser's
   editing keys; digits by physical key, since Option+1 types "¡" on a Mac; nothing fires while typing in a field):
-  Alt+1/2/4/6/8 grid, Alt+→/← next/previous chart, Alt+↑/↓ timeframe, Alt+G link group, Alt+T chart type,
-  Alt+Enter full size, Alt+K symbol box, Alt+S save, "?" the list.
+  Alt+1/2/4/6/8 grid, Alt+Shift+→/← next/previous chart, Alt+↑/↓ timeframe, Alt+G link group, Alt+T chart type,
+  Alt+Enter full size, Alt+K symbol box, Alt+Shift+S save, "?" the list. Plain Alt+←/→ (the browser's back / forward)
+  and Alt+S (a menu in some browsers) are left to the browser.
 - **Tests.** Backend `tests/test_ch5_chart_layouts.py` (4): schema per grid and refusals, flag off -> 503 and the
   tenant allow-list, per user (another organisation and a teammate get 404), versions and 409, unique names, the cap.
   Frontend `src/charting/workspace.test.ts` (11): grid shapes and the server's rules, shrinking and growing, symbol /

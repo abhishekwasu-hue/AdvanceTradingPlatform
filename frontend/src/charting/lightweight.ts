@@ -32,7 +32,7 @@ export interface CandleSeriesLike {
   attachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
   detachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
 }
-interface MouseParamsLike { time?: unknown; point?: { x: number; y: number } }
+interface MouseParamsLike { time?: unknown; point?: { x: number; y: number }; sourceEvent?: unknown }
 export interface ChartLike {
   applyOptions(options: { handleScroll?: boolean; handleScale?: boolean }): void;
   // CH5 crosshair link (optional in the structural slice: test fakes without them simply are not followed).
@@ -72,7 +72,10 @@ export class LightweightEngine implements ChartEngine {
   private barTimes: number[] | null = null;                    // the candles' times (epoch s), rebuilt when the data changes
 
   constructor(private readonly chart: ChartLike, private readonly candles: CandleSeriesLike, private readonly priceOf?: (y: number) => number | null) {
-    const cross = (p: MouseParamsLike) => this.emit({ type: "crosshair", time: typeof p.time === "number" ? p.time : null, price: this.price(p) });
+    // CH5: a move with a point but no pointer event behind it was not the user's (a programmatic crosshair); leaving the
+    // pane (no point) counts as the user's, so linked charts let go too.
+    const cross = (p: MouseParamsLike) => this.emit({ type: "crosshair", time: typeof p.time === "number" ? p.time : null, price: this.price(p),
+                                                       user: p.point == null || p.sourceEvent != null });
     const click = (p: MouseParamsLike) => this.emit({ type: "click", time: typeof p.time === "number" ? p.time : null, price: this.price(p) });
     const range = (r: { from: unknown; to: unknown } | null) => {
       if (r && typeof r.from === "number" && typeof r.to === "number") this.emit({ type: "visibleRangeChanged", from: r.from, to: r.to });

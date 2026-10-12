@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { CrosshairLink } from "./crosshairLink";
+import { ACTIVE_LTP_MS, INACTIVE_LTP_MS, LtpHub } from "./ltpHub";
 import type { ChartEngine, EngineEvent } from "./engine";
 import { LightweightEngine, type CandleSeriesLike, type ChartLike } from "./lightweight";
 import { SHORTCUTS, nextChartType, shortcutFor, type ShortcutKey } from "./shortcuts";
@@ -97,15 +98,19 @@ describe("workspace shortcuts", () => {
     expect(shortcutFor(key({ key: "¡", code: "Digit1", altKey: true }))).toEqual({ type: "grid", grid: 1 });     // Option+1 on a Mac
     expect(shortcutFor(key({ key: "8", code: "Digit8", altKey: true }))).toEqual({ type: "grid", grid: 8 });
     expect(shortcutFor(key({ key: "3", code: "Digit3", altKey: true }))).toBeNull();                          // no 3-chart grid
-    expect(shortcutFor(key({ key: "ArrowRight", altKey: true }))).toEqual({ type: "focus", delta: 1 });
+    expect(shortcutFor(key({ key: "ArrowRight", altKey: true, shiftKey: true }))).toEqual({ type: "focus", delta: 1 });
+    expect(shortcutFor(key({ key: "ArrowLeft", altKey: true }))).toBeNull();                                  // the browser's back
+    expect(shortcutFor(key({ key: "s", code: "KeyS", altKey: true }))).toBeNull();                            // a browser menu key
+    expect(shortcutFor(key({ key: "Ä", code: "Digit4", altKey: true, shiftKey: true }))).toEqual({ type: "grid", grid: 4 });
     expect(shortcutFor(key({ key: "ArrowDown", altKey: true }))).toEqual({ type: "timeframe", delta: -1 });
     expect(shortcutFor(key({ key: "©", code: "KeyG", altKey: true }))).toEqual({ type: "cycleGroup" });
-    expect(shortcutFor(key({ key: "s", altKey: true }))).toEqual({ type: "save" });
+    expect(shortcutFor(key({ key: "S", altKey: true, shiftKey: true }))).toEqual({ type: "save" });
     expect(shortcutFor(key({ key: "Enter", altKey: true }))).toEqual({ type: "maximize" });
     expect(shortcutFor(key({ key: "?" }))).toEqual({ type: "help" });
     expect(shortcutFor(key({ key: "z", ctrlKey: true }))).toBeNull();                                         // the drawing tools' undo
     expect(shortcutFor(key({ key: "Delete" }))).toBeNull();
-    expect(shortcutFor(key({ key: "s", code: "KeyS", altKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+    expect(shortcutFor(key({ key: "S", code: "KeyS", altKey: true, shiftKey: true, target: { tagName: "INPUT" } }))).toBeNull();
+    expect(SHORTCUTS.some((s) => s.keys.startsWith("Alt+Shift+→") && /back \/ forward/.test(s.does))).toBe(true);
     expect(SHORTCUTS.length).toBeGreaterThanOrEqual(8);
     let t: (typeof CHART_TYPES)[number] = "candles";
     const seen: string[] = [];
@@ -117,26 +122,34 @@ describe("workspace shortcuts", () => {
 class FakeEngine {
   listeners = new Set<(e: EngineEvent) => void>();
   shown: (number | null)[] = [];
-  constructor(private readonly echo: "sync" | "none" = "sync") {}
+  pending: (() => void)[] = [];
+  /** `echo`: how this fake reports a crosshair the link set - not at all (lightweight-charts 5.2), synchronously, or
+   * later and snapped to its own bar (an older or another engine), always marked as not the user's. */
+  constructor(private readonly echo: "none" | "sync" | "async-snapped" = "none") {}
   on(l: (e: EngineEvent) => void) { this.listeners.add(l); return () => { this.listeners.delete(l); }; }
-  move(time: number | null) { for (const l of this.listeners) l({ type: "crosshair", time, price: null }); }
-  setCrosshair(time: number | null) { this.shown.push(time); if (this.echo === "sync") this.move(time); }
+  move(time: number | null, user?: boolean) { for (const l of this.listeners) l({ type: "crosshair", time, price: null, user }); }
+  setCrosshair(time: number | null) {
+    this.shown.push(time);
+    if (this.echo === "sync") this.move(time, false);
+    if (this.echo === "async-snapped") this.pending.push(() => this.move(time == null ? null : time - 7, false));
+  }
+  flush() { const p = this.pending; this.pending = []; p.forEach((f) => f()); }
 }
 
 describe("crosshair link", () => {
-  it("moves the linked charts' crosshair to the same time, never loops on echoes, and lets go on unregister", () => {
+  it("moves the linked charts' crosshair to the same time, and lets go on unregister", () => {
     const l = four();
     const link = new CrosshairLink((i) => linkedPeers(l, i, "crosshair"));
-    const e = [new FakeEngine(), new FakeEngine(), new FakeEngine(), new FakeEngine()];
+    const e = [new FakeEngine("sync"), new FakeEngine("sync"), new FakeEngine(), new FakeEngine()];
     e.forEach((x, i) => link.register(i, x as unknown as ChartEngine));
     e[0].move(1000);
     expect(e[1].shown).toEqual([1000]);
     expect(e[0].shown).toEqual([]);                                                 // the echo from 1 did not bounce back
     expect(e[2].shown.concat(e[3].shown)).toEqual([]);
-    e[1].move(2000);                                                                // a real move on chart 1 still passes
+    e[1].move(2000);
     expect(e[0].shown).toEqual([2000]);
     e[0].move(null);
-    expect(e[1].shown[e[1].shown.length - 1]).toBeNull();                                           // leaving hides the linked crosshair
+    expect(e[1].shown[e[1].shown.length - 1]).toBeNull();                         // leaving hides the linked crosshair
     link.register(1, null);
     e[0].move(3000);
     expect(e[1].shown[e[1].shown.length - 1]).toBeNull();
@@ -145,17 +158,20 @@ describe("crosshair link", () => {
     expect(e[0].listeners.size).toBe(0);
   });
 
-  it("drops an asynchronous echo once, then follows real moves again", () => {
+  it("never passes on a move the user did not make - an async snapped echo neither loops nor swallows the next real move", () => {
     const l = four();
     const link = new CrosshairLink((i) => linkedPeers(l, i, "crosshair"));
-    const a = new FakeEngine("none"), b = new FakeEngine("none");
+    const a = new FakeEngine("async-snapped"), b = new FakeEngine("async-snapped");
     link.register(0, a as unknown as ChartEngine);
     link.register(1, b as unknown as ChartEngine);
     a.move(500);
-    b.move(500);                                                                    // b's late echo of what the link set
+    b.flush();                                                                      // b reports 493, not the user's
     expect(a.shown).toEqual([]);
-    b.move(600);
-    expect(a.shown).toEqual([600]);
+    expect(b.shown).toEqual([500]);
+    b.move(500);                                                                    // the user really moves on b, same time
+    expect(a.shown).toEqual([500]);                                                 // not swallowed as a stale echo
+    a.flush();
+    expect(b.shown).toEqual([500]);
   });
 });
 
@@ -205,7 +221,7 @@ describe("layouts API client", () => {
     expect(JSON.parse(String(init.body))).toMatchObject({ version: 2, layout: { schema: "layout/1", grid: 1 } });
   });
 
-  it("a duplicate name (409 without a layout) stays an ordinary error; a delete names its version; 404 is a conflict", async () => {
+  it("a duplicate name (409 with a sentence) stays an ordinary error; a delete names its version; 404 or a vanished layout is a conflict", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: "you already have a layout named 'X'" }), { status: 409, headers: { "content-type": "application/json" } })));
     const dup = await layoutsApi.create("X", defaultLayout()).catch((e: unknown) => e);
     expect(dup).not.toBeInstanceOf(LayoutConflict);
@@ -217,5 +233,86 @@ describe("layouts API client", () => {
     const gone = await layoutsApi.remove(stored).catch((e: unknown) => e);
     expect(gone).toBeInstanceOf(LayoutConflict);
     expect((gone as LayoutConflict).current).toBeNull();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ detail: { message: "the layout changed since it was shown", current: null } }),
+                                                       { status: 409, headers: { "content-type": "application/json" } })));
+    const raced = await layoutsApi.remove(stored).catch((e: unknown) => e);
+    expect(raced).toBeInstanceOf(LayoutConflict);
+  });
+});
+
+describe("LTP hub (one poll per symbol)", () => {
+  afterEach(() => vi.useRealTimers());
+
+  it("polls each symbol once for all its charts, at the fastest interval asked, only while visible, and stops with the last chart", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    let visible = true;
+    let clock = 0;
+    const hub = new LtpHub(async (symbol, exchange) => { calls.push(`${exchange}:${symbol}`); return { ltp: 1 } as never; }, () => visible, () => clock);
+    const seen: number[] = [];
+    const offA = hub.subscribe("NIFTY 50", "NSE", INACTIVE_LTP_MS, () => seen.push(1));
+    const offB = hub.subscribe("nifty 50", "nse", INACTIVE_LTP_MS, () => seen.push(2));
+    const offC = hub.subscribe("TCS", "NSE", ACTIVE_LTP_MS, () => seen.push(3));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls.sort()).toEqual(["NSE:NIFTY 50", "NSE:TCS"]);                      // 3 charts, 2 symbols, 2 requests
+    expect(hub.polls().map((p) => [p.key, p.periodMs, p.subscribers])).toEqual([["NSE:NIFTY 50", 20_000, 2], ["NSE:TCS", 5_000, 1]]);
+    calls.length = 0;
+    clock = 20_000;
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(calls.filter((c) => c === "NSE:NIFTY 50")).toHaveLength(1);           // inactive: every 20 s
+    expect(calls.filter((c) => c === "NSE:TCS")).toHaveLength(4);                // active: every 5 s
+    const offFast = hub.subscribe("NIFTY 50", "NSE", ACTIVE_LTP_MS, () => undefined);   // it becomes the active chart
+    expect(hub.polls().find((p) => p.key === "NSE:NIFTY 50")?.periodMs).toBe(5_000);
+    offFast();
+    expect(hub.polls().find((p) => p.key === "NSE:NIFTY 50")?.periodMs).toBe(20_000);
+    visible = false;
+    calls.length = 0;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(calls).toEqual([]);                                                     // a hidden tab asks for nothing
+    offA(); offB(); offC();
+    expect(hub.polls()).toEqual([]);
+    expect(seen.length).toBeGreaterThan(0);
+    hub.dispose();
+  });
+
+  it("hands a recent price to a chart that resubscribes (focus moving) without a new request", async () => {
+    vi.useFakeTimers();
+    let clock = 0;
+    const calls: string[] = [];
+    const hub = new LtpHub(async (symbol) => { calls.push(symbol); return { ltp: 2 } as never; }, () => true, () => clock);
+    const off = hub.subscribe("INFY", "NSE", INACTIVE_LTP_MS, () => undefined);
+    await vi.advanceTimersByTimeAsync(0);
+    off();
+    clock = 3_000;
+    const got: unknown[] = [];
+    hub.subscribe("INFY", "NSE", ACTIVE_LTP_MS, (u) => got.push(u.ltp));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(calls).toEqual(["INFY"]) ;
+    expect(got).toEqual([{ ltp: 2 }]);
+    hub.dispose();
+  });
+});
+
+describe("LightweightEngine crosshair events", () => {
+  it("marks a move without a pointer event as not the user's; a real move and leaving the pane are the user's", () => {
+    let cross: ((p: unknown) => void) | null = null;
+    const candles = {
+      data: () => [], setData() {}, update() {}, createPriceLine: () => ({}), removePriceLine() {}, priceToCoordinate: () => 0,
+      coordinateToPrice: () => 0, subscribeDataChanged() {}, unsubscribeDataChanged() {}, attachPrimitive() {}, detachPrimitive() {},
+    } as unknown as CandleSeriesLike;
+    const chart = {
+      applyOptions() {}, paneSize: () => ({ width: 1, height: 1 }), priceScale: () => ({ width: () => 0 }),
+      subscribeCrosshairMove: (h: (p: unknown) => void) => { cross = h; }, unsubscribeCrosshairMove() {}, subscribeClick() {}, unsubscribeClick() {},
+      timeScale: () => ({ subscribeVisibleTimeRangeChange() {}, unsubscribeVisibleTimeRangeChange() {}, logicalToCoordinate: () => 0, coordinateToLogical: () => 0 }),
+    } as unknown as ChartLike;
+    const engine = new LightweightEngine(chart, candles);
+    const users: (boolean | undefined)[] = [];
+    engine.on((e) => { if (e.type === "crosshair") users.push(e.user); });
+    const fire = cross as unknown as (p: unknown) => void;
+    fire({ time: 100, point: { x: 1, y: 1 }, sourceEvent: { clientX: 1 } });
+    fire({ time: 100, point: { x: 1, y: 1 } });
+    fire({});
+    expect(users).toEqual([true, false, true]);
+    engine.dispose();
   });
 });

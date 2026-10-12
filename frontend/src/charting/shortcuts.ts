@@ -2,7 +2,8 @@
  * CH5: the workspace's keyboard shortcuts, as a pure mapping from a key press to an action (tested without a browser).
  *
  * Every workspace shortcut uses Alt (Option on a Mac), so none collides with the drawing tools (Escape, Delete,
- * Ctrl/Cmd+Z / Y on the active chart) or the browser's own keys; "?" opens the list. The physical key (`code`) is read
+ * Ctrl/Cmd+Z / Y on the active chart); the ones the browser itself uses with plain Alt - Alt+←/→ (history back /
+ * forward) and Alt+S (a menu in some browsers) - take Alt+Shift instead. "?" opens the list. The physical key (`code`) is read
  * for digits, because Option+1 types "¡" on a Mac. A key typed into a field (the symbol box) is never a shortcut.
  */
 import { CHART_TYPES, type ChartType, type Grid } from "./workspace";
@@ -23,13 +24,13 @@ export interface ShortcutKey { key: string; code?: string; altKey?: boolean; ctr
 /** The list shown by "?" (the same table the tests check `shortcutFor` against). */
 export const SHORTCUTS: { keys: string; does: string }[] = [
   { keys: "Alt+1 / 2 / 4 / 6 / 8", does: "1, 2, 4, 6 or 8 charts" },
-  { keys: "Alt+→ / Alt+←", does: "next / previous chart" },
+  { keys: "Alt+Shift+→ / ←", does: "next / previous chart (plain Alt+←/→ is the browser's back / forward)" },
   { keys: "Alt+↑ / Alt+↓", does: "longer / shorter timeframe on the active chart (and its interval-linked charts)" },
   { keys: "Alt+G", does: "link group of the active chart: none → A → B → C → D" },
   { keys: "Alt+T", does: "chart type of the active chart" },
   { keys: "Alt+Enter", does: "active chart full size / back to the grid" },
   { keys: "Alt+K", does: "type a symbol for the active chart" },
-  { keys: "Alt+S", does: "save the layout" },
+  { keys: "Alt+Shift+S", does: "save the layout" },
   { keys: "?", does: "this list" },
 ];
 
@@ -47,8 +48,8 @@ export function shortcutFor(e: ShortcutKey): WorkspaceAction | null {
   if (grid) return { type: "grid", grid };
   if (!e.code && ["1", "2", "4", "6", "8"].includes(e.key)) return { type: "grid", grid: Number(e.key) as Grid };
   switch (e.key) {
-    case "ArrowRight": return { type: "focus", delta: 1 };
-    case "ArrowLeft": return { type: "focus", delta: -1 };
+    case "ArrowRight": return e.shiftKey ? { type: "focus", delta: 1 } : null;      // plain Alt+arrow: the browser's
+    case "ArrowLeft": return e.shiftKey ? { type: "focus", delta: -1 } : null;
     case "ArrowUp": return { type: "timeframe", delta: 1 };
     case "ArrowDown": return { type: "timeframe", delta: -1 };
     case "Enter": return { type: "maximize" };
@@ -57,7 +58,7 @@ export function shortcutFor(e: ShortcutKey): WorkspaceAction | null {
     case "KeyG": return { type: "cycleGroup" };
     case "KeyT": return { type: "cycleChartType" };
     case "KeyK": return { type: "symbol" };
-    case "KeyS": return { type: "save" };
+    case "KeyS": return e.shiftKey ? { type: "save" } : null;
   }
   return null;
 }

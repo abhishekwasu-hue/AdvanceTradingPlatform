@@ -25,7 +25,8 @@ export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: Layer
 export interface EngineLayout { engine: string; symbol: string | null; timeframe: string | null; studies: StudySpec[]; drawings: Record<string, DrawingV1> }
 
 export type EngineEvent =
-  | { type: "crosshair"; time: number | null; price: number | null }
+  /** `user`: false when the move did not come from the user's pointer (CH5: such moves are never passed on by a link). */
+  | { type: "crosshair"; time: number | null; price: number | null; user?: boolean }
   | { type: "click"; time: number | null; price: number | null }
   | { type: "drawingChanged"; id: string; drawing: DrawingV1 }
   | { type: "visibleRangeChanged"; from: number; to: number };

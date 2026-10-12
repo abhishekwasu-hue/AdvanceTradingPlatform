@@ -109,3 +109,41 @@ def test_the_cap_per_user(monkeypatch):
     capped = client.post("/api/charts/layouts", json={"name": "three", "layout": _layout(1)}, headers=me)
     assert capped.status_code == 409 and "at most 2" in capped.json()["detail"]
     _flag(False)
+
+
+def test_concurrent_saves_and_deletes_never_overwrite_and_the_cap_holds_under_a_race(monkeypatch):
+    me, _ = _owner("ch5-race@example.com")
+    _flag(True)
+    row = client.post("/api/charts/layouts", json={"name": "race", "layout": _layout(1)}, headers=me).json()
+    assert client.put(f"/api/charts/layouts/{row['id']}", json={"version": 1, "layout": _layout(2)}, headers=me).json()["version"] == 2
+
+    real_mine = layouts._mine
+
+    async def stale_mine(session, user, layout_id):                      # another tab read version 1 before the save above
+        r = await real_mine(session, user, layout_id)
+        session.expunge(r)
+        r.version = 1
+        return r
+    monkeypatch.setattr(layouts, "_mine", stale_mine)
+    lost = client.put(f"/api/charts/layouts/{row['id']}", json={"version": 1, "layout": _layout(8)}, headers=me)
+    assert lost.status_code == 409 and lost.json()["detail"]["current"]["version"] == 2       # the conditional UPDATE refused it
+    gone = client.delete(f"/api/charts/layouts/{row['id']}?version=1", headers=me)
+    assert gone.status_code == 409
+    monkeypatch.setattr(layouts, "_mine", real_mine)
+    kept = client.get("/api/charts/layouts", headers=me).json()
+    assert [(r["name"], r["version"], r["layout"]["grid"]) for r in kept] == [("race", 2, 2)]
+
+    monkeypatch.setattr(layouts, "MAX_PER_USER", 2)
+    real_count = layouts._count
+    calls = {"n": 0}
+
+    async def racing_count(session, user):                                 # the first check runs before another create landed
+        calls["n"] += 1
+        n = await real_count(session, user)
+        return n - 1 if calls["n"] == 1 else n
+    client.post("/api/charts/layouts", json={"name": "second", "layout": _layout(1)}, headers=me)
+    monkeypatch.setattr(layouts, "_count", racing_count)
+    over = client.post("/api/charts/layouts", json={"name": "third", "layout": _layout(1)}, headers=me)
+    assert over.status_code == 409 and "at most 2" in over.json()["detail"]
+    assert len(client.get("/api/charts/layouts", headers=me).json()) == 2
+    _flag(False)

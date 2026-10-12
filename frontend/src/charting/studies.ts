@@ -6,7 +6,7 @@
  * Reference only - nothing here places, changes or proposes an order.
  */
 import { ApiError, request } from "../api/client";
-import type { LayerTf } from "./priceAction";
+import { BUSY_RETRIES, BUSY_RETRY_MS, isBusy, type LayerTf } from "./priceAction";
 
 export const MAX_STUDIES = 6;
 export const STUDY_COLORS = ["#2563eb", "#d97706", "#7c3aed", "#0891b2", "#be185d", "#4d7c0f"] as const;
@@ -60,7 +60,7 @@ export interface StudiesState { result: StudiesResponse | null; failed: string |
 
 /** One request at a time, as the price-action layer's loader: a new question clears the old answer at once (never a
  * study as of another bar on screen), a late answer to an older question is dropped, a failure leaves nothing drawn
- * and says why, 503 (flag off) shows nothing. */
+ * and says why, 503 (flag off) shows nothing; 503 "busy, retry" is tried again a few times (`isBusy`). */
 export class StudiesLoader {
   private seq = 0;
   private available: boolean | null = null;
@@ -71,14 +71,18 @@ export class StudiesLoader {
     const my = ++this.seq;
     this.emit({ result: null, failed: null, available: q ? this.available : this.available });
     if (!q || q.exprs.length === 0) return () => {};
-    this.fetcher(q).then(
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attempt = (left: number) => this.fetcher(q).then(
       (r) => { if (my === this.seq) { this.available = true; this.emit({ result: r, failed: null, available: true }); } },
       (e: unknown) => {
         if (my !== this.seq) return;
-        if (e instanceof ApiError && e.status === 503) { this.available = false; this.emit({ result: null, failed: null, available: false }); return; }
+        // busy (the server's build slots are full): try again shortly; 503 without it is the flag being off
+        if (isBusy(e) && left > 0) { timer = setTimeout(() => { if (my === this.seq) attempt(left - 1); }, BUSY_RETRY_MS); return; }
+        if (e instanceof ApiError && e.status === 503 && !isBusy(e)) { this.available = false; this.emit({ result: null, failed: null, available: false }); return; }
         this.emit({ result: null, failed: e instanceof Error ? e.message : "Studies could not be loaded.", available: this.available });
       },
     );
-    return () => { if (my === this.seq) this.seq++; };
+    attempt(BUSY_RETRIES);
+    return () => { if (timer) clearTimeout(timer); if (my === this.seq) this.seq++; };
   }
 }

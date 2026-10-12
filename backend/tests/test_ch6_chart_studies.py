@@ -347,9 +347,9 @@ def test_answers_are_cached_and_computed_inside_the_build_semaphore(headers, mon
     slots = []
     real_slot = PAL._in_slot
 
-    async def in_slot(fn, *a):
+    async def in_slot(session, owner, fn, *a):
         slots.append(fn)
-        return await real_slot(fn, *a)
+        return await real_slot(session, owner, fn, *a)
     monkeypatch.setattr(PAL, "_in_slot", in_slot)
     params = {"at": _iso(F["bar_end"].iloc[-1]), "start": _iso(F["bar_end"].iloc[300])}
     a = _get(headers, ["SMA(close, 20)", "RSI(14)"], **params)
@@ -409,3 +409,149 @@ def test_a_warmup_over_the_rebuild_cap_refuses_that_study_only(headers):
                 await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key == KEY_1M))
                 await session.commit()
         _run(drop())
+
+
+# --------------------------------------------------------------------------------------------- CH6a re-review: build slots
+def _slot_engine(tmp_path):
+    """A pooled engine (one connection, no overflow) so a test can count checked-out connections: CI's Postgres when
+    Z5_TEST_PG_URL is set, else a SQLite file with the same queue pool."""
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    url = os.environ.get("Z5_TEST_PG_URL") or f"sqlite+aiosqlite:///{tmp_path / 'slots.db'}"
+    if url.startswith("postgresql://"):
+        url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+    engine = create_async_engine(url, pool_size=1, max_overflow=0, pool_timeout=1)
+    return engine, async_sessionmaker(engine, expire_on_commit=False)
+
+
+def test_a_request_waiting_for_a_build_slot_holds_no_pool_connection(tmp_path, monkeypatch):
+    from sqlalchemy import text
+
+    from app.charts import price_action_layer as PAL
+    monkeypatch.setattr(PAL, "SLOT_WAIT_SECONDS", 5.0)
+    engine, factory = _slot_engine(tmp_path)
+
+    async def go():
+        sem = PAL._slots()
+        for _ in range(PAL.BUILD_CONCURRENCY):                      # every build slot is taken
+            await sem.acquire()
+        session = factory()
+        await session.execute(text("SELECT 1"))                     # the request read its bars: one connection out
+        assert engine.pool.checkedout() == 1
+        entered = asyncio.Event()
+
+        async def request():
+            async with PAL.build_slot(session, owner="u1"):
+                entered.set()
+        task = asyncio.create_task(request())
+        await asyncio.sleep(0.2)
+        assert not entered.is_set()                                 # still waiting for a slot ...
+        assert engine.pool.checkedout() == 0                        # ... with its connection back in the pool
+        async with factory() as other:                              # so another request can still use the one-connection pool
+            assert (await other.execute(text("SELECT 1"))).scalar() == 1
+        sem.release()
+        await asyncio.wait_for(task, 2)
+        assert entered.is_set()
+        for _ in range(PAL.BUILD_CONCURRENCY - 1):
+            sem.release()
+        await engine.dispose()
+    asyncio.run(go())
+
+
+def test_the_wait_for_a_slot_is_bounded_and_answers_503_with_retry_after(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.charts import price_action_layer as PAL
+    monkeypatch.setattr(PAL, "SLOT_WAIT_SECONDS", 0.3)
+
+    async def go():
+        sem = PAL._slots()
+        for _ in range(PAL.BUILD_CONCURRENCY):
+            await sem.acquire()
+        t0 = time.monotonic()
+        with pytest.raises(HTTPException) as err:
+            async with PAL.build_slot(None, owner="u2"):
+                pass
+        assert time.monotonic() - t0 < 1.5
+        assert err.value.status_code == 503 and "busy, retry" in err.value.detail and err.value.headers["Retry-After"] == str(PAL.BUSY_RETRY_AFTER)
+        for _ in range(PAL.BUILD_CONCURRENCY):
+            sem.release()
+        assert not PAL._USER_LOCKS[id(asyncio.get_running_loop())]   # nothing left behind for the user
+    asyncio.run(go())
+
+
+def test_one_build_in_flight_per_user(monkeypatch):
+    from fastapi import HTTPException
+
+    from app.charts import price_action_layer as PAL
+    monkeypatch.setattr(PAL, "SLOT_WAIT_SECONDS", 0.5)
+
+    async def go():
+        sem = PAL._slots()
+        release = asyncio.Event()
+        order = []
+
+        async def build(name, owner):
+            async with PAL.build_slot(None, owner):
+                order.append(name)
+                await release.wait()
+        first = asyncio.create_task(build("a1", "alice"))
+        await asyncio.sleep(0.05)
+        second = asyncio.create_task(build("a2", "alice"))
+        bob = asyncio.create_task(build("b1", "bob"))
+        await asyncio.sleep(0.1)
+        assert order == ["a1", "b1"] and sem._value == PAL.BUILD_CONCURRENCY - 2      # alice holds one slot, never two
+        with pytest.raises(HTTPException) as err:                    # alice's queued request gives up at the bound
+            await second
+        assert err.value.status_code == 503 and "previous chart computation" in err.value.detail
+        release.set()
+        await asyncio.gather(first, bob)
+        third = asyncio.create_task(build("a3", "alice"))           # once her build is done, the next one runs
+        await asyncio.wait_for(third, 1)
+        assert order == ["a1", "b1", "a3"] and sem._value == PAL.BUILD_CONCURRENCY
+    asyncio.run(go())
+
+
+def test_both_routes_answer_busy_when_no_slot_frees_and_cached_answers_need_none(headers, monkeypatch):
+    from app.charts import price_action_layer as PAL
+    params = {"at": _iso(F["bar_end"].iloc[-1]), "start": _iso(F["bar_end"].iloc[300])}
+    warm = _get(headers, ["SMA(close, 20)"], **params)                                  # cached now
+    monkeypatch.setattr(PAL, "SLOT_WAIT_SECONDS", 0.2)
+    monkeypatch.setattr(PAL, "BUILD_CONCURRENCY", 0)
+    PAL._SLOTS.clear()
+    try:
+        busy = client.get(URL, params={"instrument": KEY, "tf": "15m", "expr": ["SMA(close, 21)"], **params}, headers=headers)
+        assert busy.status_code == 503 and busy.headers["Retry-After"] == str(PAL.BUSY_RETRY_AFTER) and "busy, retry" in busy.text
+        assert _get(headers, ["SMA(close, 20)"], **params) == warm                       # a cache hit takes no slot
+        _flag_layer(True)
+        layer = client.get("/api/charts/layers/price-action", params={"instrument": KEY, "tf": "15m", **params}, headers=headers)
+        assert layer.status_code == 503 and layer.headers["Retry-After"] == str(PAL.BUSY_RETRY_AFTER) and "busy, retry" in layer.text
+    finally:
+        _flag_layer(False)
+        PAL._SLOTS.clear()
+
+
+def test_the_cache_key_carries_each_refusal_message(headers, monkeypatch):
+    """Re-review LOW: two organisations whose flags refuse a study differently never share a cached answer."""
+    params = {"at": _iso(F["bar_end"].iloc[-1]), "start": _iso(F["bar_end"].iloc[300])}
+    keys = []
+    from app.charts import price_action_layer as PAL
+    real = PAL._cached
+
+    def spy(key):
+        keys.append(key)
+        return real(key)
+    monkeypatch.setattr(PAL, "_cached", spy)
+    _get(headers, ["RelVolume(20)"], **params)
+    studies_key = keys[-1][-1]
+    assert studies_key[0][2] and "screener_breakouts" in studies_key[0][2][-1]         # the message itself, not a count
+
+
+def _flag_layer(on):
+    async def go():
+        async with _session_factory() as session:
+            current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+            stored = dict(current.get("flags") or {})
+            stored["chart_price_action"] = {"on": on, "tenants": []}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": stored}, None)
+            await session.commit()
+    _run(go())

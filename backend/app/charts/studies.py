@@ -292,6 +292,7 @@ async def chart_studies(instrument: str = Query(..., min_length=1, max_length=10
                         expr: List[str] = Query(..., min_length=1, max_length=MAX_STUDIES),
                         user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
+    owner, tenant_id = user.id, user.tenant_id         # read now: the session is closed before the build
     from app.price_action.zones.store import normalise_key
     if any(len(e) > MAX_EXPR_CHARS or not e.strip() for e in expr):
         raise HTTPException(status_code=422, detail=f"each study is 1-{MAX_EXPR_CHARS} characters")
@@ -311,19 +312,20 @@ async def chart_studies(instrument: str = Query(..., min_length=1, max_length=10
         key = None
     if key is None or key == "*":
         return {**head, **build(pd.DataFrame(columns=PAL.FRAME_COLS), tf, studies, begin), "reason": PAL.NO_BARS}
-    studies = await gate(session, user.tenant_id, studies)
+    studies = await gate(session, tenant_id, studies)
     # a short cache (the CH3 layer's, 30 s, byte-bounded): the answer is a function of the bars read (instrument,
-    # timeframe, read start, window, `at`) and of which studies run - the flags' refusals are in the key; the budget
-    # and the read refusals follow from the same bars
+    # timeframe, read start, window, `at`) and of which studies run - each study's refusal messages (an organisation's
+    # flags) are in the key, word for word; the budget and the read refusals follow from the same bars
     cache_key = (STUDY_CACHE_TAG, key, tf, warmup_start(begin, _need(studies), key), begin, when,
-                 tuple((st["text"], st["ok"], len(st["problems"])) for st in studies))
+                 tuple((st["text"], st["ok"], tuple(p["message"] for p in st["problems"])) for st in studies))
     hit = PAL._cached(cache_key)
     if hit is None:
         frame, source, _read_from, studies = await _load(session, key, tf, begin, when, studies)
         if len(frame) > STUDY_MAX_BARS + MAX_WARMUP_BARS:
             raise HTTPException(status_code=422, detail=f"the window holds {len(frame)} bars, more than {STUDY_MAX_BARS}; choose a later `start`")
         studies = admit(studies, len(frame))
-        content = await PAL._in_slot(build, frame, tf, studies, begin, key.split(":", 1)[0])     # CH3b's build semaphore
+        # every bar is read: the session goes back to the pool before the bounded wait for a build slot (CH6a re-review)
+        content = await PAL._in_slot(session, owner, build, frame, tf, studies, begin, key.split(":", 1)[0])
         hit = {"source": source, **content, "reason": None if len(frame) else PAL.NO_BARS}
         PAL._remember(cache_key, hit, len(canonical(hit)))
     return {**head, "instrument": key, **hit}

@@ -409,6 +409,20 @@ own output on the frozen fixtures, checked against Trade live when the repositor
     - **MED, function flags.** A study using a U6 breakout function while `screener_breakouts` is off, or a
       market-zone function while `market_zones` is off, is refused with the flag's reason, as a screen is
       (`studies.gate`, the screener's own gates).
+    - **Re-review MED, build slots (`price_action_layer.build_slot`, used by the layer, the top-down rows and the
+      studies).**
+      - Every bar is read first. The request's DB session is then closed, so its pooled connection is back in the
+        pool before any wait (the top-down rows split into `mtf_frames`, the DB half, and `mtf_build`, the
+        computation).
+      - One build is in flight per user; that user's next request waits for it.
+      - At most 2 builds run per process.
+      - The whole wait is bounded at 2 s, after which the answer is 503 "busy, retry" with Retry-After: 2.
+      - The chart's loaders ask again after 2 s (three times at most), and still treat a 503 without "busy" as the
+        flag being off.
+      - Tested: a waiting request holds no pool connection, on a one-connection pool (CI's Postgres when
+        `Z5_TEST_PG_URL` is set).
+    - **Re-review LOW.** The studies cache key carries each study's refusal messages word for word, so one
+      organisation's refusal text is never served to another.
     - **LOW, read caps per study.** When the warm-up read is refused (the 180-day 1-minute rebuild cap, the row
       cap), the study whose own warm-up reaches furthest back is refused with the reason and the read is retried.
       Only a window too large on its own refuses the request.

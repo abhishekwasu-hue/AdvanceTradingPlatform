@@ -7,6 +7,7 @@ import { STUDY_PANE, LightweightEngine, type LineSeriesLike } from "./lightweigh
 import { StudiesList } from "./StudiesPanel";
 import { createStudyMath, mainThreadMath } from "./studyClient";
 import { ema, firesAt, rsi, runMath, sma, toLineData, type Num } from "./studyMath";
+import { BUSY_RETRY_MS } from "./priceAction";
 import { StudiesLoader, loadStudyList, saveStudyList, studiesApi, type StudiesResponse, type StudiesState } from "./studies";
 
 // __fixtures__/study_parity.json is a byte-identical copy of backend/tests/fixtures/charts/study_parity.json - the
@@ -135,6 +136,34 @@ describe("studies on the chart (CH6)", () => {
     expect(last()).toEqual({ result: null, failed: null, available: false });
     loader.load({ ...q("e"), exprs: [] });
     expect(pending.length).toBe(4);                                                     // nothing to ask for: no request
+  });
+
+  it("a busy server (503 busy, retry) is asked again after a pause, and a newer question cancels the retry", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending: { resolve: (r: StudiesResponse) => void; reject: (e: unknown) => void }[] = [];
+      const states: StudiesState[] = [];
+      const loader = new StudiesLoader(() => new Promise((resolve, reject) => pending.push({ resolve, reject })), (s) => states.push(s));
+      const q = (at: string) => ({ instrument: "NSE:X", tf: "15m" as const, exprs: ["SMA(close, 20)"], at, start: null });
+      loader.load(q("a"));
+      pending[0].reject(new ApiError(503, "busy", "busy, retry: the chart computations are all in use"));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(pending.length).toBe(1);
+      expect(states[states.length - 1].available).not.toBe(false);                      // busy is not "flag off"
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_MS);
+      expect(pending.length).toBe(2);                                                   // asked again
+      pending[1].resolve(response());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(states[states.length - 1].result).not.toBeNull();
+      loader.load(q("b"));
+      pending[2].reject(new ApiError(503, "busy", "busy, retry: your previous chart computation is still running"));
+      await vi.advanceTimersByTimeAsync(0);
+      loader.load(q("c"));                                                              // a newer question: no retry of "b"
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_MS * 2);
+      expect(pending.length).toBe(4);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("the study list is kept per browser, capped, and a broken storage gives none", () => {

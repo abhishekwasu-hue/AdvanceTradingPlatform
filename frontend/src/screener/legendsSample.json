@@ -45,12 +45,21 @@
      "year": 2013,
      "publisher": "McGraw-Hill Education",
      "covers": "The trend template: price and moving-average order (50, 150, 200-day), a rising 200-day average, distance from the 52-week high and low, and a relative-strength ranking.",
-     "review": "pending",
+     "review": "verified",
+     "review_note": "WorldCat OCLC 850605831: McGraw-Hill Education, New York, 2013 (ISBN 9780071807227, LCCN 2013005165).",
+     "evidence": [
+      "https://search.worldcat.org/title/Trade-like-a-stock-market-wizard-:-how-to-achieve-super-performance-in-stocks-in-any-market/oclc/850605831",
+      "https://openlibrary.org/books/OL26101648M/Trade_Like_a_Stock_Market_Wizard"
+     ],
      "citation": "Trade Like a Stock Market Wizard: How to Achieve Super Performance in Stocks in Any Market (2013), Mark Minervini"
     }
    ],
    "approximation": "Relative strength here is the percentile of the 250-bar % change within the scanned list, not a published rating; 52 weeks = 250 bars; rising = above its value 21 bars ago.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Mark Minervini. Educational tool, not investment advice.",
+   "review": {
+    "status": "verified",
+    "note": ""
+   },
    "screen": {
     "id": "legends.minervini_trend_template",
     "source": "close > SMA(close, 50) AND SMA(close, 50) > SMA(close, 150) AND SMA(close, 150) > SMA(close, 200) AND SMA(close, 200) > SMA(close, 200)[21] AND close >= $near_high * Max(high, 250) AND close >= $above_low * Min(low, 250) AND PercentileRank(PctChange(close, 250)) >= $rs_min",
@@ -136,14 +145,23 @@
       "Nicolas Darvas"
      ],
      "year": 1960,
-     "publisher": "",
+     "publisher": "American Research Council",
      "covers": "The box theory: rising stocks moving through a series of price boxes, action only when price leaves the top of the latest box, attention to volume, and the author's background as a professional dancer.",
-     "review": "pending",
+     "review": "verified",
+     "review_note": "Internet Archive catalogue record: Larchmont, N.Y., American Research Council, 1960, 178 p.; Lyle Stuart editions followed. Library of Congress name authority: ballroom dancer who began investing in 1952.",
+     "evidence": [
+      "https://archive.org/details/howimade2000000i0000darv",
+      "https://id.loc.gov/authorities/names/n97868916.html"
+     ],
      "citation": "How I Made $2,000,000 in the Stock Market (1960), Nicolas Darvas"
     }
    ],
    "approximation": "The box here is the high and low of the previous 20 bars, at most 15% deep; the book draws its boxes by eye from daily highs and lows.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Nicolas Darvas. Educational tool, not investment advice.",
+   "review": {
+    "status": "verified",
+    "note": ""
+   },
    "screen": {
     "id": "legends.darvas_box_breakout",
     "source": "close > Max(high, $box_bars)[1] AND Min(low, $box_bars)[1] >= $box_floor * Max(high, $box_bars)[1] AND volume >= $vol_mult * SMA(volume, 50)[1] AND close >= $near_high * Max(high, 250)",
@@ -238,12 +256,21 @@
      "year": 1988,
      "publisher": "Dow Jones-Irwin",
      "covers": "Stage analysis on weekly charts: four stages (basing, advancing, top, declining), the 30-week moving average, the stage 2 breakout above resistance with expanding volume, and relative strength.",
-     "review": "pending",
+     "review": "verified",
+     "review_note": "WorldCat and Open Library: Dow Jones-Irwin, Homewood, Ill., 1988 (ISBN 1556230796; LC HG4910 .W363 1988).",
+     "evidence": [
+      "https://www.worldcat.org/title/stan-weinsteins-secrets-for-profiting-in-bull-and-bear-markets/oclc/1244479714",
+      "https://openlibrary.org/works/OL5092573W/Stan_Weinstein's_Secrets_for_profiting_in_bull_and_bear_markets"
+     ],
      "citation": "Stan Weinstein's Secrets for Profiting in Bull and Bear Markets (1988), Stan Weinstein"
     }
    ],
    "approximation": "The base here is the high of the previous 10 weeks; flat or rising = the 30-week average not below its value 1 and 4 weeks ago; volume vs the 4 weeks before; no relative-strength check yet.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Stan Weinstein. Educational tool, not investment advice.",
+   "review": {
+    "status": "verified",
+    "note": ""
+   },
    "screen": {
     "id": "legends.weinstein_stage2_breakout",
     "source": "close > SMA(close, 30) AND SMA(close, 30) >= SMA(close, 30)[1] AND SMA(close, 30) >= SMA(close, 30)[4] AND close > Max(high, $base_weeks)[1] AND volume >= $vol_mult * SMA(volume, 4)[1]",
@@ -325,7 +352,12 @@
      "year": 2007,
      "publisher": "McGraw-Hill",
      "covers": "The Turtle program run by Richard Dennis and William Eckhardt, and its rules: channel breakouts of 20 days (System 1) and 55 days (System 2), volatility (N, an average true range) for position size and stops, futures markets.",
-     "review": "pending",
+     "review": "verified",
+     "review_note": "WorldCat OCLC 154806327 and Internet Archive: McGraw-Hill, New York, 2007 (ISBN 9780071486644).",
+     "evidence": [
+      "https://www.worldcat.org/title/way-of-the-turtle-the-secret-methods-that-turned-ordinary-people-into-legendary-traders/oclc/154806327",
+      "https://archive.org/details/wayofturtle0000fait"
+     ],
      "citation": "Way of the Turtle: The Secret Methods that Turned Ordinary People into Legendary Traders (2007), Curtis M. Faith"
     },
     {
@@ -338,12 +370,21 @@
      "year": 2007,
      "publisher": "Collins",
      "covers": "The history of the Turtle program (Richard Dennis, William Eckhardt, the traders they trained in the 1980s) and its breakout rules.",
-     "review": "pending",
+     "review": "verified",
+     "review_note": "WorldCat OCLC 145379622: Collins (HarperCollins imprint), New York, 2007, 1st ed. (ISBN 9780061241703).",
+     "evidence": [
+      "https://www.worldcat.org/title/complete-turtletrader-the-legend-the-lessons-the-results/oclc/145379622",
+      "https://openlibrary.org/books/OL9244148M/The_Complete_TurtleTrader"
+     ],
      "citation": "The Complete TurtleTrader: The Legend, the Lessons, the Results (2007), Michael W. Covel"
     }
    ],
    "approximation": "Long side only here (the rules were symmetric); System 1's filter that skips a breakout after a winning one is not included.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Richard Dennis, William Eckhardt and the Turtle traders. Educational tool, not investment advice.",
+   "review": {
+    "status": "verified",
+    "note": ""
+   },
    "screen": {
     "id": "legends.turtle_channel_breakout",
     "source": "high > Max(high, $entry_days)[1]",
@@ -418,12 +459,21 @@
      "year": 1995,
      "publisher": "M. Gordon Publishing Group",
      "covers": "Short-term setups, including the ADX pullback to the 20-period exponential moving average (14-period ADX above 30 marking a strong trend, entry trigger above the high of the pullback bar).",
-     "review": "pending",
+     "review": "verified",
+     "review_note": "WorldCat OCLC 36390149: M. Gordon Pub. Group, Malibu, Calif., 1995 (ISBN 0965046109). Open Library shows a 1996 date for the same ISBN; the catalogue's 1995 copyright date is kept.",
+     "evidence": [
+      "https://search.worldcat.org/title/street-smarts-high-probability-short-term-trading-strategies/oclc/36390149",
+      "https://openlibrary.org/works/OL16920438W/Street_smarts"
+     ],
      "citation": "Street Smarts: High Probability Short-Term Trading Strategies (1995), Laurence A. Connors and Linda Bradford Raschke"
     }
    ],
    "approximation": "An uptrend here is a 20-period EMA above its value 5 bars ago; ADX rising beforehand is not checked; long side only; the screen lists the touch, and the trigger bar is left for the trader to watch.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Linda Bradford Raschke and Laurence Connors. Educational tool, not investment advice.",
+   "review": {
+    "status": "verified",
+    "note": ""
+   },
    "screen": {
     "id": "legends.raschke_adx_pullback",
     "source": "ADX(14) > $adx_min AND EMA(close, 20) > EMA(close, 20)[5] AND low <= EMA(close, 20) AND low[1] > EMA(close, 20)[1]",
@@ -496,12 +546,21 @@
      "year": 1990,
      "publisher": "Traders Press",
      "covers": "Statistical study of short-term price patterns: range contraction (narrow-range days such as NR4 and NR7, inside days) and the opening-range breakout.",
-     "review": "pending",
+     "review": "verified",
+     "review_note": "WorldCat OCLC 23103747 and Open Library: Traders Press, Greenville, S.C., 1990 (ISBN 0934380171).",
+     "evidence": [
+      "https://search.worldcat.org/title/day-trading-with-short-term-price-patterns-and-opening-range-breakout/oclc/23103747",
+      "https://openlibrary.org/books/OL1611959M/Day_trading_with_short_term_price_patterns_and_opening_range_breakout"
+     ],
      "citation": "Day Trading with Short Term Price Patterns and Opening Range Breakout (1990), Toby Crabel"
     }
    ],
    "approximation": "The screen lists NR7 days in either direction; the opening-range breakout that follows needs intraday bars and is not part of it.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Toby Crabel. Educational tool, not investment advice.",
+   "review": {
+    "status": "verified",
+    "note": ""
+   },
    "screen": {
     "id": "legends.crabel_nr7",
     "source": "high - low < Min(high - low, $prior_days)[1]",
@@ -575,12 +634,21 @@
      "year": 2008,
      "publisher": "TradingMarkets Publishing Group",
      "covers": "Short-term pullbacks within long-term uptrends: price above the 200-day moving average and the 2-period RSI at low (oversold) readings, with several thresholds examined.",
-     "review": "pending",
+     "review": "unverified",
+     "review_note": "First-edition year unsettled: Google Books lists TradingMarkets Publishing Group, 2008; Open Library (OCLC 428113377) lists 2009, and a copyright line of 2009 is reported. Kept at 2008 until checked against a copy's copyright page.",
+     "evidence": [
+      "https://books.google.com/books/about/Short_Term_Trading_Strategies_that_Work.html?id=t4BdPgAACAAJ",
+      "https://openlibrary.org/works/OL19901979W/Short_term_trading_strategies_that_work"
+     ],
      "citation": "Short Term Trading Strategies That Work (2008), Larry Connors and Cesar Alvarez"
     }
    ],
    "approximation": "The book examines several RSI(2) thresholds and exits; the screen lists the setup only, with the threshold editable.",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Larry Connors and Cesar Alvarez. Educational tool, not investment advice.",
+   "review": {
+    "status": "unverified",
+    "note": "Its source connors_alvarez_2008 is unverified: catalogues disagree on the first-edition year (2008 or 2009), which the who line states."
+   },
    "screen": {
     "id": "legends.connors_rsi2_pullback",
     "source": "close > SMA(close, 200) AND RSI(2) < $rsi_max",
@@ -653,12 +721,21 @@
      "year": 1999,
      "publisher": "John Wiley & Sons",
      "covers": "Short-term trading and volatility breakouts: a move from the open by a percentage of the previous day's range.",
-     "review": "pending",
+     "review": "verified",
+     "review_note": "Open Library (LC record) and the publisher's catalogue page: John Wiley & Sons, 1999, Wiley Trading Advantage series (ISBN 0471297224); catalogued as Larry R. Williams.",
+     "evidence": [
+      "https://openlibrary.org/books/OL382546M/Long-term_secrets_to_short-term_trading",
+      "https://catalogimages.wiley.com/images/db/pdf/0471297224.pdf"
+     ],
      "citation": "Long-Term Secrets to Short-Term Trading (1999), Larry Williams"
     }
    ],
    "approximation": "On end-of-day bars the screen checks the day's high; long side only; the book examines several fractions and range measures (editable here).",
    "disclaimer": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing Larry Williams. Educational tool, not investment advice.",
+   "review": {
+    "status": "verified",
+    "note": ""
+   },
    "screen": {
     "id": "legends.williams_volatility_breakout",
     "source": "high >= open + $k * (high[1] - low[1])",

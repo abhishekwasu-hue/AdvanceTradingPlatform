@@ -9,6 +9,8 @@
 # then a clone in /opt/atp. Then it hands over to the one owner command, /opt/atp/deploy/atp.sh install
 # (bootstrap checks -> deploy -> health -> first backup + restore check). It never creates or edits .env and never
 # prints a secret; atp.sh stops (exit 10) and names the keys to fill if .env is missing or incomplete.
+# The install is a Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0, the default of atp.sh and docker-compose.hostinger.yml):
+# the first boot stores live_trading OFF and phase0_paper_only ON, so there is no flag for the owner to set.
 #
 #   ATP_DIR   install dir (default /opt/atp)
 #   ATP_REPO  git@github.com:abhishekwasu-hue/AdvanceTradingPlatform.git

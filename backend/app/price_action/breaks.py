@@ -12,6 +12,10 @@ No fixed points - the market's own noise and strength decide:
     (b) Acceptance - the next `break_no_reclaim_bars` bars also close beyond the level (no reclaim). 0 = one close decides.
     (c) Failed retest - after a reclaim, the level is retested from the broken side and rejected by a logical reversal
         (`reversal.retest_fn`; on when `break_retest_confirm`).
+    (d) Time acceptance - `break_accept_closes` = n consecutive closes beyond the level (inside the buffer too) confirm
+        on the n-th close (`time_accepted`). Added in Trade after 0df3e09 (ported at 1e6c9ac for the N1 level gate,
+        with `break_from`). Off (0) unless the settings carry the key: the existing callers' settings
+        (`pa_settings.DEFAULTS`) do not, so their breaks are unchanged; the level gate passes Trade's default (3).
   Otherwise (a wick, or a weak close followed by a reclaim) it is a false break: the candidate is dropped.
 Causal: the confirm index c is decided only from bars <= c, so "broken by bar t?" equals c <= t (truncation invariant).
 """
@@ -43,6 +47,15 @@ def _first(x: Optional[int], y: Optional[int]) -> Optional[int]:
     return x if y is None else min(x, y)
 
 
+def time_accepted(close: np.ndarray, t: int, level: float, side: str, n: int, start: int = 0) -> bool:
+    """(d) At bar t: closes [t - n + 1, t] are all beyond the level (no buffer) and none is before `start`. n <= 0: False."""
+    n = int(n or 0)
+    if n <= 0 or t - n + 1 < max(int(start), 0):
+        return False
+    window = close[t - n + 1:t + 1]
+    return bool((window < level).all() if side == "below" else (window > level).all())
+
+
 def first_real_break(frame: pd.DataFrame, start: int, level: float, side: str, s: Dict, mr: Optional[np.ndarray] = None,
                      end: Optional[int] = None, retest_fn: Optional[RetestFn] = None) -> Optional[int]:
     """Confirm index of the first REAL break of `level` within [start, end], or None.
@@ -56,9 +69,12 @@ def first_real_break(frame: pd.DataFrame, start: int, level: float, side: str, s
     k = s["break_no_reclaim_bars"]
     t = max(start, 0)
     best_r: Optional[int] = None                    # (c) a failed retest found earlier - "whichever comes first"
+    acc = int(s.get("break_accept_closes", 0) or 0)
     while t <= end:
         if best_r is not None and t > best_r:
             return best_r
+        if acc and time_accepted(c, t, level, side, acc, start):
+            return _first(t, best_r)                                                  # (d) time acceptance
         m = mr[t]
         if not np.isfinite(m) or not _beyond(c[t], level, s["break_buffer_mr"] * m, side):
             t += 1
@@ -74,6 +90,8 @@ def first_real_break(frame: pd.DataFrame, start: int, level: float, side: str, s
         for j in range(t + 1, t + k + 1):
             if j > end:
                 return best_r                                                         # not decided yet - no future bars
+            if acc and time_accepted(c, j, level, side, acc, start):
+                return _first(j, best_r)
             if _back_inside(c[j], level, side):
                 ok = False
                 break
@@ -90,6 +108,22 @@ def first_real_break(frame: pd.DataFrame, start: int, level: float, side: str, s
                 best_r = _first(r, best_r)                                            # (c) failed retest - an earlier confirm wins
         t = j + 1 if not ok else t + 1                                                # false break: resume after the reclaim
     return best_r
+
+
+def break_from(frame: pd.DataFrame, j: int, level: float, side: str, s: Dict, mr: Optional[np.ndarray] = None) -> Optional[int]:
+    """Bar j closed beyond the level (with the buffer): is THIS break real? The `first_real_break` rule (displacement at
+    once; else no reclaim for `break_no_reclaim_bars` bars; time acceptance too), only within [j, j + k]. Returns the
+    confirm index, None (reclaimed / not real), or -1 (the next bars do not exist yet: undecided, no look-ahead)."""
+    c = frame["close"].to_numpy(float)
+    n = len(c)
+    k = int(s["break_no_reclaim_bars"])
+    end = min(n - 1, j + k)
+    r = first_real_break(frame, j, level, side, s, mr=mr, end=end)
+    if r is not None:
+        return r
+    if j + k > n - 1 and not any(_back_inside(c[t], level, side) for t in range(j + 1, n)):
+        return -1
+    return None
 
 
 def first_wick_break(frame: pd.DataFrame, start: int, level: float, side: str, end: Optional[int] = None) -> Optional[int]:

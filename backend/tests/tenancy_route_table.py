@@ -276,6 +276,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/trades"): "member",             # N4 CH4a: the caller's OWN PAPER trades only (user + organisation)
+    ("GET", "/api/charts/contracts/search"): "member",          # N4 CH4b: the instrument master (platform reference data)
+    ("GET", "/api/charts/contracts/series"): "member",          # N4 CH4b: shared-lake daily F&O bars (shared-licensed sources only)
     ("GET", "/api/compliance/golive"): "admin",
     ("PUT", "/api/compliance/golive/evidence"): "admin",
     ("GET", "/api/compliance/static-ips"): "member",

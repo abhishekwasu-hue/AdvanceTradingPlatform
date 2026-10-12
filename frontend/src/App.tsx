@@ -15,6 +15,7 @@ import { legacyCopilotPath } from "./copilot/tabs";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
+const ContractChartWindow = lazy(() => import("./pages/ContractChartWindow"));
 // Z10-e (G7): the public status page - no login, no shell, its own small chunk.
 const StatusPage = lazy(() => import("./pages/StatusPage"));
 // PW6: loaded on first open. The top bar sits outside every error boundary, so a chunk that fails to load (offline)
@@ -264,7 +265,11 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          {params.has("chart") ? (
+          {params.has("contract") ? (
+            <ErrorBoundary title="The contract chart">
+              <Suspense fallback={null}><ContractChartWindow params={params} /></Suspense>
+            </ErrorBoundary>
+          ) : params.has("chart") ? (
             <ErrorBoundary title="The chart">
               <Suspense fallback={null}><ChartWindow params={params} /></Suspense>
             </ErrorBoundary>

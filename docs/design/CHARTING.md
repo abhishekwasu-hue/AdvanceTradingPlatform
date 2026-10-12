@@ -438,6 +438,44 @@ The first CH4 slice that the data ATP has supports (dependency check below; OPEN
   Intraday contract charts, IV / Greeks panes and IV / PCR / max-pain history wait for an intraday chain store
   (CH4-1).
 
+## CH4b (built): daily contract and spread charts, OI, contract search, chain -> chart links
+
+Flag `chart_contracts`, off by default; built on CH4a's branch. The daily data the shared lake already holds:
+CH4-1's data-ready slice.
+
+- **Backend** (`app/charts/contracts.py`; tenancy "member", platform reference data):
+  - **`GET /api/charts/contracts/series?leg=[qty*]KEY&...&at=&start=&iv=`**
+    - Daily F&O bars from the shared lake (HB1 `nse_bhav:fo` keys; shared-licensed sources only, the preferred
+      source then the highest version per day, corrections point-in-time), as of `at`. Expired contracts included.
+    - One leg: its OHLC, volume and OI.
+    - Up to 4 legs: the spread close = sum of close x qty on the days every leg traded (no invented OHLC), with each
+      leg's OI.
+    - `iv=true`: a COMPUTED daily IV per option leg (Black-76 from the close and the same-expiry future's close,
+      `RISK_FREE_RATE`), labelled in `iv_note`; null where unsolvable or with no future that day.
+  - **`GET /api/charts/contracts/search?underlying=&kind=&expiry=&near=`** lists the instrument master's contracts
+    with their lake keys, one row per contract across brokers, nearest expiry then nearest strike first.
+- **Frontend:**
+  - `charting/contracts.ts`: API, keys (the bhavcopy's strike text), URLs, candles, chain links.
+  - `pages/ContractChartWindow.tsx`: `/?contract=<leg>&contract=<leg>`, its own tab. The ProChart daily candles (a
+    spread as its close line), each leg's OI bars and the computed IV, labelled.
+  - Option chain: "chart" links on each strike's call and put. They appear only for a live (broker) chain with the
+    flag on, never for a sample chain.
+  - No order control anywhere.
+- **Tests:** `tests/test_ch4b_contracts.py` covers:
+  - keys equal the bhavcopy's;
+  - one leg's OHLC / OI from shared sources only (no `stream:` row);
+  - a correction counts only once ingested by `at`;
+  - spread = sum of legs on common days;
+  - computed IV = the Greeks library's Black-76 solve;
+  - search de-duplication and order;
+  - refusals and the flag.
+
+  Frontend `contracts.test.tsx` covers keys, URLs, chain links (not for a sample chain), candles, the IV label and
+  the OI figure.
+- **Not yet:** intraday contract charts, quoted IV / Greeks panes, PCR / max-pain / OI-by-strike history (CH4-1:
+  no chain history store), the basis / participant / rollover charts (CH4-4), and the options layer on the
+  underlying.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

@@ -2473,6 +2473,25 @@ export interface DowRead { trend: "UPTREND" | "DOWNTREND" | "RANGE"; swings: { k
 export interface ContextEvent { date: string; start_time: string | null; end_time: string | null; kind: string; scope: string; action: string; description: string; today: boolean; own: boolean }
 export interface ContextPanel { tiles: Record<string, ContextTile>; order: string[]; as_of: string; note: string }
 
+/** N2-6 (flag `positions_board`): one of the caller's open positions on the board. */
+export interface BoardPosition {
+  trade_id: number; symbol: string; mode: string; direction: "LONG" | "SHORT"; quantity: number; instrument_kind: string;
+  underlying: string | null; leg_group_id: string | null; entry_price: number; entry_time: string | null; time_in_trade_minutes: number | null;
+  mark_price: number | null; mark_time: string | null; mark_age_minutes: number | null; price_basis: "mark" | "entry";
+  pnl: number | null; r_multiple: number | null; initial_risk: number | null; risk_basis: string;
+  stop: number | null; stop_status: "ok" | "near" | "through" | null; to_stop_r: number | null;
+  target: number | null; target_status: "ok" | "near" | "reached" | null; to_target_r: number | null;
+  plan: { plan_id: number; setup: string; entry: number; stop_loss: number; target: number; reward_risk: number | null } | null;
+  original_stop: number | null; stop_drift: "unchanged" | "trailed" | "widened" | null;
+  exit: "one_click" | "broker_app" | "automatic";
+}
+export interface PositionsBoard {
+  positions: BoardPosition[];
+  totals: { positions: number; pnl: number | null; r: number | null; initial_risk: number | null; to_stops_from_marks: number | null;
+            without_stop: number; widened_stops: number; near_stop: number; unmarked: number };
+  lockout: { reason: string; until: string } | null; exits: string; near_r: number; as_of: string; note: string;
+}
+
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
 export interface PaperLadder {
   stage: string;

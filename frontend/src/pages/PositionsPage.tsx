@@ -5,6 +5,7 @@ import ContractNoteCard from "../components/ContractNoteCard";
 import PaperAccountCard from "../components/PaperAccountCard";
 import DecisionToolsCard from "../progression/DecisionToolsCard";
 import ExperienceCard from "../progression/ExperienceCard";
+import PositionsBoardCard from "../progression/PositionsBoardCard";
 import PaperTicketCard from "../components/PaperTicketCard";
 import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
@@ -112,6 +113,7 @@ export default function PositionsPage() {
       {error && <div className="text-sm text-down">{error}</div>}
       {loading && <div className="text-sm text-fg-muted">Loading…</div>}
 
+      <PositionsBoardCard onChanged={refresh} />
       <PaperAccountCard canTrade={user.role !== "VIEWER"} />
       <ExperienceCard canTrade={user.role !== "VIEWER"} />
       <DecisionToolsCard />

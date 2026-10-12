@@ -1886,3 +1886,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: "Market context" card on the dashboard (progression i18n).
 - Tests: `tests/test_n2_context_panel.py` (4); vitest `src/progression/context.test.tsx` (2). Open questions
   N2-17..N2-19.
+### 2026-10-12 IST - N2-6 positions board (`claude/n2-6`, stacked on `claude/n2-5`)
+- Flag `positions_board` (off). `GET /api/positions/board` ("member", read-only) shows the caller's own open positions
+  with P&L in ₹ and R, stop and target status, time in trade, plan vs current stop (widened / trailed), totals and the
+  lockout as a fact.
+- Exit stays the existing one-click Exit now, never gated; a test exits under a recorded lockout.
+- Frontend: "Positions board" card at the top of Positions (progression i18n).
+- Tests: `tests/test_n2_positions_board.py` (5); vitest `src/progression/board.test.tsx` (2). Open questions
+  N2-20..N2-21.
+- Global cues check for N2-5: an existing source (Phase AU, 27c758a; `docs/DATA_SOURCES.md` row), reused unchanged.

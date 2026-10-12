@@ -29,7 +29,7 @@ Standing rules for every slice:
 | **N2-3** | §1.5 | **Decision tools I** (`claude/n2-3`): a risk-of-ruin and Kelly calculator with editable inputs, prefilled from N2-1's figures, and a what-if for the user's own open positions grouped by underlying (price / IV / days forward; now, scenario and expiry curves) on the builder's model. | `decision_tools` | none / `POST /api/decision/ruin`, `GET /api/decision/positions`, `POST /api/decision/what-if` (tenancy table) | ~1.6k |
 | **N2-4** | §1.5 | **Decision tools II** (`claude/n2-4`): an exposure and correlation view across the user's own open positions (by underlying and sector, risk at stops, beta to the NIFTY 50 and pairs that move together, from the daily lake), plus an expected-move cone (±1 / ±2 sd from historical volatility or a typed IV) as a chart layer. | `decision_tools` | none / `GET /api/decision/exposure`, `GET /api/decision/expected-move` | ~1.3k |
 | **N2-5** | §1.5 | **Market context panel** (`claude/n2-5`): one tile each for regime (Dow structure of the NIFTY 50, daily and weekly, from the lake), breadth (advances / declines across NSE cash shares on the last two lake days), India VIX (close, change, 1-year rank and percentile, plus the VIX gate's live reading under its own viewer rule), FII / DII (the existing seam, NA until a source with clear terms is configured), global cues (the shared free cache) and events today / this week. Each tile shows its source, as-of time and stale state, and says NA on its own failure. | `context_panel` | none / `GET /api/context/panel` | ~1.1k |
-| N2-6 | §2.4 | **Positions v2**: live P&L in ₹ and R, Greeks per position and for the portfolio, SL / target status, time in trade, plan vs current (a drifted stop is highlighted) and an exit ladder. Exits stay available during a lockout (a test covers this). | `positions_v2` | none / none | ~1.8k |
+| **N2-6** | §2.4 | **Positions board** (`claude/n2-6`): the user's own open positions with P&L in ₹ and R, stop and target status, time in trade, plan vs current stop (a widened stop is highlighted) and how each exits. Exit now stays one click, with no dialog, during a lockout (tested). Greeks stay on the page's existing table; the exit ladder (partial exits) is deferred (OPEN_QUESTIONS N2-21). | `positions_board` | none / `GET /api/positions/board` | ~1.0k |
 | N2-7 | §3.2 | **Builder adjustments**: roll a leg (up / down / out), add a hedge, convert to an iron condor, close one side. Each shows the before / after payoff and Greeks. Pure functions with golden tests. Fills the P1-c "Adjustments and compare" drawer. | `builder_adjustments` | none / `POST /api/options-builder/adjust` | ~1.8k |
 | N2-8 | §3.2 | **Builder compare**: up to three strategies side by side (payoff, PoP, max loss, margin, theta per day, breakevens). Saved strategies when `options_builder_saved` is on. | `builder_compare` | none / none (client-side over `/payoff`) | ~1.2k |
 | N2-9 | §2.1, §2.5 | **Trade workspace**: chart on the left, chain and ticket on the right, positions strip at the bottom. Keyboard shortcuts: ticket, close position, flatten all with confirmation. On a phone, the ticket is a bottom sheet. States: pre-market, closed, lockout (why and until when), stale data. Layouts are saved per viewer (localStorage). Visual regression in dark, light and mobile. | `trade_workspace` | none / none | ~2.2k |
@@ -234,6 +234,28 @@ than one NSE session is missing (holidays from the calendar).
 No broker session of anyone is read. The UI is a "Market context" card on the dashboard
 (`src/progression/ContextPanelCard.tsx`), with tiles in a grid, a stale mark, the NA reason and a Refresh button.
 
+## N2-6 Positions board
+
+**Flag** `positions_board` (off by default; 404 while off, tested). The service is `app/positions_board/service.py` and
+the route is `GET /api/positions/board` ("member"). It is read-only.
+
+- **Scope**: the caller's own open trades (tenant + user), valued at the position monitor's last marks (`mark_price`,
+  `mark_time`). A trade without a mark is valued at entry and says so. No quote is read.
+- **R**: initial risk = |entry − initial stop| × quantity. The initial stop is `initial_stop_loss`, else the P1-d
+  plan's stop, else the current stop; the basis is named.
+- **Stop status**: through / near (within 0.25 R) / ok.
+- **Target status**: reached / near / ok.
+- **Drift**: the current stop against the initial or plan stop is widened, trailed or unchanged. A widened stop gets a
+  warn border.
+- **Totals**: P&L, R, what the stops would give back from the marks, and the counts of widened, near-stop and unmarked
+  positions.
+- **Lockout**: the daily loss lockout is shown as a fact ("New entries are locked … Exits still work").
+- **Exit**: "one_click" (the existing `POST /api/positions/{id}/exit-now`, with no dialog) for a PAPER position the
+  caller holds or owns, "broker_app" for LIVE, else "automatic". A lockout never changes it. A test closes a position
+  under a recorded lockout through Exit now.
+- **UI**: a "Positions board" card at the top of the Positions page (`src/progression/PositionsBoardCard.tsx`). The
+  exit button's text says exactly what happens ("Exit PAPER INFY ×10 now").
+
 ## Open questions
 
-These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-19), each with a provisional default.
+These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-21), each with a provisional default.

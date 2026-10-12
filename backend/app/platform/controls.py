@@ -210,6 +210,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # global cues and this week's events, each tile with its source and as-of and NA on its own failure. Shared data
     # only (plus the organisation's own events). OFF: /api/context/panel answers 404.
     "context_panel": "Market context panel: regime, breadth, India VIX and its rank, FII / DII, global cues and this week's events (information only)",
+    # N2-6 (P1 spec 2.4, docs/design/N2_P1FGH.md): the positions board - the caller's own open positions with P&L in ₹
+    # and R, stop / target status, time in trade, plan vs current stop (a widened stop flagged) and how each exits.
+    # Read-only; exits stay on the existing one-click Exit now and are never gated. OFF: /api/positions/board is 404.
+    "positions_board": "Positions board: your open positions with P&L in ₹ and R, stop and target status, time in trade, plan vs current stop (read-only; exits never gated)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -217,7 +221,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "experience_levels",
-                               "decision_tools", "context_panel"})
+                               "decision_tools", "context_panel", "positions_board"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

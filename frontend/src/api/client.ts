@@ -46,6 +46,7 @@ import type {
   RuinCalc,
   ExposureView,
   ContextPanel,
+  PositionsBoard,
   ExpectedMove,
   WhatIfResult,
   WhatIfSubject,
@@ -529,6 +530,8 @@ export const api = {
   decisionExposure: (days = 90) => request<ExposureView>(`/decision/exposure?days=${days}`),
   /** N2-5: the market context panel (404 while `context_panel` is off). */
   contextPanel: () => request<ContextPanel>("/context/panel"),
+  /** N2-6: the caller's own positions board (404 while `positions_board` is off). Read-only; exits use exitNow. */
+  positionsBoard: () => request<PositionsBoard>("/positions/board"),
   decisionExpectedMove: (instrument: string, horizon: number, iv?: number) =>
     request<ExpectedMove>(`/decision/expected-move?instrument=${encodeURIComponent(instrument)}&horizon=${horizon}${iv != null ? `&iv=${iv}` : ""}`),
 

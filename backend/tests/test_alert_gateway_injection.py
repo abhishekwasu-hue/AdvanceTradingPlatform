@@ -98,3 +98,89 @@ def test_end_to_end_a_moved_gateway_gets_no_stored_header():
     assert seen and all("authorization" not in {k.lower() for k in r.headers.keys()} for r in seen)
     assert all("collector.example" in str(r.url) for r in seen)
     assert _put(headers, "sms", {**TWILIO, "headers": {"Authorization": "Basic x\r\nInjected: 1"}}).status_code == 400
+
+
+# --- review round: WHATWG vs urllib parsing, the SMTP password, header / content-type hygiene ---------------------------
+
+def test_a_backslash_url_cannot_carry_stored_headers_to_another_host():
+    existing = {**TWILIO}
+    for url in ("https://evil.example\\@api.twilio.com/x", "https://evil.example\\\\@api.twilio.com/x",
+                "https://evil.example/\\@api.twilio.com/x"):
+        with pytest.raises(ValueError):
+            parse_config("SMS", {**TWILIO, "url": url})              # refused on save
+        with pytest.raises(ValueError):
+            parse_config("WEBHOOK", {"url": url, "secret": "s" * 20})
+        moved = merge_secrets("SMS", {**TWILIO, "url": url, "headers": {}}, existing)
+        assert moved["headers"] == {}, url                          # and never treated as the same origin
+    # an origin is read by the parser that validated it: userinfo does not change the host
+    assert merge_secrets("SMS", {**TWILIO, "url": "https://user@api.twilio.com/x", "headers": {}}, existing)["headers"]
+    assert merge_secrets("SMS", {**TWILIO, "url": "https://api.twilio.com:443/y", "headers": {}}, existing)["headers"]
+
+
+def test_end_to_end_a_backslash_url_is_refused():
+    headers, _ = _auth("gw-backslash@example.com")
+    assert _put(headers, "sms", TWILIO).status_code == 200
+    assert _put(headers, "sms", {**TWILIO, "url": "https://evil.example\\@api.twilio.com/x", "headers": {}}).status_code == 400
+
+
+EMAIL = {"smtp_host": "smtp.example.com", "smtp_port": 587, "username": "alerts", "password": "pw", "use_tls": True,
+         "from_address": "alerts@example.com", "to_addresses": ["ops@example.com"]}
+
+
+def test_the_smtp_password_never_follows_a_changed_server_login_or_dropped_tls():
+    existing = parse_config("EMAIL", EMAIL).model_dump(mode="json")
+    blank = {**EMAIL, "password": None}
+    kept = merge_secrets("EMAIL", {**blank, "smtp_host": "SMTP.example.com", "to_addresses": ["x@example.com"]}, existing)
+    assert kept["password"] == "pw"                                  # same server (case-insensitive), new recipients: kept
+    for change in ({"smtp_host": "smtp.evil.example"}, {"smtp_port": 2525}, {"username": "other"}, {"use_tls": False}):
+        assert merge_secrets("EMAIL", {**blank, **change}, existing)["password"] is None, change
+    assert merge_secrets("EMAIL", {**blank, "smtp_host": "smtp.evil.example", "password": "typed"}, existing)["password"] == "typed"
+
+
+def test_the_smtp_host_goes_through_the_egress_policy(monkeypatch):
+    for bad in ("smtp.example.com\r\nX: 1", "smtp example.com", "a/b", "user@host"):
+        with pytest.raises(ValueError):
+            parse_config("EMAIL", {**EMAIL, "smtp_host": bad})
+    from app.core import egress
+    monkeypatch.setattr(egress, "ENVIRONMENT", "production")
+    for private in ("127.0.0.1", "10.0.0.5", "169.254.169.254", "localhost", "::1"):
+        with pytest.raises(ValueError):
+            parse_config("EMAIL", {**EMAIL, "smtp_host": private})
+    assert parse_config("EMAIL", {**EMAIL, "smtp_host": "SMTP.Example.com"}).smtp_host == "smtp.example.com"
+    # on send the resolved address is checked again (DNS can point a public name at a private address)
+    sent: List[str] = []
+    monkeypatch.setattr(dispatcher, "_smtp_send", lambda config, message: sent.append(config.smtp_host))
+    monkeypatch.setattr(egress, "resolve", lambda host: ["10.1.2.3"])
+    import asyncio
+    with pytest.raises(egress.EgressBlocked):
+        asyncio.run(dispatcher.send_email(parse_config("EMAIL", EMAIL), "s", "b"))   # type: ignore[arg-type]
+    monkeypatch.setattr(egress, "resolve", lambda host: ["93.184.216.34"])
+    asyncio.run(dispatcher.send_email(parse_config("EMAIL", EMAIL), "s", "b"))       # type: ignore[arg-type]
+    assert sent == ["smtp.example.com"]
+
+
+def test_header_hygiene_reserved_names_ascii_values_and_content_type():
+    for bad in ({"Host": "api.twilio.com"}, {"content-length": "0"}, {"Transfer-Encoding": "chunked"}, {"Connection": "close"},
+                {"X-Key": "caf\u00e9"}, {"X-Key": "\u2028"}, {"X-Key": "v\n"}, {"X-Key\n": "v"}):
+        with pytest.raises(ValueError):
+            parse_config("SMS", {**TWILIO, "headers": bad})
+    for bad_ct in ("application/json\r\nX-Evil: 1", "text/plain\n", "", "caf\u00e9/x"):
+        with pytest.raises(ValueError):
+            parse_config("SMS", {**TWILIO, "content_type": bad_ct})
+    assert parse_config("SMS", {**TWILIO, "content_type": "application/json; charset=utf-8"}).content_type
+
+
+def test_one_recipient_failing_in_any_way_does_not_stop_the_others():
+    seen: List[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        to = parse_qs(request.content.decode())["To"][0]
+        if to == "+919800000001":
+            raise UnicodeEncodeError("ascii", "x", 0, 1, "boom")
+        seen.append(to)
+        return httpx.Response(200, json={"ok": True})
+    cfg = parse_config("SMS", {**TWILIO, "to_numbers": ["+919800000001", "+919800000002"]})
+    import asyncio
+    with pytest.raises(RuntimeError, match="UnicodeEncodeError"):
+        asyncio.run(dispatcher.send_sms(cfg, _N(), httpx.AsyncClient(transport=httpx.MockTransport(handler))))
+    assert seen == ["+919800000002"]

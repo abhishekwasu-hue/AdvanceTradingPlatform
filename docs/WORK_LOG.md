@@ -1873,4 +1873,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `SmsConfig.headers`: names must be HTTP tokens, values carry no CR / LF / control characters, at most 20 headers. (The
   webhook channel has no free-form headers - its secret signs the body and is never sent.)
 - Tests: `tests/test_alert_gateway_injection.py`.
-
+- Review round (HIGH): the origin check now parses both URLs with the same WHATWG parser that validated them (pydantic;
+  `https://evil.example\@api.twilio.com/` is evil.example to pydantic / httpx but api.twilio.com to urllib), and a
+  backslash, space or control character in a gateway URL (SMS, webhook) is refused before parsing. Email: the stored
+  SMTP password is dropped when the host, port or user changes or TLS is turned off; `smtp_host` goes through the egress
+  policy on save (literal) and on send (resolved, in production / staging).
+- Review round (LOW): header values printable ASCII only; `Host` / `Content-Length` / `Transfer-Encoding` / hop-by-hop
+  headers refused; `content_type` validated; one recipient's failure (any exception) never stops the others; GET params
+  through `httpx.QueryParams`; Twilio preset writes `From=%2B...`; OPERATIONS 1.6e documents quoting and `%2B`.

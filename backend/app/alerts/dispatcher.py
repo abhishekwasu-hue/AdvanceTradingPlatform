@@ -187,6 +187,8 @@ async def send_email(config: EmailConfig, subject: str, plain_text: str, to: Opt
     for name, value in (headers or {}).items():
         message[name] = value
     message.set_content(plain_text)
+    host = config.smtp_host
+    await check_url_resolved(f"https://[{host}]" if ":" in host else f"https://{host}")   # P0.2 / S5: no private SMTP host
     await asyncio.to_thread(_smtp_send, config, message)
 
 
@@ -305,12 +307,13 @@ async def send_sms(config: SmsConfig, notification: NotificationRecord, client: 
             try:
                 if config.method == "GET":
                     # decoded once here (httpx encodes again); duplicates kept as sent, so nothing is silently overridden
-                    response = await client.get(str(config.url), params=parse_qsl(body, keep_blank_values=True), headers=headers)
+                    response = await client.get(str(config.url), params=httpx.QueryParams(parse_qsl(body, keep_blank_values=True)),
+                                                headers=headers)
                 else:
                     response = await client.post(str(config.url), content=body.encode(), headers=headers)
                 if response.status_code >= 300:
                     errors.append(f"{number}: HTTP {response.status_code}")       # the gateway's body is never echoed (P0.2 / S5)
-            except httpx.HTTPError as exc:
+            except Exception as exc:  # noqa: BLE001 - one recipient's failure never stops the others
                 errors.append(f"{number}: {type(exc).__name__}")
     finally:
         if owns_client:

@@ -61,6 +61,7 @@ S_OWN_VERDICTS = "self: the caller's own verdicts on feed items"
 S_PREVIEW = "self: previews the contract a deployment would trade; stores nothing"
 S_OWN_MARKET_DATA = ("self: reads candles / option chains through a broker session - the organisation's (its budget) or, with the "
                      "bring-your-own-broker tier on, the caller's own; nothing is stored; rate limited per user")
+S_OWN_WHATIF = "self: models the caller's OWN open positions at the spot and IVs in the request; stores nothing, changes no order"
 S_COMPUTE = "self: computes over the request body or the organisation's data and returns it; stores nothing"
 S_OWN_EVIDENCE_TELEGRAM = ("self: sends the caller's OWN evidence image (a pack whose user is the caller) to the caller's own linked "
                            "private Telegram chat; stores nothing, never another member's pack or chat (rate limited)")
@@ -288,6 +289,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/custom-strategies/{strategy_id}"): "trader",
     ("GET", "/api/custom-strategies/{strategy_id}/versions"): "member",
     ("POST", "/api/custom-strategies/{strategy_id}/versions/{version_number}/rollback"): "trader",
+    ("GET", "/api/decision/positions"): "member",
+    ("POST", "/api/decision/ruin"): S_COMPUTE,
+    ("POST", "/api/decision/what-if"): S_OWN_WHATIF,
     ("GET", "/api/deployments"): "member",
     ("POST", "/api/deployments"): "trader",
     ("POST", "/api/deployments/preview-contract"): S_PREVIEW,

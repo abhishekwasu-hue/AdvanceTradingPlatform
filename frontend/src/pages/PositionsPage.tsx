@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ContractNoteCard from "../components/ContractNoteCard";
 import PaperAccountCard from "../components/PaperAccountCard";
+import DecisionToolsCard from "../progression/DecisionToolsCard";
 import ExperienceCard from "../progression/ExperienceCard";
 import PaperTicketCard from "../components/PaperTicketCard";
 import PositionChartCard from "../components/PositionChartCard";
@@ -113,6 +114,7 @@ export default function PositionsPage() {
 
       <PaperAccountCard canTrade={user.role !== "VIEWER"} />
       <ExperienceCard canTrade={user.role !== "VIEWER"} />
+      <DecisionToolsCard />
       <PaperTicketCard canTrade={user.role !== "VIEWER"} onPlaced={refresh} />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

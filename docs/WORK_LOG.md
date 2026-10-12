@@ -1852,3 +1852,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   tenancy table.
 - Frontend: "Experience level" card on Positions (progression i18n), with a story.
 - Tests: backend `tests/test_n2_experience_levels.py` (11); vitest `src/progression` (16). Open questions N2-6..N2-9.
+### 2026-10-12 IST - N2-3 decision tools I (`claude/n2-3`, stacked on `claude/n2-2`)
+- Flag `decision_tools` (off).
+- Risk-of-ruin and Kelly calculator: `POST /api/decision/ruin`, Lundberg bound, gambler's-ruin parity, growth per trade,
+  one row per risk level. The page prefills it from N2-1's figures.
+- What-if for the caller's own open positions by underlying: `GET /api/decision/positions` and
+  `POST /api/decision/what-if`, with now, scenario and expiry curves on the builder's model. Strikes come from the
+  instrument master.
+- Routes classified in the tenancy table (member / S_COMPUTE / S_OWN_WHATIF).
+- Frontend: "Decision tools" card on Positions (progression i18n), SVG chart, story.
+- Tests: `tests/test_n2_decision_tools.py` (10); vitest `src/progression/decision.test.tsx` (6). Open questions
+  N2-11..N2-13.

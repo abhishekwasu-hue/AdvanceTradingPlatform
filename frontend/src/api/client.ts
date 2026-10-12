@@ -43,6 +43,9 @@ import type {
   PaperAccount,
   PaperLadder,
   ExperienceStatus,
+  RuinCalc,
+  WhatIfResult,
+  WhatIfSubject,
   PaperRiskStatus,
   RiskByDefaultSettings,
   TicketPlan,
@@ -513,6 +516,12 @@ export const api = {
   paperExperience: () => request<ExperienceStatus>("/paper/experience"),
   paperExperienceOptOut: (gate: string, reason: string) =>
     request<ExperienceStatus>("/paper/experience/opt-out", { method: "POST", body: JSON.stringify({ gate, reason }) }),
+  /** N2-3: decision tools (404 while `decision_tools` is off). Information only. */
+  decisionRuin: (body: { win_rate: number; payoff_ratio: number; risk_pct: number; ruin_pct: number; compare?: number[] }) =>
+    request<RuinCalc>("/decision/ruin", { method: "POST", body: JSON.stringify(body) }),
+  decisionPositions: () => request<{ subjects: WhatIfSubject[] }>("/decision/positions"),
+  decisionWhatIf: (body: { underlying: string; spot: number; iv?: number; days_forward: number; iv_shift: number; range_pct: number }) =>
+    request<WhatIfResult>("/decision/what-if", { method: "POST", body: JSON.stringify(body) }),
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),

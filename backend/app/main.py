@@ -140,6 +140,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with _startup_session_factory() as session:
         await promote_configured_super_admins(session)
         await warm_tenant_keys(session)  # Phase N1: tenant data keys into the process key ring
+        from app.ai import instrument_names
+        await instrument_names.refresh(session)    # H-C1 c: instrument names for the AI output filter (never raises)
         # Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0): seed live_trading OFF / phase0_paper_only ON where unset, then
         # log why LIVE entry paths are (not) started. Never stops the API from coming up.
         try:

@@ -1,7 +1,8 @@
 """U6 BK1 / BK2: the breakout screens API - the catalog (style / timeframe selector, builder blocks, templates with their ScreenQL
 text, every parameter with its default and research note) and a run over server bars with the quality overlay.
 
-Behind `screener_v2` AND `screener_breakouts` (both off by default). Bars come through the organisation's broker session
+Behind `screener_v2` AND `screener_breakouts` (both off by default); the U6 BK3 screens (B3 VCP, B10 / B11 / B12 / B15
+indicator breakouts) also need `screener_breakouts_bk3` (off by default) - left out of the catalog and refused by the run. Bars come through the organisation's broker session
 (the same `fetch_frames` as a screen run; never bars a browser posted), closed bars only. Results are matches with a
 grade and the reasons, never advice; nothing here places, changes or blocks an order.
 """
@@ -24,7 +25,7 @@ from app.platform.controls import require_flag
 from app.screener.breakouts import gate, quality, style, templates
 from app.screener.breakouts import params as bp
 from app.screener.breakouts import session as ses
-from app.screener.breakouts.screens import INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS
+from app.screener.breakouts.screens import BK3_SCREENS, INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS
 from app.screener.routes import fetch_frames, run_rate_limit
 
 router = APIRouter(prefix="/api/screener/breakouts", tags=["screener"])
@@ -41,7 +42,8 @@ FETCH_TF = {"2h": "1h", "4h": "1h"}  # screenql/1 has no 2h / 4h: fetched as 1h 
 
 class RunBody(BaseModel):
     template_id: Optional[str] = None
-    screen: Optional[str] = Field(default=None, description="B1 / B2 / B4 / B7 / B13 / B14 / B16 / B17 / B18 when no template is given")
+    screen: Optional[str] = Field(default=None, description="B1 / B2 / B4 / B7 / B13 / B14 / B16 / B17 / B18 (BK3: B3 / B10 / B11 / B12 / B15)"
+                                                            " when no template is given")
     signal_tf: Optional[str] = Field(default=None, pattern=r"^(1m|3m|5m|15m|30m|1h|2h|4h|1d|1w)$")
     params: Dict[str, Union[float, int, str, bool, Dict[str, List[str]]]] = Field(default_factory=dict)
     symbols: List[str] = Field(min_length=1, max_length=MAX_SYMBOLS)
@@ -67,7 +69,9 @@ async def _flags(session: AsyncSession, user: User) -> None:
 @router.get("/catalog")
 async def catalog(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
-    return {**templates.catalog(), "screens": dict(SCREENS), "disclaimer": quality.DISCLAIMER}
+    bk3 = await gate.bk3_enabled(session, user.tenant_id)          # U6 BK3: its screens, templates and parameters only when on
+    screens = {k: v for k, v in SCREENS.items() if bk3 or k not in BK3_SCREENS}
+    return {**templates.catalog(bk3), "screens": screens, "disclaimer": quality.DISCLAIMER}
 
 
 def _resolve(body: RunBody) -> Dict[str, Any]:
@@ -171,6 +175,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     """One breakout screen (a template or screen + timeframe + parameters) over up to 50 symbols, graded."""
     await _flags(session, user)
     spec = _resolve(body)
+    if spec["screen"] in BK3_SCREENS:                              # U6 BK3: VCP / indicator breakouts need their own flag too
+        await require_flag(session, gate.BK3_FLAG, user.tenant_id)
     symbols = list(dict.fromkeys(body.symbols))
     if body.within * len(symbols) > MAX_WORK:
         raise HTTPException(status_code=422, detail=f"within x symbols is at most {MAX_WORK} per run ({body.within} x {len(symbols)})")

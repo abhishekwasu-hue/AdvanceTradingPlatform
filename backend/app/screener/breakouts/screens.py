@@ -1,5 +1,6 @@
-"""U6 BK1 / BK2: the breakout screens as causal, bar-by-bar series - price action B1, B2, B4, B7, B13, B14 (here) and the
-intraday B16, B17, B18 (intraday.py, on the exchange session of session.py).
+"""U6 BK1 / BK2 / BK3: the breakout screens as causal, bar-by-bar series - price action B1, B2, B4, B7, B13, B14 (here), the
+intraday B16, B17, B18 (intraday.py, on the exchange session of session.py), and BK3's B3 VCP (vcp.py) and indicator
+breakouts B10, B11, B12, B15 (indicator_breaks.py).
 
 Every value at bar j is computed from bars 0..j only (closed bars; the data layer never passes a bar still forming), so a
 screen evaluated on the last bar, a screen alert at bar close and a historical run agree, and appending later bars never
@@ -17,7 +18,8 @@ Each screen gives, per side ("up" = breakout, "down" = breakdown), a frame with:
   base_len, base_high, base_low   the base / reference window before the break
   wick        a wick beyond the level with the close not beyond it (a sweep, not a breakout; B1 / B2 / B4 / B7)
   event       B2: BOS (break with the swing trend), CHOCH (against it) or BREAK (range / no trend read yet); B4: the setup;
-              B7: fresh / extended; B16: OR<minutes>; B17: FIRST_HOUR / PDH / PDL / FIRST_CANDLE / PREMARKET; B18: HOD / LOD
+              B7: fresh / extended; B16: OR<minutes>; B17: FIRST_HOUR / PDH / PDL / FIRST_CANDLE / PREMARKET; B18: HOD / LOD;
+              B3: VCP<number of contractions>; B11: BB_SQUEEZE / TTM_FIRE
   days_since  B7: calendar days since the old high (low) was set
   through     B14: the close went through the level by the minimum distance
 The down side is the up rule on mirrored prices (high <-> -low), so the two sides cannot drift apart.
@@ -30,23 +32,27 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from app.indicators.volatility import atr as _atr
-from app.screener.breakouts import intraday
+from app.screener.breakouts import indicator_breaks, intraday, vcp
 from app.screener.breakouts import session as ses
 from app.screener.breakouts.params import TF_MINUTES
 
 SCREENS: Dict[str, str] = {
     "B1": "Range / consolidation breakout",
     "B2": "Swing-high / swing-low breakout (BOS / CHoCH)",
+    **vcp.SCREENS,
     "B4": "Inside-bar / NR4 / NR7 breakout",
     "B7": "52-week / N-week high breakout",
+    **{k: v for k, v in indicator_breaks.SCREENS.items() if k != "B15"},
     "B13": "ATR / range expansion",
     "B14": "Volume breakout",
+    "B15": indicator_breaks.SCREENS["B15"],
     **intraday.SCREENS,
 }
+# U6 BK3: the screens behind the second flag `screener_breakouts_bk3` (on top of `screener_breakouts`)
+BK3_SCREENS: Tuple[str, ...] = (*vcp.SCREENS, *indicator_breaks.SCREENS)
 # Timeframes a screen is meant for (spec §3: B7 is a swing screen on Daily / Weekly; B16-B18 are intraday-style screens);
 # the others run on every signal TF.
-SCREEN_TIMEFRAMES: Dict[str, Tuple[str, ...]] = {"B7": ("1d", "1w"), **{k: intraday.TIMEFRAMES for k in intraday.SCREENS}}
+SCREEN_TIMEFRAMES: Dict[str, Tuple[str, ...]] = {"B7": ("1d", "1w"), "B3": vcp.TIMEFRAMES, **{k: intraday.TIMEFRAMES for k in intraday.SCREENS}}
 INTRADAY_SCREENS: Tuple[str, ...] = tuple(intraday.SCREENS)
 SIDES = ("up", "down")
 # Bars a Dow trend needs before it is read, by swing degree: D0 is the `dow_min_bars` parameter (40, measured - see
@@ -60,6 +66,15 @@ def _shift(x: np.ndarray, k: int = 1) -> np.ndarray:
     if k < len(x):
         out[k:] = x[:len(x) - k]
     return out
+
+
+@dataclass(frozen=True)
+class Swing:
+    """A confirmed swing as the screens read it (causal_swings.Pivot's kind / price / bar_idx / confirmed_idx)."""
+    kind: str
+    price: float
+    bar_idx: int
+    confirmed_idx: int
 
 
 @dataclass
@@ -87,7 +102,8 @@ class Bars:
         self.tf, self.calendar = tf, calendar or ses.DEFAULT_CALENDAR
         self.o, self.h, self.l, self.c = (f[k].to_numpy(float) for k in ("open", "high", "low", "close"))
         self.v = f["volume"].to_numpy(float) if "volume" in f.columns else np.full(self.n, np.nan)
-        atr = _atr(f[["open", "high", "low", "close"]].astype(float), int(p["atr_n"])).to_numpy(float)
+        self._tr: Optional[np.ndarray] = None
+        atr = self.wilder(self.true_range(), int(p["atr_n"]))           # = app.indicators.volatility.atr (tested), without pd.concat
         self.atr = atr
         self.atr_prev = _shift(atr)                                     # ATR of the bars before this one
         vol = pd.Series(self.v)
@@ -104,6 +120,20 @@ class Bars:
         self._vwap: Optional[np.ndarray] = None
         self._tod: Optional[np.ndarray] = None
         self._memo: Dict[Any, Any] = {}
+
+    # ---- U6 BK3: shared true range (the ATR, the Keltner channel and the ADX read it) -----------------------------------
+    def true_range(self) -> np.ndarray:
+        """True range per bar, as app.indicators.volatility.true_range (the first bar: high - low)."""
+        if self._tr is None:
+            prev = _shift(self.c)
+            with np.errstate(invalid="ignore"):
+                self._tr = np.fmax(np.fmax(self.h - self.l, np.abs(self.h - prev)), np.abs(self.l - prev))
+        return self._tr
+
+    @staticmethod
+    def wilder(x: np.ndarray, n: int) -> np.ndarray:
+        """Wilder smoothing as the platform's indicators compute it (ewm alpha 1/n, adjust False, min_periods n)."""
+        return pd.Series(x).ewm(alpha=1 / n, adjust=False, min_periods=n).mean().to_numpy(float)
 
     # ---- intraday (U6 BK2) ----------------------------------------------------------------------------------------------
     def memo(self, key: Any, build: Any) -> Any:
@@ -169,9 +199,16 @@ class Bars:
             s = pa_settings.settings()
             if not 0 <= degree < len(s["swing_atr_mult"]):
                 raise ValueError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
-            frame = pd.DataFrame({k: self.f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
-            frame["timestamp"] = frame["bar_end"] = self.f.index
-            self._pivots[degree] = list(cs.degree_pivots(frame, degree, s))
+            if s["swing_mode"] != "fractal":
+                # U6 BK3 perf: the same zigzag as cs.degree_pivots (tested equal) on the bars' own arrays - the screens read a
+                # pivot's kind, price, bar and confirmation bar only, so no frame and no timestamps are built
+                frame = pd.DataFrame({"high": self.h, "low": self.l, "close": self.c})
+                raw = cs.zigzag_pivots(frame, cs.threshold(frame, degree, s))
+                self._pivots[degree] = [Swing(r.kind, float(r.price), int(r.pivot_bar), int(r.confirm_bar)) for r in raw]
+            else:
+                frame = pd.DataFrame({k: self.f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+                frame["timestamp"] = frame["bar_end"] = self.f.index
+                self._pivots[degree] = list(cs.degree_pivots(frame, degree, s))
         return self._pivots[degree]
 
     def dow(self, degree: int) -> np.ndarray:
@@ -400,7 +437,12 @@ def _b14(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> No
     out["base_low"][:] = pd.Series(s.l).shift(1).rolling(m, min_periods=m).min().to_numpy(float)
 
 
-_RULES = {"B1": _b1, "B2": _b2, "B4": _b4, "B7": _b7, "B13": _b13, "B14": _b14, **intraday.RULES}
+_RULES = {"B1": _b1, "B2": _b2, "B4": _b4, "B7": _b7, "B13": _b13, "B14": _b14, **intraday.RULES, **vcp.RULES, **indicator_breaks.RULES}
+
+
+def is_state(screen: str, p: Dict[str, Any]) -> bool:
+    """U6 BK3: the B3 Watchlist lists a base on every bar it is ready (a state, not an event): no one-per-leg dedupe."""
+    return screen == "B3" and p["vcp_mode"] == "watchlist"
 
 
 def one_per_leg(b: Bars, s: _Side, raw: np.ndarray, fail_level: np.ndarray, leg_degree: int, rearm_bars: int,
@@ -446,7 +488,9 @@ def evaluate_screen(f: pd.DataFrame, screen: str, p: Dict[str, Any], *, bars: Op
         s = b.side(1 if side == "up" else -1)
         out = _empty(b.n)
         _RULES[screen](b, s, p, out)
-        if screen in intraday.FIXED_LEVEL:
+        if is_state(screen, p):
+            out["signal"] = out["raw"].copy()
+        elif screen in intraday.FIXED_LEVEL:
             out["signal"] = intraday.session_cap(out["raw"], b.sessions(), int(p["intraday_max_per_session"]))
         else:
             reset = b.sessions().first_of_session() if screen in INTRADAY_SCREENS else None
@@ -459,4 +503,4 @@ def evaluate_screen(f: pd.DataFrame, screen: str, p: Dict[str, Any], *, bars: Op
     return result
 
 
-__all__ = ["SCREENS", "SCREEN_TIMEFRAMES", "INTRADAY_SCREENS", "SIDES", "COLUMNS", "Bars", "evaluate_screen", "one_per_leg"]
+__all__ = ["SCREENS", "SCREEN_TIMEFRAMES", "INTRADAY_SCREENS", "BK3_SCREENS", "is_state", "SIDES", "COLUMNS", "Bars", "evaluate_screen", "one_per_leg"]

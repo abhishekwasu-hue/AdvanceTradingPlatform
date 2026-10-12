@@ -3,7 +3,8 @@
 Two kinds of numbers live here:
 - the screener's **G4** targets (ATP_SCREENER_SPEC §1.5), measured in the CI `perf` job on every push;
 - the **API under load**: a session-shaped load test, run by CI with 20 users against the in-process test app, and
-  by the owner with 500 users against staging.
+  with 500 users on the CI staging stack on every push to main (`docs/reports/load_test_500.md`), and once by the owner
+  on the Hostinger host (`deploy/ci/loadtest_500.sh`).
 
 Nothing here is ever run against the production VPS. `scripts/loadtest.py` refuses any host that is not localhost or
 a staging host.
@@ -158,31 +159,29 @@ errors, **SLO PASS**.
 CI uses the 1 s think time so that the job measures service time, not a saturated queue. That is also closer to how
 people poll.
 
-### The owner: 500 users against staging
+### 500 users on the CI staging stack (Lane D) and on the Hostinger host
 
-```
-cd backend
-# accounts.csv: about 8 staging accounts, one "email,password" per line. The first user of each account logs in, and
-# the login limit is 10 a minute per IP.
-python scripts/loadtest.py --base https://<staging host> --users 500 --seconds 600 --ramp 120 --think 2 \
-    --accounts accounts.csv --json > loadtest-500.json
-```
+The Phase 0 exit criterion "load test passed" is measured on a real stack, not the in-process app: the production
+compose files plus `deploy/ci/compose.ci.yml` (Caddy over HTTPS, the API, the worker, Postgres, Redis and a fake
+Upstox / Dhan broker), built from the commit. Results and analysis: `docs/reports/load_test_500.md`.
 
-- **Hosts.** The script accepts localhost, or a host with a DNS label that is exactly `staging`
-  (`staging.example.org`, `api.staging.example.org`; not `api-staging.example.org` or `notstaging.example.com`). A
-  staging host with another name must be listed in `LOADTEST_ALLOWED_HOSTS=<host>`. Never list the production VPS.
-- **SLO.** Keep the plain limits against staging (no `--slo-factor`).
-- **Run length.** Keep `--ramp` + `--seconds` under 14 minutes. Access tokens live 15 minutes, and later requests
-  would answer 401.
-- **Flags and data.** Turn `screener_v2` on for the staging tenants first, or the screener scenario is reported as
-  "disabled". The same goes for a broker session for the chart and screener scenarios: without one they are
-  reported as "unavailable".
-- **What to watch.**
-  - p95 per scenario and the server-error rate;
-  - the API's CPU and the Postgres connections in use (`pg_stat_activity`);
-  - whether the worker's cycle time (`atp_worker_cycle_duration_seconds`) moves. The API and the worker are separate
-    processes, so it should not.
-- **Results.** Paste the table here with the date.
+- **Where.** CI job `load-500` in `.github/workflows/staging-stack.yml` (every push to main, and on demand with
+  `users` / `seconds` / `think` inputs). On the Hostinger host, one command as `atp` (runbook section 12a):
+  `/opt/atp/deploy/ci/loadtest_500.sh` - its own compose project `atp-ci` beside production, loopback ports only,
+  removed at the end.
+- **Users.** 500 synthetic users, each in its own organisation with a fake Dhan session (Tier A), written straight into
+  the stack's throwaway database (`deploy/ci/seed_users.py`). Every user logs in (500 logins over a 150 s ramp).
+- **The login wave and the rate limit.** Nothing is bypassed. The generator runs as 25 shards, each its own container
+  and so its own client IP on the stack network, through Caddy, which passes that IP on; each IP logs in at most
+  8 times a minute against the limit of 10. `backend/scripts/loadtest.py --account-offset / --raw-out / --merge`.
+- **Profiles.** Primary: a page load every 30 s on average (the Dashboard page's own refresh), 5 minutes after the
+  ramp; it decides the job. Busy: every 10 s, 3 minutes, for comparison. Lever: the primary profile again with 2 API
+  processes (an experiment; production runs one).
+- **Clock.** The real clock: the load needs no market session, and libfaketime (used by the acceptance flow) costs the
+  API about half its throughput in a local comparison.
+
+The manual form against any staging host still works (`--base https://<staging host> --accounts accounts.csv`); keep
+`--ramp` + `--seconds` under 14 minutes (access tokens live 15).
 
 ### Bottlenecks found and fixed
 

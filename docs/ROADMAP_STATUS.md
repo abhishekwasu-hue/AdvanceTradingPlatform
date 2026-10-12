@@ -5,12 +5,12 @@
 Phase 0 = invite-only beta (300-500 users), PWA, PAPER only, no API orders from ATP. Code: Z1-Z11 all merged (12 Oct); every new feature flag is off by default. The N-list has started (owner, 12 Oct): lane A N1, lane B N2, lane C HB2 + follow-ups, lane D exit criteria / load test / docs.
 Owner-side blockers (only these four): Hostinger server IP; R2 bucket/token in the host .env; Dhan partner application; company registration (needed before the partner emails in docs/specs/ATP_PARTNER_EMAIL_DRAFTS.md go out).
 
-Phase 0 exit criteria (open until done):
-- End-to-end acceptance flow on staging with two test users (Upstox, Dhan): staging stack being built in CI; the Hostinger run waits for the server.
-- No API order path reachable in Phase 0 mode: covered in CI (Z10-c static order-path guard + phase0_paper_only lock tests); Phase 0 deployments will start with live_trading off and phase0_paper_only on by default (in progress).
-- Stale data => alerts suppressed: covered in CI (Z10-b tests); end-to-end check added to the CI staging flow (in progress).
-- Load test (500 sessions): being built and run on a CI stack (docs/reports/load_test_500.md); the owner re-runs it on Hostinger with one command later.
-- Rollback rehearsed: rehearsal on the CI stack in progress; Hostinger rehearsal waits for the server.
+Phase 0 exit criteria (open until done; detail and CI runs: docs/reports/PHASE0_EXIT_CRITERIA.md, workflow `staging-stack.yml` on every push to main):
+- End-to-end acceptance flow, two users (Upstox, Dhan): **PASS in CI** (16/16, fake broker behind the real host names) - needs the exit-sweep fix (LD-1, commit 22d337c; FAILS on main without it). Server: a real-broker first PAPER day.
+- No API order path reachable in Phase 0 mode: **PASS in CI** (0 order-API calls of 60 broker calls; LIVE deployment refused) + the Z10-c static sweep; Phase 0 hosts seed the lock (#204).
+- Stale data => alerts suppressed: **PASS in CI** (end to end: stale feed -> no event, no alert; current -> fires).
+- Load test (500 sessions): **FAIL in CI** - 500/500 logins, 0 server errors, p95 2.4-4.9 s vs 0.5 s (docs/reports/load_test_500.md, LD-7). Server: `deploy/ci/loadtest_500.sh` once the Hostinger IP exists.
+- Rollback rehearsed: **PASS in CI** with `deploy/atp.sh` (12/12: code-only rollback, refusal past an unsafe migration, --restore-db; docs/reports/rollback_rehearsal.md). Server: one rehearsal with real releases.
 
 | Z | What | Status | PR | % |
 |---|---|---|---|---|

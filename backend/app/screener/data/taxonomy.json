@@ -466,6 +466,66 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false
+  },
+  {
+   "id": "legends.graham_net_net",
+   "source": "legends",
+   "name": "Graham-style net current asset bargain",
+   "definition": "A price at or below two-thirds of net current asset value per share: current assets minus all liabilities, per share.",
+   "method": "legends",
+   "setup": "mean_reversion",
+   "timeframe_family": ["positional"],
+   "direction": "long",
+   "data_tier": ["eod"],
+   "difficulty": "intermediate",
+   "universe_default": "your_list",
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.graham_number_value",
+   "source": "legends",
+   "name": "Graham-style defensive value (Graham number)",
+   "definition": "A price below the Graham number, the square root of 22.5 x earnings per share x book value per share.",
+   "method": "legends",
+   "setup": "mean_reversion",
+   "timeframe_family": ["positional"],
+   "direction": "long",
+   "data_tier": ["eod"],
+   "difficulty": "beginner",
+   "universe_default": "your_list",
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.greenblatt_yield_and_return",
+   "source": "legends",
+   "name": "Greenblatt-style earnings yield and return on capital rank",
+   "definition": "A high combined rank on earnings yield (EBIT / enterprise value) and return on capital within the scanned list.",
+   "method": "legends",
+   "setup": "mean_reversion",
+   "timeframe_family": ["positional"],
+   "direction": "long",
+   "data_tier": ["eod"],
+   "difficulty": "intermediate",
+   "universe_default": "nifty500",
+   "evidence_ready": false,
+   "fitness_available": false
+  },
+  {
+   "id": "legends.oneil_growth_breakout",
+   "source": "legends",
+   "name": "O'Neil-style growth breakout",
+   "definition": "Quarterly EPS and sales well up on the same quarter a year before, and a close at a new 52-week high on volume well above average.",
+   "method": "legends",
+   "setup": "breakout",
+   "timeframe_family": ["swing", "positional"],
+   "direction": "long",
+   "data_tier": ["eod"],
+   "difficulty": "intermediate",
+   "universe_default": "nifty500",
+   "evidence_ready": false,
+   "fitness_available": false
   }
  ]
 }

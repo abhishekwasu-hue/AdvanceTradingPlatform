@@ -1162,6 +1162,57 @@ and that run on bars alone (OPEN_QUESTIONS LG2-1 lists what is left out and why)
 
   The LG1 tests read the LG1 slice. The frontend samples are regenerated (the LG1 view; LG2 stays hidden in them).
 
+## U7 LG3: point-in-time fundamentals and the value / growth Legends cards
+
+The spec's LG3 needs fundamentals. What ATP had: `financial_periods` (raw statement figures, entered or imported with a
+citation), updated IN PLACE, with no record of when a figure became public. A screen reading it as of a past day would
+see later restatements and later reports, so it is never read by a screen. LG3 adds the point-in-time layer first.
+
+- **Store (`financial_period_versions`, migration `c4e8a2d6f0b1`, ROLLBACK_SAFE: one new table; it revises main's
+  head `f3b5d7a9c1e2`, to re-chain at merge).**
+  - Both write paths (`POST /companies/{symbol}/financials`, the import / provider upsert) append a version when a
+    period's figures change (`app/fundamentals/pit.py`).
+  - `known_from` (OPEN_QUESTIONS LG3-1):
+    - a first version counts from 09:15 IST on the day after its cited publication date, if that date is on or after
+      the period end and not after ingestion; otherwise from ingestion;
+    - a restatement counts only from its ingestion.
+  - Periods stored before this table existed have no version and are never read until re-imported.
+- **ScreenQL** (flag `screener_fundamentals`, off; the BK1 / Z7a-3 gate: hidden from the registry and refused in a
+  screen while off; alert rules refuse them, LG3-3).
+  - The functions: `EPSGrowthYoY`, `SalesGrowthYoY`, `EarningsYield`, `ReturnOnCapital`, `GrahamNumber` and
+    `NCAVPerShare` (`app/screener/fundamentals.py`).
+  - Each bar sees the latest version of each period known by its close, and its own close for price-based measures.
+  - Trailing = four consecutive quarters, or else the last year. Missing, non-positive or stale data (over 456 days)
+    gives NaN.
+  - The run path loads them (`RUN_PROVIDES`, `fundamentals.attach`).
+  - Z10-a causal cases: a synthetic report timeline built from the bars up to each report, with restatements.
+- **Cards (`slice: lg3`, flag `screener_legends_lg3`, off):**
+  - Graham-style net current asset bargain;
+  - Graham-style defensive value (Graham number);
+  - Greenblatt-style earnings yield and return on capital rank;
+  - O'Neil-style growth breakout.
+
+  Sources: Graham 1949 and Graham & Dodd 1934 are `unverified` (dealer listings only, no first-edition catalogue
+  record found). Greenblatt 2006 (library records, imprint [2006]) and O'Neil 1988 (library record) are `verified`.
+  The lint now allows ratio names ("return on capital") in the performance check, and "Magic Formula" is a
+  trademarked term.
+- **Tests:** `tests/test_n3_lg3_fundamentals.py` covers:
+  - the `known_from` rules, append-on-change, and restatements never reaching back;
+  - the import path;
+  - each measure, and a bar seeing only what was known by its close;
+  - the gate and the alert refusal;
+  - card lint and review;
+  - positive and negative fixtures per card, where the negative has the same figures known after the last bar;
+  - the flag.
+
+  `test_s1b_screen_runtime` gains a fixture per function.
+- **Not in LG3:**
+  - Kedia SMILE, Coffee Can and Jhunjhunwala need 10-year histories, promoter-holding history and listing age;
+  - Lynch PEG, Piotroski and Fisher need growth forecasts, more statement lines and qualitative data;
+  - the method-library pages (P1 §1.6).
+
+  See LG3-2.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

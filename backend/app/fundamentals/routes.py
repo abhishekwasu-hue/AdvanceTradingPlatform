@@ -131,6 +131,9 @@ async def add_financial_period(
     record = db.financial_period_from_model(company.id, period, user.id)
     session.add(record)
     try:
+        await session.flush()
+        from app.fundamentals import pit
+        await pit.record_version(session, company.id, period)                 # U7 LG3: the point-in-time version
         await session.commit()
     except IntegrityError as exc:
         await session.rollback()

@@ -1,6 +1,6 @@
 {
- "_comment": "U7 LG1 + LG2 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards (LG1: the first eight; LG2, marked 'slice': 'lg2', behind the flag screener_legends_lg2 on top of screener_legends) - each a short card about a publicly described trading method and a working ScreenQL screen modelled on it. A reviewed data file: change it by PR. app/screener/legends.py lints it on load: every card line cites a source in legends_sources.json, at most 5 lines, no advice / performance / endorsement wording, no first person or quotation, no trademarked method name in a title, English only, and the screen compiles with its parameters inside their documented ranges. Each card id is a screen filed in taxonomy.json (method Legends) - the taxonomy CI guard fails when it is not. The disclaimer is fixed in code (spec wording), never per card. Each card carries a review status (LG1-2): 'verified' when every source it cites is verified against public catalogue records (legends_sources.json 'evidence'), else 'unverified' with a 'review_note' saying why; the API exposes it. The owner's legal review of the card texts is separate.",
- "version": "lg2/1",
+ "_comment": "U7 LG1 + LG2 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards (LG1: the first eight; LG2 and LG3, marked 'slice': 'lg2' / 'lg3', each behind its own flag on top of screener_legends) - each a short card about a publicly described trading method and a working ScreenQL screen modelled on it. A reviewed data file: change it by PR. app/screener/legends.py lints it on load: every card line cites a source in legends_sources.json, at most 5 lines, no advice / performance / endorsement wording, no first person or quotation, no trademarked method name in a title, English only, and the screen compiles with its parameters inside their documented ranges. Each card id is a screen filed in taxonomy.json (method Legends) - the taxonomy CI guard fails when it is not. The disclaimer is fixed in code (spec wording), never per card. Each card carries a review status (LG1-2): 'verified' when every source it cites is verified against public catalogue records (legends_sources.json 'evidence'), else 'unverified' with a 'review_note' saying why; the API exposes it. The owner's legal review of the card texts is separate.",
+ "version": "lg3/1",
  "cards": [
   {
    "id": "legends.minervini_trend_template",
@@ -263,6 +263,90 @@
     "base_tf": "1d",
     "params": [
      {"name": "ma_days", "default": 200, "min": 50, "max": 300, "doc": "Days in the simple moving average of closing prices (200 in the interview)."}
+    ]
+   }
+  },
+  {
+   "id": "legends.graham_net_net",
+   "slice": "lg3",
+   "legend": "Benjamin Graham",
+   "short": "Graham",
+   "name": "Graham-style net current asset bargain",
+   "review": "unverified",
+   "review_note": "Cites graham_1949 and graham_dodd_1934, whose first editions are not yet matched to a library catalogue record.",
+   "who": {"text": "US investor and teacher of security analysis who set out value-investing principles in books of 1934 and 1949.", "cite": ["graham_dodd_1934", "graham_1949"]},
+   "style": {"text": "Value investing with a margin of safety: buying a business for well under a conservative estimate of its worth.", "cite": ["graham_1949"]},
+   "looks_for": {"text": "A price at or below two-thirds of net current asset value per share: current assets minus all liabilities, per share.", "cite": ["graham_dodd_1934", "graham_1949"]},
+   "timeframe": {"text": "Daily prices against the latest reported balance sheet; holdings kept for months to years.", "cite": ["graham_1949"]},
+   "approximation": "Uses the balance sheet known on each day (point in time, never a later restatement); the books also ask for a diversified group of such issues and for some earnings, which the screen does not check.",
+   "screen": {
+    "source": "NCAVPerShare() > 0 AND close <= $ncav_frac * NCAVPerShare()",
+    "base_tf": "1d",
+    "params": [
+     {"name": "ncav_frac", "default": 0.67, "min": 0.3, "max": 1.0, "doc": "Price at most this fraction of net current asset value per share (0.67 = two-thirds)."}
+    ]
+   }
+  },
+  {
+   "id": "legends.graham_number_value",
+   "slice": "lg3",
+   "legend": "Benjamin Graham",
+   "short": "Graham",
+   "name": "Graham-style defensive value (Graham number)",
+   "review": "unverified",
+   "review_note": "Cites graham_1949, whose first edition is not yet matched to a library catalogue record.",
+   "who": {"text": "US investor and teacher of security analysis who set out a policy for the defensive investor in a 1949 book.", "cite": ["graham_1949"]},
+   "style": {"text": "Defensive value: a moderate price against both earnings and book value, with a margin of safety.", "cite": ["graham_1949"]},
+   "looks_for": {"text": "A price below the Graham number, the square root of 22.5 x earnings per share x book value per share.", "cite": ["graham_1949"]},
+   "timeframe": {"text": "Daily prices against the latest reported earnings and balance sheet; a long holding period.", "cite": ["graham_1949"]},
+   "approximation": "22.5 is 15 times earnings times 1.5 times book; trailing earnings are the last four reported quarters (or the last year), as known on each day; the book's size, dividend and earnings-stability tests are not checked.",
+   "screen": {
+    "source": "close < $margin * GrahamNumber()",
+    "base_tf": "1d",
+    "params": [
+     {"name": "margin", "default": 1.0, "min": 0.5, "max": 1.0, "doc": "Price below this fraction of the Graham number (1.0 = below it at all)."}
+    ]
+   }
+  },
+  {
+   "id": "legends.greenblatt_yield_and_return",
+   "slice": "lg3",
+   "legend": "Joel Greenblatt",
+   "short": "Greenblatt",
+   "name": "Greenblatt-style earnings yield and return on capital rank",
+   "review": "verified",
+   "who": {"text": "US investor and teacher who described a ranking method in a 2006 book written for general readers.", "cite": ["greenblatt_2006"]},
+   "style": {"text": "Quantitative value: good businesses at bargain prices, ranked on two measures and bought as a group.", "cite": ["greenblatt_2006"]},
+   "looks_for": {"text": "A high combined rank on earnings yield (EBIT / enterprise value) and return on capital within the scanned list.", "cite": ["greenblatt_2006"]},
+   "timeframe": {"text": "Daily prices with the latest reported figures; the book holds each position for about a year.", "cite": ["greenblatt_2006"]},
+   "approximation": "Ranks within the scanned list, not the whole market; capital is total assets minus current liabilities and cash (the book uses net working capital plus net fixed assets); financials and utilities are not excluded.",
+   "screen": {
+    "source": "EarningsYield() > 0 AND ReturnOnCapital() > 0 AND PercentileRank(EarningsYield()) + PercentileRank(ReturnOnCapital()) >= $rank_sum",
+    "base_tf": "1d",
+    "params": [
+     {"name": "rank_sum", "default": 140, "min": 100, "max": 195, "doc": "Lowest sum of the two percentile ranks (each 0 to 100) within the scanned list."}
+    ]
+   }
+  },
+  {
+   "id": "legends.oneil_growth_breakout",
+   "slice": "lg3",
+   "legend": "William J. O'Neil",
+   "short": "O'Neil",
+   "name": "O'Neil-style growth breakout",
+   "review": "verified",
+   "who": {"text": "US investor and publisher who described a growth-stock method in a 1988 book.", "cite": ["oneil_1988"]},
+   "style": {"text": "Growth with price leadership: strong current earnings and sales growth, bought as the price breaks to new highs.", "cite": ["oneil_1988"]},
+   "looks_for": {"text": "Quarterly EPS and sales well up on the same quarter a year before, and a close at a new 52-week high on volume well above average.", "cite": ["oneil_1988"]},
+   "timeframe": {"text": "Daily bars and the latest reported quarter; positions held while the trend lasts.", "cite": ["oneil_1988"]},
+   "approximation": "Growth is the latest quarter known on each day (point in time); the base pattern, the relative-strength rating, market direction and institutional sponsorship in the book are not checked.",
+   "screen": {
+    "source": "EPSGrowthYoY() >= $eps_min AND SalesGrowthYoY() >= $sales_min AND close > Max(high, 250)[1] AND volume >= $vol_mult * SMA(volume, 50)[1]",
+    "base_tf": "1d",
+    "params": [
+     {"name": "eps_min", "default": 25, "min": 10, "max": 100, "doc": "Lowest growth of quarterly EPS on the same quarter a year before, %."},
+     {"name": "sales_min", "default": 25, "min": 0, "max": 100, "doc": "Lowest growth of quarterly sales on the same quarter a year before, %."},
+     {"name": "vol_mult", "default": 1.5, "min": 1.0, "max": 5.0, "doc": "Volume at least this multiple of its 50-bar average (1.5 = 50% above)."}
     ]
    }
   }

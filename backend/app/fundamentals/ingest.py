@@ -35,6 +35,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.enums import PeriodType
 from app.db.models import CompanyRecord, FinancialPeriodRecord
+from app.fundamentals import pit
 from app.fundamentals import persistence as db
 from app.fundamentals.models import CompanyProfile, FinancialPeriod
 from app.fundamentals.providers.base import FundamentalDataProvider
@@ -185,6 +186,7 @@ async def upsert_financial_periods(session: AsyncSession, company: CompanyRecord
                     continue
                 setattr(record, column, getattr(fresh, column))
             summary.updated += 1
+        await pit.record_version(session, company.id, period)        # U7 LG3: the point-in-time version (when it changed)
         summary.labels.append(period.period_label)
     return summary
 

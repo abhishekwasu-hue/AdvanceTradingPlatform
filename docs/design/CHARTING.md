@@ -480,11 +480,15 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
 - **Last price, without starving exits (review HIGH, ADR-0004).** The workspace polls each (symbol, exchange) once
   (`charting/ltpHub.ts`), shared by every chart showing it: every 5 s for the active chart's symbol, every 20 s for the
   others, only while the tab is visible; a chart that gets focus again reuses a recent price. On the server
-  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`), and every broker call it makes (when no
-  fresh tick answers) first takes a token from the session's API budget (`app/market_data/api_budget.py`: per
-  tenant + broker + account, at half the conservative per-broker limits the worker's own budget uses, in the API
-  process); with none within 2 s it answers 429 (Retry-After 5) and the chart keeps its last price, instead of a queue
-  that grows while the worker's exits need the same API key. The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
+  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`). When no fresh tick answers, the quote
+  is shared: cached in Redis for 4 s per (credential, exchange, symbol), with one request at a time making the broker
+  call (a short Redis lock) while the others wait for its result - every user and tab on that credential shares it.
+  That one call first takes a token from the credential's API budget (`app/market_data/api_budget.py`): fixed windows
+  in Redis keyed by the credential row (`record.id`, so BYOK members never share one), counted by every API worker
+  and replica together, checked and counted in one script - per second and per minute at half the worker's
+  conservative limits, and for Upstox at most 500 per 30 minutes (of its 2,000). No token within 2 s: 429
+  (Retry-After 5) and the chart keeps its last price - never a queue that grows while the worker's exits need the same
+  API key. Without Redis (dev) or with Redis unreachable, in-process windows take over. The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
   window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
   cell's button) shows the active chart at full size.
 - **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and

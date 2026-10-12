@@ -1831,3 +1831,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   disclaimer); every person a card names is in its disclaimer (lint); approximation notes for Raschke (ADX rising not
   checked, long only), Weinstein (30-week average compared over 1 and 4 weeks) and Williams (long only); Darvas volume
   `>=`; an HTTP drift check for `taxonomyLegendsSample.json`; merged main (f06c5df).
+### 2026-10-12 IST - N2 plan + N2-1 ladder evidence (`claude/n2-p1f`)
+- Plan: `docs/design/N2_P1FGH.md` splits P1-f/g/h into 11 flag-gated slices (ladder evidence, experience levels,
+  decision tools I/II, context panel, positions v2, builder adjustments / compare, trade workspace, education pages,
+  learn-from-your-journal).
+- N2-1 (flag `ladder_evidence`, off): the ladder's discipline criterion from the Z6 weekly scores, plus the user's own
+  figures. Expectancy, profit factor, payoff ratio, Kelly reference and the Lundberg risk-of-ruin bound come from
+  `app/decision_tools/own_stats.py` (pure).
+- Frontend: "Your figures" block and discipline week strip on the ladder card. Strings go through a new i18next
+  instance (`src/progression/i18n.ts`); there is a story.
+- No migration and no new route. Flag off returns the Z3-b answer unchanged.
+- Tests: backend `tests/test_n2_ladder_evidence.py` (9); vitest `src/progression` (12). Open questions N2-1..N2-5.

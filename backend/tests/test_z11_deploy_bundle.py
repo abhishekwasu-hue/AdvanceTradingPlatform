@@ -46,7 +46,8 @@ STATE = os.environ["FAKE_STATE"]
 with open(STATE) as fh:
     st = json.load(fh)
 argv = sys.argv[1:]
-st["calls"].append({"argv": argv, "release": os.environ.get("ATP_RELEASE", ""), "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", "")})
+st["calls"].append({"argv": argv, "release": os.environ.get("ATP_RELEASE", ""), "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", ""),
+                   "phase": os.environ.get("ATP_DEPLOYMENT_PHASE", "")})
 rc = 0
 out = []
 APP = {"backend": "atp-backend", "worker": "atp-worker", "frontend": "atp-frontend", "research-worker": "atp-research-worker", "backup": "atp-backup"}
@@ -126,6 +127,14 @@ if sub == "up":
             print(f"pull access denied for {APP[svc]}", file=sys.stderr); rc = 1; finish()
     for svc in targets:
         st["running"][svc] = {"release": rel if svc in APP else "infra", "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", "")}
+    if "backend" in targets and st.get("seed_on_boot") and os.environ.get("ATP_DEPLOYMENT_PHASE") == "phase0":
+        # the API's own Phase 0 first boot (app/platform/deployment_phase.py): absent entries only
+        st["flags_table"] = True
+        row = json.loads(st["flags_json"] or "{}")
+        flags = row.setdefault("flags", {})
+        for name, on in (("live_trading", False), ("phase0_paper_only", True)):
+            flags.setdefault(name, {"on": on, "tenants": []})
+        st["flags_json"] = json.dumps(row)
     finish()
 if sub == "stop":
     for svc in args:
@@ -180,6 +189,9 @@ def run_sql(target, sqls):
                 rc = 1
             else:
                 out.append(r)
+        elif "select value_json from platform_controls" in low:
+            if st["flags_json"] is not None:
+                out.append(st["flags_json"])
         elif "md5(value_json)" in low:
             if st["flags_json"] is not None:
                 import hashlib
@@ -741,6 +753,55 @@ def test_flags_changed_during_a_deploy_fail_the_run(host):
     assert res.returncode == 1 and "feature flags CHANGED during the deploy" in res.stdout and "rollback" in res.stdout
 
 
+def test_phase0_first_boot_seed_is_the_one_flag_change_a_deploy_accepts(host):
+    """Phase 0 deployment defaults: the API's first boot stores live_trading OFF / phase0_paper_only ON where no entry was
+    stored - the deploy accepts exactly that (restrictive) change; any other value is still a failed deploy."""
+    host.state["flags_table"] = True; host.state["flags_json"] = json.dumps({"flags": {"news_feed": {"on": True, "tenants": []}}})
+    host.state["seed_on_boot"] = True; host.save()
+    res = host.run("deploy")
+    assert res.returncode == 0, res.all
+    assert "except the Phase 0 first-boot seed of live_trading,phase0_paper_only" in res.stdout
+    flags = json.loads(host.state["flags_json"])["flags"]
+    assert flags == {"news_feed": {"on": True, "tenants": []}, "live_trading": {"on": False, "tenants": []},
+                     "phase0_paper_only": {"on": True, "tenants": []}}
+    assert {c["phase"] for c in host.state["calls"] if c["argv"][:2] == ["compose", "-f"]} == {"phase0"}   # no .env key needed
+    again = host.run("deploy")                                                       # re-boot: nothing absent, nothing seeded
+    assert again.returncode == 0 and "feature flags unchanged by the deploy" in again.stdout and "first-boot seed" not in again.stdout
+
+
+def test_a_seed_shaped_change_to_an_existing_entry_still_fails_the_deploy(host):
+    """Only ABSENT entries may be seeded: an owner's stored live_trading / phase0_paper_only is never overwritten."""
+    host.state["flags_table"] = True
+    host.state["flags_json"] = json.dumps({"flags": {"phase0_paper_only": {"on": False, "tenants": []}}}); host.save()
+    assert host.run("deploy", host.sha_a).returncode == 0
+    host.state["heads"][host.sha_b[:12]] = "rev2"; host.save()
+    fake = (host.bin / "docker").read_text().replace(
+        'st["databases"][db]["rev"] = st["heads"][rel]; finish()',
+        'st["databases"][db]["rev"] = st["heads"][rel]; st["flags_json"] = "{\\"flags\\": {\\"phase0_paper_only\\": {\\"on\\": true, \\"tenants\\": []}}}"; finish()')
+    (host.bin / "docker").write_text(fake)
+    res = host.run("deploy")
+    assert res.returncode == 1 and "feature flags CHANGED during the deploy" in res.stdout
+
+
+def test_health_passes_on_a_phase0_install_with_nothing_for_the_owner_to_set(host):
+    """The seeded posture (what a Phase 0 first boot leaves) is healthy: exit 0, no OWNER ACTION."""
+    host.state["posture"] = {"live_trading": {"on": False, "tenants": 0, "stored": True},
+                             "phase0_paper_only": {"known": True, "on": True, "stored": True}, "stored_on": ["phase0_paper_only"],
+                             "deployment_phase": "phase0"}
+    host.save()
+    res = host.run("install")
+    assert res.returncode == 0, res.all
+    assert "OWNER ACTION" not in res.all and "deployment phase: phase0" in res.stdout
+    res = host.run("health")
+    assert res.returncode == 0 and "OWNER ACTION" not in res.all and "nothing for the owner to set" in res.stdout
+    host.write_env(extra={"ATP_DEPLOYMENT_PHASE": "standard"})
+    host.state["posture"]["deployment_phase"] = "standard"; host.save()
+    before = len(host.state["calls"])
+    res = host.run("health")
+    assert res.returncode == 0 and "deployment phase: standard" in res.stdout and "not seeded" in res.stdout
+    assert {c["phase"] for c in host.state["calls"][before:] if c["argv"][:2] == ["compose", "-f"]} == {"standard"}
+
+
 def test_release_overlay_pins_images_to_the_commit():
     text = (ROOT / "deploy/compose.release.yml").read_text()
     for img in ("atp-backend", "atp-worker", "atp-research-worker", "atp-frontend"):
@@ -759,6 +820,8 @@ def test_release_overlay_pins_images_to_the_commit():
     services = json.loads(out)["services"]
     assert services["backend"]["image"] == "atp-backend:0123456789ab" and services["worker"]["image"] == "atp-worker:0123456789ab"
     assert services["worker"]["deploy"]["replicas"] == 1
+    # Phase 0 deployment defaults: the API and the worker run as phase0 on this host without any .env key
+    assert services["backend"]["environment"]["ATP_DEPLOYMENT_PHASE"] == "phase0" == services["worker"]["environment"]["ATP_DEPLOYMENT_PHASE"]
 
 
 def test_migrate_guard_starts_an_older_image_on_a_newer_database_only_when_told_that_exact_revision(monkeypatch):

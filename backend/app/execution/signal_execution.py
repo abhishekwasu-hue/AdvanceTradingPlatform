@@ -169,6 +169,11 @@ async def execute_signal_for_user(
             # logged opt-out for the day. New entries only - exits never come here (ADR-0004).
             from app.paper import experience
             kill_switch_reasons.extend(await experience.entry_refusals(session, user, experience.contract_gates(contract)))
+        else:
+            # N2-2 review M1: a raw symbol (webhook, public API, console, approval, underlying deployment) is classified
+            # from the instrument master / registry / its shape - a future, an MCX commodity or a sold option is gated too.
+            from app.paper import experience
+            kill_switch_reasons.extend(await experience.symbol_entry_refusals(session, user, signal.symbol, signal.direction))
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(

@@ -287,3 +287,117 @@ def test_migration_is_additive_and_single_head():
     assert len(script.get_heads()) == 1
     text = Path(script.get_revision("a4c6e8f0b2d1").path).read_text()
     assert "ROLLBACK_SAFE = True" in text and "'experience_opt_outs'" in text
+
+
+# --- review M1: raw-symbol entries (webhook, public API, console, approval, underlying deployments) ---------------------
+
+def test_raw_symbol_classification():
+    g = experience.raw_symbol_gates
+    assert g("NIFTY24OCTFUT", "LONG") == ["futures"] and g("NIFTY24OCTFUT", "SHORT") == ["futures"]
+    assert g("CRUDEOIL", "LONG", commodity=True) == ["futures"]
+    assert g("GOLDM", "SHORT", master_types=[("MCX", "COM")]) == ["futures"]
+    assert g("NIFTY24OCT25000CE", "SHORT") == ["naked_short_options"] and g("NIFTY 25000 PE", "SHORT") == ["naked_short_options"]
+    assert g("NIFTY24OCT25000CE", "LONG") == []
+    assert g("NIFTY26O0124500PE", SignalDirection.SHORT, master_types=[("NFO", "PE")]) == ["naked_short_options"]
+    assert g("ODDNAME", "LONG", master_types=[("NFO", "FUT")]) == ["futures"]
+    assert g("RELIANCE", "SHORT", master_types=[("NSE", "EQ")]) == []          # ends in CE, but the master says a share
+    assert g("RELIANCE", "SHORT") == [] and g("NIFTY", "LONG") == []
+
+
+def _webhook_owner(tag):
+    from tests.test_tradingview_webhook import _get_token
+    t = _tenant(_email(tag))
+    return t, _get_token(t["headers"])
+
+
+def _alert(symbol, direction="LONG", **kw):
+    long = direction == "LONG"
+    body = {"strategy_id": "pine_n2x", "symbol": symbol, "direction": direction, "entry": 100.0, "stop_loss": 98.0 if long else 102.0,
+            "target1": 106.0 if long else 94.0, "alert_id": uuid.uuid4().hex}
+    body.update(kw)
+    return body
+
+
+def test_webhook_entries_are_gated_by_symbol():
+    t, hook = _webhook_owner("hook")
+    _flag(t["tenant_id"])
+    cases = {
+        ("NIFTY24OCTFUT", "LONG"): "Futures open at the Intermediate",
+        ("CRUDEOIL", "LONG"): "Futures open at the Intermediate",
+        ("NIFTY24OCT25000CE", "SHORT"): "Naked short options open at the Advanced",
+    }
+    for (symbol, direction), reason in cases.items():
+        r = client.post(f"/api/webhooks/tradingview/{hook}", json=_alert(symbol, direction))
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["executed"] is False and any(x.startswith(reason) for x in body["reasons"]), (symbol, body)
+    for symbol, direction in (("NIFTY24OCT25000CE", "LONG"), ("RELIANCE", "LONG")):
+        body = client.post(f"/api/webhooks/tradingview/{hook}", json=_alert(symbol, direction)).json()
+        assert not any("experience level" in x for x in body["reasons"]), (symbol, body)
+    # The day's opt-out lets the futures alert through.
+    _opt_out(t["user_id"], "futures", "Practising futures alerts on paper")
+    body = client.post(f"/api/webhooks/tradingview/{hook}", json=_alert("NIFTY24OCTFUT", "LONG")).json()
+    assert not any("experience level" in x for x in body["reasons"]), body
+
+
+def test_public_api_signal_is_gated_by_symbol():
+    from tests.test_phase_k_commercial import _owner
+    headers, me = _owner(_email("papi"), plan="business")
+    _flag(me["tenant_id"])
+    key = client.post("/api/api-keys", headers=headers, json={"name": "n2x", "scopes": ["write:signals"]}).json()["key"]
+    body = {"strategy_id": "ema_rsi_scalper_1m", "symbol": "NIFTY24OCT25000PE", "direction": "SHORT", "entry": 100, "stop_loss": 110,
+            "target1": 80, "idempotency_key": uuid.uuid4().hex}
+    r = client.post("/api/public/v1/signals", headers={"X-API-Key": key}, json=body)
+    assert r.status_code == 201, r.text
+    assert r.json()["executed"] is False and any(x.startswith("Naked short options open at the Advanced") for x in r.json()["reasons"])
+
+
+def test_a_webhook_futures_position_still_exits_with_the_gate_shut():
+    t, hook = _webhook_owner("hookexit")
+    body = client.post(f"/api/webhooks/tradingview/{hook}", json=_alert("NIFTY24OCTFUT", "LONG")).json()   # flag off: opens
+    assert body["executed"] is True, body
+    _flag(t["tenant_id"])
+    assert client.post(f"/api/webhooks/tradingview/{hook}", json=_alert("NIFTY24OCTFUT", "LONG")).json()["executed"] is False
+
+    async def close():
+        from app.trading.position_monitor import close_position
+        async with _session_factory() as session:
+            row = await session.scalar(select(TradeRecord).where(TradeRecord.tenant_id == t["tenant_id"], TradeRecord.exit_time.is_(None)))
+            outcome = await close_position(session, row, float(row.stop_loss), "Stop loss", user_id=t["user_id"])
+            return outcome, await session.get(TradeRecord, row.id)
+    outcome, row = _run(close())
+    assert outcome.closed and row.exit_time is not None
+
+
+# --- review L2: the IST day boundary -------------------------------------------------------------------------------------
+
+def test_an_opt_out_ends_at_ist_midnight():
+    t = _tenant(_email("midnight"))
+    _flag(t["tenant_id"])
+    before = datetime(2026, 10, 12, 18, 29, tzinfo=UTC)       # 23:59 IST, 12 Oct
+    after = datetime(2026, 10, 12, 18, 31, tzinfo=UTC)        # 00:01 IST, 13 Oct
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            first = await experience.opt_out(session, user, "futures", "Late session practice on paper", now=before)
+            at_before = await experience.entry_refusals(session, user, ["futures"], now=before)
+            at_after = await experience.entry_refusals(session, user, ["futures"], now=after)
+            second = await experience.opt_out(session, user, "futures", "Next day practice on paper", now=after)
+            at_after_again = await experience.entry_refusals(session, user, ["futures"], now=after)
+            return first, at_before, at_after, second, at_after_again
+    first, at_before, at_after, second, at_after_again = _run(go())
+    assert first["created"] and first["day"] == "2026-10-12" and at_before == []
+    assert at_after and at_after[0].startswith("Futures open at the Intermediate")
+    assert second["created"] and second["day"] == "2026-10-13" and second["opt_outs"]["total"] == 2 and at_after_again == []
+
+
+# --- review L3: a user who already qualifies hears 409 before any reason check -----------------------------------------
+
+def test_a_qualified_user_gets_409_even_with_a_short_reason(monkeypatch):
+    monkeypatch.setattr(app_config, "PAPER_LADDER_MIN_TRADES", 2)
+    monkeypatch.setattr(app_config, "PAPER_LADDER_MIN_SESSIONS", 2)
+    t = _tenant(_email("q409"))
+    _flag(t["tenant_id"])
+    _closed_trades(t["tenant_id"], t["user_id"], 2, days=2)
+    assert client.post("/api/paper/experience/opt-out", headers=t["headers"], json={"gate": "futures", "reason": "x"}).status_code == 409

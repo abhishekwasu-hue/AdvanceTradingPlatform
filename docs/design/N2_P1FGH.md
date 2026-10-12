@@ -107,7 +107,14 @@ bought lots of that right. A short straddle, a short strangle and a ratio spread
 condor, a long butterfly and a calendar do not.
 
 **Gate**: `experience.entry_refusals` runs in `execute_signal_for_user`, next to the F&O ban for a resolved contract, and
-in `execute_structure`. Both are new-entry paths only. The P1-d ticket stays cash-only, and the builder basket still
+in `execute_structure`. A raw symbol (TradingView webhook, public API, console, approval, underlying deployments) is
+classified by `symbol_gates`:
+
+- the instrument master (FUT / CE / PE, MCX);
+- the contract registry (COMMODITY);
+- the symbol's shape (`...FUT`, `...25000CE`).
+
+A future or commodity needs the futures gate, and an option sold (SHORT) needs the naked gate (review M1). Both are new-entry paths only. The P1-d ticket stays cash-only, and the builder basket still
 places nothing, so neither needs a gate yet. N2-7 / N2-9 reuse `structure_gates` when a basket becomes placeable.
 
 **Opt-out**: `POST /api/paper/experience/opt-out {gate, reason}`.
@@ -128,4 +135,4 @@ places nothing, so neither needs a gate yet. N2-7 / N2-9 reuse `structure_gates`
 
 ## Open questions
 
-These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-9), each with a provisional default.
+These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-10), each with a provisional default.

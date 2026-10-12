@@ -14,7 +14,9 @@ A naked short option is a written option entered on its own, or a structure whos
 outnumber its bought lots of that right (short straddle, 1:2 ratio spread).
 
 Below the level a gate needs, the order pipeline refuses the new entry (`entry_refusals`). The refusal is called from
-`signal_execution.execute_signal_for_user` and `multileg.execute_structure`, next to the F&O ban check. The user may opt
+`signal_execution.execute_signal_for_user` and `multileg.execute_structure`, next to the F&O ban check. Without a
+resolved contract (TradingView webhook, public API, console, approval, underlying deployments) the raw symbol is
+classified (`symbol_gates`: instrument master, contract registry, symbol shape). The user may opt
 out of one gate for the rest of the IST day:
 
 - they type a reason (at least `EXPERIENCE_OPT_OUT_MIN_REASON_CHARS` characters);
@@ -25,6 +27,7 @@ Exits never come here (ADR-0004). Nothing here places an order. With the flag of
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -75,6 +78,55 @@ def contract_gates(contract: Any) -> List[str]:
     if kind == InstrumentKind.OPTION and getattr(contract, "entry_side", None) == OrderSide.SELL:
         return [GATE_NAKED]
     return []
+
+
+_OPTION_SYMBOL = re.compile(r"\d\s*(CE|PE)$")           # NIFTY24OCT25000CE, 'NIFTY 25000 CE'
+_FUTURE_SYMBOL = re.compile(r"FUT$")                     # NIFTY24OCTFUT, 'NIFTY OCT FUT' (as the P1-d ticket's DERIVATIVE)
+
+
+def raw_symbol_gates(symbol: str, direction: str, *, master_types: Sequence[Tuple[str, str]] = (),
+                     commodity: bool = False) -> List[str]:
+    """The gates a raw-symbol entry needs (review M1: webhook, public API, console, approval, underlying deployments -
+    no resolved contract). `master_types`: the instrument master's (exchange, instrument_type) rows for the symbol;
+    `commodity`: the contract registry says COMMODITY (MCX futures). A future -> futures; an option sold (SHORT) -> naked
+    short options; a bought option, a cash share or an index -> nothing."""
+    upper = symbol.strip().upper()
+    short = str(getattr(direction, "value", direction)).upper() == "SHORT"
+    kinds = {(kind or "").upper() for _, kind in master_types}
+    if master_types:
+        if "FUT" in kinds:
+            return [GATE_FUTURES]
+        if kinds & {"CE", "PE"}:
+            return [GATE_NAKED] if short else []
+        if not any((ex or "").upper() == "MCX" for ex, _ in master_types):
+            return []
+    if commodity or any((ex or "").upper() == "MCX" for ex, _ in master_types):
+        return [GATE_FUTURES]
+    if _FUTURE_SYMBOL.search(upper):
+        return [GATE_FUTURES]
+    if _OPTION_SYMBOL.search(upper):
+        return [GATE_NAKED] if short else []
+    return []
+
+
+async def symbol_gates(session: AsyncSession, symbol: str, direction: Any) -> List[str]:
+    """`raw_symbol_gates` with the instrument master (any broker's rows for the trading symbol) and the contract
+    registry (MCX commodities) read in."""
+    from app.core.enums import AssetClass
+    from app.db.models import InstrumentRecord
+    from app.instruments.registry import get_contract_spec
+    rows = [(ex or "", kind or "") for ex, kind in await session.execute(
+        select(InstrumentRecord.exchange, InstrumentRecord.instrument_type).where(InstrumentRecord.tradingsymbol == symbol.strip().upper()).limit(50))]
+    spec = get_contract_spec(symbol)
+    return raw_symbol_gates(symbol, direction, master_types=rows, commodity=spec is not None and spec.asset_class == AssetClass.COMMODITY)
+
+
+async def symbol_entry_refusals(session: AsyncSession, user: Optional[User], symbol: str, direction: Any,
+                                now: Optional[datetime] = None) -> List[str]:
+    """`entry_refusals` for a raw-symbol entry; the flag is checked before the symbol is looked up."""
+    if user is None or not await enabled(session, user.tenant_id):
+        return []
+    return await entry_refusals(session, user, await symbol_gates(session, symbol, direction), now)
 
 
 def structure_gates(legs: Iterable[Any]) -> List[str]:
@@ -147,7 +199,8 @@ async def record(session: AsyncSession, user: User) -> Dict[str, Any]:
     trades = [t for t in await service._paper_trades(session, user) if service._counted(t)]
     closed = sorted((t for t in trades if t.exit_time is not None), key=lambda t: (service._utc(t.exit_time or t.entry_time), t.id))
     sessions = {service._utc(t.entry_time).astimezone(IST).date() for t in trades if t.entry_time is not None}
-    account = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.user_id == user.id))
+    account = await session.scalar(select(PaperAccountRecord).where(PaperAccountRecord.tenant_id == user.tenant_id,
+                                                                    PaperAccountRecord.user_id == user.id))
     starting = float(account.starting_capital) if account is not None else float(app_config.PAPER_STARTING_CAPITAL)
     dd = service.equity_drawdown(starting, [float(t.pnl or 0.0) for t in closed])
     return {"closed_trades": len(closed), "sessions": len(sessions), "max_drawdown_pct": float(dd["max_drawdown_pct"])}
@@ -207,13 +260,13 @@ async def opt_out(session: AsyncSession, user: User, gate: str, reason: str, now
     now = now or datetime.now(timezone.utc)
     if gate not in GATES:
         raise OptOutError(f"Unknown gate '{gate}' - known: {', '.join(GATES)}")
+    rec = await record(session, user)
+    level, _ = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"])
+    if allowed_by_level(level, gate):                       # before the reason: a qualified user hears 409, not 422
+        raise NothingToOptOut(f"Your level ({LEVEL_LABELS[level]}) already opens {GATES[gate][1].lower()}")
     text = (reason or "").strip()
     if len(text) < app_config.EXPERIENCE_OPT_OUT_MIN_REASON_CHARS:
         raise OptOutError(f"An opt-out needs a reason of at least {app_config.EXPERIENCE_OPT_OUT_MIN_REASON_CHARS} characters")
-    rec = await record(session, user)
-    level, _ = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"])
-    if allowed_by_level(level, gate):
-        raise NothingToOptOut(f"Your level ({LEVEL_LABELS[level]}) already opens {GATES[gate][1].lower()}")
     day = ist_day(now)
     created = True
     try:

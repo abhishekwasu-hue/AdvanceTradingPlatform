@@ -9,6 +9,7 @@ Daily pivots) with the parts of `legs2/measure.py` it uses, at the pinned revisi
   "single". With `elliott=True` the full recursive reading (`read_counter`) decides.
 * kind: "impulse" = structure impulse or C IMP; "corrective" = C COR or structure corrective; else "unclear".
 """
+import threading
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
@@ -22,7 +23,16 @@ MOTIVE = ("impulse", "diagonal")
 CORRECTIVE = ("zigzag", "flat", "triangle", "combination", "3-wave")
 COMPLETE = ("zigzag", "flat", "triangle", "combination")      # combination = W and Y themselves complete corrections
 
-_READ_CACHE: Dict[Tuple[float, ...], Dict[str, Any]] = {}
+# read_counter's memo (a pure function of the prices; Trade's own cache). Per thread (review of #213): the fold runs in
+# worker threads (X1 `asyncio.to_thread`), and a shared dict with the recursion guard below is not safe across threads.
+_LOCAL = threading.local()
+
+
+def _read_cache() -> Dict[Tuple[float, ...], Dict[str, Any]]:
+    cache = getattr(_LOCAL, "read", None)
+    if cache is None:
+        cache = _LOCAL.read = {}
+    return cache
 
 
 # --- legs2 measures -----------------------------------------------------------------------------------------------------
@@ -169,14 +179,15 @@ def read_counter(prices: Sequence[float]) -> Dict[str, Any]:
     read recursively: impulse 5-3-5-3-5, diagonal, triangle, combination, zigzag 5-3-5, flat 3-3-5. A one-leg wave fits
     both. No ratios. Returns {"family", "n"}: impulse / diagonal / triangle / combination / zigzag / flat / 3-wave / single."""
     key = tuple(round(float(v), 6) for v in prices)
-    if key in _READ_CACHE:
-        return _READ_CACHE[key]
-    if len(_READ_CACHE) > 20000:
-        _READ_CACHE.clear()
+    cache = _read_cache()
+    if key in cache:
+        return cache[key]
+    if len(cache) > 20000:
+        cache.clear()
     n = len(prices) - 1
     if n <= 1:
         return {"family": "single", "n": max(n, 0)}
-    _READ_CACHE[key] = {"family": "3-wave", "n": n}                       # recursion guard
+    cache[key] = {"family": "3-wave", "n": n}                             # recursion guard
     red = reduce_counted(prices)
     s2 = PATTERN_DEFAULTS
     fam: Optional[str] = None
@@ -238,7 +249,7 @@ def read_counter(prices: Sequence[float]) -> Dict[str, Any]:
                     fam = "flat"
                     break
     out = {"family": fam or "3-wave", "n": n}
-    _READ_CACHE[key] = out
+    cache[key] = out
     return out
 
 

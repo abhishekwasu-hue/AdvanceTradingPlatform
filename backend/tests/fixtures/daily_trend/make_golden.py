@@ -74,7 +74,7 @@ def state(st):
             "wave_a": pivot(st.wave_a), "alt": st.alt, "n_pivots": len(st.pivots)}
 
 
-def daily_series(seed, n=1000, start="2010-01-04"):
+def daily_series(seed, n=1000, start="2010-01-04", sideways=0.15, flip=0.25):
     """Nested legs: a primary direction lasting months, with impulse runs and corrections, plus noise and gaps."""
     rng = np.random.default_rng(seed)
     price = 10000.0 * rng.uniform(0.8, 1.6)
@@ -83,13 +83,13 @@ def daily_series(seed, n=1000, start="2010-01-04"):
     i = 0
     primary = rng.choice([-1, 1])
     while i < n:
-        if rng.random() < 0.25:
+        if rng.random() < flip:
             primary = -primary
         for sub in range(int(rng.integers(3, 8))):
             impulse = sub % 2 == 0
             length = int(rng.integers(4, 18) if impulse else rng.integers(3, 12))
             drift = primary * (rng.uniform(0.004, 0.012) if impulse else -rng.uniform(0.002, 0.008))
-            if rng.random() < 0.15:
+            if rng.random() < sideways:
                 drift = rng.uniform(-0.0015, 0.0015)                    # sideways
             for _ in range(length):
                 if i >= n:
@@ -105,6 +105,129 @@ def daily_series(seed, n=1000, start="2010-01-04"):
     return pd.DataFrame(rows)
 
 
+def _closes(pts):
+    closes, price = [], pts[0][1]
+    for bars, level in pts[1:]:
+        for k in range(1, bars + 1):
+            closes.append(price + (level - price) * k / bars)
+        price = level
+    return closes
+
+
+def range_after_break(seed):
+    """Hand-built: an UP trend, a drop through its origin, then a range with about-equal highs and lows (Q27)."""
+    rng = np.random.default_rng(seed)
+    pts, lvl = [(0, 1000.0)], 1000.0
+    for _ in range(int(rng.integers(3, 6))):
+        lvl *= 1 + rng.uniform(0.06, 0.12)
+        pts.append((int(rng.integers(6, 12)), lvl))
+        lvl *= 1 - rng.uniform(0.02, 0.05)
+        pts.append((int(rng.integers(3, 7)), lvl))
+    top = lvl * 1.08
+    pts.append((8, top))
+    low = top * (1 - rng.uniform(0.18, 0.28))
+    pts.append((int(rng.integers(5, 10)), low))
+    hi = low * (1 + rng.uniform(0.04, 0.07))
+    for _ in range(int(rng.integers(3, 5))):
+        pts.append((int(rng.integers(4, 8)), hi))
+        pts.append((int(rng.integers(4, 8)), low))
+    pts.append((3, (hi + low) / 2))
+    rows, prev = [], None
+    for c in _closes(pts):
+        c = c * (1 + rng.normal(0, 0.002))
+        o = c if prev is None else prev
+        rows.append([o, max(o, c) * (1 + abs(rng.normal(0, 0.003))), min(o, c) * (1 - abs(rng.normal(0, 0.003))), c])
+        prev = c
+    return _frame(rows, "2012-01-02")
+
+
+def flip_spike(seed):
+    """Hand-built for flip(): an UP trend, the origin broken, a lower high, a close below the low between - and the next
+    candle spiking above that lower high (a one-bar look-ahead in flip() reads that spike)."""
+    rng = np.random.default_rng(seed)
+    pts, lvl = [(0, 1000.0)], 1000.0
+    for _ in range(int(rng.integers(3, 5))):
+        lvl *= 1 + rng.uniform(0.07, 0.12)
+        pts.append((int(rng.integers(6, 10)), lvl))
+        lvl *= 1 - rng.uniform(0.02, 0.04)
+        pts.append((int(rng.integers(3, 6)), lvl))
+    top = lvl * 1.08
+    pts.append((7, top))
+    l1 = top * (1 - rng.uniform(0.15, 0.22))
+    pts.append((int(rng.integers(5, 8)), l1))
+    h = l1 + (top - l1) * rng.uniform(0.4, 0.7)
+    pts.append((int(rng.integers(4, 7)), h))
+    pts.append((int(rng.integers(4, 7)), l1 * (1 - rng.uniform(0.02, 0.05))))
+    rows, prev = [], _closes(pts)[0]
+    for c in _closes(pts):
+        c *= 1 + rng.normal(0, 0.002)
+        o = prev
+        rows.append([o, max(o, c) * (1 + abs(rng.normal(0, 0.003))), min(o, c) * (1 - abs(rng.normal(0, 0.003))), c])
+        prev = c
+    hi_h = max(r[1] for r in rows[-12:-4])
+    rows.append([prev, hi_h * 1.01, prev * 0.995, prev * 1.002])
+    for k in range(5):
+        c = prev * (1 - 0.01 * (k + 1))
+        rows.append([prev, max(prev, c) * 1.002, min(prev, c) * 0.998, c])
+        prev = c
+    return _frame(rows, "2013-01-01")
+
+
+def _frame(rows, start):
+    days = pd.bdate_range(start, periods=len(rows))
+    return pd.DataFrame({"timestamp": days, **{k: [round(float(r[j]), 2) for r in rows] for j, k in enumerate(("open", "high", "low", "close"))}})
+
+
+# Series that reach the branches the random walks above do not (found with a line tracer over the ATP port; parity with
+# Trade still comes from Trade's own fold on them): Q49's origin move, Q27's RANGE after an origin break, the counter-move
+# read as one leg, Q49's pool with the trend start, and flip() next to a spike.
+EXTRA = [("walk", (216, 700, 0.45, 0.4)), ("walk", (227, 700, 0.45, 0.4)), ("walk", (302, 1200, 0.15, 0.25)),
+         ("range_after_break", (3,)), ("range_after_break", (4,)), ("flip_spike", (2,)), ("flip_spike", (3,))]
+
+
+def extra_series(kind, args):
+    if kind == "walk":
+        seed, n, sideways, flip = args
+        return daily_series(seed, n=n, sideways=sideways, flip=flip)
+    return {"range_after_break": range_after_break, "flip_spike": flip_spike}[kind](*args)
+
+
+TRANSLATE = [(": protected origin close ने तुटला)", ": the protected origin was broken by a close)"),
+             (": origin धोक्यात — Q47)", ": origin at risk - Q47)"),
+             (": impulse origin तुटला, parent correction चालू)", ": impulse origin broken, a parent correction is running)"),
+             (" (दोन्ही कडा)", " (both edges)"), ("Daily data अपुरा: ", "Daily data too short: ")]
+
+
+def tr(text):
+    for a, b in TRANSLATE:
+        text = text.replace(a, b)
+    if any(ord(ch) > 127 and ch not in "–·" for ch in text):
+        raise SystemExit(f"untranslated Trade text: {text!r}")
+    return text
+
+
+def ctx_json(ctx):
+    out = {}
+    for k, v in ctx.items():
+        if k == "sides":
+            out[k] = sorted(v)
+        elif k == "band":
+            out[k] = None if v is None else [num(x) for x in v]
+        elif k == "reason":
+            out[k] = tr(str(v))
+        elif isinstance(v, float):
+            out[k] = num(v)
+        else:
+            out[k] = v
+    return out
+
+
+def frame_of(bars):
+    df = pd.DataFrame({k: v for k, v in bars.items() if k != "timestamp"})
+    df.insert(0, "timestamp", pd.to_datetime(bars["timestamp"]))
+    return df
+
+
 def bars_json(df):
     return {"timestamp": [str(x) for x in df["timestamp"]], **{k: [float(x) for x in df[k]] for k in ("open", "high", "low", "close")}}
 
@@ -115,7 +238,7 @@ def main():
                         "legs2/measure.py, patterns2/rules.py, rules2.py",
               "settings": {"fold": {k: S3.DEFAULTS[k] for k in FOLD_KEYS}, "legs": {k: LS2.DEFAULTS[k] for k in LEGS_KEYS},
                            "patterns": {k: PS2.DEFAULTS[k] for k in PATTERN_KEYS}},
-              "series": [], "folds": [], "truncated": [], "short": [], "state_at": [], "pivots": [], "legs": [], "read_counter": [], "rules": [], "misc": {}}
+              "series": [], "folds": [], "trend_context": [], "truncated": [], "short": [], "state_at": [], "pivots": [], "legs": [], "read_counter": [], "rules": [], "misc": {}}
     seeds = [101, 102, 103, 104, 105, 106]
     for sid, seed in enumerate(seeds):
         raw = daily_series(seed)
@@ -162,6 +285,25 @@ def main():
                                  "pivot2": [pivot(p) for p in DD.pivots_pivot(d, 2, kat)],
                                  "pivot1": [pivot(p) for p in DD.pivots_pivot(d, 1, kat)],
                                  "dc": [pivot(p) for p in DD.pivots_dc(d, 1.0, sig, kat)]})
+    for kind, args in EXTRA:
+        sid = len(golden["series"])
+        raw = extra_series(kind, args)
+        d = DS.prepare(raw)
+        golden["series"].append({"seed": f"{kind}:{','.join(map(str, args))}", "bars": bars_json(raw)})
+        states = DD.fold(d)
+        golden["folds"].append({"series": sid, "variant": "default", "settings": {}, "states": [state(st) for st in states],
+                                "final_pivots": [pivot(p) for p in states[-1].pivots]})
+    # Trade `level_reaction.trend_context` (the gate's bridge): known at yesterday's close, < 30 bars -> trend unclear.
+    for sid, entry in enumerate(golden["series"]):
+        raw = frame_of(entry["bars"])
+        days = list(DS.prepare(raw)["timestamp"])
+        for idx in (20, 31, len(days) // 2, len(days) - 1):
+            today = days[min(idx, len(days) - 1)]
+            for over in ({}, {"allow_parent_correction": True}):
+                golden["trend_context"].append({"series": sid, "today": str(today), "settings": over,
+                                                "ctx": ctx_json(LR.trend_context(raw, today, over))})
+        golden["trend_context"].append({"series": sid, "today": None, "settings": {},
+                                        "ctx": ctx_json(LR.trend_context(raw, None, {}))})
     rng = np.random.default_rng(4242)
     for _ in range(1500):
         n = int(rng.choice([2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]))
@@ -208,6 +350,15 @@ def main():
                                  "daily_rows": len(pd_), "daily_last": str(pd_["timestamp"].iloc[-1])}
     counts = {}
     for f in golden["folds"]:
+        sts = f["states"]
+        for a, b in zip(sts, sts[1:]):
+            if a["phase"] == "origin_broken" and b["trend"] == "RANGE":
+                counts["q27_range_after_break"] = counts.get("q27_range_after_break", 0) + 1
+            if b["phase"] == "origin_broken" and a["phase"] != "origin_broken" and a["protected"] and b["protected"] \
+                    and a["protected"] != b["protected"]:
+                counts["q49_origin_moved_on_break"] = counts.get("q49_origin_moved_on_break", 0) + 1
+            if a["trend"] in ("UP", "DOWN") and b["trend"] in ("UP", "DOWN") and a["trend"] != b["trend"]:
+                counts["flip"] = counts.get("flip", 0) + 1
         for st in f["states"]:
             for key in ("trend", "phase", "counter"):
                 tag = f"{key}:{st[key]}"

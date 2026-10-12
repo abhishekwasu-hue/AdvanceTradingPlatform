@@ -53,10 +53,12 @@ class Pivot:
 
 def zigzag(h: np.ndarray, lo: np.ndarray, size: np.ndarray) -> List[Pivot]:
     """Causal zigzag on (oriented) highs and lows, in confirmation order (alternating H / L): a reversal of at least
-    size[t] (a price distance known at bar t; NaN: no reversal is read on that bar). A reversal on the bar that also
-    made the new extreme is not counted (the order inside a bar is unknown). When a swing is confirmed at bar t, the new
-    opposite extreme is the most extreme bar AFTER the pivot up to t (as app.price_action.causal_swings.zigzag_pivots
-    re-scans) - never just bar t, which would skip a deeper low / higher high between the pivot and t (BK3 review M1)."""
+    size[t] (a price distance known at bar t; NaN or 0: no reversal is read on that bar). A reversal on the bar that also
+    made (or tied) the new extreme is not counted (the order inside a bar is unknown); an equal extreme moves to the later
+    bar. When a swing is confirmed at bar t, the new opposite extreme is the most extreme bar AFTER the pivot up to t (as
+    app.price_action.causal_swings.zigzag_pivots re-scans) - never just bar t, which would skip a deeper low / higher high
+    between the pivot and t (BK3 review M1). With a positive size the pivots equal zigzag_pivots' exactly, ties included
+    (tested on tick-rounded prices)."""
     out: List[Pivot] = []
     n = len(h)
     finite = np.flatnonzero(np.isfinite(h) & np.isfinite(lo))
@@ -80,39 +82,22 @@ def zigzag(h: np.ndarray, lo: np.ndarray, size: np.ndarray) -> List[Pivot]:
         ht, lt, thr = float(h[t]), float(lo[t]), float(size[t])
         if not (np.isfinite(ht) and np.isfinite(lt)):
             continue
+        # an equal high / low moves the extreme to the later bar, so a reversal is never read on a bar that ties it
+        # (as zigzag_pivots: `>=` / `<=` tracking, distances measured as extreme - price)
+        if mode >= 0 and ht >= hi:
+            hi, hi_i = ht, t
+        if mode <= 0 and lt <= lw:
+            lw, lw_i = lt, t
         if not np.isfinite(thr) or thr <= 0:                    # the yardstick is not known yet: extremes only
-            if mode >= 0 and ht > hi:
-                hi, hi_i = ht, t
-            if mode <= 0 and lt < lw:
-                lw, lw_i = lt, t
             continue
-        if mode == 0:
-            if ht > hi:
-                hi, hi_i = ht, t
-            if lt < lw:
-                lw, lw_i = lt, t
-            if hi_i < t and lt <= hi - thr:
-                out.append(Pivot(t, hi_i, "H", hi))
-                mode = -1
-                lw, lw_i = lowest_after(hi_i, t)
-            elif lw_i < t and ht >= lw + thr:
-                out.append(Pivot(t, lw_i, "L", lw))
-                mode = 1
-                hi, hi_i = highest_after(lw_i, t)
-        elif mode == 1:
-            if ht > hi:
-                hi, hi_i = ht, t
-            elif lt <= hi - thr:
-                out.append(Pivot(t, hi_i, "H", hi))
-                mode = -1
-                lw, lw_i = lowest_after(hi_i, t)
-        else:
-            if lt < lw:
-                lw, lw_i = lt, t
-            elif ht >= lw + thr:
-                out.append(Pivot(t, lw_i, "L", lw))
-                mode = 1
-                hi, hi_i = highest_after(lw_i, t)
+        if mode >= 0 and hi_i < t and hi - lt >= thr:
+            out.append(Pivot(t, hi_i, "H", hi))
+            mode = -1
+            lw, lw_i = lowest_after(hi_i, t)
+        elif mode <= 0 and lw_i < t and ht - lw >= thr:
+            out.append(Pivot(t, lw_i, "L", lw))
+            mode = 1
+            hi, hi_i = highest_after(lw_i, t)
     return out
 
 

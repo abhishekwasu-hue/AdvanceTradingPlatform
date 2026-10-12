@@ -91,9 +91,9 @@ def test_listed_validated_catalogued_and_run_when_both_are_on(screener_on, monke
     monkeypatch.setattr(bk_routes, "fetch_frames", fake_fetch)
     out = client.post("/api/screener/breakouts/run", json={"template_id": "daily_vcp", "symbols": ["abc", "short"]}, headers=headers)
     assert out.status_code == 200, out.text
-    # BK3 review L4: the fetch covers the trend template's windows end to end (250 + 200 + ATR 14 + 1), and a short history is
-    # reported as such instead of running to a silent "no match"
-    assert asked[-1] == {"1d": 465}
+    # BK3 review L4: the fetch covers the trend template's look-backs end to end (the year 250 + the slow SMA 200 over its
+    # 21-bar slope + ATR 14 + 1), and a short history is reported as such instead of running to a silent "no match"
+    assert asked[-1] == {"1d": 486}
     assert "not enough history: 60 1d bars" in out.json()["problems"]["SHORT"] and "at least 251" in out.json()["problems"]["SHORT"]
     rows = out.json()["rows"]
     assert [r["symbol"] for r in rows] == ["ABC"] and rows[0]["event"] == "VCP3" and rows[0]["side"] == "up"
@@ -142,3 +142,14 @@ def test_the_taxonomy_hides_the_bk3_templates_until_both_flags_are_on(screener_o
     assert "breakouts_bk3.daily_vcp" not in shown and "breakouts.daily_52w_high" not in shown
     from app.screener import taxonomy as tx
     assert {"breakouts", "breakouts_bk3"} <= set(tx.default_hidden())
+
+
+def test_history_counts_only_the_windows_the_chosen_mode_reads():
+    """BK3 re-check: the template off leaves the VCP's base walk only; TTM does not read the band-width look-back; the MA
+    stack's lines count only when it is on."""
+    from app.screener.breakouts.routes import history_bars, min_signal_bars
+    assert (min_signal_bars("B3", {}), history_bars("B3", "1d", {})) == (251, 486)
+    assert (min_signal_bars("B3", {"tt_filter": False}), history_bars("B3", "1d", {"tt_filter": False})) == (126, 300)
+    assert min_signal_bars("B11", {}) == 146 and min_signal_bars("B11", {"squeeze_mode": "ttm"}) == 21
+    assert min_signal_bars("B12", {}) == 61 and min_signal_bars("B12", {"ma_stack": True}) == 201
+    assert min_signal_bars("B10", {"donchian_n": 55}) == 56 and min_signal_bars("B15", {}) == 35 and min_signal_bars("B1", {}) == 0

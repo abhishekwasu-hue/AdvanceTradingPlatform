@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { LegendCard } from "./LegendCard";
-import { cardFor, cardLines, filledSource, isLegends, LINE_KEYS, rangeText, withLegendCards, type LegendsLibrary } from "./legends";
+import { cardFor, cardLines, filledSource, isLegends, LINE_KEYS, parseSymbols, rangeText, withLegendCards, type LegendsLibrary } from "./legends";
 import legendsSample from "./legendsSample.json";
 import { ScreenGallery } from "./ScreenGallery";
 import taxonomySample from "./taxonomyLegendsSample.json";
@@ -144,5 +144,26 @@ describe("ScreenGallery with the Legends library (U7 LG1)", () => {
     expect(html).toContain(`data-legend-id="${id}"`);
     expect(html).not.toContain("data-screen-id=");
     expect(text(html)).toContain(cardFor(lib, id)!.disclaimer);
+  });
+});
+
+describe("Legends card actions (U7 LG4a)", () => {
+  const card = lib.cards[1];
+  it("parses a symbol list the way the run takes it", () => {
+    expect(parseSymbols("reliance, TCS  infy;tcs bad/sym")).toEqual(["RELIANCE", "TCS", "INFY"]);
+    expect(parseSymbols(Array.from({ length: 60 }, (_, i) => `S${i}`).join(" "))).toHaveLength(50);
+  });
+
+  it("offers Run on my list, Copy and an alert rule; a card a rule cannot hold says why and offers none", () => {
+    const on = renderToStaticMarkup(<LegendCard card={card} actions={{ run: true, alert: true, alert_reason: null }} />);
+    expect(on).toContain('aria-label="Use this screen"');
+    expect(on).toContain("Run on my list (up to 50 symbols)");
+    expect(on).toContain("Copy ScreenQL");
+    expect(on).toContain("Alert me on one symbol (bar close)");
+    expect(on).not.toMatch(/\b(buy|sell|order|trade now)\b/i);
+    const off = renderToStaticMarkup(<LegendCard card={card} actions={{ run: true, alert: false, alert_reason: "This screen ranks symbols within a list." }} />);
+    expect(off).toContain('data-testid="legend-alert-reason"');
+    expect(off).toContain("This screen ranks symbols within a list.");
+    expect(renderToStaticMarkup(<LegendCard card={card} />)).not.toContain("legend-actions");     // flag off: no actions
   });
 });

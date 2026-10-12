@@ -161,7 +161,11 @@ async def legends(user: User = Depends(get_current_user), session: AsyncSession 
     editable parameters (defaults and documented ranges) and where the screen is filed in the taxonomy."""
     await _flag(session, user)
     await require_flag(session, LEGENDS_FLAG, user.tenant_id)
-    return lg.payload(lg.load(), tx.load(), slices=await _legend_slices(session, user))
+    slices = await _legend_slices(session, user)
+    body = lg.payload(lg.load(), tx.load(), slices=slices)
+    if await flag_enabled(session, lg.ACTIONS_FLAG, user.tenant_id):     # U7 LG4a: Run on my list / Alert me from a card
+        body["actions"] = lg.actions(lg.load(), slices)
+    return body
 
 
 @router.get("/legends/{card_id}")
@@ -173,7 +177,10 @@ async def legend_card(card_id: str, user: User = Depends(get_current_user), sess
     card = library.card(card_id)
     if card is None or card.slice not in await _legend_slices(session, user):
         raise HTTPException(status_code=404, detail="no such Legends card")
-    return {**lg.card_payload(card, library, tx.load()), "header": lg.HEADER}
+    out = {**lg.card_payload(card, library, tx.load()), "header": lg.HEADER}
+    if await flag_enabled(session, lg.ACTIONS_FLAG, user.tenant_id):
+        out["actions"] = lg.card_actions(card)
+    return out
 
 
 @router.post("/validate")

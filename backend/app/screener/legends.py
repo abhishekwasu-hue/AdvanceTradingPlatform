@@ -492,6 +492,26 @@ def payload(library: Library, taxonomy: Optional[tx.Taxonomy] = None, slices: Se
             "cards": [card_payload(c, library, tax) for c in library.of(slices)]}
 
 
+ACTIONS_FLAG = "screener_legends_actions"   # U7 LG4a: Run on my list / Alert me / Copy from a card
+
+
+def card_actions(card: Card) -> Dict[str, Any]:
+    """U7 LG4a: what a card offers. Run on my list always; an alert rule only when an instrument rule can hold the
+    screen - never one that ranks within a list (cross-sectional) or reads fundamentals (alerts do not load them)."""
+    from app.screener import fundamentals as fundamentals_gate
+    ast, validated = compile_screen(card.source, base_tf=card.base_tf, params=card.defaults())
+    why: Optional[str] = None
+    if validated.cross_sectional:
+        why = "This screen ranks symbols within a list, so it runs on a list rather than as a one-symbol alert."
+    elif fundamentals_gate.flagged_calls(ast):
+        why = "Alert rules do not read reported fundamentals yet; run the screen on your list instead."
+    return {"run": True, "alert": why is None, "alert_reason": why}
+
+
+def actions(library: Library, slices: Sequence[str] = ("lg1",)) -> Dict[str, Dict[str, Any]]:
+    return {c.id: card_actions(c) for c in library.of(slices)}
+
+
 def _ids() -> List[str]:
     return load().ids()
 
@@ -506,7 +526,7 @@ tx.register_source(SOURCE, _ids, flag=FLAG)
 tx.register_screen_flags(SOURCE, _screen_flags)
 
 
-__all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "FLAG_LG2", "FLAG_LG3", "SLICES", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
+__all__ = ["ACTIONS_FLAG", "actions", "card_actions", "DATA_FILE", "DISCLAIMER", "FLAG", "FLAG_LG2", "FLAG_LG3", "SLICES", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
            "LegendsError", "Line", "Param", "Source", "card_payload", "english_problems", "link_problems", "lint", "load", "parse",
            "payload", "people_named", "wording_problems"]
 

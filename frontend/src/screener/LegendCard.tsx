@@ -11,7 +11,8 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useRef } from "react";
 import { Button } from "../components/primitives";
-import { cardLines, filledSource, rangeText, type LegendCardData } from "./legends";
+import { LegendActions } from "./LegendActions";
+import { cardLines, filledSource, rangeText, type CardActions, type LegendCardData } from "./legends";
 
 export interface LegendCardProps {
   card: LegendCardData;
@@ -21,9 +22,11 @@ export interface LegendCardProps {
   onOpen?: () => void;
   /** Move focus to the heading on mount (the gallery does this when the card opens). */
   focusOnMount?: boolean;
+  /** U7 LG4a: Run on my list / Alert me / Copy (flag screener_legends_actions; absent while it is off). */
+  actions?: CardActions;
 }
 
-export function LegendCard({ card, onBack, canOpen = false, onOpen, focusOnMount = false }: LegendCardProps) {
+export function LegendCard({ card, onBack, canOpen = false, onOpen, focusOnMount = false, actions }: LegendCardProps) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { if (focusOnMount) heading.current?.focus(); }, [focusOnMount]);
   const headingId = `legend-${card.id}`;
@@ -95,6 +98,8 @@ export function LegendCard({ card, onBack, canOpen = false, onOpen, focusOnMount
           ))}
         </ul>
       </section>
+
+      {actions && <LegendActions card={card} actions={actions} />}
 
       <div className="mt-4 flex items-center justify-end gap-2">
         <Button size="sm" onClick={onOpen} disabled={!canOpen || !onOpen} aria-label={`Open ${card.name} in the builder`}

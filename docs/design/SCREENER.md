@@ -1213,6 +1213,22 @@ see later restatements and later reports, so it is never read by a screen. LG3 a
 
   See LG3-2.
 
+## U7 LG4a: actions on a Legends card (flag `screener_legends_actions`)
+
+- With the flag on, `GET /api/screener/legends` (and one card) adds `actions`. Each card offers:
+  - **Run on my list:** the card's screen with its defaults filled in, through `POST /api/screener/run` (up to 50
+    symbols; the run's own refusals are shown, e.g. a fundamentals card while `screener_fundamentals` is off).
+  - **Copy ScreenQL.**
+  - **Alert me on one symbol:** a bar-close instrument rule through `POST /api/alerts/rules`, only where such a rule can
+    hold the screen. It is never offered for a screen that ranks within a list (Minervini, Greenblatt) or reads
+    fundamentals (LG3-3); those cards say why.
+- No new route; the frontend is `LegendActions.tsx` inside the full card. A match is a list entry or a notification,
+  never an order.
+- Tests: `tests/test_n3_lg4_actions.py` (flag, per-card eligibility and reasons, the rule the alert action sends is
+  accepted) and `LegendCard.test.tsx` (symbol parsing, the actions shown and their reasons).
+- **Not in LG4a (LG4-1):** the fitness sparkline and stats wait for screen fitness (S6: as-of history, rolling backtest,
+  trial ledger), which is not built. "Open in the builder" waits for a text import into the builder (LG1-7).
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

@@ -90,7 +90,7 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
 
         {detailCard ? (
           <div className="mt-3">
-            <LegendCard card={detailCard} focusOnMount={detail?.focus ?? false} onBack={() => setDetail(null)}
+            <LegendCard card={detailCard} focusOnMount={detail?.focus ?? false} onBack={() => setDetail(null)} actions={legends?.actions?.[detailCard.id]}
                         canOpen={!!detailScreen && canOpen(detailScreen)} onOpen={detailScreen ? () => onOpen(detailScreen) : undefined} />
           </div>
         ) : shown.length === 0 ? (

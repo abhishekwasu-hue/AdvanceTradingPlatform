@@ -205,6 +205,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     "screener_fundamentals": "Fundamentals in screens: point-in-time reported figures (growth, earnings yield, return on capital, Graham number, NCAV) - research only, places no orders",
     # U7 LG3: the third slice of Legends cards (Graham, Greenblatt, O'Neil; `slice: lg3`), on top of screener_legends.
     "screener_legends_lg3": "Legends LG3: value and growth cards on publicly described methods (needs screener_fundamentals to run; educational only, places no orders)",
+    # U7 LG4a: actions on a Legends card - Run on my list (POST /api/screener/run with the card's screen) and Alert me
+    # (an instrument alert rule, where one can hold the screen). OFF: the cards show no actions. Never an order.
+    "screener_legends_actions": "Legends card actions: run a card's screen on your list or set a bar-close alert from it (research only, places no orders)",
     "execution_core": "Execution core (N1 E1): entry intents from scans are queued and routed by one policy to a notification or a PAPER entry proposal (never a broker order)",
     # N2-1 (P1 spec 1.4 / 1.5, docs/design/N2_P1FGH.md): the progression ladder's discipline-score criterion (from the Z6
     # journal, when `discipline_engine` is on too) and the user's own figures on the ladder card - expectancy, profit
@@ -224,7 +227,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
                                "chart_price_action", "screener_legends_lg2", "screener_fundamentals",
-                               "screener_legends_lg3"})
+                               "screener_legends_lg3", "screener_legends_actions"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

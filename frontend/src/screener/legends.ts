@@ -39,7 +39,15 @@ export interface LegendCardData {
   screen: { id: string; source: string; base_tf: string; params: LegendParam[] };
   filing: { method: string; setup: string; tags: Record<string, unknown> } | null;
 }
-export interface LegendsLibrary { version: string; header: string; note: string; cards: LegendCardData[] }
+/** U7 LG4a (flag screener_legends_actions): what a card offers - Run on my list always, an alert where a one-symbol
+ * bar-close rule can hold the screen (never a list ranking, never fundamentals), with the reason when it cannot. */
+export interface CardActions { run: boolean; alert: boolean; alert_reason: string | null }
+export interface LegendsLibrary { version: string; header: string; note: string; cards: LegendCardData[]; actions?: Record<string, CardActions> }
+
+/** "RELIANCE, tcs  infy" -> ["RELIANCE", "TCS", "INFY"]: upper case, de-duplicated, at most `max` (the run's limit). */
+export function parseSymbols(text: string, max = 50): string[] {
+  return Array.from(new Set(text.split(/[\s,;]+/).map((s) => s.trim().toUpperCase()).filter((s) => /^[A-Z0-9&._-]{1,40}$/.test(s)))).slice(0, max);
+}
 
 /** A usable library: a header and a list of cards, each with its lines, disclaimer and screen (anything else - an
  * older server, a proxy page - shows no Legends detail rather than a broken one). */

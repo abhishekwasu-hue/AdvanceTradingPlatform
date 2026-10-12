@@ -404,7 +404,8 @@ class TradingWorker:
                         await session.rollback()
                 # H-1: Redis memory against its cap (every REDIS_MEMORY_CHECK_SECONDS), a WARNING at 70 %.
                 try:
-                    report.redis_memory_ratio = await self.redis_guard.check_memory(session)
+                    async with guarded(session):
+                        report.redis_memory_ratio = await self.redis_guard.check_memory(session)
                 except Exception as exc:  # noqa: BLE001 - a monitoring read never breaks trading
                     logger.exception("Redis memory check failed")
                     report.errors.append(f"redis memory check: {exc}")
@@ -953,8 +954,12 @@ class TradingWorker:
             pairs = [(a, adapters[_adapter_key(a.broker_name, a.account_label)]) for a in accounts
                      if a.status == "ACTIVE" and _adapter_key(a.broker_name, a.account_label) in adapters]
             if pairs:
-                reports = await reconcile_accounts(session, tenant_row, pairs, user_id=user.id, source="worker")
-                report.reconciled += 1 if reports else 0
+                try:
+                    async with guarded(session, keep=(tenant_row,)):
+                        reports = await reconcile_accounts(session, tenant_row, pairs, user_id=user.id, source="worker")
+                        report.reconciled += 1 if reports else 0
+                except Exception as exc:  # noqa: BLE001 - flagged and audited by the service; exits below still run
+                    logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
             elif live_broker is not None:
                 try:
                     async with guarded(session, keep=(tenant_row,)):
@@ -1046,7 +1051,7 @@ class TradingWorker:
             entries_allowed = no_new_after is None or now_ist.time() < no_new_after
             with bind_log_context(strategy_id=dep.strategy_id, deployment_id=dep.id):
                 try:
-                    async with guarded(session, keep=(dep,)):
+                    async with guarded(session, keep=(dep, tenant, user)):
                         executed = await self._evaluate_deployment(
                             session, dep, user, market_data, adapters, now, entries_allowed,
                         )
@@ -1561,8 +1566,14 @@ class TradingWorker:
                 logger.warning("Square-off: no price for %s (%s) - left open", trade.symbol, exc)
                 continue
             broker = live_broker if trade.mode == ExecutionMode.LIVE.value else None
-            outcome = await close_position(session, trade, price, "Intraday square-off", broker=broker, user_id=user_id)
-            closed += int(outcome.closed)
+            trade_id = trade.id
+            try:
+                # Review LOW-2 (ADR-0004): one savepoint per position - one close that fails never ends the square-off.
+                async with guarded(session, keep=(trade,)):
+                    outcome = await close_position(session, trade, price, "Intraday square-off", broker=broker, user_id=user_id)
+                closed += int(outcome.closed)
+            except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
+                logger.error("Square-off of trade %s failed: %s", trade_id, exc)
         if closed:
             logger.info("Square-off closed %d position(s) for tenant %s", closed, tenant_id)
         return closed

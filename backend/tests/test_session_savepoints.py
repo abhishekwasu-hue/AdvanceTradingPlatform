@@ -6,7 +6,7 @@ session needing a rollback (PendingRollbackError) - every later statement fails,
 the Postgres test (skipped without one) reproduces the aborted transaction itself."""
 import asyncio
 import os
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from sqlalchemy import select, text
@@ -207,3 +207,168 @@ def test_a_failed_housekeeping_step_leaves_the_cycle_session_working(monkeypatch
     assert news_reads and not any("news feed" in e for e in report.errors)   # the step after it still read the session
     assert not any("rolled back due to a previous exception" in e or "InFailedSqlTransaction" in e for e in report.errors), report.errors
     assert _run(cycles()) == before + 1                  # and the cycle reached its heartbeat
+
+
+# --- review fixes: per-position savepoints, commits right after a broker accepted an order ----------------------------------
+
+class _StopBroker(_FakeBroker):
+    """Stops stay TRIGGER PENDING (the base fake fills every order it is given)."""
+    async def get_order_book(self):
+        book = await super().get_order_book()
+        for o in book:
+            if o.order_type in ("SL-M", "SL"):
+                o.status, o.filled_quantity, o.average_price = "TRIGGER PENDING", 0, None
+        return book
+
+
+async def _rearm_case(factory, tag):
+    """Two LIVE positions without a standing stop. The guard re-arms the first; the second's step hits a SQL error. Run as
+    the worker runs it (inside guarded): the first position's new stop id must be committed and stay."""
+    from app.db.models import Tenant, User
+    from app.trading import stop_guard
+    async with factory() as session:
+        tenant = Tenant(name=f"sp-{tag}", plan="business")
+        session.add(tenant)
+        await session.flush()
+        user = User(tenant_id=tenant.id, email=f"sp-{tag}@example.com", hashed_password="!", is_active=True)
+        session.add(user)
+        await session.flush()
+        ids = []
+        for sym in ("SPGA", "SPGB"):
+            trade = TradeRecord(tenant_id=tenant.id, user_id=user.id, mode="LIVE", strategy_id=STRATEGY, symbol=sym, exchange="NSE",
+                                direction="LONG", entry_price=100.0, quantity=1, stop_loss=98.0, target1=104.0, target2=108.0,
+                                sl_order_id=f"GONE-{sym}", entry_time=OPEN_NOW - timedelta(minutes=30))
+            session.add(trade)
+            await session.flush()
+            ids.append(trade.id)
+        await session.commit()
+        tenant_id, first, second = tenant.id, ids[0], ids[1]
+
+    real_notify = stop_guard.notify
+
+    async def notify(session, tid, kind, **kw):
+        if kw.get("related_trade_id") == second:
+            await session.execute(text("SELECT * FROM no_such_table_sp"))     # a SQL error on the second position's step
+        return await real_notify(session, tid, kind, **kw)
+    stop_guard.notify = notify
+    try:
+        async with factory() as session:
+            tenant = await session.get(Tenant, tenant_id)
+            try:
+                async with guarded(session, keep=(tenant,)):
+                    counts = await stop_guard.verify_protective_stops(session, tenant, _StopBroker(ltp=100.0), user_id=None)
+            except Exception:  # noqa: BLE001 - the worker logs it
+                counts = None
+            assert (await session.execute(text("SELECT 1"))).scalar() == 1
+    finally:
+        stop_guard.notify = real_notify
+    async with factory() as session:
+        rows = {t.id: t.sl_order_id for t in await session.scalars(select(TradeRecord).where(TradeRecord.id.in_([first, second])))}
+    return counts, rows[first], rows[second]
+
+
+def test_a_rearmed_stop_id_survives_a_later_positions_error():
+    counts, first_id, second_id = _run(_rearm_case(_session_factory, "rearm-sqlite"))
+    assert first_id not in (None, "GONE-SPGA") and first_id.startswith("ORD-")   # the new stop - never the old id back
+    assert second_id not in (None, "GONE-SPGB")                                   # committed before its own error too
+    assert counts is not None and counts["failed"] == 1 and counts["rearmed"] >= 1   # the pass went on past the error
+
+
+@pytest.mark.skipif(_pg_url() is None, reason="needs Postgres at DATABASE_URL (the default unit run uses SQLite)")
+def test_on_postgres_a_rearmed_stop_id_survives_a_later_positions_error():
+    from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+    from app.db.models import Base
+
+    async def go():
+        engine = create_async_engine(_pg_url())
+        try:
+            async with engine.begin() as conn:
+                await conn.run_sync(Base.metadata.create_all)
+            return await _rearm_case(async_sessionmaker(engine, expire_on_commit=False), f"rearm-pg-{os.getpid()}")
+        finally:
+            await engine.dispose()
+    counts, first_id, second_id = _run(go())
+    assert first_id.startswith("ORD-") and second_id not in (None, "GONE-SPGB")
+    assert counts is not None and counts["failed"] == 1 and counts["rearmed"] >= 1   # the pass went on past the error
+
+
+def test_one_accounts_sql_error_never_blocks_the_other_accounts_reconciliation(monkeypatch):
+    from types import SimpleNamespace
+    from app.db.models import Tenant
+    from app.reconciliation import service as recon
+    t = _tenant("sp-recon@example.com")
+    seen = []
+
+    async def run_reconciliation(session, tenant, broker_name, adapter, *, account, **kw):
+        seen.append(account.account_label)
+        if account.account_label == "first":
+            await _failed_flush(session, date(2031, 8, 1))
+        await session.execute(select(TradeRecord.id).limit(1))                # the session still works for the next one
+        return SimpleNamespace(broker_name=broker_name, account_label=account.account_label, items=[], mismatched_count=0,
+                               accounts=[account.account_label])
+    monkeypatch.setattr(recon, "run_reconciliation", run_reconciliation)
+    accounts = [SimpleNamespace(broker_name="upstox", account_label=label) for label in ("first", "second")]
+
+    async def go():
+        async with _session_factory() as session:
+            tenant = await session.get(Tenant, t["tenant_id"])
+            reports = await recon.reconcile_accounts(session, tenant, [(a, None) for a in accounts], source="worker")
+            await session.execute(select(TradeRecord.id).limit(1))
+            return reports
+    reports = _run(go())
+    assert seen == ["first", "second"] and [r.account_label for r in reports] == ["second"]
+
+
+def test_one_positions_close_error_never_ends_the_sweep_or_the_square_off(monkeypatch):
+    from app.trading import position_monitor as pm
+    t = _tenant("sp-sweep@example.com")
+    dep = _deploy(t)
+    _set_active(dep)
+    first, second = _open_trade(t, dep, symbol="SPSWA"), _open_trade(t, dep, symbol="SPSWB")
+    real_close = pm.close_position
+
+    async def close(session, trade, *args, **kwargs):
+        if trade.id == first:
+            await _failed_flush(session, date(2031, 9, 1))                       # the first position's close hits a SQL error
+        return await real_close(session, trade, *args, **kwargs)
+    monkeypatch.setattr(pm, "close_position", close)
+    monkeypatch.setattr(tw, "close_position", close)
+    report = _run(_worker(monkeypatch, _FakeBroker(ltp=97.0)).run_cycle(now=OPEN_NOW))              # both below their stop
+    assert _trade(first).exit_time is None and _trade(second).exit_time is not None                # the sweep went on
+    assert not any("rolled back due to a previous exception" in e for e in report.errors), report.errors
+
+    third = _open_trade(t, dep, symbol="SPSWC")                                  # square-off: the same isolation
+    late = datetime(2026, 9, 25, 15, 16, tzinfo=OPEN_NOW.tzinfo)
+    _run(_worker(monkeypatch, _FakeBroker(ltp=100.5, intraday_bars=400)).run_cycle(now=late))
+    assert _trade(first).exit_time is None and _trade(third).exit_reason == "Intraday square-off"
+
+
+def test_a_live_exit_order_id_is_committed_before_the_booking(monkeypatch):
+    from app.execution import paper_broker
+    from app.trading import position_monitor as pm
+    monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
+    t = _tenant("sp-exit-id@example.com")
+    dep = _deploy(t)
+
+    async def seed():
+        async with _session_factory() as session:
+            trade = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="LIVE", strategy_id=STRATEGY, symbol="SPEXIT",
+                                exchange="NSE", deployment_id=dep, direction="LONG", entry_price=100.0, quantity=1, stop_loss=98.0,
+                                target1=104.0, target2=108.0, entry_time=OPEN_NOW - timedelta(minutes=30))
+            session.add(trade)
+            await session.commit()
+            return trade.id
+    trade_id = _run(seed())
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("booking failed after the exit order went out")
+    monkeypatch.setattr(paper_broker.PaperBroker, "estimate_round_trip_costs", boom)
+
+    async def go():
+        async with _session_factory() as session:
+            trade = await session.get(TradeRecord, trade_id)
+            with pytest.raises(RuntimeError):
+                async with guarded(session, keep=(trade,)):
+                    await pm.close_position(session, trade, 97.0, "Stop loss", broker=_FakeBroker(ltp=97.0), user_id=t["user_id"])
+    _run(go())
+    assert (_trade(trade_id).exit_order_id or "").startswith("ORD-")             # the broker took it: recorded for good

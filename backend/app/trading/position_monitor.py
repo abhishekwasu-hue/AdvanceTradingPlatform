@@ -36,6 +36,7 @@ from app.brokers.token_lifecycle import build_adapter, get_credential_record, to
 from app.core import config
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
 from app.db.models import BrokerCredentialRecord, StrategyDeploymentRecord, Tenant, TradeRecord
+from app.db.savepoint import guarded
 from app.compliance.algo_id import audit_order, order_algo_id
 from app.execution.tagging import LEG_EXIT, build_order_tag
 from app.execution.paper_broker import PaperBroker
@@ -386,6 +387,10 @@ async def close_position(
         if outcome.broker_exit_order_id:
             await audit_order(session, trade.tenant_id, user_id, leg="EXIT", broker_name=broker.name, symbol=trade.symbol,
                               tag=outcome.exit_tag, broker_order_id=outcome.broker_exit_order_id, ref=f"trade {trade.id}: {reason}")
+            # Review LOW-1: the broker took the exit - its id and the audit row are committed now, so no later error
+            # (the booking below, a caller's savepoint) can roll back the record that the order went out.
+            trade.exit_order_id = outcome.broker_exit_order_id
+            await session.commit()
         if outcome.broker_uncertain and tenant is not None:
             from app.reconciliation.service import mark_broker_uncertain   # local: reconciliation imports this module
             await mark_broker_uncertain(session, tenant, outcome.broker_uncertain)
@@ -609,6 +614,9 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                         stop_type, stop_limit = "SL-M", None
                 await live_broker.modify_order(trade.sl_order_id, trigger_price=trigger,
                                                price=stop_limit if stop_type == "SL" else None)
+                # Review LOW-1: the broker moved the stop - the new level is committed now, so no later error rolls the
+                # record back to a stop that no longer stands at the broker.
+                await session.commit()
             except _SameTrigger:
                 pass
             except Exception as exc:  # noqa: BLE001 - the software stop still applies
@@ -655,7 +663,13 @@ async def monitor_open_positions(
             groups.setdefault(trade.leg_group_id, []).append(trade)
     marked = False
     for group_id, legs in groups.items():
-        outcomes.extend(await _monitor_group(session, legs, price_lookup, broker=broker, user_id=user_id))
+        leg_ids = [leg.id for leg in legs]
+        try:
+            async with guarded(session, keep=tuple(legs)):
+                outcomes.extend(await _monitor_group(session, legs, price_lookup, broker=broker, user_id=user_id))
+        except Exception as exc:  # noqa: BLE001 - one structure's failure never ends the sweep (ADR-0004)
+            logger.error("Monitoring group %s failed: %s", group_id, exc)
+            outcomes.extend(CloseOutcome(trade_id=i, closed=False, warnings=[f"Monitoring failed: {exc}"]) for i in leg_ids)
         marked = marked or any(leg.mark_time is not None for leg in legs)
     for trade in open_trades:
         if trade.leg_group_id:
@@ -668,37 +682,45 @@ async def monitor_open_positions(
             continue
         _mark(trade, price)
         marked = True
-        # Phase J1: dynamic exits - tighten the stop (trailing / break-even) or close on time,
-        # with the same rule code the backtest engine runs.
-        if trade.exit_rules:
-            time_reason = await _apply_trade_exit_rules(session, trade, price, broker=broker, now=now)
-            if time_reason is not None:
+        trade_id = trade.id
+        try:
+            # Review LOW-2 (ADR-0004): one savepoint per position - a close that fails on this one (a SQL error, a
+            # broker answer the booking cannot take) never ends the sweep for the positions after it.
+            async with guarded(session, keep=(trade,)):
+                # Phase J1: dynamic exits - tighten the stop (trailing / break-even) or close on time,
+                # with the same rule code the backtest engine runs.
+                if trade.exit_rules:
+                    time_reason = await _apply_trade_exit_rules(session, trade, price, broker=broker, now=now)
+                    if time_reason is not None:
+                        trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
+                        if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:
+                            trade_broker = await broker_for_trade(session, trade)
+                        outcomes.append(await close_position(session, trade, price, time_reason, broker=trade_broker, user_id=user_id))
+                        continue
+                underlying_price = None
+                if (trade.instrument_kind or "UNDERLYING") == "OPTION" and trade.underlying_symbol:
+                    # The strategy's levels live on the underlying (Phase F4); without its quote the
+                    # premium floor/ceiling still protects the position this cycle.
+                    try:
+                        underlying_price = await price_lookup(trade.underlying_symbol, underlying_exchange(trade.underlying_symbol))
+                    except Exception as exc:  # noqa: BLE001
+                        logger.warning("No underlying price for %s (trade %s): %s - premium check only", trade.underlying_symbol, trade.id, exc)
+                hit = check_contract_exit(trade, price, underlying_price)
+                if hit is None:
+                    continue
+                reason, exit_price = hit
+                if exit_approval is not None and not approval_policy.is_protective(reason) and exit_approval(trade):
+                    asks.append((trade, reason, price))          # asked after the sweep: no question ever delays another exit
+                    outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"{reason}: waiting for \"Exit now?\" approval"]))
+                    continue
                 trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
                 if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:
                     trade_broker = await broker_for_trade(session, trade)
-                outcomes.append(await close_position(session, trade, price, time_reason, broker=trade_broker, user_id=user_id))
-                continue
-        underlying_price = None
-        if (trade.instrument_kind or "UNDERLYING") == "OPTION" and trade.underlying_symbol:
-            # The strategy's levels live on the underlying (Phase F4); without its quote the
-            # premium floor/ceiling still protects the position this cycle.
-            try:
-                underlying_price = await price_lookup(trade.underlying_symbol, underlying_exchange(trade.underlying_symbol))
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("No underlying price for %s (trade %s): %s - premium check only", trade.underlying_symbol, trade.id, exc)
-        hit = check_contract_exit(trade, price, underlying_price)
-        if hit is None:
-            continue
-        reason, exit_price = hit
-        if exit_approval is not None and not approval_policy.is_protective(reason) and exit_approval(trade):
-            asks.append((trade, reason, price))          # asked after the sweep: no question ever delays another exit
-            outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"{reason}: waiting for \"Exit now?\" approval"]))
-            continue
-        trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
-        if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:
-            trade_broker = await broker_for_trade(session, trade)
-        outcomes.append(await close_position(session, trade, exit_price, reason, broker=trade_broker, user_id=user_id,
-                                             underlying_price=underlying_price))
+                outcomes.append(await close_position(session, trade, exit_price, reason, broker=trade_broker, user_id=user_id,
+                                                     underlying_price=underlying_price))
+        except Exception as exc:  # noqa: BLE001 - this position stays open and is judged again next cycle
+            logger.error("Monitoring trade %s failed: %s", trade_id, exc)
+            outcomes.append(CloseOutcome(trade_id=trade_id, closed=False, warnings=[f"Monitoring failed: {exc}"]))
     if marked:
         # P0.5 / T6: persist the marks of positions that stayed open (close_position committed its own).
         try:

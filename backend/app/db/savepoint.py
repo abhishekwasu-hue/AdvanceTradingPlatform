@@ -11,6 +11,11 @@ exits and the heartbeat. `guarded(session)` puts the step in a savepoint:
 * the step succeeds: the savepoint is released (nothing is committed here).
 
 The exception always propagates - the caller's `except` decides what to log.
+
+Review LOW-3 (noted, not changed): a worker cycle now opens a savepoint per step, per tenant, per deployment and per
+position - tens to a few hundred in one transaction on a busy cycle. Each is a SAVEPOINT / RELEASE pair; Postgres keeps
+that cheap (subtransactions past 64 per transaction spill to pg_subtrans, which matters only with long-running readers).
+Most steps commit soon after they start, which ends the transaction and its savepoints with it.
 """
 import logging
 from contextlib import asynccontextmanager

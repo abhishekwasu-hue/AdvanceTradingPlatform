@@ -872,6 +872,35 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
             "usage": metering.spent_by(provider)}
 
 
+class AnalyzeBody(BaseModel):
+    symbol: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9 &._:-]+$")
+    exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
+    language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")
+
+
+@router.post("/analyze")
+async def analyze_symbol(body: AnalyzeBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
+    """H-C4 (behind `ai_multiview`, off by default): "analyze <symbol>" - technical, options, news and macro views from the
+    platform's read tools, then the readings that lean up / down, the risks and the possibilities (cheap tier words the
+    views, strong tier the summary, both checked; the rules without an AI provider). The model is given no tool: it can
+    neither place an order nor file a proposal. The situation and possibilities - never advice."""
+    from app.ai import metering, multiview
+    from app.ai.tools import ToolContext
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    await require_flag(session, multiview.FLAG, user.tenant_id)
+    lang = body.language or _ai_language(user)
+    tenant = await _tenant(session, user)
+    cheap = await ai_settings.provider_for(session, tenant, task="classification", user_id=user.id)
+    strong = await ai_settings.provider_for(session, tenant, task="general", user_id=user.id)
+    out = await multiview.analyze(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange, lang=lang,
+                                  gather_provider=cheap, synth_provider=strong)
+    reason = getattr(strong, "reason", "")
+    if reason:
+        out["ai_note"] = f"AI not used ({reason}); worded by the rules"
+    out["usage"] = {"cheap": metering.spent_by(cheap), "strong": metering.spent_by(strong)}
+    return out
+
+
 class ResearchBody(BaseModel):
     idea: str = Field(min_length=3, max_length=1000)
     symbol: str = Field(default="NIFTY 50", min_length=1, max_length=50)

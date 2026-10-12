@@ -58,6 +58,7 @@ class SymbolData:
     is_fno: Optional[bool] = None
     indices: Set[str] = field(default_factory=set)
     option_chain: Optional[Any] = None                     # app.brokers.models.OptionChain for PCR / ChainBias / MaxPainDistancePct
+    exchange: Optional[str] = None                         # U6 BK2: the session clock of the intraday breakout functions (None = NSE)
 
 
 @dataclass
@@ -127,6 +128,27 @@ class _Eval:
         if base_tf not in data.frames or data.frames[base_tf].empty:
             raise ScreenRuntimeError(f"{data.symbol}: no {base_tf} bars")
         self.frames: Dict[str, pd.DataFrame] = dict(data.frames)
+        self._session_bars: Dict[Tuple[Any, ...], Any] = {}      # U6 BK2: one session map / VWAP / time-of-day series per frame
+
+    def session_bars(self, tf: str, sessions: int = 20, min_sessions: int = 5, mode: str = "bar") -> Any:
+        """U6 BK2: the breakout Bars of a timeframe on the symbol's exchange clock, cached for the screen run, so a screen
+        that reads ORBreakout, SessionVWAP and RelVolumeTOD on one frame builds its sessions and averages once."""
+        key = (tf, sessions, min_sessions, mode)
+        if key not in self._session_bars:
+            from app.screener.breakouts import session as ses
+            from app.screener.breakouts.screens import Bars
+            try:
+                calendar = ses.calendar_for(self.data.exchange or "NSE")
+            except ValueError as exc:
+                raise ScreenRuntimeError(str(exc)) from exc
+            b = Bars(self.frame(tf), _breakout_params({"tod_sessions": sessions, "tod_min_sessions": min_sessions, "tod_mode": mode}),
+                     tf=tf, calendar=calendar)
+            try:
+                b.sessions()
+            except ValueError as exc:
+                raise ScreenRuntimeError(str(exc)) from exc
+            self._session_bars[key] = b
+        return self._session_bars[key]
 
     def frame(self, tf: str) -> pd.DataFrame:
         if tf not in self.frames:
@@ -224,6 +246,9 @@ class _Eval:
         def _text(i: int, default: str) -> str:
             return str(self.ev(args[i], tf)) if len(args) > i else default
 
+        def _bool(i: int, default: bool) -> bool:
+            return bool(_last(self.ev(args[i], tf))) if len(args) > i else default
+
         impl: Dict[str, Callable[[], Any]] = {
             "SMA": lambda: self.series(args[0], tf).rolling(win(1)).mean(),
             "EMA": lambda: _ema(self.series(args[0], tf), win(1)),
@@ -273,6 +298,19 @@ class _Eval:
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),
+            # U6 BK2: intraday breakouts on the exchange session (NSE clock; app/screener/breakouts/intraday.py)
+            "ORBreakout": lambda: _breakout(f, "B16", str(self.ev(args[0], tf)), {
+                "or_minutes": num(1, 15), "tod_vol_mult": num(2, 1.5), "vwap_agree": _bool(3, True), "skip_first_min": num(4, 15),
+                "min_break_atr": num(5, 0.2)}, tf=tf, bars=self.session_bars(tf)),
+            "DayLevelBreak": lambda: _breakout(f, "B17", str(self.ev(args[0], tf)), {
+                "day_level": _text(1, "first_hour"), "tod_vol_mult": num(2, 1.5), "vwap_agree": _bool(3, True), "skip_first_min": num(4, 15),
+                "min_break_atr": num(5, 0.2)}, tf=tf, bars=self.session_bars(tf)),
+            "DayExtremeBreak": lambda: _breakout(f, "B18", str(self.ev(args[0], tf)), {
+                "tod_vol_mult": num(1, 1.5), "vwap_agree": _bool(2, True), "skip_first_min": num(3, 15), "min_break_atr": num(4, 0.2)}, tf=tf,
+                bars=self.session_bars(tf)),
+            "RelVolumeTOD": lambda: pd.Series(self.session_bars(tf, win(0, 20), min(5, win(0, 20)), _text(1, "bar")).tod_rvol(), index=f.index,
+                                              dtype=float),
+            "SessionVWAP": lambda: pd.Series(self.session_bars(tf).vwap(), index=f.index, dtype=float),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -505,15 +543,17 @@ def _breakout_params(overrides: Dict[str, Any]) -> Dict[str, Any]:
         raise ScreenRuntimeError(str(exc)) from exc
 
 
-def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any], what: str = "signal") -> pd.Series:
+def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any], what: str = "signal", tf: Optional[str] = None,
+              bars: Any = None) -> pd.Series:
     """U6 BK1: one breakout screen's per-leg signal on each bar (or, `type`, BOS / CHOCH on B2 signal bars), from
-    app/screener/breakouts/screens.py with every other parameter at its default (closed bars, causal)."""
+    app/screener/breakouts/screens.py with every other parameter at its default (closed bars, causal). `tf`: the bars'
+    timeframe; `bars`: the BK2 intraday screens' cached Bars on the symbol's exchange clock (_Eval.session_bars)."""
     from app.screener.breakouts.screens import evaluate_screen
     if side not in ("up", "down"):
         raise ScreenRuntimeError(f"unknown breakout side {side!r}")
     p = _breakout_params(overrides)
     try:
-        out = evaluate_screen(f, screen, p, sides=(side,))[side]
+        out = evaluate_screen(f, screen, p, sides=(side,), tf=tf, bars=bars)[side]
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
     if what == "type":

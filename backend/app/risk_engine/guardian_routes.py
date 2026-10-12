@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.core.enums import UserRole
 from app.core.models import RiskConfig
 from app.db.models import MarketEventRecord, User
@@ -63,7 +64,7 @@ async def list_events(
     return [guardian.event_as_dict(r) for r in rows]
 
 
-@router.post("/events", status_code=201)
+@router.post("/events", status_code=201, dependencies=[Depends(require_scope("risk:write"))])
 async def create_event(body: MarketEventBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     if body.global_event and user.role != UserRole.SUPER_ADMIN.value:
         raise HTTPException(status_code=403, detail="Only the platform operator can add a global market event")
@@ -85,7 +86,7 @@ async def create_event(body: MarketEventBody, user: User = Depends(require_trade
     return guardian.event_as_dict(row)
 
 
-@router.delete("/events/{event_id}", status_code=204)
+@router.delete("/events/{event_id}", status_code=204, dependencies=[Depends(require_scope("risk:write"))])
 async def delete_event(event_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> None:
     row = await session.get(MarketEventRecord, event_id)
     if row is None:

@@ -1639,6 +1639,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Catalog and run API. The flag gate also covers the registry, validate, saved screens, `/run` and alert rules.
 - Every threshold is a parameter with a default and a research note (`docs/research/breakouts.md`).
 - Open questions: BK1-1..BK1-7.
+
+### 2026-10-11 - Z7 / U6 BK2 intraday breakouts (flag screener_breakouts, off)
+- `app/screener/breakouts/session.py`: the exchange session clock from `market_data/calendar` (half days, circular
+  overrides, evening sessions), session VWAP, relative volume by time of day (prior sessions only).
+- `app/screener/breakouts/intraday.py`: B16 opening range (15 / 30 / 60), B17 first hour / previous day / first candle /
+  pre-market, B18 new high / low of day. Closes beyond by an ATR buffer, time-of-day volume, VWAP agreement, skip-first-N
+  and the no-new-entries window. One signal per leg: the cross for fixed levels (capped per session), the swing-leg rule
+  for B18.
+- Overlay: time-of-day volume for the volume and dry-up checks; the ORB templates' stop at the range midpoint.
+- ScreenQL `ORBreakout`, `DayLevelBreak`, `DayExtremeBreak`, `RelVolumeTOD`, `SessionVWAP` (flagged, intraday timeframes
+  only, lookback in whole sessions). Five intraday templates; parity with the engine bar by bar.
+- Open questions: BK2-1..BK2-7.
 ### 2026-10-12 02:30 IST - Z5 P1-d: plan-before-trade PAPER ticket, risk by default, strike breach and VIX gate ports
 - Branch `claude/z5-p1d-ticket-risk`, stacked on Z3-b (#174). Flags `risk_by_default` and `vix_gate`, both off.
   Design note: `docs/design/RISK_BY_DEFAULT.md`.
@@ -1760,3 +1772,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: the chart's Supertrend refuses a fractional period.
 - CI: a `lookahead` marker; the harness runs as its own job (`backend-lookahead`) and the main run skips it.
 - Open: OPEN_QUESTIONS Z10-6 (VWAP without volume).
+### 2026-10-12 - Z5 P1-d follow-up (verification findings on #179)
+- India VIX gate readings are no longer Copilot market memory: `latest()` shows SYMBOL rows only.
+- BT1b: a VIX reading records whose own session took it. Only that member sees India VIX's values (status strip and
+  refusal wording); every other member gets the same verdict and reason without the values.
+- With byob on, each active member's Tier A session is tried in turn until one reads.
+- A capture that raises before reading stores a failed reading, or is retried on the next cycle.
+- An approved ticket proposal whose time stop has come is not placed (FAILED with the reason).
+- The ticket's cash-underlying check uses the instrument master when it knows the symbol.
+- CI exports `Z5_TEST_PG_URL`: the entry-slot race test runs on Postgres in a scratch database it creates and drops.
+- The clock fix (time exits judged on the cycle's clock) is merged in from `claude/z5-p1d-clockfix`.

@@ -325,7 +325,7 @@ export default function AlertChannelsCard() {
                   <td className="py-1 pr-3 text-fg-muted whitespace-nowrap">{new Date(d.created_at).toLocaleString()}</td>
                   <td className="py-1 pr-3 capitalize text-fg-muted">{d.channel_type.toLowerCase()}</td>
                   <td className="py-1 pr-3 text-fg">[{d.severity}] {d.title}</td>
-                  <td className={`py-1 pr-3 font-semibold ${d.status === "SENT" ? "text-up" : d.status === "FAILED" ? "text-down" : "text-warn"}`}>{d.status}{d.attempts > 1 ? ` (${d.attempts})` : ""}</td>
+                  <td className={`py-1 pr-3 font-semibold ${d.status === "SENT" ? "text-up" : d.status === "FAILED" || d.status === "DEAD" ? "text-down" : d.status === "SUPPRESSED" ? "text-fg-muted" : "text-warn"}`}>{d.status}{d.attempts > 1 ? ` (${d.attempts})` : ""}</td>
                   <td className="py-1 text-fg-muted">{d.last_error ?? ""}</td>
                 </tr>
               ))}

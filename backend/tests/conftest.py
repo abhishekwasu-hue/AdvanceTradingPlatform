@@ -49,4 +49,6 @@ def _platform_state_reset_per_module():
     except Exception:  # noqa: BLE001 - a module that never touched the database has nothing to reset
         pass
     capture.reset_flag_cache()   # Z6: the journal hooks cache the flags they just saw reset
+    from app.platform import phase0_lock
+    phase0_lock.reset_cache()    # Z10-c: the broker chokepoint reads the lock state the last flag read left
 

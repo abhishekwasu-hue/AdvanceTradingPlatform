@@ -115,6 +115,7 @@ from app.screener.routes import router as screener_router
 from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.alerts.links_routes import router as alert_links_router
+from app.alerts.outbox_admin import router as alert_outbox_admin_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
@@ -233,6 +234,7 @@ app.include_router(screener_router)
 app.include_router(screener_breakouts_router)
 app.include_router(alert_rules_router)
 app.include_router(alert_links_router)
+app.include_router(alert_outbox_admin_router)  # Z10-b: alert outbox state, dead letters and replay (SUPER_ADMIN)
 app.include_router(compliance_router)
 app.include_router(chart_drawings_router)
 app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs

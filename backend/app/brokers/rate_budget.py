@@ -94,10 +94,12 @@ class RateLimitedBroker(BrokerInterface):
     tenant's budget. Order placement/cancellation is *not* exempt on purpose - an exit order
     that provokes a 429 is worse than one delayed by 200ms."""
 
-    def __init__(self, inner: BrokerInterface, budget: RateBudget, ops=None) -> None:
+    def __init__(self, inner: BrokerInterface, budget: RateBudget, ops=None, tenant_id: Optional[int] = None) -> None:
         self.inner = inner
         self.budget = budget
         self.name = inner.name
+        # Z10-c: whose orders these are, for the Phase 0 PAPER-only lock (app/platform/phase0_lock.py).
+        self.tenant_id = tenant_id
         # Part D2: the SEBI orders-per-second throttle (app/execution/ops_throttle.py), when OPS_THROTTLE_ENABLED.
         self.ops = ops
 
@@ -128,6 +130,11 @@ class RateLimitedBroker(BrokerInterface):
         return await self._call("get_historical_data", symbol, exchange, interval, from_date, to_date)
     async def get_option_chain(self, underlying, expiry=None): return await self._call("get_option_chain", underlying, expiry)
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
+        # Z10-c: the broker-order chokepoint of the Phase 0 PAPER-only lock. A new entry is refused before it costs a
+        # token or reaches the broker; exits, stops, modifies and cancels always pass (ADR-0004).
+        from app.platform import phase0_lock
+        if phase0_lock.locked(self.tenant_id) and phase0_lock.is_entry_order(order):
+            return phase0_lock.refused_response()
         if self.ops is None:
             return await self._call("place_order", order)
         from app.execution.ops_throttle import is_entry, refused_response

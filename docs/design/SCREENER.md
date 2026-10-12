@@ -867,6 +867,7 @@ Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1");
 - **When U6 BK1 / BK2 merge (#178 and its follow-up):** `app/screener/breakouts/templates.py` registers
   `register_source("breakouts", lambda: [f"breakouts.{t.id}" for t in TEMPLATES], flag="screener_breakouts")` and adds
   one taxonomy entry per template (proposed filing in OPEN_QUESTIONS TX1-6). Nothing in TX1 depends on that code.
+  Done in #181 (BK2): the source is registered and all 12 BK1 + BK2 templates are filed.
 - **API.** `GET /api/screener/taxonomy[?method=&setup=]` -> `{version, methods, setups, tags, screens, matrix, total,
   note}`. `matrix` is every method x setup cell with its count (0 = an empty cell, kept); `method` / `setup` narrow
   `screens` only. Unknown ids answer 422. Read-only; no tenant data.
@@ -978,6 +979,71 @@ parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 
   every frame from one daily fetch.
 - **Validation (L1, L2).** Breakout arguments carry their parameter's range. `NewHighBreakout` runs on @1d / @1w only
   and asks for weeks x 5 daily bars. `ATRPercentile` asks for n + lookback bars.
+
+## U6 BK2 (built): intraday breakouts, session VWAP, relative volume by time of day (flag `screener_breakouts`, off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` (B16 / B17 / B18 and the series they need). Code:
+`app/screener/breakouts/intraday.py` and `session.py`. Research notes and defaults: `docs/research/breakouts.md`. Open
+questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
+- **Session clock.** The open, close and no-new-entries time come from the exchange calendar
+  (`app/market_data/calendar.EXCHANGE_SESSIONS`; NSE 09:15 / 15:30 / 15:00). Bars are placed by their start in exchange
+  time. Half days need nothing special: a session is the bars its date has, and an unreached time slot is averaged
+  over the sessions that had it. An exchange circular can override a date's window. An evening-only date (Muhurat) is
+  recognised from its first bar. A session with another open time stays out of the time-of-day averages and is not the
+  next session's "previous day".
+- **Series.** Session VWAP from the open (pre-open bars left out; equal to `VWAP()` on regular-session bars).
+  Relative volume by time of day: the bar's volume (or the session's volume so far) over the same slot's mean in the
+  previous `tod_sessions` regular sessions. It uses prior sessions only, and a session never enters its own average.
+- **Screens** (Intraday style: 1m / 3m / 5m / 15m):
+  - B16 opening range (`or_minutes` 15 / 30 / 60);
+  - B17 first hour, previous day (PDH / PDL), first candle, pre-market (where the data has pre-open bars);
+  - B18 new high / low of day.
+
+  Each needs a close beyond the level by `min_break_atr` ATR, with time-of-day relative volume of at least
+  `tod_vol_mult` and the close on the breakout side of VWAP. Nothing signals in the first `skip_first_min` minutes, or
+  from a bar that closes after the no-new-entries time.
+- **One signal per leg.** B16 / B17 levels are fixed for the session, so the event is the cross: a close beyond after a
+  close that was not. It is capped at `intraday_max_per_session` per side (default 1, the first break). B18 uses the BK1
+  swing-leg rule, re-armed at each session start. An instrument alert on `ORBreakout("up")` fires once per leg through
+  the bar-close engine (tested).
+- **Overlay.** It is BK1's checklist. Volume expansion and base dry-up read the time-of-day relative volume. The
+  time-of-day window is a hard filter, not a grade point. ORB templates take the stop reference at the range midpoint
+  (`stop_mode` = midpoint; `base` = the opposite side). Rows add `vwap`, `clock` and `minutes_from_open`.
+- **ScreenQL.** `ORBreakout(side, minutes, v, vwap, skip, k)`, `DayLevelBreak(side, level, v, vwap, skip, k)`,
+  `DayExtremeBreak(side, v, vwap, skip, k)`, `RelVolumeTOD(sessions, mode)` and `SessionVWAP()`. They are flagged with
+  the family and limited to intraday timeframes (the validator says so). Their lookback is whole sessions (20 prior +
+  today), counted in the screen's own bars. Every breakout function's arguments (BK1 and BK2) are checked against
+  their parameter's range and choices at validate time (BK1's `Arg.bounds` via `registry._bk`). Five intraday templates are added;
+  their text is checked against the engine bar by bar and on the last bar. A test runs each template on broker-shaped
+  history: IST-aware bars limited to the real fetch window, `check_history=True`.
+- **Time zones.** Intraday buckets anchor at 09:15 IST of the first bar's UTC day (`runtime.session_origin`). Session
+  dates, VWAP resets and time-of-day slots use exchange time, so an IST-aware broker index gives the same result as a
+  UTC one (tested).
+- **API.** The breakout run fetches whole sessions for an intraday screen and uses the request's exchange clock. A
+  screen asked for on a timeframe it does not run on gets a 422. Grading runs in a worker thread with BK1's cap on
+  within x symbols and its higher-timeframe row filter. Alert gating covers the BK2 functions: screen rules refused
+  while the flag is off, rules paused (not dropped) while it is off, and bar close only (tested with `ORBreakout` /
+  `DayExtremeBreak`).
+
+### U6 BK2 review follow-up (#181)
+- **Exchange clock (M1).** `SymbolData.exchange` carries the venue from the screener fetch and the alert engine into the
+  runtime, so ScreenQL's session functions use the same clock as the breakout run (an MCX test compares the two).
+  Currency derivatives get their own 09:00-17:00 clock in the screener only; the platform calendar and the trading worker are unchanged (BK2-8). Alert rules on MCX / CDS that use a session function
+  are refused, because the bar-close engine still expects NSE bars (BK2-5).
+- **Daily context on the saved / alert path (M2).** This comes from BK1's verification fix: the fetch is sized for the
+  trend, the daily history is attached, and an unknown context blocks `not_against`. The 15m templates fetch the daily
+  history, and their intraday fetch covers the whole-session lookback within the 60-day cap (tested).
+- **Cost (M3).**
+  - Time-of-day volume is vectorised: a per-slot rolling mean, then merge_asof to the last earlier session. It is
+    about 6x faster on 1m bars, and equal to the plain definition with gaps, half days and special sessions.
+  - The opening-range levels are vectorised and memoised per frame.
+  - A screen run builds its session map, VWAP and averages once per timeframe (`_Eval.session_bars`).
+  - The bar-close engine runs a rule's screen in a worker thread.
+- **Guards (L2, L4).** Stamps that look like exchange wall-clock times without a zone are logged and noted on the run.
+  An opening range that is not a whole number of the timeframe's bars fails validation.
+- **Documented (L1, L3).** BK2-9: where special sessions come from, and what an unannounced late open does. BK2-3:
+  confirmations must pass on the crossing bar.
+- **Z10-a harness.** `app/quality/causal_cases.py` covers the 15 breakout functions (BK1 and BK2), each with an
+  `@` variant where the data allows. Z10-6 records BK2's VWAP answer (NaN without volume).
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

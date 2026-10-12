@@ -89,6 +89,9 @@ class OptionChain(BaseModel):
     rows: List[OptionChainRow] = []
 
 
+ORDER_INTENT_ENTRY = "ENTRY"
+
+
 class BrokerOrderRequest(BaseModel):
     symbol: str
     exchange: str = "NSE"
@@ -100,6 +103,9 @@ class BrokerOrderRequest(BaseModel):
     trigger_price: Optional[float] = None
     validity: str = "DAY"
     tag: Optional[str] = None
+    # Z10-c: what the platform built the order for - "ENTRY" for a new position (OrderRouter, the multi-leg executor);
+    # None when not stated. Never sent to the broker; the Phase 0 PAPER-only lock refuses only an explicit ENTRY.
+    intent: Optional[str] = None
 
 
 class BrokerOrderResponse(BaseModel):

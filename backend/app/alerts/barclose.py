@@ -21,9 +21,15 @@ S4b-2: a rule with `fire_on = "intrabar"` (flag `screener_intrabar`, off by defa
 forming instead: during the session only, at most every `RETRY_SECONDS`, firing at most once per bar and symbol (the
 S3a idempotency key is per bar). Its events say `intrabar: true` - the bar had not closed, so the condition may no
 longer hold at the close.
+
+Z10-b (G5, flag `alerts_stale_guard`): before a match is recorded, each symbol's data passes the alert badge
+(`app/alerts/staleness.py`, timed by the newest bar the rule reads); a symbol that fails is not evaluated, and a rule with
+no fresh symbol is "suppressed" (its `last_problem` says why) and retried later. Today's daily bar for a bar-close rule
+is only built from intraday bars that reach the session's last bucket.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time as time_module
@@ -35,6 +41,7 @@ import pandas as pd
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.alerts import staleness
 from app.db.models import AlertRuleRecord, ScreenRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
 from app.screener import compile_screen, nodes
@@ -146,6 +153,9 @@ class CycleCache:
     fetched_symbols: int = 0
     reused_symbols: int = 0
     reused_results: int = 0
+    # Z10-b: flag alerts_stale_guard per organisation for this cycle, and the symbols it held back.
+    stale_guard: Dict[int, bool] = field(default_factory=dict)
+    suppressed_symbols: int = 0
 
 
 @dataclass
@@ -218,10 +228,33 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
             daily = data.frames.get("1d") if data is not None and tf != "1d" else None
             if frame is not None and daily is not None:               # U6 BK1: daily context, sessions closed by this bar's close
                 kept["1d"] = closed_only(daily, "1d", bar_close(pd.DatetimeIndex([pd.Timestamp(bar)]), tf)[0])
-            closed = SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
+            closed = (SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno, exchange=data.exchange or exchange)
+                      if data is not None and frame is not None else None)
             cache.frames[key(sym)] = (dict(lookback), closed)
     cache.reused_symbols += len(symbols) - len(missing)
     return [d for s in symbols if (d := cache.frames[key(s)][1]) is not None], problems
+
+
+def _fresh_only(current: List[SymbolData], tf: str, now: datetime, holidays: Iterable[date]) -> Tuple[List[SymbolData], Optional[str]]:
+    """Z10-b: the symbols whose data passes the alert badge (`staleness.alert_badge`, timed by the newest bar of the
+    frame the rule reads), and the first refusal reason. A frame without a readable bar time is refused.
+
+    Defence in depth: today `closed_frame` already keeps only frames that reach the expected (latest closed) bar, so
+    this refuses nothing on the current paths. It holds the line if a future fetch or cache path lets an old bar through
+    (the test bypasses `closed_frame` to show it)."""
+    kept: List[SymbolData] = []
+    first: Optional[str] = None
+    for data in current:
+        frame = data.frames.get(tf)
+        last = frame.index[-1] if frame is not None and len(frame) else None
+        bar_start = last.to_pydatetime() if isinstance(last, pd.Timestamp) and not pd.isna(last) else None
+        badge = staleness.alert_badge(bar_start, tf, now, holidays)
+        if badge["alerts_suppressed"]:
+            first = first or f"{data.symbol}: {badge['stale_reason']}"
+            continue
+        kept.append(data)
+    staleness.count_suppressed("alert_record", len(current) - len(kept))
+    return kept, first
 
 
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
@@ -253,29 +286,44 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
-        from app.screener.breakouts.gate import flagged_calls
+        from app.screener.breakouts.gate import alert_clock_refusal, flagged_calls
         blocked = flagged_calls(ast)
         if blocked and (not breakouts_enabled or intrabar):
             # U6 BK1: the rule stays active and resumes when the flag is back; breakout rules fire on bar close only
             rule.last_problem = (f"{', '.join(n + '()' for n in blocked)}: the breakout screens are off for this organisation (flag {BREAKOUT_FLAG})"
                                  if not breakouts_enabled else "breakout rules fire on bar close only, not intrabar")
             return "unsupported", 0
+        clock = alert_clock_refusal(ast, rule.exchange) if blocked else None
+        if clock:                                                 # U6 BK2: session functions on the NSE clock only (BK2-5)
+            rule.last_problem = clock
+            return "unsupported", 0
         current, problems = await _current_universe(session, rule, symbols, bar, validated.fetch_lookback, fetch, cache, forming=intrabar,
                                                     per_user=per_user)
+        if current and await staleness.guard_on(session, rule.tenant_id, cache.stale_guard):
+            fresh, stale = _fresh_only(current, rule.base_tf, now, holidays)
+            cache.suppressed_symbols += len(current) - len(fresh)
+            current = fresh
+            if not current:
+                rule.last_problem = f"alerts suppressed: {stale}"   # Z10-b: nothing recorded on stale data; retried later
+                return "suppressed", 0
+        if not current:
+            rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
+            return "waiting", 0
+        frames = {d.symbol: d.frames[rule.base_tf] for d in current}
+        result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
+                      tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar)
+        if result_key in cache.results:
+            cache.reused_results += 1
+        else:
+            # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
+            # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
+            # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.
+            cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params,
+                                                                     vectorized=vectorized)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
-    if not current:
-        rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
-        return "waiting", 0
     fired = 0
-    frames = {d.symbol: d.frames[rule.base_tf] for d in current}
-    result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar, tuple(frames),
-                  json.dumps(params, sort_keys=True, default=str), intrabar)
-    if result_key in cache.results:
-        cache.reused_results += 1
-    else:
-        cache.results[result_key] = run_screen(ast, validated, current, base_tf=rule.base_tf, params=params, vectorized=vectorized)
     for match in cache.results[result_key]:
         values = _values(frames[match.symbol])
         if intrabar:
@@ -352,19 +400,38 @@ async def server_fetch(session: AsyncSession, tenant_id: int, symbols: List[str]
     today = datetime.now(timezone.utc).astimezone(IST).date()
     by_symbol = {d.symbol: d.frames.get("15m") for d in intraday}
     for data in universe:
-        data.frames["1d"] = with_today(data.frames["1d"], by_symbol.get(data.symbol), today)
+        data.frames["1d"] = with_today(data.frames["1d"], by_symbol.get(data.symbol), today, complete_only=not forming)
     return universe, problems, source
 
 
-def with_today(daily: pd.DataFrame, intraday: Optional[pd.DataFrame], today: date) -> pd.DataFrame:
-    """Appends today's daily bar built from today's intraday bars (label: the session open), unless already present."""
+def _reaches_close(part: pd.DataFrame, day: date) -> bool:
+    """The intraday bars of `day` include the session's last bucket of their own timeframe (the step between bars)."""
+    if len(part) < 2:
+        step_minutes = 15
+    else:
+        step_minutes = max(1, int(min((b - a).total_seconds() for a, b in zip(part.index[:-1], part.index[1:])) // 60))
+    last = _last_intraday_bar(day, step_minutes, datetime.combine(day, MARKET_CLOSE, IST))
+    return last is not None and part.index[-1] >= pd.Timestamp(last)
+
+
+def with_today(daily: pd.DataFrame, intraday: Optional[pd.DataFrame], today: date, *, complete_only: bool = False) -> pd.DataFrame:
+    """Appends today's daily bar built from today's intraday bars (label: the session open), unless already present.
+    `complete_only` (a bar-close rule; Z10-b fix): only when the intraday bars reach the session's last bucket - a feed
+    that stopped at noon must not become "today's close" (the rule then waits for the data, never fires on part of a
+    day); a candle for today already in the broker's daily history is dropped first (it may still be forming)."""
     if intraday is None or intraday.empty:
         return daily
+    if complete_only and len(daily) and daily.index[-1].astimezone(IST).date() >= today:
+        # Z10-b review: a broker's daily history may already end with today's candle while it is still forming. A
+        # bar-close rule never takes it: today's bar comes only from intraday bars that reach the session's last bucket.
+        daily = daily[[ts.astimezone(IST).date() < today for ts in daily.index]]
     if len(daily) and daily.index[-1].astimezone(IST).date() >= today:
         return daily
     mask = [ts.astimezone(IST).date() == today for ts in intraday.index]
     part = intraday[mask]
     if part.empty:
+        return daily
+    if complete_only and not _reaches_close(part, today):
         return daily
     row = {"open": part["open"].iloc[0], "high": part["high"].max(), "low": part["low"].min(), "close": part["close"].iloc[-1],
            "volume": part["volume"].sum()}

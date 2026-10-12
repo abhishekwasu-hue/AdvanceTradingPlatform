@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_trader
 from app.backtest import chain_recorder
 from app.backtest.engine import ENGINE_VERSION, run_backtest
 from app.backtest.models import ModelError, ModelSet
@@ -169,7 +169,7 @@ class BacktestRunner:
                 from app.market_data import live_access
                 # BT1b: recorded chains came through other organisations' broker sessions - not used with byob_data_tier on.
                 byob = tenant_id is not None and await live_access.byob_on(session, tenant_id)
-                rows = [] if byob else await chain_recorder.load_rows(session, underlying, start, end)
+                rows = [] if byob else await chain_recorder.load_rows(session, underlying, start, end, tenant_id=tenant_id)
                 if not rows and fallback is None:
                     raise HTTPException(status_code=400, detail=(
                         "Recorded option-chain quotes are not used while the bring-your-own-broker data tier is on; "
@@ -302,7 +302,7 @@ async def option_chain_coverage(underlying: Optional[str] = None, user: User = D
     if await live_access.byob_on(session, user.tenant_id):
         raise live_access.LiveDataRefused("Recorded option chains came through other sessions' broker feeds, so they are not shown while "
                                           "the bring-your-own-broker data tier is on.")
-    return await chain_recorder.coverage(session, underlying_name(underlying)[0] if underlying else None)
+    return await chain_recorder.coverage(session, underlying_name(underlying)[0] if underlying else None, tenant_id=user.tenant_id)
 
 
 @router.get("/api/backtest/option-chain/snapshots")
@@ -313,7 +313,8 @@ async def option_chain_snapshots(underlying: str, start: datetime, end: datetime
         # BT1b: recorded chains came through other organisations' broker sessions.
         raise live_access.LiveDataRefused("Recorded option chains came through other sessions' broker feeds, so they are not shown while "
                                           "the bring-your-own-broker data tier is on; upload your own rows or use the synthetic pricer.")
-    rows = await chain_recorder.load_rows(session, underlying_name(underlying)[0], start, end, limit=max(1, min(limit, 200_000)))
+    rows = await chain_recorder.load_rows(session, underlying_name(underlying)[0], start, end, tenant_id=user.tenant_id,
+                                        limit=max(1, min(limit, 200_000)))
     return [r.model_dump(mode="json") for r in rows]
 
 
@@ -323,11 +324,12 @@ class SnapshotUploadBody(BaseModel):
 
 
 @router.post("/api/backtest/option-chain/snapshots")
-async def upload_option_chain_snapshots(body: SnapshotUploadBody, user: User = Depends(get_current_user),
+async def upload_option_chain_snapshots(body: SnapshotUploadBody, user: User = Depends(require_trader),
                                         session: AsyncSession = Depends(get_session)) -> dict:
-    """Bring your own quotes: rows exported from another recorder become platform history."""
+    """Bring your own quotes: rows exported from another recorder become this organisation's history (Z10-c: only its
+    own backtests see them - never another organisation's, and they never stand in for the recorder's capture)."""
     underlying, _ = underlying_name(body.underlying)
-    written = await chain_recorder.store_uploaded(session, underlying, body.rows, source=f"upload:{user.tenant_id}")
+    written = await chain_recorder.store_uploaded(session, underlying, body.rows, tenant_id=user.tenant_id)
     return {"underlying": underlying, "received": len(body.rows), "written": written}
 
 

@@ -210,3 +210,30 @@ def test_the_ticket_follows_the_instrument_master_for_cash_underlyings():
         assert any("cash underlyings" in e for e in _preview(t, symbol="NIFTY24OCT25000CE")["errors"])
     finally:
         _run(clean())
+
+
+def test_the_readers_own_refused_order_stores_and_notifies_no_vix_values(monkeypatch):
+    """BT1b: an order's reasons go on the order trail (GET /api/orders, tenant-wide) and into the org-wide RISK_REJECTION
+    notification, so even when the entering user took the reading they are worded without India VIX's values."""
+    from app.db.models import NotificationRecord, OrderRecord
+    from tests.test_z5_p1d_risk_by_default import _enter
+    owner = _tenant_t("fu-trail")
+    _org(owner)
+    for flag in (by_default.FLAG, vix_gate.FLAG, "byob_data_tier"):
+        _flag(flag, owner["tenant_id"])
+    _vix_clock(monkeypatch)
+    _store(owner, last=14.0, prev=13.0, reader=owner["user_id"])
+    executed, reasons, _ = _enter(owner["user_id"], symbol="NIFTY")
+    assert not executed and any("India VIX gate" in r for r in reasons)
+
+    async def trail():
+        async with _session_factory() as session:
+            orders = list(await session.scalars(select(OrderRecord).where(OrderRecord.tenant_id == owner["tenant_id"])))
+            notes = list(await session.scalars(select(NotificationRecord).where(NotificationRecord.tenant_id == owner["tenant_id"],
+                                                                                 NotificationRecord.event_type == "RISK_REJECTION")))
+            return [o.reasons_json for o in orders], [n.message for n in notes]
+    stored, notified = _run(trail())
+    texts = [t for t in stored + notified if t and "India VIX" in t]
+    assert texts and all("7.7" not in t and "14.0" not in t and "13.0" not in t for t in texts)
+    # The reader still sees the values where only they look: their own status strip and ticket preview.
+    assert any("+7.7%" in m for m in client.get("/api/paper/risk", headers=owner["headers"]).json()["vix_gate"]["messages"])

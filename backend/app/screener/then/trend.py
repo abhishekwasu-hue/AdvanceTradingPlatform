@@ -140,7 +140,8 @@ async def daily_context(session: AsyncSession, key: Optional[str], today: date, 
         _INFLIGHT.add((key, today))
         try:
             try:
-                bars = await lake_daily(session, key, today)
+                async with session.begin_nested():       # the caller's session: a failed read rolls back this savepoint only
+                    bars = await lake_daily(session, key, today)
             except Exception as exc:  # noqa: BLE001 - fail closed, with the reason
                 state, asof, reason = _fold_failed(exc)
             else:

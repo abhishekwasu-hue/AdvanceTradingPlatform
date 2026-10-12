@@ -671,3 +671,70 @@ def test_scan_then_is_not_an_order_path():
         for node in ast.walk(ast.parse(path.read_text())):
             name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
             assert name not in forbidden, (path.name, name)
+
+
+# --- shared-session safety (review of #219's pattern, applied to X1) ---------------------------------------------------------
+
+def _bad_sql():
+    from sqlalchemy import text
+    return text("SELECT * FROM no_such_table_x1")
+
+
+def test_a_failing_fetch_rolls_back_its_savepoint_and_later_templates_still_run(monkeypatch):
+    """runner.py fetch: a SQL error inside the bars read is confined to its savepoint; the cycle goes on and commits."""
+    _patch_market(monkeypatch)
+    t_bad, bad_rule = _setup("fetchbad")
+    t_ok, ok_rule = _setup("fetchok")
+    seen = []
+
+    async def fetch(session, tenant_id, symbols, exchange, tf, lookback, user_id=None):
+        if tenant_id == t_bad["tenant_id"]:
+            seen.append(session.in_nested_transaction())
+            await session.execute(_bad_sql())
+        return await _fetch()(session, tenant_id, symbols, exchange, tf, lookback, user_id)
+    _runner(fetch=fetch)
+    assert seen == [True]
+    assert (_template(bad_rule).last_problem or "").startswith("bars: OperationalError")
+    assert len(_rows(ExecutionIntentRecord, t_ok["tenant_id"])) == 1 and _rows(ExecutionIntentRecord, t_bad["tenant_id"]) == []
+
+
+def test_each_template_runs_in_its_own_savepoint(monkeypatch):
+    """runner.py run_due: a template that fails with a SQL error leaves its problem, and the templates after it run."""
+    _patch_market(monkeypatch)
+    t_bad, bad_rule = _setup("tplbad")
+    t_ok, ok_rule = _setup("tplok")
+    seen = []
+    real = A.areas_for
+
+    async def zones(session, key, tenant_id, at):
+        if tenant_id == t_bad["tenant_id"]:
+            seen.append(session.in_nested_transaction())
+            await session.execute(_bad_sql())
+        return await real(session, key, tenant_id, at)
+    monkeypatch.setattr(A, "areas_for", zones)
+    report = _runner()
+    assert seen == [True] and any("template" in p and "OperationalError" in p for p in report.problems)
+    assert "OperationalError" in (_template(bad_rule).last_problem or "")
+    assert len(_rows(ExecutionIntentRecord, t_ok["tenant_id"])) == 1 and _rows(ExecutionIntentRecord, t_bad["tenant_id"]) == []
+
+
+def test_a_cold_trend_read_that_fails_leaves_the_session_usable(monkeypatch):
+    """trend.py allow_cold: the lake read on the caller's session runs in a savepoint."""
+    from sqlalchemy import text
+    trend.clear_cache()
+    seen = []
+
+    async def broken(session, key, today):
+        seen.append(session.in_nested_transaction())
+        await session.execute(_bad_sql())
+    monkeypatch.setattr(trend, "lake_daily", broken)
+
+    async def go():
+        async with _session_factory() as session:
+            out = await trend.daily_context(session, "NSE:X1SAVE", date(2026, 9, 23), allow_cold=True)
+            ok = (await session.execute(text("SELECT 1"))).scalar()
+            await session.commit()
+            return out, ok
+    out, ok = _run(go())
+    assert seen == [True] and out["ok"] is False and "OperationalError" in out["reason"] and ok == 1
+    trend.clear_cache()

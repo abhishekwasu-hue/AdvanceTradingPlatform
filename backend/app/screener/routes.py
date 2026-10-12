@@ -99,6 +99,7 @@ def _view(ast: Any, validated: Any) -> Dict[str, Any]:
 def _screen_dict(row: ScreenRecord) -> Dict[str, Any]:
     return {"id": row.id, "name": row.name, "text": row.source_text, "ast": json.loads(row.ast_json), "version": row.ast_version,
             "base_tf": row.base_tf, "params": json.loads(row.params_json or "{}"), "archived": row.archived,
+            "forked_from": row.forked_from, "forked_version": row.forked_version,
             "created_at": row.created_at.isoformat() if row.created_at else None, "updated_at": row.updated_at.isoformat() if row.updated_at else None}
 
 

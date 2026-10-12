@@ -8,6 +8,7 @@
 import { Layers, LayoutGrid, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
@@ -75,6 +76,8 @@ export default function ScreenerPage(_props: PageProps) {
   // U9 TX3 (flag `screener_tx3`): today's regime (greys the gallery) and the user's digest settings.
   const [regime, setRegime] = useState<RegimeResponse | null>(null);
   const [digest, setDigest] = useState<DigestState | null>(null);
+  // U9 TX4 (flag `screener_tx4`): Learn and Fork on the gallery's cards.
+  const [learnOn, setLearnOn] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
@@ -84,6 +87,7 @@ export default function ScreenerPage(_props: PageProps) {
     screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
     screenerApi.regime().then((r) => setRegime(isRegime(r) ? r : null)).catch(() => setRegime(null));
     screenerApi.digest().then((d) => setDigest(isDigestState(d) ? d : null)).catch(() => setDigest(null));
+    api.myFeatures().then((f) => setLearnOn(Boolean(f.screener_tx4))).catch(() => setLearnOn(false));
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
@@ -284,7 +288,8 @@ export default function ScreenerPage(_props: PageProps) {
       {taxonomy && (
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
                 description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">
-          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} legends={legends} mirrors={mirrorMap} regime={regime} />
+          <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} legends={legends} mirrors={mirrorMap} regime={regime}
+                         loadLearn={learnOn ? screenerApi.learn : undefined} />
         </Dialog>
       )}
       {taxonomy && (mirrors || digest) && (

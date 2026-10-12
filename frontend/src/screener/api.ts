@@ -3,7 +3,10 @@ import { request } from "../api/client";
 import type { DataTierBadgeInfo } from "../types";
 import type { FunnelResult, Registry } from "./model";
 import type { LegendsLibrary } from "./legends";
-import type { ConfluenceResponse, Digest, DigestSettings, DigestState, MirrorsResponse, RegimeResponse, WatchListsResponse, WatchResponse } from "./library";
+import type {
+  ConfluenceResponse, Digest, DigestSettings, DigestState, ExamplesResponse, LearnResponse, MirrorsResponse, RegimeResponse,
+  WatchListsResponse, WatchResponse,
+} from "./library";
 import type { Taxonomy } from "./taxonomy";
 
 export interface Problem { message: string; pos: number | null }
@@ -49,6 +52,12 @@ export const screenerApi = {
   saveDigest: (body: DigestSettings) => request<DigestState>("/screener/library/digest", { method: "PUT", body: JSON.stringify(body) }),
   previewDigest: (body: DigestSettings) =>
     request<Digest & { messages: string[]; preview: true }>("/screener/library/digest/preview", { method: "POST", body: JSON.stringify(body) }),
+  /** U9 TX4 (flag `screener_tx4`; 503 while it is off - cards show no Learn / Fork). */
+  learn: (id: string) => request<LearnResponse>(`/screener/library/screens/${encodeURIComponent(id)}/learn`),
+  examples: (id: string, symbols: string[]) =>
+    request<ExamplesResponse>(`/screener/library/screens/${encodeURIComponent(id)}/examples`, { method: "POST", body: JSON.stringify({ symbols }) }),
+  fork: (id: string) => request<SavedScreen & { forked_from: string; forked_version: number }>("/screener/library/fork",
+    { method: "POST", body: JSON.stringify({ screen_id: id }) }),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

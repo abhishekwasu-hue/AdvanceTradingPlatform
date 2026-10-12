@@ -1,7 +1,10 @@
 import type { Meta, StoryObj } from "@storybook/react";
+import { LearnPanel } from "../screener/LearnPanel";
 import { LibraryTools } from "../screener/LibraryTools";
 import { mirrorsByScreen } from "../screener/library";
-import { SAMPLE_CONFLUENCE, SAMPLE_DIGEST, SAMPLE_LISTS, SAMPLE_MIRRORS, SAMPLE_REGIME, SAMPLE_WATCH } from "../screener/librarySample";
+import {
+  SAMPLE_CONFLUENCE, SAMPLE_DIGEST, SAMPLE_EXAMPLES, SAMPLE_LEARN, SAMPLE_LISTS, SAMPLE_MIRRORS, SAMPLE_REGIME, SAMPLE_WATCH,
+} from "../screener/librarySample";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import sample from "../screener/taxonomySample.json";
 import type { Taxonomy } from "../screener/taxonomy";
@@ -32,4 +35,8 @@ export const GalleryWithTodaysRegime: Story = {
 
 export const DailyDigest: Story = {
   render: () => frame(<LibraryTools taxonomy={tax} mirrors={SAMPLE_MIRRORS} watchLists={SAMPLE_LISTS} symbolsText="" digest={SAMPLE_DIGEST} initialTab="digest" />),
+};
+
+export const LearnMode: Story = {
+  render: () => frame(<LearnPanel learn={SAMPLE_LEARN} onBack={() => undefined} initialExamples={SAMPLE_EXAMPLES} />),
 };

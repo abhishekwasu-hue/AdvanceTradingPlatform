@@ -16,6 +16,14 @@ U9 TX3 (flag `screener_tx3`, with `screener_v2` and `screener_gallery`; not `scr
 * `POST /api/screener/library/digest/preview`  - build the digest now for the given pins and symbols, without sending
   or storing it (trader, rate limited).
 
+U9 TX4 (flag `screener_tx4`, with `screener_v2` and `screener_gallery`):
+* `GET  /api/screener/library/screens/{library_id}/learn`    - the screen's method, provenance (version, change log,
+  source note, text and its SHA-256) (member).
+* `POST /api/screener/library/screens/{library_id}/examples` - three past matches on the shared end-of-day history with
+  their evidence (as of each bar) and what the close did after (self: computes over shared data, stores nothing).
+* `POST /api/screener/library/fork`                         - copy a pre-built screen (or its mirror) into the
+  organisation's saved screens with its provenance (trader, like saving a screen).
+
 All four need `screener_v2`, `screener_gallery` and `screener_tx2` (off by default: 503 while off). The runs read closed
 bars only, through the caller's own session when the BT1b data tier is on, store nothing, and never place an order.
 """
@@ -37,6 +45,7 @@ from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
 from app.screener import digest as dg
+from app.screener import learn as ln
 from app.screener import library as lib
 from app.screener import regime_today as rt
 from app.screener import taxonomy as tx
@@ -121,6 +130,72 @@ async def preview_digest(body: dg.DigestSettings, user: User = Depends(require_t
     built = await dg.build(session, user, body.pinned, body.symbols, body.exchange)
     await session.commit()                                                 # evidence packs of the first matches, if any
     return {**built, "messages": dg.messages(built), "preview": True}
+
+
+async def _flags4(session: AsyncSession, user: User) -> None:
+    for name in (FLAG, GALLERY_FLAG, ln.FLAG):
+        await require_flag(session, name, user.tenant_id)
+
+
+async def _library_screen(session: AsyncSession, user: User, screen_id: str) -> Tuple[tx.Taxonomy, tx.Screen, lib.Resolved]:
+    """A visible pre-built screen or its `.short` mirror (mirrors need `screener_tx2`), resolved to its text."""
+    taxonomy, hidden = tx.load(), await _hidden(session, user)
+    if screen_id.endswith(lib.MIRROR_SUFFIX) and not await flag_enabled(session, lib.FLAG, user.tenant_id):
+        raise HTTPException(status_code=404, detail="mirror screens are off for this organisation")
+    base = screen_id[:-len(lib.MIRROR_SUFFIX)] if screen_id.endswith(lib.MIRROR_SUFFIX) else screen_id
+    screen = next((s for s in tx.visible(taxonomy, hidden) if s.id == base), None)
+    if screen is None:
+        raise HTTPException(status_code=404, detail="no such screen in the library (or its feature is off)")
+    resolved, why = lib.resolve_ref(screen_id, taxonomy, hidden)
+    if resolved is None:
+        raise HTTPException(status_code=422, detail=why)
+    return taxonomy, screen, resolved
+
+
+@router.get("/screens/{library_id}/learn")
+async def learn(library_id: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flags4(session, user)
+    taxonomy, screen, resolved = await _library_screen(session, user, library_id)
+    text = nodes.to_text(lib.inline_params(parse(resolved.text), resolved.params))
+    return {"id": library_id, "name": resolved.name, "base_tf": resolved.base_tf, "direction": resolved.direction,
+            "mirror_of": resolved.mirror_of, **ln.method_of(taxonomy, screen), "provenance": ln.provenance(screen, text),
+            "note": ln.NOTE}
+
+
+class ExamplesBody(BaseModel):
+    symbols: List[str] = Field(min_length=1, max_length=ln.MAX_SYMBOLS)
+
+
+@router.post("/screens/{library_id}/examples", dependencies=[Depends(library_rate_limit)])
+async def examples(library_id: str, body: ExamplesBody, user: User = Depends(get_current_user),
+                   session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flags4(session, user)
+    _, _, resolved = await _library_screen(session, user, library_id)
+    ast = lib.inline_params(parse(resolved.text), resolved.params)
+    validated = await _compile(session, user, resolved.name, ast, resolved.base_tf)
+    symbols = [s for s in _symbols(body.symbols) if s.replace("-", "").replace("&", "").isalnum()]
+    out = await ln.examples(session, ast, validated, resolved.base_tf, symbols, resolved.name)
+    return {"id": library_id, "name": resolved.name, "base_tf": resolved.base_tf, "text": nodes.to_text(ast), **out}
+
+
+class ForkBody(BaseModel):
+    screen_id: str = Field(min_length=1, max_length=120)
+    name: Optional[str] = Field(default=None, max_length=120)
+
+
+@router.post("/fork", status_code=201)
+async def fork(body: ForkBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flags4(session, user)
+    _, screen, resolved = await _library_screen(session, user, body.screen_id)
+    from app.db.models import ScreenRecord
+    from app.screener.routes import ScreenBody, _apply, _screen_dict
+    name = (body.name or f"{resolved.name} (fork of v{screen.version})")[:120]
+    row = ScreenRecord(tenant_id=user.tenant_id, created_by=user.id, name="", source_text="", ast_json="{}",
+                       forked_from=body.screen_id, forked_version=screen.version)
+    await _apply(session, user, row, ScreenBody(name=name, source=resolved.text, base_tf=resolved.base_tf, params=resolved.params))
+    session.add(row)
+    await session.commit()
+    return _screen_dict(row)
 
 
 @router.get("/mirrors")

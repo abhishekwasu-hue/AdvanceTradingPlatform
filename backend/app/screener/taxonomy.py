@@ -72,11 +72,14 @@ class Screen:
     evidence_ready: bool = False
     fitness_available: bool = False
     regimes: Tuple[str, ...] = ()           # U9 TX3: the market regimes it is designed for (empty = any)
+    version: int = 1                        # U9 TX4: provenance - the screen's version, its change log and source note
+    changes: Tuple[Dict[str, Any], ...] = ()
+    source_note: str = ""
 
     def as_dict(self) -> Dict[str, Any]:
         return {"id": self.id, "source": self.source, "name": self.name, "definition": self.definition, "method": self.method,
                 "setup": self.setup, "tags": dict(self.tags), "evidence_ready": self.evidence_ready,
-                "fitness_available": self.fitness_available, "regimes": list(self.regimes)}
+                "fitness_available": self.fitness_available, "regimes": list(self.regimes), "version": self.version}
 
 
 @dataclass(frozen=True)
@@ -204,6 +207,35 @@ def _screen_regimes(where: str, value: Any, vocab: Tuple[Dict[str, str], ...], p
     return tuple(values)
 
 
+MAX_NOTE_CHARS = 240
+
+
+def _provenance(where: str, row: Dict[str, Any], problems: List[str]) -> Tuple[int, Tuple[Dict[str, Any], ...], str]:
+    """U9 TX4 (spec §3 "versioning and provenance"): every pre-built screen has a version, a change log whose last entry
+    is that version (one entry per version, in order) and a source note - each note within MAX_NOTE_CHARS, no advice."""
+    version = row.get("version")
+    if not isinstance(version, int) or isinstance(version, bool) or version < 1:
+        problems.append(f"{where}: version must be a whole number from 1")
+        version = 1
+    raw = row.get("changes")
+    changes: List[Dict[str, Any]] = []
+    if not isinstance(raw, list) or not raw:
+        problems.append(f"{where}: changes must list at least the first version")
+    else:
+        for i, c in enumerate(raw):
+            ok = isinstance(c, dict) and set(c) == {"version", "note"} and c.get("version") == i + 1
+            if not ok:
+                problems.append(f"{where}: changes[{i}] must be {{version: {i + 1}, note}}")
+                continue
+            problems += _text_problems(f"{where} change {i + 1}", str(c["note"]), MAX_NOTE_CHARS)
+            changes.append({"version": int(c["version"]), "note": str(c["note"])})
+        if changes and changes[-1]["version"] != version:
+            problems.append(f"{where}: the last change ({changes[-1]['version']}) must be the version ({version})")
+    note = str(row.get("source_note", ""))
+    problems += _text_problems(f"{where} source_note", note, MAX_NOTE_CHARS)
+    return version, tuple(changes), note
+
+
 def _text_problems(where: str, text: str, limit: int) -> List[str]:
     out: List[str] = []
     if not text.strip():
@@ -266,12 +298,13 @@ def _screens(raw: Any, methods: Dict[str, Axis], setups: Set[str], vocab: Dict[s
             if not isinstance(row.get(flag, False), bool):
                 problems.append(f"{where}: {flag} must be true or false")
         unknown = set(row) - {"id", "source", "name", "definition", "method", "setup", "evidence_ready", "fitness_available", "regimes",
-                              *TAG_KEYS}
+                              "version", "changes", "source_note", *TAG_KEYS}
         if unknown:
             problems.append(f"{where}: unknown fields {', '.join(sorted(unknown))}")
         regimes = _screen_regimes(where, row.get("regimes"), regime_vocab, problems)
+        version, changes, source_note = _provenance(where, row, problems)
         out.append(Screen(ident, source, name, definition, method, setup, tags, bool(row.get("evidence_ready", False)),
-                          bool(row.get("fitness_available", False)), regimes))
+                          bool(row.get("fitness_available", False)), regimes, version, changes, source_note))
     return tuple(out)
 
 

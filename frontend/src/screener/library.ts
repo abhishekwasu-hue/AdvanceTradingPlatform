@@ -6,6 +6,7 @@
  *
  * Agreement between screens is a count, never a score, a pick or a recommendation.
  */
+import type { EvidencePack } from "./evidence";
 import type { Taxonomy } from "./taxonomy";
 
 export const MIN_CONFLUENCE = 2;
@@ -137,3 +138,33 @@ export function isDigestState(x: unknown): x is DigestState {
 }
 
 export const MAX_PINNED = 5;
+
+// --- U9 TX4: learn mode, provenance and forking (flag `screener_tx4`) ----------------------------------------------------
+
+export interface Provenance {
+  id: string; version: number; changes: { version: number; note: string }[]; source_note: string;
+  sources: { id?: string; citation?: string; url?: string | null }[]; text: string | null; text_sha256: string | null;
+}
+export interface LearnResponse {
+  id: string; name: string; base_tf: string; direction: string; mirror_of: string | null;
+  method: { id: string; label: string; definition: string } | null; setup: { id: string; label: string; definition: string } | null;
+  page: string | null; page_note: string; provenance: Provenance; note: string;
+}
+export interface LearnExample { symbol: string; date: string; close: number; after: Record<string, number | null>; pack: EvidencePack | null }
+export interface ExamplesResponse {
+  id: string; name: string; base_tf: string; text: string; examples: LearnExample[]; problems: string[]; scanned: number;
+  matches_seen?: number; note: string; after_sessions?: number[];
+}
+
+export function isLearn(x: unknown): x is LearnResponse {
+  const l = x as Partial<LearnResponse> | null;
+  return !!l && !!l.provenance && typeof l.note === "string";
+}
+
+/** "+3.1%" / "-0.4%" / "–" for one "after N sessions" value - a past change, not a forecast. */
+export function changeText(v: number | null | undefined): string {
+  if (v === null || v === undefined || Number.isNaN(v)) return "–";
+  return `${v > 0 ? "+" : ""}${v.toFixed(1)}%`;
+}
+
+export const MAX_LEARN_SYMBOLS = 10;

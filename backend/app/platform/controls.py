@@ -216,6 +216,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's pinned screens at their chosen time, to their own Telegram chat). OFF: /api/screener/library/regime and
     # /digest* answer 503, the gallery greys nothing and the worker builds no digest. Information only, no orders.
     "screener_tx3": "Screen library: regime-aware greying of the gallery and the setup-of-the-day digest of your pinned screens (information only)",
+    # U9 TX4 (ATP_SCREENER_TAXONOMY_ADDENDUM §3 / §4): learn mode (a screen's method, three past matches on the shared
+    # end-of-day history with their evidence and what the close did after - education) and provenance / forking (version,
+    # change log, source note; copy a pre-built screen into My screens). OFF: /api/screener/library/screens/*/learn,
+    # /examples and /fork answer 503 and the cards show no Learn / Fork. Information only, places no orders.
+    "screener_tx4": "Screen library: learn mode (past examples with evidence, as education) and screen provenance with forking into My screens",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -223,7 +228,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "screener_tx2", "screener_tx3"})
+                               "chart_price_action", "screener_tx2", "screener_tx3", "screener_tx4"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

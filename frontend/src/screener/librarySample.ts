@@ -1,6 +1,10 @@
 /** U9 TX2: sample library data for stories and tests - the mirrors and watch lists exactly as the server sends them with
  * only `screener_tx2` on (from app.screener.library.mirrors / WATCH_LISTS), plus one confluence and one watch result. */
-import type { ConfluenceResponse, DigestState, MirrorsResponse, RegimeResponse, WatchListsResponse, WatchResponse } from "./library";
+import type { EvidencePack } from "./evidence";
+import evidenceSample from "./evidenceSample.json";
+import type {
+  ConfluenceResponse, DigestState, ExamplesResponse, LearnResponse, MirrorsResponse, RegimeResponse, WatchListsResponse, WatchResponse,
+} from "./library";
 
 export const SAMPLE_MIRRORS: MirrorsResponse = {
   "mirrors": [
@@ -136,4 +140,22 @@ export const SAMPLE_DIGEST: DigestState = {
   last_digest: null, limits: { pinned: 5, symbols: 50 },
   note: "Matches of your pinned screens on the last closed bar, the first ones in your list order. Screens filter; they do not predict, and this is not advice.",
   messages: ["Setups of the day - Indicator (2026-10-09)\nMomentum: RELIANCE, TCS\nOversold: no match\nMatches of your pinned screens on the last closed bar, the first ones in your list order. Screens filter; they do not predict, and this is not advice."],
+};
+
+/** U9 TX4: the Learn panel of a starter and two past examples (one with its evidence pack). */
+export const SAMPLE_LEARN: LearnResponse = {
+  id: "starter.oversold", name: "Oversold", base_tf: "1d", direction: "long", mirror_of: null,
+  method: { id: "indicator", label: "Indicator", definition: "Moving averages, oscillators, bands, channels and volatility measures." },
+  setup: { id: "reversal", label: "Reversal", definition: "Exhaustion, divergence, a failed break or a sweep at a level." },
+  page: null, page_note: "The method page (P1 §1.6) is linked here once the Learn pages are available.",
+  provenance: { id: "starter.oversold", version: 1, changes: [{ version: 1, note: "Filed in the library (U9 TX1)." }],
+    source_note: "The U5 funnel builder's own starting point; no external source.", sources: [], text: "RSI(14) <= 30", text_sha256: null },
+  note: "Education: past matches of this screen on the shared end-of-day history and what the close did after them. Three examples are illustrations - not a statistic, not a forecast and not advice.",
+};
+
+export const SAMPLE_EXAMPLES: ExamplesResponse = {
+  id: "starter.oversold", name: "Oversold", base_tf: "1d", text: "RSI(14) <= 30", scanned: 2, after_sessions: [5, 10, 20],
+  examples: [{ symbol: "TCS", date: "2026-06-12", close: 3480.5, after: { "5": 2.34, "10": -1.2, "20": 4.05 }, pack: evidenceSample as unknown as EvidencePack },
+             { symbol: "INFY", date: "2026-03-03", close: 1500, after: { "5": 0.4, "10": 1.1, "20": -3.33 }, pack: null }],
+  problems: [], note: SAMPLE_LEARN.note,
 };

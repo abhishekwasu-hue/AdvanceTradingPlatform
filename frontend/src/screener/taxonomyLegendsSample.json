@@ -1,5 +1,5 @@
 {
- "version": "tx3/1",
+ "version": "tx4/1",
  "methods": [
   {
    "id": "price_action",
@@ -198,7 +198,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "starter.oversold",
@@ -223,7 +224,8 @@
    "fitness_available": false,
    "regimes": [
     "range"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "starter.daily_trend",
@@ -248,7 +250,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "legends.minervini_trend_template",
@@ -273,7 +276,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "legends.darvas_box_breakout",
@@ -298,7 +302,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "legends.weinstein_stage2_breakout",
@@ -322,7 +327,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "legends.turtle_channel_breakout",
@@ -347,7 +353,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "legends.raschke_adx_pullback",
@@ -371,7 +378,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "legends.crabel_nr7",
@@ -395,7 +403,8 @@
    "fitness_available": false,
    "regimes": [
     "low_vol"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "legends.connors_rsi2_pullback",
@@ -419,7 +428,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "legends.williams_volatility_breakout",
@@ -441,7 +451,8 @@
    },
    "evidence_ready": false,
    "fitness_available": false,
-   "regimes": []
+   "regimes": [],
+   "version": 1
   }
  ],
  "matrix": {

@@ -982,6 +982,33 @@ Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` §3 and §4 "TX3". Code: 
 - **Not in TX3:** greying by the symbol's own regime (today is the index's), a digest channel other than the user's own
   chat (email), and TX4 (learn mode, provenance and forking).
 
+## U9 TX4 (built): learn mode, provenance and forking (flag `screener_tx4`, off)
+
+Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` §3 ("learn mode", "versioning and provenance") and §4 "TX4".
+Code: `app/screener/learn.py`, routes in `app/screener/library_routes.py`; frontend `LearnPanel.tsx` and the gallery's
+Learn button. Flag `screener_tx4` (default OFF) with `screener_v2` and `screener_gallery`.
+
+- **Provenance (data).** `taxonomy.json` (version `tx4/1`): every pre-built screen has `version`, `changes` (one entry
+  per version, in order, the last = the version) and `source_note`; the lint enforces it and checks the wording. A
+  Legends screen's source line is its card's cited sources. The Learn panel shows the version, the change log, the
+  source, the exact ScreenQL and its SHA-256. A change to a screen's logic adds a version.
+- **Learn mode** (`GET /library/screens/{library_id}/learn`, member; `POST .../examples`, self: computes over the shared
+  history, stores nothing, rate limited). Past examples come from the lake's NSE daily bars (unadjusted, as known now)
+  for up to 10 symbols: the most recent 3 matches with 20 sessions after them, 20 sessions apart per symbol. No
+  look-ahead in the signal: each match is re-checked on the bars up to its own bar only, and its evidence pack is built
+  `as_of` that bar's close (the U8 builder drops later bars). What happened next - the close's % change after 5, 10 and
+  20 sessions - is shown as after the bar and is never part of the match. A split or bonus within the example's window
+  drops it (unadjusted prices would jump). Daily and weekly screens only. Framed as education: three illustrations,
+  not a statistic, a forecast or advice. The method page link (P1 §1.6) is empty until the Learn pages merge (TX4-2).
+- **Fork** (`POST /library/fork`, trader). Copies a pre-built screen (or its mirror, with `screener_tx2` on) into the
+  organisation's saved screens through the ordinary validation and flag gates, named "<name> (fork of v<version>)",
+  with `screens.forked_from` / `forked_version` (migration `c8e0a2b4d6f8`, two nullable columns, ROLLBACK_SAFE). The
+  copy never follows later versions.
+- **No new ScreenQL function.** Z10-a needs no new case; the examples use the registered (causal) functions and the
+  prefix re-check.
+- **Not in TX4:** screen fitness statistics (S6) - examples are illustrations only; listing forks under "My screens"
+  in the gallery (TX1-4); a reassign / update-to-latest action for a fork.
+
 ## U6 BK1 (built): breakout screens, quality overlay, style / timeframe selector (flag `screener_breakouts`, off)
 Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`. Code: `app/screener/breakouts/`. Research notes and every
 parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 are in `docs/OPEN_QUESTIONS.md`.

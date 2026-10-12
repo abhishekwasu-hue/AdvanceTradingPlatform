@@ -1869,3 +1869,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: backend `tests/test_tx3_library.py` (+ TX1 shape updates); vitest `src/screener/library.tx3.test.tsx`.
   Open questions TX3-1..TX3-5.
 
+## U9 TX4: learn mode, provenance and forking (flag `screener_tx4`, off)
+
+- Branch `claude/n3-tx4` (from `claude/n3-tx3`). Spec: ATP_SCREENER_TAXONOMY_ADDENDUM §3 / §4. Design: SCREENER.md
+  "U9 TX4".
+- Backend: taxonomy provenance (`version`, `changes`, `source_note`, linted; version `tx4/1`); `learn.py` (provenance,
+  past examples on the shared EOD history re-checked on their own bars, evidence as of each bar, after-5/10/20 changes);
+  3 routes classified (`library_id` probe value added); `screens.forked_from` / `forked_version` (migration
+  `c8e0a2b4d6f8`, ROLLBACK_SAFE, on `b7d9f1a3c5e7`). No new ScreenQL function.
+- Frontend: Learn button and version on gallery cards, `LearnPanel` (method, provenance, examples with evidence
+  charts, fork). Samples regenerated; stories.
+- Tests: backend `tests/test_tx4_library.py`; vitest `src/screener/library.tx4.test.tsx`. Open questions TX4-1..TX4-5.
+

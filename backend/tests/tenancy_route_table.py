@@ -41,6 +41,7 @@ P_UNSUBSCRIBE = "public: signed one-click unsubscribe link"
 P_REGIMES = "public: the market regime catalogue"
 P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the sign-up form links them before an account exists"
 P_STATUS_PAGE = "public: the public status page (component states and the incident banner only; rate limited)"
+S_LEARN_EXAMPLES = "self: past examples of a library screen computed over the shared end-of-day history; stores nothing"
 S_OWN_LEGAL = "self: records the caller's own acceptance of the legal documents' current versions"
 S_SUPPORT = "self: the support bot answers how-to questions from the docs; no tools, reads no positions or orders (rate limited)"
 S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor settings"
@@ -496,6 +497,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/evidence/{evidence_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}/image.png"): "member",
     ("POST", "/api/screener/evidence/{evidence_id}/telegram"): S_OWN_EVIDENCE_TELEGRAM,
+    ("GET", "/api/screener/library/screens/{library_id}/learn"): "member",
+    ("POST", "/api/screener/library/screens/{library_id}/examples"): S_LEARN_EXAMPLES,
+    ("POST", "/api/screener/library/fork"): "trader",
     ("GET", "/api/screener/library/regime"): "member",
     ("GET", "/api/screener/library/digest"): "member",
     ("PUT", "/api/screener/library/digest"): "trader",

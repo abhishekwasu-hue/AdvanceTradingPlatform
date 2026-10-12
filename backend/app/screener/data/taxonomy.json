@@ -1,6 +1,6 @@
 {
- "_comment": "U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library's two axes (method x setup type), the tag vocabulary and the filing of every pre-built screen. A reviewed data file - change it by PR; app/screener/taxonomy.py lints it (both axes, known tags, definition <= 2 lines, no advice wording) and tests/test_z8_tx1_taxonomy.py fails CI when a pre-built screen is not filed here. Labels and definitions describe what a screen looks for; they never say what to trade. U9 TX3: `regimes` is the vocabulary of market regimes (one axis each); a screen's optional `regimes` lists the ones it is designed for (absent = any), and the gallery greys a screen whose regime does not fit today's (app/screener/regime_today.py).",
- "version": "tx3/1",
+ "_comment": "U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library's two axes (method x setup type), the tag vocabulary and the filing of every pre-built screen. A reviewed data file - change it by PR; app/screener/taxonomy.py lints it (both axes, known tags, definition <= 2 lines, no advice wording) and tests/test_z8_tx1_taxonomy.py fails CI when a pre-built screen is not filed here. Labels and definitions describe what a screen looks for; they never say what to trade. U9 TX3: `regimes` is the vocabulary of market regimes (one axis each); a screen's optional `regimes` lists the ones it is designed for (absent = any), and the gallery greys a screen whose regime does not fit today's (app/screener/regime_today.py). U9 TX4: every screen carries `version`, `changes` (one entry per version, the last one = the version) and a `source_note`; a change to a screen's logic adds a version.",
+ "version": "tx4/1",
  "methods": [
   {"id": "price_action", "code": "A", "label": "Price action", "definition": "Structure, levels, candles and liquidity; no indicator required."},
   {"id": "indicator", "code": "B", "label": "Indicator", "definition": "Moving averages, oscillators, bands, channels and volatility measures."},
@@ -67,6 +67,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library (U9 TX1)."}],
+   "source_note": "The U5 funnel builder's own starting point; no external source.",
    "regimes": ["trend"]
   },
   {
@@ -83,6 +86,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library (U9 TX1)."}],
+   "source_note": "The U5 funnel builder's own starting point; no external source.",
    "regimes": ["range"]
   },
   {
@@ -99,6 +105,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library (U9 TX1)."}],
+   "source_note": "The U5 funnel builder's own starting point; no external source.",
    "regimes": ["trend"]
   },
   {
@@ -114,7 +123,10 @@
    "difficulty": "intermediate",
    "universe_default": "nifty500",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "breakouts.daily_swing_break",
@@ -129,7 +141,10 @@
    "difficulty": "intermediate",
    "universe_default": "nifty500",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "breakouts.intraday_15m_nr7",
@@ -145,6 +160,9 @@
    "universe_default": "fo_stocks",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md.",
    "regimes": ["low_vol"]
   },
   {
@@ -161,6 +179,9 @@
    "universe_default": "nifty500",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md.",
    "regimes": ["trend"]
   },
   {
@@ -177,6 +198,9 @@
    "universe_default": "nifty500",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md.",
    "regimes": ["trend"]
   },
   {
@@ -192,7 +216,10 @@
    "difficulty": "intermediate",
    "universe_default": "fo_stocks",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "breakouts.intraday_5m_volume",
@@ -207,7 +234,10 @@
    "difficulty": "intermediate",
    "universe_default": "fo_stocks",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "breakouts.intraday_5m_orb15",
@@ -222,7 +252,10 @@
    "difficulty": "beginner",
    "universe_default": "fo_stocks",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "breakouts.intraday_15m_orb30",
@@ -237,7 +270,10 @@
    "difficulty": "beginner",
    "universe_default": "fo_stocks",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "breakouts.intraday_15m_first_hour",
@@ -252,7 +288,10 @@
    "difficulty": "intermediate",
    "universe_default": "fo_stocks",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "breakouts.intraday_5m_prev_day",
@@ -267,7 +306,10 @@
    "difficulty": "intermediate",
    "universe_default": "fo_stocks",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "breakouts.intraday_5m_day_extreme",
@@ -282,7 +324,10 @@
    "difficulty": "intermediate",
    "universe_default": "fo_stocks",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed in the library with the breakout templates (U9 TX1, U6 BK1 / BK2)."}],
+   "source_note": "A U6 breakout template; its parameters and research notes are in docs/research/breakouts.md."
   },
   {
    "id": "legends.minervini_trend_template",
@@ -298,6 +343,9 @@
    "universe_default": "nifty500",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed with the Legends cards (U7 LG1)."}],
+   "source_note": "A publicly described method, approximated as a screen; its cited sources are on the Legends card.",
    "regimes": ["trend"]
   },
   {
@@ -314,6 +362,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed with the Legends cards (U7 LG1)."}],
+   "source_note": "A publicly described method, approximated as a screen; its cited sources are on the Legends card.",
    "regimes": ["trend"]
   },
   {
@@ -330,6 +381,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed with the Legends cards (U7 LG1)."}],
+   "source_note": "A publicly described method, approximated as a screen; its cited sources are on the Legends card.",
    "regimes": ["trend"]
   },
   {
@@ -346,6 +400,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed with the Legends cards (U7 LG1)."}],
+   "source_note": "A publicly described method, approximated as a screen; its cited sources are on the Legends card.",
    "regimes": ["trend"]
   },
   {
@@ -362,6 +419,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed with the Legends cards (U7 LG1)."}],
+   "source_note": "A publicly described method, approximated as a screen; its cited sources are on the Legends card.",
    "regimes": ["trend"]
   },
   {
@@ -378,6 +438,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed with the Legends cards (U7 LG1)."}],
+   "source_note": "A publicly described method, approximated as a screen; its cited sources are on the Legends card.",
    "regimes": ["low_vol"]
   },
   {
@@ -394,6 +457,9 @@
    "universe_default": "your_list",
    "evidence_ready": false,
    "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed with the Legends cards (U7 LG1)."}],
+   "source_note": "A publicly described method, approximated as a screen; its cited sources are on the Legends card.",
    "regimes": ["trend"]
   },
   {
@@ -409,7 +475,10 @@
    "difficulty": "advanced",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "version": 1,
+   "changes": [{"version": 1, "note": "Filed with the Legends cards (U7 LG1)."}],
+   "source_note": "A publicly described method, approximated as a screen; its cited sources are on the Legends card."
   }
  ]
 }

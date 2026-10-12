@@ -1,5 +1,5 @@
 {
- "version": "tx3/1",
+ "version": "tx4/1",
  "methods": [
   {
    "id": "price_action",
@@ -198,7 +198,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "starter.oversold",
@@ -223,7 +224,8 @@
    "fitness_available": false,
    "regimes": [
     "range"
-   ]
+   ],
+   "version": 1
   },
   {
    "id": "starter.daily_trend",
@@ -248,7 +250,8 @@
    "fitness_available": false,
    "regimes": [
     "trend"
-   ]
+   ],
+   "version": 1
   }
  ],
  "matrix": {

@@ -2856,6 +2856,9 @@ class ScreenRecord(Base):
     base_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="1d")
     params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # U9 TX4: a fork of a pre-built library screen - its id and the version copied (the copy never follows later versions)
+    forked_from: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    forked_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 

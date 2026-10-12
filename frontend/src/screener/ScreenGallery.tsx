@@ -16,12 +16,16 @@
  *
  * U9 TX3: with today's regime (flag `screener_tx3`), a screen designed for another regime is greyed - it still opens -
  * and says why; a banner names today's reading. Nothing is greyed on an unclear or missing reading.
+ *
+ * U9 TX4: with learn mode (flag `screener_tx4`), each card shows its version and a "Learn" button that opens the
+ * screen's Learn panel (method, provenance, past examples with evidence, fork) in place of the grid.
  */
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button, cx } from "../components/primitives";
+import { LearnPanel } from "./LearnPanel";
 import { LegendCard } from "./LegendCard";
-import { greyed, regimeText, type MirrorEntry, type RegimeResponse, type ScreenFit } from "./library";
+import { greyed, regimeText, type LearnResponse, type MirrorEntry, type RegimeResponse, type ScreenFit } from "./library";
 import { cardFor, withLegendCards, type LegendCardData, type LegendsLibrary } from "./legends";
 import {
   cellCount, chipCount, emptyText, filterScreens, NO_FILTER, placeText, railCount, tagLabel,
@@ -42,9 +46,21 @@ export interface ScreenGalleryProps {
   mirrors?: Record<string, MirrorEntry>;
   /** U9 TX3: today's regime and each screen's fit (absent while `screener_tx3` is off). */
   regime?: RegimeResponse | null;
+  /** U9 TX4: loads a screen's Learn panel (absent while `screener_tx4` is off - no version, no Learn). */
+  loadLearn?: (screenId: string) => Promise<LearnResponse>;
+  /** A Learn panel shown when the gallery opens (stories and tests). */
+  initialLearn?: LearnResponse | null;
+  canFork?: boolean;
 }
 
-export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {}, regime = null }: ScreenGalleryProps) {
+export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {}, regime = null,
+  loadLearn, initialLearn = null, canFork = true }: ScreenGalleryProps) {
+  const [learn, setLearn] = useState<LearnResponse | null>(initialLearn);
+  const [learnError, setLearnError] = useState<string | null>(null);
+  const openLearn = loadLearn ? (id: string) => {
+    setLearnError(null);
+    loadLearn(id).then(setLearn).catch((e: unknown) => setLearnError(e instanceof Error ? e.message : String(e)));
+  } : undefined;
   // L1: a Legends screen is shown only with its card (and so its disclaimer); without the library they leave the counts too.
   const taxonomy = useMemo(() => withLegendCards(served, legends), [served, legends]);
   const [filter, setFilter] = useState<GalleryFilter>({ ...NO_FILTER, ...initial });
@@ -106,7 +122,10 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
           </p>
         )}
 
-        {detailCard ? (
+        {learnError && <p role="alert" className="mt-3 text-t12 text-warn">{learnError}</p>}
+        {learn ? (
+          <div className="mt-3"><LearnPanel learn={learn} onBack={() => setLearn(null)} canFork={canFork} /></div>
+        ) : detailCard ? (
           <div className="mt-3">
             <LegendCard card={detailCard} focusOnMount={detail?.focus ?? false} onBack={() => setDetail(null)}
                         canOpen={!!detailScreen && canOpen(detailScreen)} onOpen={detailScreen ? () => onOpen(detailScreen) : undefined} />
@@ -121,7 +140,7 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
               <li key={s.id}>
                 <ScreenCard taxonomy={taxonomy} screen={s} canOpen={canOpen(s)} onOpen={() => onOpen(s)}
                             legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} mirror={mirrors[s.id] ?? null}
-                            grey={greyed(regime, s.id)} />
+                            grey={greyed(regime, s.id)} onLearn={openLearn ? () => openLearn(s.id) : undefined} />
               </li>
             ))}
           </ul>
@@ -170,9 +189,9 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror, grey = null }: {
+function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror, grey = null, onLearn }: {
   taxonomy: Taxonomy; screen: TaxScreen; canOpen: boolean; onOpen: () => void; legend: LegendCardData | null; onAbout: () => void;
-  mirror: MirrorEntry | null; grey?: ScreenFit | null;
+  mirror: MirrorEntry | null; grey?: ScreenFit | null; onLearn?: () => void;
 }) {
   const method = taxonomy.methods.find((m) => m.id === screen.method);
   const setup = taxonomy.setups.find((s) => s.id === screen.setup);
@@ -181,7 +200,9 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror
     <article className={cx("flex h-full flex-col rounded-panel border border-border bg-surface-1 p-3", grey && "border-dashed bg-surface-inset")}
              aria-labelledby={`screen-${screen.id}`} data-screen-id={screen.id} data-greyed={grey ? "true" : undefined}>
       <p className="text-t12 text-fg-muted">{method?.label ?? screen.method} → {setup?.label ?? screen.setup}</p>
-      <h4 id={`screen-${screen.id}`} className="mt-1 text-t15 font-semibold text-fg">{screen.name}</h4>
+      <h4 id={`screen-${screen.id}`} className="mt-1 text-t15 font-semibold text-fg">
+        {screen.name}{onLearn && screen.version ? <span className="ml-1 font-mono text-t12 font-normal text-fg-muted">v{screen.version}</span> : null}
+      </h4>
       <p className="mt-1 flex-1 text-t13 text-fg-muted">{screen.definition}</p>
       {legend && <p className="mt-1 text-t12 text-fg-muted" data-testid="legend-card-disclaimer">{legend.disclaimer}</p>}
       {grey && <p className="mt-1 text-t12 text-warn" data-testid="screen-regime">{grey.reason}</p>}
@@ -201,6 +222,7 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror
       <div className="mt-3 flex items-center justify-between gap-2">
         <span className="text-t12 text-fg-muted">{tagLabel(taxonomy, "universe_default", t.universe_default)}</span>
         <div className="flex items-center gap-1">
+          {onLearn && <Button size="sm" variant="ghost" onClick={onLearn} aria-label={`Learn: ${screen.name} - its method, source and past examples`}>Learn</Button>}
           {legend && <Button size="sm" variant="ghost" onClick={onAbout} aria-label={`About ${screen.name}: the method, its sources and the screen`}>About</Button>}
           <Button size="sm" onClick={onOpen} disabled={!canOpen} aria-label={`Open ${screen.name} in the builder`}
                   title={canOpen ? undefined : "This screen's family is not available on this page yet"}>Open</Button>

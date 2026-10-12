@@ -23,6 +23,8 @@ export interface TaxScreen {
   fitness_available: boolean;
   /** U9 TX3: the market regimes it is designed for (empty or absent = any). */
   regimes?: string[];
+  /** U9 TX4: the screen's version (its change log is on the Learn panel). */
+  version?: number;
 }
 
 /** U9 TX3: a market regime a screen can be designed for, on one axis. */

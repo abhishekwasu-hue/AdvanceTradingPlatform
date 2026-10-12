@@ -18,6 +18,7 @@ Daily candle, known at its close:
 from __future__ import annotations
 
 import bisect
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -699,17 +700,21 @@ def fold_impulse(d: pd.DataFrame, s: Optional[Mapping[str, Any]] = None) -> List
     return out
 
 
-_KAT_CACHE: Dict[int, Tuple[List[DState], List[Any]]] = {}
+# state_at's index of known_at times per states list (Trade's own cache). Per thread (review of #213): callers may run
+# in worker threads.
+_LOCAL = threading.local()
 
 
 def state_at(states: List[DState], ts: Any) -> DState:
     """The last Daily state known at ts (known_at <= ts); none -> UNKNOWN."""
     ts = pd.Timestamp(ts)
-    hit = _KAT_CACHE.get(id(states))
+    cache: Dict[int, Tuple[List[DState], List[Any]]] = getattr(_LOCAL, "kat", None) or {}
+    _LOCAL.kat = cache
+    hit = cache.get(id(states))
     if hit is None or hit[0] is not states or len(hit[1]) != len(states):
-        if len(_KAT_CACHE) > 16:
-            _KAT_CACHE.clear()
-        hit = _KAT_CACHE[id(states)] = (states, [x.known_at for x in states])
+        if len(cache) > 16:
+            cache.clear()
+        hit = cache[id(states)] = (states, [x.known_at for x in states])
     kats = hit[1]
     j = bisect.bisect_right(kats, ts) - 1
     return states[j] if j >= 0 else DState(-1, None, None, "UNKNOWN", why="no Daily candle yet")

@@ -20,6 +20,7 @@ from typing import Any, Dict
 import pandas as pd
 import pytest
 
+from app.price_action.daily_trend import context as CTX
 from app.price_action.daily_trend import fold as DD
 from app.price_action.daily_trend import legs as DL
 from app.price_action.daily_trend import rules as PR
@@ -110,13 +111,13 @@ def test_the_goldens_cover_the_fold_s_branches():
     cov = golden()["coverage"]
     for key in ("trend:UP", "trend:DOWN", "trend:RANGE", "trend:NEUTRAL", "trend:UNKNOWN", "phase:impulse", "phase:correction",
                 "phase:origin_broken", "counter:pullback", "counter:candidate", "counter:correction", "wave_a", "sharp", "corr_zone",
-                "mature", "origin_risk", "target_passed"):
+                "mature", "origin_risk", "target_passed", "q27_range_after_break", "q49_origin_moved_on_break", "flip"):
         assert cov.get(key, 0) > 0, key
 
 
 # --- the fold ------------------------------------------------------------------------------------------------------------
 
-@pytest.mark.parametrize("index", range(16))
+@pytest.mark.parametrize("index", range(30))
 def test_fold_parity_every_state(index):
     folds = golden()["folds"]
     if index >= len(folds):
@@ -145,6 +146,47 @@ def test_truncated_runs_match_trade_and_the_full_run():
         same(state(folded(sid, "default")[m]), state(short[-1]), f"causal[{sid}].{m}")
 
 
+def series_of(kind: str) -> list:
+    return [i for i, s in enumerate(golden()["series"]) if str(s["seed"]).startswith(kind)]
+
+
+def causal_bars(states: Any, every: int = 0, cap: int = 0) -> list:
+    """Bars to re-fold on their own: every bar where flip() runs (the day after an origin break) or the trend / phase /
+    protected origin changes, plus every k-th bar (`every`). `cap` keeps the first ones."""
+    picks = set(range(0, len(states), every)) if every else set()
+    for m in range(1, len(states)):
+        a, b = states[m - 1], states[m]
+        if a.phase == "origin_broken" or (a.trend, a.phase, pivot(a.protected)) != (b.trend, b.phase, pivot(b.protected)):
+            picks.add(m)
+    out = sorted(picks)
+    return out[:cap] if cap else out
+
+
+def assert_causal(sid: int, bars: list) -> None:
+    full = folded(sid, "default")
+    for m in bars:
+        same(state(full[m]), state(DD.fold(daily(sid).iloc[:m + 1])[-1]), f"causal[{sid}].{m}")
+
+
+def test_no_state_depends_on_a_later_candle_fast():
+    """Review of #213: the full run's state m equals the fold on the first m + 1 candles - checked on every bar where
+    flip() runs or the state changes (series 0; a one-bar look-ahead in flip() fails here)."""
+    bars = causal_bars(folded(0, "default"), cap=40)
+    assert len(bars) >= 20
+    assert_causal(0, bars)
+    for sid in series_of("flip_spike"):                        # the hand-built flip() cases: every bar after the break
+        assert_causal(sid, causal_bars(folded(sid, "default")))
+
+
+@pytest.mark.lookahead
+@pytest.mark.parametrize("sid", range(16))
+def test_no_state_depends_on_a_later_candle_dense(sid):
+    """The dense version (the Z10-a no-look-ahead CI job): every 7th bar and every change, on every golden series."""
+    if sid >= len(golden()["series"]):
+        pytest.skip("no such series")
+    assert_causal(sid, causal_bars(folded(sid, "default"), every=7))
+
+
 def test_short_series_parity():
     for case in golden()["short"]:
         states = DD.fold(daily(0).iloc[:case["m"] + 1])
@@ -158,9 +200,27 @@ def test_state_at_parity():
         assert (st.bar, st.trend) == (case["bar"], case["trend"]), case
 
 
-def test_only_the_impulse_mode_is_ported():
-    with pytest.raises(ValueError):
-        DD.fold(daily(0).iloc[:30], {"daily_trend_mode": "minor"})
+def test_only_the_impulse_mode_is_ported_and_bad_settings_are_refused():
+    for over in ({"daily_trend_mode": "minor"}, {"daily_swing_method": "zigzag"}, {"corr_degree_rule": "fib"},
+                 {"q49_impulse_origin": "nearest"}):
+        with pytest.raises(ValueError):
+            DD.fold(daily(0).iloc[:30], over)
+
+
+def test_known_at_without_bar_end_is_the_session_close():
+    d = daily(0).iloc[:5].drop(columns=["bar_end"])
+    assert DD.known_at_of(d) == [pd.Timestamp(t).normalize() + pd.Timedelta(hours=15, minutes=30) for t in d["timestamp"]]
+
+
+def test_trend_context_parity():
+    """Trade `level_reaction.trend_context` through the typed bridge (context.trend_context -> level_gate.context_from_state)."""
+    cases = golden()["trend_context"]
+    assert any(not c["ctx"]["ok"] for c in cases) and any(c["ctx"]["ok"] for c in cases)
+    for i, c in enumerate(cases):
+        raw = frame(golden()["series"][c["series"]]["bars"])
+        ctx = CTX.trend_context(raw, None if c["today"] is None else pd.Timestamp(c["today"]), c["settings"])
+        got = {k: (sorted(v) if k == "sides" else (None if v is None else [num(x) for x in v]) if k == "band" else v) for k, v in ctx.items()}
+        same(c["ctx"], got, f"trend_context[{i}]")
 
 
 def test_pivots_and_sigma_parity():
@@ -240,7 +300,8 @@ def test_c_class_parity():
 
 # --- purity --------------------------------------------------------------------------------------------------------------
 
-ALLOWED_IMPORTS = ("__future__", "bisect", "dataclasses", "typing", "numpy", "pandas", "app.price_action.daily_trend")
+ALLOWED_IMPORTS = ("__future__", "bisect", "dataclasses", "threading", "typing", "numpy", "pandas", "app.price_action.daily_trend",
+                   "app.price_action.level_gate.gate")
 
 
 def test_the_daily_trend_is_pure():
@@ -261,7 +322,7 @@ def test_the_daily_trend_is_pure():
 
 def test_importing_the_daily_trend_loads_nothing_else_from_the_app():
     """... and at run time: a fresh interpreter importing it loads no app module outside app.price_action."""
-    code = ("import sys; import app.price_action.daily_trend.fold; "
+    code = ("import sys; import app.price_action.daily_trend.fold, app.price_action.daily_trend.context; "
             "print(sorted(m for m in sys.modules if m.startswith('app.') and not m.startswith('app.price_action')))")
     out = subprocess.run([sys.executable, "-c", code], cwd=BACKEND, capture_output=True, text=True, check=True)
     assert out.stdout.strip() == "[]", out.stdout

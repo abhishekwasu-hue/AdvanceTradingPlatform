@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import cases from "../../../backend/tests/fixtures/zones/chart_bands_cases.json";
+import cases from "./__fixtures__/chart_bands_cases.json";
 import { bandShapes, type Converters } from "./geometry";
 import {
   bandsAt, bandsLayer, distancePct, marketZonesApi, roleAt, selectBands, touchText, zoneLabel,
@@ -15,7 +15,9 @@ const cand = (key: string, low: number, high: number, extra: Partial<ZoneCandida
 });
 
 describe("selectBands (Z7a-3) - the same rule as the backend", () => {
-  it("matches every shared case from backend/tests/fixtures/zones/chart_bands_cases.json", () => {
+  // __fixtures__/chart_bands_cases.json is a byte-identical copy of backend/tests/fixtures/zones/chart_bands_cases.json
+  // (checked by backend/tests/test_zones_chart_screenql.py; rebuild both with `python -m tests.zones_chart_cases --write`)
+  it("matches every shared case from the backend rule", () => {
     const all = (cases as unknown as { per_role: number; cases: Case[] }).cases;
     expect(all.length).toBeGreaterThanOrEqual(20);
     for (const c of all) {

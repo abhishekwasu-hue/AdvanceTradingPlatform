@@ -20,6 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_owner, require_role, require_trader
+from app.auth.scopes import require_scope
 from fastapi.responses import JSONResponse
 
 from app.audit.log import write_audit_log
@@ -132,7 +133,7 @@ async def request_payout(body: PayoutRequestBody, user: User = Depends(require_o
     return billing.payout_dict(payout)
 
 
-@router.post("/listings", status_code=201)
+@router.post("/listings", status_code=201, dependencies=[Depends(require_scope("marketplace:publish"))])
 async def create(body: ListingCreate, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     await _gate(session, user)
     try:
@@ -149,7 +150,7 @@ async def create(body: ListingCreate, user: User = Depends(require_trader), sess
     return as_dict(listing, include_config=True, mine=True)
 
 
-@router.post("/listings/{listing_id}/submit")
+@router.post("/listings/{listing_id}/submit", dependencies=[Depends(require_scope("marketplace:publish"))])
 async def submit(listing_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     listing = await _listing(session, listing_id)
     if listing.tenant_id != user.tenant_id:
@@ -160,7 +161,7 @@ async def submit(listing_id: int, user: User = Depends(require_trader), session:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@router.post("/listings/{listing_id}/unlist")
+@router.post("/listings/{listing_id}/unlist", dependencies=[Depends(require_scope("marketplace:publish"))])
 async def unlist(listing_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     listing = await _listing(session, listing_id)
     if listing.tenant_id != user.tenant_id:
@@ -201,7 +202,7 @@ async def subscribe(listing_id: int, user: User = Depends(require_trader), sessi
             "next": "Backtest and paper-trade this copy from the Strategies tab before deploying it LIVE."}
 
 
-@router.put("/listings/{listing_id}/price")
+@router.put("/listings/{listing_id}/price", dependencies=[Depends(require_scope("marketplace:publish"))])
 async def set_price(listing_id: int, body: PriceBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     """Phase X: re-price a listing that is not live (DRAFT / REJECTED / UNLISTED)."""
     listing = await _listing(session, listing_id)

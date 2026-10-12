@@ -2,7 +2,8 @@
 
 Company/financial/shareholding/corporate-action/qualitative-factor data is shared reference
 data (like an instrument master), not user-private - reads are open to everyone, writes require
-auth so every contribution is attributed (`created_by`). Analysis endpoints are pure GET/POST
+auth so every contribution is attributed (`created_by`). Z10-c: a write needs a trading role of an
+active organisation (`require_contributor`); VIEWER and platform SUPPORT accounts read only. Analysis endpoints are pure GET/POST
 computations over whatever has been persisted; they never fabricate a missing input, they
 report it as missing (see FundamentalScoreEngine's neutral-50 behavior, and the ValueError a
 sub-engine raises when it has nothing to work with - turned into a 422 here).
@@ -15,7 +16,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_contributor
 from app.core.enums import FundamentalGrade, InvestmentHorizon, PeriodType, QualityLabel, SignalDirection, ValuationLabel
 from app.db.models import CompanyRecord, User
 from app.db.session import get_session
@@ -79,7 +80,7 @@ async def _load_periods(session: AsyncSession, company_id: int) -> List[Financia
 # --- Company profile CRUD --------------------------------------------------------------------
 
 
-@router.post("/companies", response_model=CompanyProfile, status_code=201)
+@router.post("/companies", response_model=CompanyProfile, status_code=201, dependencies=[Depends(require_contributor)])
 async def create_company(
     profile: CompanyProfile, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> CompanyProfile:
@@ -107,7 +108,7 @@ async def get_company(symbol: str, session: AsyncSession = Depends(get_session))
     return db.company_to_model(record)
 
 
-@router.put("/companies/{symbol}", response_model=CompanyProfile)
+@router.put("/companies/{symbol}", response_model=CompanyProfile, dependencies=[Depends(require_contributor)])
 async def update_company(
     symbol: str, profile: CompanyProfile, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> CompanyProfile:
@@ -121,7 +122,7 @@ async def update_company(
 # --- Financial periods, shareholding, corporate actions, qualitative factors ------------------
 
 
-@router.post("/companies/{symbol}/financials", response_model=FinancialPeriod, status_code=201)
+@router.post("/companies/{symbol}/financials", response_model=FinancialPeriod, status_code=201, dependencies=[Depends(require_contributor)])
 async def add_financial_period(
     symbol: str, period: FinancialPeriod, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> FinancialPeriod:
@@ -145,7 +146,7 @@ class FinancialsImportBody(BaseModel):
     periods: Optional[List[FinancialPeriod]] = Field(default=None, max_length=400)
 
 
-@router.post("/companies/{symbol}/financials/import")
+@router.post("/companies/{symbol}/financials/import", dependencies=[Depends(require_contributor)])
 async def import_financials(
     symbol: str, body: FinancialsImportBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -193,7 +194,7 @@ async def list_providers() -> dict:
             "covers": ["profile", "shareholding", "announcements"], "note": "Financial statements are not published as JSON by NSE; import them as CSV."}
 
 
-@router.post("/companies/{symbol}/refresh")
+@router.post("/companies/{symbol}/refresh", dependencies=[Depends(require_contributor)])
 async def refresh_company(
     symbol: str, body: RefreshBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -208,7 +209,7 @@ async def refresh_company(
     return summary.as_dict()
 
 
-@router.post("/refresh")
+@router.post("/refresh", dependencies=[Depends(require_contributor)])
 async def refresh_many(
     body: BulkRefreshBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> dict:
@@ -231,7 +232,7 @@ async def list_financials(symbol: str, session: AsyncSession = Depends(get_sessi
     return await _load_periods(session, company.id)
 
 
-@router.post("/companies/{symbol}/shareholding", response_model=ShareholdingSnapshot, status_code=201)
+@router.post("/companies/{symbol}/shareholding", response_model=ShareholdingSnapshot, status_code=201, dependencies=[Depends(require_contributor)])
 async def add_shareholding_snapshot(
     symbol: str, snapshot: ShareholdingSnapshot, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> ShareholdingSnapshot:
@@ -248,7 +249,7 @@ async def list_shareholding(symbol: str, session: AsyncSession = Depends(get_ses
     return [db.shareholding_to_model(r) for r in rows]
 
 
-@router.post("/companies/{symbol}/corporate-actions", response_model=CorporateAction, status_code=201)
+@router.post("/companies/{symbol}/corporate-actions", response_model=CorporateAction, status_code=201, dependencies=[Depends(require_contributor)])
 async def add_corporate_action(
     symbol: str, action: CorporateAction, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> CorporateAction:
@@ -265,7 +266,7 @@ async def list_corporate_actions_route(symbol: str, session: AsyncSession = Depe
     return [db.corporate_action_to_model(r) for r in rows]
 
 
-@router.post("/companies/{symbol}/qualitative-factors", response_model=QualitativeFactor, status_code=201)
+@router.post("/companies/{symbol}/qualitative-factors", response_model=QualitativeFactor, status_code=201, dependencies=[Depends(require_contributor)])
 async def add_qualitative_factor(
     symbol: str, factor: QualitativeFactor, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> QualitativeFactor:
@@ -282,7 +283,7 @@ async def list_qualitative_factors_route(symbol: str, session: AsyncSession = De
     return [db.qualitative_factor_to_model(r) for r in rows]
 
 
-@router.post("/companies/{symbol}/calendar", response_model=EarningsCalendarEvent, status_code=201)
+@router.post("/companies/{symbol}/calendar", response_model=EarningsCalendarEvent, status_code=201, dependencies=[Depends(require_contributor)])
 async def add_calendar_event(
     symbol: str, event: EarningsCalendarEvent, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> EarningsCalendarEvent:
@@ -321,7 +322,7 @@ async def upcoming_calendar_events(session: AsyncSession = Depends(get_session))
     return upcoming
 
 
-@router.post("/companies/{symbol}/sector-metrics", response_model=SectorMetric, status_code=201)
+@router.post("/companies/{symbol}/sector-metrics", response_model=SectorMetric, status_code=201, dependencies=[Depends(require_contributor)])
 async def add_sector_metric(
     symbol: str, metric: SectorMetric, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> SectorMetric:

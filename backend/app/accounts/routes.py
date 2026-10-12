@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.accounts.service import as_dict, credential_for_account, get_account, list_accounts, sync_account
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.db.models import BrokerAccountRecord, User
 from app.db.session import get_session
@@ -39,8 +40,9 @@ async def accounts(user: User = Depends(get_current_user), session: AsyncSession
     return [await _with_status(session, a) for a in await list_accounts(session, user.tenant_id)]
 
 
-@router.post("/{account_id}/sync")
-async def sync(account_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+@router.post("/{account_id}/sync", dependencies=[Depends(require_scope("brokers:write"))])
+async def sync(account_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+    # Z10-c: rewrites the organisation's balance snapshot and spends the account's broker budget - a trading role.
     account = await _owned(session, user, account_id)
     record = await credential_for_account(session, account)
     if record is None:
@@ -57,7 +59,7 @@ class AccountPatch(BaseModel):
     display_name: Optional[str] = Field(default=None, max_length=100)
 
 
-@router.patch("/{account_id}")
+@router.patch("/{account_id}", dependencies=[Depends(require_scope("brokers:write"))])
 async def patch(account_id: int, body: AccountPatch, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     account = await _owned(session, user, account_id)
     if body.display_name is not None:
@@ -74,19 +76,19 @@ async def _set_status(session: AsyncSession, user: User, account_id: int, status
     return await _with_status(session, account)
 
 
-@router.post("/{account_id}/enable")
+@router.post("/{account_id}/enable", dependencies=[Depends(require_scope("brokers:write"))])
 async def enable(account_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     return await _set_status(session, user, account_id, "ACTIVE")
 
 
-@router.post("/{account_id}/disable")
+@router.post("/{account_id}/disable", dependencies=[Depends(require_scope("brokers:write"))])
 async def disable(account_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     """Stops new LIVE entries routed to this account (exits still run). Deployments that name
     it record the reason each cycle instead of trading."""
     return await _set_status(session, user, account_id, "DISABLED")
 
 
-@router.post("/{account_id}/default")
+@router.post("/{account_id}/default", dependencies=[Depends(require_scope("brokers:write"))])
 async def make_default(account_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
     account = await _owned(session, user, account_id)
     for other in await list_accounts(session, user.tenant_id):

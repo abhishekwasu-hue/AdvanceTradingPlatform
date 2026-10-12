@@ -162,7 +162,8 @@ async def put_settings(underlying: str, body: SettingsBody, user: User = Depends
 
 
 # Pausing the organisation's OI alerts is for members who trade or build strategies, not for viewers / support.
-_member = require_role(UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR)
+# Z10-c: and it is an alert setting, so a member the owner denied `alerts:write` cannot (nor in a suspended organisation).
+_member = require_role(UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR, active_tenant=True, scope="alerts:write")
 
 
 class SnoozeBody(BaseModel):

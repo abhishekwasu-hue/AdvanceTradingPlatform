@@ -2,23 +2,23 @@
 
 ## Phase 0 (owner's scope freeze - docs/specs/ATP_PHASE0_FREEZE.md; overrides the order below until Phase 0 ships)
 
-Phase 0 = invite-only beta (300-500 users), PWA, PAPER only, no API orders from ATP. Progress: Z1, Z4, Z6 and Z9 merged; Z5 P1-c merged (P1-d in review); Z2 BT1 merged (BT1b in review); Z3, Z7a, Z7 and Z8 in review/progress; Z10, Z11 not started. Every PR waits for green CI and, for engine/data/security/migration work, an independent review; flags stay off.
+Phase 0 = invite-only beta (300-500 users), PWA, PAPER only, no API orders from ATP. Progress: Z1, Z2, Z3, Z4, Z5, Z6, Z9, Z10 and Z11 merged; Z7a-3 zone chart layer/ScreenQL (#196) and Z7 EV1/EV2 evidence charts (#197) in review; Z8 LG1 after them. Every PR waits for green CI and, for engine/data/security/migration work, an independent review; flags stay off.
 Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan partner application; company registration (needed before the partner emails in docs/specs/ATP_PARTNER_EMAIL_DRAFTS.md go out).
 
 | Z | What | Status | PR | % |
 |---|---|---|---|---|
 | Z1 | PW5 proposal card + PW6 invite gate / feedback | merged | #162, #159 | 100 |
-| Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | BT1 merged (flag byob_data_tier off); BT1b (guard every live read, credential holder, staleness) in review: security review fixes in progress | #167 merged, #177 | 85 |
-| Z3 | BT2/BT3: proposal -> Telegram/in-app/push -> Approve PAPER, per-user PAPER account, protective exits automatic, approval expiry/re-quote, ladder card | Z3-a approval-only entries + Z3-b PAPER account/ladder/Telegram: independent review and verification done (no safety blocker); last verification fixes in progress | #173, #174 | 85 |
+| Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | merged (flag byob_data_tier off): BT1 + BT1b (guard every live read, credential holder, staleness) | #167, #177 | 100 |
+| Z3 | BT2/BT3: proposal -> Telegram/in-app/push -> Approve PAPER, per-user PAPER account, protective exits automatic, approval expiry/re-quote, ladder card | merged (flags approval_only_entries, paper_account off) | #173, #174 | 100 |
 | Z4 | HB0 R2 importer + HB1 daily 10-year backfill + nightly EOD jobs; owner intraday store tenant-scoped | merged (flags history_import / history_backfill off); owner intraday history comes from HB2 after Z11 (see note) | #164, #169 | 100 |
-| Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | P1-c merged (+ review follow-ups #180); P1-d (ticket, caps, daily loss lockout with exits allowed, strike breach, VIX gate with its own live reading) in review with the independent review fixed (flags `risk_by_default`, `vix_gate` off) | #170, #180 merged; #179 | 75 |
+| Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | merged (flags `risk_by_default`, `vix_gate` off): P1-d #179, follow-up #195 (VIX reading per user under byob, member fallback, number-free refusal text), time exits on the worker clock #194 | #170, #180, #179, #194, #195 | 100 |
 | Z6 | P1-e journal auto-capture, behaviour tags, discipline score, weekly review | merged (flag discipline_engine off) | #171, #172 | 100 |
-| Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection merged (6528/6528 identical to Trade); Z7a-2 lifecycle, level memory (parity 5336/5336) and nightly as-of zone store merged (flag `market_zones` off); Z7a-3 chart layer (<= 6 bands, as-of read API, labelled platform fallback) + ScreenQL NearZone / ZoneRole / ZoneState / ZoneStrength ready on branch `claude/z7a3-zones-chart-screenql` | #168, #176 merged | 85 |
-| Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 reviewed, fixes in progress (template history depth, alert flag gates, IST anchoring); BK2 built, aligning with BK1 fixes; EV1 + EV2 built on branch `claude/z7-ev12-evidence` (flag `evidence_charts` off; PR next) | #178, #181 | 50 |
+| Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection and Z7a-2 lifecycle/memory/nightly store merged (flag market_zones off; parity 6528/6528 and 5336/5336); Z7a-3 chart layer + ScreenQL zone functions in review (#196, review: merge; batched-read/vectorised perf follow-up ready, needed before the flag is turned on) | #168, #176 merged; #196 | 85 |
+| Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 + BK2 merged (flag screener_breakouts off; CDS session clock kept inside the screener, worker CDS change parked as OPEN_QUESTIONS BK2-8); EV1 + EV2 evidence charts in review (#197, flag evidence_charts off; review fixes done, waits for #196) | #178, #181 merged; #197 | 80 |
 | Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | TX1 merged (flag `screener_gallery` off): taxonomy data file + lint + CI guard (every pre-built screen filed), `GET /api/screener/taxonomy`, gallery rail / chips / matrix; breakouts register when #178 merges (OPEN_QUESTIONS TX1-6); LG1 next | #184 merged | 60 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |
-| Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | design note `docs/design/Z10_LAUNCH_HARDENING.md` (Z10-a..f); Z10-a (G2 no-look-ahead harness + G1 golden / chart parity) in review as draft PR #187 | #187 | 10 |
-| Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | built on branch claude/z11-deploy-bundle (deploy/atp.sh, docs/deploy/HOSTINGER_RUNBOOK.md); PR waits for a WIP slot. Owner runs it; blockers: server IP, R2 backup token in .env | - | 80 |
+| Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | merged: Z10-a no-look-ahead harness + golden/chart parity (#187), Z10-b stale-alert guard + reliable outbox (#189), Z10-c tenancy/scope sweep + no-API-order-path guard + phase0_paper_only lock (#193), Z10-d screener perf + load test (#190), Z10-e staged rollout 50/200/500 + status page + runbooks (#191), Z10-f legal pages + support bot (#188). All new flags off. Owner: the 500-user staging load test | #187-#193 | 100 |
+| Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | merged (#186): deploy/atp.sh, sealed and encrypted R2 backups with a non-superuser restore check, backup image with openssl, rollback-safety lint. Owner runs it; blockers: server IP, R2 backup token in .env | #186 | 100 |
 
 Also merged: #183 fix - the tax report uses the platform charges table (india_costs) and a configurable F&O turnover method (STT rows from 1 Apr 2026 still marked verify, OPEN_QUESTIONS TX-1).
 
@@ -62,7 +62,7 @@ Working rules: docs/WORKING_RULES.md (multitasking and self-review are required)
 Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
 Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
 
-Last update: 2026-10-11 20:45 IST (refreshed after every merge).
+Last update: 2026-10-12 20:10 IST (refreshed after every merge).
 
 ## Parts and status
 

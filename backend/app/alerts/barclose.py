@@ -29,6 +29,7 @@ is only built from intraday bars that reach the session's last bucket.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time as time_module
@@ -44,6 +45,7 @@ from app.alerts import staleness
 from app.db.models import AlertRuleRecord, ScreenRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
 from app.screener import compile_screen, nodes
+from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.runtime import SymbolData, bar_close, closed_only, run_screen
 
 logger = logging.getLogger(__name__)
@@ -228,7 +230,8 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
             daily = data.frames.get("1d") if data is not None and tf != "1d" else None
             if frame is not None and daily is not None:               # U6 BK1: daily context, sessions closed by this bar's close
                 kept["1d"] = closed_only(daily, "1d", bar_close(pd.DatetimeIndex([pd.Timestamp(bar)]), tf)[0])
-            closed = SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
+            closed = (SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno, exchange=data.exchange or exchange)
+                      if data is not None and frame is not None else None)
             cache.frames[key(sym)] = (dict(lookback), closed)
     cache.reused_symbols += len(symbols) - len(missing)
     return [d for s in symbols if (d := cache.frames[key(s)][1]) is not None], problems
@@ -259,8 +262,9 @@ def _fresh_only(current: List[SymbolData], tf: str, now: datetime, holidays: Ite
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
                         breakouts_enabled: bool = True, zones_enabled: bool = True, per_user: bool = False,
-                        evidence_enabled: bool = False) -> Tuple[str, int]:
-    """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error."""
+                        vectorized: bool = False, evidence_enabled: bool = False) -> Tuple[str, int]:
+    """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
+    (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time."""
     from app.alerts.engine import record_event
     now = _utc(now)
     intrabar = rule.fire_on == "intrabar"
@@ -285,7 +289,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
-        from app.screener.breakouts.gate import flagged_calls
+        from app.screener.breakouts.gate import alert_clock_refusal, flagged_calls
         blocked = flagged_calls(ast)
         if blocked and (not breakouts_enabled or intrabar):
             # U6 BK1: the rule stays active and resumes when the flag is back; breakout rules fire on bar close only
@@ -298,32 +302,41 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             # Z7a-3: the rule stays active and resumes when the flag is back; zone rules fire on bar close only
             rule.last_problem = zone_gate.refusal(zone_calls) if not zones_enabled else zone_gate.intrabar_refusal(zone_calls)
             return "unsupported", 0
+        clock = alert_clock_refusal(ast, rule.exchange) if blocked else None
+        if clock:                                                 # U6 BK2: session functions on the NSE clock only (BK2-5)
+            rule.last_problem = clock
+            return "unsupported", 0
         current, problems = await _current_universe(session, rule, symbols, bar, validated.fetch_lookback, fetch, cache, forming=intrabar,
                                                     per_user=per_user)
-        if zone_calls and current:
-            # the tenant's zone snapshots as of each bar's close (a bar never sees a zone computed after it closed)
-            await zone_gate.attach_zones(session, rule.tenant_id, rule.exchange or "NSE", current, now, validated.lookback)
+        if current and await staleness.guard_on(session, rule.tenant_id, cache.stale_guard):
+            fresh, stale = _fresh_only(current, rule.base_tf, now, holidays)
+            cache.suppressed_symbols += len(current) - len(fresh)
+            current = fresh
+            if not current:
+                rule.last_problem = f"alerts suppressed: {stale}"   # Z10-b: nothing recorded on stale data; retried later
+                return "suppressed", 0
+        if not current:
+            rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
+            return "waiting", 0
+        frames = {d.symbol: d.frames[rule.base_tf] for d in current}
+        result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
+                      tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar)
+        if result_key in cache.results:
+            cache.reused_results += 1
+        else:
+            if zone_calls:
+                # Z7a-3: the tenant's zone snapshots as of each bar's close (a bar never sees a zone computed after it
+                # closed) - read only when the cycle has not evaluated this same screen already
+                await zone_gate.attach_zones(session, rule.tenant_id, rule.exchange or "NSE", current, now, validated.lookback)
+            # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
+            # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
+            # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.
+            cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params,
+                                                                     vectorized=vectorized)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
-    if current and await staleness.guard_on(session, rule.tenant_id, cache.stale_guard):
-        fresh, stale = _fresh_only(current, rule.base_tf, now, holidays)
-        cache.suppressed_symbols += len(current) - len(fresh)
-        current = fresh
-        if not current:
-            rule.last_problem = f"alerts suppressed: {stale}"       # Z10-b: nothing recorded on stale data; retried later
-            return "suppressed", 0
-    if not current:
-        rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
-        return "waiting", 0
     fired = 0
-    frames = {d.symbol: d.frames[rule.base_tf] for d in current}
-    result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar, tuple(frames),
-                  json.dumps(params, sort_keys=True, default=str), intrabar)
-    if result_key in cache.results:
-        cache.reused_results += 1
-    else:
-        cache.results[result_key] = run_screen(ast, validated, current, base_tf=rule.base_tf, params=params)
     by_symbol = {d.symbol: d for d in current}
     fired_events: List[Tuple[Any, SymbolData]] = []
     for match in cache.results[result_key]:
@@ -336,8 +349,8 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                 fired += 1
                 fired_events.append((event, by_symbol[match.symbol]))
     if fired_events and evidence_enabled and not intrabar:
-        # U8 EV1/EV2: each fired symbol's evidence pack from the closed bars the rule was just evaluated on (never a bar
-        # still forming); the Telegram delivery sends its image to the rule creator's own linked chat
+        # U8 EV1/EV2: each deliverable event's evidence pack from the closed bars the rule was just evaluated on (never a
+        # bar still forming); the Telegram delivery sends its image to the rule creator's own linked chat
         from app.screener import evidence_store
         await evidence_store.store_for_events(session, rule, fired_events, ast=ast, validated=validated, universe=current, params=params,
                                               data_source="broker:own-session" if per_user else "broker:organisation", per_user=per_user)
@@ -364,6 +377,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     breakouts_on: Dict[int, bool] = {}
     zones_on: Dict[int, bool] = {}
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
+    vectorized_on: Dict[int, bool] = {}
     evidence_on: Dict[int, bool] = {}
     started = time_module.monotonic()
     for rule in rules:
@@ -385,12 +399,15 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             zones_on[rule.tenant_id] = await flag_enabled(session, ZONES_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
             per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
+        if rule.tenant_id not in vectorized_on:
+            vectorized_on[rule.tenant_id] = await flag_enabled(session, VECTOR_FLAG, rule.tenant_id)
         if rule.tenant_id not in evidence_on:
             evidence_on[rule.tenant_id] = await flag_enabled(session, EVIDENCE_FLAG, rule.tenant_id)
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
                                            breakouts_enabled=breakouts_on[rule.tenant_id], zones_enabled=zones_on[rule.tenant_id],
-                                           per_user=per_user[rule.tenant_id], evidence_enabled=evidence_on[rule.tenant_id])
+                                           per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
+                                           evidence_enabled=evidence_on[rule.tenant_id])
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired

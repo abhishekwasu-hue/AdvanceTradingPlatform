@@ -22,6 +22,7 @@ from app.alerts import links
 from app.alerts.channels import TelegramConfig, decrypt_config
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.core.enums import AlertChannelType
 from app.db.models import AlertChannelRecord, EmailOptOutRecord, User
 from app.db.session import get_session
@@ -98,7 +99,7 @@ async def email_opt_outs(user: User = Depends(require_trader), session: AsyncSes
     return [{"id": r.id, "address": r.address, "scope": r.scope, "created_at": r.created_at.isoformat()} for r in rows]
 
 
-@router.delete("/email-opt-outs/{opt_out_id}")
+@router.delete("/email-opt-outs/{opt_out_id}", dependencies=[Depends(require_scope("alerts:write"))])
 async def remove_opt_out(opt_out_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     result = await session.execute(delete(EmailOptOutRecord).where(EmailOptOutRecord.id == opt_out_id, EmailOptOutRecord.tenant_id == user.tenant_id))
     if not getattr(result, "rowcount", 0):

@@ -1,5 +1,6 @@
 """Z7a-3: the band-selection cases shared by the backend (app/price_action/zones/chart.py) and the browser port
-(frontend/src/charting/marketZones.ts). Seeded, synthetic zones only.
+(frontend/src/charting/marketZones.ts, which reads its byte-identical copy frontend/src/charting/__fixtures__/). Seeded,
+synthetic zones only.
 
 The expected bands in tests/fixtures/zones/chart_bands_cases.json come from the Python rule; tests/test_zones_chart_screenql.py
 checks Python against the file and marketZones.test.ts checks TypeScript against it, so the two can never drift.
@@ -16,6 +17,9 @@ from app.price_action.zones import chart
 from app.price_action.zones.snapshot import is_line
 
 PATH = Path(__file__).parent / "fixtures" / "zones" / "chart_bands_cases.json"
+# The browser's copy, inside the frontend build context (the frontend image type-checks its tests and cannot reach
+# backend/). Byte-identical to PATH - tests/test_zones_chart_screenql.py checks it; --write writes both.
+FRONTEND_PATH = Path(__file__).resolve().parents[2] / "frontend" / "src" / "charting" / "__fixtures__" / "chart_bands_cases.json"
 TYPES = ["DEMAND_ZONE", "SUPPLY_ZONE", "BULLISH_OB", "BEARISH_OB", "UP_GAP", "DOWN_GAP", "SUPPORT", "RESISTANCE",
          "DYNAMIC_SR_SUPPORT", "DYNAMIC_SR_RESISTANCE"]
 TFS = ["5m", "15m", "30m", "1h", "1d"]
@@ -92,7 +96,9 @@ def dump(data: Dict[str, Any]) -> str:
 
 if __name__ == "__main__":
     if "--write" in sys.argv:
-        PATH.write_text(dump(build()))
-        print(f"wrote {PATH}")
+        text = dump(build())
+        for path in (PATH, FRONTEND_PATH):
+            path.write_text(text)
+            print(f"wrote {path}")
     else:
         print(dump(build())[:2000])

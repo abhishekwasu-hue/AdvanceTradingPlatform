@@ -266,12 +266,12 @@ def test_chain_recorder_samples_dedupes_and_loads():
             written = await chain_recorder.record_chain(session, "NIFTY", _chain(), now, interval_minutes=5, span=3)
             again = await chain_recorder.record_chain(session, "NIFTY", _chain(), now + timedelta(minutes=2), interval_minutes=5, span=3)
             later = await chain_recorder.record_chain(session, "NIFTY", _chain(spot=24560), now + timedelta(minutes=6), interval_minutes=5, span=3)
-            rows = await chain_recorder.load_rows(session, "NIFTY", now - timedelta(minutes=1), now + timedelta(minutes=10))
+            rows = await chain_recorder.load_rows(session, "NIFTY", now - timedelta(minutes=1), now + timedelta(minutes=10), tenant_id=None)
             cov = await chain_recorder.coverage(session, "NIFTY")
             uploaded = await chain_recorder.store_uploaded(session, "NIFTY", [
                 OptionChainSnapshotRow(timestamp=now, expiry=date(2026, 10, 6), strike=24500, right="PE", ltp=94.0),   # duplicate of a recorded row
                 OptionChainSnapshotRow(timestamp=now + timedelta(hours=1), expiry=date(2026, 10, 6), strike=24500, right="PE", ltp=90.0),
-            ])
+            ], tenant_id=1)
             return written, again, later, rows, cov, uploaded
     written, again, later, rows, cov, uploaded = _run(go())
     assert written == 14 and again == 0 and later == 14          # 7 strikes x CE/PE around the money
@@ -359,7 +359,7 @@ def test_worker_records_chains_for_active_option_deployments_once_per_interval(m
             second = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=1), {"NSE"})
             closed = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=30), {"MCX"})
             third = await worker._record_chains(session, [option_dep], MarketDataService(broker), now + timedelta(minutes=30), {"NSE"})
-            rows = await chain_recorder.load_rows(session, "NIFTY", now - timedelta(minutes=1), now + timedelta(hours=1))
+            rows = await chain_recorder.load_rows(session, "NIFTY", now - timedelta(minutes=1), now + timedelta(hours=1), tenant_id=None)
             return first, second, closed, third, rows
     first, second, closed, third, rows = _run(go())
     assert first > 0 and second == 0 and closed == 0 and third > 0

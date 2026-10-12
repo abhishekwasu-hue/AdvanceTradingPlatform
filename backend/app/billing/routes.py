@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_owner, require_role
+from app.auth.scopes import require_scope
 from app.billing.service import (
     cancel, get_subscription, plans_catalogue, record_payment, subscribe, subscription_dict, usage_summary,
 )
@@ -63,7 +64,7 @@ async def billing_overview(user: User = Depends(get_current_user), session: Asyn
             "tenant_status": tenant.status, "status_reason": tenant.status_reason}
 
 
-@router.post("/subscribe")
+@router.post("/subscribe", dependencies=[Depends(require_scope("billing:manage"))])
 async def subscribe_plan(body: SubscribeRequest, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
     if body.plan_id.lower() not in PLANS:
         raise HTTPException(status_code=400, detail=f"Unknown plan '{body.plan_id}'. Plans: {list(PLANS)}")
@@ -76,7 +77,7 @@ async def subscribe_plan(body: SubscribeRequest, user: User = Depends(require_ow
     return subscription_dict(sub, tenant)
 
 
-@router.post("/cancel")
+@router.post("/cancel", dependencies=[Depends(require_scope("billing:manage"))])
 async def cancel_plan(body: CancelRequest, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
     tenant = await session.get(Tenant, user.tenant_id)
     try:

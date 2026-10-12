@@ -19,7 +19,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user, require_trader
+from app.auth.dependencies import TRADING_ROLES, get_current_user, require_role, require_trader
 from app.db.models import OptionStrategyRecord, User
 from app.db.session import get_session
 from app.options_builder.routes import MAX_LEGS, MAX_PRICE, LegIn
@@ -40,6 +40,8 @@ async def _enabled(user: User = Depends(get_current_user), session: AsyncSession
 
 
 router = APIRouter(prefix="/api/options-builder/strategies", tags=["options-builder"], dependencies=[Depends(_enabled)])
+# Z10-c: saving or archiving a builder strategy also honours the catalogue scope `strategies:write` (Team page denials).
+_STRATEGIES_WRITE = require_role(*TRADING_ROLES, active_tenant=True, scope="strategies:write")
 
 
 class SavedLeg(LegIn):
@@ -88,7 +90,7 @@ async def list_strategies(user: User = Depends(get_current_user), session: Async
     return [_summary(r) for r in rows]
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(_STRATEGIES_WRITE)])
 async def save_strategy(body: SaveBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     bind = session.get_bind()
     if bind is not None and bind.dialect.name == "postgresql":
@@ -119,7 +121,7 @@ async def load_strategy(strategy_id: int, user: User = Depends(get_current_user)
     return {**_summary(row), "inputs": data.get("inputs") or {}, "legs": data.get("legs") or []}
 
 
-@router.delete("/{strategy_id}")
+@router.delete("/{strategy_id}", dependencies=[Depends(_STRATEGIES_WRITE)])
 async def archive_strategy(strategy_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     row = await _get(session, user, strategy_id)
     if row.created_by != user.id and user.role != OWNER_ROLE:

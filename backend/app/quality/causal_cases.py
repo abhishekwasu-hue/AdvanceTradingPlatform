@@ -109,6 +109,13 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "RelVolume": ["RelVolume(20)", "RelVolume(10)@1h"],
     "ATRPercentile": ["ATRPercentile(14, 50)", "ATRPercentile(14, 20)@1h"],
     "DowTrend": ["DowTrend(0)", "DowTrend(0)@15m"],                    # @1h: 50 bars here, too few confirmed swings to read
+    # U6 BK2 intraday session functions (the session clock, VWAP from the open, time-of-day volume from prior sessions)
+    "ORBreakout": ['ORBreakout("up", 15, 0, FALSE, 15, 0)', 'ORBreakout("down", 30, 0, FALSE, 0, 0)@15m'],
+    "DayLevelBreak": ['DayLevelBreak("up", "prev_day", 0, FALSE, 15, 0)', 'DayLevelBreak("down", "first_hour", 0, FALSE, 0, 0)',
+                      'DayLevelBreak("up", "first_candle", 0, FALSE, 0, 0)@15m'],
+    "DayExtremeBreak": ['DayExtremeBreak("up", 0, FALSE, 15, 0)', 'DayExtremeBreak("down", 0, FALSE, 0, 0)@15m'],
+    "RelVolumeTOD": ["RelVolumeTOD(5)", 'RelVolumeTOD(3, "cumulative")@1h'],
+    "SessionVWAP": ["SessionVWAP()", "SessionVWAP()@1h"],
     # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
     "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],

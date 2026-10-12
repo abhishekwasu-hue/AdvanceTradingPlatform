@@ -33,6 +33,7 @@ from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
+from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
 from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
@@ -278,7 +279,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
             problems[symbol] = "no closed bars from the broker"
             continue
         frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
-        universe.append(SymbolData(symbol, frames))
+        universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
         newest.append(df.index[-1].to_pydatetime())
     if attach_daily and universe:
         daily_service = own.market_data(lookback_days=5) if own is not None else MarketDataService(build_adapter(record), lookback_days=5)
@@ -368,8 +369,9 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                user_id=user.id, tier_out=tier)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), validated.lookback)
-    matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params)
-    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches)
+    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
+    matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
+    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches, vectorized=vectorized)
     results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),

@@ -553,6 +553,16 @@ def test_the_nightly_start_waits_for_hb1_to_finish_the_day(monkeypatch):
     assert ready(at(20, 5)) is True
     _run(hb1(True, "running"))
     assert ready(at(23, 1)) is True                                                   # a stuck archive never costs the night
+    # a late start hour must not push the wait past midnight: from 23:30 IST it runs whatever the hour setting
+    monkeypatch.setattr(config, "MARKET_ZONES_HOUR_IST", 22)
+    assert ready(at(23, 29)) is False and ready(at(23, 30)) is True
+    monkeypatch.setattr(config, "MARKET_ZONES_HOUR_IST", 23)
+    assert ready(at(23, 10)) is False and ready(at(23, 45)) is True
+    # a weekend / exchange holiday: nothing to wait for, even with no cash-file row at all
+    _run(hb1(True))
+    saturday = next(d for d in (day + timedelta(days=k) for k in range(1, 8)) if d.weekday() == 5)
+    sat_at = pd.Timestamp(f"{saturday} 20:05").tz_localize(IST).tz_convert("UTC").to_pydatetime()
+    assert _run(_call(job.eod_ready, saturday, sat_at)) is True and ready(at(20, 5)) is False
     _run(hb1(False))
 
 

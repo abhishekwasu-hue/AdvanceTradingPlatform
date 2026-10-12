@@ -412,23 +412,33 @@ async def run_nightly(session_factory: Any, now: Optional[datetime] = None, budg
 
 
 EOD_WAIT_HOURS = 3                                       # after this long past MARKET_ZONES_HOUR_IST, run without HB1's day
+EOD_DEADLINE_MINUTES = 23 * 60 + 30                      # ... and never later than 23:30 IST (the wait must end within the day)
 
 
 async def eod_ready(session: AsyncSession, day: date, now: datetime) -> bool:
     """Has HB1 finished the day's EOD ingest? True when the `history_backfill` flag is off (HB1 does not feed the lake),
-    when the day's cash file has reached a final state (done / no_file / blocked / refused / failed), or - so a stuck
-    archive never costs the night - once EOD_WAIT_HOURS have passed since MARKET_ZONES_HOUR_IST."""
+    when the day's cash file has reached a final state (done / no_file / blocked / refused / failed), on a day that is not
+    an NSE trading day (weekend / holiday - nothing to wait for), or - so a stuck archive never costs the night - once
+    EOD_WAIT_HOURS have passed since MARKET_ZONES_HOUR_IST, at the latest at EOD_DEADLINE (23:30 IST, before the day
+    ends, whatever the hour is set to)."""
     from app.db.models import HistoryBackfillFileRecord
+    from app.market_data.calendar import is_trading_day, load_holidays
     from app.market_lake import bhavcopy_backfill
     from app.platform.controls import flag_enabled
     if not await flag_enabled(session, bhavcopy_backfill.FLAG):
         return True
-    if now.astimezone(IST).hour >= config.MARKET_ZONES_HOUR_IST + EOD_WAIT_HOURS:
-        logger.warning("Market zones: HB1 has not finished %s - running on what the lake holds", day)
-        return True
     status = await session.scalar(select(HistoryBackfillFileRecord.status).where(
         HistoryBackfillFileRecord.segment == "cm", HistoryBackfillFileRecord.trade_date == day))
-    return status is not None and status not in ("pending", "running")
+    if status is not None and status not in ("pending", "running"):
+        return True
+    if not is_trading_day(day, await load_holidays(session, "NSE", day.year)):
+        return True
+    local = now.astimezone(IST)
+    deadline = min((config.MARKET_ZONES_HOUR_IST + EOD_WAIT_HOURS) * 60, EOD_DEADLINE_MINUTES)
+    if local.hour * 60 + local.minute >= deadline:
+        logger.warning("Market zones: HB1 has not finished %s - running on what the lake holds", day)
+        return True
+    return False
 
 
 def nightly_due(now: datetime, last_day: Optional[date]) -> Optional[date]:

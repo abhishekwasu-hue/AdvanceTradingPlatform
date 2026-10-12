@@ -113,14 +113,24 @@ ADR-0004 test closes a position whose bucket is over every cap.
 - Capital basis unknown or 0: refuse, with the reason (Trade's fail-closed rule; F-7).
 - Read error: refuse, with the reason. It is an entry, so failing closed is safe.
 
-## 5. F3: cards and lines (`portfolio_risk`)
+## 5. F3: cards and lines (`portfolio_risk`) - as built
 
-- **Positions page:** a "Portfolio risk" card with exposure, open risk by bucket against the user's caps, beta
-  exposure, and the one-sided warning. All strings go through i18n, with a fixture that is the server's own payload
-  (the X1b pattern).
-- **Telegram `/risk`:** three to five lines from the same `RiskView`, own book only.
-- **Proposal card:** a "portfolio impact" line, e.g. "after this entry: IT 18 % of capital, open risk 2.1 %,
-  positions 4 of 5". It is information, never advice.
+- **Positions page:** a "Portfolio risk" card (`frontend/src/portfolio/`, its own lazy chunk, only while the flag is
+  on) with exposure, net, open risk at the stops and beta-weighted net exposure as tiles, the buckets with exposure
+  and open risk (marked when at or above the user's own limit), the one-sided warning, the user's limits (F2, when
+  on) and notes (beta unknown, not weighted, valued at entry). Every string is in the `portfolioRisk` i18n namespace;
+  `riskSample.json` is the server's own payload (a backend test fails when its keys drift); a Storybook story.
+  `GET /api/portfolio/risk` now also carries `limits` (null while the caps are off).
+- **Telegram `/risk`:** after the existing lines, three to five lines of the user's own book (`risk_text.telegram_lines`,
+  English and Marathi), and their limits when the caps are on. The reads run in a savepoint.
+- **Proposal card:** `portfolio_impact` on a waiting ENTRY proposal, for its owner only (another member, the OWNER
+  included, sees none - it is the owner's book): the book after this entry taken at its most - its bucket's exposure
+  and open risk, all open risk, open positions, each against the owner's limit. The same line ends the proposal's
+  notification (in-app, push, Telegram). Computed in a savepoint; a problem leaves the line out, never the proposal.
+- **No advice:** every line states numbers of the user's own book and their own limits. `risk_text.ADVICE_WORDS`
+  (recommend, should, must, buy, sell, reduce, ...) is checked on every line in the backend tests and on every card
+  string in the frontend test. Nothing here places, changes or closes an order; the call graph shows no F3 function
+  reaches an order path, and only `propose_entry` / `execute_entry` ask the caps for refusals.
 
 ## 6. Flags
 

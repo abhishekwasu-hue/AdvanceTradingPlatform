@@ -14,6 +14,9 @@
   proposal price, the risk at the stop, the cap that binds, the cost line (charges, slippage estimate, break-even move,
   reward:risk after costs), and why it would be refused now (daily loss lockout, entries per day, the guardian, the
   India VIX gate). Approve places the PAPER order sized the same way (the pipeline applies the same cap).
+* `portfolio_impact` - N1 F3, only with the `portfolio_risk` flag on, only for a waiting ENTRY proposal and only for its
+  owner: the owner's own PAPER book after this entry taken at its most (its bucket's exposure and open risk, all open
+  risk, open positions, each against the owner's limit), with one line of text. Numbers only, never advice.
 * `strike_breach` - Z5 (Trade `strike_breach_model.py`), with the same flag: each short strike's chance of a breach
   before expiry, when the proposal carries option legs (`evidence.strike_breach`, computed when it was raised).
 
@@ -99,6 +102,8 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
     links_on = any(r.action in TICKET_ACTIONS and r.status == "PROPOSED" for r in rows) and await flag_enabled(session, FLAG, tenant_id)
     key = (app_config.KITE_PUBLISHER_API_KEY or "").strip()
     risk_on = user is not None and user.tenant_id == tenant_id and any(r.action == "ENTRY" for r in rows) and await flag_enabled(session, RISK_FLAG, tenant_id)
+    portfolio_on = (user is not None and user.tenant_id == tenant_id and any(r.action == "ENTRY" and r.status == "PROPOSED" for r in rows)
+                    and await flag_enabled(session, "portfolio_risk", tenant_id))
     out: List[dict] = []
     for row in rows:
         item = monitor.as_dict(row)
@@ -113,6 +118,13 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
             item["ticket"] = ticket_for(trade, await _broker_of(session, tenant_id, trade, dep), key)
         item["risk_check"] = None
         item["strike_breach"] = None
+        item["portfolio_impact"] = None
+        if portfolio_on and row.action == "ENTRY" and row.status == "PROPOSED" and user is not None \
+                and getattr(row, "owner_user_id", None) in (None, user.id):
+            from app.portfolio import risk_text
+            ev = item["evidence"]
+            item["portfolio_impact"] = await risk_text.proposal_impact(session, user, str(ev.get("symbol") or ""), ev.get("proposal_price"),
+                                                                       ev.get("stop_loss"), quantity=(ev.get("ticket") or {}).get("max_quantity"))
         if risk_on and row.action == "ENTRY" and user is not None:
             item["strike_breach"] = item["evidence"].get("strike_breach")
             owner_id = getattr(row, "owner_user_id", None)

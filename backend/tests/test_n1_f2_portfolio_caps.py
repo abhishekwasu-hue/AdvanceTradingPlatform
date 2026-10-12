@@ -192,8 +192,9 @@ def test_no_exit_path_reaches_the_caps_and_the_caps_reach_no_order():
         assert start in graph.functions, start
         assert graph.reaches_any(start, caps_functions) is None, start
     assert not caps_functions & graph.reaching()
-    callers = {c for f in caps_functions for c in graph.callers.get(f, ())} - caps_functions
-    assert callers == {"app.execution.approval.propose_entry", "app.execution.approval.execute_entry"}
+    # Only the two entry steps ask for refusals; F3's read-only cards use the caps' readers (limits, the book), not this.
+    assert graph.callers.get("app.portfolio.caps.entry_refusals") == {"app.execution.approval.propose_entry",
+                                                                      "app.execution.approval.execute_entry"}
 
 
 def test_a_position_over_every_cap_still_closes():

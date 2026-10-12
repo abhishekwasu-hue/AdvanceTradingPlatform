@@ -238,8 +238,14 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     from app.observability.metrics import AI_PROPOSALS
     from app.notifications.service import notify
     AI_PROPOSALS.labels(action=ACTION_ENTRY).inc()
+    impact_line = ""
+    if user_id is not None:                                                   # N1 F3: the owner's own book after this entry
+        from app.portfolio import risk_text
+        impact = await risk_text.proposal_impact(session, await session.get(User, user_id), signal.symbol, signal.entry, signal.stop_loss,
+                                                 quantity=(ticket or {}).get("max_quantity"), now=now)
+        impact_line = f" {impact['line']}" if impact else ""
     await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"Entry proposal: {direction} {signal.symbol} (PAPER)",
-                 message=f"{reason} Nothing is placed until you approve.", severity=NotificationSeverity.WARNING, user_id=user_id,
+                 message=f"{reason} Nothing is placed until you approve.{impact_line}", severity=NotificationSeverity.WARNING, user_id=user_id,
                  ai_action_id=row.id)
     from app.ai import vision_audit
     await vision_audit.enqueue_for_proposal(session, row, now=now)

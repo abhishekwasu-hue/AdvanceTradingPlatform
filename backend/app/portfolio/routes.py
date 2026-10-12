@@ -23,7 +23,12 @@ async def risk(user: User = Depends(get_current_user), session: AsyncSession = D
     from app.platform.controls import require_flag
     from app.portfolio import risk_data
     await require_flag(session, risk_data.FLAG, user.tenant_id)
-    return await risk_data.risk_view(session, user)
+    out = await risk_data.risk_view(session, user)
+    from app.portfolio import caps                             # N1 F3: the user's own limits on new entries (F2), when on
+    limits = await caps.limits_of(session, user) if await caps.enabled(session, user.tenant_id) else None
+    out["limits"] = ({"max_sector_pct": limits.max_sector_pct, "max_correlated_risk_pct": limits.max_correlated_risk_pct,
+                      "max_open_positions": limits.max_open_positions} if limits is not None else None)
+    return out
 
 
 @router.get("/exposure")

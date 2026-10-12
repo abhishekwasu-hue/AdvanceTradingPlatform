@@ -63,6 +63,20 @@ def rates_on(day: date) -> Dict[str, Dict[str, float]]:
     }
 
 
+def sources_on(day: date) -> Dict[str, Dict[str, Dict[str, str]]]:
+    """Where each rate of `rates_on(day)` comes from (TX-1): the `india_costs` source of the row in force that day - URL,
+    circular / notification / Act, date, and a non-empty `verify` when no official document settles the rate yet."""
+    def src(table: str, segment: str = "") -> Dict[str, str]:
+        return india_costs.source(table, segment, day).as_dict()
+    return {
+        "EQUITY_INTRADAY": {"stt_sell_pct": src("STT_SELL", "EQUITY_INTRADAY")},
+        "FNO_OPTION": {"stt_sell_pct": src("STT_SELL", "OPTION")},
+        "FNO_FUTURE": {"stt_sell_pct": src("STT_SELL", "FUTURE")},
+        "MCX_FUTURE": {"ctt_sell_pct": src("CTT_SELL_COMMODITY_FUTURE")},
+        "CRYPTO": {"tds_pct": src("VDA_TDS"), "tax_pct": src("VDA_TAX")},
+    }
+
+
 def turnover_method(value: Optional[str] = None) -> str:
     """`value` upper-cased if it names a method; None -> the configured default. Anything else is a ValueError."""
     if value is None or not value.strip():
@@ -230,7 +244,8 @@ def build_report(trades: List[TradeRecord], fy: str, *, mode: Optional[str], met
                   *([rate_note] if rate_note else []),
                   "Tax audit under section 44AB is generally required above 10 crore of turnover when receipts and payments are digital; "
                   + ("your turnover crosses that line." if audit_requirement else "your turnover is below that line.")],
-        "rates": rates_on(fy_start), "rates_as_of": fy_start.isoformat(), "rate_changes": changes,
+        "rates": rates_on(fy_start), "rate_sources": sources_on(fy_start), "rates_as_of": fy_start.isoformat(),
+        "rate_changes": changes,
     }
 
 

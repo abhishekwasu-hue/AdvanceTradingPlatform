@@ -146,12 +146,16 @@ FEATURE_FLAGS: Dict[str, str] = {
     # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
     # Research only - matches, never orders.
     "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
+    # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
+    # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
+    # answers 404 and the page says it is not enabled.
+    "public_status_page": "Public status page: API, worker, data feed, alert delivery and incidents at /status (no login, no tenant data)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "risk_by_default", "vix_gate", "screener_breakouts"})
+                               "risk_by_default", "vix_gate", "public_status_page", "screener_breakouts"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

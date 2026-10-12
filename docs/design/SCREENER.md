@@ -1131,6 +1131,58 @@ notes, sources and the parameter table: `docs/research/breakouts.md`. Open quest
 - **Not in BK3.** Evidence-pack terms for the BK3 functions (EV1 maps BK1's; BK3-6) and frontend changes (the
   builder reads the catalog, so the new blocks and templates show up when the flag is on).
 
+## U6 BK4 (built): trendline, pattern, gap and retest breakouts (flag `screener_breakouts_bk4` on top of `screener_breakouts`, both off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §8 BK4 (B5 / B6 / B8 / B9). Code: `app/screener/breakouts/lines.py`,
+`gaps.py`, `retest.py`, wired into `screens.py` like BK2 / BK3. Research notes and the parameter table:
+`docs/research/breakouts.md`. Open questions BK4-1..BK4-7 in `docs/OPEN_QUESTIONS.md`.
+- **Flag.** `screener_breakouts_bk4` (DEFAULT_OFF_FLAGS) works like BK3's (`Spec.also_flags`). The five functions are
+  hidden and refused unless both flags are on. The catalog leaves out the BK4 screens, templates and parameters, and
+  `/breakouts/run` answers 503. Alert rules are refused at creation and pause while the flag is off. The bar-close engine
+  now reads every set flag generically (`gate.extra_flags_needed`, `evaluate_rule(breakout_extra_flags=...)`). The
+  taxonomy source is `breakouts_bk4`. There are no new routes and no migration.
+- **Screens** (closed bars; a value at bar j uses bars 0..j; down = mirrored prices):
+  - **B5 trendline / channel.** The trendline rule is the CH3b port of Trade's (`app/price_action/trendlines.py`), applied
+    as of every bar on the bars before it. On every prefix it gives the same line as `find_trendline` (tested on two
+    seeds, both kinds). Each anchor pair's first close beyond is computed once, vectorised, and the finder runs only on
+    bars where some line is closed beyond by the buffer, so the result is the same as running it on every bar. Added:
+    the age filter `tl_max_bars`. `line`: the first close beyond a falling resistance (up) / rising support (down) by
+    `min_break_atr` ATR. `channel`: beyond the far edge (`channel_of`'s parallel); `measured_move` = the edge plus the
+    width. One per leg.
+  - **B6.** `flag` / `pennant`: a pole (at least `pole_min_atr` ATR within `pole_max_bars`), then `flag_min_bars` to
+    `flag_max_bars` bars under the pole top that give back at most `flag_max_retrace`; the pennant's must also contract.
+    The break is a close above them by k ATR on `vol_mult` volume; measured move = level + pole. `triangle`: the current
+    resistance and support lines converge, and the close goes above the resistance; measured move = the height at the
+    start. ATP had no chart-pattern detector (Trade's "patterns2" is the Elliott rule set, ported as `daily_trend`), so
+    these are built from the bars. Flat-sided triangles are not detected (BK4-2). One per leg.
+  - **B8 gap.** The level is the previous regular session's high / low (`prev_day`) or the last `gap_base_n` sessions'
+    (`base`). The open must be beyond it (optionally by `gap_min_atr` daily ATRs). Every close of the first
+    `gap_hold_min` minutes must hold beyond it; on Daily bars, the day's close. Classes: `GAP_AND_GO` / `GAP_HOLD`
+    (signalled) and `GAP_FILL` (classified, not signalled). One signal per session. Intraday sessions come from the
+    exchange calendar (as BK2). The breakout run fetches the sessions the level and the daily ATR need.
+  - **B9 retest.** After a range / swing / Donchian / trendline breakout (`retest_of`, that screen's own parameters and
+    leg rule), price must leave the level, then come back within `retest_max_bars` and close at or beyond it. By default
+    the return is a logical reversal at the level - the composite rule `ReversalAt` uses, run on the candidate bars only
+    (tested equal), and its candles never include the breakout bar. `retest_reversal` false: a touch is enough. A close
+    back inside first means the breakout failed. One per breakout.
+- **ScreenQL.** `TrendlineBreakout(side, mode, touches, k)`, `PatternBreakout(side, pattern, v, k)`,
+  `GapBreakout(side, level, hold)`, the classifier `GapType(side, level, hold)` (GAP_AND_GO / GAP_HOLD / GAP_FILL / "")
+  and `RetestEntry(side, of, bars, reversal)`. History: lines 125 bars (age 120 plus the swing window), retest 250 (the D1
+  swings of a swing break), gaps two whole sessions on intraday bars. Gaps run on 1m-15m and Daily only; `hold` must be
+  a whole number of bars. Gap functions are session functions for the alert clock (NSE only, as BK2-5).
+- **Result rows** add `measured_move` (B5 channel, B6), reported as a price, never as advice. The taxonomy lint refuses
+  "target" wording.
+- **Templates.** Eight: daily trendline, 1H channel, daily flag (up), daily triangle, 5m gap beyond the previous day, daily
+  gap above a 20-day base (up), daily and 1H range retests. Each template's ScreenQL text equals the engine bar by bar.
+  The daily flag and range-retest templates are proven on an injected daily history within the broker's 272-session
+  fetch.
+- **Perf (Z10-d).** The perf-job test (`test_bk3_breakout_screens_fit_the_bar_close_target`) now times the BK4 screens
+  too (200 symbols). The largest are the trendline-based ones and the retest of a trendline break (Daily). To get there:
+  vectorised line pairs, a candidate-bar filter, vectorised session aggregates and a shared reversal setup. Medians land
+  around 0.6-1.6 s against a 1 s x CI-factor budget (factor 1.3-1.9 on this shared machine).
+- **Z10-a.** Each of the five functions has causal cases on 5m (`@1h` / `@15m` variants) plus daily cases. All are
+  non-vacuous; the gap cases use the down side because the synthetic 5m sessions gap mostly down, and the synthetic
+  daily bars never gap, so the daily gap behaviour is covered by fixtures.
+
 ## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
 Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
 - Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own

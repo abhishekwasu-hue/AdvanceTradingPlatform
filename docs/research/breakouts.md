@@ -1,11 +1,11 @@
-# Breakout screens - research notes (U6 BK1, BK2, BK3)
+# Breakout screens - research notes (U6 BK1, BK2, BK3, BK4)
 
 Source spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` (§1 research summary). Code: `backend/app/screener/breakouts/`.
 
 Rule: no fitted numbers. Every threshold is an editable parameter (`params.py`) whose default is a published convention or
 the practitioner range named below, with a one-line note. The table at the end is the parameter list; a test
 (`tests/test_z7_bk1_breakouts.py`) checks that every parameter and its note appear here word for word (BK2's intraday
-parameters and BK3's VCP / indicator parameters included).
+parameters, BK3's VCP / indicator parameters and BK4's trendline / pattern / gap / retest parameters included).
 
 ## What the sources say (spec §1, summarised)
 
@@ -143,6 +143,34 @@ How BK3 uses them:
   ADX that was at or below `adx_low` inside the window and rises on the bar, the DI of the breakout side leading, and the
   close beyond the window's high (low) by `min_break_atr` x ATR.
 
+## BK4: trendline, pattern, gap and retest breakouts
+
+Sources (in addition to the ones above):
+- Robert D. Edwards and John Magee, *Technical Analysis of Stock Trends* (1948): trendlines and channels, flags and
+  pennants ("half-mast" measured moves) and triangles; a flag retraces less than half of its pole.
+- Thomas N. Bulkowski, *Encyclopedia of Chart Patterns* (2nd ed., 2005): flag / pennant durations (up to about three
+  weeks), steep short poles, triangle breakouts and their measured moves.
+- The Trade repo's trendline rule (ported in CH3b as `app/price_action/trendlines.py`, parity-tested): fractal swings of
+  3 bars either side, anchors 5+ bars apart, slope within half a median bar range per bar, touches within a quarter of
+  it, no close beyond the line since its first anchor.
+- Gap trading terms (gap-and-go, gap fill) are practitioner usage; the spec names the hold window ("by the end of the
+  first N minutes").
+- The retest ("second chance") entry is the platform's pullback logic applied to a broken level: the same composite
+  reversal rule as `ReversalAt` (app/price_action/reversal.py).
+
+How BK4 uses them:
+- **B5.** The line is the trendline port's own choice (newest second anchor, oldest valid first anchor), recomputed as of
+  every bar on the bars before it - tested equal to `find_trendline` on each prefix. One addition, the age filter
+  `tl_max_bars`. The channel is the parallel through the farthest extreme between the anchors (`channel_of`).
+- **B6.** No chart-pattern detector existed in ATP (the Trade "patterns2" module is the Elliott-wave rule set ported as
+  `daily_trend`, not flags or triangles). BK4 builds the three patterns from the bars: flags / pennants from a pole and a
+  shallow consolidation, triangles from two current, converging trendlines. Ascending / descending triangles with a flat
+  side are not detected (open question BK4-2). The measured move is reported (`measured_move`), never as advice.
+- **B8.** Sessions come from the exchange calendar (as BK2). The gap is read on the session's open, the hold on the closes of
+  the first `gap_hold_min` minutes. Daily bars: the open and the day's close. A gap-fill is classified but not signalled.
+- **B9.** A retest needs price to leave the level first and to come back within `retest_max_bars`; the reversal's candles
+  never include the breakout bar; a close back inside the level first means the breakout failed.
+
 ## Parameters
 
 | Parameter | Group | Default | Research note |
@@ -240,4 +268,24 @@ How BK3 uses them:
 | `regime_n` | B15 | 20 | About one trading month on Daily: a 'long' compression. |
 | `adx_n` | B15 | 14 | Wilder (1978) ADX length. |
 | `adx_low` | B15 | 20 | Common reading of Wilder's ADX: below 20 = no trend; rising from there = a trend being born. |
+| `tl_mode` | B5 | line | Both forms named in spec B5; the lines and channels are the platform's trendline port (CH3b, Trade trendlines). |
+| `tl_order` | B5 | 3 | Trade trendlines default: the extreme of 3 bars either side. |
+| `tl_min_touches` | B5 | 2 | Spec B5: at least 2 touches. |
+| `tl_min_gap` | B5 | 5 | Trade trendlines default: anchors at least 5 bars apart. |
+| `tl_max_slope` | B5 | 0.5 | Trade trendlines default (0.5 x the median range per bar): a steeper line is a leg, not a trendline. |
+| `tl_touch_tol` | B5 | 0.25 | Trade trendlines default: within a quarter of the median range. |
+| `tl_max_bars` | B5 | 120 | About six months on Daily; spec B5's age filter, which also bounds the cost. |
+| `pattern` | B6 | flag | The three patterns named in spec B6 (Edwards & Magee, Technical Analysis of Stock Trends; Bulkowski, Encyclopedia of Chart Patterns). |
+| `pole_min_atr` | B6 | 3 | A pole is a fast, outsized move; 3 ATR is a common flagpole threshold, not fitted. |
+| `pole_max_bars` | B6 | 10 | Bulkowski: flag poles are steep and short (two weeks on Daily). |
+| `flag_min_bars` | B6 | 5 | One trading week on Daily. |
+| `flag_max_bars` | B6 | 15 | Bulkowski: flags and pennants last up to about three weeks; longer is a base (B1). |
+| `flag_max_retrace` | B6 | 0.5 | Classic rule: a flag retraces less than half of the pole (Edwards & Magee). |
+| `gap_level` | B8 | prev_day | Spec B8 'gap beyond a level/base on the open'. |
+| `gap_base_n` | B8 | 20 | About one trading month, as vol_avg_n. |
+| `gap_min_atr` | B8 | 0 | ATR-scaled, not points; 0 keeps every open beyond the level - raise it for larger gaps only. |
+| `gap_hold_min` | B8 | 30 | Spec B8 'holding above the level by the end of the first N minutes'; 30 minutes = the second opening-range window of spec B16. |
+| `retest_of` | B9 | range | Spec B9 'breakout already happened'; the fixed-level breakouts of this family. |
+| `retest_max_bars` | B9 | 10 | Two trading weeks on Daily: a later return is a new base, not a retest. |
+| `retest_reversal` | B9 | True | Spec B9: the same commitment forms as the pullback screens (ReversalAt). |
 | `context_ladder` | style | 15m -> 1h + 1d, 1h -> 1d + 1w, 1d -> 1w, ... (see params.py) | Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w). |

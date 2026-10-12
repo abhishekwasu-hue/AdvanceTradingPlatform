@@ -673,6 +673,46 @@ def test_scan_then_is_not_an_order_path():
             assert name not in forbidden, (path.name, name)
 
 
+# --- X1b: the intents list and the frontend sample ------------------------------------------------------------------------
+
+SAMPLE = BACKEND.parent / "frontend" / "src" / "screener" / "then" / "thenSample.json"
+
+
+def _confirmed_rule(monkeypatch, tag):
+    _patch_market(monkeypatch)
+    t, rule_id = _setup(tag)
+    assert _runner().submitted == 1
+    _drain()
+    return t, rule_id
+
+
+def test_the_intents_list_is_the_caller_s_own(monkeypatch):
+    t, rule_id = _confirmed_rule(monkeypatch, "intents")
+    rows = client.get(f"/api/alerts/rules/{rule_id}/then/intents", headers=t["headers"]).json()
+    assert len(rows) == 1 and rows[0]["gate_status"] == ST.CONFIRMED_ENTRY and rows[0]["route"] == "PROPOSE"
+    assert rows[0]["ai_action_id"] is not None and rows[0]["stop_loss"] == CASE["out"]["sl"] and rows[0]["study"].startswith("inside demand")
+    member = _member(_email("intents-member"), t["tenant_id"], "USER")
+    assert client.get(f"/api/alerts/rules/{rule_id}/then/intents", headers=member).json() == []     # not theirs
+
+
+def test_then_payloads_match_the_frontend_sample(monkeypatch):
+    """frontend/src/screener/then/thenSample.json is the server's own payload (the Then drawer's tests render it): the
+    same keys as the live GET /then and GET /then/intents, so the sample cannot drift from the API."""
+    t, rule_id = _confirmed_rule(monkeypatch, "sample")
+    template = client.get(f"/api/alerts/rules/{rule_id}/then", headers=t["headers"]).json()
+    intents_ = client.get(f"/api/alerts/rules/{rule_id}/then/intents", headers=t["headers"]).json()
+    sample = json.loads(SAMPLE.read_text())
+    assert set(sample["template"]) == set(template)
+    assert set(sample["template"]["gate_defaults"]) == set(template["gate_defaults"])
+    assert set(sample["intents"][0]) == set(intents_[0])
+    assert set(next(iter(sample["template"]["status"].values()))) == set(next(iter(template["status"].values())))
+    assert not any(m == "AUTO_LIVE" for m in sample["template"]["modes"])
+    assert template["status_shown"] is True and sample["template"]["status_shown"] is True
+    member = _member(_email("sample-member"), t["tenant_id"], "USER")
+    theirs = client.get(f"/api/alerts/rules/{rule_id}/then", headers=member).json()
+    assert theirs["status_shown"] is False and theirs["status"] == {} and set(theirs) == set(template)
+
+
 # --- shared-session safety (review of #219's pattern, applied to X1) ---------------------------------------------------------
 
 def _bad_sql():

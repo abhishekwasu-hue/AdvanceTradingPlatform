@@ -4,7 +4,7 @@
  * hours, hourly cap, grouping, end-of-day digest time), dead-lettered deliveries with retry, and the user's own
  * Telegram link and email opt-outs. A rule only notifies - it never places or changes an order.
  */
-import { useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import {
@@ -13,6 +13,10 @@ import {
 } from "../alerts/rules";
 import { Badge, Button, Input, Select } from "./primitives";
 import { Card } from "./ui";
+
+// N1 X1b (flag scan_then): a rule's Then chip and drawer, loaded only when the flag is on (its i18n bundle stays out of
+// this page's chunk otherwise).
+const RuleThen = lazy(() => import("../screener/then/ThenPanel").then((m) => ({ default: m.RuleThen })));
 
 const NEW_RULE: AlertRuleInput = { name: "", kind: "instrument", symbol: "", condition: "", base_tf: "5m", priority: "normal",
   cooldown_minutes: 60, mode: "instant", digest_every: "hourly" };
@@ -30,7 +34,7 @@ function Errors({ lines }: { lines: string[] }) {
   return <ul role="alert" className="text-xs text-down space-y-0.5">{lines.map((l) => <li key={l}>{l}</li>)}</ul>;
 }
 
-function RuleRow({ rule, onChanged }: { rule: AlertRule; onChanged: () => void }) {
+function RuleRow({ rule, onChanged, thenOn }: { rule: AlertRule; onChanged: () => void; thenOn: boolean }) {
   const [events, setEvents] = useState<AlertEventRow[] | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   async function toggle() {
@@ -57,6 +61,7 @@ function RuleRow({ rule, onChanged }: { rule: AlertRule; onChanged: () => void }
         </div>
       </div>
       <div className="text-xs text-fg-muted font-tabular break-words">{describeRule(rule)}</div>
+      {thenOn && <Suspense fallback={null}><RuleThen ruleId={rule.id} /></Suspense>}
       <Errors lines={errors} />
       {events && (events.length === 0 ? <div className="text-xs text-fg-muted">No firings yet.</div> : (
         <table className="w-full text-xs">
@@ -231,6 +236,10 @@ function PersonalChannels() {
 export function AlertRulesPanel() {
   const [rules, setRules] = useState<AlertRule[] | null>(null);
   const [off, setOff] = useState(false);
+  const [thenOn, setThenOn] = useState(false);
+  useEffect(() => {
+    api.myFeatures().then((f) => setThenOn(Boolean(f.scan_then))).catch(() => setThenOn(false));
+  }, []);
   const [errors, setErrors] = useState<string[]>([]);
   const load = useCallback(() => {
     api.listAlertRules().then((r) => { setRules(r); setOff(false); }).catch((e) => {
@@ -249,7 +258,7 @@ export function AlertRulesPanel() {
             <Errors lines={errors} />
             <div className="space-y-2">
               {rules?.length === 0 && <div className="text-xs text-fg-muted">No rules yet.</div>}
-              {rules?.map((r) => <RuleRow key={r.id} rule={r} onChanged={load} />)}
+              {rules?.map((r) => <RuleRow key={r.id} rule={r} onChanged={load} thenOn={thenOn} />)}
             </div>
             <p className="mt-2 text-xs text-fg-muted">Alerts report that a rule's conditions matched. They are not recommendations and never place orders.</p>
           </Card>

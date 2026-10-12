@@ -1,0 +1,73 @@
+{
+ "_doc": "N1 X1b: the server's own GET /api/alerts/rules/{id}/then and /then/intents payloads (backend tests/test_n1_x1_scan_then.py fails when the keys drift).",
+ "template": {
+  "rule_id": 12,
+  "configured": true,
+  "enabled": true,
+  "mode": "ONE_CLICK",
+  "confirm_tf": "5m",
+  "gate": {},
+  "gate_defaults": {
+   "min_rr": 3.0,
+   "max_armed_bars": 8,
+   "mr_n": 20,
+   "approach_bars": 3,
+   "approach_wide_mr": 1.5,
+   "approach_close_frac": 0.25,
+   "approach_min_wide": 2,
+   "sl_buffer_mr": 0.25,
+   "wait_next_candle": false,
+   "allow_parent_correction": false,
+   "grade_b_lot_mult": 1.0,
+   "trend_retry_min": 15
+  },
+  "modes": [
+   "NOTIFY",
+   "ONE_CLICK",
+   "AUTO_PAPER"
+  ],
+  "confirm_tfs": [
+   "5m",
+   "15m"
+  ],
+  "user_id": 7,
+  "last_bar_at": "2026-09-23T04:00:00",
+  "last_problem": null,
+  "status": {
+   "GATEDEMO": {
+    "code": "GATE_CONFIRMED",
+    "lines": [
+     "GATE_CONFIRMED: CONFIRMED demand 22,240–22,246 · strong_close · grade B · entry 22252.66 · SL 22234.9 · target 22306.0 · R:R 3.0",
+     "SKIPPED_GATE_RR: demand 22,233–22,241 · disarmed: R:R < min (2.29 < 3)"
+    ],
+    "trend": "Daily UP",
+    "bar": "2026-09-23T04:00:00+00:00"
+   }
+  },
+  "status_shown": true,
+  "updated_at": "2026-10-12T18:29:12.426215"
+ },
+ "intents": [
+  {
+   "id": 101,
+   "symbol": "GATEDEMO",
+   "direction": "LONG",
+   "mode": "ONE_CLICK",
+   "status": "DONE",
+   "route": "PROPOSE",
+   "reason": "One-click: a PAPER entry proposal (proposal #55)",
+   "ai_action_id": 55,
+   "notification_id": null,
+   "gate_status": "GATE_CONFIRMED",
+   "entry": 22252.66,
+   "stop_loss": 22234.9,
+   "target": 22306.0,
+   "rr": 3.0,
+   "grade": "B",
+   "study": "inside demand: no clear handover read",
+   "commit_line": "commitment: strong bullish close · body 2.5× window avg · volume 1.5× window avg",
+   "confirm_ts": "2026-09-23 09:30:00",
+   "created_at": "2026-09-23T04:05:20"
+  }
+ ]
+}

@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Mapping, Optional
 
-from app.db.models import ScanThenTemplateRecord
+from app.db.models import ExecutionIntentRecord, ScanThenTemplateRecord
 from app.price_action.level_gate.settings import GATE_DEFAULTS, gate_settings
 
 FLAG = "scan_then"
@@ -110,6 +110,7 @@ def as_dict(row: Optional[ScanThenTemplateRecord], rule_id: int, include_status:
     if row is None:
         return {"rule_id": rule_id, "configured": False, "enabled": False, "mode": "NOTIFY", "confirm_tf": DEFAULT_TF, "gate": {},
                 "gate_defaults": dict(GATE_DEFAULTS), "modes": list(MODES), "confirm_tfs": list(CONFIRM_TFS),
+                "status_shown": include_status,
                 "auto_paper": auto_paper or {"available": False, "armed": False, "why": "no template", "today": 0, "max_per_day": 0}}
     try:
         status = json.loads(row.last_status_json) if (row.last_status_json and include_status) else {}
@@ -120,5 +121,21 @@ def as_dict(row: Optional[ScanThenTemplateRecord], rule_id: int, include_status:
             "confirm_tfs": list(CONFIRM_TFS), "user_id": row.user_id,
             "last_bar_at": row.last_bar_at.isoformat() if row.last_bar_at else None,
             "last_problem": row.last_problem if include_status else None,
-            "status": status, "updated_at": row.updated_at.isoformat() if row.updated_at else None,
+            "status": status, "status_shown": include_status, "updated_at": row.updated_at.isoformat() if row.updated_at else None,
             "auto_paper": auto_paper or {"available": False, "armed": is_armed(row), "why": "", "today": 0, "max_per_day": 0}}
+
+
+def intent_dict(row: ExecutionIntentRecord) -> Dict[str, Any]:
+    """An intent as the Then drawer lists it: the setup (levels, gate status and lines) and what the core decided."""
+    try:
+        evidence = json.loads(row.evidence_json or "{}")
+        signal = json.loads(row.signal_json or "{}")
+    except ValueError:
+        evidence, signal = {}, {}
+    ticket = evidence.get("ticket") or {}
+    return {"id": row.id, "symbol": row.symbol, "direction": row.direction, "mode": row.requested_mode, "status": row.status,
+            "route": row.route, "reason": row.reason, "ai_action_id": row.ai_action_id, "notification_id": row.notification_id,
+            "gate_status": evidence.get("gate_status"), "entry": signal.get("entry"), "stop_loss": signal.get("stop_loss"),
+            "target": signal.get("target1"), "rr": ticket.get("rr"), "grade": ticket.get("grade"), "study": ticket.get("study"),
+            "commit_line": ticket.get("commit_line"), "confirm_ts": ticket.get("confirm_ts"),
+            "created_at": row.created_at.isoformat() if row.created_at else None}

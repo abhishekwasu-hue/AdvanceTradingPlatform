@@ -356,5 +356,10 @@ def test_scan_notification_and_migration_details():
     note_cols = {c.name for c in NotificationRecord.__table__.columns}
     assert "user_id" in note_cols
     migration = (Path(__file__).resolve().parents[1] / "alembic" / "versions" / "c9e1f3a5b7d2_byok_v3_vision_subjects.py").read_text()
-    assert "ROLLBACK_SAFE = True" in migration and "ROLLBACK_SAFE_REASON" in migration and "down_revision: Union[str, Sequence[str], None] = 'a7d3e9c1b5f2'" in migration
+    assert "ROLLBACK_SAFE = True" in migration and "ROLLBACK_SAFE_REASON" in migration
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    script = ScriptDirectory.from_config(Config(str(Path(__file__).resolve().parents[1] / "alembic.ini")))
+    assert len(script.get_heads()) == 1                                 # re-chained at merge; later migrations may sit on top
+    assert "c9e1f3a5b7d2" in {rev.revision for rev in script.walk_revisions()}
     assert _headers("x") == {"Authorization": "Bearer x"}

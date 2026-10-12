@@ -4,7 +4,7 @@ user created) or daily_review (one symbol of the user's own after-close review) 
 'proposal'; their `subject_key` stays NULL - V2's (user, ai_action_id) constraint keeps them unique).
 
 Revision ID: c9e1f3a5b7d2
-Revises: a7d3e9c1b5f2 (N1 E1 execution_intents, main's head)
+Revises: b9e4c2d7a1f3 (N1 X1 scan Then templates #214, main's head)
 Create Date: 2026-10-12 20:00:00
 """
 from typing import Sequence, Union
@@ -13,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c9e1f3a5b7d2'
-down_revision: Union[str, Sequence[str], None] = 'a7d3e9c1b5f2'
+down_revision: Union[str, Sequence[str], None] = 'b9e4c2d7a1f3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: the previous release keeps working on this schema. Every new column is nullable or has a server default, and

@@ -161,6 +161,21 @@ ALERT = {"reason": "The trader asked to be told when this condition holds.", "na
          "condition": "close > SMA(close, 20)"}
 
 
+def _instrument(symbol="UP"):
+    """The alert's symbol must be a real instrument (re-check MED): one row in the instrument master."""
+    from app.db.models import InstrumentRecord
+
+    async def go():
+        async with _session_factory() as session:
+            session.add(InstrumentRecord(broker="upstox", exchange="NSE", instrument_key=f"NSE_EQ|{uuid.uuid4().hex[:8]}", tradingsymbol=symbol,
+                                         instrument_type="EQ"))
+            await session.commit()
+    _run(go())
+
+
+_instrument()
+
+
 def test_an_asked_alert_is_a_proposal_for_the_asker_and_exists_only_after_approval():
     t = _org("alert")
     question = "Alert me when UP closes above its 20-day average"
@@ -365,3 +380,30 @@ def test_approval_checks_the_flag_again_and_the_asker_is_part_of_the_key():
     _flag(S.FLAG, t["tenant_id"], on=False)
     done = client.post(f"/api/ai/actions/{first.data['proposal_id']}/approve", headers=t["headers"], json={}).json()
     assert done["status"] == "FAILED" and S.FLAG in done["result"]
+
+
+def test_free_text_and_unknown_symbols_never_reach_an_alert():
+    """Re-check MED: model text cannot ride in through the symbol (no spaces, a real instrument) or a string literal in
+    the condition; the final name and the reason sentence are filtered, with fixed text on refusal."""
+    t = _org("bypass")
+    spaced = _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "symbol": "STRONG BUY - SURE PROFIT"}, guard_cleared=True)
+    assert not spaced.ok and "invalid arguments" in spaced.error
+    unknown = _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "symbol": "SUREPROFIT"}, guard_cleared=True)
+    assert not unknown.ok and "not a known instrument" in unknown.error
+    literal = _tool(t, "propose_alert", {**ALERT, "quote": "alert me",
+                                         "condition": 'close > 1 AND "strong buy guaranteed profit" == "strong buy guaranteed profit"'},
+                    guard_cleared=True)
+    assert not literal.ok and "free-text literals" in literal.error
+    pattern = _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "condition": 'Pattern("hammer")'}, guard_cleared=True)
+    assert pattern.ok and pattern.data["created"]                                       # a function's fixed choice is fine
+    loud = _tool(t, "propose_alert", {**ALERT, "quote": "alert me guaranteed profit", "name": "x" * 3}, guard_cleared=True)
+    assert loud.ok and loud.data["created"]
+
+    async def actions():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(AiActionRecord).where(AiActionRecord.tenant_id == t["tenant_id"])
+                                              .order_by(AiActionRecord.id)))
+    rows = _run(actions())
+    assert "guaranteed" not in rows[-1].reason.lower() and rows[-1].reason.startswith("Create a Copilot alert on UP")
+    from app.ai.tools.screener import FIXED_NAME, final_name
+    assert final_name("BUY now - guaranteed 20% profit") == FIXED_NAME and final_name("UP: close > 1") == "UP: close > 1"

@@ -389,7 +389,7 @@ async def _create_alert(session: AsyncSession, action: AiActionRecord, user: Use
 
     from app.alerts.rules_routes import RuleBody, build_rule
     from app.ai.tools.screener import FLAG as COPILOT_FLAG
-    from app.ai.tools.screener import neutral
+    from app.ai.tools.screener import final_name
     from app.auth.dependencies import ensure_trader
     from app.platform.controls import flag_enabled
     owner = await session.get(User, action.owner_user_id) if action.owner_user_id else user
@@ -401,10 +401,10 @@ async def _create_alert(session: AsyncSession, action: AiActionRecord, user: Use
         await ensure_trader(session, owner)
         await ensure_trader(session, owner, scope="alerts:write")
     except HTTPException as exc:
-        raise ValueError(f"The person who asked for this alert may not create alerts now ({exc.detail})") from exc
+        raise ValueError("The person who asked for this alert may not create alerts now") from exc
     raw = (json.loads(action.evidence_json or "{}") or {}).get("rule") or {}
     if isinstance(raw, dict) and raw.get("name"):                                 # review MED-2: filtered again, as stored
-        raw = {**raw, "name": neutral(str(raw["name"]), f"{raw.get('symbol', '')}: {raw.get('condition', '')}")[:120]}
+        raw = {**raw, "name": final_name(str(raw["name"]))}
     body = RuleBody.model_validate(raw)
     try:
         async with session.begin_nested():                 # a refusal leaves nothing behind in the action's commit

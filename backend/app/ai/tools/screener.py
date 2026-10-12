@@ -56,7 +56,7 @@ class _Alert(BaseModel):
     reason: str = Field(min_length=10, max_length=300, description="Why, from the tool results - shown to the person who decides")
     quote: str = Field(min_length=2, max_length=300, description="The trader's own words that ask for the alert, copied exactly from their message")
     name: str = Field(min_length=1, max_length=120, description="A short name for the alert")
-    symbol: str = Field(pattern=r"^[A-Za-z0-9 &._:-]{1,40}$", description="The instrument the condition watches")
+    symbol: str = Field(pattern=r"^[A-Za-z0-9&._:-]{1,40}$", description="The instrument the condition watches (its exchange symbol)")
     condition: str = Field(min_length=3, max_length=2000, description="The condition in ScreenQL (a validated build_screen text)")
     base_tf: str = Field(default="1d", pattern=TF)
     exchange: str = Field(default="NSE", pattern=r"^[A-Z]{2,10}$")
@@ -91,6 +91,52 @@ def neutral(text: str, fallback: str) -> str:
     from app.ai import output_filter
     ok, shown, _ = output_filter.check(text, "en", where="screener_copilot")
     return shown.strip() if ok and shown and shown.strip() == text.strip() else fallback
+
+
+FIXED_NAME = "Copilot alert"
+
+
+def final_name(name: str) -> str:
+    """Re-check (MED): the FINAL alert name - the model's or the fallback - passes the output filter, else fixed text."""
+    return neutral(name.strip()[:120], FIXED_NAME) or FIXED_NAME
+
+
+def free_text_literals(ast: Any) -> List[str]:
+    """Re-check (MED): string literals in a condition other than a function's fixed choices ("promoter", "hammer"...).
+    Free text would survive into the canonical condition and from there into the rule and the proposal."""
+    from app.screener import nodes
+    from app.screener.registry import FUNCTIONS
+    allowed: set = set()
+    for node in nodes.walk(ast):
+        spec = FUNCTIONS.get(node.name) if isinstance(node, nodes.Call) else None
+        if spec is not None:
+            for arg, value in zip(spec.args, node.args):
+                if isinstance(value, nodes.Str) and arg.choices and value.value in arg.choices:
+                    allowed.add(id(value))
+        if isinstance(node, nodes.Compare):           # a classifier against one of its own values: ZoneRole() == "DEMAND"
+            for side, other in ((node.left, node.right), (node.right, node.left)):
+                ospec = FUNCTIONS.get(other.name) if isinstance(other, nodes.Call) else None
+                if isinstance(side, nodes.Str) and ospec is not None and ospec.values and side.value in ospec.values:
+                    allowed.add(id(side))
+    return [n.value for n in nodes.walk(ast) if isinstance(n, nodes.Str) and id(n) not in allowed]
+
+
+async def known_symbol(session: Any, symbol: str) -> bool:
+    """Re-check (MED): an alert's symbol is a real instrument - in the instrument master (any broker), an index name,
+    or the NSE listing as of today."""
+    from sqlalchemy import or_, select
+
+    from app.db.models import InstrumentRecord
+    from app.instruments.master import INDEX_SYMBOLS
+    sym = symbol.strip().upper()
+    if sym in INDEX_SYMBOLS or sym in {v.upper() for v in INDEX_SYMBOLS.values()}:
+        return True
+    found = await session.scalar(select(InstrumentRecord.id).where(or_(InstrumentRecord.tradingsymbol == sym,
+                                                                       InstrumentRecord.underlying == sym)).limit(1))
+    if found is not None:
+        return True
+    from app.universe.asof import isin_for
+    return await isin_for(session, sym, date.today()) is not None
 
 
 async def _screener_on(ctx: ToolContext) -> Optional[ToolResult]:
@@ -215,6 +261,13 @@ async def propose_alert(ctx: ToolContext, args: _Alert) -> ToolResult:
     if not await flag_enabled(ctx.session, ALERTS_FLAG, ctx.tenant_id):
         return ToolResult(False, None, None, "ai_actions", error=f"alerts are not enabled for this organisation (flag {ALERTS_FLAG})")
     symbol = args.symbol.strip().upper()
+    if not await known_symbol(ctx.session, symbol):
+        return ToolResult(False, None, None, "ai_actions", error=f"{symbol} is not a known instrument (instrument master, index or NSE listing)")
+    from app.screener import compile_screen
+    parsed, _ = compile_screen(args.condition, base_tf=args.base_tf)
+    texts = free_text_literals(parsed) if parsed is not None else []
+    if texts:
+        return ToolResult(False, None, None, "ai_actions", error="a Copilot alert condition takes no free-text literals (only a function's fixed choices)")
     body = RuleBody(name=f"{symbol} alert", kind="instrument", symbol=symbol, condition=args.condition, base_tf=args.base_tf,
                     exchange=args.exchange)
     try:
@@ -223,13 +276,14 @@ async def propose_alert(ctx: ToolContext, args: _Alert) -> ToolResult:
         return ToolResult(False, None, None, "ai_actions", error=f"the alert would be refused: {_detail(exc)}")
     # Review MED-2: the name goes out in every fire's title and the note to the person deciding - filtered; refused words
     # give way to neutral text built from the facts
-    name = neutral(args.name.strip(), f"{target['symbol']}: {target['condition_text']}")[:120]
+    name = final_name(neutral(args.name.strip(), f"{target['symbol']}: {target['condition_text']}"))
     note = neutral(args.reason.strip(), "The trader asked for this alert.")
     rule = {**body.model_dump(mode="json", exclude_none=True), "name": name, "condition": target["condition_text"]}
     # review LOW-3: the asker is part of the key - two members proposing the same alert are two proposals
     key = hashlib.sha256(json.dumps({**rule, "for": ctx.user.id}, sort_keys=True).encode()).hexdigest()[:12]
     sentence = f"Create the alert \"{name}\": {target['condition_text']} on {target['symbol']} ({body.base_tf}, bar close)."
-    reason = f"{sentence} Asked by the trader (\"{args.quote.strip()}\"). AI note: {note}"
+    reason = neutral(f"{sentence} Asked by the trader (\"{args.quote.strip()}\"). AI note: {note}",
+                     f"Create a Copilot alert on {target['symbol']} ({body.base_tf}, bar close), as the trader asked.")
     evidence = {"source": "copilot_agent", "quote": args.quote.strip(), "agent_reason": note, "user_id": ctx.user.id, "rule": rule}
     created = await monitor.raise_proposals(ctx.session, ctx.tenant_id, [monitor.Proposal(None, None, "CREATE_ALERT", f"AGENT_ALERT:{key}", reason,
                                                                                          evidence, owner_user_id=ctx.user.id)], ctx.now)

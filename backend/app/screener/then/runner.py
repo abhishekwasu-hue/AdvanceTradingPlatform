@@ -172,8 +172,11 @@ async def evaluate_template(session: AsyncSession, tpl: ScanThenTemplateRecord, 
         return
     exchange = rule.exchange or "NSE"
     try:
-        universe, problems, _source = await fetch(session, tpl.tenant_id, pending, exchange, tf, {tf: BAR_LOOKBACK},
-                                                  user_id=owner.id if per_user else None)
+        # The trading worker's shared session: a failed read here rolls back this savepoint only (on Postgres it would
+        # otherwise abort the whole cycle's transaction - other templates and the exits after them).
+        async with session.begin_nested():
+            universe, problems, _source = await fetch(session, tpl.tenant_id, pending, exchange, tf, {tf: BAR_LOOKBACK},
+                                                      user_id=owner.id if per_user else None)
     except Exception as exc:  # noqa: BLE001 - no bars, no gate (retried on the next cycle)
         tpl.last_problem = f"bars: {type(exc).__name__}: {str(exc)[:150]}"
         return
@@ -339,13 +342,20 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
         rule = await session.get(AlertRuleRecord, tpl.rule_id)
         if rule is None or rule.tenant_id != tpl.tenant_id or rule.status != "active":
             continue
+        tpl_id = tpl.id
         try:
-            if tpl.tenant_id not in byob:
-                byob[tpl.tenant_id] = await flag_enabled(session, "byob_data_tier", tpl.tenant_id)
-            await evaluate_template(session, tpl, rule, now, fetch or server_fetch, holidays, byob[tpl.tenant_id], report, cycle)
+            # One savepoint per template: its failure (a SQL error included) rolls back its own work only, and the cycle's
+            # session stays usable for the templates after it and the commit below.
+            async with session.begin_nested():
+                if tpl.tenant_id not in byob:
+                    byob[tpl.tenant_id] = await flag_enabled(session, "byob_data_tier", tpl.tenant_id)
+                await evaluate_template(session, tpl, rule, now, fetch or server_fetch, holidays, byob[tpl.tenant_id], report, cycle)
         except Exception as exc:  # noqa: BLE001 - one template's problem stays on it
-            logger.exception("Scan Then template %s failed", tpl.id)
-            tpl.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
-            report.problems.append(f"template {tpl.id}: {tpl.last_problem}")
+            logger.exception("Scan Then template %s failed", tpl_id)
+            problem = f"{type(exc).__name__}: {str(exc)[:150]}"
+            row = await session.get(ScanThenTemplateRecord, tpl_id, populate_existing=True)
+            if row is not None:
+                row.last_problem = problem
+            report.problems.append(f"template {tpl_id}: {problem}")
     await session.commit()
     return report

@@ -127,7 +127,8 @@ AI_RATE_WINDOW_SECONDS = max(1, int(os.environ.get("AI_RATE_WINDOW_SECONDS", "60
 _AI_RATE_LIMITS_DEFAULT = {"free": {"user": 60, "tenant": 120}, "pro": {"user": 180, "tenant": 600}, "business": {"user": 360, "tenant": 3000}}
 _AI_RATE_WEIGHTS_DEFAULT = {"POST strategist/build": 20, "POST strategist/study": 10, "POST interview/plan": 10, "POST interview/refine": 10,
                             "POST drafts": 5, "POST drafts/{draft_id}/backtest": 5, "POST copilot": 3, "POST ask": 3,
-                            "POST market-memory/refresh": 10, "POST plan": 3, "POST read": 3}
+                            "POST market-memory/refresh": 10, "POST plan": 3, "POST read": 3,
+                            "POST support/ask": 1}
 
 
 def _json_table(name: str, default: dict) -> dict:
@@ -475,6 +476,16 @@ def _bounded_int(name: str, default: int, low: int, high: int) -> int:
 OI_BANNER_SLOT_MINUTES = _bounded_int("OI_BANNER_SLOT_MINUTES", 5, 1, 60)
 OI_BANNER_COLLECT_SPAN = _bounded_int("OI_BANNER_COLLECT_SPAN", 15, 1, 60)
 OI_BANNER_DEFAULTS: dict = _json_object("OI_BANNER_DEFAULTS")
+
+# Z7a-2 market zones: the operator's ZoneSettings fields over the platform's all-daily defaults (JSON object; see
+# app/price_action/zones/store.py PLATFORM_DEFAULTS), the lake instruments the nightly zone job always follows (comma list
+# of keys like "NSE:BANKNIFTY"; tenants add their own in market_zone_settings), the IST hour from which it runs once a day
+# (20: after HB1's 19:00 EOD ingest) and one pass's time budget (a pass that runs out resumes on the next cycle). Only with
+# the `market_zones` flag (off by default).
+MARKET_ZONES_DEFAULTS: dict = _json_object("MARKET_ZONES_DEFAULTS")
+MARKET_ZONES_SYMBOLS = [k.strip().upper() for k in os.environ.get("MARKET_ZONES_SYMBOLS", "").split(",") if k.strip()]
+MARKET_ZONES_HOUR_IST = _bounded_int("MARKET_ZONES_HOUR_IST", 20, 0, 23)
+MARKET_ZONES_BUDGET_SECONDS = _bounded_int("MARKET_ZONES_BUDGET_SECONDS", 1800, 10, 6 * 3600)
 
 # PW6: the closed-beta cohort cap. With the `beta_cohort_gate` flag on, registration needs an invite code and stops once
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes

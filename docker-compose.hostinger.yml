@@ -62,6 +62,9 @@ services:
       resources:
         limits:
           memory: ${MEM_WORKER:-1536m}
+    # Z11: room to finish the cycle and release the Redis replica lock on SIGTERM (a SIGKILL after the default 10 s
+    # would leave the lock held until its TTL, and the next worker would wait for it).
+    stop_grace_period: ${WORKER_STOP_GRACE:-90s}
 
   frontend:
     deploy:

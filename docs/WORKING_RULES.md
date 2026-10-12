@@ -36,6 +36,11 @@ every 2 hours, draft PRs only, merge only on Abhi's "Merge", no LIVE / VPS / sec
 - After the push, if time allows, do a second independent pass on the same diff (fresh eyes or a reviewer subagent).
   Anything found goes in a follow-up commit.
 
+## 3. Test fixtures
+- Golden fixtures over ~1,000 lines are stored compressed (`.json.gz`, written deterministically: sorted keys, gzip
+  `mtime=0`, loaded by the test) or generated deterministically from the pinned source commit - never committed as big
+  plain JSON. The fixture folder's README says how to regenerate them.
+
 ## Queue notes from Abhi (order)
 - **IBKR adapter (MASTER v1.2 §2)** comes after the Indian PAPER go-live and crypto Phase 1. The design PR comes first
   (ADR-0018 IBKR transports). The spec is in `docs/specs/IBKR_ADAPTER_SPEC.md`.

@@ -17,6 +17,8 @@ revision: str = 'f3a9c1e7b2d4'
 down_revision: Union[str, Sequence[str], None] = '039888cda9b1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
+ROLLBACK_SAFE_REASON = "the unique key is on the new nullable idempotency_key: the previous release writes NULL there, and NULLs never collide"
 
 
 def upgrade() -> None:

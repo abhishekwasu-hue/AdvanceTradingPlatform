@@ -56,6 +56,12 @@ jobs:
         working-directory: backend
         run: bandit -q -r app -ll -ii
 
+      - name: shellcheck (Z11 deploy bundle; ShellCheck ships with the runner image)
+        run: shellcheck -x deploy/atp.sh deploy/hostinger/install.sh
+
+      - name: Migration rollback safety (every migration declares ROLLBACK_SAFE; risky upgrades are not marked safe)
+        run: python backend/scripts/migration_rollback_safety.py lint
+
       - name: gitleaks secret scan (.gitleaks.toml)
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:
@@ -108,6 +114,9 @@ jobs:
       - name: Run test suite (in-memory SQLite, no DB dependency)
         env:
           REDIS_URL: redis://localhost:6379/0
+          # Z5 P1-d: the entry-slot race test also runs on Postgres (in its own scratch database, created and dropped by
+          # the test, so the migration steps below still start from an empty schema).
+          Z5_TEST_PG_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
         # P0.7: each failed test becomes a check-run annotation (`::error`), so the failure is readable from the API
         # without the job log (which GitHub serves from a host the session tooling cannot reach).
         # The default shell is `bash -e`: a failing pipeline would stop the script before the annotations are written,
@@ -133,6 +142,18 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
         run: python -m pytest tests/test_backup_scripts.py -q -rs
+
+      # Z11: the backup scripts run in the backup service's own image on the server (busybox sh, Alpine openssl), not on
+      # this runner - so run them there too: build deploy/backup.Dockerfile on the Postgres major of this job's service
+      # database, take an encrypted + sealed dump, and restore-verify it into a scratch database as the restore role.
+      - name: Backup scripts inside the backup image (Alpine, busybox sh)
+        working-directory: .
+        run: |
+          docker build -q -f deploy/backup.Dockerfile --build-arg PG_IMAGE=postgres:16-alpine -t atp-backup:ci .
+          docker run --rm --network host -v "$PWD/scripts/backup:/scripts:ro" \
+            -e DATABASE_URL=postgresql://atp_user:atp_dev_password@localhost:5432/advance_trading_platform \
+            -e BACKUP_DIR=/tmp/backups -e BACKUP_ENCRYPTION_PASSPHRASE=FAKEFAKE-ci-backup-passphrase \
+            --entrypoint sh atp-backup:ci -c 'sh /scripts/backup.sh && ls /tmp/backups/*.dump.enc.hmac && sh /scripts/verify_backup.sh latest > /tmp/report.json; cat /tmp/report.json; grep -q "\"status\":\"ok\"" /tmp/report.json'
 
       - name: Audit Python dependencies for known vulnerabilities (pip-audit)
         run: |

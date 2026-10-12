@@ -43,7 +43,7 @@ assumption.
   `tenants`/`orders`/`trades`/`audit_logs` counts are within the source's, re-verifies the audit
   hash chain in the copy (`python -m app.audit.verify_chain`), drops the scratch database and
   prints a one-line JSON report with `status: ok`. Run it monthly and keep the report:
-  `docker compose run --rm backup sh /scripts/verify_backup.sh latest`. CI runs the same
+  `docker compose run --rm --entrypoint sh backup /scripts/verify_backup.sh latest`. CI runs the same
   rehearsal on every push (`tests/test_backup_scripts.py`), including the encrypted and tampered
   cases.
 - **Restore for real**: `scripts/backup/restore.sh <file|latest>` (asks you to type the database
@@ -58,12 +58,12 @@ assumption.
 - **Continuous WAL archiving** is on in `docker-compose.yml` (`archive_mode=on`, five-minute
   `archive_timeout`, segments copied into the `wal_archive` volume). Copy that volume off the host
   with the dumps.
-- **Weekly base backup**: `docker compose run --rm backup sh /scripts/base_backup.sh` (or from
+- **Weekly base backup**: `docker compose run --rm --entrypoint sh backup /scripts/base_backup.sh` (or from
   cron). It writes `backups/base/<stamp>/`, keeps the newest `BASE_BACKUP_KEEP` (4) and prunes WAL
   older than the oldest kept base backup. Alert when `LAST_BASE_BACKUP_OK` is older than 8 days.
 - **Recover to an instant** (e.g. just before a bad bulk change at 11:04 IST):
   1. stop the API and worker (`docker compose stop backend worker`);
-  2. `docker compose run --rm -v atp_pitr:/pitr backup sh /scripts/pitr_restore.sh latest "2026-09-28 11:03:30+05:30" /pitr`;
+  2. `docker compose run --rm -v atp_pitr:/pitr --entrypoint sh backup /scripts/pitr_restore.sh latest "2026-09-28 11:03:30+05:30" /pitr`;
   3. start a scratch Postgres on that directory (`docker run --rm -v atp_pitr:/var/lib/postgresql/data postgres:17-alpine`),
      which replays WAL to the target and promotes; verify `alembic current`, open trades and
      `python -m app.audit.verify_chain` against it;
@@ -1488,3 +1488,54 @@ PBKDF2-derived key before they touch disk, and `restore.sh`/`verify_backup.sh` r
 passphrase (a wrong one fails the restore, it does not produce a plausible-looking database). The
 passphrase is the one secret that must survive losing the server - store it with the same care as
 `SECRETS_ENCRYPTION_KEY`, and rehearse a restore with it at least once a quarter.
+
+### 2.6 Legal pages, their acceptance and the support bot (Z10-f)
+
+**Flag `legal_pages` (off by default).** While it is off nothing below exists for users: `/api/legal/*` answers 404,
+sign-up ignores `legal_acceptance`, the form has no consent box, nobody sees the banner and the support bot leaves the
+legal pages out. The admin API (`PUT /api/admin/controls/flags/legal_pages`) refuses `on` - or an organisation
+allow-list - while any document still has an open `[PLACEHOLDER]`; send `"override_open_placeholders": true` to switch
+it on anyway (audited as `legal_pages_placeholder_override`). Fill the placeholders and have the text reviewed first.
+
+**Legal pages.** The Privacy notice (DPDP Act 2023), Terms of use and Risk disclosure are versioned Markdown in
+`backend/app/legal/content/{privacy,terms,risk}.md`, each headed "Draft — to be reviewed by a lawyer before launch".
+With the flag on they are public: `/legal/privacy`, `/legal/terms`, `/legal/risk` in the app (no sign-in, no app shell) and
+`GET /api/legal/documents[/{slug}]`. The privacy notice does not copy configuration: retention days come from the
+retention policy (section 2.3, `RETENTION_*`) and the breach-notice hours and log retention from `in_sebi.json`
+(`IN-SEBI.golive.checklist`), filled in when the page is served. Company facts that do not exist yet stay as
+`[SQUARE BRACKET]` placeholders (`open_placeholders` in the API response) until the company is registered.
+
+To change a document: edit its file, bump its `version` (a date), ship it. Everyone is asked again on their next
+sign-in - also when the text changes without a version bump (the acceptance is bound to the text's SHA-256).
+
+**Acceptance.** With the flag on, sign-up and team join require the acceptance (400 `legal_acceptance_required`
+without it): the form's box sends each document's version and the SHA-256 of the text it showed, and a version or text
+that is no longer current gets 409 `legal_version_changed` (the form reloads the text - the documents are served
+`no-cache` with an ETag). Accounts created before the flag was on, and everyone after a document changes, see a banner
+after signing in: "I have read and accept" records it, "Later" hides it until the next sign-in (no limit on how often -
+OPEN_QUESTIONS Z10F-7). It is a banner, never a modal or a route gate: positions, exits and every other screen keep
+working. Each acceptance is a row in `ai_acknowledgements` (`kind` = `legal_terms` / `legal_privacy` / `legal_risk`,
+`version`, `text_sha256`, IP, browser, `accepted_at`; kept for good) plus a `legal_accepted` audit row.
+
+**Support bot** (flag `support_bot`, **off by default**; off = `POST /api/ai/support/ask` answers 404 and the help
+button is hidden). How-to answers from `backend/app/support/content/help.md` and, while `legal_pages` is on, the legal
+pages (help entries marked `requires: legal_pages` are left out while it is off). It refuses advice
+questions (what to buy or sell, targets, tips, "will X go up" and the advice / guarantee words), questions about the
+user's own positions, orders or P&L (it reads none) and requests to place, change, cancel or exit orders (it has no
+tool that can). Below the confidence floor (`SUPPORT_BOT_MIN_CONFIDENCE`, default 0.5) it hands the question to the
+feedback form instead of guessing. With the organisation's own AI provider configured (Settings > AI provider, data
+consent accepted, the user has accepted the AI Copilot acknowledgement, `ai_copilot` on) the provider may reword the
+matching help passage; the reworded text is shown only if it passes the advice / guarantee filter, the banned-word and
+the numbers checks, else the help text is shown. Review H1 hardening: the question is normalised first (NFKC, no
+zero-width characters, Cyrillic/Greek look-alikes mapped); advice is also recognised in Hindi, Hinglish and Marathi and
+in spaced-out words; order and account requests are checked clause by clause; a question with letters outside English
+never goes to the model; and a model text is rejected when it has letters outside English, a ticker or number that is
+not in the help passages (the question is not trusted), a trade verb the top passage does not use, a claimed action
+("I closed", "has been placed"), or fewer than 80 % of its words from the passages. Personal data in the question is
+masked before it is sent. There is no platform key: one organisation's key is never used for
+another. Limits (checked after the flag, so a 404 spends nothing): the AI endpoints' per-user / per-organisation units
+(`AI_RATE_WEIGHTS` "POST support/ask" = 1) plus `SUPPORT_BOT_RATE_PER_MINUTE` (default 20) per user; model tier: the
+`support` task (cheap). Metric: `atp_support_bot_answers_total{outcome,source}`.
+
+To add or fix a help answer, edit `help.md` (one `## ` question per entry, `keywords:`, `page:` = an app path). The
+tests screen every entry through the advice filter.

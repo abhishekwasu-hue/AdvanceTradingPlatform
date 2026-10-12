@@ -7,6 +7,8 @@ import { ROLE_LABELS, type InviteInfo, type MfaStatus, type SessionInfo } from "
 import MfaCard from "../components/MfaCard";
 import { Card } from "../components/ui";
 import { LogoMark } from "../components/Logo";
+import LegalConsentField from "../legal/LegalConsentField";
+import { acceptanceFor, type LegalSummary } from "../legal/legal";
 
 export default function AccountPage() {
   const { user, login, completeMfaLogin, register, acceptInvite, resetPassword, logout, refreshUser } = useAuth();
@@ -31,6 +33,15 @@ export default function AccountPage() {
   // PW6: the closed-beta invite code - the field opens when the server asks for one (or the visitor says they have one).
   const [betaCode, setBetaCode] = useState("");
   const [betaField, setBetaField] = useState(false);
+  // Z10-f: the legal documents' current versions, accepted with the account. The box shows (and is required) only when
+  // the server publishes the documents - flag `legal_pages`; while it is off the list answers 404 and the form is as before.
+  const [legalDocs, setLegalDocs] = useState<LegalSummary[] | null>(null);
+  const [legalAccepted, setLegalAccepted] = useState(false);
+  const needsLegal = mode === "register" || mode === "invite";
+  useEffect(() => {
+    if (!needsLegal || legalDocs) return;
+    api.legalDocuments().then((r) => setLegalDocs(r.documents)).catch(() => setLegalDocs(null));
+  }, [needsLegal, legalDocs]);
 
   useEffect(() => {
     if (!user) return;
@@ -195,17 +206,23 @@ export default function AccountPage() {
       } else if (mode === "mfa" && mfaToken) {
         await completeMfaLogin(mfaToken, mfaCode);
       } else if (mode === "invite" && inviteToken) {
-        await acceptInvite(inviteToken, password);
+        await acceptInvite(inviteToken, password, legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined);
       } else if (mode === "reset" && resetToken) {
         await resetPassword(resetToken, password);
       } else if (mode === "forgot") {
         const result = await api.forgotPassword(email);
         setNotice(result.detail);
       } else {
-        await register(email, password, betaCode.trim() || undefined);
+        await register(email, password, betaCode.trim() || undefined, legalDocs && legalAccepted ? acceptanceFor(legalDocs) : undefined);
       }
     } catch (err) {
       if (mode === "register" && err instanceof ApiError && /"code"\s*:\s*"beta_(invite|cohort)_/.test(err.body)) setBetaField(true);
+      // Z10-f: a document changed while the form was open - load the new versions and ask to read them again.
+      // (or the list did not load although the server now requires the acceptance - load it and show the box).
+      if (err instanceof ApiError && (err.body.includes("legal_version_changed") || err.body.includes("legal_acceptance_required"))) {
+        setLegalAccepted(false);
+        setLegalDocs(null);
+      }
       setError(String(err));
     } finally {
       setLoading(false);
@@ -308,10 +325,11 @@ export default function AccountPage() {
               Have a beta invite code?
             </button>
           ))}
+          {needsLegal && legalDocs && <LegalConsentField checked={legalAccepted} onChange={setLegalAccepted} />}
           {error && <div className="text-xs text-down">{error}</div>}
           <button
             type="submit"
-            disabled={loading || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))}
+            disabled={loading || (needsLegal && legalDocs !== null && !legalAccepted) || (mode === "invite" && !(invite && invite.valid)) || (mode === "reset" && !(resetHint && resetHint.valid))}
             className="w-full rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-4 py-1.5 text-sm disabled:opacity-50 transition-colors"
           >
             {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "mfa" ? "Verify" : mode === "invite" ? "Join team" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Set new password" : "Create account"}

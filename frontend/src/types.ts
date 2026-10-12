@@ -1264,7 +1264,7 @@ export interface AlertDelivery {
   notification_id: number;
   title: string;
   severity: NotificationSeverity;
-  status: "PENDING" | "SENT" | "FAILED";
+  status: "PENDING" | "SENT" | "FAILED" | "DEAD" | "SUPPRESSED";
   attempts: number;
   last_error: string | null;
   created_at: string;

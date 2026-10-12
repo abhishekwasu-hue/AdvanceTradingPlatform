@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
-from app.db.models import AlertChannelRecord, AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, NotificationPolicyRecord, ScreenRecord, User
+from app.db.models import AlertChannelRecord, AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, NotificationPolicyRecord, NotificationRecord, ScreenRecord, User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
 
@@ -202,27 +202,42 @@ async def put_policy(body: PolicyBody, user: User = Depends(require_trader), ses
     return body.model_dump()
 
 
+async def _visible_deliveries(session: AsyncSession, user: User) -> list:
+    from app.alerts.routes import _deliveries_visible            # BT1b: the same rule as /api/alert-channels/deliveries
+    return await _deliveries_visible(session, user)
+
+
+RETRYABLE = ("FAILED", "DEAD")                            # Z10-b: DEAD = gave up after MAX_ATTEMPTS (alerts_reliable_outbox)
+
+
 @router.get("/dead-letters")
 async def dead_letters(limit: int = 100, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
-    """S3b: deliveries that gave up after every retry (or whose channel was off), for the operator to look at or retry."""
+    """S3b: deliveries that gave up after every retry (or whose channel was off), for the operator to look at or retry.
+    Z10-b: also DEAD rows (flag alerts_reliable_outbox); with `byob_data_tier` on, BT1b's delivery visibility applies
+    (another member's data-bearing alerts are theirs only)."""
     rows = await session.execute(select(AlertDeliveryRecord, AlertChannelRecord.channel_type).join(
-        AlertChannelRecord, AlertChannelRecord.id == AlertDeliveryRecord.channel_id).where(
-        AlertDeliveryRecord.tenant_id == user.tenant_id, AlertDeliveryRecord.status == "FAILED").order_by(AlertDeliveryRecord.id.desc())
-        .limit(max(1, min(limit, 500))))
+        AlertChannelRecord, AlertChannelRecord.id == AlertDeliveryRecord.channel_id).join(
+        NotificationRecord, NotificationRecord.id == AlertDeliveryRecord.notification_id).where(
+        AlertDeliveryRecord.tenant_id == user.tenant_id, AlertDeliveryRecord.status.in_(RETRYABLE), *(await _visible_deliveries(session, user)))
+        .order_by(AlertDeliveryRecord.id.desc()).limit(max(1, min(limit, 500))))
     return [{"id": d.id, "notification_id": d.notification_id, "channel": ctype, "attempts": d.attempts, "reason": d.reason_code,
-             "last_error": d.last_error, "group_id": d.group_id, "created_at": d.created_at.isoformat() if d.created_at else None}
+             "last_error": d.last_error, "group_id": d.group_id, "created_at": d.created_at.isoformat() if d.created_at else None,
+             "status": d.status}
             for d, ctype in rows.all()]
 
 
 @router.post("/deliveries/{delivery_id}/retry")
 async def retry_delivery(delivery_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Puts a dead-lettered delivery back in the outbox (fresh attempts); the worker sends it on its next cycle."""
-    row = await session.scalar(select(AlertDeliveryRecord).where(AlertDeliveryRecord.id == delivery_id, AlertDeliveryRecord.tenant_id == user.tenant_id))
+    row = await session.scalar(select(AlertDeliveryRecord).join(NotificationRecord, NotificationRecord.id == AlertDeliveryRecord.notification_id)
+                               .where(AlertDeliveryRecord.id == delivery_id, AlertDeliveryRecord.tenant_id == user.tenant_id,
+                                      *(await _visible_deliveries(session, user))))
     if row is None:
         raise HTTPException(status_code=404, detail="Delivery not found")
-    if row.status != "FAILED":
+    if row.status not in RETRYABLE:
         raise HTTPException(status_code=409, detail=f"Only failed deliveries can be retried (this one is {row.status})")
     row.status, row.attempts, row.reason_code, row.next_attempt_at = "PENDING", 0, None, datetime.now(timezone.utc)
+    row.lease_until = None                                # Z10-b: the idempotency key stays, so a receiver can drop a repeat
     await session.commit()
     return {"id": row.id, "status": row.status}
 

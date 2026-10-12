@@ -13,6 +13,7 @@ import {
 } from "../alerts/rules";
 import { Badge, Button, Input, Select } from "./primitives";
 import { Card } from "./ui";
+import type { ThenTemplate } from "../screener/then/model";
 
 // N1 X1b (flag scan_then): a rule's Then chip and drawer, loaded only when the flag is on (its i18n bundle stays out of
 // this page's chunk otherwise).
@@ -34,7 +35,8 @@ function Errors({ lines }: { lines: string[] }) {
   return <ul role="alert" className="text-xs text-down space-y-0.5">{lines.map((l) => <li key={l}>{l}</li>)}</ul>;
 }
 
-function RuleRow({ rule, onChanged, thenOn }: { rule: AlertRule; onChanged: () => void; thenOn: boolean }) {
+function RuleRow({ rule, onChanged, thenOn, then }: { rule: AlertRule; onChanged: () => void; thenOn: boolean;
+  then?: ThenTemplate | null }) {
   const [events, setEvents] = useState<AlertEventRow[] | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   async function toggle() {
@@ -61,7 +63,7 @@ function RuleRow({ rule, onChanged, thenOn }: { rule: AlertRule; onChanged: () =
         </div>
       </div>
       <div className="text-xs text-fg-muted font-tabular break-words">{describeRule(rule)}</div>
-      {thenOn && <Suspense fallback={null}><RuleThen ruleId={rule.id} /></Suspense>}
+      {thenOn && <Suspense fallback={null}><RuleThen ruleId={rule.id} initial={then} /></Suspense>}
       <Errors lines={errors} />
       {events && (events.length === 0 ? <div className="text-xs text-fg-muted">No firings yet.</div> : (
         <table className="w-full text-xs">
@@ -237,9 +239,15 @@ export function AlertRulesPanel() {
   const [rules, setRules] = useState<AlertRule[] | null>(null);
   const [off, setOff] = useState(false);
   const [thenOn, setThenOn] = useState(false);
+  // Review of X1b: one batch read of every rule's Then (undefined until it answers, or when it fails - each rule then
+  // reads its own)
+  const [thens, setThens] = useState<Record<string, ThenTemplate> | null | undefined>(undefined);   // null: the batch read failed
   useEffect(() => {
     api.myFeatures().then((f) => setThenOn(Boolean(f.scan_then))).catch(() => setThenOn(false));
   }, []);
+  useEffect(() => {
+    if (thenOn) api.allThen().then((r) => setThens(r.templates)).catch(() => setThens(null));
+  }, [thenOn]);
   const [errors, setErrors] = useState<string[]>([]);
   const load = useCallback(() => {
     api.listAlertRules().then((r) => { setRules(r); setOff(false); }).catch((e) => {
@@ -258,7 +266,8 @@ export function AlertRulesPanel() {
             <Errors lines={errors} />
             <div className="space-y-2">
               {rules?.length === 0 && <div className="text-xs text-fg-muted">No rules yet.</div>}
-              {rules?.map((r) => <RuleRow key={r.id} rule={r} onChanged={load} thenOn={thenOn} />)}
+              {rules?.map((r) => <RuleRow key={r.id} rule={r} onChanged={load} thenOn={thenOn && thens !== undefined}
+                then={thens === null ? undefined : thens?.[String(r.id)] ?? null} />)}
             </div>
             <p className="mt-2 text-xs text-fg-muted">Alerts report that a rule's conditions matched. They are not recommendations and never place orders.</p>
           </Card>

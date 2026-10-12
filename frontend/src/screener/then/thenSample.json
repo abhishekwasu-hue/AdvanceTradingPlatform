@@ -45,7 +45,9 @@
    }
   },
   "status_shown": true,
-  "updated_at": "2026-10-12T18:29:12.426215"
+  "updated_at": "2026-10-12T18:29:12.426215",
+  "set_by_you": true,
+  "may_change": true
  },
  "intents": [
   {

@@ -3,7 +3,8 @@ import { describe, expect, it } from "vitest";
 import { thenT } from "./i18n";
 import { SCAN_THEN_EN } from "./locales/en";
 import {
-  bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isThenTemplate, levelsVars, outcomeOf, THEN_MODES, visibleModes, withOverride,
+  bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isThenTemplate, levelsVars, needsTakeOver, outcomeOf, THEN_MODES, visibleModes,
+  withOverride,
   type ThenIntent, type ThenTemplate,
 } from "./model";
 import { ThenChip, ThenDrawerView } from "./ThenPanel";
@@ -118,6 +119,29 @@ describe("the Then drawer and chip (server sample)", () => {
     expect(out).toContain("Shown to the template's owner and the organisation owner only.");
     expect(out).not.toContain("Not checked yet.");
     for (const code of ["DATA_LATE", "TREND_PENDING", "SKIPPED_GATE_CONFLICT", "SKIPPED_INTENT_REFUSED"]) expect(codeLabel(code, thenT)).not.toBe(code);
+  });
+
+  it("says who set the Then and asks before taking another member's over (review of X1b)", () => {
+    const theirs = { ...template, set_by_you: false };
+    const props = { intents, body: bodyOf(theirs), onBody: () => {}, errors: [], notice: "", busy: false, onSave: () => {}, onRemove: () => {} };
+    expect(text(renderToStaticMarkup(<ThenDrawerView template={template} {...props} />))).toContain("Set by: you");
+    const asked = text(renderToStaticMarkup(<ThenDrawerView template={theirs} {...props} confirming />));
+    expect(asked).toContain("Set by: another member");
+    expect(asked).toContain("Saving makes you the owner of this Then; setups will go to you, not to the member who set it.");
+    expect(asked).toContain("Save and take over");
+    expect(asked).not.toContain("Remove Then");
+    expect(needsTakeOver(theirs)).toBe(true);
+    expect(needsTakeOver(template)).toBe(false);
+    expect(needsTakeOver({ ...theirs, configured: false })).toBe(false);
+  });
+
+  it("offers no Save or Remove to someone the server would refuse", () => {
+    const locked = { ...template, may_change: false };
+    const out = text(renderToStaticMarkup(<ThenDrawerView template={locked} intents={intents} body={bodyOf(locked)} onBody={() => {}}
+      errors={[]} notice="" busy={false} onSave={() => {}} onRemove={() => {}} />));
+    expect(out).toContain("Only the rule's creator or the organisation owner can change this Then.");
+    expect(out).not.toContain("Remove Then");
+    expect(out).not.toMatch(/\bSave\b/);
   });
 
   it("asks a new rule to pick a mode, with no status or setups yet", () => {

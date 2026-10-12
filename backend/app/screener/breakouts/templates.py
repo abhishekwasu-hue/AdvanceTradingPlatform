@@ -1,4 +1,4 @@
-"""U6 BK1 (spec §4): pre-built breakout templates, the "Breakout" / "Breakout quality" builder block families, and the
+"""U6 BK1 / BK2 (spec §4): pre-built breakout templates, the "Breakout" / "Breakout quality" builder block families, and the
 ScreenQL text of a template.
 
 A template is (screen, signal timeframe, parameters, direction). Its ScreenQL text is built as an AST (app/screener/nodes)
@@ -31,6 +31,14 @@ SIGNAL_KEYS: Dict[str, Tuple[str, ...]] = {
     "B13": _COMMON + ("expansion_k", "close_loc", "vol_mult"),
     "B14": _COMMON + ("shock_mult", "range_n", "level_tol_atr", "close_loc", "min_break_atr"),
 }
+# U6 BK2: the intraday screens read the session clock and time-of-day volume instead of the n-bar volume average
+_INTRADAY = ("atr_n", "min_break_atr", "skip_first_min", "tod_window_end", "tod_vol_mult", "tod_sessions", "tod_min_sessions", "tod_mode",
+             "vwap_agree")
+SIGNAL_KEYS.update({
+    "B16": _INTRADAY + ("or_minutes", "intraday_max_per_session"),
+    "B17": _INTRADAY + ("day_level", "first_hour_min", "intraday_max_per_session"),
+    "B18": _INTRADAY + ("leg_degree", "leg_rearm_bars"),
+})
 CONTEXT_KEYS: Tuple[str, ...] = ("dow_min_bars",)   # changes the context filter, not a ScreenQL argument
 CALLS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "B1": ("RangeBreakout", ("range_n", "min_break_atr", "vol_mult", "range_mode")),
@@ -39,10 +47,15 @@ CALLS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "B7": ("NewHighBreakout", ("high_weeks", "vol_mult", "min_break_atr")),
     "B13": ("RangeExpansion", ("expansion_k", "vol_mult")),
     "B14": ("VolumeBreakout", ("shock_mult", "range_n")),
+    "B16": ("ORBreakout", ("or_minutes", "tod_vol_mult", "vwap_agree", "skip_first_min", "min_break_atr")),
+    "B17": ("DayLevelBreak", ("day_level", "tod_vol_mult", "vwap_agree", "skip_first_min", "min_break_atr")),
+    "B18": ("DayExtremeBreak", ("tod_vol_mult", "vwap_agree", "skip_first_min", "min_break_atr")),
 }
 # Columns a result row shows (spec §4): base metrics, breakout distance in ATR, relative volume, HTF agreement, grade.
 RESULT_COLUMNS: Tuple[str, ...] = ("symbol", "side", "grade", "why", "base_len", "base_height_pct", "dist_atr", "rvol", "htf", "event",
                                    "status", "retest", "level", "stop_ref", "time")
+# U6 BK2: the intraday screens add the session VWAP at the signal bar and its exchange-clock time
+INTRADAY_COLUMNS: Tuple[str, ...] = ("vwap", "clock")
 
 
 @dataclass(frozen=True)
@@ -65,11 +78,24 @@ TEMPLATES: Tuple[Template, ...] = (
              note="weekly close above the prior 52-week high; no context filter - a monthly trend needs 40 months of history (BK1-2)"),
     Template("intraday_15m_expansion", "Intraday 15m ATR expansion", "B13", "15m", note="wide-range bar >= 2 ATR with a directional close"),
     Template("intraday_5m_volume", "Intraday 5m volume breakout", "B14", "5m", note="volume shock at the 20-bar high / low"),
+    # U6 BK2 (spec §4 "Intraday ORB"): stop reference = the opening-range midpoint for the "Then" template (spec B16)
+    Template("intraday_5m_orb15", "Intraday ORB: 15-minute opening range on 5m", "B16", "5m", params={"or_minutes": 15, "stop_mode": "midpoint"},
+             note="first close beyond the 09:15-09:30 range, VWAP side, time-of-day volume; stop = range midpoint; context 15m + 1H"),
+    Template("intraday_15m_orb30", "Intraday ORB: 30-minute opening range on 15m", "B16", "15m", params={"or_minutes": 30, "stop_mode": "midpoint"},
+             note="first close beyond the 09:15-09:45 range; stop = range midpoint; context 1H + Daily"),
+    Template("intraday_15m_first_hour", "Intraday first-hour high / low break on 15m", "B17", "15m", params={"day_level": "first_hour", "stop_mode": "base"},
+             note="first close beyond the 09:15-10:15 range; stop = the other side of the first hour"),
+    Template("intraday_5m_prev_day", "Intraday previous-day high / low break on 5m", "B17", "5m", params={"day_level": "prev_day"},
+             note="first close beyond yesterday's high / low after the first 15 minutes"),
+    Template("intraday_5m_day_extreme", "Intraday new high / low of day on 5m", "B18", "5m",
+             note="close beyond the session's high / low so far with time-of-day volume and VWAP agreement, once per leg"),
 )
 BY_ID: Dict[str, Template] = {t.id: t for t in TEMPLATES}
 
 
 def _arg(value: Any) -> n.Node:
+    if isinstance(value, bool):
+        return n.Bool(value)
     if isinstance(value, str):
         return n.Str(value)
     return n.Num(float(value))
@@ -135,8 +161,9 @@ def blocks() -> Dict[str, Any]:
                        "timeframes": list(SCREEN_TIMEFRAMES.get(code, style.STYLES["intraday"] + style.STYLES["swing"]))})
     quality = [d for d in described.values() if d["group"] == "quality"]
     common = [described[k] for k in ("atr_n", "vol_avg_n", "vol_mult", "min_break_atr", "close_loc", "leg_degree", "leg_rearm_bars")]
+    intraday = [d for d in described.values() if d["group"] == "intraday"]
     return {"breakout": family, "quality": {"name": "Breakout quality", "fields": quality, "grades": ["A", "B", "C"]},
-            "common": common, "result_columns": list(RESULT_COLUMNS)}
+            "common": common, "intraday": intraday, "result_columns": list(RESULT_COLUMNS), "intraday_columns": list(INTRADAY_COLUMNS)}
 
 
 def catalog() -> Dict[str, Any]:
@@ -150,5 +177,15 @@ def catalog() -> Dict[str, Any]:
     return {"selector": style.selector(), "blocks": blocks(), "templates": rows, "params": bp.describe()}
 
 
+def _register_taxonomy() -> None:
+    """U9 TX1: every template is filed in the screen taxonomy (app/screener/data/taxonomy.json, OPEN_QUESTIONS TX1-6); the
+    CI guard (taxonomy.coverage_problems) fails on an unfiled one. Hidden while `screener_breakouts` is off."""
+    from app.screener import taxonomy
+    taxonomy.register_source("breakouts", lambda: [f"breakouts.{t.id}" for t in TEMPLATES], flag="screener_breakouts")
+
+
+_register_taxonomy()
+
+
 __all__ = ["TEMPLATES", "BY_ID", "Template", "screenql", "screenql_ast", "screen_call", "blocks", "catalog", "template_params",
-           "SIGNAL_KEYS", "CALLS", "RESULT_COLUMNS"]
+           "SIGNAL_KEYS", "CALLS", "RESULT_COLUMNS", "INTRADAY_COLUMNS"]

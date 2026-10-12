@@ -69,7 +69,7 @@ def _rule_dict(r: AlertRuleRecord) -> Dict[str, Any]:
             "last_bar_at": r.last_bar_at.isoformat() if r.last_bar_at else None, "last_problem": r.last_problem}
 
 
-async def _breakout_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
+async def _breakout_check(session: AsyncSession, user: User, ast: Any, fire_on: str, exchange: Optional[str] = "NSE") -> None:
     """U6 BK1: a rule (instrument condition or saved screen) using a breakout function needs `screener_breakouts` on, and
     fires on bar close only (spec §5) - never intrabar."""
     from app.screener import nodes
@@ -83,6 +83,8 @@ async def _breakout_check(session: AsyncSession, user: User, ast: Any, fire_on: 
         why = breakout_gate.refusal(names)
     elif fire_on == "intrabar":
         why = f"{', '.join(n + '()' for n in names)}: breakout alerts fire on bar close only, not intrabar"
+    else:
+        why = breakout_gate.alert_clock_refusal(tree, exchange)                  # U6 BK2: session functions on NSE's clock only
     if why:
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
@@ -98,7 +100,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
         if not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
-        await _breakout_check(session, user, json.loads(screen.ast_json), body.fire_on)
+        await _breakout_check(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange)
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
@@ -109,7 +111,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail={"message": "the condition did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     if validated.cross_sectional:
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
-    await _breakout_check(session, user, ast, body.fire_on)
+    await _breakout_check(session, user, ast, body.fire_on, body.exchange)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
             "universe_json": None, "exchange": body.exchange}
 

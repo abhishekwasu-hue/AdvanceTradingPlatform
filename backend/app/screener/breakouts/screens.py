@@ -1,4 +1,5 @@
-"""U6 BK1: the price-action breakout screens B1, B2, B4, B7, B13, B14 as causal, bar-by-bar series.
+"""U6 BK1 / BK2: the breakout screens as causal, bar-by-bar series - price action B1, B2, B4, B7, B13, B14 (here) and the
+intraday B16, B17, B18 (intraday.py, on the exchange session of session.py).
 
 Every value at bar j is computed from bars 0..j only (closed bars; the data layer never passes a bar still forming), so a
 screen evaluated on the last bar, a screen alert at bar close and a historical run agree, and appending later bars never
@@ -16,7 +17,7 @@ Each screen gives, per side ("up" = breakout, "down" = breakdown), a frame with:
   base_len, base_high, base_low   the base / reference window before the break
   wick        a wick beyond the level with the close not beyond it (a sweep, not a breakout; B1 / B2 / B4 / B7)
   event       B2: BOS (break with the swing trend), CHOCH (against it) or BREAK (range / no trend read yet); B4: the setup;
-              B7: fresh / extended
+              B7: fresh / extended; B16: OR<minutes>; B17: FIRST_HOUR / PDH / PDL / FIRST_CANDLE / PREMARKET; B18: HOD / LOD
   days_since  B7: calendar days since the old high (low) was set
   through     B14: the close went through the level by the minimum distance
 The down side is the up rule on mirrored prices (high <-> -low), so the two sides cannot drift apart.
@@ -30,6 +31,9 @@ import numpy as np
 import pandas as pd
 
 from app.indicators.volatility import atr as _atr
+from app.screener.breakouts import intraday
+from app.screener.breakouts import session as ses
+from app.screener.breakouts.params import TF_MINUTES
 
 SCREENS: Dict[str, str] = {
     "B1": "Range / consolidation breakout",
@@ -38,9 +42,12 @@ SCREENS: Dict[str, str] = {
     "B7": "52-week / N-week high breakout",
     "B13": "ATR / range expansion",
     "B14": "Volume breakout",
+    **intraday.SCREENS,
 }
-# Timeframes a screen is meant for (spec §3: B7 is a swing screen on Daily / Weekly); the others run on every signal TF.
-SCREEN_TIMEFRAMES: Dict[str, Tuple[str, ...]] = {"B7": ("1d", "1w")}
+# Timeframes a screen is meant for (spec §3: B7 is a swing screen on Daily / Weekly; B16-B18 are intraday-style screens);
+# the others run on every signal TF.
+SCREEN_TIMEFRAMES: Dict[str, Tuple[str, ...]] = {"B7": ("1d", "1w"), **{k: intraday.TIMEFRAMES for k in intraday.SCREENS}}
+INTRADAY_SCREENS: Tuple[str, ...] = tuple(intraday.SCREENS)
 SIDES = ("up", "down")
 # Bars a Dow trend needs before it is read, by swing degree: D0 is the `dow_min_bars` parameter (40, measured - see
 # params.py); D1-D3 keep the swing history (registry SWING_DEGREE_MIN_BARS), not measured for the trend.
@@ -69,12 +76,15 @@ class _Side:
 
 
 class Bars:
-    """Closed bars of one timeframe plus the lazily computed pieces every screen shares (ATR, relative volume, pivots)."""
+    """Closed bars of one timeframe plus the lazily computed pieces every screen shares (ATR, relative volume, pivots;
+    for the intraday screens the session map, session VWAP and relative volume by time of day). `tf` is the bars'
+    timeframe (inferred from the spacing when not given); `calendar` the exchange session (NSE by default)."""
 
-    def __init__(self, f: pd.DataFrame, p: Dict[str, Any]) -> None:
+    def __init__(self, f: pd.DataFrame, p: Dict[str, Any], tf: Optional[str] = None, calendar: Optional[ses.SessionCalendar] = None) -> None:
         if f.empty:
             raise ValueError("no bars")
         self.f, self.p, self.n = f, p, len(f)
+        self.tf, self.calendar = tf, calendar or ses.DEFAULT_CALENDAR
         self.o, self.h, self.l, self.c = (f[k].to_numpy(float) for k in ("open", "high", "low", "close"))
         self.v = f["volume"].to_numpy(float) if "volume" in f.columns else np.full(self.n, np.nan)
         atr = _atr(f[["open", "high", "low", "close"]].astype(float), int(p["atr_n"])).to_numpy(float)
@@ -85,8 +95,61 @@ class Bars:
         with np.errstate(divide="ignore", invalid="ignore"):
             self.rvol = np.where(avg > 0, self.v / avg, np.nan)
         self.vol_avg = avg
+        self.rvol_basis = f"{int(p['vol_avg_n'])}-bar average"          # what `rvol` is relative to (the reasons say it)
+        self.vol_key = "vol_mult"                                       # the parameter the overlay's volume check reads
+        self.intraday = False
         self._pivots: Dict[int, List[Any]] = {}
         self._dow: Dict[int, np.ndarray] = {}
+        self._sm: Optional[ses.SessionMap] = None
+        self._vwap: Optional[np.ndarray] = None
+        self._tod: Optional[np.ndarray] = None
+        self._memo: Dict[Any, Any] = {}
+
+    # ---- intraday (U6 BK2) ----------------------------------------------------------------------------------------------
+    def memo(self, key: Any, build: Any) -> Any:
+        """A per-frame cache for the session levels both sides read (the opening range, the previous day)."""
+        if key not in self._memo:
+            self._memo[key] = build()
+        return self._memo[key]
+
+    def tf_minutes(self) -> float:
+        if self.tf is not None:
+            if self.tf not in TF_MINUTES or TF_MINUTES[self.tf] >= TF_MINUTES["1d"]:
+                raise ValueError(f"the session screens need intraday bars, not {self.tf}")
+            return float(TF_MINUTES[self.tf])
+        idx = self.f.index
+        if not isinstance(idx, pd.DatetimeIndex) or len(idx) < 2:
+            raise ValueError("the session screens need time-stamped intraday bars (give the timeframe)")
+        steps = np.diff(idx.asi8) / 6e10
+        steps = steps[steps > 0]
+        if not len(steps) or steps.min() >= TF_MINUTES["1d"]:
+            raise ValueError("the session screens need intraday bars")
+        return float(steps.min())
+
+    def sessions(self) -> ses.SessionMap:
+        if self._sm is None:
+            self._sm = ses.map_sessions(self.f.index, self.tf_minutes(), self.calendar)
+        return self._sm
+
+    def vwap(self) -> np.ndarray:
+        if self._vwap is None:
+            self._vwap = ses.session_vwap(self.f, self.sessions())
+        return self._vwap
+
+    def tod_rvol(self) -> np.ndarray:
+        if self._tod is None:
+            p = self.p
+            self._tod = ses.time_of_day_rvol(self.f, self.sessions(), int(p["tod_sessions"]), int(p["tod_min_sessions"]), p["tod_mode"])
+        return self._tod
+
+    def use_time_of_day(self) -> None:
+        """The intraday screens grade volume against the same time of day (the plain n-bar average is skewed by the
+        U-shaped intraday volume curve)."""
+        self.rvol = self.tod_rvol()
+        what = "session volume so far" if self.p["tod_mode"] == "cumulative" else "volume"
+        self.rvol_basis = f"same-time average of the last {int(self.p['tod_sessions'])} sessions ({what})"
+        self.vol_key = "tod_vol_mult"
+        self.intraday = True
 
     def side(self, sign: int) -> _Side:
         if sign > 0:
@@ -337,20 +400,23 @@ def _b14(b: Bars, s: _Side, p: Dict[str, Any], out: Dict[str, np.ndarray]) -> No
     out["base_low"][:] = pd.Series(s.l).shift(1).rolling(m, min_periods=m).min().to_numpy(float)
 
 
-_RULES = {"B1": _b1, "B2": _b2, "B4": _b4, "B7": _b7, "B13": _b13, "B14": _b14}
+_RULES = {"B1": _b1, "B2": _b2, "B4": _b4, "B7": _b7, "B13": _b13, "B14": _b14, **intraday.RULES}
 
 
-def one_per_leg(b: Bars, s: _Side, raw: np.ndarray, fail_level: np.ndarray, leg_degree: int, rearm_bars: int) -> np.ndarray:
+def one_per_leg(b: Bars, s: _Side, raw: np.ndarray, fail_level: np.ndarray, leg_degree: int, rearm_bars: int,
+                reset: Optional[np.ndarray] = None) -> np.ndarray:
     """The first raw bar of each leg. After a signal at bar i the side re-arms when (a) a swing AGAINST it (a swing low
     for a breakout) whose extreme is after bar i is confirmed, (b) a close goes back inside the fail level (the break
-    failed), or (c) `rearm_bars` bars pass without a new extreme beyond the highest point since the signal (a new base).
-    Each is known at the bar it happens, so the result is causal."""
+    failed), (c) `rearm_bars` bars pass without a new extreme beyond the highest point since the signal (a new base), or
+    (d) `reset` is True on the bar (B18: a new session). Each is known at the bar it happens, so the result is causal."""
     against = "L" if s.sign > 0 else "H"
     events = sorted((int(pv.confirmed_idx), int(pv.bar_idx)) for pv in b.pivots(leg_degree) if pv.kind == against)
     out = np.zeros(b.n, dtype=bool)
     armed, sig, fail, k = True, -1, np.nan, 0
     peak, peak_bar = -np.inf, -1
     for t in range(b.n):
+        if reset is not None and reset[t]:
+            armed = True
         while k < len(events) and events[k][0] <= t:
             if not armed and events[k][1] > sig:
                 armed = True
@@ -369,17 +435,22 @@ def one_per_leg(b: Bars, s: _Side, raw: np.ndarray, fail_level: np.ndarray, leg_
 
 
 def evaluate_screen(f: pd.DataFrame, screen: str, p: Dict[str, Any], *, bars: Optional[Bars] = None,
-                    sides: Tuple[str, ...] = SIDES) -> Dict[str, pd.DataFrame]:
-    """{side: frame of COLUMNS} for one screen over closed bars `f` (validated parameters `p`)."""
+                    sides: Tuple[str, ...] = SIDES, tf: Optional[str] = None, calendar: Optional[ses.SessionCalendar] = None) -> Dict[str, pd.DataFrame]:
+    """{side: frame of COLUMNS} for one screen over closed bars `f` (validated parameters `p`). `tf` / `calendar` matter
+    to the intraday screens only (the bars' timeframe, inferred when not given; the exchange session, NSE by default)."""
     if screen not in _RULES:
         raise ValueError(f"unknown breakout screen {screen!r}; one of {', '.join(SCREENS)}")
-    b = bars if bars is not None else Bars(f, p)
+    b = bars if bars is not None else Bars(f, p, tf=tf, calendar=calendar)
     result: Dict[str, pd.DataFrame] = {}
     for side in sides:
         s = b.side(1 if side == "up" else -1)
         out = _empty(b.n)
         _RULES[screen](b, s, p, out)
-        out["signal"] = one_per_leg(b, s, out["raw"], out["fail_level"], int(p["leg_degree"]), int(p["leg_rearm_bars"]))
+        if screen in intraday.FIXED_LEVEL:
+            out["signal"] = intraday.session_cap(out["raw"], b.sessions(), int(p["intraday_max_per_session"]))
+        else:
+            reset = b.sessions().first_of_session() if screen in INTRADAY_SCREENS else None
+            out["signal"] = one_per_leg(b, s, out["raw"], out["fail_level"], int(p["leg_degree"]), int(p["leg_rearm_bars"]), reset)
         for key in ("level", "fail_level", "base_high", "base_low"):            # prices back to the real orientation
             out[key] = s.back(out[key])
         if s.sign < 0:
@@ -388,4 +459,4 @@ def evaluate_screen(f: pd.DataFrame, screen: str, p: Dict[str, Any], *, bars: Op
     return result
 
 
-__all__ = ["SCREENS", "SCREEN_TIMEFRAMES", "SIDES", "COLUMNS", "Bars", "evaluate_screen", "one_per_leg"]
+__all__ = ["SCREENS", "SCREEN_TIMEFRAMES", "INTRADAY_SCREENS", "SIDES", "COLUMNS", "Bars", "evaluate_screen", "one_per_leg"]

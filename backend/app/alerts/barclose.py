@@ -29,6 +29,7 @@ is only built from intraday bars that reach the session's last bucket.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time as time_module
@@ -226,7 +227,8 @@ async def _current_universe(session: AsyncSession, rule: AlertRuleRecord, symbol
             daily = data.frames.get("1d") if data is not None and tf != "1d" else None
             if frame is not None and daily is not None:               # U6 BK1: daily context, sessions closed by this bar's close
                 kept["1d"] = closed_only(daily, "1d", bar_close(pd.DatetimeIndex([pd.Timestamp(bar)]), tf)[0])
-            closed = SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno) if data is not None and frame is not None else None
+            closed = (SymbolData(sym, kept, data.sector, data.industry, data.mcap_bucket, data.is_fno, exchange=data.exchange or exchange)
+                      if data is not None and frame is not None else None)
             cache.frames[key(sym)] = (dict(lookback), closed)
     cache.reused_symbols += len(symbols) - len(missing)
     return [d for s in symbols if (d := cache.frames[key(s)][1]) is not None], problems
@@ -282,36 +284,43 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
-        from app.screener.breakouts.gate import flagged_calls
+        from app.screener.breakouts.gate import alert_clock_refusal, flagged_calls
         blocked = flagged_calls(ast)
         if blocked and (not breakouts_enabled or intrabar):
             # U6 BK1: the rule stays active and resumes when the flag is back; breakout rules fire on bar close only
             rule.last_problem = (f"{', '.join(n + '()' for n in blocked)}: the breakout screens are off for this organisation (flag {BREAKOUT_FLAG})"
                                  if not breakouts_enabled else "breakout rules fire on bar close only, not intrabar")
             return "unsupported", 0
+        clock = alert_clock_refusal(ast, rule.exchange) if blocked else None
+        if clock:                                                 # U6 BK2: session functions on the NSE clock only (BK2-5)
+            rule.last_problem = clock
+            return "unsupported", 0
         current, problems = await _current_universe(session, rule, symbols, bar, validated.fetch_lookback, fetch, cache, forming=intrabar,
                                                     per_user=per_user)
+        if current and await staleness.guard_on(session, rule.tenant_id, cache.stale_guard):
+            fresh, stale = _fresh_only(current, rule.base_tf, now, holidays)
+            cache.suppressed_symbols += len(current) - len(fresh)
+            current = fresh
+            if not current:
+                rule.last_problem = f"alerts suppressed: {stale}"   # Z10-b: nothing recorded on stale data; retried later
+                return "suppressed", 0
+        if not current:
+            rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
+            return "waiting", 0
+        frames = {d.symbol: d.frames[rule.base_tf] for d in current}
+        result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
+                      tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar)
+        if result_key in cache.results:
+            cache.reused_results += 1
+        else:
+            # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
+            # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
+            # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.
+            cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
-    if current and await staleness.guard_on(session, rule.tenant_id, cache.stale_guard):
-        fresh, stale = _fresh_only(current, rule.base_tf, now, holidays)
-        cache.suppressed_symbols += len(current) - len(fresh)
-        current = fresh
-        if not current:
-            rule.last_problem = f"alerts suppressed: {stale}"       # Z10-b: nothing recorded on stale data; retried later
-            return "suppressed", 0
-    if not current:
-        rule.last_problem = f"waiting for the {'forming' if intrabar else 'closed'} bar from the broker" + (f" ({'; '.join(list(problems.values())[:2])})" if problems else "")
-        return "waiting", 0
     fired = 0
-    frames = {d.symbol: d.frames[rule.base_tf] for d in current}
-    result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar, tuple(frames),
-                  json.dumps(params, sort_keys=True, default=str), intrabar)
-    if result_key in cache.results:
-        cache.reused_results += 1
-    else:
-        cache.results[result_key] = run_screen(ast, validated, current, base_tf=rule.base_tf, params=params)
     for match in cache.results[result_key]:
         values = _values(frames[match.symbol])
         if intrabar:

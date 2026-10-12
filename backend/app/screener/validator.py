@@ -174,6 +174,20 @@ class _Checker:
         except (TypeError, ValueError, IndexError):
             return max(table)
 
+    def sessions_needed(self, node: Any, spec: Any) -> int:
+        """U6 BK2: whole sessions a function needs - its fixed `min_sessions`, or the `sessions_arg` argument (literal,
+        parameter or default) plus the current session."""
+        if spec.sessions_arg is None:
+            return int(spec.min_sessions)
+        pos = next(i for i, a in enumerate(spec.args) if a.name == spec.sessions_arg)
+        arg = node.args[pos] if pos < len(node.args) else None
+        value: Any = spec.args[pos].default if arg is None else arg.value if isinstance(arg, n.Num) else \
+            self.params.get(arg.name) if isinstance(arg, n.Param) else None
+        try:
+            return max(int(spec.min_sessions), int(value) + 1)
+        except (TypeError, ValueError):
+            return int(spec.min_sessions)
+
     def check(self, node: Any, tf: Optional[str] = None) -> T:  # noqa: C901 - one switch over the node kinds
         tf = tf or self.base_tf
         if isinstance(node, n.Num):
@@ -365,6 +379,17 @@ class _Checker:
         min_bars = spec.min_bars
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))
+        for name in spec.tf_multiple_args:                            # U6 BK2: e.g. a 30-minute range on 15m bars, not on 45m ones
+            pos = next(i for i, a in enumerate(spec.args) if a.name == name)
+            arg = node.args[pos] if pos < len(node.args) else None
+            value = (arg.value if isinstance(arg, n.Num) else self.params.get(arg.name) if isinstance(arg, n.Param)
+                     else spec.args[pos].default if arg is None else None)
+            step = n.TF_MINUTES.get(own_tf, 0)
+            if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < step < n.TF_MINUTES["1d"] and float(value) % step:
+                self.err(f"{node.name}: {name} {value:g} is not a whole number of @{own_tf} bars ({step} minutes each)", arg or node)
+        sessions = self.sessions_needed(node, spec)
+        if sessions and n.TF_MINUTES[own_tf] < n.TF_MINUTES["1d"]:    # whole sessions in this timeframe's bars
+            min_bars = max(min_bars, sessions * math.ceil(n.TF_MINUTES["1d"] / n.TF_MINUTES[own_tf]))
         self._need(own_tf, offset + max(window, 1, min_bars) + spec.extra_bars)
         if spec.fetch_degree_bars:                                    # U6 BK1: fetch more than the refusal needs
             fetch_need = offset + self.degree_bars(node, spec, spec.fetch_degree_bars)

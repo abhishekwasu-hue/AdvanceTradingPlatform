@@ -39,6 +39,10 @@ Refusals are `403` with a machine-readable code and a sentence for the user:
 The cohort grows in stages, `BETA_COHORT_STAGES` = 50, 200, 500. The gate stops at the **effective cap,
 min(stage, `BETA_COHORT_CAP`)**. With the defaults (stage 50, cap 500) sign-up stops after 50 accounts.
 
+**Release note (behaviour change with the gate on):** before Z10-e the gate stopped at `BETA_COHORT_CAP` (500). Now,
+with no stage stored, it stops at min(50, `BETA_COHORT_CAP`). Move the stage up in Admin > Beta rollout (or set
+`BETA_COHORT_STAGE`) to allow more. With `beta_cohort_gate` off (the default) nothing changes.
+
 - The stage is moved in **Admin > Beta rollout** (or `PUT /api/admin/beta/cohort/stage`, SUPER_ADMIN with an
   MFA-verified session). It is stored in `platform_controls` (key `beta_cohort_stage`); no migration.
 - **Up**: one stage at a time (50 -> 200, then 200 -> 500), with a reason of at least 3 characters. Skipping a stage or

@@ -189,7 +189,7 @@ def test_status_flag_is_registered_and_off_by_default():
     status_page.reset_cache()
     rate_limit.reset("public_status")
     r = client.get("/api/status")
-    assert r.status_code == 404
+    assert r.status_code == 404 and r.json() == {"detail": "Not Found"}      # says nothing about a feature
 
 
 FORBIDDEN_KEYS = {"error", "last_error", "latency_ms", "environment", "current", "head", "tenant_id", "user_id", "title",
@@ -427,6 +427,79 @@ def test_redis_unreachable_reads_as_degraded_api(fresh, monkeypatch):
     monkeypatch.setattr(health_routes, "_check_redis", redis_down)
     body = _build(fresh, CLOSED_NOW)
     assert body["components"]["api"]["state"] == "degraded" and "ConnectionError" not in json.dumps(body)
+
+
+def test_hung_database_is_an_outage_within_the_timeout(fresh, monkeypatch):
+    from app.observability import routes as health_routes
+
+    async def hang(session):
+        await asyncio.sleep(30)
+    monkeypatch.setattr(health_routes, "_check_db", hang)
+    monkeypatch.setattr(status_page, "DB_CHECK_TIMEOUT_SECONDS", 0.05)
+    assert _build(fresh, OPEN_NOW)["status"] == "outage"
+
+
+def test_failing_flag_read_is_an_outage_not_a_500(fresh, monkeypatch):
+    async def broken(session, name, tenant_id=None):
+        raise RuntimeError("relation does not exist")
+    monkeypatch.setattr(controls, "flag_enabled", broken)
+    body = _build(fresh, OPEN_NOW)
+    assert body["status"] == "outage" and "relation" not in json.dumps(body)
+
+
+def test_maintenance_message_is_null_while_maintenance_is_off(fresh):
+    async def off_with_message():
+        async with fresh() as session:
+            await controls._set(session, controls.KEY_MAINTENANCE, {"on": False, "message": "old note"}, None)
+            await session.commit()
+    _run(off_with_message())
+    banner = _build(fresh, OPEN_NOW)["banner"]
+    assert banner["maintenance"] is False and banner["maintenance_message"] is None
+
+
+def test_outage_body_is_cached_briefly_and_builds_are_single_flight(monkeypatch):
+    from starlette.responses import Response as StarletteResponse
+
+    calls = []
+
+    async def slow_outage(session, now=None):
+        calls.append(1)
+        await asyncio.sleep(0.05)
+        return status_page._outage(OPEN_NOW)
+    monkeypatch.setattr(status_page, "build", slow_outage)
+    status_page.reset_cache()
+
+    async def burst():
+        responses = [StarletteResponse() for _ in range(5)]
+        bodies = await asyncio.gather(*(status_page.public_status(r, session=None) for r in responses))
+        return responses, bodies
+    responses, bodies = _run(burst())
+    assert len(calls) == 1                                           # five requests, one build
+    assert all(r.status_code == 503 and r.headers["cache-control"] == "public, max-age=5" for r in responses)
+    assert all(b["status"] == "outage" for b in bodies)
+    stored_at, ttl, _ = status_page._cache["body"]
+    assert ttl == status_page.OUTAGE_CACHE_SECONDS
+    status_page._cache["body"] = (stored_at - ttl - 1, ttl, bodies[0])  # expired: the next request builds again
+    _run(burst())
+    assert len(calls) == 2
+    status_page.reset_cache()
+
+
+def test_turning_the_flag_on_or_off_clears_the_cache(admin_headers):
+    status_page._cache["body"] = (status_page.time.monotonic(), 999.0, {"stale": True})
+    r = client.put("/api/admin/controls/flags/public_status_page", headers=admin_headers, json={"on": False})
+    assert r.status_code == 200, r.text
+    assert "body" not in status_page._cache
+
+
+def test_concurrent_first_stage_move_answers_409(admin_headers, stage_reset, monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+
+    async def collide(session, admin, stage, reason):
+        raise IntegrityError("INSERT INTO platform_controls", {}, Exception("UNIQUE constraint failed: platform_controls.key"))
+    monkeypatch.setattr(invites, "set_stage", collide)
+    r = client.put(f"{ADMIN}/cohort/stage", headers=admin_headers, json={"stage": 200, "reason": "race"})
+    assert r.status_code == 409 and "UNIQUE" not in r.text
 
 
 def test_worst_ignores_unknown():

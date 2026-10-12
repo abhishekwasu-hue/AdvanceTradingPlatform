@@ -129,10 +129,13 @@ async def set_stage(session: AsyncSession, admin: User, stage: int, reason: Opti
     """Moves the cohort to `stage` and writes the audit row. Returns (previous stage, new stage). Does not commit.
 
     Up: exactly one stage at a time (50 -> 200 -> 500), with a reason. Down: any lower stage; accounts already created
-    are never touched - sign-up just stops sooner. Setting the current stage again changes nothing and writes nothing."""
+    are never touched - sign-up just stops sooner. Setting the current stage again changes nothing and writes nothing.
+    On Postgres the move takes the cohort advisory lock; two first-ever moves racing on SQLite (or any database without
+    it) can still collide on the new row, which raises IntegrityError - the route answers 409."""
     allowed = stages()
     if stage not in allowed:
         raise StageChangeError(f"stage must be one of {list(allowed)}")
+    await _serialise(session)                       # the same lock as redemptions: no sign-up between read and move
     previous = await current_stage(session)
     if stage == previous:
         return previous, stage

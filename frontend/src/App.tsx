@@ -9,7 +9,7 @@ import PwaBanners from "./pwa/PwaBanners";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
-import { PAGES, PAGE_COMPONENTS, pageFromPath, pathFor } from "./routes";
+import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
 import { legacyCopilotPath } from "./copilot/tabs";
 import type { SystemStatus } from "./types";
 
@@ -211,7 +211,7 @@ function AppShell() {
 
 export default function App() {
   // Z10-e: `/status` is public and stands alone - outside the router, the shell and the sign-in refresh.
-  if (window.location.pathname === "/status") {
+  if (isStatusPath(window.location.pathname)) {
     return (
       <ErrorBoundary title="The status page">
         <Suspense fallback={null}><StatusPage /></Suspense>

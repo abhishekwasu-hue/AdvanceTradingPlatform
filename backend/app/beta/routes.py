@@ -17,6 +17,7 @@ from typing import Dict, List, Literal, Optional
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
@@ -115,9 +116,13 @@ async def set_cohort_stage(body: StageBody, admin: User = Depends(require_role()
     """Z10-e: move the rollout stage. Up one stage at a time with a reason; down to any lower stage. Audited."""
     try:
         await invites.set_stage(session, admin, body.stage, body.reason)
+        await session.commit()
     except invites.StageChangeError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
-    await session.commit()
+    except IntegrityError as exc:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT,
+                            detail="The stage was changed by another request at the same moment. Reload and try again.") from exc
     return await invites.cohort_view(session, gate_on=await flag_enabled(session, "beta_cohort_gate"))
 
 

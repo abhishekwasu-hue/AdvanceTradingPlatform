@@ -1309,8 +1309,9 @@ probes (`/api/system/health/deep`). It reads only the probes above
 and `app/incidents`; it shows no error text, version, host, latency, user or organisation. Incidents scoped to one
 organisation are left out. A platform-wide incident shows as "Incident" (WARNING) or "Major incident" (CRITICAL,
 EMERGENCY), "investigating" (OPEN) or "monitoring" (MITIGATED), and its start time; its title and summary stay in the
-admin console. The answer is cached for 15 seconds and rate-limited to 60 calls per minute per IP. While the database
-does not answer, the endpoint answers 503 with an outage body (the flag cannot be read then).
+admin console. The answer is cached for 15 seconds (an outage answer for 5), built by one request at a time, and rate-limited to 60
+calls per minute per IP; turning the flag on or off clears the cache. With the flag off it answers a plain 404. While
+the database does not answer within 2 seconds, or the flag cannot be read, the endpoint answers 503 with an outage body.
 
 **Every incident.** Open one in Admin > Incidents for anything users notice (that is what puts the banner on
 `/status`), set it to MITIGATED when the fix is in, and resolve it with the root cause. Downtime is measured from the

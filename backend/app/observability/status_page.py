@@ -15,15 +15,18 @@ What it never says: error text, versions, commits, migration revisions, host nam
 anything per tenant or per user (organisation-scoped incidents are left out, and an incident's title, summary and
 cause stay in the admin console), counts of users, positions or orders.
 
-The flag `public_status_page` is off by default: while it is off the endpoint answers 404. When the database does not
-answer the flag cannot be read, so the endpoint answers 503 with an outage body and nothing else - that is the moment a
-status page exists for. The body is computed at most once every `CACHE_SECONDS` per process, and each IP is rate-limited.
+The flag `public_status_page` is off by default: while it is off the endpoint answers a plain 404. When the database
+does not answer within `DB_CHECK_TIMEOUT_SECONDS`, or the flag cannot be read, the endpoint answers 503 with an outage
+body and nothing else - that is the moment a status page exists for. The body is computed at most once every
+`CACHE_SECONDS` (an outage body every `OUTAGE_CACHE_SECONDS`) per process, by one request at a time (the others wait for
+it and read the cache), and each IP is rate-limited. Turning the flag on or off in the admin console clears the cache.
 Nothing here writes, and nothing here touches an order. The owner's server-side check, `deploy/atp.sh health` (Z11,
 docs/deploy/HOSTINGER_RUNBOOK.md section 10), reads the same `/api/system/health/deep` probe; the runbooks are
 docs/OPERATIONS.md 1.9.
 """
 from __future__ import annotations
 
+import asyncio
 import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -39,6 +42,8 @@ from app.db.session import get_session
 
 FLAG = "public_status_page"
 CACHE_SECONDS = 15.0
+OUTAGE_CACHE_SECONDS = 5.0
+DB_CHECK_TIMEOUT_SECONDS = 2.0
 # Alert outbox lag bands. The worker drains the outbox once per cycle (60 s), so a due row may wait about a cycle; three
 # cycles is the same "stale" line the worker heartbeat uses. Fifteen minutes is an outage.
 OUTBOX_LAG_OK_SECONDS = 180
@@ -51,12 +56,30 @@ router = APIRouter(tags=["system"])
 # Module-level so tests can target it through `app.dependency_overrides`.
 status_rate_limit = rate_limit("public_status", limit=60, window_seconds=60)
 
-_cache: Dict[str, Tuple[float, Dict[str, Any]]] = {}
+_cache: Dict[str, Tuple[float, float, Dict[str, Any]]] = {}        # "body" -> (stored at, seconds valid, body)
+_locks: Dict[int, asyncio.Lock] = {}
 
 
 def reset_cache() -> None:
-    """Tests: forget the cached body."""
+    """Forget the cached body (tests; and the admin console when the flag is turned on or off)."""
     _cache.clear()
+
+
+def _cached() -> Optional[Dict[str, Any]]:
+    entry = _cache.get("body")
+    if entry is not None and time.monotonic() - entry[0] < entry[1]:
+        return entry[2]
+    return None
+
+
+def _lock() -> asyncio.Lock:
+    """One build at a time per event loop (single flight: a burst of requests on an expired cache builds once)."""
+    loop_id = id(asyncio.get_running_loop())
+    lock = _locks.get(loop_id)
+    if lock is None:
+        _locks.clear()                                                   # a new loop (tests): drop locks of old ones
+        lock = _locks[loop_id] = asyncio.Lock()
+    return lock
 
 
 def _iso(value: Optional[datetime]) -> Optional[str]:
@@ -148,8 +171,8 @@ async def _banner(session: AsyncSession) -> Dict[str, Any]:
     incidents = [{"impact": "major" if r.severity in ("CRITICAL", "EMERGENCY") else "minor",
                   "state": "monitoring" if r.status == "MITIGATED" else "investigating",
                   "started_at": _iso(r.started_at)} for r in rows]
-    return {"maintenance": bool(controls.get("maintenance_mode")), "maintenance_message": controls.get("maintenance_message"),
-            "incidents": incidents}
+    on = bool(controls.get("maintenance_mode"))
+    return {"maintenance": on, "maintenance_message": (controls.get("maintenance_message") or None) if on else None, "incidents": incidents}
 
 
 def _outage(now: datetime) -> Dict[str, Any]:
@@ -169,9 +192,17 @@ async def build(session: AsyncSession, now: Optional[datetime] = None) -> Option
     from app.platform.controls import flag_enabled
 
     now = now or datetime.now(timezone.utc)
-    if (await _check_db(session))["status"] != "ok":
+    try:
+        db = await asyncio.wait_for(_check_db(session), DB_CHECK_TIMEOUT_SECONDS)
+    except Exception:  # noqa: BLE001 - a hung or failing database is an outage, never a hung or failing status page
         return _outage(now)
-    if not await flag_enabled(session, FLAG):
+    if db["status"] != "ok":
+        return _outage(now)
+    try:
+        enabled = await flag_enabled(session, FLAG)
+    except Exception:  # noqa: BLE001 - the database answered SELECT 1 but not the flag read: still an outage
+        return _outage(now)
+    if not enabled:
         return None
     unknown = {"state": UNKNOWN, "summary": "Not known right now."}
     try:
@@ -203,20 +234,22 @@ async def build(session: AsyncSession, now: Optional[datetime] = None) -> Option
 
 @router.get("/api/status", dependencies=[Depends(status_rate_limit)])
 async def public_status(response: Response, session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    """Unauthenticated, read-only. 404 while the `public_status_page` flag is off; 503 with an outage body when the
-    database does not answer."""
-    cached = _cache.get("body")
-    if cached is not None and time.monotonic() - cached[0] < CACHE_SECONDS:
-        body = cached[1]
-    else:
-        body_or_none = await build(session)
-        if body_or_none is None:
-            _cache.pop("body", None)
-            raise HTTPException(status_code=404, detail="The status page is not enabled.")
-        body = body_or_none
-        if body["components"]["api"]["state"] != OUTAGE:
-            _cache["body"] = (time.monotonic(), body)
-    response.headers["Cache-Control"] = f"public, max-age={int(CACHE_SECONDS)}"
-    if body["components"]["api"]["state"] == OUTAGE:
+    """Unauthenticated, read-only. A plain 404 while the `public_status_page` flag is off; 503 with an outage body when
+    the database does not answer."""
+    body = _cached()
+    if body is None:
+        async with _lock():
+            body = _cached()                                             # filled by the request we waited for
+            if body is None:
+                built = await build(session)
+                if built is None:
+                    _cache.pop("body", None)
+                    raise HTTPException(status_code=404, detail="Not Found")
+                body = built
+                outage = body["components"]["api"]["state"] == OUTAGE
+                _cache["body"] = (time.monotonic(), OUTAGE_CACHE_SECONDS if outage else CACHE_SECONDS, body)
+    outage = body["components"]["api"]["state"] == OUTAGE
+    response.headers["Cache-Control"] = f"public, max-age={int(OUTAGE_CACHE_SECONDS if outage else CACHE_SECONDS)}"
+    if outage:
         response.status_code = 503
     return body

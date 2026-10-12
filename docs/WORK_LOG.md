@@ -1903,3 +1903,9 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: the builder's drawer (progression i18n); "use the legs after" replaces the page's legs.
 - Tests: `tests/test_n2_builder_adjust.py` (5); vitest `src/progression/adjust.test.tsx` (3). Open questions
   N2-22..N2-23.
+### 2026-10-12 IST - N2-8 builder compare (`claude/n2-8`, stacked on `claude/n2-7`)
+- Flag `builder_compare` (off). Up to three strategies (the current legs or saved ones) are compared in the builder
+  drawer, client-side over the existing evaluate: a side-by-side table of the engine's numbers and the expiry curves
+  on one scale. No new route.
+- Tests: `tests/test_n2_builder_compare.py` (2: the flag per organisation through `/api/system/features`; evaluate's
+  numbers on one grid); vitest `src/progression/compare.test.tsx` (3).

@@ -31,7 +31,7 @@ Standing rules for every slice:
 | **N2-5** | §1.5 | **Market context panel** (`claude/n2-5`): one tile each for regime (Dow structure of the NIFTY 50, daily and weekly, from the lake), breadth (advances / declines across NSE cash shares on the last two lake days), India VIX (close, change, 1-year rank and percentile, plus the VIX gate's live reading under its own viewer rule), FII / DII (the existing seam, NA until a source with clear terms is configured), global cues (the shared free cache) and events today / this week. Each tile shows its source, as-of time and stale state, and says NA on its own failure. | `context_panel` | none / `GET /api/context/panel` | ~1.1k |
 | **N2-6** | §2.4 | **Positions board** (`claude/n2-6`): the user's own open positions with P&L in ₹ and R, stop and target status, time in trade, plan vs current stop (a widened stop is highlighted) and how each exits. Exit now stays one click, with no dialog, during a lockout (tested). Greeks stay on the page's existing table; the exit ladder (partial exits) is deferred (OPEN_QUESTIONS N2-21). | `positions_board` | none / `GET /api/positions/board` | ~1.0k |
 | **N2-7** | §3.2 | **Builder adjustments** (`claude/n2-7`): roll a leg (up / down / out), add a hedge, convert a short strangle to an iron condor, close one side. Each shows the changes at model prices, the P&L locked in, the premium today, and the before / after payoff and Greeks. It fills the P1-c drawer. Models only: no order is placed, staged or proposed; "use the legs after" only replaces the page's legs. | `builder_adjustments` | none / `POST /api/options-builder/adjust` | ~1.2k |
-| N2-8 | §3.2 | **Builder compare**: up to three strategies side by side (payoff, PoP, max loss, margin, theta per day, breakevens). Saved strategies when `options_builder_saved` is on. | `builder_compare` | none / none (client-side over `/payoff`) | ~1.2k |
+| **N2-8** | §3.2 | **Builder compare** (`claude/n2-8`): up to three strategies side by side (net premium, max profit / loss, reward : risk, PoP, margin estimate, theta per day, breakevens, expected move) and their expiry curves on one scale. It covers the page's current legs and saved strategies when `options_builder_saved` is on, each evaluated by the engine at the same spot, date and range. | `builder_compare` | none / none (client-side over `/evaluate`) | ~0.6k |
 | N2-9 | §2.1, §2.5 | **Trade workspace**: chart on the left, chain and ticket on the right, positions strip at the bottom. Keyboard shortcuts: ticket, close position, flatten all with confirmation. On a phone, the ticket is a bottom sheet. States: pre-market, closed, lockout (why and until when), stale data. Layouts are saved per viewer (localStorage). Visual regression in dark, light and mobile. | `trade_workspace` | none / none | ~2.2k |
 | N2-10 | §1.6 | **Education pages**: method library (trend -> level -> pullback -> commitment -> R:R) and a glossary. Each concept links to the chart layer that draws it (zones, evidence) and the screens that find it (taxonomy / Legends). Static English content with a compliance scan. | `education_pages` | none / none | ~2.0k |
 | N2-11 | §1.6, §1.3 | **Learn from your journal**: cards that link a Z6 behaviour tag on the user's own losing trades to its lesson (N2-10). The weekly review itself shipped in Z6-b (#172); this slice links it to the lessons. | `journal_lessons` | none / `GET /api/journal/lessons` | ~1.0k |
@@ -288,6 +288,23 @@ N2-22).
 **UI**: the builder's "Adjustments and compare" drawer (`src/progression/AdjustDrawer.tsx`), shown when the flag is on.
 It has the form per kind, the changes, both curves (before dashed, after solid) and the comparison table. Compare up to
 three strategies is N2-8.
+
+## N2-8 Builder compare
+
+**Flag** `builder_compare` (off by default). It reaches the page through `/api/system/features`, per organisation
+(tested). There is no new route: the comparison runs client-side (`src/progression/CompareSection.tsx`,
+`compare.ts`) over the existing `POST /api/options-builder/evaluate`.
+
+- **Slots**: up to three. "Add this strategy" copies the page's current legs; "Add a saved strategy" uses the existing
+  saved-strategy routes (when `options_builder_saved` is on). The same legs cannot be added twice.
+- **Compare**: evaluates every slot at the same spot, as-of date, range (±10 %) and points (121), so all curves share
+  one price grid (tested on the backend).
+- **Table** (all numbers from the engine): net premium, max profit, max loss (or "unbounded"; a calendar says it has
+  no single expiry payoff), reward : risk, PoP, margin estimate ("broker only" when undefined), theta per day,
+  breakevens and expected move.
+- **Chart**: the expiry curves on one y-scale (the near-expiry curve for a calendar), one colour per slot with its
+  chip.
+- Models only: nothing is placed.
 
 ## Open questions
 

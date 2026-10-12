@@ -227,6 +227,7 @@ class TradingWorker:
         self._regime_wanted: set = set()
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
+        self._then_warm_task: Optional["asyncio.Task[None]"] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -277,6 +278,10 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._then_warm_task is not None and not self._then_warm_task.done():
+            self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
+        if self._vision_task is not None and not self._vision_task.done():
+            self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
         if self._intraday_task is not None and not self._intraday_task.done():
             self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
 
@@ -435,6 +440,16 @@ class TradingWorker:
                     logger.exception("Alert rule flush failed")
                     await session.rollback()
                     report.errors.append(f"alert flush: {exc}")
+                # N1 U4 X1 (flag scan_then): scan Then templates - the level gate on each matched symbol's closed bars; a
+                # confirmed setup becomes an execution-core intent (drained below into a notification or a PAPER proposal).
+                self._spawn_then_warm(now)
+                try:
+                    from app.screener.then import runner as scan_then
+                    await scan_then.run_due(session, now)
+                except Exception as exc:  # noqa: BLE001 - a Then template must never stop the alerts or the outbox
+                    logger.exception("Scan Then run failed")
+                    await session.rollback()
+                    report.errors.append(f"scan then: {exc}")
                 # PW5: snoozed proposals whose time is up are announced once more (in-app, push, Telegram) before the
                 # outbox drain, market open or not - a snooze "until 09:00" must ring at 09:00.
                 try:
@@ -1203,6 +1218,24 @@ class TradingWorker:
 
         self._market_zones_task = asyncio.get_running_loop().create_task(run())
         return True
+
+    def _spawn_then_warm(self, now: datetime) -> None:
+        """N1 X1 (review of #214, H1): today's Daily trend contexts for the scan Then symbols, computed in a background task
+        with its own session (a cold fold takes seconds) - never inside the trading cycle, one at a time per worker."""
+        if self._then_warm_task is not None and not self._then_warm_task.done():
+            return
+
+        async def run() -> None:
+            from app.screener.then import runner as scan_then
+            try:
+                await scan_then.warm_due(self.session_factory, now)
+            except Exception:  # noqa: BLE001 - a missing context only means "trend pending"; never reaches trading
+                logger.exception("Scan Then trend warm-up failed")
+
+        try:
+            self._then_warm_task = asyncio.get_running_loop().create_task(run())
+        except RuntimeError:
+            self._then_warm_task = None
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

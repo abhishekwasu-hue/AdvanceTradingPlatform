@@ -195,6 +195,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    "scan_then": "Scan Then (N1 U4 X1): after a scan alert matches, the level gate watches the symbol at its market zones and a confirmed setup is sent as a notification or a PAPER entry proposal (never an order; needs execution_core)",
     # CH5 (docs/design/CHARTING.md): the multi-chart workspace - 1/2/4/6/8 charts, symbol / interval / crosshair link
     # groups, saved layouts per user, keyboard shortcuts, chart types. OFF: /api/charts/layouts answers 503 and the
     # workspace is not offered. Charts only; nothing places an order.
@@ -233,7 +234,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

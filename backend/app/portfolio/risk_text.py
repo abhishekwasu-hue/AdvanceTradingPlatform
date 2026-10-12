@@ -7,6 +7,7 @@ never places one). `ADVICE_WORDS` is checked by the tests on every line built he
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from app.portfolio import caps as C
@@ -15,6 +16,14 @@ from app.portfolio import risk as R
 # Words a line may never contain (SCREENER_SPEC §6 and the Copilot's advice list, plus imperatives about the book).
 ADVICE_WORDS = ("recommend", "advice", "advise", "should", "must", "buy", "sell", "reduce", "cut your", "add more", "hedge now",
                 "guarantee", "best", "safe bet", "target price")
+# Marathi imperatives and advice words (review of #219): "buy", "sell", "reduce", "must / should", "advice", "buy (take)".
+ADVICE_WORDS_MR = ("खरेदी करा", "विका", "विकून", "कमी करा", "पाहिजे", "हवे", "सल्ला", "विकत घ्या", "घ्या", "करावे")
+_ADVICE_EN = re.compile(r"\b(" + "|".join(re.escape(w) for w in ADVICE_WORDS) + r")\b", re.IGNORECASE)
+
+
+def has_advice(line: str) -> bool:
+    """True when a line holds an English advice word (whole words) or a Marathi one (as written)."""
+    return bool(_ADVICE_EN.search(line)) or any(w in line for w in ADVICE_WORDS_MR)
 
 
 def _tr(lang: str, en: str, mr: str) -> str:
@@ -93,16 +102,19 @@ def impact(inputs: C.BookInputs, candidate: C.Candidate) -> Dict[str, Any]:
 
 
 async def proposal_impact(session: Any, user: Any, symbol: str, entry: Any, stop: Any, *, quantity: Any = None,
-                          now: Any = None) -> Optional[Dict[str, Any]]:
+                          now: Any = None, book: Optional[C.BookRead] = None) -> Optional[Dict[str, Any]]:
     """The impact of an entry proposal on its owner's own book (None with `portfolio_risk` off or when it cannot be
-    read - it is information, so a problem never stops the proposal)."""
+    read - it is information, so a problem never stops the proposal). `book`: this request's read of the owner's book
+    (`caps.read_book`), reused; every read runs in a savepoint (the worker's shared session)."""
     from app.platform.controls import flag_enabled
     from app.portfolio import risk_data
     if user is None or not await flag_enabled(session, risk_data.FLAG, user.tenant_id):
         return None
+    book = book if book is not None else await C.read_book(session, user, now)
+    if book.inputs is None:
+        return None
     try:
-        async with session.begin_nested():            # the worker's shared session: a failed read rolls back this savepoint only
-            inputs, candidate = await C.book_inputs(session, user, C.candidate_of(symbol, entry, stop, quantity=quantity), now)
+        inputs, candidate = await C.with_candidate(session, book.inputs, C.candidate_of(symbol, entry, stop, quantity=quantity), now)
     except Exception:  # noqa: BLE001 - no line rather than a wrong one (an unresolvable underlying included)
         return None
     return impact(inputs, candidate)

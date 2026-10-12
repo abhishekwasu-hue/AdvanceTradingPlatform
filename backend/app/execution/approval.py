@@ -205,10 +205,16 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     locked = await proposal_refusal(session, tenant_id, user_id, now)      # Z5 / P1-d: daily loss lockout, entries per day
     if locked:
         raise EntriesPaused(locked)
+    owner_row: Optional[User] = None
+    book = None
     if user_id is not None:                                                  # N1 F2: the owner's portfolio caps (entries only)
-        from app.portfolio import caps
-        refused = await caps.entry_refusals(session, await session.get(User, user_id), caps.candidate_of(
-            signal.symbol, signal.entry, signal.stop_loss, quantity=(ticket or {}).get("max_quantity")), now)
+        from app.platform.controls import flag_enabled
+        from app.portfolio import caps, risk_data
+        owner_row = await session.get(User, user_id)
+        if owner_row is not None and await flag_enabled(session, risk_data.FLAG, tenant_id):
+            book = await caps.read_book(session, owner_row, now)              # one read for the caps and the impact line
+        refused = await caps.entry_refusals(session, owner_row, caps.candidate_of(
+            signal.symbol, signal.entry, signal.stop_loss, quantity=(ticket or {}).get("max_quantity")), now, book=book)
         if refused:
             raise EntriesPaused("; ".join(refused))
     if deployment is not None:
@@ -239,10 +245,10 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     from app.notifications.service import notify
     AI_PROPOSALS.labels(action=ACTION_ENTRY).inc()
     impact_line = ""
-    if user_id is not None:                                                   # N1 F3: the owner's own book after this entry
+    if book is not None:                                                      # N1 F3: the owner's own book after this entry
         from app.portfolio import risk_text
-        impact = await risk_text.proposal_impact(session, await session.get(User, user_id), signal.symbol, signal.entry, signal.stop_loss,
-                                                 quantity=(ticket or {}).get("max_quantity"), now=now)
+        impact = await risk_text.proposal_impact(session, owner_row, signal.symbol, signal.entry, signal.stop_loss,
+                                                 quantity=(ticket or {}).get("max_quantity"), now=now, book=book)
         impact_line = f" {impact['line']}" if impact else ""
     await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"Entry proposal: {direction} {signal.symbol} (PAPER)",
                  message=f"{reason} Nothing is placed until you approve.{impact_line}", severity=NotificationSeverity.WARNING, user_id=user_id,

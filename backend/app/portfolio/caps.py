@@ -136,46 +136,81 @@ async def largest_risk_amount(session: AsyncSession, user: User, capital: float,
     return max(user_cap, org_cap)
 
 
-async def book_inputs(session: AsyncSession, user: User, candidate: Candidate, now: Optional[datetime] = None) -> Tuple[BookInputs, Candidate]:
-    """The user's own open PAPER book, the buckets of its underlyings and the candidate's (a derivative resolved to its
-    underlying - `Unresolved` when it cannot be), the capital basis, the largest risk per trade and the user's limits.
-    Reads only; the caller wraps it in a savepoint (review M1)."""
+async def book_inputs(session: AsyncSession, user: User, now: Optional[datetime] = None) -> BookInputs:
+    """The user's own open PAPER book (contracts under their underlying), the buckets of its underlyings, the capital
+    basis, the largest risk per trade and the user's limits. Reads only; `read_book` runs it in a savepoint."""
     from app.portfolio import risk_data
     from app.risk_engine import by_default
     settings = await by_default.user_settings(session, user, now)
     day = risk_data._today(now)
-    underlying = await risk_data.resolve_underlying(session, candidate.symbol, candidate.underlying)
-    if underlying is None:
-        raise Unresolved(candidate.symbol)
-    candidate = replace(candidate, underlying=underlying)
     positions = R.positions_of(await risk_data.open_book(session, user))
     for p in positions:
         p.underlying = await risk_data.resolve_underlying(session, p.underlying, p.underlying) or p.underlying
-    underlyings = sorted({p.underlying for p in positions} | {candidate.underlying})
-    buckets = {u: await risk_data.bucket_of(session, u, day) for u in underlyings}
+    buckets = {u: await risk_data.bucket_of(session, u, day) for u in sorted({p.underlying for p in positions})}
     capital = await by_default.capital_basis(session, user, now)
     limits = Limits(float(settings.max_sector_pct), float(settings.max_correlated_risk_pct), int(settings.max_open_positions))
-    return BookInputs(positions, buckets, capital, await largest_risk_amount(session, user, capital, settings), limits), candidate
+    return BookInputs(positions, buckets, capital, await largest_risk_amount(session, user, capital, settings), limits)
 
 
-async def entry_refusals(session: AsyncSession, user: Optional[User], candidate: Candidate, now: Optional[datetime] = None) -> List[str]:
-    """The caps' refusals for this user's new PAPER entry ([] with the flags off, no limits set, or no user).
+@dataclass
+class BookRead:
+    """One read of a user's book for one request (review of #219: the caps and the impact line share it)."""
+    inputs: Optional[BookInputs]
+    error: Optional[str] = None
 
-    Review M1: the reads run inside a savepoint. The session is often the worker's shared one; on Postgres a failed
+
+async def read_book(session: AsyncSession, user: User, now: Optional[datetime] = None) -> BookRead:
+    """`book_inputs` in a savepoint (the session is often the worker's shared one: a failed read rolls back only it)."""
+    try:
+        async with session.begin_nested():
+            return BookRead(await book_inputs(session, user, now))
+    except Exception as exc:  # noqa: BLE001 - the caller decides (the caps refuse; the impact line is left out)
+        return BookRead(None, type(exc).__name__)
+
+
+async def with_candidate(session: AsyncSession, inputs: BookInputs, candidate: Candidate, now: Optional[datetime] = None
+                         ) -> Tuple[BookInputs, Candidate]:
+    """The candidate under its underlying (a derivative resolved; `Unresolved` when it cannot be) and the book's buckets
+    with its bucket added. Reads in a savepoint; `inputs` is not changed."""
+    from app.portfolio import risk_data
+    async with session.begin_nested():
+        underlying = await risk_data.resolve_underlying(session, candidate.symbol, candidate.underlying)
+        if underlying is None:
+            raise Unresolved(candidate.symbol)
+        buckets = dict(inputs.buckets)
+        if underlying not in buckets:
+            buckets[underlying] = await risk_data.bucket_of(session, underlying, risk_data._today(now))
+    return replace(inputs, buckets=buckets), replace(candidate, underlying=underlying)
+
+
+async def entry_refusals(session: AsyncSession, user: Optional[User], candidate: Candidate, now: Optional[datetime] = None, *,
+                         book: Optional[BookRead] = None) -> List[str]:
+    """The caps' refusals for this user's new PAPER entry ([] with the flags off, no limits set, or no user). `book`: a
+    read already made for this request (`read_book`), reused instead of reading again.
+
+    Review M1: every read runs inside a savepoint. The session is often the worker's shared one; on Postgres a failed
     statement aborts the whole transaction, so a refusal that swallowed it would leave the rest of the cycle (other
     tenants' exits included) failing. With the savepoint only the caps' own reads roll back."""
     if user is None or not await enabled(session, user.tenant_id):
         return []
     try:
         async with session.begin_nested():
-            if not (await limits_of(session, user, now)).any:
-                return []
-            b, candidate = await book_inputs(session, user, candidate, now)
+            limits = await limits_of(session, user, now)
+    except Exception as exc:  # noqa: BLE001 - an entry: refuse, with the reason
+        return [f"Portfolio caps could not be checked ({type(exc).__name__}) - no new entry"]
+    if not limits.any:
+        return []
+    book = book if book is not None else await read_book(session, user, now)
+    if book.inputs is None:
+        return [f"Portfolio caps could not be checked ({book.error}) - no new entry"]
+    try:
+        inputs, candidate = await with_candidate(session, book.inputs, candidate, now)
     except Unresolved as exc:
         return [f"Portfolio caps: the underlying of {exc} cannot be told, so its bucket cannot be checked - no new entry"]
     except Exception as exc:  # noqa: BLE001 - an entry: refuse, with the reason (the savepoint is rolled back)
         return [f"Portfolio caps could not be checked ({type(exc).__name__}) - no new entry"]
-    return refusals(b.positions, b.buckets, candidate, b.buckets[candidate.underlying], b.limits, b.capital, b.risk_cap_amount)
+    return refusals(inputs.positions, inputs.buckets, candidate, inputs.buckets[candidate.underlying], inputs.limits, inputs.capital,
+                    inputs.risk_cap_amount)
 
 
 def candidate_of(symbol: str, entry: Any, stop: Any, *, underlying: Optional[str] = None, quantity: Any = None) -> Candidate:

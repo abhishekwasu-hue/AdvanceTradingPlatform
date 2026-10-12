@@ -104,6 +104,7 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
     risk_on = user is not None and user.tenant_id == tenant_id and any(r.action == "ENTRY" for r in rows) and await flag_enabled(session, RISK_FLAG, tenant_id)
     portfolio_on = (user is not None and user.tenant_id == tenant_id and any(r.action == "ENTRY" and r.status == "PROPOSED" for r in rows)
                     and await flag_enabled(session, "portfolio_risk", tenant_id))
+    book = None                                            # the caller's own book, read once for every card (review of #219)
     out: List[dict] = []
     for row in rows:
         item = monitor.as_dict(row)
@@ -121,10 +122,13 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
         item["portfolio_impact"] = None
         if portfolio_on and row.action == "ENTRY" and row.status == "PROPOSED" and user is not None \
                 and getattr(row, "owner_user_id", None) in (None, user.id):
-            from app.portfolio import risk_text
+            from app.portfolio import caps, risk_text
+            if book is None:
+                book = await caps.read_book(session, user)
             ev = item["evidence"]
             item["portfolio_impact"] = await risk_text.proposal_impact(session, user, str(ev.get("symbol") or ""), ev.get("proposal_price"),
-                                                                       ev.get("stop_loss"), quantity=(ev.get("ticket") or {}).get("max_quantity"))
+                                                                       ev.get("stop_loss"), quantity=(ev.get("ticket") or {}).get("max_quantity"),
+                                                                       book=book)
         if risk_on and row.action == "ENTRY" and user is not None:
             item["strike_breach"] = item["evidence"].get("strike_breach")
             owner_id = getattr(row, "owner_user_id", None)

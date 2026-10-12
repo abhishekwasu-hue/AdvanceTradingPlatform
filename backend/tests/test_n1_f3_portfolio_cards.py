@@ -27,7 +27,6 @@ from tests.test_z3_approval_entries import _sig
 UTC = timezone.utc
 BACKEND = Path(__file__).resolve().parents[1]
 SAMPLE = BACKEND.parent / "frontend" / "src" / "portfolio" / "riskSample.json"
-ADVICE = re.compile(r"\b(" + "|".join(re.escape(w) for w in T.ADVICE_WORDS) + r")\b", re.IGNORECASE)
 
 
 def _run(coro):
@@ -45,7 +44,7 @@ def _pos(underlying, risk=0.0, gross=0.0, direction=R.BULLISH):
 
 def _no_advice(lines):
     for line in lines:
-        assert not ADVICE.search(line), line
+        assert not T.has_advice(line), line
 
 
 # --- the text (pure) ------------------------------------------------------------------------------------------------------
@@ -62,6 +61,10 @@ def test_telegram_lines_state_numbers_and_limits_never_advice():
     assert lines[4] == "Your limits on new entries: one bucket's exposure 30%, one bucket's open risk 2%, 5 open positions."
     mr = T.telegram_lines(view, "mr", C.Limits(30.0, 2.0, 5))
     assert len(mr) == 5 and any(re.search(r"[ऀ-ॿ]", line) for line in mr)
+    # The check itself catches advice in either language (review of #219: Marathi imperatives too).
+    for bad in ("You should cut this.", "हे शेअर्स विका.", "जोखीम कमी करा.", "आता खरेदी करा.", "तुम्ही थांबले पाहिजे."):
+        assert T.has_advice(bad), bad
+    assert all(w for w in T.ADVICE_WORDS_MR) and not T.has_advice("Open risk at the stops: 2,000 (2% of capital).")
     _no_advice(lines + mr)
     assert T.telegram_lines(R.view([], {}, {}, 100_000.0)) == ["Portfolio (your PAPER book): no open positions."]
     assert len(T.telegram_lines(view, "en", None)) == 4                                     # caps off: no limits line
@@ -163,3 +166,59 @@ def test_the_cards_are_not_an_order_path():
                                                                   "app.ai.proposal_card."))}
     assert "app.portfolio.risk_text.proposal_impact" in mine and "app.telegram_inbound.service._portfolio_lines" in mine
     assert not {n for n in mine if n.startswith(("app.portfolio.", "app.telegram_inbound.service._portfolio"))} & graph.reaching()
+
+
+
+def test_the_org_owner_never_sees_a_member_s_portfolio_impact():
+    """Review of #219: the OWNER lists a member's waiting proposal - the impact is the member's own book, so none."""
+    t = _tenant(_email("owner"), with_credentials=False)
+    _member(_email("owner-member"), t["tenant_id"], "USER")
+    _flag(C.BASE_FLAG, t["tenant_id"])
+
+    async def propose():
+        async with _session_factory() as session:
+            member = await session.scalar(select(User).where(User.tenant_id == t["tenant_id"], User.id != t["user_id"]))
+            row = await approval.propose_entry(session, t["tenant_id"], signal=_sig(symbol="RELIANCE"), strategy_id="f3", source="tradingview",
+                                               idempotency_key=f"f3:{uuid.uuid4().hex}", user_id=member.id)
+            return row.id, row.owner_user_id, member.id
+    action_id, owner_id, member_id = _run(propose())
+    assert owner_id == member_id != t["user_id"]
+    me = client.get("/api/auth/me", headers=t["headers"]).json()
+    assert me["role"] == "OWNER"
+    cards = client.get("/api/ai/actions?status=PROPOSED", headers=t["headers"]).json()
+    card = next(c for c in cards if c["id"] == action_id)
+    assert card["portfolio_impact"] is None
+
+
+def test_the_book_is_read_once_per_request(monkeypatch):
+    """Review of #219: propose_entry reads the owner's book once for the caps and the impact line; the cards read the
+    caller's book once for every proposal listed."""
+    from app.portfolio import risk_data
+    t = _tenant(_email("once"), with_credentials=False)
+    for name in (C.BASE_FLAG, C.FLAG):
+        _flag(name, t["tenant_id"])
+
+    async def limits():
+        async with _session_factory() as session:
+            from app.paper.ticket import save_settings
+            await save_settings(session, await session.get(User, t["user_id"]), {"max_open_positions": 10})
+    _run(limits())
+    reads = []
+    real = risk_data.open_book
+
+    async def counting(session, user):
+        reads.append(user.id)
+        return await real(session, user)
+    monkeypatch.setattr(risk_data, "open_book", counting)
+
+    async def propose():
+        async with _session_factory() as session:
+            row = await approval.propose_entry(session, t["tenant_id"], signal=_sig(symbol="RELIANCE"), strategy_id="f3", source="tradingview",
+                                               idempotency_key=f"f3:{uuid.uuid4().hex}", user_id=t["user_id"])
+            note = await session.scalar(select(NotificationRecord).where(NotificationRecord.ai_action_id == row.id))
+            return note.message
+    assert "Portfolio after this entry" in _run(propose()) and reads == [t["user_id"]]
+    assert "Portfolio after this entry" in _run(propose()) and len(reads) == 2
+    reads.clear()
+    cards = [c for c in client.get("/api/ai/actions?status=PROPOSED", headers=t["headers"]).json() if c.get("portfolio_impact")]
+    assert len(cards) == 2 and reads == [t["user_id"]]

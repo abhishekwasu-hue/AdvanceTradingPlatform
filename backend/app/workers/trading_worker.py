@@ -181,6 +181,13 @@ def _chain_provider(broker: BrokerInterface, cache: Optional[Dict[str, object]] 
     return provider
 
 
+# TX-3 / TX-4: why a deployment opens no new entry when the member who set it up cannot act any more (exits continue).
+DEPLOYMENT_CREATOR_INACTIVE = ("No new entries: the member who set up this deployment is no longer an active member of this organisation. "
+                               "Open positions are still monitored and closed. The owner can re-create the deployment under an active member.")
+DEPLOYMENT_CREATOR_CANNOT_TRADE = ("No new entries: the member who set up this deployment no longer has a trading role or the trading:write "
+                                   "scope. Open positions are still monitored and closed.")
+
+
 class TradingWorker:
     def __init__(
         self, session_factory: async_sessionmaker, *, cycle_seconds: int = WORKER_CYCLE_SECONDS,
@@ -1017,6 +1024,7 @@ class TradingWorker:
         start = self._tenant_cursor.get(tenant_id, 0) % max(1, len(active))
         ordered = active[start:] + active[:start]
         evaluated = 0
+        members: Dict[int, Optional[User]] = {user.id: user}      # per-cycle cache of the deployments' creators
         for dep in ordered:
             if evaluated > 0 and (time.monotonic() - tenant_started) > self.max_seconds_per_tenant:
                 logger.warning(
@@ -1056,15 +1064,32 @@ class TradingWorker:
             no_new_after = intraday_cutoffs(family)[0]
             entries_allowed = no_new_after is None or now_ist.time() < no_new_after
             with bind_log_context(strategy_id=dep.strategy_id, deployment_id=dep.id):
+                dep_user = user
                 try:
+                    # TX-3 / BT1b: a deployment's entries act as the member who set it up (its trades carry their user id),
+                    # not as the organisation's acting user; exits above keep the organisation's acting user (ADR-0004).
+                    try:
+                        resolved, refusal = await self._deployment_user(session, tenant_id, dep, user, members)
+                    except Exception:  # noqa: BLE001 - a failed lookup skips this deployment's entries this cycle
+                        # Never re-attribute (TX-4): acting as the organisation's user would also skip the inactive /
+                        # cannot-trade checks. Nothing is written on a session that just failed; exits already ran.
+                        logger.exception("Deployment %s: creator lookup failed - no new entries this cycle", dep.id)
+                        continue
+                    if resolved is None:
+                        # Entries only: the monitor, square-off and stop guard above already ran for its positions.
+                        if dep.last_error != refusal:
+                            dep.last_error = refusal
+                            await session.commit()
+                        continue
+                    dep_user = resolved
                     executed = await self._evaluate_deployment(
-                        session, dep, user, market_data, adapters, now, entries_allowed,
+                        session, dep, dep_user, market_data, adapters, now, entries_allowed,
                     )
                     report.deployments_evaluated += 1
                     if executed:
                         report.signals_executed += 1
                 except Exception as exc:  # noqa: BLE001 - recorded on the deployment, never fatal
-                    await self._record_failure(session, dep, exc, user.id)
+                    await self._record_failure(session, dep, exc, dep_user.id)
                     report.errors.append(f"deployment {dep.id}: {exc}")
         self._tenant_cursor[tenant_id] = (start + evaluated) % max(1, len(active))
 
@@ -1287,7 +1312,7 @@ class TradingWorker:
 
         # Z3 / BT2: approval-only - the signal becomes an ENTRY proposal; nothing is placed until a person approves.
         if await approval.required(session, dep.tenant_id, dep):
-            return await self._propose_entry(session, dep, signal, signal_ts, now)
+            return await self._propose_entry(session, dep, signal, signal_ts, now, user.id)
 
         contract = None
         rules = ContractRules.from_deployment(dep)
@@ -1341,7 +1366,8 @@ class TradingWorker:
         logger.info("Deployment %s signal %s -> executed=%s order=%s", dep.id, signal.direction.value, result.executed, order.id)
         return result.executed
 
-    async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime) -> bool:
+    async def _propose_entry(self, session: AsyncSession, dep: StrategyDeploymentRecord, signal, signal_ts: datetime, now: datetime,
+                             user_id: int) -> bool:
         """Z3 / BT2: an approval-only deployment's signal -> one ENTRY proposal (PAPER). Returns False: nothing executed.
         Phase 0 proposes the underlying (cash) only: a LIVE deployment places nothing through ATP, and option / future /
         structure deployments are not proposed yet - each says so on the deployment instead."""
@@ -1360,7 +1386,7 @@ class TradingWorker:
             row = await approval.propose_entry(session, dep.tenant_id, signal=signal, strategy_id=dep.strategy_id, source="deployment",
                                                idempotency_key=f"deployment:{dep.id}:{signal_ts.isoformat()}", deployment=dep,
                                                requested_mode=dep.mode, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
-                                               user_id=dep.created_by, now=now, exchange=dep.exchange or "NSE")
+                                               user_id=user_id, now=now, exchange=dep.exchange or "NSE")   # the resolved deployment user
         except approval.EntriesPaused as exc:          # Z3-b: the deployment creator paused their PAPER entries
             dep.last_error = f"Signal at {signal_ts.isoformat()} not proposed: {exc}"
             await session.commit()
@@ -1498,6 +1524,28 @@ class TradingWorker:
         return await session.scalar(
             select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True)).order_by(User.id).limit(1)
         )
+
+    async def _deployment_user(
+        self, session: AsyncSession, tenant_id: int, dep: StrategyDeploymentRecord, fallback: User,
+        cache: Dict[int, Optional[User]],
+    ) -> Tuple[Optional[User], Optional[str]]:
+        """TX-3: (the user a deployment's entries act as, None) or (None, why it opens no new entry).
+
+        * no creator recorded (older rows): the organisation's acting user, as before;
+        * the creator is an active member of this organisation with a trading role and `trading:write`: the creator;
+        * otherwise (removed, deactivated, another organisation's user, demoted to VIEWER or without the scope): no new
+          entries - never re-attributed to someone else (OPEN_QUESTIONS TX-4). Exits are not decided here (ADR-0004)."""
+        creator_id = dep.created_by
+        if creator_id is None:
+            return fallback, None
+        if creator_id not in cache:
+            cache[creator_id] = await session.get(User, creator_id)
+        creator = cache[creator_id]
+        if creator is None or creator.tenant_id != tenant_id or not creator.is_active:
+            return None, DEPLOYMENT_CREATOR_INACTIVE
+        if not approval.can_trade(creator):
+            return None, DEPLOYMENT_CREATOR_CANNOT_TRADE
+        return creator, None
 
     async def _usable_adapter(
         self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: Optional[int], now: datetime, account_label: str = "primary",

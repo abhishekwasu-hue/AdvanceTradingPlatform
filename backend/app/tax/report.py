@@ -84,10 +84,11 @@ STATUTES: Dict[str, Dict[str, Any]] = {
 # A professional referral is a protective line, not advice (#225 review); the 2025 wording is fixed by that review.
 CA_REFERRAL = {"1961": "Verify with a chartered accountant before filing.",
                "2025": "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."}
-# Fix (BT1b) limitation: the trading worker files a deployment's trades under one acting user per organisation, so an
-# automated trade can carry another member's user id (OPEN_QUESTIONS TX-3; fixed on claude/fix-worker-acting-user).
-AUTOMATED_NOTE = ("{count} of these trades came from automated deployments: automated trades are attributed to the deployment's "
-                  "acting user, which may not be the member who set the deployment up (OPEN_QUESTIONS TX-3).")
+# TX-3: since claude/fix-worker-acting-user a deployment's entries are filed under the member who set it up; rows filed
+# before that fix keep the organisation's acting user (no backfill), so the note stays while such trades can appear.
+AUTOMATED_NOTE = ("{count} of these trades came from automated deployments: they are filed under the member who set the "
+                  "deployment up; trades recorded before 12 Oct 2026 may be attributed to the organisation's acting user "
+                  "instead (OPEN_QUESTIONS TX-3).")
 
 
 def statute(fy: str) -> Dict[str, Any]:

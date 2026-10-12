@@ -39,7 +39,7 @@ from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
-from app.market_data import entitlement
+from app.market_data import api_budget, entitlement
 from app.market_data.calendar import load_holidays
 from app.market_data.data_terms import terms_for
 from app.market_data.entitlement import DataTier, Entitlement
@@ -146,6 +146,10 @@ async def sources(user: User = Depends(get_current_user), session: AsyncSession 
 # unless the bring-your-own-broker tier is on), so a member - a VIEWER included - is limited per user.
 candles_rate_limit = user_rate_limit("market_data_candles", limit=120, window_seconds=60)
 chains_rate_limit = user_rate_limit("market_data_chains", limit=30, window_seconds=60)
+# CH5-a review (ADR-0004): a chart polls its last price (every 5 s while it is the active chart, every 20 s otherwise in
+# the multi-chart workspace, one poll per symbol shared by the charts showing it); without a fresh tick each call reads
+# the broker's quote API. Per user, and every broker call also draws from the session's API budget (api_budget).
+ltp_rate_limit = user_rate_limit("market_data_ltp", limit=60, window_seconds=60)
 
 
 @router.post("/candles", dependencies=[Depends(candles_rate_limit)])
@@ -229,7 +233,7 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     return result
 
 
-@router.get("/ltp")
+@router.get("/ltp", dependencies=[Depends(ltp_rate_limit)])
 async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, account_label: str = "primary",
               user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     """Phase AN: the last price of one symbol for a live chart. Tick cache first (the exchange's own
@@ -265,7 +269,16 @@ async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: st
         return {**base, "ltp": float(tick.ltp), "timestamp": tick.best_ts.isoformat(), "age_seconds": round(tick.age_seconds(now), 1),
                 "stale": False, "stale_reason": None, "source": "tick", "bid": None, "ask": None, "volume": None}
     adapter = build_adapter(record)
+    # CH5-a review: every broker call draws a token from this session's API budget first; none within a moment -> 429,
+    # never a queue that grows while the worker's exits need the same API key.
+    budget = api_budget.budget_for(record.tenant_id, record.broker_name, record.account_label)
+
+    async def token() -> None:
+        if not await api_budget.take(budget):
+            raise HTTPException(status_code=429, detail="The broker's rate budget for this session is in use - the price refreshes shortly",
+                                headers={"Retry-After": "5"})
     try:
+        await token()
         quote = await adapter.get_quote_for_symbol(symbol, exchange)
         if quote is not None:
             reason = quote_is_stale(quote.timestamp, now)
@@ -273,6 +286,7 @@ async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: st
             return {**base, "ltp": float(quote.ltp), "timestamp": quote.timestamp.isoformat() if quote.timestamp else None,
                     "age_seconds": round(age, 1) if age is not None else None, "stale": reason is not None, "stale_reason": reason,
                     "source": "quote", "bid": quote.bid, "ask": quote.ask, "volume": quote.volume or None}
+        await token()
         price = await adapter.get_ltp_for_symbol(symbol, exchange)
     except HTTPException:
         raise

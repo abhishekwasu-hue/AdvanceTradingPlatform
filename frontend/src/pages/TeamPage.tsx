@@ -8,6 +8,8 @@ import { PageHeader } from "../components/primitives";
 
 const INVITABLE: TenantRole[] = ["USER", "STRATEGY_CREATOR", "VIEWER"];
 const ASSIGNABLE: TenantRole[] = ["OWNER", "USER", "STRATEGY_CREATOR", "VIEWER"];
+// Z10c-6: the longest algo id the backend saves (`ALGO_ID_MAX_SAVED`: an EXIT tag `<id>-EXIT` within 20 characters).
+const ALGO_ID_MAX_SAVED = 15;
 
 function RoleBadge({ role }: { role: TenantRole }) {
   const cls =
@@ -279,7 +281,8 @@ export default function TeamPage() {
               SEBI's retail algo framework requires every algorithmic order to carry the identifier the exchange
               issued when your broker registered the algo. Enter it here once and every entry, stop-loss and exit
               order this platform places is tagged <code>{(algoId || "ALGOID")}-strategy-leg</code> at the broker;
-              the tag is also stored on each order for reconciliation. Leave blank until registration is done.
+              the tag is also stored on each order for reconciliation. At most {ALGO_ID_MAX_SAVED} characters, so the id fits the
+              broker's tag whole on every leg. Leave blank until registration is done.
             </p>
             <div className="flex flex-wrap items-center gap-2">
               <input className="rounded bg-surface-2 border border-border px-2 py-1.5 text-sm font-mono w-56" placeholder="e.g. NSE1234567" value={algoId} maxLength={32}
@@ -288,6 +291,12 @@ export default function TeamPage() {
                 className="rounded border border-border hover:bg-surface-2 text-fg px-4 py-1.5 text-sm disabled:opacity-50">Save</button>
               <span className="text-xs text-fg-muted">{tenant.algo_id ? `Current: ${tenant.algo_id}` : "Not set - orders are tagged strategy-leg only."}</span>
             </div>
+            {algoId.trim().length > ALGO_ID_MAX_SAVED && (
+              <div className="text-xs text-down" role="alert">
+                {algoId.trim().length} characters - at most {ALGO_ID_MAX_SAVED} fit the broker order tag whole, so Save will be refused.
+                Check the id your broker registered.
+              </div>
+            )}
           </div>
         </Card>
       )}

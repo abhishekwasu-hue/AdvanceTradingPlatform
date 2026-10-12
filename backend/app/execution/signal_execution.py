@@ -86,7 +86,7 @@ async def execute_signal_for_user(
     holding: str = "INTRADAY", order_style: Optional[str] = None, market_protection_pct: Optional[float] = None,
     journal_source: Optional[str] = None,
     origin: str = approval_gate.ORIGIN_AUTOMATIC, approval_action_id: Optional[int] = None,
-    max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None,
+    max_quantity: Optional[float] = None, risk_cap_amount: Optional[float] = None, exchange: Optional[str] = None,
 ) -> Tuple[ExecutionResult, OrderRecord]:
     """The full logged-in execution path a pre-formed `Signal` goes through, regardless of where
     it came from (the platform's own strategy engine via /paper-execute, a TradingView webhook
@@ -104,6 +104,11 @@ async def execute_signal_for_user(
     Z5 / P1-d: `max_quantity` caps the size (a PAPER ticket's checked quantity); `risk_cap_amount` is the user's checked
     cap for this entry (a ticket's, an override included). With the `risk_by_default` flag on, a PAPER entry is sized
     within the user's own cap (that amount, or their settings') as well as the organisation's, strictest wins.
+
+    BK2-8: `exchange` is the caller's venue (the deployment's exchange). For an instrument with no contract and no registry
+    entry it is the order's exchange when it is another session family than NSE (a currency deployment orders on CDS);
+    an NSE / BSE / NFO name keeps the NSE default. The position records the order's exchange, so its exits follow that
+    venue's clock.
     """
     ticket_quantity = max_quantity
     # Phase F3: when the deployment trades a derived contract, the order goes on the contract
@@ -165,6 +170,15 @@ async def execute_signal_for_user(
                 kill_switch_reasons.append(ban)
             elif ban_note:
                 fo_notes.append(ban_note)
+            # N2-2 (flag experience_levels): futures / naked short options open with the user's experience level or a
+            # logged opt-out for the day. New entries only - exits never come here (ADR-0004).
+            from app.paper import experience
+            kill_switch_reasons.extend(await experience.entry_refusals(session, user, experience.contract_gates(contract)))
+        else:
+            # N2-2 review M1: a raw symbol (webhook, public API, console, approval, underlying deployment) is classified
+            # from the instrument master / registry / its shape - a future, an MCX commodity or a sold option is gated too.
+            from app.paper import experience
+            kill_switch_reasons.extend(await experience.symbol_entry_refusals(session, user, signal.symbol, signal.direction))
         if kill_switch_reasons:
             order.reasons_json = json.dumps(kill_switch_reasons)
             order = await transition_order(
@@ -243,7 +257,9 @@ async def execute_signal_for_user(
         pre_notes.extend(guard.notes)
         if contract_spec is None:
             contract_spec = get_contract_spec(signal.symbol)
-        order_exchange = contract.exchange if contract is not None else (contract_spec.exchange if contract_spec else "NSE")
+        from app.trading.position_monitor import venue_beyond_nse   # local: the monitor imports the execution layer
+        order_exchange = contract.exchange if contract is not None else (
+            contract_spec.exchange if contract_spec else (venue_beyond_nse(exchange) or "NSE"))
         refusals, notes = await validate_instrument(
             session, symbol=signal.symbol, exchange=order_exchange, mode=mode,
             broker_name=getattr(broker, "name", None) if broker is not None else None, contract=contract,
@@ -408,10 +424,15 @@ async def execute_signal_for_user(
             ORDER_ENTRY_LATENCY.labels(mode=mode).observe(result.trade.entry_latency_ms / 1000.0)
 
         if result.trade is not None:
+            # BK2-8: the position carries the exchange its order went to (a contract plan names its own), so its exits
+            # follow that venue's session - never the NSE default a row without an exchange used to fall back to.
+            trade_meta = {"exchange": order_exchange, **(plan.meta if plan is not None else {})}
+            if not trade_meta.get("exchange"):
+                trade_meta["exchange"] = order_exchange
             trade_record = await persist_trade(
                 session, user, result.trade, mode=execution_mode.value, broker_order_id=result.broker_order_id,
                 sl_order_id=result.sl_order_id, deployment_id=deployment_id,
-                contract_meta=plan.meta if plan is not None else None, exit_rules=exit_rules, account_id=account_id,
+                contract_meta=trade_meta, exit_rules=exit_rules, account_id=account_id,
                 holding=holding, journal_source=journal_source,
             )
             order.trade_id = trade_record.id

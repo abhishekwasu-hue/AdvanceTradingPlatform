@@ -1,7 +1,7 @@
 """N1 U4 X1: scan_then_templates - a scan alert rule's "Then" template (flag scan_then, off by default).
 
 Revision ID: b9e4c2d7a1f3
-Revises: a7d3e9c1b5f2 (N1 E1 execution_intents)
+Revises: b8d0f2a4c6e9 (CH5-a chart layouts #215, main's head)
 Create Date: 2026-10-12 23:30:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b9e4c2d7a1f3'
-down_revision: Union[str, Sequence[str], None] = 'a7d3e9c1b5f2'
+down_revision: Union[str, Sequence[str], None] = 'b8d0f2a4c6e9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: additive (one new table) - the previous release runs on this schema (code-only rollback ok)

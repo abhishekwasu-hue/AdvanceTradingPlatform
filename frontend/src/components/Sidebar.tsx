@@ -50,6 +50,7 @@ export type Page =
   | "instruments"
   | "positions"
   | "trade"
+  | "learn"
   | "portfolio"
   | "orders"
   | "analytics"

@@ -1,0 +1,114 @@
+/**
+ * N2-10 (P1 spec 1.6): the method library and glossary (namespace `learn`, locale `en`). Education only: no advice, no
+ * performance claims. learn.test.ts checks every value against the same English and Marathi advice lists as the
+ * portfolio risk text (N1 F3), plus a list of performance-claim phrases, and checks that every link points to an
+ * official NSE, SEBI or income-tax (CBDT) site.
+ */
+export const LEARN_EN = {
+  title: "Learn the method",
+  intro: "The method in five steps - trend, level, pullback, commitment, reward to risk - each linked to where ATP draws it, the screens that look for it and the checklist item that records it.",
+  steps: "The five steps",
+  glossary: "Glossary",
+  onChart: "Where ATP draws it",
+  screens: "Screens that look for it",
+  checklist: "Checklist item",
+  mistakes: "What the journal tags when this step is skipped",
+  openScreener: "Open the screener",
+  officialLinks: "Official sources",
+  risk: "Regulator studies found that most individual traders in equity derivatives lost money over the periods they covered. ATP is a tool and an education platform: it does not tell anyone which security to trade, and nothing here is a promise of any result.",
+  concepts: {
+    trend: {
+      title: "1. Trend",
+      summary: "The direction of the market on the higher timeframe, read from its swings.",
+      body: {
+        p1: "An uptrend prints higher highs and higher lows; a downtrend prints lower highs and lower lows. Anything else is a range.",
+        p2: "The method reads the trend on the weekly and daily charts first, then looks for an entry on a lower timeframe in the same direction.",
+        p3: "A trade against the higher-timeframe trend is a different setup with different odds; the journal records which one a trade was.",
+      },
+      onChart: "The price-action layer marks the swing highs and lows (HH, HL, LH, LL) and the trend they give. The market context panel shows the NIFTY 50's daily and weekly read.",
+      checklist: "Trend aligned on the higher timeframe",
+    },
+    level: {
+      title: "2. Level",
+      summary: "A price area where the market turned before: support, resistance, demand and supply zones, the previous day's high and low.",
+      body: {
+        p1: "A level is an area, not a single price. The more often price respected it, and the cleaner the turn, the more traders watch it.",
+        p2: "When a level breaks and price comes back to it from the other side, it can change role: old resistance acting as support is a support / resistance flip.",
+        p3: "A level gives a trade its location: the stop sits beyond it, where the idea is wrong.",
+      },
+      onChart: "Market zones draw demand and supply zones with their state (fresh, tested, flipped). Evidence charts show the level a screen matched.",
+      checklist: "Level identified",
+    },
+    pullback: {
+      title: "3. Pullback",
+      summary: "A move against the trend that comes back to a level.",
+      body: {
+        p1: "In an uptrend a pullback is a dip into support or a demand zone; in a downtrend, a rally into resistance or a supply zone.",
+        p2: "The pullback is the wait: the entry comes after price reaches the level, not before it.",
+        p3: "A pullback that breaks through the level and keeps going is no longer a pullback; the plan's invalidation note says what would show that.",
+      },
+      onChart: "The price-action layer shows the swing the pullback comes from; market zones show the area it comes back to.",
+      checklist: "Pullback confirmed",
+    },
+    commitment: {
+      title: "4. Commitment",
+      summary: "The candle that shows the side in control taking over again at the level.",
+      body: {
+        p1: "At the level, a strong candle in the trend's direction - a wide body closing near its extreme, often on higher volume - shows participation returning.",
+        p2: "It is confirmation, not prediction: it is read after the candle closes.",
+        p3: "Without it the setup is incomplete, and the checklist records that.",
+      },
+      onChart: "Evidence charts mark the candle a pattern or breakout screen read, with the screen's own numbers in the verify strip.",
+      checklist: "Commitment candle",
+    },
+    rr: {
+      title: "5. Reward to risk",
+      summary: "The distance to the target divided by the distance to the stop.",
+      body: {
+        p1: "Risk is fixed first: the stop beyond the level, and the size from your risk cap (the PAPER ticket computes the quantity).",
+        p2: "The target comes from the next opposing level. When it is too close for your minimum reward to risk, the ticket refuses the plan.",
+        p3: "Costs move both numbers: the ticket shows reward to risk after brokerage, taxes and slippage.",
+      },
+      onChart: "The PAPER ticket draws the entry, stop and target and shows reward to risk before and after costs.",
+      checklist: "Reward : risk at or above your minimum",
+    },
+  },
+  tags: {
+    fomo_entry: "Entry chasing beyond the plan's entry",
+    early_exit: "Exit before the target with no invalidation",
+    no_stop: "No stop",
+    moved_stop_against: "Stop moved against the position",
+    revenge_trade: "Entry soon after a loss, at a larger size",
+    averaging_loser: "Adding to a losing position",
+    overtrading: "More trades than your own daily norm",
+    held_through_event: "Held through a scheduled event",
+  },
+  terms: {
+    r_multiple: { term: "R multiple", def: "A trade's result divided by its initial risk (entry to stop). A loss at the stop is -1 R." },
+    expectancy: { term: "Expectancy", def: "The average result per trade over a set of trades, in rupees or in R." },
+    profit_factor: { term: "Profit factor", def: "Gross gains divided by gross losses over a set of trades." },
+    drawdown: { term: "Drawdown", def: "The fall from the highest account value to a later low, as an amount or a percentage." },
+    stop_loss: { term: "Stop loss", def: "The price at which a position is closed because the trade idea is wrong; it caps the loss of the trade." },
+    time_stop: { term: "Time stop", def: "A time of day at which a position is closed whatever the price." },
+    invalidation: { term: "Invalidation", def: "What would show the idea is wrong, written in the plan before the entry." },
+    risk_cap: { term: "Risk cap", def: "The most a single trade may lose at its stop, as a share of capital or an amount; the ticket sizes the quantity from it." },
+    daily_loss_limit: { term: "Daily loss limit", def: "The loss for the day after which new entries stop until the next session; exits still work." },
+    support_resistance: { term: "Support / resistance", def: "Price areas where falls (support) or rises (resistance) stopped before." },
+    demand_supply: { term: "Demand / supply zone", def: "The base a strong move started from: demand below the price, supply above it." },
+    swing: { term: "Swing high / low", def: "A bar whose high (or low) is the extreme of the bars around it; swings define the trend." },
+    breakout: { term: "Breakout", def: "A close beyond a range or a level that held before." },
+    atr: { term: "ATR", def: "Average true range: the average size of a bar's range, gaps included, over a number of bars." },
+    iv: { term: "Implied volatility (IV)", def: "The volatility an option's price implies under a pricing model, as an annual percentage." },
+    pop: { term: "Probability of profit (PoP)", def: "A model's estimate of the chance that a strategy ends above zero at expiry. A model estimate, not a forecast." },
+    expected_move: { term: "Expected move", def: "One standard deviation of the price over a period under a lognormal model: price × volatility × √time." },
+    theta: { term: "Theta", def: "How much an option's value changes as one day passes, other things equal." },
+    delta: { term: "Delta", def: "How much an option's value changes for a one-point move in the underlying." },
+    lot_size: { term: "Lot size", def: "The number of units in one futures or options contract, set by the exchange." },
+    charges: { term: "Charges", def: "Brokerage, STT, exchange and SEBI fees, stamp duty and GST on a trade; ATP's ticket and journal show them." },
+  },
+  links: {
+    sebi: "SEBI investor website",
+    nse: "NSE (contract specifications and circulars)",
+    incomeTax: "Income Tax Department (CBDT)",
+  },
+} as const;

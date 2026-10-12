@@ -1920,3 +1920,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   ticket, market / lockout / stale states and a per-viewer saved layout. No new route.
 - Tests: `tests/test_n2_trade_workspace.py`; vitest `src/progression/workspace.test.tsx` (7). Open questions
   N2-24..N2-25.
+### 2026-10-12 IST - N2-10 education pages (`claude/n2-10`, stacked on `claude/n2-9`)
+- Flag `education_pages` (off). `/learn` holds the method library (five steps, each linked to its chart layer,
+  screener setups, checklist item and journal tags), a glossary (21 terms) and official NSE / SEBI / CBDT links only.
+  It is linked from Coach & Guide.
+- All strings are in the i18n namespace `learn`. The wording check is N1 F3's English + Marathi advice words plus
+  performance-claim phrases.
+- Tests: `src/progression/learn.test.tsx` (6: wording, keys, links, render); `tests/test_n2_education_pages.py` (2:
+  flag, drift against the ticket / journal / taxonomy). Open question N2-26.

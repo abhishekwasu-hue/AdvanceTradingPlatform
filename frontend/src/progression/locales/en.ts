@@ -246,6 +246,8 @@ export const PROGRESSION_EN = {
     unbounded: "unbounded",
     calendar: "two expiries: no single expiry payoff",
   },
+  learnOff: "The method library is not turned on for your organisation.",
+  learnOpen: "Learn the method: trend, level, pullback, commitment, reward to risk",
   workspace: {
     title: "Trade workspace",
     off: "The trade workspace is not turned on for your organisation.",

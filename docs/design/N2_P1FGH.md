@@ -33,7 +33,7 @@ Standing rules for every slice:
 | **N2-7** | §3.2 | **Builder adjustments** (`claude/n2-7`): roll a leg (up / down / out), add a hedge, convert a short strangle to an iron condor, close one side. Each shows the changes at model prices, the P&L locked in, the premium today, and the before / after payoff and Greeks. It fills the P1-c drawer. Models only: no order is placed, staged or proposed; "use the legs after" only replaces the page's legs. | `builder_adjustments` | none / `POST /api/options-builder/adjust` | ~1.2k |
 | **N2-8** | §3.2 | **Builder compare** (`claude/n2-8`): up to three strategies side by side (net premium, max profit / loss, reward : risk, PoP, margin estimate, theta per day, breakevens, expected move) and their expiry curves on one scale. It covers the page's current legs and saved strategies when `options_builder_saved` is on, each evaluated by the engine at the same spot, date and range. | `builder_compare` | none / none (client-side over `/evaluate`) | ~0.6k |
 | **N2-9** | §2.1, §2.5 | **Trade workspace** (`claude/n2-9`): a `/trade` page with the chart on the left, the P1-d PAPER ticket on the right and the positions board below. Keyboard: t ticket, c chart, x exits the focused position, Shift+F flattens all after one confirmation, ? help. On a phone the ticket is a bottom sheet. It shows market, lockout and stale-data states, and keeps the layout per viewer (localStorage, try/catch). It uses existing routes only. | `trade_workspace` | none / none | ~0.8k |
-| N2-10 | §1.6 | **Education pages**: method library (trend -> level -> pullback -> commitment -> R:R) and a glossary. Each concept links to the chart layer that draws it (zones, evidence) and the screens that find it (taxonomy / Legends). Static English content with a compliance scan. | `education_pages` | none / none | ~2.0k |
+| **N2-10** | §1.6 | **Education pages** (`claude/n2-10`): the method library at `/learn` (trend -> level -> pullback -> commitment -> reward to risk). Each step is linked to where ATP draws it (price-action layer, market zones, evidence charts, the ticket), the screener setups that look for it, the P1-d checklist item that records it and the Z6 tags that show it skipped. It has a 21-term glossary and official NSE / SEBI / CBDT links only. Static English content through i18n, with an advice / claim check. | `education_pages` | none / none | ~0.7k |
 | N2-11 | §1.6, §1.3 | **Learn from your journal**: cards that link a Z6 behaviour tag on the user's own losing trades to its lesson (N2-10). The weekly review itself shipped in Z6-b (#172); this slice links it to the lessons. | `journal_lessons` | none / `GET /api/journal/lessons` | ~1.0k |
 
 N2-J (the journal module, `docs/journal/PLAN.md`) runs next to N2. N2-11 reads only the Z6 tables, so the two do not
@@ -338,6 +338,30 @@ status, the P1-d ticket, the positions board, broker candles and Exit now.
 - **Exits** stay one click or one key, never gated. Entries go through the ticket's own checks.
 - **Visual regression:** a Playwright run in dark, light and mobile is left to the e2e job (OPEN_QUESTIONS N2-24).
 
+## N2-10 Education pages
+
+**Flag** `education_pages` (off by default; per organisation, tested). The page is `/learn`
+(`src/pages/LearnPage.tsx`). It is linked from Coach & Guide only while the flag is on; with the flag off the page says
+it is not turned on. **No new route.**
+
+- **Content**: every string is in the i18n namespace `learn` (`src/progression/locales/learn.en.ts`, on the progression
+  i18next instance). English only, like the rest of the dashboard.
+  - The five steps each have a summary, three short paragraphs, where ATP draws them, the screens that look for them,
+    their checklist item and the journal tags that show them skipped.
+  - A 21-term glossary (R multiple, expectancy, drawdown, stop, risk cap, IV, PoP, expected move, Greeks, charges, ...).
+  - A plain risk note: regulator studies found most individual F&O traders lost money; ATP does not say which security
+    to trade.
+- **Wording check** (`src/progression/learn.test.tsx`): every string passes the same advice check as the portfolio risk
+  text (N1 F3 `risk_text.has_advice`). That is the English advice words as whole words (recommend, advice, should,
+  must, buy, sell, reduce, best, guarantee, target price, ...) and the Marathi advice words as written. A
+  performance-claim list is also checked (risk-free, sure-shot, "N % win rate", "never lose", "proven method", ...),
+  and there is no Devanagari (English bundle).
+- **Links**: only `https` to official NSE, SEBI and income-tax (CBDT) hosts (`learn.OFFICIAL_HOSTS`). The test scans
+  every URL written in the education sources and rejects lookalike hosts. External links open with
+  `rel="noopener noreferrer"`.
+- **Drift check** (`tests/test_n2_education_pages.py`): the library's checklist keys, journal tags and screener setup
+  keys exist in the P1-d ticket, the Z6 journal and the screener taxonomy.
+
 ## Open questions
 
-These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-25), each with a provisional default.
+These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-26), each with a provisional default.

@@ -227,6 +227,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # confirmation), a phone bottom-sheet ticket, market / lockout / stale states and a per-viewer saved layout. It uses
     # existing routes only (exits through Exit now, never gated). OFF: the page says it is not turned on.
     "trade_workspace": "Trade workspace: chart, PAPER ticket and positions on one screen with keyboard shortcuts and a saved layout (exits never gated)",
+    # N2-10 (P1 spec 1.6, docs/design/N2_P1FGH.md): the method library (trend, level, pullback, commitment, reward to
+    # risk) and glossary at /learn, each step linked to its chart layer, screens, checklist item and journal tags.
+    # Education only (no advice, no performance claims; official NSE / SEBI / CBDT links only). Static frontend content,
+    # no route. OFF: the page says it is not turned on and Coach & Guide shows no link.
+    "education_pages": "Method library and glossary: trend, level, pullback, commitment, reward to risk (education only, no advice)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -236,7 +241,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "experience_levels",
                                "decision_tools", "context_panel", "positions_board",
                                "builder_adjustments", "builder_compare",
-                               "trade_workspace"})
+                               "trade_workspace", "education_pages"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

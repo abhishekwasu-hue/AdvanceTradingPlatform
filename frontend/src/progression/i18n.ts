@@ -1,6 +1,7 @@
 import { createInstance, type TFunction } from "i18next";
 import { initReactI18next, useTranslation } from "react-i18next";
 import { PROGRESSION_EN } from "./locales/en";
+import { LEARN_EN } from "./locales/learn.en";
 
 /**
  * N2 (P1-f/g/h) interface strings through i18n keys - the Copilot's pattern (copilot/i18n.ts): its own i18next
@@ -11,9 +12,9 @@ export const progressionI18n = createInstance();
 void progressionI18n.use(initReactI18next).init({
   lng: "en",
   fallbackLng: "en",
-  ns: ["progression"],
+  ns: ["progression", "learn"],
   defaultNS: "progression",
-  resources: { en: { progression: PROGRESSION_EN } },
+  resources: { en: { progression: PROGRESSION_EN, learn: LEARN_EN } },
   interpolation: { escapeValue: false },     // React escapes
   returnNull: false,
   initAsync: false,                          // resources are inline: ready synchronously
@@ -26,3 +27,10 @@ export function useProgressionT(): TFunction<"progression"> {
 
 /** Outside React (helpers, tests). */
 export const tProgression: TFunction<"progression"> = progressionI18n.getFixedT("en", "progression");
+
+/** N2-10: the method library and glossary strings (namespace `learn`). */
+export function useLearnT(): TFunction<"learn"> {
+  return useTranslation("learn", { i18n: progressionI18n }).t;
+}
+
+export const tLearn: TFunction<"learn"> = progressionI18n.getFixedT("en", "learn");

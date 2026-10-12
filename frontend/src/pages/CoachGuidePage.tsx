@@ -1,5 +1,8 @@
 import { BookOpen, GraduationCap } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { api } from "../api/client";
+import { useProgressionT } from "../progression/i18n";
+import { pathFor } from "../routes";
 import { useAuth } from "../auth/AuthContext";
 import GuideChat from "../components/GuideChat";
 import TradeCoach from "../components/TradeCoach";
@@ -15,10 +18,15 @@ export default function CoachGuidePage() {
     try { return localStorage.getItem("atp_coach_tab") === "guide" ? "guide" : "coach"; } catch { return "coach"; }
   });
   const choose = (t: "coach" | "guide") => { setTab(t); try { localStorage.setItem("atp_coach_tab", t); } catch { /* storage unavailable */ } };
+  // N2-10: the method library link, while the organisation has education_pages
+  const [learnOn, setLearnOn] = useState(false);
+  const tp = useProgressionT();
+  useEffect(() => { if (user) api.myFeatures().then((f) => setLearnOn(Boolean(f.education_pages))).catch(() => setLearnOn(false)); }, [user]);
   if (!user) return <Card><p className="text-sm text-fg-muted">Log in to see your trade review.</p></Card>;
   return (
     <div className="space-y-4">
       <PageHeader title={<span className="inline-flex items-center gap-2"><GraduationCap size={18} /> Coach & Guide</span>} description="The coach shows patterns in your own trades (rules followed or broken); the guide explains the concepts behind them. Decisions are yours." />
+      {learnOn && <a href={pathFor("learn")} className="inline-block text-sm text-info underline" data-testid="open-learn">{tp("learnOpen")}</a>}
       <div className="flex gap-1 border-b border-border">
         {([["coach", "Trade coach", GraduationCap], ["guide", "Guide", BookOpen]] as const).map(([id, label, Icon]) => (
           <button key={id} onClick={() => choose(id)}

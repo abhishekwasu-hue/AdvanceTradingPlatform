@@ -26,6 +26,8 @@ const loaders: Record<Page, () => Promise<{ default: ComponentType<PageProps> }>
   positions: () => import("./pages/PositionsPage"),
   // N2-9 (flag trade_workspace): reached from the Positions page while the flag is on; not in the sidebar
   trade: () => import("./pages/TradeWorkspacePage"),
+  // N2-10 (flag education_pages): the method library; reached from Coach & Guide while the flag is on
+  learn: () => import("./pages/LearnPage"),
   portfolio: () => import("./pages/PortfolioPage"),
   orders: () => import("./pages/OrdersPage"),
   analytics: () => import("./pages/AnalyticsPage"),

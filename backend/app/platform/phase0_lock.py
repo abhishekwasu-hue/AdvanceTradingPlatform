@@ -1,7 +1,9 @@
 """Z10-c (Phase 0 exit criterion "no API order path reachable"): the PAPER-only lock, feature flag `phase0_paper_only`.
 
-OFF by default, like every flag, and nothing in code, migrations, scripts or deploy tooling turns it on: the owner turns
-it on in *Admin Console -> Feature flags* when installing the beta host (docs/OPERATIONS.md 1.6aj, OPEN_QUESTIONS Z10-3).
+OFF by default, like every flag. The one exception is the explicit Phase 0 deployment mode (`ATP_DEPLOYMENT_PHASE=phase0`,
+set by the Z11 bundle for the Hostinger host): it seeds this flag ON (and `live_trading` OFF) where no entry is stored yet,
+by the owner's decision of 2026-10-12 - the restrictive direction only (app/platform/deployment_phase.py,
+docs/OPERATIONS.md 1.6aj, OPEN_QUESTIONS Z10-3). No other code, migration or script turns it on.
 The tenant allow-list works as for every flag: OFF with tenants listed locks those tenants only.
 
 While it is on, no new LIVE entry is sent anywhere. Two layers:
@@ -11,6 +13,8 @@ While it is on, no new LIVE entry is sent anywhere. Two layers:
    order goes through) refuses an order whose stated intent is ENTRY before it reaches the broker - a REJECTED
    response the router records as a refusal.
 Exits of an existing LIVE position, protective stops, modifies and cancels always pass (ADR-0004). PAPER is untouched.
+On top of the two layers, the trading worker does not evaluate a LIVE deployment while the lock holds for its
+organisation (`WORKER_NOT_EVALUATED`), so no LIVE entry is even built.
 The lock never changes the `live_trading` flag or a plan; it only adds a refusal.
 
 The chokepoint has no database session, so it reads the state the last flag read in this process left behind
@@ -26,6 +30,8 @@ from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest, BrokerOrd
 FLAG = "phase0_paper_only"
 REFUSAL = "phase0_paper_only"
 ENTRY_REASON = "Phase 0 PAPER-only lock (phase0_paper_only) is on: new LIVE entries are refused - exits still run"
+# What a LIVE deployment says while the lock is on: the trading worker does not evaluate it (no LIVE entry path is started).
+WORKER_NOT_EVALUATED = ENTRY_REASON + " (LIVE deployment not evaluated)"
 
 # Last read of the flag in this process: the global switch and the tenant allow-list.
 _state: Dict[str, object] = {"on": False, "tenants": frozenset()}

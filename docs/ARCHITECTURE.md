@@ -2728,10 +2728,15 @@ are skipped: their legs are protected as a group by the monitor.
 
 ### P2: Financial-year tax report (sections 57-61)
 
-`app/tax/report.py` aggregates closed trades of an Indian financial year (1 April to 31 March,
-IST) into the three income heads the Income Tax Act uses: equity intraday (speculative business),
-F&O including MCX (non-speculative business) and crypto/VDA (section 115BBH: 30% on gains, no loss
-set-off, 1% TDS under 194S). F&O turnover is a setting, `TAX_FNO_TURNOVER_METHOD`: `ABS_PNL`
+`app/tax/report.py` aggregates the caller's own closed trades of an Indian financial year (1 April
+to 31 March, IST) into the three income heads the Income Tax Act uses: equity intraday (speculative
+business), F&O including MCX (non-speculative business) and crypto/VDA (30% on gains, no loss
+set-off, 1% TDS). The report reads only the caller's trades (tenant and user): a member never sees
+another member's, and the owner sees only their own (BT1b). The statute it cites follows the year
+(`report.statute`): ss.115BBH / 194S / 44AB of the Income-tax Act 1961 up to FY 2025-26, the
+Income-tax Act 2025 (in force from 1 April 2026) from FY 2026-27, with TDS under s.393(1) and the
+sections not found in an official text marked "to be verified"; each cited section carries its
+incometaxindia.gov.in source, and the CSV lists them. F&O turnover is a setting, `TAX_FNO_TURNOVER_METHOD`: `ABS_PNL`
 (default, absolute profit/loss per trade) or `ABS_PNL_PLUS_PREMIUM` (the older method, which adds
 premium on options sold); the report names the method. STT/CTT/TDS are independent estimates at the
 rates `app.execution.india_costs` holds for each trade's sell date (one table for the platform) for

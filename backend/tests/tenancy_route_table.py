@@ -8,7 +8,8 @@ Classes (the sweep checks each against the route's dependencies and with real re
 - "admin"          SUPER_ADMIN only (a tenant OWNER gets 403);
 - "owner"          the organisation's OWNER (team:manage); a plain member and a VIEWER get 403;
 - "trader"         a write that needs a trading role and scope; a VIEWER and a member denied every scope get 403;
-- "member"         a read by any logged-in member of the organisation;
+- "member"         a read by any logged-in member of the organisation; "member: <why>" names a read that returns only the
+                   caller's own rows (never another member's, BT1b);
 - "self: <why>"    a write any member may make, because it touches only the caller's own data or computes and stores
                    nothing (a VIEWER may do it).
 Every route except "public" refuses an anonymous request, and none lets another organisation read or change this
@@ -41,6 +42,8 @@ P_UNSUBSCRIBE = "public: signed one-click unsubscribe link"
 P_REGIMES = "public: the market regime catalogue"
 P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the sign-up form links them before an account exists"
 P_STATUS_PAGE = "public: the public status page (component states and the incident banner only; rate limited)"
+M_OWN_TAX = ("member: the caller's own closed trades only (tenant and user) - a member never sees another member's trades and "
+             "the organisation owner sees only their own (BT1b; tests/test_tax_report_own.py)")
 S_OWN_LEGAL = "self: records the caller's own acceptance of the legal documents' current versions"
 S_SUPPORT = "self: the support bot answers how-to questions from the docs; no tools, reads no positions or orders (rate limited)"
 S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor settings"
@@ -52,6 +55,7 @@ S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
 S_COPILOT = "self: a Copilot read or research run for the caller: read-only tools, no order, no other member's data changes"
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
+S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
@@ -104,6 +108,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/admin/history-backfill/holidays/remove"): "admin",
     ("GET", "/api/admin/history-backfill/progress"): "admin",
     ("POST", "/api/admin/history-backfill/upload"): "admin",
+    ("GET", "/api/admin/history-intraday/progress"): "admin",
     ("GET", "/api/admin/history-import/progress"): "admin",
     ("GET", "/api/admin/incidents"): "admin",
     ("POST", "/api/admin/incidents"): "admin",
@@ -273,7 +278,13 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("PUT", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("POST", "/api/charts/drawings/{drawing_id}/lock"): S_OWN_DRAWINGS,
+    ("GET", "/api/charts/layouts"): "member",                   # CH5: the caller's own saved workspace layouts
+    ("POST", "/api/charts/layouts"): S_OWN_LAYOUTS,
+    ("PUT", "/api/charts/layouts/{layout_id}"): S_OWN_LAYOUTS,
+    ("DELETE", "/api/charts/layouts/{layout_id}"): S_OWN_LAYOUTS,
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
+    ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
+    ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
     ("GET", "/api/compliance/golive"): "admin",
     ("PUT", "/api/compliance/golive/evidence"): "admin",
     ("GET", "/api/compliance/static-ips"): "member",
@@ -452,6 +463,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/ticket"): "trader",
     ("POST", "/api/paper/ticket/preview"): "trader",
     ("GET", "/api/portfolio/exposure"): "member",
+    ("GET", "/api/portfolio/risk"): "member",               # N1 F1: the caller's own PAPER book only
     ("GET", "/api/positions"): "member",
     ("GET", "/api/positions/greeks"): "member",
     ("POST", "/api/positions/{trade_id}/exit-now"): "trader",
@@ -530,9 +542,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/system/ready"): P_HEALTH,
     ("GET", "/api/system/status"): P_HEALTH,
     ("GET", "/api/system/worker-status"): "member",
-    ("GET", "/api/tax/report"): "member",
-    ("GET", "/api/tax/report.csv"): "member",
-    ("GET", "/api/tax/years"): "member",
+    ("GET", "/api/tax/report"): M_OWN_TAX,
+    ("GET", "/api/tax/report.csv"): M_OWN_TAX,
+    ("GET", "/api/tax/years"): M_OWN_TAX,
     ("GET", "/api/team/invites"): "owner",
     ("POST", "/api/team/invites"): "owner",
     ("DELETE", "/api/team/invites/{invite_id}"): "owner",

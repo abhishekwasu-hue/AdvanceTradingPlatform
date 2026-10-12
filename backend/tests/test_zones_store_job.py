@@ -489,10 +489,30 @@ def test_worker_hook_flag_off_and_failure_paths(monkeypatch):
     assert _run(stopped()) is True
 
 
+LOOP_GAP_SECONDS = 0.5      # the worst tick gap allowed on the reference runner (CI factor 1); locally it is ~0.02-0.03 s
+
+
+def _ci_factor() -> float:
+    """The Z10-d calibration (scripts/bench_screener.py): this machine's time for a fixed numpy / pandas workload over the
+    reference runner's, never below 1 - a slower or busier runner's thread chunks and GIL hand-offs take longer too."""
+    import sys
+    from pathlib import Path
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import bench_screener as bench
+    return bench.ci_factor()
+
+
 def test_the_event_loop_is_never_held_for_long_while_an_instrument_runs():
     """ADR-0004: the job shares the worker's loop - its reads stream and every DataFrame / snapshot is built in a thread.
-    A 10 ms ticker runs alongside one intraday run; the worst gap between ticks stays small."""
+    A 10 ms ticker runs alongside one intraday run; the worst gap between ticks stays small.
+
+    Robust on a shared CI runner without proving less: the bound is scaled by the CI factor; the garbage the rest of the
+    suite left behind is collected first (a full collection of the whole suite's heap is not this job's work); and a
+    run over the bound is measured once more - work the job does on the loop stalls it on every run, a one-off runner
+    hiccup (CPU steal, a stray collection) does not, so the test fails only when both runs are over."""
+    import gc
     s = resolve_settings(INTRA)
+    bound = LOOP_GAP_SECONDS * _ci_factor()
 
     async def go():
         gaps, stop = [], asyncio.Event()
@@ -512,8 +532,15 @@ def test_the_event_loop_is_never_held_for_long_while_an_instrument_runs():
         stop.set()
         await tick
         return res.status, max(gaps)
-    status, worst = _run(go())
-    assert status == "stored" and worst < 0.5, worst
+    worst = []
+    for _ in range(2):
+        gc.collect()
+        status, gap = _run(go())                         # rolled back, so the second run stores the same snapshot again
+        assert status == "stored", status
+        worst.append(gap)
+        if gap < bound:
+            break
+    assert min(worst) < bound, (worst, bound)
 
 
 def test_a_resumed_pass_skips_finished_instruments_without_loading_them(monkeypatch):

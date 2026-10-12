@@ -1829,6 +1829,10 @@ export interface AiAction {
   risk_check?: ProposalRiskCheck | null;
   /** Z5 (flag risk_by_default): each short strike's breach chance, when the proposal carries option legs. */
   strike_breach?: StrikeBreachBlock | null;
+  /** N1 F3 (flag portfolio_risk): the owner's own PAPER book after this entry, taken at its most (server text). */
+  portfolio_impact?: { line: string; bucket: string; bucket_gross_pct: number | null; bucket_risk_pct: number | null;
+    total_risk_pct: number | null; positions: number; entry_risk: number;
+    limits: { max_sector_pct: number; max_correlated_risk_pct: number; max_open_positions: number } } | null;
 }
 
 export interface BrokerTicket {
@@ -1930,7 +1934,10 @@ export interface TaxReport {
   turnover_method: TaxTurnoverMethod; turnover_method_label: string;
   // Statutory rates (percent) on the FY's first day, from the platform's dated charges table; changes inside the FY.
   rates: Record<string, Record<string, number>>; rates_as_of: string; rate_changes: TaxRateChange[];
+  // TX-1: where each of `rates` comes from (same keys); `verify` is non-empty when no official document settles it yet.
+  rate_sources?: Record<string, Record<string, TaxRateSource>>;
 }
+export interface TaxRateSource { url: string; ref: string; date: string; note: string; verify: string }
 export interface FxRate { base: string; quote: string; rate: number; source: string; as_of: string | null }
 
 export interface Incident {

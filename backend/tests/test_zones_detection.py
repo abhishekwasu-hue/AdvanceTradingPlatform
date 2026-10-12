@@ -159,7 +159,9 @@ def test_gap_zone_jumped_through_is_tested_by_gap_not_removed():
     assert [(g["zone_type"], g["zone_low"], g["zone_high"]) for g in gaps] == [("UP_GAP", 101.0, 109.0), ("DOWN_GAP", 96.0, 110.0)]
     rows = {r["zone_type"]: r for r in C.compute_all_zones({"15m": df}, settings=resolve_settings({"sr_min_bars": 1000}))}
     up = rows["UP_GAP"]
-    assert up["state"] == "tested" and up["first_touch"]["event"] == D.GAP_THROUGH
+    assert up["first_touch"]["event"] == D.GAP_THROUGH
+    # Z7a-2 lifecycle: tested by the gap, then two closes below the gap = closed through and held -> flipped (not removed)
+    assert [e["event"] for e in up["tracker"]["events"]] == ["GAP_THROUGH", "FLIP"] and up["state"] == "flipped"
     assert up["first_touch"]["time"] == pd.Timestamp("2026-03-04 09:15") and up["role"] == D.ROLE_RESISTANCE
     assert rows["DOWN_GAP"]["state"] == "fresh"
 

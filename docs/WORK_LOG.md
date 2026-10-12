@@ -1714,6 +1714,20 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Follow-up (coordinator): legal pages, the sign-up/invite consent box and the acceptance banner behind the new flag
   `legal_pages` (default off: 404, sign-up unchanged, bot leaves legal out); turning it on is refused while placeholders
   are open unless `override_open_placeholders` (audited). Z10F-5 updated.
+### 2026-10-11 - Z10-e (G7 + rollout): staged beta cohort, public status page, on-call runbooks
+- Staged rollout: `BETA_COHORT_STAGES` 50 / 200 / 500; the PW6 gate stops at min(stage, `BETA_COHORT_CAP`). The stage is
+  stored in `platform_controls` (`beta_cohort_stage`, no migration), moved in Admin > Beta rollout or
+  `PUT /api/admin/beta/cohort/stage`: up one stage at a time with a reason, down to any lower stage; every move audited
+  (`beta_cohort_stage_raised` / `_lowered`). `BETA_COHORT_STAGE` (default 50) applies until a stage is stored.
+  `GET /api/admin/beta/cohort` adds stage, stages, next stage, env cap, headroom. Gate flag `beta_cohort_gate` still off.
+- Public status: `GET /api/status` (no login, new flag `public_status_page`, off = 404) and the standalone `/status`
+  page: API, trading engine, market data (EOD date, NSE open, Tier A session count), alert outbox lag, maintenance and
+  platform-wide incidents (impact, state, start only). Built from the deep-health probes, BT1 EOD helpers, the fan-in
+  eligibility rule (`fanin.eligible_sessions`, shared with the worker) and `app/incidents`. Cached 15 s, 60/min per IP,
+  503 outage body when the database is down. No tenant data, no internal detail.
+- Runbooks: `docs/OPERATIONS.md` 1.9 (data stale, worker stale, outbox backlog, broker down, rollback, staged rollout),
+  linking the Z11 runbook (PR #186) instead of copying it; `runbook` annotations on the Prometheus rules, with a test that
+  every link resolves. Open questions Z10e-1..Z10e-8.
 ### 2026-10-12 IST - Z10-a review follow-ups (#187)
 - Merged origin/main (9c4c16a).
 - H1: Supertrend / Bollinger `k` and the zone filters' `tolerance_pct` are read once by the runtime, so an expression

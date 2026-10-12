@@ -10,11 +10,13 @@ import LegalAcceptanceBanner from "./legal/LegalAcceptanceBanner";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
-import { PAGES, PAGE_COMPONENTS, pageFromPath, pathFor } from "./routes";
+import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
 import { legacyCopilotPath } from "./copilot/tabs";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
+// Z10-e (G7): the public status page - no login, no shell, its own small chunk.
+const StatusPage = lazy(() => import("./pages/StatusPage"));
 // PW6: loaded on first open. The top bar sits outside every error boundary, so a chunk that fails to load (offline)
 // renders nothing instead of taking the shell down.
 type FeedbackDialogProps = { open: boolean; onOpenChange: (open: boolean) => void; pathname: string; initialText?: string };
@@ -248,6 +250,14 @@ function AppShell() {
 }
 
 export default function App() {
+  // Z10-e: `/status` is public and stands alone - outside the router, the shell and the sign-in refresh.
+  if (isStatusPath(window.location.pathname)) {
+    return (
+      <ErrorBoundary title="The status page">
+        <Suspense fallback={null}><StatusPage /></Suspense>
+      </ErrorBoundary>
+    );
+  }
   // `?chart=SYMBOL` is a chart opened in its own browser tab (a chart's "New tab" button): just the chart, no shell.
   const params = new URLSearchParams(window.location.search);
   return (

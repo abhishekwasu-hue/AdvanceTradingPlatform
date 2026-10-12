@@ -102,3 +102,13 @@ export function railCount(tax: Taxonomy, method: string | null, f: GalleryFilter
 export function chipCount(tax: Taxonomy, setup: string | null, f: GalleryFilter): number {
   return cellCount(tax, f.method, setup);
 }
+
+/** The taxonomy with only the screens `keep` accepts, its matrix and total recomputed (every cell still present). */
+export function keepScreens(tax: Taxonomy, keep: (s: TaxScreen) => boolean): Taxonomy {
+  const screens = tax.screens.filter(keep);
+  if (screens.length === tax.screens.length) return tax;
+  const removed = tax.screens.filter((s) => !keep(s));
+  const matrix = Object.fromEntries(Object.entries(tax.matrix).map(([m, row]) => [m, { ...row }]));
+  for (const s of removed) if (matrix[s.method]?.[s.setup] !== undefined) matrix[s.method][s.setup] = Math.max(0, matrix[s.method][s.setup] - 1);
+  return { ...tax, screens, matrix, total: Math.max(0, tax.total - removed.length) };
+}

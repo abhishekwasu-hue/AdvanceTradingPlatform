@@ -34,7 +34,9 @@ describe("ScreenGallery (U9 TX1)", () => {
 
   it("filters by search", () => {
     const html = render({ query: "EMA" });
-    expect(html.match(/data-screen-id=/g)).toHaveLength(2);
+    const expected = tax.screens.filter((s) => `${s.name} ${s.definition}`.toLowerCase().includes("ema")).length;
+    expect(expected).toBeGreaterThanOrEqual(2);                              // two starters and the Raschke-style card (U7 LG1)
+    expect(html.match(/data-screen-id=/g)).toHaveLength(expected);
   });
 
   it("names each Open button and disables it when the page cannot load the screen", () => {

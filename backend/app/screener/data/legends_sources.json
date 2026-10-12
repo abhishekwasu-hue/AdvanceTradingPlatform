@@ -1,0 +1,96 @@
+{
+ "_comment": "U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md §1 'Source discipline'): the public sources the Legends cards cite. Every line of a card names at least one id here, and app/screener/legends.py refuses a card that cites anything else. Only published, publicly available works (books, papers); no paywalled course material, no private notes, no hearsay. Bibliographic details are first editions as commonly catalogued; 'review' stays 'pending' until the owner (legal review of the card texts before Phase 1, spec §1) has checked each entry against a copy. English only.",
+ "version": "lg1/1",
+ "sources": [
+  {
+   "id": "minervini_2013",
+   "kind": "book",
+   "title": "Trade Like a Stock Market Wizard: How to Achieve Super Performance in Stocks in Any Market",
+   "authors": ["Mark Minervini"],
+   "year": 2013,
+   "publisher": "McGraw-Hill Education",
+   "covers": "The trend template: price and moving-average order (50, 150, 200-day), a rising 200-day average, distance from the 52-week high and low, and a relative-strength ranking.",
+   "review": "pending"
+  },
+  {
+   "id": "darvas_1960",
+   "kind": "book",
+   "title": "How I Made $2,000,000 in the Stock Market",
+   "authors": ["Nicolas Darvas"],
+   "year": 1960,
+   "publisher": "",
+   "covers": "The box theory: rising stocks moving through a series of price boxes, action only when price leaves the top of the latest box, attention to volume, and the author's background as a professional dancer.",
+   "review": "pending"
+  },
+  {
+   "id": "weinstein_1988",
+   "kind": "book",
+   "title": "Stan Weinstein's Secrets for Profiting in Bull and Bear Markets",
+   "authors": ["Stan Weinstein"],
+   "year": 1988,
+   "publisher": "Dow Jones-Irwin",
+   "covers": "Stage analysis on weekly charts: four stages (basing, advancing, top, declining), the 30-week moving average, the stage 2 breakout above resistance with expanding volume, and relative strength.",
+   "review": "pending"
+  },
+  {
+   "id": "faith_2007",
+   "kind": "book",
+   "title": "Way of the Turtle: The Secret Methods that Turned Ordinary People into Legendary Traders",
+   "authors": ["Curtis M. Faith"],
+   "year": 2007,
+   "publisher": "McGraw-Hill",
+   "covers": "The Turtle program run by Richard Dennis and William Eckhardt, and its rules: channel breakouts of 20 days (System 1) and 55 days (System 2), volatility (N, an average true range) for position size and stops, futures markets.",
+   "review": "pending"
+  },
+  {
+   "id": "covel_2007",
+   "kind": "book",
+   "title": "The Complete TurtleTrader: The Legend, the Lessons, the Results",
+   "authors": ["Michael W. Covel"],
+   "year": 2007,
+   "publisher": "Collins",
+   "covers": "The history of the Turtle program (Richard Dennis, William Eckhardt, the traders they trained in the 1980s) and its breakout rules.",
+   "review": "pending"
+  },
+  {
+   "id": "raschke_connors_1995",
+   "kind": "book",
+   "title": "Street Smarts: High Probability Short-Term Trading Strategies",
+   "authors": ["Laurence A. Connors", "Linda Bradford Raschke"],
+   "year": 1995,
+   "publisher": "M. Gordon Publishing Group",
+   "covers": "Short-term setups, including the ADX pullback to the 20-period exponential moving average (14-period ADX above 30 marking a strong trend, entry trigger above the high of the pullback bar).",
+   "review": "pending"
+  },
+  {
+   "id": "crabel_1990",
+   "kind": "book",
+   "title": "Day Trading with Short Term Price Patterns and Opening Range Breakout",
+   "authors": ["Toby Crabel"],
+   "year": 1990,
+   "publisher": "Traders Press",
+   "covers": "Statistical study of short-term price patterns: range contraction (narrow-range days such as NR4 and NR7, inside days) and the opening-range breakout.",
+   "review": "pending"
+  },
+  {
+   "id": "connors_alvarez_2008",
+   "kind": "book",
+   "title": "Short Term Trading Strategies That Work",
+   "authors": ["Larry Connors", "Cesar Alvarez"],
+   "year": 2008,
+   "publisher": "TradingMarkets Publishing Group",
+   "covers": "Short-term pullbacks within long-term uptrends: price above the 200-day moving average and the 2-period RSI at low (oversold) readings, with several thresholds examined.",
+   "review": "pending"
+  },
+  {
+   "id": "williams_1999",
+   "kind": "book",
+   "title": "Long-Term Secrets to Short-Term Trading",
+   "authors": ["Larry Williams"],
+   "year": 1999,
+   "publisher": "John Wiley & Sons",
+   "covers": "Short-term trading and volatility breakouts: a move from the open by a percentage of the previous day's range.",
+   "review": "pending"
+  }
+ ]
+}

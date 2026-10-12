@@ -1074,6 +1074,60 @@ Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
 - EV2: the same chart as a deterministic PNG, sent to the user's own linked Telegram chat.
 - Open questions EV-1 .. EV-10.
 
+## U7 LG1 (prepared): the first eight Legends cards
+
+Source: `docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md` (U7 §1, §2, §5, §6 "LG1"); Phase 0 item Z8, built only once
+Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (default OFF) on top of `screener_v2`.
+
+- **Cards and sources are data.** `backend/app/screener/data/legends.json` holds the cards; `legends_sources.json` the
+  published works they cite (title, authors, first-edition year, publisher, what the work covers, review status). A
+  card is: the person (`legend`, `short`), the title "<Short>-style <descriptive screen>", four lines - who, style,
+  what the screen looks for, timeframe - each with the source ids it rests on, an `approximation` note (what the
+  screen simplifies), and the screen (ScreenQL source, base timeframe, parameters with default, min, max and a note).
+  The fifth line, the source line, is built from the sources file. Nothing about a method is written in code.
+- **The eight.** Minervini-style trend template (momentum), Darvas-style box breakout, Weinstein-style stage 2
+  breakout (weekly), Turtle-style 20-day channel breakout, Raschke-style ADX pullback to the 20 EMA (pullback),
+  Crabel-style NR7 range contraction, Connors-style 2-period RSI pullback (pullback), Williams-style volatility
+  breakout. Graham and Greenblatt, named in the spec's LG1 list, need point-in-time fundamentals the run path does not
+  have; Connors and Williams (spec LG2 list, bars only) take their places (OPEN_QUESTIONS LG1-1).
+- **Lint (`app/screener/legends.py`, refused on load, run in CI).** Every line cites at least one listed source and no
+  source goes uncited; five lines at most; each line and note at most 160 characters on one line (approximation 240);
+  no advice wording (the taxonomy's list: the Copilot's advice / guarantee terms, its specific-call check, and the
+  screener's buy / sell / target / best...); no performance wording (profit, returns, outperform, win rate, millions,
+  proven...); no endorsement or affiliation wording (endorsed, official, approved, partner, sponsored...); no first
+  person and no quotation marks (a card never speaks for a person); no trademarked method name in a title
+  (`TRADEMARK_TERMS`); English only, sources included; the screen compiles with its defaults, every parameter is used
+  and its default lies inside its range. Source titles are cited verbatim and are not linted (LG1-6).
+- **Disclaimer.** The spec's wording is fixed in code (`legends.DISCLAIMER`): the API adds it to every card, naming
+  `legend`, and, for "the people named", as the library header. `legend` must name every person the card names (lint:
+  `people_named` - capitalised names outside the cited titles, and cited authors named by surname). In the gallery a
+  Legends screen is listed only with its card (`withLegendCards`): if `/legends` fails, the Legends screens and their
+  counts leave the gallery rather than show without a disclaimer. Living persons: name and public source only.
+- **Link to the taxonomy.** A card's id is a pre-built screen id (`legends.<name>`) filed in `taxonomy.json` under
+  source and method `legends` with the card's name and its "looks for" line as the definition. `legends.py`
+  registers the source with the flag (`register_source("legends", ..., flag="screener_legends")`), so the TX1 guard
+  fails on an unfiled card, and `link_problems()` fails on a card whose screen is missing, renamed or misfiled, or a
+  filed Legends screen with no card. While the flag is off the taxonomy hides the Legends screens and counts.
+- **API.** `GET /api/screener/legends` -> `{version, header, note, cards}`; a card is `{id, legend, name, lines,
+  source_line, sources, approximation, disclaimer, screen: {id, source, base_tf, params}, filing}`.
+  `GET /api/screener/legends/{id}` -> one card plus the header (404 for an unknown id). Read-only.
+- **Gallery.** With the library loaded, every Legends card in the grid shows its disclaimer and an "About" button; a
+  grid that lists any Legends screen starts with the library header. "About" shows the full card in place of the
+  grid (LegendCard): disclaimer as a note, the five lines as a description list, "An approximation of the published
+  rules" with the note, the ScreenQL source with defaults filled in, the parameter table (caption, column and row
+  headers), the sources; focus moves to the card's heading and "Back to screens" returns. "Open" stays disabled with
+  its reason (LG1-7 / TX1-7): the funnel cannot hold offsets or arithmetic yet.
+- **Tests.** Backend `tests/test_z8_lg1_legends.py`: the library passes lint; 39 broken-library cases (advice,
+  performance, endorsement, first person, quotation, Devanagari, trademark, title form, citations, length, unknown
+  fields, compile errors, missing / unused parameters, out-of-range defaults, source kind / year / authors / covers,
+  uncited source); every screen compiles across its documented range; a positive and a negative bar fixture per
+  screen (`run_screen`); taxonomy link and guard; API flags, shape, disclaimer, 404, taxonomy hiding; the frontend
+  samples (`legendsSample.json`, and `taxonomyLegendsSample.json` - the taxonomy with the flag on) equal the payloads. Frontend: sample contract, LegendCard render and accessibility, gallery integration,
+  Playwright (Legends rail -> header -> About -> focused card -> Back), Storybook stories.
+- **Not in LG1:** fitness sparkline and stats (LG4 / S6), Alert and Show on chart from a card, the method-library page
+  (P1 §1.6), the Turtles "Then" template (ATR sizing, 2N stop), short mirrors (TX2), the remaining catalogue (LG2,
+  LG3), search by style chips beyond the taxonomy's setup chips.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

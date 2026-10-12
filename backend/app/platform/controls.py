@@ -184,14 +184,17 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,
     # ZoneStrength). OFF: the layer answers 503, the functions are hidden and refused, zone alert rules pause.
     "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory, the chart layer and the ScreenQL zone functions (read-only, places no orders)",
+    # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
+    # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
+    # Educational only - never a recommendation, never an endorsement.
+    "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages",
-                               "evidence_charts"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

@@ -10,7 +10,9 @@ from app.db.models import Tenant, TradeRecord, User
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import VALID_ANSWER, _owner
 
-IST_TODAY = datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
+def _ist_today() -> str:
+    """Read at call time, not import time: a run that crosses IST midnight must not use yesterday's date."""
+    return datetime.now(timezone(timedelta(hours=5, minutes=30))).date().isoformat()
 
 
 def _run(coro):
@@ -62,14 +64,14 @@ def test_runtime_context_reflects_the_account_state():
     _seed_closed(me, +400.0, 40)
     for minutes in (30, 20, 10):
         _seed_closed(me, -200.0, minutes, reason="Stop Loss")
-    client.post("/api/risk-guardian/events", headers=headers, json={"event_date": IST_TODAY, "underlying": "INDEX", "kind": "EXPIRY", "action": "SIZE_CUT", "size_cut_pct": 50, "description": "weekly expiry"})
+    client.post("/api/risk-guardian/events", headers=headers, json={"event_date": _ist_today(), "underlying": "INDEX", "kind": "EXPIRY", "action": "SIZE_CUT", "size_cut_pct": 50, "description": "weekly expiry"})
     body = client.get("/api/ai/context?language=mr&regime=RANGING&symbol=NIFTY%2050", headers=headers).json()
     assert body["prompt_version"] == PROMPT_VERSION
     ctx = body["context"]
     assert ctx["risk_profile"] == "conservative" and ctx["user_language"] == "mr" and ctx["market_regime"] == "RANGING"
     assert ctx["allowed_instruments"].startswith("NIFTY 50 (requested); ")
     assert "last 4 closed trades (PAPER): 1 won, 3 lost, net -200, 3 stopped out; the last 3 in a row lost" == ctx["recent_trade_summary"]
-    assert ctx["event_calendar"] == [f"{IST_TODAY} EXPIRY (INDEX): size cut 50.0% - weekly expiry"]
+    assert ctx["event_calendar"] == [f"{_ist_today()} EXPIRY (INDEX): size cut 50.0% - weekly expiry"]
     assert ctx["drawdown_mode"] == "PAPER" and ctx["current_drawdown_pct"] > 0 and ctx["ceiling_risk_per_trade_pct"] == 2.0
     assert ctx["cooldown_minutes"] == 30 and ctx["max_portfolio_risk_pct"] == 6.0
     assert risk_profile_for(1.0) == "moderate" and risk_profile_for(1.5) == "aggressive"

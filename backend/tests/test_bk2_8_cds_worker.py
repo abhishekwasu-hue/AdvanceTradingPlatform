@@ -53,11 +53,11 @@ def _close_what_this_module_opened():
     _run(go())
 
 
-def _cds_deploy(t, *, exchange="CDS", symbol="USDINR", status="ACTIVE") -> int:
+def _cds_deploy(t, *, exchange="CDS", symbol="USDINR", status="ACTIVE", mode="PAPER") -> int:
     async def go():
         async with _session_factory() as session:
             dep = StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id=STRATEGY, symbol=symbol, exchange=exchange, timeframe="1min",
-                                           mode="PAPER", broker_name="upstox", status=status, created_by=t["user_id"])
+                                           mode=mode, broker_name="upstox", status=status, created_by=t["user_id"])
             session.add(dep)
             await session.commit()
             return dep.id
@@ -261,3 +261,91 @@ def test_worker_does_not_read_trades_through_a_stale_session_family(monkeypatch)
         async with _session_factory() as session:
             return await session.scalar(select(TradeRecord.exit_time).where(TradeRecord.id == nse_trade))
     assert _run(open_nse()) is None
+
+
+# --- review LOW-2 / LOW-3: the exit order, the stop and the advisory layer follow the position's own venue ----------------
+
+def _live_legacy(t, dep_id, *, sl_order_id=None) -> int:
+    async def go():
+        async with _session_factory() as session:
+            trade = TradeRecord(tenant_id=t["tenant_id"], user_id=t["user_id"], mode="LIVE", strategy_id=STRATEGY, symbol="USDINR",
+                                exchange=None, deployment_id=dep_id, direction="LONG", entry_price=100.0, quantity=1,
+                                stop_loss=98.0, target1=104.0, target2=108.0, sl_order_id=sl_order_id,
+                                entry_time=datetime(2026, 9, 25, 10, 0, tzinfo=IST))
+            session.add(trade)
+            await session.commit()
+            return trade.id
+    return _run(go())
+
+
+class _StopBook(_FakeBroker):
+    """A stop stays TRIGGER PENDING until cancelled (the base fake fills every order it is given)."""
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.cancelled = set()
+
+    async def cancel_order(self, order_id):
+        self.cancelled.add(order_id)
+        return await super().cancel_order(order_id)
+
+    async def get_order_book(self):
+        book = await super().get_order_book()
+        for o in book:
+            if o.order_type in ("SL-M", "SL"):
+                o.status, o.filled_quantity, o.average_price = ("CANCELLED" if o.order_id in self.cancelled else "TRIGGER PENDING"), 0, None
+        return book
+
+
+def test_a_legacy_live_row_on_a_cds_deployment_exits_with_the_cds_venue_at_the_cds_time(monkeypatch):
+    monkeypatch.setattr("app.execution.router.OrderRouter.fill_poll_delay_seconds", 0)
+    t = _tenant("bk28-live-exit@example.com")
+    dep_id = _cds_deploy(t, mode="LIVE")                         # the tenant's LIVE session is the exit's broker
+    trade_id = _live_legacy(t, dep_id)
+    broker = _StopBook(ltp=100.7)
+    _run(_worker(monkeypatch, broker).run_cycle(now=AT_1516))
+    def market_exits():
+        return [o for o in broker.placed if o.symbol == "USDINR" and o.order_type == "MARKET"]
+    assert _trade(trade_id).exit_time is None and market_exits() == []      # 15:15 is NSE's time, not this position's
+    assert all(o.exchange == "CDS" for o in broker.placed if o.symbol == "USDINR")   # its missing stop re-armed on CDS
+    _run(_worker(monkeypatch, broker).run_cycle(now=AT_1646))
+    exits = market_exits()
+    assert exits and exits[-1].exchange == "CDS" and exits[-1].transaction_type.value == "SELL"   # the venue whose clock closed it
+    row = _trade(trade_id)
+    assert row.exit_time is not None and row.exit_reason == "Intraday square-off"
+
+
+def test_the_stop_guard_rearms_on_the_positions_own_venue_and_clock(monkeypatch):
+    from app.db.models import Tenant
+    from app.trading import stop_guard
+    t = _tenant("bk28-stop-guard@example.com")
+    dep_id = _cds_deploy(t)
+    trade_id = _live_legacy(t, dep_id, sl_order_id="GONE-1")       # the stop is missing from the book
+
+    async def guard(families):
+        broker = _FakeBroker(ltp=100.5)
+        async with _session_factory() as session:
+            tenant = await session.get(Tenant, t["tenant_id"])
+            counts = await stop_guard.verify_protective_stops(session, tenant, broker, families=families)
+        return counts, broker.placed
+    counts, placed = _run(guard({"NSE", "MCX"}))                  # CDS closed: not this position's clock
+    assert counts["checked"] == 0 and placed == []
+    counts, placed = _run(guard({"CDS"}))
+    assert counts["rearmed"] == 1 and placed and placed[-1].exchange == "CDS" and placed[-1].order_type in ("SL-M", "SL")
+    assert _trade(trade_id).sl_order_id != "GONE-1"
+
+
+def test_the_ai_monitor_observes_only_deployments_whose_venue_is_open(monkeypatch):
+    from app.ai import monitor as ai_monitor
+    t = _tenant("bk28-ai-observe@example.com")
+    cds_id = _cds_deploy(t)
+    nse_id = _deploy(t)
+    seen = []
+
+    async def observe(session, tenant_id, deployments, now, regime_lookup=None):
+        seen.append(sorted(d.id for d in deployments if d.tenant_id == t["tenant_id"]))
+        return []
+    monkeypatch.setattr(ai_monitor, "observe", observe)
+    _run(_worker(monkeypatch, _FakeBroker(ltp=100.5)).run_cycle(now=AT_1600))
+    assert seen and seen[-1] == [cds_id]                        # NSE closed: its deployment is not observed at 16:00
+    _run(_worker(monkeypatch, _FakeBroker(ltp=100.5)).run_cycle(now=OPEN_NOW))
+    assert seen[-1] == sorted([cds_id, nse_id])

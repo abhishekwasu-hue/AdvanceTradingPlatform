@@ -948,7 +948,7 @@ class TradingWorker:
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
             try:
-                report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user.id)
+                report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user.id, families=open_families)
             except Exception as exc:  # noqa: BLE001 - advisory safety net; never stops the cycle
                 logger.warning("Tenant %s: stop guard failed: %s", tenant_id, exc)
         tenant_started = time.monotonic()
@@ -1038,7 +1038,10 @@ class TradingWorker:
             open_dep_ids = set(await session.scalars(select(TradeRecord.deployment_id).where(
                 TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.deployment_id.is_not(None))))
             self._regime_wanted = open_dep_ids
-            proposals = await ai_monitor.observe(session, tenant_id, deployments, now, regime_lookup=lambda d: self._regimes.get(d.id))
+            # BK2-8 review LOW-3: only deployments whose own venue is trading now (no CDS "exit?" question at 20:00 because
+            # MCX is open). Advisory only - the monitor and square-off above already judged every open position.
+            observed = [d for d in deployments if session_family(d.exchange) in open_families]
+            proposals = await ai_monitor.observe(session, tenant_id, observed, now, regime_lookup=lambda d: self._regimes.get(d.id))
             if proposals:
                 created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
                 report.ai_proposals += len(created)
@@ -1506,7 +1509,7 @@ class TradingWorker:
         await session.commit()
 
     async def _guard_stops(self, session: AsyncSession, tenant: Tenant, accounts: List, adapters: Dict[str, BrokerInterface],
-                           user_id: int) -> int:
+                           user_id: int, families: Optional[set] = None) -> int:
         """Phase P1 per account (Phase T): one session holds one order book, so each account's open
         LIVE trades are checked against its own; trades recorded before accounts were tracked go
         with the default account of their broker. An account without a usable session this cycle
@@ -1517,7 +1520,7 @@ class TradingWorker:
             if adapter is None:
                 continue
             guard = await verify_protective_stops(session, tenant, adapter, user_id=user_id, account_id=account.id,
-                                                  include_unassigned=bool(account.is_default) or len(accounts) == 1)
+                                                  include_unassigned=bool(account.is_default) or len(accounts) == 1, families=families)
             rearmed += guard["rearmed"]
         return rearmed
 

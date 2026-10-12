@@ -112,6 +112,16 @@ def venue_beyond_nse(exchange: Optional[str]) -> Optional[str]:
     return None
 
 
+async def venue_for(session: AsyncSession, trade) -> str:
+    """`trade_venue` for one trade, reading its deployment's exchange only when it is needed (a legacy row without an
+    exchange and not in the registry). Every exit path uses it - the clock, the exit order, the stop and its tick - so a
+    legacy CDS row is closed with the CDS venue at the CDS time (BK2-8 review LOW-2)."""
+    if trade.exchange or get_contract_spec(trade.symbol) is not None or trade.deployment_id is None:
+        return trade_venue(trade)
+    dep_exchange = await session.scalar(select(StrategyDeploymentRecord.exchange).where(StrategyDeploymentRecord.id == trade.deployment_id))
+    return trade_venue(trade, dep_exchange)
+
+
 async def deployment_exchanges(session: AsyncSession, trades) -> Dict[int, str]:
     """{deployment id: exchange} for the trades whose venue falls back to their deployment (one query)."""
     ids = {t.deployment_id for t in trades if not t.exchange and t.deployment_id is not None and get_contract_spec(t.symbol) is None}
@@ -238,14 +248,14 @@ def _partial_aware() -> bool:
 
 async def _square_off_live(
     trade: TradeRecord, broker: BrokerInterface, reason: str, reference_price: float, outcome: CloseOutcome,
-    algo_id: Optional[str] = None, stop_dead: bool = False,
+    algo_id: Optional[str] = None, stop_dead: bool = False, exchange: Optional[str] = None,
 ) -> Optional[float]:
     """Places whatever the broker needs to flatten this position and returns the realised exit
     price, or None when the position could not be flattened (the trade must then stay open).
 
     `stop_dead` (G-LIVE, LIVE_EXIT_IF_NO_STOP): the caller has just seen the stop missing / rejected and the broker
     clearly refuse a new one - there is no stop to cancel, so the exit must not wait on a cancel."""
-    exchange = exchange_for_trade(trade)
+    exchange = exchange or exchange_for_trade(trade)       # the caller passes venue_for(): the trade's session venue
     exit_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
     stop_after: Optional[BrokerOrderStatus] = None
     cancelled_stop = False
@@ -371,6 +381,7 @@ async def close_position(
         realised = await _square_off_live(
             trade, broker, reason, exit_price, outcome,
             algo_id=order_algo_id(tenant.algo_id if tenant is not None else None, broker.name), stop_dead=stop_dead,
+            exchange=await venue_for(session, trade),
         )
         if outcome.broker_exit_order_id:
             await audit_order(session, trade.tenant_id, user_id, leg="EXIT", broker_name=broker.name, symbol=trade.symbol,
@@ -518,7 +529,7 @@ async def _monitor_group(
     prices: Dict[int, float] = {}
     for leg in legs:
         try:
-            prices[leg.id] = await price_lookup(leg.symbol, exchange_for_trade(leg))
+            prices[leg.id] = await price_lookup(leg.symbol, await venue_for(session, leg))
             _mark(leg, prices[leg.id])
         except Exception as exc:  # noqa: BLE001 - no decision on a group with a missing leg price
             logger.warning("No price for leg %s of group %s: %s", leg.symbol, leg.leg_group_id, exc)
@@ -585,8 +596,9 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
                 # P0.5 / T2: a stop placed as SL (limit) moves its limit with the trigger; SL-M has no limit. The exchange
                 # takes only whole ticks: the trigger moves to the tick farther from the market.
                 stop_side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
-                trigger = round_stop_trigger(update.stop_loss, stop_side, symbol=trade.symbol, exchange=exchange_for_trade(trade))
-                if trigger == round_stop_trigger(old_stop, stop_side, symbol=trade.symbol, exchange=exchange_for_trade(trade)):
+                venue = await venue_for(session, trade)
+                trigger = round_stop_trigger(update.stop_loss, stop_side, symbol=trade.symbol, exchange=venue)
+                if trigger == round_stop_trigger(old_stop, stop_side, symbol=trade.symbol, exchange=venue):
                     raise _SameTrigger()           # on the tick it has not moved: a no-op modify some brokers reject
                 stop_type, stop_limit = live_broker.stop_order_params(trade.symbol, stop_side, trigger,
                                                                       is_option=(trade.instrument_kind or "UNDERLYING") == "OPTION")

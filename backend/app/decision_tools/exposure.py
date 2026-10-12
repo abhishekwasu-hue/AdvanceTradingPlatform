@@ -23,6 +23,14 @@ from app.decision_tools.whatif import underlying_of
 
 MIN_POINTS = 20
 MOVE_TOGETHER = 0.7
+MAX_COMPUTED = 40          # review (DoS): beta and pairs for at most this many underlyings, largest risk first
+
+
+def computed_names(rows: Mapping[str, Mapping[str, Any]], limit: Optional[int] = None) -> List[str]:
+    """The underlyings that get market data, beta and correlations: the `limit` with the largest risk at the stops (then
+    notional, then name). The pair work grows with the square of this number, so it is capped."""
+    ranked = sorted(rows.values(), key=lambda r: (-float(r["risk_at_stop"]), -float(r["notional"]), r["underlying"]))
+    return [r["underlying"] for r in ranked[:MAX_COMPUTED if limit is None else limit]]
 
 
 def book(trades: Sequence[TradeRecord]) -> Dict[str, Dict[str, Any]]:
@@ -64,7 +72,10 @@ def correlations(returns: Mapping[str, Mapping[Any, float]], *, min_points: int 
 
 def assemble(rows: Dict[str, Dict[str, Any]], sectors: Mapping[str, str], returns: Mapping[str, Mapping[Any, float]],
              market: Optional[Mapping[Any, float]], *, days: int) -> Dict[str, Any]:
-    """The exposure view from the book, the sectors and the daily returns (market = the NIFTY 50's)."""
+    """The exposure view from the book, the sectors and the daily returns (market = the NIFTY 50's). Only the names in
+    `returns` (at most MAX_COMPUTED, `computed_names`) get beta and pairs; the rest are listed as not computed."""
+    if len(returns) > MAX_COMPUTED:
+        raise ValueError(f"at most {MAX_COMPUTED} underlyings get beta and correlations")
     underlyings = []
     for name in sorted(rows):
         row = dict(rows[name])
@@ -76,6 +87,7 @@ def assemble(rows: Dict[str, Dict[str, Any]], sectors: Mapping[str, str], return
             b = stats.beta(xa, xm) if len(xa) >= MIN_POINTS else None
         row["beta"] = None if b is None else round(b, 3)
         row["return_days"] = len(mine)
+        row["computed"] = name in returns
         underlyings.append(row)
     by_sector: Dict[str, Dict[str, Any]] = {}
     for row in underlyings:
@@ -90,6 +102,7 @@ def assemble(rows: Dict[str, Dict[str, Any]], sectors: Mapping[str, str], return
         "underlyings": underlyings, "sectors": sorted(by_sector.values(), key=lambda s: (-s["risk_at_stop"], s["sector"])),
         "pairs": pairs, "move_together": [p for p in pairs if p["r"] is not None and abs(p["r"]) >= MOVE_TOGETHER],
         "move_together_threshold": MOVE_TOGETHER, "min_points": MIN_POINTS, "lookback_days": days,
+        "not_computed": sorted(n for n in rows if n not in returns), "max_computed": MAX_COMPUTED,
         "totals": {"underlyings": len(underlyings), "legs": sum(r["legs"] for r in underlyings), "risk_at_stop": total_risk,
                    "notional": round(sum(r["notional"] for r in underlyings), 2)},
         "market": "NIFTY 50", "market_days": len(market or {}),

@@ -15,6 +15,7 @@ Every position read is the caller's own (tenant + user). Nothing here places, ch
 from typing import Annotated, Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -114,9 +115,12 @@ async def exposure_view(days: int = Query(default=90, ge=LOOKBACK_DAYS[0], le=LO
     trades = list(await session.scalars(select(TradeRecord).where(
         TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.exit_time.is_(None)).order_by(TradeRecord.id)))
     rows = exposure.book(trades)
-    returns = {name: stats.log_returns(await market.daily_closes(session, name, days=days)) for name in rows}
+    # Review (DoS): lake reads and the pair maths for at most MAX_COMPUTED underlyings (largest risk first); the pure
+    # maths runs in the thread pool, off the event loop.
+    returns = {name: stats.log_returns(await market.daily_closes(session, name, days=days)) for name in exposure.computed_names(rows)}
     nifty = stats.log_returns(await market.daily_closes(session, market.MARKET, days=days))
-    return exposure.assemble(rows, await market.sectors(session, rows), returns, nifty, days=days)
+    sectors = await market.sectors(session, rows)
+    return await run_in_threadpool(exposure.assemble, rows, sectors, returns, nifty, days=days)
 
 
 @router.get("/expected-move")

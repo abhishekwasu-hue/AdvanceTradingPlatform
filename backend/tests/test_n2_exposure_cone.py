@@ -206,3 +206,40 @@ def test_expected_move_cone_from_hv_or_a_typed_iv():
     few = f"FEW{tag}"
     _seed(f"NSE:{few}", _base(5), 10.0)
     assert client.get(f"/api/decision/expected-move?instrument={few}", headers=t["headers"]).status_code == 422
+
+
+
+# --- review: the pair work is capped -------------------------------------------------------------------------------
+
+def test_beta_and_pairs_are_capped_to_the_largest_risks(monkeypatch):
+    trades = [_T(i, f"S{i:03d}", "UNDERLYING", "LONG", 1, 100.0, 100.0 - (i % 50) - 1) for i in range(60)]
+    rows = exposure.book(trades)
+    names = exposure.computed_names(rows)
+    assert len(names) == exposure.MAX_COMPUTED
+    risk = {n: rows[n]["risk_at_stop"] for n in rows}
+    assert min(risk[n] for n in names) >= max(risk[n] for n in rows if n not in names)
+    base = {date(2026, 1, 1) + timedelta(days=i): r for i, r in enumerate(_base(30))}
+    view = exposure.assemble(rows, {}, {n: base for n in names}, base, days=90)
+    assert len(view["pairs"]) == exposure.MAX_COMPUTED * (exposure.MAX_COMPUTED - 1) // 2
+    assert len(view["not_computed"]) == 20 and all(not u["computed"] for u in view["underlyings"] if u["underlying"] in view["not_computed"])
+    assert len(view["underlyings"]) == 60                                  # every position is still listed
+    with pytest.raises(ValueError):
+        exposure.assemble(rows, {}, {n: base for n in rows}, base, days=90)
+
+
+def test_exposure_route_reads_the_lake_only_for_the_capped_names(monkeypatch):
+    t = _tenant(_email("cap"))
+    _flag(t["tenant_id"])
+    monkeypatch.setattr(exposure, "MAX_COMPUTED", 2)
+    for i, stop in enumerate((90.0, 95.0, 99.0)):
+        _open(t, f"CAP{i}{uuid.uuid4().hex[:4].upper()}", "UNDERLYING", "LONG", 1, 100.0, stop)
+    read = []
+    original = market.daily_closes
+
+    async def counting(session, name, **kw):
+        read.append(name)
+        return await original(session, name, **kw)
+    monkeypatch.setattr(market, "daily_closes", counting)
+    body = client.get("/api/decision/exposure", headers=t["headers"]).json()
+    assert len(body["underlyings"]) == 3 and len(body["not_computed"]) == 1 and body["max_computed"] == 2
+    assert len([n for n in read if n != market.MARKET]) == 2

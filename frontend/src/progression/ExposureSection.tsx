@@ -81,6 +81,9 @@ export function ExposureViewPanel({ view }: { view: ExposureView }) {
           </ul>
         </div>
       ) : <p className="text-fg-muted">{t("decision.exposure.togetherNone", { threshold: view.move_together_threshold })}</p>}
+      {!!view.not_computed?.length && (
+        <p className="text-warn">{t("decision.exposure.notComputed", { max: view.max_computed ?? 0, list: view.not_computed.join(", ") })}</p>
+      )}
       <p className="text-[11px] text-fg-muted">{view.note}</p>
     </div>
   );

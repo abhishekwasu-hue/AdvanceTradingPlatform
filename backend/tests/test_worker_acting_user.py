@@ -123,7 +123,7 @@ def test_a_creator_without_a_trading_role_opens_no_entries(monkeypatch):
     assert "no longer has a trading role or the trading:write scope" in _dep(dep).last_error
 
 
-def test_no_recorded_creator_keeps_the_acting_user_and_a_failed_lookup_falls_back(monkeypatch):
+def test_no_recorded_creator_keeps_the_acting_user_and_a_failed_lookup_skips_entries(monkeypatch):
     owner = _tenant("w-acting-legacy@example.com")
     mate = member(owner)
     legacy = _deploy(owner, symbol="TCS")
@@ -141,9 +141,11 @@ def test_no_recorded_creator_keeps_the_acting_user_and_a_failed_lookup_falls_bac
     _signals(monkeypatch)
     report = _run(_worker(monkeypatch, _FakeBroker(ltp=101.0)).run_cycle(now=OPEN_NOW))
     trades = _by_deployment(owner["tenant_id"])
-    assert set(calls) == {legacy, theirs} and report.signals_executed == 2           # the loop went on past the failure
+    assert set(calls) == {legacy, theirs} and report.signals_executed == 1           # the loop went on past the failure
     # the organisation's acting user (`_acting_user`: the first recorded deployment creator, here the member) - as before TX-3
-    assert trades[legacy].user_id == mate["user_id"] and trades[theirs].user_id == mate["user_id"]
+    assert trades[legacy].user_id == mate["user_id"]
+    # a failed lookup is never re-attributed to the acting user: no entry this cycle (TX-4)
+    assert theirs not in trades
 
 
 def test_an_approval_only_entry_is_proposed_for_the_resolved_deployment_user(monkeypatch):

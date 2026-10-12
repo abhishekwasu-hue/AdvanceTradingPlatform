@@ -1045,9 +1045,11 @@ class TradingWorker:
                     # not as the organisation's acting user; exits above keep the organisation's acting user (ADR-0004).
                     try:
                         resolved, refusal = await self._deployment_user(session, tenant_id, dep, user, members)
-                    except Exception:  # noqa: BLE001 - a failed lookup falls back to the acting user, as before TX-3
-                        logger.exception("Deployment %s: creator lookup failed - acting as the organisation's user", dep.id)
-                        resolved, refusal = user, None
+                    except Exception:  # noqa: BLE001 - a failed lookup skips this deployment's entries this cycle
+                        # Never re-attribute (TX-4): acting as the organisation's user would also skip the inactive /
+                        # cannot-trade checks. Nothing is written on a session that just failed; exits already ran.
+                        logger.exception("Deployment %s: creator lookup failed - no new entries this cycle", dep.id)
+                        continue
                     if resolved is None:
                         # Entries only: the monitor, square-off and stop guard above already ran for its positions.
                         if dep.last_error != refusal:

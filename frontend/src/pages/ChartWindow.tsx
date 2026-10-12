@@ -1,10 +1,14 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
 import ProChart, { useLiveLtp } from "../components/ProChart";
 import { SymbolTierBadge } from "../components/DataTierBadge";
 import type { ChartEngine } from "../charting/engine";
 import { MarketZonesLayer } from "../charting/MarketZonesLayer";
+import { PriceActionLayer } from "../charting/PriceActionLayer";
+import { ReplayBar } from "../charting/ReplayBar";
+import { layerTf } from "../charting/priceAction";
+import { REPLAY_OFF, replayAt, visibleCandles, type ReplayState } from "../charting/replay";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -29,7 +33,14 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   const live = useLiveLtp(!!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
-  const lastClose = chart.candles.length ? chart.candles[chart.candles.length - 1].close : null;
+  // N4 CH3: bar replay - the chart shows the candles up to the replay bar, the layers are read as of that bar's end
+  const [replay, setReplay] = useState<ReplayState>(REPLAY_OFF);
+  const [paAvailable, setPaAvailable] = useState(false);
+  useEffect(() => { setReplay(REPLAY_OFF); }, [symbol, timeframe]);
+  const shown = useMemo(() => visibleCandles(chart.candles, replay), [chart.candles, replay]);
+  const at = replayAt(chart.candles, replay, layerTf(timeframe));
+  const onWindow = useCallback((start: string) => setReplay((r) => (r.active && !r.start ? { ...r, start } : r)), []);
+  const lastClose = shown.length ? shown[shown.length - 1].close : null;
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
@@ -45,12 +56,16 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
         <span>refreshes every minute · live price every 5 s · scroll left for older history</span>
         {error && <span className="text-down">{error}</span>}
       </div>
-      <ProChart candles={chart.candles} symbol={symbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
-                live={timeframe === "day" ? null : live.ltp} liveError={live.error} fullWindow deployable exchange={exchange}
+      <ProChart candles={shown} symbol={symbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
+                live={timeframe === "day" || replay.active ? null : live.ltp} liveError={live.error} fullWindow deployable exchange={exchange}
                 defaultIndicators={["ema_fast", "ema_slow", "vwap", "volume", "rsi"]}
-                onLoadOlder={chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} onEngine={setEngine} />
-      {/* Z7a-3: stored market zones (flag market_zones; nothing shows while it is off) */}
-      <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} /></div>
+                onLoadOlder={replay.active ? undefined : chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} onEngine={setEngine} />
+      {/* N4 CH3: price-action layer + replay (flag chart_price_action; nothing shows while it is off) */}
+      {paAvailable && <div className="mt-2"><ReplayBar state={replay} count={chart.candles.length} at={at} onChange={setReplay} /></div>}
+      <div className="mt-2"><PriceActionLayer engine={engine} instrument={`${exchange}:${symbol}`} timeframe={timeframe} at={at} start={replay.start}
+                                              onAvailable={setPaAvailable} onWindow={onWindow} /></div>
+      {/* Z7a-3: stored market zones (flag market_zones; nothing shows while it is off) - in replay, as of the replay bar */}
+      <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} at={at} /></div>
     </div>
   );
 }

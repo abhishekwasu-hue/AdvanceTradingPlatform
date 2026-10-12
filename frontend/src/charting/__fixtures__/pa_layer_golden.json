@@ -1,0 +1,474 @@
+{
+ "debug": {
+  "counts": {
+   "breaks": 46,
+   "legs": 68,
+   "levels": 68,
+   "swings": 72,
+   "trend": 4
+  },
+  "debug_info": {
+   "degrees": [
+    {
+     "confirmed": 39,
+     "degree": 0,
+     "setting": 1.5,
+     "swing_mode": "atr",
+     "tentative": {
+      "confirmed_at": null,
+      "confirmed_time": null,
+      "degree": 0,
+      "kind": "L",
+      "label": "L",
+      "price": 47226.12,
+      "price_text": "47226.12",
+      "status": "tentative",
+      "text": "swing low so far 47226.12 (not confirmed)",
+      "time": 1773739800
+     },
+     "threshold_last": 83.113929
+    },
+    {
+     "confirmed": 17,
+     "degree": 1,
+     "setting": 3.0,
+     "swing_mode": "atr",
+     "tentative": {
+      "confirmed_at": null,
+      "confirmed_time": null,
+      "degree": 1,
+      "kind": "H",
+      "label": "H",
+      "price": 47311.95,
+      "price_text": "47311.95",
+      "status": "tentative",
+      "text": "swing high so far 47311.95 (not confirmed)",
+      "time": 1773738900
+     },
+     "threshold_last": 166.227857
+    },
+    {
+     "confirmed": 8,
+     "degree": 2,
+     "setting": 6.0,
+     "swing_mode": "atr",
+     "tentative": {
+      "confirmed_at": null,
+      "confirmed_time": null,
+      "degree": 2,
+      "kind": "H",
+      "label": "H",
+      "price": 47344.59,
+      "price_text": "47344.59",
+      "status": "tentative",
+      "text": "swing high so far 47344.59 (not confirmed)",
+      "time": 1773726300
+     },
+     "threshold_last": 332.455714
+    },
+    {
+     "confirmed": 4,
+     "degree": 3,
+     "setting": 12.0,
+     "swing_mode": "atr",
+     "tentative": {
+      "confirmed_at": null,
+      "confirmed_time": null,
+      "degree": 3,
+      "kind": "H",
+      "label": "H",
+      "price": 47344.59,
+      "price_text": "47344.59",
+      "status": "tentative",
+      "text": "swing high so far 47344.59 (not confirmed)",
+      "time": 1773726300
+     },
+     "threshold_last": 664.911429
+    }
+   ],
+   "median_range_last": 49.27,
+   "settings": {
+    "atr_len": 14,
+    "break_buffer_mr": 0.25,
+    "break_close_loc": 0.3,
+    "break_displacement_confirm": true,
+    "break_no_reclaim_bars": 1,
+    "median_range_n": 20,
+    "strength_min": 1.2,
+    "swing_atr_mult": [
+     1.5,
+     3.0,
+     6.0,
+     12.0
+    ],
+    "swing_fractal_r": [
+     2,
+     4,
+     8,
+     16
+    ],
+    "swing_mode": "atr",
+    "swing_pct": [
+     0.15,
+     0.3,
+     0.6,
+     1.2
+    ]
+   }
+  },
+  "fingerprint": "2c14c6d9e025884c897652a4d090401f48761a2b811f46df191c79feb1432aad"
+ },
+ "default": {
+  "as_of": "2026-03-17T10:00:00+00:00",
+  "bars": 300,
+  "breaks": [
+   {
+    "close": 46389.96,
+    "confirmed_time": 1773288900,
+    "degree": 2,
+    "level": 46558.68,
+    "level_text": "46558.68",
+    "pivot_time": 1772683200,
+    "side": "below",
+    "text": "break below swing low 46558.68",
+    "time": 1773288000
+   },
+   {
+    "close": 46389.96,
+    "confirmed_time": 1773288900,
+    "degree": 2,
+    "level": 46591.6,
+    "level_text": "46591.60",
+    "pivot_time": 1773114300,
+    "side": "below",
+    "text": "break below swing low 46591.60",
+    "time": 1773288000
+   },
+   {
+    "close": 47082.68,
+    "confirmed_time": 1773380700,
+    "degree": 2,
+    "level": 47057.0,
+    "level_text": "47057.00",
+    "pivot_time": 1773135000,
+    "side": "above",
+    "text": "break above swing high 47057.00",
+    "time": 1773379800
+   },
+   {
+    "close": 47304.72,
+    "confirmed_time": 1773724500,
+    "degree": 2,
+    "level": 47147.86,
+    "level_text": "47147.86",
+    "pivot_time": 1773393300,
+    "side": "above",
+    "text": "break above swing high 47147.86",
+    "time": 1773723600
+   }
+  ],
+  "debug": false,
+  "degree": 2,
+  "fingerprint": "2de59fba2ee4e3c6628e112d93f2aa348d5a5e120149cb4f33c81b9b3d45087f",
+  "first_bar": 1772423100,
+  "last_bar": 1773740700,
+  "last_close": 47279.84,
+  "legs": [
+   {
+    "bars": 64,
+    "change": -1552.15,
+    "change_pct": -3.23,
+    "degree": 2,
+    "direction": "down",
+    "from": {
+     "price": 48110.83,
+     "time": 1772433900
+    },
+    "status": "confirmed",
+    "text": "-3.23% · 64 bars",
+    "to": {
+     "price": 46558.68,
+     "time": 1772683200
+    }
+   },
+   {
+    "bars": 38,
+    "change": 799.53,
+    "change_pct": 1.72,
+    "degree": 2,
+    "direction": "up",
+    "from": {
+     "price": 46558.68,
+     "time": 1772683200
+    },
+    "status": "confirmed",
+    "text": "+1.72% · 38 bars",
+    "to": {
+     "price": 47358.21,
+     "time": 1772781300
+    }
+   },
+   {
+    "bars": 36,
+    "change": -766.61,
+    "change_pct": -1.62,
+    "degree": 2,
+    "direction": "down",
+    "from": {
+     "price": 47358.21,
+     "time": 1772781300
+    },
+    "status": "confirmed",
+    "text": "-1.62% · 36 bars",
+    "to": {
+     "price": 46591.6,
+     "time": 1773114300
+    }
+   },
+   {
+    "bars": 23,
+    "change": 465.4,
+    "change_pct": 1.0,
+    "degree": 2,
+    "direction": "up",
+    "from": {
+     "price": 46591.6,
+     "time": 1773114300
+    },
+    "status": "confirmed",
+    "text": "+1.00% · 23 bars",
+    "to": {
+     "price": 47057.0,
+     "time": 1773135000
+    }
+   },
+   {
+    "bars": 31,
+    "change": -724.82,
+    "change_pct": -1.54,
+    "degree": 2,
+    "direction": "down",
+    "from": {
+     "price": 47057.0,
+     "time": 1773135000
+    },
+    "status": "confirmed",
+    "text": "-1.54% · 31 bars",
+    "to": {
+     "price": 46332.18,
+     "time": 1773290700
+    }
+   },
+   {
+    "bars": 43,
+    "change": 815.68,
+    "change_pct": 1.76,
+    "degree": 2,
+    "direction": "up",
+    "from": {
+     "price": 46332.18,
+     "time": 1773290700
+    },
+    "status": "confirmed",
+    "text": "+1.76% · 43 bars",
+    "to": {
+     "price": 47147.86,
+     "time": 1773393300
+    }
+   },
+   {
+    "bars": 23,
+    "change": -486.47,
+    "change_pct": -1.03,
+    "degree": 2,
+    "direction": "down",
+    "from": {
+     "price": 47147.86,
+     "time": 1773393300
+    },
+    "status": "confirmed",
+    "text": "-1.03% · 23 bars",
+    "to": {
+     "price": 46661.39,
+     "time": 1773650700
+    }
+   }
+  ],
+  "levels": [
+   {
+    "broken_time": null,
+    "degree": 2,
+    "kind": "resistance",
+    "pivot_time": 1772433900,
+    "price": 48110.83,
+    "price_text": "48110.83",
+    "status": "live",
+    "text": "swing high 48110.83 · D2"
+   },
+   {
+    "broken_time": null,
+    "degree": 2,
+    "kind": "resistance",
+    "pivot_time": 1772781300,
+    "price": 47358.21,
+    "price_text": "47358.21",
+    "status": "live",
+    "text": "swing high 47358.21 · D2"
+   },
+   {
+    "broken_time": null,
+    "degree": 2,
+    "kind": "support",
+    "pivot_time": 1773650700,
+    "price": 46661.39,
+    "price_text": "46661.39",
+    "status": "live",
+    "text": "swing low 46661.39 · D2"
+   },
+   {
+    "broken_time": null,
+    "degree": 2,
+    "kind": "support",
+    "pivot_time": 1773290700,
+    "price": 46332.18,
+    "price_text": "46332.18",
+    "status": "live",
+    "text": "swing low 46332.18 · D2"
+   }
+  ],
+  "schema": "pa-layer/1",
+  "swings": [
+   {
+    "confirmed_at": "2026-03-03T04:30:00+00:00",
+    "confirmed_time": 1772512200,
+    "degree": 2,
+    "kind": "H",
+    "label": "H",
+    "price": 48110.83,
+    "price_text": "48110.83",
+    "status": "confirmed",
+    "text": "H 48110.83",
+    "time": 1772433900
+   },
+   {
+    "confirmed_at": "2026-03-05T09:45:00+00:00",
+    "confirmed_time": 1772703900,
+    "degree": 2,
+    "kind": "L",
+    "label": "L",
+    "price": 46558.68,
+    "price_text": "46558.68",
+    "status": "confirmed",
+    "text": "L 46558.68",
+    "time": 1772683200
+   },
+   {
+    "confirmed_at": "2026-03-09T06:15:00+00:00",
+    "confirmed_time": 1773036900,
+    "degree": 2,
+    "kind": "H",
+    "label": "LH",
+    "price": 47358.21,
+    "price_text": "47358.21",
+    "status": "confirmed",
+    "text": "LH 47358.21",
+    "time": 1772781300
+   },
+   {
+    "confirmed_at": "2026-03-10T07:30:00+00:00",
+    "confirmed_time": 1773127800,
+    "degree": 2,
+    "kind": "L",
+    "label": "HL",
+    "price": 46591.6,
+    "price_text": "46591.60",
+    "status": "confirmed",
+    "text": "HL 46591.60",
+    "time": 1773114300
+   },
+   {
+    "confirmed_at": "2026-03-11T04:15:00+00:00",
+    "confirmed_time": 1773202500,
+    "degree": 2,
+    "kind": "H",
+    "label": "LH",
+    "price": 47057.0,
+    "price_text": "47057.00",
+    "status": "confirmed",
+    "text": "LH 47057.00",
+    "time": 1773135000
+   },
+   {
+    "confirmed_at": "2026-03-12T08:15:00+00:00",
+    "confirmed_time": 1773303300,
+    "degree": 2,
+    "kind": "L",
+    "label": "LL",
+    "price": 46332.18,
+    "price_text": "46332.18",
+    "status": "confirmed",
+    "text": "LL 46332.18",
+    "time": 1773290700
+   },
+   {
+    "confirmed_at": "2026-03-16T07:45:00+00:00",
+    "confirmed_time": 1773647100,
+    "degree": 2,
+    "kind": "H",
+    "label": "HH",
+    "price": 47147.86,
+    "price_text": "47147.86",
+    "status": "confirmed",
+    "text": "HH 47147.86",
+    "time": 1773393300
+   },
+   {
+    "confirmed_at": "2026-03-17T04:15:00+00:00",
+    "confirmed_time": 1773720900,
+    "degree": 2,
+    "kind": "L",
+    "label": "HL",
+    "price": 46661.39,
+    "price_text": "46661.39",
+    "status": "confirmed",
+    "text": "HL 46661.39",
+    "time": 1773650700
+   }
+  ],
+  "tf": "15m",
+  "trend": [
+   {
+    "basis": "LH 47311.95 + HL 47142.38",
+    "confirmed": 39,
+    "degree": 0,
+    "text": "D0 range (LH 47311.95 + HL 47142.38)",
+    "tf": "15m",
+    "trend": "range"
+   },
+   {
+    "basis": "HH 47344.59 + HL 47142.38",
+    "confirmed": 17,
+    "degree": 1,
+    "text": "D1 up (HH 47344.59 + HL 47142.38)",
+    "tf": "15m",
+    "trend": "up"
+   },
+   {
+    "basis": "HH 47147.86 + HL 46661.39",
+    "confirmed": 8,
+    "degree": 2,
+    "text": "D2 up (HH 47147.86 + HL 46661.39)",
+    "tf": "15m",
+    "trend": "up"
+   },
+   {
+    "basis": "LH 47358.21 + LL 46332.18",
+    "confirmed": 4,
+    "degree": 3,
+    "text": "D3 down (LH 47358.21 + LL 46332.18)",
+    "tf": "15m",
+    "trend": "down"
+   }
+  ]
+ }
+}

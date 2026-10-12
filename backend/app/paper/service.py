@@ -20,7 +20,7 @@ Nothing in this module places, changes or closes an order.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import and_, case, func, select
@@ -30,9 +30,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.db.models import AiActionRecord, PaperAccountRecord, TradeRecord, User
+from app.decision_tools import own_stats
 from app.market_data.calendar import IST
 
 FLAG = "paper_account"
+EVIDENCE_FLAG = "ladder_evidence"          # N2-1: the discipline criterion and the user's own figures on the ladder card
 STAGE_PAPER = "PAPER"
 STAGE_LIVE = "LIVE_APPROVAL"
 
@@ -221,9 +223,12 @@ async def summary(session: AsyncSession, user: User, now: Optional[datetime] = N
     }
 
 
-async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict:
+async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = None, *, evidence: bool = False) -> Dict:
     """The progression ladder card (P1 §1.4), PAPER stage only in Phase 0: each criterion with its value from the user's
-    own PAPER trades and its threshold from settings. States facts; it never recommends trading or a stage change."""
+    own PAPER trades and its threshold from settings. States facts; it never recommends trading or a stage change.
+    N2-1 (`evidence`, flag `ladder_evidence`): the discipline criterion is measured from the Z6 journal and the card
+    carries the user's own figures. Without it the answer is exactly the Z3-b one."""
+    now = now or datetime.now(timezone.utc)
     data = await summary(session, user, now)
     closed = data["closed_trades"]
     criteria = [
@@ -234,13 +239,60 @@ async def ladder(session: AsyncSession, user: User, now: Optional[datetime] = No
         {"key": "max_drawdown_pct", "label": "Largest drawdown, % of peak equity", "value": data["max_drawdown_pct"],
          "target": app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT, "comparison": "at_most",
          "met": closed > 0 and data["max_drawdown_pct"] <= app_config.PAPER_LADDER_MAX_DRAWDOWN_PCT},
+        await discipline_criterion(session, user, now) if evidence else
         {"key": "discipline_score", "label": "Discipline score", "value": None, "target": None, "comparison": None, "met": None,
          "note": "Not measured yet (journal behaviour tags come with P1-e)"},
     ]
     measured = [c for c in criteria if c["met"] is not None]
-    return {"stage": STAGE_PAPER, "stages": [
+    extra: Dict[str, Any] = {}
+    if evidence:
+        closed = sorted((t for t in await _paper_trades(session, user) if _counted(t) and t.exit_time is not None),
+                        key=lambda t: (_utc(t.exit_time or t.entry_time), t.id))
+        extra["evidence"] = own_stats.evidence([float(t.pnl or 0.0) for t in closed], data["starting_capital"],
+                                               min_trades=app_config.PAPER_EVIDENCE_MIN_TRADES, ruin_pct=app_config.PAPER_EVIDENCE_RUIN_PCT)
+    return {**extra, "stage": STAGE_PAPER, "stages": [
                 {"key": STAGE_PAPER, "label": "PAPER", "status": "current"},
                 {"key": STAGE_LIVE, "label": "LIVE (approval-only)", "status": "locked", "note": "Not available in Phase 0"}],
             "criteria": criteria, "met": sum(1 for c in measured if c["met"]), "measured": len(measured),
             "summary": {k: data[k] for k in ("starting_capital", "balance", "equity", "closed_trades", "sessions", "max_drawdown_pct", "win_rate")},
             "as_of": data["as_of"]}
+
+
+async def discipline_criterion(session: AsyncSession, user: User, now: datetime) -> Dict:
+    """N2-1: the mean Z6 weekly discipline score of the last PAPER_LADDER_DISCIPLINE_WEEKS completed IST weeks that had a
+    counted PAPER trade (looking back PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS weeks). Each week's score is the journal's
+    own (`refresh_week`, what GET /api/journal/week runs), so the card and the journal agree. The current week is left out
+    (its score still moves); a week with no decision has no score and is skipped. Not measured while the organisation's
+    `discipline_engine` flag is off."""
+    from app.journal import service as journal
+    from app.platform.controls import flag_enabled
+    need, minimum = app_config.PAPER_LADDER_DISCIPLINE_WEEKS, app_config.PAPER_LADDER_MIN_DISCIPLINE
+    base: Dict[str, Any] = {"key": "discipline_score", "label": "Discipline score (mean of recent weekly scores)", "weeks": [],
+                            "weeks_needed": need}
+    if not await flag_enabled(session, "discipline_engine", user.tenant_id):
+        return {**base, "value": None, "target": None, "comparison": None, "met": None, "status": "engine_off",
+                "note": "Not measured: the journal's discipline engine is off for your organisation"}
+    _, this_week_start, _ = journal.week_bounds(None, now=now)
+    since = this_week_start - timedelta(weeks=app_config.PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS)
+    entry_times = await session.scalars(select(TradeRecord.entry_time).where(
+        TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.mode == "PAPER",
+        TradeRecord.price_source.is_(None), TradeRecord.entry_time >= since, TradeRecord.entry_time < this_week_start))
+    labels = sorted({journal.week_bounds(None, now=_utc(t))[0] for t in entry_times if t is not None}, reverse=True)
+    weeks: List[Dict[str, Any]] = []
+    for label in labels:
+        if len(weeks) >= need:
+            break
+        score = (await journal.refresh_week(session, user, label, now=now))["score"]["score"]
+        if score is not None:
+            weeks.append({"week": label, "score": score})
+    weeks.reverse()                                          # oldest first, as the card draws them
+    value = round(sum(w["score"] for w in weeks) / len(weeks), 1) if weeks else None
+    enough = len(weeks) >= need
+    out = {**base, "weeks": weeks, "value": value, "target": minimum, "comparison": "at_least",
+           "met": bool(enough and value is not None and value >= minimum),
+           "status": "ok" if enough else ("no_weeks" if not weeks else "too_few_weeks")}
+    if not weeks:
+        out["note"] = f"No scored week yet (0 of {need} completed weeks)"
+    elif not enough:
+        out["note"] = f"{len(weeks)} of {need} scored weeks"
+    return out

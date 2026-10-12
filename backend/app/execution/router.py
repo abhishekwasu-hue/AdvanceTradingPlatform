@@ -9,7 +9,7 @@ from app.execution.tagging import LEG_ENTRY, LEG_STOP, build_order_tag
 from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.circuit_breaker import breaker_for, observe_call
 from app.brokers.exceptions import is_clear_rejection
-from app.brokers.models import BrokerOrderRequest
+from app.brokers.models import ORDER_INTENT_ENTRY, BrokerOrderRequest
 from app.core.enums import ExecutionMode, SignalDirection, OrderSide
 from app.core.models import RiskConfig, Signal, Trade
 from app.execution.paper_broker import PaperBroker
@@ -176,6 +176,7 @@ class OrderRouter:
             order_type="MARKET",
             product=self.product,
             tag=entry_tag,
+            intent=ORDER_INTENT_ENTRY,
         )
         if self.order_style == "PROTECTED_LIMIT":
             limit = protected_limit_price(signal.entry, order_request.transaction_type, self.market_protection_pct)

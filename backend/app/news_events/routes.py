@@ -1,7 +1,8 @@
 """API surface for the News & Event engine - structured, cited macro/market news entries (RBI
 policy, Union Budget, government policy, broad corporate news, global macro events, sector
 developments). Shared reference data (like the fundamentals module), not tenant-private: reads
-are open to everyone, writes require auth so every entry is attributed (`created_by`). Phase BB adds
+are open to everyone, writes require auth so every entry is attributed (`created_by`); Z10-c: and a trading role of an
+active organisation (`require_contributor`) - VIEWER and platform SUPPORT accounts read only. Phase BB adds
 FEED rows from public feeds (app/news_feed): unverified, with the item's URL, never a person's claim.
 """
 from datetime import date
@@ -10,7 +11,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.dependencies import get_current_user
+from app.auth.dependencies import get_current_user, require_contributor
 from app.db.models import NewsEventRecord, User
 from app.db.session import get_session
 from app.news_events import persistence as db
@@ -19,7 +20,7 @@ from app.news_events.models import NewsEvent, NewsEventCategory, NewsEventRespon
 router = APIRouter(prefix="/api/news-events", tags=["news-events"])
 
 
-@router.post("", response_model=NewsEventResponse, status_code=201)
+@router.post("", response_model=NewsEventResponse, status_code=201, dependencies=[Depends(require_contributor)])
 async def create_news_event(
     event: NewsEvent, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> NewsEventResponse:
@@ -50,7 +51,7 @@ async def get_news_event(event_id: int, session: AsyncSession = Depends(get_sess
     return db.news_event_to_response(record)
 
 
-@router.delete("/{event_id}", status_code=204)
+@router.delete("/{event_id}", status_code=204, dependencies=[Depends(require_contributor)])
 async def delete_news_event(
     event_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> None:

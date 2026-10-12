@@ -14,6 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
+from app.auth.scopes import require_scope
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, AlertEventRecord, AlertRuleRecord, NotificationPolicyRecord, NotificationRecord, ScreenRecord, User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
@@ -141,7 +142,7 @@ async def list_rules(user: User = Depends(get_current_user), session: AsyncSessi
     return [_rule_dict(r) for r in await session.scalars(query.order_by(AlertRuleRecord.id.desc()))]
 
 
-@router.post("/rules", status_code=201)
+@router.post("/rules", status_code=201, dependencies=[Depends(require_scope("alerts:write"))])
 async def create_rule(body: RuleBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
     if body.fire_on == "intrabar" and not await flag_enabled(session, INTRABAR_FLAG, user.tenant_id):
@@ -156,7 +157,7 @@ async def create_rule(body: RuleBody, user: User = Depends(require_trader), sess
     return _rule_dict(row)
 
 
-@router.post("/rules/{rule_id}/{action}")
+@router.post("/rules/{rule_id}/{action}", dependencies=[Depends(require_scope("alerts:write"))])
 async def set_rule_status(rule_id: int, action: Literal["pause", "resume"], user: User = Depends(require_trader),
                           session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
@@ -186,7 +187,7 @@ async def get_policy(user: User = Depends(get_current_user), session: AsyncSessi
     return dict((await policy_for(session, user.tenant_id)).__dict__)
 
 
-@router.put("/policy")
+@router.put("/policy", dependencies=[Depends(require_scope("alerts:write"))])
 async def put_policy(body: PolicyBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
     if (body.quiet_start is None) != (body.quiet_end is None):
@@ -226,7 +227,7 @@ async def dead_letters(limit: int = 100, user: User = Depends(require_trader), s
             for d, ctype in rows.all()]
 
 
-@router.post("/deliveries/{delivery_id}/retry")
+@router.post("/deliveries/{delivery_id}/retry", dependencies=[Depends(require_scope("alerts:write"))])
 async def retry_delivery(delivery_id: int, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Puts a dead-lettered delivery back in the outbox (fresh attempts); the worker sends it on its next cycle."""
     row = await session.scalar(select(AlertDeliveryRecord).join(NotificationRecord, NotificationRecord.id == AlertDeliveryRecord.notification_id)

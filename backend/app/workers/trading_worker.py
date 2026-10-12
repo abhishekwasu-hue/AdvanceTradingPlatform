@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.brokers.base import BrokerInterface
 from app.alerts.dispatcher import dispatch_pending
 from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+from app.platform import phase0_lock
 from app.execution.ops_throttle import OpsThrottle
 from app.compliance.static_ip import live_entry_problem
 from app.brokers.token_lifecycle import build_adapter, get_credential_record, token_is_usable, verify_token
@@ -302,6 +303,8 @@ class TradingWorker:
 
         try:
             async with self.session_factory() as session:
+                # Z10-c: the broker-order chokepoint reads the PAPER-only lock from this process; refresh it every cycle.
+                await phase0_lock.is_on(session, None)
                 # Phase O2: one clock per exchange family. NSE is always considered; MCX/CRYPTO only
                 # when a deployment actually trades there, so a pure-equity platform behaves as before.
                 wanted = {"NSE"} | {session_family(ex) for ex in await session.scalars(
@@ -1398,7 +1401,7 @@ class TradingWorker:
             ops = self._ops.get(key)
             if ops is None:
                 ops = self._ops[key] = OpsThrottle(app_config.OPS_PER_SECOND)
-        return RateLimitedBroker(adapter, budget, ops=ops)
+        return RateLimitedBroker(adapter, budget, ops=ops, tenant_id=tenant_id)
 
     async def _has_open_position(self, session: AsyncSession, dep: StrategyDeploymentRecord) -> bool:
         open_trade = await session.scalar(

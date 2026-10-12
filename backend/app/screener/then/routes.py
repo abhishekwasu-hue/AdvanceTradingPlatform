@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -13,7 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user, require_trader
 from app.auth.scopes import require_scope
-from app.db.models import AlertRuleRecord, ScanThenTemplateRecord, User
+from app.db.models import AlertRuleRecord, ExecutionIntentRecord, ScanThenTemplateRecord, User
 from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener.then import templates as T
@@ -96,3 +96,17 @@ async def delete_then(rule_id: int, user: User = Depends(require_trader), sessio
         await session.delete(row)
         await session.commit()
     return T.as_dict(None, rule.id)
+
+
+@router.get("/rules/{rule_id}/then/intents")
+async def then_intents(rule_id: int, limit: int = 50, user: User = Depends(get_current_user),
+                       session: AsyncSession = Depends(get_session)) -> List[Dict[str, Any]]:
+    """The caller's OWN execution-core intents raised by this rule's Then template (newest first): what the core did with
+    each confirmed setup - notified, proposed (with the proposal id), refused or expired, and why. Read-only."""
+    await require_flag(session, T.FLAG, user.tenant_id)
+    rule = await _rule(session, user, rule_id)
+    rows = await session.scalars(select(ExecutionIntentRecord).where(
+        ExecutionIntentRecord.tenant_id == rule.tenant_id, ExecutionIntentRecord.user_id == user.id, ExecutionIntentRecord.source == "scan",
+        ExecutionIntentRecord.source_ref.like(f"rule:{rule.id}:symbol:%")).order_by(ExecutionIntentRecord.id.desc())
+        .limit(max(1, min(int(limit), 200))))
+    return [T.intent_dict(row) for row in rows]

@@ -1512,6 +1512,13 @@ class AlertDeliveryRecord(Base):
     reason_code: Mapped[str | None] = mapped_column(String(40), nullable=True)
     # S3b-2: a per-user destination on the channel (a linked Telegram chat); NULL = the channel's own address.
     address: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Z10-b (flag alerts_reliable_outbox): one key per delivery (notification x channel x address), unique, so a
+    # duplicate cycle cannot queue the same delivery twice; sent to receivers that can dedupe (webhook / SMS
+    # `Idempotency-Key`, email `Message-ID`). A worker claims a row with a lease before sending it, so two workers never
+    # send the same row; a worker killed mid-send leaves a lease that expires, and the row is claimed again.
+    idem_key: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    lease_until: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    claimed_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class CompanyRecord(Base):
@@ -2878,6 +2885,9 @@ class AlertEventRecord(Base):
     condition_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     bar_time: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
     idem_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    # Z10-b: the rule's timeframe when the event was recorded - the stale-data check at send time judges the bar by it,
+    # not by whatever the rule says later. NULL for events recorded before this column.
+    base_tf: Mapped[str | None] = mapped_column(String(5), nullable=True)
     priority: Mapped[str] = mapped_column(String(10), nullable=False)
     values_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")     # the trigger values, with their timestamps
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)

@@ -2,7 +2,7 @@
 event (flag evidence_charts, off by default).
 
 Revision ID: e8a1c4d2f9b7
-Revises: b476873844dd
+Revises: c7e2a9d4b1f6 (Z10-b, on main after Z7a-2's b476873844dd)
 Create Date: 2026-10-11 23:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e8a1c4d2f9b7'
-down_revision: Union[str, Sequence[str], None] = 'b476873844dd'
+down_revision: Union[str, Sequence[str], None] = 'c7e2a9d4b1f6'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: additive (one new table) - the previous release runs on this schema (code-only rollback ok)

@@ -169,6 +169,10 @@ class AlertDeliveryStatus(str, Enum):
     PENDING = "PENDING"
     SENT = "SENT"
     FAILED = "FAILED"
+    # Z10-b (flag alerts_reliable_outbox): gave up after MAX_ATTEMPTS (or its worker was lost on the last attempt) -
+    # kept for the operator to replay; and held back because the alert's market data was stale when it was due.
+    DEAD = "DEAD"
+    SUPPRESSED = "SUPPRESSED"
 
 
 class BrokerTokenStatus(str, Enum):

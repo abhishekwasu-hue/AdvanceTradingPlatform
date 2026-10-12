@@ -28,9 +28,12 @@
 #     that is not ROLLBACK_SAFE (backend/scripts/migration_rollback_safety.py);
 #   * the worker is not restarted while any exchange session is open and positions are open (the app's own calendar,
 #     backend/scripts/session_check.py), unless ATP_ALLOW_SESSION_RESTART=1;
-#   * feature flags and every LIVE switch are left exactly as they are (compared before and after a deploy); `health`
-#     and `install` ask the owner to act (exit 10) while live_trading is on or phase0_paper_only is off; profiles come
-#     only from COMPOSE_PROFILES in .env;
+#   * feature flags and every LIVE switch are left exactly as they are (compared before and after a deploy - the one
+#     change allowed is the release's own Phase 0 first-boot seed of a flag that had no entry: live_trading OFF,
+#     phase0_paper_only ON); the host runs with ATP_DEPLOYMENT_PHASE=phase0 (default; .env may name another mode only
+#     when the owner ends Phase 0), so a fresh install starts PAPER-only with nothing for the owner to set; `health`
+#     and `install` still ask the owner to act (exit 10) if live_trading is on or phase0_paper_only is off; profiles
+#     come only from COMPOSE_PROFILES in .env;
 #   * idempotent: running a command again converges on the same state.
 #
 # Exit codes: 0 ok | 1 failed | 2 usage | 3 refused: market session (migration / restart) | 10 owner action needed |
@@ -132,6 +135,8 @@ is_true() { case "$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')" in 1|true|ye
 pg_user() { local v; v="$(env_get POSTGRES_USER)"; printf '%s' "${v:-atp_user}"; }
 pg_db()   { local v; v="$(env_get POSTGRES_DB)"; printf '%s' "${v:-advance_trading_platform}"; }
 research_on() { case ",$(env_get COMPOSE_PROFILES)," in *,research,*) return 0 ;; esac; return 1; }
+# Phase 0 deployment defaults (backend/app/platform/deployment_phase.py): phase0 unless .env names another mode.
+deployment_phase() { local v; v="$(env_get ATP_DEPLOYMENT_PHASE)"; printf '%s' "${v:-phase0}"; }
 
 # --- state (.deploy/, never secret) ------------------------------------------------------------------------------
 state_init() { [ "$DRY_RUN" = "1" ] || mkdir -p "$STATE_DIR/logs"; }
@@ -156,7 +161,7 @@ log_release() { [ "$DRY_RUN" = "1" ] || { state_init; printf '%s %s\n' "$(date -
 dc() {
   local ahead="$DB_AHEAD"
   if [ -z "$ahead" ] && db_ahead_marker; then ahead="$(cat "$STATE_DIR/db_ahead")"; fi
-  (cd "$ATP_DIR" && ATP_RELEASE="${RELEASE:-latest}" MIGRATION_ALLOW_DB_AHEAD="$ahead" \
+  (cd "$ATP_DIR" && ATP_RELEASE="${RELEASE:-latest}" MIGRATION_ALLOW_DB_AHEAD="$ahead" ATP_DEPLOYMENT_PHASE="$(deployment_phase)" \
     docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
     -f deploy/compose.release.yml -p "$PROJECT" "$@")
 }
@@ -185,13 +190,42 @@ db_revision() {
   printf '%s' "${r:--}"
 }
 code_head() { { dc run --rm --no-deps -T backend python -m alembic heads 2>/dev/null || true; } | awk '/\(head\)/ {print $1}' | sort | paste -sd, -; }
-# no-table | none (no flags row) | <md5 of the flags row> | unknown (could not read - a failure, never "unchanged")
-flags_fingerprint() {
+# no-table | none (no flags row) | the flags row as stored (JSON; flag names and switches, never a secret) |
+# unknown (could not read - a failure, never "unchanged")
+flags_snapshot() {
   local reg h
   reg="$(psql_q "select coalesce(to_regclass('public.platform_controls')::text, '')")" || { printf 'unknown'; return 0; }
   [ -n "$reg" ] || { printf 'no-table'; return 0; }
-  h="$(psql_q "select md5(value_json) from platform_controls where key = 'feature_flags'")" || { printf 'unknown'; return 0; }
+  h="$(psql_q "select value_json from platform_controls where key = 'feature_flags'")" || { printf 'unknown'; return 0; }
   printf '%s' "${h:-none}"
+}
+# Before/after a deploy: "unchanged", "seeded <names>" (only the Phase 0 first-boot seed added entries that were absent:
+# live_trading {"on": false}, phase0_paper_only {"on": true}, no organisation list - the restrictive direction), or
+# "changed" (anything else, including an unreadable row).
+flags_change() {
+  FLAGS_BEFORE="$1" FLAGS_AFTER="$2" python3 -c 'import json, os
+SEED = {"live_trading": {"on": False, "tenants": []}, "phase0_paper_only": {"on": True, "tenants": []}}
+def load(v):
+    if v in ("no-table", "none", ""):
+        return {}
+    d = json.loads(v)
+    if not isinstance(d, dict):
+        raise ValueError(v)
+    return d
+try:
+    b, a = load(os.environ["FLAGS_BEFORE"]), load(os.environ["FLAGS_AFTER"])
+except Exception:
+    print("changed"); raise SystemExit(0)
+if a == b:
+    print("unchanged"); raise SystemExit(0)
+bf, af = dict(b.get("flags") or {}), dict(a.get("flags") or {})
+added = sorted(k for k in af if k not in bf)
+same_rest = {k: v for k, v in b.items() if k != "flags"} == {k: v for k, v in a.items() if k != "flags"}
+kept = all(af.get(k) == v for k, v in bf.items())
+if same_rest and kept and added and all(af[k] == SEED.get(k) for k in added):
+    print("seeded " + ",".join(added))
+else:
+    print("changed")'
 }
 images_exist() {
   local img imgs=(atp-backend atp-worker atp-frontend atp-backup)
@@ -546,11 +580,17 @@ report_flags() {
     OWNER_ACTION="${OWNER_ACTION:+$OWNER_ACTION; }confirm in Admin > Controls that live_trading is off"
     report_settings; return 0
   fi
-  read -r live live_tenants po_known po_on stored < <(printf '%s' "$js" | python3 -c 'import json, sys
+  read -r live live_tenants po_known po_on stored phase < <(printf '%s' "$js" | python3 -c 'import json, sys
 d = json.load(sys.stdin)
 lt, po = d.get("live_trading") or {}, d.get("phase0_paper_only") or {}
-print(int(bool(lt.get("on", True))), int(lt.get("tenants") or 0), int(bool(po.get("known"))), int(bool(po.get("on"))), ",".join(d.get("stored_on") or []) or "none")')
+print(int(bool(lt.get("on", True))), int(lt.get("tenants") or 0), int(bool(po.get("known"))), int(bool(po.get("on"))), ",".join(d.get("stored_on") or []) or "none",
+      "".join(ch for ch in str(d.get("deployment_phase") or "-") if ch.isalnum() or ch in "_-")[:20] or "-")')
   info "flags stored on: $stored"
+  case "$phase" in
+    phase0) ok "deployment phase: phase0 (first boot seeds live_trading OFF and phase0_paper_only ON - nothing for the owner to set)" ;;
+    -) info "deployment phase: not reported by this release" ;;
+    *) warn "deployment phase: $phase (ATP_DEPLOYMENT_PHASE in .env) - the Phase 0 defaults are not seeded on this host" ;;
+  esac
   if [ "$live" = "1" ] || [ "$live_tenants" != "0" ]; then
     if [ "$live" = "1" ]; then warn "live_trading is ON for everyone: Phase 0 has no LIVE"; else warn "live_trading is ON for $live_tenants organisation(s): Phase 0 has no LIVE"; fi
     OWNER_ACTION="${OWNER_ACTION:+$OWNER_ACTION; }turn live_trading OFF in Admin > Controls"
@@ -571,7 +611,8 @@ health_summary() {
   printf 'health: OK - %s warning(s)\n' "$WARNS"
 }
 
-# Owner action left (exit 10): flags only the owner may change. Nothing here changes them.
+# Owner action left (exit 10): flags only the owner may change. Nothing here changes them (the Phase 0 seed is the
+# release's own first boot, not this script).
 owner_action_exit() {
   [ -n "$OWNER_ACTION" ] || return 0
   printf '\nOWNER ACTION NEEDED: %s (runbook section 4a). This script never changes a flag.\n' "$OWNER_ACTION"
@@ -678,7 +719,7 @@ cmd_deploy() {
     before="$(db_revision)"; head="$(code_head)"
     [ "$before" != "unknown" ] || die "cannot read the database revision - nothing was changed" 1
     [ -n "$head" ] || die "could not read the alembic head from atp-backend:$RELEASE" 1
-    flags_before="$(flags_fingerprint)"
+    flags_before="$(flags_snapshot)"
     [ "$flags_before" != "unknown" ] || die "cannot read the feature flags - nothing was changed" 1
     info "database at ${before}, code head ${head}"
     if [ "$before" = "$head" ]; then
@@ -754,10 +795,16 @@ cmd_deploy() {
   step "health"
   if [ "$DRY_RUN" != "1" ]; then
     health_until_ok
-    local flags_after; flags_after="$(flags_fingerprint)"
+    local flags_after change; flags_after="$(flags_snapshot)"
     if [ "$flags_before" = "unknown" ] || [ "$flags_after" = "unknown" ]; then bad "could not read the feature flags before/after the deploy - check Admin > Controls"
-    elif [ "$flags_before" = "$flags_after" ] || { [ "$flags_before" = "no-table" ] && [ "$flags_after" = "none" ]; }; then ok "feature flags unchanged by the deploy"
-    else bad "feature flags CHANGED during the deploy ($flags_before -> $flags_after) - check Admin > Controls and the audit log"; fi
+    else
+      change="$(flags_change "$flags_before" "$flags_after")"
+      case "$change" in
+        unchanged) ok "feature flags unchanged by the deploy" ;;
+        seeded\ *) ok "feature flags unchanged by the deploy, except the Phase 0 first-boot seed of ${change#seeded } (live_trading OFF, phase0_paper_only ON; audited as phase0_flag_seeded)" ;;
+        *) bad "feature flags CHANGED during the deploy - check Admin > Controls and the audit log" ;;
+      esac
+    fi
   else
     info "would run every health check and compare the feature flags before/after"
   fi

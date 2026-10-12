@@ -57,7 +57,8 @@ ORIGIN_APPROVAL = "approval"       # the execution of an APPROVED entry proposal
 TARGET_RULES = ("TARGET_1_REACHED", "TARGET_2_REACHED")
 
 SOURCE_LABELS = {"deployment": "Deployment signal", "tradingview": "TradingView alert", "public_api": "API signal",
-                 "manual": "Manual setup", "ticket": "PAPER ticket", "requote": "Re-quoted entry", "console": "Console signal"}
+                 "manual": "Manual setup", "ticket": "PAPER ticket", "requote": "Re-quoted entry", "console": "Console signal",
+                 "scan": "Scan setup"}
 
 PriceLookup = Callable[..., Awaitable[float]]       # (symbol, exchange="NSE") -> last price
 

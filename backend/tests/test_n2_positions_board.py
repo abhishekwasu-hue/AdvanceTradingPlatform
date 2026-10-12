@@ -156,3 +156,27 @@ def test_exit_stays_one_click_under_a_lockout_and_closes():
     assert r.status_code == 200, r.text
     assert r.json()["closed"][0]["exit_price"] == pytest.approx(99.0)
     assert client.get("/api/positions/board", headers=t["headers"]).json()["positions"] == []
+
+
+
+def test_a_viewer_sees_automatic_not_a_button_that_would_403():
+    """Review: Exit now needs a trading role and scope; a VIEWER's board says the exits run automatically."""
+    from urllib.parse import parse_qs, urlparse
+    owner = _tenant(_email("viewer-owner"))
+    _flag(service.FLAG, owner["tenant_id"])
+    _paper_flag(owner["tenant_id"])
+    email = _email("viewer")
+    invite = client.post("/api/team/invites", headers=owner["headers"], json={"email": email, "role": "VIEWER"})
+    assert invite.status_code in (200, 201), invite.text
+    token = parse_qs(urlparse(invite.json()["invite_url"]).query)["invite"][0]
+    access = client.post(f"/api/auth/invite/{token}/accept", json={"password": "Viewer-Pass-2026"}).json()["access_token"]
+    headers = {"Authorization": f"Bearer {access}"}
+    me = client.get("/api/auth/me", headers=headers).json()
+    trade_id = _open({"tenant_id": owner["tenant_id"], "user_id": me["id"]}, "WIPRO")
+    body = client.get("/api/positions/board", headers=headers).json()
+    assert body["positions"][0]["exit"] == "automatic"
+    assert client.post(f"/api/positions/{trade_id}/exit-now", headers=headers).status_code == 403
+    # The owner (a trader) still gets the one-click exit on their own position.
+    own = _open(owner, "HCLTECH")
+    rows = {p["trade_id"]: p for p in client.get("/api/positions/board", headers=owner["headers"]).json()["positions"]}
+    assert rows[own]["exit"] == "one_click"

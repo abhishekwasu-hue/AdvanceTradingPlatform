@@ -190,6 +190,9 @@ positions, grouped by underlying as in the what-if. For each underlying it gives
 It also gives sector totals and every pair's Pearson r over the aligned daily log returns, needing at least 20 common
 days. Pairs at |r| ≥ 0.7 are listed as moving together.
 
+Review fix (DoS): the lake reads and the pair maths cover at most `MAX_COMPUTED` (40) underlyings, those with the
+largest risk at stops. The rest are listed as "not computed", and the maths runs in the thread pool.
+
 Daily closes come from the shared lake (`app/decision_tools/market.py`):
 
 - a share with a known ISIN reads the split-adjusted company history (`by_isin.isin_candles`);

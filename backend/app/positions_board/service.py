@@ -110,6 +110,22 @@ def row(trade: TradeRecord, plan: Optional[TradePlanRecord], *, now: datetime, e
     }
 
 
+async def may_use_exit_now(session: AsyncSession, user: User) -> bool:
+    """Review: whether this user passes Exit now's own gate (`require_trader`: a trading role, the `trading:write` scope
+    and an active organisation). A user who does not is shown "automatic", not a button that would answer 403."""
+    from app.auth.dependencies import TRADING_ROLES
+    from app.auth.scopes import has_scope
+    from app.core.enums import UserRole
+    from app.plans.limits import tenant_is_active
+    if user.role == UserRole.SUPER_ADMIN.value:
+        return True
+    if user.role not in {r.value for r in TRADING_ROLES} or not has_scope(user, "trading:write"):
+        return False
+    from app.db.models import Tenant
+    tenant = await session.get(Tenant, user.tenant_id)
+    return tenant is not None and tenant_is_active(tenant)
+
+
 async def board(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict[str, Any]:
     """The caller's own open positions (tenant + user), with totals and the lockout as a fact."""
     from app.execution import approval
@@ -124,7 +140,7 @@ async def board(session: AsyncSession, user: User, now: Optional[datetime] = Non
                 TradePlanRecord.trade_id.in_([t.id for t in trades]))):
             if p.trade_id is not None:
                 plans[int(p.trade_id)] = p
-    one_click = await approval.exit_now_enabled(session, user.tenant_id)
+    one_click = await approval.exit_now_enabled(session, user.tenant_id) and await may_use_exit_now(session, user)
 
     def how(t: TradeRecord) -> str:
         if t.mode == "LIVE":

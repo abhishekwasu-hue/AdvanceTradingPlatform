@@ -495,6 +495,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/evidence/runs/{run_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}/image.png"): "member",
+    ("GET", "/api/screener/evidence/{evidence_id}/replay"): "member",  # U8 EV3: the pack recomputed from the shared lake (readable rule)
     ("POST", "/api/screener/evidence/{evidence_id}/telegram"): S_OWN_EVIDENCE_TELEGRAM,
     ("GET", "/api/screener/legends"): "member",
     ("GET", "/api/screener/legends/{card_id}"): "member",

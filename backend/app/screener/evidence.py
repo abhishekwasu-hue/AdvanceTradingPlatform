@@ -84,7 +84,9 @@ CONTEXT_DEGREE = 1                    # the strip's trend tag: the engine's DowT
 #   overlay - the function's own level / crossing on the price pane                     levels - option-chain OI walls (EV3)
 #   strip   - a category or a filter without geometry: in the verify strip only, with the reason
 DRAWN_AS: Dict[str, str] = {
-    **{name: "box" for name in BREAKOUT_ARGS if name != "SwingBreakType"},
+    **{name: "box" for name in BREAKOUT_ARGS if name not in ("SwingBreakType", "RangeExpansion")},
+    "RangeExpansion": "bars",                                  # B13 marks the expansion bar (no base to box)
+    "Greatest": "series", "Least": "series",                   # drawn as their arguments' lines
     "SwingBreakType": "strip",
     **{name: "band" for name in ZONE_CALLS},
     **{name: "overlay" for name in CROSS_CALLS},
@@ -327,6 +329,7 @@ def _breakout(ctx: _Ctx, call: n.Call, row: Dict[str, Any]) -> Optional[Dict[str
                      f"volume {terms[3]['value_text']} average")
     row["engine_signal"] = bool(out["signal"].iloc[k])
     if level is None:
+        row["note"] = f"the breakout engine found no {words} on this bar: nothing to draw (its numbers are in the strip)"
         return None
     base_len, hi, lo = out["base_len"].iloc[k], out["base_high"].iloc[k], out["base_low"].iloc[k]
     label = f"{words} {value_text(level, 'price')}"

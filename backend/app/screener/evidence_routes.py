@@ -131,7 +131,6 @@ async def replay_evidence(evidence_id: int, at: datetime, debug: bool = False, u
     if any(isinstance(node, nodes.Call) and node.name in ZONE_CALLS for node in nodes.walk(ast)):
         raise _refuse("market-zone conditions are not replayed yet (the zone timeline is not attached to a replay)")
     from app.charts import price_action_layer as PAL
-    from app.price_action.zones import job
     from app.price_action.zones.store import normalise_key
     try:
         key: Optional[str] = normalise_key(f"{pack.get('exchange') or 'NSE'}:{pack['symbol']}")
@@ -139,8 +138,7 @@ async def replay_evidence(evidence_id: int, at: datetime, debug: bool = False, u
         key = None
     if key is None or key == "*":
         raise _refuse("this instrument has no shared history")
-    need = max([int(v) for v in validated.fetch_lookback.values()] or [1]) + int(len(times))
-    start = at - timedelta(days=job.warmup_days(base_tf if base_tf != "1h" else "1h", need, job.exchange_session(key)) + 1)
+    start = replay_start(validated, base_tf, len(times), at, key)
     try:
         frame, source = await PAL.load_frame(session, key, base_tf, start, at)
     except PAL.WindowTooLarge as exc:
@@ -150,6 +148,14 @@ async def replay_evidence(evidence_id: int, at: datetime, debug: bool = False, u
     replayed = await asyncio.to_thread(_replay_pack, frame, ast, validated, pack, base_tf, at, debug, source)
     return {**evidence_store.view(replayed, debug=debug), "evidence_id": row.id, "can_send": False,
             "replay": {"at": at.isoformat(), "source": source, "note": REPLAY_NOTE, "stored_as_of": pack["as_of"]}}
+
+
+def replay_start(validated: Any, base_tf: str, window: int, at: datetime, key: str) -> datetime:
+    """The first day a replay reads: the screen's own warm-up (its fetch lookback, as the run sizes it) plus the pack's
+    window, before `at` - the same history the run would have had, so the recomputed indicators are the run's."""
+    from app.price_action.zones import job
+    need = max([int(v) for v in validated.fetch_lookback.values()] or [1]) + int(window)
+    return at - timedelta(days=job.warmup_days(base_tf, need, job.exchange_session(key)) + 1)
 
 
 def _replay_pack(frame: Any, ast: Any, validated: Any, pack: Dict[str, Any], base_tf: str, at: datetime, debug: bool,

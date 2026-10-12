@@ -32,6 +32,7 @@ from app.screener import compile_screen, nodes
 from app.screener import taxonomy as tx
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
+from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
 from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
@@ -354,8 +355,9 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     tier: Dict[str, Any] = {}
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
                                                                user_id=user.id, tier_out=tier)
-    matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params)
-    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches)
+    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
+    matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
+    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches, vectorized=vectorized)
     results = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),

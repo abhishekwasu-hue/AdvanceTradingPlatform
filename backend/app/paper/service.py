@@ -21,9 +21,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -169,14 +169,17 @@ async def _not_taken(session: AsyncSession, user: User, limit: int = 20) -> List
 
 
 async def _proposal_counts(session: AsyncSession, user: User) -> Dict[str, int]:
-    async def count(*conditions) -> int:
-        return int(await session.scalar(select(func.count()).select_from(AiActionRecord).where(
-            AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == "ENTRY", AiActionRecord.owner_user_id == user.id, *conditions)) or 0)
-    # Review L7: the user's own entry proposals only.
-    return {"approved_by_you": await count(AiActionRecord.decided_by.is_not(None), AiActionRecord.status.in_(("APPROVED", "EXECUTED", "FAILED", "EXPIRED"))),
-            "rejected_by_you": await count(AiActionRecord.status == "REJECTED"),
-            "pending": await count(AiActionRecord.status == "PROPOSED"),
-            "expired_unanswered": await count(AiActionRecord.status == "EXPIRED", AiActionRecord.decided_by.is_(None))}
+    """Review L7: the user's own entry proposals only. Z10-d: the four counts in one query (one round trip, not four:
+    `/api/paper/account` was the slowest read of the load test's sessions)."""
+    def count(*conditions: Any) -> Any:
+        return func.coalesce(func.sum(case((and_(*conditions), 1), else_=0)), 0)
+    row = (await session.execute(select(
+        count(AiActionRecord.decided_by.is_not(None), AiActionRecord.status.in_(("APPROVED", "EXECUTED", "FAILED", "EXPIRED"))),
+        count(AiActionRecord.status == "REJECTED"),
+        count(AiActionRecord.status == "PROPOSED"),
+        count(AiActionRecord.status == "EXPIRED", AiActionRecord.decided_by.is_(None)),
+    ).where(AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == "ENTRY", AiActionRecord.owner_user_id == user.id))).one()
+    return {"approved_by_you": int(row[0]), "rejected_by_you": int(row[1]), "pending": int(row[2]), "expired_unanswered": int(row[3])}
 
 
 async def summary(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict:

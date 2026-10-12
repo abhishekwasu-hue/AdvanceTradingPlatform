@@ -45,6 +45,7 @@ from app.alerts import staleness
 from app.db.models import AlertRuleRecord, ScreenRecord
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN, is_trading_day
 from app.screener import compile_screen, nodes
+from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.runtime import SymbolData, bar_close, closed_only, run_screen
 
 logger = logging.getLogger(__name__)
@@ -258,8 +259,9 @@ def _fresh_only(current: List[SymbolData], tf: str, now: datetime, holidays: Ite
 
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
-                        breakouts_enabled: bool = True, per_user: bool = False) -> Tuple[str, int]:
-    """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error."""
+                        breakouts_enabled: bool = True, per_user: bool = False, vectorized: bool = False) -> Tuple[str, int]:
+    """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
+    (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time."""
     from app.alerts.engine import record_event
     now = _utc(now)
     intrabar = rule.fire_on == "intrabar"
@@ -316,7 +318,8 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
             # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
             # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.
-            cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params)
+            cache.results[result_key] = await asyncio.to_thread(run_screen, ast, validated, current, base_tf=rule.base_tf, params=params,
+                                                                     vectorized=vectorized)
     except Exception as exc:  # noqa: BLE001 - one rule's problem is recorded on the rule; the others go on
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
@@ -349,6 +352,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     intrabar_on: Dict[int, bool] = {}
     breakouts_on: Dict[int, bool] = {}
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
+    vectorized_on: Dict[int, bool] = {}
     started = time_module.monotonic()
     for rule in rules:
         if rule.expires_at is not None and _utc(rule.expires_at) <= now:
@@ -367,9 +371,12 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             breakouts_on[rule.tenant_id] = await flag_enabled(session, BREAKOUT_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
             per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
+        if rule.tenant_id not in vectorized_on:
+            vectorized_on[rule.tenant_id] = await flag_enabled(session, VECTOR_FLAG, rule.tenant_id)
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
-                                           breakouts_enabled=breakouts_on[rule.tenant_id], per_user=per_user[rule.tenant_id])
+                                           breakouts_enabled=breakouts_on[rule.tenant_id], per_user=per_user[rule.tenant_id],
+                                           vectorized=vectorized_on[rule.tenant_id])
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired

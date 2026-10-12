@@ -150,6 +150,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (method rail, setup chips) on the Screener page. OFF: /api/screener/taxonomy answers 503 and the page is unchanged.
     # Files screens only - never ranks or recommends one.
     "screener_gallery": "Screen gallery: browse pre-built screens by method and setup type on the Screener page (research only)",
+    # Z10-d (G4, docs/PERFORMANCE.md): screener runs and bar-close alert rules evaluate the symbols that share a bar index
+    # together (app/screener/panel.py) - the same matches, computed once over the universe. OFF: per symbol, as before.
+    "screener_vectorized": "Vectorised screens: screener runs and bar-close alerts evaluate the whole universe at once (same matches, less time)",
     # Z10-b (G5, docs/design/Z10_LAUNCH_HARDENING.md): stale data -> zero alerts. The bar-close engine, the rule flush and
     # the dispatcher hold back a screen / instrument alert whose bars are no longer current. Trade, exit, risk and
     # system notifications are never held back. OFF: unchanged.
@@ -180,7 +183,8 @@ FEATURE_FLAGS: Dict[str, str] = {
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts", "support_bot", "legal_pages"})
+                               "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
+                               "support_bot", "legal_pages"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

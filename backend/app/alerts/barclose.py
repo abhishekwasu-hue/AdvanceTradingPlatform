@@ -319,14 +319,15 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             return "waiting", 0
         frames = {d.symbol: d.frames[rule.base_tf] for d in current}
         result_key = (rule.tenant_id, rule.created_by if per_user else None, json.dumps(nodes.to_json(ast), sort_keys=True), rule.base_tf, bar,
-                      tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar)
+                      tuple(frames), json.dumps(params, sort_keys=True, default=str), intrabar, rule.exchange or "NSE")
         if result_key in cache.results:
             cache.reused_results += 1
         else:
             if zone_calls:
                 # Z7a-3: the tenant's zone snapshots as of each bar's close (a bar never sees a zone computed after it
-                # closed) - read only when the cycle has not evaluated this same screen already
-                await zone_gate.attach_zones(session, rule.tenant_id, rule.exchange or "NSE", current, now, validated.lookback)
+                # closed) - one batched read for the rule's symbols over the zone calls' own window, only when the cycle
+                # has not evaluated this same screen already (an error here is this rule's problem: the try below)
+                await zone_gate.attach_zones(session, rule.tenant_id, rule.exchange or "NSE", current, now, ast, rule.base_tf, params)
             # CPU-bound (a breakout / session screen over 1m bars can take a fraction of a second per symbol): run it in a
             # worker thread so one rule never stalls the worker's event loop (U6 BK2 review M3). It reads only the frames.
             # Inside the try: a screen that fails at run time is this rule's problem, not the cycle's.

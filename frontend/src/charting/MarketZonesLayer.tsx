@@ -53,7 +53,8 @@ export function MarketZonesLayer({ engine, instrument, price }: { engine: ChartE
     if (!instrument) return () => { live = false; };
     marketZonesApi.layer(instrument).then(
       (r) => { if (live) setLayer(r); },
-      (e: unknown) => { if (live) setFailed(!(e instanceof ApiError && (e.status === 503 || e.status === 404))); },   // 503: flag off
+      // 503: flag off; 404 / 422: no zones for this instrument - nothing to show, never an error on the chart
+      (e: unknown) => { if (live) setFailed(!(e instanceof ApiError && [404, 422, 503].includes(e.status))); },
     );
     return () => { live = false; };
   }, [instrument]);

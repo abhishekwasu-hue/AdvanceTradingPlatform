@@ -110,6 +110,34 @@ async def settings_for(session: AsyncSession, tenant_id: int, key: str) -> ZoneS
         return platform_settings()
 
 
+async def settings_for_many(session: AsyncSession, tenant_id: int, keys: Sequence[str]) -> Dict[str, ZoneSettings]:
+    """`settings_for` for several instrument keys in ONE query (the tenant's "*" row and each key's row). Keys must be
+    normalised already."""
+    wanted = sorted(set(keys))
+    rows = {r.instrument_key: r for r in await session.scalars(select(MarketZoneSettingRecord).where(
+        MarketZoneSettingRecord.tenant_id == tenant_id, MarketZoneSettingRecord.instrument_key.in_([DEFAULT_KEY, *wanted])))}
+    default_row = rows.get(DEFAULT_KEY)
+    out: Dict[str, ZoneSettings] = {}
+    for key in wanted:
+        try:
+            out[key] = resolve_settings(*platform_layers(), _overrides(default_row), _overrides(rows.get(key)))
+        except ValueError as exc:
+            logger.warning("Tenant %s %s: zone settings invalid (%s) - platform settings used", tenant_id, key, exc)
+            out[key] = platform_settings()
+    return out
+
+
+async def read_scopes(session: AsyncSession, keys: Sequence[str], tenant_id: Optional[int]) -> Dict[str, str]:
+    """The scope `zones_as_of` reads for each key, without the platform fallback: the platform's when the reader's settings
+    resolve to the platform's, else the tenant's own (one settings query for all keys; tested equal to zones_as_of)."""
+    keys = [normalise_key(k) for k in keys]
+    if tenant_id is None:
+        return {k: PLATFORM_SCOPE for k in keys}
+    plat_hash = settings_hash(platform_settings())
+    per_key = await settings_for_many(session, tenant_id, keys)
+    return {k: PLATFORM_SCOPE if settings_hash(per_key[k]) == plat_hash else tenant_scope(tenant_id) for k in keys}
+
+
 async def save_settings(session: AsyncSession, tenant_id: int, key: str, overrides: Optional[Mapping[str, Any]] = None, *,
                         enabled: Optional[bool] = None, user_id: Optional[int] = None, preset: Optional[str] = None,
                         now: Optional[datetime] = None) -> MarketZoneSettingRecord:

@@ -82,8 +82,8 @@ from app.secrets_store.envelope import ensure_tenant_key
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
 from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
 from app.notifications.service import notify
-from app.trading.position_monitor import (close_position, monitor_open_positions, open_trade_families,
-                                          trade_venues)
+from app.trading.position_monitor import (broker_for_trade, close_position, monitor_open_positions,
+                                          open_trade_families_by_tenant, trade_venues)
 from app.trading.stop_guard import verify_protective_stops
 
 logger = logging.getLogger(__name__)
@@ -345,12 +345,14 @@ class TradingWorker:
                 self._note_lock_state()
                 # Phase O2: one clock per exchange family. NSE is always considered; MCX/CDS/CRYPTO only
                 # when a deployment actually trades there, so a pure-equity platform behaves as before.
-                # BK2-8: and always the family of every open position of the tenants this cycle processes (those with an
-                # ACTIVE / PAUSED deployment), so its exits run on its own clock.
+                # BK2-8 / #221: and always the family of every open position of every organisation - with or without an
+                # ACTIVE / PAUSED deployment (a PAPER ticket, a manual proposal, a stopped deployment) - so its exits run on
+                # its own clock (ADR-0004). The same select names the organisations that get the exits part of the cycle.
                 live_deps = (await session.execute(select(StrategyDeploymentRecord.tenant_id, StrategyDeploymentRecord.exchange).where(
                     StrategyDeploymentRecord.status.in_([DeploymentStatus.ACTIVE.value, DeploymentStatus.PAUSED.value])).distinct())).all()
+                open_by_tenant = await open_trade_families_by_tenant(session)
                 wanted = {"NSE"} | {session_family(ex) for _, ex in live_deps}
-                wanted |= await open_trade_families(session, {tenant for tenant, _ in live_deps})
+                wanted |= set().union(*open_by_tenant.values()) if open_by_tenant else set()
                 statuses = {name: st for name, st in (await all_session_statuses(session, now)).items() if name in wanted}
                 self._open_families = {name for name, st in statuses.items() if st.is_open}
                 nse = statuses["NSE"]
@@ -359,7 +361,7 @@ class TradingWorker:
                                      lock_degraded=self._lock_degraded)
                 if self._open_families:
                     self._stale_skips = 0
-                    await self._process_tenants(session, now, report)
+                    await self._process_tenants(session, now, report, open_tenants=set(open_by_tenant))
                     report.stale_skips = self._stale_skips
                     # P0.1 / S2: a long evaluation phase must not let the lock lapse under the housekeeping below.
                     if report.lock_aborted or not await self._keep_lock(session, report, "after the tenants"):
@@ -826,7 +828,7 @@ class TradingWorker:
             return False
         return True
 
-    async def _process_tenants(self, session: AsyncSession, now: datetime, report: CycleReport) -> None:
+    async def _process_tenants(self, session: AsyncSession, now: datetime, report: CycleReport, open_tenants: Optional[set] = None) -> None:
         deployments = list(await session.scalars(
             select(StrategyDeploymentRecord)
             .where(StrategyDeploymentRecord.status.in_([DeploymentStatus.ACTIVE.value, DeploymentStatus.PAUSED.value]))
@@ -838,7 +840,9 @@ class TradingWorker:
         # ADR-0004: an open position is watched whether or not a deployment still runs for it - a PAPER ticket, a manual
         # /paper or webhook proposal, or a deployment stopped while its position stayed open. Such an organisation gets
         # the exits part of the cycle (stop, time exit, square-off, stop guard) with no deployment to evaluate.
-        for tenant_id in await session.scalars(select(TradeRecord.tenant_id).where(TradeRecord.exit_time.is_(None)).distinct()):
+        if open_tenants is None:
+            open_tenants = set(await session.scalars(select(TradeRecord.tenant_id).where(TradeRecord.exit_time.is_(None)).distinct()))
+        for tenant_id in open_tenants:
             by_tenant.setdefault(tenant_id, [])
         by_tenant = dict(sorted(by_tenant.items()))
 
@@ -860,9 +864,11 @@ class TradingWorker:
         now: datetime, report: CycleReport,
     ) -> None:
         user = await self._acting_user(session, tenant_id, deployments)
+        # #221 LOW-4: an organisation with no active user still gets its exits (ADR-0004); they are recorded with no acting
+        # user, and no entry is evaluated (below).
+        user_id = user.id if user is not None else None
         if user is None:
-            logger.warning("Tenant %s has deployments but no user to act as - skipping", tenant_id)
-            return
+            logger.warning("Tenant %s has no active user to act as - exits only (%d deployment(s) not evaluated)", tenant_id, len(deployments))
 
         # One adapter per (broker, account) whose token is proven - every ACTIVE account, not only
         # the ones a deployment names: a routing policy may pick any of them, an open position may
@@ -874,7 +880,7 @@ class TradingWorker:
         for account in accounts:
             if account.status != "ACTIVE":
                 continue
-            adapter = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
+            adapter = await self._usable_adapter(session, tenant_id, account.broker_name, user_id, now, account_label=account.account_label)
             if adapter is not None:
                 adapters[_adapter_key(account.broker_name, account.account_label)] = adapter
 
@@ -895,7 +901,15 @@ class TradingWorker:
             for dep in deployments:
                 dep.last_error = message
             await session.commit()
-            logger.warning("Tenant %s: %s", tenant_id, message)
+            # #221 LOW-4: an exit needs a price, and a price comes only through the organisation's own broker session
+            # (BT1b: never another organisation's feed) - so its open positions are not watched until a session is back.
+            # Said loudly; docs/OPEN_QUESTIONS.md LD-8.
+            unwatched = await session.scalar(select(func.count()).select_from(TradeRecord).where(
+                TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None)))
+            if unwatched:
+                logger.error("Tenant %s: %s - %d open position(s) get no exits until a broker session is usable", tenant_id, message, unwatched)
+            else:
+                logger.warning("Tenant %s: %s", tenant_id, message)
             return
         market_data = self.market_data_factory(data_broker)
         if byob and hasattr(market_data, "cache_namespace"):
@@ -947,12 +961,12 @@ class TradingWorker:
             pairs = [(a, adapters[_adapter_key(a.broker_name, a.account_label)]) for a in accounts
                      if a.status == "ACTIVE" and _adapter_key(a.broker_name, a.account_label) in adapters]
             if pairs:
-                reports = await reconcile_accounts(session, tenant_row, pairs, user_id=user.id, source="worker")
+                reports = await reconcile_accounts(session, tenant_row, pairs, user_id=user_id, source="worker")
                 report.reconciled += 1 if reports else 0
             elif live_broker is not None:
                 try:
                     await run_reconciliation(session, tenant_row, live_broker_name or live_broker.name, live_broker,
-                                             user_id=user.id, source="worker")
+                                             user_id=user_id, source="worker")
                     report.reconciled += 1
                 except Exception as exc:  # noqa: BLE001 - flagged and audited by the service
                     logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
@@ -961,21 +975,26 @@ class TradingWorker:
         # positions on venues still inside their session are monitored as before.
         due_square_off = {f for f in open_families if (cut := intraday_cutoffs(f)[1]) is not None and now_ist.time() >= cut}
         if due_square_off:
-            report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user.id, families=due_square_off)
+            report.positions_closed += await self._square_off_all(session, tenant_id, market_data, exit_broker, user_id, families=due_square_off)
         monitored = open_families - due_square_off
         if monitored:
             # Z3 / BT2: on approval-only positions a target asks "Exit now?"; the stop and time exits stay automatic.
             exit_approval = await approval.exit_approval_predicate(session, tenant_id, deployments)
-            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user.id, families=monitored,
+            outcomes = await monitor_open_positions(session, tenant_id, market_data.get_ltp, broker=exit_broker, user_id=user_id, families=monitored,
                                                     exit_approval=exit_approval, now=now)
             report.positions_closed += sum(1 for o in outcomes if o.closed)
         # Phase P1: every open LIVE position keeps a standing broker-side stop, whatever happened to it.
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
             try:
-                report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user.id, families=open_families)
+                report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user_id, families=open_families)
             except Exception as exc:  # noqa: BLE001 - advisory safety net; never stops the cycle
                 logger.warning("Tenant %s: stop guard failed: %s", tenant_id, exc)
+        if user is None:
+            for dep in deployments:
+                dep.last_error = "No active user in the organisation: exits only, no new entries"
+            await session.commit()
+            return
         tenant_started = time.monotonic()
         tenant = await session.get(Tenant, tenant_id)
         if tenant is not None and not tenant_is_active(tenant):
@@ -1481,7 +1500,7 @@ class TradingWorker:
         )
 
     async def _usable_adapter(
-        self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: int, now: datetime, account_label: str = "primary",
+        self, session: AsyncSession, tenant_id: int, broker_name: str, user_id: Optional[int], now: datetime, account_label: str = "primary",
     ) -> Optional[BrokerInterface]:
         record = await get_credential_record(session, tenant_id, broker_name, account_label)
         if record is None:
@@ -1531,7 +1550,7 @@ class TradingWorker:
 
     async def _square_off_all(
         self, session: AsyncSession, tenant_id: int, market_data: MarketDataService,
-        live_broker: Optional[BrokerInterface], user_id: int, families: Optional[set] = None,
+        live_broker: Optional[BrokerInterface], user_id: Optional[int], families: Optional[set] = None,
     ) -> int:
         open_trades = list(await session.scalars(
             select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
@@ -1548,7 +1567,12 @@ class TradingWorker:
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Square-off: no price for %s (%s) - left open", trade.symbol, exc)
                 continue
-            broker = live_broker if trade.mode == ExecutionMode.LIVE.value else None
+            broker = None
+            if trade.mode == ExecutionMode.LIVE.value:
+                # #221 MED-2: the trade's own account (cached per cycle), as the monitor does, when no LIVE deployment named
+                # a session - a LIVE position with no deployment is squared off too (an exit: the Phase 0 chokepoint lets
+                # it through).
+                broker = live_broker or await broker_for_trade(session, trade)
             outcome = await close_position(session, trade, price, "Intraday square-off", broker=broker, user_id=user_id)
             closed += int(outcome.closed)
         if closed:
@@ -1573,7 +1597,7 @@ class TradingWorker:
         await session.commit()
 
     async def _guard_stops(self, session: AsyncSession, tenant: Tenant, accounts: List, adapters: Dict[str, BrokerInterface],
-                           user_id: int, families: Optional[set] = None) -> int:
+                           user_id: Optional[int], families: Optional[set] = None) -> int:
         """Phase P1 per account (Phase T): one session holds one order book, so each account's open
         LIVE trades are checked against its own; trades recorded before accounts were tracked go
         with the default account of their broker. An account without a usable session this cycle

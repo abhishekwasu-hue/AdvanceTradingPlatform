@@ -360,6 +360,34 @@ chart's pointer events and a toolbar to it.
     preference before version; corrections point-in-time (CH3-3, CH3-6). `at` / `start` before 1990 -> 422.
 - Open questions CH3-1 .. CH3-6 (`docs/OPEN_QUESTIONS.md`); CH3-4 lists what is left for later.
 
+## CH6a (built): ScreenQL studies on charts from the screener runtime, a study WebWorker, 50k-bar performance
+
+- **Backend.** `GET /api/charts/studies?instrument=&tf=&at=&start=&expr=...` (`app/charts/studies.py`; flag `chart_studies`,
+  off -> 503, per organisation; "member" in the tenancy table; 120 requests a minute per user).
+  - Up to 6 ScreenQL expressions, each a number (a line) or a condition (marks where it turns true), checked like a
+    screen plus `validator.validate_study`: no cross-sectional and no last-bar-only function, no data a chart does not
+    load. A refused study says why; the others are still drawn.
+  - Values: `app.screener.runtime.evaluate` - the screener's own engine (screens, alert rules, the screener backtest),
+    so a chart study and a screen of the same expression cannot disagree (tested against `run_screen`).
+  - As of `at` with the CH3 loader (bars that ended by `at`, shared-licensed sources, corrections point-in-time, row
+    caps); the studies' look-back before `start` is read too (per timeframe, `@1d` included), so the first drawn value
+    is a full one. Columnar answer: `times` once, `values` per line study, `fires` per condition; `fingerprint`.
+  - A price-unit study that lives at the price (median |value / close - 1| < 25 %) draws on the price pane; distances
+    (ATR) and other units in the study pane.
+- **Frontend.** `studies.ts` (API, loader that clears on every new question), `StudiesPanel.tsx` (add / remove,
+  each study's last value or refusal, kept per browser), `LightweightEngine.setStudy` (one line series per study, on
+  pane 0 or the study pane 1), `studyMath.ts` + `studyWorker.ts` + `studyClient.ts` (the WebWorker that turns values
+  into chart series and runs SMA / EMA / Wilder RSI kernels; main-thread fallback). Mounted on the full-window chart,
+  following replay (`at`) like the price-action layer.
+- **Tests.** `backend/tests/test_ch6_chart_studies.py`: values = the runtime's, conditions fire where a screen matches;
+  truncation invariance over every ScreenQL series expression of the Z10-a harness; later bars added / altered (and a
+  `stream:` row) leave the answer at `at` byte-identical; warm-up; refusals and caps; flag; 50,000 bars x 6 studies +
+  JSON < 1 s x CI factor in the perf job (0.4 s locally) and < 5 s in the normal suite. Frontend `studies.test.ts`: the
+  kernels equal the backend on `__fixtures__/study_parity.json` (a byte-identical copy of the backend's) to 1e-9;
+  50,000 bars of three kernels + the line conversion < 1 s; the worker protocol and its fallback; the loader; the
+  engine's study lines.
+- **No new ScreenQL function**, so no new Z10-a causal case. Open questions CH6-1 .. CH6-3.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

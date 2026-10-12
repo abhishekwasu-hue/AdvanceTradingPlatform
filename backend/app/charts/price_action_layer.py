@@ -68,6 +68,7 @@ MAX_BREAK_PIVOTS = 40                 # the newest confirmed pivots per degree w
 MAX_LEVELS_PER_SIDE = 3               # unbroken swing levels drawn above and below the last close (debug: all)
 CONCEPTS = ("swings", "legs", "breaks", "levels", "trend")
 FETCH_PARTITION = 5000
+FRAME_COLS = ["timestamp", "bar_end", "open", "high", "low", "close", "volume"]
 # Provenance (BT1b, data terms): only sources licensed for every organisation are read, in this preference order -
 # NSE bhavcopy (HB1), a market-data vendor, the operator's history import into the shared lake (HB0). Never
 # `stream:<broker>` / `broker:<name>` rows: those were recorded through one organisation's own broker session.
@@ -295,25 +296,26 @@ def _to_frame(rows: List[RowTuple], tf: str, key: str, end: datetime, rebuild: b
     else:
         df = job.raw_frame(rows, tf, sess)
     if not len(df):
-        return pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"])
+        return pd.DataFrame(columns=FRAME_COLS)
     df = df.rename(columns={"close_at": "bar_end"})
     df = df[pd.to_datetime(df["bar_end"], utc=True) <= pd.Timestamp(end)]       # closed by `end`, whatever the source
-    return df[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
+    return df[["timestamp", "bar_end", "open", "high", "low", "close", "volume"]].reset_index(drop=True)
 
 
-async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime) -> Tuple[pd.DataFrame, Optional[str]]:
+async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime,
+                     max_bars: Optional[int] = None) -> Tuple[pd.DataFrame, Optional[str]]:
     """The lake's own `tf` bars, else `tf` rebuilt from its 1-minute bars (intraday). (frame, source label)."""
     for label in LAKE_LABELS[tf]:
-        rows = await _fetch(session, key, label, start, end, MAX_BARS * ROWS_PER_BAR)
+        rows = await _fetch(session, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, False), f"lake:{label}"
     if tf in INTRADAY_MINUTES and tf != "1m":
         if end - start > timedelta(days=REBUILD_MAX_DAYS) and await _has_rows(session, key, "1m", start, end):
             raise WindowTooLarge(f"{tf} is rebuilt from 1-minute bars for at most {REBUILD_MAX_DAYS} days; choose a later `start`")
-        rows = await _fetch(session, key, "1m", start, end, MAX_BARS * INTRADAY_MINUTES[tf] * ROWS_PER_BAR)
+        rows = await _fetch(session, key, "1m", start, end, (max_bars or MAX_BARS) * INTRADAY_MINUTES[tf] * ROWS_PER_BAR)
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, True), "lake:1m"
-    return pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"]), None
+    return pd.DataFrame(columns=FRAME_COLS), None
 
 
 def build(frame: pd.DataFrame, tf: str, degree: int, debug: bool) -> Dict[str, Any]:

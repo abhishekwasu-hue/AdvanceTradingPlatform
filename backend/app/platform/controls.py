@@ -205,6 +205,14 @@ FEATURE_FLAGS: Dict[str, str] = {
     # the Dow trend per degree from the shared lake bars as of a time, with toggles, a debug mode and bar replay that
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart
     # shows no layer. Reference only - places no orders.
+    # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices
+    # in one), beta to NIFTY 50 from the lake's Daily closes, and the one-sided direction warning. OFF:
+    # GET /api/portfolio/risk answers 503. Read-only: it refuses nothing and places no orders.
+    "portfolio_risk": "Portfolio risk view of the user's own PAPER book: exposure, open risk by sector bucket, beta to NIFTY 50, one-sided warning (read-only)",
+    # N1 F2: the user's own portfolio caps (max exposure in one sector bucket, max open risk at the stops in one
+    # bucket, max open positions; each 0 = no limit, set in the PAPER risk settings) refuse new PAPER entries before a
+    # proposal and at Approve. Acts only while portfolio_risk is on too. Exits are never refused (ADR-0004).
+    "portfolio_risk_caps": "Portfolio caps on new PAPER entries: sector exposure, open risk per bucket, open positions (entries only; exits never refused)",
     # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
     # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
@@ -217,7 +225,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "chart_studies"})
+                               "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

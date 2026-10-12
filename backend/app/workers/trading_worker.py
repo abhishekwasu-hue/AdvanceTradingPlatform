@@ -82,7 +82,8 @@ from app.secrets_store.envelope import ensure_tenant_key
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
 from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
 from app.notifications.service import notify
-from app.trading.position_monitor import close_position, exchange_for_trade, monitor_open_positions
+from app.trading.position_monitor import (close_position, monitor_open_positions, open_trade_families,
+                                          trade_venues)
 from app.trading.stop_guard import verify_protective_stops
 
 logger = logging.getLogger(__name__)
@@ -305,11 +306,14 @@ class TradingWorker:
             async with self.session_factory() as session:
                 # Z10-c: the broker-order chokepoint reads the PAPER-only lock from this process; refresh it every cycle.
                 await phase0_lock.is_on(session, None)
-                # Phase O2: one clock per exchange family. NSE is always considered; MCX/CRYPTO only
+                # Phase O2: one clock per exchange family. NSE is always considered; MCX/CDS/CRYPTO only
                 # when a deployment actually trades there, so a pure-equity platform behaves as before.
-                wanted = {"NSE"} | {session_family(ex) for ex in await session.scalars(
-                    select(StrategyDeploymentRecord.exchange).where(
-                        StrategyDeploymentRecord.status.in_([DeploymentStatus.ACTIVE.value, DeploymentStatus.PAUSED.value])).distinct())}
+                # BK2-8: and always the family of every open position of the tenants this cycle processes (those with an
+                # ACTIVE / PAUSED deployment), so its exits run on its own clock.
+                live_deps = (await session.execute(select(StrategyDeploymentRecord.tenant_id, StrategyDeploymentRecord.exchange).where(
+                    StrategyDeploymentRecord.status.in_([DeploymentStatus.ACTIVE.value, DeploymentStatus.PAUSED.value])).distinct())).all()
+                wanted = {"NSE"} | {session_family(ex) for _, ex in live_deps}
+                wanted |= await open_trade_families(session, {tenant for tenant, _ in live_deps})
                 statuses = {name: st for name, st in (await all_session_statuses(session, now)).items() if name in wanted}
                 self._open_families = {name for name, st in statuses.items() if st.is_open}
                 nse = statuses["NSE"]
@@ -1199,6 +1203,7 @@ class TradingWorker:
             contract=contract, rules=rules if contract is not None else None, quote_broker=market_data.broker,
             account_id=account_id, exit_rules=dep.exit_rules, holding=getattr(dep, "holding", None) or "INTRADAY",
             order_style=getattr(dep, "order_style", None) or "MARKET", market_protection_pct=getattr(dep, "market_protection_pct", None),
+            exchange=dep.exchange,
         )
         dep.last_signal_at = signal_ts
         dep.last_error = None if result.executed else "; ".join(result.reasons)[:500]
@@ -1419,14 +1424,15 @@ class TradingWorker:
         open_trades = list(await session.scalars(
             select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         ))
+        venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
         closed = 0
         for trade in open_trades:
-            if families is not None and session_family(exchange_for_trade(trade)) not in families:
+            if families is not None and session_family(venues[trade.id]) not in families:
                 continue
             if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
                 continue   # Phase AS: a swing position is held overnight by design
             try:
-                price = await market_data.get_ltp(trade.symbol, exchange_for_trade(trade))
+                price = await market_data.get_ltp(trade.symbol, venues[trade.id])
             except Exception as exc:  # noqa: BLE001
                 logger.warning("Square-off: no price for %s (%s) - left open", trade.symbol, exc)
                 continue
@@ -1541,9 +1547,10 @@ class TradingWorker:
         that symbol on REST polling; nothing else changes."""
         key = next((k for k, a in adapters.items() if a is data_broker), data_broker.name)
         wanted: set = {(d.symbol, d.exchange or "NSE") for d in deployments}
-        open_trades = await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None)))
+        open_trades = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))))
+        venues = await trade_venues(session, open_trades)
         for trade in open_trades:
-            wanted.add((trade.symbol, exchange_for_trade(trade)))
+            wanted.add((trade.symbol, venues[trade.id]))
             if trade.underlying_symbol:
                 from app.trading.position_monitor import underlying_exchange
                 wanted.add((trade.underlying_symbol, underlying_exchange(trade.underlying_symbol)))

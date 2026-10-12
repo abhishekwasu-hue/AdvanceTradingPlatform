@@ -90,6 +90,61 @@ def exchange_for_trade(trade: TradeRecord) -> str:
     return trade.exchange or exchange_for_symbol(trade.symbol)
 
 
+def trade_venue(trade, deployment_exchange: Optional[str] = None) -> str:
+    """BK2-8: the exchange whose session clock a position follows (monitoring, square-off, its quote). The trade's own
+    exchange - stamped at entry since BK2-8; for an older row without one, the symbol registry's (MCX / crypto
+    contracts), else its deployment's exchange when that is another family than NSE (a currency deployment's trade is
+    CDS), else NSE - as before for every equity / F&O row."""
+    if trade.exchange:
+        return trade.exchange
+    spec = get_contract_spec(trade.symbol)
+    if spec is not None:
+        return spec.exchange
+    return venue_beyond_nse(deployment_exchange) or "NSE"
+
+
+def venue_beyond_nse(exchange: Optional[str]) -> Optional[str]:
+    """`exchange` (upper case) when its session family is not NSE's, else None: an NSE / BSE / NFO name keeps meaning the
+    NSE venue the platform has always used for an equity row; a CDS / MCX / crypto one is a different clock."""
+    from app.market_data.calendar import session_family
+    if exchange and session_family(exchange) != "NSE":
+        return exchange.upper()
+    return None
+
+
+async def deployment_exchanges(session: AsyncSession, trades) -> Dict[int, str]:
+    """{deployment id: exchange} for the trades whose venue falls back to their deployment (one query)."""
+    ids = {t.deployment_id for t in trades if not t.exchange and t.deployment_id is not None and get_contract_spec(t.symbol) is None}
+    if not ids:
+        return {}
+    rows = await session.execute(select(StrategyDeploymentRecord.id, StrategyDeploymentRecord.exchange)
+                                 .where(StrategyDeploymentRecord.id.in_(ids)))
+    return {dep_id: exchange for dep_id, exchange in rows.all() if exchange}
+
+
+async def trade_venues(session: AsyncSession, trades) -> Dict[int, str]:
+    """{trade id: venue} (`trade_venue`) for a batch of trades."""
+    deps = await deployment_exchanges(session, trades)
+    return {t.id: trade_venue(t, deps.get(t.deployment_id)) for t in trades}
+
+
+async def open_trade_families(session: AsyncSession, tenant_ids: Optional[set] = None) -> set:
+    """BK2-8: the session families of the open positions of `tenant_ids` (None: every tenant) - the worker always keeps
+    these clocks, so a position is monitored and squared off on its own venue's session even when no ACTIVE / PAUSED
+    deployment trades there any more (ADR-0004: an exit is never skipped because a clock was not looked at)."""
+    from types import SimpleNamespace
+
+    from app.market_data.calendar import session_family
+    query = select(TradeRecord.id, TradeRecord.symbol, TradeRecord.exchange, TradeRecord.deployment_id).where(TradeRecord.exit_time.is_(None))
+    if tenant_ids is not None:
+        if not tenant_ids:
+            return set()
+        query = query.where(TradeRecord.tenant_id.in_(tenant_ids))
+    rows = (await session.execute(query)).all()
+    trades = [SimpleNamespace(id=i, symbol=sym, exchange=ex, deployment_id=dep) for i, sym, ex, dep in rows]
+    return {session_family(venue) for venue in (await trade_venues(session, trades)).values()}
+
+
 async def broker_for_trade(session: AsyncSession, trade: TradeRecord) -> Optional[BrokerInterface]:
     """The authenticated adapter that can square off this LIVE trade: the broker account the
     position sits in (Phase T), else the broker its deployment trades through, else - for a trade
@@ -574,10 +629,11 @@ async def monitor_open_positions(
         select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         .order_by(TradeRecord.id)
     ))
+    venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
     if families is not None:
         # Phase O2: only venues whose session is open right now; a closed venue's quote is stale anyway.
         from app.market_data.calendar import session_family
-        open_trades = [t for t in open_trades if session_family(exchange_for_trade(t)) in families]
+        open_trades = [t for t in open_trades if session_family(venues[t.id]) in families]
     outcomes: List[CloseOutcome] = []
     asks: List[tuple] = []          # Z3: (trade, target reason, price) - "Exit now?" questions, raised after every exit
     # Phase H2: legs of one structure are judged together, never one by one.
@@ -593,7 +649,7 @@ async def monitor_open_positions(
         if trade.leg_group_id:
             continue
         try:
-            price = await price_lookup(trade.symbol, exchange_for_trade(trade))
+            price = await price_lookup(trade.symbol, venues[trade.id])
         except Exception as exc:  # noqa: BLE001 - one bad quote must not stop the sweep
             logger.warning("No price for %s while monitoring trade %s: %s", trade.symbol, trade.id, exc)
             outcomes.append(CloseOutcome(trade_id=trade.id, closed=False, warnings=[f"Price unavailable: {exc}"]))

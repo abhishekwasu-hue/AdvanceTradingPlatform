@@ -333,6 +333,7 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             # Z5 / P1-d: a ticket's proposal keeps the plan's quantity as a ceiling and its checked cap (override included).
             max_quantity=(evidence.get("ticket") or {}).get("max_quantity"), risk_cap_amount=(evidence.get("ticket") or {}).get("risk_cap_amount"),
             journal_source="PROPOSAL",            # Z6 L2: the journal records where the trade came from
+            exchange=exchange,                    # BK2-8: the position follows its venue's session (CDS, MCX)
         )
         if not result.executed:
             raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or order.status))

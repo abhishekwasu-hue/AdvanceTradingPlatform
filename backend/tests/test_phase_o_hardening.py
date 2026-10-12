@@ -113,7 +113,7 @@ def test_square_off_is_per_venue(monkeypatch):
 
 def test_system_status_lists_exchange_sessions():
     body = client.get("/api/system/status").json()
-    assert set(body["sessions"]) == {"NSE", "MCX", "CRYPTO"}
+    assert set(body["sessions"]) == {"NSE", "MCX", "CDS", "CRYPTO"}
     assert body["sessions"]["CRYPTO"]["is_open"] is True
     assert {"is_open", "reason", "next_open"} <= set(body["sessions"]["NSE"])
 

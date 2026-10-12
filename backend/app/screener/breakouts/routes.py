@@ -77,6 +77,28 @@ async def catalog(user: User = Depends(get_current_user), session: AsyncSession 
     return {**templates.catalog(bk3, bk4), "screens": screens, "disclaimer": quality.DISCLAIMER}
 
 
+@router.get("/fitness")
+async def fitness(template_id: Optional[str] = None, user: User = Depends(get_current_user),
+                  session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """U6 BK5: the newest stored fitness of each daily / weekly breakout template (or one) - past matches on the shared
+    lake's daily bars, by grade, timeframe and volatility regime, small samples marked. Reference data: the same rows for
+    every organisation; templates of a set whose flag is off are left out. Informational, never a recommendation."""
+    from app.screener.breakouts import fitness as fit
+    from app.screener.breakouts import fitness_job
+    await _flags(session, user)
+    await require_flag(session, fitness_job.FLAG, user.tenant_id)
+    bk3 = await gate.bk3_enabled(session, user.tenant_id)
+    bk4 = await flag_enabled(session, gate.BK4_FLAG, user.tenant_id)
+    hidden = (() if bk3 else BK3_SCREENS) + (() if bk4 else BK4_SCREENS)
+    visible = [t.id for t in templates.TEMPLATES if t.screen not in hidden and (template_id is None or t.id == template_id)]
+    if template_id is not None and not visible:
+        raise HTTPException(status_code=404, detail="Template not found")
+    rows = await fitness_job.latest(session, visible)
+    return {"rows": rows, "universe": fitness_job.config.BREAKOUT_FITNESS_UNIVERSE, "horizons": list(fit.FITNESS_HORIZONS),
+            "intraday_note": "Intraday templates have no fitness yet: there is no shared intraday history (open question BK5-2).",
+            "disclaimer": fit.DISCLAIMER}
+
+
 def _resolve(body: RunBody) -> Dict[str, Any]:
     if body.template_id is not None:
         t = templates.BY_ID.get(body.template_id)

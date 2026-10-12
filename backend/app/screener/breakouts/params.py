@@ -296,6 +296,10 @@ PARAMS: Tuple[Param, ...] = (
     Param("retest_reversal", True, "the retest bar is a logical reversal at the level (app/price_action/reversal.py, as ReversalAt); False: "
           "a touch within retest_tol_atr ATR with the close held is enough", "Spec B9: the same commitment forms as the pullback screens (ReversalAt).",
           group="B9"),
+    # --- screen fitness (U6 BK5, flag screener_breakouts_fitness) ---------------------------------------------------------
+    Param("fitness_min_samples", 30, "screen fitness: a bucket (a grade, a regime, a timeframe, a horizon) with fewer signals than this is "
+          "marked low_sample and shown greyed", "Spec §6 'shown greyed when samples are small'; 30 is the usual rule of thumb before a mean is read at all.",
+          5, 1000, group="fitness"),
     # --- style / timeframes -----------------------------------------------------------------------------------------------
     Param("context_ladder", DEFAULT_CONTEXT_LADDER, "signal timeframe -> the higher timeframes read for context (closed bars only)",
           "Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w).", group="style"),

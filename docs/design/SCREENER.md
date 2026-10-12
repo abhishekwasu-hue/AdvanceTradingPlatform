@@ -1193,6 +1193,54 @@ Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §8 BK4 (B5 / B6 / B8 / B9
   non-vacuous; the gap cases use the down side because the synthetic 5m sessions gap mostly down, and the synthetic
   daily bars never gap, so the daily gap behaviour is covered by fixtures.
 
+## U6 BK5 (built): breakout screen fitness, the template catalogue, docs (flag `screener_breakouts_fitness`, off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §6 (screen fitness) and §8 BK5 (templates, fitness stats, docs).
+Code: `app/screener/breakouts/fitness.py` (the statistics), `fitness_job.py` (the nightly pass and the reads), the
+`/api/screener/breakouts/fitness` endpoint. Research notes: `docs/research/breakouts.md` "BK5: screen fitness". Open
+questions BK5-1..BK5-5.
+- **What it shows.** For each daily / weekly template, every past match's forward return at 1 / 5 / 20 bars (% and R,
+  signed for the side), whether the break failed, its grade and volatility regime, aggregated overall, by grade, by
+  regime, by timeframe and by side. Each bucket gives its signal count, failed-break rate, and per horizon the samples,
+  mean, median, hit rate and mean R. A bucket below `fitness_min_samples` (30) is `low_sample` (greyed). It is
+  informational only, with a disclaimer; nothing ranks or recommends a screen.
+- **Data.** Only the shared lake's daily bars (`md_candles`, read with the zones job's point-in-time reader: ended and
+  ingested by the run time). No user's broker data and no tenant's private store are read, so one set of rows serves every
+  organisation (reference data, like the market zones). The universe is `BREAKOUT_FITNESS_SYMBOLS` (empty:
+  `MARKET_ZONES_SYMBOLS`) under the label `BREAKOUT_FITNESS_UNIVERSE`, with up to `BREAKOUT_FITNESS_HISTORY_DAYS` (5
+  years) of history. Intraday templates are not computed: there is no shared intraday history (BK5-2).
+- **Pass.** The worker starts it as its own task once per IST day from `BREAKOUT_FITNESS_HOUR_IST` (21), with the NSE
+  closed, after HB1's EOD ingest (the zones job's `eod_ready`). It runs under a Postgres advisory lock and a time budget
+  (`BREAKOUT_FITNESS_BUDGET_SECONDS`), with the CPU part in a thread. It is resumable: templates stored for the day are
+  skipped, and the day counts as done only when every template was worked through. Rows go to `breakout_fitness_runs`
+  (one per template, universe and IST date, with the parameter hash), via migration `d4f6a8c0e2b5` (ROLLBACK_SAFE,
+  additive).
+- **Endpoint.** `GET /api/screener/breakouts/fitness[?template_id=]` (member; tenancy table) answers the newest stored row
+  per template. It needs `screener_v2`, `screener_breakouts` and `screener_breakouts_fitness`, and leaves out the BK3 /
+  BK4 templates while their flags are off. It answers 503 while the fitness flag is off.
+- **Templates.** Every screen has at least one template, and every template's ScreenQL compiles (a test keeps both true).
+  The catalogue:
+
+| Screen | What | ScreenQL | Timeframes | Flags | Templates |
+|---|---|---|---|---|---|
+| B1 | Range / consolidation breakout | `RangeBreakout` | any | screener_breakouts | swing_1h_range |
+| B2 | Swing-high / swing-low breakout (BOS / CHoCH) | `SwingBreakout`, `SwingBreakType` | any | screener_breakouts | daily_swing_break |
+| B3 | Volatility contraction (VCP-style) breakout | `VCPBreakout`, `VCPReady` | 1d | screener_breakouts + screener_breakouts_bk3 | daily_vcp, daily_vcp_watchlist |
+| B4 | Inside-bar / NR4 / NR7 breakout | `NRBreakout` | any | screener_breakouts | intraday_15m_nr7 |
+| B5 | Trendline / channel breakout | `TrendlineBreakout` | any | screener_breakouts + screener_breakouts_bk4 | daily_trendline_break, swing_1h_channel_break |
+| B6 | Flag / pennant / triangle breakout | `PatternBreakout` | any | screener_breakouts + screener_breakouts_bk4 | daily_flag, daily_triangle |
+| B7 | 52-week / N-week high breakout | `NewHighBreakout` | 1d / 1w | screener_breakouts | daily_52w_high, weekly_52w_high |
+| B8 | Gap breakout (gap-and-go / gap-fill) | `GapBreakout`, `GapType` | 1m / 3m / 5m / 15m / 1d | screener_breakouts + screener_breakouts_bk4 | intraday_5m_gap_and_go, daily_gap_base |
+| B9 | Retest entry (second chance) | `RetestEntry` | any | screener_breakouts + screener_breakouts_bk4 | daily_range_retest, swing_1h_range_retest |
+| B10 | Donchian channel breakout | `DonchianBreakout` | any | screener_breakouts + screener_breakouts_bk3 | daily_donchian_20, daily_donchian_55 |
+| B11 | Bollinger squeeze -> expansion (TTM squeeze variant) | `SqueezeBreakout` | any | screener_breakouts + screener_breakouts_bk3 | daily_bb_squeeze, intraday_15m_ttm_squeeze |
+| B12 | Moving-average breakout | `MABreakout` | any | screener_breakouts + screener_breakouts_bk3 | daily_50ma_breakout |
+| B13 | ATR / range expansion | `RangeExpansion` | any | screener_breakouts | intraday_15m_expansion |
+| B14 | Volume breakout | `VolumeBreakout` | any | screener_breakouts | intraday_5m_volume |
+| B15 | RSI / ADX regime breakout | `RegimeBreakout` | any | screener_breakouts + screener_breakouts_bk3 | daily_rsi_adx_regime |
+| B16 | Opening range breakout | `ORBreakout` | 1m / 3m / 5m / 15m | screener_breakouts | intraday_5m_orb15, intraday_15m_orb30 |
+| B17 | First-hour / previous-day / first-candle / pre-market level break | `DayLevelBreak` | 1m / 3m / 5m / 15m | screener_breakouts | intraday_15m_first_hour, intraday_5m_prev_day |
+| B18 | New high / low of day | `DayExtremeBreak` | 1m / 3m / 5m / 15m | screener_breakouts | intraday_5m_day_extreme |
+
 ## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
 Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
 - Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own

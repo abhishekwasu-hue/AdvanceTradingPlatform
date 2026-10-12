@@ -1,4 +1,4 @@
-# Breakout screens - research notes (U6 BK1, BK2, BK3, BK4)
+# Breakout screens - research notes (U6 BK1-BK5)
 
 Source spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` (§1 research summary). Code: `backend/app/screener/breakouts/`.
 
@@ -171,6 +171,27 @@ How BK4 uses them:
 - **B9.** A retest needs price to leave the level first and to come back within `retest_max_bars`; the reversal's candles
   never include the breakout bar; a close back inside the level first means the breakout failed.
 
+## BK5: screen fitness
+
+Spec §6 and SCREENER_SPEC §2.6 ask for a transparent version of "Holly": for every breakout screen, what followed its past
+matches - forward returns and the failed-break rate by grade, timeframe and volatility regime - informational only, small
+samples greyed.
+
+- **Horizons.** 1, 5 and 20 bars after the signal bar's close (SCREENER_SPEC §2.6), signed for the side (a breakdown
+  that falls counts as positive). A horizon that runs past the last bar is not counted - no partial horizons.
+- **R multiple.** The same move over the stop distance of the quality overlay (close minus `stop_ref`): it relates the
+  move to the risk the template's "Then" plan would take, without suggesting one.
+- **Failed-break rate.** The overlay's own failed-break status (a close back inside the fail level within
+  `failed_break_bars`), over the signals whose window had closed.
+- **Buckets.** Overall, by grade (A / B / C), by volatility regime (low / normal / high from the ATR percentile; unknown
+  before the look-back fills), by timeframe and by side. A bucket below `fitness_min_samples` is marked `low_sample`.
+- **Data.** Only the shared lake's daily bars (md_candles - the NSE EOD archive HB1 ingests), as-of the run time. A user's
+  broker data or a tenant's private store is never read, so the same rows can be shown to every organisation. The
+  intraday templates have no shared intraday history behind them yet, so they have no fitness (BK5-2).
+- **Not done (honest limits).** No deflation for the number of screens tried (SCREENER_SPEC §2.6's "search-adjusted via
+  the trial ledger" needs S6's trial ledger) and no benchmark-relative hit rate yet (BK5-3). The bars are not adjusted
+  for corporate actions, so a split can read as a gap or a break (BK5-4).
+
 ## Parameters
 
 | Parameter | Group | Default | Research note |
@@ -288,4 +309,5 @@ How BK4 uses them:
 | `retest_of` | B9 | range | Spec B9 'breakout already happened'; the fixed-level breakouts of this family. |
 | `retest_max_bars` | B9 | 10 | Two trading weeks on Daily: a later return is a new base, not a retest. |
 | `retest_reversal` | B9 | True | Spec B9: the same commitment forms as the pullback screens (ReversalAt). |
+| `fitness_min_samples` | fitness | 30 | Spec §6 'shown greyed when samples are small'; 30 is the usual rule of thumb before a mean is read at all. |
 | `context_ladder` | style | 15m -> 1h + 1d, 1h -> 1d + 1w, 1d -> 1w, ... (see params.py) | Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w). |

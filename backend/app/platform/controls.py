@@ -187,6 +187,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Needs `screener_breakouts` too. OFF: their ScreenQL functions are hidden and refused, their templates and screens are
     # left out of the catalog and the run, and alert rules using them pause. Research only - matches, never orders.
     "screener_breakouts_bk4": "Breakout screens, set 3: trendline / channel, flag / pennant / triangle, gap-and-go and retest breakouts (needs screener_breakouts; research only, places no orders)",
+    # U6 BK5 (spec §6): breakout screen fitness - a nightly pass computes, for every daily / weekly breakout template, the
+    # forward returns and failed-break rate of its past matches on the SHARED lake's daily bars (by grade, timeframe and
+    # volatility regime; small samples marked). Needs `screener_breakouts` too. OFF: the job does not run and the endpoint
+    # answers 503. Informational - describes past matches, never recommends one, places no orders.
+    "screener_breakouts_fitness": "Breakout screen fitness: what followed each breakout template's past matches on shared daily data, by grade, timeframe and volatility regime (informational, places no orders)",
     # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
     # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
     # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
@@ -221,7 +226,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "screener_breakouts_bk3", "screener_breakouts_bk4",
+                               "screener_breakouts_bk3", "screener_breakouts_bk4", "screener_breakouts_fitness",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
                                "chart_price_action"})
 

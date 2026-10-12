@@ -132,6 +132,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # HB1 (docs/design/HB_HISTORY_BACKFILL.md): the daily NSE bhavcopy backfill (CLI), the nightly EOD fetch (worker) and
     # the admin's manual file / corporate-action / holiday uploads. OFF: all of them refuse and nothing contacts NSE.
     "history_backfill": "Daily NSE bhavcopy backfill and nightly EOD fetch into the shared lake (cash, indices, F&O futures)",
+    # HB2 (docs/design/HB2_INTRADAY_HISTORY.md): the owner's 1-minute history - captured after the close and backfilled
+    # through the OWNER's own broker session (read-only candle endpoints) into the owner's private store only, sharing
+    # the worker's rate budget with a reserve kept for exits. OFF: the job, the CLI and the worker hook do nothing.
+    "history_intraday": "Owner intraday history: 1-minute bars from the owner's own broker session into the owner's private store (read-only, places no orders)",
     # Z3 / BT2 (beta spec, Phase 0): every automatic entry (deployments, TradingView webhooks, public API signals) becomes
     # an ENTRY proposal (Approve / Reject / Snooze); Approve places a PAPER order at a re-quoted price. Target exits ask
     # "Exit now?"; protective exits (stop, time stop, square-off, kill switch) stay automatic (ADR-0004). OFF: unchanged.
@@ -192,7 +196,7 @@ FEATURE_FLAGS: Dict[str, str] = {
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
+                               "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends"})
 

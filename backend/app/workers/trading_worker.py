@@ -774,6 +774,12 @@ class TradingWorker:
         by_tenant: Dict[int, List[StrategyDeploymentRecord]] = {}
         for dep in deployments:
             by_tenant.setdefault(dep.tenant_id, []).append(dep)
+        # ADR-0004: an open position is watched whether or not a deployment still runs for it - a PAPER ticket, a manual
+        # /paper or webhook proposal, or a deployment stopped while its position stayed open. Such an organisation gets
+        # the exits part of the cycle (stop, time exit, square-off, stop guard) with no deployment to evaluate.
+        for tenant_id in await session.scalars(select(TradeRecord.tenant_id).where(TradeRecord.exit_time.is_(None)).distinct()):
+            by_tenant.setdefault(tenant_id, [])
+        by_tenant = dict(sorted(by_tenant.items()))
 
         for tenant_id, tenant_deployments in by_tenant.items():
             # P0.1 / S2: the evaluation phase is the long one; keep the replica lock alive per tenant.

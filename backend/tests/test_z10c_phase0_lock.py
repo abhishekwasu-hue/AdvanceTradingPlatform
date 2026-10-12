@@ -19,6 +19,8 @@ from tests.test_trading_worker import (
     BAR_TS, LATE_NOW, OPEN_NOW, _deploy, _FakeBroker, _force_signal, _get, _signal, _tenant, _trades, _worker,
 )
 
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+
 
 def _run(coro):
     return asyncio.run(coro)

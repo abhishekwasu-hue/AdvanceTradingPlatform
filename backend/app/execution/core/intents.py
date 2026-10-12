@@ -99,6 +99,16 @@ async def existing_order(session: AsyncSession, tenant_id: int, intent_id: int, 
                                                           OrderRecord.mode == "PAPER", OrderRecord.idempotency_key == order_key(intent_id)))
 
 
+async def relink_placed(session: AsyncSession, intent_id: int, *, route: str, reason: str, now: datetime) -> bool:
+    """Review of the X2 delta (L1): an EXPIRED / FAILED row whose own attempt did place its PAPER order -> DONE. A
+    conditional update on that status (False when the row is anything else); the caller commits."""
+    result = await session.execute(update(ExecutionIntentRecord)
+                                   .where(ExecutionIntentRecord.id == intent_id, ExecutionIntentRecord.status.in_((EXPIRED, FAILED)))
+                                   .values(status=DONE, route=route, reason=(reason or "")[:300], finished_at=_utc(now))
+                                   .execution_options(synchronize_session=False))
+    return bool(_count(result))
+
+
 def order_outcome(order: Any, now: datetime) -> Optional[Dict[str, Any]]:
     """The values that finish an intent from its PAPER order (review of X2, L3): DONE when it filled, REFUSED (route
     PAPER) when it was rejected or failed, None while it is still in flight (its own attempt finishes the row)."""

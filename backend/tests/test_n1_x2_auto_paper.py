@@ -652,3 +652,50 @@ def test_a_retry_reports_a_rejected_order_and_announces_a_filled_one_once(monkey
     _reset_to_claimed(intent2.id)
     assert _run(retry2()) == intents.DONE                                # a second retry does not announce again
     assert len([a for a in _rows(AuditLogRecord, t2["tenant_id"]) if a.event == "scan_auto_paper_entry"]) == 1
+
+
+@pytest.mark.parametrize("swept", [intents.EXPIRED, intents.FAILED])
+def test_a_row_swept_while_its_order_filled_becomes_done_and_is_announced_once(monkeypatch, swept):
+    """Review of the X2 delta (L1): the expiry / stale sweep settled the row (it saw no order yet) while this attempt's
+    pipeline was still filling the order. The filled PAPER order is the entry: the row moves to DONE (route PAPER) and the
+    owner is told once - never an open PAPER position under an "Interrupted" intent with no notification."""
+    t, _ = _armed_setup(f"swept{swept.lower()}", monkeypatch)
+    real = dispatcher._placed
+
+    async def swept_first(session, f, *args, **kwargs):
+        await session.execute(update(ExecutionIntentRecord).where(ExecutionIntentRecord.id == f.intent_id)
+                              .values(status=swept, reason="Interrupted: nothing was raised"))
+        await session.commit()
+        return await real(session, f, *args, **kwargs)
+    monkeypatch.setattr(dispatcher, "_placed", swept_first)
+    row = _go(t)
+    assert row.status == intents.DONE and row.route == policy.ROUTE_PAPER and "placed while the row was being swept" in row.reason
+    assert len(_rows(OrderRecord, t["tenant_id"])) == 1 and len(_trades(t)) == 1
+    audits = [a for a in _rows(AuditLogRecord, t["tenant_id"]) if a.event == "scan_auto_paper_entry"]
+    notes = [n for n in _rows(NotificationRecord, t["tenant_id"]) if n.title.startswith("Auto PAPER entry")]
+    assert len(audits) == 1 and len(notes) == 1 and f"intent #{row.id}" in audits[0].detail
+
+
+def test_a_retry_s_done_and_its_announcement_commit_together(monkeypatch):
+    """Review of the X2 delta (L2): the retry path's DONE and the announcement are one commit - a failure while
+    announcing leaves the row CLAIMED (retried later), never DONE without the owner told."""
+    from app.execution.core import announce
+    t, _ = _armed_setup("onecommit", monkeypatch)
+    assert _runner().submitted >= 1
+    intent = _intent_of(t)
+    _order(t, t["user_id"], f"intent:{intent.id}")                      # filled, but the crash came before _placed
+    _reset_to_claimed(intent.id)
+
+    async def boom(*args, **kwargs):
+        raise RuntimeError("notification store down")
+    monkeypatch.setattr(announce, "placed_once", boom)
+
+    async def retry():
+        async with _session_factory() as session:
+            fresh = await session.get(ExecutionIntentRecord, intent.id, populate_existing=True)
+            try:
+                await dispatcher.dispatch_one(session, fresh, NOW + timedelta(minutes=1))
+            except RuntimeError:
+                await session.rollback()
+    _run(retry())
+    assert _intent_of(t).status == intents.CLAIMED

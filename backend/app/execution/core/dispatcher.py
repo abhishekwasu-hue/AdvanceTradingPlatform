@@ -117,12 +117,13 @@ async def dispatch_one(session: AsyncSession, row: ExecutionIntentRecord, now: d
         earlier = await intents.earlier_outcome(session, tenant_id, intent_id, now)
         if earlier is not None:
             order = earlier.get("order")
+            # Review of the X2 delta (L2): the status and the announcement land in one commit (both or neither).
             done = await intents.finish(session, intent_id, earlier["status"], route=earlier["route"], ai_action_id=earlier.get("ai_action_id"),
-                                        reason=earlier["reason"], now=now)
+                                        reason=earlier["reason"], now=now, commit=False)
             if done and order is not None and earlier["status"] == intents.DONE:
                 from app.execution.core import announce
                 await announce.placed_once(session, intent_id, order)     # the crash came between the fill and _placed
-                await session.commit()
+            await session.commit()
             return str(earlier["status"])
         if await intents.existing_order(session, tenant_id, intent_id) is not None:
             return intents.CLAIMED                     # its order is still in flight in the other attempt: that one finishes it
@@ -296,6 +297,15 @@ async def _placed(session: AsyncSession, f: _Facts, owner_id: int, signal: Signa
     if not await intents.finish(session, f.intent_id, intents.DONE, route=policy.ROUTE_PAPER, now=now, commit=False,
                                 reason=f"Auto PAPER: PAPER order #{order_id} at {price:g}{trade}"):
         await session.rollback()                       # another attempt settled the row; it announces the entry
+        # Review of the X2 delta (L1): or a sweep settled it EXPIRED / FAILED while this attempt's pipeline was still
+        # filling the order (the sweep saw no order yet). The owner's filled PAPER order is the entry: the row becomes
+        # DONE (only from that status) and the owner hears once - never an open position under an "Interrupted" intent.
+        order = await intents.existing_order(session, f.tenant_id, f.intent_id, owner_id)
+        if order is not None and str(order.status or "") in intents.PLACED_ORDER and await intents.relink_placed(
+                session, f.intent_id, route=policy.ROUTE_PAPER, now=now,
+                reason=f"Auto PAPER: PAPER order #{order_id} at {price:g}{trade} (placed while the row was being swept)"):
+            await announce.placed_once(session, f.intent_id, order)
+            await session.commit()
         return
     await announce.write(session, tenant_id=f.tenant_id, owner_id=owner_id, intent_id=f.intent_id, direction=f.direction, symbol=f.symbol,
                          strategy_id=f.strategy_id, source_ref=f.source_ref, order_id=order_id, price=price,

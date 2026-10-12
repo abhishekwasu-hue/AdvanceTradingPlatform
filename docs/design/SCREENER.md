@@ -211,7 +211,11 @@ job, never tuned against results.
   - Names and arity. Windows must be whole numbers from 1 to 500, as a literal or a parameter. Missing and unknown
     parameters are refused.
   - Timeframes: a field finer than the screen's base timeframe is refused.
-  - Look-ahead: a negative offset is refused, both in the text and in a builder tree.
+  - Look-ahead: a negative offset is refused, both in the text and in a builder tree. Z10-a: a function answered for
+    the last bar only (`LAST_BAR_ONLY`: structure / pattern / zone filters, option chain, reference data, ranks) is
+    refused inside a function that reads a history (`READS_HISTORY`: Count, CountStreak, CrossAbove / CrossBelow,
+    SMA, EMA, Max, Min, PctChange, ZScore, Lag) - it would repeat today's answer on the bars before. Every registry
+    function is also in the no-look-ahead harness (`app/quality/causal_cases.py`).
   - Offsets are capped at 500.
   - Cost: a per-tenant cap (default 200); cross-sectional functions cost more.
   - The validation also carries the plan inputs: the timeframes used and the bars needed per timeframe
@@ -964,6 +968,16 @@ parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 
     context filter (BK1-2).
   - A test runs every template on the alert fetch window (fetch-sized intraday bars plus the daily history) with the
     history check on. No "not enough history", and every template matches.
+- **Fetch cost and the cycle cache (verification F1-F3).**
+  - **F1, cycle cache:** a cache entry records the lookback per timeframe it was fetched for, and is reused only when it
+    covers every timeframe a rule asks for. A plain 15m rule's frame (no daily context) is never served to a breakout
+    rule, so the result no longer depends on rule order. A refetch merges both needs.
+  - **F2, daily history:** completed-session daily history for context is cached per user namespace, symbol and
+    session date (`HISTORY_CACHE_TTL_SECONDS`), not fetched again every cycle.
+  - **F3, intraday window:** with the daily history attached, only intraday timeframes size the intraday window.
+  - **Breakout run:** the run reports refused daily-context fetches (BYOB) as problems.
+- **Z10-a harness:** the 10 breakout functions have `SCREENQL_SERIES` / daily cases in `app/quality/causal_cases.py`.
+  Their numeric settings are `literal_only`: a literal or a $parameter, never a per-bar expression.
 - **Months (verification B).** `runtime.bar_close` counts a month in exchange time. A month labelled 1 Aug 00:00 IST
   (31 Jul 18:30 UTC) used to close on 30 Aug in UTC arithmetic, a session early. Tested on UTC 03:45, UTC 18:30 and
   IST-aware daily stamps.

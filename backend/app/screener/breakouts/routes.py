@@ -95,29 +95,34 @@ def _resolve(body: RunBody) -> Dict[str, Any]:
 
 
 async def _frames(session: AsyncSession, user: User, symbols: List[str], exchange: str, signal_tf: str,
-                  context: tuple) -> tuple:
+                  context: tuple, tier: Optional[Dict[str, Any]] = None) -> tuple:
     """Closed bars per symbol for the signal timeframe and every context timeframe.
 
     * A daily-or-coarser signal: one daily fetch; the signal and every context frame are built from the daily bars (L8: a
       weekly signal's monthly context comes from daily bars, not from weekly ones).
     * An intraday signal: the signal timeframe's fetch (1h for 2h / 4h); intraday context is resampled from it, and
       daily-or-coarser context is built from a separate daily fetch (deeper than the intraday window)."""
+    tier = tier if tier is not None else {}                           # BT1b: the run's own user session, its data-tier badge
     daily_tf = bp.TF_MINUTES["1d"]
     frames: Dict[str, Dict[str, pd.DataFrame]] = {}
     if bp.TF_MINUTES[signal_tf] >= daily_tf:
-        daily, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, "1d", {"1d": SIGNAL_HISTORY_BARS})
+        daily, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, "1d", {"1d": SIGNAL_HISTORY_BARS},
+                                                     user_id=user.id, tier_out=tier)
         for d in daily:
             base = d.frames["1d"]
             frames[d.symbol] = {tf: style.resample(base, "1d", tf) for tf in (signal_tf, *context)}
         return frames, problems, source
     fetch_tf = FETCH_TF.get(signal_tf, signal_tf)
-    universe, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, fetch_tf, {fetch_tf: SIGNAL_HISTORY_BARS})
+    universe, problems, source = await fetch_frames(session, user.tenant_id, symbols, exchange, fetch_tf, {fetch_tf: SIGNAL_HISTORY_BARS},
+                                                    user_id=user.id, tier_out=tier)
     for d in universe:
         f = d.frames[fetch_tf]
         frames[d.symbol] = {signal_tf: style.resample(f, fetch_tf, signal_tf) if fetch_tf != signal_tf else f}
     daily_ctx = [tf for tf in context if bp.TF_MINUTES[tf] >= daily_tf]
     if daily_ctx and frames:
-        daily, _, _ = await fetch_frames(session, user.tenant_id, list(frames), exchange, "1d", {"1d": SIGNAL_HISTORY_BARS})
+        daily, daily_problems, _ = await fetch_frames(session, user.tenant_id, list(frames), exchange, "1d", {"1d": SIGNAL_HISTORY_BARS},
+                                                      user_id=user.id)
+        problems.update({s: f"daily context: {why}" for s, why in daily_problems.items() if s not in problems})
         for d in daily:
             for tf in daily_ctx:
                 frames[d.symbol][tf] = style.resample(d.frames["1d"], "1d", tf)
@@ -154,14 +159,15 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     symbols = list(dict.fromkeys(body.symbols))
     if body.within * len(symbols) > MAX_WORK:
         raise HTTPException(status_code=422, detail=f"within x symbols is at most {MAX_WORK} per run ({body.within} x {len(symbols)})")
-    frames, problems, source = await _frames(session, user, symbols, body.exchange, spec["signal_tf"], spec["context"])
+    tier: Dict[str, Any] = {}
+    frames, problems, source = await _frames(session, user, symbols, body.exchange, spec["signal_tf"], spec["context"], tier)
     rows, graded, hidden = await run_in_threadpool(_grade_all, spec, frames, body.within, body.include_htf_failed)
     reasons: Dict[str, str] = {**dict(problems), **graded}
     text, why = templates.screenql(spec["screen"], spec["signal_tf"], spec["params"])
     return {"screen": spec["screen"], "signal_tf": spec["signal_tf"], "context_tfs": list(spec["context"]), "style": style.style_of(spec["signal_tf"]),
             "screenql": text, "engine_only_reason": why, "data_source": source, "scanned": len(symbols), "rows": rows,
             "columns": list(templates.RESULT_COLUMNS), "problems": reasons, "as_of": datetime.now(timezone.utc).isoformat(),
-            "htf_filter": bp.validate(spec["params"])[0]["htf_filter"], "htf_failed_hidden": hidden, "history_note": HISTORY_NOTE,
+            **tier, "htf_filter": bp.validate(spec["params"])[0]["htf_filter"], "htf_failed_hidden": hidden, "history_note": HISTORY_NOTE,
             "disclaimer": quality.DISCLAIMER}
 
 

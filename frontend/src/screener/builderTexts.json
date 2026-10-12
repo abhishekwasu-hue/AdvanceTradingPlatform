@@ -20,6 +20,9 @@
     "k": "num"
    },
    "cross_sectional": false,
+   "literal": [
+    "k"
+   ],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -42,6 +45,7 @@
    "defaults": {},
    "types": {},
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": false,
@@ -67,6 +71,7 @@
     "n": "window"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -88,6 +93,7 @@
     "index": "str"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": false,
@@ -107,6 +113,7 @@
    "defaults": {},
    "types": {},
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": false,
@@ -134,6 +141,9 @@
     "swing": "window"
    },
    "cross_sectional": false,
+   "literal": [
+    "tolerance_pct"
+   ],
    "kwargs": [],
    "varargs": false,
    "timeframed": false,
@@ -155,6 +165,7 @@
     "minutes": "window"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -172,6 +183,7 @@
    "defaults": {},
    "types": {},
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -210,6 +222,7 @@
     "name": "str"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -233,6 +246,7 @@
     "n": "window"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -254,6 +268,7 @@
     "x": "num"
    },
    "cross_sectional": true,
+   "literal": [],
    "kwargs": [
     "by"
    ],
@@ -279,6 +294,7 @@
     "n": "window"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -300,6 +316,7 @@
     "x": "num"
    },
    "cross_sectional": true,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": false,
@@ -328,6 +345,7 @@
     "direction": "str"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -354,6 +372,9 @@
     "k": "num"
    },
    "cross_sectional": false,
+   "literal": [
+    "k"
+   ],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -387,6 +408,7 @@
     "degree": "num"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -417,6 +439,7 @@
     "degree": "num"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -444,6 +467,7 @@
     "swing": "window"
    },
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": false,
@@ -461,6 +485,7 @@
    "defaults": {},
    "types": {},
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -478,6 +503,7 @@
    "defaults": {},
    "types": {},
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,
@@ -495,6 +521,7 @@
    "defaults": {},
    "types": {},
    "cross_sectional": false,
+   "literal": [],
    "kwargs": [],
    "varargs": false,
    "timeframed": true,

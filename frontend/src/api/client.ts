@@ -42,6 +42,11 @@ import type {
   ExitNowResponse,
   PaperAccount,
   PaperLadder,
+  PaperRiskStatus,
+  RiskByDefaultSettings,
+  TicketPlan,
+  TicketView,
+  TradePlanView,
   MarkPriceResponse,
   MarketStructureResult,
   MfaStatus,
@@ -147,6 +152,7 @@ import type {
   StaticIpOverview,
 } from "../types";
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
+import type { BetaCohort } from "../beta/rollout";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 
@@ -489,6 +495,13 @@ export const api = {
   paperPause: (reason?: string) => request<{ paused: boolean; paused_reason: string | null }>("/paper/pause", { method: "POST", body: JSON.stringify(reason ? { reason } : {}) }),
   paperResume: () => request<{ paused: boolean; paused_reason: string | null }>("/paper/resume", { method: "POST" }),
 
+  /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
+  paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
+  setPaperRisk: (values: Partial<RiskByDefaultSettings>) => request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) }),
+  previewTicket: (plan: TicketPlan) => request<TicketView>("/paper/ticket/preview", { method: "POST", body: JSON.stringify(plan) }),
+  placeTicket: (plan: TicketPlan) => request<TradePlanView>("/paper/ticket", { method: "POST", body: JSON.stringify(plan) }),
+  paperPlans: () => request<TradePlanView[]>("/paper/plans"),
+
   /** Z3 "Exit now" (approval-only or the PAPER account on): closes a PAPER position at once at the live price, else the last price seen. */
   exitNow: (tradeId: number) => request<ExitNowResponse>(`/positions/${tradeId}/exit-now`, { method: "POST" }),
 
@@ -724,6 +737,10 @@ export const api = {
   analyticsDegradation: () => request<DegradationReport>("/analytics/degradation"),
   updateTradeJournal: (tradeId: number, body: { notes?: string | null; tags?: string[] | null }) =>
     request<TradeRecord>(`/trades/${tradeId}/journal`, { method: "PATCH", body: JSON.stringify(body) }),
+  // Z10-e: the staged beta rollout (SUPER_ADMIN, MFA). Moving up is one stage at a time with a reason; audited.
+  adminBetaCohort: () => request<BetaCohort>("/admin/beta/cohort"),
+  adminSetBetaStage: (stage: number, reason?: string) =>
+    request<BetaCohort>("/admin/beta/cohort/stage", { method: "PUT", body: JSON.stringify({ stage, reason: reason || undefined }) }),
   adminIncidents: (status?: string) => request<Incident[]>(`/admin/incidents${status ? `?status=${status}` : ""}`),
   adminCreateIncident: (body: { title: string; severity: string; summary?: string; tenant_id?: number | null }) =>
     request<Incident>("/admin/incidents", { method: "POST", body: JSON.stringify(body) }),

@@ -384,6 +384,13 @@ async def close_position(
     )
     # Z3: an "Exit now?" question still open on this position is void now (best effort, after the close is booked).
     await approval_policy.retire_proposals_for_closed(session, trade, reason)
+    # Z5 / P1-d: a PAPER close that reaches the user's daily loss limit records the lockout now (after the exit, never raises).
+    try:
+        from app.risk_engine import by_default
+        await by_default.after_close(session, trade)
+    except Exception:  # noqa: BLE001 - belt and braces: the exit is booked; nothing after it may turn it into an error
+        logger.exception("Daily loss check after closing trade %s failed", trade.id)
+        await session.rollback()
     return outcome
 
 
@@ -493,10 +500,13 @@ class _SameTrigger(Exception):
     """The trailed stop rounds to the trigger already standing - nothing to send."""
 
 
-async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, price: float, *, broker: Optional[BrokerInterface]) -> Optional[str]:
+async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, price: float, *, broker: Optional[BrokerInterface],
+                                  now: Optional[datetime] = None) -> Optional[str]:
     """Run the trade's ExitRules against the current price. Persists a tightened stop and the
     best price; LIVE, moves the broker-side SL-M trigger too (a failed modify keeps the software
-    stop and says so). Returns a time-exit reason when one fired."""
+    stop and says so). Returns a time-exit reason when one fired. `now` is the sweep's clock (the worker cycle's time),
+    so a time exit ("flat at 15:00", "N minutes in trade") is judged at the same instant as everything else in the cycle,
+    never against a different wall clock."""
     rules = ExitRules.from_json(trade.exit_rules)
     if not rules.active:
         return None
@@ -504,7 +514,7 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
         rules, direction=trade.direction, entry_price=trade.entry_price,
         initial_stop=trade.initial_stop_loss if trade.initial_stop_loss is not None else trade.stop_loss,
         current_stop=trade.stop_loss, best_price=trade.best_price, high=price, low=price,
-        entry_time=trade.entry_time, now=datetime.now(timezone.utc),
+        entry_time=trade.entry_time, now=now or datetime.now(timezone.utc),
     )
     changed = update.best_price != trade.best_price or update.stop_changed
     trade.best_price = update.best_price
@@ -547,7 +557,7 @@ async def _apply_trade_exit_rules(session: AsyncSession, trade: TradeRecord, pri
 async def monitor_open_positions(
     session: AsyncSession, tenant_id: int, price_lookup: PriceLookup, *,
     broker: Optional[BrokerInterface] = None, user_id: Optional[int] = None, families: Optional[set] = None,
-    exit_approval: Optional[Callable[[TradeRecord], bool]] = None,
+    exit_approval: Optional[Callable[[TradeRecord], bool]] = None, now: Optional[datetime] = None,
 ) -> List[CloseOutcome]:
     """The worker's per-cycle sweep for one tenant: current price for every open position, close
     the ones whose stop/target has been crossed. `price_lookup(symbol, exchange)` is normally
@@ -557,7 +567,9 @@ async def monitor_open_positions(
     Z3 / BT2 (`exit_approval`, None = unchanged): for a position it returns True for, reaching a *target* asks "Exit
     now?" (an EXIT_POSITION proposal) instead of closing. Every protective exit - the stop, a premium floor/ceiling,
     a time exit, a structure rule - still closes here at once, before and regardless of any proposal or snooze
-    (ADR-0004); `determine_exit_price` checks the stop first, so a pending question never shadows it."""
+    (ADR-0004); `determine_exit_price` checks the stop first, so a pending question never shadows it.
+
+    `now`: the cycle's clock (default: the wall clock) - time exits are judged against it."""
     open_trades = list(await session.scalars(
         select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None))
         .order_by(TradeRecord.id)
@@ -591,7 +603,7 @@ async def monitor_open_positions(
         # Phase J1: dynamic exits - tighten the stop (trailing / break-even) or close on time,
         # with the same rule code the backtest engine runs.
         if trade.exit_rules:
-            time_reason = await _apply_trade_exit_rules(session, trade, price, broker=broker)
+            time_reason = await _apply_trade_exit_rules(session, trade, price, broker=broker, now=now)
             if time_reason is not None:
                 trade_broker = broker if trade.mode == ExecutionMode.LIVE.value else None
                 if trade.mode == ExecutionMode.LIVE.value and trade_broker is None:

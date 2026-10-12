@@ -77,6 +77,7 @@ from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
 from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
+from app.paper.ticket_routes import router as paper_ticket_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
 from app.workers.routes import router as workers_router
@@ -88,6 +89,7 @@ from app.exports.routes import router as exports_router
 from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
 from app.observability.routes import router as observability_router
+from app.observability.status_page import router as public_status_router
 from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
@@ -199,6 +201,7 @@ app.include_router(admin_router)
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)
+app.include_router(public_status_router)  # Z10-e (G7): public status page data (flag public_status_page, off)
 app.include_router(instrument_master_router)
 app.include_router(market_holidays_router)
 app.include_router(billing_router)
@@ -239,6 +242,7 @@ app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, coho
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
+app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 
 _default_risk_config = RiskConfig()
 

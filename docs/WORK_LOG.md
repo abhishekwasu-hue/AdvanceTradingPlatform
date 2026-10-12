@@ -1842,3 +1842,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   instance (`src/progression/i18n.ts`); there is a story.
 - No migration and no new route. Flag off returns the Z3-b answer unchanged.
 - Tests: backend `tests/test_n2_ladder_evidence.py` (9); vitest `src/progression` (12). Open questions N2-1..N2-5.
+
+## Fix: tax report reads only the caller's own trades (BT1b) + FY-dependent statute (TX-1 follow-up)
+
+- Branch `claude/fix-tax-report-own` (from main). Phase 0 bug: `/api/tax/report`, `/api/tax/report.csv` and
+  `/api/tax/years` read every trade of the organisation, so a member saw colleagues' trades. `closed_trades` and
+  `available_years` now filter on the caller's user id too. No flag: this is the only behaviour.
+- Tenancy table: the three routes are `M_OWN_TAX` ("member: the caller's own closed trades only"); the class docstring
+  now allows "member: <why>" for own-rows reads.
+- TX-1 follow-up: `report.statute(fy)` / `report.disclaimer(fy)`. FY up to 2025-26 cites ss.115BBH / 194S / 44AB of the
+  1961 Act; FY 2026-27 onwards cites the Income-tax Act 2025 (TDS s.393(1); the 30% section and the tax-audit section
+  "to be verified"). Each cited section has an incometaxindia.gov.in URL or a verify note; the CSV lists them as
+  `source` rows. The "a chartered accountant should confirm" / "Verify with a chartered accountant" wording is gone.
+  TX-2 (MCX commodity-option CTT) stays open.
+- Tests: `tests/test_tax_report_own.py` (members A and B and the owner each see only their own trades in the report,
+  the CSV and the years; statute by year; disclaimer wording); `test_phase_p_closure.py` updated for FY 2026-27.

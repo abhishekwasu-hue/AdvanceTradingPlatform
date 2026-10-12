@@ -1,4 +1,7 @@
-"""Phase P2 / sections 57-61: Indian financial-year tax report for a tenant's closed trades.
+"""Phase P2 / sections 57-61: Indian financial-year tax report for the caller's own closed trades.
+
+Scope (fix, BT1b): the report reads only the caller's own trades (`trades.user_id`), never another member's of the same
+organisation - a tax report is personal.
 
 The platform is not a tax adviser; this report gives a CA the numbers they ask for, computed the
 way the Income Tax Act classifies them. Every statutory rate comes from the platform's one dated
@@ -12,8 +15,11 @@ report, PAPER fills, backtests and the options builder can never disagree:
   `ABS_PNL` (default) = sum of absolute profit/loss per trade; `ABS_PNL_PLUS_PREMIUM` (the older
   method) also adds the premium received on options sold. STT: `india_costs` OPTION (premium sold)
   or FUTURE (sell value) rate of the sell leg's date; CTT for MCX futures: `india_costs.ctt_sell`.
-* **Crypto / VDA** (section 115BBH) - gains taxed flat (`india_costs.vda_rates`), losses cannot be
-  set off against anything; TDS on sale consideration under section 194S is withheld by the exchange.
+* **Crypto / VDA** - gains taxed flat (`india_costs.vda_rates`), losses cannot be set off against anything; TDS on the
+  sale consideration is withheld by the exchange. The statute cited depends on the year (`statute`): s.115BBH / s.194S of
+  the Income-tax Act 1961 up to FY 2025-26; the Income-tax Act 2025 from FY 2026-27 (it came into force on 1 Apr 2026
+  and the 1961 Act stands repealed from that date), where the TDS is s.393(1) and the section carrying the 30% rate is
+  marked "verify" until an official text is read.
 
 `charges` on each trade (estimated or from a contract note) already include STT/CTT; the STT
 figures here are informational estimates so the user can reconcile against the broker's annual
@@ -41,10 +47,56 @@ TURNOVER_METHODS: Dict[str, str] = {
     "ABS_PNL_PLUS_PREMIUM": "Absolute profit/loss plus premium method (older): F&O turnover is the sum of the absolute profit or "
                             "loss of every trade, plus the premium received on options sold.",
 }
-DISCLAIMER = ("This report is not tax advice. Estimates for reconciliation with your broker's tax P&L statement. Equity intraday and "
-              "F&O are business income (speculative / non-speculative); crypto gains are taxed at a flat rate under section 115BBH "
-              "with no loss set-off and TDS under section 194S withheld by the exchange. Verify with a chartered accountant before "
-              "filing.")
+# TX-1 follow-up: which Act a financial year falls under, with the official source of every section cited. `verify` is set
+# where no official text could be read; nothing is cited without either a source or that marker.
+ACT_2025_FROM = date(2026, 4, 1)
+_ACT_2025_SOURCE = {"url": "https://www.incometaxindia.gov.in/w/income-tax-act-2025-comes-into-force-from-1st-april-2026",
+                    "reference": "CBDT: Income-tax Act, 2025 comes into force from 1st April, 2026 (s.1(3) of the Act; text as amended by "
+                                 "the Finance Act 2026: https://www.incometaxindia.gov.in/documents/d/guest/"
+                                 "income_tax_act_2025_as_amended_by_fa_act_2026-pdf)", "date": "2026-04-01", "verify": ""}
+STATUTES: Dict[str, Dict[str, Any]] = {
+    "1961": {
+        "act": "Income-tax Act, 1961",
+        "vda_tax": {"section": "s.115BBH", "url": "https://www.incometaxindia.gov.in/w/section-115bbh-1",
+                    "reference": "s.115BBH Income-tax Act 1961 (Finance Act 2022)", "verify": ""},
+        "vda_tds": {"section": "s.194S", "url": "https://www.incometaxindia.gov.in/w/section-194s",
+                    "reference": "s.194S Income-tax Act 1961 (CBDT Circular 23/2022)", "verify": ""},
+        "tax_audit": {"section": "s.44AB", "url": "", "reference": "s.44AB Income-tax Act 1961 (10 crore turnover when receipts and "
+                                                                  "payments are digital)",
+                      "verify": "No official page for s.44AB and its 10 crore proviso was read."},
+    },
+    "2025": {
+        "act": "Income-tax Act, 2025",
+        "vda_tax": {"section": "the Income-tax Act 2025 section on income from transfer of a VDA", "url": "",
+                    "reference": "Income-tax Act 2025 (the successor of s.115BBH)",
+                    "verify": "The section of the Income-tax Act 2025 that carries the 30% rate was not found in an official text."},
+        "vda_tds": {"section": "s.393(1) (Table, Sl. 8(vi))", "url": "https://www.incometaxindia.gov.in/w/section-393-5",
+                    "reference": "s.393(1) Table Sl. 8(vi) Income-tax Act 2025", "verify": ""},
+        "tax_audit": {"section": "the Income-tax Act 2025 tax-audit section", "url": "", "reference": "Income-tax Act 2025 (the successor of s.44AB)",
+                      "verify": "The section and threshold of the tax audit in the Income-tax Act 2025 were not found in an official text."},
+    },
+}
+
+
+def statute(fy: str) -> Dict[str, Any]:
+    """The Act a financial year falls under and its cited sections, each with its source (or a `verify` note)."""
+    start = _ist_day(fy_bounds(fy)[0])
+    key = "2025" if start >= ACT_2025_FROM else "1961"
+    return {"key": key, **STATUTES[key], "act_2025_from": ACT_2025_FROM.isoformat(), "act_2025_source": _ACT_2025_SOURCE}
+
+
+def disclaimer(fy: str) -> str:
+    s = statute(fy)
+    if s["key"] == "1961":
+        vda = (f"crypto (VDA) gains are taxed at a flat rate under {s['vda_tax']['section']} of the {s['act']} with no loss set-off, "
+               f"and TDS under {s['vda_tds']['section']} is withheld by the exchange.")
+    else:
+        vda = (f"for this year the {s['act']} applies (in force from 1 Apr 2026): VDA gains are taxed at a flat rate with no loss "
+               f"set-off (section to be verified) and TDS under {s['vda_tds']['section']} is withheld by the exchange.")
+    return ("This report is not tax advice. Estimates for reconciliation with your broker's tax P&L statement; it is not a return and "
+            "files nothing. Equity intraday and F&O are business income (speculative / non-speculative); " + vda)
+
+
 
 
 def _pct(fraction: float) -> float:
@@ -199,9 +251,10 @@ def _rate_changes(start: date, end: date) -> List[Dict]:
     return changes
 
 
-async def closed_trades(session: AsyncSession, tenant_id: int, fy: str, *, mode: Optional[str] = "LIVE") -> List[TradeRecord]:
+async def closed_trades(session: AsyncSession, tenant_id: int, user_id: int, fy: str, *, mode: Optional[str] = "LIVE") -> List[TradeRecord]:
+    """The caller's own closed trades of the year (tenant + user): never another member's (BT1b)."""
     start, end = fy_bounds(fy)
-    query = select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_not(None),
+    query = select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.user_id == user_id, TradeRecord.exit_time.is_not(None),
                                       TradeRecord.exit_time >= start, TradeRecord.exit_time < end)
     if mode:
         query = query.where(TradeRecord.mode == mode)
@@ -211,6 +264,7 @@ async def closed_trades(session: AsyncSession, tenant_id: int, fy: str, *, mode:
 def build_report(trades: List[TradeRecord], fy: str, *, mode: Optional[str], method: Optional[str] = None) -> Dict:
     """`method`: the F&O turnover method (`TURNOVER_METHODS`); None = the configured `TAX_FNO_TURNOVER_METHOD`."""
     method = turnover_method(method)
+    law = statute(fy)
     fy_start, fy_end = (_ist_day(t) for t in fy_bounds(fy))
     totals = {kind: ClassTotals() for kind in CLASSES}
     for trade in trades:
@@ -225,7 +279,8 @@ def build_report(trades: List[TradeRecord], fy: str, *, mode: Optional[str], met
             "tax_estimate": round(t.tax_estimate, 2), "disallowed_losses": round(t.disallowed_losses, 2),
             "top_symbols": [{"symbol": s, "net_pnl": round(v, 2)} for s, v in sorted(t.by_symbol.items(), key=lambda r: -abs(round(r[1], 2)))][:10],
             "income_head": {"EQUITY_INTRADAY": "Speculative business income", "FNO": "Non-speculative business income",
-                            "CRYPTO": "Income from transfer of VDA (s.115BBH)"}[kind],
+                            "CRYPTO": f"Income from transfer of VDA ({law['vda_tax']['section']}, {law['act']})"
+                                      if law["key"] == "1961" else f"Income from transfer of VDA ({law['act']}; section to be verified)"}[kind],
         }
     audit_requirement = (classes["EQUITY_INTRADAY"]["turnover"] + classes["FNO"]["turnover"]) > 10_00_00_000   # 10 crore digital-turnover threshold
     changes = _rate_changes(fy_start, fy_end)
@@ -236,14 +291,19 @@ def build_report(trades: List[TradeRecord], fy: str, *, mode: Optional[str], met
         "financial_year": fy, "mode": mode or "ALL", "generated_at": datetime.now(timezone.utc).isoformat(), "trades": len(trades),
         "net_pnl": round(sum(c["net_pnl"] for c in classes.values()), 2), "classes": classes,
         "turnover_method": method, "turnover_method_label": TURNOVER_METHODS[method],
-        "notes": [DISCLAIMER,
+        "notes": [disclaimer(fy),
                   f"Turnover method: {method}. {TURNOVER_METHODS[method]} Intraday equity turnover is the sum of absolute profit/loss. "
-                  "The method is a setting (TAX_FNO_TURNOVER_METHOD); a chartered accountant should confirm which one applies.",
+                  "The method is a setting (TAX_FNO_TURNOVER_METHOD); which one applies is for the taxpayer and their chartered "
+                  "accountant to settle.",
                   "Charges are what the platform recorded per trade (ESTIMATED until a contract note replaces them); STT/CTT/TDS columns are "
                   "independent estimates at the statutory rates of each trade's sell date, from the platform's one dated charges table.",
                   *([rate_note] if rate_note else []),
-                  "Tax audit under section 44AB is generally required above 10 crore of turnover when receipts and payments are digital; "
-                  + ("your turnover crosses that line." if audit_requirement else "your turnover is below that line.")],
+                  (f"Tax audit under {law['tax_audit']['section']} of the {law['act']} is generally required above 10 crore of turnover "
+                   "when receipts and payments are digital; " if law["key"] == "1961" else
+                   f"Tax audit: the {law['act']} has a tax-audit provision (section and threshold to be verified; under s.44AB of the "
+                   "1961 Act the line was 10 crore of turnover when receipts and payments are digital); ")
+                  + ("this report's turnover crosses 10 crore." if audit_requirement else "this report's turnover is below 10 crore.")],
+        "statute": law, "scope": "your own trades",
         "rates": rates_on(fy_start), "rate_sources": sources_on(fy_start), "rates_as_of": fy_start.isoformat(),
         "rate_changes": changes,
     }
@@ -268,11 +328,18 @@ def to_csv(report: Dict) -> str:
     writer.writerow([])
     for note in report["notes"]:
         writer.writerow(["note", note])
+    law = report.get("statute") or {}
+    for key in ("vda_tax", "vda_tds", "tax_audit"):
+        cited = law.get(key)
+        if cited:
+            writer.writerow(["source", law["act"], cited["section"], cited["url"] or "verify: " + cited["verify"]])
     return out.getvalue()
 
 
-async def available_years(session: AsyncSession, tenant_id: int) -> List[str]:
-    rows = await session.scalars(select(TradeRecord.exit_time).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_not(None)))
+async def available_years(session: AsyncSession, tenant_id: int, user_id: int) -> List[str]:
+    """The financial years of the caller's own closed trades, plus the current one."""
+    rows = await session.scalars(select(TradeRecord.exit_time).where(TradeRecord.tenant_id == tenant_id, TradeRecord.user_id == user_id,
+                                                                     TradeRecord.exit_time.is_not(None)))
     years = {financial_year(_ist_day(t)) for t in rows if t is not None}
     years.add(financial_year(datetime.now(IST).date()))
     return sorted(years, reverse=True)

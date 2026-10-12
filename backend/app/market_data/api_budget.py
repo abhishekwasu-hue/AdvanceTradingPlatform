@@ -6,11 +6,14 @@ same symbol on many screens - can never spend the broker allowance the trading w
   worker and replica counts together, and two members who each brought their own broker (BYOK / BT1) never share one -
   exactly where `app.core.rate_limit` keeps its counters (production and staging, or `RATE_LIMIT_BACKEND=redis`). With
   Redis not configured (one dev process) or unreachable, an in-process window takes over, as for the rate limiter.
-- **Windows.** A token is granted only when every window has room, checked and counted in one Redis script: per second,
-  per minute and - for Upstox, whose standard APIs allow 2,000 requests per 30 minutes per user - per 30 minutes, at
-  most UPSTOX_API_PER_30MIN (500) for the API. Each window is half or less of the worker's own conservative limits
-  (`rate_budget.limits_for`), so API plus worker stay inside the broker's allowance whatever the number of API workers.
-- **No queue.** A request that gets no token within TOKEN_WAIT_SECONDS is answered 429 (the chart keeps its last price).
+- **Windows.** A token is granted only when every window has room, checked and counted in one Redis script: per second
+  (a burst guard at the worker's own conservative rate, far below the broker's), per minute at half the worker's
+  conservative limit, and - for Upstox, whose standard APIs allow 2,000 requests per 30 minutes per user - per 30
+  minutes, at most UPSTOX_API_PER_30MIN (500) for the API. So API plus worker stay inside the broker's allowance
+  whatever the number of API workers.
+- **No queue.** Only the per-second window is waited for (it refills within a second); a full minute or 30-minute window
+  refuses at once. `/ltp` waits at most TOKEN_WAIT_SECONDS, then answers 429 (the chart keeps its last price); a
+  `/candles` request waits at most CANDLE_WAIT_SECONDS in all, and a symbol without a token says "budget used".
 - **One broker call per symbol.** A quote is cached in Redis for QUOTE_CACHE_SECONDS per (credential, exchange, symbol),
   and one request at a time fetches it (a short lock); the others wait for its result. Every user and tab on the same
   credential shares that one call; a BYOK member's own credential has its own entries.
@@ -51,7 +54,7 @@ class ApiLimits:
 def api_limits(broker: str) -> ApiLimits:
     """The API's share for one credential of this broker."""
     base = limits_for(broker)
-    share = ApiLimits(per_second=max(1, int(base.per_second * API_SHARE)), per_minute=max(1, int(base.per_minute * API_SHARE)))
+    share = ApiLimits(per_second=max(1, int(base.per_second)), per_minute=max(1, int(base.per_minute * API_SHARE)))
     if (broker or "").lower() == "upstox":
         return ApiLimits(share.per_second, share.per_minute, UPSTOX_API_PER_30MIN)
     return share
@@ -59,10 +62,11 @@ def api_limits(broker: str) -> ApiLimits:
 
 # --- the shared windows --------------------------------------------------------------------------------------------------
 # Check every window, then count in every window - in one script, so two workers never both take the last token, and a
-# refused call costs nothing in any window.
+# refused call costs nothing in any window. Returns 1 (granted) or -i (refused by the i-th window, 1-based; the longest
+# full window is reported, so a caller never waits on the second when the minute or the 30 minutes are used up).
 _TAKE_LUA = (
-    "for i = 1, #KEYS do local c = tonumber(redis.call('get', KEYS[i]) or '0'); "
-    "if c + 1 > tonumber(ARGV[2 * i]) then return 0 end end; "
+    "for i = #KEYS, 1, -1 do local c = tonumber(redis.call('get', KEYS[i]) or '0'); "
+    "if c + 1 > tonumber(ARGV[2 * i]) then return -i end end; "
     "for i = 1, #KEYS do local c = redis.call('incr', KEYS[i]); "
     "if c == 1 then redis.call('expire', KEYS[i], ARGV[2 * i - 1]) end end; return 1"
 )
@@ -73,33 +77,34 @@ def _keys(record_id: int, windows: List[Tuple[int, int]]) -> List[str]:
     return [f"ab:{int(record_id)}:{seconds}" for seconds, _ in windows]
 
 
-def _local_take(record_id: int, windows: List[Tuple[int, int]]) -> bool:
+def _local_take(record_id: int, windows: List[Tuple[int, int]]) -> int:
     now = time.monotonic()
     buckets = [(_LOCAL[key], seconds, limit) for key, (seconds, limit) in zip(_keys(record_id, windows), windows)]
-    for bucket, seconds, limit in buckets:
+    for i in range(len(buckets), 0, -1):                       # the longest window first, as in the script
+        bucket, seconds, limit = buckets[i - 1]
         while bucket and now - bucket[0] > seconds:
             bucket.popleft()
         if len(bucket) + 1 > limit:
-            return False
+            return -i
     for bucket, _, _ in buckets:
         bucket.append(now)
-    return True
+    return 1
 
 
-async def _redis_take(record_id: int, windows: List[Tuple[int, int]]) -> Optional[bool]:
+async def _redis_take(record_id: int, windows: List[Tuple[int, int]]) -> Optional[int]:
     from app.cache.client import _get_client
     args: List[Any] = []
     for seconds, limit in windows:
         args += [seconds, limit]
     try:
         client: Any = _get_client()                       # redis-py types eval as sync-or-async
-        return bool(int(await client.eval(_TAKE_LUA, len(windows), *_keys(record_id, windows), *args)))
+        return int(await client.eval(_TAKE_LUA, len(windows), *_keys(record_id, windows), *args))
     except Exception:  # noqa: BLE001 - Redis down: the in-process window takes over (never fails open)
         return None
 
 
-async def try_take(record_id: int, broker: str) -> bool:
-    """One token for this credential now, or False."""
+async def _attempt(record_id: int, broker: str) -> int:
+    """1 when a token was taken; -i when the i-th window (1 = per second) has no room."""
     from app.core.rate_limit import redis_backed
     windows = api_limits(broker).windows()
     if redis_backed():
@@ -109,13 +114,20 @@ async def try_take(record_id: int, broker: str) -> bool:
     return _local_take(record_id, windows)
 
 
+async def try_take(record_id: int, broker: str) -> bool:
+    """One token for this credential now, or False."""
+    return await _attempt(record_id, broker) == 1
+
+
 async def take(record_id: int, broker: str, wait_seconds: Optional[float] = None) -> bool:
-    """A token within `wait_seconds` (TOKEN_WAIT_SECONDS), or False - the caller answers 429 rather than queue."""
+    """A token within `wait_seconds` (TOKEN_WAIT_SECONDS), or False - the caller answers 429 rather than queue. Only
+    the per-second window is waited for; a full minute or 30-minute window refuses at once."""
     deadline = time.monotonic() + (TOKEN_WAIT_SECONDS if wait_seconds is None else wait_seconds)
     while True:
-        if await try_take(record_id, broker):
+        verdict = await _attempt(record_id, broker)
+        if verdict == 1:
             return True
-        if time.monotonic() + RETRY_EVERY_SECONDS > deadline:
+        if verdict != -1 or time.monotonic() + RETRY_EVERY_SECONDS > deadline:
             return False
         await asyncio.sleep(RETRY_EVERY_SECONDS)
 
@@ -198,3 +210,43 @@ def reset() -> None:
     _LOCAL.clear()
     _LOCAL_QUOTES.clear()
     _LOCAL_FETCHING.clear()
+
+
+# --- /candles: the same budget around every broker data call --------------------------------------------------------------
+CANDLE_WAIT_SECONDS = 8.0        # in all, per /candles request (the per-second window paces a 50-symbol screen run)
+BUDGETED_CALLS = frozenset({"get_historical_data", "get_intraday_candles", "get_quote", "get_quote_for_symbol", "get_ltp",
+                            "get_ltp_for_symbol", "get_option_chain"})
+
+
+class BudgetUsed(Exception):
+    """No token for this credential right now: the call was not made."""
+
+
+class BudgetedAdapter:
+    """A broker adapter whose data calls each take one token from the credential's API budget first (`BUDGETED_CALLS`;
+    every other attribute passes through - the instrument master, the adapter's name). Calls wait for the per-second
+    window only within one time allowance for the whole request (`wait_seconds`); a call that gets no token raises
+    BudgetUsed without reaching the broker, and after the first refusal the next ones do not wait (the rest of a screen
+    run is marked at once)."""
+
+    def __init__(self, inner: Any, record_id: int, broker: str, wait_seconds: Optional[float] = None) -> None:
+        self._inner = inner
+        self._record_id = record_id
+        self._broker = broker
+        self._deadline = time.monotonic() + (CANDLE_WAIT_SECONDS if wait_seconds is None else wait_seconds)
+        self.refused = 0
+        self.taken = 0
+
+    def __getattr__(self, name: str) -> Any:
+        attr = getattr(self._inner, name)
+        if name not in BUDGETED_CALLS or not callable(attr):
+            return attr
+
+        async def call(*args: Any, **kwargs: Any) -> Any:
+            wait = 0.0 if self.refused else max(0.0, self._deadline - time.monotonic())
+            if not await take(self._record_id, self._broker, wait):
+                self.refused += 1
+                raise BudgetUsed("broker rate budget used - try again shortly")
+            self.taken += 1
+            return await attr(*args, **kwargs)
+        return call

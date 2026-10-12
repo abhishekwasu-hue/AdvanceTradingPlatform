@@ -151,6 +151,53 @@ def test_exercise_stt_by_date():
     assert CO.exercise_cost("2026-04-01", 0.0, 24540.0, 65) == 0.0
 
 
+# --- sources (TX-1) -------------------------------------------------------------------------------------------------------
+def test_every_row_of_every_table_has_a_source_and_nothing_else_does():
+    rows = {(name, seg, since) for (name, seg), table in CO.tables().items() for since, _ in table}
+    assert rows == set(CO.SOURCES)
+    for key, src in CO.SOURCES.items():
+        if src.verify:                                                         # what is missing, in words
+            assert len(src.verify) > 40, key
+        else:                                                                  # settled: a document, its reference and date
+            assert src.url.startswith("https://") and src.ref and src.date, key
+
+
+def test_the_1_april_2026_stt_rows_are_cited_to_the_finance_act_2026_circular():
+    for table, seg in (("STT_SELL", "OPTION"), ("STT_SELL", "FUTURE"), ("STT_EXERCISE", "")):
+        src = CO.source(table, seg, "2026-04-01")
+        assert src.verify == "" and "NSE/FATAX/73524" in src.ref and src.date == "2026-03-31"
+        assert src.url == "https://nsearchives.nseindia.com/content/circulars/FATAX73524.pdf"
+        assert "NSE/FATAX/63809" in CO.source(table, seg, "2026-03-31").ref or table == "STT_EXERCISE"
+    assert not [r for r in CO.unverified() if r[0] in ("STT_SELL", "STT_BUY", "STT_EXERCISE", "CTT_SELL_COMMODITY_FUTURE")]
+
+
+def test_rows_still_marked_verify_are_exactly_the_unsettled_ones():
+    assert {(t, s, since.isoformat()) for t, s, since, _ in CO.unverified()} == {
+        ("EXCHANGE", "EQUITY_INTRADAY", "2023-04-01"), ("EXCHANGE", "EQUITY_DELIVERY", "2023-04-01"),     # 1 Apr 2024 cash slab
+        *{("STAMP_BUY", seg, "2000-01-01") for seg in CO.SEGMENTS},                                      # State rates pre-2020
+        ("TAX", "", "2016-06-01"),                                                                       # Krishi Kalyan Cess
+        ("SEBI_FEE", "", "2000-01-01"),                                                                  # Rs 10 vs Rs 15 / crore
+        ("VDA_TAX", "", "2000-01-01"),                                                                   # Income-tax Act 2025
+    }
+
+
+def test_exchange_charges_on_both_sides_of_each_circular():
+    ex = {seg: [CO.rates(day, seg)["exch"] for day in ("2020-12-31", "2021-01-01", "2023-04-01", "2024-04-01", "2024-10-01",
+                                                        "2026-02-28", "2026-03-01")] for seg in ("OPTION", "FUTURE", "EQUITY_INTRADAY")}
+    assert ex["OPTION"] == [0.0005, 0.00053, 0.0005, 0.000495, 0.0003503, 0.0003503, 0.000355299]
+    assert ex["FUTURE"] == [0.000019, 0.00002, 0.000019, 0.0000188, 0.0000173, 0.0000173, 0.000018299]
+    assert ex["EQUITY_INTRADAY"] == [0.0000325, 0.0000345, 0.0000325, 0.0000325, 0.0000297, 0.0000297, 0.000030699]
+    assert CO.EXCHANGE["EQUITY_DELIVERY"] == CO.EXCHANGE["EQUITY_INTRADAY"]
+    # NSE/FA/73061: the charge absorbs the IPFT contribution it drops (Rs 9.99 / 49.99 per crore), total unchanged.
+    assert ex["EQUITY_INTRADAY"][-1] * 1e7 == pytest.approx(297 + 9.99)
+    assert ex["FUTURE"][-1] * 1e7 == pytest.approx(173 + 9.99) and ex["OPTION"][-1] * 1e7 == pytest.approx(3503 + 49.99)
+
+
+def test_futures_stt_before_and_after_1_june_2013():
+    assert CO.rates("2013-05-31", "FUTURE")["stt_sell"] == 0.00017 and CO.rates("2013-06-01", "FUTURE")["stt_sell"] == 0.0001
+    assert CO.rates("2023-03-31", "FUTURE")["stt_sell"] == 0.0001 and CO.rates("2023-04-01", "FUTURE")["stt_sell"] == 0.000125
+
+
 # --- ATP integration ------------------------------------------------------------------------------------------------------
 def test_paper_broker_stt_on_the_sold_leg_whichever_side_opened():
     """The old ATP equity profile charged STT on both legs; now STT follows the executed sell order."""

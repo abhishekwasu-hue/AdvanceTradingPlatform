@@ -2,7 +2,7 @@
 history_intraday, off by default). The bars go to HB0's existing md_tenant_candles; no other table changes.
 
 Revision ID: f3b5d7a9c1e2
-Revises: e8a1c4d2f9b7 (U8 EV1/EV2 screen_evidence, main's head after Z11)
+Revises: a7d3e9c1b5f2 (N1 E1 execution_intents, main's head after #206)
 Create Date: 2026-10-12 12:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'f3b5d7a9c1e2'
-down_revision: Union[str, Sequence[str], None] = 'e8a1c4d2f9b7'
+down_revision: Union[str, Sequence[str], None] = 'a7d3e9c1b5f2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - one new table that no earlier release reads or writes, so the previous release runs unchanged

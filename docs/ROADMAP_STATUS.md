@@ -35,8 +35,8 @@ Starts as soon as Z11 merges, in this order. A Phase 0 bug, beta feedback or a s
 | N | What | Status |
 |---|---|---|
 | HB2 | Owner intraday history on the server (replaces the cancelled Trade-repo collector as the intraday source) | built, not merged: branch `claude/hb2-intraday-history` (flag `history_intraday` off; docs/design/HB2_INTRADAY_HISTORY.md, questions HB2-1..11) |
-| N1 | E execution core (ADR-0014) -> U4 X1-X2 -> F portfolio risk. The proposal engine reuses the Trade level-bot confirmation rules (trend first -> area -> handover study -> dominant commitment candle on higher volume -> Vision -> approval) once the Trade replay report is in; see docs/TRADE_PORT_MAP.md | after Z11 |
-| N2 | P1-f/g/h: progression ladder, decision tools, context panel, manual-trading workspace polish, education pages | after Z11 |
+| N1 | E execution core (ADR-0014) -> U4 X1-X2 -> F portfolio risk. The proposal engine reuses the Trade level-bot confirmation rules (trend first -> area -> handover study -> dominant commitment candle on higher volume -> Vision -> approval); the Trade replay report is in (Trade #295). Plan: docs/design/N1_EXECUTION_CORE.md (E1 -> L1 -> L2a -> L2b -> E2 -> X1 -> X2 -> F1-F3); questions N1-1..N1-9 | E1 built on `claude/n1-e1` (ADR-0014 intent queue + routing policy + worker drain, flag `execution_core` off); L1 next |
+| N2 | P1-f/g/h: progression ladder, decision tools, context panel, manual-trading workspace polish, education pages. Plan: `docs/design/N2_P1FGH.md` (slices N2-1..N2-11, one flag each) | N2-1 ladder evidence (discipline criterion + own figures, flag `ladder_evidence` off) on branch `claude/n2-p1f`, ready for review |
 | N2-J | **Journal module (owner spec, after Phase 0)**: `docs/specs/ATP_JOURNAL_MODULE_SPEC.md` (v1 + v1.1). Extends the Z6 journal package (`backend/app/journal`, #171/#172): broker API sync (read-only) and file import, fills -> positions -> trade groups, charges on `india_costs`, auto charts, rulesets and checklist, AI text review and BYOK vision review, trade plan and alert-only guardrails, Telegram/email reports, analytics, plans on the existing Razorpay billing, tax, mentor mode. English UI only for now. Plan: `docs/journal/PLAN.md` (PRs J1-a..J8-c); questions JM-1..JM-34 in `docs/journal/OPEN_QUESTIONS.md` | plan done (milestone 0); build after Z11, next to N2 |
 | N3-N9 | Remaining screener, charting CH3-CH7, Copilot H-C4+ / BYOK-V3, G trade engine port, backtest C2-C6 / I, Phase 1 items behind flags, crypto / IBKR / K | after Z11, in that order |
 
@@ -45,14 +45,14 @@ Starts as soon as Z11 merges, in this order. A Phase 0 bug, beta feedback or a s
 docs/TRADE_PORT_MAP.md maps every Trade repo module (Trade@eafc872) to ATP, with status and parity tests.
 Each port PR updates its row in the map and these counts.
 
-| Status | Rows (of 192) |
+| Status | Rows (of 196) |
 |---|---|
-| ported | 11 |
+| ported | 13 |
 | partial | 18 |
 | partial (unverified) | 9 |
-| in progress (Z7a) | 6 |
-| missing | 49 (25 are G rows that wait for the owner's "stable" mark) |
-| not needed | 99 |
+| in progress (Z7a) | 4 |
+| missing | 52 (25 are G rows that wait for the owner's "stable" mark) |
+| not needed | 100 |
 
 Phase 0 ports (Z3 / Z5 / Z10): order safety (partial), charges golden check (partial), strike breach model (ported, Z5 P1-d),
 India VIX gate (ported, Z5 P1-d), PAPER journal / Telegram commands (partial), PAPER exit engine (partial), expiry rule
@@ -94,7 +94,7 @@ Merge train (owner's MERGE_NOW): finished 09:52 IST. PRs #82-#155 are all merged
 | B4 | Corporate-action adjusted view | done | #101 | 100 |
 | B5 | history API with as_of / adjusted / quality | done | #102 | 100 |
 | B6-B7 | backtests read the lake, retention/compression/metrics | next | - | 0 |
-| E | Execution core and scale (ADR-0014) | not started | - | 0 |
+| E | Execution core and scale (ADR-0014) | E1 built (N1): intent queue, routing policy, worker drain (flag `execution_core` off); E2 next (CLOSING pre-claim, intents read API, venue contract suite) | branch claude/n1-e1 | 15 |
 | F | Portfolio risk | not started | - | 0 |
 | G | Trade repo engine port (ADR-0015) | not started | - | 0 |
 | H | Copilot v2 (ATP_COPILOT_SPEC): design note, review findings G1-G13 checked | done (design) | #103 | 100 |

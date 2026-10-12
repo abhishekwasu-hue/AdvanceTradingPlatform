@@ -108,6 +108,13 @@ _SKIP = _bk("skip_first_min", "skip", NUM)
 _K = _bk("min_break_atr", "k", NUM)
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
+# S5-C (Category C, F&O): open-interest screens on the screen's own bars and the shared EOD F&O figures (app/screener/fno.py),
+# behind the `screener_fno` flag. The EOD ones read the lake ("fno_eod": futures rows, spot closes, NSE's ban list).
+FNO_FLAG = "screener_fno"
+_FNO_N = Arg("n", "window", 1, False)
+_FNO_PRICE = Arg("price_pct", NUM, 0.0, False, literal_only=True, bounds=(0.0, 50.0))
+_FNO_OI = Arg("oi_pct", NUM, 0.0, False, literal_only=True, bounds=(0.0, 100.0))
+_BUILDUPS = ("LONG_BUILDUP", "SHORT_BUILDUP", "SHORT_COVERING", "LONG_UNWINDING", "")
 # Z7a-3: market-zone functions (app/screener/zones.py) - the stored zone snapshots, behind the `market_zones` flag
 ZONES_FLAG = "market_zones"
 _ZROLE = Arg("role", STR, "any", False, choices=("any", "demand", "supply"))
@@ -262,6 +269,26 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " sessions (prior sessions only; at least 5)"),
     Spec("SessionVWAP", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG,
          doc="VWAP from the session open on the exchange calendar (pre-open bars left out); equals VWAP on regular-session bars"),
+    # S5-C: F&O / open interest (Category C) - informational screens, place no orders
+    Spec("OIChange", "factor", NUM, "pct", (_FNO_N,), extra_bars=1, flag=FNO_FLAG,
+         doc="% change of open interest over n bars (the screen's own bars - a futures or options contract; NaN without OI)"),
+    Spec("Buildup", "classifier", CAT, None, (_FNO_N, _FNO_PRICE, _FNO_OI), extra_bars=1, values=_BUILDUPS, flag=FNO_FLAG,
+         doc="the buildup from the close and the OI n bars back: LONG_BUILDUP (price up, OI up), SHORT_BUILDUP (down, up), SHORT_COVERING"
+             " (up, down), LONG_UNWINDING (down, down); empty when a move is within price_pct / oi_pct %; missing without OI"),
+    Spec("FutOIChange", "factor", NUM, "pct", (_FNO_N,), min_bars=1, needs=("fno_eod",), flag=FNO_FLAG,
+         doc="% change of the underlying's futures open interest (all expiries) over n trade dates - NSE's F&O bhavcopy, as of the"
+             " bar's close"),
+    Spec("FutBuildup", "classifier", CAT, None, (_FNO_N, _FNO_PRICE, _FNO_OI), min_bars=1, values=_BUILDUPS, needs=("fno_eod",),
+         flag=FNO_FLAG,
+         doc="the futures buildup over n trade dates: the near-month contract's close against its own, and the OI of all expiries"
+             " (NSE's F&O bhavcopy, as of the bar's close)"),
+    Spec("RolloverPct", "factor", NUM, "pct", (), min_bars=1, needs=("fno_eod",), flag=FNO_FLAG,
+         doc="futures OI in the next and far months as % of all expiries' OI (NSE's F&O bhavcopy, as of the bar's close)"),
+    Spec("CostOfCarry", "factor", NUM, "pct", (), min_bars=1, needs=("fno_eod",), flag=FNO_FLAG,
+         doc="the near-month futures premium over the spot close, annualised over the calendar days to expiry, % (as of the bar's"
+             " close)"),
+    Spec("InFnoBan", "filter", BOOL, None, (), min_bars=1, needs=("fno_eod",), flag=FNO_FLAG,
+         doc="the underlying is in NSE's F&O ban list for the bar's trade date (published before the open)"),
     # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
     Spec("NearZone", "filter", BOOL, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
          doc="true when there is a zone of that role" + _ZDOC),
@@ -274,6 +301,7 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
+FNO_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == FNO_FLAG)
 BREAKOUT_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == BREAKOUT_FLAG)
 
 
@@ -302,5 +330,5 @@ def describe() -> Dict[str, Dict[str, object]]:
 
 
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
-           "ZONES_FLAG", "MAX_WINDOW",
+           "ZONES_FLAG", "MAX_WINDOW", "FNO_FLAG", "FNO_FUNCTIONS",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

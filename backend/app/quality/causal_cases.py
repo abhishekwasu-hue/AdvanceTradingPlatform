@@ -116,6 +116,14 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "DayExtremeBreak": ['DayExtremeBreak("up", 0, FALSE, 15, 0)', 'DayExtremeBreak("down", 0, FALSE, 0, 0)@15m'],
     "RelVolumeTOD": ["RelVolumeTOD(5)", 'RelVolumeTOD(3, "cumulative")@1h'],
     "SessionVWAP": ["SessionVWAP()", "SessionVWAP()@1h"],
+    # S5-C: F&O / open interest (own-bar OI added causally; the EOD figures from a causal synthetic timeline)
+    "OIChange": ["OIChange(1)", "OIChange(5)", "OIChange(2)@1h"],
+    "Buildup": ["Buildup(1)", 'Buildup(3, 0.1, 0.5) == "LONG_BUILDUP"', "Buildup(1)@1h"],
+    "FutOIChange": ["FutOIChange(1)", "FutOIChange(3)@1h"],
+    "FutBuildup": ["FutBuildup(1)", 'FutBuildup(2, 0.0, 0.1) != "SHORT_BUILDUP"'],
+    "RolloverPct": ["RolloverPct()", "RolloverPct()@1h"],
+    "CostOfCarry": ["CostOfCarry()", "CostOfCarry()@15m"],
+    "InFnoBan": ["InFnoBan()", "InFnoBan()@1h"],
     # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
     "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],
@@ -147,7 +155,50 @@ def _screenql(text: str, base_tf: str = BASE_TF):
                 for node in nodes.walk(ast))
     if zones:
         return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}, zones=_zone_timeline(f, base_tf)), base_tf=base_tf)
+    called = {node.name for node in nodes.walk(ast) if isinstance(node, nodes.Call)}
+    if called & {"OIChange", "Buildup"}:                 # S5-C: the synthetic bars carry no OI - a causal one is added
+        return lambda f: evaluate(ast, SymbolData("S", {base_tf: _with_oi(f)}), base_tf=base_tf)
+    fno = any("fno_eod" in getattr(FUNCTIONS.get(name), "needs", ()) for name in called)
+    if fno:
+        return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}, fno=_fno_timeline(f, base_tf)), base_tf=base_tf)
     return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}), base_tf=base_tf)
+
+
+def _with_oi(f: pd.DataFrame) -> pd.DataFrame:
+    """S5-C: an open-interest column built from the bars up to each row (a running sum of signed volume around a
+    base) - truncating the bars or changing later ones never changes an earlier value."""
+    out = f.copy()
+    sign = np.sign(f["close"].astype(float).diff().fillna(0.0).to_numpy())
+    out["oi"] = 1_000_000.0 + np.cumsum(sign * f["volume"].astype(float).to_numpy() * 0.5)
+    return out
+
+
+def _fno_timeline(f: pd.DataFrame, tf: str) -> Any:
+    """S5-C: the shared EOD F&O figures stand-in - per IST trade date, a near / next futures contract whose close and OI
+    come ONLY from that date's bars (the last close, a running volume sum), a spot just under the close, a weekly expiry
+    cycle (so contracts roll) and a ban every 11th date. Like the lake rows, each date belongs to its 15:30 close; the case
+    proves the runtime never shows a bar a date that had not closed (the loader's own as-of read is tested in
+    tests/test_s5c_fno.py)."""
+    from datetime import timedelta
+
+    from app.screener.fno import DayRow, build_timeline
+    if not len(f):
+        return build_timeline("S", [])
+    ist = pd.DatetimeIndex(f.index).tz_convert("Asia/Kolkata")
+    frame = f.assign(day=ist.date)
+    days, bans = [], []
+    running = 0.0
+    for k, (d, g) in enumerate(frame.groupby("day", sort=True)):
+        running += float(g["volume"].sum())
+        close = float(g["close"].iloc[-1])
+        expiry = d + timedelta(days=(3 - d.weekday()) % 7 or 7)              # the coming Thursday (not the trade date)
+        near_oi, next_oi = 1_000_000.0 + running * 0.4, 400_000.0 + running * 0.1 * (k % 3)
+        days.append(DayRow(d, [(f"NFO:S:FUT:{expiry.isoformat()}", expiry, close * (1 + 0.0005 * (k % 4)), near_oi),
+                               (f"NFO:S:FUT:{(expiry + timedelta(days=7)).isoformat()}", expiry + timedelta(days=7), close * 1.004, next_oi)],
+                           spot=close * 0.998))
+        if k % 11 == 0:
+            bans.append(d)
+    return build_timeline("S", days, bans)
 
 
 ZONE_SNAPSHOT_EVERY = 25          # bars between the synthetic zone snapshots (plus each session's last bar)

@@ -90,6 +90,16 @@ async def _breakout_check(session: AsyncSession, user: User, ast: Any, fire_on: 
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+async def _fno_check(session: AsyncSession, user: User, ast: Any) -> None:
+    """S5-C: a rule using an F&O function needs `screener_fno` on (refused with the reason while it is off)."""
+    from app.screener import fno as fno_gate
+    from app.screener import nodes
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    if await fno_gate.blocked_calls(session, user.tenant_id, tree):
+        why = fno_gate.refusal(fno_gate.flagged_calls(tree))
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
     """Z7a-3 (the U6 BK1 pattern): a rule (instrument condition or saved screen) using a market-zone function needs
     `market_zones` on, and fires on bar close only - never intrabar."""
@@ -121,6 +131,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
         await _breakout_check(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange)
         await _zone_check(session, user, json.loads(screen.ast_json), body.fire_on)
+        await _fno_check(session, user, json.loads(screen.ast_json))
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
@@ -133,6 +144,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
     await _breakout_check(session, user, ast, body.fire_on, body.exchange)
     await _zone_check(session, user, ast, body.fire_on)
+    await _fno_check(session, user, ast)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
             "universe_json": None, "exchange": body.exchange}
 

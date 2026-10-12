@@ -797,7 +797,7 @@ with the indicator block, and the result table.
     - no flat-bar guard;
     - a cache that ignores the side;
     - a cache that ignores a changed frame.
-- **Next (S5-C).** Category C.
+- **Next (S5-C).** Category C: the first part is built (see "S5-C (built)" below).
 
 ## U5 D2 (built): the other block forms, groups, live counts, why it matched
 - **Block forms** (`StageRow.tsx`; one row shell, a body per kind). Each reads as a sentence edited in place:
@@ -864,6 +864,73 @@ with the indicator block, and the result table.
   and in alert rules while off; an active rule pauses with the reason and resumes when the flag is back; zone rules fire
   on bar close only (intrabar refused at save and skipped by the engine). Research only - no order path.
 - Tests: `backend/tests/test_zones_chart_screenql.py`. Open questions Z7a3-3 .. Z7a3-7 (`docs/OPEN_QUESTIONS.md`).
+## S5-C (built, first part): F&O and open interest (flag `screener_fno`, off)
+
+Spec §2.3 (Category C, India first). This first part builds what ATP's data already supports. The rest is listed under
+"Not built" and in `docs/OPEN_QUESTIONS.md` (S5C-1 .. S5C-8). Code: `app/screener/fno.py`. Tests:
+`backend/tests/test_s5c_fno.py`.
+
+- **Functions on the screen's own bars** (a futures or options contract with an `oi` column):
+  - `OIChange(n=1)`: the % change in open interest over n bars.
+  - `Buildup(n=1, price_pct=0, oi_pct=0)`: one of four buildups, from the close and the OI n bars back.
+    - Price up, OI up: LONG_BUILDUP.
+    - Price down, OI up: SHORT_BUILDUP.
+    - Price up, OI down: SHORT_COVERING.
+    - Price down, OI down: LONG_UNWINDING.
+    - "" when either move is within its threshold.
+  - Bars without OI are refused with the reason, never read as "no buildup". The broker bars the screener loads today
+    carry no OI (S5C-2).
+- **Functions on the shared end-of-day F&O data** (`needs` "fno_eod"; `RUN_PROVIDES` has it). These read the same
+  exchange data for every organisation: the lake's `md_candles` and `fo_ban_history`, which have no tenant column. No
+  user's broker data is read.
+  - `FutOIChange(n=1)`: the % change in futures OI over n trade dates, all expiries.
+  - `FutBuildup(n=1, price_pct=0, oi_pct=0)`: compares the near-month contract's close with its own close n dates back
+    (across a roll it is still the same contract), and all-expiry OI.
+  - `RolloverPct()`: next- and far-month OI as a % of all OI.
+  - `CostOfCarry()`: (near close / spot - 1) x 365 / calendar days to expiry (at least 1) x 100. The spot is the cash
+    close, or for an index future the index close (`NSE_INDEX:<code>`).
+  - `InFnoBan()`: true when the bar's trade date is on NSE's ban list.
+  - The near month is the earliest expiry on or after the trade date, so the expiry day still counts as near.
+- **As of each bar's close (no look-ahead).** A trade date's figures belong to its 15:30 close and are published after
+  it.
+  - A bar sees the newest trade date whose close is strictly before its own close. Every intraday bar of day d, the
+    15:25 bar included, sees d-1. The daily bar of d sees d. This holds whether daily bars are labelled at IST
+    midnight, at 09:15 or at UTC midnight.
+  - The ban list for d is published the evening before, so every bar of d reads it. A weekly bar reads every date
+    inside it.
+  - The loader reads only rows that ended and were ingested by the run time. For each date the highest version wins.
+    Ban rows count only if they were fetched by the run time. Futures rows are looked up by their exact keys (every
+    possible monthly expiry date in the window), an equality look-up on the primary key under any collation (S5C-9).
+  - Tested:
+    - appending or changing later dates leaves earlier values unchanged;
+    - the Z10-a causal cases (`app/quality/causal_cases.py`: a synthetic OI column, and a timeline built per IST date
+      from the bars only);
+    - the loader against seeded lake rows (options and look-alike symbols excluded, versions, ingestion time).
+- **Pre-built screens.**
+  - Source `fno` in the taxonomy: method "Volume and order flow", setup "Options and volatility", EOD data tier,
+    default universe "F&O stocks". Hidden while the flag is off.
+  - The screens: long buildup, short buildup, short covering, long unwinding (`FutBuildup(1, 0.5, 2) == ...`), OI
+    surge (`FutOIChange(1) >= 10`), near-month futures at a discount (`CostOfCarry() < 0`) and the ban list
+    (`InFnoBan()`).
+  - Served by `GET /api/screener/fno/presets` (member; fixed texts; 503 while the flag is off).
+- **Flag `screener_fno`** (off by default), the same pattern as the zones flag:
+  - while off, the functions are hidden from the registry and refused in validate, save, run and alert rules;
+  - an active alert rule pauses with the reason and resumes when the flag is back;
+  - informational only, no order path.
+- **Missing data is explained.** A symbol with no futures rows (not an F&O underlying, or the bhavcopy is not loaded)
+  gets the reason in its result row. It is never a silent no-match.
+- **Not built** (each with its reason in S5C-5):
+  - PCR and max pain from the EOD option bhavcopy;
+  - IV rank and percentile, IV skew, IV crush;
+  - unusual options activity;
+  - FII index-futures positioning from participant-wise OI;
+  - straddle premium and expected move;
+  - premium-decay candidates;
+  - the credit spread finder;
+  - ban-list proximity (MWPL %);
+  - OI walls and max-OI strikes.
+- No migration: everything reads existing tables.
+
 ## U9 TX1 (built): screen taxonomy (method x setup) and the gallery rail and chips
 
 Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1"); Phase 0 item Z8. Flag

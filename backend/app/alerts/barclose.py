@@ -54,6 +54,7 @@ FLAG = "screener_v2"
 INTRABAR_FLAG = "screener_intrabar"
 BREAKOUT_FLAG = "screener_breakouts"                 # U6 BK1: rules using breakout functions pause (stay active) while it is off
 ZONES_FLAG = "market_zones"                    # Z7a-3: rules using market-zone functions pause (stay active) while it is off
+FNO_FLAG = "screener_fno"                      # S5-C: rules using F&O functions pause (stay active) while it is off
 EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
 RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
@@ -261,7 +262,7 @@ def _fresh_only(current: List[SymbolData], tf: str, now: datetime, holidays: Ite
 
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
-                        breakouts_enabled: bool = True, zones_enabled: bool = True, per_user: bool = False,
+                        breakouts_enabled: bool = True, zones_enabled: bool = True, per_user: bool = False, fno_enabled: bool = False,
                         vectorized: bool = False, evidence_enabled: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
     (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time."""
@@ -298,6 +299,11 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             return "unsupported", 0
         from app.screener import zones as zone_gate
         zone_calls = zone_gate.flagged_calls(ast)
+        from app.screener import fno as fno_gate
+        fno_calls = fno_gate.flagged_calls(ast)
+        if fno_calls and not fno_enabled:
+            rule.last_problem = fno_gate.refusal(fno_calls)       # S5-C: paused, not dropped; resumes when the flag is back
+            return "unsupported", 0
         if zone_calls and (not zones_enabled or intrabar):
             # Z7a-3: the rule stays active and resumes when the flag is back; zone rules fire on bar close only
             rule.last_problem = zone_gate.refusal(zone_calls) if not zones_enabled else zone_gate.intrabar_refusal(zone_calls)
@@ -324,6 +330,9 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         if result_key in cache.results:
             cache.reused_results += 1
         else:
+            if fno_gate.eod_calls(ast):
+                # S5-C: the shared EOD F&O figures as of each bar's close (one read per symbol; this rule's problem on error)
+                await fno_gate.attach_fno(session, current, now, rule.base_tf)
             if zone_calls:
                 # Z7a-3: the tenant's zone snapshots as of each bar's close (a bar never sees a zone computed after it
                 # closed) - one batched read for the rule's symbols over the zone calls' own window, only when the cycle
@@ -377,6 +386,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     intrabar_on: Dict[int, bool] = {}
     breakouts_on: Dict[int, bool] = {}
     zones_on: Dict[int, bool] = {}
+    fno_on: Dict[int, bool] = {}
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     vectorized_on: Dict[int, bool] = {}
     evidence_on: Dict[int, bool] = {}
@@ -398,6 +408,8 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             breakouts_on[rule.tenant_id] = await flag_enabled(session, BREAKOUT_FLAG, rule.tenant_id)
         if rule.tenant_id not in zones_on:
             zones_on[rule.tenant_id] = await flag_enabled(session, ZONES_FLAG, rule.tenant_id)
+        if rule.tenant_id not in fno_on:
+            fno_on[rule.tenant_id] = await flag_enabled(session, FNO_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
             per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
         if rule.tenant_id not in vectorized_on:
@@ -407,6 +419,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
                                            breakouts_enabled=breakouts_on[rule.tenant_id], zones_enabled=zones_on[rule.tenant_id],
+                                           fno_enabled=fno_on[rule.tenant_id],
                                            per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
                                            evidence_enabled=evidence_on[rule.tenant_id])
         out.evaluated += state == "done"

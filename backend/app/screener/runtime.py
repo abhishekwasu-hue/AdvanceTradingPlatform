@@ -60,6 +60,7 @@ class SymbolData:
     option_chain: Optional[Any] = None                     # app.brokers.models.OptionChain for PCR / ChainBias / MaxPainDistancePct
     exchange: Optional[str] = None                         # U6 BK2: the session clock of the intraday breakout functions (None = NSE)
     zones: Optional[Any] = None                            # Z7a-3: app.price_action.zones.read.ZoneTimeline for the zone functions
+    fno: Optional[Any] = None                              # S5-C: app.screener.fno.FnoTimeline for the EOD F&O functions
 
 
 @dataclass
@@ -317,6 +318,14 @@ class _Eval:
             "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
             "ZoneState": lambda: _zone(self.data, f, tf, "state", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "ZoneStrength": lambda: _zone(self.data, f, tf, "strength", _text(0, "any"), num(1, 0.5), _text(2, "all")),
+            # S5-C: F&O / open interest (app/screener/fno.py)
+            "OIChange": lambda: _fno().oi_change(f, win(0, 1)),
+            "Buildup": lambda: _fno().buildup(f, win(0, 1), num(1, 0.0), num(2, 0.0)),
+            "FutOIChange": lambda: _fno().fno_series(self.data, f, tf, "oi_change", win(0, 1)),
+            "FutBuildup": lambda: _fno().fno_series(self.data, f, tf, "buildup", win(0, 1), num(1, 0.0), num(2, 0.0)),
+            "RolloverPct": lambda: _fno().fno_series(self.data, f, tf, "rollover"),
+            "CostOfCarry": lambda: _fno().fno_series(self.data, f, tf, "carry"),
+            "InFnoBan": lambda: _fno().fno_series(self.data, f, tf, "ban"),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -585,6 +594,13 @@ def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
         return pd.Series(Bars(f, _breakout_params({})).dow(degree), index=f.index, dtype=object)
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
+
+
+def _fno() -> Any:
+    from app.screener import fno
+    return fno
+
+
 def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:
     from app.screener.zones import zone_series
     return zone_series(data, f, tf, what, role, tolerance_pct, family)

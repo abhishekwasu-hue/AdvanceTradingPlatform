@@ -178,6 +178,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
     # Research only - matches, never orders.
     "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
+    # S5-C (ATP_SCREENER_SPEC §2.3, Category C): F&O screens - open-interest change and the four buildups on the screen's own
+    # bars, and from the shared EOD F&O bhavcopy the futures OI change / buildup, rollover %, cost of carry and the F&O ban
+    # list. OFF: the functions are hidden and refused, the F&O pre-built screens are left out of the gallery and alert rules
+    # using them pause. Informational - matches, never orders.
+    "screener_fno": "F&O screens: open-interest change, long / short buildup, short covering, long unwinding, rollover, cost of carry and the ban list (informational, places no orders)",
     # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
     # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
     # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
@@ -216,6 +221,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
+                               "screener_fno",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
                                "chart_price_action", "chart_studies"})
 

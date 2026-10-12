@@ -230,6 +230,27 @@ def test_market_zone_functions_z7a3():
     assert _ev("ZoneStrength()", d).iloc[2] == 60.0 and np.isnan(_ev('ZoneStrength("any", 0.5, "levels")', d).iloc[2])
 
 
+def test_fno_functions_s5c():
+    # deeper checks (as-of per bar, the lake loader, gating, alerts) are in tests/test_s5c_fno.py
+    from datetime import date
+    from app.screener.fno import DayRow, build_timeline
+    f = _bars([100.0, 102.0, 101.0, 99.0, 100.0])
+    f["oi"] = [1000.0, 1100.0, 1050.0, 1200.0, 1100.0]
+    d = SymbolData("S", {"5m": f})
+    assert _ev("OIChange(1)", d).round(4).tolist()[1:] == [10.0, round(-50 / 11, 4), round(150 / 10.5, 4), round(-100 / 12, 4)]
+    assert _ev("Buildup(1)", d).tolist() == [None, "LONG_BUILDUP", "LONG_UNWINDING", "SHORT_BUILDUP", "SHORT_COVERING"]
+    assert _ev("Buildup(1, 1.5, 0)", d).tolist()[1:3] == ["LONG_BUILDUP", ""]               # 1 % down is inside 1.5 %
+    with pytest.raises(ScreenRuntimeError, match="no open interest"):
+        _ev("OIChange(1)", _sym([100.0, 101.0]))
+    days = [DayRow(date(2026, 2, 26), [("NFO:S:FUT:2026-03-26", date(2026, 3, 26), 101.0, 900.0), ("NFO:S:FUT:2026-04-30", date(2026, 4, 30), 102.0, 100.0)], 100.0),
+            DayRow(date(2026, 2, 27), [("NFO:S:FUT:2026-03-26", date(2026, 3, 26), 103.0, 1100.0), ("NFO:S:FUT:2026-04-30", date(2026, 4, 30), 104.0, 100.0)], 102.0)]
+    d.fno = build_timeline("S", days, [date(2026, 3, 2)])                    # the 5m bars are on 2 March: they see 27 Feb
+    assert _ev("FutOIChange(1)", d).round(4).eq(20.0).all() and _ev('FutBuildup(1) == "LONG_BUILDUP"', d).all()
+    assert _ev("RolloverPct()", d).round(4).eq(round(100 / 12, 4)).all()
+    assert _ev("CostOfCarry()", d).round(4).eq(round((103 / 102 - 1) * 365 / 27 * 100, 4)).all()
+    assert _ev("InFnoBan()", d).all()
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

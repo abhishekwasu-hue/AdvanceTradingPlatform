@@ -11,12 +11,15 @@
 . "$(dirname "$0")/common.sh"
 need pg_dump
 
-URL="$(pg_url)"
+pg_setup
+URL="$PG_URL"
 DB="$(db_name_of "$URL")"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 mkdir -p "$BACKUP_DIR"
 BASE="$BACKUP_DIR/atp_${DB}_${STAMP}.dump"
 TMP="$BASE.part"
+# Z11 / L7: a failed run leaves no half-written file behind.
+trap 'rm -f "$TMP" "$BASE.enc.part" "$BASE.enc.hmac.part"' EXIT
 
 log "dumping $DB"
 pg_dump --dbname="$URL" --format=custom --compress=6 --no-owner --no-privileges --file="$TMP"
@@ -32,6 +35,8 @@ else
   mv "$TMP" "$OUT"
 fi
 sha256_file "$OUT" > "$OUT.sha256"
+# Z11 / N1: every encrypted dump is sealed where it is made (a restore refuses an unsealed one).
+if [ -n "$BACKUP_ENCRYPTION_PASSPHRASE" ]; then seal_file "$OUT"; fi
 SIZE="$(wc -c < "$OUT" | tr -d ' ')"
 ln -sfn "$(basename "$OUT")" "$BACKUP_DIR/latest"
 date -u +%Y-%m-%dT%H:%M:%SZ > "$BACKUP_DIR/LAST_BACKUP_OK"

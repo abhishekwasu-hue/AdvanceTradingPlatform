@@ -258,6 +258,24 @@ async def _free_deployment_slot(session: AsyncSession, tenant_id: int, deploymen
     await session.flush()
 
 
+def ticket_time_stop_passed(evidence: Dict, now: datetime) -> Optional[str]:
+    """Z5 / P1-d: a PAPER ticket's proposal approved after its plan's time stop (or within the minimum lead before it)
+    would open a position the time exit closes at once. Why it must not be placed, or None."""
+    if not isinstance(evidence, dict) or not evidence.get("ticket") or not evidence.get("exit_rules"):
+        return None
+    try:
+        time_stop = json.loads(evidence["exit_rules"]).get("time_exit_at")
+    except (TypeError, ValueError, AttributeError):
+        return None
+    if not time_stop:
+        return None
+    earliest = (_utc(now).astimezone(IST) + timedelta(minutes=app_config.TICKET_TIME_STOP_MIN_LEAD_MINUTES)).strftime("%H:%M")
+    if str(time_stop) <= earliest:
+        return (f"The plan's time stop {time_stop} IST is no longer later than {earliest} IST - the position would close at once; "
+                "nothing was placed (make a new plan)")
+    return None
+
+
 async def execute_entry(session: AsyncSession, action: AiActionRecord, user: User, *, price_lookup: Optional[PriceLookup],
                         now: Optional[datetime] = None) -> AiActionRecord:
     """Runs an APPROVED entry proposal: re-quote, then one PAPER order through the ordinary pipeline (kill switches,
@@ -281,6 +299,9 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
                 raise ValueError(f"Deployment #{deployment.id} already has an open position (#{open_trade}) - the entry was not placed")
         symbol, direction = str(evidence["symbol"]), str(evidence["direction"])
         exchange = str(evidence.get("exchange") or (deployment.exchange if deployment is not None else None) or "NSE")
+        stale = ticket_time_stop_passed(evidence, now)
+        if stale:
+            raise ValueError(stale)
         if price_lookup is None:
             raise ValueError("No live price to re-quote the entry at - nothing was placed (a broker session supplies quotes)")
         try:

@@ -18,7 +18,7 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z8 | U9 TX1 taxonomy + gallery chips; U7 LG1 (only if Z1-Z7 done) | TX1 merged (flag `screener_gallery` off): taxonomy data file + lint + CI guard (every pre-built screen filed), `GET /api/screener/taxonomy`, gallery rail / chips / matrix; breakouts register when #178 merges (OPEN_QUESTIONS TX1-6); LG1 next | #184 merged | 60 |
 | Z9 | BYOK-V2 Vision audit on proposals (own key, caps) | merged (V1 #160, V2 #163) | #160, #163 | 100 |
 | Z10 | Launch hardening (U3 subset G1/G2/G4/G5/G6/G7), load test 500 sessions, staged rollout flags, DPDP/terms/risk pages, support bot | design note `docs/design/Z10_LAUNCH_HARDENING.md` (Z10-a..f); Z10-a (G2 no-look-ahead harness + G1 golden / chart parity) in review as draft PR #187 | #187 | 10 |
-| Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | next | - | 0 |
+| Z11 | Hostinger deploy bundle (owner-run command, rollback, R2 backup verified) | built on branch claude/z11-deploy-bundle (deploy/atp.sh, docs/deploy/HOSTINGER_RUNBOOK.md); PR waits for a WIP slot. Owner runs it; blockers: server IP, R2 backup token in .env | - | 80 |
 
 Also merged: #183 fix - the tax report uses the platform charges table (india_costs) and a configurable F&O turnover method (STT rows from 1 Apr 2026 still marked verify, OPEN_QUESTIONS TX-1).
 

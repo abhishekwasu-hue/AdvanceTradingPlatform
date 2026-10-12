@@ -192,7 +192,7 @@ async def active_events(session: AsyncSession, tenant_id: int, underlying: str, 
 
 
 async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, underlying: str, cfg: RiskConfig,
-                      now: Optional[datetime] = None, direction: Optional[str] = None) -> GuardianVerdict:
+                      now: Optional[datetime] = None, direction: Optional[str] = None, user_id: Optional[int] = None) -> GuardianVerdict:
     """The pre-sizing rules: cool-down (R10), drawdown ladder (P2/P3), event blackout (M8), and - with the `vix_gate`
     flag on - the India VIX gate (Z5: a spike pauses new bullish index entries, a high level cuts the size; `direction`
     is the entry's direction on the underlying). Reasons refuse the entry; the multiplier scales the risk per trade of
@@ -239,7 +239,7 @@ async def guard_entry(session: AsyncSession, tenant_id: int, *, mode: str, under
                 verdict.notes.append(f"Event risk: {label} today{_window(event)} - risk per trade cut {cut:g}% (rule M8)")
 
     from app.risk_engine import vix_gate
-    vix = await vix_gate.check(session, tenant_id, symbol=underlying, direction=direction, now=asked_at)
+    vix = await vix_gate.check(session, tenant_id, symbol=underlying, direction=direction, now=asked_at, user_id=user_id)
     verdict.reasons.extend(vix.reasons)
     verdict.notes.extend(vix.notes)
     verdict.size_multiplier *= vix.size_multiplier

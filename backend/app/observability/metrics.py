@@ -65,6 +65,7 @@ AI_PROPOSALS = _counter("ai_proposals", "Monitoring-agent proposals raised by ac
 AI_DECISIONS = _counter("ai_decisions", "Human decisions on AI proposals", ("decision",))
 AI_RATE_LIMITED = _counter("ai_rate_limited", "H-C1 b: AI requests refused by the rate limit, by scope (user/tenant)", ("scope",))
 AI_OUTPUT_FILTERED = _counter("ai_output_filtered", "H-C1 c: LLM texts blocked (advice/guarantee words) or framed (specific call)", ("kind", "where"))
+SUPPORT_BOT_ANSWERS = _counter("support_bot_answers", "Z10-f: support bot replies by outcome (answer / handoff / refused_*) and source (help / ai)", ("outcome", "source"))
 BILLING_PAYMENTS = _counter("billing_payments", "Payments recorded by source", ("source",))
 BILLING_TRANSITIONS = _counter("billing_transitions", "Subscription state transitions made by the daily sweep", ("transition",))
 

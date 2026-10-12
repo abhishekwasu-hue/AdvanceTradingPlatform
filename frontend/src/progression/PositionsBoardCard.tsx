@@ -53,8 +53,10 @@ export function PositionsBoardView({ board, exiting, message, onExit }: {
                 const target = targetLine(p, t);
                 const tone = (p.pnl ?? 0) > 0 ? "text-up" : (p.pnl ?? 0) < 0 ? "text-down" : "text-fg";
                 return (
-                  <li key={p.trade_id} className={`rounded-lg border p-2 ${p.stop_drift === "widened" ? "border-warn" : "border-border"}`}
-                      data-testid={`board-${p.trade_id}`} data-drift={p.stop_drift ?? ""}>
+                  // N2-9: a row takes focus; "x" on a focused row is Exit now (one key, the same call as the button)
+                  <li key={p.trade_id} tabIndex={0} className={`rounded-lg border p-2 outline-none focus:ring-2 focus:ring-info ${p.stop_drift === "widened" ? "border-warn" : "border-border"}`}
+                      data-testid={`board-${p.trade_id}`} data-drift={p.stop_drift ?? ""}
+                      onKeyDown={(e) => { if (e.key === "x" && !e.ctrlKey && !e.metaKey && !e.altKey && p.exit === "one_click" && exiting !== p.trade_id) { e.preventDefault(); e.stopPropagation(); onExit(p); } }}>
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <span className="font-semibold text-fg">{p.direction} {p.symbol} ×{p.quantity.toLocaleString("en-IN")} · {p.mode}</span>
                       <span className={`tabular-nums ${tone}`}>

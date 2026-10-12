@@ -222,6 +222,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # PoP, max loss, margin estimate, theta per day, breakevens). Client-side over the existing evaluate endpoint (and
     # saved strategies when options_builder_saved is on); no new route. OFF: the builder drawer does not show it.
     "builder_compare": "Builder compare: up to three strategies side by side - payoff, PoP, max loss, margin estimate, theta per day, breakevens (models only)",
+    # N2-9 (P1 spec 2.1, 2.5, docs/design/N2_P1FGH.md): the Trade workspace page - chart, the P1-d PAPER ticket and the
+    # positions board on one screen, keyboard shortcuts (ticket, close the focused position, flatten all with a
+    # confirmation), a phone bottom-sheet ticket, market / lockout / stale states and a per-viewer saved layout. It uses
+    # existing routes only (exits through Exit now, never gated). OFF: the page says it is not turned on.
+    "trade_workspace": "Trade workspace: chart, PAPER ticket and positions on one screen with keyboard shortcuts and a saved layout (exits never gated)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -230,7 +235,8 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "experience_levels",
                                "decision_tools", "context_panel", "positions_board",
-                               "builder_adjustments", "builder_compare"})
+                               "builder_adjustments", "builder_compare",
+                               "trade_workspace"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

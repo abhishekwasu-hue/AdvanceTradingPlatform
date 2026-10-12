@@ -32,7 +32,7 @@ Standing rules for every slice:
 | **N2-6** | §2.4 | **Positions board** (`claude/n2-6`): the user's own open positions with P&L in ₹ and R, stop and target status, time in trade, plan vs current stop (a widened stop is highlighted) and how each exits. Exit now stays one click, with no dialog, during a lockout (tested). Greeks stay on the page's existing table; the exit ladder (partial exits) is deferred (OPEN_QUESTIONS N2-21). | `positions_board` | none / `GET /api/positions/board` | ~1.0k |
 | **N2-7** | §3.2 | **Builder adjustments** (`claude/n2-7`): roll a leg (up / down / out), add a hedge, convert a short strangle to an iron condor, close one side. Each shows the changes at model prices, the P&L locked in, the premium today, and the before / after payoff and Greeks. It fills the P1-c drawer. Models only: no order is placed, staged or proposed; "use the legs after" only replaces the page's legs. | `builder_adjustments` | none / `POST /api/options-builder/adjust` | ~1.2k |
 | **N2-8** | §3.2 | **Builder compare** (`claude/n2-8`): up to three strategies side by side (net premium, max profit / loss, reward : risk, PoP, margin estimate, theta per day, breakevens, expected move) and their expiry curves on one scale. It covers the page's current legs and saved strategies when `options_builder_saved` is on, each evaluated by the engine at the same spot, date and range. | `builder_compare` | none / none (client-side over `/evaluate`) | ~0.6k |
-| N2-9 | §2.1, §2.5 | **Trade workspace**: chart on the left, chain and ticket on the right, positions strip at the bottom. Keyboard shortcuts: ticket, close position, flatten all with confirmation. On a phone, the ticket is a bottom sheet. States: pre-market, closed, lockout (why and until when), stale data. Layouts are saved per viewer (localStorage). Visual regression in dark, light and mobile. | `trade_workspace` | none / none | ~2.2k |
+| **N2-9** | §2.1, §2.5 | **Trade workspace** (`claude/n2-9`): a `/trade` page with the chart on the left, the P1-d PAPER ticket on the right and the positions board below. Keyboard: t ticket, c chart, x exits the focused position, Shift+F flattens all after one confirmation, ? help. On a phone the ticket is a bottom sheet. It shows market, lockout and stale-data states, and keeps the layout per viewer (localStorage, try/catch). It uses existing routes only. | `trade_workspace` | none / none | ~0.8k |
 | N2-10 | §1.6 | **Education pages**: method library (trend -> level -> pullback -> commitment -> R:R) and a glossary. Each concept links to the chart layer that draws it (zones, evidence) and the screens that find it (taxonomy / Legends). Static English content with a compliance scan. | `education_pages` | none / none | ~2.0k |
 | N2-11 | §1.6, §1.3 | **Learn from your journal**: cards that link a Z6 behaviour tag on the user's own losing trades to its lesson (N2-10). The weekly review itself shipped in Z6-b (#172); this slice links it to the lessons. | `journal_lessons` | none / `GET /api/journal/lessons` | ~1.0k |
 
@@ -309,6 +309,35 @@ three strategies is N2-8.
   chip.
 - Models only: nothing is placed.
 
+## N2-9 Trade workspace
+
+**Flag** `trade_workspace` (off by default), read through `/api/system/features` per organisation (tested). The page
+is `/trade` (`src/pages/TradeWorkspacePage.tsx`). It is not in the sidebar; the Positions page links to it only while
+the flag is on. While the flag is off the page says it is not turned on. **No new route** (tested): it reuses worker
+status, the P1-d ticket, the positions board, broker candles and Exit now.
+
+- **Layout:**
+  - chart (the user's own broker candles through `useBrokerChart`, symbol and timeframe saved) on the left;
+  - the PAPER ticket on the right;
+  - the positions board below;
+  - each panel can be shown or hidden.
+  The layout is kept per viewer in `localStorage` (`atp.tradeWorkspace.v1`). Every read and write is wrapped, so a
+  private window or blocked storage falls back to the default.
+- **Phone:** a "Ticket" button opens the ticket as a bottom sheet.
+- **States:**
+  - market open / closed with the next open (worker status);
+  - the daily loss lockout, shown as a fact ("Exits still work");
+  - stale chart data: more than three bars late while the market is open.
+- **Keyboard** (never while typing, never with Ctrl / Cmd / Alt):
+  - t: go to the ticket;
+  - c: go to the chart symbol;
+  - x: on a focused position row, Exit now (one key, the same call as the button);
+  - Shift+F: flatten all, after one confirmation that lists the positions, through Exit now for each position the user
+    can close here (LIVE ones close in the broker app);
+  - ?: show or hide the shortcut list.
+- **Exits** stay one click or one key, never gated. Entries go through the ticket's own checks.
+- **Visual regression:** a Playwright run in dark, light and mobile is left to the e2e job (OPEN_QUESTIONS N2-24).
+
 ## Open questions
 
-These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-23), each with a provisional default.
+These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-25), each with a provisional default.

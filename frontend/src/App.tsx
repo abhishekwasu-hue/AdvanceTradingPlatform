@@ -40,7 +40,7 @@ function LegacyCopilot() {
 function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const { user } = useAuth();
   const location = useLocation();
-  const title = page === null ? "Page not found" : page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
+  const title = page === null ? "Page not found" : page === "account" ? "Account" : page === "trade" ? "Trade workspace" : NAV.find((n) => n.id === page)?.label ?? "";
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
@@ -204,7 +204,7 @@ function AppShell() {
   // A new page starts at the top, keeps the browser tab title meaningful, and moves keyboard focus to the content.
   const first = useRef(true);
   useEffect(() => {
-    const label = page === null ? "Not found" : page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
+    const label = page === null ? "Not found" : page === "account" ? "Account" : page === "trade" ? "Trade workspace" : NAV.find((n) => n.id === page)?.label ?? "";
     document.title = label ? `${label} · Advance Trading` : "Advance Trading";
     if (first.current) { first.current = false; return; }
     window.scrollTo(0, 0);                       // the window scrolls (the shell is min-h-screen), not <main>

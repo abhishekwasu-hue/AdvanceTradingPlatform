@@ -1909,3 +1909,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on one scale. No new route.
 - Tests: `tests/test_n2_builder_compare.py` (2: the flag per organisation through `/api/system/features`; evaluate's
   numbers on one grid); vitest `src/progression/compare.test.tsx` (3).
+### 2026-10-12 IST - N2-4..N2-7 review fixes, N2-9 trade workspace
+- Review fixes, each carried up the stack with merge commits:
+  - N2-4: exposure maths capped at 40 by risk, in the thread pool;
+  - N2-5: the panel test owns its index bars; a failed global-cues fetch backs off for 60 s;
+  - N2-6: a non-trader sees "automatic";
+  - N2-7: whole-number lots.
+- N2-9 (`claude/n2-9`, stacked on `claude/n2-8`), flag `trade_workspace` (off): a `/trade` page with the chart, PAPER
+  ticket and positions board, keyboard shortcuts (t, c, x, Shift+F flatten with confirmation, ?), a phone bottom-sheet
+  ticket, market / lockout / stale states and a per-viewer saved layout. No new route.
+- Tests: `tests/test_n2_trade_workspace.py`; vitest `src/progression/workspace.test.tsx` (7). Open questions
+  N2-24..N2-25.

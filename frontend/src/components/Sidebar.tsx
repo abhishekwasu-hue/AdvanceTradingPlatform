@@ -49,6 +49,7 @@ export type Page =
   | "options-builder"
   | "instruments"
   | "positions"
+  | "trade"
   | "portfolio"
   | "orders"
   | "analytics"

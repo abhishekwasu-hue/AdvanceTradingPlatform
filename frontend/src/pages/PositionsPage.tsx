@@ -6,6 +6,8 @@ import PaperAccountCard from "../components/PaperAccountCard";
 import DecisionToolsCard from "../progression/DecisionToolsCard";
 import ExperienceCard from "../progression/ExperienceCard";
 import PositionsBoardCard from "../progression/PositionsBoardCard";
+import { useProgressionT } from "../progression/i18n";
+import { pathFor } from "../routes";
 import PaperTicketCard from "../components/PaperTicketCard";
 import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
@@ -25,6 +27,8 @@ export default function PositionsPage() {
   const [greeksBusy, setGreeksBusy] = useState(false);
   // Z3: "Exit now" exists only with approval-only entries or the PAPER account on (otherwise exits run automatically).
   const [exitNowOn, setExitNowOn] = useState(false);
+  const [workspaceOn, setWorkspaceOn] = useState(false);   // N2-9: the link to the trade workspace (flag trade_workspace)
+  const tWorkspace = useProgressionT();
 
   async function loadGreeks() {
     setGreeksBusy(true); setGreeksError(null);
@@ -51,7 +55,8 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!user) return;
     refresh();
-    api.myFeatures().then((f) => setExitNowOn(Boolean(f.approval_only_entries || f.paper_account))).catch(() => setExitNowOn(false));
+    api.myFeatures().then((f) => { setExitNowOn(Boolean(f.approval_only_entries || f.paper_account)); setWorkspaceOn(Boolean(f.trade_workspace)); })
+      .catch(() => { setExitNowOn(false); setWorkspaceOn(false); });
   }, [user]);
 
   async function handleMarkPrice(tradeId: number) {
@@ -113,6 +118,9 @@ export default function PositionsPage() {
       {error && <div className="text-sm text-down">{error}</div>}
       {loading && <div className="text-sm text-fg-muted">Loading…</div>}
 
+      {workspaceOn && (
+        <a href={pathFor("trade")} className="inline-block text-sm text-info underline" data-testid="open-workspace">{tWorkspace("workspace.open")}</a>
+      )}
       <PositionsBoardCard onChanged={refresh} />
       <PaperAccountCard canTrade={user.role !== "VIEWER"} />
       <ExperienceCard canTrade={user.role !== "VIEWER"} />

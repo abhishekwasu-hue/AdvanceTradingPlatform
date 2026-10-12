@@ -230,6 +230,7 @@ class TradingWorker:
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
         self._ops: Dict[Tuple[int, str], OpsThrottle] = {}
+        self._live_paths_locked: Optional[bool] = None   # Phase 0 defaults: last logged state of the global PAPER-only lock
         self._tenant_cursor: Dict[int, int] = {}
         self._stale_skips = 0
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
@@ -264,6 +265,7 @@ class TradingWorker:
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
+        await self.startup_check()
         # Safety rule 18: before the first cycle, every tenant with an open LIVE position is
         # reconciled against its broker. Whatever happened while this process was down (a fill
         # after a crash, a manual exit at the broker) is known before anything new is traded.
@@ -286,6 +288,31 @@ class TradingWorker:
         await self.byob.close_all()
         logger.info("Trading worker %s stopped", self.holder_id)
 
+    async def startup_check(self) -> Dict[str, object]:
+        """Phase 0 deployment defaults (app/platform/deployment_phase.py): seed the two Phase 0 flags where unset
+        (ATP_DEPLOYMENT_PHASE=phase0 only) and log why LIVE entry paths are not started while `phase0_paper_only` is on.
+        The worker always comes up: exits, stops, square-off and reconciliation of LIVE positions run regardless."""
+        from app.platform import deployment_phase
+        try:
+            async with self.session_factory() as session:
+                state = await deployment_phase.on_startup(session, "worker")
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting
+            logger.exception("Phase 0 start-up check failed")
+            return {"error": "failed"}
+        self._live_paths_locked = bool(state.get("phase0_paper_only"))
+        return state
+
+    def _note_lock_state(self) -> None:
+        """Logs when the global PAPER-only lock changes between cycles (the owner switched it in Admin -> Controls)."""
+        locked = phase0_lock.locked(None)
+        if locked != self._live_paths_locked:
+            from app.platform.deployment_phase import LIVE_PATHS_NOT_STARTED
+            if locked:
+                logger.warning("Trading worker: %s", LIVE_PATHS_NOT_STARTED)
+            else:
+                logger.warning("Trading worker: phase0_paper_only is off - LIVE deployments are evaluated again (flags and plans decide)")
+            self._live_paths_locked = locked
+
     # --- one cycle ---------------------------------------------------------------------------
 
     async def run_cycle(self, now: Optional[datetime] = None) -> CycleReport:
@@ -305,6 +332,7 @@ class TradingWorker:
             async with self.session_factory() as session:
                 # Z10-c: the broker-order chokepoint reads the PAPER-only lock from this process; refresh it every cycle.
                 await phase0_lock.is_on(session, None)
+                self._note_lock_state()
                 # Phase O2: one clock per exchange family. NSE is always considered; MCX/CRYPTO only
                 # when a deployment actually trades there, so a pure-equity platform behaves as before.
                 wanted = {"NSE"} | {session_family(ex) for ex in await session.scalars(
@@ -952,6 +980,13 @@ class TradingWorker:
             family = session_family(dep.exchange)
             if family not in open_families:
                 continue  # Phase O2: this venue is closed right now; nothing to evaluate
+            if dep.mode == ExecutionMode.LIVE.value and phase0_lock.locked(tenant_id):
+                # Z10-c / Phase 0 defaults: the LIVE entry path is not started at all while the PAPER-only lock is on
+                # (layers 1 and 2 would refuse the entry anyway). Exits, stops and square-off above already ran.
+                if dep.last_error != phase0_lock.WORKER_NOT_EVALUATED:     # written once, not every cycle
+                    dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
+                    await session.commit()
+                continue
             if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
                 await session.commit()

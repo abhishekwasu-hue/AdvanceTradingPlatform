@@ -184,3 +184,45 @@ def test_one_recipient_failing_in_any_way_does_not_stop_the_others():
     with pytest.raises(RuntimeError, match="UnicodeEncodeError"):
         asyncio.run(dispatcher.send_sms(cfg, _N(), httpx.AsyncClient(transport=httpx.MockTransport(handler))))
     assert seen == ["+919800000002"]
+
+
+def test_smtp_starttls_verifies_the_server_certificate(monkeypatch):
+    """Gateway review LOW-2: STARTTLS runs with a default (verifying) SSL context, never an unverified one."""
+    import ssl
+
+    from app.alerts import dispatcher
+    from app.alerts.channels import EmailConfig
+
+    seen = {}
+
+    class _FakeSMTP:
+        def __init__(self, host, port, timeout=None):
+            seen["host"] = host
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def ehlo(self):
+            pass
+
+        def starttls(self, context=None):
+            seen["context"] = context
+
+        def login(self, user, password):
+            seen["login"] = user
+
+        def send_message(self, message):
+            seen["sent"] = True
+
+    monkeypatch.setattr(dispatcher.smtplib, "SMTP", _FakeSMTP)
+    config = EmailConfig.model_validate({"smtp_host": "smtp.example.com", "smtp_port": 587, "use_tls": True,
+                                         "username": "u", "password": "p", "from_address": "alerts@example.com",
+                                         "to_addresses": ["ops@example.com"]})
+    dispatcher._smtp_send(config, dispatcher.EmailMessage())
+    context = seen["context"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname is True
+    assert seen.get("sent") is True

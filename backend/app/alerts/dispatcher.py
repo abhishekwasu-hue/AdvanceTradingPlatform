@@ -29,6 +29,7 @@ import re
 import secrets
 import smtplib
 import socket
+import ssl
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -171,7 +172,9 @@ def _smtp_send(config: EmailConfig, message: EmailMessage) -> None:
     with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=SEND_TIMEOUT_SECONDS) as smtp:
         smtp.ehlo()
         if config.use_tls:
-            smtp.starttls()
+            # Verify the server certificate and host name: without a context starttls() accepts any certificate,
+            # so an on-path attacker could read the SMTP password (gateway review LOW-2).
+            smtp.starttls(context=ssl.create_default_context())
             smtp.ehlo()
         if config.username:
             smtp.login(config.username, config.password or "")
@@ -307,7 +310,7 @@ async def send_sms(config: SmsConfig, notification: NotificationRecord, client: 
             try:
                 if config.method == "GET":
                     # decoded once here (httpx encodes again); duplicates kept as sent, so nothing is silently overridden
-                    response = await client.get(str(config.url), params=httpx.QueryParams(parse_qsl(body, keep_blank_values=True)),
+                    response = await client.get(str(config.url), params=httpx.QueryParams(tuple(parse_qsl(body, keep_blank_values=True))),
                                                 headers=headers)
                 else:
                     response = await client.post(str(config.url), content=body.encode(), headers=headers)

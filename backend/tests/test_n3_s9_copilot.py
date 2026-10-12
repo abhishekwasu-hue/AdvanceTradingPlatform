@@ -157,8 +157,7 @@ def _agent(t, provider, question):
     return _run(go())
 
 
-ALERT = {"reason": "The trader asked to be told when this condition holds.", "name": "UP above its 20-day average", "symbol": "UP",
-         "condition": "close > SMA(close, 20)"}
+ALERT = {"reason": "The trader asked to be told when this condition holds.", "symbol": "UP", "condition": "close > SMA(close, 20)"}
 
 
 def _instrument(symbol="UP"):
@@ -343,8 +342,10 @@ def test_the_run_limit_is_shared_by_the_page_and_the_agent(monkeypatch):
 def test_model_words_in_an_alert_pass_the_output_filter():
     """MED-2: an advice-laden name or note never reaches the rule (it goes out in every fire's title) or the proposal."""
     t = _org("filter")
-    res = _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "name": "BUY UP now - guaranteed 20% profit",
-                                     "reason": "Guaranteed profit, buy it now before it runs away."}, guard_cleared=True)
+    named = _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "name": "BUY UP now - guaranteed 20% profit"}, guard_cleared=True)
+    assert not named.ok and "invalid arguments" in named.error                      # the model never names the alert
+    res = _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "reason": "Guaranteed profit, buy it now before it runs away."},
+                guard_cleared=True)
     assert res.ok and res.data["created"]
 
     async def action():
@@ -396,7 +397,8 @@ def test_free_text_and_unknown_symbols_never_reach_an_alert():
     assert not literal.ok and "free-text literals" in literal.error
     pattern = _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "condition": 'Pattern("hammer")'}, guard_cleared=True)
     assert pattern.ok and pattern.data["created"]                                       # a function's fixed choice is fine
-    loud = _tool(t, "propose_alert", {**ALERT, "quote": "alert me guaranteed profit", "name": "x" * 3}, guard_cleared=True)
+    loud = _tool(t, "propose_alert", {**ALERT, "quote": "alert me guaranteed profit", "condition": "close > SMA(close, 30)"}, guard_cleared=True)
+    assert not _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "exchange": "NASDAQ"}, guard_cleared=True).ok
     assert loud.ok and loud.data["created"]
 
     async def actions():

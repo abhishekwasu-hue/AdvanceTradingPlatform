@@ -55,11 +55,10 @@ class _Alert(BaseModel):
     model_config = ConfigDict(extra="forbid")
     reason: str = Field(min_length=10, max_length=300, description="Why, from the tool results - shown to the person who decides")
     quote: str = Field(min_length=2, max_length=300, description="The trader's own words that ask for the alert, copied exactly from their message")
-    name: str = Field(min_length=1, max_length=120, description="A short name for the alert")
     symbol: str = Field(pattern=r"^[A-Za-z0-9&._:-]{1,40}$", description="The instrument the condition watches (its exchange symbol)")
     condition: str = Field(min_length=3, max_length=2000, description="The condition in ScreenQL (a validated build_screen text)")
     base_tf: str = Field(default="1d", pattern=TF)
-    exchange: str = Field(default="NSE", pattern=r"^[A-Z]{2,10}$")
+    exchange: str = Field(default="NSE", pattern=EXCHANGE)
 
 
 def _now(ctx: ToolContext) -> str:
@@ -276,7 +275,8 @@ async def propose_alert(ctx: ToolContext, args: _Alert) -> ToolResult:
         return ToolResult(False, None, None, "ai_actions", error=f"the alert would be refused: {_detail(exc)}")
     # Review MED-2: the name goes out in every fire's title and the note to the person deciding - filtered; refused words
     # give way to neutral text built from the facts
-    name = final_name(neutral(args.name.strip(), f"{target['symbol']}: {target['condition_text']}"))
+    # Re-check follow-up: the name is built, never the model's - "<symbol>: <condition>" (the condition is literal-free)
+    name = final_name(f"{target['symbol']}: {target['condition_text']}")
     note = neutral(args.reason.strip(), "The trader asked for this alert.")
     rule = {**body.model_dump(mode="json", exclude_none=True), "name": name, "condition": target["condition_text"]}
     # review LOW-3: the asker is part of the key - two members proposing the same alert are two proposals

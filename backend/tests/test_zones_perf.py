@@ -154,6 +154,39 @@ def test_bar_close_reads_zones_once_for_rules_sharing_a_cached_result(monkeypatc
     assert out.fired == 2 and out.cache.reused_results == 1 and len(calls) == 1
 
 
+def test_bar_close_evidence_keeps_the_zone_band_for_a_rule_reusing_a_cached_result():
+    # U8 EV x Z7a-3: the second rule reuses the first's result and skips the zone read, yet its evidence pack still draws
+    # the zone its condition read - a shared result key means the same cached SymbolData objects, which already hold the
+    # timeline, and evidence._trim (dataclasses.replace) carries it over
+    import json
+
+    from sqlalchemy import select
+
+    from app.alerts import barclose
+    from app.db.models import ScreenEvidenceRecord
+    from tests.test_s4a_barclose import TUE, FakeFetch, _bars as s4_bars, _rule, ist as s4_ist
+    _set(screener_v2=True, market_zones=True, evidence_charts=True)
+    _, me = _owner("z7a3perf-evidence@example.com")
+    for name in ("e1", "e2"):
+        _rule(me["tenant_id"], name=name, condition='NearZone("demand", 0.5)', tf="5m", symbol="ZCHARTA")
+    _run(_write_run(KEY, s4_ist(TUE, 9, 0) - timedelta(hours=18), [_zrow("p", "DEMAND_ZONE", 99.7, 99.9)]))
+    fetch = FakeFetch({"ZCHARTA": s4_bars(s4_ist(TUE, 9, 15), [100.0] * 61)})
+
+    async def go():
+        async with _session_factory() as session:
+            out = await barclose.run_due(session, now=s4_ist(TUE, 14, 21), fetch=fetch, holidays=set())
+            await session.commit()
+            rows = (await session.execute(select(ScreenEvidenceRecord).where(ScreenEvidenceRecord.tenant_id == me["tenant_id"]))).scalars().all()
+            return out, rows
+    try:
+        out, rows = _run(go())
+    finally:
+        _set(evidence_charts=False)                      # a platform-wide flag: never left on for later tests
+    assert out.fired == 2 and out.cache.reused_results == 1 and len(rows) == 2
+    for row in rows:
+        assert [d for d in json.loads(row.pack_json)["drawables"] if d["kind"] == "band"], row.alert_event_id
+
+
 # ------------------------------------------------------------------------------------------------------------------ F2
 def _random_timeline(rng, n_bars, n_snaps, n_rows, index, tf="5m"):
     closes = bar_close(index, tf)
@@ -231,7 +264,7 @@ def test_screen_run_evaluates_off_the_event_loop(monkeypatch):
         used.append(fn.__name__)
         return await real(fn, *a, **kw)
     monkeypatch.setattr(routes.asyncio, "to_thread", spy)
-    _set(screener_v2=True)
+    _set(screener_v2=True, evidence_charts=False)        # the evidence packs (U8 EV1) would use a worker thread too
     headers, _ = _owner("z7a3perf-thread@example.com")
     frame = _bars([D1])
 

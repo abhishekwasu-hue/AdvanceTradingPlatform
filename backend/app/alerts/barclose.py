@@ -54,6 +54,7 @@ FLAG = "screener_v2"
 INTRABAR_FLAG = "screener_intrabar"
 BREAKOUT_FLAG = "screener_breakouts"                 # U6 BK1: rules using breakout functions pause (stay active) while it is off
 ZONES_FLAG = "market_zones"                    # Z7a-3: rules using market-zone functions pause (stay active) while it is off
+EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
 RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
 MAX_SYMBOLS = 50
@@ -261,7 +262,7 @@ def _fresh_only(current: List[SymbolData], tf: str, now: datetime, holidays: Ite
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
                         breakouts_enabled: bool = True, zones_enabled: bool = True, per_user: bool = False,
-                        vectorized: bool = False) -> Tuple[str, int]:
+                        vectorized: bool = False, evidence_enabled: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
     (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time."""
     from app.alerts.engine import record_event
@@ -337,12 +338,23 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         rule.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"
         return "error", 0
     fired = 0
+    by_symbol = {d.symbol: d for d in current}
+    fired_events: List[Tuple[Any, SymbolData]] = []
     for match in cache.results[result_key]:
         values = _values(frames[match.symbol])
         if intrabar:
             values["intrabar"] = True                             # the bar had not closed; it may not hold at the close
-        if match.matched and await record_event(session, rule, match.symbol, bar, values, now=now) is not None:
-            fired += 1
+        if match.matched:
+            event = await record_event(session, rule, match.symbol, bar, values, now=now)
+            if event is not None:
+                fired += 1
+                fired_events.append((event, by_symbol[match.symbol]))
+    if fired_events and evidence_enabled and not intrabar:
+        # U8 EV1/EV2: each deliverable event's evidence pack from the closed bars the rule was just evaluated on (never a
+        # bar still forming); the Telegram delivery sends its image to the rule creator's own linked chat
+        from app.screener import evidence_store
+        await evidence_store.store_for_events(session, rule, fired_events, ast=ast, validated=validated, universe=current, params=params,
+                                              data_source="broker:own-session" if per_user else "broker:organisation", per_user=per_user)
     if not intrabar:
         rule.last_bar_at = bar                                    # intrabar: other symbols may still match later in the bar
     rule.last_problem = None
@@ -367,6 +379,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     zones_on: Dict[int, bool] = {}
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     vectorized_on: Dict[int, bool] = {}
+    evidence_on: Dict[int, bool] = {}
     started = time_module.monotonic()
     for rule in rules:
         if rule.expires_at is not None and _utc(rule.expires_at) <= now:
@@ -389,10 +402,13 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
         if rule.tenant_id not in vectorized_on:
             vectorized_on[rule.tenant_id] = await flag_enabled(session, VECTOR_FLAG, rule.tenant_id)
+        if rule.tenant_id not in evidence_on:
+            evidence_on[rule.tenant_id] = await flag_enabled(session, EVIDENCE_FLAG, rule.tenant_id)
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
                                            breakouts_enabled=breakouts_on[rule.tenant_id], zones_enabled=zones_on[rule.tenant_id],
-                                           per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id])
+                                           per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
+                                           evidence_enabled=evidence_on[rule.tenant_id])
         out.evaluated += state == "done"
         out.waiting += state == "waiting"
         out.fired += fired

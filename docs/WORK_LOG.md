@@ -1737,6 +1737,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   close; hidden / refused while the flag is off (BK1 pattern), alert rules refused, paused at bar close, never intrabar.
 - Frontend: `LayerData.bands` drawn as a `LayerPrimitive` by the lightweight engine; `MarketZonesLayer` + legend on the
   full-window chart. Open questions Z7a3-1 .. Z7a3-8. No order path, no flag turned on.
+### 2026-10-11 IST - Z7 U8 EV1 + EV2: evidence charts (branch only, no PR)
+- Branch `claude/z7-ev12-evidence` from Z7a-3 (zone band selector), with BK1 (#178) merged in for the breakout
+  drawables. Later Z7a-3 and BK1 updates are merged in too (never rebased). The BK1 merge fixes Z7a3-7: the breakout
+  gate now matches only `screener_breakouts`.
+- Evidence pack `evidence/1` (`app/screener/evidence.py`): the runtime's own evaluator on the same bars, parameters
+  and ranks. It holds blocks, conditions with the engine's values at the matched bar, a verify text, and at most one
+  drawable per condition (overlay, pane, box, band, bars). Bars after the evidence time are dropped (no look-ahead,
+  tested). Zone bands go through the Z7a-3 selector (at most 6).
+- Stored with the run (matched symbols) and with each fired bar-close alert event (`screen_evidence`, migration
+  `e8a1c4d2f9b7`, retention 90 days). The evidence API is 404 while `evidence_charts` is off. The organisation reads
+  it; with BT1 on, only the runner.
+- EV2: a deterministic PNG (the Vision chart renderer with a fuller bitmap font, Okabe-Ito colours, hollow rising
+  candles, light / dark) with a caption. It goes to the user's OWN linked Telegram chat, from the panel or after an
+  alert's text. Never to the group chat.
+- Frontend: "Show on chart" on matched rows, an SVG evidence chart, "Why it matched" toggles, "Show failed
+  conditions", the verify strip and "Send to my Telegram". Story `Screener/Evidence chart`. Design note:
+  `docs/design/EVIDENCE_CHARTS.md`. Open questions EV-1 .. EV-9. No order path, no flag turned on.
 
 ### 2026-10-11 - Z10-f: legal pages + acceptance, support bot (flag support_bot, off)
 - Privacy notice (DPDP 2023), Terms of use, Risk disclosure as versioned Markdown (`backend/app/legal/content/`), each

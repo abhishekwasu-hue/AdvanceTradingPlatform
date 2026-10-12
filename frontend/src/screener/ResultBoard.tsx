@@ -2,9 +2,10 @@
  * U5: the result board - the table view (dense, sortable). Matched symbols first; a symbol the scan could not read
  * says why. D2: a "Stages" column of why-matched chips - one per top-level stage, filled when the symbol passed that
  * stage on its own, hollow when it did not - with the stage's words on hover and for screen readers. Heatmap, chart
- * grid, RRG and the F&O dashboard join as more views (D3).
+ * grid, RRG and the F&O dashboard join as more views (D3). U8 EV1: a matched row with stored evidence has "Show on chart"
+ * (the evidence chart with only the screen's own conditions and the verify strip).
  */
-import { ArrowDown, ArrowUp } from "lucide-react";
+import { ArrowDown, ArrowUp, ChartCandlestick } from "lucide-react";
 import { useMemo, useState } from "react";
 import { cx } from "../components/primitives";
 import type { RunResult } from "./api";
@@ -31,9 +32,10 @@ export interface ResultBoardProps {
   runKey?: number;
   stale?: boolean;           // the scan changed since this run: the rows are kept, dimmed, with a note to run again
   why?: (symbol: string) => WhyChip[];
+  onShowEvidence?: (row: RunResult) => void;   // U8 EV1: only rows with an evidence id get the button
 }
 
-export function ResultBoard({ results, running = false, runKey, stale = false, why }: ResultBoardProps) {
+export function ResultBoard({ results, running = false, runKey, stale = false, why, onShowEvidence }: ResultBoardProps) {
   const [sort, setSort] = useState<SortState>({ key: "result", dir: "asc" });
   const rows = useMemo(() => (results ? sortResults(results, sort) : []), [results, sort]);
   const toggle = (key: SortKey) => setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: "asc" }));
@@ -72,7 +74,15 @@ export function ResultBoard({ results, running = false, runKey, stale = false, w
                   <td className="px-4 font-mono font-tabular text-fg">{r.symbol}</td>
                   <td className="px-4">
                     {r.matched
-                      ? <span className="inline-flex items-center gap-1.5 text-signal"><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-signal" />Matched</span>
+                      ? <span className="inline-flex items-center gap-3">
+                          <span className="inline-flex items-center gap-1.5 text-signal"><span aria-hidden className="h-1.5 w-1.5 rounded-full bg-signal" />Matched</span>
+                          {onShowEvidence && r.evidence_id != null && (
+                            <button type="button" onClick={() => onShowEvidence(r)} aria-label={`Show ${r.symbol} on chart`} data-testid="show-on-chart"
+                                    className="inline-flex items-center gap-1 rounded-control px-1.5 py-0.5 text-t12 text-brand hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                              <ChartCandlestick size={12} aria-hidden />Show on chart
+                            </button>
+                          )}
+                        </span>
                       : r.reason
                         ? <span className="text-warn" title={r.reason}>Could not be read · <span className="text-fg-muted">{r.reason}</span></span>
                         : <span className="text-fg-muted">Did not match</span>}

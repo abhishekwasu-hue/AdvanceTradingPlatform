@@ -25,7 +25,17 @@ SCRATCH="${SRC_DB}_verify_$(date -u +%Y%m%d%H%M%S)"
 SCRATCH_URL="$(with_db "$SRC_URL" "$SCRATCH")"
 ADMIN_URL="$(with_db "$SRC_URL" postgres)"
 
-psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\"" >/dev/null || die "could not create scratch database $SCRATCH"
+# Z11 / N1: the copy is restored by a NOLOGIN, non-superuser role that owns the scratch database (pg_restore --role),
+# so a dump that was swapped in the bucket cannot run superuser-only SQL on the cluster. VERIFY_RESTORE_ROLE= (empty)
+# restores as the connecting user, as before.
+ROLE="${VERIFY_RESTORE_ROLE-atp_restore}"
+if [ -n "$ROLE" ]; then
+  psql "$ADMIN_URL" -qAtc "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$ROLE') THEN CREATE ROLE \"$ROLE\" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; END IF; END \$\$" >/dev/null \
+    || die "could not create the restore role $ROLE (VERIFY_RESTORE_ROLE= restores as the connecting user)"
+  psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\" OWNER \"$ROLE\"" >/dev/null || die "could not create scratch database $SCRATCH"
+else
+  psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\"" >/dev/null || die "could not create scratch database $SCRATCH"
+fi
 # VERIFY_KEEP_SCRATCH=1: leave the restored copy for one more check from outside (deploy/atp.sh runs the audit-chain
 # check in the backend image, then drops it); the report names it.
 cleanup() { [ "${VERIFY_KEEP_SCRATCH:-0}" = "1" ] || psql "$ADMIN_URL" -qAtc "DROP DATABASE IF EXISTS \"$SCRATCH\"" >/dev/null 2>&1 || true; }
@@ -36,7 +46,7 @@ STATUS="ok"; NOTES=""
 fail() { [ "$STATUS" = "ok" ] && STATUS="$1"; NOTES="$NOTES $2;"; }
 
 RESTORE_LOG="$(mktemp "${TMPDIR:-/tmp}/atp_verify.XXXXXX")"
-if RESTORE_CONFIRM=yes "$(dirname "$0")/restore.sh" "$FILE" "$SCRATCH_URL" >"$RESTORE_LOG" 2>&1; then
+if RESTORE_CONFIRM=yes RESTORE_ROLE="$ROLE" sh "$(dirname "$0")/restore.sh" "$FILE" "$SCRATCH_URL" >"$RESTORE_LOG" 2>&1; then
   sed 's/^/  /' "$RESTORE_LOG" >&2
 else
   sed 's/^/  /' "$RESTORE_LOG" >&2

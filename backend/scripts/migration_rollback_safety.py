@@ -9,10 +9,11 @@ Every migration in alembic/versions declares, next to its revision ids:
 Two uses:
 
     python scripts/migration_rollback_safety.py lint
-        CI (tests/test_z11_migration_rollback_safety.py). Fails when a migration does not declare ROLLBACK_SAFE, or
+        CI (the lint job, and tests/test_z11_deploy_bundle.py). Fails when a migration does not declare ROLLBACK_SAFE, or
         declares True while its upgrade() drops / renames a table or column, changes a column type, makes a column
-        NOT NULL, adds a NOT NULL column without a server default, adds a UNIQUE / CHECK constraint, or runs SQL doing any
-        of that. A reviewed exception
+        NOT NULL, drops a server default, adds a NOT NULL column without a server default, adds a UNIQUE / CHECK / FOREIGN
+        KEY constraint or a unique index to a table that existed before, or runs SQL doing any of that or rewriting rows
+        (UPDATE / DELETE). A reviewed exception
         sets ROLLBACK_SAFE_REASON = "<why the old code is unaffected>" next to ROLLBACK_SAFE = True.
 
     python scripts/migration_rollback_safety.py check --db-revision <rev> --target-head <rev>
@@ -30,10 +31,12 @@ from typing import Dict, List, Optional
 
 BACKEND = Path(__file__).resolve().parents[1]
 VERSIONS = BACKEND / "alembic" / "versions"
-_RISKY_SQL = re.compile(r"\b(drop\s+(table|column)|rename\s+(to|column)|alter\s+column\s+\w+\s+(set\s+data\s+)?type|set\s+not\s+null)\b", re.I)
-_ALWAYS_RISKY = {"drop_table", "drop_column", "rename_table",
-                 # a new UNIQUE / CHECK constraint on an existing table can refuse a write the previous release still makes
-                 "create_unique_constraint", "create_check_constraint"}
+_RISKY_SQL = re.compile(r"\b(drop\s+(table|column)|rename\s+(to|column)|alter\s+column\s+\w+\s+(set\s+data\s+)?type|set\s+not\s+null"
+                        r"|drop\s+default|add\s+constraint|create\s+unique\s+index|update\s+\w+\s+set|delete\s+from)\b", re.I)
+_ALWAYS_RISKY = {"drop_table", "drop_column", "rename_table"}
+# A new constraint or unique index on a table that existed before can refuse a write the previous release still makes.
+# On a table created in the same upgrade() the previous release never writes it, so it is not counted there.
+_CONSTRAINT_OPS = {"create_unique_constraint": 1, "create_check_constraint": 1, "create_foreign_key": 1}   # op -> table arg
 
 
 def _kw(call: ast.Call, name: str):
@@ -51,16 +54,32 @@ def _strings(node) -> List[str]:
     return [n.value for n in ast.walk(node) if isinstance(n, ast.Constant) and isinstance(n.value, str)]
 
 
+def _arg(call: ast.Call, index: int, name: str):
+    value = call.args[index] if len(call.args) > index else _kw(call, name)
+    return value.value if isinstance(value, ast.Constant) else None
+
+
 def risky_operations(source: str) -> List[str]:
     """What upgrade() does that an older release's code may not survive (heuristic, errs on 'risky')."""
     tree = ast.parse(source)
     upgrade = next((n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == "upgrade"), None)
     if upgrade is None:
         return []
+    calls = [n for n in ast.walk(upgrade) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
+    created = {_arg(c, 0, "table_name") for c in calls if isinstance(c.func, ast.Attribute) and c.func.attr == "create_table"}
     found: List[str] = []
-    for call in (n for n in ast.walk(upgrade) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)):
-        op = call.func.attr
-        if op in _ALWAYS_RISKY:
+    for call in calls:
+        func = call.func
+        assert isinstance(func, ast.Attribute)
+        op = func.attr
+        if op in _CONSTRAINT_OPS:
+            table = _arg(call, _CONSTRAINT_OPS[op], "table_name" if op != "create_foreign_key" else "source_table")
+            if table not in created:
+                found.append(f"{op} on an existing table")
+        elif op == "create_index" and _kw(call, "unique") is not None and not _is_false(_kw(call, "unique")):
+            if _arg(call, 1, "table_name") not in created:
+                found.append("unique create_index on an existing table")
+        elif op in _ALWAYS_RISKY:
             found.append(op)
         elif op == "alter_column":
             for kw in ("new_column_name", "type_"):
@@ -68,6 +87,9 @@ def risky_operations(source: str) -> List[str]:
                     found.append(f"alter_column {kw}")
             if _is_false(_kw(call, "nullable")):
                 found.append("alter_column nullable=False")
+            default = _kw(call, "server_default")
+            if isinstance(default, ast.Constant) and default.value is None:
+                found.append("alter_column server_default=None")
         elif op == "add_column":
             for col in (a for a in call.args if isinstance(a, ast.Call)):
                 if _is_false(_kw(col, "nullable")) and _kw(col, "server_default") is None:
@@ -97,12 +119,13 @@ def lint(versions: Path = VERSIONS) -> List[str]:
         safe = declared.get("ROLLBACK_SAFE")
         if not isinstance(safe, bool):
             risky = sorted(set(risky_operations(source)))
-            hint = (f"ROLLBACK_SAFE = False    # {', '.join(risky)}" if risky else
-                    "ROLLBACK_SAFE = True     # additive: the previous release runs on this schema")
-            problems.append(f"{path.name}: missing ROLLBACK_SAFE (Z11). Add this line under `down_revision` / `depends_on`:\n"
-                            f"    {hint}\n"
-                            "  True only when the previous release's code keeps working on the upgraded schema; otherwise False "
-                            "(a code-only rollback past it is then refused and deploy/atp.sh rollback --restore-db is used).")
+            seen = f" upgrade() has {', '.join(risky)}, so it has to be False." if risky else ""
+            problems.append(f"{path.name}: missing ROLLBACK_SAFE (Z11).{seen} Add ONE of these lines under `down_revision` / "
+                            "`depends_on` and choose:\n"
+                            "    ROLLBACK_SAFE = True     # the previous release's code keeps working on the upgraded schema\n"
+                            "    ROLLBACK_SAFE = False    # it does not (drops, renames, retypes, new constraints, rewritten rows)\n"
+                            "  False makes deploy/atp.sh refuse a code-only rollback past it (rollback --restore-db is used); "
+                            "unsure means False.")
             continue
         risky = risky_operations(source)
         if safe and risky and not declared.get("ROLLBACK_SAFE_REASON"):

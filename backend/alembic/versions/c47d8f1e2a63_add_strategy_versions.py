@@ -16,7 +16,7 @@ revision: str = 'c47d8f1e2a63'
 down_revision: Union[str, Sequence[str], None] = 'b2e7f4a9c815'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
-ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
+ROLLBACK_SAFE = False    # Z11: create_foreign_key on an existing table, execute: risky SQL - a code-only rollback past it is refused; use --restore-db
 
 
 def upgrade() -> None:

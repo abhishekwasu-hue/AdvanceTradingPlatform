@@ -57,14 +57,14 @@ services:
     restart: unless-stopped
 
   worker:
-    # Z11: room to finish the cycle and release the Redis replica lock on SIGTERM (a SIGKILL after the default 10 s
-    # would leave the lock held until its TTL, and the next worker would wait for it).
-    stop_grace_period: ${WORKER_STOP_GRACE:-90s}
     deploy:
       replicas: 1          # H-1: exactly one trading worker (ADR-0010); the Redis lock is the backstop, not the plan
       resources:
         limits:
           memory: ${MEM_WORKER:-1536m}
+    # Z11: room to finish the cycle and release the Redis replica lock on SIGTERM (a SIGKILL after the default 10 s
+    # would leave the lock held until its TTL, and the next worker would wait for it).
+    stop_grace_period: ${WORKER_STOP_GRACE:-90s}
 
   frontend:
     deploy:

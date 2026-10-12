@@ -31,7 +31,12 @@ chmod 600 "$HOME/.ssh/config"
 # fingerprint (docs.github.com "GitHub's SSH key fingerprints") - a man in the middle cannot slip its own key in here.
 GITHUB_ED25519_FP="SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU"
 if ! ssh-keygen -F github.com -f "$HOME/.ssh/known_hosts" >/dev/null 2>&1; then
-  scanned="$(ssh-keyscan -t ed25519 github.com 2>/dev/null | grep -E '^github\.com ssh-ed25519 ' | head -n 1)"
+  scanned="$(ssh-keyscan -t ed25519 github.com 2>/dev/null | grep -E '^github\.com ssh-ed25519 ' | head -n 1 || true)"
+  if [ -z "$scanned" ]; then
+    echo "github.com did not answer on port 22 (ssh-keyscan returned nothing) - check the server's outbound network / DNS" >&2
+    echo "(e.g. 'ssh -T git@github.com', 'getent hosts github.com'), then paste the line again" >&2
+    exit 1
+  fi
   fp="$(printf '%s\n' "$scanned" | ssh-keygen -lf - 2>/dev/null | awk '{print $2}')"
   if [ -z "$scanned" ] || [ "$fp" != "$GITHUB_ED25519_FP" ]; then
     echo "github.com answered with host key ${fp:-none}, not GitHub's published $GITHUB_ED25519_FP - refusing (network intercepted?)" >&2

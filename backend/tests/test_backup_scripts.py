@@ -67,3 +67,50 @@ def test_tampered_backup_is_refused(tmp_path):
         fh.write(b"tamper")
     verify = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), "latest"], env=_env(tmp_path), capture_output=True, text=True)
     assert verify.returncode == 1 and "sha256 mismatch" in verify.stderr
+
+
+# --- Z11 / N1: only encrypted, sealed dumps are restored; the verify copy is restored by a non-superuser role ---------
+
+def _psql(sql: str, db: str = "") -> str:
+    url = DB_URL.replace("postgresql+asyncpg://", "postgresql://")
+    if db:
+        url = url.rsplit("/", 1)[0] + "/" + db
+    return subprocess.run(["psql", url, "-qAtc", sql], capture_output=True, text=True, check=True).stdout.strip()
+
+
+def test_every_encrypted_dump_is_sealed_and_restored_by_a_non_superuser_role(tmp_path):
+    env = _env(tmp_path, BACKUP_ENCRYPTION_PASSPHRASE="unit-test-passphrase", VERIFY_KEEP_SCRATCH="1")
+    assert subprocess.run(["sh", str(SCRIPTS / "backup.sh")], env=env, capture_output=True, text=True).returncode == 0
+    dump = next(tmp_path.glob("atp_*.dump.enc"))
+    assert len((tmp_path / (dump.name + ".hmac")).read_text().strip()) == 64
+    ok = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), "latest"], env=env, capture_output=True, text=True)
+    report = json.loads(ok.stdout.strip().splitlines()[-1])
+    try:
+        assert report["status"] == "ok", ok.stderr
+        assert _psql("select tableowner from pg_tables where tablename = 'tenants'", report["restored_into"]) == "atp_restore"
+        assert _psql("select rolsuper from pg_roles where rolname = 'atp_restore'") == "f"
+    finally:
+        _psql(f'DROP DATABASE IF EXISTS "{report["restored_into"]}"')
+
+
+def test_unsealed_plain_and_tampered_seal_dumps_are_refused(tmp_path):
+    env = _env(tmp_path, BACKUP_ENCRYPTION_PASSPHRASE="unit-test-passphrase")
+    assert subprocess.run(["sh", str(SCRIPTS / "backup.sh")], env=env, capture_output=True, text=True).returncode == 0
+    dump = next(tmp_path.glob("atp_*.dump.enc"))
+    seal = tmp_path / (dump.name + ".hmac")
+    original = seal.read_text()
+
+    seal.unlink()                                                                  # unsealed
+    run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), "latest"], env=env, capture_output=True, text=True)
+    assert run.returncode == 1 and "no .hmac seal" in run.stderr
+
+    seal.write_text("0" * 64 + "\n")                                               # a seal that does not match
+    run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), "latest"], env=env, capture_output=True, text=True)
+    assert run.returncode == 1 and "does not match its seal" in run.stderr
+    seal.write_text(original)
+
+    plain_env = _env(tmp_path / "plain")
+    assert subprocess.run(["sh", str(SCRIPTS / "backup.sh")], env=plain_env, capture_output=True, text=True).returncode == 0
+    plain = next((tmp_path / "plain").glob("atp_*.dump"))                           # a .dump without .enc, read with a passphrase set
+    run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), str(plain)], env=env, capture_output=True, text=True)
+    assert run.returncode == 1 and "not an encrypted dump" in run.stderr

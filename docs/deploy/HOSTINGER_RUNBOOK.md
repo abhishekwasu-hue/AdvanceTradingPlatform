@@ -86,7 +86,7 @@ Required. `atp.sh` refuses to run while any of these is empty, `CHANGE_ME`, or a
 
 | Key | Value |
 |---|---|
-| `POSTGRES_PASSWORD`, `JWT_SECRET_KEY`, `METRICS_TOKEN`, `BACKUP_ENCRYPTION_PASSPHRASE` | `python3 -c "import secrets;print(secrets.token_urlsafe(48))"` (a different value for each key). Keep a copy of `BACKUP_ENCRYPTION_PASSPHRASE` off the server: without it no backup can be restored or verified. |
+| `POSTGRES_PASSWORD`, `JWT_SECRET_KEY`, `METRICS_TOKEN`, `BACKUP_ENCRYPTION_PASSPHRASE` | `python3 -c "import secrets;print(secrets.token_urlsafe(48))"` (a different value for each key). Keep a copy of `BACKUP_ENCRYPTION_PASSPHRASE` off the server: without it no backup can be restored or verified. `POSTGRES_PASSWORD` sits inside a database URL, so it must be URL-safe: letters, digits, `-` and `_` only (`token_urlsafe` gives exactly that), never `@ : / ? # %`. |
 | `SECRETS_ENCRYPTION_KEY` | The **same** key the PAPER PC uses. Never a new one: every stored broker and AI credential depends on it. The first deploy records a salted scrypt fingerprint of it (`.deploy/secrets_key.fingerprint` with a random per-host salt). After that, any run with a different key stops with exit 20. `health` also checks inside the API container that the key opens every organisation's data key. |
 | `DOMAIN`, `ACME_EMAIL` | Section 5. |
 
@@ -215,8 +215,11 @@ Until then, `backup` and `restore-check` work on the local copies and print `R2 
   - CI lints this: `scripts/migration_rollback_safety.py lint` fails on a missing marker, or on `True` next to a
     drop, rename, type change or NOT NULL without a server default, unless a reviewed `ROLLBACK_SAFE_REASON` is
     given.
-  - Nine older migrations are marked `False`: five change column types or nullability, and four add a UNIQUE
-    constraint to an existing table and have not been reviewed.
+  - The lint also flags: a dropped server default; a new UNIQUE / CHECK / FOREIGN KEY constraint or unique index on
+    a table that existed before; SQL that adds constraints or rewrites rows (UPDATE / DELETE).
+  - 17 older migrations are marked `False` (unknown or risky means False). Two are `True` with a reviewed reason,
+    because their new key is on a new nullable column.
+  - An author adding a migration chooses the line; the lint error shows both options.
 - **Code-only (default).** If the database is ahead of the target release, the **newer** image checks two things:
   that the database revision descends from the target's head, and that every migration in between is
   `ROLLBACK_SAFE`.
@@ -302,11 +305,19 @@ It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEE
 | Off-site copy of all of the above | `offsite` service hourly; `atp.sh backup` | R2 `atp-backups/{backups,wal_archive,files}` |
 | Restore check | cron Sunday 03:43 IST; `atp.sh restore-check` | `.deploy/restore-checks.log` |
 
+**Only encrypted, sealed dumps are restored.**
+
+- With `BACKUP_ENCRYPTION_PASSPHRASE` set, `restore.sh` refuses a plain `.dump`, an unsealed dump, and a dump that
+  does not match its seal.
+- `restore-check` fetches only `.dump.enc` files from R2.
+- The scratch copy is restored by `atp_restore`, a NOLOGIN, non-superuser role (`pg_restore --role`). A dump swapped
+  in the bucket therefore cannot run superuser-only SQL such as `COPY ... TO PROGRAM` on the cluster.
+
 **Seal.** `openssl enc` has no authenticated mode. A `.sha256` file can be recomputed by whoever changed the dump, so
-`atp.sh` adds a `.hmac` sidecar: HMAC-SHA256 over the ciphertext, with a key derived from
-`BACKUP_ENCRYPTION_PASSPHRASE` under its own label, so the MAC key is separate from the encryption key. A dump or
-archive that does not match its seal fails the check. A dump the backup service made since the last `atp.sh backup`
-has no seal yet; that is a warning.
+`scripts/backup/backup.sh` seals every dump where it is made, and `atp.sh` seals the files archive. A seal is a
+`.hmac` sidecar: HMAC-SHA256 over the ciphertext, with a key derived from `BACKUP_ENCRYPTION_PASSPHRASE` under its own
+label, so the MAC key is separate from the encryption key. A missing seal, or one that does not match, fails the
+check.
 
 The database URL's password never reaches a command line. The backup scripts take it from `DATABASE_URL` into
 `PGPASSWORD` (`scripts/backup/common.sh` `pg_setup`).

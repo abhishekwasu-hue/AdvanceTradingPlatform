@@ -227,25 +227,19 @@ for k in sys.argv[1].split("."):
 print("" if d is None else d)' "$1"
 }
 
-# --- backup sealing: HMAC-SHA256 over the ciphertext, key derived from the passphrase ----------------------------
+# --- backup seals: HMAC-SHA256 over the ciphertext, key derived from the passphrase ------------------------------
 # openssl enc has no authenticated mode; the .hmac sidecar makes tampering with an encrypted file detectable (a .sha256
-# can be recomputed by whoever changed the file). PBKDF2 with its own label keeps the MAC key separate from the
-# encryption key. The passphrase reaches python through its environment only.
+# can be recomputed by whoever changed the file). Dumps are sealed by scripts/backup/backup.sh where they are made
+# (common.sh hmac_file - the same derivation: PBKDF2-HMAC-SHA256, salt "atpmacv1", 200000 rounds, 32 bytes, separate
+# from the encryption key); this side seals the files archive and checks every seal. The passphrase reaches python
+# through its environment only.
 mac_stream() {
   ATP_MAC_PASS="$(env_get BACKUP_ENCRYPTION_PASSPHRASE)" python3 -c 'import hashlib, hmac, os, sys
-key = hashlib.pbkdf2_hmac("sha256", os.environ["ATP_MAC_PASS"].encode(), b"atp-backup-mac-v1", 200000)
+key = hashlib.pbkdf2_hmac("sha256", os.environ["ATP_MAC_PASS"].encode(), b"atpmacv1", 200000, 32)
 mac = hmac.new(key, digestmod="sha256")
 for chunk in iter(lambda: sys.stdin.buffer.read(1 << 20), b""):
     mac.update(chunk)
 print(mac.hexdigest())'
-}
-# Seal a dump inside the backups volume ($1 = path under /backups).
-seal_dump() {
-  local f="$1" mac
-  [ "$DRY_RUN" = "1" ] && { info "would seal $f (HMAC sidecar)"; return 0; }
-  mac="$(dc run --rm --no-deps -T --entrypoint cat backup "/backups/$f" | mac_stream)" || return 1
-  # shellcheck disable=SC2016  # $0 expands inside the container
-  printf '%s\n' "$mac" | dc run --rm --no-deps -T --entrypoint sh backup -c 'cat > "/backups/$0.hmac"' "$f"
 }
 # ok | missing | mismatch, for a dump in the volume ($1 = path under /backups).
 dump_mac_state() {
@@ -645,17 +639,25 @@ cmd_deploy() {
   RESTORE_CHECKOUT="${prev:-$head_before}"
   run git -C "$ATP_DIR" checkout -q --detach "$sha"
 
-  step "database and cache"
-  rdc up -d --wait postgres redis
-
-  step "images atp-*:$RELEASE (built from the commit, reused by a rollback)"
+  step "images atp-*:$RELEASE (built from the commit, reused by a rollback; nothing running is touched)"
   if [ "$DRY_RUN" != "1" ] && images_exist "$RELEASE"; then ok "images for $RELEASE already built"
   else rdc build --pull; fi
+
+  # The session gate runs before anything is (re)started - `up` may recreate Postgres or Redis when their config changed.
+  step "session gate"
+  if [ "$DRY_RUN" = "1" ]; then session_gate "restart the worker" "$RELEASE"
+  elif dc ps --status running --services 2>/dev/null | grep -qx postgres; then
+    local running_rev; running_rev="$(db_revision)"
+    [ "$running_rev" != "unknown" ] || die "cannot read the database revision - nothing was changed" 1
+    if [ "$running_rev" != "-" ]; then session_gate "restart the worker" "$RELEASE" "$(release_of "${prev:-}")"; else info "empty database - nothing to protect"; fi
+  else info "Postgres not running yet (first start) - nothing to protect"; fi
+
+  step "database and cache"
+  rdc up -d --wait postgres redis
 
   step "migrations"
   local before="" after="" head="" flags_before backup_file="-"
   if [ "$DRY_RUN" = "1" ]; then
-    session_gate "restart the worker" "$RELEASE"
     info "would compare the database revision with the image's alembic head; if behind: encrypted, sealed pre-migration backup, then scripts/migrate_guard.py"
     flags_before="dry-run"
   else
@@ -665,7 +667,6 @@ cmd_deploy() {
     flags_before="$(flags_fingerprint)"
     [ "$flags_before" != "unknown" ] || die "cannot read the feature flags - nothing was changed" 1
     info "database at ${before}, code head ${head}"
-    if [ "$before" != "-" ]; then session_gate "restart the worker" "$RELEASE" "$(release_of "${prev:-}")"; fi
     if [ "$before" = "$head" ]; then
       ok "schema at head - no migration, no pre-migration backup needed"
     else
@@ -673,7 +674,7 @@ cmd_deploy() {
       rdc run --rm --no-deps -T --entrypoint sh backup /scripts/backup.sh || die "pre-migration backup failed - nothing was migrated or restarted" 1
       local f; f="$(dc run --rm --no-deps -T --entrypoint sh backup -c 'readlink /backups/latest' | tr -d '\r' | tail -n 1)"
       [ -n "$f" ] || die "pre-migration backup not found after backup.sh" 1
-      seal_dump "$f" || die "could not seal the pre-migration backup $f" 1
+      [ "$(dump_mac_state "$f")" = "ok" ] || die "the pre-migration backup $f has no valid seal - nothing was migrated" 1
       # shellcheck disable=SC2016  # $0 expands inside the container
       rdc run --rm --no-deps -T --entrypoint sh backup -c \
         'mkdir -p /backups/pre-migration && for x in "$0" "$0.sha256" "$0.hmac"; do ln -f "/backups/$x" "/backups/pre-migration/$x"; done' "$f" \
@@ -692,7 +693,10 @@ cmd_deploy() {
         die "migration failed (exit $rc). The old release still runs; the database may be partly migrated - 'atp.sh rollback --restore-db' puts back $backup_file (runbook 'Troubleshooting')." 1
       fi
       after="$(db_revision)"
-      [ "$after" = "$head" ] || die "after migrating the database is at $after, expected $head" 1
+      if [ "$after" != "$head" ]; then
+        log_release failed "$sha" "${prev:--}" "$backup_file" "$before" "$after"
+        die "after migrating the database is at $after, expected $head - 'atp.sh rollback --restore-db' puts back $backup_file" 1
+      fi
       ok "database migrated $before -> $after"
     fi
     [ -n "$after" ] || after="$before"
@@ -886,7 +890,8 @@ cmd_rollback() {
     step "database back to $backup (restored beside the live one first; the live one keeps serving meanwhile)"
     if [ "$DRY_RUN" != "1" ]; then
       local seal; seal="$(dump_mac_state "$backup")"
-      case "$seal" in ok) ok "$backup seal verified" ;; missing) warn "$backup has no seal (older backup) - sha256 only" ;;
+      case "$seal" in ok) ok "$backup seal verified" ;;
+        missing) die "$backup has no seal - refusing to restore it (every dump is sealed by backup.sh); nothing changed" 1 ;;
         *) die "$backup does not match its seal - it was changed after it was taken; nothing restored" 1 ;; esac
     fi
     rdc run --rm --no-deps -T --entrypoint sh backup /scripts/backup.sh || die "safety backup of the current database failed - nothing changed" 1
@@ -960,7 +965,9 @@ cmd_backup() {
     else rdc run --rm --no-deps -T --entrypoint sh backup /scripts/backup.sh || die "database backup failed" 1; fi
     if [ "$DRY_RUN" != "1" ]; then
       local f; f="$(dc run --rm --no-deps -T --entrypoint sh backup -c 'readlink /backups/latest' 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
-      if [ -n "$f" ]; then seal_dump "$f" || die "could not seal $f" 1; ok "sealed $f"; fi
+      if [ -n "$f" ]; then
+        if [ "$(dump_mac_state "$f")" = "ok" ]; then ok "$f sealed"; else bad "$f has no valid seal"; fi
+      fi
     fi
   fi
 
@@ -1054,9 +1061,12 @@ cmd_restore_check_inner() {
   if [ "$local_only" = "0" ] && [ "$r2" = "configured" ]; then
     src="R2"
     step "newest database backup from R2 -> $(restore_dir)"
-    if [ "$DRY_RUN" = "1" ]; then rdc run --rm --no-deps -T --entrypoint sh offsite /scripts/offsite_fetch.sh /restore; file="/restore/<newest>"
+    if [ "$DRY_RUN" = "1" ]; then rdc run --rm --no-deps -T -e OFFSITE_REQUIRE_ENCRYPTED=1 --entrypoint sh offsite /scripts/offsite_fetch.sh /restore; file="/restore/<newest>"
     else
-      file="$(dc run --rm --no-deps -T --entrypoint sh offsite /scripts/offsite_fetch.sh /restore | tr -d '\r' | tail -n 1)" || { bad "could not fetch a backup from R2"; return 0; }
+      # only encrypted dumps (offsite_fetch.sh), and below only sealed ones: anyone with write access to the bucket could
+      # otherwise hand pg_restore a dump of their choosing
+      file="$(dc run --rm --no-deps -T -e OFFSITE_REQUIRE_ENCRYPTED=1 --entrypoint sh offsite /scripts/offsite_fetch.sh /restore | tr -d '\r' | tail -n 1)" || { bad "could not fetch a backup from R2"; return 0; }
+      case "$file" in *.dump.enc) ;; *) bad "R2 handed back $file, not an encrypted dump - refused"; return 0 ;; esac
       ok "fetched $(basename "$file")"
       seal="$(host_mac_state "$(restore_dir)/$(basename "$file")")"
     fi
@@ -1073,7 +1083,8 @@ cmd_restore_check_inner() {
     fi
   fi
   if [ "$DRY_RUN" != "1" ]; then
-    case "$seal" in ok) ok "seal (HMAC) verified" ;; missing) warn "backup has no seal (taken by the backup service since the last atp.sh backup, or before sealing existed)" ;;
+    case "$seal" in ok) ok "seal (HMAC) verified" ;;
+      missing) bad "backup has no seal - refused (every dump is sealed by backup.sh; an unsealed one did not come from it)"; return 0 ;;
       *) bad "backup does not match its seal - changed after it was taken"; return 0 ;; esac
   fi
 

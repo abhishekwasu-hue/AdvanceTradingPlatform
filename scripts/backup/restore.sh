@@ -25,6 +25,18 @@ else
   log "WARNING: no .sha256 sidecar next to $FILE - integrity not verified"
 fi
 
+# Z11 / N1: with a passphrase configured only an encrypted AND sealed dump is restored - a plain or unsealed file could
+# come from anyone with write access to the bucket, and pg_restore runs SQL from it (RESTORE_ALLOW_UNSEALED=1 is for a
+# dump taken before sealing existed, read by hand first).
+if [ -n "$BACKUP_ENCRYPTION_PASSPHRASE" ] && [ "${RESTORE_ALLOW_UNSEALED:-0}" != "1" ]; then
+  case "$FILE" in *.enc) ;; *) die "refusing $FILE: not an encrypted dump (.enc) while BACKUP_ENCRYPTION_PASSPHRASE is set" ;; esac
+  case "$(seal_state "$FILE")" in
+    ok) log "seal verified" ;;
+    missing) die "refusing $FILE: no .hmac seal (every dump is sealed by backup.sh)" ;;
+    *) die "refusing $FILE: it does not match its seal - changed after it was written" ;;
+  esac
+fi
+
 if [ "${RESTORE_CONFIRM:-}" != "yes" ]; then
   printf 'This will REPLACE the contents of %s with %s. Type the database name to continue: ' "$(db_name_of "$TARGET")" "$(basename "$FILE")" >&2
   read -r answer
@@ -46,6 +58,8 @@ esac
 log "restoring $(basename "$FILE") into $(db_name_of "$TARGET")"
 # --clean/--if-exists drop what the dump will recreate; --no-owner/--no-privileges keep the
 # restore usable under a different role name than the source.
-pg_restore --dbname="$TARGET" --clean --if-exists --no-owner --no-privileges --exit-on-error "$SRC"
+# RESTORE_ROLE (verify_backup.sh): restore as that non-superuser role (SET ROLE after connecting), so a hostile dump
+# cannot run superuser-only SQL (COPY ... TO PROGRAM, untrusted functions) on the cluster.
+pg_restore --dbname="$TARGET" ${RESTORE_ROLE:+--role="$RESTORE_ROLE"} --clean --if-exists --no-owner --no-privileges --exit-on-error "$SRC"
 [ -n "$CLEANUP" ] && rm -f "$CLEANUP"
 log "restore complete"

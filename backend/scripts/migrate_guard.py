@@ -88,9 +88,10 @@ def main() -> int:
         if allowed:
             print(f"guard: MIGRATION_ALLOW_DB_AHEAD={allowed} does not name the database revision "
                   f"{unknown_revision() or '?'} - refusing", file=sys.stderr)
-        print("guard: REFUSING to start - the database carries a revision this code does not know (a newer release "
-              "migrated it). Roll back with deploy/atp.sh rollback (it sets MIGRATION_ALLOW_DB_AHEAD=1) or deploy the "
-              "newer release.", file=sys.stderr)
+        print(f"guard: REFUSING to start - the database carries revision {unknown_revision() or '?'}, which this code does not "
+              "know (a newer release migrated it). Roll back with deploy/atp.sh rollback (it checks that the migrations in "
+              f"between are ROLLBACK_SAFE and sets MIGRATION_ALLOW_DB_AHEAD={unknown_revision() or '<that revision>'}) or "
+              "deploy the newer release.", file=sys.stderr)
         return 4
     now = datetime.now(timezone.utc)
     status = session_status(now, asyncio.run(load_holidays()))

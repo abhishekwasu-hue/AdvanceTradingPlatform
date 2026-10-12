@@ -131,6 +131,8 @@ if sub == "stop":
     for svc in args:
         st["running"].pop(svc, None)
     finish()
+if sub == "ps" and "--services" in args:
+    out.extend(st["running"]); finish()
 if sub == "ps":
     for svc, info in st["running"].items():
         health = "healthy" if svc in ("postgres", "redis", "backend", "worker") else ""
@@ -260,6 +262,9 @@ if sub == "run":
         if cmd[:1] == ["/scripts/backup.sh"]:
             name = f"atp_{db}_2026101{len(st['backups'])}T183000Z.dump.enc"
             st["backups"].append({"name": name, "rev": st["databases"][db]["rev"]})
+            import hashlib, hmac                                    # backup.sh seals what it writes (common.sh hmac_file)
+            key = hashlib.pbkdf2_hmac("sha256", os.environ["FAKE_BACKUP_PASS"].encode(), b"atpmacv1", 200000, 32)
+            st["hmacs"][name] = hmac.new(key, dump_bytes(name).encode(), "sha256").hexdigest()
             st["latest"] = name
             st["last_backup_ok"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             finish()
@@ -310,7 +315,10 @@ if sub == "run":
                         b.write(a.read())
             finish()
         if entry == "sh" and cmd[:1] == ["/scripts/offsite_fetch.sh"]:
-            top = [b for b in st["backups"] if "/" not in b["name"]]
+            top = [b for b in st["backups"] + st.get("bucket_extra", []) if "/" not in b["name"]]
+            top.sort(key=lambda b: b["name"])
+            if envs.get("OFFSITE_REQUIRE_ENCRYPTED") == "1":
+                top = [b for b in top if b["name"].endswith(".dump.enc")]
             name = top[-1]["name"]
             with open(os.path.join(st["restore_dir"], name), "w") as fh:
                 fh.write(dump_bytes(name))
@@ -417,6 +425,7 @@ class Host:
         (self.bin / "ss").write_text("#!/bin/sh\n[ -n \"$FAKE_SS\" ] && { printf '%s\\n' \"$FAKE_SS\"; exit 0; }\n"
                                      "printf 'LISTEN 0 4096 0.0.0.0:22 0.0.0.0:*\\nLISTEN 0 4096 0.0.0.0:443 0.0.0.0:*\\n"
                                      "LISTEN 0 4096 127.0.0.1:8000 0.0.0.0:*\\n'\n")
+        (self.bin / "df").write_text("#!/bin/sh\nprintf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n/dev/fake 100 40 60 40%% /\\n'\n")
         (self.bin / "crontab").write_text(f"#!/bin/sh\nF='{self.crontab}'\nif [ \"$1\" = -l ]; then [ -f \"$F\" ] && cat \"$F\" || exit 1; else cat > \"$F\"; fi\n")
         if os.getuid() == 0:   # the script refuses root; the CI runner is not root, this sandbox may be
             (self.bin / "id").write_text("#!/bin/sh\ncase \"$1\" in -u) echo 1000;; -un) echo atp;; *) exec /usr/bin/id \"$@\";; esac\n")
@@ -448,7 +457,7 @@ class Host:
     def run(self, *args, extra_env=None, timeout=120):
         env = {**os.environ, "PATH": f"{self.bin}:{os.environ['PATH']}", "FAKE_STATE": str(self.state_path), "ATP_DIR": str(self.dir),
                "ATP_HEALTH_TIMEOUT": "2", "ATP_POLL_SECONDS": "1", "ATP_FILES_BACKUP_DIR": str(self.files_dir), "HOME": str(self.tmp),
-               **(extra_env or {})}
+               "FAKE_BACKUP_PASS": SECRETS["BACKUP_ENCRYPTION_PASSPHRASE"], **(extra_env or {})}
         env.pop("ATP_DRY_RUN", None)
         res = subprocess.run(["bash", str(ATP_SH), *args], env=env, capture_output=True, text=True, timeout=timeout)
         self.load()
@@ -496,7 +505,7 @@ def test_first_deploy_backs_up_then_migrates_then_api_then_worker_and_records_th
     res = host.run("deploy")
     assert res.returncode == 0, res.all
     calls = host.calls()
-    order = [host.index("up -d --wait postgres redis"), host.index(" build --pull"), host.index("alembic heads"),
+    order = [host.index(" build --pull"), host.index("up -d --wait postgres redis"), host.index("alembic heads"),
              host.index("/scripts/backup.sh"), host.index("scripts/migrate_guard.py"), host.index("up -d --no-deps --no-build backend"),
              host.index("up -d --no-build")]
     assert -1 not in order and order == sorted(order), calls
@@ -940,8 +949,9 @@ def test_env_values_are_read_like_compose_reads_them(host):
     text = text.replace(f"BACKUP_ENCRYPTION_PASSPHRASE={SECRETS['BACKUP_ENCRYPTION_PASSPHRASE']}",
                         f"BACKUP_ENCRYPTION_PASSPHRASE=\"{SECRETS['BACKUP_ENCRYPTION_PASSPHRASE']} #kept\"")
     env.write_text(text)
-    assert host.run("deploy").returncode == 0                                        # the comment is not part of CADDYFILE
-    assert host.run("backup").returncode == 0
+    real_pass = {"FAKE_BACKUP_PASS": SECRETS["BACKUP_ENCRYPTION_PASSPHRASE"] + " #kept"}   # what backup.sh seals with
+    assert host.run("deploy", extra_env=real_pass).returncode == 0                   # the comment is not part of CADDYFILE
+    assert host.run("backup", extra_env=real_pass).returncode == 0
     archive = sorted(host.files_dir.glob("atp_files_*.tar.gz.enc"))[-1]
     dec = subprocess.run(["openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-iter", "200000", "-pass", "env:P", "-in", str(archive)],
                          env={**os.environ, "P": SECRETS["BACKUP_ENCRYPTION_PASSPHRASE"] + " #kept"}, capture_output=True)
@@ -990,6 +1000,13 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
         "sql.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('ALTER TABLE t ALTER COLUMN c SET NOT NULL')\n", True),
         "missing.py": (head + "\ndef upgrade():\n    op.create_table('t')\n", True),
         "unique.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.create_unique_constraint('uq', 't', ['a'])\n", True),
+        "unique_index.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.create_index('ix', 't', ['a'], unique=True)\n", True),
+        "fk.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.create_foreign_key('fk', 't', 'u', ['a'], ['id'])\n", True),
+        "drop_default.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.alter_column('t', 'c', server_default=None)\n", True),
+        "rewrite.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE t SET c = 1')\n", True),
+        "sql_constraint.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('ALTER TABLE t ADD CONSTRAINT x UNIQUE (a)')\n", True),
+        "new_table_keys.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.create_table('n', sa.Column('id', sa.Integer()))\n"
+                              "    op.create_index('ix', 'n', ['id'], unique=True)\n    op.create_foreign_key('fk', 'n', 'u', ['id'], ['id'])\n", False),
         "additive.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.add_column('t', sa.Column('c', sa.Integer(), nullable=False, server_default='0'))\n"
                         "    op.create_table('u', sa.Column('id', sa.Integer(), nullable=False))\n\ndef downgrade():\n    op.drop_table('u')\n", False),
         "marked_unsafe.py": (head + "ROLLBACK_SAFE = False\n\ndef upgrade():\n    op.drop_table('t')\n", False),
@@ -1000,4 +1017,44 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
     flagged = {p.split(":")[0] for p in mod.lint(tmp_path)}
     assert flagged == {name for name, (_, bad) in cases.items() if bad}
     message = "\n".join(mod.lint(tmp_path))
-    assert "missing.py: missing ROLLBACK_SAFE (Z11). Add this line" in message and "ROLLBACK_SAFE = True     # additive" in message
+    assert "missing.py: missing ROLLBACK_SAFE (Z11). Add ONE of these lines" in message and "ROLLBACK_SAFE = True     # the previous" in message
+    assert "ROLLBACK_SAFE = False    # it does not" in message and "unsure means False" in message
+
+
+# --- N1: only encrypted, sealed dumps are ever restored; the gate runs before Postgres / Redis are touched -----------
+
+def test_restore_check_refuses_an_unsealed_r2_dump_and_never_picks_a_plain_one(host):
+    host.write_env(extra=R2)
+    assert host.run("deploy").returncode == 0
+    assert host.run("backup").returncode == 0
+    newest = host.state["latest"]
+    host.state["bucket_extra"] = [{"name": "atp_advance_trading_platform_20261099T000000Z.dump", "rev": "rev1"}]   # newer, plain
+    host.save()
+    res = host.run("restore-check")
+    assert res.returncode == 0, res.all
+    fetch = next(c for c in host.calls() if "offsite_fetch.sh" in c)
+    assert "-e OFFSITE_REQUIRE_ENCRYPTED=1" in fetch and host.state["verified"][-1] == "/restore/" + newest
+    del host.state["hmacs"][newest]; host.save()                                     # stripped seal
+    (host.restore_dir / (newest + ".hmac")).unlink(missing_ok=True)
+    res = host.run("restore-check")
+    assert res.returncode == 1 and "no seal - refused" in res.stdout
+    assert host.state["verified"][-1] == "/restore/" + newest and len([v for v in host.state["verified"] if v == "/restore/" + newest]) == 1
+
+
+def test_restore_db_refuses_a_pre_migration_dump_without_its_seal(host):
+    _deploy_a_then_migrating_b(host)
+    pre = [b["name"] for b in host.state["backups"] if b["name"].startswith("pre-migration/")][-1]   # the one B's migration took
+    del host.state["hmacs"][pre]; host.save()
+    before = len(host.state["calls"])
+    res = host.run("rollback", "--restore-db", extra_env={"ATP_CONFIRM_DB": "advance_trading_platform"})
+    assert res.returncode == 1 and "has no seal - refusing to restore it" in res.all
+    assert not any("restore.sh" in c or "CREATE DATABASE" in c for c in host.calls(before))
+    assert host.state["databases"]["advance_trading_platform"]["rev"] == "rev2"
+
+
+def test_the_session_gate_runs_before_postgres_and_redis_are_touched(host):
+    assert host.run("deploy", host.sha_a).returncode == 0
+    before = len(host.state["calls"])
+    assert host.run("deploy").returncode == 0
+    gate, up = host.index("session_check.py", before), host.index("up -d --wait postgres redis", before)
+    assert -1 < gate < up and host.index(" build --pull", before) < gate

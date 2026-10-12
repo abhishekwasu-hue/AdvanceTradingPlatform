@@ -11,7 +11,13 @@ DEST="${1:?usage: offsite_fetch.sh <dest dir>}"
 log() { printf '%s offsite-fetch: %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 
 # Names carry a UTC stamp (atp_<db>_<YYYYmmddTHHMMSSZ>.dump[.enc], scripts/backup/backup.sh): the last by name is the newest.
-NEWEST="$(rclone lsf "$REMOTE/backups" --files-only --include 'atp_*.dump' --include 'atp_*.dump.enc' | sort | tail -n 1)"
+# Z11 / N1: OFFSITE_REQUIRE_ENCRYPTED=1 (deploy/atp.sh sets it - the passphrase is required there) fetches only encrypted
+# dumps: a plain .dump in the bucket is never picked, whoever put it there.
+if [ "${OFFSITE_REQUIRE_ENCRYPTED:-0}" = "1" ]; then
+  NEWEST="$(rclone lsf "$REMOTE/backups" --files-only --include 'atp_*.dump.enc' | sort | tail -n 1)"
+else
+  NEWEST="$(rclone lsf "$REMOTE/backups" --files-only --include 'atp_*.dump' --include 'atp_*.dump.enc' | sort | tail -n 1)"
+fi
 [ -n "$NEWEST" ] || { log "no dump under $REMOTE/backups"; exit 1; }
 mkdir -p "$DEST"
 find "$DEST" -maxdepth 1 -name 'atp_*' -type f -exec rm -f {} + 2>/dev/null || true   # only the previous test copy

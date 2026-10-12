@@ -47,3 +47,43 @@ sha256_file() {
 }
 
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installed"; }
+
+# Z11 / N1: the seal - HMAC-SHA256 over the (encrypted) file, written as <file>.hmac. openssl enc has no authenticated
+# mode, and a .sha256 can be recomputed by whoever changed the file; without the passphrase a seal cannot be.
+#   key  = PBKDF2-HMAC-SHA256(BACKUP_ENCRYPTION_PASSPHRASE, salt "atpmacv1", 200000 rounds), 32 bytes - derived by
+#          `openssl enc -P` with -pass env: (the passphrase never reaches argv); the 8-byte salt and the label keep this
+#          key separate from the encryption key. deploy/atp.sh computes the same value (python hashlib) on the host.
+#   HMAC = SHA256((K ^ opad) || SHA256((K ^ ipad) || file)), built here with printf (a shell builtin) and openssl dgst.
+_mac_key_hex() {
+  BACKUP_ENCRYPTION_PASSPHRASE="$BACKUP_ENCRYPTION_PASSPHRASE" openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 \
+    -S 6174706d61637631 -pass env:BACKUP_ENCRYPTION_PASSPHRASE -P | sed -n 's/^key=//p' | tr 'A-F' 'a-f'
+}
+# 64-byte block of the key XOR <pad>, as printf octal escapes.
+_mac_pad() {
+  _k="$1"; _p="$2"; _out=""; _i=0
+  while [ "$_i" -lt 64 ]; do
+    if [ "$_i" -lt 32 ]; then _b="$(printf '%s' "$_k" | cut -c$((_i * 2 + 1))-$((_i * 2 + 2)))"; else _b="00"; fi
+    _out="$_out\\$(printf '%03o' $(( 0x$_b ^ _p )))"
+    _i=$((_i + 1))
+  done
+  printf '%s' "$_out"
+}
+hmac_file() {
+  [ -n "$BACKUP_ENCRYPTION_PASSPHRASE" ] || die "the seal needs BACKUP_ENCRYPTION_PASSPHRASE"
+  need openssl
+  _key="$(_mac_key_hex)"
+  [ "${#_key}" = 64 ] || die "could not derive the seal key"
+  _ipad="$(_mac_pad "$_key" 54)"; _opad="$(_mac_pad "$_key" 92)"
+  _inner="$(mktemp "${TMPDIR:-/tmp}/atp_mac.XXXXXX")"
+  # shellcheck disable=SC2059  # the format is the octal key block on purpose
+  { printf "$_ipad"; cat "$1"; } | openssl dgst -sha256 -binary > "$_inner"
+  # shellcheck disable=SC2059
+  { printf "$_opad"; cat "$_inner"; } | openssl dgst -sha256 | sed 's/.*= //'
+  rm -f "$_inner"
+}
+seal_file() { hmac_file "$1" > "$1.hmac.part" && mv "$1.hmac.part" "$1.hmac"; }
+# ok | missing | mismatch
+seal_state() {
+  [ -s "$1.hmac" ] || { printf 'missing'; return 0; }
+  if [ "$(hmac_file "$1")" = "$(tr -d '\r\n' < "$1.hmac")" ]; then printf 'ok'; else printf 'mismatch'; fi
+}

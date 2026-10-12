@@ -1128,6 +1128,29 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
   (P1 §1.6), the Turtles "Then" template (ATR sizing, 2N stop), short mirrors (TX2), the remaining catalogue (LG2,
   LG3), search by style chips beyond the taxonomy's setup chips.
 
+## U5 D3a (built): result board views - heatmap and chart grid (flag `screener_board_views`)
+
+- **`POST /api/screener/board/context`** (`app/screener/board.py`; tenancy "self", it stores nothing) gives, for up to 50
+  symbols:
+  - sector, industry and market cap from the company reference data (`companies`). A symbol without a row is
+    "Unclassified", never a guessed sector;
+  - the last 30 daily closes from the shared lake (shared-licensed sources, preferred source then highest version,
+    corrections only once ingested) and the last day's change.
+
+  With the flag off it answers 404 and the page shows the table alone.
+- **`ResultViews`** wraps the D1 board with a Table / Heatmap / Chart grid tablist:
+  - **Heatmap:** a squarified treemap (Bruls et al.) of the scanned symbols by sector, sized by market cap. A symbol
+    with none counts at the median and the caption says so. Tiles are coloured by the day's change on the up / down
+    tokens (colour-blind safe), matched symbols are ringed in `--signal`, and each tile names its symbol, result and
+    change.
+  - **Chart grid:** the matched symbols (up to 12), each with its evidence chart (the scan's own conditions, U8)
+    when the run stored one, else the shared daily closes.
+- **Tests:** `tests/test_u5_d3_board.py` (reference data, shared closes only - no `stream:` row, no correction
+  before its ingestion - the flag and limits); `boardViews.test.tsx` (treemap areas and bounds, sector sizing and
+  the median fill, colours, accessible labels, grid limits).
+- **Next (D3b):** RRG (relative rotation against a benchmark from the shared lake) and the template sheet with live
+  thumbnails; the F&O dashboard waits for chain data on the run path (EV-11 / CH4-1).
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

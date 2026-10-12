@@ -116,6 +116,7 @@ from app.incidents.routes import router as incidents_router
 from app.screener.routes import router as screener_router
 from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.screener.evidence_routes import router as screener_evidence_router
+from app.screener.board import router as screener_board_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.alerts.links_routes import router as alert_links_router
 from app.alerts.outbox_admin import router as alert_outbox_admin_router
@@ -246,6 +247,7 @@ app.include_router(incidents_router)
 app.include_router(screener_router)
 app.include_router(screener_breakouts_router)
 app.include_router(screener_evidence_router)  # U8 EV1/EV2: evidence charts (flag evidence_charts, off)
+app.include_router(screener_board_router)  # U5 D3a: result-board heatmap / chart-grid context (flag screener_board_views, off)
 app.include_router(alert_rules_router)
 app.include_router(alert_links_router)
 app.include_router(alert_outbox_admin_router)  # Z10-b: alert outbox state, dead letters and replay (SUPER_ADMIN)

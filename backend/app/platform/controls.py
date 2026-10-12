@@ -206,6 +206,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart
     # shows no layer. Reference only - places no orders.
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # U5 D3a: the result board's heatmap (by sector, sized by market cap) and chart-grid views, with POST
+    # /api/screener/board/context (company reference data + shared daily closes). OFF: the table view only (404).
+    "screener_board_views": "Screener result views: heatmap by sector and a chart grid of the matched symbols (research only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -213,7 +216,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action"})
+                               "chart_price_action", "screener_board_views"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

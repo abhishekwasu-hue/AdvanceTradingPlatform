@@ -17,7 +17,7 @@ import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
-import { ResultBoard } from "../screener/ResultBoard";
+import { ResultViews } from "../screener/ResultViews";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
@@ -253,7 +253,7 @@ export default function ScreenerPage(_props: PageProps) {
               </div>
             </div>
           )}
-          <ResultBoard results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh}
+          <ResultViews results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh}
                        why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined}
                        onShowEvidence={(r) => { if (r.evidence_id != null) setEvidence({ id: r.evidence_id, symbol: r.symbol }); }} />
           <EvidencePanel evidenceId={evidence?.id ?? null} symbol={evidence?.symbol} onClose={() => setEvidence(null)} />

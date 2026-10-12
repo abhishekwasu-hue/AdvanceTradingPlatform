@@ -1,0 +1,113 @@
+/**
+ * U5 D3a: the result board's heatmap and chart-grid views (flag `screener_board_views`; off -> the context call answers
+ * 404 and only the table shows). Pure helpers: the context API, a squarified treemap (Bruls, Huizing, van Wijk) of the
+ * scanned symbols grouped by sector and sized by market cap, the tile colours and sparkline paths. Every number comes
+ * from the run and the server's context (company reference data, shared daily closes) - none from pixels.
+ */
+import { request } from "../api/client";
+import type { RunResult } from "./api";
+
+export type BoardView = "table" | "heatmap" | "grid";
+export const BOARD_VIEWS: { id: BoardView; label: string }[] = [
+  { id: "table", label: "Table" }, { id: "heatmap", label: "Heatmap" }, { id: "grid", label: "Chart grid" },
+];
+export const GRID_MAX = 12;                       // mini charts in the grid (the spec's 12 / 20; 12 keeps evidence reads small)
+
+export interface ContextRow {
+  symbol: string; sector: string; industry: string | null; market_cap: number | null; cap_category: string | null;
+  closes: { t: number; c: number }[]; change_pct: number | null;
+}
+export interface BoardContext { as_of: string; exchange: string; symbols: ContextRow[]; note: string }
+
+export const boardApi = {
+  context: (symbols: string[], exchange = "NSE") =>
+    request<BoardContext>("/screener/board/context", { method: "POST", body: JSON.stringify({ symbols, exchange }) }),
+};
+
+export interface Rect { x: number; y: number; w: number; h: number }
+export interface Sized<T> { item: T; value: number }
+
+function worst(row: number[], side: number): number {
+  const sum = row.reduce((a, b) => a + b, 0);
+  const max = Math.max(...row), min = Math.min(...row);
+  return Math.max((side * side * max) / (sum * sum), (sum * sum) / (side * side * min));
+}
+
+/** Squarified treemap: rectangles for `items` (value > 0) filling `box`, largest first; areas proportional to value. */
+export function squarify<T>(items: Sized<T>[], box: Rect): { item: T; rect: Rect }[] {
+  const list = items.filter((i) => i.value > 0).sort((a, b) => b.value - a.value);
+  const total = list.reduce((a, b) => a + b.value, 0);
+  if (!list.length || box.w <= 0 || box.h <= 0) return [];
+  const scale = (box.w * box.h) / total;
+  const areas = list.map((i) => i.value * scale);
+  const out: { item: T; rect: Rect }[] = [];
+  let free = { ...box }, i = 0;
+  while (i < areas.length) {
+    const side = Math.min(free.w, free.h);
+    const row = [areas[i]];
+    let j = i + 1;
+    while (j < areas.length && worst([...row, areas[j]], side) <= worst(row, side)) { row.push(areas[j]); j++; }
+    const sum = row.reduce((a, b) => a + b, 0);
+    if (free.w >= free.h) {                         // lay the row down the left edge
+      const w = sum / free.h;
+      let y = free.y;
+      row.forEach((a, k) => { const h = a / w; out.push({ item: list[i + k].item, rect: { x: free.x, y, w, h } }); y += h; });
+      free = { x: free.x + w, y: free.y, w: free.w - w, h: free.h };
+    } else {                                        // along the top edge
+      const h = sum / free.w;
+      let x = free.x;
+      row.forEach((a, k) => { const w = a / h; out.push({ item: list[i + k].item, rect: { x, y: free.y, w, h } }); x += w; });
+      free = { x: free.x, y: free.y + h, w: free.w, h: free.h - h };
+    }
+    i = j;
+  }
+  return out;
+}
+
+export interface HeatTile { symbol: string; sector: string; matched: boolean; unread: boolean; change: number | null; cap: number | null; rect: Rect }
+export interface HeatGroup { sector: string; rect: Rect; tiles: HeatTile[]; matched: number }
+
+/** Sectors sized by their symbols' market caps, symbols inside each; a symbol with no market cap counts as the
+ * median cap of those that have one (equal sizes when none has one), so it is still visible - said in the legend. */
+export function heatmapLayout(results: RunResult[], ctx: ContextRow[], box: Rect): HeatGroup[] {
+  const byS = new Map(ctx.map((c) => [c.symbol, c]));
+  const caps = ctx.map((c) => c.market_cap).filter((v): v is number => v != null && v > 0).sort((a, b) => a - b);
+  const fill = caps.length ? caps[Math.floor(caps.length / 2)] : 1;
+  const sectors = new Map<string, { r: RunResult; c: ContextRow | undefined; v: number }[]>();
+  for (const r of results) {
+    const c = byS.get(r.symbol);
+    const sector = c?.sector ?? "Unclassified";
+    const v = c?.market_cap != null && c.market_cap > 0 ? c.market_cap : fill;
+    sectors.set(sector, [...(sectors.get(sector) ?? []), { r, c, v }]);
+  }
+  const groups = squarify([...sectors.entries()].map(([sector, rows]) => ({ item: { sector, rows }, value: rows.reduce((a, b) => a + b.v, 0) })), box);
+  return groups.map(({ item, rect }) => {
+    const inner = { x: rect.x + 1, y: rect.y + 14, w: Math.max(0, rect.w - 2), h: Math.max(0, rect.h - 15) };
+    const tiles = squarify(item.rows.map((row) => ({ item: row, value: row.v })), inner).map(({ item: row, rect: t }) => ({
+      symbol: row.r.symbol, sector: item.sector, matched: row.r.matched, unread: !!row.r.reason, change: row.c?.change_pct ?? null,
+      cap: row.c?.market_cap ?? null, rect: t,
+    }));
+    return { sector: item.sector, rect, tiles, matched: tiles.filter((t) => t.matched).length };
+  });
+}
+
+/** A tile's fill: the day's change on the up / down tokens (colour-blind safe), its strength by size (capped at 3 %). */
+export function tileFill(change: number | null): { color: string; opacity: number } {
+  if (change == null) return { color: "rgb(var(--surface-2))", opacity: 1 };
+  const strength = Math.min(1, Math.abs(change) / 3);
+  return { color: change >= 0 ? "rgb(var(--up))" : "rgb(var(--down))", opacity: 0.2 + 0.6 * strength };
+}
+
+/** An SVG path of closes in a w x h box (null with fewer than two). */
+export function sparkPath(closes: { c: number }[], w: number, h: number): string | null {
+  if (closes.length < 2) return null;
+  const vals = closes.map((p) => p.c);
+  const lo = Math.min(...vals), hi = Math.max(...vals);
+  const span = hi - lo || 1;
+  return vals.map((v, i) => `${i ? "L" : "M"}${((i / (vals.length - 1)) * w).toFixed(1)} ${(h - ((v - lo) / span) * h).toFixed(1)}`).join("");
+}
+
+/** The grid: matched symbols first (up to GRID_MAX), in the table's order. */
+export function gridSymbols(results: RunResult[]): RunResult[] {
+  return results.filter((r) => r.matched).slice(0, GRID_MAX);
+}

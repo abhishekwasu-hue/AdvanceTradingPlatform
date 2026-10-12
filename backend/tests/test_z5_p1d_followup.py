@@ -187,13 +187,26 @@ def test_the_ticket_follows_the_instrument_master_for_cash_underlyings():
     tag = uuid.uuid4().hex[:6].upper()
     equity, future = f"EQ{tag}", f"FN{tag}"
 
+    # A broker name of its own, removed afterwards: the shared test database's real masters (and the worker tests that
+    # read them) must never see these rows.
+    broker = f"z5test{tag.lower()}"
+
     async def seed():
         async with _session_factory() as session:
-            session.add(InstrumentRecord(broker="upstox", exchange="NSE", instrument_key=f"NSE_EQ|{equity}", tradingsymbol=equity, instrument_type="EQ"))
-            session.add(InstrumentRecord(broker="upstox", exchange="NFO", instrument_key=f"NSE_FO|{future}", tradingsymbol=future, instrument_type="FUT"))
+            session.add(InstrumentRecord(broker=broker, exchange="NSE", instrument_key=f"NSE_EQ|{equity}", tradingsymbol=equity, instrument_type="EQ"))
+            session.add(InstrumentRecord(broker=broker, exchange="NFO", instrument_key=f"NSE_FO|{future}", tradingsymbol=future, instrument_type="FUT"))
+            await session.commit()
+
+    async def clean():
+        from sqlalchemy import delete
+        async with _session_factory() as session:
+            await session.execute(delete(InstrumentRecord).where(InstrumentRecord.broker == broker))
             await session.commit()
     _run(seed())
-    assert _preview(t, symbol=equity)["can_place"]
-    assert any("cash underlyings" in e for e in _preview(t, symbol=future)["errors"])      # the master says FUT, no regex needed
-    assert _preview(t, symbol="RELIANCE")["can_place"]                                       # not in this master: the fallback check
-    assert any("cash underlyings" in e for e in _preview(t, symbol="NIFTY24OCT25000CE")["errors"])
+    try:
+        assert _preview(t, symbol=equity)["can_place"]
+        assert any("cash underlyings" in e for e in _preview(t, symbol=future)["errors"])      # the master says FUT, no regex needed
+        assert _preview(t, symbol="RELIANCE")["can_place"]                                       # not in this master: the fallback check
+        assert any("cash underlyings" in e for e in _preview(t, symbol="NIFTY24OCT25000CE")["errors"])
+    finally:
+        _run(clean())

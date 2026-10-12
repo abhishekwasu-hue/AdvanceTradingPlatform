@@ -1719,3 +1719,13 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: the chart's Supertrend refuses a fractional period.
 - CI: a `lookahead` marker; the harness runs as its own job (`backend-lookahead`) and the main run skips it.
 - Open: OPEN_QUESTIONS Z10-6 (VWAP without volume).
+### 2026-10-12 - Z5 P1-d follow-up (verification findings on #179)
+- India VIX gate readings are no longer Copilot market memory: `latest()` shows SYMBOL rows only.
+- BT1b: a VIX reading records whose own session took it. Only that member sees India VIX's values (status strip and
+  refusal wording); every other member gets the same verdict and reason without the values.
+- With byob on, each active member's Tier A session is tried in turn until one reads.
+- A capture that raises before reading stores a failed reading, or is retried on the next cycle.
+- An approved ticket proposal whose time stop has come is not placed (FAILED with the reason).
+- The ticket's cash-underlying check uses the instrument master when it knows the symbol.
+- CI exports `Z5_TEST_PG_URL`: the entry-slot race test runs on Postgres in a scratch database it creates and drops.
+- The clock fix (time exits judged on the cycle's clock) is merged in from `claude/z5-p1d-clockfix`.

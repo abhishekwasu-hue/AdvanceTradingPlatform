@@ -88,7 +88,8 @@ def test_the_worker_captures_a_live_vix_reading_and_the_gate_acts_on_it(monkeypa
     taken = _run(rows())
     assert len(taken) == 1
     payload = json.loads(taken[0].payload_json)
-    assert payload == {"last": 14.0, "prev_close": 13.0, "change_pct": 7.69, "date": VIX_NOW.date().isoformat(), "error": None}
+    assert payload == {"last": 14.0, "prev_close": 13.0, "change_pct": 7.69, "date": VIX_NOW.date().isoformat(), "error": None,
+                       "reader_user_id": None}                   # the organisation's session (byob off)
 
     async def verdicts():
         async with _session_factory() as session:

@@ -23,7 +23,7 @@ def flagged_calls(ast: Any) -> List[str]:
         return out
     for node in nodes.walk(ast):
         spec = FUNCTIONS.get(node.name) if isinstance(node, nodes.Call) else None
-        if spec is not None and spec.flag and spec.name not in out:
+        if spec is not None and spec.flag == FLAG and spec.name not in out:      # Z7a3-7: not the market-zone family
             out.append(spec.name)
     return out
 

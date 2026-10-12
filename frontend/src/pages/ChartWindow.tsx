@@ -3,6 +3,8 @@ import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
 import ProChart, { useLiveLtp } from "../components/ProChart";
 import { SymbolTierBadge } from "../components/DataTierBadge";
+import type { ChartEngine } from "../charting/engine";
+import { MarketZonesLayer } from "../charting/MarketZonesLayer";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -26,6 +28,8 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const error = chart.error;
 
   const live = useLiveLtp(!!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
+  const [engine, setEngine] = useState<ChartEngine | null>(null);
+  const lastClose = chart.candles.length ? chart.candles[chart.candles.length - 1].close : null;
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
@@ -44,7 +48,9 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
       <ProChart candles={chart.candles} symbol={symbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
                 live={timeframe === "day" ? null : live.ltp} liveError={live.error} fullWindow deployable exchange={exchange}
                 defaultIndicators={["ema_fast", "ema_slow", "vwap", "volume", "rsi"]}
-                onLoadOlder={chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} />
+                onLoadOlder={chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} onEngine={setEngine} />
+      {/* Z7a-3: stored market zones (flag market_zones; nothing shows while it is off) */}
+      <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} /></div>
     </div>
   );
 }

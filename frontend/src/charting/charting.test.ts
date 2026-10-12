@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ANCHOR_RULES, DrawingConflict, drawingProblem, drawingsApi, type DrawingKind, type DrawingV1, type StoredDrawing } from "./drawings";
 import { LightweightEngine, type CandleSeriesLike, type ChartLike } from "./lightweight";
-import type { DrawingPrimitive } from "./primitives";
+import { LayerPrimitive, type DrawingPrimitive } from "./primitives";
 import type { EngineEvent } from "./engine";
 
 const T1 = "2026-03-02T04:00:00Z";
@@ -74,6 +74,7 @@ describe("drawingsApi status mapping (CH2c review)", () => {
 function fakes() {
   const priceLines: { price: number; title: string }[] = [];
   const primitives: DrawingPrimitive[] = [];
+  const layerPrimitives: LayerPrimitive[] = [];                  // Z7a-3: layer bands
   const handlers: Record<string, ((p: unknown) => void)[]> = { cross: [], click: [], range: [], data: [] };
   const candles: CandleSeriesLike & { bars: { time: unknown }[]; updates: unknown[] } = {
     bars: [], updates: [],
@@ -86,8 +87,11 @@ function fakes() {
     coordinateToPrice: (y) => (1000 - y) / 5,
     subscribeDataChanged(h) { handlers.data.push(h as (p: unknown) => void); },
     unsubscribeDataChanged(h) { handlers.data = handlers.data.filter((x) => x !== h); },
-    attachPrimitive(p) { primitives.push(p); },
-    detachPrimitive(p) { primitives.splice(primitives.indexOf(p), 1); },
+    attachPrimitive(p) { if (p instanceof LayerPrimitive) layerPrimitives.push(p); else primitives.push(p); },
+    detachPrimitive(p) {
+      if (p instanceof LayerPrimitive) layerPrimitives.splice(layerPrimitives.indexOf(p), 1);
+      else primitives.splice(primitives.indexOf(p), 1);
+    },
   };
   const options: { handleScroll?: boolean; handleScale?: boolean }[] = [];
   const chart: ChartLike & { options: typeof options } = {
@@ -106,7 +110,7 @@ function fakes() {
       coordinateToLogical: (x: number) => x / 8,
     }),
   };
-  return { chart, candles, priceLines, primitives, handlers };
+  return { chart, candles, priceLines, primitives, layerPrimitives, handlers };
 }
 
 describe("LightweightEngine (B-lite)", () => {
@@ -191,5 +195,24 @@ describe("LightweightEngine (B-lite)", () => {
     f.handlers.click[0]({ time: undefined });
     f.handlers.range[0]({ from: 1, to: 2 });
     expect(events).toEqual([{ type: "crosshair", time: 2, price: 400 }, { type: "click", time: null, price: null }, { type: "visibleRangeChanged", from: 1, to: 2 }]);
+  });
+});
+
+describe("LightweightEngine layer bands (Z7a-3)", () => {
+  it("draws a layer's bands as one primitive under the drawings and removes it with the layer", () => {
+    const f = fakes();
+    const engine = new LightweightEngine(f.chart, f.candles);
+    engine.setLayer("market_zones", { lines: [{ price: 100 }], bands: [{ low: 99, high: 100, color: "#16a34a", label: "demand 100.00 (fresh) · no touches" }] });
+    expect(f.layerPrimitives.length).toBe(1);
+    expect(f.priceLines.map((l) => l.price)).toEqual([100]);
+    expect(f.layerPrimitives[0].paneViews()[0].zOrder?.()).toBe("bottom");
+    engine.setLayer("market_zones", { bands: [{ low: 98, high: 98 }] });
+    expect(f.layerPrimitives.length).toBe(1);                      // replaced, not stacked
+    expect(f.priceLines.length).toBe(0);
+    engine.setLayer("market_zones", { bands: [] });
+    expect(f.layerPrimitives.length).toBe(0);
+    engine.setLayer("market_zones", { bands: [{ low: 1, high: 2 }] });
+    engine.dispose();
+    expect(f.layerPrimitives.length).toBe(0);
   });
 });

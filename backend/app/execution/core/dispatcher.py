@@ -23,9 +23,9 @@ import logging
 import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List, Optional, Tuple
+from typing import List, Optional, Tuple
 
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config as app_config
@@ -200,8 +200,17 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
     `execute_signal_for_user(` here). The checks read inside a savepoint; the pipeline commits on its own, so a failure
     there is rolled back here and the intent ends FAILED - the shared session is never left aborted. PAPER only: the
     pipeline is called without a broker."""
+    from app.db.models import OrderRecord
     from app.execution.signal_execution import execute_signal_for_user
-    intent_id, tenant_id = row.id, row.tenant_id
+    # Plain values first: the pipeline commits, which expires the row (an async session must not lazy-load it later).
+    facts = _Facts(row.id, row.tenant_id, row.direction, row.symbol, row.strategy_id, row.source_ref)
+    intent_id, tenant_id = facts.intent_id, facts.tenant_id
+    earlier = await session.scalar(select(OrderRecord).where(OrderRecord.tenant_id == tenant_id,
+                                                            OrderRecord.idempotency_key == f"intent:{intent_id}"))
+    if earlier is not None:                          # a retried intent: its PAPER order was placed before an interruption
+        await intents.finish(session, intent_id, intents.DONE, route=policy.ROUTE_PAPER, now=now,
+                             reason=f"Auto PAPER: PAPER order #{earlier.id} was placed before an interruption")
+        return intents.DONE
     if await approval.required(session, tenant_id):
         return await _fallback(session, row, signal, policy.WHY_AUTO_APPROVAL, now)
     try:
@@ -217,11 +226,12 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
         return intents.REFUSED
     if outcome == "propose" or price is None:
         return await _fallback(session, row, signal, why, now)
+    owner_id = owner.id
     placed = signal.model_copy(update={"entry": price, "timestamp": now,
                                        "reasons": list(signal.reasons) + [f"Auto PAPER (intent #{intent_id}), re-quoted at {price:g}"]})
     try:
         result, order = await execute_signal_for_user(
-            session, owner, mode="PAPER", strategy_id=row.strategy_id, signal=placed, idempotency_key=f"intent:{intent_id}",
+            session, owner, mode="PAPER", strategy_id=facts.strategy_id, signal=placed, idempotency_key=f"intent:{intent_id}",
             origin=approval.ORIGIN_AUTOMATIC, journal_source="SCAN")
     except Exception as exc:  # noqa: BLE001 - the pipeline commits on its own: roll back what it left, record why
         logger.exception("Auto PAPER placement failed for intent %s", intent_id)
@@ -233,27 +243,37 @@ async def _paper(session: AsyncSession, row: ExecutionIntentRecord, owner: User,
         await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_PAPER, now=now,
                              reason=("PAPER order not placed: " + ("; ".join(result.reasons) or str(order.status)))[:300])
         return intents.REFUSED
-    await _placed(session, row, owner, placed, order, price, now)
+    await _placed(session, facts, owner_id, placed, int(order.id), getattr(order, "trade_id", None), price, now)
     return intents.DONE
 
 
-async def _placed(session: AsyncSession, row: ExecutionIntentRecord, owner: User, signal: Signal, order: Any, price: float,
+@dataclass(frozen=True)
+class _Facts:
+    intent_id: int
+    tenant_id: int
+    direction: str
+    symbol: str
+    strategy_id: str
+    source_ref: str
+
+
+async def _placed(session: AsyncSession, f: _Facts, owner_id: int, signal: Signal, order_id: int, trade_id: Optional[int], price: float,
                   now: datetime) -> None:
     """DONE with the order, an audit row and one factual notification to the owner (no advice)."""
     from app.audit.log import write_audit_log
     from app.notifications.service import notify
-    trade = f"; position #{order.trade_id}" if getattr(order, "trade_id", None) else ""
-    await intents.finish(session, row.id, intents.DONE, route=policy.ROUTE_PAPER, now=now, commit=False,
-                         reason=f"Auto PAPER: PAPER order #{order.id} at {price:g}{trade}")
-    await write_audit_log(session, row.tenant_id, owner.id, "scan_auto_paper_entry",
-                          f"intent #{row.id} {row.direction} {row.symbol} at {price:g}: PAPER order #{order.id} ({row.source_ref})"[:500])
+    trade = f"; position #{trade_id}" if trade_id else ""
+    await intents.finish(session, f.intent_id, intents.DONE, route=policy.ROUTE_PAPER, now=now, commit=False,
+                         reason=f"Auto PAPER: PAPER order #{order_id} at {price:g}{trade}")
+    await write_audit_log(session, f.tenant_id, owner_id, "scan_auto_paper_entry",
+                          f"intent #{f.intent_id} {f.direction} {f.symbol} at {price:g}: PAPER order #{order_id} ({f.source_ref})"[:500])
     await notify(
-        session, row.tenant_id, NotificationType.SCREEN_ALERT, title=f"Auto PAPER entry: {row.direction} {row.symbol} (PAPER)",
-        message=(f"Auto PAPER entry placed: {row.direction} {row.symbol} at {_money(price)} (stop {_money(signal.stop_loss)}, "
-                 f"target {_money(signal.target1)}) from {row.strategy_id}. PAPER only. Exits run as usual; Exit now is on the "
+        session, f.tenant_id, NotificationType.SCREEN_ALERT, title=f"Auto PAPER entry: {f.direction} {f.symbol} (PAPER)",
+        message=(f"Auto PAPER entry placed: {f.direction} {f.symbol} at {_money(price)} (stop {_money(signal.stop_loss)}, "
+                 f"target {_money(signal.target1)}) from {f.strategy_id}. PAPER only. Exits run as usual; Exit now is on the "
                  f"Positions page."),
-        severity=NotificationSeverity.WARNING, user_id=owner.id,
-        metadata_json=json.dumps({"execution_intent_id": row.id, "source_ref": row.source_ref, "order_id": order.id}))
+        severity=NotificationSeverity.WARNING, user_id=owner_id,
+        metadata_json=json.dumps({"execution_intent_id": f.intent_id, "source_ref": f.source_ref, "order_id": order_id}))
     await session.commit()
 
 

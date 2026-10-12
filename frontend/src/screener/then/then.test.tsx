@@ -3,10 +3,10 @@ import { describe, expect, it } from "vitest";
 import { thenT } from "./i18n";
 import { SCAN_THEN_EN } from "./locales/en";
 import {
-  bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isThenTemplate, levelsVars, outcomeOf, THEN_MODES, visibleModes, withOverride,
+  bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isThenTemplate, levelsVars, outcomeOf, placesAutoPaper, THEN_MODES, visibleModes, withOverride,
   type ThenIntent, type ThenTemplate,
 } from "./model";
-import { ThenChip, ThenDrawerView } from "./ThenPanel";
+import { AutoPaperBox, ThenChip, ThenDrawerView } from "./ThenPanel";
 import sample from "./thenSample.json";
 
 /** N1 X1b: the Then chip and drawer. `thenSample.json` is the server's own payload (backend
@@ -127,5 +127,44 @@ describe("the Then drawer and chip (server sample)", () => {
     expect(out).toContain("No Then template yet");
     expect(out).not.toContain("Setups sent to you");
     expect(out).not.toContain("Remove Then");
+  });
+});
+
+describe("Auto PAPER (N1 X2): armed only with all three switches", () => {
+  const auto = { ...template, mode: "AUTO_PAPER" };
+  const on = { available: true, armed: true, why: "", today: 1, max_per_day: 3 };
+
+  it("chips 'armed' only when available and armed; anything missing is 'as a proposal'", () => {
+    expect(chipKey({ ...auto, auto_paper: on })).toBe("chip.AUTO_PAPER_ARMED");
+    expect(placesAutoPaper({ ...auto, auto_paper: on })).toBe(true);
+    for (const off of [{ ...on, available: false }, { ...on, armed: false }, undefined]) {
+      expect(chipKey({ ...auto, auto_paper: off })).toBe("chip.AUTO_PAPER");
+      expect(placesAutoPaper({ ...auto, auto_paper: off })).toBe(false);
+    }
+    expect(placesAutoPaper({ ...auto, enabled: false, auto_paper: on })).toBe(false);
+    expect(text(renderToStaticMarkup(<ThenChip template={{ ...auto, auto_paper: on }} />))).toContain("Then: Auto PAPER - armed");
+    expect(text(renderToStaticMarkup(<ThenChip template={auto} />))).toContain("Then: Auto PAPER - as a proposal");
+  });
+
+  it("shows why it is a proposal, today's count, and Arm only when the platform offers it", () => {
+    const off = text(renderToStaticMarkup(<AutoPaperBox template={{ ...auto, auto_paper: template.auto_paper }} busy={false} onArm={() => {}} />));
+    expect(off).toContain("Not placing on its own:");
+    expect(off).toContain("operator");
+    expect(off).not.toContain("Arm Auto PAPER");
+    const can = renderToStaticMarkup(<AutoPaperBox template={{ ...auto, auto_paper: { ...on, armed: false } }} busy={false} onArm={() => {}} />);
+    expect(text(can)).toContain("Arm Auto PAPER");
+    expect(can).toContain("disabled");                                  // until AUTO_PAPER is typed
+    const armed = text(renderToStaticMarkup(<AutoPaperBox template={{ ...auto, auto_paper: on }} busy={false} onDisarm={() => {}} />));
+    expect(armed).toContain("Armed: a confirmed setup is placed as a PAPER order");
+    expect(armed).toContain("Auto PAPER entries today: 1 of 3");
+    expect(armed).toContain("Disarm");
+    expect(armed).not.toMatch(/\b(recommend\w*|should|guarantee\w*|win rate)\b/i);
+  });
+
+  it("puts the box in the drawer for an Auto PAPER template only", () => {
+    const view = (tpl: typeof template) => renderToStaticMarkup(<ThenDrawerView template={tpl} intents={[]} body={bodyOf(tpl)} onBody={() => {}}
+      errors={[]} notice="" busy={false} onSave={() => {}} onRemove={() => {}} />);
+    expect(view({ ...auto, auto_paper: on })).toContain('data-testid="auto-paper"');
+    expect(view(template)).not.toContain('data-testid="auto-paper"');
   });
 });

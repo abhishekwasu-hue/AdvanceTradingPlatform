@@ -195,6 +195,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    # N1 X2: Auto PAPER from scans. OFF (the default, and while the owner has not decided N1-3): an AUTO_PAPER template
+    # stays a proposal. ON: a template its owner armed places one PAPER order per confirmed setup (approval-only mode
+    # off, within the scan limits, re-quoted) - PAPER only, never a broker order. Only the platform operator sets it.
+    "scan_auto_paper": "Auto PAPER from armed scan templates (N1 X2): a confirmed setup is placed as a PAPER order without a proposal (approval-only mode off; PAPER only, never a broker order)",
     "scan_then": "Scan Then (N1 U4 X1): after a scan alert matches, the level gate watches the symbol at its market zones and a confirmed setup is sent as a notification or a PAPER entry proposal (never an order; needs execution_core)",
     "execution_core": "Execution core (N1 E1): entry intents from scans are queued and routed by one policy to a notification or a PAPER entry proposal (never a broker order)",
     # N2-1 (P1 spec 1.4 / 1.5, docs/design/N2_P1FGH.md): the progression ladder's discipline-score criterion (from the Z6
@@ -222,7 +226,8 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "scan_then", "portfolio_risk", "portfolio_risk_caps"})
+                               "chart_price_action", "scan_then", "portfolio_risk", "portfolio_risk_caps",
+                               "scan_auto_paper"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

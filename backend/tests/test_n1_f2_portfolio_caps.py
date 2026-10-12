@@ -195,9 +195,10 @@ def test_no_exit_path_reaches_the_caps_and_the_caps_reach_no_order():
     # Only the two entry steps ask for refusals, and the rule itself is reached only through them; every other caller of
     # a caps function is one of the four read-only views (F1 route, F3 Telegram lines, impact line, proposal cards).
     assert graph.callers.get("app.portfolio.caps.entry_refusals") == {"app.execution.approval.propose_entry",
-                                                                      "app.execution.approval.execute_entry"}
+                                                                      "app.execution.approval.execute_entry",
+                                                                      "app.execution.core.dispatcher._paper_checks"}   # N1 X2
     assert graph.callers.get("app.portfolio.caps.refusals") == {"app.portfolio.caps.entry_refusals"}
-    allowed = {"app.execution.approval.propose_entry", "app.execution.approval.execute_entry",
+    allowed = {"app.execution.approval.propose_entry", "app.execution.approval.execute_entry", "app.execution.core.dispatcher._paper_checks",
                "app.portfolio.routes.risk", "app.telegram_inbound.service._portfolio_lines", "app.ai.proposal_card.enrich",
                "app.portfolio.risk_text.proposal_impact", "app.portfolio.risk_text.impact", "app.portfolio.risk_text.telegram_lines"}
     outside = {(c, f) for f in caps_functions for c in graph.callers.get(f, ()) if not c.startswith("app.portfolio.caps.")}

@@ -30,12 +30,16 @@ export type GateOverrides = Record<string, GateValue>;
 
 export interface SymbolStatus { code: string; lines: string[]; trend?: string | null; bar?: string | null; tries?: number }
 
+/** N1 X2: the template's Auto PAPER state - all three switches must be on for a setup to be placed (N1-3). */
+export interface AutoPaperState { available: boolean; armed: boolean; why: string; today: number; max_per_day: number; armed_at?: string | null }
+
 export interface ThenTemplate {
   rule_id: number; configured: boolean; enabled: boolean; mode: string; confirm_tf: string; gate: GateOverrides;
   gate_defaults: Record<string, GateValue>; modes: string[]; confirm_tfs: string[]; user_id?: number | null;
   last_bar_at?: string | null; last_problem?: string | null; status?: Record<string, SymbolStatus>; updated_at?: string | null;
   /** False: the last check is the template owner's and the organisation owner's only (the server sent none). */
   status_shown?: boolean;
+  auto_paper?: AutoPaperState;
 }
 
 export interface ThenIntent {
@@ -70,8 +74,18 @@ export function asTf(tf: string): ConfirmTf {
 export function chipKey(t: ThenTemplate | null): string {
   if (!t || !t.configured) return "chip.off";
   if (!t.enabled) return "chip.paused";
-  return `chip.${asMode(t.mode)}`;
+  const mode = asMode(t.mode);
+  if (mode === "AUTO_PAPER") return placesAutoPaper(t) ? "chip.AUTO_PAPER_ARMED" : "chip.AUTO_PAPER";
+  return `chip.${mode}`;
 }
+
+/** N1 X2: whether this template places PAPER orders on its own now: the platform switch on, approval-only off and
+ * armed by its owner. Anything missing (an older server included) means "as a proposal". */
+export function placesAutoPaper(t: ThenTemplate | null): boolean {
+  return !!t && t.configured && t.enabled && asMode(t.mode) === "AUTO_PAPER" && !!t.auto_paper?.available && !!t.auto_paper?.armed;
+}
+
+export const ARM_CONFIRM = "AUTO_PAPER";
 
 /** The form's starting body from a template (a new one: Notify on 5m, no overrides). */
 export function bodyOf(t: ThenTemplate | null): ThenBody {

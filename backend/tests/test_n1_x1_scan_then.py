@@ -708,6 +708,7 @@ def test_then_payloads_match_the_frontend_sample(monkeypatch):
     assert set(next(iter(sample["template"]["status"].values()))) == set(next(iter(template["status"].values())))
     assert not any(m == "AUTO_LIVE" for m in sample["template"]["modes"])
     assert template["status_shown"] is True and sample["template"]["status_shown"] is True
+    assert set(sample["template"]["auto_paper"]) == set(template["auto_paper"])          # N1 X2
     member = _member(_email("sample-member"), t["tenant_id"], "USER")
     theirs = client.get(f"/api/alerts/rules/{rule_id}/then", headers=member).json()
     assert theirs["status_shown"] is False and theirs["status"] == {} and set(theirs) == set(template)

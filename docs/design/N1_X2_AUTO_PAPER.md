@@ -1,6 +1,6 @@
 # N1 X2: Auto PAPER from scans (the core's PAPER route)
 
-Status: **plan only**. No code until the coordinator confirms. X2 follows X1 (#214), which it builds on. It extends
+Status: **built** on `claude/n1-x2` (plan approved; X2-2 decided: the arming lives in `gate_settings_json`, no migration). X2 follows X1 (#214), which it builds on. It extends
 the X2 row of `docs/design/N1_EXECUTION_CORE.md` §4. Open questions are X2-1 to X2-7 in `docs/OPEN_QUESTIONS.md`.
 
 ## 0. The decision X2 does not make
@@ -65,9 +65,9 @@ from the intent's `source_ref` (`rule:<id>:symbol:<sym>`). Any other source pass
   owner only (not the OWNER on someone else's template, because the entries go to the owner's book). It answers 409
   unless the mode is AUTO_PAPER. It is audited. The `DELETE` form disarms. A mode change or a template PUT disarms.
   Both routes are classified in the tenancy table.
-- `armed_at` and `armed_by` are stored on `scan_then_templates`. **This needs a migration**, one nullable column
-  pair, with ROLLBACK_SAFE (dropping them disarms everything, which is the safe direction). Alternative X2-2: keep it
-  in `gate_settings_json` and avoid the migration.
+- The arming is a key in `gate_settings_json` (`_auto_paper_arm: {at, by}`; X2-2 decided, no migration). A missing,
+  malformed or foreign key is "not armed"; the gate's settings and the API's `gate` never include it. Arming needs
+  the platform switch on (409 otherwise).
 - GET `.../then` adds `auto_paper: {available, armed, why}`. `why` says whichever of these holds: flag off,
   approval-only on, not armed, or limits reached today.
 - **X1b chip:**
@@ -105,7 +105,6 @@ from the intent's `source_ref` (`rule:<id>:symbol:<sym>`). Any other source pass
 ## 4. PR shape
 
 One PR, about 700 lines excluding tests:
-- the migration (if X2-2 keeps the columns);
 - the template's arm state and routes;
 - the dispatcher's `_paper` with its fallbacks;
 - the limits;

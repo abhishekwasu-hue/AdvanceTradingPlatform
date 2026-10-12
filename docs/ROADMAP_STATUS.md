@@ -11,7 +11,7 @@ Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan
 | Z2 | BT1 Tier A per-user broker feed (Upstox, Dhan), entitlement/isolation guard, login reminder, data-tier badges, BROKER_DATA_TERMS gating | BT1 merged (flag byob_data_tier off); BT1b (guard every live read, credential holder, staleness) in review: security review fixes in progress | #167 merged, #177 | 85 |
 | Z3 | BT2/BT3: proposal -> Telegram/in-app/push -> Approve PAPER, per-user PAPER account, protective exits automatic, approval expiry/re-quote, ladder card | Z3-a approval-only entries + Z3-b PAPER account/ladder/Telegram: independent review and verification done (no safety blocker); last verification fixes in progress | #173, #174 | 85 |
 | Z4 | HB0 R2 importer + HB1 daily 10-year backfill + nightly EOD jobs; owner intraday store tenant-scoped | merged (flags history_import / history_backfill off); owner intraday history comes from HB2 after Z11 (see note) | #164, #169 | 100 |
-| Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | P1-c merged (+ review follow-ups #180); P1-d (ticket, caps, daily loss lockout with exits allowed, strike breach, VIX gate) in independent review | #170, #180 merged; #179 | 75 |
+| Z5 | P1-c builder page (payoff, draggable strikes, metrics) + P1-d plan-before-trade ticket, risk-by-default caps / lockouts | P1-c merged (+ review follow-ups #180); P1-d (ticket, caps, daily loss lockout with exits allowed, strike breach, VIX gate with its own live reading) in review with the independent review fixed (flags `risk_by_default`, `vix_gate` off) | #170, #180 merged; #179 | 75 |
 | Z6 | P1-e journal auto-capture, behaviour tags, discipline score, weekly review | merged (flag discipline_engine off) | #171, #172 | 100 |
 | Z7a | Market zones port from Trade (demand/supply, order blocks, S/R, dynamic S/R, level memory; ATP lifecycle fresh -> tested -> flipped -> invalidated) | Z7a-1 detection merged (6528/6528 identical to Trade); Z7a-2 lifecycle/memory/store reviewed, fixes in progress (job off the trading worker, daily defaults, retention, compressed golden fixture); Z7a-3 chart layer + ScreenQL zone functions next | #168 merged; #176 | 55 |
 | Z7 | U6 BK1 + BK2 breakout screens + quality overlay; U8 EV1 + EV2 evidence charts | BK1 in review (B1/B2/B4/B7/B13/B14, quality overlay, style / timeframe selector; flag screener_breakouts off, #178); BK2 in review (B16 ORB / B17 first hour, previous day, first candle / B18 new high-low of day, session VWAP, time-of-day relative volume; same flag, stacked on #178, #181); EV1, EV2 next | #178, #181 | 45 |
@@ -47,15 +47,15 @@ Each port PR updates its row in the map and these counts.
 
 | Status | Rows (of 192) |
 |---|---|
-| ported | 9 |
+| ported | 11 |
 | partial | 18 |
 | partial (unverified) | 9 |
 | in progress (Z7a) | 6 |
-| missing | 51 (25 are G rows that wait for the owner's "stable" mark) |
+| missing | 49 (25 are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
 
-Phase 0 ports (Z3 / Z5 / Z10): order safety (partial), charges golden check (partial), strike breach model (missing),
-India VIX gate (missing), PAPER journal / Telegram commands (partial), PAPER exit engine (partial), expiry rule
+Phase 0 ports (Z3 / Z5 / Z10): order safety (partial), charges golden check (partial), strike breach model (ported, Z5 P1-d),
+India VIX gate (ported, Z5 P1-d), PAPER journal / Telegram commands (partial), PAPER exit engine (partial), expiry rule
 (partial: ported, not wired).
 
 Working rules: docs/WORKING_RULES.md (multitasking and self-review are required). Updated with docs/WORK_LOG.md (at least every 2 hours while work runs). Own PRs are merged when CI is green and review passes (owner's Phase 0 rule); flags stay off.

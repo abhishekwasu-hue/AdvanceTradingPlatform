@@ -1651,6 +1651,49 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - ScreenQL `ORBreakout`, `DayLevelBreak`, `DayExtremeBreak`, `RelVolumeTOD`, `SessionVWAP` (flagged, intraday timeframes
   only, lookback in whole sessions). Five intraday templates; parity with the engine bar by bar.
 - Open questions: BK2-1..BK2-7.
+### 2026-10-12 02:30 IST - Z5 P1-d: plan-before-trade PAPER ticket, risk by default, strike breach and VIX gate ports
+- Branch `claude/z5-p1d-ticket-risk`, stacked on Z3-b (#174). Flags `risk_by_default` and `vix_gate`, both off.
+  Design note: `docs/design/RISK_BY_DEFAULT.md`.
+- Plan ticket (`app/paper/ticket.py`, `/api/paper/ticket[/preview]`, `/api/paper/risk`, `/api/paper/plans`):
+  - the plan: setup, levels, minimum reward:risk, time stop, invalidation, checklist (a skip is allowed and counted);
+  - sizing from the user's cap, strictest wins with the organisation's limit and the guardian's cuts;
+  - an override that is logged, bounded (2x) and counted;
+  - the cost line with the break-even move;
+  - placement re-priced at the live price, stored as `trade_plans`.
+- Risk by default (`app/risk_engine/by_default.py`): the user's cap on every PAPER entry; a daily loss lockout
+  (`risk_lockouts`, kept for the day) and an entries-per-day limit in `entry_refusals`; no proposal for a locked user.
+  Exits are never locked: tests close a locked user's position with Exit now and at its stop.
+- Trade ports:
+  - `strike_breach_model.py` -> `app/options_builder/strike_breach.py`: golden parity on Trade's own functions;
+    builder `evaluate` and the proposal card;
+  - `check_vix_spike_halt.py` -> `app/risk_engine/vix_gate.py`, applied in `guard_entry`; parity cases from Trade's
+    tests.
+- Frontend:
+  - "Plan before trade (PAPER)" card on Positions: risk strip, lockout line, plan form, server-sized ticket with the
+    risk gauge and cost line;
+  - risk check and breach lines on the proposal card.
+- Migration `612f572d7ad2` (revises `a7d3e9f1c5b8`): upgrade, downgrade, upgrade and `alembic check` on local Postgres.
+- Open questions Z5D-1 to Z5D-6.
+### 2026-10-12 - Z5 P1-d review fixes (#179)
+- H1: the India VIX gate now reads its own live reading: the LTP plus the close of the last completed session before
+  today, stamped today. The trading worker takes it from 09:20 IST every 15 minutes, through the entitled data path
+  (the user's own Tier A session under BT1). Trade timing applies: the gate is open before 09:20, and no valid reading
+  after a 10-minute grace pauses bullish index entries. An end-to-end test goes from the worker's capture to the gate.
+- M2: a loosening of the user's limits takes effect the next IST day; a tightening at once. The lockout is recorded
+  after each PAPER close and by a worker sweep (open marks).
+- M3: a time stop must be at least 5 minutes after now.
+- L1: entries per day are atomic slots on the PAPER account row, given back if the order is refused later.
+- L2: the proposal card's risk check is computed for the proposal's owner only.
+- L3: a ticket proposal's plan becomes PLACED (counted as an override) or FAILED when its approval runs.
+- L4: every plan row carries a reason (a duplicate proposal, an exception = FAILED).
+- L6: the strike breach docstring now says where the structure input comes from.
+- L7: the ticket takes cash underlyings only; the cost line reads the paper broker's own brokerage and slippage.
+- L8: `.coverage` is untracked and ignored.
+- L9: the ticket card says "Sent for approval: proposal #N" for a proposed plan.
+- M1: already fixed in Z3 (merged).
+- The reviewer's adversarial cases are ported into `tests/test_z5_p1d_review.py`.
+- The migration `612f572d7ad2` gains `paper_accounts.entries_day` / `entries_count` and `trade_plans.proposal_id`, and
+  still revises `a7d3e9f1c5b8`.
 ### 2026-10-11 21:30 IST - Z10 design note + Z10-a (U3 G2 no-look-ahead harness, G1 golden correctness)
 - `docs/design/Z10_LAUNCH_HARDENING.md`: Z10 split into Z10-a..f, each mapped to existing code. The pieces: the alert
   outbox and dispatcher, BT1 `alerts_suppressed`, the PW6 invite gate + `BETA_COHORT_CAP`, the feature flags,

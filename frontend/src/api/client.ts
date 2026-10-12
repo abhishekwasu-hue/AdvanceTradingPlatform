@@ -42,6 +42,11 @@ import type {
   ExitNowResponse,
   PaperAccount,
   PaperLadder,
+  PaperRiskStatus,
+  RiskByDefaultSettings,
+  TicketPlan,
+  TicketView,
+  TradePlanView,
   MarkPriceResponse,
   MarketStructureResult,
   MfaStatus,
@@ -488,6 +493,13 @@ export const api = {
     request<PaperAccount>("/paper/account", { method: "PUT", body: JSON.stringify({ starting_capital: startingCapital }) }),
   paperPause: (reason?: string) => request<{ paused: boolean; paused_reason: string | null }>("/paper/pause", { method: "POST", body: JSON.stringify(reason ? { reason } : {}) }),
   paperResume: () => request<{ paused: boolean; paused_reason: string | null }>("/paper/resume", { method: "POST" }),
+
+  /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
+  paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
+  setPaperRisk: (values: Partial<RiskByDefaultSettings>) => request<PaperRiskStatus>("/paper/risk", { method: "PUT", body: JSON.stringify(values) }),
+  previewTicket: (plan: TicketPlan) => request<TicketView>("/paper/ticket/preview", { method: "POST", body: JSON.stringify(plan) }),
+  placeTicket: (plan: TicketPlan) => request<TradePlanView>("/paper/ticket", { method: "POST", body: JSON.stringify(plan) }),
+  paperPlans: () => request<TradePlanView[]>("/paper/plans"),
 
   /** Z3 "Exit now" (approval-only or the PAPER account on): closes a PAPER position at once at the live price, else the last price seen. */
   exitNow: (tradeId: number) => request<ExitNowResponse>(`/positions/${tradeId}/exit-now`, { method: "POST" }),

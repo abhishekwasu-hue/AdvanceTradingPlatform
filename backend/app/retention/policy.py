@@ -25,6 +25,8 @@ NEVER_DELETED = (
     "llm_calls", "ai_acknowledgements",
     # H-C2: the Copilot agent's audit trail (runs and tool calls), kept like llm_calls.
     "agent_runs", "agent_steps",
+    # N1 E1: the execution core's decision trail (what was proposed, refused or expired, and why), kept like orders.
+    "execution_intents",
 )
 
 

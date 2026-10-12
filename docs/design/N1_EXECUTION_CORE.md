@@ -181,7 +181,7 @@ The owner is asked to mark `decision3.daily` stable or accept the pinned port (O
 | 14 | Signal-log reason codes | `level_gate_bot.STATUS`, `ARMED_WHY`, `status_of` | `level_gate/status.py` -> the intent's `reason` / the rule's `last_problem` | X1 | table test |
 | 15 | Confirmation TF per bot (5m / 15m), closed bars only | `level_gate_bot.CONFIRM_TF`, `closed_bars` | Then template `confirm_tf` (default 5m); S4 closed bars | X1 | behaviour test |
 | 16 | Index volume = front futures; NA => grade <= B | `level_gate_bot` volume source | lake / broker futures bars when present, else NA | X1 | N1-5 |
-| 17 | One entry per confirmation | `mcx_confirm_used.json` | intent key `scan:<rule>:<symbol>:<area>:<confirm bar>` (unique per organisation) | E1 / X1 | E1 idempotency test |
+| 17 | One entry per confirmation | `mcx_confirm_used.json` | intent key `scan:<rule>:<symbol>:<area>:<confirm bar>` (unique per organisation and person) | E1 / X1 | E1 idempotency test |
 | 18 | Vision audit | `vision.gate.entry_gate`, `vision.signal_audit` | `app/ai/vision_audit.py` (BYOK-V2, already called by `propose_entry`) + the ticket lines in its context | E1 (wired) / X1 (context) | BYOK-V2 tests |
 | 19 | Telegram approval, drift check | `vision/approval.py` | Z3 `approval.propose_entry` / `execute_entry` (re-quote), PW4 / PW5 | E1 | Z3 tests |
 | 20 | Legacy touch mode, `paper_would_have` | `level_gate_bot.entry_mode`, touch records | not ported: ATP has no touch-mode level bots. Rejected / expired proposals already give "not taken" rows (Z3-b) | - | - |

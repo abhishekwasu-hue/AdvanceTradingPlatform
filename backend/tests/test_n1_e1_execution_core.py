@@ -16,13 +16,14 @@ from sqlalchemy import select, update
 from app.core import config as app_config
 from app.core.enums import SignalDirection, SignalGrade
 from app.core.models import Signal
-from app.db.models import AiActionRecord, ExecutionIntentRecord, NotificationRecord, OrderRecord, User
+from app.db.models import AiActionRecord, ExecutionIntentRecord, NotificationRecord, OrderRecord, Tenant, User
 from app.execution import approval
 from app.execution.core import dispatcher, intents, policy
 from app.platform import controls, phase0_lock
 from tests.order_path_graph import CallGraph
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import CLOSED_NOW, _FakeBroker, _tenant, _worker
+from tests.test_z10c_order_paths import GATED
 from tests.test_z3_approval_entries import _price
 
 UTC = timezone.utc
@@ -174,6 +175,37 @@ def test_submit_is_idempotent_and_only_for_an_active_member_of_the_organisation(
     assert len(_rows(ExecutionIntentRecord, t["tenant_id"])) == 1
 
 
+def test_two_members_with_the_same_setup_key_get_their_own_intents():
+    """Review M1 (BT1b): an organisation-wide rule fires for two members with the same key - two rows, never shared."""
+    t = _org("two-members")
+
+    async def member():
+        from app.auth.security import hash_password
+        async with _session_factory() as session:
+            user = User(tenant_id=t["tenant_id"], email=_email("member"), hashed_password=hash_password("x" * 16), role="USER",
+                        is_active=True)
+            session.add(user)
+            await session.commit()
+            return user.id
+    second = _run(member())
+    mine, created = _submit(t, "ONE_CLICK", key="rule:7:RELIANCE:area:bar")
+    theirs, created_theirs = _submit(t, "ONE_CLICK", key="rule:7:RELIANCE:area:bar", user_id=second)
+    again, created_again = _submit(t, "ONE_CLICK", key="rule:7:RELIANCE:area:bar", user_id=second)
+    assert created and created_theirs and not created_again and again == theirs and mine != theirs
+    assert _intent(mine).user_id == t["user_id"] and _intent(theirs).user_id == second
+
+
+def test_a_long_key_is_hashed_never_cut():
+    t = _org("long-key")
+    stem = "x" * 250
+    first, _ = _submit(t, "NOTIFY", key=stem + "A")
+    second, created = _submit(t, "NOTIFY", key=stem + "B")
+    assert created and first != second
+    key = _intent(first).idempotency_key
+    assert key.startswith("scan:sha256:") and len(key) <= 200
+    assert _submit(t, "NOTIFY", key=stem + "A") == (first, False)
+
+
 # --- the drain ---------------------------------------------------------------------------------------------------------
 
 def test_notify_intent_becomes_one_notification_for_its_owner_and_nothing_else():
@@ -320,6 +352,89 @@ def test_an_interrupted_claim_is_retried_and_finds_its_proposal_instead_of_raisi
     assert len(_rows(AiActionRecord, t["tenant_id"])) == 1
 
 
+def _crashed_proposal(t, intent_id, now):
+    async def go():
+        async with _session_factory() as session:
+            [row] = [r for r in await intents.claim(session, frozenset({t["tenant_id"]}), now, 10) if r.id == intent_id]
+            return (await approval.propose_entry(session, t["tenant_id"], signal=_sig(), strategy_id="scan:demo", source="scan",
+                                                 idempotency_key=f"intent:{row.id}", user_id=t["user_id"], now=now)).id
+    return _run(go())
+
+
+def test_a_retried_intent_past_its_window_links_its_proposal_instead_of_expiring():
+    """Review L1: the stale sweep re-queued it, then its window passed - the proposal it raised is linked, not lost."""
+    t = _org("retry-expire")
+    now = datetime.now(UTC)
+    intent_id, _ = _submit(t, "ONE_CLICK", now=now)
+    action_id = _crashed_proposal(t, intent_id, now)
+    _set(intent_id, status=intents.QUEUED, claimed_at=None, expires_at=now - timedelta(seconds=1))
+    _drain(now)
+    row = _intent(intent_id)
+    assert row.status == intents.DONE and row.ai_action_id == action_id and "before an interruption" in row.reason
+
+
+def test_a_claim_interrupted_too_often_links_its_proposal_if_one_was_raised():
+    t = _org("stale-linked")
+    now = datetime.now(UTC)
+    intent_id, _ = _submit(t, "ONE_CLICK", now=now)
+    action_id = _crashed_proposal(t, intent_id, now)
+    _set(intent_id, claimed_at=now - timedelta(seconds=app_config.EXECUTION_CORE_CLAIM_STALE_SECONDS + 1),
+         attempts=app_config.EXECUTION_CORE_MAX_ATTEMPTS)
+    _drain(now)
+    row = _intent(intent_id)
+    assert row.status == intents.DONE and row.ai_action_id == action_id
+
+
+def test_the_paper_route_is_refused_until_x2(monkeypatch):
+    """Review L2: even if the policy ever answered PAPER, E1's dispatcher places nothing."""
+    t = _org("paper-route")
+    monkeypatch.setattr(policy, "decide", lambda inputs: policy.Decision(policy.ROUTE_PAPER, "Auto PAPER"))
+    intent_id, _ = _submit(t, "AUTO_PAPER")
+    _drain()
+    row = _intent(intent_id)
+    assert row.status == intents.REFUSED and row.reason == dispatcher.WHY_PAPER_LATER
+    assert _rows(OrderRecord, t["tenant_id"]) == [] and _rows(AiActionRecord, t["tenant_id"]) == []
+
+
+def test_a_suspended_organisation_is_refused():
+    """Review L3."""
+    t = _org("suspended")
+    intent_id, _ = _submit(t, "ONE_CLICK")
+
+    async def status(value):
+        async with _session_factory() as session:
+            await session.execute(update(Tenant).where(Tenant.id == t["tenant_id"]).values(status=value))
+            await session.commit()
+    _run(status("suspended"))
+    try:
+        _drain()
+    finally:
+        _run(status("active"))
+    row = _intent(intent_id)
+    assert row.status == intents.REFUSED and "suspended" in row.reason and _rows(AiActionRecord, t["tenant_id"]) == []
+
+
+def test_the_drain_stops_claiming_at_its_deadline_and_limit():
+    """Review L4: nothing is claimed once the time budget is spent; the limit caps one pass."""
+    t = _org("deadline")
+    _drain()                                   # other tests' leftovers first, so the limit below counts only these
+    ids = [_submit(t, "NOTIFY")[0] for _ in range(3)]
+
+    async def go(**kwargs):
+        async with _session_factory() as session:
+            return await dispatcher.drain(session, datetime.now(UTC), **kwargs)
+    assert _run(go(deadline_seconds=0)).claimed == 0
+    assert {_intent(i).status for i in ids} == {intents.QUEUED}
+    _run(go(limit=1))
+    assert sorted(_intent(i).status for i in ids).count(intents.QUEUED) == 2
+
+
+def test_intents_are_never_deleted_by_retention():
+    """Review L5: the core's decision trail is kept like orders."""
+    from app.retention.policy import NEVER_DELETED
+    assert "execution_intents" in NEVER_DELETED
+
+
 def test_a_claim_interrupted_too_often_fails():
     t = _org("stale")
     intent_id, _ = _submit(t, "ONE_CLICK")
@@ -375,10 +490,7 @@ def test_the_core_names_no_broker_and_no_order_pipeline():
 def test_no_function_of_the_core_reaches_a_broker_order_method():
     """Z10-c's graph: the core is not an order path, so a producer - an API route included - can write intents
     without any route reaching a broker. The worker's drain is the only caller."""
-    graph = CallGraph(gated={"app.execution.signal_execution.execute_signal_for_user": "broker",
-                             "app.execution.multileg.execute_structure": "broker",
-                             "app.execution.router.OrderRouter.__init__": "broker",
-                             "app.trading.position_monitor.close_position": "broker", "app.ai.monitor.execute": "broker"})
+    graph = CallGraph(gated=GATED)
     core = {name for name in graph.functions if name.startswith("app.execution.core.")}
     assert "app.execution.core.dispatcher.drain" in core and "app.execution.core.intents.submit" in core
     assert not core & graph.reaching()

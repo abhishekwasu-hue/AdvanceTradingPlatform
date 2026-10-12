@@ -528,6 +528,8 @@ EXECUTION_INTENT_TTL_SECONDS = _bounded_int("EXECUTION_INTENT_TTL_SECONDS", 300,
 EXECUTION_CORE_DRAIN_LIMIT = _bounded_int("EXECUTION_CORE_DRAIN_LIMIT", 50, 1, 1000)
 EXECUTION_CORE_CLAIM_STALE_SECONDS = _bounded_int("EXECUTION_CORE_CLAIM_STALE_SECONDS", 120, 30, 3600)
 EXECUTION_CORE_MAX_ATTEMPTS = _bounded_int("EXECUTION_CORE_MAX_ATTEMPTS", 3, 1, 10)
+# The drain stops claiming new intents once it has run this long in one cycle (the rest wait for the next cycle).
+EXECUTION_CORE_DRAIN_SECONDS = _bounded_int("EXECUTION_CORE_DRAIN_SECONDS", 20, 1, 300)
 
 # Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). A new account starts
 # with PAPER_STARTING_CAPITAL (the user may change it within the bounds). The progression ladder card shows the PAPER

@@ -17,17 +17,18 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import List, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config as app_config
 from app.core.enums import NotificationSeverity, NotificationType
 from app.core.models import Signal
-from app.db.models import AiActionRecord, ExecutionIntentRecord, User
+from app.db.models import ExecutionIntentRecord, Tenant, User
 from app.execution import approval
 from app.execution.core import intents, policy
 from app.platform import phase0_lock
@@ -36,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 WHY_PAPER_LATER = "Auto PAPER placement arrives with U4 X2 - nothing was placed"
 WHY_OWNER_GONE = "The person this intent is for is no longer an active member - nothing was raised"
+CLAIM_BATCH = 10            # intents claimed at a time, so the drain's deadline is checked between small batches
 
 
 @dataclass
@@ -52,20 +54,33 @@ def _money(value: Optional[float]) -> str:
     return "-" if value is None else f"{value:,.2f}"
 
 
-async def drain(session: AsyncSession, now: Optional[datetime] = None, limit: Optional[int] = None) -> DrainReport:
-    """One pass over the queue for the organisations with `execution_core` on. Never raises for one intent."""
+async def drain(session: AsyncSession, now: Optional[datetime] = None, limit: Optional[int] = None,
+                deadline_seconds: Optional[float] = None) -> DrainReport:
+    """One pass over the queue for the organisations with `execution_core` on. Never raises for one intent. Claims in
+    small batches and stops claiming once `deadline_seconds` (EXECUTION_CORE_DRAIN_SECONDS) have passed (review L4)."""
     report = DrainReport()
+    started = time.monotonic()
+    budget = float(app_config.EXECUTION_CORE_DRAIN_SECONDS if deadline_seconds is None else deadline_seconds)
     now = intents._utc(now)
     anything, scope = await intents.drain_scope(session)
     if not anything:
         return report
+    cap = int(limit or app_config.EXECUTION_CORE_DRAIN_LIMIT)
     report.expired = await intents.expire_overdue(session, scope, now)
-    report.requeued, stale_failed = await intents.requeue_stale(session, scope, now)
+    report.requeued, stale_failed = await intents.requeue_stale(session, scope, now, limit=cap)
     report.failed += stale_failed
-    rows = await intents.claim(session, scope, now, limit or app_config.EXECUTION_CORE_DRAIN_LIMIT)
-    report.claimed = len(rows)
+    while report.claimed < cap and time.monotonic() - started < budget:
+        rows = await intents.claim(session, scope, now, min(CLAIM_BATCH, cap - report.claimed))
+        if not rows:
+            break
+        report.claimed += len(rows)
+        await _dispatch_batch(session, [row.id for row in rows], now, report)
+    return report
+
+
+async def _dispatch_batch(session: AsyncSession, ids: List[int], now: datetime, report: DrainReport) -> None:
     # Ids first: a rollback after one intent's error expires every loaded row, so each is read again before it runs.
-    for intent_id in [row.id for row in rows]:
+    for intent_id in ids:
         try:
             row = await session.get(ExecutionIntentRecord, intent_id, populate_existing=True)
             if row is None or row.status != intents.CLAIMED:
@@ -83,12 +98,23 @@ async def drain(session: AsyncSession, now: Optional[datetime] = None, limit: Op
             report.refused += 1
         else:
             report.failed += 1
-    return report
 
 
 async def dispatch_one(session: AsyncSession, row: ExecutionIntentRecord, now: datetime) -> str:
     """Routes one CLAIMED intent and records the outcome. Returns its final status."""
     intent_id, tenant_id = row.id, row.tenant_id
+    if int(row.attempts or 0) > 1:                  # review L1: a retried intent links the proposal it already raised
+        action = await intents.existing_proposal(session, tenant_id, intent_id)
+        if action is not None:
+            await intents.finish(session, intent_id, intents.DONE, route=policy.ROUTE_PROPOSE, ai_action_id=action.id, now=now,
+                                 reason=f"Proposal #{action.id} was raised before an interruption")
+            return intents.DONE
+    from app.plans.limits import tenant_is_active
+    tenant = await session.get(Tenant, tenant_id)
+    if tenant is None or not tenant_is_active(tenant):          # review L3
+        await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_REFUSE, now=now,
+                             reason=f"The organisation is {getattr(tenant, 'status', 'gone')}: nothing was raised")
+        return intents.REFUSED
     owner = await session.get(User, row.user_id) if row.user_id is not None else None
     if owner is None or owner.tenant_id != tenant_id or not owner.is_active:
         await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_REFUSE, reason=WHY_OWNER_GONE, now=now)
@@ -137,7 +163,7 @@ async def _notify(session: AsyncSession, row: ExecutionIntentRecord, signal: Sig
 async def _propose(session: AsyncSession, row: ExecutionIntentRecord, signal: Signal, decision: policy.Decision,
                    now: datetime) -> str:
     intent_id, tenant_id = row.id, row.tenant_id
-    key = f"intent:{intent_id}"
+    key = intents.proposal_key(intent_id)
     try:
         action = await approval.propose_entry(session, tenant_id, signal=signal, strategy_id=row.strategy_id, source=row.source,
                                               idempotency_key=key, user_id=row.user_id, now=now, exchange=row.exchange)
@@ -146,8 +172,7 @@ async def _propose(session: AsyncSession, row: ExecutionIntentRecord, signal: Si
         await intents.finish(session, intent_id, intents.REFUSED, route=policy.ROUTE_REFUSE, reason=str(exc), now=now)
         return intents.REFUSED
     if action is None:                               # a retried intent: its proposal is already there
-        action = await session.scalar(select(AiActionRecord).where(AiActionRecord.tenant_id == tenant_id,
-                                                                    AiActionRecord.idempotency_key == key))
+        action = await intents.existing_proposal(session, tenant_id, intent_id)
         if action is None:
             await intents.finish(session, intent_id, intents.FAILED, route=decision.route, now=now,
                                  reason="The proposal could not be raised - nothing was placed")

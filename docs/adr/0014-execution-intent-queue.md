@@ -28,7 +28,7 @@ producers, and some of them are API routes. Three rules hold all the time:
 
 ## Decision (provisional)
 **Option 3.**
-- **Queue.** `execution_intents`: one row per intent. It is idempotent per organisation and key, and it holds the
+- **Queue.** `execution_intents`: one row per intent. It is idempotent per organisation, person and key, and it holds the
   owner, the source, the requested mode, the signal, the evidence, the route, the status and the reason.
 - **Producers only write.** `intents.submit` never dispatches. So an API route that queues an intent cannot reach an
   order pipeline through the core.

@@ -1267,7 +1267,8 @@ class ExecutionIntentRecord(Base):
     (tenant + user); kept as the trail of what the core decided and why."""
 
     __tablename__ = "execution_intents"
-    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key", name="uq_execution_intents_tenant_key"),)
+    # Per person (review M1): two members' intents for the same organisation-wide setup are two rows, never one shared row.
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "idempotency_key", name="uq_execution_intents_tenant_user_key"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)

@@ -1,11 +1,12 @@
 """N1 E1 (ADR-0014): the intent queue - the `execution_intents` table, written by producers, claimed by the worker.
 
-* `submit` writes one QUEUED row (idempotent per organisation and key; a second submit of the same setup returns the
-  first row). It never dispatches: a producer - an API route included (U4 X1) - only ever writes a row, so no request
+* `submit` writes one QUEUED row (idempotent per organisation, person and key; a second submit of the same setup for
+  the same person returns the first row - another member's submit is that member's own row, review M1). It never dispatches: a producer - an API route included (U4 X1) - only ever writes a row, so no request
   can reach an order pipeline through the core.
 * `claim` moves QUEUED rows to CLAIMED with a conditional UPDATE per row (`status = 'QUEUED'`), so two worker replicas
   never take the same row.
-* `expire_overdue` closes rows nobody dispatched in time (EXPIRED - a setup is never proposed late).
+* `expire_overdue` closes rows nobody dispatched in time (EXPIRED - a setup is never proposed late). A retried row whose
+  `intent:<id>` proposal was already raised is linked to it (DONE) instead (review L1).
 * `requeue_stale` puts a CLAIMED row whose worker was interrupted back in the queue (every route is idempotent on
   `intent:<id>`), and FAILS it after `EXECUTION_CORE_MAX_ATTEMPTS` claims.
 * `finish` records the outcome, again conditionally (only a CLAIMED row is finished).
@@ -14,6 +15,7 @@ Statuses: QUEUED -> CLAIMED -> DONE | REFUSED | FAILED; QUEUED -> EXPIRED; CLAIM
 """
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -25,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import config as app_config
 from app.core.models import Signal
-from app.db.models import ExecutionIntentRecord, User
+from app.db.models import AiActionRecord, ExecutionIntentRecord, User
 from app.execution.core import policy
 
 FLAG = "execution_core"
@@ -56,6 +58,24 @@ class Submitted:
 def _count(result: object) -> int:
     """Rows an UPDATE touched (typed loosely: `execute` is annotated as returning a plain Result)."""
     return int(getattr(result, "rowcount", 0) or 0)
+
+
+def queue_key(source: str, idempotency_key: str) -> str:
+    """`<source>:<key>`; a key that would not fit the column is hashed (never cut: two long keys must not collide)."""
+    key = f"{source}:{idempotency_key}"
+    if len(key) <= 200:
+        return key
+    return f"{source}:sha256:{hashlib.sha256(idempotency_key.encode('utf-8')).hexdigest()}"
+
+
+def proposal_key(intent_id: int) -> str:
+    return f"intent:{intent_id}"
+
+
+async def existing_proposal(session: AsyncSession, tenant_id: int, intent_id: int) -> Optional[AiActionRecord]:
+    """The proposal an earlier (interrupted) attempt of this intent already raised, if any."""
+    return await session.scalar(select(AiActionRecord).where(AiActionRecord.tenant_id == tenant_id,
+                                                             AiActionRecord.idempotency_key == proposal_key(intent_id)))
 
 
 def _utc(value: Optional[datetime]) -> datetime:
@@ -99,8 +119,8 @@ async def submit(session: AsyncSession, *, tenant_id: int, user_id: int, source:
     if user is None or user.tenant_id != tenant_id or not user.is_active:
         raise IntentRejected("The intent's person is not an active member of this organisation")
     now = _utc(now)
-    key = f"{source}:{idempotency_key}"[:200]
-    existing = await _by_key(session, tenant_id, key)
+    key = queue_key(source, idempotency_key)
+    existing = await _by_key(session, tenant_id, user_id, key)
     if existing is not None:
         return Submitted(existing, False)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
@@ -115,20 +135,33 @@ async def submit(session: AsyncSession, *, tenant_id: int, user_id: int, source:
             session.add(row)
             await session.flush()
     except IntegrityError:                     # a concurrent submit of the same key won
-        existing = await _by_key(session, tenant_id, key)
+        existing = await _by_key(session, tenant_id, user_id, key)
         if existing is None:
             raise
         return Submitted(existing, False)
     return Submitted(row, True)
 
 
-async def _by_key(session: AsyncSession, tenant_id: int, key: str) -> Optional[ExecutionIntentRecord]:
+async def _by_key(session: AsyncSession, tenant_id: int, user_id: int, key: str) -> Optional[ExecutionIntentRecord]:
     return await session.scalar(select(ExecutionIntentRecord).where(ExecutionIntentRecord.tenant_id == tenant_id,
+                                                                     ExecutionIntentRecord.user_id == user_id,
                                                                      ExecutionIntentRecord.idempotency_key == key))
 
 
 async def expire_overdue(session: AsyncSession, scope: Scope, now: datetime) -> int:
     now = _utc(now)
+    # A retried row (attempts > 0) may already have its proposal: link it (DONE), never call it "nothing was raised".
+    retried = (await session.execute(_in_scope(select(ExecutionIntentRecord.id, ExecutionIntentRecord.tenant_id)
+                                               .where(ExecutionIntentRecord.status == QUEUED, ExecutionIntentRecord.expires_at <= now,
+                                                      ExecutionIntentRecord.attempts > 0), scope))).all()
+    for intent_id, tenant_id in retried:
+        action = await existing_proposal(session, tenant_id, intent_id)
+        if action is not None:
+            await session.execute(update(ExecutionIntentRecord)
+                                  .where(ExecutionIntentRecord.id == intent_id, ExecutionIntentRecord.status == QUEUED)
+                                  .values(status=DONE, route=policy.ROUTE_PROPOSE, ai_action_id=action.id, finished_at=now,
+                                          reason=f"Proposal #{action.id} was raised before an interruption")
+                                  .execution_options(synchronize_session=False))
     query = update(ExecutionIntentRecord).where(ExecutionIntentRecord.status == QUEUED, ExecutionIntentRecord.expires_at <= now)
     if scope is not None:
         query = query.where(ExecutionIntentRecord.tenant_id.in_(sorted(scope)))
@@ -138,16 +171,25 @@ async def expire_overdue(session: AsyncSession, scope: Scope, now: datetime) -> 
     return _count(result)
 
 
-async def requeue_stale(session: AsyncSession, scope: Scope, now: datetime) -> Tuple[int, int]:
-    """(requeued, failed): CLAIMED rows older than EXECUTION_CORE_CLAIM_STALE_SECONDS were interrupted."""
+async def requeue_stale(session: AsyncSession, scope: Scope, now: datetime, limit: int = 500) -> Tuple[int, int]:
+    """(requeued, failed): CLAIMED rows older than EXECUTION_CORE_CLAIM_STALE_SECONDS were interrupted (at most
+    `limit` per call; the rest next time)."""
     now = _utc(now)
     cutoff = now - timedelta(seconds=app_config.EXECUTION_CORE_CLAIM_STALE_SECONDS)
-    rows = (await session.execute(_in_scope(select(ExecutionIntentRecord.id, ExecutionIntentRecord.attempts, ExecutionIntentRecord.claimed_at)
-                                            .where(ExecutionIntentRecord.status == CLAIMED, ExecutionIntentRecord.claimed_at <= cutoff), scope))).all()
+    rows = (await session.execute(_in_scope(select(ExecutionIntentRecord.id, ExecutionIntentRecord.tenant_id, ExecutionIntentRecord.attempts,
+                                                   ExecutionIntentRecord.claimed_at)
+                                            .where(ExecutionIntentRecord.status == CLAIMED, ExecutionIntentRecord.claimed_at <= cutoff), scope)
+                                  .order_by(ExecutionIntentRecord.id).limit(max(1, int(limit))))).all()
     requeued = failed = 0
-    for intent_id, attempts, claimed_at in rows:
+    for intent_id, tenant_id, attempts, claimed_at in rows:
+        values: Dict[str, object]
         if int(attempts or 0) >= app_config.EXECUTION_CORE_MAX_ATTEMPTS:
-            values = {"status": FAILED, "finished_at": now, "reason": f"Interrupted {int(attempts)} times - nothing more is tried"}
+            action = await existing_proposal(session, tenant_id, intent_id)
+            if action is not None:              # review L1: its proposal exists - link it, do not call it failed
+                values = {"status": DONE, "route": policy.ROUTE_PROPOSE, "ai_action_id": action.id, "finished_at": now,
+                          "reason": f"Proposal #{action.id} was raised before an interruption"}
+            else:
+                values = {"status": FAILED, "finished_at": now, "reason": f"Interrupted {int(attempts)} times - nothing more is tried"}
         else:
             values = {"status": QUEUED, "claimed_at": None}
         result = await session.execute(update(ExecutionIntentRecord)
@@ -157,7 +199,7 @@ async def requeue_stale(session: AsyncSession, scope: Scope, now: datetime) -> T
         if _count(result):
             if values["status"] == FAILED:
                 failed += 1
-            else:
+            elif values["status"] == QUEUED:
                 requeued += 1
     await session.commit()
     return requeued, failed

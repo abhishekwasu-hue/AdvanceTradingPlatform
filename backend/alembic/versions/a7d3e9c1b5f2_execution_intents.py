@@ -42,7 +42,7 @@ def upgrade() -> None:
         sa.Column('finished_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('expires_at', sa.DateTime(timezone=True), nullable=False),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False),
-        sa.UniqueConstraint('tenant_id', 'idempotency_key', name='uq_execution_intents_tenant_key'),
+        sa.UniqueConstraint('tenant_id', 'user_id', 'idempotency_key', name='uq_execution_intents_tenant_user_key'),
     )
     op.create_index('ix_execution_intents_tenant_id', 'execution_intents', ['tenant_id'])
     op.create_index('ix_execution_intents_user_id', 'execution_intents', ['user_id'])

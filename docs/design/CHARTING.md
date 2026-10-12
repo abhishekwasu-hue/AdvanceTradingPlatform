@@ -466,6 +466,30 @@ workspace looks exactly as before.
   (`src/charting/__fixtures__/chart_types_golden.json`, one line; `UPDATE_GOLDEN=1` regenerates after a deliberate
   change); session breaks for NSE, MCX, crypto and daily bars; tick labels per zone; the break lines.
 
+## CH6-2 and render checks (built): browser timing and headless smoke checks
+
+- **Timing** (`frontend/e2e/render.perf.ts`, `playwright.perf.config.ts`; CI perf job with `ATP_CI_FACTOR` from the Z10-d
+  calibration; the screenshot is an artifact). The full-window chart with 50,000 5-minute candles and 6 study lines, the
+  production build, every API answer mocked; timed in the page from each answer's body arriving to the painted frame
+  that shows it. Measured here (CI factor 1.69): candles 0.68-0.80 s (budget 1 s x factor), study lines 0.68-0.82 s
+  (budget 1.5 s x factor, CH6-2).
+- **What the timing found and fixed.**
+  - ProChart's session VWAP and day-open read an IST date with `toLocaleDateString` for every bar - 25.8 s for 50,000
+    candles. Now an arithmetic IST day number (`utils/indicators.istDayNumber`, tested equal at IST midnight): 0.7 s.
+  - The studies panel asked twice on load (before and after the candles); it now waits for the candles in the live view,
+    and a candle refresh redraws the study lines only when a condition study needs the candles.
+  - Copying 50,000 points out of the WebWorker and back cost more than the one O(n) conversion; the line conversion is on
+    the main thread, the worker keeps the kernels and the condition marks.
+- **Smoke checks** (`frontend/e2e/charts.e2e.ts`, desktop, in the normal e2e job; screenshots as an artifact):
+  - CH3a: the price-action layer and replay - a step back clears the layer at once and the next one arrives as of the
+    earlier bar; start < at on every request; exit restores all candles.
+  - CH5-a: four charts in link group A - the crosshair on chart 1 moves the other three to the same bar. This found
+    that lightweight-charts raises no crosshairMove for `setCrosshairPosition`, so the linked charts drew the crosshair
+    but their legends did not follow: `LightweightEngine.setCrosshair` now emits a `synthetic` crosshair event that
+    ProChart's legend follows (the link consumes it as an echo; unit-tested).
+  - CH5-b: every chart type renders (badge, bars on the chart), no page error.
+  - ProChart carries `data-bars` / `data-hover`, the studies panel `data-drawn`, for these checks.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

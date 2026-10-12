@@ -195,7 +195,7 @@ jobs:
   perf:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     defaults:
       run:
         working-directory: backend
@@ -220,6 +220,32 @@ jobs:
         env:
           ATP_PERF: "1"
         run: python -m pytest tests/test_ch6_chart_studies.py -k perf_job -q -rA -s -p no:cacheprovider
+
+      - name: Z10-d CI factor for the browser timing (this runner's speed over the reference runner's, at least 1)
+        run: echo "ATP_CI_FACTOR=$(python -c 'import sys; sys.path.insert(0, "scripts"); import bench_screener as b; print(round(b.ci_factor(), 3))')" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: N4 CH6-2 render timing (50,000 candles < 1 s, + 6 study lines < 1.5 s, ProChart in Chromium; x CI factor)
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+          npx playwright install --with-deps chromium
+          npx playwright test -c playwright.perf.config.ts
+
+      - name: Render timing screenshot (artifact)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: render-timing
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Load test, 20 session-shaped users against the in-process test app (scripts/loadtest.py; SLO per scenario)
         run: python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 1 --slo-factor auto --annotate
@@ -255,10 +281,19 @@ jobs:
       - name: JS budgets (initial 300 KB; Copilot route 120 KB; Copilot 3D chunk 180 KB - gzip)
         run: npm run check:bundle
 
-      - name: Browser tests (Playwright, Copilot - mocked API, desktop + mobile)
+      - name: Browser tests (Playwright, Copilot and the chart render checks - mocked API, desktop + mobile)
         run: |
           npx playwright install --with-deps chromium
           npm run test:e2e
+
+      - name: Chart render check screenshots (artifact, never committed)
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: chart-render-checks
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Generated palette is up to date (scripts/gen-palette.mjs)
         run: npm run gen:palette && git diff --exit-code -- src/styles/palette.css

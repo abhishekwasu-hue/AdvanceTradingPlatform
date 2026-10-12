@@ -29,8 +29,8 @@ import socket
 import time
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, time as dtime, timedelta, timezone
-from typing import Callable, Dict, List, Optional, Tuple
+from datetime import date, datetime, time as dtime, timedelta, timezone
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -149,6 +149,7 @@ class CycleReport:
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
+    intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -226,10 +227,17 @@ class TradingWorker:
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
         self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
         self._market_zones_task: Optional["asyncio.Task[None]"] = None
+        # HB2: the IST date the owner's intraday-history pass last COMPLETED, its task, and when an unfinished pass may
+        # be started again (monotonic seconds).
+        self._last_intraday_day: Optional[date] = None
+        self._intraday_task: Optional["asyncio.Task[None]"] = None
+        self._intraday_retry_at = 0.0
+        self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
         self._ops: Dict[Tuple[int, str], OpsThrottle] = {}
+        self._live_paths_locked: Optional[bool] = None   # Phase 0 defaults: last logged state of the global PAPER-only lock
         self._tenant_cursor: Dict[int, int] = {}
         self._stale_skips = 0
         # Phase S: one websocket quote stream per broker session, subscribed each cycle to the
@@ -261,9 +269,12 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._intraday_task is not None and not self._intraday_task.done():
+            self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
+        await self.startup_check()
         # Safety rule 18: before the first cycle, every tenant with an open LIVE position is
         # reconciled against its broker. Whatever happened while this process was down (a fill
         # after a crash, a manual exit at the broker) is known before anything new is traded.
@@ -286,6 +297,31 @@ class TradingWorker:
         await self.byob.close_all()
         logger.info("Trading worker %s stopped", self.holder_id)
 
+    async def startup_check(self) -> Dict[str, object]:
+        """Phase 0 deployment defaults (app/platform/deployment_phase.py): seed the two Phase 0 flags where unset
+        (ATP_DEPLOYMENT_PHASE=phase0 only) and log why LIVE entry paths are not started while `phase0_paper_only` is on.
+        The worker always comes up: exits, stops, square-off and reconciliation of LIVE positions run regardless."""
+        from app.platform import deployment_phase
+        try:
+            async with self.session_factory() as session:
+                state = await deployment_phase.on_startup(session, "worker")
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting
+            logger.exception("Phase 0 start-up check failed")
+            return {"error": "failed"}
+        self._live_paths_locked = bool(state.get("phase0_paper_only"))
+        return state
+
+    def _note_lock_state(self) -> None:
+        """Logs when the global PAPER-only lock changes between cycles (the owner switched it in Admin -> Controls)."""
+        locked = phase0_lock.locked(None)
+        if locked != self._live_paths_locked:
+            from app.platform.deployment_phase import LIVE_PATHS_NOT_STARTED
+            if locked:
+                logger.warning("Trading worker: %s", LIVE_PATHS_NOT_STARTED)
+            else:
+                logger.warning("Trading worker: phase0_paper_only is off - LIVE deployments are evaluated again (flags and plans decide)")
+            self._live_paths_locked = locked
+
     # --- one cycle ---------------------------------------------------------------------------
 
     async def run_cycle(self, now: Optional[datetime] = None) -> CycleReport:
@@ -305,6 +341,7 @@ class TradingWorker:
             async with self.session_factory() as session:
                 # Z10-c: the broker-order chokepoint reads the PAPER-only lock from this process; refresh it every cycle.
                 await phase0_lock.is_on(session, None)
+                self._note_lock_state()
                 # Phase O2: one clock per exchange family. NSE is always considered; MCX/CRYPTO only
                 # when a deployment actually trades there, so a pure-equity platform behaves as before.
                 wanted = {"NSE"} | {session_family(ex) for ex in await session.scalars(
@@ -402,6 +439,16 @@ class TradingWorker:
                     logger.exception("Expiring proposals failed")
                     await session.rollback()
                     report.errors.append(f"ai expiry: {exc}")
+                # N1 E1 (ADR-0014, flag execution_core): queued entry intents -> a notification or a PAPER entry proposal
+                # (never an order), before the outbox drain so they go out this cycle. Market open or not; an intent
+                # nobody dispatched in time expires. One flags read when the flag is off everywhere.
+                try:
+                    from app.execution.core import dispatcher as intent_dispatcher
+                    await intent_dispatcher.drain(session, now)
+                except Exception as exc:  # noqa: BLE001 - the core must never break trading or delivery
+                    logger.exception("Execution intent drain failed")
+                    await session.rollback()
+                    report.errors.append(f"execution intents: {exc}")
                 try:
                     await dispatch_pending(session)
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
@@ -525,6 +572,16 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Market zones job not started")
                         report.errors.append(f"market zones: {exc}")
+                        await session.rollback()
+                # HB2: the owner's intraday history (flag `history_intraday`, off by default) - after the close, through the
+                # owner's own broker session, drawing from that session's rate budget only while a reserve stays free for
+                # exits. Its own task with its own sessions and a time budget; never during NSE hours.
+                if not nse.is_open:
+                    try:
+                        report.intraday_history_started = await self._maybe_start_intraday_history(session, now)
+                    except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
+                        logger.exception("Intraday history pass not started")
+                        report.errors.append(f"intraday history: {exc}")
                         await session.rollback()
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
@@ -942,6 +999,13 @@ class TradingWorker:
             family = session_family(dep.exchange)
             if family not in open_families:
                 continue  # Phase O2: this venue is closed right now; nothing to evaluate
+            if dep.mode == ExecutionMode.LIVE.value and phase0_lock.locked(tenant_id):
+                # Z10-c / Phase 0 defaults: the LIVE entry path is not started at all while the PAPER-only lock is on
+                # (layers 1 and 2 would refuse the entry anyway). Exits, stops and square-off above already ran.
+                if dep.last_error != phase0_lock.WORKER_NOT_EVALUATED:     # written once, not every cycle
+                    dep.last_error = phase0_lock.WORKER_NOT_EVALUATED
+                    await session.commit()
+                continue
             if dep.mode == ExecutionMode.LIVE.value and not live_allowed(tenant):
                 dep.last_error = "Plan does not include live trading - LIVE entries skipped"
                 await session.commit()
@@ -1024,6 +1088,38 @@ class TradingWorker:
                 await fetcher.aclose()
 
         self._history_eod_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_intraday_history(self, session: AsyncSession, now: datetime) -> bool:
+        """HB2: starts an owner intraday-history pass when one is due (from HISTORY_INTRADAY_HOUR_IST, NSE closed), the
+        flag is on for the owner's tenant and no pass is running. An unfinished pass (time budget, no session yet, rate
+        limited) is started again at most every HISTORY_INTRADAY_RETRY_MINUTES; the day counts as done only when a pass
+        worked through everything. The pass shares this worker's RateBudget for the owner's session."""
+        from app.market_lake import intraday_history
+
+        day = intraday_history.nightly_due(now, self._last_intraday_day)
+        if day is None or (self._intraday_task is not None and not self._intraday_task.done()):
+            return False
+        if time.monotonic() < self._intraday_retry_at:
+            return False
+        if not await intraday_history.enabled(session):
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+        self._intraday_retry_at = time.monotonic() + app_config.HISTORY_INTRADAY_RETRY_MINUTES * 60
+
+        async def run() -> None:
+            try:
+                result = await intraday_history.run_pass(self.session_factory, budget_for=self._budget_for,
+                                                         adapter_cache=self._intraday_adapters)
+                if result.complete:
+                    self._last_intraday_day = day
+                elif result.status == "request_cap":     # at most one capped pass per 30 minutes (Upstox: 2,000 / 30 min)
+                    self._intraday_retry_at = max(self._intraday_retry_at, time.monotonic() + 30 * 60)
+            except intraday_history.IntradayConfigError as exc:
+                logger.warning("Intraday history pass did not run: %s", exc)
+            except Exception:  # noqa: BLE001 - market data history; never reaches trading
+                logger.exception("Intraday history pass failed")
+
+        self._intraday_task = asyncio.get_running_loop().create_task(run())
         return True
 
     async def _maybe_start_market_zones(self, session: AsyncSession, now: datetime) -> bool:
@@ -1391,11 +1487,18 @@ class TradingWorker:
             return None
         return self._rate_limited(tenant_id, f"{broker_name}@{account_label}", build_adapter(record))
 
-    def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:
+    def _budget_for(self, tenant_id: int, budget_key: str) -> RateBudget:
+        """The one RateBudget of a (tenant, "<broker>@<account>") session - shared by the trading calls and HB2's history
+        reads (which take tokens only from what is spare, app/brokers/rate_budget.py)."""
         key = (tenant_id, budget_key)
         budget = self._budgets.get(key)
         if budget is None:
             budget = self._budgets[key] = RateBudget(limits_for(budget_key.split("@")[0]))
+        return budget
+
+    def _rate_limited(self, tenant_id: int, budget_key: str, adapter: BrokerInterface) -> BrokerInterface:
+        key = (tenant_id, budget_key)
+        budget = self._budget_for(tenant_id, budget_key)
         ops = None
         if app_config.OPS_THROTTLE_ENABLED:      # Part D2: one OPS throttle per (tenant, broker account), kept across cycles
             ops = self._ops.get(key)

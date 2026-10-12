@@ -1930,7 +1930,10 @@ export interface TaxReport {
   turnover_method: TaxTurnoverMethod; turnover_method_label: string;
   // Statutory rates (percent) on the FY's first day, from the platform's dated charges table; changes inside the FY.
   rates: Record<string, Record<string, number>>; rates_as_of: string; rate_changes: TaxRateChange[];
+  // TX-1: where each of `rates` comes from (same keys); `verify` is non-empty when no official document settles it yet.
+  rate_sources?: Record<string, Record<string, TaxRateSource>>;
 }
+export interface TaxRateSource { url: string; ref: string; date: string; note: string; verify: string }
 export interface FxRate { base: string; quote: string; rate: number; source: string; as_of: string | null }
 
 export interface Incident {

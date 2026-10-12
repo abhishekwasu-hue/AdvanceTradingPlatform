@@ -210,6 +210,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # the Dow trend per degree from the shared lake bars as of a time, with toggles, a debug mode and bar replay that
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart
     # shows no layer. Reference only - places no orders.
+    # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
+    # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
+    # answers 503 and the chart shows no study panel. Reference only - places no orders.
+    "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
@@ -219,7 +223,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "screener_breakouts_bk3",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action"})
+                               "chart_price_action", "chart_studies"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

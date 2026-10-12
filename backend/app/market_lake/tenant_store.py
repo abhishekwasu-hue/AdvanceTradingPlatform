@@ -51,13 +51,22 @@ def _rank(sources: Optional[Sequence[str]], source: str) -> int:
     return list(sources).index(source) if source in sources else len(sources)
 
 
+def _without(query, exclude_prefixes: Sequence[str]):
+    for prefix in exclude_prefixes:
+        query = query.where(MdTenantCandleRecord.source.not_like(f"{prefix}%"))
+    return query
+
+
 async def rows_as_of(session: AsyncSession, tenant_id: int, instrument_key: str, timeframe: str, start: datetime, end: datetime, *,
-                     as_of: Optional[datetime] = None, sources: Optional[Sequence[str]] = None) -> List[MdTenantCandleRecord]:
-    """The tenant's own bars with start < ts <= end, one per ts (preferred source, then highest visible version)."""
+                     as_of: Optional[datetime] = None, sources: Optional[Sequence[str]] = None,
+                     exclude_prefixes: Sequence[str] = ()) -> List[MdTenantCandleRecord]:
+    """The tenant's own bars with start < ts <= end, one per ts (preferred source, then highest visible version).
+    `exclude_prefixes` leaves out sources the reader may not see (HB2: `broker:` rows of another member's session)."""
     tenant = _require_tenant(tenant_id)
-    query = select(MdTenantCandleRecord).where(
+    query = _without(select(MdTenantCandleRecord).where(
         MdTenantCandleRecord.tenant_id == tenant, MdTenantCandleRecord.instrument_key == instrument_key,
-        MdTenantCandleRecord.timeframe == timeframe, MdTenantCandleRecord.ts > start, MdTenantCandleRecord.ts <= end)
+        MdTenantCandleRecord.timeframe == timeframe, MdTenantCandleRecord.ts > start, MdTenantCandleRecord.ts <= end),
+        exclude_prefixes)
     if as_of is not None:
         query = query.where(MdTenantCandleRecord.ingested_at <= as_of)
     if sources:
@@ -100,20 +109,22 @@ def resample(bars: Sequence[LakeBar], minutes: int, *, exchange: str = "NSE") ->
 
 async def candles(session: AsyncSession, tenant_id: Optional[int], instrument_key: str, timeframe: str, start: datetime,
                   end: datetime, *, symbol: str, exchange: str = "NSE", kind: str = "EQ", adjusted: bool = True,
-                  as_of: Optional[datetime] = None, sources: Optional[Sequence[str]] = None) -> List[LakeBar]:
+                  as_of: Optional[datetime] = None, sources: Optional[Sequence[str]] = None,
+                  exclude_prefixes: Sequence[str] = ()) -> List[LakeBar]:
     """The tenant's own bars for (start, end] at `timeframe` (built from 1-minute), as known at `as_of`, adjusted for
     splits/bonuses known then (equity only) when `adjusted` - the private twin of `adjust.candles`."""
     tenant = _require_tenant(tenant_id)
     minutes = resample_minutes(timeframe)
     raw_start = start - timedelta(minutes=minutes)        # the first bucket ending after `start` may begin before it
-    stored = int(await session.scalar(select(func.count()).select_from(MdTenantCandleRecord).where(
+    stored = int(await session.scalar(_without(select(func.count()).select_from(MdTenantCandleRecord).where(
         MdTenantCandleRecord.tenant_id == tenant, MdTenantCandleRecord.instrument_key == instrument_key,
         MdTenantCandleRecord.timeframe == BASE_TIMEFRAME, MdTenantCandleRecord.ts > raw_start,
-        MdTenantCandleRecord.ts <= end)) or 0)
+        MdTenantCandleRecord.ts <= end), exclude_prefixes)) or 0)
     if stored > config.LAKE_TENANT_MAX_BASE_ROWS:         # counted BEFORE anything is read into memory
         raise ValueError(f"{stored} one-minute rows in the window; at most {config.LAKE_TENANT_MAX_BASE_ROWS} are read per "
                          "request - narrow the window")
-    rows = await rows_as_of(session, tenant, instrument_key, BASE_TIMEFRAME, raw_start, end, as_of=as_of, sources=sources)
+    rows = await rows_as_of(session, tenant, instrument_key, BASE_TIMEFRAME, raw_start, end, as_of=as_of, sources=sources,
+                            exclude_prefixes=exclude_prefixes)
     base = [LakeBar(r.instrument_key, r.timeframe, _utc(r.ts), float(r.open), float(r.high), float(r.low), float(r.close),
                     int(r.volume), r.oi) for r in rows]
     bars = [b for b in resample(base, minutes, exchange=exchange) if start < _utc(b.ts) <= end]

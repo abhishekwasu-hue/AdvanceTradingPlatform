@@ -30,7 +30,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as dtime, timedelta, timezone
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -232,6 +232,7 @@ class TradingWorker:
         self._last_intraday_day: Optional[date] = None
         self._intraday_task: Optional["asyncio.Task[None]"] = None
         self._intraday_retry_at = 0.0
+        self._intraday_adapters: Dict[Any, Any] = {}   # one owner adapter per IST day, reused by that evening's passes
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -1062,9 +1063,12 @@ class TradingWorker:
 
         async def run() -> None:
             try:
-                result = await intraday_history.run_pass(self.session_factory, budget_for=self._budget_for)
+                result = await intraday_history.run_pass(self.session_factory, budget_for=self._budget_for,
+                                                         adapter_cache=self._intraday_adapters)
                 if result.complete:
                     self._last_intraday_day = day
+                elif result.status == "request_cap":     # at most one capped pass per 30 minutes (Upstox: 2,000 / 30 min)
+                    self._intraday_retry_at = max(self._intraday_retry_at, time.monotonic() + 30 * 60)
             except intraday_history.IntradayConfigError as exc:
                 logger.warning("Intraday history pass did not run: %s", exc)
             except Exception:  # noqa: BLE001 - market data history; never reaches trading

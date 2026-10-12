@@ -15,7 +15,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Dict, List, Optional
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.brokers.exceptions import BrokerAPIError
 from app.brokers.rate_budget import RateBudget, RateLimits
@@ -81,10 +81,13 @@ def _credential(user: User, *, broker="upstox", label="primary", valid=True, ten
     return _run(go())
 
 
-def _teammate(owner: User, email: str) -> User:
+def _teammate(owner: User, email: str, role: str = "USER") -> User:
+    from app.auth.security import hash_password
+
     async def go():
         async with _session_factory() as session:
-            user = User(tenant_id=owner.tenant_id, email=email, hashed_password="x", role="USER", is_active=True)
+            user = User(tenant_id=owner.tenant_id, email=email, hashed_password=hash_password("S3cur3Pass!"), role=role,
+                        is_active=True)
             session.add(user)
             await session.commit()
             return user
@@ -385,7 +388,9 @@ def test_only_the_owners_own_session_is_used_and_no_other_tenant_sees_the_bars()
     _flag(True)
     owner = Owner("hb2-iso-owner@example.com", credential=False)
     teammate = _teammate(owner.user, "hb2-iso-mate@example.com")
-    _credential(teammate, label="mate")                                  # a teammate's Upstox in the owner's tenant: never used
+    _credential(teammate, label="mate")                      # a teammate's Upstox in the owner's tenant: never used
+    co_owner = _teammate(owner.user, "hb2-iso-coowner@example.com", role="OWNER")
+    _credential(co_owner, label="coowner")                   # a teammate promoted to OWNER (higher id): never used either
     other = _user("hb2-iso-other@example.com")
     other_cred = _credential(other)                          # another tenant's own session: never used
     broker = FakeBroker({"HBIT1": day_bars(FRI)})
@@ -537,3 +542,137 @@ def test_instrument_keys_are_checked_not_guessed():
             hb2.parse_instrument(bad)
     assert hb2._windows([date(2023, 3, d) for d in (6, 7, 8, 9, 10)], 3) == [
         [date(2023, 3, 10), date(2023, 3, 9), date(2023, 3, 8)], [date(2023, 3, 7), date(2023, 3, 6)]]
+
+
+# --- review follow-ups (M1-M3, L1-L5) --------------------------------------------------------------------------------
+def test_the_session_user_is_pinned_to_one_user():
+    _flag(True)
+    owner = Owner("hb2-pin-owner@example.com", credential=False)
+    co_owner = _teammate(owner.user, "hb2-pin-coowner@example.com", role="OWNER")
+    co_cred = _credential(co_owner, label="coowner")
+    broker = FakeBroker({"HBIN1": day_bars(FRI)})
+    assert owner.run(broker, symbols=["NSE:HBIN1"], start=FRI).status == "no_session"     # lowest-id OWNER only
+    report = owner.run(broker, symbols=["NSE:HBIN1"], start=FRI, owner_user_id=co_owner.id)  # pinned explicitly
+    assert report.complete and owner.used == [co_cred]
+    assert _states(owner.tenant_id, "NSE:HBIN1")[FRI].user_id == co_owner.id
+    other = _user("hb2-pin-other@example.com")
+    with pytest.raises(hb2.IntradayConfigError, match="HISTORY_OWNER_USER_ID"):            # checked against the tenant
+        owner.run(broker, symbols=["NSE:HBIN1"], start=FRI, owner_user_id=other.id)
+
+
+def test_broker_rows_are_readable_only_by_the_session_holder():
+    _flag(True)
+    owner = Owner("hb2-read-owner@example.com")
+    owner.run(FakeBroker({"HBIV1": day_bars(FRI)}), symbols=["NSE:HBIV1"], start=FRI)
+    _teammate(owner.user, "hb2-read-viewer@example.com", role="VIEWER")
+    _teammate(owner.user, "hb2-read-coowner@example.com", role="OWNER")
+    params = {"instrument_key": "NSE:HBIV1", "timeframe": "1m", "store": "tenant", "symbol": "HBIV1",
+              "start": (EVENING - timedelta(hours=9)).isoformat(), "end": EVENING.isoformat()}
+
+    def read(token):
+        res = client.get("/api/market-data/history", params=params, headers={"Authorization": f"Bearer {token}"})
+        assert res.status_code == 200, res.text
+        return len(res.json()["candles"])
+
+    def login(email):
+        res = client.post("/api/auth/login", json={"email": email, "password": "S3cur3Pass!"})
+        assert res.status_code == 200, res.text
+        return res.json()["access_token"]
+    assert read(TOKENS["hb2-read-owner@example.com"]) == 375
+    assert read(login("hb2-read-viewer@example.com")) == 0             # same organisation, not the session holder
+    assert read(login("hb2-read-coowner@example.com")) == 0
+
+
+def test_mcx_session_request_cap_and_blackout_dates(monkeypatch):
+    owner = Owner("hb2-mcx@example.com")
+    _flag(True)
+    days = [FRI - timedelta(days=n) for n in range(0, 12)]
+    bars = {"HBIM1": [b for d in days for b in day_bars(d)]}
+    capped = FakeBroker(bars)
+    report = owner.run(capped, symbols=["NSE:HBIM1"], start=FRI - timedelta(days=11), max_requests=2)
+    assert report.status == "request_cap" and not report.complete and report.requests == 2 == len(capped.calls)
+    assert report.pending > 0
+
+    from app.db.models import StrategyDeploymentRecord
+
+    async def mcx_deployment():
+        async with _session_factory() as session:
+            session.add(StrategyDeploymentRecord(tenant_id=owner.tenant_id, strategy_id="ema_crossover", symbol="CRUDEOIL",
+                                                 exchange="MCX", timeframe="5min", mode="PAPER", status="ACTIVE"))
+            await session.commit()
+    _run(mcx_deployment())
+    held = FakeBroker(bars)
+    report = owner.run(held, symbols=["NSE:HBIM1"], start=FRI - timedelta(days=11))       # 17:00 IST: MCX open
+    assert report.status == "mcx_session" and held.calls == [] and not report.complete
+    late = owner.run(held, symbols=["NSE:HBIM1"], start=FRI - timedelta(days=11),
+                     clock=lambda: datetime(2023, 3, 10, 23, 45, tzinfo=IST))           # MCX closed at 23:30
+    assert late.complete and held.calls
+
+    monkeypatch.setattr(config, "HISTORY_INTRADAY_BLACKOUT_DATES", frozenset({"2023-03-11"}))   # e.g. a budget Saturday
+    assert not hb2.quiet_hours(datetime(2023, 3, 11, 20, 0, tzinfo=IST), set())
+    with pytest.raises(hb2.IntradayConfigError, match="blackout"):
+        owner.run(held, symbols=["NSE:HBIM1"], clock=lambda: datetime(2023, 3, 11, 20, 0, tzinfo=IST))
+
+
+def test_hours_and_flag_are_checked_again_after_waiting_for_a_token():
+    owner = Owner("hb2-recheck@example.com")
+    _flag(True)
+
+    class FlagOffWhileWaiting(RateBudget):
+        async def acquire_spare(self, reserve, *, deadline=None):
+            async with _session_factory() as session:            # the operator turns the flag off during the wait
+                current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+                flags = current.get("flags") or {}
+                flags[hb2.FLAG] = {"on": False, "tenants": []}
+                await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+                await session.commit()
+            return await super().acquire_spare(reserve, deadline=deadline)
+    broker = FakeBroker({"HBIW1": day_bars(FRI)})
+    budget = FlagOffWhileWaiting(RateLimits(per_second=100.0, burst=100, per_minute=1000))
+    report = owner.run(broker, symbols=["NSE:HBIW1"], start=FRI, budget_for=lambda t, k: budget)
+    assert report.status == "partial" and broker.calls == [] and report.requests == 0
+    assert _states(owner.tenant_id, "NSE:HBIW1")[FRI].status == "pending"
+
+
+def test_adapter_is_reused_within_an_ist_day():
+    owner = Owner("hb2-cache@example.com")
+    _flag(True)
+    built = []
+    broker = FakeBroker({"HBIK1": day_bars(FRI)})
+
+    def factory(record):
+        built.append(record.id)
+        return broker
+    cache: dict = {}
+    for when in (EVENING, EVENING + timedelta(minutes=15)):
+        _run(hb2.run_pass(_session_factory, adapter_factory=factory, adapter_cache=cache, clock=lambda w=when: w,
+                          symbols=["NSE:HBIK1"], start=FRI, owner_tenant_id=owner.tenant_id, owner_tenant_name=owner.name))
+    assert built == [owner.credential_id]
+    _run(hb2.run_pass(_session_factory, adapter_factory=factory, adapter_cache=cache, clock=lambda: EVENING + timedelta(days=1),
+                      symbols=["NSE:HBIK1"], start=FRI, owner_tenant_id=owner.tenant_id, owner_tenant_name=owner.name))
+    assert built == [owner.credential_id] * 2 and len(cache) == 1
+
+
+def test_one_bad_day_refuses_only_that_day_and_progress_marks_stale_running(monkeypatch):
+    owner = Owner("hb2-split@example.com")
+    _flag(True)
+    days = [FRI - timedelta(days=n) for n in range(1, 4)]                     # Tue 7 .. Thu 9, one window
+    bars = [b for d in days for b in day_bars(d)]
+    bars[400] = bars[400].model_copy(update={"low": 0.0})                    # a bad bar on Wednesday
+    report = owner.run(FakeBroker({"HBIS1": bars}), symbols=["NSE:HBIS1"], start=days[-1], end=days[0])
+    states = _states(owner.tenant_id, "NSE:HBIS1")
+    assert report.requests == 1 and report.refused == 1 and report.days_done == 2
+    assert states[date(2023, 3, 8)].status == "refused" and states[date(2023, 3, 9)].status == "done"
+    assert states[date(2023, 3, 7)].status == "done"
+
+    async def stale_and_progress():
+        async with _session_factory() as session:
+            row = states[date(2023, 3, 8)]
+            await session.execute(update(D).where(D.id == row.id).values(
+                status="running", started_at=datetime(2023, 3, 10, 12, 0, tzinfo=timezone.utc)))
+            await session.commit()
+            return await hb2.progress(session, tenant_id=owner.tenant_id, now=datetime(2023, 3, 10, 15, 0, tzinfo=timezone.utc))
+    body = _run(stale_and_progress())
+    entry = next(a for a in body["attention"] if a["instrument_key"] == "NSE:HBIS1")
+    assert entry["status"] == "running" and entry["stale"] is True and entry["started_at"].startswith("2023-03-10T12:00")
+    assert body["stale_running"] >= 1

@@ -10,9 +10,12 @@ Rules (hard):
 - Read-only market data. Only the adapter's candle endpoints are called (`get_historical_data` for past days,
   `get_intraday_candles` for today after the close); no order path is touched (Phase 0: PAPER only).
 - One owner, one session: bars go only to HISTORY_OWNER_TENANT_ID, confirmed by HISTORY_OWNER_TENANT_NAME (HB0's rule),
-  and are read only through a credential that an OWNER / SUPER_ADMIN of THAT tenant linked themselves (BT1 "own
-  session") at a broker whose data terms are confirmed (Tier A), with a usable token today. Another tenant's or a
-  teammate's session is never used, and the bars never reach the shared lake (BYOK / BT1b).
+  and are read only through a credential that ONE pinned user of THAT tenant (HISTORY_OWNER_USER_ID, else the lowest-id
+  active OWNER) linked themselves (BT1 "own session") at a broker whose data terms are confirmed (Tier A), with a usable
+  token today. Another tenant's, a teammate's or a co-owner's session is never used, the bars never reach the shared
+  lake, and within the tenant only that user may read the `broker:*` rows (BYOK / BT1b).
+- Volume: at most HISTORY_INTRADAY_MAX_REQUESTS requests per pass, and no pass while the owner's MCX deployments are
+  in session (the same account's exits may need the API until 23:30 IST).
 - Rate budget: when the trading worker runs the job it hands over the SAME RateBudget its exits draw from, and every
   request takes a token through `acquire_spare` - only while HISTORY_INTRADAY_RESERVE of both buckets stays free for
   the worker, never holding the budget's lock while waiting. A 429 ends the pass. Broker errors here are not reported
@@ -67,8 +70,11 @@ TIMEFRAME = "1m"
 PERIOD = timedelta(minutes=1)
 # Brokers whose adapter serves BOTH 1-minute endpoints (past days and today's session). Also must be Tier A confirmed.
 SUPPORTED_BROKERS = ("upstox",)
-OWNER_ROLES = ("SUPER_ADMIN", "OWNER")      # the account holder of the owner's tenant (registration makes one of these)
+OWNER_ROLE = "OWNER"                        # without HISTORY_OWNER_USER_ID: the lowest-id active OWNER, and only them
+BROKER_SOURCE_PREFIX = "broker:"            # HB2's sources; readable only by the member whose session produced them
 EXCHANGES = ("NSE", "BSE")                  # cash and indices on the NSE clock (F&O / MCX: open question HB2-6)
+MCX_SESSION = EXCHANGE_SESSIONS["MCX"]
+STALE_RUNNING = timedelta(hours=2)          # a `running` day older than this belongs to a pass that died (progress)
 RECHECK_NO_DATA_DAYS = 3                    # a `no_data` day this recent is asked again (the broker may publish late)
 SESSION = EXCHANGE_SESSIONS["NSE"]
 BARS_FINAL = time(15, 45)                   # every bar of the day has closed and the broker has it
@@ -107,7 +113,8 @@ def parse_instrument(raw: str) -> Instrument:
 
 @dataclass
 class PassReport:
-    status: str = "complete"         # complete | partial | no_session | locked | rate_limited | auth_failed | flag_off
+    # complete | partial | no_session | locked | rate_limited | auth_failed | mcx_session | request_cap
+    status: str = "complete"
     complete: bool = False
     tenant_id: Optional[int] = None
     broker: Optional[str] = None
@@ -146,8 +153,12 @@ def _wall() -> datetime:
 # --- when ------------------------------------------------------------------------------------------------------------
 def quiet_hours(now: datetime, holidays: Set[date]) -> bool:
     """True when HB2 may call the broker: a day without an NSE session, or a trading day after the bars are final
-    (HISTORY_INTRADAY_HOUR_IST, never before 15:45 IST) or before HISTORY_INTRADAY_STOP_HOUR_IST (never after 09:00)."""
+    (HISTORY_INTRADAY_HOUR_IST, never before 15:45 IST) or before HISTORY_INTRADAY_STOP_HOUR_IST (never after 09:00).
+    Never on a HISTORY_INTRADAY_BLACKOUT_DATES date (a special session the calendar does not know: Muhurat, a budget-day
+    Saturday)."""
     ist = now.astimezone(IST)
+    if ist.date().isoformat() in config.HISTORY_INTRADAY_BLACKOUT_DATES:
+        return False
     if not is_trading_day(ist.date(), holidays):
         return True
     start = max(time(min(max(config.HISTORY_INTRADAY_HOUR_IST, 0), 23)), BARS_FINAL)
@@ -208,19 +219,52 @@ async def enabled(session: AsyncSession) -> bool:
     return owner is not None and await flag_enabled(session, FLAG, owner)
 
 
-async def owner_session(session: AsyncSession, tenant_id: int, now: datetime) -> Optional[Tuple[User, BrokerCredentialRecord]]:
-    """The owner's OWN broker session in the owner's tenant: a credential linked by an active OWNER / SUPER_ADMIN of
-    that tenant themselves (BT1: never a teammate's, never another tenant's), at a supported broker whose data terms
-    allow Tier A, with a usable token now. None when there is none (the owner has not logged in today)."""
+async def owner_user(session: AsyncSession, tenant_id: int, user_id: Optional[int] = None) -> Optional[User]:
+    """The ONE user whose own session HB2 reads: HISTORY_OWNER_USER_ID (refused unless it is an active user of the owner
+    tenant), else the lowest-id active OWNER of that tenant. Never another co-owner or teammate."""
+    user_id = config.HISTORY_OWNER_USER_ID if user_id is None else user_id
+    if user_id is not None:
+        user = await session.get(User, user_id)
+        if user is None or user.tenant_id != tenant_id or not user.is_active:
+            raise IntradayConfigError(f"HISTORY_OWNER_USER_ID={user_id} is not an active user of the owner tenant {tenant_id}")
+        return user
+    return await session.scalar(select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True),
+                                                   User.role == OWNER_ROLE).order_by(User.id).limit(1))
+
+
+async def owner_session(session: AsyncSession, tenant_id: int, now: datetime,
+                        user_id: Optional[int] = None) -> Optional[Tuple[User, BrokerCredentialRecord]]:
+    """The owner's OWN broker session: a credential the pinned owner user (`owner_user`) linked themselves in the owner's
+    tenant (BT1: never a teammate's, never another tenant's), at a supported broker whose data terms allow Tier A, with a
+    usable token now. None when that user has none (the owner has not logged in today) - no other user is tried."""
     from app.market_data.entitlement import own_records, pick_session
-    users = await session.scalars(select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True),
-                                                     User.role.in_(OWNER_ROLES)).order_by(User.id))
-    for user in list(users):
-        records = [r for r in await own_records(session, user) if r.broker_name in SUPPORTED_BROKERS]
-        record = pick_session(records, now)
-        if record is not None and record.tenant_id == tenant_id and record.user_id == user.id:
-            return user, record
+    user = await owner_user(session, tenant_id, user_id)
+    if user is None:
+        return None
+    records = [r for r in await own_records(session, user) if r.broker_name in SUPPORTED_BROKERS]
+    record = pick_session(records, now)
+    if record is not None and record.tenant_id == tenant_id and record.user_id == user.id:
+        return user, record
     return None
+
+
+async def broker_rows_readable(session: AsyncSession, user: User) -> bool:
+    """BT1b for the private store: `broker:*` rows were read through one member's own session, so only that member (the
+    user recorded on the tenant's HB2 days) may read them - not a teammate, a VIEWER or another co-owner."""
+    holder = await session.scalar(select(D.id).where(D.tenant_id == user.tenant_id, D.user_id == user.id).limit(1))
+    return holder is not None
+
+
+async def mcx_in_session(session: AsyncSession, tenant_id: int, now: datetime) -> bool:
+    """True while the owner tenant has a non-stopped MCX deployment and the MCX session is open (it trades to 23:30 IST):
+    its exits may need the same broker account's rate limit, so HB2 neither starts nor continues a pass then."""
+    from app.market_data.calendar import session_family, session_status
+    rows = await session.scalars(select(StrategyDeploymentRecord.exchange).where(
+        StrategyDeploymentRecord.tenant_id == tenant_id, StrategyDeploymentRecord.status != "STOPPED").distinct())
+    if not any(session_family(exchange) == "MCX" for exchange in rows):
+        return False
+    status = session_status(now, await load_holidays(session, MCX_SESSION.holiday_calendar), "MCX")
+    return bool(status.is_open)
 
 
 # --- what ------------------------------------------------------------------------------------------------------------
@@ -322,7 +366,7 @@ async def _store_day(session: AsyncSession, tenant_id: int, inst: Instrument, da
 
 # --- state -----------------------------------------------------------------------------------------------------------
 async def _claim(session_factory: Any, tenant_id: int, inst: Instrument, days: Sequence[date], *, source: str,
-                 credential_id: int, endpoint: str) -> None:
+                 credential_id: int, user_id: int, endpoint: str) -> None:
     now = _wall()
     async with session_factory() as session:
         existing = {s.trade_date: s for s in await session.scalars(select(D).where(
@@ -335,7 +379,7 @@ async def _claim(session_factory: Any, tenant_id: int, inst: Instrument, days: S
                 session.add(state)
             state.status, state.error, state.started_at = "running", None, now
             state.attempts = (state.attempts or 0) + 1
-            state.source, state.credential_id, state.endpoint = source, credential_id, endpoint
+            state.source, state.credential_id, state.user_id, state.endpoint = source, credential_id, user_id, endpoint
         await session.commit()
 
 
@@ -365,15 +409,30 @@ def _default_adapter(record: BrokerCredentialRecord) -> Any:
     return build_adapter(record)
 
 
+def _adapter(record: BrokerCredentialRecord, factory: AdapterFactory, cache: Optional[Dict[Any, Any]], day: date) -> Any:
+    """One adapter per (credential, its last update, IST day) when the caller keeps a cache (the worker does): the
+    retries of one evening reuse it (and the instrument master it has loaded); a re-login or a new day builds a new one."""
+    if cache is None:
+        return factory(record)
+    key = (record.id, record.updated_at, day)
+    if key not in cache:
+        cache.clear()                                    # one slot: yesterday's or a stale token's adapter is dropped
+        cache[key] = factory(record)
+    return cache[key]
+
+
 async def run_pass(session_factory: Any, *, budget_for: Optional[BudgetFor] = None, adapter_factory: Optional[AdapterFactory] = None,
                    symbols: Optional[Sequence[str]] = None, start: Optional[date] = None, end: Optional[date] = None,
                    redo: bool = False, budget_seconds: Optional[float] = None, clock: Optional[Clock] = None,
                    owner_tenant_id: Optional[int] = None, owner_tenant_name: Optional[str] = None,
-                   reserve: Optional[float] = None) -> PassReport:
+                   owner_user_id: Optional[int] = None, reserve: Optional[float] = None, max_requests: Optional[int] = None,
+                   adapter_cache: Optional[Dict[Any, Any]] = None) -> PassReport:
     """One pass: today's capture (once the bars are final) and the backfill, newest days first, until everything in
     range is done or the time budget, the quiet hours, the rate budget or the flag ends it. See the module docstring.
     `budget_for(tenant_id, "<broker>@<account>")` returns the trading worker's own RateBudget for that session; without
-    it the pass makes its own (CLI). `complete` is True only when nothing in range is left to ask for."""
+    it the pass makes its own (CLI). At most `max_requests` (HISTORY_INTRADAY_MAX_REQUESTS) broker requests per pass.
+    `adapter_cache` (a dict the caller keeps) reuses one adapter across the passes of one IST day. `complete` is True
+    only when nothing in range is left to ask for."""
     clock = clock or _wall
     reserve = config.HISTORY_INTRADAY_RESERVE if reserve is None else reserve
     seconds = float(config.HISTORY_INTRADAY_BUDGET_SECONDS if budget_seconds is None else budget_seconds)
@@ -389,15 +448,19 @@ async def run_pass(session_factory: Any, *, budget_for: Optional[BudgetFor] = No
     async with session_factory() as session:
         holidays, unknown_years = await _holidays(session, range(first_day.year - 1, now.astimezone(IST).year + 1))
         if not quiet_hours(now, holidays):
-            raise IntradayConfigError("NSE trading hours: HB2 runs only after the bars are final "
+            raise IntradayConfigError("NSE trading hours or a blackout date: HB2 runs only after the bars are final "
                                       f"({max(config.HISTORY_INTRADAY_HOUR_IST, 15)}:45 IST at the earliest) or before "
                                       f"{min(config.HISTORY_INTRADAY_STOP_HOUR_IST, 9):02d}:00 IST, and on days without a session")
-        found = await owner_session(session, tenant_id, now)
+        found = await owner_session(session, tenant_id, now, owner_user_id)
         if found is None:
             report.status = "no_session"
             report.notes.append("no usable broker session of the owner's own (log in to the broker today); nothing asked")
             return report
-        _owner_user, record = found
+        if await mcx_in_session(session, tenant_id, now):
+            report.status = "mcx_session"
+            report.notes.append("the owner's MCX deployments are in session - nothing asked until MCX closes")
+            return report
+        session_user, record = found
         targets, notes = await instruments(session, tenant_id, symbols)
     report.notes += notes
     report.broker, report.credential_id, report.instruments = record.broker_name, record.id, len(targets)
@@ -410,15 +473,17 @@ async def run_pass(session_factory: Any, *, budget_for: Optional[BudgetFor] = No
         return report
     budget = budget_for(tenant_id, f"{record.broker_name}@{record.account_label or 'primary'}") if budget_for else \
         RateBudget(limits_for(record.broker_name))
-    adapter = (adapter_factory or _default_adapter)(record)
-    source = f"broker:{record.broker_name}"
+    adapter = _adapter(record, adapter_factory or _default_adapter, adapter_cache, now.astimezone(IST).date())
+    source = f"{BROKER_SOURCE_PREFIX}{record.broker_name}"
+    cap = max(1, int(config.HISTORY_INTRADAY_MAX_REQUESTS if max_requests is None else max_requests))
     async with session_factory() as lock_session:
         if not await _try_lock(lock_session):
             report.status = "locked"
             return report
         try:
-            await _run_targets(session_factory, report, tenant_id, record, adapter, budget, targets, first_day, last_day,
-                               holidays, source=source, redo=redo, reserve=reserve, deadline=deadline, clock=clock)
+            await _run_targets(session_factory, report, tenant_id, session_user.id, record, adapter, budget, targets, first_day,
+                               last_day, holidays, source=source, redo=redo, reserve=reserve, deadline=deadline, clock=clock,
+                               cap=cap)
         finally:
             await lock_session.rollback()                        # ends the lock's transaction: the lock is released
     # Complete = the pass worked through everything in range. Failed / refused days are retried by the next day's pass
@@ -428,9 +493,10 @@ async def run_pass(session_factory: Any, *, budget_for: Optional[BudgetFor] = No
     return report
 
 
-async def _run_targets(session_factory: Any, report: PassReport, tenant_id: int, record: BrokerCredentialRecord, adapter: Any,
-                       budget: RateBudget, targets: Sequence[Instrument], first_day: date, last_day: date, holidays: Set[date], *,
-                       source: str, redo: bool, reserve: float, deadline: float, clock: Clock) -> None:
+async def _run_targets(session_factory: Any, report: PassReport, tenant_id: int, user_id: int, record: BrokerCredentialRecord,
+                       adapter: Any, budget: RateBudget, targets: Sequence[Instrument], first_day: date, last_day: date,
+                       holidays: Set[date], *, source: str, redo: bool, reserve: float, deadline: float, clock: Clock,
+                       cap: int) -> None:
     plan: List[Tuple[Instrument, List[date]]] = []
     today_ist = clock().astimezone(IST).date()
     async with session_factory() as session:
@@ -448,21 +514,25 @@ async def _run_targets(session_factory: Any, report: PassReport, tenant_id: int,
         if inst.key in broken:
             report.pending += len(window)
             continue
-        stop = await _should_stop(session_factory, tenant_id, clock, holidays, deadline)
+        stop = await _should_stop(session_factory, report, tenant_id, clock, holidays, deadline, cap)
         if stop:
-            report.status = "partial"
+            report.status, why = stop
             report.pending += sum(len(w) for _, w in plan[i:])
-            report.notes.append(stop)
+            report.notes.append(why)
             return
         endpoint = "intraday" if window[0] == today_ist else "historical"
-        await _claim(session_factory, tenant_id, inst, window, source=source, credential_id=record.id, endpoint=endpoint)
+        await _claim(session_factory, tenant_id, inst, window, source=source, credential_id=record.id, user_id=user_id,
+                     endpoint=endpoint)
         remaining = deadline - monotonic_clock.monotonic()
-        if not await budget.acquire_spare(reserve, deadline=budget.now() + max(0.0, remaining)):
-            await _set(session_factory, tenant_id, inst, window, status="pending", note="time budget used while waiting for "
-                       "spare rate budget - asked again next pass")
-            report.status = "partial"
+        got = await budget.acquire_spare(reserve, deadline=budget.now() + max(0.0, remaining))
+        # The wait may have been long: hours, the flag and MCX are looked at again before the request goes out.
+        stop = (None if not got else await _should_stop(session_factory, report, tenant_id, clock, holidays, None, cap)) or \
+            (None if got else ("partial", "time budget used while the trading worker held the rate budget"))
+        if stop:
+            await _set(session_factory, tenant_id, inst, window, status="pending", note=f"{stop[1]} - asked again next pass")
+            report.status = stop[0]
             report.pending += sum(len(w) for _, w in plan[i:])
-            report.notes.append("time budget used while the trading worker held the rate budget")
+            report.notes.append(stop[1])
             return
         report.requests += 1
         try:
@@ -502,25 +572,51 @@ def _classify(exc: BaseException) -> str:
     return "failed"
 
 
-async def _should_stop(session_factory: Any, tenant_id: int, clock: Clock, holidays: Set[date], deadline: float) -> Optional[str]:
-    if monotonic_clock.monotonic() >= deadline:
-        return "time budget used - the rest is asked for on the next pass"
-    if not quiet_hours(clock(), holidays):
-        return "NSE trading hours reached - stopped so live reads keep the broker API"
+async def _should_stop(session_factory: Any, report: PassReport, tenant_id: int, clock: Clock, holidays: Set[date],
+                       deadline: Optional[float], cap: int) -> Optional[Tuple[str, str]]:
+    """(status, why) when the pass must stop before its next request; None to go on."""
+    if deadline is not None and monotonic_clock.monotonic() >= deadline:
+        return "partial", "time budget used - the rest is asked for on the next pass"
+    if report.requests >= cap:
+        return "request_cap", f"{cap} requests made (HISTORY_INTRADAY_MAX_REQUESTS) - the rest is asked for on the next pass"
+    now = clock()
+    if not quiet_hours(now, holidays):
+        return "partial", "NSE trading hours (or a blackout date) reached - stopped so live reads keep the broker API"
     if not await _flag_on(session_factory, tenant_id):
-        return f"the '{FLAG}' flag was turned off - stopped"
+        return "partial", f"the '{FLAG}' flag was turned off - stopped"
+    async with session_factory() as session:
+        if await mcx_in_session(session, tenant_id, now):
+            return "mcx_session", "the owner's MCX deployments are in session - stopped until MCX closes"
     return None
 
 
 async def _store_window(session_factory: Any, report: PassReport, tenant_id: int, inst: Instrument, window: Sequence[date],
                         raw: List[Any], *, source: str, fetched_at: datetime, clock: Clock, last_day: date) -> None:
-    try:
-        bars = to_bars(inst, raw)
-    except ImportRefused as exc:
-        await _set(session_factory, tenant_id, inst, window, status="refused", error=str(exc)[:2000])
-        report.refused += len(window)
-        report.errors.append(f"{inst.key} {min(window)}..{max(window)}: refused - {exc}"[:500])
-        return
+    from app.brokers.timestamps import parse_broker_timestamp
+    # One refused bar refuses only ITS day: the window's bars are split by their IST date before they are checked (a bar
+    # whose time cannot be read cannot be placed in a day, so it still refuses the whole window).
+    raw_by_day: Dict[date, List[Any]] = {}
+    for b in raw:
+        start = parse_broker_timestamp(getattr(b, "timestamp", None))
+        if start is None:
+            why = f"a bar without a readable time ({getattr(b, 'timestamp', None)!r})"
+            await _set(session_factory, tenant_id, inst, window, status="refused", error=why[:2000])
+            report.refused += len(window)
+            report.errors.append(f"{inst.key} {min(window)}..{max(window)}: refused - {why}"[:500])
+            return
+        raw_by_day.setdefault(start.astimezone(IST).date(), []).append(b)
+    bars: List[LakeBar] = []
+    refused_days: Dict[date, str] = {}
+    for day, day_raw in raw_by_day.items():
+        try:
+            bars += to_bars(inst, day_raw)
+        except ImportRefused as exc:
+            refused_days[day] = str(exc)
+    for day, why in sorted(refused_days.items()):
+        if day in window:
+            await _set(session_factory, tenant_id, inst, [day], status="refused", error=why[:2000])
+            report.refused += 1
+            report.errors.append(f"{inst.key} {day}: refused - {why}"[:500])
     closed = [b for b in bars if _utc(b.ts) <= _utc(fetched_at)]     # no look-ahead: a forming bar is never stored
     forming = len(bars) - len(closed)
     by_day: Dict[date, List[LakeBar]] = {}
@@ -529,6 +625,8 @@ async def _store_window(session_factory: Any, report: PassReport, tenant_id: int
     outside = sum(len(v) for d, v in by_day.items() if d not in window)
     report.dropped_forming += forming
     for day in sorted(window):
+        if day in refused_days:
+            continue
         day_bars = by_day.get(day, [])
         extra = {"dropped_forming": forming if day == max(window) else 0}
         if not day_bars:
@@ -566,9 +664,11 @@ async def _store_window(session_factory: Any, report: PassReport, tenant_id: int
 
 
 # --- reporting and clean-up -------------------------------------------------------------------------------------------
-async def progress(session: AsyncSession, *, tenant_id: Optional[int] = None, limit: int = 200) -> Dict[str, Any]:
+async def progress(session: AsyncSession, *, tenant_id: Optional[int] = None, limit: int = 200,
+                   now: Optional[datetime] = None) -> Dict[str, Any]:
     """Per instrument: days by status, first / last day done, bars stored; then the days that need attention (failed,
-    refused, running) - newest first. Counts and names only, never bars."""
+    refused, running - with when they were claimed, and `stale` for a `running` day older than STALE_RUNNING, whose pass
+    died) - newest first. Counts and names only, never bars."""
     tenant = config.HISTORY_OWNER_TENANT_ID if tenant_id is None else tenant_id
     if tenant is None:
         return {"tenant_id": None, "instruments": {}, "attention": []}
@@ -581,10 +681,17 @@ async def progress(session: AsyncSession, *, tenant_id: Optional[int] = None, li
         if status == "done":
             entry["first_done"], entry["last_done"] = first.isoformat() if first else None, last.isoformat() if last else None
             entry["bars"] = int(bars or 0)
-    attention = await session.scalars(select(D).where(D.tenant_id == tenant, D.status.in_(("failed", "refused", "running")))
-                                      .order_by(D.trade_date.desc()).limit(max(1, limit)))
+    attention = list(await session.scalars(select(D).where(D.tenant_id == tenant, D.status.in_(("failed", "refused", "running")))
+                                           .order_by(D.trade_date.desc()).limit(max(1, limit))))
+    stale_before = (now or _wall()) - STALE_RUNNING
+
+    def stale(s: Any) -> bool:
+        """A `running` day claimed longer ago than any pass lasts: its pass died (it is asked again by the next one)."""
+        return s.status == "running" and (s.started_at is None or _utc(s.started_at) < stale_before)
     return {"tenant_id": tenant, "instruments": per,
+            "stale_running": sum(1 for s in attention if stale(s)),
             "attention": [{"instrument_key": s.instrument_key, "trade_date": s.trade_date.isoformat(), "status": s.status,
+                           "started_at": _utc(s.started_at).isoformat() if s.started_at else None, "stale": stale(s),
                            "error": s.error, "attempts": s.attempts} for s in attention]}
 
 
@@ -596,9 +703,9 @@ async def purge_tenant(session: AsyncSession, tenant_id: int, *, confirm_name: s
         raise IntradayConfigError(f"--confirm-name must equal the name of tenant {tenant_id}")
     bars = await session.execute(delete(MdTenantCandleRecord).where(
         MdTenantCandleRecord.tenant_id == tenant_id, MdTenantCandleRecord.timeframe == TIMEFRAME,
-        MdTenantCandleRecord.source.like("broker:%")))
+        MdTenantCandleRecord.source.like(f"{BROKER_SOURCE_PREFIX}%")))
     events = await session.execute(delete(DataQualityEventRecord).where(
-        DataQualityEventRecord.tenant_id == tenant_id, DataQualityEventRecord.source.like("broker:%")))
+        DataQualityEventRecord.tenant_id == tenant_id, DataQualityEventRecord.source.like(f"{BROKER_SOURCE_PREFIX}%")))
     states = await session.execute(delete(D).where(D.tenant_id == tenant_id))
     await session.commit()
     return {"bars": int(getattr(bars, "rowcount", 0) or 0), "quality_events": int(getattr(events, "rowcount", 0) or 0),

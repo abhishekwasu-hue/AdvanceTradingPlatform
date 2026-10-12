@@ -29,6 +29,7 @@ def upgrade() -> None:
         sa.Column('status', sa.String(length=12), nullable=False, server_default='pending'),
         sa.Column('source', sa.String(length=30), nullable=True),
         sa.Column('credential_id', sa.Integer(), sa.ForeignKey('broker_credentials.id', ondelete='SET NULL'), nullable=True),
+        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
         sa.Column('endpoint', sa.String(length=16), nullable=True),
         sa.Column('bars', sa.Integer(), nullable=True),
         sa.Column('inserted', sa.Integer(), nullable=False, server_default='0'),
@@ -49,9 +50,11 @@ def upgrade() -> None:
     op.create_index('ix_history_intraday_days_tenant_id', 'history_intraday_days', ['tenant_id'])
     op.create_index('ix_history_intraday_days_trade_date', 'history_intraday_days', ['trade_date'])
     op.create_index('ix_history_intraday_days_status', 'history_intraday_days', ['status'])
+    op.create_index('ix_history_intraday_days_user_id', 'history_intraday_days', ['user_id'])
 
 
 def downgrade() -> None:
+    op.drop_index('ix_history_intraday_days_user_id', table_name='history_intraday_days')
     op.drop_index('ix_history_intraday_days_status', table_name='history_intraday_days')
     op.drop_index('ix_history_intraday_days_trade_date', table_name='history_intraday_days')
     op.drop_index('ix_history_intraday_days_tenant_id', table_name='history_intraday_days')

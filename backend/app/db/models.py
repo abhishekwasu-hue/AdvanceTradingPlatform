@@ -2625,6 +2625,8 @@ class HistoryIntradayDayRecord(Base):
     status: Mapped[str] = mapped_column(String(12), nullable=False, default="pending", index=True)
     source: Mapped[str | None] = mapped_column(String(30), nullable=True)            # broker:<name>
     credential_id: Mapped[int | None] = mapped_column(ForeignKey("broker_credentials.id", ondelete="SET NULL"), nullable=True)
+    # The account holder whose own session the bars came from: the only member who may read `broker:*` rows (BT1b).
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     endpoint: Mapped[str | None] = mapped_column(String(16), nullable=True)          # intraday (today) | historical
     bars: Mapped[int | None] = mapped_column(Integer, nullable=True)
     inserted: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

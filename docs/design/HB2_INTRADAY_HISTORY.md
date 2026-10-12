@@ -17,8 +17,12 @@ a resumable backfill, both read through the owner's own broker session and writt
   changed one becomes the next version), source `broker:<name>` (e.g. `broker:upstox`).
 - `ingested_at` = the time the bar was written. Only bars whose END is at or before the fetch time are stored; a forming
   bar is dropped and counted (`dropped_forming`). So an as-of replay never sees a bar before it was really known.
-- Read path unchanged: `tenant_store.candles` and `GET /api/market-data/history?store=tenant` (the caller's own tenant
-  only), 3/5/15/30/60-minute bars resampled on read. Nothing is written to the shared lake (`md_candles`).
+- Read path: `tenant_store.candles` and `GET /api/market-data/history?store=tenant` (the caller's own tenant only),
+  3/5/15/30/60-minute bars resampled on read. Nothing is written to the shared lake (`md_candles`).
+- Who may read them (BT1b, review M3): the bars came through ONE member's own broker session, so `store=tenant` serves
+  `broker:*` rows only to that member (the `user_id` recorded on the tenant's `history_intraday_days`). Every other
+  member - a teammate, a VIEWER, another OWNER - gets the private store without them (`tenant_store`'s
+  `exclude_prefixes`), and the quality-event count leaves them out too. Open question HB2-11.
 - Checks per day (HB0's): labels must be whole minutes inside 09:15-15:30 IST (a START-labelled batch is refused, never
   shifted), two different bars with one END refuse the day, a price that is not a positive number or a volume that is
   not a count refuses the batch. Quality events (B3): duplicates, bar problems and per-session gaps, recorded with the
@@ -26,8 +30,10 @@ a resumable backfill, both read through the owner's own broker session and writt
 - Retention: as for the rest of the lake, rows are kept (neither lake table is in `run_retention`).
 
 ## Whose session (BYOK / BT1b)
-Only the owner's OWN session: a `broker_credentials` row in the owner's tenant that an active OWNER / SUPER_ADMIN of
-that tenant linked themselves (`entitlement.own_records`), at a broker whose data terms allow Tier A
+Only ONE pinned user's own session (review M2): `HISTORY_OWNER_USER_ID` when set (refused unless it is an active user
+of the owner tenant), else the lowest-id active OWNER of that tenant. If that user has no usable session the pass does
+nothing - no co-owner (a teammate promoted to OWNER), teammate or other tenant is tried. The credential must be one that
+user linked themselves in the owner's tenant (`entitlement.own_records`), at a broker whose data terms allow Tier A
 (`broker_data_terms.json`) and whose adapter serves both 1-minute endpoints (Upstox for now), with a usable token now
 (`pick_session`). A teammate's credential, another tenant's credential and execution-only brokers are never used; with
 no such session the pass does nothing (`no_session`) and is tried again later that evening. Only the adapter's candle
@@ -39,6 +45,14 @@ endpoints are called (`get_historical_data` for past days, `get_intraday_candles
   `RateBudget.acquire_spare(reserve)`: only while both buckets still hold `HISTORY_INTRADAY_RESERVE` (50%) of their
   capacity on top of it, and without holding the budget's lock while it waits, so an exit's `acquire()` is never
   queued behind a history read. If the time budget would run out while waiting, the pass stops.
+- Request volume (review M1): at most `HISTORY_INTRADAY_MAX_REQUESTS` (600) broker requests per pass; a capped pass
+  ends `request_cap` and the worker starts the next one 30 minutes later at the earliest. Upstox caps a user at 2,000
+  standard API requests per 30 minutes, which the per-second / per-minute buckets do not model, so history takes under
+  a third of that window and leaves the rest to the worker and the owner's own apps.
+- MCX (review M1): while the owner tenant has a non-stopped MCX deployment and the MCX session is open (to 23:30 IST),
+  no pass starts (`mcx_session`) and a running pass stops before its next request.
+- After waiting for a spare token, the hours, blackout dates, flag and MCX are checked again before the request goes
+  out (review L1); if one says stop, the claimed days go back to `pending`.
 - A 429 ends the pass (claimed days go back to `pending`); an auth error (401 / 403 / expired token) also ends it.
   Other errors fail that window and skip the instrument's other windows until the next pass. History reads do not
   report to the trading circuit breaker, so a history error can never block a LIVE entry.
@@ -53,7 +67,11 @@ final) until `HISTORY_INTRADAY_STOP_HOUR_IST` (08:00; never after 09:00) the nex
 request, so a long pass stops itself before the open. The worker starts a pass once the day's bars are final (16:00 IST,
 NSE closed), in its own task with its own DB sessions and a time budget (`HISTORY_INTRADAY_BUDGET_SECONDS`, 30 min); an
 unfinished pass (time budget, no session yet, rate limited) is started again at most every
-`HISTORY_INTRADAY_RETRY_MINUTES` (15) until one completes; then the day is done. The MCX evening session may still be
+`HISTORY_INTRADAY_RETRY_MINUTES` (15) until one completes; then the day is done. The worker keeps one adapter per
+(credential, its last update, IST day) and reuses it across that evening's passes (review L3), so the instrument master
+is not reloaded every 15 minutes; a re-login or a new day builds a new one. `HISTORY_INTRADAY_BLACKOUT_DATES` lists IST
+dates on which HB2 never calls the broker: special sessions the holiday calendar does not know (Muhurat evening, a
+budget-day Saturday), which would otherwise look like closed days (review L2). The MCX evening session may still be
 trading on the same broker account: that is what the 50% reserve is for. Stopping the worker cancels the task.
 
 ## Capture, backfill, resume
@@ -71,11 +89,14 @@ trading on the same broker account: that is what the 50% reserve is for. Stoppin
   identical bars are skipped, changed ones become versions). `no_data` is asked again while recent (3 days);
   `refused` / `failed` are asked again by the next pass. One pass at a time per database (advisory lock `0x48420003`).
 - The flag is checked before every request: turning `history_intraday` off stops a pass.
+- A window's bars are split by IST date before they are checked, so one bad bar refuses only its own day; the window's
+  other days are stored (review L5). A bar whose time cannot be read still refuses the whole window.
 
 ## Admin and CLI
 - `GET /api/admin/history-intraday/progress` (SUPER_ADMIN with an MFA session; classified `admin` in
   `tests/tenancy_route_table.py`): per instrument the days by status, first / last day done and bars stored, and the
-  days that need attention. Counts and names only, never bars.
+  days that need attention with `started_at`; a `running` day claimed more than 2 hours ago is flagged `stale` (its pass
+  died; the next pass asks for it again) and counted in `stale_running` (review L4). Counts and names only, never bars.
 - `python -m app.market_lake.intraday_history run [--from D] [--to D] [--symbols ...] [--redo] [--budget-seconds N]`,
   `progress`, `purge --tenant ID --confirm-name NAME` (removes HB2's `broker:*` rows, their quality events and day rows
   of a wrongly configured tenant). Exit codes: 0 complete, 1 something left, 2 refused (flag off, owner not confirmed,
@@ -102,6 +123,11 @@ deadline and never holds the lock for exits; the pass draws from the worker's bu
 (no session from a teammate, another tenant or an execution-only broker; bars only in the owner's private store; other
 tenants and the shared lake see nothing, also through the history API); never during NSE hours and a pass stops before
 the morning; the worker hook shares the worker's RateBudget and is cancelled on stop; admin progress is SUPER_ADMIN only.
+Review follow-ups: one pinned session user (a co-owner's credential is never used; `HISTORY_OWNER_USER_ID` checked
+against the tenant); `broker:*` rows readable only by the session holder (a VIEWER and a co-owner of the same
+organisation get none through the history API); the request cap; MCX in session stops the pass; blackout dates; hours
+and flag re-checked after the token wait; one adapter per IST day; a bad day refuses only itself; stale `running` days
+in progress.
 
 ## Open questions
-HB2-1 .. HB2-10 in `docs/OPEN_QUESTIONS.md`.
+HB2-1 .. HB2-11 in `docs/OPEN_QUESTIONS.md`.

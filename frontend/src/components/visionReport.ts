@@ -1,6 +1,6 @@
 // BYOK-V2: what the proposal card shows of the caller's own Vision report. Pure, so it is unit-tested. The report only
 // comments - nothing here (or on the server) approves, rejects or changes a proposal.
-import type { VisionReportsResponse } from "../types";
+import type { VisionReport, VisionReportsResponse } from "../types";
 
 export const MAX_REPORT_LINES = 12;
 export const VISION_MARKS = ["✅", "⚠️", "❌"] as const;
@@ -28,4 +28,31 @@ export function splitJudgement(line: string): { heading: string; mark: string; r
   if (!mark || colon < 0) return null;
   const rest = line.slice(line.indexOf(mark) + mark.length).trim();
   return { heading: line.slice(0, colon).trim(), mark, rest };
+}
+
+// ---- BYOK-V3: scan alerts and the daily review -------------------------------------------------------------------------
+
+/** One response holding a single report, for `VisionReportView` (the card shows that report or its line). */
+export function single(resp: VisionReportsResponse, report: VisionReport): VisionReportsResponse {
+  return { ...resp, reports: [report] };
+}
+
+/** The caller's scan-alert reports by notification id (the newest per notification). */
+export function byNotification(resp: VisionReportsResponse | null): Map<number, VisionReport> {
+  const out = new Map<number, VisionReport>();
+  for (const r of resp?.reports ?? []) {
+    if (r.kind === "scan_alert" && r.notification_id != null && !out.has(r.notification_id)) out.set(r.notification_id, r);
+  }
+  return out;
+}
+
+/** Daily-review reports grouped by review date, newest date first, symbols A-Z within a day. */
+export function dailyGroups(resp: VisionReportsResponse | null): { date: string; reports: VisionReport[] }[] {
+  const groups = new Map<string, VisionReport[]>();
+  for (const r of resp?.reports ?? []) {
+    if (r.kind !== "daily_review" || !r.subject_date) continue;
+    groups.set(r.subject_date, [...(groups.get(r.subject_date) ?? []), r]);
+  }
+  return [...groups.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1))
+    .map(([date, reports]) => ({ date, reports: [...reports].sort((a, b) => String(a.symbol).localeCompare(String(b.symbol))) }));
 }

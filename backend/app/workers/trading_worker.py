@@ -218,6 +218,8 @@ class TradingWorker:
         self._regime_wanted: set = set()
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
+        # BYOK-V3: when the daily-review queue was last checked (every 15 minutes; the queue itself is once per user per day).
+        self._last_vision_daily_check: Optional[datetime] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -446,6 +448,11 @@ class TradingWorker:
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
                 try:
+                    # BYOK-V3: after the close, queue each opted-in user's daily review (rows only; idempotent per user per day).
+                    if self._last_vision_daily_check is None or now - self._last_vision_daily_check >= timedelta(minutes=15):
+                        self._last_vision_daily_check = now
+                        from app.ai import vision_audit
+                        await vision_audit.enqueue_daily_reviews(session, now)
                     if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1)) is not None:
                         self._spawn_vision_drain()
                 except Exception as exc:  # noqa: BLE001 - Vision is advisory; never breaks trading

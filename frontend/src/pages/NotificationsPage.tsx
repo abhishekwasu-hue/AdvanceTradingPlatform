@@ -2,7 +2,10 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "../components/ui";
-import type { NotificationEntry, NotificationSeverity } from "../types";
+import type { NotificationEntry, NotificationSeverity, VisionReportsResponse } from "../types";
+import { VisionReportView } from "../components/VisionReportPanel";
+import VisionDailyReview from "../components/VisionDailyReview";
+import { byNotification, single } from "../components/visionReport";
 import { PageHeader, Tabs } from "../components/primitives";
 import { AlertRulesPanel } from "../components/AlertRulesPanel";
 import { useDeepLinkTarget } from "../utils/useDeepLinkTarget";
@@ -26,10 +29,16 @@ export default function NotificationsPage() {
   const target = useDeepLinkTarget("n", "notification", notifications.length > 0);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState("feed");
+  // BYOK-V3: the caller's own Vision reports on their scan alerts and their daily review. Null while the flags are off
+  // (the API answers 404) - then nothing about Vision is shown.
+  const [scanVision, setScanVision] = useState<VisionReportsResponse | null>(null);
+  const [dailyVision, setDailyVision] = useState<VisionReportsResponse | null>(null);
 
   function refresh() {
     if (!user) return;
     api.listNotifications().then(setNotifications).catch((e) => setError(String(e)));
+    api.byokReportsBy({ kind: "scan_alert" }).then(setScanVision).catch(() => setScanVision(null));
+    api.byokReportsBy({ kind: "daily_review" }).then(setDailyVision).catch(() => setDailyVision(null));
   }
 
   useEffect(refresh, [user]);
@@ -67,6 +76,7 @@ export default function NotificationsPage() {
   }
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+  const scanReports = byNotification(scanVision);
   const feed = (
       <Card className="mt-3">
         {notifications.length === 0 ? (
@@ -90,6 +100,9 @@ export default function NotificationsPage() {
                 </div>
                 <div className="mt-1 text-sm font-medium text-fg">{n.title}</div>
                 {n.message && <div className="mt-0.5 text-xs text-fg-muted">{n.message}</div>}
+                {scanVision && scanReports.has(n.id) && (
+                  <div className="mt-1.5"><VisionReportView resp={single(scanVision, scanReports.get(n.id)!)} onChanged={refresh} /></div>
+                )}
                 {!n.read && (
                   <button
                     onClick={() => markRead(n.id)}
@@ -124,6 +137,8 @@ export default function NotificationsPage() {
       <Tabs value={tab} onChange={setTab} items={[
         { value: "feed", label: `Feed (${notifications.length})`, content: feed },
         { value: "rules", label: "Rules & delivery", content: <div className="pt-3"><AlertRulesPanel /></div> },
+        ...(dailyVision && dailyVision.in_app ? [{ value: "vision-daily", label: "Vision daily review",
+                                                   content: <Card className="mt-3"><VisionDailyReview resp={dailyVision} onChanged={refresh} /></Card> }] : []),
       ]} />
     </div>
   );

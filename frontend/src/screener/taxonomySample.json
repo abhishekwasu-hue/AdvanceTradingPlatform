@@ -1,5 +1,5 @@
 {
- "version": "tx1/1",
+ "version": "tx3/1",
  "methods": [
   {
    "id": "price_action",
@@ -195,7 +195,10 @@
     "universe_default": "your_list"
    },
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": [
+    "trend"
+   ]
   },
   {
    "id": "starter.oversold",
@@ -217,7 +220,10 @@
     "universe_default": "your_list"
    },
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": [
+    "range"
+   ]
   },
   {
    "id": "starter.daily_trend",
@@ -239,7 +245,10 @@
     "universe_default": "your_list"
    },
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": [
+    "trend"
+   ]
   }
  ],
  "matrix": {
@@ -305,5 +314,27 @@
   }
  },
  "total": 3,
- "note": "Screens are filed by how they reason and what they look for. Filing is not a ranking and not advice."
+ "note": "Screens are filed by how they reason and what they look for. Filing is not a ranking and not advice.",
+ "regimes": [
+  {
+   "id": "trend",
+   "axis": "trend",
+   "label": "Trending market"
+  },
+  {
+   "id": "range",
+   "axis": "trend",
+   "label": "Range-bound market"
+  },
+  {
+   "id": "high_vol",
+   "axis": "volatility",
+   "label": "High volatility"
+  },
+  {
+   "id": "low_vol",
+   "axis": "volatility",
+   "label": "Low volatility"
+  }
+ ]
 }

@@ -195,13 +195,13 @@ def test_the_api_is_off_by_default_and_needs_both_flags():
 def test_the_api_shape(gallery_on):
     headers, _ = _owner("tx1-shape@example.com")
     body = client.get("/api/screener/taxonomy", headers=headers).json()
-    assert set(body) == {"version", "methods", "setups", "tags", "screens", "matrix", "total", "note"}
-    assert body["version"] == "tx1/1" and body["total"] == len(body["screens"]) == 3
+    assert set(body) == {"version", "methods", "setups", "tags", "screens", "matrix", "total", "note", "regimes"}
+    assert body["version"] == "tx3/1" and body["total"] == len(body["screens"]) == 3
     assert [m["id"] for m in body["methods"]] == ["price_action", "indicator", "volume_flow", "fundamental", "legends", "my_screens"]
     assert set(body["methods"][0]) == {"id", "code", "label", "definition", "user_built"}
     assert len(body["setups"]) == 8 and all(len(row) == 8 for row in body["matrix"].values())
     screen = body["screens"][0]
-    assert set(screen) == {"id", "source", "name", "definition", "method", "setup", "tags", "evidence_ready", "fitness_available"}
+    assert set(screen) == {"id", "source", "name", "definition", "method", "setup", "tags", "evidence_ready", "fitness_available", "regimes"}
     assert set(screen["tags"]) == set(tx.TAG_KEYS)
     assert tx.advice_words(json.dumps({k: body[k] for k in ("methods", "setups", "screens", "note")})) == []
 

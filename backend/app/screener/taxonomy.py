@@ -71,11 +71,12 @@ class Screen:
     tags: Dict[str, Any]
     evidence_ready: bool = False
     fitness_available: bool = False
+    regimes: Tuple[str, ...] = ()           # U9 TX3: the market regimes it is designed for (empty = any)
 
     def as_dict(self) -> Dict[str, Any]:
         return {"id": self.id, "source": self.source, "name": self.name, "definition": self.definition, "method": self.method,
                 "setup": self.setup, "tags": dict(self.tags), "evidence_ready": self.evidence_ready,
-                "fitness_available": self.fitness_available}
+                "fitness_available": self.fitness_available, "regimes": list(self.regimes)}
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,7 @@ class Taxonomy:
     setups: Tuple[Axis, ...]
     tags: Dict[str, Tuple[Dict[str, str], ...]]
     screens: Tuple[Screen, ...]
+    regimes: Tuple[Dict[str, str], ...] = ()     # U9 TX3: the regime vocabulary ({id, axis, label})
 
     def screen_ids(self, source: Optional[str] = None) -> List[str]:
         return [s.id for s in self.screens if source is None or s.source == source]
@@ -168,6 +170,40 @@ def _vocab(raw: Any, problems: List[str]) -> Dict[str, Tuple[Dict[str, str], ...
     return out
 
 
+REGIME_AXES: Tuple[str, ...] = ("trend", "volatility")
+
+
+def _regime_vocab(raw: Any, problems: List[str]) -> Tuple[Dict[str, str], ...]:
+    """U9 TX3: the regimes a screen may declare, each on one axis (trend: trending / range-bound; volatility)."""
+    if raw is None:
+        return ()
+    out: List[Dict[str, str]] = []
+    for v in raw if isinstance(raw, list) else []:
+        entry = {"id": str(v.get("id", "")), "axis": str(v.get("axis", "")), "label": str(v.get("label", ""))} if isinstance(v, dict) else {}
+        if not entry or not _ID.match(entry["id"]) or entry["axis"] not in REGIME_AXES:
+            problems.append(f"regimes: each needs a lower_snake_case id and an axis ({', '.join(REGIME_AXES)})")
+            continue
+        out.append(entry)
+    if len({e["id"] for e in out}) != len(out):
+        problems.append("regimes: ids must be unique")
+    return tuple(out)
+
+
+def _screen_regimes(where: str, value: Any, vocab: Tuple[Dict[str, str], ...], problems: List[str]) -> Tuple[str, ...]:
+    if value is None:
+        return ()
+    values = list(value) if isinstance(value, list) else []
+    axis_of = {e["id"]: e["axis"] for e in vocab}
+    bad = [v for v in values if v not in axis_of]
+    if not isinstance(value, list) or bad:
+        problems.append(f"{where}: regimes must be a list from the vocabulary ({', '.join(axis_of)})")
+        return ()
+    axes = [axis_of[v] for v in values]
+    if len(axes) != len(set(axes)):
+        problems.append(f"{where}: at most one regime per axis (listing both sides of an axis means any - leave it out)")
+    return tuple(values)
+
+
 def _text_problems(where: str, text: str, limit: int) -> List[str]:
     out: List[str] = []
     if not text.strip():
@@ -181,7 +217,7 @@ def _text_problems(where: str, text: str, limit: int) -> List[str]:
 
 
 def _screens(raw: Any, methods: Dict[str, Axis], setups: Set[str], vocab: Dict[str, Tuple[Dict[str, str], ...]],
-             problems: List[str]) -> Tuple[Screen, ...]:
+             problems: List[str], regime_vocab: Tuple[Dict[str, str], ...] = ()) -> Tuple[Screen, ...]:
     out: List[Screen] = []
     seen: Set[str] = set()
     for i, row in enumerate(raw if isinstance(raw, list) else []):
@@ -229,11 +265,13 @@ def _screens(raw: Any, methods: Dict[str, Axis], setups: Set[str], vocab: Dict[s
         for flag in ("evidence_ready", "fitness_available"):
             if not isinstance(row.get(flag, False), bool):
                 problems.append(f"{where}: {flag} must be true or false")
-        unknown = set(row) - {"id", "source", "name", "definition", "method", "setup", "evidence_ready", "fitness_available", *TAG_KEYS}
+        unknown = set(row) - {"id", "source", "name", "definition", "method", "setup", "evidence_ready", "fitness_available", "regimes",
+                              *TAG_KEYS}
         if unknown:
             problems.append(f"{where}: unknown fields {', '.join(sorted(unknown))}")
+        regimes = _screen_regimes(where, row.get("regimes"), regime_vocab, problems)
         out.append(Screen(ident, source, name, definition, method, setup, tags, bool(row.get("evidence_ready", False)),
-                          bool(row.get("fitness_available", False))))
+                          bool(row.get("fitness_available", False)), regimes))
     return tuple(out)
 
 
@@ -249,11 +287,14 @@ def parse(data: Dict[str, Any]) -> Tuple[Taxonomy, List[str]]:
     for key, values in vocab.items():
         for v in values:
             problems += [p for p in _text_problems(f"tag {key}.{v['id']} label", v["label"], MAX_NAME_CHARS)]
-    screens = _screens(data.get("screens"), {m.id: m for m in methods}, {s.id for s in setups}, vocab, problems)
+    regime_vocab = _regime_vocab(data.get("regimes"), problems)
+    for r in regime_vocab:
+        problems += _text_problems(f"regime {r['id']} label", r["label"], MAX_NAME_CHARS)
+    screens = _screens(data.get("screens"), {m.id: m for m in methods}, {s.id for s in setups}, vocab, problems, regime_vocab)
     version = str(data.get("version", ""))
     if not version:
         problems.append("version: missing")
-    return Taxonomy(version, methods, setups, vocab, screens), problems
+    return Taxonomy(version, methods, setups, vocab, screens, regime_vocab), problems
 
 
 def lint(path: Path = DATA_FILE) -> List[str]:
@@ -317,7 +358,8 @@ def payload(taxonomy: Taxonomy, *, hidden_sources: Iterable[str] = (), method: O
     return {"version": taxonomy.version, "methods": [m.as_dict() for m in taxonomy.methods],
             "setups": [s.as_dict() for s in taxonomy.setups],
             "tags": {k: [dict(v) for v in values] for k, values in taxonomy.tags.items()},
-            "screens": [s.as_dict() for s in picked], "matrix": matrix(taxonomy, shown), "total": len(shown), "note": NOTE}
+            "screens": [s.as_dict() for s in picked], "matrix": matrix(taxonomy, shown), "total": len(shown), "note": NOTE,
+            "regimes": [dict(r) for r in taxonomy.regimes]}
 
 
 __all__ = ["NOTE", "DATA_FILE", "FRONTEND_SOURCES", "TAG_KEYS", "Axis", "Screen", "Source", "Taxonomy", "TaxonomyError", "advice_words",

@@ -13,12 +13,15 @@
  *
  * U9 TX2: with the library tools (flag `screener_tx2`), a long screen's card also shows its generated mirror (the same
  * rules on reflected prices) or why it has none.
+ *
+ * U9 TX3: with today's regime (flag `screener_tx3`), a screen designed for another regime is greyed - it still opens -
+ * and says why; a banner names today's reading. Nothing is greyed on an unclear or missing reading.
  */
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button, cx } from "../components/primitives";
 import { LegendCard } from "./LegendCard";
-import type { MirrorEntry } from "./library";
+import { greyed, regimeText, type MirrorEntry, type RegimeResponse, type ScreenFit } from "./library";
 import { cardFor, withLegendCards, type LegendCardData, type LegendsLibrary } from "./legends";
 import {
   cellCount, chipCount, emptyText, filterScreens, NO_FILTER, placeText, railCount, tagLabel,
@@ -37,9 +40,11 @@ export interface ScreenGalleryProps {
   initialDetail?: string | null;
   /** U9 TX2: the mirror of each long screen, by screen id (absent while `screener_tx2` is off). */
   mirrors?: Record<string, MirrorEntry>;
+  /** U9 TX3: today's regime and each screen's fit (absent while `screener_tx3` is off). */
+  regime?: RegimeResponse | null;
 }
 
-export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {} }: ScreenGalleryProps) {
+export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {}, regime = null }: ScreenGalleryProps) {
   // L1: a Legends screen is shown only with its card (and so its disclaimer); without the library they leave the counts too.
   const taxonomy = useMemo(() => withLegendCards(served, legends), [served, legends]);
   const [filter, setFilter] = useState<GalleryFilter>({ ...NO_FILTER, ...initial });
@@ -88,6 +93,13 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
           </p>
         </div>
 
+        {regime && (
+          <p role="note" className="mt-3 rounded-control border border-border bg-surface-2 px-3 py-2 text-t12 text-fg" data-testid="regime-banner">
+            Today ({regime.index}{regime.session ? `, session ${regime.session}` : ""}): {regimeText(regime, taxonomy)}.{" "}
+            <span className="text-fg-muted">{regime.note}</span>
+          </p>
+        )}
+
         {legends && showsLegends && !detailCard && (
           <p role="note" className="mt-3 rounded-control border border-border bg-surface-2 px-3 py-2 text-t12 text-fg" data-testid="legends-header">
             {legends.header}
@@ -108,7 +120,8 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
             {shown.map((s) => (
               <li key={s.id}>
                 <ScreenCard taxonomy={taxonomy} screen={s} canOpen={canOpen(s)} onOpen={() => onOpen(s)}
-                            legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} mirror={mirrors[s.id] ?? null} />
+                            legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} mirror={mirrors[s.id] ?? null}
+                            grey={greyed(regime, s.id)} />
               </li>
             ))}
           </ul>
@@ -157,19 +170,21 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror }: {
+function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror, grey = null }: {
   taxonomy: Taxonomy; screen: TaxScreen; canOpen: boolean; onOpen: () => void; legend: LegendCardData | null; onAbout: () => void;
-  mirror: MirrorEntry | null;
+  mirror: MirrorEntry | null; grey?: ScreenFit | null;
 }) {
   const method = taxonomy.methods.find((m) => m.id === screen.method);
   const setup = taxonomy.setups.find((s) => s.id === screen.setup);
   const t = screen.tags;
   return (
-    <article className="flex h-full flex-col rounded-panel border border-border bg-surface-1 p-3" aria-labelledby={`screen-${screen.id}`} data-screen-id={screen.id}>
+    <article className={cx("flex h-full flex-col rounded-panel border border-border bg-surface-1 p-3", grey && "border-dashed bg-surface-inset")}
+             aria-labelledby={`screen-${screen.id}`} data-screen-id={screen.id} data-greyed={grey ? "true" : undefined}>
       <p className="text-t12 text-fg-muted">{method?.label ?? screen.method} → {setup?.label ?? screen.setup}</p>
       <h4 id={`screen-${screen.id}`} className="mt-1 text-t15 font-semibold text-fg">{screen.name}</h4>
       <p className="mt-1 flex-1 text-t13 text-fg-muted">{screen.definition}</p>
       {legend && <p className="mt-1 text-t12 text-fg-muted" data-testid="legend-card-disclaimer">{legend.disclaimer}</p>}
+      {grey && <p className="mt-1 text-t12 text-warn" data-testid="screen-regime">{grey.reason}</p>}
       {mirror && (
         <p className="mt-1 text-t12 text-fg-muted" data-testid="screen-mirror">
           {mirror.text ? <>Mirror (down side): <code className="break-words font-mono text-fg">{mirror.text}</code></> : mirror.reason}

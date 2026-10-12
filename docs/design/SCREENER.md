@@ -948,6 +948,40 @@ Flag `screener_tx2` (default OFF) on top of `screener_v2` and `screener_gallery`
 - **Not in TX2:** evidence charts per confluence row (U8 packs are stored for `/run` only), a compare view, filing user
   screens on both axes (TX1-4), regime greying and the digest (TX3), learn mode and forking (TX4).
 
+## U9 TX3 (built): regime-aware greying and the setup-of-the-day digest (flag `screener_tx3`, off)
+
+Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` §3 and §4 "TX3". Code: `app/screener/regime_today.py`,
+`app/screener/digest.py`, routes in `app/screener/library_routes.py`; frontend `ScreenGallery` (greying, banner) and the
+"Daily digest" tab of `LibraryTools`. Flag `screener_tx3` (default OFF) with `screener_v2` and `screener_gallery`.
+
+- **Screens declare regimes.** `taxonomy.json` (version `tx3/1`) has a `regimes` vocabulary on two axes - trend
+  (`trend` / `range`) and volatility (`high_vol` / `low_vol`) - and a screen's optional `regimes` (at most one per
+  axis; absent = any). The lint refuses unknown values and both sides of one axis. Provisional filing: OPEN_QUESTIONS
+  TX3-1.
+- **Today's regime** (`GET /api/screener/library/regime`, member; no organisation data). From the shared history's NSE
+  bhavcopy daily bars, closed sessions only (`candles_as_of(..., as_of=now)`):
+  - trend axis: NIFTY 50's Dow trend on confirmed degree-1 swings (the breakout engine's pivots, labelled with
+    symmetric ties - an equal high or low is neither; 250 bars of warm-up), confirmed by breadth (NSE cash
+    advancers vs decliners on the last session): UP / DOWN with breadth agreeing = `trend`, RANGE = `range`, otherwise
+    unclear;
+  - volatility axis: India VIX percentile in its last 250 sessions: >= 70 = `high_vol`, <= 30 = `low_vol`, else normal.
+  A screen is greyed only when an axis it declares has a clear reading that differs; the card says why and still
+  opens. Missing or unclear data greys nothing. Z10-a cases `library.regime_trend` / `library.regime_volatility`
+  (last-bar answers on daily bars).
+- **Setup-of-the-day digest.** Per user (`screen_digests`, migration `b7d9f1a3c5e7`, ROLLBACK_SAFE): pinned screens (up
+  to 5: library ids, their `.short` mirrors with `screener_tx2` on, or the organisation's saved screens), symbols (up to
+  50), a time (IST). The worker spawns a background pass (`digest.run_due`, own sessions, at most 20 per pass) that, on
+  trading days at or after the time, runs the pins on closed bars through the user's own broker session (BT1b; same path
+  as `/run`), groups the first 5 matches per screen by method folder, stores it on the user's row (in-app) and sends one
+  message per folder only to the user's own linked private Telegram chat, with the evidence image of each screen's first
+  match when `evidence_charts` is on. Once per trading day; a removed member, a user without a trading role or the
+  flag off gets no digest (the status says why). `GET /digest` (member, own), `PUT /digest` (trader),
+  `POST /digest/preview` (trader, rate limited; builds now, sends nothing).
+- **Wording.** "First matches in your list order", never "top picks"; the digest and regime notes say it is not
+  advice; `digest.lint()` and the fits' reasons pass `taxonomy.advice_words`.
+- **Not in TX3:** greying by the symbol's own regime (today is the index's), a digest channel other than the user's own
+  chat (email), and TX4 (learn mode, provenance and forking).
+
 ## U6 BK1 (built): breakout screens, quality overlay, style / timeframe selector (flag `screener_breakouts`, off)
 Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`. Code: `app/screener/breakouts/`. Research notes and every
 parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 are in `docs/OPEN_QUESTIONS.md`.

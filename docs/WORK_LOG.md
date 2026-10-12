@@ -1854,3 +1854,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   gallery cards; `starters.json` carries each starter's text (checked against the builds by a vitest). Stories.
 - Tests: backend `tests/test_tx2_library.py`; vitest `src/screener/library.test.tsx`. Open questions TX2-1..TX2-5.
 
+## U9 TX3: regime-aware greying and the setup-of-the-day digest (flag `screener_tx3`, off)
+
+- Branch `claude/n3-tx3` (from `claude/n3-tx2`). Spec: ATP_SCREENER_TAXONOMY_ADDENDUM §3 / §4. Design: SCREENER.md
+  "U9 TX3".
+- Backend: taxonomy `regimes` (vocabulary + per-screen filing, lint, payload; version `tx3/1`); `regime_today.py`
+  (NIFTY 50 Dow trend with symmetric ties + breadth, India VIX percentile, from closed sessions of the shared history;
+  per-screen fit); `digest.py` (settings, build through the user's own session, one message per method folder, own
+  Telegram chat only, worker pass in a background task); 4 routes classified; migration `b7d9f1a3c5e7` (new table
+  `screen_digests`, ROLLBACK_SAFE, single head on `f3b5d7a9c1e2`). No new ScreenQL function; Z10-a last-bar cases for
+  the regime reading.
+- Frontend: greyed gallery cards with the reason and a regime banner; the "Daily digest" tab (pins, time, preview).
+  Samples regenerated (taxonomy payload now carries `regimes`).
+- Tests: backend `tests/test_tx3_library.py` (+ TX1 shape updates); vitest `src/screener/library.tx3.test.tsx`.
+  Open questions TX3-1..TX3-5.
+

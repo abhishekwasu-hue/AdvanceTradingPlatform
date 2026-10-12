@@ -95,3 +95,45 @@ export function agreementText(row: ConfluenceRow): string {
   const s = row.screen_count === 1 ? "1 screen" : `${row.screen_count} screens`;
   return `${m} · ${s}`;
 }
+
+// --- U9 TX3: regime-aware greying and the setup-of-the-day digest (flag `screener_tx3`) ---------------------------------
+
+export interface RegimeAxisReading { value: string | null; reasons: string[]; numbers: Record<string, number | string | null> }
+export interface ScreenFit { fits: boolean | null; reason: string }
+export interface RegimeResponse {
+  as_of: string; session: string | null; index: string; trend: RegimeAxisReading; volatility: RegimeAxisReading; note: string;
+  fits: Record<string, ScreenFit>;
+}
+
+export function isRegime(x: unknown): x is RegimeResponse {
+  const r = x as Partial<RegimeResponse> | null;
+  return !!r && !!r.fits && typeof r.fits === "object" && !!r.trend && !!r.volatility;
+}
+
+/** "Trending market · High volatility" from the taxonomy's labels ("unclear" where an axis has no clear reading). */
+export function regimeText(r: RegimeResponse, tax: Taxonomy): string {
+  const label = (id: string | null, axis: string) =>
+    id ? (tax.regimes ?? []).find((v) => v.id === id)?.label ?? id : `${axis} unclear`;
+  return `${label(r.trend.value, "trend")} · ${label(r.volatility.value, "volatility")}`;
+}
+
+/** Screens greyed for today's regime (only a clear mismatch greys a screen). */
+export function greyed(r: RegimeResponse | null, screenId: string): ScreenFit | null {
+  const f = r?.fits[screenId];
+  return f && f.fits === false ? f : null;
+}
+
+export interface DigestFolder { method: string; label: string; screens: { ref: string; name: string; base_tf: string; first: string[]; more: number; evidence_id: number | null }[] }
+export interface Digest { day: string; built_at: string; methods: DigestFolder[]; scanned: number; problems: string[]; note: string }
+export interface DigestSettings { enabled: boolean; send_time: string; pinned: string[]; symbols: string[]; exchange: string }
+export interface DigestState extends DigestSettings {
+  last_sent_on: string | null; last_status: string | null; last_digest: Digest | null; messages?: string[];
+  limits?: { pinned: number; symbols: number }; note?: string;
+}
+
+export function isDigestState(x: unknown): x is DigestState {
+  const d = x as Partial<DigestState> | null;
+  return !!d && typeof d.send_time === "string" && Array.isArray(d.pinned) && Array.isArray(d.symbols);
+}
+
+export const MAX_PINNED = 5;

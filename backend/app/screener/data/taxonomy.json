@@ -1,6 +1,6 @@
 {
- "_comment": "U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library's two axes (method x setup type), the tag vocabulary and the filing of every pre-built screen. A reviewed data file - change it by PR; app/screener/taxonomy.py lints it (both axes, known tags, definition <= 2 lines, no advice wording) and tests/test_z8_tx1_taxonomy.py fails CI when a pre-built screen is not filed here. Labels and definitions describe what a screen looks for; they never say what to trade.",
- "version": "tx1/1",
+ "_comment": "U9 TX1 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md): the screen library's two axes (method x setup type), the tag vocabulary and the filing of every pre-built screen. A reviewed data file - change it by PR; app/screener/taxonomy.py lints it (both axes, known tags, definition <= 2 lines, no advice wording) and tests/test_z8_tx1_taxonomy.py fails CI when a pre-built screen is not filed here. Labels and definitions describe what a screen looks for; they never say what to trade. U9 TX3: `regimes` is the vocabulary of market regimes (one axis each); a screen's optional `regimes` lists the ones it is designed for (absent = any), and the gallery greys a screen whose regime does not fit today's (app/screener/regime_today.py).",
+ "version": "tx3/1",
  "methods": [
   {"id": "price_action", "code": "A", "label": "Price action", "definition": "Structure, levels, candles and liquidity; no indicator required."},
   {"id": "indicator", "code": "B", "label": "Indicator", "definition": "Moving averages, oscillators, bands, channels and volatility measures."},
@@ -46,6 +46,12 @@
    {"id": "indices", "label": "Indices"}
   ]
  },
+ "regimes": [
+  {"id": "trend", "axis": "trend", "label": "Trending market"},
+  {"id": "range", "axis": "trend", "label": "Range-bound market"},
+  {"id": "high_vol", "axis": "volatility", "label": "High volatility"},
+  {"id": "low_vol", "axis": "volatility", "label": "Low volatility"}
+ ],
  "screens": [
   {
    "id": "starter.momentum",
@@ -60,7 +66,8 @@
    "difficulty": "beginner",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "starter.oversold",
@@ -75,7 +82,8 @@
    "difficulty": "beginner",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["range"]
   },
   {
    "id": "starter.daily_trend",
@@ -90,7 +98,8 @@
    "difficulty": "beginner",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "breakouts.swing_1h_range",
@@ -135,7 +144,8 @@
    "difficulty": "intermediate",
    "universe_default": "fo_stocks",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["low_vol"]
   },
   {
    "id": "breakouts.daily_52w_high",
@@ -150,7 +160,8 @@
    "difficulty": "beginner",
    "universe_default": "nifty500",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "breakouts.weekly_52w_high",
@@ -165,7 +176,8 @@
    "difficulty": "beginner",
    "universe_default": "nifty500",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "breakouts.intraday_15m_expansion",
@@ -285,7 +297,8 @@
    "difficulty": "intermediate",
    "universe_default": "nifty500",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "legends.darvas_box_breakout",
@@ -300,7 +313,8 @@
    "difficulty": "beginner",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "legends.weinstein_stage2_breakout",
@@ -315,7 +329,8 @@
    "difficulty": "intermediate",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "legends.turtle_channel_breakout",
@@ -330,7 +345,8 @@
    "difficulty": "beginner",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "legends.raschke_adx_pullback",
@@ -345,7 +361,8 @@
    "difficulty": "intermediate",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "legends.crabel_nr7",
@@ -360,7 +377,8 @@
    "difficulty": "intermediate",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["low_vol"]
   },
   {
    "id": "legends.connors_rsi2_pullback",
@@ -375,7 +393,8 @@
    "difficulty": "beginner",
    "universe_default": "your_list",
    "evidence_ready": false,
-   "fitness_available": false
+   "fitness_available": false,
+   "regimes": ["trend"]
   },
   {
    "id": "legends.williams_volatility_breakout",

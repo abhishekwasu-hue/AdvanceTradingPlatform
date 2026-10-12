@@ -334,6 +334,15 @@ def _register_screenql() -> None:
             register(f"screenql.{text}", _screenql(text), kind=LAST_BAR, group="screenql", samples=3)
 
 
+def _register_library() -> None:
+    """U9 TX3: today's regime reading (the index trend on confirmed swings, the volatility percentile) from daily bars -
+    an answer for the last closed bar, so the gallery's greying never reads a later session."""
+    from app.screener import regime_today as rt
+    register("library.regime_trend", lambda f: rt.trend_of(f)[0], kind=LAST_BAR, group="screenql", bars="1d", length=600, samples=3)
+    register("library.regime_volatility", lambda f: rt.vol_axis(f["close"]).value, kind=LAST_BAR, group="screenql", bars="1d",
+             length=600, samples=3)
+
+
 def register_all() -> None:
     """Registers every case once (idempotent: the test session and a CLI may both call it)."""
     if any(name.startswith("indicator.") for name in REGISTRY):
@@ -345,6 +354,7 @@ def register_all() -> None:
     _register_structure()
     _register_zones()
     _register_screenql()
+    _register_library()
 
 
 def indicator_functions() -> List[str]:

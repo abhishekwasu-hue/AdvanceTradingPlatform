@@ -2882,6 +2882,28 @@ class ScreenRunRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
 
 
+class ScreenDigestRecord(Base):
+    """U9 TX3: one user's setup-of-the-day digest - the screens they pinned (at most 5: library ids, their mirrors or
+    their organisation's saved screens), the symbols it runs on, the time (IST) it is sent on trading days, and the last
+    digest built (shown in-app; sent only to the user's own linked Telegram chat). Personal: read and changed by that
+    user only (BT1b). Information only - never an order."""
+
+    __tablename__ = "screen_digests"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, unique=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    send_time: Mapped[str] = mapped_column(String(5), nullable=False, default="16:00")      # HH:MM IST
+    pinned_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    symbols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    exchange: Mapped[str] = mapped_column(String(8), nullable=False, default="NSE")
+    last_sent_on: Mapped[date | None] = mapped_column(Date, nullable=True)                  # IST trading day of the last digest
+    last_digest_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
 class ScreenEvidenceRecord(Base):
     """U8 EV1/EV2: the evidence pack (`evidence/1`) of one matched symbol - stored with the screen run or the alert
     event that produced it, in the same pass as the match, so "Show on chart", the verify strip and the Telegram image

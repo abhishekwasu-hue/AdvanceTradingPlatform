@@ -21,7 +21,12 @@ export interface TaxScreen {
   tags: { timeframe_family: string[]; direction: string; data_tier: string[]; difficulty: string; universe_default: string };
   evidence_ready: boolean;
   fitness_available: boolean;
+  /** U9 TX3: the market regimes it is designed for (empty or absent = any). */
+  regimes?: string[];
 }
+
+/** U9 TX3: a market regime a screen can be designed for, on one axis. */
+export interface RegimeValue { id: string; axis: "trend" | "volatility"; label: string }
 
 export interface Taxonomy {
   version: string;
@@ -32,6 +37,7 @@ export interface Taxonomy {
   matrix: Record<string, Record<string, number>>;   // method -> setup -> screens filed there (0 = an empty cell)
   total: number;
   note: string;
+  regimes?: RegimeValue[];
 }
 
 /** The response has both axes, a matrix and a screen list (anything else - an older server, a proxy page - shows no

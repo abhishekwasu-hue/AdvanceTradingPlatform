@@ -3,7 +3,7 @@ import { request } from "../api/client";
 import type { DataTierBadgeInfo } from "../types";
 import type { FunnelResult, Registry } from "./model";
 import type { LegendsLibrary } from "./legends";
-import type { ConfluenceResponse, MirrorsResponse, WatchListsResponse, WatchResponse } from "./library";
+import type { ConfluenceResponse, Digest, DigestSettings, DigestState, MirrorsResponse, RegimeResponse, WatchListsResponse, WatchResponse } from "./library";
 import type { Taxonomy } from "./taxonomy";
 
 export interface Problem { message: string; pos: number | null }
@@ -43,6 +43,12 @@ export const screenerApi = {
     request<ConfluenceResponse>("/screener/library/confluence", { method: "POST", body: JSON.stringify({ screens, symbols, exchange }) }),
   watchTrigger: (body: { list_id?: string; ready?: string; trigger?: string; base_tf?: string; symbols: string[]; exchange?: string }) =>
     request<WatchResponse>("/screener/library/watch-trigger", { method: "POST", body: JSON.stringify(body) }),
+  /** U9 TX3 (flag `screener_tx3`; 503 while it is off - nothing is greyed and there is no digest tab). */
+  regime: () => request<RegimeResponse>("/screener/library/regime"),
+  digest: () => request<DigestState>("/screener/library/digest"),
+  saveDigest: (body: DigestSettings) => request<DigestState>("/screener/library/digest", { method: "PUT", body: JSON.stringify(body) }),
+  previewDigest: (body: DigestSettings) =>
+    request<Digest & { messages: string[]; preview: true }>("/screener/library/digest/preview", { method: "POST", body: JSON.stringify(body) }),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

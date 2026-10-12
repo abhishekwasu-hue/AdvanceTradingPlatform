@@ -7,14 +7,18 @@
  * - Watch -> trigger: a "ready" condition and a "trigger" condition. Triggered = the trigger on the last closed bar after
  *   a ready bar; Ready = ready now, not yet triggered. The transition is itself a screen: save it, then put an alert on it.
  *
+ * - Daily digest (U9 TX3, flag `screener_tx3`): pin up to 5 screens, pick a time (India time); on trading days the
+ *   first matches of each pinned screen arrive grouped by method folder, in the app and in your own Telegram chat.
+ *   Preview builds it now without sending.
+ *
  * Research only: nothing here places an order.
  */
 import { useMemo, useState } from "react";
 import { Button, cx, Tabs } from "../components/primitives";
 import { screenerApi } from "./api";
 import {
-  agreementText, confluenceChoices, MAX_CONFLUENCE, methodLabel, MIN_CONFLUENCE, toggleChoice,
-  type ConfluenceResponse, type MirrorsResponse, type WatchListsResponse, type WatchResponse,
+  agreementText, confluenceChoices, MAX_CONFLUENCE, MAX_PINNED, methodLabel, MIN_CONFLUENCE, toggleChoice,
+  type ConfluenceResponse, type DigestState, type MirrorsResponse, type WatchListsResponse, type WatchResponse,
 } from "./library";
 import { parseSymbols } from "./model";
 import type { Taxonomy } from "./taxonomy";
@@ -25,31 +29,102 @@ export interface LibraryToolsProps {
   watchLists: WatchListsResponse | null;
   /** The scan's symbol list (one per line or comma separated), used as the starting list here. */
   symbolsText: string;
-  initialTab?: "confluence" | "watch";
+  initialTab?: "confluence" | "watch" | "digest";
+  /** U9 TX3: the user's digest settings (null while `screener_tx3` is off - no digest tab). */
+  digest?: DigestState | null;
+  /** U9 TX2 tools are shown only with `screener_tx2` on (mirrors loaded). */
+  tx2?: boolean;
   /** Stories and tests: results shown without a call. */
   initialConfluence?: ConfluenceResponse | null;
   initialWatch?: WatchResponse | null;
-  api?: Pick<typeof screenerApi, "confluence" | "watchTrigger" | "save">;
+  api?: Pick<typeof screenerApi, "confluence" | "watchTrigger" | "save" | "saveDigest" | "previewDigest">;
 }
 
 function message(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-export function LibraryTools({ taxonomy, mirrors, watchLists, symbolsText, initialTab = "confluence", initialConfluence = null,
-  initialWatch = null, api = screenerApi }: LibraryToolsProps) {
-  const [tab, setTab] = useState<string>(initialTab);
-  const [text, setText] = useState(symbolsText);
+export function LibraryTools({ taxonomy, mirrors, watchLists, symbolsText, initialTab, initialConfluence = null,
+  initialWatch = null, api = screenerApi, digest = null, tx2 = true }: LibraryToolsProps) {
+  const [text, setText] = useState(digest && digest.symbols.length ? digest.symbols.join(", ") : symbolsText);
   const symbols = useMemo(() => parseSymbols(text), [text]);
+  const items = [
+    ...(tx2 ? [
+      { value: "confluence", label: "Confluence", content: <Confluence taxonomy={taxonomy} mirrors={mirrors} symbols={symbols} initial={initialConfluence} api={api} /> },
+      { value: "watch", label: "Watch → trigger", content: <Watch lists={watchLists} symbols={symbols} initial={initialWatch} api={api} /> },
+    ] : []),
+    ...(digest ? [{ value: "digest", label: "Daily digest", content: <DigestTab taxonomy={taxonomy} mirrors={mirrors} symbols={symbols} state={digest} api={api} /> }] : []),
+  ];
+  const [tab, setTab] = useState<string>(initialTab ?? items[0]?.value ?? "confluence");
   return (
     <div data-testid="library-tools">
       <label className="block text-t12 font-medium text-fg-muted" htmlFor="library-symbols">Symbols ({symbols.length})</label>
       <textarea id="library-symbols" value={text} onChange={(e) => setText(e.target.value)} rows={2}
                 className="mt-1 w-full rounded-control border border-border bg-surface-1 p-2 font-mono text-t13 text-fg" />
-      <Tabs className="mt-3" value={tab} onChange={setTab} items={[
-        { value: "confluence", label: "Confluence", content: <Confluence taxonomy={taxonomy} mirrors={mirrors} symbols={symbols} initial={initialConfluence} api={api} /> },
-        { value: "watch", label: "Watch → trigger", content: <Watch lists={watchLists} symbols={symbols} initial={initialWatch} api={api} /> },
-      ]} />
+      <Tabs className="mt-3" value={tab} onChange={setTab} items={items} />
+    </div>
+  );
+}
+
+function DigestTab({ taxonomy, mirrors, symbols, state, api }: {
+  taxonomy: Taxonomy; mirrors: MirrorsResponse | null; symbols: string[]; state: DigestState; api: NonNullable<LibraryToolsProps["api"]>;
+}) {
+  const choices = useMemo(() => confluenceChoices(taxonomy, mirrors), [taxonomy, mirrors]);
+  const [enabled, setEnabled] = useState(state.enabled);
+  const [time, setTime] = useState(state.send_time);
+  const [pinned, setPinned] = useState<string[]>(state.pinned);
+  const [status, setStatus] = useState<string | null>(state.last_status);
+  const [shown, setShown] = useState<string[] | null>(state.messages ?? null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const body = () => ({ enabled, send_time: time, pinned, symbols, exchange: state.exchange || "NSE" });
+  const act = async (what: "save" | "preview") => {
+    setBusy(true);
+    setError(null);
+    try {
+      if (what === "save") { await api.saveDigest(body()); setStatus("Saved. It runs on trading days at or after the time you chose."); }
+      else { setShown((await api.previewDigest(body())).messages); }
+    } catch (e) { setError(message(e)); } finally { setBusy(false); }
+  };
+  const full = pinned.length >= MAX_PINNED;
+  return (
+    <div data-testid="digest-tab">
+      <p className="text-t12 text-fg-muted">{state.note}</p>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <label className="flex min-h-[44px] items-center gap-2 text-t13 text-fg">
+          <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Send me the digest on trading days
+        </label>
+        <label className="flex items-center gap-2 text-t13 text-fg">At (India time)
+          <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="min-h-[44px] rounded-control border border-border bg-surface-1 px-2 text-t13 text-fg" />
+        </label>
+      </div>
+      <fieldset className="mt-2">
+        <legend className="text-t12 text-fg-muted">Pin up to {MAX_PINNED} screens ({pinned.length} pinned)</legend>
+        <ul className="mt-1 grid max-h-40 gap-1 overflow-y-auto sm:grid-cols-2" data-testid="digest-choices">
+          {choices.map((c) => {
+            const on = pinned.includes(c.ref);
+            return (
+              <li key={c.ref}>
+                <label className={cx("flex min-h-[44px] items-center gap-2 rounded-control border px-2 text-t13", on ? "border-brand text-fg" : "border-border text-fg-muted")}>
+                  <input type="checkbox" checked={on} disabled={!on && full} onChange={() => setPinned((p) => toggleChoice(p, c.ref, MAX_PINNED))} />
+                  <span>{c.label}<span className="ml-1 text-t12 text-fg-muted">· {methodLabel(taxonomy, c.method)}</span></span>
+                </label>
+              </li>
+            );
+          })}
+        </ul>
+      </fieldset>
+      <div className="mt-2 flex gap-2">
+        <Button size="sm" variant="primary" onClick={() => void act("save")} loading={busy} disabled={enabled && (!pinned.length || !symbols.length)}>Save</Button>
+        <Button size="sm" onClick={() => void act("preview")} disabled={busy || !pinned.length || !symbols.length}>Preview now</Button>
+      </div>
+      {error && <p role="alert" className="mt-2 text-t12 text-warn">{error}</p>}
+      {status && <p role="status" className="mt-2 text-t12 text-fg">{status}{state.last_sent_on ? ` (last: ${state.last_sent_on})` : ""}</p>}
+      {shown && (
+        <ul className="mt-2 space-y-2" aria-label="Digest messages" data-testid="digest-messages">
+          {shown.map((m, i) => <li key={i} className="whitespace-pre-wrap rounded-panel border border-border bg-surface-1 p-2 text-t13 text-fg">{m}</li>)}
+        </ul>
+      )}
     </div>
   );
 }

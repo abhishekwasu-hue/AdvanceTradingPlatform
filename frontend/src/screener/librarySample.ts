@@ -1,6 +1,6 @@
 /** U9 TX2: sample library data for stories and tests - the mirrors and watch lists exactly as the server sends them with
  * only `screener_tx2` on (from app.screener.library.mirrors / WATCH_LISTS), plus one confluence and one watch result. */
-import type { ConfluenceResponse, MirrorsResponse, WatchListsResponse, WatchResponse } from "./library";
+import type { ConfluenceResponse, DigestState, MirrorsResponse, RegimeResponse, WatchListsResponse, WatchResponse } from "./library";
 
 export const SAMPLE_MIRRORS: MirrorsResponse = {
   "mirrors": [
@@ -115,4 +115,25 @@ export const SAMPLE_WATCH: WatchResponse = {
   triggered: ["UP"], ready: ["MID"], neither: ["DOWN"], not_evaluated: {}, note: "Save the trigger screen to get an alert on the transition.",
   name: "Your watch list", base_tf: "1d", ready_text: "close > SMA(close, 5)", trigger_text: "close > high[1]",
   transition_text: "Count(1, close > SMA(close, 5))[1] >= 1 AND close > high[1]", scanned: 3, disclaimer: SAMPLE_CONFLUENCE.disclaimer,
+};
+
+/** U9 TX3: a regime reading (trend + high volatility) with the starters' fits, and a digest state with its messages. */
+export const SAMPLE_REGIME: RegimeResponse = {
+  as_of: "2026-10-12T11:00:00+00:00", session: "2026-10-09", index: "NIFTY 50",
+  trend: { value: "range", reasons: ["NIFTY 50 Dow trend on daily bars (degree 1): RANGE (last swing high lower, last swing low higher)"], numbers: { dow: "RANGE", advancers: 812, decliners: 1104 } },
+  volatility: { value: "high_vol", reasons: ["INDIA VIX 18.40: percentile 82 of the last 250 sessions"], numbers: { vix: 18.4, percentile: 82, sessions: 250 } },
+  note: "Today's regime is read from closed sessions of NIFTY 50, India VIX and NSE breadth in the shared history. A greyed screen was designed for another regime; it still opens and runs. This is a hint, not advice.",
+  fits: {
+    "starter.momentum": { fits: false, reason: "Not today's regime: designed for a trending market; today reads range-bound market." },
+    "starter.oversold": { fits: true, reason: "Fits today's regime." },
+    "starter.daily_trend": { fits: false, reason: "Not today's regime: designed for a trending market; today reads range-bound market." },
+  },
+};
+
+export const SAMPLE_DIGEST: DigestState = {
+  enabled: true, send_time: "16:00", pinned: ["starter.momentum", "starter.oversold"], symbols: ["RELIANCE", "TCS", "INFY"], exchange: "NSE",
+  last_sent_on: "2026-10-09", last_status: "Kept in the app: link your Telegram under Settings > Notifications to get it there too.",
+  last_digest: null, limits: { pinned: 5, symbols: 50 },
+  note: "Matches of your pinned screens on the last closed bar, the first ones in your list order. Screens filter; they do not predict, and this is not advice.",
+  messages: ["Setups of the day - Indicator (2026-10-09)\nMomentum: RELIANCE, TCS\nOversold: no match\nMatches of your pinned screens on the last closed bar, the first ones in your list order. Screens filter; they do not predict, and this is not advice."],
 };

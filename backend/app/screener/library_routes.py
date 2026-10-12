@@ -7,6 +7,15 @@
 * `POST /api/screener/library/watch-trigger` - a pre-built or own ready / trigger pair over up to 50 symbols -> the
   "triggered" and "ready" lists (trader).
 
+U9 TX3 (flag `screener_tx3`, with `screener_v2` and `screener_gallery`; not `screener_tx2`):
+* `GET  /api/screener/library/regime`          - today's regime (NIFTY 50 Dow trend + breadth, India VIX) from closed
+  sessions of the shared history, and whether each screen fits it (member; no organisation data).
+* `GET  /api/screener/library/digest`          - the caller's own digest settings and their last digest (member).
+* `PUT  /api/screener/library/digest`          - the caller's own settings (trader: the digest runs screens through
+  their broker session, like `/run`).
+* `POST /api/screener/library/digest/preview`  - build the digest now for the given pins and symbols, without sending
+  or storing it (trader, rate limited).
+
 All four need `screener_v2`, `screener_gallery` and `screener_tx2` (off by default: 503 while off). The runs read closed
 bars only, through the caller's own session when the BT1b data tier is on, store nothing, and never place an order.
 """
@@ -27,7 +36,9 @@ from app.db.models import User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
+from app.screener import digest as dg
 from app.screener import library as lib
+from app.screener import regime_today as rt
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.panel import FLAG as VECTOR_FLAG
@@ -64,6 +75,52 @@ async def _flags(session: AsyncSession, user: User) -> None:
 
 async def _hidden(session: AsyncSession, user: User) -> List[str]:
     return [name for name, src in tx.sources().items() if src.flag and not await flag_enabled(session, src.flag, user.tenant_id)]
+
+
+async def _flags3(session: AsyncSession, user: User) -> None:
+    for name in (FLAG, GALLERY_FLAG, dg.FLAG):
+        await require_flag(session, name, user.tenant_id)
+
+
+@router.get("/regime")
+async def regime(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flags3(session, user)
+    today = await rt.today(session)
+    return {**today.as_dict(), "fits": rt.fits(tx.load(), today, await _hidden(session, user))}
+
+
+@router.get("/digest")
+async def digest_settings(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flags3(session, user)
+    out = dg.settings_of(await dg.own_row(session, user))
+    if out["last_digest"]:
+        out["messages"] = dg.messages(out["last_digest"])
+    return {**out, "limits": {"pinned": dg.MAX_PINNED, "symbols": dg.MAX_SYMBOLS}, "note": dg.NOTE}
+
+
+async def _check_pins(session: AsyncSession, user: User, pinned: List[str]) -> None:
+    taxonomy, hidden = tx.load(), await _hidden(session, user)
+    for ref in pinned:
+        await _resolve(session, user, ref, taxonomy, hidden)              # 422 / 404 with the reason
+
+
+@router.put("/digest")
+async def save_digest(body: dg.DigestSettings, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flags3(session, user)
+    if body.enabled and (not body.pinned or not body.symbols):
+        raise HTTPException(status_code=422, detail="pin at least one screen and add symbols before turning the digest on")
+    await _check_pins(session, user, body.pinned)
+    return dg.settings_of(await dg.save(session, user, body))
+
+
+@router.post("/digest/preview", dependencies=[Depends(library_rate_limit)])
+async def preview_digest(body: dg.DigestSettings, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    await _flags3(session, user)
+    if not body.pinned or not body.symbols:
+        raise HTTPException(status_code=422, detail="pin at least one screen and add symbols")
+    built = await dg.build(session, user, body.pinned, body.symbols, body.exchange)
+    await session.commit()                                                 # evidence packs of the first matches, if any
+    return {**built, "messages": dg.messages(built), "preview": True}
 
 
 @router.get("/mirrors")

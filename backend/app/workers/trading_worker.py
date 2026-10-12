@@ -48,7 +48,7 @@ from app.core.config import ENVIRONMENT, HARDENED_ENVIRONMENTS, WORKER_CYCLE_SEC
 from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, NotificationSeverity, NotificationType, OptionStrategy, SignalDirection
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
-from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, VisionReportRecord, WorkerHeartbeatRecord
+from app.db.models import ScreenDigestRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User, VisionReportRecord, WorkerHeartbeatRecord
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
@@ -220,6 +220,7 @@ class TradingWorker:
         self._regime_wanted: set = set()
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
+        self._digest_task: Optional["asyncio.Task[None]"] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -418,6 +419,14 @@ class TradingWorker:
                     logger.exception("Alert rule evaluation failed")
                     await session.rollback()
                     report.errors.append(f"alert rules: {exc}")
+                # U9 TX3 (flag screener_tx3): the users' setup-of-the-day digests that are due, in a background task with
+                # its own sessions (they run screens through each user's own broker session) - never holds up a cycle.
+                try:
+                    if await session.scalar(select(ScreenDigestRecord.id).where(ScreenDigestRecord.enabled.is_(True)).limit(1)) is not None:
+                        self._spawn_digests(now)
+                except Exception as exc:  # noqa: BLE001 - a digest is information; never breaks trading
+                    logger.warning("Screen digest check failed: %s", exc.__class__.__name__)
+                    await session.rollback()
                 try:
                     # S3a: alert-rule events -> grouped notifications (quiet hours, caps, digests) before the outbox drain.
                     from app.alerts import engine as alert_engine
@@ -1153,6 +1162,23 @@ class TradingWorker:
 
         self._market_zones_task = asyncio.get_running_loop().create_task(run())
         return True
+
+    def _spawn_digests(self, now: datetime) -> None:
+        """U9 TX3: one pass over the due digests at a time per worker (each digest in its own session)."""
+        if self._digest_task is not None and not self._digest_task.done():
+            return
+
+        async def run() -> None:
+            from app.screener import digest as screen_digest
+            try:
+                await screen_digest.run_due(self.session_factory, now)
+            except Exception:  # noqa: BLE001 - information only; never reaches trading
+                logger.exception("Screen digests failed")
+
+        try:
+            self._digest_task = asyncio.get_running_loop().create_task(run())
+        except RuntimeError:
+            self._digest_task = None
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

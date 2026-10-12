@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { LibraryTools } from "../screener/LibraryTools";
 import { mirrorsByScreen } from "../screener/library";
-import { SAMPLE_CONFLUENCE, SAMPLE_LISTS, SAMPLE_MIRRORS, SAMPLE_WATCH } from "../screener/librarySample";
+import { SAMPLE_CONFLUENCE, SAMPLE_DIGEST, SAMPLE_LISTS, SAMPLE_MIRRORS, SAMPLE_REGIME, SAMPLE_WATCH } from "../screener/librarySample";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import sample from "../screener/taxonomySample.json";
 import type { Taxonomy } from "../screener/taxonomy";
@@ -24,4 +24,12 @@ export const WatchThenTrigger: Story = {
 
 export const GalleryWithMirrors: Story = {
   render: () => frame(<ScreenGallery taxonomy={tax} canOpen={() => true} onOpen={() => undefined} mirrors={mirrorsByScreen(SAMPLE_MIRRORS)} />),
+};
+
+export const GalleryWithTodaysRegime: Story = {
+  render: () => frame(<ScreenGallery taxonomy={tax} canOpen={() => true} onOpen={() => undefined} regime={SAMPLE_REGIME} />),
+};
+
+export const DailyDigest: Story = {
+  render: () => frame(<LibraryTools taxonomy={tax} mirrors={SAMPLE_MIRRORS} watchLists={SAMPLE_LISTS} symbolsText="" digest={SAMPLE_DIGEST} initialTab="digest" />),
 };

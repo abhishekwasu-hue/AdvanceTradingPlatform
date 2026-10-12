@@ -877,6 +877,9 @@ def test_the_evaluative_list_is_support_only():
     "b u y TCS", "8uy RELIANCE", "s e l l INFY", "5e11 INFY now", "$ell TCS", "s-e-l-l everything", "s.h.o.r.t NIFTY",
     "should I b.u.y TCS", "Is TCS a 8uy?", "1nvest in TCS?", "how do I b u y in paper mode?", "how do I 8uy TCS here?",
     "should I go all in on TCS?", "all in on banks?", "go all-in tomorrow?", "Should I go all-in", "all in?",
+    # review LOW-7: / , + separators, partial splits, "purchase"
+    "b/u/y TCS", "s,e,l,l INFY", "b+u+y RELIANCE", "bu y TCS", "should I s ell TCS", "8u y RELIANCE", "pur chase TCS?",
+    "Should I purchase TCS?", "ex it all now",
 ])
 def test_spaced_leetspeak_and_all_in_questions_are_refused(question):
     assert guard.classify(bot.clean_question(question)) == "advice", question
@@ -886,6 +889,8 @@ def test_spaced_leetspeak_and_all_in_questions_are_refused(question):
     "how do I see my orders all in one place?", "is the history all in one file?", "how do I set 15m candles on NIFTY50?",
     "what is A B testing", "what is P & L", "How do I close a paper position?", "what does SL mean?", "how do I set a 5 m timeframe?",
     "how do I reset my password?", "where is the F & O segment?", "what is M T M?", "how do I connect my broker?",
+    "Will my alerts be all in one place?", "Do the logs go all in one file?", "Can I put everything all in one watchlist?",
+    "how do I place buy/sell orders?", "what is p/l", "T+1 settlement?", "is it a go", "do I need a b c d account",
 ])
 def test_ordinary_how_to_questions_are_not_refused(question):
     assert guard.classify(bot.clean_question(question)) is None, question

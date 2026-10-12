@@ -27,7 +27,7 @@ _HOWTO = re.compile(r"^\s*(?:how\s+(?:do|can|does|should|to|would)|how\s+is|wher
 
 _SHOULD = r"(?:should|shoud|shuld|shud|shld|shall|must)"
 _ADVICE = [re.compile(p, re.I) for p in (
-    rf"\b{_SHOULD}\s+(?:i|we)\s+(?:buy|sell|hold|short|invest|trade|exit|enter|book|average|add|keep|accumulate)\b",
+    rf"\b{_SHOULD}\s+(?:i|we)\s+(?:buy|sell|hold|short|invest|trade|exit|enter|book|average|add|keep|accumulate|purchase)\b",
     r"\bis\s+\S+(?:\s+\S+)?\s+a\s+(?:good\s+|strong\s+|safe\s+)?(?:buy|sell|short|hold)\b",
     r"\b(?:stocks?|shares?|scrips?|coins?|options?|strikes?|names|tickers?)\s+to\s+(?:buy|sell|short|pick|invest|trade|hold|accumulate)\b",
     r"\b(?:going\s+to|gonna)\s+(?:go\s+up|go\s+down|rise|fall|rally|crash|move\s+up|move\s+down)\b",
@@ -56,8 +56,8 @@ _ADVICE = [re.compile(p, re.I) for p in (
     r"\bhow\s+much\s+(?:should|to|must|can)\s+(?:i\s+)?(?:invest|buy|put|allocate|risk)\b",
     r"\bsure[- ]?shot\b|\bmultibagger\b|\bjackpot\b",
     # "should I go all in on TCS?", "all-in on banks?" - not "see them all in one place"
-    r"\b(?:go|goes|going|went|gone|be|bet|put\s+(?:it|everything|my\s+\w+))\s+all[\s-]+in\b",
-    r"\ball[\s-]+in\s+(?:on|with|into)\b|^\s*all[\s-]+in\s*[?!.]*\s*$",
+    r"\b(?:go|goes|going|went|gone|be|bet|put\s+(?:it|everything|my\s+\w+))\s+all[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)",
+    r"\ball[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)\s+(?:on|with|into)\b|^\s*all[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)\s*[?!.]*\s*$",
     r"शिफारस|कोणता\s+शेअर|कोणते\s+शेअर|घ्यावा\s+का|घेऊ\s+का|विकू\s+का|खरेदी\s+करू\s+का|टिप्स",
 )]
 # Only outside a how-to clause: "RELIANCE: buy or sell?" is advice, "how do I buy or sell in paper mode?" is not.

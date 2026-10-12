@@ -349,8 +349,10 @@ it is not turned on. **No new route.**
   - The five steps each have a summary, three short paragraphs, where ATP draws them, the screens that look for them,
     their checklist item and the journal tags that show them skipped.
   - A 21-term glossary (R multiple, expectancy, drawdown, stop, risk cap, IV, PoP, expected move, Greeks, charges, ...).
-  - A plain risk note: regulator studies found most individual F&O traders lost money; ATP does not say which security
-    to trade.
+  - A plain risk note. It cites SEBI's study "Analysis of Profit and Loss of Individual Traders dealing in Equity F&O
+    Segment" (25 January 2023): 9 out of 10 individual traders in equity F&O incurred net losses, and later SEBI studies
+    report the same pattern. It links to SEBI's official Reports and Statistics - Research list, and says ATP does not
+    tell anyone which security to trade.
 - **Wording check** (`src/progression/learn.test.tsx`): every string passes the same advice check as the portfolio risk
   text (N1 F3 `risk_text.has_advice`). That is the English advice words as whole words (recommend, advice, should,
   must, buy, sell, reduce, best, guarantee, target price, ...) and the Marathi advice words as written. A
@@ -364,4 +366,4 @@ it is not turned on. **No new route.**
 
 ## Open questions
 
-These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-26), each with a provisional default.
+These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-27), each with a provisional default.

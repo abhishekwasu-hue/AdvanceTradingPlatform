@@ -88,7 +88,9 @@ describe("LearnContent (N2-10)", () => {
   it("shows the risk note, the five steps, one concept, the glossary and the official links", () => {
     const html = renderToStaticMarkup(<LearnContent initial="pullback" />);
     const words = text(html);
-    expect(words).toContain("Regulator studies found that most individual traders in equity derivatives lost money");
+    expect(words).toContain("Analysis of Profit and Loss of Individual Traders dealing in Equity F&O Segment");
+    expect(words).toContain("9 out of 10 individual traders in the equity F&O segment incurred net losses");
+    expect(html).toContain('href="https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&amp;sid=4&amp;ssid=81&amp;smid=109"');
     for (const c of CONCEPTS) expect(words).toContain(LEARN_EN.concepts[c].title);
     expect(html).toContain('data-testid="concept-pullback"');
     expect(words).toContain("The pullback is the wait");

@@ -21,7 +21,12 @@ export const GLOSSARY = ["r_multiple", "expectancy", "profit_factor", "drawdown"
 export const OFFICIAL_HOSTS = ["www.sebi.gov.in", "sebi.gov.in", "investor.sebi.gov.in", "www.nseindia.com", "nseindia.com",
   "www.incometaxindia.gov.in", "incometaxindia.gov.in", "www.incometax.gov.in", "incometax.gov.in"];
 
-export const OFFICIAL_LINKS: { key: "sebi" | "nse" | "incomeTax"; href: string }[] = [
+/** SEBI's official Reports and Statistics - Research list, where the F&O profit and loss study (25 Jan 2023) and its
+ * later updates are listed by name. */
+export const SEBI_STUDY_LINK = "https://www.sebi.gov.in/sebiweb/home/HomeAction.do?doListing=yes&sid=4&ssid=81&smid=109";
+
+export const OFFICIAL_LINKS: { key: "sebiStudy" | "sebi" | "nse" | "incomeTax"; href: string }[] = [
+  { key: "sebiStudy", href: SEBI_STUDY_LINK },
   { key: "sebi", href: "https://investor.sebi.gov.in/" },
   { key: "nse", href: "https://www.nseindia.com/" },
   { key: "incomeTax", href: "https://www.incometaxindia.gov.in/" },

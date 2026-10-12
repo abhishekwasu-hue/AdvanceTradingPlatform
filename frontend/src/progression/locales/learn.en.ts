@@ -15,7 +15,8 @@ export const LEARN_EN = {
   mistakes: "What the journal tags when this step is skipped",
   openScreener: "Open the screener",
   officialLinks: "Official sources",
-  risk: "Regulator studies found that most individual traders in equity derivatives lost money over the periods they covered. ATP is a tool and an education platform: it does not tell anyone which security to trade, and nothing here is a promise of any result.",
+  risk: "SEBI's study \"Analysis of Profit and Loss of Individual Traders dealing in Equity F&O Segment\" (25 January 2023) found that 9 out of 10 individual traders in the equity F&O segment incurred net losses; SEBI's later studies of the equity derivatives segment report the same pattern. ATP is a tool and an education platform: it does not tell anyone which security to trade, and nothing here is a promise of any result.",
+  riskSource: "Source: SEBI, Reports and Statistics - Research (the study is listed there by name and date)",
   concepts: {
     trend: {
       title: "1. Trend",
@@ -107,6 +108,7 @@ export const LEARN_EN = {
     charges: { term: "Charges", def: "Brokerage, STT, exchange and SEBI fees, stamp duty and GST on a trade; ATP's ticket and journal show them." },
   },
   links: {
+    sebiStudy: "SEBI research reports (official list)",
     sebi: "SEBI investor website",
     nse: "NSE (contract specifications and circulars)",
     incomeTax: "Income Tax Department (CBDT)",

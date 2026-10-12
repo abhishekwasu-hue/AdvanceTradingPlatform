@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { PageHeader } from "../components/primitives";
 import { pathFor } from "../routes";
 import { useLearnT, useProgressionT } from "../progression/i18n";
-import { CONCEPTS, CONCEPT_LINKS, GLOSSARY, OFFICIAL_LINKS, conceptFromHash, isOfficial, type Concept } from "../progression/learn";
+import { CONCEPTS, CONCEPT_LINKS, GLOSSARY, OFFICIAL_LINKS, SEBI_STUDY_LINK, conceptFromHash, isOfficial, type Concept } from "../progression/learn";
 
 /**
  * N2-10 (P1 spec 1.6, flag `education_pages`): the method library - trend, level, pullback, commitment, reward to
@@ -32,7 +32,12 @@ export function LearnContent({ initial = "trend" as Concept }: { initial?: Conce
   return (
     <div className="space-y-4" data-testid="learn">
       <PageHeader title={t("title")} description={t("intro")} />
-      <p className="rounded border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg" role="note">{t("risk")}</p>
+      <div className="rounded border border-warn/40 bg-warn/10 px-3 py-2 text-xs text-fg" role="note" data-testid="learn-risk">
+        <p>{t("risk")}</p>
+        <p className="mt-1 text-fg-muted">
+          <a href={SEBI_STUDY_LINK} target="_blank" rel="noopener noreferrer" className="text-info underline">{t("riskSource")}</a>
+        </p>
+      </div>
       <nav aria-label={t("steps")} className="flex flex-wrap gap-2">
         {CONCEPTS.map((k) => (
           <a key={k} href={`#learn-${k}`} aria-current={k === active ? "page" : undefined} onClick={() => setActive(k)}

@@ -19,7 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.core.rate_limit import user_rate_limit
-from app.db.models import User
+from app.db.models import ScreenRunRecord, User
 from app.db.session import get_session
 from app.platform.controls import require_flag
 from app.screener import evidence_store
@@ -47,6 +47,11 @@ async def _row(session: AsyncSession, user: User, evidence_id: int) -> Any:
 @router.get("/runs/{run_id}")
 async def run_evidence(run_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _gate(session, user)
+    run = await session.get(ScreenRunRecord, run_id)
+    if run is None or run.tenant_id != user.tenant_id:
+        raise HTTPException(status_code=404, detail="Run not found")            # another organisation's run: no hint
+    if run.user_id != user.id and await evidence_store._byob(session, user):
+        raise HTTPException(status_code=404, detail="Run not found")            # BT1b: a run read the runner's own feed
     rows = await evidence_store.for_run(session, user, run_id)
     return {"run_id": run_id, "evidence": {r.symbol: r.id for r in rows}}
 

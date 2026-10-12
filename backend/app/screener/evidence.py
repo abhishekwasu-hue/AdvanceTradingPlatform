@@ -24,6 +24,7 @@ ranks an order.
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import math
@@ -472,8 +473,8 @@ def _trim(data: SymbolData, base_tf: str, as_of: Optional[datetime]) -> SymbolDa
             frames[tf] = df[closes <= pd.Timestamp(at)]
         else:
             frames[tf] = closed_only(df, tf, at)
-    return SymbolData(data.symbol, frames, data.sector, data.industry, data.mcap_bucket, data.is_fno, set(data.indices), data.option_chain,
-                      data.zones)
+    # every other field (zones, the BK2 session exchange, reference data) carried over as is - only the frames are cut
+    return dataclasses.replace(data, frames=frames, indices=set(data.indices))
 
 
 def ast_sha256(ast: Any) -> str:

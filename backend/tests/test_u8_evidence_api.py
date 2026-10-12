@@ -139,7 +139,7 @@ def test_a_run_stores_one_pack_per_matched_symbol_readable_by_its_organisation_o
     assert client.get(f"/api/screener/evidence/{ids['UP']}", headers=other).status_code == 404
     assert client.get(f"/api/screener/evidence/{ids['UP']}/image.png", headers=other).status_code == 404
     assert client.post(f"/api/screener/evidence/{ids['UP']}/telegram", headers=other).status_code == 404
-    assert client.get(f"/api/screener/evidence/runs/{body['run_id']}", headers=other).json()["evidence"] == {}
+    assert client.get(f"/api/screener/evidence/runs/{body['run_id']}", headers=other).status_code == 404
     # a preview is not stored and builds no evidence
     preview = client.post("/api/screener/run", json={"source": SCREEN, "symbols": ["UP"], "preview": True}, headers=headers).json()
     assert preview["run_id"] is None and "results" not in preview

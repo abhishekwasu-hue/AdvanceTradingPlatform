@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ContractNoteCard from "../components/ContractNoteCard";
 import PaperAccountCard from "../components/PaperAccountCard";
+import PaperTicketCard from "../components/PaperTicketCard";
 import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
@@ -110,6 +111,7 @@ export default function PositionsPage() {
       {loading && <div className="text-sm text-fg-muted">Loading…</div>}
 
       <PaperAccountCard canTrade={user.role !== "VIEWER"} />
+      <PaperTicketCard canTrade={user.role !== "VIEWER"} onPlaced={refresh} />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <StatTile label="Open Positions" value={positions.length} />

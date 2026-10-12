@@ -205,6 +205,18 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     locked = await proposal_refusal(session, tenant_id, user_id, now)      # Z5 / P1-d: daily loss lockout, entries per day
     if locked:
         raise EntriesPaused(locked)
+    owner_row: Optional[User] = None
+    book = None
+    if user_id is not None:                                                  # N1 F2: the owner's portfolio caps (entries only)
+        from app.platform.controls import flag_enabled
+        from app.portfolio import caps, risk_data
+        owner_row = await session.get(User, user_id)
+        if owner_row is not None and await flag_enabled(session, risk_data.FLAG, tenant_id):
+            book = await caps.read_book(session, owner_row, now)              # one read for the caps and the impact line
+        refused = await caps.entry_refusals(session, owner_row, caps.candidate_of(
+            signal.symbol, signal.entry, signal.stop_loss, quantity=(ticket or {}).get("max_quantity")), now, book=book)
+        if refused:
+            raise EntriesPaused("; ".join(refused))
     if deployment is not None:
         await _free_deployment_slot(session, tenant_id, deployment.id, now)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
@@ -232,8 +244,14 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     from app.observability.metrics import AI_PROPOSALS
     from app.notifications.service import notify
     AI_PROPOSALS.labels(action=ACTION_ENTRY).inc()
+    impact_line = ""
+    if book is not None:                                                      # N1 F3: the owner's own book after this entry
+        from app.portfolio import risk_text
+        impact = await risk_text.proposal_impact(session, owner_row, signal.symbol, signal.entry, signal.stop_loss,
+                                                 quantity=(ticket or {}).get("max_quantity"), now=now, book=book)
+        impact_line = f" {impact['line']}" if impact else ""
     await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"Entry proposal: {direction} {signal.symbol} (PAPER)",
-                 message=f"{reason} Nothing is placed until you approve.", severity=NotificationSeverity.WARNING, user_id=user_id,
+                 message=f"{reason} Nothing is placed until you approve.{impact_line}", severity=NotificationSeverity.WARNING, user_id=user_id,
                  ai_action_id=row.id)
     from app.ai import vision_audit
     await vision_audit.enqueue_for_proposal(session, row, now=now)
@@ -323,6 +341,12 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
         if verdict != "ok":
             return await _close_unplaced(session, action, user, evidence, deployment, verdict, why, price, now)
         signal = Signal.model_validate(evidence["signal"])
+        # N1 F2: the owner's portfolio caps again at the re-quoted price (the book may have changed since the proposal).
+        from app.portfolio import caps
+        refused = await caps.entry_refusals(session, owner, caps.candidate_of(
+            symbol, price, signal.stop_loss, quantity=(evidence.get("ticket") or {}).get("max_quantity")), now)
+        if refused:
+            raise ValueError("; ".join(refused) + " - nothing was placed")
         risk = abs(price - signal.stop_loss) if signal.stop_loss is not None else 0.0
         rr = round(abs(signal.target1 - price) / risk, 2) if risk and signal.target1 is not None else signal.risk_reward
         signal = signal.model_copy(update={"entry": price, "risk_reward": rr, "timestamp": now,
@@ -334,6 +358,7 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
             # Z5 / P1-d: a ticket's proposal keeps the plan's quantity as a ceiling and its checked cap (override included).
             max_quantity=(evidence.get("ticket") or {}).get("max_quantity"), risk_cap_amount=(evidence.get("ticket") or {}).get("risk_cap_amount"),
             journal_source="PROPOSAL",            # Z6 L2: the journal records where the trade came from
+            exchange=exchange,                    # BK2-8: the position follows its venue's session (CDS, MCX)
         )
         if not result.executed:
             raise ValueError("PAPER order not placed: " + ("; ".join(result.reasons) or order.status))
@@ -533,7 +558,7 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
     structure closes the whole structure. The close itself is claimed atomically in `close_position` (review M3).
     Returns the close outcomes; raises ValueError when there is no price at all, or for LIVE."""
     from app.ai.worker_bridge import price_lookup_for_user
-    from app.trading.position_monitor import close_group, close_position, exchange_for_trade
+    from app.trading.position_monitor import close_group, close_position, venue_for
     if trade.mode != "PAPER":
         raise ValueError("LIVE positions are closed in the broker app - ATP places no broker order in Phase 0")
     lookup = await price_lookup_for_user(session, user)
@@ -541,7 +566,7 @@ async def exit_now(session: AsyncSession, trade: TradeRecord, user: User, *, via
     async def price_of(leg: TradeRecord) -> Tuple[float, str]:
         if lookup is not None:
             try:
-                return float(await lookup(leg.symbol, exchange_for_trade(leg))), "live price"
+                return float(await lookup(leg.symbol, await venue_for(session, leg))), "live price"
             except Exception as exc:  # noqa: BLE001 - fall back below
                 logger.warning("Exit now: no live price for %s: %s", leg.symbol, type(exc).__name__)
         if leg.mark_price and recent_mark(leg):

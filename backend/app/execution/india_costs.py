@@ -165,14 +165,15 @@ _CTT = Source("https://www.mcxindia.com/market-operations/clearing-settlement/co
               "Finance Act 2013 Chapter VII (Commodities Transaction Tax); MCX CTT page", "2013-07-01",
               "0.01% of the price of a sale of non-agricultural commodity derivatives (futures), payable by the seller, from "
               "1 Jul 2013. Finance Bill text: https://www.indiabudget.gov.in/budget2013-2014/ub2013-14/fb/bill7.pdf")
-_VDA_TDS = Source("https://www.incometaxindia.gov.in/documents/d/guest/circular-23-2022-pdf",
-                  "s.194S Income-tax Act 1961 (CBDT Circular 23/2022); s.393(1) Table Sl. 8(vi) Income-tax Act 2025 from "
-                  "1 Apr 2026", "2022",
+_VDA_TDS = Source("https://www.incometaxindia.gov.in/w/circular-no.-13/2022-guidelines-for-removal-of-difficulties-under-sub-section-6-"
+                  "of-section-194s-of-the-income-tax-act-1961",
+                  "s.194S Income-tax Act 1961 (CBDT Circular 13/2022 of 22 Jun 2022 and Circular 14/2022 of 28 Jun 2022: the "
+                  "s.194S guidelines); s.393(1) Table Sl. 8(vi) Income-tax Act 2025 from 1 Apr 2026", "2022-06-22",
                   "1% of the consideration for transfer of a virtual digital asset (from 1 Jul 2022). From 1 Apr 2026 the same "
-                  "1% with a nil threshold in the s.393(1) table: https://www.incometaxindia.gov.in/w/section-393-5 (the "
-                  "circular's own date was not read).")
-_VDA_TAX = Source("https://www.incometaxindia.gov.in/w/section-115bbh-1",
-                  "s.115BBH Income-tax Act 1961 (Finance Act 2022, from 1 Apr 2022 / AY 2023-24)", "2022-03-30",
+                  "1% with a nil threshold in the s.393(1) table (page URL not confirmed - verify: "
+                  "https://www.incometaxindia.gov.in/w/section-393-5).")
+_VDA_TAX = Source("https://www.incometaxindia.gov.in/w/section-115bbh",
+                  "s.115BBH Income-tax Act 1961 (Finance Act 2022, from 1 Apr 2022 / AY 2023-24; CBDT Circular 23/2022 explains it)", "2022-03-30",
                   "30% of the income from transfer of a virtual digital asset, no deduction but the cost of acquisition, no "
                   "set-off of losses.",
                   verify="From 1 Apr 2026 the Income-tax Act 2025 applies; the section that carries the 30% rate in the new Act "

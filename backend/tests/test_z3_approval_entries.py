@@ -23,6 +23,8 @@ from app.platform import controls
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
 
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+
 UTC = timezone.utc
 BACKEND = Path(__file__).resolve().parents[1]
 

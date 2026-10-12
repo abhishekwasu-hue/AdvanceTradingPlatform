@@ -415,6 +415,8 @@ async def build_slot(session: Optional[AsyncSession], owner: Any) -> AsyncIterat
     * at most BUILD_CONCURRENCY builds per process;
     * the whole wait is bounded by SLOT_WAIT_SECONDS; past it the request is answered 503 "busy, retry" with Retry-After.
     Nothing read from the session may be used lazily after this (its objects are detached, already loaded)."""
+    if owner is None:
+        raise ValueError("build_slot needs the owner (the user id): a shared 'None' lock would serialise every caller")
     if session is not None:
         await session.close()
     loop_id = id(asyncio.get_running_loop())
@@ -448,9 +450,23 @@ async def build_slot(session: Optional[AsyncSession], owner: Any) -> AsyncIterat
 
 
 async def _in_slot(session: Optional[AsyncSession], owner: Any, fn: Any, *args: Any) -> Any:
-    """`fn(*args)` in a worker thread inside `build_slot` (the session is released first)."""
+    """`fn(*args)` in a worker thread inside `build_slot` (the session is released first).
+    A worker thread cannot be stopped: when the request is cancelled (the client went away) the slot and the user's
+    lock stay held until the thread has finished, then the cancellation goes on (CH6a re-review LOW-1) - so the
+    number of builds actually running never exceeds BUILD_CONCURRENCY, nor one per user."""
     async with build_slot(session, owner):
-        return await asyncio.to_thread(fn, *args)
+        work = asyncio.ensure_future(asyncio.to_thread(fn, *args))
+        try:
+            return await asyncio.shield(work)
+        except asyncio.CancelledError:
+            while not work.done():
+                try:
+                    await asyncio.shield(work)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:  # noqa: BLE001 - the build's own failure no longer matters to a cancelled request
+                    break
+            raise
 
 
 MtfItem = Tuple[str, tuple, Optional[Dict[str, Any]], Optional[pd.DataFrame], Optional[str]]
@@ -507,9 +523,10 @@ def mtf_remember(items: Sequence[MtfItem], rows: Sequence[Dict[str, Any]]) -> No
 
 
 async def mtf_rows(session: AsyncSession, key: str, when: datetime, daily: Optional[Tuple[datetime, pd.DataFrame, Optional[str]]] = None,
-                   owner: Any = None) -> List[Dict[str, Any]]:
+                   *, owner: Any) -> List[Dict[str, Any]]:
     """Both halves: the bars read, the session released, the rows built in a slot (a caller that builds more in the
-    same request uses `mtf_frames` + `mtf_build` inside its own one slot)."""
+    same request uses `mtf_frames` + `mtf_build` inside its own one slot). `owner` (the user id) is required: the
+    slot's per-user lock is keyed by it (re-review LOW-2)."""
     items = await mtf_frames(session, key, when, daily)
     if all(row is not None for _t, _ck, row, _f, _s in items):
         return [row for _t, _ck, row, _f, _s in items if row is not None]

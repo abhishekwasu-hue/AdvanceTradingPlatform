@@ -423,6 +423,12 @@ own output on the frozen fixtures, checked against Trade live when the repositor
         `Z5_TEST_PG_URL` is set).
     - **Re-review LOW.** The studies cache key carries each study's refusal messages word for word, so one
       organisation's refusal text is never served to another.
+    - **Re-review LOWs (2):**
+      - A cancelled request (the client went away) keeps its slot and the user's lock until its worker thread has
+        finished, because a thread cannot be stopped. The cancellation then goes on, so the builds actually running
+        never exceed 2, nor one per user.
+      - `owner` is required: `mtf_rows(..., *, owner)`, and `build_slot` refuses `None`, so there is no shared lock.
+      - The layer loader's busy-retry is tested.
     - **LOW, read caps per study.** When the warm-up read is refused (the 180-day 1-minute rebuild cap, the row
       cap), the study whose own warm-up reaches furthest back is refused with the reason and the read is retried.
       Only a window too large on its own refuses the request.

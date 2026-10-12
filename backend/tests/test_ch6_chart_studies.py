@@ -555,3 +555,50 @@ def _flag_layer(on):
             await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": stored}, None)
             await session.commit()
     _run(go())
+
+
+# --------------------------------------------------------------------------------------------- CH6a re-review LOWs
+def test_a_cancelled_request_keeps_its_slot_until_its_build_has_finished():
+    """LOW-1: a worker thread cannot be stopped, so a cancelled request (the client went away) holds its slot and the
+    user's lock until the thread is done - the builds running never exceed BUILD_CONCURRENCY, nor one per user."""
+    import threading
+
+    from app.charts import price_action_layer as PAL
+    gate = threading.Event()
+    started = threading.Event()
+
+    def slow():
+        started.set()
+        gate.wait(5)
+        return "done"
+
+    async def go():
+        sem = PAL._slots()
+        req = asyncio.create_task(PAL._in_slot(None, "carol", slow))
+        while not started.is_set():
+            await asyncio.sleep(0.01)
+        req.cancel()
+        await asyncio.sleep(0.1)
+        assert not req.done()                                            # still waiting for its thread ...
+        assert sem._value == PAL.BUILD_CONCURRENCY - 1                   # ... holding its slot
+        assert PAL._USER_LOCKS[id(asyncio.get_running_loop())]["carol"][0].locked()
+        gate.set()
+        with pytest.raises(asyncio.CancelledError):
+            await req
+        assert sem._value == PAL.BUILD_CONCURRENCY and "carol" not in PAL._USER_LOCKS[id(asyncio.get_running_loop())]
+    asyncio.run(go())
+
+
+def test_the_owner_is_required():
+    """LOW-2: no shared "None" lock - every slot names its user."""
+    import inspect
+
+    from app.charts import price_action_layer as PAL
+    param = inspect.signature(PAL.mtf_rows).parameters["owner"]
+    assert param.kind is inspect.Parameter.KEYWORD_ONLY and param.default is inspect.Parameter.empty
+
+    async def go():
+        with pytest.raises(ValueError):
+            async with PAL.build_slot(None, None):
+                pass
+    asyncio.run(go())

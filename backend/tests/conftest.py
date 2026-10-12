@@ -49,7 +49,8 @@ def _platform_state_reset_per_module():
             # The worker sweeps every open position, deployment or not (ADR-0004): a position a module left open would be
             # priced and closed by the next module's worker cycles. Each module starts with none open.
             await session.execute(update(TradeRecord).where(TradeRecord.exit_time.is_(None))
-                                  .values(exit_time=datetime.now(timezone.utc), exit_reason="test isolation: left open by an earlier module"))
+                                  .values(exit_time=datetime.now(timezone.utc), exit_price=TradeRecord.entry_price, pnl=0.0,
+                                          exit_reason="test isolation: left open by an earlier module"))
             await session.commit()
     try:
         asyncio.run(reset())
@@ -75,7 +76,8 @@ def no_open_positions_from_earlier_tests():
     async def close_leftovers():
         async with _session_factory() as session:
             await session.execute(update(TradeRecord).where(TradeRecord.exit_time.is_(None))
-                                  .values(exit_time=datetime.now(timezone.utc), exit_reason="test isolation: left open by an earlier test"))
+                                  .values(exit_time=datetime.now(timezone.utc), exit_price=TradeRecord.entry_price, pnl=0.0,
+                                          exit_reason="test isolation: left open by an earlier test"))
             await session.commit()
     asyncio.run(close_leftovers())
     yield

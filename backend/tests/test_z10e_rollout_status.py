@@ -240,28 +240,43 @@ def test_status_is_rate_limited_per_ip(status_on):
 
 
 def test_tenant_incidents_and_incident_text_never_reach_the_public_body(status_on):
-    async def seed():
+    """The suite shares one database: incidents other tests left open (the kill switch opens platform-wide ones) and
+    their maintenance note are set aside for this test and put back afterwards."""
+    async def set_aside():
         async with _session_factory() as session:
+            others = {r.id: r.status for r in await session.scalars(select(IncidentRecord).where(IncidentRecord.status.in_(("OPEN", "MITIGATED"))))}
+            for row in await session.scalars(select(IncidentRecord).where(IncidentRecord.id.in_(list(others) or [-1]))):
+                row.status = "RESOLVED"
+            maintenance = await controls._get(session, controls.KEY_MAINTENANCE)
+            await controls._set(session, controls.KEY_MAINTENANCE, {"on": False, "message": ""}, None)
             session.add(IncidentRecord(title="Tenant 7 broker keys leaked", severity="CRITICAL", summary="internal detail", status="OPEN",
                                        source="operator", tenant_id=1))
             session.add(IncidentRecord(title="Postgres replica lag on db-2", severity="WARNING", summary="internal", status="OPEN",
                                        source="operator", tenant_id=None, root_cause="secret cause"))
             await session.commit()
-    _run(seed())
-    status_page.reset_cache()
-    text = client.get("/api/status").text
-    for leaked in ("Tenant 7", "broker keys", "Postgres", "db-2", "internal", "secret cause", "operator"):
-        assert leaked not in text
-    incidents = json.loads(text)["banner"]["incidents"]
-    assert {"impact": "minor", "state": "investigating"}.items() <= incidents[0].items()
-    assert all(i["impact"] == "minor" for i in incidents)            # the CRITICAL one is organisation-scoped: left out
+            return others, maintenance
 
-    async def resolve():
+    async def put_back(others, maintenance):
         async with _session_factory() as session:
-            for row in await session.scalars(select(IncidentRecord).where(IncidentRecord.status == "OPEN")):
-                row.status = "RESOLVED"
+            for row in await session.scalars(select(IncidentRecord).where(IncidentRecord.status.in_(("OPEN", "MITIGATED")))):
+                row.status = "RESOLVED"                                      # the two seeded here
+            for row in await session.scalars(select(IncidentRecord).where(IncidentRecord.id.in_(list(others) or [-1]))):
+                row.status = others[row.id]
+            await controls._set(session, controls.KEY_MAINTENANCE, maintenance, None)
             await session.commit()
-    _run(resolve())
+
+    others, maintenance = _run(set_aside())
+    try:
+        status_page.reset_cache()
+        text = client.get("/api/status").text
+        for leaked in ("Tenant 7", "broker keys", "Postgres", "db-2", "internal", "secret cause", "operator"):
+            assert leaked not in text, leaked
+        incidents = json.loads(text)["banner"]["incidents"]
+        # Only the platform-wide WARNING: the CRITICAL one is organisation-scoped and left out.
+        assert [{k: i[k] for k in ("impact", "state")} for i in incidents] == [{"impact": "minor", "state": "investigating"}]
+    finally:
+        _run(put_back(others, maintenance))
+        status_page.reset_cache()
 
 
 # --- public status page: the body, on a database of its own ---------------------------------------------------------------

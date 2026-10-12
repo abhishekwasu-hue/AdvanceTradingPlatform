@@ -66,7 +66,9 @@ def test_next_open_fills_close_marks_and_a_rebalance(monkeypatch):
     qty_b = int(equity_day3_open * (1 - B.CASH_BUFFER) // 40)
     assert res.equity[2] == pytest.approx(equity_day3_open - qty_b * 40 + qty_b * 40)
     assert [r["held"] for r in res.rebalances] == [["A"], ["B"]] and res.holdings == [1, 1]
-    assert len(res.returns) == len(res.days) - 1 and res.costs == 0.0
+    # review of S6b (MED): day 1 is measured from the capital, so its move (and costs) count
+    assert len(res.returns) == len(res.days) and res.costs == 0.0
+    assert res.returns[0] == pytest.approx(res.equity[0] / 100_000 - 1.0)
 
 
 def test_charges_and_slippage_are_paid():
@@ -192,3 +194,47 @@ def test_backtest_refusals(monkeypatch):
     monkeypatch.setenv("BACKTEST_HOLDOUT_START", str(days[140]))
     sealed = client.post("/api/screener/history/backtest", headers=t["headers"], json=base)
     assert sealed.status_code == 422 and "holdout" in sealed.text
+
+
+# --- review of S6b -----------------------------------------------------------------------------------------------------------------
+
+def test_rank_by_passes_the_screen_gates_and_must_be_a_number():
+    t = _org("rankgate")
+    frames, days = _symbols(2)
+    base = {"source": SCREEN, "start": str(days[110]), "end": str(days[150]), "universe": {"symbols": list(frames)}, "top_n": 1}
+    for rank_by, why in (("RelVolume(20)", "screener_breakouts"), ("PCR()", "PCR()"), ("close > open", "a number"),
+                         ('Trend(3) == "UPTREND"', "last bar only")):
+        r = client.post("/api/screener/history/backtest", headers=t["headers"], json={**base, "rank_by": rank_by})
+        assert r.status_code == 422 and why in r.text, (rank_by, r.text)
+    ok = client.post("/api/screener/history/backtest", headers=t["headers"], json={**base, "rank_by": "PctChange(close, 20)"})
+    assert ok.status_code == 200, ok.text
+
+
+def test_a_holding_without_an_open_is_kept_not_sold_at_a_stale_close(monkeypatch):
+    _no_charges(monkeypatch)
+    from tests.test_n3_s6_history import _sessions
+    sess = _sessions(8)
+    a = _bars([100.0] * 8, [100.0] * 8, sess)
+    b = _bars([50.0] * 8, [50.0] * 8, sess)
+    a = a.drop(a.index[3])                                            # A does not trade on day 3 (suspended)
+    frames = {"A": a, "B": b}
+    sig = pd.DataFrame(False, index=pd.Index([sess[0], sess[2]]), columns=["A", "B"])
+    sig.loc[sess[0], "A"] = True                                      # bought day 1
+    sig.loc[sess[2], "B"] = True                                      # switch to B at day 3's open - A has no open then
+    res = B.simulate(sig, None, frames, sess, sess[-1], FREE)
+    assert res.rebalances[1]["filled"] == str(sess[3])
+    assert res.holdings[1] == 2                                       # A kept (could not be sold), B bought with the cash left
+
+
+def test_benchmarks_share_the_basis_and_a_missing_close_is_skipped(monkeypatch):
+    _no_charges(monkeypatch)
+    from tests.test_n3_s6_history import _sessions
+    sess = _sessions(6)
+    frames = {"A": _bars([100, 102, 104, 106, 108, 110], [101, 103, 105, 107, 109, 111], sess)}
+    sig = pd.DataFrame(True, index=pd.Index([sess[0]]), columns=["A"])
+    nifty = pd.Series({sess[0]: 100.0, sess[1]: 101.0, sess[3]: 103.0, sess[4]: 104.0, sess[5]: 105.0})   # sess[2] missing
+    res = B.simulate(sig, None, frames, sess, sess[-1], FREE, benchmark_closes={"nifty_50": nifty})
+    assert res.benchmark_returns["equal_weight_universe"][0] == pytest.approx(103 / 102 - 1)      # day 1 from the open
+    assert res.benchmark_returns["nifty_50"][0] == pytest.approx(101 / 100 - 1)
+    assert res.benchmark_missing == {"nifty_50": 1} and len(res.benchmark_returns["nifty_50"]) == len(res.days) - 1
+    assert B.report(res, FREE)["benchmark_missing_sessions"] == {"nifty_50": 1}

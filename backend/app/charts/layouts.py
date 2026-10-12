@@ -148,6 +148,9 @@ async def list_layouts(user: User = Depends(get_current_user), session: AsyncSes
 @router.post("", status_code=201)
 async def create_layout(body: CreateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
+    # One create at a time per user: the user's row is locked (Postgres SELECT ... FOR UPDATE, held to the commit), so
+    # two racing creates are counted one after the other. The re-count after the insert stays as a second guard.
+    await session.execute(select(User.id).where(User.id == user.id).with_for_update())
     if await _count(session, user) >= MAX_PER_USER:
         raise HTTPException(status_code=409, detail=f"at most {MAX_PER_USER} saved layouts per user - delete one first")
     now = datetime.now(timezone.utc)

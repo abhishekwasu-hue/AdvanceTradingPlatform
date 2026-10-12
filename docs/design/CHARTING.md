@@ -358,7 +358,7 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
   window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
   cell's button) shows the active chart at full size.
 - **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and
-  tenant, a unique name per user, at most 50 (re-counted after the insert, so two racing creates cannot pass it),
+  tenant, a unique name per user, at most 50 (the user's row is locked with `SELECT ... FOR UPDATE` before the count, and re-counted after the insert, so two racing creates cannot pass it),
   versioned: the save and the delete are a conditional `UPDATE` / `DELETE ... WHERE id, user, tenant AND version`
   with a row-count check, so of two tabs saving at once exactly one wins and the other gets 409 with the current
   layout; the page says so. `GET/POST /api/charts/layouts`, `PUT/DELETE /api/charts/layouts/{id}` (the

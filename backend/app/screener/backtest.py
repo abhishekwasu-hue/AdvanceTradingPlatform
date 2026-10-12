@@ -73,16 +73,17 @@ class Result:
     turnover: List[float] = field(default_factory=list)
     holdings: List[int] = field(default_factory=list)
     rebalances: List[Dict[str, Any]] = field(default_factory=list)
+    benchmark_missing: Dict[str, int] = field(default_factory=dict)     # sessions a benchmark had no close (skipped)
 
 
 def rank_table(rank_ast: Any, frames: Dict[str, pd.DataFrame], dates: Sequence[date], params: Optional[Dict[str, Any]] = None,
-               validated: Any = None) -> pd.DataFrame:
+               validated: Any = None, scales: Optional[Dict[str, Dict[date, H.Scale]]] = None) -> pd.DataFrame:
     """[dates x symbols] the rank expression's value at each date, on bars closed by then (S6a's causal series read at
     the date, vectorised where the panel covers the expression; NaN where there is none)."""
     if validated is None:
         from app.screener.validator import validate
         validated = validate(rank_ast, base_tf=H.BASE_TF, params=params)       # a number, not a condition: only its plan is used
-    values = H.series_at_dates(rank_ast, validated, frames, dates, params)
+    values = H.series_at_dates(rank_ast, validated, frames, dates, params, scales)
     return values.apply(pd.to_numeric, errors="coerce").astype(float)
 
 
@@ -144,8 +145,14 @@ def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str,
     last = max(k for k, d in enumerate(calendar) if d <= end)
     cash = float(settings.capital)
     qty = np.zeros(len(cols))
-    prev_equity: Optional[float] = None
+    # review of S6b (MED): day 1 is measured from the capital - its costs and its open-to-close move count
+    prev_equity: Optional[float] = float(settings.capital)
     bench_prev: Dict[str, Optional[float]] = {}
+    if first > 0:                                           # the benchmarks' basis: the last close before the first fill day
+        for name, series in (benchmark_closes or {}).items():
+            value = series.get(calendar[first - 1])
+            if value is not None and np.isfinite(value):
+                bench_prev[name] = float(value)
     ew_index = np.zeros(0, dtype=int)
     for k in range(first, last + 1):
         day = calendar[k]
@@ -158,9 +165,12 @@ def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str,
             equity_before = cash + float(np.nansum(qty * np.nan_to_num(px)))
             traded_value = 0.0
             new_qty = np.zeros(len(cols))
+            stuck = [j for j in range(len(cols)) if qty[j] > 0 and (not np.isfinite(opens[k, j]) or opens[k, j] <= 0)]
+            for j in stuck:
+                new_qty[j] = qty[j]                           # review of S6b (LOW): no open today - kept, never sold at a stale close
             for s, w in target.items():
                 j = col[s]
-                if not np.isfinite(opens[k, j]) or opens[k, j] <= 0:
+                if not np.isfinite(opens[k, j]) or opens[k, j] <= 0 or j in stuck:
                     continue                                  # does not trade at this open: not bought
                 # a cash buffer (CASH_BUFFER) for the charges, so the book is never financed by negative cash
                 new_qty[j] = math.floor(w * equity_before * (1 - CASH_BUFFER) / (opens[k, j] * (1 + slip)))
@@ -187,17 +197,23 @@ def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str,
         result.equity.append(equity)
         if prev_equity is not None:
             result.returns.append(equity / prev_equity - 1.0)
-            # the equal-weight universe: today's close over yesterday's, over the members that traded both days
+            # the equal-weight universe on the strategy's basis: day 1 from the open (the book is bought there), later
+            # days close over the last close (a name without a bar keeps its last price, as a holding does - review of S6b)
             with np.errstate(invalid="ignore", divide="ignore"):
-                day_ret = closes[k, ew_index] / closes[k - 1, ew_index] - 1.0
+                if k == first:
+                    day_ret = marks[k, ew_index] / opens[k, ew_index] - 1.0
+                else:
+                    day_ret = marks[k, ew_index] / marks[k - 1, ew_index] - 1.0
             day_ret = day_ret[np.isfinite(day_ret)]
             ew = float(day_ret.mean()) if len(day_ret) else 0.0
             result.benchmark_returns.setdefault("equal_weight_universe", []).append(ew)
             for name, series in (benchmark_closes or {}).items():
                 value = series.get(day)
                 before = bench_prev.get(name)
-                result.benchmark_returns.setdefault(name, []).append(
-                    float(value) / before - 1.0 if value is not None and before and np.isfinite(value) else 0.0)
+                if value is not None and before and np.isfinite(value):
+                    result.benchmark_returns.setdefault(name, []).append(float(value) / before - 1.0)
+                else:                                          # review of S6b (LOW): a missing close is skipped and counted, never 0 %
+                    result.benchmark_missing[name] = result.benchmark_missing.get(name, 0) + 1
         for name, series in (benchmark_closes or {}).items():
             value = series.get(day)
             if value is not None and np.isfinite(value):
@@ -230,7 +246,7 @@ def report(result: Result, settings: Settings) -> Dict[str, Any]:
                      if own["total_return"] is not None and b["total_return"] is not None else None) for name, b in benches.items()}
     return {"strategy": own, "benchmarks": benches, "excess_total_return": excess,
             "final_equity": round(result.equity[-1], 2) if result.equity else settings.capital, "capital": settings.capital,
-            "costs": round(result.costs, 2), "rebalances": len(result.rebalances),
+            "costs": round(result.costs, 2), "rebalances": len(result.rebalances), "benchmark_missing_sessions": dict(result.benchmark_missing),
             "turnover_per_rebalance": round(float(np.mean(result.turnover)), 4) if result.turnover else None,
             "avg_holdings": round(float(np.mean(result.holdings)), 2) if result.holdings else 0.0,
             "settings": {"top_n": settings.top_n, "weighting": settings.weighting, "descending": settings.descending,

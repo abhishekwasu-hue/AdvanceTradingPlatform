@@ -43,8 +43,9 @@ def test_neutral_and_negated_text_passes_unchanged(text):
 
 
 def test_a_specific_call_is_kept_with_educational_framing_in_the_answer_language():
-    en = output_filter.screen("Buy NIFTY 25000 CE above 120.", "en")
-    assert en.ok and en.framed and en.text.startswith("Buy NIFTY 25000 CE") and "not investment advice" in en.text
+    # (an imperative call aimed at an instrument - "Buy NIFTY 25000 CE above 120." - is now blocked, tests/test_ai_call_filter.py)
+    en = output_filter.screen("One could buy the 25000 CE above 120.", "en")
+    assert en.ok and en.framed and en.text.startswith("One could buy the 25000 CE") and "not investment advice" in en.text
     mr = output_filter.screen("25200 च्या वर खरेदी चा विचार होऊ शकतो.", "mr")
     assert mr.ok and mr.framed and "शिक्षणासाठी" in mr.text
     again = output_filter.screen(en.text, "en")                                   # framing is added once

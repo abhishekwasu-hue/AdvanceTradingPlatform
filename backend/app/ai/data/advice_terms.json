@@ -29,6 +29,24 @@
     "en": ["buy", "sell", "short", "go long", "go short"],
     "mr": ["खरेदी", "विक्री", "विका", "घ्या"]
   },
+  "calls": {
+    "_comment": "Calls aimed at an instrument - blocked, not framed (app/ai/output_filter.call_terms): an imperative trade verb opening a clause next to a ticker (an upper-case symbol not in not_tickers) or a share word; 'TICKER: buy the dip'; a stop AND a target with numbers plus an entry level or a ticker in one sentence; a price level with certainty ('to 3000 for sure'). Every language is checked whatever the answer language.",
+    "verbs": {"en": ["buy", "sell", "short", "short sell", "go long", "go short", "accumulate", "exit", "book profit", "book profits",
+                     "average down", "load up on"],
+              "mr": ["खरेदी करा", "खरेदी करावा", "खरेदी करावे", "विक्री करा", "विकून टाका", "घ्या", "विका", "घेऊन टाका"],
+              "hi": ["खरीदें", "खरीदो", "खरीद लें", "खरीद लो", "बेचें", "बेचो", "बेच दें", "बेच दो", "ले लें", "ले लो"]},
+    "share_words": ["share", "shares", "stock", "शेअर", "शेअर्स", "शेयर", "शेयर्स", "स्टॉक", "समभाग"],
+    "entry": ["entry", "enter at", "enter above", "buy above", "buy at", "buy near", "buy below", "sell below", "sell at", "sell above",
+              "एन्ट्री", "प्रवेश"],
+    "stop": ["sl", "stop loss", "stop-loss", "stoploss", "stop", "स्टॉप लॉस", "स्टॉपलॉस", "स्टॉप-लॉस", "स्टॉप"],
+    "target": ["tgt", "target", "targets", "t1", "t2", "लक्ष्य", "टार्गेट", "टारगेट"],
+    "certainty": ["for sure", "surely", "definitely", "certainly", "pakka", "नक्की", "पक्का", "पक्के", "ज़रूर", "जरूर", "निश्चित", "निश्चितच"],
+    "moves": ["to", "till", "upto", "up to", "reach", "reaches", "hit", "hits", "touch", "touches", "cross", "crosses", "target", "targets",
+              "पर्यंत", "तक", "लक्ष्य", "टार्गेट"],
+    "not_tickers": ["CE", "PE", "SL", "TGT", "RSI", "SMA", "EMA", "ATR", "ADX", "VWAP", "OI", "PCR", "IV", "AND", "OR", "NOT", "THE", "IF",
+                    "MACD", "DMA", "OHLC", "BOS", "CHOCH", "AI", "API", "PAPER", "LIVE", "NSE", "BSE", "MCX", "EOD", "IST", "ATM", "OTM",
+                    "ITM", "UP", "DOWN", "T1", "T2", "PNL", "P&L", "FII", "DII", "GTT", "MIS", "CNC", "NRML", "OK", "SEBI", "RBI", "GDP", "CPI"]
+  },
   "framing": {
     "en": "Educational illustration only - not investment advice or a recommendation to trade. Check it against your own plan and risk limits.",
     "mr": "हे फक्त शिक्षणासाठी उदाहरण आहे - गुंतवणुकीचा सल्ला किंवा trade ची शिफारस नाही. तुमच्या plan आणि risk मर्यादांशी तपासून पाहा."

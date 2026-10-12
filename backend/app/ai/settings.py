@@ -94,7 +94,8 @@ async def mark_used(session: AsyncSession, tenant_id: int, error: Optional[str] 
 TYPICAL_CALL_TOKENS = {"cheap": (1500, 300), "fast": (3000, 1200), "strong": (6000, 4000)}
 TASK_LABELS = {"strategy_generation": "Strategy drafts", "strategist": "Strategist rule proposals", "scanner_plan": "Scanner plans",
                "narration": "Narration", "copilot": "Copilot chat", "knowledge": "Guide answers", "thesis": "Thesis wording",
-               "classification": "News classification", "scanner_read": "Scanner reads"}
+               "classification": "News classification", "scanner_read": "Scanner reads",
+               "support": "Help desk answers"}
 
 
 def task_models(tenant_model: Optional[str] = None, tenant_provider: Optional[str] = None) -> dict:

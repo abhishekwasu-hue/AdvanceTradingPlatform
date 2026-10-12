@@ -65,3 +65,8 @@ export function pageFromPath(pathname: string): Page | null {
   if (parts.length > (first === "copilot" ? 2 : 1)) return null;
   return first as Page;
 }
+
+/** Z10-e: the public status page, `/status` or `/status/` - rendered on its own, outside the app shell. */
+export function isStatusPath(pathname: string): boolean {
+  return /^\/status\/?$/.test(pathname);
+}

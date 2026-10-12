@@ -21,6 +21,7 @@ revision: str = 'd2a7c9e4f581'
 down_revision: Union[str, Sequence[str], None] = 'c81f4e2a9d36'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z11: create_foreign_key on an existing table - a code-only rollback past it is refused; use --restore-db
 
 
 # NSE Capital Market segment trading holidays for calendar year 2026, per NSE circular

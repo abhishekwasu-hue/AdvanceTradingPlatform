@@ -13,6 +13,7 @@ revision: str = 'a2b4c6d8e0f2'
 down_revision: Union[str, Sequence[str], None] = 'f1a3b5c7d9e1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z11: create_foreign_key on an existing table - a code-only rollback past it is refused; use --restore-db
 
 
 def _fk_names(table: str) -> dict:

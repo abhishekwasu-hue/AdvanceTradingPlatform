@@ -206,6 +206,10 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
             if r.symbol not in globals_ and captured >= now - timedelta(days=3):
                 globals_[r.symbol] = _row(r)
             continue
+        if (r.kind or "SYMBOL") != "SYMBOL":
+            # Only symbol reads below. Other kinds (the VIX gate's live India VIX reading, Z5) are not the Copilot's
+            # context: never shown as a symbol snapshot or in its history, and never make "newest" look fresh.
+            continue
         if r.symbol not in symbols and captured >= now - timedelta(days=3):
             symbols[r.symbol] = _row(r)
         day = captured.astimezone(IST).date().isoformat()

@@ -17,6 +17,7 @@ revision: str = 'c81f4e2a9d36'
 down_revision: Union[str, Sequence[str], None] = 'b7d4f9a3c821'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = False    # Z11: alter_column server_default=None - a code-only rollback past it is refused; use --restore-db
 
 GENESIS_HASH = "GENESIS"
 

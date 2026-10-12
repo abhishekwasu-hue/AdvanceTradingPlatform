@@ -257,6 +257,30 @@ class FanInReport:
     errors: List[str] = field(default_factory=list)
 
 
+async def eligible_sessions(db: Any, now: datetime) -> Dict[str, Any]:
+    """namespace -> credential row for every user session the worker keeps open while NSE is open: a credential at a
+    broker whose data terms are confirmed, with a usable token, in a tenant the `byob_data_tier` flag is on for. The
+    worker's `sync` opens exactly these; the public status page (Z10-e) counts them."""
+    from sqlalchemy import select
+
+    from app.brokers.token_lifecycle import token_is_usable
+    from app.db.models import BrokerCredentialRecord
+    from app.platform.controls import feature_flags
+
+    flag = (await feature_flags(db)).get(FLAG) or {}
+    if not (flag.get("on") or flag.get("tenants")):
+        return {}
+    allowed_tenants = set(flag.get("tenants") or [])
+    rows = await db.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.broker_name.in_(sorted(confirmed_brokers()))))
+    wanted: Dict[str, Any] = {}
+    for record in rows:
+        if not (flag.get("on") or record.tenant_id in allowed_tenants):
+            continue
+        if token_is_usable(record, now):
+            wanted[SessionRef.of(record).namespace] = record
+    return wanted
+
+
 class UserSessionFanIn:
     """The worker's per-user sessions (bring your own broker). `sync` is called once per worker cycle."""
 
@@ -331,24 +355,14 @@ class UserSessionFanIn:
         on), close the rest; then refresh each session's positions and plan. Market closed = day end: all closed."""
         from sqlalchemy import select
 
-        from app.brokers.token_lifecycle import token_is_usable
-        from app.db.models import BrokerCredentialRecord, TradeRecord
-        from app.platform.controls import feature_flags
+        from app.db.models import TradeRecord
         from app.trading.position_monitor import exchange_for_trade, underlying_exchange
 
         report = FanInReport()
-        flag = (await feature_flags(db)).get(FLAG) or {}
-        if not market_open or not (flag.get("on") or flag.get("tenants")):
+        wanted = await eligible_sessions(db, now) if market_open else {}
+        if not wanted:
             report.closed = await self.close_all()
             return report
-        allowed_tenants = set(flag.get("tenants") or [])
-        rows = await db.scalars(select(BrokerCredentialRecord).where(BrokerCredentialRecord.broker_name.in_(sorted(confirmed_brokers()))))
-        wanted: Dict[str, Any] = {}
-        for record in rows:
-            if not (flag.get("on") or record.tenant_id in allowed_tenants):
-                continue
-            if token_is_usable(record, now):
-                wanted[SessionRef.of(record).namespace] = record
         today = now.astimezone(IST).date()
         for namespace, live in list(self._sessions.items()):
             if namespace not in wanted or live.opened_day != today:

@@ -49,7 +49,11 @@ minutes while NSE is open: the live LTP and the close of the last completed sess
 numbers), stamped with today's IST date. With `byob_data_tier` on it reads only through the acting user's own Tier A
 session; else through the organisation's usable session. A failed read is stored with its reason. Before 09:20 the
 gate is open; after 09:20 + 10 minutes, on a weekday, no valid reading pauses bullish index entries (Trade's
-fail-safe). The Copilot's market-memory CUE row (completed daily bars) is not used.
+fail-safe). The Copilot's market-memory CUE row (completed daily bars) is not used. With `byob_data_tier` on, each active
+member's own Tier A session is tried in turn until one reads; the reading records whose session took it, and only that
+member sees India VIX's values (the strip, the refusal wording) - everyone else gets the same verdict and reason without
+them (BT1b). A capture that fails before reading stores a failed reading, or is retried on the next cycle. The VIX
+readings are not Copilot market memory (`market_memory.latest` shows SYMBOL rows only).
 
 ## Where it runs
 
@@ -66,7 +70,9 @@ fail-safe). The Copilot's market-memory CUE row (completed daily bars) is not us
 
 ## The ticket's placement
 
-The ticket takes NSE/BSE cash underlyings only in Phase 0 (no futures, options, commodities or crypto). A time stop must
+The ticket takes NSE/BSE cash underlyings only in Phase 0 (no futures, options, commodities or crypto): by the instrument
+master when it knows the symbol (an NSE/BSE EQ or INDEX row), else a registry contract or an option/future-shaped symbol
+is refused. An approved ticket proposal whose time stop is no longer later than now + the lead is not placed. A time stop must
 be later than now + 5 minutes IST (`TICKET_TIME_STOP_MIN_LEAD_MINUTES`); one already past would close the position at
 once. Every stored plan carries a reason: PLACED, PROPOSED ("Sent for approval: proposal #N"; it becomes PLACED or
 FAILED when the approval runs), REFUSED or FAILED.

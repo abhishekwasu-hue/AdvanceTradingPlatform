@@ -148,6 +148,7 @@ class CycleReport:
     eod_summaries: int = 0       # Phase AX: end-of-day summary notifications raised this cycle
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
+    market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
 
 
 def _just_closed(now: datetime) -> bool:
@@ -223,6 +224,8 @@ class TradingWorker:
         # HB1: the nightly EOD bhavcopy job (IST date of the last start) and its background task.
         self._last_history_eod_day = None
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
+        self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
+        self._market_zones_task: Optional["asyncio.Task[None]"] = None
         # One API rate budget per (tenant, broker): tenants use their own API keys, so their
         # broker limits are their own too (app/brokers/rate_budget.py).
         self._budgets: Dict[Tuple[int, str], RateBudget] = {}
@@ -256,6 +259,8 @@ class TradingWorker:
         self._stop.set()
         if self._history_eod_task is not None and not self._history_eod_task.done():
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
+        if self._market_zones_task is not None and not self._market_zones_task.done():
+            self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -511,6 +516,16 @@ class TradingWorker:
                 except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
                     logger.exception("History EOD job not started")
                     report.errors.append(f"history eod: {exc}")
+                # Z7a-2: market zones - once per IST day from MARKET_ZONES_HOUR_IST, NSE closed (flag `market_zones`, off by
+                # default). Started as its own task (own sessions, a time budget), so it never holds up a cycle - exits,
+                # stop guards and MCX square-off keep running. Reference data; never trades.
+                if not nse.is_open:
+                    try:
+                        report.market_zones_started = await self._maybe_start_market_zones(session, now)
+                    except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                        logger.exception("Market zones job not started")
+                        report.errors.append(f"market zones: {exc}")
+                        await session.rollback()
                 # Data retention (Phase D3): once per IST day, outside market hours so it never
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
@@ -696,10 +711,11 @@ class TradingWorker:
         for tenant_id in tenant_ids:
             if not vix_gate.due(self._last_vix.get(tenant_id), now):
                 continue
-            self._last_vix[tenant_id] = now
             with bind_log_context(tenant_id=tenant_id):
                 try:
                     user = await self._acting_user(session, tenant_id, [])
+                    members = list(await session.scalars(select(User).where(User.tenant_id == tenant_id, User.is_active.is_(True))
+                                                         .order_by(User.id)))
                     broker = None
                     if user is not None:
                         for account in await list_accounts(session, tenant_id):
@@ -707,11 +723,19 @@ class TradingWorker:
                                 broker = await self._usable_adapter(session, tenant_id, account.broker_name, user.id, now, account_label=account.account_label)
                                 if broker is not None:
                                     break
-                    await vix_gate.capture_for_tenant(session, tenant_id, user, org_adapter=broker, market_data_factory=self.market_data_factory, now=now)
+                    await vix_gate.capture_for_tenant(session, tenant_id, user, org_adapter=broker, market_data_factory=self.market_data_factory,
+                                                      now=now, members=members)
+                    self._last_vix[tenant_id] = now          # a reading (good or failed) is stored: the next one is due later
                     taken += 1
-                except Exception:  # noqa: BLE001 - one organisation's reading must not stop the others
+                except Exception as exc:  # noqa: BLE001 - one organisation's reading must not stop the others
                     logger.exception("India VIX reading for tenant %s failed", tenant_id)
                     await session.rollback()
+                    try:                                     # store why, so the gate can say it; else retry next cycle
+                        await vix_gate.capture(session, tenant_id, None, now=now, source="none", error=f"reading failed: {type(exc).__name__}: {exc}"[:150])
+                        self._last_vix[tenant_id] = now
+                    except Exception:  # noqa: BLE001 - no reading stored: due again on the next cycle
+                        logger.exception("Storing the failed India VIX reading for tenant %s failed", tenant_id)
+                        await session.rollback()
         return taken
 
     async def _keep_lock(self, session: AsyncSession, report: CycleReport, where: str) -> bool:
@@ -1000,6 +1024,31 @@ class TradingWorker:
                 await fetcher.aclose()
 
         self._history_eod_task = asyncio.get_running_loop().create_task(run())
+        return True
+
+    async def _maybe_start_market_zones(self, session: AsyncSession, now: datetime) -> bool:
+        """Z7a-2: starts the nightly market-zones pass as a background task when it is due and the flag is on for anyone.
+        One task per worker; the job's advisory lock keeps a second replica out. The day counts as done only when a pass
+        worked through the whole plan - a pass that ran out of time (or failed) is started again on a later cycle."""
+        from app.price_action.zones import job as zones_job
+
+        day = zones_job.nightly_due(now, self._last_market_zones_day)
+        if day is None or (self._market_zones_task is not None and not self._market_zones_task.done()):
+            return False
+        if not await zones_job.any_enabled(session):
+            return False                                 # asked again next cycle: turning the flag on tonight still runs
+        if not await zones_job.eod_ready(session, day, now):
+            return False                                 # HB1's EOD ingest for the day is still running: asked again next cycle
+
+        async def run() -> None:
+            try:
+                result = await zones_job.run_nightly(self.session_factory, now=now)
+                if result.get("complete"):
+                    self._last_market_zones_day = day
+            except Exception:  # noqa: BLE001 - reference data; never reaches trading
+                logger.exception("Market zones job failed")
+
+        self._market_zones_task = asyncio.get_running_loop().create_task(run())
         return True
 
     def _spawn_vision_drain(self) -> None:

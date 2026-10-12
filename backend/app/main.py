@@ -89,6 +89,7 @@ from app.exports.routes import router as exports_router
 from app.contract_notes.routes import router as contract_notes_router
 from app.observability.middleware import ObservabilityMiddleware
 from app.observability.routes import router as observability_router
+from app.observability.status_page import router as public_status_router
 from app.instruments.routes import router as instrument_master_router
 from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
@@ -111,12 +112,16 @@ from app.tax.routes import router as tax_router
 from app.fx.routes import admin_router as fx_admin_router, router as fx_router
 from app.incidents.routes import router as incidents_router
 from app.screener.routes import router as screener_router
+from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.alerts.links_routes import router as alert_links_router
+from app.alerts.outbox_admin import router as alert_outbox_admin_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
 from app.journal.routes import router as journal_router
+from app.legal.routes import router as legal_router
+from app.support.routes import router as support_router
 from app.secrets_store.envelope import warm_all as warm_tenant_keys
 
 @asynccontextmanager
@@ -197,6 +202,7 @@ app.include_router(admin_router)
 app.include_router(exports_router)
 app.include_router(contract_notes_router)
 app.include_router(observability_router)
+app.include_router(public_status_router)  # Z10-e (G7): public status page data (flag public_status_page, off)
 app.include_router(instrument_master_router)
 app.include_router(market_holidays_router)
 app.include_router(billing_router)
@@ -225,8 +231,10 @@ app.include_router(fx_router)
 app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 app.include_router(screener_router)
+app.include_router(screener_breakouts_router)
 app.include_router(alert_rules_router)
 app.include_router(alert_links_router)
+app.include_router(alert_outbox_admin_router)  # Z10-b: alert outbox state, dead letters and replay (SUPER_ADMIN)
 app.include_router(compliance_router)
 app.include_router(chart_drawings_router)
 app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs
@@ -235,6 +243,8 @@ app.include_router(pwa_router)             # PW6: PWA install/update events (cou
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
+app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
+app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
 
 _default_risk_config = RiskConfig()
 

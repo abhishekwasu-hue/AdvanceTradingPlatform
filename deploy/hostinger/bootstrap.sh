@@ -131,7 +131,7 @@ sysctl -q -w vm.swappiness=10
 echo 'vm.swappiness=10' > /etc/sysctl.d/90-atp.conf
 
 log "directories"
-install -d -m 750 -o "$ATP_USER" -g "$ATP_USER" /opt/atp /var/backups/atp-offsite /var/backups/atp-restore-test
+install -d -m 750 -o "$ATP_USER" -g "$ATP_USER" /opt/atp /var/backups/atp-offsite /var/backups/atp-restore-test /var/backups/atp-files
 
 log "done"
 docker --version; docker compose version
@@ -139,4 +139,4 @@ echo "timezone: $(timedatectl show -p Timezone --value)  swap: $(swapon --show=S
 ufw status | head -12
 echo
 echo "NEXT: open a NEW terminal and check 'ssh $ATP_USER@<server-ip>' works BEFORE closing this one."
-echo "Then run block 2 (deploy) as $ATP_USER."
+echo "Then, as $ATP_USER, paste the install.sh line (Z11: deploy key, clone, then /opt/atp/deploy/atp.sh install)."

@@ -8,6 +8,11 @@
 # schema is NOT rolled back - every migration is additive and an older image reads the newer schema (ADR in
 # scripts/deploy.sh). Positions are untouched; the worker restarts and reconciles. Prefer outside market hours.
 set -euo pipefail
+# Z11: this server is managed by deploy/atp.sh once it has recorded a release - the old blocks would build untagged
+# images and skip its checks, so they refuse (runbook docs/deploy/HOSTINGER_RUNBOOK.md).
+if [ -f "${ATP_DIR:-/opt/atp}/.deploy/releases.log" ]; then
+  echo "this server is managed by /opt/atp/deploy/atp.sh (see docs/deploy/HOSTINGER_RUNBOOK.md) - use it instead" >&2; exit 2
+fi
 ATP_DIR="${ATP_DIR:-/opt/atp}"
 cd "$ATP_DIR"
 TARGET="${1:-}"

@@ -107,5 +107,5 @@ Deployment: Autopilot → New deployment → **mode PAPER** → Start (GO_LIVE_M
 ## 7. Backups (local)
 
 `backup` service compose volume मध्ये रोज dump ठेवतो; off-site नाही. आठवड्यातून एकदा:
-`docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm backup sh /scripts/verify_backup.sh latest`.
+`docker compose -f docker-compose.yml -f docker-compose.local.yml run --rm --entrypoint sh backup /scripts/verify_backup.sh latest`.
 `.env` ची copy password manager मध्ये (SECRETS_ENCRYPTION_KEY हरवला = सगळे broker keys निरुपयोगी).

@@ -18,7 +18,7 @@ import pytest
 import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
-SCRIPTS = ["bootstrap", "deploy", "rollback", "status", "oneliners"]
+SCRIPTS = ["bootstrap", "install", "deploy", "rollback", "status", "oneliners"]
 
 
 @pytest.mark.parametrize("name", SCRIPTS)
@@ -31,7 +31,7 @@ def test_the_one_line_blocks_are_the_scripts():
     committed = (ROOT / "docs/DEPLOY_HOSTINGER_ONELINERS.txt").read_text()
     body = "\n".join(l for l in committed.splitlines() if not l.startswith("# Hostinger") and not l.startswith("# do not edit"))
     assert body.strip() == generated.strip(), "run: bash deploy/hostinger/oneliners.sh >> docs/DEPLOY_HOSTINGER_ONELINERS.txt (see its header)"
-    for name in ("bootstrap", "deploy", "rollback", "status"):
+    for name in ("bootstrap", "install", "status"):                    # Z11: deploy / rollback are deploy/atp.sh commands
         assert re.search(rf"# {name}\.sh  sha256 [0-9a-f]{{64}}\nbash -c \"\$\(echo [A-Za-z0-9+/=]+ \| base64 -d\)\"", committed), name
 
 

@@ -13,6 +13,7 @@ revision: str = 'c5e7a9b1d3f5'
 down_revision: Union[str, Sequence[str], None] = 'd4e1f2a3b4c5'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
 
 
 def upgrade() -> None:

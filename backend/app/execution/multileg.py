@@ -163,6 +163,7 @@ async def execute_structure(
         cfg, cap_notes = await by_default.apply_user_cap(session, user, cfg)
         guardian_notes.extend(cap_notes)
     guard = await guard_entry(session, user.tenant_id, mode=mode, underlying=structure.underlying_symbol, cfg=cfg,
+                              # no user_id: stored and notified org-wide - number-free VIX wording (BT1b)
                               direction=signal.direction.value) if state.daily_pnl > daily_limit else GuardianVerdict()
     if guard.reasons:
         await _reject_all(session, orders, guard.reasons)

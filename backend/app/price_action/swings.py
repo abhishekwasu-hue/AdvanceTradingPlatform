@@ -1,8 +1,27 @@
+import warnings
 from typing import List, Tuple
 
+import numpy as np
 import pandas as pd
 
 from app.price_action.models import SwingPoint
+
+
+def fractal_positions(df: pd.DataFrame, window: int = 3) -> List[Tuple[int, str]]:
+    """The positional core of `find_swings`: (bar index, "HIGH" / "LOW") in bar order, a swing high before a swing low
+    on the same bar. Bar i is a swing high / low if it is the extreme of the 2*window+1 bars centred on it (ties
+    allowed). A NaN in the window is skipped (pandas max / min) and a NaN bar is never a swing, so the swing list and
+    the market-structure events (which use this too) always agree."""
+    highs, lows = df["high"].to_numpy(float), df["low"].to_numpy(float)
+    out: List[Tuple[int, str]] = []
+    with np.errstate(invalid="ignore"), warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)                  # an all-NaN window: no swing
+        for i in range(window, len(df) - window):
+            if highs[i] == np.nanmax(highs[i - window:i + window + 1]):
+                out.append((i, "HIGH"))
+            if lows[i] == np.nanmin(lows[i - window:i + window + 1]):
+                out.append((i, "LOW"))
+    return out
 
 
 def find_swings(df: pd.DataFrame, window: int = 3) -> List[SwingPoint]:
@@ -11,18 +30,8 @@ def find_swings(df: pd.DataFrame, window: int = 3) -> List[SwingPoint]:
     to one point). A bar can register as both kinds at once (rare, e.g. a doji at a sharp turn).
     """
     highs, lows = df["high"], df["low"]
-    swings: List[SwingPoint] = []
-    n = len(df)
-
-    for i in range(window, n - window):
-        high_window = highs.iloc[i - window : i + window + 1]
-        if highs.iloc[i] == high_window.max():
-            swings.append(SwingPoint(timestamp=df.index[i], price=float(highs.iloc[i]), kind="HIGH"))
-
-        low_window = lows.iloc[i - window : i + window + 1]
-        if lows.iloc[i] == low_window.min():
-            swings.append(SwingPoint(timestamp=df.index[i], price=float(lows.iloc[i]), kind="LOW"))
-
+    swings = [SwingPoint(timestamp=df.index[i], price=float((highs if kind == "HIGH" else lows).iloc[i]), kind=kind)  # type: ignore[arg-type]
+              for i, kind in fractal_positions(df, window)]
     swings.sort(key=lambda s: s.timestamp)
     return swings
 

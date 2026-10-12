@@ -133,6 +133,13 @@ async def list_plans() -> List[PlanResponse]:
     return [PlanResponse(id=p.id, name=p.name, description=p.description, limits=plan_limits(p)) for p in PLANS.values()]
 
 
+@router.get("/screener/audit")
+async def screener_audit(session: AsyncSession = Depends(get_session)) -> dict:
+    """Z10-a: saved screens and instrument alert rules that no longer pass the ScreenQL validator (read-only)."""
+    from app.screener.audit import audit_stored
+    return await audit_stored(session)
+
+
 @router.get("/readiness")
 async def platform_readiness(session: AsyncSession = Depends(get_session)) -> dict:
     """Phase AB: the operator's go-live checklist (secrets, SMTP, gateway, worker, migrations, ...)."""

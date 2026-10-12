@@ -612,7 +612,7 @@ async def list_actions(status: Optional[str] = Query(default=None, max_length=10
     elif mode == "only":
         query = query.where(AiActionRecord.status == "PROPOSED", AiActionRecord.snoozed_until.is_not(None), AiActionRecord.snoozed_until > now)
     rows = await session.scalars(query.order_by(AiActionRecord.id.desc()).limit(limit))
-    return await proposal_card.enrich(session, user.tenant_id, rows)
+    return await proposal_card.enrich(session, user.tenant_id, rows, user=user)
 
 
 async def _action(session: AsyncSession, action_id: int, user: User, *, deciding: bool = False) -> AiActionRecord:

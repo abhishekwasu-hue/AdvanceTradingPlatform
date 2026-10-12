@@ -140,6 +140,18 @@ jobs:
           DATABASE_URL: postgresql+asyncpg://atp_user:atp_dev_password@localhost:5432/advance_trading_platform
         run: python -m pytest tests/test_backup_scripts.py -q -rs
 
+      # Z11: the backup scripts run in the backup service's own image on the server (busybox sh, Alpine openssl), not on
+      # this runner - so run them there too: build deploy/backup.Dockerfile on the Postgres major of this job's service
+      # database, take an encrypted + sealed dump, and restore-verify it into a scratch database as the restore role.
+      - name: Backup scripts inside the backup image (Alpine, busybox sh)
+        working-directory: .
+        run: |
+          docker build -q -f deploy/backup.Dockerfile --build-arg PG_IMAGE=postgres:16-alpine -t atp-backup:ci .
+          docker run --rm --network host -v "$PWD/scripts/backup:/scripts:ro" \
+            -e DATABASE_URL=postgresql://atp_user:atp_dev_password@localhost:5432/advance_trading_platform \
+            -e BACKUP_DIR=/tmp/backups -e BACKUP_ENCRYPTION_PASSPHRASE=FAKEFAKE-ci-backup-passphrase \
+            --entrypoint sh atp-backup:ci -c 'sh /scripts/backup.sh && ls /tmp/backups/*.dump.enc.hmac && sh /scripts/verify_backup.sh latest > /tmp/report.json; cat /tmp/report.json; grep -q "\"status\":\"ok\"" /tmp/report.json'
+
       - name: Audit Python dependencies for known vulnerabilities (pip-audit)
         run: |
           pip install pip-audit

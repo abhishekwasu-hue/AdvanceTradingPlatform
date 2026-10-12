@@ -53,7 +53,7 @@ DRY_RUN="${ATP_DRY_RUN:-0}"
 COMPOSE_MIN="2.24"
 REQUIRED_KEYS=(POSTGRES_PASSWORD JWT_SECRET_KEY SECRETS_ENCRYPTION_KEY METRICS_TOKEN DOMAIN ACME_EMAIL BACKUP_ENCRYPTION_PASSPHRASE)
 LIVE_SWITCHES=(LIVE_MARKET_PROTECTION LIVE_UPSTOX_OPTION_STOP_LIMIT LIVE_EXIT_IF_NO_STOP LIVE_STRICT_WING_FILL STATIC_IP_REQUIRED_FOR_LIVE)
-APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker)
+APP_IMAGES=(atp-backend atp-worker atp-frontend atp-research-worker atp-backup)
 
 RELEASE=""          # image tag compose uses (ATP_RELEASE)
 DB_AHEAD=""         # MIGRATION_ALLOW_DB_AHEAD for compose: the exact database revision an older image may start on
@@ -182,7 +182,7 @@ flags_fingerprint() {
   printf '%s' "${h:-none}"
 }
 images_exist() {
-  local img imgs=(atp-backend atp-worker atp-frontend)
+  local img imgs=(atp-backend atp-worker atp-frontend atp-backup)
   if research_on; then imgs+=(atp-research-worker); fi
   for img in "${imgs[@]}"; do
     docker image inspect "$img:$1" >/dev/null 2>&1 || return 1
@@ -233,27 +233,28 @@ print("" if d is None else d)' "$1"
 # (common.sh hmac_file - the same derivation: PBKDF2-HMAC-SHA256, salt "atpmacv1", 200000 rounds, 32 bytes, separate
 # from the encryption key); this side seals the files archive and checks every seal. The passphrase reaches python
 # through its environment only.
+# $1 = the file's name: the seal covers name + contents, so a sealed file cannot be replayed under another name.
 mac_stream() {
   ATP_MAC_PASS="$(env_get BACKUP_ENCRYPTION_PASSPHRASE)" python3 -c 'import hashlib, hmac, os, sys
 key = hashlib.pbkdf2_hmac("sha256", os.environ["ATP_MAC_PASS"].encode(), b"atpmacv1", 200000, 32)
-mac = hmac.new(key, digestmod="sha256")
+mac = hmac.new(key, os.path.basename(sys.argv[1]).encode() + b"\n", digestmod="sha256")
 for chunk in iter(lambda: sys.stdin.buffer.read(1 << 20), b""):
     mac.update(chunk)
-print(mac.hexdigest())'
+print(mac.hexdigest())' "$1"
 }
 # ok | missing | mismatch, for a dump in the volume ($1 = path under /backups).
 dump_mac_state() {
   local f="$1" want got
   want="$(dc run --rm --no-deps -T --entrypoint cat backup "/backups/$f.hmac" 2>/dev/null | tr -d '\r\n' || true)"
   [ -n "$want" ] || { printf 'missing'; return 0; }
-  got="$(dc run --rm --no-deps -T --entrypoint cat backup "/backups/$f" | mac_stream)" || { printf 'mismatch'; return 0; }
+  got="$(dc run --rm --no-deps -T --entrypoint cat backup "/backups/$f" | mac_stream "$f")" || { printf 'mismatch'; return 0; }
   if [ "$got" = "$want" ]; then printf 'ok'; else printf 'mismatch'; fi
 }
 host_mac_state() {
   local f="$1" want
   [ -s "$f.hmac" ] || { printf 'missing'; return 0; }
   want="$(tr -d '\r\n' < "$f.hmac")"
-  if [ "$(mac_stream < "$f")" = "$want" ]; then printf 'ok'; else printf 'mismatch'; fi
+  if [ "$(mac_stream "$f" < "$f")" = "$want" ]; then printf 'ok'; else printf 'mismatch'; fi
 }
 
 # --- R2 / off-site -----------------------------------------------------------------------------------------------
@@ -764,7 +765,7 @@ record_images() {
   for img in postgres:17-alpine redis:7-alpine caddy:2-alpine rclone/rclone:1; do
     out="$out $img=$(docker image inspect --format '{{index .RepoDigests 0}}' "$img" 2>/dev/null | sed 's/.*@//' | cut -c1-19)"
   done
-  for img in atp-backend atp-worker atp-frontend; do
+  for img in atp-backend atp-worker atp-frontend atp-backup; do
     out="$out $img=$(docker image inspect --format '{{.Id}}' "$img:$RELEASE" 2>/dev/null | sed 's/^sha256://' | cut -c1-19)"
   done
   printf '%s %s images%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$out" >> "$STATE_DIR/images.log"
@@ -1013,7 +1014,7 @@ backup_files() {
   fi
   mv "$out.part" "$out"
   sha256sum "$out" | cut -d' ' -f1 > "$out.sha256"
-  mac_stream < "$out" > "$out.hmac"
+  mac_stream "$out" < "$out" > "$out.hmac"
   ok "$(basename "$out") ($(wc -c < "$out" | tr -d ' ') bytes, sealed)"
   local keep="${BACKUP_FILES_KEEP:-14}" old
   while read -r old; do

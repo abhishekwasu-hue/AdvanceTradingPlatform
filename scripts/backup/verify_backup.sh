@@ -25,28 +25,41 @@ SCRATCH="${SRC_DB}_verify_$(date -u +%Y%m%d%H%M%S)"
 SCRATCH_URL="$(with_db "$SRC_URL" "$SCRATCH")"
 ADMIN_URL="$(with_db "$SRC_URL" postgres)"
 
-# Z11 / N1: the copy is restored by a NOLOGIN, non-superuser role that owns the scratch database (pg_restore --role),
-# so a dump that was swapped in the bucket cannot run superuser-only SQL on the cluster. VERIFY_RESTORE_ROLE= (empty)
-# restores as the connecting user, as before.
 ROLE="${VERIFY_RESTORE_ROLE-atp_restore}"
+cleanup() {
+  [ -z "$ROLE" ] || psql "$ADMIN_URL" -qAtc "ALTER ROLE \"$ROLE\" NOLOGIN PASSWORD NULL" >/dev/null 2>&1 || true
+  [ "${VERIFY_KEEP_SCRATCH:-0}" = "1" ] || psql "$ADMIN_URL" -qAtc "DROP DATABASE IF EXISTS \"$SCRATCH\"" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT INT TERM
+
+# Z11 / N1: the copy is restored over a connection that logs in AS a non-superuser role (atp_restore) owning the scratch
+# database - not `SET ROLE`, which archive SQL could undo with RESET ROLE. A dump swapped in the bucket therefore cannot
+# run superuser-only SQL (COPY ... TO PROGRAM, untrusted functions) on the cluster. The role gets a fresh random password
+# for this run only (sent to psql on stdin, handed to pg_restore through PGPASSWORD) and is NOLOGIN again afterwards.
+# The seal (restore.sh refuses unsealed dumps) is the first line; this is the second. VERIFY_RESTORE_ROLE= (empty)
+# restores as the connecting user, as before.
+RESTORE_URL="$SCRATCH_URL"
+RESTORE_PW=""
 if [ -n "$ROLE" ]; then
-  psql "$ADMIN_URL" -qAtc "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '$ROLE') THEN CREATE ROLE \"$ROLE\" NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE; END IF; END \$\$" >/dev/null \
-    || die "could not create the restore role $ROLE (VERIFY_RESTORE_ROLE= restores as the connecting user)"
+  need openssl
+  RESTORE_PW="$(openssl rand -hex 24)"
+  printf "DO \$\$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '%s') THEN CREATE ROLE \"%s\" NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT; END IF; END \$\$;\nALTER ROLE \"%s\" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '%s';\n" \
+    "$ROLE" "$ROLE" "$ROLE" "$RESTORE_PW" | psql "$ADMIN_URL" -q -v ON_ERROR_STOP=1 >/dev/null \
+    || die "could not prepare the restore role $ROLE (VERIFY_RESTORE_ROLE= restores as the connecting user)"
   psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\" OWNER \"$ROLE\"" >/dev/null || die "could not create scratch database $SCRATCH"
+  RESTORE_URL="$(printf '%s' "$SCRATCH_URL" | sed "s#^\(postgresql://\)[^@/]*@#\1$ROLE@#")"
 else
   psql "$ADMIN_URL" -qAtc "CREATE DATABASE \"$SCRATCH\"" >/dev/null || die "could not create scratch database $SCRATCH"
 fi
 # VERIFY_KEEP_SCRATCH=1: leave the restored copy for one more check from outside (deploy/atp.sh runs the audit-chain
 # check in the backend image, then drops it); the report names it.
-cleanup() { [ "${VERIFY_KEEP_SCRATCH:-0}" = "1" ] || psql "$ADMIN_URL" -qAtc "DROP DATABASE IF EXISTS \"$SCRATCH\"" >/dev/null 2>&1 || true; }
-trap cleanup EXIT INT TERM
 
 STATUS="ok"; NOTES=""
 # The first failure names the status; later checks only add notes.
 fail() { [ "$STATUS" = "ok" ] && STATUS="$1"; NOTES="$NOTES $2;"; }
 
 RESTORE_LOG="$(mktemp "${TMPDIR:-/tmp}/atp_verify.XXXXXX")"
-if RESTORE_CONFIRM=yes RESTORE_ROLE="$ROLE" sh "$(dirname "$0")/restore.sh" "$FILE" "$SCRATCH_URL" >"$RESTORE_LOG" 2>&1; then
+if RESTORE_CONFIRM=yes RESTORE_PASSWORD="$RESTORE_PW" sh "$(dirname "$0")/restore.sh" "$FILE" "$RESTORE_URL" >"$RESTORE_LOG" 2>&1; then
   sed 's/^/  /' "$RESTORE_LOG" >&2
 else
   sed 's/^/  /' "$RESTORE_LOG" >&2

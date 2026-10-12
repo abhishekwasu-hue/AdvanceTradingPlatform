@@ -32,3 +32,11 @@ services:
   frontend:
     image: atp-frontend:${ATP_RELEASE:-latest}
     pull_policy: never     # built here from the commit, never fetched from a registry
+
+  # postgres:17-alpine + the openssl CLI the backup scripts need (deploy/backup.Dockerfile)
+  backup:
+    build:
+      context: .
+      dockerfile: deploy/backup.Dockerfile
+    image: atp-backup:${ATP_RELEASE:-latest}
+    pull_policy: never     # built here from the commit, never fetched from a registry

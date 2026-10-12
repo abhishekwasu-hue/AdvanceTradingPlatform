@@ -53,7 +53,9 @@ need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not installe
 #   key  = PBKDF2-HMAC-SHA256(BACKUP_ENCRYPTION_PASSPHRASE, salt "atpmacv1", 200000 rounds), 32 bytes - derived by
 #          `openssl enc -P` with -pass env: (the passphrase never reaches argv); the 8-byte salt and the label keep this
 #          key separate from the encryption key. deploy/atp.sh computes the same value (python hashlib) on the host.
-#   HMAC = SHA256((K ^ opad) || SHA256((K ^ ipad) || file)), built here with printf (a shell builtin) and openssl dgst.
+#   HMAC = SHA256((K ^ opad) || SHA256((K ^ ipad) || name "\n" || file)), built with printf (a shell builtin) and openssl
+#          dgst. The file's own name (basename) is inside the MAC, so a sealed dump cannot be replayed under another,
+#          newer name (offsite_fetch.sh picks the newest by name).
 _mac_key_hex() {
   BACKUP_ENCRYPTION_PASSPHRASE="$BACKUP_ENCRYPTION_PASSPHRASE" openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -md sha256 \
     -S 6174706d61637631 -pass env:BACKUP_ENCRYPTION_PASSPHRASE -P | sed -n 's/^key=//p' | tr 'A-F' 'a-f'
@@ -76,7 +78,7 @@ hmac_file() {
   _ipad="$(_mac_pad "$_key" 54)"; _opad="$(_mac_pad "$_key" 92)"
   _inner="$(mktemp "${TMPDIR:-/tmp}/atp_mac.XXXXXX")"
   # shellcheck disable=SC2059  # the format is the octal key block on purpose
-  { printf "$_ipad"; cat "$1"; } | openssl dgst -sha256 -binary > "$_inner"
+  { printf "$_ipad"; printf '%s\n' "$(basename "$1")"; cat "$1"; } | openssl dgst -sha256 -binary > "$_inner"
   # shellcheck disable=SC2059
   { printf "$_opad"; cat "$_inner"; } | openssl dgst -sha256 | sed 's/.*= //'
   rm -f "$_inner"

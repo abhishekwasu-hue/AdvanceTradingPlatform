@@ -49,7 +49,7 @@ argv = sys.argv[1:]
 st["calls"].append({"argv": argv, "release": os.environ.get("ATP_RELEASE", ""), "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", "")})
 rc = 0
 out = []
-APP = {"backend": "atp-backend", "worker": "atp-worker", "frontend": "atp-frontend", "research-worker": "atp-research-worker"}
+APP = {"backend": "atp-backend", "worker": "atp-worker", "frontend": "atp-frontend", "research-worker": "atp-research-worker", "backup": "atp-backup"}
 ALL = ["postgres", "redis", "backend", "worker", "frontend", "caddy", "backup", "offsite"]
 rel = os.environ.get("ATP_RELEASE", "")
 db = st["db_name"]
@@ -264,7 +264,7 @@ if sub == "run":
             st["backups"].append({"name": name, "rev": st["databases"][db]["rev"]})
             import hashlib, hmac                                    # backup.sh seals what it writes (common.sh hmac_file)
             key = hashlib.pbkdf2_hmac("sha256", os.environ["FAKE_BACKUP_PASS"].encode(), b"atpmacv1", 200000, 32)
-            st["hmacs"][name] = hmac.new(key, dump_bytes(name).encode(), "sha256").hexdigest()
+            st["hmacs"][name] = hmac.new(key, (name + "\n" + dump_bytes(name)).encode(), "sha256").hexdigest()
             st["latest"] = name
             st["last_backup_ok"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
             finish()
@@ -745,7 +745,7 @@ def test_release_overlay_pins_images_to_the_commit():
     text = (ROOT / "deploy/compose.release.yml").read_text()
     for img in ("atp-backend", "atp-worker", "atp-research-worker", "atp-frontend"):
         assert f"image: {img}:${{ATP_RELEASE:-latest}}" in text
-    assert text.count("pull_policy: never") == 4 and "MIGRATION_ALLOW_DB_AHEAD: ${MIGRATION_ALLOW_DB_AHEAD:-}" in text
+    assert text.count("pull_policy: never") == 5 and "dockerfile: deploy/backup.Dockerfile" in text and "MIGRATION_ALLOW_DB_AHEAD: ${MIGRATION_ALLOW_DB_AHEAD:-}" in text
     if not shutil.which("docker") or subprocess.run(["docker", "compose", "version"], capture_output=True).returncode:
         pytest.skip("docker compose not available")
     env = ROOT / "backend/.pytest_env_z11"
@@ -1004,6 +1004,10 @@ def test_every_migration_declares_rollback_safety_and_the_lint_catches_risky_one
         "fk.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.create_foreign_key('fk', 't', 'u', ['a'], ['id'])\n", True),
         "drop_default.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.alter_column('t', 'c', server_default=None)\n", True),
         "rewrite.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE t SET c = 1')\n", True),
+        "qualified_update.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('UPDATE public.\"orders\" SET c = 1')\n", True),
+        "non_literal.py": (head + "ROLLBACK_SAFE = True\nSQL = 'x'\n\ndef upgrade():\n    op.execute(SQL)\n", True),
+        "batch_fk.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    with op.batch_alter_table('t') as batch_op:\n"
+                        "        batch_op.create_foreign_key('fk', 'u', ['a'], ['id'])\n", True),
         "sql_constraint.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.execute('ALTER TABLE t ADD CONSTRAINT x UNIQUE (a)')\n", True),
         "new_table_keys.py": (head + "ROLLBACK_SAFE = True\n\ndef upgrade():\n    op.create_table('n', sa.Column('id', sa.Integer()))\n"
                               "    op.create_index('ix', 'n', ['id'], unique=True)\n    op.create_foreign_key('fk', 'n', 'u', ['id'], ['id'])\n", False),

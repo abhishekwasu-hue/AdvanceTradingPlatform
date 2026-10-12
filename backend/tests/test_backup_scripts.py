@@ -88,7 +88,7 @@ def test_every_encrypted_dump_is_sealed_and_restored_by_a_non_superuser_role(tmp
     try:
         assert report["status"] == "ok", ok.stderr
         assert _psql("select tableowner from pg_tables where tablename = 'tenants'", report["restored_into"]) == "atp_restore"
-        assert _psql("select rolsuper from pg_roles where rolname = 'atp_restore'") == "f"
+        assert _psql("select rolsuper::text || rolcanlogin::text from pg_roles where rolname = 'atp_restore'") == "falsefalse"   # NOLOGIN again
     finally:
         _psql(f'DROP DATABASE IF EXISTS "{report["restored_into"]}"')
 
@@ -114,3 +114,14 @@ def test_unsealed_plain_and_tampered_seal_dumps_are_refused(tmp_path):
     plain = next((tmp_path / "plain").glob("atp_*.dump"))                           # a .dump without .enc, read with a passphrase set
     run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), str(plain)], env=env, capture_output=True, text=True)
     assert run.returncode == 1 and "not an encrypted dump" in run.stderr
+
+
+def test_a_sealed_dump_cannot_be_replayed_under_another_name(tmp_path):
+    env = _env(tmp_path, BACKUP_ENCRYPTION_PASSPHRASE="unit-test-passphrase")
+    assert subprocess.run(["sh", str(SCRIPTS / "backup.sh")], env=env, capture_output=True, text=True).returncode == 0
+    dump = next(tmp_path.glob("atp_*.dump.enc"))
+    newer = tmp_path / "atp_advance_trading_platform_20991231T000000Z.dump.enc"       # an old dump renamed to look newest
+    for suffix in ("", ".sha256", ".hmac"):
+        (tmp_path / (dump.name + suffix)).rename(tmp_path / (newer.name + suffix))
+    run = subprocess.run(["sh", str(SCRIPTS / "verify_backup.sh"), str(newer)], env=env, capture_output=True, text=True)
+    assert run.returncode == 1 and "does not match its seal" in run.stderr

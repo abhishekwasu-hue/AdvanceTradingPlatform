@@ -16,6 +16,8 @@ FILE="${1:-}"; [ -n "$FILE" ] || die "usage: restore.sh <file|latest> [target-ur
 [ -f "$FILE" ] || die "no such file: $FILE"
 pg_setup
 TARGET="${2:-$PG_URL}"
+# verify_backup.sh restores the scratch copy logged in as its non-superuser role: that role's one-run password.
+if [ -n "${RESTORE_PASSWORD:-}" ]; then PGPASSWORD="$RESTORE_PASSWORD"; export PGPASSWORD; fi
 
 if [ -f "$FILE.sha256" ]; then
   EXPECTED="$(cat "$FILE.sha256")"; ACTUAL="$(sha256_file "$FILE")"
@@ -58,8 +60,6 @@ esac
 log "restoring $(basename "$FILE") into $(db_name_of "$TARGET")"
 # --clean/--if-exists drop what the dump will recreate; --no-owner/--no-privileges keep the
 # restore usable under a different role name than the source.
-# RESTORE_ROLE (verify_backup.sh): restore as that non-superuser role (SET ROLE after connecting), so a hostile dump
-# cannot run superuser-only SQL (COPY ... TO PROGRAM, untrusted functions) on the cluster.
-pg_restore --dbname="$TARGET" ${RESTORE_ROLE:+--role="$RESTORE_ROLE"} --clean --if-exists --no-owner --no-privileges --exit-on-error "$SRC"
+pg_restore --dbname="$TARGET" --clean --if-exists --no-owner --no-privileges --exit-on-error "$SRC"
 [ -n "$CLEANUP" ] && rm -f "$CLEANUP"
 log "restore complete"

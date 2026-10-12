@@ -217,7 +217,7 @@ Until then, `backup` and `restore-check` work on the local copies and print `R2 
     given.
   - The lint also flags: a dropped server default; a new UNIQUE / CHECK / FOREIGN KEY constraint or unique index on
     a table that existed before; SQL that adds constraints or rewrites rows (UPDATE / DELETE).
-  - 17 older migrations are marked `False` (unknown or risky means False). Two are `True` with a reviewed reason,
+  - 18 older migrations are marked `False` (unknown or risky means False). Two are `True` with a reviewed reason,
     because their new key is on a new nullable column.
   - An author adding a migration chooses the line; the lint error shows both options.
 - **Code-only (default).** If the database is ahead of the target release, the **newer** image checks two things:
@@ -310,14 +310,22 @@ It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEE
 - With `BACKUP_ENCRYPTION_PASSPHRASE` set, `restore.sh` refuses a plain `.dump`, an unsealed dump, and a dump that
   does not match its seal.
 - `restore-check` fetches only `.dump.enc` files from R2.
-- The scratch copy is restored by `atp_restore`, a NOLOGIN, non-superuser role (`pg_restore --role`). A dump swapped
-  in the bucket therefore cannot run superuser-only SQL such as `COPY ... TO PROGRAM` on the cluster.
+- The seal is the protection: a dump that was not sealed by `backup.sh` with your passphrase is never restored, and
+  the seal covers the file's name, so a sealed dump cannot be replayed under a newer name.
+- As a second line, the scratch copy is restored over a connection that **logs in as** `atp_restore`, a
+  non-superuser role that owns the scratch database. It gets a one-run random password and is set back to NOLOGIN
+  afterwards. Archive SQL cannot get superuser rights back (a `SET ROLE` would not do, because `RESET ROLE` undoes
+  it), so even a bad dump cannot run `COPY ... TO PROGRAM` on the cluster.
 
 **Seal.** `openssl enc` has no authenticated mode. A `.sha256` file can be recomputed by whoever changed the dump, so
 `scripts/backup/backup.sh` seals every dump where it is made, and `atp.sh` seals the files archive. A seal is a
 `.hmac` sidecar: HMAC-SHA256 over the ciphertext, with a key derived from `BACKUP_ENCRYPTION_PASSPHRASE` under its own
 label, so the MAC key is separate from the encryption key. A missing seal, or one that does not match, fails the
 check.
+
+The backup service runs its own image, `atp-backup:<release>` (`deploy/backup.Dockerfile`): `postgres:17-alpine`
+plus the `openssl` command. The base image ships only the OpenSSL libraries, and without the command no dump could be
+encrypted or sealed. CI runs the backup scripts inside that image.
 
 The database URL's password never reaches a command line. The backup scripts take it from `DATABASE_URL` into
 `PGPASSWORD` (`scripts/backup/common.sh` `pg_setup`).

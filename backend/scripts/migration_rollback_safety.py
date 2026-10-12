@@ -32,7 +32,8 @@ from typing import Dict, List, Optional
 BACKEND = Path(__file__).resolve().parents[1]
 VERSIONS = BACKEND / "alembic" / "versions"
 _RISKY_SQL = re.compile(r"\b(drop\s+(table|column)|rename\s+(to|column)|alter\s+column\s+\w+\s+(set\s+data\s+)?type|set\s+not\s+null"
-                        r"|drop\s+default|add\s+constraint|create\s+unique\s+index|update\s+\w+\s+set|delete\s+from)\b", re.I)
+                        r"|drop\s+default|add\s+constraint|create\s+unique\s+index"
+                        r"|update\s+(only\s+)?[\w.\"]+\s+set|delete\s+from)\b", re.I)   # schema-qualified / quoted names too
 _ALWAYS_RISKY = {"drop_table", "drop_column", "rename_table"}
 # A new constraint or unique index on a table that existed before can refuse a write the previous release still makes.
 # On a table created in the same upgrade() the previous release never writes it, so it is not counted there.
@@ -67,18 +68,31 @@ def risky_operations(source: str) -> List[str]:
         return []
     calls = [n for n in ast.walk(upgrade) if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)]
     created = {_arg(c, 0, "table_name") for c in calls if isinstance(c.func, ast.Attribute) and c.func.attr == "create_table"}
+    # `with op.batch_alter_table("t") as batch_op:` - batch operations name no table; they act on the batch's table.
+    batch_tables = {}
+    for node in ast.walk(upgrade):
+        if isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                ctx = item.context_expr
+                if (isinstance(ctx, ast.Call) and isinstance(ctx.func, ast.Attribute) and ctx.func.attr == "batch_alter_table"
+                        and isinstance(item.optional_vars, ast.Name)):
+                    batch_tables[item.optional_vars.id] = _arg(ctx, 0, "table_name")
     found: List[str] = []
     for call in calls:
         func = call.func
         assert isinstance(func, ast.Attribute)
         op = func.attr
-        if op in _CONSTRAINT_OPS:
-            table = _arg(call, _CONSTRAINT_OPS[op], "table_name" if op != "create_foreign_key" else "source_table")
+        owner = func.value.id if isinstance(func.value, ast.Name) else ""
+        batch = owner in batch_tables
+        if op in _CONSTRAINT_OPS or (op == "create_index" and _kw(call, "unique") is not None and not _is_false(_kw(call, "unique"))):
+            if batch:          # batch_op.create_foreign_key(name, referent, ...), batch_op.create_index(name, cols, ...)
+                table = batch_tables[owner]
+            elif op == "create_index":
+                table = _arg(call, 1, "table_name")
+            else:
+                table = _arg(call, _CONSTRAINT_OPS[op], "table_name" if op != "create_foreign_key" else "source_table")
             if table not in created:
-                found.append(f"{op} on an existing table")
-        elif op == "create_index" and _kw(call, "unique") is not None and not _is_false(_kw(call, "unique")):
-            if _arg(call, 1, "table_name") not in created:
-                found.append("unique create_index on an existing table")
+                found.append(f"{'unique create_index' if op == 'create_index' else op} on an existing table")
         elif op in _ALWAYS_RISKY:
             found.append(op)
         elif op == "alter_column":
@@ -95,7 +109,10 @@ def risky_operations(source: str) -> List[str]:
                 if _is_false(_kw(col, "nullable")) and _kw(col, "server_default") is None:
                     found.append("add_column NOT NULL without server_default")
         elif op == "execute":
-            if any(_RISKY_SQL.search(s) for s in _strings(call)):
+            texts = _strings(call)
+            if not texts:
+                found.append("execute with a non-literal argument: review needed")
+            elif any(_RISKY_SQL.search(s) for s in texts):
                 found.append("execute: risky SQL")
     return found
 

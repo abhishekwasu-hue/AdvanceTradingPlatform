@@ -16,7 +16,7 @@ revision: str = 'f4c2a9e1b753'
 down_revision: Union[str, Sequence[str], None] = 'e3b8d1c7a942'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
-ROLLBACK_SAFE = True     # Z11: additive - the previous release runs on this schema (code-only rollback ok)
+ROLLBACK_SAFE = False    # Z11: rewrites rows (users.role -> OWNER, notification reads) via bind.execute - a code-only rollback past it is refused; use --restore-db
 
 
 def upgrade() -> None:

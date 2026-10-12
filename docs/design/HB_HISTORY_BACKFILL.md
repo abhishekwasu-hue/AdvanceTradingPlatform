@@ -15,7 +15,7 @@ are events (B3), never edits.
 |---|---|---|---|
 | HB0 | R2 importer (optional path - collector cancelled): manifest + sha256 checks, daily -> shared lake, 1-minute -> owner tenant only, import state, progress API, flag `history_import` (off) | this PR | #164 |
 | HB1 | Daily backfill: 10 years, all NSE equities + indices (+ F&O futures), adjusted via B4 (unadjusted kept), quality gates, gaps reported; nightly EOD job; flag `history_backfill` (off) | this PR (draft, stacked on HB0) - **primary daily path** (NSE bhavcopy archives; the R2 daily folders are optional) | - |
-| HB2 | Owner intraday: 1-minute from the owner's Upstox entitlement since Jan 2022, resampled on read to 3/5/15/30/60 | planned (runs HB0 on the m1 folders) | - |
+| HB2 | Owner intraday: 1-minute from the owner's Upstox entitlement since Jan 2022, resampled on read to 3/5/15/30/60 | built on branch `claude/hb2-intraday-history` (flag `history_intraday` off): a capture after the close + backfill through the owner's own broker session into `md_tenant_candles` - see docs/design/HB2_INTRADAY_HISTORY.md (no longer depends on the R2 m1 folders) | - |
 | HB3 | Extend the universe (new listings, delistings, renames via ISIN) | planned | - |
 | HB4 | Native nightly jobs on the VPS + admin progress page (symbols done / pending / last error) | planned - reads `history_import_files` | - |
 

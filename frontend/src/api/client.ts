@@ -706,6 +706,8 @@ export const api = {
     request<BrokerTokenInfo>(`/broker/${name}/login-code?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify({ code }) }),
 
   positionGreeks: () => request<PositionGreeks>("/positions/greeks"),
+  // N1 F3 (flag portfolio_risk): the caller's own PAPER book as a risk view (typed in portfolio/model.ts).
+  portfolioRisk: () => request<unknown>("/portfolio/risk"),
 
   reconciliationStatus: () => request<ReconciliationStatus>("/reconciliation/status"),
   runReconciliation: (brokerName: string) =>

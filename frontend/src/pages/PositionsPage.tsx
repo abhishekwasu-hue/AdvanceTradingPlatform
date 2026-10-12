@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ContractNoteCard from "../components/ContractNoteCard";
@@ -14,6 +14,9 @@ import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
 import { PageHeader } from "../components/primitives";
 
+// N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
+const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
+
 export default function PositionsPage() {
   const { user, loading: authLoading } = useAuth();
   const [positions, setPositions] = useState<TradeRecord[]>([]);
@@ -27,6 +30,7 @@ export default function PositionsPage() {
   const [greeksBusy, setGreeksBusy] = useState(false);
   // Z3: "Exit now" exists only with approval-only entries or the PAPER account on (otherwise exits run automatically).
   const [exitNowOn, setExitNowOn] = useState(false);
+  const [portfolioRiskOn, setPortfolioRiskOn] = useState(false);
   const [workspaceOn, setWorkspaceOn] = useState(false);   // N2-9: the link to the trade workspace (flag trade_workspace)
   const tWorkspace = useProgressionT();
 
@@ -55,8 +59,11 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!user) return;
     refresh();
-    api.myFeatures().then((f) => { setExitNowOn(Boolean(f.approval_only_entries || f.paper_account)); setWorkspaceOn(Boolean(f.trade_workspace)); })
-      .catch(() => { setExitNowOn(false); setWorkspaceOn(false); });
+    api.myFeatures().then((f) => {
+      setExitNowOn(Boolean(f.approval_only_entries || f.paper_account));
+      setPortfolioRiskOn(Boolean(f.portfolio_risk));
+      setWorkspaceOn(Boolean(f.trade_workspace));
+    }).catch(() => { setExitNowOn(false); setPortfolioRiskOn(false); setWorkspaceOn(false); });
   }, [user]);
 
   async function handleMarkPrice(tradeId: number) {
@@ -124,6 +131,7 @@ export default function PositionsPage() {
       <PositionsBoardCard onChanged={refresh} />
       <PaperAccountCard canTrade={user.role !== "VIEWER"} />
       <ExperienceCard canTrade={user.role !== "VIEWER"} />
+      {portfolioRiskOn && <Suspense fallback={null}><PortfolioRiskCard /></Suspense>}
       <DecisionToolsCard />
       <PaperTicketCard canTrade={user.role !== "VIEWER"} onPlaced={refresh} />
 

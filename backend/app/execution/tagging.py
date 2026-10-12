@@ -30,6 +30,11 @@ LEG_ENTRY = "ENT"
 LEG_STOP = "SL"
 LEG_EXIT = "EXIT"
 
+# Z10c-6: the longest algo id the Team page saves - the one that fits the longest leg's tag `<algo id>-EXIT` whole on
+# the default 20-character limit (15). A longer id would reach the broker cut short on some legs (build_order_tag keeps
+# the leg whole and cuts the id), and the exchange could not attribute those orders to the registered algo.
+ALGO_ID_MAX_SAVED = DEFAULT_MAX_TAG_LENGTH - len("-" + LEG_EXIT)
+
 
 def sanitize_tag_part(value: str) -> str:
     """Broker tag fields reject most punctuation and whitespace; keep letters, digits, `_`, `-`."""

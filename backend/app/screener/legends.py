@@ -39,8 +39,12 @@ LINES: Tuple[str, ...] = ("who", "style", "looks_for", "timeframe")   # plus the
 MAX_CARD_LINES = 5
 MAX_LINE_CHARS = tx.MAX_DEFINITION_CHARS
 MAX_NOTE_CHARS = 240
+MAX_REVIEW_NOTE_CHARS = 400
 MAX_NAME_CHARS = tx.MAX_NAME_CHARS
 SOURCE_KINDS: Tuple[str, ...] = ("book", "paper", "article")        # published, publicly available works only
+# LG1-2: the bibliographic check of a source against public catalogue records (title, authors, first-edition year,
+# publisher), and a card's status from it. "verified" needs evidence (public URLs); "unverified" needs a note saying why.
+REVIEW_STATUSES: Tuple[str, ...] = ("verified", "unverified")
 # Spec §1, word for word. `{name}` is the legend's name on a card and "the people named" in the library header.
 DISCLAIMER = "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing {name}. Educational tool, not investment advice."
 HEADER = DISCLAIMER.format(name="the people named")
@@ -101,6 +105,8 @@ class Source:
     publisher: str
     covers: str
     review: str
+    review_note: str = ""
+    evidence: Tuple[str, ...] = ()
 
     def citation(self) -> str:
         """`Title (Year), Author and Author` - the card's source line."""
@@ -109,7 +115,8 @@ class Source:
 
     def as_dict(self) -> Dict[str, Any]:
         return {"id": self.id, "kind": self.kind, "title": self.title, "authors": list(self.authors), "year": self.year,
-                "publisher": self.publisher, "covers": self.covers, "review": self.review, "citation": self.citation()}
+                "publisher": self.publisher, "covers": self.covers, "review": self.review, "review_note": self.review_note,
+                "evidence": list(self.evidence), "citation": self.citation()}
 
 
 @dataclass(frozen=True)
@@ -144,6 +151,8 @@ class Card:
     source: str
     base_tf: str
     params: Tuple[Param, ...]
+    review: str = "unverified"
+    review_note: str = ""
 
     def cited(self) -> List[str]:
         """Every source id the card cites, in order of first use."""
@@ -219,6 +228,21 @@ def people_named(texts: Sequence[str], cited: Sequence[Source]) -> List[str]:
     return list(dict.fromkeys(found))
 
 
+def _review(where: str, row: Dict[str, Any], problems: List[str]) -> Tuple[str, str]:
+    """(status, note) of a source or card: a status from REVIEW_STATUSES; an unverified one says why in its note."""
+    review = str(row.get("review", ""))
+    if review not in REVIEW_STATUSES:
+        problems.append(f"{where}: review must be one of {', '.join(REVIEW_STATUSES)} ({review!r} given)")
+    note = row.get("review_note", "")
+    note = note.strip() if isinstance(note, str) else ""
+    if review == "unverified" and not note:
+        problems.append(f"{where}: an unverified entry says why in review_note")
+    if "\n" in note or len(note) > MAX_REVIEW_NOTE_CHARS:
+        problems.append(f"{where} review_note: at most {MAX_REVIEW_NOTE_CHARS} characters on one line")
+    problems += english_problems(f"{where} review_note", note)
+    return review, note
+
+
 def _sources(raw: Any, problems: List[str]) -> Dict[str, Source]:
     out: Dict[str, Source] = {}
     rows = raw.get("sources") if isinstance(raw, dict) else None
@@ -254,8 +278,19 @@ def _sources(raw: Any, problems: List[str]) -> Dict[str, Source]:
         for key in ("title", "publisher", "covers"):
             problems += english_problems(f"{where} {key}", str(row.get(key, "")))
         problems += [p for a in authors for p in english_problems(f"{where} author", a)]
+        review, note = _review(where, row, problems)
+        evidence: Tuple[str, ...] = ()
+        raw_evidence = row.get("evidence", [])
+        if not isinstance(raw_evidence, list) or not all(isinstance(u, str) and u.startswith("https://") for u in raw_evidence):
+            problems.append(f"{where}: evidence must be a list of public https:// URLs")
+        elif review == "verified" and not raw_evidence:
+            problems.append(f"{where}: a verified source lists its evidence (catalogue / ISBN record URLs)")
+        else:
+            evidence = tuple(raw_evidence)
+        if review == "verified" and not str(row.get("publisher", "")).strip():
+            problems.append(f"{where}: a verified source names its publisher")
         out[ident] = Source(ident, kind, title, tuple(a.strip() for a in authors), int(year), str(row.get("publisher", "")).strip(),
-                            covers, str(row.get("review", "pending")))
+                            covers, review, note, evidence)
     return out
 
 
@@ -340,10 +375,14 @@ def _cards(raw: Any, sources: Dict[str, Source], problems: List[str]) -> Tuple[C
         cited = [sources[c] for c in dict.fromkeys(c for k in LINES for c in lines[k].cite) if c in sources]
         problems += [f"{where}: names {who!r}, so the disclaimer must too - add them to `legend`"
                      for who in people_named(texts, cited) if who.split()[-1].lower() not in legend.lower()]
-        unknown = set(row) - {"id", "legend", "short", "name", "approximation", "screen", *LINES}
+        review, review_note = _review(where, row, problems)
+        unchecked = [s.id for s in cited if s.review != "verified"]
+        if review == "verified" and unchecked:
+            problems.append(f"{where}: verified, but it cites unverified sources ({', '.join(unchecked)})")
+        unknown = set(row) - {"id", "legend", "short", "name", "approximation", "screen", "review", "review_note", *LINES}
         if unknown:
             problems.append(f"{where}: unknown fields {', '.join(sorted(unknown))}")
-        out.append(Card(ident, legend, short, name, lines, approximation, source, base_tf, params))
+        out.append(Card(ident, legend, short, name, lines, approximation, source, base_tf, params, review, review_note))
     if not out:
         problems.append("cards: none defined")
     if len(LINES) + 1 > MAX_CARD_LINES:          # the source line is the fifth
@@ -422,6 +461,7 @@ def card_payload(card: Card, library: Library, taxonomy: Optional[tx.Taxonomy] =
         "sources": [s.as_dict() for s in cited],
         "approximation": card.approximation,
         "disclaimer": DISCLAIMER.format(name=card.legend),
+        "review": {"status": card.review, "note": card.review_note},
         "screen": {"id": card.id, "source": card.source, "base_tf": card.base_tf, "params": [p.as_dict() for p in card.params]},
         "filing": {"method": filed.method, "setup": filed.setup, "tags": dict(filed.tags)} if filed else None,
     }
@@ -441,7 +481,7 @@ def _ids() -> List[str]:
 tx.register_source(SOURCE, _ids, flag=FLAG)
 
 
-__all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "SOURCES_FILE", "Card", "Library",
+__all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
            "LegendsError", "Line", "Param", "Source", "card_payload", "english_problems", "link_problems", "lint", "load", "parse",
            "payload", "people_named", "wording_problems"]
 

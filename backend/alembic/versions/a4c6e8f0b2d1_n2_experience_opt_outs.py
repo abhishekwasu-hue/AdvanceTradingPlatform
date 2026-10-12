@@ -2,8 +2,7 @@
 off by default).
 
 Revision ID: a4c6e8f0b2d1
-Revises: e8a1c4d2f9b7 (main's head when N2-2 was pushed; HB2 #202 adds f3b5d7a9c1e2 on the same parent - whichever
-merges second moves its down_revision onto the other)
+Revises: b4e6d8f0a2c3 (exit sweep open-trades index #221, main's head)
 Create Date: 2026-10-12 22:00:00
 """
 from typing import Sequence, Union
@@ -12,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'a4c6e8f0b2d1'
-down_revision: Union[str, Sequence[str], None] = 'e8a1c4d2f9b7'
+down_revision: Union[str, Sequence[str], None] = 'b4e6d8f0a2c3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: additive (one new table) - the previous release runs on this schema (code-only rollback ok)

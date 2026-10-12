@@ -2224,8 +2224,73 @@ class PaperAccountRecord(Base):
     paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     paused_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     paused_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Z5 / P1-d: the user's own risk-by-default settings (risk per trade, daily loss limit, trades per day, minimum
+    # reward:risk) as JSON; NULL = the platform defaults (app/risk_engine/by_default.py).
+    risk_settings_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Z5 / P1-d: the entries-per-day slots taken on `entries_day` (IST), updated atomically per entry (by_default.reserve_entry).
+    entries_day: Mapped[date | None] = mapped_column(Date, nullable=True)
+    entries_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class TradePlanRecord(Base):
+    """Z5 / P1-d (P1 spec 1.2): the plan behind a PAPER ticket - setup, direction, entry / stop / target, reward:risk,
+    time stop, invalidation note and the pre-trade checklist - with the sizing it was checked against (the user's risk
+    cap, the quantity, a deliberate override and its reason) and the cost line. Stored with the order and the position it
+    produced (or the reasons it was refused), so the plan can be compared with what happened. Personal: tenant + user."""
+
+    __tablename__ = "trade_plans"
+    __table_args__ = (Index("ix_trade_plans_user_created", "user_id", "created_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    symbol: Mapped[str] = mapped_column(String(50), nullable=False)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    setup: Mapped[str] = mapped_column(String(30), nullable=False)
+    entry: Mapped[float] = mapped_column(Price, nullable=False)
+    stop_loss: Mapped[float] = mapped_column(Price, nullable=False)
+    target: Mapped[float] = mapped_column(Price, nullable=False)
+    reward_risk: Mapped[float | None] = mapped_column(Float, nullable=True)
+    time_stop: Mapped[str | None] = mapped_column(String(10), nullable=True)          # "HH:MM" IST
+    invalidation: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    checklist_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    checklist_complete: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    quantity: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_amount: Mapped[float] = mapped_column(Money, nullable=False)
+    risk_cap: Mapped[float] = mapped_column(Money, nullable=False)
+    override: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
+    override_reason: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    costs_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="PENDING")     # PENDING | PLACED | PROPOSED | REFUSED | FAILED
+    reasons_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # Under approval-only mode the ticket raises an ENTRY proposal; Approve places the PAPER order (Z3-a).
+    proposal_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="SET NULL"), nullable=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id", ondelete="SET NULL"), nullable=True)
+    trade_id: Mapped[int | None] = mapped_column(ForeignKey("trades.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class RiskLockoutRecord(Base):
+    """Z5 / P1-d (P1 spec 1.1): a user's daily loss lockout - recorded the first time their PAPER net P&L of the IST day
+    reaches the limit, and kept for the rest of that day even if the P&L recovers. It stops new PAPER entries and entry
+    proposals of that user only; exits are never locked (ADR-0004). One row per user, mode, day and kind."""
+
+    __tablename__ = "risk_lockouts"
+    __table_args__ = (UniqueConstraint("user_id", "mode", "trading_day", "kind", name="uq_risk_lockouts_user_day_kind"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    mode: Mapped[str] = mapped_column(String(10), nullable=False, default="PAPER")
+    trading_day: Mapped[date] = mapped_column(Date, nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="DAILY_LOSS")
+    pnl: Mapped[float] = mapped_column(Money, nullable=False)
+    limit_amount: Mapped[float] = mapped_column(Money, nullable=False)
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    locked_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 # --- Part B1: market data lake (ADR-0013). Every row carries `ingested_at` (when the platform learned it) and, where a

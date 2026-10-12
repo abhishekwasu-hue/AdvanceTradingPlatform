@@ -2,8 +2,15 @@
 
 ## Phase 0 (owner's scope freeze - docs/specs/ATP_PHASE0_FREEZE.md; overrides the order below until Phase 0 ships)
 
-Phase 0 = invite-only beta (300-500 users), PWA, PAPER only, no API orders from ATP. Progress: Z1-Z11 all merged (12 Oct); every new feature flag is off by default. Next: HB2 (owner intraday history on the server), then the N-list. Remaining Phase 0 work is owner-side: the server, R2 token, the 500-user staging load test, and the Admin -> Controls install steps (live_trading off, phase0_paper_only on).
-Owner-side blockers: Hostinger server IP; R2 bucket/token in the host .env; Dhan partner application; company registration (needed before the partner emails in docs/specs/ATP_PARTNER_EMAIL_DRAFTS.md go out).
+Phase 0 = invite-only beta (300-500 users), PWA, PAPER only, no API orders from ATP. Code: Z1-Z11 all merged (12 Oct); every new feature flag is off by default. The N-list has started (owner, 12 Oct): lane A N1, lane B N2, lane C HB2 + follow-ups, lane D exit criteria / load test / docs.
+Owner-side blockers (only these four): Hostinger server IP; R2 bucket/token in the host .env; Dhan partner application; company registration (needed before the partner emails in docs/specs/ATP_PARTNER_EMAIL_DRAFTS.md go out).
+
+Phase 0 exit criteria (open until done):
+- End-to-end acceptance flow on staging with two test users (Upstox, Dhan): staging stack being built in CI; the Hostinger run waits for the server.
+- No API order path reachable in Phase 0 mode: covered in CI (Z10-c static order-path guard + phase0_paper_only lock tests); Phase 0 deployments will start with live_trading off and phase0_paper_only on by default (in progress).
+- Stale data => alerts suppressed: covered in CI (Z10-b tests); end-to-end check added to the CI staging flow (in progress).
+- Load test (500 sessions): being built and run on a CI stack (docs/reports/load_test_500.md); the owner re-runs it on Hostinger with one command later.
+- Rollback rehearsed: rehearsal on the CI stack in progress; Hostinger rehearsal waits for the server.
 
 | Z | What | Status | PR | % |
 |---|---|---|---|---|

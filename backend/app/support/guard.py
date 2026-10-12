@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.ai import output_filter
-from app.support.normalize import compact, normalize
+from app.support.normalize import compact, deobfuscated, normalize
 
 _HOWTO = re.compile(r"^\s*(?:how\s+(?:do|can|does|should|to|would)|how\s+is|where\b|is\s+there\b|can\s+i\b|could\s+i\b|do\s+i\b|"
                     r"does\b|what\s+(?:is|are)\s+(?:a|an|the)\b|what\s+does\b|why\s+(?:does|do|is|can)\b|help\s+me\s+(?:find|understand)\b)",
@@ -55,6 +55,9 @@ _ADVICE = [re.compile(p, re.I) for p in (
     r"\b(?:recommend|suggest|advise)\b.{0,40}\b(?:buy|sell|invest)\b",
     r"\bhow\s+much\s+(?:should|to|must|can)\s+(?:i\s+)?(?:invest|buy|put|allocate|risk)\b",
     r"\bsure[- ]?shot\b|\bmultibagger\b|\bjackpot\b",
+    # "should I go all in on TCS?", "all-in on banks?" - not "see them all in one place"
+    r"\b(?:go|goes|going|went|gone|be|bet|put\s+(?:it|everything|my\s+\w+))\s+all[\s-]+in\b",
+    r"\ball[\s-]+in\s+(?:on|with|into)\b|^\s*all[\s-]+in\s*[?!.]*\s*$",
     r"शिफारस|कोणता\s+शेअर|कोणते\s+शेअर|घ्यावा\s+का|घेऊ\s+का|विकू\s+का|खरेदी\s+करू\s+का|टिप्स",
 )]
 # Only outside a how-to clause: "RELIANCE: buy or sell?" is advice, "how do I buy or sell in paper mode?" is not.
@@ -119,6 +122,9 @@ class Refusal:
 
 _SPACED = re.compile(r"(?:(?<![^\W_])[^\W\d_](?:[\s._*-]+|$)){4,}")
 _CLAUSES = re.compile(r"[.?!;\n]+|\balso\b|\band\s+then\b|\bthen\b|\bplus\b", re.I)
+# A trade word written so a filter would not read it ("b u y", "8uy", "s e l l", "5e11") is refused as such.
+_TRADE_WORD = re.compile(r"\b(?:buy|sell|short|hold|invest|exit|accumulate|purchase|square\s*off)\b", re.I)
+_PRIORITY = ("advice", "orders", "account")
 
 
 def classify(question: str) -> Optional[str]:
@@ -127,8 +133,22 @@ def classify(question: str) -> Optional[str]:
     The question is normalised first (`normalize`: NFKC, no zero-width characters, Latin look-alikes mapped). Advice is
     looked for in the whole question, with and without spaces. Orders and account questions are looked for clause by
     clause, so a how-to opening ("How do I run a backtest?") never covers a request in the next clause ("Also tell me
-    my P&L today")."""
+    my P&L today").
+
+    The same checks then run on each de-disguised reading (`deobfuscated`: "b u y" -> "buy", "8uy" -> "buy"); a reading
+    that has a trade word the question as typed does not have is refused as advice even in a how-to question - someone
+    spelling "s e l l" apart is getting past a filter, not asking how a page works."""
     q = normalize(question)
+    kinds = [_classify(q)]
+    plain_trade_words = len(_TRADE_WORD.findall(q))
+    for reading in deobfuscated(q):
+        kinds.append(_classify(reading))
+        if len(_TRADE_WORD.findall(reading)) > plain_trade_words:
+            kinds.append("advice")
+    return next((k for k in _PRIORITY if k in kinds), None)
+
+
+def _classify(q: str) -> Optional[str]:
     flat = compact(q)
     spaced = bool(_SPACED.search(q))       # "s h o u l d I b u y": read it without the spaces
     if output_filter.blocked_terms(q) or any(p.search(q) for p in _ADVICE) or (spaced and any(w in flat for w in _ADVICE_COMPACT)):

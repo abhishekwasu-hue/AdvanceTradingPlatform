@@ -843,3 +843,55 @@ def test_privacy_and_help_say_what_is_recorded():
     assert "acceptance of these documents" in privacy and "IP address and browser (user agent)" in privacy
     help_text = knowledge.HELP_FILE.read_text(encoding="utf-8")
     assert "browser type (user agent) are recorded" in help_text
+
+
+# --- Z10-f follow-up: evaluative AI wording, "all in", spaced-out / leetspeak trade words ---------------------------------
+
+@pytest.mark.parametrize("phrase,ai_text", [
+    ("good idea", "Open Screener; running it daily is a good idea."),
+    ("upside", "Open Screener to see the upside."),
+    ("pick the", "Open Screener and pick the strongest match."),
+    ("worth", "Open Screener; the matches are worth a look."),
+    ("attractive", "Open Screener for the attractive matches."),
+    ("all in", "Open Screener and put it all in."),
+    ("go all in", "Open Screener, then go all in."),
+    ("go all in", "Open Screener, then go all-in."),
+])
+def test_evaluative_wording_in_an_ai_answer_is_never_shown(phrase, ai_text):
+    top = knowledge.search("how do I use the screener")[0].passage.text
+    why = bot.check_ai_text(ai_text, top, top)
+    assert why is not None and why.startswith("AI answer uses evaluative wording") and phrase.split()[-1] in why, (ai_text, why)
+    out, provider = _bot("How do I use the screener?", ai_text)
+    assert provider.calls and out["source"] == "help" and out["answer"] != ai_text
+
+
+def test_the_evaluative_list_is_support_only():
+    """The deny list lives in the support bot, not in the platform-wide advice filter the other AI features share."""
+    from app.ai import output_filter
+    assert output_filter.blocked_terms("it is worth a look, a good idea with upside") == []
+    assert bot.check_ai_text("Open Positions and close it from its row.", "Open Positions and close it from its row.",
+                             "Open Positions and close it from its row.") is None
+
+
+@pytest.mark.parametrize("question", [
+    "b u y TCS", "8uy RELIANCE", "s e l l INFY", "5e11 INFY now", "$ell TCS", "s-e-l-l everything", "s.h.o.r.t NIFTY",
+    "should I b.u.y TCS", "Is TCS a 8uy?", "1nvest in TCS?", "how do I b u y in paper mode?", "how do I 8uy TCS here?",
+    "should I go all in on TCS?", "all in on banks?", "go all-in tomorrow?", "Should I go all-in", "all in?",
+])
+def test_spaced_leetspeak_and_all_in_questions_are_refused(question):
+    assert guard.classify(bot.clean_question(question)) == "advice", question
+
+
+@pytest.mark.parametrize("question", [
+    "how do I see my orders all in one place?", "is the history all in one file?", "how do I set 15m candles on NIFTY50?",
+    "what is A B testing", "what is P & L", "How do I close a paper position?", "what does SL mean?", "how do I set a 5 m timeframe?",
+    "how do I reset my password?", "where is the F & O segment?", "what is M T M?", "how do I connect my broker?",
+])
+def test_ordinary_how_to_questions_are_not_refused(question):
+    assert guard.classify(bot.clean_question(question)) is None, question
+
+
+def test_a_disguised_trade_word_never_reaches_the_model():
+    for question in ("8uy RELIANCE?", "how do I s e l l TCS in paper mode?", "should I go all in on INFY?"):
+        out, provider = _bot(question, "Open Positions and close it from its row.")
+        assert out["outcome"] == "refused" and out["refusal"] == "advice" and provider.calls == [], question

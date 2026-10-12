@@ -301,3 +301,88 @@ def test_a_group_fallback_is_logged_as_a_warning_with_the_exception_type(monkeyp
         run_screen(ast, validated, data, base_tf="1d", vectorized=True)
     warnings = [r for r in caplog.records if r.name == "app.screener.panel" and r.levelname == "WARNING"]
     assert warnings and all("ZeroDivisionError: kernel broke" in r.getMessage() for r in warnings)
+
+
+# --- U6 BK1: breakouts and the daily context ------------------------------------------------------------------------
+
+IDX_5M = pd.DatetimeIndex([d + pd.Timedelta(hours=3, minutes=45) + pd.Timedelta(minutes=5 * i)
+                           for d in pd.bdate_range("2026-02-02", periods=12, tz="UTC") for i in range(75)])
+IDX_1D = pd.bdate_range("2025-01-01", periods=290, tz="UTC") + pd.Timedelta(hours=3, minutes=45)
+
+
+def _with_daily(n_symbols=6):
+    """Symbols the way the bar-close engine hands them over since BK1: the screen's 5m bars plus a daily context frame."""
+    return [SymbolData(f"D{i}", {"5m": _walk(200 + i, IDX_5M, vol=0.003), "1d": _walk(300 + i, IDX_1D)}) for i in range(n_symbols)]
+
+
+@pytest.mark.parametrize("text", ['RangeBreakout("up")', 'RangeBreakout("down", 10) OR close > SMA(close, 20)', "RelVolume(20) > 1",
+                                  'NRBreakout("up")', "ATRPercentile(14, 100) > 20", 'DowTrend() == "UP"',
+                                  'close > SMA(close, 20) AND SwingBreakout("up")'])
+def test_breakout_functions_run_per_symbol_under_the_flag(text):
+    data = _with_daily()
+    ast, validated = compile_screen(text, base_tf="5m", cost_cap=1e9)
+    assert validated.ok, validated.problems
+    assert not panel.supported(ast, validated, "5m")
+    assert _as_tuples(run_screen(ast, validated, data, base_tf="5m", vectorized=True)) == _as_tuples(run_screen(ast, validated, data, base_tf="5m"))
+
+
+@pytest.mark.parametrize("text", ["close > SMA(close, 20) AND RSI(14) > 30", "close > EMA(close, 20)@1d", "close > Max(high, 4)@1w",
+                                  "CrossAbove(EMA(close, 9), EMA(close, 21)) OR volume > SMA(volume, 20)"])
+def test_the_daily_context_frame_changes_nothing_on_either_path(text):
+    """A 5m-only screen stays vectorised (the daily frame is not read); one that reads 1d / 1w uses the daily context
+    per symbol, exactly as without the flag."""
+    data = _with_daily()
+    ast, validated = compile_screen(text, base_tf="5m", cost_cap=1e9)
+    assert validated.ok, validated.problems
+    assert panel.supported(ast, validated, "5m") == ("@" not in text)
+    assert _as_tuples(run_screen(ast, validated, data, base_tf="5m", vectorized=True)) == _as_tuples(run_screen(ast, validated, data, base_tf="5m"))
+
+
+def test_the_bar_close_engine_fires_the_same_with_and_without_the_flag():
+    """BK1's cycle cache (lookback per timeframe) and daily attach, then the screen: vectorised or not, the same events."""
+    import json as _json
+
+    from app.alerts import barclose
+    from app.db.models import AlertEventRecord, AlertRuleRecord, ScreenRecord
+    from app.market_data.calendar import IST
+    from app.screener import nodes as n
+    from sqlalchemy import select
+    from tests.test_auth_api import _session_factory
+    from tests.test_phase_l_ai import _owner
+
+    data = _with_daily(8)
+    frames = {d.symbol: d.frames for d in data}
+    last = IDX_5M[-1].tz_convert(IST)
+    now = last.to_pydatetime().replace(hour=15, minute=31)
+    _, me = _owner("z10d-bk1-barclose@example.com")
+    text = "close > SMA(close, 20) AND RSI(14) > 30"
+
+    async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback, **kw):
+        return [barclose.SymbolData(s, dict(frames[s])) for s in symbols if s in frames], {}, "synthetic"
+
+    async def go():
+        async with _session_factory() as session:
+            ast, _ = compile_screen(text, base_tf="5m")
+            screen = ScreenRecord(tenant_id=me["tenant_id"], name="z10d", source_text=text, ast_json=_json.dumps(n.to_json(ast)), base_tf="5m",
+                                  params_json="{}")
+            session.add(screen)
+            await session.flush()
+            rules = []
+            for name in ("per-symbol", "vectorised"):
+                rule = AlertRuleRecord(tenant_id=me["tenant_id"], name=name, kind="screen", screen_id=screen.id, universe_json=_json.dumps(list(frames)),
+                                       base_tf="5m", priority="normal", cooldown_minutes=0, mode="instant", digest_every="hourly", status="active",
+                                       created_at=now, updated_at=now)
+                session.add(rule)
+                rules.append(rule)
+            await session.flush()
+            states = [await barclose.evaluate_rule(session, rule, now, fetch, (), barclose.CycleCache(), vectorized=(rule.name == "vectorised"))
+                      for rule in rules]
+            await session.commit()
+            events = []
+            for rule in rules:
+                rows = await session.scalars(select(AlertEventRecord).where(AlertEventRecord.rule_id == rule.id).order_by(AlertEventRecord.symbol))
+                events.append([(e.symbol, e.values_json) for e in rows])
+            return states, events
+    states, (plain, vectorised) = asyncio.run(go())
+    assert [s for s, _ in states] == ["done", "done"] and states[0][1] == states[1][1] > 0
+    assert plain == vectorised

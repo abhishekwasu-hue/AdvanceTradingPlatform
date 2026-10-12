@@ -41,6 +41,10 @@ BAR_LOOKBACK = 150                    # confirm-TF bars read: today's session pl
 MAX_STATUS_LINES = 5                  # per symbol on the template's status
 NO_AREAS = "SKIPPED_GATE_NO_AREAS"
 WAITING_DATA = "WAITING_DATA"
+DATA_LATE = "DATA_LATE"                # given up for this bar after MAX_LAG_TRIES cycles of short data
+TREND_PENDING = "TREND_PENDING"        # the Daily trend is being computed (the warm task); retried
+MAX_LAG_TRIES = 3
+COLD_FOLDS_PER_CYCLE = 1               # cold Daily folds the cycle itself may run (the warm task does the rest)
 
 
 @dataclass
@@ -100,17 +104,52 @@ async def _symbols_today(session: AsyncSession, rule: AlertRuleRecord, today: da
     return out
 
 
+@dataclass
+class CycleState:
+    """One run's shared limits (review of #214, H1): the time deadline (monotonic) and the cold Daily folds left."""
+    deadline: float
+    cold_left: int = 1
+
+    def out_of_time(self) -> bool:
+        return time_module.monotonic() >= self.deadline
+
+
+def _load_status(tpl: ScanThenTemplateRecord) -> Dict[str, Any]:
+    try:
+        data = json.loads(tpl.last_status_json) if tpl.last_status_json else {}
+    except ValueError:
+        data = {}
+    return data if isinstance(data, dict) else {}
+
+
+def _pick(entries: List[Tuple[Tuple[float, float], Dict[str, Any]]]) -> Tuple[Tuple[float, float], Dict[str, Any]]:
+    """One setup per side and commitment candle (review of #214, M1): grade A first, then the larger reward:risk, then the
+    tighter risk; the area stays in the evidence only."""
+    def score(item: Tuple[Tuple[float, float], Dict[str, Any]]) -> Tuple[int, float, float]:
+        r = item[1]
+        risk = abs(float(r.get("entry_price") or 0) - float(r.get("sl") or 0))
+        return (1 if r.get("grade") == "A" else 0, float(r.get("rr") or 0.0), -risk)
+    return max(entries, key=score)
+
+
 async def evaluate_template(session: AsyncSession, tpl: ScanThenTemplateRecord, rule: AlertRuleRecord, now: datetime, fetch: Any,
-                            holidays: Set[date], per_user: bool, report: RunReport) -> None:
-    """One template at `now` (at most once per closed confirmation bar)."""
+                            holidays: Set[date], per_user: bool, report: RunReport, cycle: Optional[CycleState] = None) -> None:
+    """One template at `now`, once per closed confirmation bar per symbol. Per symbol the status keeps the bar it was
+    evaluated on (`bar`) and how many cycles its data lagged (`tries`): only symbols not done for the current bar are
+    fetched again, a symbol whose data is still short after `MAX_LAG_TRIES` cycles is given up for that bar (DATA_LATE),
+    and the template's bar advances when every symbol is done (review of #214, M2). Out of time or out of cold folds:
+    the rest wait for the next cycle (H1)."""
     from app.alerts.barclose import expected_bar
+    from app.execution import approval
     from app.execution.core import intents
     from app.screener.zones import instrument_key
+    cycle = cycle or CycleState(deadline=time_module.monotonic() + BUDGET_SECONDS)
     tf = tpl.confirm_tf if tpl.confirm_tf in T.CONFIRM_TFS else T.DEFAULT_TF
     minutes = T.CONFIRM_TFS[tf]
     bar = expected_bar(now, tf, holidays)
     if bar is None or (tpl.last_bar_at is not None and _utc(tpl.last_bar_at) >= bar):
         return
+    bar_key = _utc(bar).isoformat()
     today = _utc(bar).astimezone(IST).date()
     symbols = await _symbols_today(session, rule, today)
     if not symbols:
@@ -121,108 +160,172 @@ async def evaluate_template(session: AsyncSession, tpl: ScanThenTemplateRecord, 
         tpl.last_problem = "The template's owner is no longer an active member - nothing is watched"
         tpl.last_bar_at = bar
         return
+    if not approval.can_trade(owner):                              # review L3: a trading role and trading:write
+        tpl.last_problem = "The template's owner may not trade any more (role or scope) - nothing is watched"
+        tpl.last_bar_at = bar
+        return
+    status = {k: v for k, v in _load_status(tpl).items() if k in symbols}
+    pending = [sym for sym in symbols if (status.get(sym) or {}).get("bar") != bar_key]
+    if not pending:
+        tpl.last_bar_at = bar
+        return
     exchange = rule.exchange or "NSE"
     try:
-        universe, problems, _source = await fetch(session, tpl.tenant_id, symbols, exchange, tf, {tf: BAR_LOOKBACK},
+        universe, problems, _source = await fetch(session, tpl.tenant_id, pending, exchange, tf, {tf: BAR_LOOKBACK},
                                                   user_id=owner.id if per_user else None)
     except Exception as exc:  # noqa: BLE001 - no bars, no gate (retried on the next cycle)
         tpl.last_problem = f"bars: {type(exc).__name__}: {str(exc)[:150]}"
         return
     gs = T.settings_of(tpl)
     expected = _ist_naive(bar)
-    status: Dict[str, Any] = {}
-    waiting = False
     problem: Optional[str] = None
     report.evaluated += 1
-    for data in universe:
-        frame = data.frames.get(tf)
+    by_symbol = {data.symbol: data for data in universe}
+
+    def lagging(sym: str, line: str) -> None:
+        prev = status.get(sym) or {}
+        tries = int(prev.get("tries", 0)) + 1 if prev.get("lag_bar") == bar_key else 1
+        if tries >= MAX_LAG_TRIES:
+            status[sym] = {"code": DATA_LATE, "lines": [line], "bar": bar_key}
+        else:
+            status[sym] = {"code": WAITING_DATA, "lines": [line], "lag_bar": bar_key, "tries": tries, "bar": prev.get("bar")}
+
+    for sym in pending:
+        if cycle.out_of_time():
+            report.deferred += 1
+            break                                                  # the rest are retried next cycle (same bar)
+        data = by_symbol.get(sym)
+        frame = data.frames.get(tf) if data is not None else None
         bars = G.closed_bars(bars_frame(frame), minutes, now) if frame is not None and len(frame) else None
         if bars is None or not len(bars) or pd.Timestamp(bars["timestamp"].iloc[-1]) != expected:
-            status[data.symbol] = {"code": WAITING_DATA, "lines": [f"waiting for the closed {tf} bar"]}
-            waiting = True                                         # never decided on data short of the expected bar
-            continue
-        key = instrument_key(data.symbol, exchange)
-        ctx = await trend.daily_context(session, key, today, gs)
+            lagging(sym, str(problems.get(sym) or f"waiting for the closed {tf} bar"))
+            continue                                               # never decided on data short of the expected bar
+        key = instrument_key(sym, exchange)
+        allow_cold = cycle.cold_left > 0
+        if allow_cold and trend.is_cold(key, today):
+            cycle.cold_left -= 1
+        ctx = await trend.daily_context(session, key, today, gs, allow_cold=allow_cold)
+        if ctx.get("pending"):
+            status[sym] = {"code": TREND_PENDING, "lines": [str(ctx.get("reason"))], "bar": (status.get(sym) or {}).get("bar")}
+            continue                                               # retried next cycle (the warm task computes it)
         areas = await A.areas_for(session, key, tpl.tenant_id, now)
         if not areas:
-            status[data.symbol] = {"code": NO_AREAS, "lines": ["no live market zone for the symbol (zones off or not computed)"],
-                                   "trend": ctx.get("reason")}
+            status[sym] = {"code": NO_AREAS, "lines": ["no live market zone for the symbol (zones off or not computed)"],
+                           "trend": ctx.get("reason"), "bar": bar_key}
             continue
         start = G.session_start_index(bars)
         bar_close = _utc(bar) + timedelta(minutes=minutes)
         lines: List[Tuple[int, str, str]] = []
+        entries: Dict[str, List[Tuple[Tuple[float, float], Dict[str, Any]]]] = {}
         for area in areas:
             others = [a for a in areas if a != area]
             r = G.safe_evaluate(bars, area, ctx, others, start, gs)
             code = status_of(r)
             if r.get("entry"):
-                lo, hi = area
-                evidence = ticket_of(r, ctx, tf, rule.id)
-                try:
-                    out = await intents.submit(session, tenant_id=tpl.tenant_id, user_id=owner.id, source="scan",
-                                               source_ref=f"rule:{rule.id}:symbol:{data.symbol}",
-                                               idempotency_key=f"{rule.id}:{data.symbol}:{lo:.2f}-{hi:.2f}:{r.get('confirm_ts')}",
-                                               mode=tpl.mode, signal=signal_of(rule, data.symbol, r, ctx, tf, bar_close), exchange=exchange,
-                                               evidence=evidence, now=now)
-                    report.submitted += int(out.created)
-                except (intents.CoreDisabled, intents.IntentRejected) as exc:
-                    code = "SKIPPED_INTENT_REFUSED"
-                    problem = str(exc)[:300]
+                entries.setdefault(str(r.get("side")), []).append((area, r))
             if code != "SKIPPED_GATE_NOT_AT_AREA":
                 rank = 0 if code == CONFIRMED_ENTRY else (1 if r.get("state") == G.ARMED else 2)
                 lines.append((rank, code, G.describe(r)))
+        for side, found in entries.items():
+            area, r = _pick(found)
+            evidence = ticket_of(r, ctx, tf, rule.id)
+            try:
+                out = await intents.submit(session, tenant_id=tpl.tenant_id, user_id=owner.id, source="scan",
+                                           source_ref=f"rule:{rule.id}:symbol:{sym}",
+                                           idempotency_key=f"{rule.id}:{sym}:{side}:{r.get('confirm_ts')}",
+                                           mode=tpl.mode, signal=signal_of(rule, sym, r, ctx, tf, bar_close), exchange=exchange,
+                                           evidence=evidence, now=now)
+                report.submitted += int(out.created)
+            except (intents.CoreDisabled, intents.IntentRejected) as exc:
+                lines.insert(0, (0, "SKIPPED_INTENT_REFUSED", str(exc)[:200]))
+                problem = str(exc)[:300]
         lines.sort(key=lambda x: x[0])
-        status[data.symbol] = {"code": lines[0][1] if lines else "SKIPPED_GATE_NOT_AT_AREA",
-                               "lines": [f"{c}: {d}" for _, c, d in lines[:MAX_STATUS_LINES]], "trend": ctx.get("reason")}
-    for symbol in symbols:
-        if symbol not in status:
-            status[symbol] = {"code": WAITING_DATA, "lines": [str(problems.get(symbol) or "no bars from the broker")]}
-            waiting = True
+        status[sym] = {"code": lines[0][1] if lines else "SKIPPED_GATE_NOT_AT_AREA",
+                       "lines": [f"{c}: {d}" for _, c, d in lines[:MAX_STATUS_LINES]], "trend": ctx.get("reason"), "bar": bar_key}
     tpl.last_status_json = json.dumps(status, default=str)
     tpl.last_problem = problem
-    if not waiting:
-        tpl.last_bar_at = bar                                      # a lagging symbol: the same bar again next cycle
+    if all((status.get(sym) or {}).get("bar") == bar_key for sym in symbols):
+        tpl.last_bar_at = bar                                      # every symbol done (or given up) for this bar
+
+
+async def _enabled_templates(session: AsyncSession) -> List[ScanThenTemplateRecord]:
+    """Enabled templates of organisations with `scan_then` and `execution_core` on (one flags read when off everywhere)."""
+    from app.execution.core.intents import FLAG as CORE_FLAG
+    from app.platform.controls import feature_flags, flag_enabled
+    entry = (await feature_flags(session)).get(T.FLAG) or {}
+    if not entry.get("on") and not entry.get("tenants"):
+        return []
+    rows = list(await session.scalars(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.enabled.is_(True))
+                                      .order_by(ScanThenTemplateRecord.last_bar_at.is_not(None), ScanThenTemplateRecord.last_bar_at,
+                                                ScanThenTemplateRecord.id)))
+    on: Dict[Tuple[str, int], bool] = {}
+    out = []
+    for tpl in rows:
+        for name in (T.FLAG, CORE_FLAG):
+            if (name, tpl.tenant_id) not in on:
+                on[(name, tpl.tenant_id)] = await flag_enabled(session, name, tpl.tenant_id)
+        if on[(T.FLAG, tpl.tenant_id)] and on[(CORE_FLAG, tpl.tenant_id)]:
+            out.append(tpl)
+    return out
+
+
+async def watched_keys(session: AsyncSession, now: datetime) -> List[str]:
+    """The lake keys every enabled template may watch today: its rule's own symbols and today's matches."""
+    from app.screener.zones import instrument_key
+    today = _utc(now).astimezone(IST).date()
+    keys: List[str] = []
+    for tpl in await _enabled_templates(session):
+        rule = await session.get(AlertRuleRecord, tpl.rule_id)
+        if rule is None or rule.tenant_id != tpl.tenant_id or rule.status != "active":
+            continue
+        try:
+            own = json.loads(rule.universe_json) if rule.universe_json else []
+        except ValueError:
+            own = []
+        symbols = [str(x) for x in own if isinstance(x, str)] + ([rule.symbol] if rule.symbol else []) + await _symbols_today(session, rule, today)
+        for sym in symbols[: MAX_SYMBOLS * 3]:
+            key = instrument_key(sym, rule.exchange or "NSE")
+            if key and key not in keys:
+                keys.append(key)
+    return keys
+
+
+async def warm_due(session: AsyncSession, now: Optional[datetime] = None) -> int:
+    """Review of #214 (H1): computes today's Daily contexts for every watched symbol not cached yet - run by the worker
+    as a background task outside the trading cycle (pre-open and whenever a new symbol is watched). Returns the folds run."""
+    now = _utc(now or datetime.now(timezone.utc))
+    keys = await watched_keys(session, now)
+    today = now.astimezone(IST).date()
+    return await trend.warm(session, [k for k in keys if trend.is_cold(k, today)], today)
 
 
 async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: Any = None,
-                  budget_seconds: float = BUDGET_SECONDS) -> RunReport:
-    """Every enabled template of the organisations with `scan_then` (and `execution_core`) on, within the time budget.
-    Commits once at the end. Never raises for one template."""
-    from app.execution.core.intents import FLAG as CORE_FLAG
-    from app.platform.controls import feature_flags, flag_enabled
+                  budget_seconds: float = BUDGET_SECONDS, cold_folds: int = COLD_FOLDS_PER_CYCLE) -> RunReport:
+    """Every enabled template of the organisations with `scan_then` (and `execution_core`) on, within the time budget
+    (checked per symbol) and at most `cold_folds` cold Daily folds. Commits once at the end. Never raises for one template."""
+    from app.platform.controls import flag_enabled
     report = RunReport()
     now = _utc(now or datetime.now(timezone.utc))
-    entry = (await feature_flags(session)).get(T.FLAG) or {}
-    if not entry.get("on") and not entry.get("tenants"):
-        return report                                              # off everywhere: one flags read
-    templates = list(await session.scalars(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.enabled.is_(True))
-                                           .order_by(ScanThenTemplateRecord.last_bar_at.is_not(None), ScanThenTemplateRecord.last_bar_at,
-                                                     ScanThenTemplateRecord.id)))
+    templates = await _enabled_templates(session)
     if not templates:
         return report
     from app.alerts.barclose import server_fetch
     from app.market_data.calendar import load_holidays
     holidays = await load_holidays(session, "NSE")
-    on: Dict[Tuple[str, int], bool] = {}
-
-    async def flag(name: str, tenant_id: int) -> bool:
-        if (name, tenant_id) not in on:
-            on[(name, tenant_id)] = await flag_enabled(session, name, tenant_id)
-        return on[(name, tenant_id)]
-    started = time_module.monotonic()
+    byob: Dict[int, bool] = {}
+    cycle = CycleState(deadline=time_module.monotonic() + budget_seconds, cold_left=max(0, int(cold_folds)))
     for tpl in templates:
-        if not (await flag(T.FLAG, tpl.tenant_id) and await flag(CORE_FLAG, tpl.tenant_id)):
-            continue
         report.templates += 1
-        if time_module.monotonic() - started > budget_seconds:
+        if cycle.out_of_time():
             report.deferred += 1
             continue
         rule = await session.get(AlertRuleRecord, tpl.rule_id)
         if rule is None or rule.tenant_id != tpl.tenant_id or rule.status != "active":
             continue
         try:
-            await evaluate_template(session, tpl, rule, now, fetch or server_fetch, holidays,
-                                    await flag("byob_data_tier", tpl.tenant_id), report)
+            if tpl.tenant_id not in byob:
+                byob[tpl.tenant_id] = await flag_enabled(session, "byob_data_tier", tpl.tenant_id)
+            await evaluate_template(session, tpl, rule, now, fetch or server_fetch, holidays, byob[tpl.tenant_id], report, cycle)
         except Exception as exc:  # noqa: BLE001 - one template's problem stays on it
             logger.exception("Scan Then template %s failed", tpl.id)
             tpl.last_problem = f"{type(exc).__name__}: {str(exc)[:150]}"

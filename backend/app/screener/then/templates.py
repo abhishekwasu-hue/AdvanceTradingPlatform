@@ -63,16 +63,17 @@ def settings_of(row: ScanThenTemplateRecord) -> Dict[str, Any]:
     return gate_settings(stored if isinstance(stored, dict) else {})
 
 
-def as_dict(row: Optional[ScanThenTemplateRecord], rule_id: int) -> Dict[str, Any]:
+def as_dict(row: Optional[ScanThenTemplateRecord], rule_id: int, include_status: bool = True) -> Dict[str, Any]:
     if row is None:
         return {"rule_id": rule_id, "configured": False, "enabled": False, "mode": "NOTIFY", "confirm_tf": DEFAULT_TF, "gate": {},
                 "gate_defaults": dict(GATE_DEFAULTS), "modes": list(MODES), "confirm_tfs": list(CONFIRM_TFS)}
     try:
-        status = json.loads(row.last_status_json) if row.last_status_json else {}
+        status = json.loads(row.last_status_json) if (row.last_status_json and include_status) else {}
     except ValueError:
         status = {}
     return {"rule_id": rule_id, "configured": True, "enabled": bool(row.enabled), "mode": row.mode, "confirm_tf": row.confirm_tf,
             "gate": json.loads(row.gate_settings_json or "{}"), "gate_defaults": dict(GATE_DEFAULTS), "modes": list(MODES),
             "confirm_tfs": list(CONFIRM_TFS), "user_id": row.user_id,
-            "last_bar_at": row.last_bar_at.isoformat() if row.last_bar_at else None, "last_problem": row.last_problem,
+            "last_bar_at": row.last_bar_at.isoformat() if row.last_bar_at else None,
+            "last_problem": row.last_problem if include_status else None,
             "status": status, "updated_at": row.updated_at.isoformat() if row.updated_at else None}

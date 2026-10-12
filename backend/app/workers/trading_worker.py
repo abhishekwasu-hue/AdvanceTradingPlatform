@@ -218,6 +218,7 @@ class TradingWorker:
         self._regime_wanted: set = set()
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
+        self._then_warm_task: Optional["asyncio.Task[None]"] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
         self._last_universe_sync_day = None   # U1-a
@@ -415,6 +416,7 @@ class TradingWorker:
                     report.errors.append(f"alert flush: {exc}")
                 # N1 U4 X1 (flag scan_then): scan Then templates - the level gate on each matched symbol's closed bars; a
                 # confirmed setup becomes an execution-core intent (drained below into a notification or a PAPER proposal).
+                self._spawn_then_warm(now)
                 try:
                     from app.screener.then import runner as scan_then
                     await scan_then.run_due(session, now)
@@ -1104,6 +1106,25 @@ class TradingWorker:
 
         self._market_zones_task = asyncio.get_running_loop().create_task(run())
         return True
+
+    def _spawn_then_warm(self, now: datetime) -> None:
+        """N1 X1 (review of #214, H1): today's Daily trend contexts for the scan Then symbols, computed in a background task
+        with its own session (a cold fold takes seconds) - never inside the trading cycle, one at a time per worker."""
+        if self._then_warm_task is not None and not self._then_warm_task.done():
+            return
+
+        async def run() -> None:
+            from app.screener.then import runner as scan_then
+            try:
+                async with self.session_factory() as own:
+                    await scan_then.warm_due(own, now)
+            except Exception:  # noqa: BLE001 - a missing context only means "trend pending"; never reaches trading
+                logger.exception("Scan Then trend warm-up failed")
+
+        try:
+            self._then_warm_task = asyncio.get_running_loop().create_task(run())
+        except RuntimeError:
+            self._then_warm_task = None
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

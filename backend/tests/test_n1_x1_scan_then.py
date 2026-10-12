@@ -83,17 +83,23 @@ def _fetch(upto=None, calls=None):
     return fetch
 
 
-def _patch_market(monkeypatch, ctx=None, areas=None):
-    async def context(session, key, today, gs=None, clock=None):
+def _patch_market(monkeypatch, ctx=None, areas=None, warm=None):
+    """`warm`: a set of keys whose Daily context is computed (None: every key is warm)."""
+    async def context(session, key, today, gs=None, clock=None, allow_cold=True):
+        if warm is not None and key not in warm:
+            if not allow_cold:
+                return {**trend._failed(trend.R_PENDING), "pending": True}
+            warm.add(key)
         return dict(ctx if ctx is not None else CTX)
 
     async def zones(session, key, tenant_id, at):
         return list(areas if areas is not None else [AREA] + OTHERS)
     monkeypatch.setattr(trend, "daily_context", context)
+    monkeypatch.setattr(trend, "is_cold", lambda key, today, clock=None: warm is not None and key not in warm)
     monkeypatch.setattr(A, "areas_for", zones)
 
 
-def _setup(tag, mode="ONE_CLICK", flags=("scan_then", "execution_core"), symbol="GATEDEMO"):
+def _setup(tag, mode="ONE_CLICK", flags=("scan_then", "execution_core"), symbol="GATEDEMO", symbols=None):
     t = _tenant(_email(tag), with_credentials=False)
     for name in flags:
         _flag(name, t["tenant_id"])
@@ -104,9 +110,10 @@ def _setup(tag, mode="ONE_CLICK", flags=("scan_then", "execution_core"), symbol=
                                    status="active", exchange="NSE")
             session.add(rule)
             await session.flush()
-            session.add(AlertEventRecord(tenant_id=t["tenant_id"], rule_id=rule.id, symbol=symbol, condition_hash="x" * 8,
-                                         bar_time=(LAST - pd.Timedelta(minutes=10)).to_pydatetime(), idem_key=uuid.uuid4().hex,
-                                         priority="normal", values_json="{}", status="sent"))
+            for sym in symbols or [symbol]:
+                session.add(AlertEventRecord(tenant_id=t["tenant_id"], rule_id=rule.id, symbol=sym, condition_hash="x" * 8,
+                                             bar_time=(LAST - pd.Timedelta(minutes=10)).to_pydatetime(), idem_key=uuid.uuid4().hex,
+                                             priority="normal", values_json="{}", status="sent"))
             session.add(ScanThenTemplateRecord(tenant_id=t["tenant_id"], rule_id=rule.id, user_id=t["user_id"], mode=mode, confirm_tf="5m",
                                                gate_settings_json=json.dumps(CASE["settings"]), enabled=True))
             await session.commit()
@@ -114,10 +121,10 @@ def _setup(tag, mode="ONE_CLICK", flags=("scan_then", "execution_core"), symbol=
     return t, _run(go())
 
 
-def _runner(now=NOW, fetch=None):
+def _runner(now=NOW, fetch=None, **kw):
     async def go():
         async with _session_factory() as session:
-            return await runner.run_due(session, now, fetch=fetch or _fetch())
+            return await runner.run_due(session, now, fetch=fetch or _fetch(), **kw)
     return _run(go())
 
 
@@ -188,7 +195,7 @@ def _daily_rows(key, days=260, seed=5):
         o = price
         c = o * (1 + drift + rng.normal(0, 0.008))
         end = pd.Timestamp(day).tz_localize(IST) + pd.Timedelta(hours=15, minutes=30)
-        rows.append(MdCandleRecord(instrument_key=key, timeframe="1d", ts=end.tz_convert(UTC).to_pydatetime(), source="test", version=1,
+        rows.append(MdCandleRecord(instrument_key=key, timeframe="1d", ts=end.tz_convert(UTC).to_pydatetime(), source="nse_bhav:cm", version=1,
                                    open=round(o, 2), high=round(max(o, c) * 1.004, 2), low=round(min(o, c) * 0.996, 2), close=round(c, 2),
                                    volume=1000, ingested_at=datetime(2025, 1, 1, tzinfo=UTC)))
         price = c
@@ -200,9 +207,18 @@ def test_daily_context_from_the_lake_matches_the_ported_fold_and_is_computed_onc
     rows = _daily_rows(key)
     today = (rows[-1].ts.astimezone(IST) + timedelta(days=1)).date()
 
+    # Review L1: a broker's or a stream's Daily bars are never read (end-of-day sources only), even on a day the
+    # bhavcopy has no bar or when they differ.
+    last = rows[-1]
+    foreign = [MdCandleRecord(instrument_key=key, timeframe="1d", ts=last.ts - timedelta(hours=1), source=src, version=9, open=1.0,
+                              high=1.0, low=1.0, close=1.0, volume=1, ingested_at=datetime(2025, 1, 1, tzinfo=UTC))
+               for src in ("broker:kite", "stream:upstox")]
+    foreign.append(MdCandleRecord(instrument_key=key, timeframe="1d", ts=last.ts, source="broker:kite", version=9, open=1.0, high=1.0,
+                                  low=1.0, close=1.0, volume=1, ingested_at=datetime(2025, 1, 1, tzinfo=UTC)))
+
     async def seed():
         async with _session_factory() as session:
-            session.add_all(rows)
+            session.add_all(rows + foreign)
             await session.commit()
     _run(seed())
     trend.clear_cache()
@@ -227,7 +243,7 @@ def test_daily_context_from_the_lake_matches_the_ported_fold_and_is_computed_onc
     assert first == expected and first["asof"] == str(rows[-1].ts.astimezone(IST).date())
     assert second["trend"] == first["trend"]
     # Today's own bar is never read (known at yesterday's close): a row ending today changes nothing.
-    assert len(bars) == len(rows)
+    assert len(bars) == len(rows) and float(bars["close"].iloc[-1]) == float(last.close)
 
 
 def test_daily_context_fails_closed_and_retries_later(monkeypatch):
@@ -283,8 +299,9 @@ def test_a_confirmed_setup_becomes_one_one_click_intent_then_a_paper_proposal(mo
     [intent] = _rows(ExecutionIntentRecord, t["tenant_id"])
     assert intent.status == intents.QUEUED and intent.requested_mode == "ONE_CLICK" and intent.user_id == t["user_id"]
     assert intent.source == "scan" and intent.symbol == "GATEDEMO" and intent.direction == "LONG"
-    assert intent.idempotency_key.startswith(f"scan:{rule_id}:GATEDEMO:{AREA[0]:.2f}-{AREA[1]:.2f}:")
+    assert intent.idempotency_key == f"scan:{rule_id}:GATEDEMO:{G.BULL}:{CASE['out']['confirm_ts']}"    # no area in the key
     evidence = json.loads(intent.evidence_json)
+    assert evidence["area"] == list(AREA)
     assert evidence["gate_status"] == ST.CONFIRMED_ENTRY and evidence["ticket"]["entry_price"] == CASE["out"]["entry_price"]
     assert evidence["ticket"]["sl"] == CASE["out"]["sl"] and evidence["ticket"]["study"].startswith("inside demand")
     signal = json.loads(intent.signal_json)
@@ -344,6 +361,110 @@ def test_data_short_of_the_expected_bar_is_not_evaluated_and_retried(monkeypatch
     assert _runner().submitted == 1                                              # retried next cycle, the bar is in
 
 
+def _fetch_by(upto, calls=None):
+    """Bars per symbol: `upto[symbol]` (default the commitment candle)."""
+    async def fetch(session, tenant_id, symbols, exchange, tf, lookback, user_id=None):
+        if calls is not None:
+            calls.append(tuple(symbols))
+        return [SymbolData(symbol=s, frames={tf: _bars(upto.get(s, CASE["m"]))}) for s in symbols], {}, "test"
+    return fetch
+
+
+def _evaluate(rule_id, fetch, cycle, now=NOW):
+    """One template on its own (the runner's other templates - from other tests - never share its cycle)."""
+    async def go():
+        async with _session_factory() as session:
+            tpl = await session.scalar(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.rule_id == rule_id))
+            rule = await session.get(AlertRuleRecord, rule_id)
+            report = runner.RunReport()
+            await runner.evaluate_template(session, tpl, rule, now, fetch, set(), False, report, cycle)
+            await session.commit()
+            return report
+    return _run(go())
+
+
+def _cycle(seconds=60.0, cold=1):
+    import time
+    return runner.CycleState(deadline=time.monotonic() + seconds, cold_left=cold)
+
+
+def test_one_intent_per_side_and_commitment_candle_even_with_overlapping_areas(monkeypatch):
+    """Review of #214 (M1): overlapping zones each confirm the same candle; one intent, the best area in its evidence."""
+    wide = (round(AREA[0] - 0.5, 2), round(AREA[1] + 0.5, 2))
+    above = (round(AREA[0] + 1.0, 2), round(AREA[1] + 3.0, 2))
+    _patch_market(monkeypatch, areas=[wide, AREA, above] + OTHERS)
+    t, rule_id = _setup("overlap")
+    assert _evaluate(rule_id, _fetch(), _cycle()).submitted == 1
+    [intent] = _rows(ExecutionIntentRecord, t["tenant_id"])
+    assert tuple(json.loads(intent.evidence_json)["area"]) in {wide, AREA, above}
+    assert intent.idempotency_key == f"scan:{rule_id}:GATEDEMO:{G.BULL}:{CASE['out']['confirm_ts']}"
+    # The pick: grade A first, then the larger reward:risk, then the tighter risk.
+    b3 = {"grade": "B", "rr": 3.0, "entry_price": 100.0, "sl": 98.0}
+    assert runner._pick([((1, 2), b3), ((3, 4), {**b3, "grade": "A", "rr": 2.0})])[0] == (3, 4)
+    assert runner._pick([((1, 2), b3), ((3, 4), {**b3, "rr": 3.5})])[0] == (3, 4)
+    assert runner._pick([((1, 2), b3), ((3, 4), {**b3, "sl": 99.0})])[0] == (3, 4)
+
+
+def test_a_lagging_symbol_is_refetched_alone_and_given_up_after_n_cycles(monkeypatch):
+    """Review of #214 (M2): the status keeps each symbol's evaluated bar; only lagging symbols are fetched again, and one
+    still short after MAX_LAG_TRIES cycles is given up for the bar (DATA_LATE), which then lets the template's bar advance."""
+    _patch_market(monkeypatch)
+    t, rule_id = _setup("laggy", symbols=["GATEDEMO", "LAGGY"])
+    calls = []
+    fetch = _fetch_by({"LAGGY": CASE["m"] - 1}, calls)
+    assert _evaluate(rule_id, fetch, _cycle()).submitted == 1                       # GATEDEMO confirmed on its bar
+    status = json.loads(_template(rule_id).last_status_json)
+    assert status["GATEDEMO"]["code"] == ST.CONFIRMED_ENTRY and status["LAGGY"]["code"] == runner.WAITING_DATA
+    assert status["LAGGY"]["tries"] == 1 and _template(rule_id).last_bar_at is None
+    for n in range(2, runner.MAX_LAG_TRIES + 1):
+        assert _evaluate(rule_id, fetch, _cycle()).submitted == 0
+        assert calls[-1] == ("LAGGY",)                                               # the done symbol is not fetched again
+    tpl = _template(rule_id)
+    assert json.loads(tpl.last_status_json)["LAGGY"]["code"] == runner.DATA_LATE and tpl.last_bar_at is not None
+    before = len(calls)
+    _evaluate(rule_id, fetch, _cycle())
+    assert len(calls) == before and len(_rows(ExecutionIntentRecord, t["tenant_id"])) == 1   # nothing more for this bar
+
+
+def test_many_cold_symbols_stop_at_the_cycle_s_fold_and_time_budget(monkeypatch):
+    """Review of #214 (H1): a cycle runs at most its cold-fold budget (the rest wait as TREND_PENDING) and stops at its
+    deadline; the background warm-up computes the rest, then the next cycle evaluates them all."""
+    names = ["GATEDEMO", "GATEDEMOB", "GATEDEMOC", "GATEDEMOD", "GATEDEMOE"]
+    warm: set = set()
+    _patch_market(monkeypatch, warm=warm)
+    t, rule_id = _setup("cold", symbols=names)
+    assert _evaluate(rule_id, _fetch(), _cycle(cold=1)).submitted == 1
+    status = json.loads(_template(rule_id).last_status_json)
+    assert [status[n]["code"] for n in names] == [ST.CONFIRMED_ENTRY] + [runner.TREND_PENDING] * 4
+    assert warm == {"NSE:GATEDEMO"} and _template(rule_id).last_bar_at is None
+    report = _evaluate(rule_id, _fetch(), _cycle(seconds=0.0, cold=1))              # out of time: nothing evaluated
+    assert report.deferred == 1 and report.submitted == 0 and warm == {"NSE:GATEDEMO"}
+
+    async def warm_up():
+        async with _session_factory() as session:
+            return await runner.warm_due(session, NOW)
+    assert _run(warm_up()) >= 4 and {f"NSE:{n}" for n in names} <= warm             # outside the cycle
+    assert _evaluate(rule_id, _fetch(), _cycle(cold=0)).submitted == 4
+    assert _template(rule_id).last_bar_at is not None and len(_rows(ExecutionIntentRecord, t["tenant_id"])) == 5
+
+
+def test_a_template_owner_who_may_not_trade_is_skipped(monkeypatch):
+    """Review of #214 (L3): the owner lost the trading role or scope - nothing is watched, with the reason."""
+    from app.db.models import User
+    _patch_market(monkeypatch)
+    t, rule_id = _setup("cantrade")
+
+    async def demote():
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            user.role = "VIEWER"
+            await session.commit()
+    _run(demote())
+    assert _evaluate(rule_id, _fetch(), _cycle()).submitted == 0
+    tpl = _template(rule_id)
+    assert "may not trade" in (tpl.last_problem or "") and _rows(ExecutionIntentRecord, t["tenant_id"]) == []
+
+
 def test_nothing_runs_without_both_flags(monkeypatch):
     _patch_market(monkeypatch)
     t, _ = _setup("noflag", flags=("scan_then",))
@@ -371,6 +492,23 @@ def test_then_routes(monkeypatch):
     assert client.put(url, headers=member, json={"mode": "NOTIFY"}).status_code == 403   # not the rule's creator
     viewer = _member(_email("viewer"), t["tenant_id"], "VIEWER")
     assert client.put(url, headers=viewer, json={"mode": "NOTIFY"}).status_code == 403
+    # Review of #214 (L2): the last check per symbol is the template owner's and the OWNER's only.
+    async def set_status(created_by="keep"):
+        async with _session_factory() as session:
+            tpl = await session.scalar(select(ScanThenTemplateRecord).where(ScanThenTemplateRecord.rule_id == rule_id))
+            tpl.last_status_json, tpl.last_problem = json.dumps({"GATEDEMO": {"code": "WAITING_DATA", "lines": ["x"]}}), "p"
+            if created_by != "keep":
+                (await session.get(AlertRuleRecord, rule_id)).created_by = created_by
+            await session.commit()
+    _run(set_status())
+    mine = client.get(url, headers=t["headers"]).json()
+    assert mine["status"]["GATEDEMO"]["code"] == "WAITING_DATA" and mine["last_problem"] == "p"
+    theirs = client.get(url, headers=member).json()
+    assert theirs["configured"] is True and theirs["status"] == {} and theirs["last_problem"] is None
+    # Info: an ownerless rule (its creator left) is the OWNER's to take over, never a member's.
+    _run(set_status(created_by=None))
+    assert client.put(url, headers=member, json={"mode": "NOTIFY"}).status_code == 403
+    assert client.put(url, headers=t["headers"], json={"mode": "NOTIFY"}).status_code == 200
     other = _tenant(_email("other"), with_credentials=False)
     _flag("scan_then", other["tenant_id"])
     assert client.get(url, headers=other["headers"]).status_code == 404                  # another organisation's rule

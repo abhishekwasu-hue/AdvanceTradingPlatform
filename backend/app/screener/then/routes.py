@@ -33,10 +33,20 @@ async def _rule(session: AsyncSession, user: User, rule_id: int) -> AlertRuleRec
     return await _owned(session, user, rule_id)
 
 
-def _may_change(user: User, rule: AlertRuleRecord) -> bool:
-    """The rule's creator or the organisation OWNER: intents go to the template's owner, so nobody sets one for another."""
+def _is_owner_role(user: User) -> bool:
     from app.core.enums import UserRole
-    return rule.created_by in (None, user.id) or user.role in (UserRole.OWNER.value, UserRole.SUPER_ADMIN.value)
+    return user.role in (UserRole.OWNER.value, UserRole.SUPER_ADMIN.value)
+
+
+def _may_change(user: User, rule: AlertRuleRecord) -> bool:
+    """The rule's creator or the organisation OWNER: intents go to the template's owner, so nobody sets one for another.
+    A rule without a creator (the creator left) is the OWNER's to take over only (review of #214)."""
+    return (rule.created_by is not None and rule.created_by == user.id) or _is_owner_role(user)
+
+
+def _sees_status(user: User, row: Any) -> bool:
+    """The last check per symbol (live values from the owner's feed) is the template owner's and the OWNER's only."""
+    return row is None or row.user_id == user.id or _is_owner_role(user)
 
 
 async def _template(session: AsyncSession, rule: AlertRuleRecord) -> Any:
@@ -48,7 +58,8 @@ async def _template(session: AsyncSession, rule: AlertRuleRecord) -> Any:
 async def get_then(rule_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, T.FLAG, user.tenant_id)
     rule = await _rule(session, user, rule_id)
-    return T.as_dict(await _template(session, rule), rule.id)
+    row = await _template(session, rule)
+    return T.as_dict(row, rule.id, include_status=_sees_status(user, row))
 
 
 @router.put("/rules/{rule_id}/then", dependencies=[Depends(require_scope("alerts:write"))])

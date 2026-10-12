@@ -80,45 +80,102 @@ def contract_gates(contract: Any) -> List[str]:
     return []
 
 
-_OPTION_SYMBOL = re.compile(r"\d\s*(CE|PE)$")           # NIFTY24OCT25000CE, 'NIFTY 25000 CE'
-_FUTURE_SYMBOL = re.compile(r"FUT$")                     # NIFTY24OCTFUT, 'NIFTY OCT FUT' (as the P1-d ticket's DERIVATIVE)
+# Review M1 follow-up: raw symbols arrive in many spellings (TradingView, Upstox, Dhan, Shoonya, Yahoo-style suffixes).
+# Classify what is plainly a derivative; a symbol that is neither in the master nor plainly cash-shaped FAILS CLOSED
+# (the futures gate applies), as the P1-d ticket refuses what it cannot read as a cash underlying.
+_PREFIX = re.compile(r"^([A-Z_]+):")
+_SUFFIX = re.compile(r"\.([A-Z]{1,4})$")
+DERIVATIVE_VENUES = {"NFO", "BFO", "MCX", "CDS", "NCDEX"}
+CASH_VENUES = {"NSE", "BSE", "NS", "BO"}
+_CONTINUOUS = re.compile(r"\d+!$")                                              # NIFTY1!, CRUDEOIL1! (TradingView {{ticker}})
+_FUTURE_PATTERNS = (re.compile(r"FUT$"), re.compile(r"\bFUT\b"), re.compile(r"\d{2}[A-Z]{3}\d{2}F$"))   # ...OCTFUT, 'X FUT 30 OCT 26', Shoonya ...26F
+_OPTION_PATTERNS = (re.compile(r"\d[\s-]*(CE|PE)$"),                            # NIFTY24OCT25000CE, 'NIFTY 25000 CE', Dhan ...-26000-CE
+                    re.compile(r"\d+(?:\.\d+)?\s+(CE|PE)\b"),                   # Upstox 'NIFTY 26000 CE 30 OCT 26'
+                    re.compile(r"\d{2}[A-Z]{3}\d{2}[CP]\d+(?:\.\d+)?$"))          # Shoonya NIFTY30OCT26C26000
+_CASH_SHAPE = re.compile(r"^[A-Z][A-Z0-9&-]*$")                                 # RELIANCE, M&M, BAJAJ-AUTO, RELIANCE-EQ
+GATE_UNRECOGNISED = "unrecognised_instrument"                                  # treated as the futures gate (fail closed)
 
 
-def raw_symbol_gates(symbol: str, direction: str, *, master_types: Sequence[Tuple[str, str]] = (),
-                     commodity: bool = False) -> List[str]:
-    """The gates a raw-symbol entry needs (review M1: webhook, public API, console, approval, underlying deployments -
-    no resolved contract). `master_types`: the instrument master's (exchange, instrument_type) rows for the symbol;
-    `commodity`: the contract registry says COMMODITY (MCX futures). A future -> futures; an option sold (SHORT) -> naked
-    short options; a bought option, a cash share or an index -> nothing."""
-    upper = symbol.strip().upper()
-    short = str(getattr(direction, "value", direction)).upper() == "SHORT"
-    kinds = {(kind or "").upper() for _, kind in master_types}
+def normalise_symbol(symbol: str) -> Tuple[str, Optional[str], Optional[str]]:
+    """(core, exchange prefix, suffix): 'MCX:CRUDEOIL' -> ('CRUDEOIL', 'MCX', None); 'RELIANCE.NS' -> ('RELIANCE', None, 'NS')."""
+    text = (symbol or "").strip().upper()
+    prefix = suffix = None
+    m = _PREFIX.match(text)
+    if m:
+        prefix, text = m.group(1), text[m.end():].strip()
+    m = _SUFFIX.search(text)
+    if m:
+        suffix, text = m.group(1), text[:m.start()].strip()
+    return text, prefix, suffix
+
+
+def _is_commodity(core: str) -> bool:
+    from app.core.enums import AssetClass
+    from app.instruments.registry import get_contract_spec
+    root = re.match(r"[A-Z]+", core)
+    for name in {core, root.group(0) if root else core}:
+        spec = get_contract_spec(name)
+        if spec is not None and spec.asset_class == AssetClass.COMMODITY:
+            return True
+    return False
+
+
+def _is_index(core: str) -> bool:
+    from app.instruments.master import INDEX_SYMBOLS
+    return core in INDEX_SYMBOLS or core in set(INDEX_SYMBOLS.values())
+
+
+def classify_symbol(symbol: str, *, master_types: Sequence[Tuple[str, str]] = ()) -> str:
+    """"cash" | "future" | "option" | "unrecognised" for a raw symbol. `master_types`: the instrument master's
+    (exchange, instrument_type) rows for it (they win when present)."""
+    from app.brokers.contract_symbols import parse_contract
     if master_types:
-        if "FUT" in kinds:
-            return [GATE_FUTURES]
+        kinds = {(kind or "").upper() for _, kind in master_types}
+        if "FUT" in kinds or any((ex or "").upper() in DERIVATIVE_VENUES - {"NFO", "BFO"} for ex, _ in master_types):
+            return "future"
         if kinds & {"CE", "PE"}:
-            return [GATE_NAKED] if short else []
-        if not any((ex or "").upper() == "MCX" for ex, _ in master_types):
-            return []
-    if commodity or any((ex or "").upper() == "MCX" for ex, _ in master_types):
+            return "option"
+        if kinds & {"EQ", "INDEX", "BE"}:
+            return "cash"
+    core, prefix, suffix = normalise_symbol(symbol)
+    if not core:
+        return "unrecognised"
+    parsed = parse_contract(core)
+    if parsed is not None:
+        return "future" if parsed.right == "FUT" else "option"
+    if any(p.search(core) for p in _OPTION_PATTERNS):
+        return "option"
+    if (prefix in DERIVATIVE_VENUES or suffix in DERIVATIVE_VENUES or _CONTINUOUS.search(core) or _is_commodity(core)
+            or any(p.search(core) for p in _FUTURE_PATTERNS)):
+        return "future"
+    if (prefix in (None, *CASH_VENUES)) and (suffix in (None, *CASH_VENUES)) and (_CASH_SHAPE.match(core) or _is_index(core)):
+        return "cash"
+    return "unrecognised"
+
+
+def raw_symbol_gates(symbol: str, direction: Any, *, master_types: Sequence[Tuple[str, str]] = ()) -> List[str]:
+    """The gates a raw-symbol entry needs (review M1: webhook, public API, console, approval, underlying deployments -
+    no resolved contract): a future -> futures; an option sold (SHORT) -> naked short options; a bought option, a cash
+    share or an index -> nothing; anything else -> the futures gate, as an unrecognised instrument (fail closed)."""
+    kind = classify_symbol(symbol, master_types=master_types)
+    short = str(getattr(direction, "value", direction)).upper() == "SHORT"
+    if kind == "future":
         return [GATE_FUTURES]
-    if _FUTURE_SYMBOL.search(upper):
-        return [GATE_FUTURES]
-    if _OPTION_SYMBOL.search(upper):
+    if kind == "option":
         return [GATE_NAKED] if short else []
+    if kind == "unrecognised":
+        return [GATE_UNRECOGNISED]
     return []
 
 
 async def symbol_gates(session: AsyncSession, symbol: str, direction: Any) -> List[str]:
-    """`raw_symbol_gates` with the instrument master (any broker's rows for the trading symbol) and the contract
-    registry (MCX commodities) read in."""
-    from app.core.enums import AssetClass
+    """`raw_symbol_gates` with the instrument master's rows (any broker) for the symbol, as sent and normalised."""
     from app.db.models import InstrumentRecord
-    from app.instruments.registry import get_contract_spec
+    core, _, _ = normalise_symbol(symbol)
+    names = sorted({(symbol or "").strip().upper(), core} - {""})
     rows = [(ex or "", kind or "") for ex, kind in await session.execute(
-        select(InstrumentRecord.exchange, InstrumentRecord.instrument_type).where(InstrumentRecord.tradingsymbol == symbol.strip().upper()).limit(50))]
-    spec = get_contract_spec(symbol)
-    return raw_symbol_gates(symbol, direction, master_types=rows, commodity=spec is not None and spec.asset_class == AssetClass.COMMODITY)
+        select(InstrumentRecord.exchange, InstrumentRecord.instrument_type).where(InstrumentRecord.tradingsymbol.in_(names)).limit(50))]
+    return raw_symbol_gates(symbol, direction, master_types=rows)
 
 
 async def symbol_entry_refusals(session: AsyncSession, user: Optional[User], symbol: str, direction: Any,
@@ -181,6 +238,11 @@ def allowed_by_level(level: str, gate: str) -> bool:
 
 
 def refusal_text(gate: str, level: str, record: Dict[str, Any]) -> str:
+    if gate == GATE_UNRECOGNISED:
+        need = GATES[GATE_FUTURES][0]
+        return (f"Unrecognised instrument; the futures gate applies: it opens at the {LEVEL_LABELS[need]} experience level; yours is "
+                f"{LEVEL_LABELS[level]} (from your PAPER record: {record['closed_trades']} closed trades over {record['sessions']} sessions). "
+                "A futures opt-out for today, with a reason, lifts this gate; it is logged and counted")
     need, label = GATES[gate]
     return (f"{label} open at the {LEVEL_LABELS[need]} experience level; yours is {LEVEL_LABELS[level]} (from your PAPER record: "
             f"{record['closed_trades']} closed trades over {record['sessions']} sessions). An opt-out for today, with a reason, "
@@ -219,11 +281,13 @@ async def entry_refusals(session: AsyncSession, user: Optional[User], gates: Seq
     now = now or datetime.now(timezone.utc)
     rec = await record(session, user)
     level, _ = derive_level(rec["closed_trades"], rec["sessions"], rec["max_drawdown_pct"])
-    blocked = [g for g in dict.fromkeys(gates) if g in GATES and not allowed_by_level(level, g)]
+    def base(g: str) -> str:
+        return GATE_FUTURES if g == GATE_UNRECOGNISED else g
+    blocked = [g for g in dict.fromkeys(gates) if base(g) in GATES and not allowed_by_level(level, base(g))]
     if not blocked:
         return []
     opted = set(await _opted_out_today(session, user, ist_day(now)))
-    return [refusal_text(g, level, rec) for g in blocked if g not in opted]
+    return [refusal_text(g, level, rec) for g in blocked if base(g) not in opted]
 
 
 async def status(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict[str, Any]:

@@ -114,7 +114,16 @@ classified by `symbol_gates`:
 - the contract registry (COMMODITY);
 - the symbol's shape (`...FUT`, `...25000CE`).
 
-A future or commodity needs the futures gate, and an option sold (SHORT) needs the naked gate (review M1). Both are new-entry paths only. The P1-d ticket stays cash-only, and the builder basket still
+A future or commodity needs the futures gate, and an option sold (SHORT) needs the naked gate (review M1).
+
+Classification steps (review M1 follow-up):
+
+1. **Normalise first.** Upper-case the symbol and strip an `EXCHANGE:` prefix and a `.XX` suffix, keeping both.
+2. **Futures:** an NFO / BFO / MCX / CDS venue, TradingView's continuous `NIFTY1!`, a registry COMMODITY root, Upstox
+   `X FUT dd MON yy`, `...FUT` or Shoonya `...26F`.
+3. **Options:** `parse_contract`, `...25000CE`, Dhan `...-26000-CE` or Shoonya `...26C26000`.
+4. **Cash:** the shape `^[A-Z][A-Z0-9&-]*$` (with an optional NSE/BSE prefix or `.NS` / `.BO` suffix), or an index name.
+5. **Fail closed:** anything else is an "unrecognised instrument" under the futures gate. A futures opt-out lifts it. Both are new-entry paths only. The P1-d ticket stays cash-only, and the builder basket still
 places nothing, so neither needs a gate yet. N2-7 / N2-9 reuse `structure_gates` when a basket becomes placeable.
 
 **Opt-out**: `POST /api/paper/experience/opt-out {gate, reason}`.

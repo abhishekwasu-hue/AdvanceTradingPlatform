@@ -8,6 +8,7 @@ Covers:
 - the two routes, and nothing gated while the flag is off.
 """
 import asyncio
+import json
 import uuid
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -293,15 +294,32 @@ def test_migration_is_additive_and_single_head():
 
 def test_raw_symbol_classification():
     g = experience.raw_symbol_gates
-    assert g("NIFTY24OCTFUT", "LONG") == ["futures"] and g("NIFTY24OCTFUT", "SHORT") == ["futures"]
-    assert g("CRUDEOIL", "LONG", commodity=True) == ["futures"]
-    assert g("GOLDM", "SHORT", master_types=[("MCX", "COM")]) == ["futures"]
-    assert g("NIFTY24OCT25000CE", "SHORT") == ["naked_short_options"] and g("NIFTY 25000 PE", "SHORT") == ["naked_short_options"]
-    assert g("NIFTY24OCT25000CE", "LONG") == []
-    assert g("NIFTY26O0124500PE", SignalDirection.SHORT, master_types=[("NFO", "PE")]) == ["naked_short_options"]
-    assert g("ODDNAME", "LONG", master_types=[("NFO", "FUT")]) == ["futures"]
-    assert g("RELIANCE", "SHORT", master_types=[("NSE", "EQ")]) == []          # ends in CE, but the master says a share
-    assert g("RELIANCE", "SHORT") == [] and g("NIFTY", "LONG") == []
+    fut, naked, unknown = ["futures"], ["naked_short_options"], ["unrecognised_instrument"]
+    futures = ["NIFTY24OCTFUT", "CRUDEOIL", "GOLD", "NIFTY1!", "CRUDEOIL1!", "MCX:CRUDEOIL", "NIFTY FUT 30 OCT 26", "NIFTY30OCT26F",
+               "NIFTY24OCTFUT.NS", "NFO:NIFTY24OCTFUT", "BANKNIFTY24OCTFUT.NFO"]
+    for symbol in futures:
+        assert g(symbol, "LONG") == fut, symbol
+        assert g(symbol, "SHORT") == fut, symbol
+    options = ["NIFTY24OCT25000CE", "NIFTY 25000 PE", "NIFTY 26000 CE 30 OCT 26", "NIFTY-OCT2026-26000-CE", "NIFTY30OCT26C26000",
+               "NIFTY24OCT25000CE.NFO", "NFO:NIFTY24OCT25000PE"]
+    for symbol in options:
+        assert g(symbol, "SHORT") == naked, symbol
+        assert g(symbol, "LONG") == [], symbol                                   # a bought option is not gated
+    for symbol in ("RELIANCE", "M&M", "BAJAJ-AUTO", "NSE:RELIANCE", "RELIANCE.NS", "RELIANCE-EQ", "BSE:TCS", "TCS.BO", "NIFTY", "NIFTY 50",
+                   "NIFTY BANK", "SENSEX"):
+        assert g(symbol, "SHORT") == [] and g(symbol, "LONG") == [], symbol
+    # Fail closed: neither in the master nor plainly cash-shaped.
+    for symbol in ("SOMETHING ODD 123", "XYZ@1", "NIFTY#", "FOO:BAR", "RELIANCE.XYZ"):
+        assert g(symbol, "LONG") == unknown, symbol
+    # The master wins when it knows the symbol.
+    assert g("NIFTY26O0124500PE", SignalDirection.SHORT, master_types=[("NFO", "PE")]) == naked
+    assert g("ODDNAME", "LONG", master_types=[("NFO", "FUT")]) == fut
+    assert g("GOLDM", "LONG", master_types=[("MCX", "FUTCOM")]) == fut
+    assert g("SOMETHING ODD 123", "LONG", master_types=[("NSE", "EQ")]) == []
+    assert experience.normalise_symbol(" mcx:crudeoil ") == ("CRUDEOIL", "MCX", None)
+    assert experience.normalise_symbol("RELIANCE.NS") == ("RELIANCE", None, "NS")
+    text = experience.refusal_text("unrecognised_instrument", "BEGINNER", {"closed_trades": 0, "sessions": 0})
+    assert text.startswith("Unrecognised instrument; the futures gate applies") and advice_in(text) == []
 
 
 def _webhook_owner(tag):
@@ -325,13 +343,18 @@ def test_webhook_entries_are_gated_by_symbol():
         ("NIFTY24OCTFUT", "LONG"): "Futures open at the Intermediate",
         ("CRUDEOIL", "LONG"): "Futures open at the Intermediate",
         ("NIFTY24OCT25000CE", "SHORT"): "Naked short options open at the Advanced",
+        ("NIFTY1!", "LONG"): "Futures open at the Intermediate",
+        ("MCX:CRUDEOIL", "SHORT"): "Futures open at the Intermediate",
+        ("NIFTY-OCT2026-26000-CE", "SHORT"): "Naked short options open at the Advanced",
+        ("NIFTY30OCT26C26000", "SHORT"): "Naked short options open at the Advanced",
+        ("SOMETHING ODD 123", "LONG"): "Unrecognised instrument; the futures gate applies",
     }
     for (symbol, direction), reason in cases.items():
         r = client.post(f"/api/webhooks/tradingview/{hook}", json=_alert(symbol, direction))
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["executed"] is False and any(x.startswith(reason) for x in body["reasons"]), (symbol, body)
-    for symbol, direction in (("NIFTY24OCT25000CE", "LONG"), ("RELIANCE", "LONG")):
+    for symbol, direction in (("NIFTY24OCT25000CE", "LONG"), ("RELIANCE", "LONG"), ("NSE:RELIANCE", "SHORT"), ("RELIANCE.NS", "LONG")):
         body = client.post(f"/api/webhooks/tradingview/{hook}", json=_alert(symbol, direction)).json()
         assert not any("experience level" in x for x in body["reasons"]), (symbol, body)
     # The day's opt-out lets the futures alert through.
@@ -401,3 +424,27 @@ def test_a_qualified_user_gets_409_even_with_a_short_reason(monkeypatch):
     _flag(t["tenant_id"])
     _closed_trades(t["tenant_id"], t["user_id"], 2, days=2)
     assert client.post("/api/paper/experience/opt-out", headers=t["headers"], json={"gate": "futures", "reason": "x"}).status_code == 409
+
+
+def test_an_approved_futures_proposal_is_gated_at_execution(monkeypatch):
+    """Approval execute passes a raw symbol to the pipeline: the gate applies there too."""
+    from app.execution import approval
+    from tests.test_z3_approval_entries import _flag_for, _price, _sig
+    t = _tenant(_email("appr"))
+    _flag_for(t["tenant_id"])
+    _flag(t["tenant_id"])
+
+    async def propose():
+        async with _session_factory() as session:
+            row = await approval.propose_entry(session, t["tenant_id"], signal=_sig(symbol="NIFTY24OCTFUT"), strategy_id="ema_rsi_scalper_1m",
+                                               source="tradingview", idempotency_key=f"n2x:{uuid.uuid4().hex}", user_id=t["user_id"])
+            return row.id
+    action_id = _run(propose())
+    _price(monkeypatch, 100.0)
+    body = client.post(f"/api/ai/actions/{action_id}/approve", headers=t["headers"], json={}).json()
+    assert "Futures open at the Intermediate experience level" in json.dumps(body), body
+
+    async def trades():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == t["tenant_id"])))
+    assert _run(trades()) == []

@@ -1160,6 +1160,24 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
   - Tests: `tests/test_u5_d3b_rrg_templates.py`, `d3b.test.tsx`.
   - The F&O dashboard view waits for chain data on the run path (EV-11 / CH4-1).
 
+## U5 D5 (built, partial): the quality bar on the result views
+
+- **`frontend/e2e/screenerViews.e2e.ts`** (desktop project, production build, every `/api` call mocked):
+  - **Keyboard only:** a starter, the symbols and Run, then every view (Table, Heatmap, Chart grid, RRG) through the
+    tablist.
+  - **Accessibility:** axe-core, the engine Lighthouse's accessibility audit runs, finds no serious or critical WCAG
+    2.1 A/AA issue in the results column with each view shown.
+  - **Reduce motion:** the board does not animate with the trader's setting.
+  - **Visual regression:** the heatmap and RRG views in dark, light and colour-blind, committed in
+    `e2e/__screenshots__/` (DejaVu Sans, frozen clock).
+- **`perf50.test.tsx`:** the spec's 50-stage canvas. The per-edit model work (text, spans, trail, problems, a move)
+  and a full canvas render stay inside loose bounds, to catch a quadratic path.
+- **Not in D5 here:** a Lighthouse run itself (D5-1); the page-wide primary-button contrast found by axe (D5-2); the
+  mobile layout keeps its own PW2 suite (`mobile.e2e.ts`).
+- **D4 (Then drawer, mode chip, arm banner, alert composer, delivery log)** is left to lane A. Its U4 X1/X1b branches
+  build the scan "Then" panel (`frontend/src/screener/then/`) on the execution core, so a second Then drawer here would
+  collide.
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

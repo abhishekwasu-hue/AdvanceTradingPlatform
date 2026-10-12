@@ -52,7 +52,19 @@ FLAG = "screener_v2"
 GALLERY_FLAG = "screener_gallery"   # U9 TX1: the taxonomy API and the gallery on the Screener page
 LEGENDS_FLAG = lg.FLAG             # U7 LG1: the Legends cards (their screens are hidden from the taxonomy while off)
 # U5 D2 review: live previews make /run chattier; a per-user window keeps them (and Runs) to a sane rate.
-run_rate_limit = user_rate_limit("screener_run", limit=60, window_seconds=60)
+RUN_LIMIT = (60, 60.0)                 # runs per user per window (seconds); shared by the routes and the Copilot tools
+run_rate_limit = user_rate_limit("screener_run", limit=RUN_LIMIT[0], window_seconds=RUN_LIMIT[1])
+
+
+async def run_allowed(session: AsyncSession, user: User) -> None:
+    """N3 S9 (review MED-1): the gate a screener run passes when it is not a route call - the Copilot's run_screen and
+    explain_results act for the caller, so they need the caller's trading role and draw on the same per-user run limit
+    as the Screener page (`screener_run`). Raises the route's own 403 / 429."""
+    from app.auth.dependencies import ensure_trader
+    from app.core.rate_limit import _too_many, allow
+    await ensure_trader(session, user)
+    if not await allow("screener_run", f"u{user.id}", RUN_LIMIT[0], RUN_LIMIT[1]):
+        raise _too_many()
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
 # N3 S7a: and the ranking systems a RankScore names (loaded by the route, with the sectors a sector-neutral one needs).
@@ -545,7 +557,7 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
             draft = nl.parse(await provider.complete(system, prompt, max_tokens=1200))
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:
             await ai_settings.mark_used(session, user.tenant_id, error=str(exc)[:200])
-            raise HTTPException(status_code=502, detail=f"The AI did not answer usably ({str(exc)[:120]}); write the screen in the builder") from exc
+            raise HTTPException(status_code=502, detail="The AI did not answer usably; write the screen in the builder") from exc
         ast, validated = _compiled(draft["text"], body.base_tf, {})
         await _gate(session, user, ast, validated, {})
         problems = [p.as_dict() for p in validated.problems]

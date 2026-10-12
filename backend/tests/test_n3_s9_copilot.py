@@ -275,3 +275,93 @@ def test_the_registry_text_lists_every_entry_but_flagged_off_ones():
     with pytest.raises(ValueError):
         nl.parse("no json here")
     assert nl.parse('```json\n{"text": " close > 1 ", "assumptions": "x"}\n```') == {"text": "close > 1", "explanation": "", "assumptions": []}
+
+
+# --- review fixes (security review of 5049c68) -----------------------------------------------------------------------------------
+
+def _viewer(t):
+    from tests.test_z10c_tenancy_fixes import _member
+    email = f"n3s9-viewer-{uuid.uuid4().hex[:6]}@example.com"
+    _member(email, t["tenant_id"], "VIEWER")
+
+    async def uid():
+        async with _session_factory() as session:
+            return (await session.scalar(select(User).where(User.email == email))).id
+    return {**t, "user_id": _run(uid())}
+
+
+def test_a_viewer_cannot_run_or_explain_through_the_copilot(monkeypatch):
+    """MED-1: the tools act for the caller and pass the route's own gate - a VIEWER gets the route's 403, nothing stored."""
+    t = _org("viewer")
+    _broker(monkeypatch)
+    viewer = _viewer(t)
+    for name, args in (("run_screen", {"text": "close > SMA(close, 20)", "symbols": ["UP"]}),
+                       ("explain_results", {"text": "close > SMA(close, 20)", "symbols": ["UP"]}),
+                       ("run_screen", {"text": "close > 1", "symbols": ["UP"], "as_of": "2025-06-02"})):
+        res = _tool(viewer, name, args)
+        assert not res.ok and "Insufficient role" in res.error, (name, res.error)
+
+    async def runs():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(ScreenRunRecord).where(ScreenRunRecord.tenant_id == t["tenant_id"])))
+    assert _run(runs()) == []
+    assert _tool(viewer, "build_screen", {"text": "close > 1"}).ok                      # checking a screen stays a read
+
+
+def test_the_run_limit_is_shared_by_the_page_and_the_agent(monkeypatch):
+    """MED-1: run_screen / explain_results draw on the same per-user `screener_run` window as /api/screener/run."""
+    from app.core import rate_limit
+    from app.screener import routes
+    t = _org("limit")
+    _broker(monkeypatch)
+    rate_limit.reset("screener_run")
+    monkeypatch.setattr(routes, "RUN_LIMIT", (3, 60.0))
+    body = {"source": "close > SMA(close, 20)", "symbols": ["UP"]}
+    assert client.post("/api/screener/run", headers=t["headers"], json=body).status_code == 200
+    assert client.post("/api/screener/run", headers=t["headers"], json=body).status_code == 200
+    assert _tool(t, "run_screen", {"text": "close > SMA(close, 20)", "symbols": ["UP"]}).ok                  # the 3rd in the window
+    refused = _tool(t, "explain_results", {"text": "close > SMA(close, 20)", "symbols": ["UP"]})
+    assert not refused.ok and "Too many requests" in refused.error
+    rate_limit.reset("screener_run")
+
+
+def test_model_words_in_an_alert_pass_the_output_filter():
+    """MED-2: an advice-laden name or note never reaches the rule (it goes out in every fire's title) or the proposal."""
+    t = _org("filter")
+    res = _tool(t, "propose_alert", {**ALERT, "quote": "alert me", "name": "BUY UP now - guaranteed 20% profit",
+                                     "reason": "Guaranteed profit, buy it now before it runs away."}, guard_cleared=True)
+    assert res.ok and res.data["created"]
+
+    async def action():
+        async with _session_factory() as session:
+            return await session.scalar(select(AiActionRecord).where(AiActionRecord.tenant_id == t["tenant_id"]))
+    row = _run(action())
+    evidence = json.loads(row.evidence_json)
+    assert evidence["rule"]["name"] == "UP: close > SMA(close, 20)" and "guaranteed" not in row.reason.lower()
+    assert evidence["agent_reason"] == "The trader asked for this alert."
+    approved = client.post(f"/api/ai/actions/{row.id}/approve", headers=t["headers"], json={}).json()
+    assert approved["status"] == "EXECUTED"
+
+    async def rules():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(AlertRuleRecord).where(AlertRuleRecord.tenant_id == t["tenant_id"])))
+    assert [r.name for r in _run(rules())] == ["UP: close > SMA(close, 20)"]
+
+
+def test_approval_checks_the_flag_again_and_the_asker_is_part_of_the_key():
+    """LOW-2 / LOW-3: the flag is read again at approval; two members asking for the same alert are two proposals."""
+    t = _org("recheck")
+    first = _tool(t, "propose_alert", {**ALERT, "quote": "alert me"}, guard_cleared=True)
+    assert first.data["created"]
+    from tests.test_z10c_tenancy_fixes import _member
+    email = f"n3s9-second-{uuid.uuid4().hex[:6]}@example.com"
+    _member(email, t["tenant_id"], "USER")
+
+    async def uid():
+        async with _session_factory() as session:
+            return (await session.scalar(select(User).where(User.email == email))).id
+    second = _tool({**t, "user_id": _run(uid())}, "propose_alert", {**ALERT, "quote": "alert me"}, guard_cleared=True)
+    assert second.ok and second.data["created"] and second.data["proposal_id"] != first.data["proposal_id"]
+    _flag(S.FLAG, t["tenant_id"], on=False)
+    done = client.post(f"/api/ai/actions/{first.data['proposal_id']}/approve", headers=t["headers"], json={}).json()
+    assert done["status"] == "FAILED" and S.FLAG in done["result"]

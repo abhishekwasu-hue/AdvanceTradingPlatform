@@ -388,10 +388,24 @@ async def _create_alert(session: AsyncSession, action: AiActionRecord, user: Use
     from fastapi import HTTPException
 
     from app.alerts.rules_routes import RuleBody, build_rule
+    from app.ai.tools.screener import FLAG as COPILOT_FLAG
+    from app.ai.tools.screener import neutral
+    from app.auth.dependencies import ensure_trader
+    from app.platform.controls import flag_enabled
     owner = await session.get(User, action.owner_user_id) if action.owner_user_id else user
     if owner is None or owner.tenant_id != action.tenant_id or not owner.is_active:
         raise ValueError("The person who asked for this alert is no longer an active member")
-    body = RuleBody.model_validate((json.loads(action.evidence_json or "{}") or {}).get("rule") or {})
+    if not await flag_enabled(session, COPILOT_FLAG, action.tenant_id):          # review LOW-2: checked again at approval
+        raise ValueError(f"Copilot alert proposals are no longer enabled for this organisation (flag {COPILOT_FLAG})")
+    try:                                                                          # review LOW-1: the owner may still write alerts
+        await ensure_trader(session, owner)
+        await ensure_trader(session, owner, scope="alerts:write")
+    except HTTPException as exc:
+        raise ValueError(f"The person who asked for this alert may not create alerts now ({exc.detail})") from exc
+    raw = (json.loads(action.evidence_json or "{}") or {}).get("rule") or {}
+    if isinstance(raw, dict) and raw.get("name"):                                 # review MED-2: filtered again, as stored
+        raw = {**raw, "name": neutral(str(raw["name"]), f"{raw.get('symbol', '')}: {raw.get('condition', '')}")[:120]}
+    body = RuleBody.model_validate(raw)
     try:
         async with session.begin_nested():                 # a refusal leaves nothing behind in the action's commit
             rule = await build_rule(session, owner, body)

@@ -74,6 +74,25 @@ def _detail(exc: HTTPException) -> str:
     return str(d)[:400]
 
 
+async def _may_run(ctx: ToolContext, source: str) -> Optional[ToolResult]:
+    """Review MED-1: a run for the caller passes the Screener route's own gate - the trading role and the shared
+    per-user run limit (`routes.run_allowed`)."""
+    from app.screener.routes import run_allowed
+    try:
+        await run_allowed(ctx.session, ctx.user)
+    except HTTPException as exc:
+        return ToolResult(False, None, None, source, error=_detail(exc))
+    return None
+
+
+def neutral(text: str, fallback: str) -> str:
+    """Review MED-2: model-written words that reach a person (an alert's name, a proposal's note) pass the H-C1 c
+    output filter; refused words are replaced by a neutral text built from the facts."""
+    from app.ai import output_filter
+    ok, shown, _ = output_filter.check(text, "en", where="screener_copilot")
+    return shown.strip() if ok and shown and shown.strip() == text.strip() else fallback
+
+
 async def _screener_on(ctx: ToolContext) -> Optional[ToolResult]:
     from app.platform.controls import flag_enabled
     if not await flag_enabled(ctx.session, SCREENER_FLAG, ctx.tenant_id):
@@ -104,7 +123,7 @@ async def build_screen(ctx: ToolContext, args: _Screen) -> ToolResult:
 
 async def run_screen(ctx: ToolContext, args: _Run) -> ToolResult:
     """Run a screen on up to 50 symbols: now (last closed bars, stored as a Screener run) or on a past date (as_of)."""
-    off = await _screener_on(ctx)
+    off = await _screener_on(ctx) or await _may_run(ctx, "screener_run")
     if off:
         return off
     try:
@@ -138,7 +157,7 @@ async def explain_results(ctx: ToolContext, args: _Explain) -> ToolResult:
     """Why each symbol passed or not: every stage's pass / fail and every condition's own numbers on its last closed bar."""
     import asyncio
 
-    off = await _screener_on(ctx)
+    off = await _screener_on(ctx) or await _may_run(ctx, "screen_evidence")
     if off:
         return off
     from app.screener import evidence
@@ -195,17 +214,23 @@ async def propose_alert(ctx: ToolContext, args: _Alert) -> ToolResult:
     from app.platform.controls import flag_enabled
     if not await flag_enabled(ctx.session, ALERTS_FLAG, ctx.tenant_id):
         return ToolResult(False, None, None, "ai_actions", error=f"alerts are not enabled for this organisation (flag {ALERTS_FLAG})")
-    body = RuleBody(name=args.name.strip(), kind="instrument", symbol=args.symbol.strip().upper(), condition=args.condition,
-                    base_tf=args.base_tf, exchange=args.exchange)
+    symbol = args.symbol.strip().upper()
+    body = RuleBody(name=f"{symbol} alert", kind="instrument", symbol=symbol, condition=args.condition, base_tf=args.base_tf,
+                    exchange=args.exchange)
     try:
         target = await _checked(ctx.session, ctx.user, body)
     except HTTPException as exc:
         return ToolResult(False, None, None, "ai_actions", error=f"the alert would be refused: {_detail(exc)}")
-    rule = {**body.model_dump(mode="json", exclude_none=True), "condition": target["condition_text"]}
-    key = hashlib.sha256(json.dumps(rule, sort_keys=True).encode()).hexdigest()[:12]
-    sentence = f"Create the alert \"{body.name}\": {target['condition_text']} on {target['symbol']} ({body.base_tf}, bar close)."
-    reason = f"{sentence} Asked by the trader (\"{args.quote.strip()}\"). AI note: {args.reason.strip()}"
-    evidence = {"source": "copilot_agent", "quote": args.quote.strip(), "agent_reason": args.reason.strip(), "user_id": ctx.user.id, "rule": rule}
+    # Review MED-2: the name goes out in every fire's title and the note to the person deciding - filtered; refused words
+    # give way to neutral text built from the facts
+    name = neutral(args.name.strip(), f"{target['symbol']}: {target['condition_text']}")[:120]
+    note = neutral(args.reason.strip(), "The trader asked for this alert.")
+    rule = {**body.model_dump(mode="json", exclude_none=True), "name": name, "condition": target["condition_text"]}
+    # review LOW-3: the asker is part of the key - two members proposing the same alert are two proposals
+    key = hashlib.sha256(json.dumps({**rule, "for": ctx.user.id}, sort_keys=True).encode()).hexdigest()[:12]
+    sentence = f"Create the alert \"{name}\": {target['condition_text']} on {target['symbol']} ({body.base_tf}, bar close)."
+    reason = f"{sentence} Asked by the trader (\"{args.quote.strip()}\"). AI note: {note}"
+    evidence = {"source": "copilot_agent", "quote": args.quote.strip(), "agent_reason": note, "user_id": ctx.user.id, "rule": rule}
     created = await monitor.raise_proposals(ctx.session, ctx.tenant_id, [monitor.Proposal(None, None, "CREATE_ALERT", f"AGENT_ALERT:{key}", reason,
                                                                                          evidence, owner_user_id=ctx.user.id)], ctx.now)
     if not created:

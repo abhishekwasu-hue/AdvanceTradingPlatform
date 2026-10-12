@@ -13,11 +13,22 @@ Point in time throughout:
   - Every ScreenQL function is causal (Z10-a), so one evaluation of the full series, read at each date, equals running
     the screen on bars cut at that date. `tests/test_n3_s6_history.py` checks exactly that on sample dates (the
     truncation test).
-  - A cross-sectional screen (rank / percentile across the universe) is run date by date on cut bars instead.
+  - A cross-sectional screen (rank / percentile across the universe) and a screen with a function answered for the
+    last bar only (Trend, StructureEvent, PatternBullish / PatternBearish, NearSupport / NearResistance - registry
+    LAST_BAR_ONLY) are run date by date on cut bars instead (review of S6a, HIGH: read as a series, the last date's answer
+    would be copied onto every date). The fast path refuses anything that is not a per-bar series.
+  - **Prices as known at d** (review of S6a, MED): the bars are adjusted for every corporate action on record, but a
+    split or bonus after d was not known at d. Adjustment after d scales every bar up to d by one factor, so a scale-free
+    screen (a ratio, RSI, close > SMA) reads the same either way; an absolute level (close > 1000, volume > 1e6) does
+    not. The screen at d therefore reads the bars rescaled to their prices as of d (`scales`: the factor of the actions
+    after d, from the adjusted and the raw bar of d). Forward returns use the fully adjusted closes.
   - A symbol with fewer bars than the screen's lookback at d does not match at d.
 - **Forward returns** (fitness only) are the closes after d, by design.
-  - They are measured on the trading calendar: d + h sessions, at the last close on or before that day. A delisted
-    name keeps its last price.
+  - They are measured on the trading calendar: d + h sessions, at the last close on or before that day. A name with no
+    bar at d + h (delisted or suspended in between) keeps its last price, and those observations are counted
+    (`no_bar_at_horizon`).
+  - With rebalance dates closer than the horizon the forward windows overlap; the t-statistic and the deflation use
+    non-overlapping dates only (one every h sessions; `independent_dates`), the means use every date.
   - A date whose horizon has not finished yet is left out for that horizon.
   - The sealed backtest holdout is never read (`data_policy.check_range`).
 
@@ -64,6 +75,35 @@ class HistoryError(ValueError):
     """A history request the data cannot answer (shown as is)."""
 
 
+Scale = Tuple[float, float]          # (price divisor, volume multiplier) that turns adjusted bars into the bars as of a date
+
+
+def last_bar_only_calls(ast: Any) -> List[str]:
+    """The functions of a screen answered for the last bar only (registry LAST_BAR_ONLY): they cannot be read back in
+    time from one series, so such a screen runs date by date on cut bars."""
+    from app.screener import nodes
+    from app.screener.registry import LAST_BAR_ONLY
+    out: List[str] = []
+    for node in nodes.walk(ast):
+        if isinstance(node, nodes.Call) and node.name in LAST_BAR_ONLY and node.name not in out:
+            out.append(node.name)
+    return out
+
+
+def rescaled(frame: pd.DataFrame, scale: Optional[Scale]) -> pd.DataFrame:
+    """Adjusted bars -> the bars as known on a date (prices / divisor, volume x multiplier); identity for no scale."""
+    if frame is None or frame.empty or scale is None or scale == (1.0, 1.0):
+        return frame
+    p, v = scale
+    out = frame.copy()
+    for col in ("open", "high", "low", "close"):
+        if col in out.columns:
+            out[col] = out[col] / p
+    if "volume" in out.columns:
+        out["volume"] = out["volume"] * v
+    return out
+
+
 def bar_index(days: Sequence[date]) -> pd.DatetimeIndex:
     """Daily bar timestamps as the screener's daily frames have them: the session date at 00:00 IST, in UTC."""
     return pd.DatetimeIndex([pd.Timestamp(datetime.combine(d, dtime(0, 0), IST)).tz_convert("UTC") for d in days])
@@ -90,16 +130,17 @@ def rebalance_dates(calendar: Sequence[date], start: date, end: date, every: int
 # --- signals: who passed at each date -------------------------------------------------------------------------------------
 
 def passers_on(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], day: date, params: Optional[Dict[str, Any]] = None,
-               eligible: Optional[Set[str]] = None) -> Dict[str, Any]:
+               eligible: Optional[Set[str]] = None, scales: Optional[Dict[str, Dict[date, Scale]]] = None,
+               excluded: Optional[Set[Tuple[str, date]]] = None) -> Dict[str, Any]:
     """The as-of run: the screen on every eligible symbol's bars cut at `day` (the exact, slow path). Only symbols that
     traded that session are evaluated (a suspended or delisted name has no bar of `day` and is not a match)."""
     universe = []
     for s, f in sorted(frames.items()):
-        if (eligible is not None and s not in eligible) or f is None:
+        if (eligible is not None and s not in eligible) or f is None or (excluded is not None and (s, day) in excluded):
             continue
         upto = cut(f, day)
         if upto is not None and not upto.empty and session_dates(upto.index[-1:])[0] == day:
-            universe.append(SymbolData(symbol=s, frames={BASE_TF: upto}))
+            universe.append(SymbolData(symbol=s, frames={BASE_TF: rescaled(upto, (scales or {}).get(s, {}).get(day))}))
     matches = run_screen(ast, validated, universe, base_tf=BASE_TF, params=params or {})
     return {"matched": sorted(m.symbol for m in matches if m.matched),
             "not_evaluated": {m.symbol: m.reason for m in matches if not m.matched and m.reason},
@@ -107,63 +148,77 @@ def passers_on(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], day: d
 
 
 def signals(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: Sequence[date], params: Optional[Dict[str, Any]] = None,
-            eligible: Optional[Dict[date, Set[str]]] = None) -> pd.DataFrame:
-    """[dates x symbols] -> True where the symbol passed the screen at that date (on bars closed by then). Ineligible
-    (not an index member at that date) is False."""
+            eligible: Optional[Dict[date, Set[str]]] = None, scales: Optional[Dict[str, Dict[date, Scale]]] = None,
+            excluded: Optional[Set[Tuple[str, date]]] = None) -> pd.DataFrame:
+    """[dates x symbols] -> True where the symbol passed the screen at that date (on bars closed by then, at the prices
+    known then: `scales`). Ineligible (not an index member at that date) and `excluded` (symbol, date) pairs are False."""
     params = dict(params or {})
     dates = sorted(dates)
     symbols = sorted(frames)
     table = pd.DataFrame(False, index=pd.Index(dates, name="date"), columns=symbols, dtype=bool)
     if not dates or not symbols:
         return table
-    if validated.cross_sectional:
+    last_bar = last_bar_only_calls(ast)
+    if validated.cross_sectional or last_bar:
         if len(dates) > MAX_CROSS_SECTIONAL_DATES:
-            raise HistoryError(f"a cross-sectional screen (a rank across the universe) runs date by date: at most "
-                               f"{MAX_CROSS_SECTIONAL_DATES} dates - use a longer rebalance step or a shorter window")
+            what = "a cross-sectional screen (a rank across the universe)" if validated.cross_sectional else \
+                f"a screen with {', '.join(n + '()' for n in last_bar)} (answered for the last bar only)"
+            raise HistoryError(f"{what} runs date by date: at most {MAX_CROSS_SECTIONAL_DATES} dates - use a longer rebalance step "
+                               f"or a shorter window")
         for d in dates:
-            matched = passers_on(ast, validated, frames, d, params, eligible.get(d) if eligible is not None else None)["matched"]
+            matched = passers_on(ast, validated, frames, d, params, eligible.get(d) if eligible is not None else None, scales, excluded)["matched"]
             for s in matched:
                 table.at[d, s] = True
         return table
-    values = series_at_dates(ast, validated, frames, dates, params)
+    values = series_at_dates(ast, validated, frames, dates, params, scales)
     for s in values.columns:
         col = values[s]
         for d in dates:
             v = col.at[d]
-            if v is not None and not (isinstance(v, float) and math.isnan(v)) and bool(v) and (eligible is None or s in eligible.get(d, set())):
+            if v is not None and not (isinstance(v, float) and math.isnan(v)) and bool(v) and (eligible is None or s in eligible.get(d, set())) \
+                    and (excluded is None or (s, d) not in excluded):
                 table.at[d, s] = True
     return table
 
 
 def series_at_dates(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], dates: Sequence[date],
-                    params: Optional[Dict[str, Any]] = None) -> pd.DataFrame:
+                    params: Optional[Dict[str, Any]] = None, scales: Optional[Dict[str, Dict[date, Scale]]] = None) -> pd.DataFrame:
     """[dates x symbols] an expression's value at each date, on bars closed by then: one causal series per symbol (or
-    per group of symbols sharing a bar index - the Z10-d panel) read at the date. NaN where the symbol has no bar that
-    date or fewer bars than the expression's lookback. Used for the screen's matches and for S6b's rank values."""
+    per group of symbols sharing a bar index - the Z10-d panel) read at the date, at the prices known then (`scales`;
+    a symbol with a split / bonus between the dates is evaluated once per price scale). NaN where the symbol has no bar
+    that date or fewer bars than the expression's lookback. Used for the screen's matches and for S6b's rank values.
+    Review of S6a (HIGH): an expression with a last-bar-only function is refused - read as a series, the last date's
+    answer would be copied onto every date (the callers run such screens date by date)."""
     params = dict(params or {})
     dates = sorted(dates)
     symbols = sorted(frames)
     out = pd.DataFrame(np.nan, index=pd.Index(dates), columns=symbols, dtype=object)
     if not dates or not symbols:
         return out
+    if last_bar_only_calls(ast) or validated.cross_sectional:
+        raise HistoryError("this expression is answered for the last bar only (or across the universe): it cannot be read back in time")
     lookback = int((validated.lookback or {}).get(BASE_TF, 1) or 1)
     last = dates[-1]
     cut_frames = {s: cut(frames[s], last) for s in symbols}
     cut_frames = {s: f for s, f in cut_frames.items() if f is not None and not f.empty}
 
-    def mark(s: str, values: Any, frame: pd.DataFrame) -> None:
+    def mark(s: str, values: Any, frame: pd.DataFrame, only: Optional[Set[date]] = None) -> None:
+        if not isinstance(values, pd.Series):
+            raise HistoryError("the expression did not give a per-bar series; it cannot be read back in time")
         days = session_dates(frame.index)
         pos = {d: i for i, d in enumerate(days)}
-        arr = values.to_numpy() if isinstance(values, pd.Series) else np.full(len(frame), values, dtype=object)
+        arr = values.to_numpy()
         for d in dates:
             i = pos.get(d)
-            if i is not None and i + 1 >= lookback:
+            if i is not None and i + 1 >= lookback and (only is None or d in only):
                 out.at[d, s] = arr[i]
+    scaled = {s for s in cut_frames if any(v != (1.0, 1.0) for v in (scales or {}).get(s, {}).values())}
     rest = list(cut_frames)
     from app.screener import panel as P
     if P.supported(ast, validated, BASE_TF):
-        universe = [SymbolData(symbol=s, frames={BASE_TF: f}) for s, f in cut_frames.items()]
-        rest = []
+        # Z10-d: symbols sharing one bar index are evaluated at once (bit for bit the per-symbol series).
+        universe = [SymbolData(symbol=s, frames={BASE_TF: f}) for s, f in cut_frames.items() if s not in scaled]
+        rest = sorted(scaled)
         for members in P._groups(universe, BASE_TF):
             names = [universe[i].symbol for i in members]
             if len(members) < P.MIN_GROUP:
@@ -180,11 +235,15 @@ def series_at_dates(ast: Any, validated: Any, frames: Dict[str, pd.DataFrame], d
                 mark(name, value.iloc[:, k] if isinstance(value, pd.DataFrame) else value, frame)
     for s in rest:
         frame = cut_frames[s]
-        try:
-            values = evaluate(ast, SymbolData(symbol=s, frames={BASE_TF: frame}), base_tf=BASE_TF, params=params)
-        except Exception:  # noqa: BLE001 - one symbol's bad data never fails the run (it simply has no value)
-            continue
-        mark(s, values, frame)
+        groups: Dict[Optional[Scale], Set[date]] = {}
+        for d in dates:
+            groups.setdefault((scales or {}).get(s, {}).get(d), set()).add(d)
+        for scale, only in groups.items():
+            try:
+                values = evaluate(ast, SymbolData(symbol=s, frames={BASE_TF: rescaled(frame, scale)}), base_tf=BASE_TF, params=params)
+            except Exception:  # noqa: BLE001 - one symbol's bad data never fails the run (it simply has no value)
+                continue
+            mark(s, values, frame, only if len(groups) > 1 else None)
     return out
 
 
@@ -202,12 +261,15 @@ class HorizonStats:
     t_stat: Optional[float] = None
     low_sample: bool = True
     excess_by_date: List[float] = field(default_factory=list)
+    independent_excess: List[float] = field(default_factory=list)   # one date every `horizon` sessions (no overlap)
+    no_bar_at_horizon: int = 0
 
     def as_dict(self) -> Dict[str, Any]:
         r = lambda v, k=6: None if v is None else round(float(v), k)  # noqa: E731
         return {"horizon": self.horizon, "dates": self.dates, "observations": self.observations, "passers_mean": r(self.passers_mean),
                 "universe_mean": r(self.universe_mean), "excess_mean": r(self.excess_mean), "hit_rate": r(self.hit_rate, 4),
-                "t_stat": r(self.t_stat, 3), "low_sample": self.low_sample}
+                "t_stat": r(self.t_stat, 3), "low_sample": self.low_sample, "independent_dates": len(self.independent_excess),
+                "no_bar_at_horizon": self.no_bar_at_horizon}
 
 
 def closes_on_calendar(frames: Dict[str, pd.DataFrame], calendar: Sequence[date]) -> pd.DataFrame:
@@ -244,7 +306,7 @@ def _breadth(closes: np.ndarray, traded_row: np.ndarray, i: int, mask: np.ndarra
 
 
 def fitness(sig: pd.DataFrame, frames: Dict[str, pd.DataFrame], calendar: Sequence[date], horizons: Sequence[int] = HORIZONS,
-            eligible: Optional[Dict[date, Set[str]]] = None) -> Dict[str, Any]:
+            eligible: Optional[Dict[date, Set[str]]] = None, excluded: Optional[Set[Tuple[str, date]]] = None) -> Dict[str, Any]:
     """The fitness statistics of a signal table (pure; numpy over the calendar x symbols grid)."""
     calendar = sorted(calendar)
     pos = {d: i for i, d in enumerate(calendar)}
@@ -282,6 +344,7 @@ def fitness(sig: pd.DataFrame, frames: Dict[str, pd.DataFrame], calendar: Sequen
         passer_rets: List[float] = []
         universe_means: List[float] = []
         hits = 0
+        last_independent: Optional[int] = None
         for k, d in enumerate(sig.index):
             i = pos.get(d)
             if i is None or i + h >= len(calendar):
@@ -292,6 +355,11 @@ def fitness(sig: pd.DataFrame, frames: Dict[str, pd.DataFrame], calendar: Sequen
             with np.errstate(invalid="ignore", divide="ignore"):
                 fwd = closes[i + h] / closes[i] - 1.0
             ok = m & np.isfinite(fwd)
+            if excluded:
+                # a split / bonus inside the window of unadjusted bars: that observation is not a return
+                for j, c in enumerate(cols):
+                    if ok[j] and (c, d) in excluded:
+                        ok[j] = False
             if not ok.any():
                 continue
             u = float(fwd[ok].mean())
@@ -304,6 +372,10 @@ def fitness(sig: pd.DataFrame, frames: Dict[str, pd.DataFrame], calendar: Sequen
             universe_means.append(u)
             hits += int((p > u + 1e-12).sum())                     # beat the universe (float noise is not a beat)
             st.excess_by_date.append(float(p.mean()) - u)
+            st.no_bar_at_horizon += int((chosen & ~traded[i + h]).sum())
+            if last_independent is None or i - last_independent >= h:
+                st.independent_excess.append(float(p.mean()) - u)        # forward windows that do not overlap
+                last_independent = i
             if h == MAIN_HORIZON:
                 regime = _breadth(closes, traded[i], i, masks[d])
                 if regime is not None:
@@ -314,10 +386,10 @@ def fitness(sig: pd.DataFrame, frames: Dict[str, pd.DataFrame], calendar: Sequen
             st.passers_mean = float(np.mean(passer_rets))
             st.universe_mean = float(np.mean(universe_means))
             st.hit_rate = hits / len(passer_rets)
-            ex = np.array(st.excess_by_date, dtype=float)
-            st.excess_mean = float(ex.mean())
-            if len(ex) >= 2 and ex.std(ddof=1) > 0:
-                st.t_stat = float(ex.mean() / (ex.std(ddof=1) / math.sqrt(len(ex))))
+            st.excess_mean = float(np.mean(st.excess_by_date))
+            ind = np.array(st.independent_excess, dtype=float)       # review of S6a (MED): overlapping windows inflate t
+            if len(ind) >= 2 and ind.std(ddof=1) > 0:
+                st.t_stat = float(ind.mean() / (ind.std(ddof=1) / math.sqrt(len(ind))))
         out["horizons"].append(st)
     for name, rows in regime_rows.items():
         out["regimes"][name] = ({"dates": len(rows), "passers_mean": round(float(np.mean([r[0] for r in rows])), 6),

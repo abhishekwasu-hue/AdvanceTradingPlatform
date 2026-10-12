@@ -276,12 +276,13 @@ def table(system: System, values: Dict[str, pd.DataFrame], dates: Sequence[Any],
 
 
 def rank_at_dates(system: System, frames: Dict[str, pd.DataFrame], dates: Sequence[Any],
-                  sectors: Optional[Mapping[Any, Mapping[str, Optional[str]]]] = None, eligible: Optional[Dict[Any, set]] = None) -> pd.DataFrame:
+                  sectors: Optional[Mapping[Any, Mapping[str, Optional[str]]]] = None, eligible: Optional[Dict[Any, set]] = None,
+                  scales: Optional[Dict[str, Dict[Any, Any]]] = None) -> pd.DataFrame:
     """The S6 history read of a system: each leaf's causal value at each date on bars closed by then (S6a
     `series_at_dates`, NaN before its lookback), scored date by date. Equal to running the system on bars cut at each
     date (tested), so a backtest ranking on it never sees a later bar."""
     from app.screener import history as H
-    values = {path: H.series_at_dates(leaf.ast, leaf.validated, frames, dates).apply(pd.to_numeric, errors="coerce").astype(float)
+    values = {path: H.series_at_dates(leaf.ast, leaf.validated, frames, dates, None, scales).apply(pd.to_numeric, errors="coerce").astype(float)
               for path, leaf in leaf_paths(system)}
     return table(system, values, dates, sectors, eligible)
 

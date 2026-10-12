@@ -75,8 +75,10 @@ unchanged.
 ## 4. F2: caps as entry refusals only (`portfolio_risk_caps`, needs `portfolio_risk`)
 
 **Settings.** Three new keys in the user's P1-d risk settings, stored in the same JSON (`RiskSettings`, so no
-migration). Each gets bounds in `BOUNDS`, a platform ceiling in `controls.risk_ceilings`, and the P1-d rule that
-loosening waits until the next day (`loosens`):
+migration). Each gets bounds in `BOUNDS` and the P1-d rule that loosening (including going back to 0 = no limit)
+waits until the next day (`loosens`). As built there is no platform ceiling for them: they only ever tighten, and R4's
+`max_portfolio_risk_pct` stays the organisation's ceiling. They are set through `PUT /api/paper/risk` (the P1-d
+settings route, behind `risk_by_default`) until F3 adds them to the Positions card:
 
 | Key | Meaning | Default |
 |---|---|---|
@@ -91,8 +93,12 @@ with candidate = symbol, side, quantity, entry and stop. It is called from two p
 
 1. Before a proposal, next to `proposal_refusal` in `approval.propose_entry`. The intent is refused with the
    reason, and the core records it as REFUSED. This covers X1.
-2. At Approve, in `approval.execute_entry` before the re-quote, because the book may have changed since the
-   proposal. A refused Approve closes the proposal unplaced with the reason, as a failed re-quote does.
+2. At Approve, in `approval.execute_entry` after the re-quote (at the re-quoted price), because the book may have
+   changed since the proposal. A refused Approve ends FAILED with the reason, and nothing is placed.
+
+The entry's size is not known before the pipeline sizes it, so the caps take it at its most: a ticket's own quantity
+when it has one, else the user's risk cap per trade over the stop distance (the largest the sizing allows). An option
+proposal's symbol is its own bucket unless the signal names an underlying.
 
 Each call is a read plus a comparison. There is no call-site change in the order paths, and `guard_entry` is
 unchanged (F-6).

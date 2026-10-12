@@ -205,6 +205,12 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     locked = await proposal_refusal(session, tenant_id, user_id, now)      # Z5 / P1-d: daily loss lockout, entries per day
     if locked:
         raise EntriesPaused(locked)
+    if user_id is not None:                                                  # N1 F2: the owner's portfolio caps (entries only)
+        from app.portfolio import caps
+        refused = await caps.entry_refusals(session, await session.get(User, user_id), caps.candidate_of(
+            signal.symbol, signal.entry, signal.stop_loss, quantity=(ticket or {}).get("max_quantity")), now)
+        if refused:
+            raise EntriesPaused("; ".join(refused))
     if deployment is not None:
         await _free_deployment_slot(session, tenant_id, deployment.id, now)
     direction = signal.direction.value if hasattr(signal.direction, "value") else str(signal.direction)
@@ -323,6 +329,12 @@ async def execute_entry(session: AsyncSession, action: AiActionRecord, user: Use
         if verdict != "ok":
             return await _close_unplaced(session, action, user, evidence, deployment, verdict, why, price, now)
         signal = Signal.model_validate(evidence["signal"])
+        # N1 F2: the owner's portfolio caps again at the re-quoted price (the book may have changed since the proposal).
+        from app.portfolio import caps
+        refused = await caps.entry_refusals(session, owner, caps.candidate_of(
+            symbol, price, signal.stop_loss, quantity=(evidence.get("ticket") or {}).get("max_quantity")), now)
+        if refused:
+            raise ValueError("; ".join(refused) + " - nothing was placed")
         risk = abs(price - signal.stop_loss) if signal.stop_loss is not None else 0.0
         rr = round(abs(signal.target1 - price) / risk, 2) if risk and signal.target1 is not None else signal.risk_reward
         signal = signal.model_copy(update={"entry": price, "risk_reward": rr, "timestamp": now,

@@ -706,12 +706,13 @@ def _mcx_frame():
     return sessions_frame(days, starts={k: "03:30" for k in range(22)})  # 09:00 IST
 
 
-def test_currency_derivatives_have_their_own_clock_in_the_screener_only():
+def test_currency_derivatives_have_their_own_clock_in_the_screener_and_the_worker():
     cds = ses.calendar_for("CDS")
-    assert (cds.name, cds.open, cds.close) == ("CDS", time(9, 0), time(17, 0)) and ses.calendar_for("BCD").name == "CDS"
-    # the platform calendar - the trading worker's clock - is untouched (ADR-0004): CDS stays on the equity family
-    assert mcal.session_family("CDS") == mcal.session_family("NSE_CD") == "NSE" and "CDS" not in mcal.EXCHANGE_SESSIONS
-    assert mcal.intraday_cutoffs("CDS") == mcal.intraday_cutoffs("NSE") == (time(15, 0), time(15, 15))
+    assert (cds.name, cds.open, cds.close, cds.cutoff) == ("CDS", time(9, 0), time(17, 0), time(16, 30))
+    assert ses.calendar_for("BCD").name == ses.calendar_for("NSE_CD").name == "CDS"
+    # BK2-8: the screener reads the platform calendar's CDS family - the trading worker's clock (tests/test_bk2_8_cds_worker.py)
+    assert mcal.session_family("CDS") == mcal.session_family("NSE_CD") == "CDS" and "CDS" in mcal.EXCHANGE_SESSIONS
+    assert mcal.intraday_cutoffs("CDS") == (time(16, 30), time(16, 45)) and mcal.intraday_cutoffs("NSE") == (time(15, 0), time(15, 15))
 
 
 def test_mcx_screenql_and_the_breakout_run_read_the_same_exchange_clock(monkeypatch):

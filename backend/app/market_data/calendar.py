@@ -13,7 +13,7 @@ notifies by circular are deliberately not modelled: the worker simply stays idle
 """
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Dict, Iterable, Optional, Set
+from typing import Dict, Iterable, Optional, Set, Tuple
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -31,7 +31,8 @@ MARKET_CLOSE = time(15, 30)
 class ExchangeSession:
     """Phase O2 / section 57-61: regular hours of one exchange family, all in IST. `always_open`
     covers 24x7 venues (crypto). `no_new_entries_after` / `square_off_at` are the worker's intraday
-    cut-offs for that venue (NSE: 15:00 / 15:15; MCX: 23:00 / 23:15; crypto: never)."""
+    cut-offs for that venue (NSE: 15:00 / 15:15; MCX: 23:00 / 23:15; CDS: 16:30 / 16:45, provisional;
+    crypto: never). `also_closed_on`: other holiday calendars whose days close this family too."""
 
     name: str
     open: time
@@ -41,21 +42,29 @@ class ExchangeSession:
     weekdays_only: bool = True
     always_open: bool = False
     holiday_calendar: str = "NSE"   # which `market_holidays.exchange` rows apply
+    also_closed_on: Tuple[str, ...] = ()
 
 
 EXCHANGE_SESSIONS = {
     "NSE": ExchangeSession("NSE", time(9, 15), time(15, 30), time(15, 0), time(15, 15), holiday_calendar="NSE"),
     "MCX": ExchangeSession("MCX", time(9, 0), time(23, 30), time(23, 0), time(23, 15), holiday_calendar="MCX"),
+    # BK2-8: currency derivatives (NSE CDS, BSE BCD) trade 09:00-17:00 IST. The cut-offs are PROVISIONAL - no exchange or
+    # broker source names them, so they keep the equity margins (no new entries 30 minutes, square-off 15 minutes before
+    # the close). The CDS holiday list is the `market_holidays` rows with exchange "CDS" (the segment's own extra days,
+    # loaded by the owner from NSE's currency-derivatives circular) PLUS every NSE trading holiday (open question BK2-8).
+    "CDS": ExchangeSession("CDS", time(9, 0), time(17, 0), time(16, 30), time(16, 45), holiday_calendar="CDS", also_closed_on=("NSE",)),
     "CRYPTO": ExchangeSession("CRYPTO", time(0, 0), time(23, 59, 59), None, None, weekdays_only=False, always_open=True,
                               holiday_calendar="CRYPTO"),
 }
 # Segments that trade on an exchange family's clock and calendar.
 _SESSION_ALIASES = {"NSE": "NSE", "BSE": "NSE", "NFO": "NSE", "BFO": "NSE", "NSE_EQ": "NSE", "NSE_FO": "NSE", "BSE_EQ": "NSE",
-                    "MCX": "MCX", "MCX_FO": "MCX", "CRYPTO": "CRYPTO", "BINANCE": "CRYPTO", "COINDCX": "CRYPTO", "WAZIRX": "CRYPTO"}
+                    "MCX": "MCX", "MCX_FO": "MCX", "CDS": "CDS", "NSE_CD": "CDS", "BCD": "CDS", "BSE_CD": "CDS",
+                    "CRYPTO": "CRYPTO", "BINANCE": "CRYPTO", "COINDCX": "CRYPTO", "WAZIRX": "CRYPTO"}
 
 
 def session_family(exchange: Optional[str]) -> str:
-    """NFO/BFO/BSE -> NSE clock; MCX segments -> MCX; crypto venues -> CRYPTO; unknown -> NSE."""
+    """NFO/BFO/BSE -> NSE clock; MCX segments -> MCX; currency derivatives (CDS / BCD) -> CDS; crypto venues -> CRYPTO;
+    unknown -> NSE."""
     return _SESSION_ALIASES.get((exchange or "NSE").upper(), "NSE")
 
 
@@ -152,12 +161,21 @@ async def load_holidays(session: AsyncSession, exchange: str = "NSE", year: Opti
     return set(rows)
 
 
+async def family_holidays(session: AsyncSession, exchange: str = "NSE", year: Optional[int] = None) -> Set[date]:
+    """The days the family of `exchange` is closed: its own holiday calendar plus the ones it is `also_closed_on`."""
+    spec = EXCHANGE_SESSIONS[session_family(exchange)]
+    days = await load_holidays(session, spec.holiday_calendar, year)
+    for calendar in spec.also_closed_on:
+        days |= await load_holidays(session, calendar, year)
+    return days
+
+
 async def market_session_status(
     session: AsyncSession, now: Optional[datetime] = None, exchange: str = "NSE"
 ) -> SessionStatus:
     """DB-backed variant the worker calls once per cycle."""
     family = session_family(exchange)
-    return session_status(now, await load_holidays(session, EXCHANGE_SESSIONS[family].holiday_calendar), family)
+    return session_status(now, await family_holidays(session, family), family)
 
 
 async def all_session_statuses(session: AsyncSession, now: Optional[datetime] = None) -> Dict[str, SessionStatus]:

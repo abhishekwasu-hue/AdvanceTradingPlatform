@@ -1025,6 +1025,8 @@ class TradingWorker:
             return False
         if not await zones_job.any_enabled(session):
             return False                                 # asked again next cycle: turning the flag on tonight still runs
+        if not await zones_job.eod_ready(session, day, now):
+            return False                                 # HB1's EOD ingest for the day is still running: asked again next cycle
 
         async def run() -> None:
             try:

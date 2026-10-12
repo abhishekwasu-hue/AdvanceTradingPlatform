@@ -2,7 +2,7 @@
 snapshots with lifecycle state and level memory, computed from the shared lake bars by the flag-gated nightly job).
 
 Revision ID: b476873844dd
-Revises: a7d3e9f1c5b8
+Revises: 612f572d7ad2
 Create Date: 2026-10-11 21:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b476873844dd'
-down_revision: Union[str, Sequence[str], None] = 'a7d3e9f1c5b8'
+down_revision: Union[str, Sequence[str], None] = '612f572d7ad2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Creates three new tables (and their indexes) only; downgrade drops them - nothing existing is altered.
@@ -44,6 +44,8 @@ def upgrade() -> None:
         sa.Column('bars', sa.Text(), nullable=False),
         sa.Column('zone_count', sa.Integer(), nullable=False),
         sa.Column('previous_run_id', sa.Integer(), nullable=True),
+        sa.Column('source_last_ts', sa.DateTime(timezone=True), nullable=True),
+        sa.Column('source_ingested_at', sa.DateTime(timezone=True), nullable=True),
         sa.UniqueConstraint('scope', 'instrument_key', 'as_of', name='uq_market_zone_run'),
     )
     op.create_index('ix_market_zone_runs_tenant_id', 'market_zone_runs', ['tenant_id'])

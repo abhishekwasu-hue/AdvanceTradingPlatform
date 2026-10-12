@@ -186,13 +186,15 @@ class ZoneSettings(BaseModel):
     flip_confirm_closes: int = Field(default=2, ge=1, le=50)       # closes beyond the far edge in a row = closed through and held
     flip_buffer_pct: float = Field(default=0.10, ge=0, le=10)      # a close counts as beyond when this % past the edge
     structure_swing_order: int = Field(default=3, ge=1, le=100)    # fractal swing order of the structural swing beyond a zone
+    structure_lookback_bars: int = Field(default=100, ge=1, le=5000)  # the structural swing is looked for this far back only
     structure_buffer_pct: float = Field(default=0.10, ge=0, le=10) # a close must be this % past the structural swing to break it
     max_events_kept: int = Field(default=50, ge=0, le=1000)        # lifecycle events stored per zone (the most recent ones)
     # --- storage job (Z7a-2): history read from the lake per run --------------------------------------------------------
     history_days: int = Field(default=365, ge=5, le=3650)    # S/R, order blocks, demand / supply, gaps (Trade: one year)
     max_bars_per_frame: int = Field(default=20000, ge=100, le=200000)   # the job reads at most this many bars per frame
-    warmup_bars: int = Field(default=50, ge=0, le=5000)      # stored zones formed in a frame's first bars are dropped (the
-    #                                                          window start moves every night; an edge zone would flicker)
+    warmup_bars: int = Field(default=100, ge=0, le=5000)     # the job reads this many extra bars before the window and drops
+    #                                                          zones formed in them: a zone's average range and structural swing
+    #                                                          look-back (structure_lookback_bars) are always inside the frame
     recent_days_by_tf: Dict[str, int] = Field(default_factory=lambda: {"1m": 5, "5m": 20, "15m": 180, "30m": 180, "1h": 180})
     # --- scored multi-timeframe levels (sr_levels_v3) ---------------------------------------------------------------------
     sr_v3: SRV3Settings = Field(default_factory=SRV3Settings)

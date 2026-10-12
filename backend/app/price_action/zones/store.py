@@ -240,11 +240,14 @@ def row_to_record(run_id: int, r: Mapping[str, Any]) -> MarketZoneRecord:
 
 async def write_run(session: AsyncSession, *, scope: str, tenant_id: Optional[int], key: str, as_of: datetime, settings: ZoneSettings,
                     rows: Sequence[Mapping[str, Any]], price: Optional[float], bars: Mapping[str, int],
-                    previous_run_id: Optional[int] = None, now: Optional[datetime] = None) -> MarketZoneRunRecord:
-    """Store one snapshot (the caller commits). Duplicate (scope, key, as_of) raise from the unique constraint."""
+                    previous_run_id: Optional[int] = None, now: Optional[datetime] = None,
+                    source: Tuple[Optional[datetime], Optional[datetime]] = (None, None)) -> MarketZoneRunRecord:
+    """Store one snapshot (the caller commits). `source`: (newest bar END, newest ingest) of what it read - a later pass
+    with the same probe skips the instrument. Duplicate (scope, key, as_of) raise from the unique constraint."""
     run = MarketZoneRunRecord(scope=scope, tenant_id=tenant_id, instrument_key=key, as_of=_dt(as_of), computed_at=now or datetime.now(timezone.utc),
                               settings_hash=settings_hash(settings), price=price, bars=json.dumps(dict(bars), sort_keys=True),
-                              zone_count=len(rows), previous_run_id=previous_run_id)
+                              zone_count=len(rows), previous_run_id=previous_run_id, source_last_ts=_dt(source[0]),
+                              source_ingested_at=_dt(source[1]))
     session.add(run)
     await session.flush()
     session.add_all([row_to_record(run.id, r) for r in rows])
@@ -254,35 +257,42 @@ async def write_run(session: AsyncSession, *, scope: str, tenant_id: Optional[in
 
 @dataclass
 class ZonesRead:
-    """What zones_as_of found: the run (None when there is none), its rows, the scope read, the settings hash the caller's
-    settings resolve to, and whether the platform snapshot was served as an explicit fallback for other settings."""
+    """What zones_as_of found: the run (None when there is none), its rows, the scope read, the settings hash the
+    reader's settings resolve to now, whether that run was built with exactly those settings (`settings_match` - False
+    after a settings change: older snapshots stay readable, the caller sees they were made otherwise), and whether the
+    platform snapshot was served as an explicit fallback for a tenant whose settings differ."""
     run: Optional[MarketZoneRunRecord]
     rows: List[Dict[str, Any]]
     scope: Optional[str]
     settings_hash: str
+    settings_match: bool = False
     fallback: bool = False
 
 
 async def zones_as_of(session: AsyncSession, key: str, at: datetime, tenant_id: Optional[int] = None, *,
                       allow_platform_fallback: bool = False) -> ZonesRead:
-    """The zones known at `at` (timezone-aware) for this tenant's settings: the latest snapshot with as_of <= at built with
-    exactly those settings (settings_hash) - the platform scope when the tenant's settings resolve to the platform's, else
-    the tenant's own scope only. With allow_platform_fallback, a tenant without its own snapshot gets the platform one
-    and `fallback` says so. Never a snapshot computed from bars after `at`, never another tenant's."""
+    """The zones known at `at` (timezone-aware): the latest snapshot with as_of <= at in the reader's scope - the platform
+    scope when the reader's current settings resolve to the platform's, else the tenant's own scope only. A settings
+    change does not hide history: older snapshots are still returned, with settings_match False. With
+    allow_platform_fallback a tenant without its own snapshot gets the platform one and `fallback` says so. Never a
+    snapshot computed from bars after `at`, never another tenant's."""
     key = normalise_key(key)
     _aware(at)
     plat_hash = settings_hash(platform_settings())
     wanted = settings_hash(await settings_for(session, tenant_id, key)) if tenant_id is not None else plat_hash
+
+    async def read(scope: str, fallback: bool = False) -> ZonesRead:
+        run = await latest_run(session, scope, key, at)
+        return ZonesRead(run, await rows_of(session, run), scope if run is not None else None, wanted,
+                         settings_match=run is not None and run.settings_hash == wanted, fallback=fallback and run is not None)
     if wanted == plat_hash:
-        run = await latest_run(session, PLATFORM_SCOPE, key, at, settings_hash=wanted)
-        return ZonesRead(run, await rows_of(session, run), PLATFORM_SCOPE if run is not None else None, wanted)
+        return await read(PLATFORM_SCOPE)
     if tenant_id is None:                           # unreachable: only a tenant's settings can differ from the platform's
         raise RuntimeError("zones_as_of: settings differ from the platform's without a tenant")
-    run = await latest_run(session, tenant_scope(tenant_id), key, at, settings_hash=wanted)
-    if run is not None or not allow_platform_fallback:
-        return ZonesRead(run, await rows_of(session, run), tenant_scope(tenant_id) if run is not None else None, wanted)
-    run = await latest_run(session, PLATFORM_SCOPE, key, at, settings_hash=plat_hash)
-    return ZonesRead(run, await rows_of(session, run), PLATFORM_SCOPE if run is not None else None, wanted, fallback=run is not None)
+    own = await read(tenant_scope(tenant_id))
+    if own.run is not None or not allow_platform_fallback:
+        return own
+    return await read(PLATFORM_SCOPE, fallback=True)
 
 
 # ---------------------------------------------------------------- retention
@@ -290,7 +300,11 @@ async def zones_as_of(session: AsyncSession, key: str, at: datetime, tenant_id: 
 async def retention_run_ids(session: AsyncSession, now: datetime, *, daily_days: int, weekly_days: int, tenant_idle_days: int,
                             limit: Optional[int] = None) -> List[int]:
     """Snapshot runs past their keep: older than `daily_days` and not the last run of their ISO week (per scope +
-    instrument); older than `weekly_days`; every run of a tenant scope whose newest run is older than `tenant_idle_days`."""
+    instrument); older than `weekly_days`; every run of a tenant scope the job no longer plans (unfollowed, flag lost,
+    settings back to the platform's) once its newest run is older than `tenant_idle_days`. A scope still planned is
+    never dropped as idle."""
+    from app.price_action.zones.job import plan
+    planned = set(await plan(session))
     daily_cut, weekly_cut, idle_cut = now - pd.Timedelta(days=daily_days), now - pd.Timedelta(days=weekly_days), now - pd.Timedelta(days=tenant_idle_days)
     rows = (await session.execute(select(MarketZoneRunRecord.id, MarketZoneRunRecord.scope, MarketZoneRunRecord.instrument_key,
                                          MarketZoneRunRecord.as_of))).all()
@@ -311,7 +325,7 @@ async def retention_run_ids(session: AsyncSession, now: datetime, *, daily_days:
         t = _utc(as_of)
         if t is None:
             continue
-        if scope != PLATFORM_SCOPE and newest[(scope, key)] < idle_cut:
+        if scope != PLATFORM_SCOPE and (scope, key) not in planned and newest[(scope, key)] < idle_cut:
             out.append(rid)
         elif t < weekly_cut or (t < daily_cut and rid not in keep_weekly):
             out.append(rid)

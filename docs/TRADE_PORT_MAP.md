@@ -34,10 +34,10 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 
 | Status | Rows |
 |---|---|
-| ported | 11 |
+| ported | 13 |
 | partial | 18 |
 | partial (unverified) | 9 |
-| in progress (Z7a) | 6 |
+| in progress (Z7a) | 4 |
 | missing | 49 (25 of them are G rows that wait for the owner's "stable" mark) |
 | not needed | 99 |
 | **Total** | **192** |
@@ -45,7 +45,7 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 | Group | Rows | ported | partial | partial (unverified) | in progress (Z7a) | missing | not needed |
 |---|---|---|---|---|---|---|---|
 | 1. Phase 0 (fold into Z3 / Z5 / Z10) | 21 | 2 | 11 | 4 | 0 | 2 | 2 |
-| 2. Right after Phase 0 (N-list) | 29 | 2 | 3 | 3 | 6 | 15 | 0 |
+| 2. Right after Phase 0 (N-list) | 29 | 4 | 3 | 3 | 4 | 15 | 0 |
 | 3. Only when the owner marks it stable (G) | 25 | 0 | 0 | 0 | 0 | 25 (waiting) | 0 |
 | 4. Already ported or covered, outside the groups | 11 | 7 | 4 | 0 | 0 | 0 | 0 |
 | 5. Unscheduled (not in the owner's lists) | 9 | 0 | 0 | 2 | 0 | 7 | 0 |

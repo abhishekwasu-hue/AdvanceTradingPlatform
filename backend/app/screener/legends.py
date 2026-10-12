@@ -423,5 +423,18 @@ __all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "HEADER", "LINES", "MAX_CARD_LINES
            "payload", "wording_problems"]
 
 
-if __name__ == "__main__":      # regenerates the frontend's sample: python -m app.screener.legends > ../frontend/src/screener/legendsSample.json
-    print(json.dumps(payload(load()), indent=1, ensure_ascii=False))
+if __name__ == "__main__":
+    # Regenerates the frontend's samples:
+    #   python -m app.screener.legends > ../frontend/src/screener/legendsSample.json
+    #   python -m app.screener.legends taxonomy > ../frontend/src/screener/taxonomyLegendsSample.json
+    # The second is the taxonomy as an organisation with `screener_legends` on sees it (other default-off sources hidden).
+    import sys
+
+    import app.main  # noqa: F401 - registers every template source (into the imported modules, not this __main__ copy)
+    from app.screener import legends as _lg
+    from app.screener import taxonomy as _tx
+    if sys.argv[1:] == ["taxonomy"]:
+        hidden = [name for name in _tx.default_hidden() if name != _lg.SOURCE]
+        print(json.dumps(_tx.payload(_tx.load(), hidden_sources=hidden), indent=1, ensure_ascii=False))
+    else:
+        print(json.dumps(_lg.payload(_lg.load()), indent=1, ensure_ascii=False))

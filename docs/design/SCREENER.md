@@ -1090,7 +1090,7 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
   fields, compile errors, missing / unused parameters, out-of-range defaults, source kind / year / authors / covers,
   uncited source); every screen compiles across its documented range; a positive and a negative bar fixture per
   screen (`run_screen`); taxonomy link and guard; API flags, shape, disclaimer, 404, taxonomy hiding; the frontend
-  sample equals the payload. Frontend: sample contract, LegendCard render and accessibility, gallery integration,
+  samples (`legendsSample.json`, and `taxonomyLegendsSample.json` - the taxonomy with the flag on) equal the payloads. Frontend: sample contract, LegendCard render and accessibility, gallery integration,
   Playwright (Legends rail -> header -> About -> focused card -> Back), Storybook stories.
 - **Not in LG1:** fitness sparkline and stats (LG4 / S6), Alert and Show on chart from a card, the method-library page
   (P1 §1.6), the Turtles "Then" template (ATR sizing, 2N stop), short mirrors (TX2), the remaining catalogue (LG2,

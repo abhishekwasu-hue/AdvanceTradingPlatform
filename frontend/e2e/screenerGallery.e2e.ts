@@ -14,6 +14,7 @@ import { mockApi } from "./mockApi";
 const read = (path: string): unknown => JSON.parse(readFileSync(new URL(path, import.meta.url), "utf8"));
 const registry = (read("../src/screener/builderTexts.json") as { registry: unknown }).registry;
 const taxonomy = read("../src/screener/taxonomySample.json") as { screens: { id: string; source: string }[] };
+const taxonomyLegends = read("../src/screener/taxonomyLegendsSample.json");   // the taxonomy with `screener_legends` on
 const legends = read("../src/screener/legendsSample.json") as { header: string; cards: { id: string; name: string; disclaimer: string }[] };
 
 async function screener(page: Page, galleryOn: boolean, legendsOn = false) {
@@ -23,7 +24,7 @@ async function screener(page: Page, galleryOn: boolean, legendsOn = false) {
     const url = route.request().url();
     if (/\/registry$/.test(url)) return route.fulfill({ json: { version: "screenql/1", timeframes: [], entries: registry } });
     if (/\/taxonomy$/.test(url)) {
-      return galleryOn ? route.fulfill({ json: taxonomy })
+      return galleryOn ? route.fulfill({ json: legendsOn ? taxonomyLegends : taxonomy })
         : route.fulfill({ status: 503, headers: { "X-Feature-Disabled": "screener_gallery" }, json: { detail: "disabled" } });
     }
     if (/\/legends$/.test(url)) {

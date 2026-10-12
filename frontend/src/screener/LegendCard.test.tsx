@@ -4,7 +4,7 @@ import { LegendCard } from "./LegendCard";
 import { cardFor, cardLines, filledSource, isLegends, LINE_KEYS, rangeText, type LegendsLibrary } from "./legends";
 import legendsSample from "./legendsSample.json";
 import { ScreenGallery } from "./ScreenGallery";
-import taxonomySample from "./taxonomySample.json";
+import taxonomySample from "./taxonomyLegendsSample.json";
 import type { Taxonomy } from "./taxonomy";
 
 /** The server's own payloads (backend tests/test_z8_lg1_legends.py and test_z8_tx1_taxonomy.py fail when these samples

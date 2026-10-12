@@ -22,7 +22,9 @@ from tests.test_auth_api import client  # noqa: F401 - fixtures
 from tests.test_phase_l_ai import _owner
 from tests.test_z8_tx1_taxonomy import _set_flags
 
-SAMPLE = Path(__file__).resolve().parents[2] / "frontend" / "src" / "screener" / "legendsSample.json"
+FRONTEND = Path(__file__).resolve().parents[2] / "frontend" / "src" / "screener"
+SAMPLE = FRONTEND / "legendsSample.json"
+TAXONOMY_SAMPLE = FRONTEND / "taxonomyLegendsSample.json"
 LG1_CARDS = ["legends.minervini_trend_template", "legends.darvas_box_breakout", "legends.weinstein_stage2_breakout",
              "legends.turtle_channel_breakout", "legends.raschke_adx_pullback", "legends.crabel_nr7",
              "legends.connors_rsi2_pullback", "legends.williams_volatility_breakout"]
@@ -354,3 +356,16 @@ def test_the_frontend_sample_is_the_server_payload():
     """src/screener/legendsSample.json feeds the frontend tests and stories; regenerate it with
     `python -m app.screener.legends > ../frontend/src/screener/legendsSample.json` after changing the data files."""
     assert json.loads(SAMPLE.read_text(encoding="utf-8")) == json.loads(json.dumps(lg.payload(lg.load())))
+
+
+def test_the_frontend_taxonomy_sample_with_legends_on_is_the_server_payload():
+    """src/screener/taxonomyLegendsSample.json is the taxonomy an organisation with `screener_legends` on sees (other
+    default-off sources stay hidden); regenerate it with
+    `python -m app.screener.legends taxonomy > ../frontend/src/screener/taxonomyLegendsSample.json`."""
+    import app.main  # noqa: F401 - registers every template source
+    hidden = tx.default_hidden()
+    assert lg.SOURCE in hidden                                                           # off for a new organisation
+    shown = [name for name in hidden if name != lg.SOURCE]
+    sample = json.loads(TAXONOMY_SAMPLE.read_text(encoding="utf-8"))
+    assert sample == json.loads(json.dumps(tx.payload(tx.load(), hidden_sources=shown)))
+    assert [s["id"] for s in sample["screens"] if s["source"] == lg.SOURCE] == LG1_CARDS

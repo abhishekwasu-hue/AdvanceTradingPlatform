@@ -4,6 +4,7 @@ import type { LegendsLibrary } from "../screener/legends";
 import legendsSample from "../screener/legendsSample.json";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import sample from "../screener/taxonomySample.json";
+import legendsTaxonomy from "../screener/taxonomyLegendsSample.json";
 import type { Taxonomy } from "../screener/taxonomy";
 
 /** U9 TX1 - the screen library: method rail, setup chips, cards and the method × setup matrix, on the server's own
@@ -14,6 +15,7 @@ type Story = StoryObj;
 
 const tax = sample as unknown as Taxonomy;
 const lib = legendsSample as unknown as LegendsLibrary;
+const taxL = legendsTaxonomy as unknown as Taxonomy;          // the taxonomy with `screener_legends` on
 const frame = (children: JSX.Element) => <div className="max-w-6xl bg-surface p-4">{children}</div>;
 
 export const AllScreens: Story = {
@@ -38,12 +40,12 @@ export const CannotOpenHere: Story = {
 
 /** U7 LG1: the Legends folder with the library header and each card's disclaimer and About button. */
 export const Legends: Story = {
-  render: () => frame(<ScreenGallery taxonomy={tax} canOpen={() => false} onOpen={() => undefined} legends={lib} initial={{ method: "legends" }} />),
+  render: () => frame(<ScreenGallery taxonomy={taxL} canOpen={() => false} onOpen={() => undefined} legends={lib} initial={{ method: "legends" }} />),
 };
 
 /** U7 LG1: one Legends card in full (opened from About). */
 export const LegendCardOpen: Story = {
-  render: () => frame(<ScreenGallery taxonomy={tax} canOpen={() => false} onOpen={() => undefined} legends={lib} initial={{ method: "legends" }}
+  render: () => frame(<ScreenGallery taxonomy={taxL} canOpen={() => false} onOpen={() => undefined} legends={lib} initial={{ method: "legends" }}
                                      initialDetail="legends.minervini_trend_template" />),
 };
 

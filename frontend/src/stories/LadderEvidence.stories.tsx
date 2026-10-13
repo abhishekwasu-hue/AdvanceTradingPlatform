@@ -1,6 +1,8 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import LadderEvidence, { DisciplineWeeks } from "../progression/LadderEvidence";
+import { ExperiencePanel } from "../progression/ExperienceCard";
 import { LOSING, OK, TOO_FEW } from "../progression/samples";
+import { BEGINNER_STATUS } from "../progression/samples.experience";
 
 /** N2-1 (flag `ladder_evidence`): the ladder card's "Your figures" block and the discipline week strip. Use the toolbar
  * for dark / light. Payloads as the server builds them (progression/samples.ts). */
@@ -19,4 +21,9 @@ export const DisciplineWeekStrip: Story = {
                                   comparison: "at_least", met: false, weeks_needed: 4, status: "too_few_weeks",
                                   weeks: [{ week: "2026-W39", score: 64 }, { week: "2026-W40", score: 76 }, { week: "2026-W41", score: 78 }] }} />,
   ),
+};
+
+/** N2-2 (flag `experience_levels`): the experience level card - a Beginner with futures opted out for today. */
+export const ExperienceLevel: Story = {
+  render: () => <ExperiencePanel status={BEGINNER_STATUS} canTrade onOptOut={async () => true} />,
 };

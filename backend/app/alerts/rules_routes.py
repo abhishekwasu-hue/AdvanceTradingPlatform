@@ -90,6 +90,16 @@ async def _breakout_check(session: AsyncSession, user: User, ast: Any, fire_on: 
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+async def _fundamentals_check(ast: Any) -> None:
+    """U7 LG3: alert rules do not read fundamentals yet (the bar-close engine does not load them) - refused with the reason."""
+    from app.screener import fundamentals as fundamentals_gate
+    from app.screener import nodes
+    names = fundamentals_gate.flagged_calls(nodes.from_json(ast) if isinstance(ast, dict) else ast)
+    if names:
+        why = fundamentals_gate.alert_refusal(names)
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str) -> None:
     """Z7a-3 (the U6 BK1 pattern): a rule (instrument condition or saved screen) using a market-zone function needs
     `market_zones` on, and fires on bar close only - never intrabar."""
@@ -121,6 +131,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
         await _breakout_check(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange)
         await _zone_check(session, user, json.loads(screen.ast_json), body.fire_on)
+        await _fundamentals_check(json.loads(screen.ast_json))
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
@@ -133,6 +144,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
     await _breakout_check(session, user, ast, body.fire_on, body.exchange)
     await _zone_check(session, user, ast, body.fire_on)
+    await _fundamentals_check(ast)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
             "universe_json": None, "exchange": body.exchange}
 

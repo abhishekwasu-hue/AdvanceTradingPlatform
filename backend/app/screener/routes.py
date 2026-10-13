@@ -33,6 +33,7 @@ from app.screener import compile_screen, nodes
 from app.screener import legends as lg   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
+from app.screener import fundamentals as fundamentals_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
@@ -50,7 +51,7 @@ LEGENDS_FLAG = lg.FLAG             # U7 LG1: the Legends cards (their screens ar
 run_rate_limit = user_rate_limit("screener_run", limit=60, window_seconds=60)
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
-RUN_PROVIDES: frozenset = frozenset({"zones"})
+RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals"})
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -146,8 +147,13 @@ async def taxonomy(method: Optional[str] = None, setup: Optional[str] = None, us
 
 
 async def _legend_slices(session: AsyncSession, user: User) -> List[str]:
-    """U7 LG2: the card slices this organisation sees - LG1 with `screener_legends`, LG2 also with `screener_legends_lg2`."""
-    return ["lg1"] + (["lg2"] if await flag_enabled(session, lg.FLAG_LG2, user.tenant_id) else [])
+    """U7 LG2 / LG3: the card slices this organisation sees - LG1 with `screener_legends`, each later slice also with its
+    own flag (`legends.SLICES`)."""
+    out = ["lg1"]
+    for part, flag in lg.SLICES.items():
+        if flag and await flag_enabled(session, flag, user.tenant_id):
+            out.append(part)
+    return out
 
 
 @router.get("/legends")
@@ -183,8 +189,9 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
 
 async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
-    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`) and the Z7a-3 market-zone functions (`market_zones`)."""
-    for gate in (breakout_gate, zone_gate):
+    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`) and
+    the U7 LG3 fundamentals functions (`screener_fundamentals`)."""
+    for gate in (breakout_gate, zone_gate, fundamentals_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
@@ -405,6 +412,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                user_id=user.id, tier_out=tier)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+    if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
+        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)

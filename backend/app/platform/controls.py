@@ -208,6 +208,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # top of screener_legends. OFF: the LG2 cards are left out of /api/screener/legends and their screens out of the
     # taxonomy. Educational only - never a recommendation, never an endorsement; places no orders.
     "screener_legends_lg2": "Legends LG2: more cards on publicly described trading methods, each with an editable screen (educational only, places no orders)",
+    # U7 LG3: the point-in-time fundamentals functions in ScreenQL (EPSGrowthYoY, SalesGrowthYoY, EarningsYield,
+    # ReturnOnCapital, GrahamNumber, NCAVPerShare) - the reported figures as known by each bar's close, never a later
+    # restatement. OFF: the registry hides them and a screen using one is refused with the reason.
+    "screener_fundamentals": "Fundamentals in screens: point-in-time reported figures (growth, earnings yield, return on capital, Graham number, NCAV) - research only, places no orders",
+    # U7 LG3: the third slice of Legends cards (Graham, Greenblatt, O'Neil; `slice: lg3`), on top of screener_legends.
+    "screener_legends_lg3": "Legends LG3: value and growth cards on publicly described methods (needs screener_fundamentals to run; educational only, places no orders)",
     "scan_then": "Scan Then (N1 U4 X1): after a scan alert matches, the level gate watches the symbol at its market zones and a confirmed setup is sent as a notification or a PAPER entry proposal (never an order; needs execution_core)",
     # CH5 (docs/design/CHARTING.md): the multi-chart workspace - 1/2/4/6/8 charts, symbol / interval / crosshair link
     # groups, saved layouts per user, keyboard shortcuts, chart types. OFF: /api/charts/layouts answers 503 and the
@@ -266,7 +272,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_fundamentals", "screener_legends_lg3"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

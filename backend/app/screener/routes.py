@@ -58,6 +58,7 @@ DISCLAIMER = "Matches are symbols that passed the screen's filters on the data s
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
 HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
 MAX_INTRADAY_FETCH_DAYS = 60
+NO_CLOSED_BARS = "no closed bars from the broker"     # bars came back, none closed by the time asked
 _FETCH = {"1m": "1min", "3m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "day", "1M": "day"}
 _FETCH_TF = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", "day": "1d"}
 
@@ -260,7 +261,8 @@ def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
 
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
-                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
+                       reach_back_days: int = 0) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
@@ -268,7 +270,12 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     BT1b (flag `byob_data_tier`): the bars come only through the session of the user the run / alert rule belongs to
     (`user_id`), at a broker whose data terms are confirmed, for the symbols inside that session's budget (the rest are
     reported as EOD-only problems), cached under that session's namespace. No such session -> 409 (Tier C).
-    `tier_out` receives the data-tier badge of what was read."""
+    `tier_out` receives the data-tier badge of what was read.
+
+    U3 G3 replay: the broker's window always ends at the real current time, so a replay of a run whose data time
+    (`now`) lies `reach_back_days` in the past widens the window by that much - the bars it read then are still inside
+    (intraday: up to the broker's intraday window, MAX_INTRADAY_FETCH_DAYS; beyond it the replay says the history no
+    longer covers the run)."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
@@ -280,6 +287,11 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     # size the intraday window (a 15m screen with daily context fetches days, not the 60-day cap)
     window = {tf: b for tf, b in lookback.items() if nodes.TF_MINUTES.get(tf, 0) < nodes.TF_MINUTES["1d"]} if attach_daily else lookback
     days = fetch_days(window or {base_tf: 1}, base_tf) if interval != "day" else 5
+    daily_days = 5                                       # the service raises a daily fetch to DAILY_MIN_LOOKBACK_DAYS
+    if reach_back_days > 0:
+        from app.market_data.service import DAILY_MIN_LOOKBACK_DAYS
+        daily_days = DAILY_MIN_LOOKBACK_DAYS + reach_back_days
+        days = daily_days if interval == "day" else min(MAX_INTRADAY_FETCH_DAYS, days + reach_back_days)
     problems: Dict[str, str] = {}
     own = None
     if await live_access.byob_on(session, tenant_id):
@@ -314,13 +326,14 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         if not include_forming:
             df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
         if df.empty:
-            problems[symbol] = "no closed bars from the broker"
+            problems[symbol] = NO_CLOSED_BARS
             continue
         frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
         newest.append(df.index[-1].to_pydatetime())
     if attach_daily and universe:
-        daily_service = own.market_data(lookback_days=5) if own is not None else MarketDataService(build_adapter(record), lookback_days=5)
+        daily_service = (own.market_data(lookback_days=daily_days) if own is not None
+                         else MarketDataService(build_adapter(record), lookback_days=daily_days))
         await _attach_daily(daily_service, universe, exchange, now)        # U6 BK1: through the same (BT1b) source
     if own is not None and tier_out is not None:
         # Timed by the data (the stalest symbol's newest bar); nothing read = age unknown = stale.
@@ -366,6 +379,19 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
             data.frames["1d"] = df
 
 
+async def attach_run_data(session: AsyncSession, tenant_id: int, exchange: str, universe: List[SymbolData], as_of: datetime,
+                          ast: Any, base_tf: str, params: Dict[str, Any]) -> None:
+    """Everything a run loads beyond the bars (`RUN_PROVIDES`), as of `as_of` - the ONE place for it, shared by `/run` (as
+    of now) and the replay of a stored run (as of its data time), so a replay evaluates on what the run had. Today: the
+    tenant's zone snapshots (Z7a-3). A function whose data is not in RUN_PROVIDES is refused by `missing_data` before this
+    (run: 422, replay: 409); a data kind added to RUN_PROVIDES must be attached here (tests/test_u3_gates.py checks)."""
+    if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
+        await zone_gate.attach_zones(session, tenant_id, exchange, universe, as_of, ast, base_tf, params)
+
+
+RUN_ATTACHES: frozenset = frozenset({"zones"})   # what attach_run_data loads: must cover RUN_PROVIDES
+
+
 def missing_data(ast: Any) -> List[str]:
     """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES)."""
     out: List[str] = []
@@ -405,8 +431,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     tier: Dict[str, Any] = {}
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
                                                                user_id=user.id, tier_out=tier)
-    if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
-        await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+    await attach_run_data(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
@@ -498,11 +523,19 @@ async def replay_run(run_id: int, user: User = Depends(require_trader),
     if not validated.ok:
         raise HTTPException(status_code=409, detail={"message": "the stored screen no longer passes validation",
                                                      "problems": [p.as_dict() for p in validated.problems]})
+    missing = missing_data(ast)
+    if missing:                                            # data the run path does not load: the run itself was refused
+        raise HTTPException(status_code=409, detail=f"{', '.join(m + '()' for m in missing)} need data a replay does not load")
+    # the broker's window ends at the real current time: reach back over the time since the run's data time, so the bars
+    # the run read are still inside it (review MED: sized from now, a replay of an older run was trimmed to too little)
+    reach_back = replay.reach_back_days(as_of, datetime.now(timezone.utc))
     universe, problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
-                                                         now=as_of, user_id=user.id)
-    if zone_gate.flagged_calls(ast):
-        await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, as_of, ast, base_tf, params)
-    universe = replay.trim(universe, as_of)
+                                                         now=as_of, user_id=user.id, reach_back_days=reach_back)
+    await attach_run_data(session, user.tenant_id, exchange, universe, as_of, ast, base_tf, params)   # exactly what /run attaches
+    universe, gone = replay.trim_covered(universe, as_of, base_tf)
+    problems.update(gone)
+    # bars came back but none had closed by the run's data time: the window starts after it (not a fetch failure)
+    problems.update({s: replay.HISTORY_GONE for s, why in problems.items() if why == NO_CLOSED_BARS})
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
     matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
     outcome = replay.compare(json.loads(row.result_json), json.loads(row.bar_times_json or "{}"), matches,

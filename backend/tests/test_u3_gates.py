@@ -254,10 +254,111 @@ def test_compare_and_trim_by_hand():
     assert replay.data_as_of({}) is None
     from app.screener.runtime import Match
     out = replay.compare([{"symbol": "A", "matched": True}], {"A": "t"}, [Match("A", True)], {"A": "t"}, {})
-    assert out == {"reproduced": True, "same": 1, "differences": [], "more_differences": 0}
+    assert out == {"reproduced": True, "same": 1, "history_not_covered": 0, "differences": [], "more_differences": 0}
+    short = replay.compare([{"symbol": "A", "matched": True}], {"A": "t"}, [Match("A", False, "not enough history on 1d")], {"A": "t"}, {})
+    assert short["differences"][0]["why"] == replay.HISTORY_GONE and short["history_not_covered"] == 1   # never "a correction"
+    gone = replay.compare([{"symbol": "A", "matched": True}], {"A": "t"}, [], {}, {"A": replay.HISTORY_GONE})
+    assert gone["differences"][0]["why"] == replay.HISTORY_GONE
+    assert replay.reach_back_days(datetime(2026, 3, 1, tzinfo=timezone.utc), datetime(2026, 3, 11, 1, tzinfo=timezone.utc)) == 12
+    assert replay.reach_back_days(datetime(2026, 3, 2, tzinfo=timezone.utc), datetime(2026, 3, 1, tzinfo=timezone.utc)) == 0
     many = replay.compare([{"symbol": f"S{i}", "matched": True} for i in range(60)], {}, [], {}, {"S0": "gone"})
     assert len(many["differences"]) == replay.MAX_DIFFERENCES and many["more_differences"] == 10
     assert many["differences"][0]["replayed"]["reason"] == "gone"
+
+
+@pytest.fixture
+def window_broker(monkeypatch):
+    """A fake broker that serves, like the real service, only the bars of its window: `lookback` calendar days ending at
+    its clock (`state["clock"]`, the real time when None) - so a run "then" and its replay "now" read different windows."""
+    from datetime import timedelta
+
+    from app.brokers import token_lifecycle
+    from app.market_data import candles_routes, service
+    state = {"clock": None, "series": {}, "asked": []}
+
+    async def pick(session, tenant_id, broker, label):
+        return types.SimpleNamespace(broker_name="fake")
+
+    async def candles(self, symbol, exchange="NSE", interval="1min", now=None, fresh=False):
+        end = state["clock"] or datetime.now(timezone.utc)
+        days = self._lookback(interval)
+        state["asked"].append((interval, days))
+        start = end - timedelta(days=days)
+        return [b for b in state["series"][symbol] if start <= b.timestamp and b.timestamp < end]
+    monkeypatch.setattr(candles_routes, "_pick_record", pick)
+    monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
+    monkeypatch.setattr(service.MarketDataService, "get_candles", candles)
+    return state
+
+
+def _rising(stamps):
+    return [OHLCVBar(timestamp=t.to_pydatetime(), open=99.0 + i * 0.01, high=101.0 + i * 0.01, low=98.0 + i * 0.01, close=100.0 + i * 0.01,
+                     volume=1000.0) for i, t in enumerate(stamps)]
+
+
+def _five_minute_bars(days_back):
+    """NSE sessions (09:15-15:30 IST = 03:45-10:00 UTC, 75 five-minute bars) on the weekdays of the last `days_back` days."""
+    today = pd.Timestamp.now(tz="UTC").normalize()
+    stamps = [d + pd.Timedelta(minutes=225 + 5 * k) for d in pd.bdate_range(today - pd.Timedelta(days=days_back), today, tz="UTC")
+              for k in range(75)]
+    return _rising(stamps)
+
+
+def _replay_then(headers, state, symbol, source, base_tf, days_ago):
+    """Run `source` with the broker's clock `days_ago` days back (the run "then"), then replay it now."""
+    from datetime import timedelta
+    state["clock"] = datetime.now(timezone.utc) - timedelta(days=days_ago)
+    out = client.post("/api/screener/run", json={"source": source, "base_tf": base_tf, "symbols": [symbol]}, headers=headers)
+    assert out.status_code == 200, out.text
+    assert out.json()["matched"] == [symbol], out.json()["results"]
+    state["clock"], state["asked"] = None, []
+    res = client.post(f"/api/screener/runs/{out.json()['run_id']}/replay", headers=headers)
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_a_5m_run_replayed_ten_days_later_reads_the_bars_it_had(flags_on, window_broker):
+    """Review MED: the replay's fetch is sized from (now - data time) + the screen's lookback. Sized from now alone, a 5m run
+    replayed 10 days later kept almost no bars before its data time and was reported as 'earlier bars changed'."""
+    headers, _ = _owner("u3-replay-5m@example.com")
+    window_broker["series"]["FIVE"] = _five_minute_bars(120)
+    body = _replay_then(headers, window_broker, "FIVE", "close > SMA(close, 300)", "5m", days_ago=10)
+    assert body["reproduced"] is True and body["same"] == 1 and body["differences"] == [], body
+    asked = [days for interval, days in window_broker["asked"] if interval == "5min"]
+    assert asked and min(asked) >= 10 + 10                                # the screen's 10 days, plus the 10 since the run
+    # beyond the broker's intraday window (60 days) the bars the run read cannot be fetched any more: said so, never a correction
+    late = _replay_then(headers, window_broker, "FIVE", "close > SMA(close, 300)", "5m", days_ago=75)
+    assert late["reproduced"] is False and late["history_not_covered"] == 1, late["differences"]
+    assert late["differences"][0]["why"] == replay.HISTORY_GONE and "correction" not in late["differences"][0]["why"]
+
+
+def test_a_daily_250_bar_screen_replayed_200_days_later_reproduces(flags_on, window_broker):
+    headers, _ = _owner("u3-replay-1d@example.com")
+    today = pd.Timestamp.now(tz="UTC").normalize()
+    window_broker["series"]["DAILY"] = _rising(pd.bdate_range(today - pd.Timedelta(days=1200), today, tz="UTC"))
+    body = _replay_then(headers, window_broker, "DAILY", "close > SMA(close, 250)", "1d", days_ago=200)
+    assert body["reproduced"] is True and body["differences"] == [], body
+    assert max(days for interval, days in window_broker["asked"] if interval == "day") >= 400 + 200
+    # the source lost the older history since: too few bars before the data time - the distinct reason, not a correction
+    cut = today - pd.Timedelta(days=330)
+    window_broker["series"]["DAILY"] = [b for b in window_broker["series"]["DAILY"] if b.timestamp >= cut.to_pydatetime()]
+    again = client.post(f"/api/screener/runs/{body['run_id']}/replay", headers=headers).json()      # the same stored run
+    assert again["reproduced"] is False and again["history_not_covered"] == 1
+    diff = again["differences"][0]
+    assert diff["why"] == replay.HISTORY_GONE and diff["replayed"]["reason"].startswith("not enough history"), diff
+
+
+def test_replay_attaches_exactly_what_the_run_attaches():
+    """Review LOW: the run and the replay load data beyond the bars through one helper (`attach_run_data`); a data kind the
+    run path starts loading (RUN_PROVIDES) must be attached there, or a replay of such a screen would differ."""
+    import inspect
+
+    from app.screener import routes
+    assert routes.RUN_PROVIDES <= routes.RUN_ATTACHES
+    for fn in (routes.run, routes.replay_run):
+        src = inspect.getsource(fn)
+        assert "attach_run_data(" in src and "attach_zones(" not in src, fn.__name__
+    assert "missing_data(" in inspect.getsource(routes.replay_run)       # data the run path does not load: refused (409)
 
 
 # ------------------------------------------------------------------------------------------------------ G7 metrics

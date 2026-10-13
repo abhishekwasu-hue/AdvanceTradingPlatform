@@ -110,6 +110,12 @@ The U3 gates still have no spec text (Z10-1). U3 gathers the screener spec's own
   - `POST /api/screener/runs/{id}/replay` (flag `screener_run_replay`, off) re-fetches the run's symbols through the
     caller's own source and keeps only the bars closed by `data_as_of`. It evaluates the same AST and parameters and
     reports each symbol as reproduced, a different last bar, or the same last bar with a different answer (a correction).
+  - The broker's window always ends now, so the replay widens its fetch by the days since `data_as_of` on top of the
+    screen's lookback (`fetch_frames(reach_back_days=...)`; intraday capped at the broker's 60-day window, daily from
+    the 400-day floor). A symbol left with too few bars before `data_as_of` is reported as "the history window no longer
+    covers this run" (`replay.HISTORY_GONE`, counted in `history_not_covered`), never as a correction.
+  - What a run loads beyond the bars (zones today, `RUN_PROVIDES`) comes from one helper, `attach_run_data`, used by
+    `/run` (as of now) and the replay (as of `data_as_of`); a function whose data the run does not load answers 409.
   - A replay stores nothing. Runs stored before U3 answer 409.
 - **DoD.** `definition_of_done()` checks every registry entry: a doc string, a flag in DEFAULT_OFF_FLAGS, and a Z10-a
   causal case or a named exemption. Once EV3 puts `evidence.DRAWN_AS` on main, it also checks the drawn-as

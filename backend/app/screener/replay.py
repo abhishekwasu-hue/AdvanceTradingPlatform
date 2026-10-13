@@ -7,7 +7,12 @@ with the same parameters, and compares symbol by symbol:
 
 * same last bar and same answer -> reproduced;
 * a different last bar -> the source now returns other bars for that moment (a gap filled, a bar missing);
-* the same last bar but another answer -> the bars before it changed (a correction or an adjustment).
+* the same last bar but another answer -> the bars before it changed (a correction or an adjustment);
+* too few bars left before `data_as_of` (the run's own answer had enough) -> the source's history window no longer
+  covers the run (HISTORY_GONE), never reported as a correction.
+
+The broker's window always ends at the real current time, so the replay fetch reaches back over the time since the run
+(`reach_back_days`) on top of the screen's own lookback; an intraday window is capped by what the broker serves.
 
 A replay stores nothing, never changes the stored run and never places, proposes or ranks an order. Runs stored before
 U3 have no AST or `data_as_of` and are refused as "not replayable".
@@ -16,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -25,6 +31,8 @@ from app.screener.runtime import Match, SymbolData, bar_close, closed_only
 
 REPLAY_FLAG = "screener_run_replay"
 MAX_DIFFERENCES = 50
+HISTORY_GONE = "the history window no longer covers this run: the source no longer returns enough bars before its data time"
+_SHORT = ("not enough history", HISTORY_GONE)
 
 
 class NotReplayable(ValueError):
@@ -64,6 +72,29 @@ def inputs(row: Any) -> Tuple[Dict[str, Any], Dict[str, Any], List[str], str, da
     return json.loads(row.ast_json), json.loads(row.params_json or "{}"), list(json.loads(row.universe_json)), row.base_tf, as_of
 
 
+def reach_back_days(as_of: datetime, now: datetime) -> int:
+    """Whole days from the run's data time to now, plus one for the date boundary (0 when not in the past)."""
+    gap = (now - as_of).total_seconds()
+    return math.ceil(gap / 86400) + 1 if gap > 0 else 0
+
+
+def trim_covered(universe: List[SymbolData], as_of: datetime, base_tf: str) -> Tuple[List[SymbolData], Dict[str, str]]:
+    """`trim`, then the symbols left with no base bar before `as_of` -> {symbol: HISTORY_GONE} (out of the universe)."""
+    kept: List[SymbolData] = []
+    gone: Dict[str, str] = {}
+    for data in trim(universe, as_of):
+        frame = data.frames.get(base_tf)
+        if frame is None or frame.empty:
+            gone[data.symbol] = HISTORY_GONE
+        else:
+            kept.append(data)
+    return kept, gone
+
+
+def _short(reason: Any) -> bool:
+    return bool(reason) and str(reason).startswith(_SHORT)
+
+
 def trim(universe: List[SymbolData], as_of: datetime) -> List[SymbolData]:
     """Every frame cut to the bars that had closed by `as_of` (a symbol left with no base bars keeps an empty frame)."""
     for data in universe:
@@ -81,18 +112,22 @@ def compare(stored_results: List[Dict[str, Any]], stored_times: Dict[str, str], 
         symbol = str(row["symbol"])
         then = {"matched": bool(row.get("matched")), "bar_time": stored_times.get(symbol)}
         match = replayed.get(symbol)
-        now = {"matched": bool(match.matched) if match else False, "bar_time": replayed_times.get(symbol),
-               "reason": (match.reason if match else problems.get(symbol))}
+        reason = match.reason if match else problems.get(symbol)
+        now = {"matched": bool(match.matched) if match else False, "bar_time": replayed_times.get(symbol), "reason": reason}
         if then["matched"] == now["matched"] and then["bar_time"] == now["bar_time"]:
             same += 1
             continue
-        if then["bar_time"] != now["bar_time"]:
+        if _short(reason) and not _short(row.get("reason")):
+            why = HISTORY_GONE                                  # the run had the bars; the source no longer serves them
+        elif then["bar_time"] != now["bar_time"]:
             why = "the source now returns a different last bar for that time"
         else:
             why = "same last bar, different answer: earlier bars changed (a correction or an adjustment)"
         differences.append({"symbol": symbol, "stored": then, "replayed": now, "why": why})
-    return {"reproduced": not differences, "same": same, "differences": differences[:MAX_DIFFERENCES],
+    return {"reproduced": not differences, "same": same, "history_not_covered": sum(1 for d in differences if d["why"] == HISTORY_GONE),
+            "differences": differences[:MAX_DIFFERENCES],
             "more_differences": max(0, len(differences) - MAX_DIFFERENCES)}
 
 
-__all__ = ["REPLAY_FLAG", "NotReplayable", "bar_times", "data_as_of", "ast_digest", "inputs", "trim", "compare"]
+__all__ = ["REPLAY_FLAG", "HISTORY_GONE", "NotReplayable", "bar_times", "data_as_of", "ast_digest", "inputs", "reach_back_days", "trim",
+           "trim_covered", "compare"]

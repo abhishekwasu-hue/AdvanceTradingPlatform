@@ -26,7 +26,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from fastapi import HTTPException
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models import ScreenDigestRecord, User
@@ -42,6 +42,8 @@ MAX_PER_CYCLE = 20                       # digests built per worker pass (the re
 NOTE = ("Matches of your pinned screens on the last closed bar, the first ones in your list order. Screens filter; they do "
         "not predict, and this is not advice.")
 _TIME = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+_SYMBOL = re.compile(r"^[A-Z0-9&._:-]{1,40}$")          # the alert rules' and the breakout runs' symbol shape
+NEEDS_FLAGS = ("screener_v2", "screener_gallery", FLAG)  # the routes' flags: the worker honours the same kill switches
 
 
 class DigestSettings(BaseModel):
@@ -61,7 +63,11 @@ class DigestSettings(BaseModel):
     @field_validator("symbols")
     @classmethod
     def _symbols(cls, v: List[str]) -> List[str]:
-        return list(dict.fromkeys(s.strip().upper() for s in v if s.strip()))
+        out = list(dict.fromkeys(s.strip().upper() for s in v if s.strip()))
+        bad = [s for s in out if not _SYMBOL.fullmatch(s)]
+        if bad:                                         # review of TX3: a symbol is short and plain (it is stored)
+            raise ValueError(f"invalid symbol(s): {', '.join(b[:40] for b in bad[:5])}")
+        return out
 
     @field_validator("pinned")
     @classmethod
@@ -107,14 +113,17 @@ def _detail(exc: HTTPException) -> str:
     return str(detail)[:200]
 
 
-async def build(session: AsyncSession, user: User, pinned: Sequence[str], symbols: Sequence[str], exchange: str,
-                now: Optional[datetime] = None) -> Dict[str, Any]:
-    """The digest of the pinned screens over the symbols, as of `now` (closed bars). Problems are listed, never raised."""
+def run_units(pinned: int, fetches: int) -> int:
+    """`/run` calls a digest is worth (the preview is charged this on the shared bucket, like a confluence)."""
+    return max(1, int(pinned)) + max(0, int(fetches) - 1)
+
+
+async def compiled_pins(session: AsyncSession, user: User, pinned: Sequence[str]) -> Tuple[List[Tuple[Any, Any, Any]], List[str]]:
+    """The pinned screens resolved and validated like `/run` validates (problems listed, never raised)."""
     from app.platform.controls import flag_enabled
     from app.screener import library as lib
     from app.screener import library_routes as lr
     from app.screener.parser import parse
-    now = now or datetime.now(timezone.utc)
     taxonomy = tx.load()
     hidden = await lr._hidden(session, user)
     mirrors_on = await flag_enabled(session, lib.FLAG, user.tenant_id)
@@ -132,14 +141,27 @@ async def build(session: AsyncSession, user: User, pinned: Sequence[str], symbol
             problems.append(f"{ref}: {_detail(exc)}")
         except ValueError as exc:
             problems.append(f"{ref}: {str(exc)[:200]}")
+    return compiled, problems
+
+
+async def build(session: AsyncSession, user: User, pinned: Sequence[str], symbols: Sequence[str], exchange: str,
+                now: Optional[datetime] = None, *, store_evidence: bool = True,
+                compiled: Optional[Tuple[List[Tuple[Any, Any, Any]], List[str]]] = None) -> Dict[str, Any]:
+    """The digest of the pinned screens over the symbols, as of `now` (closed bars). Problems are listed, never raised.
+    `store_evidence=False` (the preview, review of TX3): nothing is stored - no evidence pack is kept."""
+    from app.screener import library_routes as lr
+    now = now or datetime.now(timezone.utc)
+    taxonomy = tx.load()
+    pins, problems = compiled if compiled is not None else await compiled_pins(session, user, pinned)
+    problems = list(problems)
     by_tf: Dict[str, Dict[str, int]] = {}
-    for s, _, validated in compiled:
+    for s, _, validated in pins:
         lr._merge(by_tf.setdefault(s.base_tf, {}), validated.fetch_lookback)
     results: Dict[str, List[str]] = {}
     evidence: Dict[str, Optional[int]] = {}
     tiers: Dict[str, Any] = {}
     from app.screener import evidence_store
-    store_evidence = await evidence_store.enabled(session, user.tenant_id)
+    store_evidence = store_evidence and await evidence_store.enabled(session, user.tenant_id)
     for base_tf, lookback in by_tf.items():
         try:
             universe, fetch_problems, source = await lr._universe(session, user, list(symbols), exchange, base_tf, lookback)
@@ -148,7 +170,7 @@ async def build(session: AsyncSession, user: User, pinned: Sequence[str], symbol
             continue
         tiers[base_tf] = source
         problems += [f"{sym}: {why}" for sym, why in list(fetch_problems.items())[:10]]
-        for s, ast, validated in compiled:
+        for s, ast, validated in pins:
             if s.base_tf != base_tf:
                 continue
             got = await lr._run(session, user, ast, validated, universe, base_tf, exchange)
@@ -158,7 +180,7 @@ async def build(session: AsyncSession, user: User, pinned: Sequence[str], symbol
                 evidence[s.ref] = await _evidence(session, user, s, ast, validated, universe, results[s.ref][0], base_tf, exchange,
                                                   source, per_user="data_tier" in source)
     methods: Dict[str, List[Dict[str, Any]]] = {}
-    for s, _, _ in compiled:
+    for s, _, _ in pins:
         if s.ref not in results:
             continue
         found = results[s.ref]
@@ -245,6 +267,15 @@ async def deliver(session: AsyncSession, user: User, digest: Dict[str, Any], cli
 
 # --- the worker's pass ----------------------------------------------------------------------------------------------
 
+async def _flags_on(session: AsyncSession, tenant_id: int) -> bool:
+    """Every flag the digest routes need (`NEEDS_FLAGS`), so turning the screener or the gallery off stops the worker too."""
+    from app.platform.controls import flag_enabled
+    for name in NEEDS_FLAGS:
+        if not await flag_enabled(session, name, tenant_id):
+            return False
+    return True
+
+
 def due(row: ScreenDigestRecord, now: datetime, holidays: Iterable[Any] = ()) -> bool:
     from app.market_data.calendar import IST, is_trading_day
     local = now.astimezone(IST)
@@ -257,13 +288,16 @@ async def run_due(session_factory: Any, now: Optional[datetime] = None, client: 
     """Builds and delivers every due digest (at most MAX_PER_CYCLE), each in its own session. Returns how many."""
     from app.execution import approval
     from app.market_data.calendar import IST, load_holidays
-    from app.platform.controls import flag_enabled
     from app.secrets_store.envelope import ensure_tenant_key
     now = now or datetime.now(timezone.utc)
     async with session_factory() as session:
         holidays = await load_holidays(session, "NSE")
-        rows = [r for r in await session.scalars(select(ScreenDigestRecord).where(ScreenDigestRecord.enabled.is_(True))
-                                                 .order_by(ScreenDigestRecord.id)) if due(r, now, holidays)]
+        today_ist = now.astimezone(IST).date()
+        # review of TX3: only rows not yet built today come back (the time of day and the trading day are checked below)
+        rows = [r for r in await session.scalars(select(ScreenDigestRecord).where(
+                    ScreenDigestRecord.enabled.is_(True),
+                    or_(ScreenDigestRecord.last_sent_on.is_(None), ScreenDigestRecord.last_sent_on != today_ist))
+                .order_by(ScreenDigestRecord.id)) if due(r, now, holidays)]
         ids = [r.id for r in rows[:MAX_PER_CYCLE]]
     done = 0
     for ident in ids:
@@ -276,7 +310,8 @@ async def run_due(session_factory: Any, now: Optional[datetime] = None, client: 
             try:
                 if user is None or not user.is_active or user.tenant_id != row.tenant_id:
                     status = "Not built: the user is no longer an active member."
-                elif not await flag_enabled(session, FLAG, row.tenant_id):
+                elif not await _flags_on(session, row.tenant_id):
+                    # review of TX3 (MED): the screener's kill switches (screener_v2, screener_gallery) stop the digest too
                     status = "Not built: the digest is turned off for this organisation."
                 elif not approval.can_trade(user):
                     status = "Not built: running screens needs a trading role."
@@ -305,5 +340,5 @@ def lint() -> List[str]:
     return [f"advice wording {tx.advice_words(t)}" for t in (NOTE, *sample) if tx.advice_words(t)]
 
 
-__all__ = ["FLAG", "NOTE", "MAX_PINNED", "MAX_SYMBOLS", "FIRST_PER_SCREEN", "DigestSettings", "settings_of", "own_row", "save", "build",
+__all__ = ["NEEDS_FLAGS", "run_units", "compiled_pins", "FLAG", "NOTE", "MAX_PINNED", "MAX_SYMBOLS", "FIRST_PER_SCREEN", "DigestSettings", "settings_of", "own_row", "save", "build",
            "messages", "deliver", "due", "run_due", "lint"]

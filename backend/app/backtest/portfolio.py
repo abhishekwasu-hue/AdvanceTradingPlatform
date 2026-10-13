@@ -107,8 +107,8 @@ def _check_models(models: ModelSet) -> None:
                              "portfolio backtests yet")
     if models.margin_model().name != "none":
         raise PortfolioError("execution_models: the span_like margin model is not offered for portfolio backtests yet")
-    if models.pricing != "recorded_only":
-        raise PortfolioError("execution_models: the pricing model applies to option backtests only")
+    if models.pricing != "recorded_only" or models.settlement != "default":
+        raise PortfolioError("execution_models: the pricing and settlement models apply to option backtests only")
 
 
 def _same_clock(frames: Dict[str, pd.DataFrame]) -> None:

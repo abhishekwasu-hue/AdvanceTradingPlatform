@@ -1,6 +1,6 @@
 # Part C2 - Pluggable execution models for backtests: design note
 
-Spec: MASTER SPEC v1 §2 (C2). Status: **PR 1 done** (protocols, defaults, golden test; fill + slippage wired); **PR 2 built (N7 C2b)**: `next_open`, `spread_half`, `volume_share`, `fixed_ms`; **PR 3 built (N7 C2c)**: `span_like` margin with a margin call, `black76` for missing strikes, the option engine takes a ModelSet - all behind the `backtest_models` flag. It is stacked on the realism PR (#83: C1 HTF closed bars, C3 prefix
+Spec: MASTER SPEC v1 §2 (C2). Status: **PR 4 built (N7 C2d)**: `sampled` latency, `physical` settlement; **PR 1 done** (protocols, defaults, golden test; fill + slippage wired); **PR 2 built (N7 C2b)**: `next_open`, `spread_half`, `volume_share`, `fixed_ms`; **PR 3 built (N7 C2c)**: `span_like` margin with a margin call, `black76` for missing strikes, the option engine takes a ModelSet - all behind the `backtest_models` flag. It is stacked on the realism PR (#83: C1 HTF closed bars, C3 prefix
 cache, C4 reproducibility fingerprint). The models below are added in small PRs. The default model of each kind
 reproduces today's numbers exactly, so no existing backtest result changes until someone picks a different model.
 
@@ -95,6 +95,21 @@ Rules that apply across all six:
 - Defaults byte-identical: the PR 1 golden hashes and the option engine's hashes recorded before this change
   (tests/test_n7_c2c_models.py). No look-ahead: a margin call reads the bar's close only; a run cut anywhere agrees with
   the full run; an IV row from after the bar is never used.
+
+
+## PR 4 (N7 C2d, built)
+- `sampled` latency (single-leg engine): each entry order's delay is drawn from a log-normal around `median_ms`
+  (250) with spread `sigma` (0.5), clipped to [`min_ms`, `max_ms`] (0, 5000), from one generator seeded by `seed` (7) -
+  draws in entry order, so the same seed gives the same run. The seed is in `ModelSet.describe()` (`latency_seed`,
+  hence the C4 `config_hash`) and in the fingerprint's `seed`. With `sigma` 0 it is `fixed_ms` at `median_ms` (tested).
+  The fill is `fixed_ms`'s: the open of the bar trading when the order arrives.
+- `physical` settlement (option engine): an in-the-money leg of an expiring STOCK option - bought or written - settles
+  by delivery of the underlying at the settlement price, squared there (the run holds no stock): delivery charges on
+  both legs (STT 0.1 % each side, stamp on the buy, exchange, SEBI, GST, brokerage per order) on the settlement value,
+  instead of the exercise STT. Index options stay cash-settled; out-of-the-money legs are unchanged; the option's P&L
+  is still its intrinsic value. Counted in `execution.physically_settled_legs` (C2-8).
+- Both need `backtest_models` at the API. Settlement applies to option backtests only (a single-leg request is a 422);
+  the portfolio backtest (C3) refuses `sampled` and `physical`. The defaults are unchanged (golden test).
 
 ## Open questions
 - C2-1: which slippage model should the UI pre-select once alternatives exist? Provisional: the default stays

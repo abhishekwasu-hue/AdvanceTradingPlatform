@@ -232,6 +232,10 @@ def run_option_backtest(
         broker.slippage_model = models.slippage_model(broker.slippage_pct)
     margin = models.margin_model()
     margin_on = margin.name != "none"
+    # N7 C2d: physical settlement of stock options (index options always settle in cash)
+    from app.execution.prechecks import is_index_symbol
+    physical = models.settlement_model().physical(is_index_symbol(symbol))
+    physical_legs = 0
     margin_refused = 0
     margin_calls = 0
     b76: Optional[Black76Pricer] = None
@@ -255,8 +259,8 @@ def run_option_backtest(
     current_day: Optional[date] = None
     step_used: Optional[float] = None
 
-    def close_position(pos: _Open, exit_prices: Dict[int, float], when, reason: str) -> None:
-        nonlocal equity, settlements, open_pos
+    def close_position(pos: _Open, exit_prices: Dict[int, float], when, reason: str, spot: Optional[float] = None) -> None:
+        nonlocal equity, settlements, open_pos, physical_legs
         gross = 0.0
         charges = 0.0
         settled = reason.startswith("Expiry")
@@ -271,7 +275,13 @@ def run_option_backtest(
             if settled and leg.expiry == pos.near_expiry:
                 charges += broker.estimate_round_trip_costs(leg.entry_price, 0.0, leg.quantity, "OPTION", sold_first=leg.role == "SHORT", settled=True,
                                                             entry_date=pos.entry_time, exit_date=when)
-                if leg.role == "LONG":
+                if physical and price > 0 and spot is not None:
+                    # N7 C2d: an in-the-money stock option leg (bought or written) becomes a delivery of the underlying at
+                    # the settlement price, squared there: delivery charges on both legs, no exercise STT
+                    charges += broker.estimate_round_trip_costs(spot, spot, leg.quantity, "UNDERLYING", delivery=True,
+                                                                entry_date=when, exit_date=when)
+                    physical_legs += 1
+                elif leg.role == "LONG":
                     charges += broker.exercise_charges(price, leg.quantity, trade_date=when)
             else:
                 charges += broker.estimate_round_trip_costs(leg.entry_price, price, leg.quantity, "OPTION", sold_first=leg.role == "SHORT",
@@ -399,7 +409,7 @@ def run_option_backtest(
                 if reason is not None:
                     fills = {idx: (p if settle else round(broker._slip(p, SignalDirection.LONG if pos.legs[idx].role == "SHORT" else SignalDirection.SHORT), 2))
                              for idx, p in prices.items()}
-                    close_position(pos, fills, ts, reason)
+                    close_position(pos, fills, ts, reason, spot=exit_spot if settle else None)
             except PricingUnavailable as exc:
                 skipped[f"open position not repriced: {exc}"] += 1
 
@@ -504,7 +514,8 @@ def run_option_backtest(
         analytics=build_analytics(trades, equity_curve, risk_config.capital),
         exit_rules=time_rules.to_json() if time_rules is not None else None, options=options,
         execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
-                                                  "model_prices": b76.count if b76 is not None else 0},
+                                                  "model_prices": b76.count if b76 is not None else 0,
+                                                  "settlement": "physical" if physical else "cash", "physically_settled_legs": physical_legs},
     )
 
 

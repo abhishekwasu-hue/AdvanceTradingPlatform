@@ -165,6 +165,8 @@ class BacktestRunner:
                                                         "backtests only")
         if body.options is None and self.models.pricing != "recorded_only":
             raise HTTPException(status_code=422, detail="execution_models: the pricing model applies to option backtests only")
+        if body.options is None and self.models.settlement != "default":
+            raise HTTPException(status_code=422, detail="execution_models: the settlement model applies to option backtests only")
 
     @classmethod
     async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None) -> "BacktestRunner":
@@ -212,7 +214,7 @@ class BacktestRunner:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         # Realism C4: what produced this result, as hashes (recorded with the run).
         result.reproducibility = fingerprint(
-            result, df, engine_version=self.body.engine_version, strategy_id=self.body.strategy_id, params=getattr(strategy, "params", None),
+            result, df, engine_version=self.body.engine_version, seed=self.models.seed, strategy_id=self.body.strategy_id, params=getattr(strategy, "params", None),
             symbol=self.body.symbol.upper(), base_timeframe=self.body.base_timeframe, risk=self.risk,
             exit_rules=self.body.exit_rules, options=self.body.options.model_dump(exclude={"option_chain"}) if self.body.options else None,
             option_chain=data_version_of_chain(self.body.options.option_chain) if self.body.options and self.body.options.option_chain else None,

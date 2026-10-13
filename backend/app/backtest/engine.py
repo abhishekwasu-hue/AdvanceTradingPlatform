@@ -54,7 +54,8 @@ def run_backtest(
     if not models.is_default:
         broker.slippage_model = models.slippage_model(broker.slippage_pct)
     fill = models.fill_model()
-    delay = models.latency_model().delay()
+    latency = models.latency_model()
+    delay = latency.delay()
     deferred = fill.defers_entry or delay > pd.Timedelta(0)     # N7 C2b: the entry fills at a later bar's open
     bar_len = bar_length(primary_tf)
     starts = pd.DatetimeIndex(primary_df.index)
@@ -152,7 +153,8 @@ def run_backtest(
                 if decision.approved and deferred:
                     # the order reaches the market `delay` after this bar closed: the bar trading then (or the next one
                     # after a gap) fills it at its open; none left -> no entry
-                    arrives = decision_time(current_time, primary_tf) + delay
+                    # N7 C2d: a sampled latency draws each order's delay (seeded, in entry order); the others are fixed
+                    arrives = decision_time(current_time, primary_tf) + (latency.draw() if latency.name == "sampled" else delay)
                     j = int((starts + bar_len).searchsorted(arrives, side="right"))
                     if j <= i:
                         j = i + 1

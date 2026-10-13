@@ -152,6 +152,10 @@ class _Eval:
             self._session_bars[key] = b
         return self._session_bars[key]
 
+    def _gap_bars(self, tf: str) -> Any:
+        """U6 BK4: B8 reads the exchange session on intraday bars (the BK2 session Bars); on Daily it needs none."""
+        return self.session_bars(tf) if n.TF_MINUTES.get(tf, 0) < n.TF_MINUTES["1d"] else None
+
     def frame(self, tf: str) -> pd.DataFrame:
         if tf not in self.frames:
             src = self.base_tf
@@ -332,6 +336,18 @@ class _Eval:
             "RegimeBreakout": lambda: _breakout(f, "B15", str(self.ev(args[0], tf)), {
                 "rsi_band": num(1, _bkd("rsi_band")), "regime_n": win(2, _bkd("regime_n")), "adx_low": num(3, _bkd("adx_low")),
                 "min_break_atr": num(4, _bkd("min_break_atr"))}),
+            # U6 BK4: trendline / pattern / gap / retest breakouts (app/screener/breakouts/lines.py, gaps.py, retest.py)
+            "TrendlineBreakout": lambda: _breakout(f, "B5", str(self.ev(args[0], tf)), {
+                "tl_mode": _text(1, _bkd("tl_mode")), "tl_min_touches": num(2, _bkd("tl_min_touches")), "min_break_atr": num(3, _bkd("min_break_atr"))}),
+            "PatternBreakout": lambda: _breakout(f, "B6", str(self.ev(args[0], tf)), {
+                "pattern": _text(1, _bkd("pattern")), "vol_mult": num(2, _bkd("vol_mult")), "min_break_atr": num(3, _bkd("min_break_atr"))}),
+            "GapBreakout": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
+                "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, tf=tf, bars=self._gap_bars(tf)),
+            "GapType": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
+                "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, "class", tf=tf, bars=self._gap_bars(tf)),
+            "RetestEntry": lambda: _breakout(f, "B9", str(self.ev(args[0], tf)), {
+                "retest_of": _text(1, _bkd("retest_of")), "retest_max_bars": num(2, _bkd("retest_max_bars")),
+                "retest_reversal": _bool(3, _bkd("retest_reversal"))}),
             # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
             "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
@@ -592,11 +608,14 @@ def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any]
         raise ScreenRuntimeError(f"unknown breakout side {side!r}")
     p = _breakout_params(overrides)
     try:
-        out = evaluate_screen(f, screen, p, sides=(side,), tf=tf, bars=bars)[side]
+        out = evaluate_screen(f, screen, p, sides=(side,), tf=tf, bars=bars, columns=("signal", "event"))[side]
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
     if what == "type":
         return out["event"].where(out["signal"], "").astype(object)
+    if what == "class":                                     # U6 BK4 GapType: the class on every gap bar, a fill included
+        from app.screener.breakouts.gaps import CLASSES
+        return out["event"].where(out["event"].isin(CLASSES), "").astype(object)
     return out["signal"].astype(bool)
 
 

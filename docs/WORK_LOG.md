@@ -1852,6 +1852,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   tenancy table.
 - Frontend: "Experience level" card on Positions (progression i18n), with a story.
 - Tests: backend `tests/test_n2_experience_levels.py` (11); vitest `src/progression` (16). Open questions N2-6..N2-9.
+### 2026-10-12 IST - N2-3 decision tools I (`claude/n2-3`, stacked on `claude/n2-2`)
+- Flag `decision_tools` (off).
+- Risk-of-ruin and Kelly calculator: `POST /api/decision/ruin`, Lundberg bound, gambler's-ruin parity, growth per trade,
+  one row per risk level. The page prefills it from N2-1's figures.
+- What-if for the caller's own open positions by underlying: `GET /api/decision/positions` and
+  `POST /api/decision/what-if`, with now, scenario and expiry curves on the builder's model. Strikes come from the
+  instrument master.
+- Routes classified in the tenancy table (member / S_COMPUTE / S_OWN_WHATIF).
+- Frontend: "Decision tools" card on Positions (progression i18n), SVG chart, story.
+- Tests: `tests/test_n2_decision_tools.py` (10); vitest `src/progression/decision.test.tsx` (6). Open questions
+  N2-11..N2-13.
 
 ## Fix: the trading worker acts per deployment as its creator (TX-3)
 
@@ -1903,6 +1914,27 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_shared_fundamentals_scope.py` (cross-tenant poisoning attempt on every kind of row, dates, the
   private company, the Factor Lab fill, manual news); fundamentals / news / quant tests read with the caller's token.
   OPEN_QUESTIONS SF-1.
+## S10 (Phase 0 slice): ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
+
+- Branch `claude/n3-s10` (from main). Design: SCREENER.md "S10".
+- Backend: `app/screener/etf.py` + `GET /api/screener/etf` (member, classified); `WhatsAppConfig` + `AlertChannelType.WHATSAPP`
+  (template + opt-in, paid plans, the SMS sender); SMS DLT fields and placeholders; both behind `alerts_whatsapp_dlt`
+  at channel save. No migration (channel types and config are stored as text / encrypted JSON); no new ScreenQL function.
+- Frontend: "ETFs" dialog on the Screener page (`EtfPanel`); WhatsApp section and DLT fields in the alert channels card.
+- Tests: `tests/test_s10_etf_whatsapp.py`; vitest `src/screener/etf.test.tsx`. Open questions S10-1..S10-5.
+- Security review round: `app/alerts/s10_gate.py` is the one gate (flag + paid plan for WhatsApp) used on save, on
+  `POST /api/alert-channels/{type}/test` (403 / 402) and on every delivery in `dispatch_pending` - a flag turned off or a
+  plan downgrade after the channel was created SUPPRESSES the delivery with `reason_code=feature_off` and the reason in
+  `last_error`; nothing is sent. `WhatsAppConfig.opt_in_confirmed` is required (no default) and its headers are validated
+  like SMS. `GET /api/screener/etf`: per-user rate limit (30 / min) and a 120 s per-process cache by window.
+  Merges `claude/fix-alert-gateway-injection`.
+- Second review round: the gate now runs inside `dispatcher.send_via_channel` (`s10_gate.enforce`, raising `Refused`), so
+  the outbox, the Settings test button and `first_paper_day_check.py` are gated the same way, and the config decrypt it
+  needs sits inside the per-row try - one organisation's undecryptable channel becomes a retry on its own row, never an
+  exception that stops every organisation's deliveries (test: A's corrupt SMS + B's webhook SENT in one drain); the test
+  button answers ok=False for it. ETF screen: the closes are read once per 120 s per process (single flight per event
+  loop) and every request measures its own window on them. Merges PR #228's head.
+
 ## Fix: SMS gateway template injection and header handling (S10 security review)
 
 - Branch `claude/fix-alert-gateway-injection` (from main).

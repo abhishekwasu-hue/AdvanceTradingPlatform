@@ -139,7 +139,9 @@ def lists(path: str) -> Lists:
         modal=re.compile(rf"(?<![{_WORD}])(?:{_alt(calls.get('modal_subjects', []))})\s*(?:{_alt(calls.get('modal_verbs', []))})\s+"
                          rf"(?:(?:also|still|definitely|probably|personally|now|happily|just)\s+)?(?P<verb>{en})(?![{_WORD}-]){sep}{rest}", re.I),
         gerund=re.compile(rf"(?<![{_WORD}])(?:consider|considering|worth|try)\s+(?P<verb>{_alt(calls.get('gerunds', []))})(?![{_WORD}-]){sep}{rest}", re.I),
-        colon=re.compile(rf"(?P<obj>[^\n.!?;:\u0964]{{1,60}}?)\s*[:\-–—]\s*(?P<verb>{en})(?![{_WORD}-])(?=(?P<after>[^\n.!?;\u0964]{{0,40}}))", re.I),
+        # Round 12 (perf): anchored at the separator - the instrument before it is read back from there (`_sentence_calls`),
+        # never by a lazy scan from every position ("- a - a ..." floods were quadratic in the verb alternation).
+        colon=re.compile(rf"\s*[:\-–—]\s*(?P<verb>{en})(?![{_WORD}-])(?=(?P<after>[^\n.!?;\u0964]{{0,40}}))", re.I),
         deva=re.compile(rf"(?<![{_WORD}])(?P<verb>{deva})(?![{_WORD}])", re.I),
         deva_light=re.compile(rf"(?<![{_WORD}])(?P<verb>{light})(?![{_WORD}])", re.I),
         opinion=re.compile(rf"(?<![{_WORD}])(?:my|our|top|best)\s+(?:top\s+)?(?:{_alt(calls.get('opinion_nouns', []))})\s*(?:for\s+\w+\s+)?(?:is|are|=|:|-)\s*{rest}", re.I),
@@ -282,77 +284,208 @@ _FIELD_VERBS = frozenset({"close", "open", "hold"})
 # ("TCS: close was flat", "open gap-up, close higher", "Close/Open ratio").
 _PRICE_FIELD = re.compile(
     r"^[\s,:\-–—]*(?:"
-    r"(?:at|above|below|near|over|under|around|in|within)\s+(?:(?:a|an|the|its|record)\s+)?(?:₹|\d|(?:\d+[\s-]*(?:day|week|month|period|session)s?\s+)?"
+    r"(?P<prep>at|above|below|near|over|under|around|in|within)\s+(?:(?:a|an|the|its|record)\s+)?(?:₹|\d|(?:\d+[\s-]*(?:day|week|month|period|session)s?\s+)?"
     r"(?:sma|ema|dma|wma|vwap|high|low|52[\s-]*week|average|moving average|band|level|support|resistance|range|record|"
     r"day'?s|week'?s|session'?s|top|bottom|upper|lower|quartile|half)\b)"
-    r"|of\s+₹?\d"
-    r"|\d[\d,.]*\s*%\s+(?:above|below|higher|lower|up|down|over|from)\b"
-    r"|₹?\d+(?:,\d{2,3})*(?:\.\d+)?(?!\s*(?:%|percent\b|per\s*cent\b|pc\b|shares?\b|lots?\b|qty\b|quantity\b|units?\b|contracts?\b|nos\b|"
-    r"stocks?\b|of\b|/\s*\d|lakhs?\b|crores?\b|k\b|\d|\.\d|,\d))"
-    r"|(?:was|is|were)\s+(?:flat|unchanged|higher|lower|up|down|above|below|near|at|around|₹?\d|the\s+(?:highest|lowest))"
-    r"|and\s+(?:open|close|high|low|volume)\b"
-    r"|(?:price|prices|level|levels|unchanged|flat|higher|lower|gap|gapped|ratio)\b"
-    r"|/)", re.I)
-# Round 10: what may follow a price field in its own clause is a whitelist of recap tails (nothing, another field, a
-# metric, a move, a comparison, a span of sessions, a past time, a descriptive predicate); anything else - "at once",
-# "if you own it", "for more upside", "with a small lot", "is advisable" - leaves close / open / hold an order.
-_ADVICE_WORDS = (r"wise|advisable|recommended|prudent|ideal|optimal|preferable|preferred|suggested|safer|safest|needed|a must|key|"
-                 r"good|great|fine|best|better|the call|the play|the move|the way|the trade|the plan|the strategy|my pick|"
-                 r"our pick|a good idea|makes sense|smart|sensible|best bet|right call|worth it|the right")
+    r"|(?P<of>of\s+₹?\d)"
+    r"|(?P<pct>\d[\d,.]*\s*%\s+(?:above|below|higher|lower|up|down|over|from)\b)"
+    r"|(?P<bare>₹?\d+(?:,\d{2,3})*(?:\.\d+)?(?!\s*(?:%|percent\b|per\s*cent\b|pc\b|shares?\b|lots?\b|qty\b|quantity\b|units?\b|contracts?\b|nos\b|"
+    r"stocks?\b|of\b|/\s*\d|lakhs?\b|crores?\b|k\b|\d|\.\d|,\d)))"
+    r"|(?P<cop>(?:was|is|were)\s+(?:flat|unchanged|higher|lower|up|down|above|below|near|at|around|₹?\d|the\s+(?:highest|lowest)))"
+    r"|(?P<pair>and\s+(?:open|close|high|low|volume)\b)"
+    r"|(?P<label>(?:price|prices|level|levels|ratio)\b|/)"
+    r"|(?P<word>(?:unchanged|flat|higher|lower|gap|gapped)\b)"
+    r")", re.I)
+
+# --- what may follow a price field (review rounds 10-12) ----------------------------------------------------------------
+# Round 12: a structural reading, not an open whitelist. Every tail is a closed form (or a bounded one the advice / order
+# checks read whole), and three checks run on EVERYTHING after the field, in every clause of its sentence:
+#   * an advice / order word (`_ADVICE_HARD`), or an advice adjective that does not describe a level or a candle
+#     (`_ADVICE_ADJ`: "a good sign", "key support" and "the best close" describe; "is a smart move", "is the safest" advise);
+#   * a later clause that opens a condition, a purpose or an appositive verdict (", if it breaks", ", to be safe",
+#     ", the obvious choice");
+#   * a subordinate clause (as / since / while / amid / despite / after / post / following / because) must report the past.
+# "close / open N" (a bare value) is the bar's field; "close / open at / above N" is order-shaped and needs past-tense
+# evidence after a subordinator; "hold above / at N" is an order unless a predicate follows it ("hold above 4000 is intact",
+# "... kept the trend", "... since Monday") or it is "hold of N".
+_N = r"₹?\d[\d,]*(?:\.\d+)?"
+_WORD_ = r"[^\s,;]+"
+_MORE = rf"(?:\s+{_WORD_}){{0,8}}"                                  # a bounded rest: the advice / order checks read it whole
+_DAYS = r"monday|tuesday|wednesday|thursday|friday|saturday|sunday"
+_MONTHS = r"jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
+_SPAN = r"sessions?|days?|weeks?|months?|years?|quarters?|bars?|candles?"
+_COUNT = r"\d+|two|three|four|five|six|seven|eight|nine|ten|a\s+few|several"
+_LEVEL_NOUN = (r"close|closes|closing|open|opening|high|highs|low|lows|level|levels|support|resistance|sign|signs|candle|candles|print|"
+               r"bar|session|day|week|month|quarter|year|gain|gains|rally|reversal|breakout|breakdown|base|zone|area|volume|"
+               r"start|finish|showing|reading|week's|day's|month's|year's|top|bottom|peak|trough|record|test|retest|run|streak")
+# Advice adjectives: advice unless a level / candle noun follows (one word may sit between) or a period possessive leads
+# ("the week's best"); "fine" only as the whole complement of a bare field ("INFY: close 1500 is fine.").
+_ADVICE_ADJ = re.compile(r"\b(?:wise|wisest|advisable|recommended|prudent|ideal|optimal|preferable|preferred|suggested|safe|safer|safest|"
+                         r"needed|key|good|great|fine|best|better|smart|smarter|smartest|sensible|sound|obvious|easiest|simplest|"
+                         r"cleanest|surest|clear|right)\b", re.I)
+_ADVICE_FOLLOWED = re.compile(rf"\s+(?:[\w%.-]+\s+)?(?:{_LEVEL_NOUN})\b|(?<=smart)\s+money\b", re.I)
+_PERIOD_POSSESSIVE = re.compile(r"(?:week|month|day|session|year|quarter|decade)'s\s+$", re.I)
+_ADVICE_HARD = re.compile(
+    r"\b(?:a must|worth it|makes sense|my pick|our pick|best bet|no[- ]?brainer|you|your|yours|plans?|strateg(?:y|ies)|"
+    r"hedge(?!\s+funds?\b)|hedging|precaution(?:ary)?|protect(?:s|ing)?|as long as|while you can|choice|"
+    r"step(?!\s+(?:up|down|higher|lower)\b)|entry|(?<!net\s)(?:re-?)?(?:buy|sell)(?!-(?:side|off)\b)|re-?enter|accumulate|"
+    r"add|average\s+(?:down|up)|trim|(?:as|for|on)\s+(?:a\s+|the\s+)?confirmation|"
+    r"the\s+right\s+(?:call|move|thing|choice|time|way|step|play|trade))\b", re.I)
+# Instructions inside the field's own clause ("... below the 20-DMA and walk away", "... if it breaks", "... for upside").
+_IN_CLAUSE_ORDER = re.compile(
+    r"\band\s+(?:then\s+)?(?:add|buy|sell|exit|book|hold|wait|stay|remain|keep|walk|move|ride|lock|take|avoid|consider|switch|rotate|"
+    r"reduce|trim|cut|go|re-?enter|re-?buy|step)\b|\b(?:or|else|otherwise)\s+(?:lose|regret|risk|miss|face|get)\b|"
+    r"\b(?:if|unless|in\s+case|until|till|so\s+that|in\s+order\s+to)\b|\b(?:before|ahead\s+of)\s+(?!(?:that|then)\b)\w|"
+    r"\bfor\s+(?:more\s+|further\s+|the\s+|some\s+)?(?:upside|downside|gains?|profits?|safety|protection|a\s+(?:quick|fast|short|bounce|"
+    r"trade|swing|move|rise|rally|target))\b|\bfor\s+(?:exiting|selling|buying|booking|adding|entering|holding|accumulating|shorting)\b|"
+    r"\b(?:booking|taking|locking)\s+(?:in\s+)?(?:profits?|gains?)\b|\bworth\s+(?![₹\d])|\bopportunity\b|"
+    r"\b(?:go|going|stay|staying)\s+(?:long|short)\b", re.I)
+_PURPOSE = re.compile(r"\bto\s+(?:protect|stay|be\s+safe|keep|lock|limit|avoid|cut|reduce|play|book|secure|guard|preserve|save|"
+                      r"manage|control|minimi[sz]e|cap|stop|exit|trim|exit|enter|catch|ride|capture|bank|benefit|gain|profit)\b", re.I)
+# A later clause that is a condition, a purpose, an instruction or a verdict on the action, never a recap.
+_ORDER_CLAUSE = re.compile(
+    r"^\s*(?:if|unless|in\s+case|until|till|before|ahead\s+of|or|else|otherwise|so(?!\s+far\b)|then(?![-\w])(?!\s+₹?\d)|please|just|"
+    r"to\s+(?!₹?\d)[a-z]|(?:and\s+)?(?:then\s+(?!₹?\d)[a-z]|add|buy|sell|exit(?!\s+polls?\b)|book\s+(?:profits?|gains?|it)|hold|wait|stay|"
+    r"remain|keep|walk|move|ride|lock|take|avoid|consider|look\s+to|prefer|try|go|let|switch|rotate|reduce|trim|cut)\b|"
+    r"(?:(?:that|it|this)(?:'s|\s+is)\s+)?(?:the|a|an|my|our|your)\s+(?:[\w-]+\s+){0,2}(?:call|play|way|trade|move|plan|pick|"
+    r"bet|idea|step|choice|option|thing|approach|course|decision)\s*$)", re.I)
+# Subordinate clauses: present tense (a reason, a condition now) never reports a bar; past evidence (a past-tense verb, a
+# past time) does. An order-shaped field (at / above N, or hold) needs the evidence; a bare field ("close 4050 after
+# results", "close 4050 amid sector weakness") only needs the present tense absent.
+_SUBORDINATE = re.compile(r"^(?P<lead>as\s+of|as|since|while|whilst|amid|amidst|despite|after|post|following|because|given)\s+(?P<body>.*)$",
+                          re.I | re.S)
+_PRESENT = re.compile(r"\b(?:is|are|am|isn't|aren't|has|have|hasn't|haven't|holds|remains|stays|looks|seems|keeps|trades|sits|"
+                      r"stands|can|can't|cannot|will|won't|shall|should|must|could|would|may|might|do|does|need|needs|want|wants|"
+                      r"let|lets|(?:it|that|this|he|she|there|what|which|they|you|we)'(?:s|re|ll|d))\b", re.I)
+_PAST_VERB = re.compile(
+    r"\b(?:(?!(?:need|feed|speed|seed|breed|indeed|hundred|embed|shed)\b)\w{2,}(?<!e)ed|rose|fell|ran|broke|came|made|saw|hit|"
+    r"held|led|won|lost|beat|met|slid|sank|shrank|grew|cut|took|went|did|was|were|had|sold|bought|gave|got|set|"
+    r"ago|yesterday|earlier|last\s+(?:week|month|session|year|quarter|time|{days})|previous|prior)\b".replace("{days}", _DAYS), re.I)
+_SESSION_NOUN = re.compile(
+    rf"\b(?:{_DAYS}|gap(?:[- ]?(?:up|down))?|gapped|(?:{_COUNT})\s+(?:{_SPAN})|\d{{1,2}}\s+(?:{_MONTHS})\w*|(?:{_MONTHS})\w*\s+\d{{1,2}}|"
+    r"the\s+(?:open|opening|bell|start|lows?|highs?|breakout|breakdown))\b", re.I)
+_SINCE_LEADS = frozenset({"since", "as of"})
+# After a bare value, "after / amid / despite" may take a closed noun phrase naming an event or a market condition.
+_NOUN_LEADS = frozenset({"after", "post", "following", "amid", "amidst", "despite"})
+_EVENT_NP = re.compile(
+    r"(?:(?:the|a|an|its|their|q[1-4]|quarterly|weak|weaker|strong|stronger|sector|broad|broader|market|global|heavy|light|fii|dii|"
+    r"mixed|firm|soft|upbeat|poor|good|bad|it|bank|index|sectoral|overall|foreign|domestic|institutional|profit|gap-up|gap-down|"
+    r"wider|widespread|early|late|intraday|monthly|weekly)\s+){0,3}"
+    r"(?:results|earnings|numbers|data|news|guidance|commentary|weakness|strength|markets?|selling|buying|volatility|cues|"
+    r"gap(?:[- ]?(?:up|down))?(?:\s+open)?|selloff|sell-off|rally|bounce|dip|flows|outflows|inflows|expiry|announcement|update|"
+    r"booking|pressure|demand|supply|tone|sentiment|trade|session|open|opening|holiday)"
+    rf"(?:\s+(?:on\s+(?:{_DAYS})|yesterday|today|last\s+\w+|this\s+(?:week|month|morning)|on\s+\d{{1,2}}\s+(?:{_MONTHS})\w*))?", re.I)
+_AFTER_LEADS = frozenset({"after", "post", "following"})
+
+
+def _subordinate_ok(lead: str, body: str, strict: bool) -> bool:
+    """Whether "<lead> <body>" after a price field reports the past ("as IT rallied", "since Monday", "after 3 sessions
+    below"), never a reason or a condition now ("as it is weak", "since the trend is up", "while you can")."""
+    lead = re.sub(r"\s+", " ", lead.lower())
+    if len(body.split()) > 10 or _PRESENT.search(body) or lead in ("because", "given"):
+        return False                                            # a reason is never a recap tail (as / since + a reason
+    if not strict and lead in _NOUN_LEADS and _EVENT_NP.fullmatch(body.strip(" .")):
+        return True                                             # "close 4050 after results / amid sector weakness"
+    if _PAST_VERB.search(body):
+        return True
+    if lead in _SINCE_LEADS:
+        return bool(_SESSION_NOUN.search(body))
+    if lead in _AFTER_LEADS:                                    # "after 3 sessions below", "after a gap-up" - never "after
+        return bool(re.search(rf"\b(?:gap(?:[- ]?(?:up|down))?|(?:{_COUNT})\s+(?:{_SPAN}))\b", body, re.I))   # results"
+    return False
+
+
+_COPULA = r"(?:is|was|were|has\s+been|had\s+been|remains|remained|stays|stayed)"
+# A complement noun that reports the bar ("is a 3-week high", "is a strong close", "is a good sign"), never "is the level /
+# the plan / the move", which name what to do.
+_COMP_NOUN = (r"close|closes|closing|open|opening|high|highs|low|lows|record|candle|print|bar|gain|loss|rally|reversal|breakout|"
+              r"breakdown|top|bottom|peak|trough|sign|streak|run|base|finish|session|day|week|month|quarter|year|showing|start|week's\s+\w+|day's\s+\w+|month's\s+\w+")
+_SUPERLATIVE = (r"highest|lowest|strongest|weakest|biggest|largest|smallest|widest|narrowest|tightest|steepest|sharpest|deepest|"
+                r"longest|shortest|best|worst|firmest|softest")
+_SCOPE = rf"(?:\s+(?:in|of|for|since|over|across|this|on|among|ever|yet|so\s+far|of\s+the)\b{_MORE})?"
+_COMPLEMENT = (
+    rf"(?:the\s+(?:(?:week|month|day|session|year|quarter)'?s\s+)?(?:{_SUPERLATIVE})(?:\s+(?:[\w-]+\s+)?(?:{_LEVEL_NOUN}))?{_SCOPE}"
+    rf"|(?:the|a|an)\s+(?:[\w%.,'-]+\s+){{0,2}}(?:{_COMP_NOUN}){_MORE}"
+    rf"|(?:a|an)\s+{_N}\s*%?\s+(?:move|gain|loss|rise|fall|drop|jump|slide){_MORE}"
+    rf"|(?:key|major|strong|firm|immediate|near-term|minor|crucial|important)\s+(?:support|resistance|level|pivot)\b{_MORE}"
+    r"|(?:intact|flat|unchanged|higher|lower|up|down|above|below|near|at|tested|broken|breached|held|lost|reclaimed|confirmed|seen|"
+    rf"recorded|reached|hit|rejected|retested|weak|weaker|strong|stronger|firm|firmer|steady|muted|volatile|in\s+place|bullish|bearish|"
+    rf"positive|negative|constructive|encouraging|notable|significant)\b{_MORE}"
+    rf"|{_N}{_MORE})")
+# Predicates that make the field the subject of a report ("hold above 1650 kept the trend", "close above 2500 should
+# confirm the breakout"): the only tails a "hold above / at N" may take, besides "since <a past time>".
+_PREDICATE = (
+    rf"{_COPULA}\s+{_COMPLEMENT}"
+    r"|(?:should|would|could|might|may)\s+(?:confirm|invalidate|signal|mark|indicate|show|suggest)\b" + _MORE +
+    r"|(?:would|could|might|may)\s+be\s+(?:bullish|bearish|positive|negative|constructive|significant|a\s+(?:breakout|breakdown|signal))\b" + _MORE +
+    r"|(?:kept|held|lasted|marked|marks|came|confirm\w*|invalidat\w*|signal\w*|show\w*|set|made|hit|printed|stayed|remained|ended|"
+    r"finished|rose|fell|gained|lost|matters|counts|stands|holds|continues|continued|failed|broke|gave\s+way|faded|reversed|"
+    r"capped|limited|defined|survived|cracked|gave|came)\b" + _MORE)
+# "hold above 4000 for 5 sessions" is an order (hold it for five sessions); "... for 5 sessions so far" and "... for the
+# last 5 sessions" report one.
+_HOLD_TAIL = re.compile(rf"(?:{_PREDICATE}"
+                        rf"|(?:for|over|in)\s+(?:{_COUNT})\s+(?:{_SPAN})\s+(?:so\s+far|running|straight|in\s+a\s+row)"
+                        rf"|(?:for|over|in)\s+the\s+(?:last|past|previous)\s+(?:{_COUNT})\s+(?:{_SPAN}))", re.I)
+_PER = (r"(?:as\s+per|per|according\s+to)\s+(?:the\s+)?(?:[\w'-]+\s+){0,2}?(?:nse|bse|exchange|bhavcopy|data|feed|filings?|quotes?|"
+        r"tape|terminal|vendor|records?|figures?|numbers?)"
+        r"|in\s+line\s+with\s+(?:the\s+)?(?:[\w'-]+\s+){0,2}?(?:sector|index|market|markets|peers?|benchmark|nifty|sensex|street|"
+        r"estimates?|expectations?|consensus|trend|pack|group|bank\s+nifty|banknifty)")
 _RECAP_TAIL = re.compile(
-    r"^\s*(?:"
-    rf"|\((?![^)]*\b(?:{_ADVICE_WORDS}|buy|sell)\b)[^)]*\)\s*"
+    r"(?:"
     r"|₹?\d[\d,.]*\s*%?"
     r"|(?:at|near|around)\s+₹?\d[\d,.]*\s*%?"
-    r"|(?:by|within)\s+₹?[\d.,]+(?!\s*(?:days?|sessions?|hours?|hrs?|pm|am|mins?|minutes?|o'?clock)\b)\s*(?:%|points?|pts)?(?:\s.*)?"
-    r"|(?:quartile|half|decile|percentile|band|zone|range|end)\b.*"
-    r"|(?:support|resistance|level|zone|area|floor|ceiling|moving average|average)\b.*"
+    r"|(?:by|within)\s+₹?[\d.,]+(?!\s*(?:days?|sessions?|hours?|hrs?|pm|am|mins?|minutes?|o'?clock)\b)\s*(?:%|points?|pts)?" + _MORE +
+    r"|(?:quartile|half|decile|percentile|band|zone|range|end)\b" + _MORE +
+    r"|(?:support|resistance|level|zone|area|floor|ceiling|moving average|average)\b" + _MORE +
     r"|(?:above|below|near|inside|within|under|over)\s+(?:the|its|a)?\s*(?:\d+[- ]?)?(?:-?(?:day|week|month|period|session)s?\s+)?"
-    r"(?:dma|sma|ema|wma|band|range|average|moving average|high|low|vwap|upper band|lower band|cloud|channel|box)\b.*"
-    r"|from\s+₹?\d.*"
-    r"|now\s+(?:sits|trades|stands|at|above|below|near)\b.*"
-    r"|on\s+a\s+gap(?:[- ]?(?:up|down))?\b.*"
-    r"|on\s+\d+(?:\.\d+)?x?\s*(?:volume|times)?$"
-    r"|(?:after|post|since|following)\s+.*"
-    r"|(?:as|amid|despite|while)\s+.*"
-    r"|(?:again|once more|twice|thrice)\b.*|\w+\s+(?:days|sessions)\s+running\b.*"
-    r"|for\s+a\s+(?:\S+\s+){0,3}(?:gain|loss|rise|fall|drop|decline|advance)\b.*"
-    r"|[-–—]\s*(?:a|an|the)\s+.*"
-    r"|(?:per|according to|as per|in line with)\s+.*"
-    r"|(?:for|over|across|during|in|on)\s+(?:the|this|that)\s+(?:week|session|day|month|year|quarter)\b.*"
-    r"|all\s+(?:day|session|week)\b.*"
-    r"|at\s+the\s+bell\b.*"
-    r"|with\s+(?:rsi|volume|oi|macd|adx|atr|vwap|pcr|delivery)\b.*"
-    r"|in\s+(?:a|the)\s+(?:\w+\s+)?(?:range|band|zone|channel|box)\b.*"
-    r"|(?:its|the|a)\s+(?:\S+\s+){0,3}(?:price|high|low|level|average|close|open)\b.*"
-    r"|(?:on|with)\s+(?:(?:heavy|low|high|light|strong|weak|record|thin|above-average|below-average)\s+)?volumes?\b.*"
-    r"|(?:(?:up|down)(?!\s+(?:to|till|until)\b)|higher|lower|flat|unchanged|green|red)\b.*"
-    r"|(?:vs\.?|versus|compared (?:to|with))\s+.*"
-    r"|against\s+(?:₹?\d|the|its|last|yesterday|previous|prior|a\b).*"
+    r"(?:dma|sma|ema|wma|band|range|average|moving average|high|low|vwap|upper band|lower band|cloud|channel|box)\b" + _MORE +
+    r"|(?:near|above|below|at|around)\s+(?:the\s+)?(?:consensus|street|analysts?'?|brokerage)\s+(?:target|estimate)s?(?:\s+price)?" +
+    rf"|from\s+{_N}\s*%?(?:\s+(?:a\s+(?:day|week|month|year)\s+ago|\d+\s+(?:{_SPAN})\s+ago|last\s+\w+|yesterday|earlier|on\s+\w+|"
+    r"the\s+(?:previous|prior)\s+\w+|in\s+\w+))?"
+    r"|now\s+(?:sits|trades|stands|at|above|below|near|up|down|higher|lower|" + _N + r"\s*%?\s+(?:above|below|higher|lower|up|down|over|from))\b" + _MORE +
+    r"|on\s+a\s+gap(?:[- ]?(?:up|down))?\b" + _MORE +
+    r"|on\s+\d+(?:\.\d+)?x?\s*(?:volume|times)?"
+    r"|(?:again|once\s+more|twice|thrice)(?:\s+(?:this|last)\s+(?:week|month|session|year|quarter))?"
+    r"|(?:\w+)\s+(?:days|sessions)\s+running"
+    rf"|{_PER}"
+    rf"|[-–—]\s*(?:a|an|the)\s+(?:[\w%.,'-]+\s+){{0,3}}(?:high|low|record|gain|loss|close|level|top|bottom|peak|trough|print|"
+    r"breakout|breakdown|streak|run|rise|fall|drop|move)"
+    r"|(?:for|over|across|during|in|on)\s+(?:the|this|that)\s+(?:week|session|day|month|year|quarter)\b" + _MORE +
+    r"|all\s+(?:day|session|week)\b" + _MORE +
+    r"|at\s+the\s+bell\b" + _MORE +
+    r"|with\s+(?:rsi|volume|volumes|oi|macd|adx|atr|vwap|pcr|delivery)(?:\s*\(?\d+\)?)?(?:\s+(?:up|down|at|above|below|near|of|over|under|"
+    r"rising|falling|higher|lower|flat|steady))?(?:\s+₹?\d[\d,.]*\s*[%x]?)?"
+    r"|in\s+(?:a|the)\s+(?:\w+\s+)?(?:range|band|zone|channel|box)\b" + _MORE +
+    r"|(?:its|the|a)\s+(?:\S+\s+){0,3}(?:price|high|low|level|average|close|open)\b" + _MORE +
+    r"|(?:on|with)\s+(?:(?:heavy|low|high|light|strong|weak|record|thin|above-average|below-average)\s+)?volumes?\b" + _MORE +
+    r"|(?:(?:up|down)(?!\s+(?:to|till|until)\b)|higher|lower|flat|unchanged|green|red)\b" + _MORE +
+    r"|(?:vs\.?|versus|compared\s+(?:to|with))\s+(?!(?:holding|selling|buying|exiting|staying|waiting|adding|booking)\b)" + _WORD_ + _MORE +
+    r"|against\s+(?:₹?\d|the|its|last|yesterday|previous|prior|a\b)" + _WORD_.replace("+", "*") + _MORE +
     r"|(?:for|over|across|in|during)\s+(?:the\s+)?(?:last|past|previous|first|second|third|fourth|fifth|\d+)\s*"
-    r"(?!more\b|next\b)(?:\w+\s+)?(?:sessions?|days?|weeks?|months?|bars?|candles?)\b.*"
-    r"|(?:today|yesterday|last\s+\w+|this morning|on\s+\S+\s+(?:results|earnings|expiry)\s+day\b.*)"
-    r"|(?:and\s+)?(?:open|close|high|low|volume|vwap|rsi|macd|adx|atr|oi|pcr|sma|ema|dma|range)\b.*"
-    r"|(?:to\s+₹?\d[\d,.]*\s+range\b.*)"
-    r"|(?:was|were|is|has been|had been)\s+(?:the\s+(?:highest|lowest)|the\s+(?!best\b)(?:\S+\s+){0,2}(?:\w+est|high|low|record)|"
-    r"(?:a|an)\s+(?:\S+\s+){0,2}(?:high|low|record|gain|loss|move)|intact|flat|unchanged|higher|lower|up|down|above|below|"
-    r"near|at|₹?\d|tested|broken|breached|held|lost|reclaimed|confirmed|seen|recorded|reached|hit|rejected|retested|weak|"
-    r"strong|firm|steady|muted|volatile)\b.*"
-    r"|(?:should|would|could|might|may)\s+(?:confirm|invalidate|signal|mark|indicate|show|suggest)\b.*"
-    r"|(?:would|could|might|may)\s+be\s+(?:bullish|bearish|positive|negative|constructive|significant|a\s+(?:breakout|breakdown|signal))\b.*"
-    r"|(?:kept|held|lasted|marked|came|confirm\w*|invalidat\w*|signal\w*|show\w*|set|made|hit|printed|stayed|remained|ended|"
-    r"finished|rose|fell|gained|lost|matters|counts|stands|holds|continues|continued|failed|broke|gave way|faded|reversed)\b"
-    rf"(?!.*\b(?:{_ADVICE_WORDS})\b).*"
-    r")$", re.I)
+    r"(?!more\b|next\b)(?:\w+\s+)?(?:sessions?|days?|weeks?|months?|bars?|candles?)\b" + _MORE +
+    r"|(?:today|yesterday|last\s+\w+|this\s+morning|on\s+\S+\s+(?:results|earnings|expiry)\s+day\b" + _MORE + r")"
+    r"|(?:and\s+)?(?:open|close|high|low|volume|vwap|rsi|macd|adx|atr|oi|pcr|sma|ema|dma|range)\b" + _MORE +
+    r"|to\s+₹?\d[\d,.]*\s+range\b" + _MORE +
+    rf"|{_PREDICATE}"
+    r")", re.I)
+# Only after a bare value ("close 4050"), never after an order-shaped field or "hold": a gain is a target there.
+_BARE_TAIL = re.compile(
+    rf"(?=[^\d]*\d)for\s+a\s+(?:{_N}\s*%\s+)?(?:(?:daily|weekly|monthly|quarterly|yearly|session|day's|week's|\d+-(?:day|week|session))\s+)?"
+    rf"(?:gain|loss|rise|fall|drop|decline|advance)(?:\s+of\s+{_N}\s*%?)?"
+    r"|is\s+fine", re.I)
 # Order words anywhere in the sentence ("INFY: close at 1500, then re-enter at 1450", "... !").
-_FIELD_ORDER = re.compile(r"!|\b(?:target(?![-\w])(?!\s+(?:price|date)\b)|sl\s*(?:at\s*|of\s*|:\s*)?₹?\d|stop[- ]?loss|stop\s+(?:at\s*|of\s*|:\s*)?₹?\d|now(?!\s+(?:sits|trades|stands|at|above|below|near|"
-                          r"\d))|then\s+(?:re-?enter|buy|sell|exit|add|short|book|hold|close|go|take)|re-?enter|do it|"
+_FIELD_ORDER = re.compile(r"!|\b(?:(?P<target>target)(?![-\w])(?!\s+(?:price|date)\b)|sl\s*(?:at\s*|of\s*|:\s*)?₹?\d|stop[- ]?loss|stop\s+(?:at\s*|of\s*|:\s*)?₹?\d|"
+                          r"now(?!\s+(?:sits|trades|stands|at|above|below|near|up|down|higher|lower|\d))|then\s+(?:re-?enter|buy|sell|exit|add|short|book|hold|close|go|take)|re-?enter|do it|"
                           r"don'?t sell|do not sell|exit(?!\s+polls?)|stop[- ]?loss|book (?:profits?|gains?|losses?)|take (?:profits?|gains?)|"
                           r"lock (?:in )?(?:gains?|profits?)|ride it|immediately|asap|right away|urgently|pronto|at once|"
                           r"without delay|quickly|tomorrow|tonight|if you (?:own|hold|have)|you should|you must|better to|"
                           r"(?:can|will|could|may|should)\s+(?:go|move|head|rally|run|climb)\s+(?:to|towards?|till))\b", re.I)
 _FIELD_PAIR = re.compile(r"\b(?:open|high|low|close|at|near|above|below)\s+₹?\d", re.I)
 _FIELD_CONNECTORS = frozenset({"on", "in", "with", "all", "your", "the", "of", "-", "–", "—", "for", "my", "our", "this", "and"})
+# Round 12 (MED-1): a target names a third party's number ("analysts see a target of 1600", "brokerage target 4500") only
+# outside the field's own clause; anywhere else it is the call's target.
+_THIRD_PARTY = re.compile(r"\b(?:analysts?|brokerages?|brokers?|consensus|street|research\s+houses?|estimates?)\b", re.I)
+_SEMI_CLAUSE = re.compile(r";|\n|[.?!](?!\d)")
 
 
 _RECAP_LISTS: "dict[str, bool]" = {}
@@ -372,34 +505,146 @@ def _recap_list(s: str, L: "Lists") -> bool:
 
 
 @functools.lru_cache(maxsize=256)
-def _orders_in(sentence: str) -> bool:
-    """Whether sentence `sentence` holds an order word - once per sentence, not once per field."""
-    return bool(sentence) and bool(_FIELD_ORDER.search(sentence))
+def _semi_clauses(sentence: str) -> Tuple[int, ...]:
+    """The end offsets of the ;-clause breaks of `sentence`, once per sentence."""
+    return tuple(b.end() for b in _SEMI_CLAUSE.finditer(sentence))
 
 
-def _price_field(verb: str, text: str, L: "Lists", sentence: str = "") -> bool:
+def _semi_clause(sentence: str, at: int) -> Tuple[int, int]:
+    """The (start, end) of the ;-clause of `sentence` holding offset `at`."""
+    ends = _semi_clauses(sentence)
+    i = bisect.bisect_right(ends, at)
+    return (ends[i - 1] if i else 0), (ends[i] - 1 if i < len(ends) else len(sentence))
+
+
+@functools.lru_cache(maxsize=256)
+def _order_hits(sentence: str) -> Tuple[Tuple[int, bool], ...]:
+    """The order words of sentence `sentence` as (offset, third party?) - once per sentence, not once per field. The flag
+    is True for a target whose ;-clause names a third party (analysts, a brokerage, consensus)."""
+    hits = []
+    for m in _FIELD_ORDER.finditer(sentence):
+        third = False
+        if m.group("target"):
+            lo, hi = _semi_clause(sentence, m.start())
+            third = bool(_THIRD_PARTY.search(sentence[lo:hi]))
+        hits.append((m.start(), third))
+    return tuple(hits)
+
+
+def _orders_in(sentence: str, at: int = -1) -> bool:
+    """Whether sentence `sentence` holds an order word for a field at offset `at`: a third party's target in another
+    ;-clause does not count ("TCS: close 4050; brokerage target 4500 unchanged")."""
+    if not sentence:
+        return False
+    hits = _order_hits(sentence)
+    if not hits or at < 0:
+        return bool(hits)
+    if all(not third for _, third in hits):
+        return True
+    lo, hi = _semi_clause(sentence, at)
+    return any(not third or lo <= start < hi for start, third in hits)
+
+
+@functools.lru_cache(maxsize=1024)
+def _advice_after(rest: str, bare: bool) -> bool:
+    """Whether the text after a price field (`rest`, every clause up to the sentence end) advises: an advice / order
+    word, an advice adjective that does not describe a level or a candle, a superlative verdict ("is the safest"), or a
+    later clause that is a condition, a purpose or a verdict on the action."""
+    if _ADVICE_HARD.search(rest):
+        return True
+    for m in _ADVICE_ADJ.finditer(rest):
+        word = m.group(0).lower()
+        if _ADVICE_FOLLOWED.match(rest, m.end()) or _PERIOD_POSSESSIVE.search(rest[max(0, m.start() - 20):m.start()]):
+            continue                                            # "a good sign", "key support", "the week's best"
+        if word == "fine" and bare and re.fullmatch(r"\s*is\s*", rest[:m.start()]) and not rest[m.end():].strip(" ."):
+            continue                                            # "INFY: close 1500 is fine." - the whole complement
+        return True
+    if _PURPOSE.search(rest) or _IN_CLAUSE_ORDER.search(rest):
+        return True                                             # "... to protect capital", "... to stay safe"
+    if re.search(rf"\b(?:is|=)\s+the\s+(?!{_SUPERLATIVE}\b)\w+est\b(?!\s+(?:[\w-]+\s+)?(?:{_LEVEL_NOUN})\b)", rest, re.I):
+        return True                                             # "is the cleanest": a verdict on the action
+    return False
+
+
+def _later_clause_order(clauses: Sequence[str], strict: bool) -> bool:
+    """Whether a later clause after a price field is a condition / purpose / verdict, or a subordinate clause that does
+    not report the past (", since it is weak")."""
+    for c in clauses:
+        c = c.strip(" .")
+        if not c:
+            continue
+        if _ORDER_CLAUSE.match(c):
+            return True
+        sub = _SUBORDINATE.match(c)
+        if sub and not re.match(r"as\s+per\b", c, re.I) and not _subordinate_ok(sub.group("lead"), sub.group("body"), strict):
+            return True
+    return False
+
+
+def _recap_tail(tail: str, kind: str, verb: str) -> bool:
+    """Whether `tail` (the rest of the field's own clause) is a recap tail for a field of `kind` (bare / prep / of / ...)
+    of `verb`."""
+    t = tail.strip(" .")
+    hold = verb == "hold" and kind not in ("of", "cop", "label")
+    sub = _SUBORDINATE.match(t)
+    if sub and not re.match(r"as\s+per\b", t, re.I):
+        lead = sub.group("lead").lower()
+        if hold and lead not in _SINCE_LEADS:
+            return False                                        # "hold above 4000 after results / despite the noise"
+        return _subordinate_ok(lead, sub.group("body"), strict=kind != "bare" or hold)
+    if hold:
+        return bool(_HOLD_TAIL.fullmatch(t))                    # "hold above 4000 is intact / kept the trend"
+    if kind == "bare" and _BARE_TAIL.fullmatch(t):
+        return True
+    if kind == "at" and re.match(r"(?:by|within)\b", t, re.I):
+        return False                                            # "close at 1500 by 2%": a move needs a direction
+    return bool(_RECAP_TAIL.fullmatch(t))
+
+
+def _field_kind(m: "re.Match[str]") -> str:
+    if m.group("prep"):
+        return "at" if m.group("prep").lower() in ("at", "near", "around", "in", "within") else "prep"
+    for kind in ("of", "pct", "bare", "cop", "pair", "label", "word"):
+        if m.group(kind):
+            return kind
+    return "word"
+
+
+def _field_ok(verb: str, kind: str, rest: str, L: "Lists") -> bool:
+    """Whether `rest` (everything after a price field of `kind`, up to the sentence end) keeps the field a recap."""
+    v = verb.lower()
+    parts = re.split(r"[,;]", rest[:200])
+    nxt = [w for w in _words(parts[1]) if w] if len(parts) > 1 else []
+    if len(nxt) == 1 and _is_ticker(nxt[0].strip(".!?"), L):
+        return False                                            # "Close at 2450, RELIANCE."
+    if _advice_after(rest[:200], kind == "bare"):
+        return False
+    strict = kind != "bare" or v == "hold"
+    if _later_clause_order(parts[1:], strict):
+        return False
+    return _recap_tail(parts[0], kind, v)
+
+
+def _price_field(verb: str, text: str, L: "Lists", sentence: str = "", at: int = -1) -> bool:
     """Whether close / open / hold + `text` reads as the bar's price field ("close 4050", "close above 2450", "close was
-    flat"): only when what follows the field in its clause is a recap tail (`_RECAP_TAIL`), and never with an order word
-    in the sentence."""
+    flat"): only when what follows the field is a recap tail (`_recap_tail`), with no advice after it (`_advice_after`)
+    and no order word in the sentence. `at` is the offset of `text` in `sentence` (review round 12, LOW: never a search,
+    which found the first copy of a repeated text)."""
     if verb.lower() not in _FIELD_VERBS:
         return False
-    at = sentence.find(text) if sentence and text else -1
-    if at >= 0:                                                 # "close 4050 for a 1.2% gain": the clause, past decimal points
-        end = re.search(r"\n|[.?!](?!\d)", sentence[at:at + 200])
+    if sentence and at >= 0:                                    # "close 4050 for a 1.2% gain": to the sentence end, past
+        end = re.search(r"\n|[.?!](?!\d)", sentence[at:at + 200])   # decimal points
         text = sentence[at:at + (end.end() if end else 200)]
     m = _PRICE_FIELD.match(text)
-    if m is None or _FIELD_ORDER.search(text[:200]) or _orders_in(sentence):
+    if m is None or (not sentence and _FIELD_ORDER.search(text[:200])) or _orders_in(sentence, at if at >= 0 else -1):
         return False
-    if re.match(r"[\s,:\-–—]*(?:price|prices|level|levels|ratio|/)", m.group(0), re.I):
+    kind = _field_kind(m)
+    if kind == "label":
         return True                                             # "Close price: INFY 1500" - a label, not an order
     rest = re.sub(r"^[\w.₹%-]*", "", text[m.end():])            # the rest of the number / level word the match ended in
     if verb.lower() == "hold" and re.match(r"\s*and\s+(?:close|open)\b", rest):
         return False                                            # "hold above 4000 and close at 4500": a target
-    parts = re.split(r"[,;]", rest[:200], maxsplit=1)
-    nxt = [w for w in _words(parts[1]) if w] if len(parts) > 1 else []
-    if len(nxt) == 1 and _is_ticker(nxt[0].strip(".!?"), L):
-        return False                                            # "Close at 2450, RELIANCE."
-    return bool(_RECAP_TAIL.match(parts[0].strip(" .")))
+    return _field_ok(verb, kind, rest, L)
 
 
 _OPEN_TRADE = re.compile(r"^\s*(?:(?:an?|new|fresh|the)\s+)*(?:long|short|position|trade)s?\b", re.I)
@@ -554,25 +799,33 @@ def _has_instrument(text: str, L: Lists) -> bool:
     return any(instrument_names.prefix_len(words[i:i + instrument_names.MAX_WORDS]) for i in range(len(words)))
 
 
-def _object(rest: str, L: Lists, s: str, *, allow_level: bool, verb: str = "") -> Optional[str]:
+def _object(rest: str, L: Lists, s: str, *, allow_level: bool, verb: str = "", at: int = -1) -> Optional[str]:
     """What an imperative / modal verb is aimed at (None = not a call): an instrument, a share word or a price level after
     the fillers; "a signal / setup / rating on RELIANCE"; a pronoun ("buy more") when the sentence names an instrument.
-    A noun phrase ("Sell HDFCBANK was the most common signal") is not a call."""
-    if _price_field(verb, rest, L, s):
+    A noun phrase ("Sell HDFCBANK was the most common signal") is not a call. `at` is the offset of `rest` in `s`."""
+    if _price_field(verb, rest, L, s, at):
         return None
     if verb.lower() in _FIELD_VERBS and re.match(r"[\s,:\-–—]*(?:/|(?:(?:at|above|below|near|over|under|around)\s+)?₹?\d)", rest):
         # "Close above 2450 in INFY", "Hold above 2500 - RELIANCE": an order on the instrument named after the level - unless
         # a recap predicate follows it ("Close above 1500 in INFY was the week's best") or the sentence lists several
         # fields or instruments ("Open 1490, close 1500 in INFY"; "Close near 1500 on INFY, near 4050 on TCS")
-        if not _orders_in(s) and _recap_list(s, L):
+        full = rest
+        if s and at >= 0:
+            end = re.search(r"\n|[.?!](?!\d)", s[at:at + 200])
+            full = s[at:at + (end.end() if end else 200)]
+        if not _orders_in(s) and _recap_list(s, L) and not _advice_after(full, False):
             return None
-        words = [w for w in _words(rest[:80]) if w]
-        for k, word in enumerate(words[:6]):
-            if _is_ticker(word.rstrip(".!?"), L):
-                after = rest[rest.find(word) + len(word):]
-                if _RECAP_TAIL.match(re.split(r"[,;]", after, maxsplit=1)[0].strip(" .")) and after.strip(" .,;"):
+        field = _PRICE_FIELD.match(full)
+        kind = _field_kind(field) if field else "prep"
+        words = [w for w in _words(full[:80]) if w]
+        for word in words[:6]:
+            ticker = word.rstrip(".!?")
+            if _is_ticker(ticker, L):
+                hit = re.search(rf"(?<![\w&]){re.escape(ticker)}(?![\w&])", full)
+                after = full[hit.end():] if hit else ""
+                if after.strip(" .,;") and not _orders_in(s, at) and _field_ok(verb, kind, after, L):
                     return None
-                return word.rstrip(".!?")                                             # "Close above 2450", "SMA(close, 20)": the candle, not an order
+                return ticker                                   # "Close above 2450", "SMA(close, 20)": the candle, not an order
     if L.descriptive.match(rest):
         tail = L.descriptive.sub("", rest, count=1)
         tail = re.sub(r"^\s*(?:on|in|for|of)\s+", "", tail, flags=re.I)
@@ -635,27 +888,33 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
     for m in L.imperative.finditer(s):
         if exempt(m, howto_ok=True):
             continue
-        obj = _object(m.group("rest"), L, s, allow_level=True, verb=m.group("verb"))
+        obj = _object(m.group("rest"), L, s, allow_level=True, verb=m.group("verb"), at=m.start("rest"))
         if obj:
             add(m.group("verb"), obj)
     for pattern in (L.modal, L.gerund):
         for m in pattern.finditer(s):
             if exempt(m, howto_ok=True):
                 continue
-            obj = _object(m.group("rest"), L, s, allow_level=False, verb=m.group("verb"))
+            obj = _object(m.group("rest"), L, s, allow_level=False, verb=m.group("verb"), at=m.start("rest"))
             if obj:
                 add(m.group("verb"), obj)
     for m in _GERUND_SUBJECT.finditer(s):
         obj = _instrument_at_start(m.group("rest"), L, allow_level=False)
         if obj and not _negated(s, m.start("verb"), L):
             add(m.group("verb"), obj)
+    taken = 0
     for m in L.colon.finditer(s):
+        head = s[max(taken, m.start() - 60):m.start()]
+        head = head[max(head.rfind(c) for c in "\n.!?;:\u0964") + 1:]
+        if not head:
+            continue                                              # nothing names an object before the separator
+        taken = m.end()
         rated = re.match(r"^\s*(?:rating|call)\b", m.group("after"), re.I)
         if (L.descriptive.match(m.group("after")) and not rated) or _negated(s, m.start("verb"), L) or record_line(s, m.start("verb")):
             continue
-        if _price_field(m.group("verb"), s[m.end("verb"):], L, s):
+        if _price_field(m.group("verb"), s[m.end("verb"):], L, s, m.end("verb")):
             continue                                              # "TCS: close 4050, RSI 62" - a price field, not a call
-        obj = _instrument_at_end(m.group("obj"), L, gap=0)
+        obj = _instrument_at_end(head, L, gap=0)
         if obj and obj.lower() not in L.share_words:
             add(f"{obj}:", m.group("verb"))
     for m in L.deva.finditer(s):

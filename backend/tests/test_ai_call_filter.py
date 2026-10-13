@@ -120,6 +120,31 @@ SHOULD_BLOCK = [
     "INFY: close at 1500 and lock gains", "INFY: close at 1500 and take profits", "Close at 2450 against RELIANCE.",
     "Close at 2450 via RELIANCE.", "Close 1/2 of INFY.", "INFY: close 1 lakh qty", "TCS: open at 4000 with a small lot",
     "TCS: hold above 4000 up to 4500", "Close at 2450, RELIANCE.",
+    # review round 12 (HIGH-1): every tail is read for advice; a subordinate clause must report the past; "hold above / at N"
+    # is an order unless a predicate follows; dash asides, "per ...", gains and copula complements are closed forms
+    "INFY: close at 1500 after results", "TCS: hold above 4000 after results", "INFY: close at 1500 following the results",
+    "INFY: close at 1500 post results, re-buy lower", "INFY: close at 1500 as a precaution", "INFY: close at 1500 as a hedge",
+    "INFY: close at 1500 as it is weak", "TCS: hold above 4000 as long as it holds", "INFY: close at 1500 while you can",
+    "TCS: hold above 4000 despite the noise", "INFY: close at 1500 amid the selloff to protect capital",
+    "INFY: close at 1500 since it is weak", "TCS: hold above 4000 since it is strong", "TCS: hold above 4000 since the trend is up",
+    "INFY: close at 1500 - a prudent step", "INFY: close at 1500 - the safest choice", "INFY: close at 1500 – the obvious choice",
+    "TCS: hold above 4000 — a no-brainer", "INFY: close at 1500 as per your plan", "INFY: close at 1500 per the strategy",
+    "INFY: close at 1500 according to the plan", "INFY: close at 1500 in line with your risk plan",
+    "TCS: hold above 4000 for a 10% gain", "TCS: hold above 4000 for a rise to 4500", "INFY: close at 1500 for a quick gain",
+    "INFY: close at 1500 is a smart move", "INFY: close at 1500 is a wise move", "INFY: close at 1500 is a good move",
+    "INFY: close at 1500 is a sound move", "INFY: close at 1500 is a strong move", "INFY: close at 1500 is the safest",
+    "INFY: close at 1500 is the smartest", "INFY: close at 1500 is the cleanest", "INFY: close at 1500 from 1520 entry",
+    "TCS: hold above 4000 again", "TCS: hold above 4000 should signal a buy", "TCS: hold above 4000 with RSI above 60 as confirmation",
+    "INFY: close at 1500 by 2%", "TCS: hold above 4000", "TCS: hold at 4000", "TCS: hold 4000", "TCS: hold above 4000 for the week",
+    "INFY: close at 1500, as it is weak", "INFY: close at 1500, since it is weak", "INFY: close at 1500, a prudent step",
+    "INFY: close at 1500, the obvious choice", "INFY: close at 1500, if it breaks", "INFY: close at 1500, to be safe",
+    "INFY: close 1500, a no brainer", "INFY: close at 1500 is fine", "INFY: close 1500 is fine to do", "INFY: close 1500 as a safety measure",
+    "INFY: close 1500 after results come out", "INFY: close at 1500 after Monday", "INFY: close at 1500 amid the selloff",
+    "INFY: close at 1500 because it rallied", "TCS: close 4050; target 4500", "TCS: close 4050, analysts target 4500",
+    "Close at 1500 in INFY as a precaution.", "Hold above 2500 in RELIANCE after results.", "Close above 1500 in INFY, the obvious choice.",
+    "INFY: close below the 20-DMA and walk away", "INFY: close below the 20-DMA before results", "TCS: close above the 20-DMA for upside",
+    "TCS: close above 4000, a buying opportunity", "TCS: hold above 4000 kept the trend, stay long", "TCS: close 4050 is a good sign to add",
+    "INFY: close 1500 vs holding", "INFY: close at 1500 for a 2% gain",
 ]
 
 SHOULD_PASS = [
@@ -191,6 +216,24 @@ SHOULD_PASS = [
     "RELIANCE: close above the 200-day moving average.", "INFY: close near 1500 for the week.", "TCS: close above VWAP all session.",
     "NIFTY: close 25100 at the bell; trading stopped at 15:30.", "TCS: close 4050 for the week.", "INFY: close 1500 with RSI 62.",
     "INFY: close 1500 in a range of 1480-1520.", "TCS: close 4050; exit poll results due.",
+    # review round 12 (MED-1): an advice word before a level / candle noun describes it; "is fine" as the whole complement;
+    # a third party's target in another clause; "now up / down"
+    "INFY: close 1500 is fine.", "INFY: close 1500 is key support.", "TCS: close 4050 is a strong close.",
+    "TCS: close 4050 is a good sign for the trend.", "TCS: close 4050 is the best close in 5 sessions.",
+    "TCS: close 4050, now up 3 sessions straight.", "TCS: close 4050; brokerage target 4500 unchanged.",
+    "INFY: close 1500 versus 1480; analysts see a target of 1600.", "TCS: close 4050 now 2% above the 50-DMA.",
+    "TCS: close 4050 near the consensus target price.", "TCS: close 4050 marks a breakout from the range.",
+    # round 12: recaps the structural reading keeps (past evidence, a bare value with an event, hold with a predicate)
+    "TCS: close 4050 after results.", "TCS: close 4050 after results, up 2%.", "TCS: close 4050 after results on Thursday.",
+    "TCS: close 4050 as IT rallied.", "TCS: close 4050 amid sector weakness.", "TCS: close 4050 despite FII outflows.",
+    "TCS: close above 4000 since Monday.", "TCS: close above 4000 after 3 sessions below.", "TCS: close above 4000 again.",
+    "TCS: hold above 4000 since the gap.", "TCS: hold above 4000 is intact.", "TCS: hold above 4000 continues.",
+    "TCS: hold above 4000 for 5 sessions so far.", "TCS: hold of 4000 failed on Friday.", "INFY: close 1500 since Monday, a 2% gain.",
+    "TCS: close 4050 - a 3-week high.", "INFY: close 1500 per the exchange data.", "INFY: close 1500, in line with the sector.",
+    "TCS: close 4050 for a weekly gain of 2%.", "TCS: close 4050 for a 2% weekly gain.", "TCS: close 4050 is the highest since March.",
+    "TCS: close 4050 was the week's best.", "TCS: close 4050 is bullish.", "TCS: close 4050 was a strong finish.",
+    "TCS: close 4050; book value 1200.", "NIFTY: close 25100, smart money flows 2 cr.", "TCS: close 4050; then-CEO comments drew volume.",
+    "TCS: close 4050 vs 4000, worth 2,000 cr in turnover.",
 ]
 
 
@@ -220,10 +263,20 @@ def test_price_field_floods_stay_linear():
     import time
     from app.ai.call_detect import detect
     path = "app/ai/data/advice_terms.json"
-    for text in ("TCS: close 1, " * 3000, "Close above 2450 in INFY. " * 1500, "INFY: close at 1500 - x " * 1700):
+    for text in ("TCS: close 1, " * 3000, "Close above 2450 in INFY. " * 1500, "INFY: close at 1500 - x " * 1700,
+                 "TCS: close 1 after " * 2000, "- a " * 9500, "as per " * 5500, "is the a a " * 3500, "1.1.1." * 6400,
+                 "TCS: close 1; analysts target 1; " * 1200, "Close above 1 in INFY was the a " * 1200):
         started = time.monotonic()
         detect(text[:38000], path)
         assert time.monotonic() - started < 5, text[:30]            # review round 10: once per sentence, never per field
+
+
+def test_a_price_field_is_read_at_its_own_offset():
+    from app.ai.call_detect import _price_field, lists
+    L = lists("app/ai/data/advice_terms.json")
+    s = "WIPRO: close 4050 on volume as a precaution; TCS: close 4050 on volume"
+    assert not _price_field("close", " 4050 on volume", L, s, s.index(" 4050 on volume"))
+    assert _price_field("close", " 4050 on volume", L, s, s.rindex(" 4050 on volume"))   # review round 12, LOW: its own copy
 
 
 def test_buy_and_hold_as_a_benchmark_is_not_blocked():

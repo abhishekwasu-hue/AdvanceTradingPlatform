@@ -244,6 +244,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/backtest"): S_BACKTEST,
     ("POST", "/api/backtest/monte-carlo"): S_BACKTEST,
     ("POST", "/api/backtest/optimize"): S_BACKTEST,
+    ("POST", "/api/backtest/portfolio"): S_BACKTEST,
     ("GET", "/api/backtest/option-chain/coverage"): "member",
     ("GET", "/api/backtest/option-chain/snapshots"): "member",
     ("POST", "/api/backtest/option-chain/snapshots"): "trader",

@@ -4,6 +4,7 @@
 * `GET  /api/backtests/{id}`       - one run with its stored metrics and analytics
 * `POST /api/backtest/monte-carlo` - run the backtest, then resample its trades
 * `POST /api/backtest/walk-forward`- run the same strategy on consecutive windows
+* `POST /api/backtest/portfolio`  - N7 C3: one strategy over several symbols on one book (flag backtest_portfolio)
 
 `/api/backtest` itself (app/main.py) records a run whenever the caller is logged in.
 """
@@ -12,6 +13,7 @@ import json
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
+import pandas as pd
 from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -382,3 +384,102 @@ async def backtest_optimize(body: OptimizeBody, user: User = Depends(get_current
                                        holdout_start=body.holdout_start)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+class PortfolioBody(BaseModel):
+    """N7 C3: one strategy over several symbols on one shared book - bars posted per symbol, or the server's lake bars."""
+    strategy_id: str
+    base_timeframe: str
+    symbols: List[str] = Field(min_length=1, max_length=50)
+    candles: Optional[Dict[str, List[OHLCVBar]]] = Field(default=None, description="symbol -> its bars (every symbol listed)")
+    lake: Optional[Any] = Field(default=None, description="N7 C5 lake window (NSE day bars), instead of candles")
+    risk_config: Optional[RiskConfig] = None
+    strategy_params: Optional[Dict] = None
+    exit_rules: Optional[ExitRulesBody] = None
+    execution_models: Optional[Dict[str, Any]] = None
+    settings: Optional[Dict[str, Any]] = None
+
+
+PORTFOLIO_KIND = "portfolio_backtest"
+
+
+@router.post("/api/backtest/portfolio")
+async def backtest_portfolio(body: PortfolioBody, user: User = Depends(get_current_user),
+                             session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """N7 C3 (flag `backtest_portfolio`, off by default): the portfolio backtest (app/backtest/portfolio.py), recorded as a
+    trial in the organisation's research ledger and deflated for its recent portfolio runs; lake windows stop before the
+    sealed holdout. A simulation - it places nothing."""
+    from pydantic import ValidationError
+
+    from app.backtest import ledger
+    from app.backtest import portfolio as P
+    from app.backtest.repro import APP_VERSION, result_hash
+    from app.billing.service import meter
+    from app.platform.controls import require_flag
+    await require_flag(session, P.FLAG, user.tenant_id)
+    symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+    if not symbols:
+        raise HTTPException(status_code=422, detail="symbols: at least one")
+    try:
+        settings = P.PortfolioSettings(**(body.settings or {}))
+        window = ledger.LakeWindow(**body.lake) if isinstance(body.lake, dict) else None
+    except (ValidationError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if body.lake is not None and window is None:
+        raise HTTPException(status_code=422, detail="lake: {start, end[, exchange, adjusted]}")
+    strategy = await _strategy(BacktestBody(strategy_id=body.strategy_id, symbol=symbols[0], base_timeframe=body.base_timeframe,
+                                            candles=[], strategy_params=body.strategy_params), user, session)
+    frames: Dict[str, Any] = {}
+    if window is not None:
+        if body.candles:
+            raise HTTPException(status_code=422, detail="lake: send either candles or a lake window, not both")
+        data_source = ledger.lake_label(window)
+        for sym in symbols:
+            try:
+                frames[sym] = bars_to_dataframe(await ledger.lake_candles(session, sym, body.base_timeframe, window))
+            except ledger.HoldoutError as exc:
+                raise HTTPException(status_code=422, detail=f"lake: {exc}; the holdout is kept for one final check") from exc
+            except ledger.LedgerError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+    else:
+        data_source = "uploaded"                         # posted bars are the client's (N7 C5): never held to the holdout
+        posted = {k.strip().upper(): v for k, v in (body.candles or {}).items()}
+        missing = [s for s in symbols if not posted.get(s)]
+        if missing:
+            raise HTTPException(status_code=422, detail=f"candles: no bars for {', '.join(missing[:10])} (or send a lake window)")
+        frames = {s: bars_to_dataframe(posted[s]) for s in symbols}
+    try:
+        models = ModelSet(**(body.execution_models or {}))
+        models.built()
+    except (ModelError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
+    await _models_allowed(session, models, user.tenant_id)
+    risk = body.risk_config or RiskConfig()
+    rules = body.exit_rules.to_rules() if body.exit_rules else None
+    try:
+        result = await run_in_threadpool(P.run_portfolio_backtest, strategy, frames, body.base_timeframe, risk, rules, models, settings)
+    except P.PortfolioError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    result.reproducibility = {
+        "engine_version": P.ENGINE_VERSION, "code_version": APP_VERSION, "data_version": P.frames_hash(frames),
+        "config_hash": config_hash(strategy_id=body.strategy_id, params=getattr(strategy, "params", None), symbols=symbols,
+                                   base_timeframe=body.base_timeframe, risk=risk, exit_rules=body.exit_rules, settings=settings.model_dump(),
+                                   **({} if models.is_default else {"execution_models": models.describe()})),
+        "result_hash": result_hash(result), "bars": sum(len(f) for f in frames.values())}
+    await meter(session, user.tenant_id, "backtest", len(symbols), source="api", metadata={"strategy_id": body.strategy_id, "portfolio": len(symbols)})
+    first = min(f.index[0] for f in frames.values())
+    last = max(f.index[-1] for f in frames.values())
+    dsl = {"kind": PORTFOLIO_KIND, "strategy_id": body.strategy_id, "params": body.strategy_params or {}, "symbols": symbols,
+           "base_timeframe": body.base_timeframe, "exit_rules": body.exit_rules.model_dump(exclude_none=True) if body.exit_rules else None,
+           "execution_models": body.execution_models or None, "settings": settings.model_dump(), "data_source": data_source}
+    result.deflation = await ledger.record_returns(
+        session, tenant_id=user.tenant_id, user_id=user.id, kind=PORTFOLIO_KIND, dsl=dsl, symbol=f"PORTFOLIO:{len(symbols)}",
+        exchange=window.exchange if window is not None else "NSE", timeframe=body.base_timeframe,
+        data_from=pd.Timestamp(first).to_pydatetime(), data_to=pd.Timestamp(last).to_pydatetime(),
+        returns=P.daily_returns(result.daily, risk.capital), data_source=data_source,
+        metrics={"net_pnl": result.net_pnl, "total_trades": result.total_trades, "sharpe": result.sharpe, "max_drawdown_pct": result.max_drawdown_pct})
+    out = result.model_dump(mode="json")
+    out["data_source"] = data_source
+    out["disclaimer"] = ("A simulation of one strategy over these symbols on past data, deflated for this organisation's recent "
+                         "portfolio runs. Not a recommendation, and not a prediction.")
+    return out

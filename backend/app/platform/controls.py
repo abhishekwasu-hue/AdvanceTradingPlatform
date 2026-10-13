@@ -217,6 +217,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # deflated for the organisation's recent backtests; `lake` runs read the shared NSE bhavcopy day bars on the server,
     # behind the sealed holdout. OFF: /api/backtest as before (no trial, no deflation, a lake window refused).
     "backtest_ledger": "Backtest trial ledger: each backtest recorded as a trial and its Sharpe deflated for the search; server lake runs behind the sealed holdout",
+    # N7 C3: one strategy over several symbols on one shared book (shared risk limits, cash, marked daily equity),
+    # each run a ledger trial deflated for the organisation's recent portfolio runs; lake windows behind the holdout.
+    # OFF: POST /api/backtest/portfolio answers 503. A simulation only.
+    "backtest_portfolio": "Portfolio backtest: one strategy over several symbols on one shared book, recorded in the trial ledger and deflated (a simulation)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -225,7 +229,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
                                "chart_price_action", "chart_studies", "backtest_models",
-                               "backtest_ledger"})
+                               "backtest_ledger", "backtest_portfolio"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

@@ -113,38 +113,50 @@ def trial_dsl(body: Any, data_source: str) -> Dict[str, Any]:
             "execution_models": body.execution_models or None, "data_source": data_source}
 
 
-async def earlier_sharpes(session: AsyncSession, tenant_id: int, since: datetime) -> List[float]:
-    """The Sharpe of every `backtest` trial this organisation recorded since `since` (its own rows only - BT1b)."""
+async def earlier_sharpes(session: AsyncSession, tenant_id: int, since: datetime, kind: str = KIND) -> List[float]:
+    """The Sharpe of every trial of `kind` this organisation recorded since `since` (its own rows only - BT1b)."""
     import json
 
     from app.backtest.validation import sharpe
     from app.db.models import ResearchTrialRecord
     rows = await session.scalars(select(ResearchTrialRecord).where(
         ResearchTrialRecord.tenant_id == tenant_id, ResearchTrialRecord.status == "ok", ResearchTrialRecord.created_at >= since,
-        ResearchTrialRecord.dsl_json.like(f'%"kind": "{KIND}"%')))
+        ResearchTrialRecord.dsl_json.like(f'%"kind": "{kind}"%')))
     return [sharpe(json.loads(r.returns_json or "[]")) for r in rows]
 
 
 async def record(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], body: Any, result: Any, df: pd.DataFrame,
                  capital: float, data_source: str, exchange: str = "NSE") -> Dict[str, Any]:
     """Append the run to the ledger and deflate it against the organisation's recent backtests -> the `deflation` block."""
-    from app.ai.research import daily_returns, record_trial, trading_days
-    from app.backtest.validation import deflated_sharpe, sharpe
+    from app.ai.research import daily_returns, trading_days
     days = trading_days(pd.DatetimeIndex(df.index))
     returns = daily_returns(result.trades, capital, days) if days else []
+    first, last = pd.Timestamp(df.index[0]), pd.Timestamp(df.index[-1])
+    from app.backtest.validation import sharpe as _sharpe
+    return await record_returns(session, tenant_id=tenant_id, user_id=user_id, kind=KIND, dsl=trial_dsl(body, data_source),
+                                symbol=body.symbol, exchange=exchange, timeframe=body.base_timeframe, data_from=first.to_pydatetime(),
+                                data_to=last.to_pydatetime(), returns=returns, data_source=data_source,
+                                metrics={"net_pnl": result.net_pnl, "total_trades": result.total_trades, "win_rate": result.win_rate,
+                                         "max_drawdown": result.max_drawdown,
+                                         "sharpe": round(_sharpe(returns), 6) if len(returns) >= 2 else None,
+                                         "run_id": getattr(result, "run_id", None)})
+
+
+async def record_returns(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], kind: str, dsl: Dict[str, Any], symbol: str,
+                         exchange: str, timeframe: str, data_from: Any, data_to: Any, returns: List[float], data_source: str,
+                         metrics: Dict[str, Any]) -> Dict[str, Any]:
+    """One trial of `kind` with its daily returns, deflated against the organisation's trials of that kind in the last
+    LEDGER_DAYS days -> the `deflation` block (a run with fewer than two daily returns is not a trial)."""
+    from app.ai.research import record_trial
+    from app.backtest.validation import deflated_sharpe, sharpe
     since = datetime.now(timezone.utc) - timedelta(days=LEDGER_DAYS)
-    earlier = await earlier_sharpes(session, tenant_id, since)
+    earlier = await earlier_sharpes(session, tenant_id, since, kind)
     if len(returns) < 2:
         return {"recorded": False, "n_trials": len(earlier), "dsr": None,
                 "note": "Fewer than two sessions: not a trial (a Sharpe needs at least two daily returns)."}
-    first, last = pd.Timestamp(df.index[0]), pd.Timestamp(df.index[-1])
-    row = await record_trial(session, tenant_id=tenant_id, user_id=user_id, study_id=f"{KIND}:{uuid.uuid4()}",
-                             dsl=trial_dsl(body, data_source), symbol=body.symbol, exchange=exchange, timeframe=body.base_timeframe,
-                             status="ok", data_from=first.to_pydatetime(), data_to=last.to_pydatetime(),
-                             metrics={"net_pnl": result.net_pnl, "total_trades": result.total_trades, "win_rate": result.win_rate,
-                                      "max_drawdown": result.max_drawdown, "sharpe": round(sharpe(returns), 6),
-                                      "run_id": getattr(result, "run_id", None)},
-                             returns=returns)
+    row = await record_trial(session, tenant_id=tenant_id, user_id=user_id, study_id=f"{kind}:{uuid.uuid4()}", dsl=dsl, symbol=symbol,
+                             exchange=exchange, timeframe=timeframe, status="ok", data_from=data_from, data_to=data_to,
+                             metrics=metrics, returns=returns)
     await session.commit()
     out = deflated_sharpe(returns, earlier + [sharpe(returns)])
     return {**out, "recorded": True, "trial_id": row.id, "data_source": data_source,
@@ -152,4 +164,4 @@ async def record(session: AsyncSession, *, tenant_id: int, user_id: Optional[int
 
 
 __all__ = ["FLAG", "KIND", "LEDGER_DAYS", "LakeWindow", "LedgerError", "HoldoutError", "enabled", "lake_candles", "lake_label",
-           "check_holdout", "trial_dsl", "earlier_sharpes", "record"]
+           "check_holdout", "trial_dsl", "earlier_sharpes", "record", "record_returns"]

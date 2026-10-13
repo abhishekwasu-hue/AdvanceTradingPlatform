@@ -69,6 +69,10 @@ class Resolved:
                 "mirror_of": self.mirror_of}
 
 
+# The breakout template sources: BK1/BK2's and BK3's (registered separately so each keeps its own flag).
+BREAKOUT_SOURCES = frozenset({"breakouts", "breakouts_bk3"})
+
+
 def _breakout_text(screen_id: str, direction: Optional[str] = None) -> Tuple[Optional[str], str, Optional[str]]:
     from app.screener.breakouts.templates import BY_ID, screenql, template_params
     template = BY_ID.get(screen_id.split(".", 1)[1])
@@ -93,7 +97,7 @@ def resolve(screen: tx.Screen) -> Tuple[Optional[Resolved], Optional[str]]:
         if card is None:
             return None, "no such Legends card"
         text, base_tf, params = card.source, card.base_tf, card.defaults()
-    elif screen.source == "breakouts":
+    elif screen.source in BREAKOUT_SOURCES:
         text, base_tf, why = _breakout_text(screen.id)
         if text is None:
             return None, why
@@ -128,7 +132,7 @@ def mirror_of(resolved: Resolved) -> Dict[str, Any]:
     entry = {"id": resolved.ref + MIRROR_SUFFIX, "mirror_of": resolved.ref, "name": f"{resolved.name} (mirror, down side)",
              "method": resolved.method, "setup": resolved.setup, "direction": "short", "base_tf": resolved.base_tf,
              "source": resolved.source, "text": None, "reason": None, "how": "reflected"}
-    if resolved.source == "breakouts":
+    if resolved.source in BREAKOUT_SOURCES:
         text, _, why = _breakout_text(resolved.ref, "down")
         entry.update(text=text, reason=None if text else f"No mirror: {why}.", how="template_down_side")
         return entry

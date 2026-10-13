@@ -313,6 +313,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/custom-strategies/{strategy_id}"): "trader",
     ("GET", "/api/custom-strategies/{strategy_id}/versions"): "member",
     ("POST", "/api/custom-strategies/{strategy_id}/versions/{version_number}/rollback"): "trader",
+    ("GET", "/api/decision/expected-move"): "member",
+    ("GET", "/api/decision/exposure"): "member",
     ("GET", "/api/decision/positions"): "member",
     ("POST", "/api/decision/ruin"): S_COMPUTE,
     ("POST", "/api/decision/what-if"): S_OWN_WHATIF,

@@ -44,6 +44,8 @@ import type {
   PaperLadder,
   ExperienceStatus,
   RuinCalc,
+  ExposureView,
+  ExpectedMove,
   WhatIfResult,
   WhatIfSubject,
   PaperRiskStatus,
@@ -523,6 +525,10 @@ export const api = {
   decisionPositions: () => request<{ subjects: WhatIfSubject[] }>("/decision/positions"),
   decisionWhatIf: (body: { underlying: string; spot: number; iv?: number; days_forward: number; iv_shift: number; range_pct: number }) =>
     request<WhatIfResult>("/decision/what-if", { method: "POST", body: JSON.stringify(body) }),
+  /** N2-4: exposure / correlation of the caller's own positions, and the expected-move cone for the chart. */
+  decisionExposure: (days = 90) => request<ExposureView>(`/decision/exposure?days=${days}`),
+  decisionExpectedMove: (instrument: string, horizon: number, iv?: number) =>
+    request<ExpectedMove>(`/decision/expected-move?instrument=${encodeURIComponent(instrument)}&horizon=${horizon}${iv != null ? `&iv=${iv}` : ""}`),
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),

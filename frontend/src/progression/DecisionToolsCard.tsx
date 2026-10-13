@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { Card } from "../components/ui";
 import type { RuinCalc, WhatIfResult, WhatIfSubject } from "../types";
 import { chartGeometry, pnl, ruinBody, ruinPrefill, type RuinInputs } from "./decision";
+import ExposureSection from "./ExposureSection";
 import { pct, probability } from "./evidence";
 import { useProgressionT } from "./i18n";
 
@@ -62,6 +63,7 @@ export default function DecisionToolsCard() {
           {calc && <RuinResultView calc={calc} />}
         </section>
         <WhatIfSection subjects={subjects} />
+        <ExposureSection />
         {error && <p role="status" className="text-down">{error}</p>}
       </div>
     </Card>

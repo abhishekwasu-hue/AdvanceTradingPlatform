@@ -143,8 +143,8 @@ def check_ai_text(text: str, passages: str, top_passage: str) -> Optional[str]:
     known = set(knowledge.tokens(passages))
     if words and sum(1 for w in words if w in known) / len(words) < MIN_PASSAGE_WORDS:
         return "AI answer strays from the help passages"
-    if output_filter.blocked_terms(text):
-        return "AI answer used advice/guarantee words"
+    if output_filter.findings(text):
+        return "AI answer used advice/guarantee words or named a trade"
     if output_filter.is_specific_call(text):
         return "AI answer named a trade"
     return None

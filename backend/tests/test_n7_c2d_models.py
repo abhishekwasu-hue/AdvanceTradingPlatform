@@ -119,9 +119,14 @@ def test_an_in_the_money_stock_option_settles_by_delivery():
     leg = physical.options["structures"][0]["legs"][0]
     intrinsic, qty = float(leg["exit_price"]), float(leg["quantity"])
     assert intrinsic > 0
-    spot = float(leg["strike"]) + intrinsic
+    strike = float(leg["strike"])
+    spot = strike + intrinsic
     pb, day = PaperBroker(), date(2026, 10, 6)
-    delivery = pb.estimate_round_trip_costs(spot, spot, qty, "UNDERLYING", delivery=True, entry_date=day, exit_date=day)
+    # independently: the bought call takes delivery (a delivery BUY) at the strike and squares it (a delivery SELL) at the
+    # settlement price - each leg's own statutory charges and one brokerage; no exercise STT
+    from app.execution import india_costs
+    delivery = (india_costs.leg_cost(day, "buy", strike, qty, "EQUITY_DELIVERY", 20.0)["total"]
+                + india_costs.leg_cost(day, "sell", spot, qty, "EQUITY_DELIVERY", 20.0)["total"])
     exercise = pb.exercise_charges(intrinsic, qty, trade_date=day)
     assert t_phys.charges - t_cash.charges == pytest.approx(delivery - exercise, abs=0.05)
     assert t_cash.pnl - t_phys.pnl == pytest.approx(delivery - exercise, abs=0.05)                  # the option's P&L is still intrinsic
@@ -163,3 +168,23 @@ def test_the_api_gates_the_new_models_and_fingerprints_the_seed():
     single = client.post("/api/backtest", headers=headers, json={**body, "execution_models": {"settlement": "physical"}})
     assert single.status_code == 422 and "option backtests only" in single.text
     assert client.post("/api/backtest", headers=headers, json=body).json()["reproducibility"]["seed"] is None
+
+
+def test_index_options_are_known_by_their_underlying_and_a_missing_expiry_close_settles_in_cash():
+    """Review of C2d: an index named in full ("NIFTY MIDCAP SELECT") is an index; and physical settlement needs the expiry
+    day's own close - settled from the next session's open, the expiry is cash-settled and counted."""
+    from app.instruments.master import underlying_of
+    assert underlying_of("NIFTY MIDCAP SELECT") == "MIDCPNIFTY"
+    mid = _expiry_run("NIFTY MIDCAP SELECT", 12000.0, 12200.0, ModelSet(settlement="physical"))
+    assert mid.execution["settlement"] == "cash"
+    cfg = OptionBacktestConfig(option_strategy=OptionStrategy.SINGLE, option_position=OptionPosition.BUY, implied_volatility=0.14, intraday=False,
+                               max_lots=1, lot_size=250, strike_step=10.0, expiry_weekday=1, weekly_expiry=True)
+    day = make_series(list(np.linspace(2900, 2990, 300)), start="2026-10-06 09:15")      # ends 14:14: no bar after 15:15
+    after = make_series(list(np.linspace(3000, 3010, 30)), start="2026-10-07 09:15")
+    bars = pd.concat([day, after])
+    run = lambda m: run_option_backtest(_OnceLong(stop=2800.0, target1=30000.0), bars, "RELIANCE", "1min",   # noqa: E731
+                                        RiskConfig(capital=50_000_000, risk_per_trade_pct=1.0), cfg, models=m)
+    cash, phys = run(None), run(ModelSet(settlement="physical"))
+    assert phys.trades[0].exit_reason.startswith("Expiry settlement") and float(phys.trades[0].exit_price) > 0
+    assert [_key(t) for t in phys.trades] == [_key(t) for t in cash.trades]
+    assert phys.execution["physically_settled_legs"] == 0 and phys.execution["physical_without_expiry_close"] == 1

@@ -42,6 +42,7 @@ import type {
   ExitNowResponse,
   PaperAccount,
   PaperLadder,
+  ExperienceStatus,
   PaperRiskStatus,
   RiskByDefaultSettings,
   TicketPlan,
@@ -509,6 +510,10 @@ export const api = {
     request<PaperAccount>("/paper/account", { method: "PUT", body: JSON.stringify({ starting_capital: startingCapital }) }),
   paperPause: (reason?: string) => request<{ paused: boolean; paused_reason: string | null }>("/paper/pause", { method: "POST", body: JSON.stringify(reason ? { reason } : {}) }),
   paperResume: () => request<{ paused: boolean; paused_reason: string | null }>("/paper/resume", { method: "POST" }),
+  /** N2-2: the caller's experience level and gates, and a logged opt-out for today (404 while `experience_levels` is off). */
+  paperExperience: () => request<ExperienceStatus>("/paper/experience"),
+  paperExperienceOptOut: (gate: string, reason: string) =>
+    request<ExperienceStatus>("/paper/experience/opt-out", { method: "POST", body: JSON.stringify({ gate, reason }) }),
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),

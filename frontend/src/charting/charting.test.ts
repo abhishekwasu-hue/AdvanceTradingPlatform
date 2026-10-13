@@ -191,10 +191,10 @@ describe("LightweightEngine (B-lite)", () => {
     engine.appendBar({ time: 2, open: 1.5, high: 2, low: 1, close: 1.8 });
     expect(f.candles.bars.length).toBe(1);
     expect(f.candles.updates.length).toBe(1);
-    f.handlers.cross[0]({ time: 2, point: { x: 10, y: 100 } });
+    f.handlers.cross[0]({ time: 2, point: { x: 10, y: 100 }, sourceEvent: {} });
     f.handlers.click[0]({ time: undefined });
     f.handlers.range[0]({ from: 1, to: 2 });
-    expect(events).toEqual([{ type: "crosshair", time: 2, price: 400 }, { type: "click", time: null, price: null }, { type: "visibleRangeChanged", from: 1, to: 2 }]);
+    expect(events).toEqual([{ type: "crosshair", time: 2, price: 400, user: true }, { type: "click", time: null, price: null }, { type: "visibleRangeChanged", from: 1, to: 2 }]);
   });
 });
 

@@ -164,7 +164,8 @@ def test_template_checks():
         T.check_mode("SOMETHING")
     assert T.check_gate({"min_rr": 2, "wait_next_candle": True}) == {"min_rr": 2.0, "wait_next_candle": True}
     for bad in ({"min_rr": 0.5}, {"max_armed_bars": 99}, {"wait_next_candle": 1}, {"trend_retry_min": 5}, {"min_rr": "3"},
-                {"max_armed_bars": 2.5}):                                       # review of X1b: an integer is never truncated
+                {"max_armed_bars": 2.5}, {"max_armed_bars": float("inf")}, {"min_rr": float("nan")},
+                {"mr_n": float("-inf")}):                                     # review of X1b: never truncated, never int(inf)
         with pytest.raises(T.TemplateError):
             T.check_gate(bad)
     assert T.FLAG in __import__("app.platform.controls", fromlist=["x"]).DEFAULT_OFF_FLAGS
@@ -627,6 +628,9 @@ def test_then_routes(monkeypatch):
     assert live.status_code == 422 and "Auto LIVE" in live.text
     assert client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "gate": {"min_rr": 0.1}}).status_code == 422
     assert client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "confirm_tf": "1h"}).status_code == 422
+    for raw in ('{"mode": "NOTIFY", "gate": {"max_armed_bars": Infinity}}', '{"mode": "NOTIFY", "gate": {"min_rr": NaN}}'):
+        sent = client.put(url, headers={**t["headers"], "content-type": "application/json"}, content=raw)
+        assert sent.status_code == 422, sent.text                       # JSON Infinity / NaN: a 422, not a 500
     ok = client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "confirm_tf": "15m", "gate": {"min_rr": 2.5}})
     assert ok.status_code == 200 and ok.json()["gate"] == {"min_rr": 2.5} and ok.json()["confirm_tf"] == "15m"
     member = _member(_email("member"), t["tenant_id"], "USER")

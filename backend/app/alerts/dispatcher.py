@@ -21,6 +21,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+from urllib.parse import parse_qsl, quote
 import html
 import logging
 import os
@@ -28,6 +29,7 @@ import re
 import secrets
 import smtplib
 import socket
+import ssl
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -170,7 +172,9 @@ def _smtp_send(config: EmailConfig, message: EmailMessage) -> None:
     with smtplib.SMTP(config.smtp_host, config.smtp_port, timeout=SEND_TIMEOUT_SECONDS) as smtp:
         smtp.ehlo()
         if config.use_tls:
-            smtp.starttls()
+            # Verify the server certificate and host name: without a context starttls() accepts any certificate,
+            # so an on-path attacker could read the SMTP password (gateway review LOW-2).
+            smtp.starttls(context=ssl.create_default_context())
             smtp.ehlo()
         if config.username:
             smtp.login(config.username, config.password or "")
@@ -186,6 +190,8 @@ async def send_email(config: EmailConfig, subject: str, plain_text: str, to: Opt
     for name, value in (headers or {}).items():
         message[name] = value
     message.set_content(plain_text)
+    host = config.smtp_host
+    await check_url_resolved(f"https://[{host}]" if ":" in host else f"https://{host}")   # P0.2 / S5: no private SMTP host
     await asyncio.to_thread(_smtp_send, config, message)
 
 
@@ -279,8 +285,12 @@ def render_sms(config: SmsConfig, notification: NotificationRecord, to_number: s
     text = plain[: config.max_length]
     values = {"to": to_number, "text": text, "title": notification.title[:120], "severity": notification.severity,
               "event_type": notification.event_type}
-    if "json" in config.content_type:
+    if "json" in (config.content_type or "").lower():
         values = {k: json.dumps(v)[1:-1] for k, v in values.items()}  # escape for insertion inside JSON strings
+    else:
+        # Form bodies, query strings and anything else: every substituted value is percent-encoded, so an alert title
+        # such as "x&To=+1555...&Body=spam" stays ONE value and cannot add or override a parameter.
+        values = {k: quote(str(v), safe="") for k, v in values.items()}
     return _fill_template(config.body_template, values), None
 
 
@@ -299,12 +309,14 @@ async def send_sms(config: SmsConfig, notification: NotificationRecord, client: 
                 headers["Idempotency-Key"] = hashlib.sha256(f"{idempotency_key}|{number}".encode()).hexdigest()  # one per recipient
             try:
                 if config.method == "GET":
-                    response = await client.get(str(config.url), params=dict(p.split("=", 1) for p in body.split("&") if "=" in p), headers=headers)
+                    # decoded once here (httpx encodes again); duplicates kept as sent, so nothing is silently overridden
+                    response = await client.get(str(config.url), params=httpx.QueryParams(tuple(parse_qsl(body, keep_blank_values=True))),
+                                                headers=headers)
                 else:
                     response = await client.post(str(config.url), content=body.encode(), headers=headers)
                 if response.status_code >= 300:
                     errors.append(f"{number}: HTTP {response.status_code}")       # the gateway's body is never echoed (P0.2 / S5)
-            except httpx.HTTPError as exc:
+            except Exception as exc:  # noqa: BLE001 - one recipient's failure never stops the others
                 errors.append(f"{number}: {type(exc).__name__}")
     finally:
         if owns_client:

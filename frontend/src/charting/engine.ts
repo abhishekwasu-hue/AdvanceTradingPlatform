@@ -26,10 +26,14 @@ export interface LayerLabel { time: number; price: number; text: string; color?:
 /** A platform overlay (price-action levels, market-zone bands, option walls, trade markers...), computed server-side with an as-of time. */
 export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[]; bands?: LayerBand[]; segments?: LayerSegment[]; labels?: LayerLabel[] }
 
+/** N4 CH6: a study line from the server (ScreenQL via the screener runtime): on the price pane or in its own pane. */
+export interface StudyLine { data: { time: number; value: number }[]; color?: string; pane: "price" | "own"; title?: string }
+
 export interface EngineLayout { engine: string; symbol: string | null; timeframe: string | null; studies: StudySpec[]; drawings: Record<string, DrawingV1> }
 
 export type EngineEvent =
-  | { type: "crosshair"; time: number | null; price: number | null }
+  /** `user`: false when the move did not come from the user's pointer (CH5: such moves are never passed on by a link). */
+  | { type: "crosshair"; time: number | null; price: number | null; user?: boolean }
   | { type: "click"; time: number | null; price: number | null }
   | { type: "drawingChanged"; id: string; drawing: DrawingV1 }
   | { type: "visibleRangeChanged"; from: number; to: number };
@@ -48,8 +52,13 @@ export interface ChartEngine {
   updateDrawing(id: string, drawing: DrawingV1): void;
   removeDrawing(id: string): void;
   setLayer(id: string, data: LayerData | null): void;
+  /** N4 CH6: draw (or with null remove) one study line; an engine without study series ignores it (optional). */
+  setStudy?(id: string, line: StudyLine | null): void;
   serialize(): EngineLayout;
   deserialize(layout: EngineLayout): void;
+  /** CH5: shows the crosshair at this time (its own bar at or before it), or hides it with null - for the workspace's
+   * crosshair link. Optional: an engine without it is simply not followed. */
+  setCrosshair?(time: number | null): void;
   on(listener: (event: EngineEvent) => void): () => void;
   dispose(): void;
 }

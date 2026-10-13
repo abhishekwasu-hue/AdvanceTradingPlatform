@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -65,14 +65,17 @@ async def _template(session: AsyncSession, rule: AlertRuleRecord) -> Any:
                                                                      ScanThenTemplateRecord.tenant_id == rule.tenant_id))
 
 
-async def _auto_block(session: AsyncSession, rule: AlertRuleRecord, row: Any) -> Dict[str, Any]:
-    """N1 X2: the template's Auto PAPER state - the three switches and today's count against the limit."""
+async def _auto_block(session: AsyncSession, rule: AlertRuleRecord, row: Any, known: Any = None,
+                      counts: Optional[Dict[int, int]] = None) -> Dict[str, Any]:
+    """N1 X2: the template's Auto PAPER state - the three switches and today's count against the limit. `known` /
+    `counts`: the organisation's switches and today's counts by rule, when the caller read them once for many rules."""
     from app.core import config as app_config
     from app.screener.then import auto_paper
     if row is None:
         return {"available": False, "armed": False, "why": "no template", "today": 0, "max_per_day": int(app_config.SCAN_AUTO_PAPER_MAX_PER_DAY)}
-    av = await auto_paper.availability(session, rule.tenant_id, row)
-    today = await auto_paper.entries_today(session, rule.tenant_id, rule.id, datetime.now(timezone.utc))
+    av = await auto_paper.availability(session, rule.tenant_id, row, known=known)
+    today = (counts.get(rule.id, 0) if counts is not None
+             else await auto_paper.entries_today(session, rule.tenant_id, rule.id, datetime.now(timezone.utc)))
     return {"available": av.available, "armed": av.armed, "why": av.why, "today": today,
             "max_per_day": int(app_config.SCAN_AUTO_PAPER_MAX_PER_DAY), "armed_at": (T.arm_of(row) or {}).get("at")}
 
@@ -206,8 +209,12 @@ async def all_then(user: User = Depends(get_current_user), session: AsyncSession
     rules = list(await session.scalars(query))
     rows = {r.rule_id: r for r in await session.scalars(select(ScanThenTemplateRecord).where(
         ScanThenTemplateRecord.tenant_id == user.tenant_id, ScanThenTemplateRecord.rule_id.in_([r.id for r in rules] or [0])))}
+    from app.screener.then import auto_paper
+    known = await auto_paper.switches(session, user.tenant_id) if rows else None     # re-check of X2: read once, not per rule
+    counts = await auto_paper.entries_today_by_rule(session, user.tenant_id, datetime.now(timezone.utc)) if rows else {}
     out: Dict[str, Any] = {}
     for rule in rules:
         row = rows.get(rule.id)
-        out[str(rule.id)] = _view(row, rule, user, include_status=_sees_status(user, row), auto_paper=await _auto_block(session, rule, row))
+        out[str(rule.id)] = _view(row, rule, user, include_status=_sees_status(user, row),
+                                  auto_paper=await _auto_block(session, rule, row, known, counts))
     return {"templates": out}

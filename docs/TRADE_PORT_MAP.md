@@ -171,7 +171,7 @@ ATP's `price_action` follows their behaviour specs, not their code. All rows: AT
 
 | Trade module | Purpose | Note |
 |---|---|---|
-| `decision3/` (rest) | v2.2 method-first engine (Abhi's six steps): daily legs / swings, levels, liquidity, trendline, advisory, vision audit, Telegram view | owner's G list. The level gate's Daily trend (`daily.fold` with `daily_legs`, `legs2`, `patterns2`) is ported at a pinned revision in N1 L2 unless the owner says otherwise (OPEN_QUESTIONS N1-2); `method.py`'s gate functions are their own row in group 2 |
+| `decision3/` (rest) | v2.2 method-first engine (Abhi's six steps): daily legs / swings, levels, liquidity, trendline, advisory, vision audit, Telegram view | owner's G list. The level gate's Daily trend (`daily.fold` with `daily_legs`, `legs2`, `patterns2`) is ported at a pinned revision in N1 L2 unless the owner says otherwise (OPEN_QUESTIONS N1-2); `method.py`'s gate functions are their own row in group 2. N4 CH3b ported `liquidity.py` pools, sweeps and marks (not the trapped zones) to `backend/app/price_action/liquidity.py` for the chart, with parity |
 | `swings2/` | Layer 1 v2.1: nested directional-change swing engine + market structure (BOS / CHoCH / sweep) | owner's G list |
 | `legs2/` | Layer 2: role and character of each leg -> labels I and K | owner's G list |
 | `patterns2/` | Layer 3: correction pattern inside I and K (hypotheses, rules, scores) | owner's G list |
@@ -181,7 +181,7 @@ ATP's `price_action` follows their behaviour specs, not their code. All rows: AT
 | `elliott/` (rest) | Elliott pullback credit spread bot: counts, patterns, setups, trigger, confirm, invalidation, exits, strikes, pricing, backtest, golden, bhavcopy, contract master, own_tf | owner's G list; the ported files are the `elliott/` row in group 4 |
 | `mtf/` | Layers 1-7 on any timeframe's own candles (shadow) | owner's G list |
 | `simple_core/` | Simple core: entry area + commitment candle -> entry signal; execution in settings | owner's G list |
-| `opportunity_engine/` | MTF price-action opportunity engine: structure state machine, zones, level quality, journal, scoring, backtest, visual audit | owner's G list |
+| `opportunity_engine/` | MTF price-action opportunity engine: structure state machine, zones, level quality, journal, scoring, backtest, visual audit | owner's G list. N4 CH3b ported `structure.py` (the structure state machine: BOS / CHoCH / sweeps) to `backend/app/price_action/structure_tracker.py` for the chart, with parity (`tests/test_ch3b_trade_parity.py`) |
 | `vision2/` | Vision veto | owner's G list |
 | `vision_led/` | Vision-led entry: candidates, playbook, prompt, situation map, blind test | owner's G list |
 | `decision2/` | Earlier common analysis engine (superseded by `decision3`) | not in the owner's list; same family, treated as G (assumption) |
@@ -222,11 +222,11 @@ These hold logic that is in none of the spec's groups. The owner decides whether
 | `strategies/` | Orchestrator strategies: OI / PCR breakout, ICT liquidity sweep + FVG, BB squeeze, VWAP trend, S/R bounce, MTF gap fill, opportunity engine adapter | `backend/app/strategy_engine/combo_strategies.py` (ATP's own VWAP + Supertrend and Bollinger strategies, not ports) | missing | none |
 | `entry_engine.py` | "A1 signal engine" extracted: direction -> structure -> break / pullback / retest | none | missing | none |
 | `price_action/leg_eval.py` | Leg evaluation (impulse vs correction measures) | none | missing (the earlier AY/AZ/BA price-action port was stopped: the level engine showed no edge over random in Trade's validation, see `docs/WORK_LOG.md`) | none |
-| `price_action/legs.py` | Leg detection | none | missing (as above) | none (Trade has `tests/test_price_action_legs.py`) |
+| `price_action/legs.py` | Leg detection and classes (impulse vs pullback, CHoCH in a pullback) | `backend/app/price_action/legs.py` (Trade@1e6c9ac; chart reference only - the N4 CH3b leg classes, no signal, no gate) | ported (CH3b; the Elliott Tier-A check and Trade's plotting are not) | `backend/tests/test_ch3b_trade_parity.py` (golden from Trade's own output) |
 | `price_action/level_validation.py` | Level validation (Osler method) | none | missing (as above) | none (Trade has `tests/test_level_validation.py`) |
 | `price_action/levels_v2.py` | Levels v2 | `backend/app/support_resistance/levels.py` (ATP's own levels) | partial (unverified) | none (Trade has `tests/test_levels_v2.py`) |
 | `price_action/major_levels.py` | Major levels | `backend/app/support_resistance/engine.py` (ATP's own) | partial (unverified); may overlap Z7a | none (Trade has `tests/test_major_levels.py`) |
-| `price_action/trendlines.py` | Trendline rules | none | missing | none (Trade has `tests/test_price_action_trendlines.py`) |
+| `price_action/trendlines.py` | Trendline rules (falling resistance, rising support) | `backend/app/price_action/trendlines.py` with `opportunity_engine/detectors/patterns.find_trendline` and `measures.ref_range` (Trade@1e6c9ac; chart only, CH3b); the channel line is ATP's | ported (CH3b; the touch audit and the 30m -> 60m resampler are not) | `backend/tests/test_ch3b_trade_parity.py` |
 | `stocko_api.py` | Stocko (SAS Online) REST wrapper (OAuth2, orders, positions) | none (ATP has no Stocko adapter) | missing: a broker onboarding decision, not a port | none (Trade has `tests/test_stocko_api.py`) |
 
 ## 6. Not needed

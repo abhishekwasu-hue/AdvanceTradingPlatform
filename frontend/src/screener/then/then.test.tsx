@@ -1,10 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
+import { ApiError } from "../../api/errors";
 import { thenT } from "./i18n";
 import { SCAN_THEN_EN } from "./locales/en";
 import {
-  bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isThenTemplate, levelsVars, needsTakeOver, outcomeOf, placesAutoPaper,
-  THEN_MODES, visibleModes, withOverride,
+  bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isOwnerConflict, isThenTemplate, levelsVars, needsTakeOver, outcomeOf,
+  placesAutoPaper, THEN_MODES, visibleModes, withOverride,
   type ThenIntent, type ThenTemplate,
 } from "./model";
 import { AutoPaperBox, ThenChip, ThenDrawerView } from "./ThenPanel";
@@ -133,6 +134,19 @@ describe("the Then drawer and chip (server sample)", () => {
     expect(needsTakeOver(theirs)).toBe(true);
     expect(needsTakeOver(template)).toBe(false);
     expect(needsTakeOver({ ...theirs, configured: false })).toBe(false);
+  });
+
+  it("asks before removing another member's Then, and reloads on a 409 save (re-check of X1b)", () => {
+    const theirs = { ...template, set_by_you: false };
+    const asked = text(renderToStaticMarkup(<ThenDrawerView template={theirs} intents={intents} body={bodyOf(theirs)} onBody={() => {}}
+      errors={[]} notice="" busy={false} onSave={() => {}} onRemove={() => {}} confirmingRemove />));
+    expect(asked).toContain("Another member set this Then. Removing it stops the setups it sends them for this rule.");
+    expect(asked).toContain("Remove their Then");
+    expect(asked).not.toContain("Remove Then");
+    expect(isOwnerConflict(new ApiError(409, "Another member set this Then."), false)).toBe(true);
+    expect(isOwnerConflict(new ApiError(409, "x"), true)).toBe(false);
+    expect(isOwnerConflict(new ApiError(422, "x"), false)).toBe(false);
+    expect(isOwnerConflict(new Error("x"), false)).toBe(false);
   });
 
   it("offers no Save or Remove to someone the server would refuse", () => {

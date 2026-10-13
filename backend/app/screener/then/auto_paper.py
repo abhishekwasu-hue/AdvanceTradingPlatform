@@ -17,7 +17,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import datetime, time as dtime, timedelta, timezone
-from typing import Optional, Tuple
+from typing import Dict, Optional, Tuple
 
 from sqlalchemy import String, and_, cast, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -39,10 +39,24 @@ WHY_ARM_STALE = "The arming predates the platform switch's last change: arm it a
 WHY_ARM_EXPIRED = "The arming expired after {days} days: arm it again"
 
 
-async def arm_state(session: AsyncSession, row: Optional[ScanThenTemplateRecord], now: Optional[datetime] = None) -> Tuple[bool, str]:
-    """(armed, why not) - review of X2 (L1): a valid arming (`templates.arm_of`) that was made after the operator last
-    changed the `scan_auto_paper` switch (audit `feature_flag_set`) and is younger than SCAN_AUTO_PAPER_ARM_DAYS."""
+async def flag_changed_at(session: AsyncSession) -> Optional[datetime]:
+    """When the operator last changed the `scan_auto_paper` switch (audit `feature_flag_set`; platform rows: tenant NULL)."""
     from app.db.models import AuditLogRecord
+    changed = await session.scalar(select(func.max(AuditLogRecord.created_at)).where(
+        AuditLogRecord.tenant_id.is_(None), AuditLogRecord.event == "feature_flag_set", AuditLogRecord.detail.like(f"{FLAG}:%")))
+    if changed is None:
+        return None
+    return changed if changed.tzinfo else changed.replace(tzinfo=timezone.utc)
+
+
+_UNREAD: object = object()
+
+
+async def arm_state(session: AsyncSession, row: Optional[ScanThenTemplateRecord], now: Optional[datetime] = None,
+                    changed: object = _UNREAD) -> Tuple[bool, str]:
+    """(armed, why not) - review of X2 (L1): a valid arming (`templates.arm_of`) that was made after the operator last
+    changed the `scan_auto_paper` switch (audit `feature_flag_set`) and is younger than SCAN_AUTO_PAPER_ARM_DAYS.
+    `changed`: that time when the caller already read it (`flag_changed_at`), else it is read here."""
     arm = T.arm_of(row)
     if arm is None:
         return False, WHY_NOT_ARMED
@@ -55,12 +69,9 @@ async def arm_state(session: AsyncSession, row: Optional[ScanThenTemplateRecord]
     days = int(app_config.SCAN_AUTO_PAPER_ARM_DAYS)
     if now - at > timedelta(days=days):
         return False, WHY_ARM_EXPIRED.format(days=days)
-    changed = await session.scalar(select(func.max(AuditLogRecord.created_at)).where(       # platform rows: tenant NULL (index)
-        AuditLogRecord.tenant_id.is_(None), AuditLogRecord.event == "feature_flag_set", AuditLogRecord.detail.like(f"{FLAG}:%")))
-    if changed is not None:
-        changed = changed if changed.tzinfo else changed.replace(tzinfo=timezone.utc)
-        if at <= changed:
-            return False, WHY_ARM_STALE
+    last = await flag_changed_at(session) if changed is _UNREAD else changed
+    if isinstance(last, datetime) and at <= last:
+        return False, WHY_ARM_STALE
     return True, ""
 
 
@@ -87,15 +98,30 @@ async def template_for(session: AsyncSession, tenant_id: int, rule_id: Optional[
                                                                      ScanThenTemplateRecord.rule_id == rule_id))
 
 
-async def availability(session: AsyncSession, tenant_id: int, row: Optional[ScanThenTemplateRecord],
-                       now: Optional[datetime] = None) -> Availability:
-    """The three switches for one template (the dispatcher and the template's API read the same answer)."""
+@dataclass(frozen=True)
+class Switches:
+    """The organisation-wide part of `availability`, read once for many templates (re-check of X2: GET /alerts/then
+    read it per rule)."""
+    flag_on: bool
+    approval_required: bool
+    changed_at: Optional[datetime]
+
+
+async def switches(session: AsyncSession, tenant_id: int) -> Switches:
     from app.execution import approval
     from app.platform.controls import flag_enabled
-    armed, why_not = await arm_state(session, row, now)
-    if not await flag_enabled(session, FLAG, tenant_id):
+    return Switches(await flag_enabled(session, FLAG, tenant_id), await approval.required(session, tenant_id), await flag_changed_at(session))
+
+
+async def availability(session: AsyncSession, tenant_id: int, row: Optional[ScanThenTemplateRecord],
+                       now: Optional[datetime] = None, known: Optional[Switches] = None) -> Availability:
+    """The three switches for one template (the dispatcher and the template's API read the same answer). `known`: the
+    organisation's switches when the caller already read them (`switches`)."""
+    sw = known or await switches(session, tenant_id)
+    armed, why_not = await arm_state(session, row, now, sw.changed_at)
+    if not sw.flag_on:
         return Availability(False, armed, WHY_FLAG_OFF)
-    if await approval.required(session, tenant_id):
+    if sw.approval_required:
         return Availability(False, armed, WHY_APPROVAL)
     if row is None or row.mode != "AUTO_PAPER":
         return Availability(True, False, WHY_NOT_AUTO)
@@ -139,6 +165,19 @@ async def entries_today(session: AsyncSession, tenant_id: int, rule_id: int, now
     from app.db.models import OrderRecord
     return int(await session.scalar(_placed_orders(tenant_id).where(
         ExecutionIntentRecord.source_ref.like(f"rule:{rule_id}:symbol:%"), OrderRecord.created_at >= day_start(now))) or 0)
+
+
+async def entries_today_by_rule(session: AsyncSession, tenant_id: int, now: datetime) -> Dict[int, int]:
+    """`entries_today` for every rule of the organisation in one read (rule id -> count; rules with none are absent)."""
+    from app.db.models import OrderRecord
+    refs = await session.scalars(_placed_orders(tenant_id).with_only_columns(ExecutionIntentRecord.source_ref).where(
+        ExecutionIntentRecord.source_ref.like("rule:%:symbol:%"), OrderRecord.created_at >= day_start(now)))
+    out: Dict[int, int] = {}
+    for ref in refs:
+        rule_id, _symbol = rule_and_symbol(ref)
+        if rule_id is not None:
+            out[rule_id] = out.get(rule_id, 0) + 1
+    return out
 
 
 WHY_CLOSED = "The {venue} session is not open now - a proposal instead"

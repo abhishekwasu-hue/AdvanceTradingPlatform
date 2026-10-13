@@ -13,10 +13,10 @@ from app.market_data.service import MarketDataService
 async def _exchange_of(session: AsyncSession, tenant_id: int, symbol: str) -> str:
     """The exchange the organisation's open position in `symbol` trades on (a contract is NFO / BFO / MCX), else NSE."""
     from app.db.models import TradeRecord
-    from app.trading.position_monitor import exchange_for_trade
+    from app.trading.position_monitor import venue_for
     trade = await session.scalar(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.symbol == symbol,
                                                            TradeRecord.exit_time.is_(None)).limit(1))
-    return exchange_for_trade(trade) if trade is not None else "NSE"
+    return await venue_for(session, trade) if trade is not None else "NSE"
 
 
 async def price_lookup_for_tenant(session: AsyncSession, tenant_id: int, user: Any = None) -> Optional[Callable[[str], Awaitable[float]]]:

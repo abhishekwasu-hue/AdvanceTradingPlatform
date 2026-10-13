@@ -11,8 +11,8 @@ import { ApiError } from "../../api/errors";
 import { Badge, Button, Input, Select } from "../../components/primitives";
 import { useThenT, type ThenT } from "./i18n";
 import {
-  ARM_CONFIRM, bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, levelsVars, needsTakeOver, outcomeOf, placesAutoPaper,
-  visibleModes, withOverride,
+  ARM_CONFIRM, bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isOwnerConflict, levelsVars, needsTakeOver, outcomeOf,
+  placesAutoPaper, visibleModes, withOverride,
   type ConfirmTf, type ThenBody, type ThenIntent, type ThenMode, type ThenTemplate,
 } from "./model";
 
@@ -129,11 +129,13 @@ export interface DrawerViewProps {
   onArm?: (confirm: string) => void; onDisarm?: () => void;
   /** Review of X1b: the take-over confirmation is showing (Save was pressed on another member's template). */
   confirming?: boolean; onConfirmTakeOver?: () => void; onCancelTakeOver?: () => void;
+  /** Re-check of X1b: the remove confirmation is showing (Remove was pressed on another member's template). */
+  confirmingRemove?: boolean; onConfirmRemove?: () => void; onCancelRemove?: () => void;
 }
 
 /** The drawer's content (presentational: the container below loads and saves). */
 export function ThenDrawerView({ template, intents, body, onBody, errors, notice, busy, onSave, onRemove, onArm, onDisarm, confirming = false,
-  onConfirmTakeOver, onCancelTakeOver }: DrawerViewProps) {
+  onConfirmTakeOver, onCancelTakeOver, confirmingRemove = false, onConfirmRemove, onCancelRemove }: DrawerViewProps) {
   const t = useThenT();
   const defaults = template?.gate_defaults ?? {};
   const mayChange = template?.may_change !== false;
@@ -179,6 +181,14 @@ export function ThenDrawerView({ template, intents, body, onBody, errors, notice
             <Button size="sm" variant="ghost" onClick={onCancelTakeOver} disabled={busy}>{t("drawer.cancel")}</Button>
           </div>
         </div>
+      ) : confirmingRemove ? (
+        <div role="alert" className="space-y-2 rounded border border-warn px-2 py-1">
+          <p className="text-xs text-fg">{t("drawer.removeWarn")}</p>
+          <div className="flex gap-2">
+            <Button size="sm" variant="danger" onClick={onConfirmRemove} disabled={busy}>{t("drawer.removeConfirm")}</Button>
+            <Button size="sm" variant="ghost" onClick={onCancelRemove} disabled={busy}>{t("drawer.cancel")}</Button>
+          </div>
+        </div>
       ) : (
         <div className="flex gap-2">
           <Button size="sm" onClick={onSave} disabled={busy}>{busy ? t("drawer.saving") : t("drawer.save")}</Button>
@@ -210,6 +220,7 @@ export function RuleThen({ ruleId, initial }: { ruleId: number; initial?: ThenTe
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [confirmingRemove, setConfirmingRemove] = useState(false);
   const load = useCallback(() => {
     if (initial !== undefined) return;
     api.ruleThen(ruleId).then((tpl) => { setTemplate(tpl); setBody(bodyOf(tpl)); setErrors([]); }).catch((e) => setErrors(errorLines(e)));
@@ -235,9 +246,21 @@ export function RuleThen({ ruleId, initial }: { ruleId: number; initial?: ThenTe
       setConfirming(false);
       setNotice(t("drawer.saved"));
       if (open && tpl.configured) loadIntents();
-    } catch (e) { setErrors(errorLines(e)); } finally { setBusy(false); }
+    } catch (e) {
+      if (isOwnerConflict(e, takeOver)) {
+        // re-check of X1b: another member saved it since this drawer loaded - reload it and ask before taking it over
+        try {
+          setTemplate(await api.ruleThen(ruleId));
+          setErrors([]);
+          setConfirming(true);
+        } catch (e2) { setErrors(errorLines(e2)); }
+      } else setErrors(errorLines(e));
+    } finally { setBusy(false); }
   }
-  async function remove() {
+  async function remove(confirmed = false) {
+    setNotice("");
+    if (!confirmed && needsTakeOver(template)) { setConfirmingRemove(true); return; }   // another member's: confirm first
+    setConfirmingRemove(false);
     setBusy(true);
     try {
       const tpl = await api.deleteRuleThen(ruleId);
@@ -271,8 +294,9 @@ export function RuleThen({ ruleId, initial }: { ruleId: number; initial?: ThenTe
         <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? t("hide") : t("open")}</Button>
       </div>
       {open && <ThenDrawerView template={template} intents={intents} body={body} onBody={setBody} errors={errors} notice={notice}
-        busy={busy} onSave={() => save(false)} onRemove={remove} onArm={arm} onDisarm={disarm} confirming={confirming}
-        onConfirmTakeOver={() => save(true)} onCancelTakeOver={() => setConfirming(false)} />}
+        busy={busy} onSave={() => save(false)} onRemove={() => remove(false)} onArm={arm} onDisarm={disarm} confirming={confirming}
+        onConfirmTakeOver={() => save(true)} onCancelTakeOver={() => setConfirming(false)}
+        confirmingRemove={confirmingRemove} onConfirmRemove={() => remove(true)} onCancelRemove={() => setConfirmingRemove(false)} />}
     </div>
   );
 }

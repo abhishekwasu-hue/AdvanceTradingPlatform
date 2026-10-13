@@ -251,6 +251,13 @@ def test_the_daily_limit_and_the_cool_down_make_a_proposal(monkeypatch):
     _run(seed(1, "OTHER", 60, status="EXPIRED"))                           # an expired intent's order still counts
     _run(seed(1, "OTHER", 50, status="FAILED"))                            # 3 today from this template: the limit
     assert "limit reached: 3 entries" in _run(reason())
+
+
+    async def counts():
+        async with _session_factory() as session:
+            return (await AP.entries_today_by_rule(session, t["tenant_id"], NOW),
+                    await AP.entries_today(session, t["tenant_id"], rule_id, NOW))
+    assert _run(counts()) == ({rule_id: 3}, 3)                             # re-check of X2: the batch read counts the same
     row = _go(t)                                                           # the dispatcher makes it a proposal
     assert row.route == policy.ROUTE_PROPOSE and "limit reached" in row.reason
     assert len([x for x in _trades(t) if x.strategy_id != "seed"]) == 0
@@ -357,6 +364,21 @@ def test_the_arm_routes(monkeypatch):
     got = client.get(url, headers=t["headers"]).json()["auto_paper"]
     assert got["available"] is False and "Approval-only" in got["why"]
     _flag("approval_only_entries", t["tenant_id"], on=False)
+    # Re-check of X2: the batch read (GET /alerts/then) reads the organisation's switches once, today's counts in one query.
+    calls = []
+    real = AP.switches
+
+    async def counted(session, tenant_id):
+        calls.append(tenant_id)
+        return await real(session, tenant_id)
+
+    async def per_rule(*a, **k):
+        raise AssertionError("GET /alerts/then counted one rule at a time")
+    monkeypatch.setattr(AP, "switches", counted)
+    with monkeypatch.context() as m:
+        m.setattr(AP, "entries_today", per_rule)
+        batch = client.get("/api/alerts/then", headers=t["headers"]).json()["templates"][str(rule_id)]["auto_paper"]
+    assert calls == [t["tenant_id"]] and batch == client.get(url, headers=t["headers"]).json()["auto_paper"]
     # A template PUT (any change) disarms, audited.
     assert client.put(url, headers=t["headers"], json={"mode": "AUTO_PAPER", "gate": {"min_rr": 2.5}}).json()["auto_paper"]["armed"] is False
     assert not T.is_armed(_template(rule_id))

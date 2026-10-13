@@ -2409,6 +2409,18 @@ export interface LadderEvidence {
   ruin?: { probability: number | null; status: "ok" | "certain" | "no_losses"; ruin_pct: number; distance: number | null; method: string; note: string };
 }
 
+/** N2-2 (flag `experience_levels`): the caller's experience level from their own PAPER record, the gates and opt-outs. */
+export type ExperienceLevelKey = "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
+export interface ExperienceStatus {
+  level: ExperienceLevelKey; level_label: string;
+  levels: { key: ExperienceLevelKey; label: string; reached: boolean; opens: string[]; criteria: LadderCriterion[] }[];
+  record: { closed_trades: number; sessions: number; max_drawdown_pct: number };
+  gates: { key: string; label: string; opens_at: ExperienceLevelKey; opens_at_label: string; allowed_by_level: boolean; opted_out_today: boolean; allowed: boolean }[];
+  opt_outs: { today: number; last_7_days: number; total: number; recent: { gate: string; gate_label: string; level: string; reason: string; day: string }[] };
+  min_reason_chars: number; day: string; exits: string; as_of: string;
+  created?: boolean;
+}
+
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
 export interface PaperLadder {
   stage: string;

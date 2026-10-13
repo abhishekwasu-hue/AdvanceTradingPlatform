@@ -205,6 +205,30 @@ async def execute_structure(
             return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
         notes.append(note)
         lots = min(lots, cap)
+    if await fo_limits.limits_on(session, user.tenant_id):
+        # D7 (rest): every leg's lot as the exchange lists it for its series, and the client-level limit on the underlying
+        # (all legs' quantities count: a structure of ratio r adds lots x lot x sum of ratios). New entries only.
+        d7: List[str] = []
+        for leg in structure.legs:
+            lot_ref, _ = fo_limits.lot_refusal(leg.contract)
+            if lot_ref:
+                d7.append(lot_ref)
+        if not d7:
+            unit = lot * sum(leg.ratio for leg in structure.legs)
+            cap_units, cap_ref, cap_note = await fo_limits.client_limit_cap(
+                session, tenant_id=user.tenant_id, user_id=user.id, underlying=structure.underlying_symbol, mode=mode, lot=unit,
+                when=signal.timestamp)
+            if cap_ref:
+                d7.append(cap_ref)
+            elif cap_units is not None:
+                lots = min(lots, int(cap_units // unit))
+                notes.append(cap_note or "")
+            elif cap_note:
+                notes.append(cap_note)
+        if d7:
+            reasons = notes + d7
+            await _reject_all(session, orders, reasons)
+            return StructureResult(executed=False, reasons=reasons, orders=orders, metrics=metrics)
     quantity = lots * lot
     ratios = {leg.contract.tradingsymbol: leg.ratio for leg in structure.legs}
     if structure.max_ratio > 1:
@@ -357,7 +381,8 @@ async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *
         margin = await broker.get_order_margin(probe)
         if margin is None or margin <= 0:
             raise ContractExecutionError(f"{broker.name} did not report a margin requirement for {leg.contract.tradingsymbol} - refused")
-        per_lot += float(margin)
+        # D7: a short leg on its own expiry day carries the rule set's expiry-day margin multiplier (1 = none)
+        per_lot += float(margin) * fo_limits.expiry_day_factor(getattr(leg.contract, "expiry", None), datetime.now(timezone.utc))
     margins = await broker.get_margins()
     available = float(margins.available_margin or margins.available_cash or 0.0)
     lots = int((available * MARGIN_SAFETY) // per_lot) if per_lot > 0 else 0

@@ -268,6 +268,38 @@ async def execute_signal_for_user(
             )
             return ExecutionResult(executed=False, reasons=refusals), order
 
+        if contract is not None and await fo_limits.limits_on(session, user.tenant_id):
+            # D7 (rest): the exchange's lot for this series, and the client-level position limit on the underlying - a
+            # cap on the new quantity (whole lots), a refusal when not one lot fits. New entries only; exits never.
+            d7_refusals: list = []
+            lot_ref, lot_note = fo_limits.lot_refusal(contract)
+            if lot_ref:
+                d7_refusals.append(lot_ref)
+            elif lot_note:
+                pre_notes.append(lot_note)
+            if not d7_refusals:
+                cap, cap_ref, cap_note = await fo_limits.client_limit_cap(
+                    session, tenant_id=user.tenant_id, user_id=user.id, underlying=underlying_signal.symbol, mode=mode,
+                    lot=int(contract.lot_size or 1), when=underlying_signal.timestamp)
+                if cap_ref:
+                    d7_refusals.append(cap_ref)
+                else:
+                    if cap_note:
+                        pre_notes.append(cap_note)
+                    if cap is not None:
+                        max_quantity = cap if max_quantity is None else min(max_quantity, cap)
+            if d7_refusals:
+                order.reasons_json = json.dumps(d7_refusals)
+                order = await transition_order(session, order, OrderStatus.REJECTED, detail="; ".join(d7_refusals))
+                logger.warning("Order rejected - F&O position limits: %s", "; ".join(d7_refusals))
+                ORDERS.labels(mode=mode, status=order.status).inc()
+                await notify(
+                    session, user.tenant_id, NotificationType.RISK_REJECTION,
+                    title=f"Order rejected: {signal.symbol}", message="; ".join(d7_refusals),
+                    severity=NotificationSeverity.WARNING, user_id=user.id, related_order_id=order.id,
+                )
+                return ExecutionResult(executed=False, reasons=d7_refusals), order
+
         is_write = contract is not None and contract.position == OptionPosition.WRITE
         if execution_mode == ExecutionMode.LIVE and not is_write:
             probe = margin_probe_for(

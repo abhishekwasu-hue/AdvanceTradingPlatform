@@ -225,6 +225,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # of workers claim from two Postgres tables (in-process fallback in the API while BACKTEST_SWEEP_INLINE is on); every
     # combination a ledger trial, the best deflated. OFF: /api/backtest/sweeps answers 503. A simulation only.
     "backtest_distributed": "Distributed backtest sweeps: a parameter grid over symbols, run by parallel workers, every combination a ledger trial (a simulation)",
+    # N7 D7 (rest; rule IN-SEBI.risk.futeq_mwpl): new F&O entries capped by the client-level position limit (MWPL / OI
+    # from the lake), refused when the instrument master's lot differs from the exchange's lot for the series; short
+    # options on their expiry day carry the rule set's margin multiplier (LIVE sizing). OFF: nothing changes. Exits never.
+    "fo_position_limits": "F&O client position limit, lot size of the series and expiry-day margin on new derivative entries (exits never refused)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -233,7 +237,8 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
                                "chart_price_action", "chart_studies", "backtest_models",
-                               "backtest_ledger", "backtest_portfolio", "backtest_distributed"})
+                               "backtest_ledger", "backtest_portfolio", "backtest_distributed",
+                               "fo_position_limits"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

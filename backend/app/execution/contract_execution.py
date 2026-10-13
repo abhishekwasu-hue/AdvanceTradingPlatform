@@ -136,6 +136,11 @@ async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract) -
     per_lot = await broker.get_order_margin(probe)
     if per_lot is None or per_lot <= 0:
         raise ContractExecutionError(f"{broker.name} did not report a margin requirement for writing {contract.tradingsymbol} - refused")
+    from datetime import datetime, timezone
+
+    from app.compliance import fo_limits
+    factor = fo_limits.expiry_day_factor(getattr(contract, "expiry", None), datetime.now(timezone.utc))   # D7: expiry-day margin
+    per_lot = float(per_lot) * factor
     margins = await broker.get_margins()
     available = float(margins.available_margin or margins.available_cash or 0.0)
     lots = int((available * MARGIN_SAFETY) // per_lot)

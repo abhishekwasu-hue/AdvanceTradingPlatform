@@ -8,15 +8,27 @@ export const MAX_SLOTS = 3;
 export const COMPARE_POINTS = 121;
 export const COMPARE_RANGE_PCT = 10;
 
-export interface CompareSlot { key: string; name: string; legs: Leg[] }
+/** `underlying` is set for a saved strategy: the one it was saved on, checked against the page's before it is added. */
+export interface CompareSlot { key: string; name: string; legs: Leg[]; underlying?: string }
+
+const sym = (u: string | null | undefined) => (u ?? "").trim().toUpperCase();
+
+/** True when a saved strategy is on another underlying than the page: evaluated at the page's spot it would be priced
+ *  thousands of points away from its strikes, so it is refused rather than shown with absurd numbers. */
+export function otherUnderlying(slot: CompareSlot, pageUnderlying: string): boolean {
+  return slot.underlying !== undefined && sym(slot.underlying) !== sym(pageUnderlying);
+}
 
 /** A stable signature of a strategy's legs (ids and premium source left out), to refuse adding the same one twice. */
 export function signature(legs: Leg[]): string {
   return legs.map((l) => `${l.direction}|${l.option_type}|${l.strike}|${l.expiry}|${l.lots}|${l.lot_size}|${l.premium}`).sort().join(";");
 }
 
-/** The slots with `slot` added, or a reason it was not ("full" | "same"). */
-export function addSlot(slots: CompareSlot[], slot: CompareSlot): { slots: CompareSlot[]; refused: "full" | "same" | null } {
+export type Refusal = "full" | "same" | "underlying";
+
+/** The slots with `slot` added, or a reason it was not ("full" | "same" | "underlying"). */
+export function addSlot(slots: CompareSlot[], slot: CompareSlot, pageUnderlying = ""): { slots: CompareSlot[]; refused: Refusal | null } {
+  if (otherUnderlying(slot, pageUnderlying)) return { slots, refused: "underlying" };
   if (slots.some((s) => signature(s.legs) === signature(slot.legs))) return { slots, refused: "same" };
   if (slots.length >= MAX_SLOTS) return { slots, refused: "full" };
   return { slots: [...slots, slot], refused: null };

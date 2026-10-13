@@ -279,7 +279,7 @@ export default function OptionsBuilderPage(_props: PageProps) {
               {/* N2-7 (flag builder_adjustments): models only; "use the legs after" replaces this page's legs, nothing is placed */}
               {adjustOn && <AdjustDrawer legs={legs} spot={spot} step={step} asOf={asOf} onUse={takeAdjusted} />}
               {/* N2-8 (flag builder_compare): up to three strategies side by side, through the engine's evaluate */}
-              {compareOn && <CompareSection legs={legs} spot={spot} asOf={asOf} savedOn={saved === "on"} />}
+              {compareOn && <CompareSection legs={legs} spot={spot} asOf={asOf} savedOn={saved === "on"} underlying={underlying} />}
             </>
           ) : (
             <p className="border-t border-border px-4 py-3 text-xs text-fg-muted">

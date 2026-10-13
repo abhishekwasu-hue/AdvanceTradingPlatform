@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { builderApi, wireLegs, type SavedSummary } from "../optionsBuilder/api";
 import { legId, type Evaluation, type Leg } from "../optionsBuilder/model";
-import { COMPARE_POINTS, COMPARE_RANGE_PCT, addSlot, compareTable, overlay, type CompareSlot } from "./compare";
+import { COMPARE_POINTS, COMPARE_RANGE_PCT, addSlot, compareTable, otherUnderlying, overlay, type CompareSlot } from "./compare";
 import { useProgressionT } from "./i18n";
 
 const STROKES = ["stroke-info", "stroke-signal", "stroke-warn"];
@@ -10,8 +10,10 @@ const W = 600, H = 200;
 /**
  * N2-8 (flag `builder_compare`): up to three strategies side by side - the page's current legs, or saved strategies
  * when saving is on - each evaluated by the engine at the same spot, date and range. Models only; nothing is placed.
+ * A saved strategy on another underlying than the page's is refused with a note (the page's spot would misprice it).
  */
-export default function CompareSection({ legs, spot, asOf, savedOn }: { legs: Leg[]; spot: number | null; asOf: string; savedOn: boolean }) {
+export default function CompareSection({ legs, spot, asOf, savedOn, underlying }:
+  { legs: Leg[]; spot: number | null; asOf: string; savedOn: boolean; underlying: string }) {
   const t = useProgressionT();
   const [slots, setSlots] = useState<CompareSlot[]>([]);
   const [evals, setEvals] = useState<Evaluation[] | null>(null);
@@ -22,18 +24,22 @@ export default function CompareSection({ legs, spot, asOf, savedOn }: { legs: Le
   useEffect(() => { if (savedOn) builderApi.saved().then(setSaved).catch(() => setSaved([])); }, [savedOn]);
 
   function add(slot: CompareSlot) {
-    const out = addSlot(slots, slot);
-    setNote(out.refused ? t(out.refused === "full" ? "compare.full" : "compare.same") : null);
+    const out = addSlot(slots, slot, underlying);
+    setNote(out.refused === "underlying" ? otherNote(slot) : out.refused ? t(out.refused === "full" ? "compare.full" : "compare.same") : null);
     setSlots(out.slots); setEvals(null);
   }
+  const otherNote = (s: CompareSlot) =>
+    t("compare.otherUnderlying", { name: s.name, theirs: s.underlying || "-", ours: underlying.trim() || "-" });
   async function addSaved(id: number) {
     try {
       const s = await builderApi.load(id);
-      add({ key: `saved-${id}`, name: s.name, legs: s.legs.map((l) => ({ ...l, id: legId(), iv: l.iv ?? null } as Leg)) });
+      add({ key: `saved-${id}`, name: s.name, underlying: s.underlying, legs: s.legs.map((l) => ({ ...l, id: legId(), iv: l.iv ?? null } as Leg)) });
     } catch (e) { setNote(String(e)); }
   }
   async function run() {
     if (spot == null || !slots.length) return;
+    const other = slots.find((s) => otherUnderlying(s, underlying));     // the page's underlying changed after adding
+    if (other) { setNote(otherNote(other)); setEvals(null); return; }
     setBusy(true); setNote(null);
     try {
       setEvals(await Promise.all(slots.map((s) => builderApi.evaluate({ legs: wireLegs(s.legs), spot, as_of: asOf, days_forward: 0, iv_shift: 0,
@@ -73,12 +79,12 @@ export default function CompareSection({ legs, spot, asOf, savedOn }: { legs: Le
         ))}
       </ul>
       {note && <p role="status" className="text-fg-muted">{note}</p>}
-      {evals && <CompareView names={slots.map((s) => s.name)} evals={evals} />}
+      {evals && <CompareView columns={slots.map(({ key, name }) => ({ key, name }))} evals={evals} />}
     </section>
   );
 }
 
-export function CompareView({ names, evals }: { names: string[]; evals: Evaluation[] }) {
+export function CompareView({ columns, evals }: { columns: { key: string; name: string }[]; evals: Evaluation[] }) {
   const t = useProgressionT();
   const chart = overlay(evals, W, H);
   return (
@@ -89,7 +95,7 @@ export function CompareView({ names, evals }: { names: string[]; evals: Evaluati
       </svg>
       <div className="overflow-x-auto">
         <table className="w-full text-left tabular-nums" aria-label={t("compare.tableLabel")}>
-          <thead className="text-fg-muted"><tr><th className="py-1 pr-2 font-normal" />{names.map((n) => <th key={n} className="py-1 pr-2 font-normal">{n}</th>)}</tr></thead>
+          <thead className="text-fg-muted"><tr><th className="py-1 pr-2 font-normal" />{columns.map((c) => <th key={c.key} className="py-1 pr-2 font-normal">{c.name}</th>)}</tr></thead>
           <tbody>
             {compareTable(evals, t).map(([label, ...values]) => (
               <tr key={label} className="text-fg"><td className="py-1 pr-2 text-fg-muted">{label}</td>{values.map((v, i) => <td key={i} className="py-1 pr-2">{v}</td>)}</tr>

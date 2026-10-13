@@ -224,6 +224,7 @@ export const PROGRESSION_EN = {
     add: "Add this strategy",
     full: "Three strategies already: remove one first.",
     same: "This strategy is already in the comparison.",
+    otherUnderlying: "{{name}} is on {{theirs}} and this page is on {{ours}}: it would be priced at the wrong spot, so it is not compared. Set the page's underlying to {{theirs}} first.",
     saved: "Add a saved strategy",
     savedPick: "Choose…",
     remove: "Remove {{name}}",

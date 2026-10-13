@@ -1,0 +1,27 @@
+import type { Meta, StoryObj } from "@storybook/react";
+import { LibraryTools } from "../screener/LibraryTools";
+import { mirrorsByScreen } from "../screener/library";
+import { SAMPLE_CONFLUENCE, SAMPLE_LISTS, SAMPLE_MIRRORS, SAMPLE_WATCH } from "../screener/librarySample";
+import { ScreenGallery } from "../screener/ScreenGallery";
+import sample from "../screener/taxonomySample.json";
+import type { Taxonomy } from "../screener/taxonomy";
+
+/** U9 TX2 - the library tools: the confluence view, watch-then-trigger lists and the mirror line on gallery cards. */
+const meta: Meta = { title: "Screener/Library tools" };
+export default meta;
+type Story = StoryObj;
+
+const tax = sample as unknown as Taxonomy;
+const frame = (children: JSX.Element) => <div className="max-w-5xl bg-surface p-4">{children}</div>;
+
+export const Confluence: Story = {
+  render: () => frame(<LibraryTools taxonomy={tax} mirrors={SAMPLE_MIRRORS} watchLists={SAMPLE_LISTS} symbolsText="UP, DOWN, FLAT" initialConfluence={SAMPLE_CONFLUENCE} />),
+};
+
+export const WatchThenTrigger: Story = {
+  render: () => frame(<LibraryTools taxonomy={tax} mirrors={SAMPLE_MIRRORS} watchLists={SAMPLE_LISTS} symbolsText="UP, MID, DOWN" initialTab="watch" initialWatch={SAMPLE_WATCH} />),
+};
+
+export const GalleryWithMirrors: Story = {
+  render: () => frame(<ScreenGallery taxonomy={tax} canOpen={() => true} onOpen={() => undefined} mirrors={mirrorsByScreen(SAMPLE_MIRRORS)} />),
+};

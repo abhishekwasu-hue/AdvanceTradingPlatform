@@ -911,6 +911,54 @@ Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1");
   gallery render (rail, chips, cards, empty cell, matrix, disabled Open, no advice wording, no Devanagari), a Playwright
   spec (flag off: no button; rail -> chip -> empty cell -> card -> Open loads the starter), Storybook stories.
 
+## U9 TX2 (built): confluence view, mirror screens, watch-then-trigger lists (flag `screener_tx2`, off)
+
+Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` §3 and §4 "TX2". Code: `app/screener/mirror.py`,
+`app/screener/library.py`, `app/screener/library_routes.py`; frontend `src/screener/library.ts`, `LibraryTools.tsx`.
+Flag `screener_tx2` (default OFF) on top of `screener_v2` and `screener_gallery`; off = 503 and the page unchanged.
+
+- **Pre-built screens as text.** `library.resolve` turns a filed screen into ScreenQL: the U5 starters (`STARTERS`; the
+  same text is in `frontend/src/screener/starters.json` and a vitest checks it against what each starter's build
+  prints), the Legends cards (source + default parameters) and the breakout templates (`templates.screenql`).
+- **Mirror screens.** Defined, not guessed: `mirror(S)` holds on a symbol's bars exactly when `S` holds on the bars
+  reflected through a price level C (p -> C - p: highs and lows swap, volume unchanged). The AST is rewritten with a
+  class per sub-expression (same value / C minus / minus / 100 minus) - e.g. `RSI(14) <= 30` -> `RSI(14) >= 70`,
+  `high > Max(high, 20)[1]` -> `low < Min(low, 20)[1]`, side arguments swap. Every rule is checked bar by bar on
+  synthetic bars against the original on reflected bars (`tests/test_tx2_library.py`), and so is every generated
+  pre-built mirror. No mirror, with the reason: a price against a fixed number, a ratio or multiple of a price
+  (Minervini, Darvas), PctChange of a price, Supertrend, option-chain / zone functions, and the functions found NOT
+  exact on reflected bars - `DowTrend` and `SwingBreakType` (an equal swing high or low reads as lower on both sides,
+  so ties do not mirror), `ATRPercentile` (ATR / close depends on the price level), the outside-bar patterns and
+  hammer / shooting star. A screen that reads both sides alike (Crabel NR7) is its own mirror. The breakout
+  templates' mirror is the template's own down side (the engine defines it). Mirrors are `<id>.short`, generated per
+  request, never filed in taxonomy.json; a card shows "Mirror (down side): <text>" or the reason.
+  - One warm-up (review of TX2): the swing functions (SwingHigh / SwingLow / SwingDirection / SwingZone* and screens
+    built on swings) are exact from the third confirmed swing on (`mirror.SWING_WARMUP`). Before that, the zigzag's
+    opening swing can differ on reflected bars: it tests a high before a low, so when both could confirm on the same
+    early bar the two sides open differently. On the test bars that was bars 13-32 in 6 of 40 seeds.
+  - The exactness test uses prices on whole ticks (so an equal high or low stays equal after the reflection) and
+    three seeds, and skips that warm-up.
+- **Confluence.** `POST /api/screener/library/confluence` runs 2-6 screens (library ids, their mirrors, or
+  `saved:<id>` of the organisation) over up to 50 symbols - one fetch per timeframe, closed bars, the BT1b own-session
+  path - and ranks symbols by the number of different methods (taxonomy axis 1) that flag them, then screens, then
+  symbol. Each row lists the screens that flagged it with their text (the evidence). Stores nothing. A count of
+  agreement: never a score or a recommendation.
+  - Rate limit (review of TX2): a confluence is charged as k + f - 1 `/run` calls (k screens, f fetches) on the same
+    per-user bucket as `/run` (60 a minute), before any bar is fetched. A watch-trigger is charged as 2.
+- **Watch-then-trigger lists.** A list is a ready and a trigger condition (three pre-built lists in
+  `library.WATCH_LISTS`, or the user's own). On the last closed bar: triggered = the trigger holds and ready held on
+  the bar before - the transition screen `Count(1, ready)[1] >= 1 AND trigger`; ready = ready now and not triggered.
+  The transition is an ordinary screen: "Save the trigger screen" saves it, and the existing screen alert rules give
+  the alert on the transition (no second alert engine). Z10-a case: `Count(1, close > EMA(close, 20))[1]`.
+  - The route evaluates `ready` and `trigger` once each (`library_routes.watch_eval`). Triggered is read from the
+    ready series' bar before the last and the trigger's last bar. A test checks this against running the ready and
+    transition screens, on every prefix of three seeds' bars.
+- **No new ScreenQL function.** TX2 adds no registry entry; the transition uses `Count` with an offset.
+- **Routes** (`tests/tenancy_route_table.py`): `GET /library/mirrors`, `GET /library/watch-lists` (member);
+  `POST /library/confluence`, `POST /library/watch-trigger` (trader, rate limited 20 / min, like `/run`).
+- **Not in TX2:** evidence charts per confluence row (U8 packs are stored for `/run` only), a compare view, filing user
+  screens on both axes (TX1-4), regime greying and the digest (TX3), learn mode and forking (TX4).
+
 ## U6 BK1 (built): breakout screens, quality overlay, style / timeframe selector (flag `screener_breakouts`, off)
 Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`. Code: `app/screener/breakouts/`. Research notes and every
 parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 are in `docs/OPEN_QUESTIONS.md`.

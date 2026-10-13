@@ -21,6 +21,8 @@ from tests.test_trading_worker import (
 )
 from tests.test_z10c_phase0_lock import _StopStandingBroker
 
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+
 SEEDED = (deployment_phase.LIVE_TRADING, deployment_phase.PAPER_ONLY)
 
 

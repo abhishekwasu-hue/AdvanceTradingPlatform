@@ -83,11 +83,11 @@ def _rule(tenant_id, **kw):
     return _run(go())
 
 
-def _evaluate(rule_id, now, fetch):
+def _evaluate(rule_id, now, fetch, **flags):
     async def go():
         async with _session_factory() as session:
             rule = await session.get(AlertRuleRecord, rule_id)
-            result = await barclose.evaluate_rule(session, rule, now, fetch)
+            result = await barclose.evaluate_rule(session, rule, now, fetch, **flags)
             await session.commit()
             return result, rule.last_problem
     return _run(go())

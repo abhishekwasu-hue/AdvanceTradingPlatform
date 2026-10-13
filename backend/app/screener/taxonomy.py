@@ -96,17 +96,18 @@ class Source:
     name: str
     ids: Callable[[], Iterable[str]]
     flag: Optional[str] = None
+    also: Tuple[str, ...] = ()          # U6 BK3: further flags that must be on too (hidden while any is off)
 
 
 _SOURCES: Dict[str, Source] = {}
 
 
-def register_source(name: str, ids: Callable[[], Iterable[str]], *, flag: Optional[str] = None) -> None:
+def register_source(name: str, ids: Callable[[], Iterable[str]], *, flag: Optional[str] = None, also: Tuple[str, ...] = ()) -> None:
     """A backend template module calls this at import (re-registering replaces). `ids` is called lazily, so the module's
     own template list stays its single source of truth."""
     if not _ID.match(name) or name in FRONTEND_SOURCES:
         raise ValueError(f"template source name {name!r} is not allowed")
-    _SOURCES[name] = Source(name, ids, flag)
+    _SOURCES[name] = Source(name, ids, flag, tuple(also))
 
 
 def unregister_source(name: str) -> None:
@@ -346,7 +347,7 @@ __all__ = ["NOTE", "DATA_FILE", "FRONTEND_SOURCES", "TAG_KEYS", "Axis", "Screen"
 def default_hidden() -> List[str]:
     """Registered sources whose flag starts OFF (U6 breakouts): what a new organisation's gallery leaves out."""
     from app.platform.controls import DEFAULT_OFF_FLAGS
-    return [name for name, src in _SOURCES.items() if src.flag in DEFAULT_OFF_FLAGS]
+    return [name for name, src in _SOURCES.items() if any(f in DEFAULT_OFF_FLAGS for f in (src.flag, *src.also))]
 
 
 def default_hidden_ids() -> List[str]:

@@ -27,6 +27,10 @@ Point in time - what a bar may know is decided by `known_from`, never by the row
 So a value at bar t never changes when later bars are added, nor when a later row corrects a quarter (tested, Z10-a
 causal cases); the one exception is the "as published" backfill of a whole quarter above (S8-8).
 
+Whose rows: the companies, patterns and calendar events a run reads are the shared reference rows plus the caller's
+organisation's own contributed rows (#234's `visible`), filtered in SQL before the rules above - another
+organisation's contributed row is never read and never makes a shared row of the same quarter a "correction".
+
 While the flag is off the registry endpoint hides the functions and a screen using one is refused with the reason;
 alert rules and screen history do not load this data yet (refused with the reason; OPEN_QUESTIONS S8-4). Research only -
 matches, never orders.
@@ -135,20 +139,25 @@ async def blocked_calls(session: AsyncSession, tenant_id: Any, ast: Any) -> List
 
 
 # ------------------------------------------------------------------------------------------------------------- the data
-async def load(session: AsyncSession, symbols: Sequence[str], exchange: str = "NSE", until: Optional[datetime] = None
-               ) -> Dict[str, Ownership]:
-    """Every symbol's patterns and events known by `until` (all of them when None), in three reads. Shared reference
-    data (companies, their patterns and calendars, the lake) - no organisation's own rows."""
+async def load(session: AsyncSession, symbols: Sequence[str], exchange: str = "NSE", until: Optional[datetime] = None, *,
+               viewer: Optional[int]) -> Dict[str, Ownership]:
+    """Every symbol's patterns and events known by `until` (all of them when None), in three reads. The companies, their
+    patterns and calendars are the rows `viewer` (the caller's organisation) may read - the shared reference rows plus its
+    own contributed ones, never another organisation's (#234, app/fundamentals/visibility.py; `viewer=None`: shared rows
+    only). The filter is in the SQL, so another organisation's row never takes part in the first-row-of-a-quarter rule
+    below either. The lake's ex-dates are shared exchange data."""
     from sqlalchemy import func, select
 
     from app.db.models import CompanyRecord, EarningsCalendarEventRecord, MdCorporateActionRecord, ShareholdingSnapshotRecord
+    from app.fundamentals.visibility import visible
     names = sorted({s.strip().upper() for s in symbols if s and s.strip()})
     out: Dict[str, Ownership] = {n: Ownership([], []) for n in names}
     if not names:
         return out
     rows = await session.execute(select(CompanyRecord.symbol, ShareholdingSnapshotRecord)
                                  .join(CompanyRecord, CompanyRecord.id == ShareholdingSnapshotRecord.company_id)
-                                 .where(func.upper(CompanyRecord.symbol).in_(names)))
+                                 .where(func.upper(CompanyRecord.symbol).in_(names), visible(CompanyRecord, viewer),
+                                        visible(ShareholdingSnapshotRecord, viewer)))
     seen_quarters: set = set()
     for sym, r in sorted(rows.all(), key=lambda x: (_utc(x[1].created_at), x[1].id)):           # stored order (review of S8)
         stored = _utc(r.created_at)
@@ -165,7 +174,8 @@ async def load(session: AsyncSession, symbols: Sequence[str], exchange: str = "N
     by_type = {t: kind for kind, types in CALENDAR_KINDS.items() for t in types}
     events = await session.execute(select(CompanyRecord.symbol, EarningsCalendarEventRecord)
                                  .join(CompanyRecord, CompanyRecord.id == EarningsCalendarEventRecord.company_id)
-                                 .where(func.upper(CompanyRecord.symbol).in_(names)))
+                                 .where(func.upper(CompanyRecord.symbol).in_(names), visible(CompanyRecord, viewer),
+                                        visible(EarningsCalendarEventRecord, viewer)))
     for sym, ev in events.all():
         kind = by_type.get(str(ev.event_type or "").strip().upper())
         if kind is None:
@@ -190,9 +200,10 @@ async def load(session: AsyncSession, symbols: Sequence[str], exchange: str = "N
     return out
 
 
-async def attach(session: AsyncSession, universe: List[Any], exchange: str = "NSE", end: Optional[datetime] = None) -> None:
-    """Every symbol's rows known by `end` (now), onto its SymbolData."""
-    found = await load(session, [d.symbol for d in universe], exchange, until=end or datetime.now(timezone.utc))
+async def attach(session: AsyncSession, universe: List[Any], exchange: str = "NSE", end: Optional[datetime] = None, *,
+                 viewer: Optional[int]) -> None:
+    """Every symbol's rows known by `end` (now) that the caller's organisation `viewer` may read, onto its SymbolData."""
+    found = await load(session, [d.symbol for d in universe], exchange, until=end or datetime.now(timezone.utc), viewer=viewer)
     for data in universe:
         data.ownership = found.get(data.symbol.strip().upper(), Ownership([], []))
 

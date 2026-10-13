@@ -125,6 +125,14 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
                         'SqueezeBreakout("up", "ttm", 10, 20, 0)@1h'],
     "MABreakout": ['MABreakout("up", 50, "sma", 0)', 'MABreakout("down", 20, "ema", 0)', 'MABreakout("up", 10, "sma", 0)@1h'],
     "RegimeBreakout": ['RegimeBreakout("up", 15, 10, 30, 0)', 'RegimeBreakout("down", 15, 10, 30, 0)', 'RegimeBreakout("down", 20, 10, 35, 0)@1h'],
+    # U6 BK4: trendline / pattern / gap / retest breakouts; volume and distance conditions off so they fire
+    "TrendlineBreakout": ['TrendlineBreakout("up", "line", 2, 0)', 'TrendlineBreakout("down", "channel", 2, 0)',
+                          'TrendlineBreakout("up", "line", 2, 0)@1h'],
+    "PatternBreakout": ['PatternBreakout("up", "triangle", 0, 0)', 'PatternBreakout("down", "flag", 0, 0)', 'PatternBreakout("up", "triangle", 0, 0)@1h'],
+    # the synthetic 5m sessions open where the previous one closed or with a gap: only some sessions gap (down here)
+    "GapBreakout": ['GapBreakout("down", "prev_day", 15)', 'GapBreakout("down", "prev_day", 5)', 'GapBreakout("down", "prev_day", 60)@15m'],
+    "GapType": ['GapType("down", "prev_day", 15)', 'GapType("up", "prev_day", 30)@15m'],
+    "RetestEntry": ['RetestEntry("down", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)', 'RetestEntry("up", "trendline", 20, TRUE)'],
     # Z7a-3: market zones from stored snapshots - the case builds a causal snapshot timeline from the bars (_zone_timeline)
     "NearZone": ['NearZone("demand", 0.5)', "NearZone()@1h", 'NearZone("supply", 1.0, "zones")'],
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],
@@ -137,7 +145,9 @@ SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "clos
                              'NewHighBreakout("up", 4, 0, 0)', 'NewHighBreakout("down", 26, 0, 0)', "DowTrend(0)@1w",   # U6 BK1
                              'VCPBreakout("up", 2, 1, 0, 0, FALSE, FALSE)', 'VCPBreakout("down", 2, 1, 0, 0, FALSE)',   # U6 BK3
                              'VCPReady("up", 2, 1, 10, FALSE)', 'DonchianBreakout("up", 55, 0)', 'SqueezeBreakout("up", "bollinger", 20, 125, 0)',
-                             'SqueezeBreakout("down", "ttm")', 'MABreakout("down", 50, "sma", 0)', 'RegimeBreakout("up", 15, 10, 30, 0)']
+                             'SqueezeBreakout("down", "ttm")', 'MABreakout("down", 50, "sma", 0)', 'RegimeBreakout("up", 15, 10, 30, 0)',
+                             'TrendlineBreakout("down", "line", 2, 0)', 'PatternBreakout("down", "flag", 0, 0)',      # U6 BK4
+                             'RetestEntry("up", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)']   # daily synthetic bars open at the last close: no gaps
 # Answered for the last bar only (not series): causal by construction, kept out of history-reading functions.
 SCREENQL_LAST_BAR: Dict[str, List[str]] = {
     "Trend": ["Trend(3)"],
@@ -334,7 +344,7 @@ def _register_zones() -> None:
 def _register_screenql() -> None:
     for exprs in SCREENQL_SERIES.values():
         for text in exprs:
-            heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady"))
+            heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady", "Gap", "Retest"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")

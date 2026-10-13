@@ -146,7 +146,16 @@ async def taxonomy(method: Optional[str] = None, setup: Optional[str] = None, us
         raise HTTPException(status_code=422, detail=f"unknown setup {setup!r}; one of {', '.join(s.id for s in tax.setups)}")
     hidden = [name for name, src in tx.sources().items()
               if any([not await flag_enabled(session, f, user.tenant_id) for f in (src.flag, *src.also) if f])]
-    return tx.payload(tax, hidden_sources=hidden, method=method, setup=setup)
+    on: Dict[str, bool] = {}
+    for flag in set(tx.screen_flags().values()):                  # U7 LG2: single screens behind their own flag
+        on[flag] = await flag_enabled(session, flag, user.tenant_id)
+    hidden_ids = [ident for ident, flag in tx.screen_flags().items() if not on[flag]]
+    return tx.payload(tax, hidden_sources=hidden, method=method, setup=setup, hidden_ids=hidden_ids)
+
+
+async def _legend_slices(session: AsyncSession, user: User) -> List[str]:
+    """U7 LG2: the card slices this organisation sees - LG1 with `screener_legends`, LG2 also with `screener_legends_lg2`."""
+    return ["lg1"] + (["lg2"] if await flag_enabled(session, lg.FLAG_LG2, user.tenant_id) else [])
 
 
 @router.get("/legends")
@@ -156,7 +165,7 @@ async def legends(user: User = Depends(get_current_user), session: AsyncSession 
     editable parameters (defaults and documented ranges) and where the screen is filed in the taxonomy."""
     await _flag(session, user)
     await require_flag(session, LEGENDS_FLAG, user.tenant_id)
-    return lg.payload(lg.load(), tx.load())
+    return lg.payload(lg.load(), tx.load(), slices=await _legend_slices(session, user))
 
 
 @router.get("/legends/{card_id}")
@@ -166,7 +175,7 @@ async def legend_card(card_id: str, user: User = Depends(get_current_user), sess
     await require_flag(session, LEGENDS_FLAG, user.tenant_id)
     library = lg.load()
     card = library.card(card_id)
-    if card is None:
+    if card is None or card.slice not in await _legend_slices(session, user):
         raise HTTPException(status_code=404, detail="no such Legends card")
     return {**lg.card_payload(card, library, tx.load()), "header": lg.HEADER}
 

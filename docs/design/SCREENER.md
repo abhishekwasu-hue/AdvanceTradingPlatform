@@ -1361,8 +1361,9 @@ marketplace, no store apps).
 - **Not in D5 here:** a Lighthouse run itself (D5-1); the page-wide primary-button contrast found by axe (D5-2); the
   mobile layout keeps its own PW2 suite (`mobile.e2e.ts`).
 - **Review of D5 (fixed):** HIGH - the baselines were made on a developer machine and failed on CI (352-403 px on the
-  heatmap): runner pinned, tolerance 0.02, the six images remade on CI. LOW - the keyboard test drives Tab and the arrow
-  keys; a system reduced-motion test.
+  heatmap): runner pinned, tolerance 0.02 (the committed images pass on CI), and a CI path that remakes the six on that
+  runner as an artifact (committing them: OPEN_QUESTIONS D5-4). LOW - the keyboard test drives Tab and the arrow keys;
+  a system reduced-motion test.
 - **D4 (Then drawer, mode chip, arm banner, alert composer, delivery log)** is left to lane A. Its U4 X1/X1b branches
   build the scan "Then" panel (`frontend/src/screener/then/`) on the execution core, so a second Then drawer here would
   collide.

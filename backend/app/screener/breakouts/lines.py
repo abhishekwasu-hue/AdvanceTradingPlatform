@@ -86,6 +86,9 @@ class Line:
         return self.m * x + self.c0
 
 
+PAIR_CELLS = 2_000_000          # cells of the pairs x bars grid computed at once (about 16 MB per float array)
+
+
 class Lines:
     """One kind of line in the side's orientation - "resistance" (falling, over swing highs, broken by a close above) or
     "support" (rising, over swing lows, broken by a close below) - with every anchor pair's first break."""
@@ -108,23 +111,31 @@ class Lines:
         a_arr, b_arr, m = a_arr[keep], b_arr[keep], m[keep]
         c0 = self.y[a_arr] - m * a_arr
         span = np.arange(self.max_bars + 1)
-        xs = a_arr[:, None] + span[None, :]                                  # each pair's bars from A on, within the age limit
-        valid = xs <= self.n - 1
-        xc = np.minimum(xs, self.n - 1)
-        lines = m[:, None] * xs + c0[:, None]
-        cx = c[xc]
-        with np.errstate(invalid="ignore"):
-            beyond = valid & ((cx > lines + _EPS) if high else (cx < lines - _EPS))
-        first = np.where(beyond.any(axis=1), a_arr + np.argmax(beyond, axis=1), np.inf)
+        first = np.full(len(a_arr), np.inf)
         edge = np.zeros(len(a_arr))
         edge_broken = np.full(len(a_arr), np.inf)
-        if edges and len(a_arr):                                             # support: the channel's far edge (trendlines.channel_of)
-            col = b_arr - a_arr
-            gap_hi = np.maximum.accumulate(np.where(valid, s.h[xc] - lines, -np.inf), axis=1)
-            edge = gap_hi[np.arange(len(a_arr)), col]
+        # BK4 review (LOW): the pairs x (tl_max_bars + 1) grid in chunks of rows, so memory is bounded by PAIR_CELLS
+        # cells whatever the number of anchor pairs (the results are row by row, so equal to the one-grid computation)
+        rows = max(1, PAIR_CELLS // (self.max_bars + 1))
+        for lo in range(0, len(a_arr), rows):
+            sl = slice(lo, lo + rows)
+            a_c, m_c, c0_c = a_arr[sl], m[sl], c0[sl]
+            xs = a_c[:, None] + span[None, :]                                # each pair's bars from A on, within the age limit
+            valid = xs <= self.n - 1
+            xc = np.minimum(xs, self.n - 1)
+            lines = m_c[:, None] * xs + c0_c[:, None]
+            cx = c[xc]
             with np.errstate(invalid="ignore"):
-                above = valid & (cx > lines + edge[:, None] + _EPS) & (span[None, :] > col[:, None])
-            edge_broken = np.where(above.any(axis=1), a_arr + np.argmax(above, axis=1), np.inf)
+                beyond = valid & ((cx > lines + _EPS) if high else (cx < lines - _EPS))
+            first[sl] = np.where(beyond.any(axis=1), a_c + np.argmax(beyond, axis=1), np.inf)
+            if edges:                                                        # support: the channel's far edge (trendlines.channel_of)
+                col = b_arr[sl] - a_c
+                gap_hi = np.maximum.accumulate(np.where(valid, s.h[xc] - lines, -np.inf), axis=1)
+                edge_c = gap_hi[np.arange(len(a_c)), col]
+                edge[sl] = edge_c
+                with np.errstate(invalid="ignore"):
+                    above = valid & (cx > lines + edge_c[:, None] + _EPS) & (span[None, :] > col[:, None])
+                edge_broken[sl] = np.where(above.any(axis=1), a_c + np.argmax(above, axis=1), np.inf)
         self.A, self.B, self.M, self.C0, self.BRK, self.EDGE, self.EDGE_BRK = a_arr, b_arr, m, c0, first, edge, edge_broken
         self.absM = np.abs(m)
         self._lines: Dict[int, Line] = {}

@@ -1318,6 +1318,29 @@ broker's and C2's default) and `brokerage_per_order` (default 20). It is a trade
 - LOW: no stale-close sells (S6-13); the equal-weight universe keeps delisted names at their last price; a missing
   NIFTY close is skipped and counted.
 
+## S10 (Phase 0 slice, built): the ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
+
+Source: SCREENER_SPEC §5 S10 ("J (ETF/MF), SMS/WhatsApp, mobile push, marketplace") within ATP_PHASE0_FREEZE (no
+marketplace, no store apps).
+
+- **ETF screen (J)** - `app/screener/etf.py`, `GET /api/screener/etf` (member; shared reference data only). Every NSE
+  ETF the universe lists (`securities.is_etf`) from the lake's daily bars as known now, closed sessions only: last close,
+  average traded value (20 sessions), the change over a window (1-250 sessions), the tracked index's change over the
+  same sessions (`securities.underlying` -> `NSE_INDEX:<code>`, with "Index" / "TRI" stripped as a second try) and the
+  tracking difference. Filters (min traded value, text, max |tracking difference|), sorts (liquidity, change, closest
+  tracking, symbol); a row says why a column is empty. Facts, not a ranking. Frontend: "ETFs" on the Screener page.
+  Not a ScreenQL function: the run path loads bars only (the ETF -> index mapping is reference data).
+- **Mutual funds** are not here: AMFI NAVs are not ingested yet (OPEN_QUESTIONS S10-1).
+- **SMS DLT (India)** - optional `dlt_entity_id`, `dlt_template_id`, `sender_id` on the SMS channel, filled into the
+  `{dlt_entity_id}` / `{dlt_template_id}` / `{sender_id}` placeholders; a template that uses one must set it. Existing SMS
+  channels are untouched.
+- **WhatsApp channel** - `AlertChannelType.WHATSAPP`, a Business gateway through a request template (no vendor SDK, the
+  SMS sender and egress checks): `{template}` must be in the body (business-initiated messages are approved templates
+  only), `template_name` / `language` fill it, `opt_in_confirmed` must be true, headers are write-only secrets, paid
+  plans only (402 on Free). With the flag off a WhatsApp channel or DLT fields are refused (403).
+- **Mobile push** stays the PWA's Web Push (installed on a phone it is a mobile push); native FCM / APNs come with the
+  store apps (frozen). **Marketplace** is frozen (K).
+
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the
   uploads. Provisional: U2 is taken as SCREENER_SPEC §3's builder, and U4 as U5's "Then" drawer (D4).

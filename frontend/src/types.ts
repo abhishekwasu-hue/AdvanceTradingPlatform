@@ -1225,7 +1225,7 @@ export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min
 
 // --- Out-of-app alert delivery (Telegram / email) ---
 
-export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS";
+export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS" | "WHATSAPP";
 
 export interface AlertChannel {
   channel_type: AlertChannelType;
@@ -2419,6 +2419,35 @@ export interface ExperienceStatus {
   opt_outs: { today: number; last_7_days: number; total: number; recent: { gate: string; gate_label: string; level: string; reason: string; day: string }[] };
   min_reason_chars: number; day: string; exits: string; as_of: string;
   created?: boolean;
+}
+
+/** N2-3 (flag `decision_tools`): the risk-of-ruin / Kelly calculator's answer. */
+export interface RuinCalc {
+  inputs: { win_rate: number; payoff_ratio: number; risk_pct: number; ruin_pct: number };
+  expectancy_r: number;
+  kelly: { fraction: number; status: "ok" | "negative"; formula: string };
+  rows: { risk_pct: number; ruin_probability: number; ruin_status: "ok" | "certain"; losses_to_ruin: number; growth_per_trade_pct: number | null; chosen: boolean }[];
+  method: string; note: string;
+}
+
+export interface WhatIfLeg {
+  trade_id: number; symbol: string; direction: "BUY" | "SELL"; option_type: "CE" | "PE" | "FUT"; strike: number;
+  expiry?: string; lots: number; premium: number; iv?: number | null;
+}
+
+/** N2-3: the caller's own open positions grouped by underlying. */
+export interface WhatIfSubject {
+  underlying: string; legs: WhatIfLeg[]; skipped: { trade_id: number; symbol: string; reason: string }[];
+  modes: string[]; has_options: boolean; expiries: string[];
+}
+
+export interface WhatIfResult {
+  underlying: string; skipped: WhatIfSubject["skipped"];
+  prices: number[]; curves: { now: number[]; scenario: number[]; expiry?: number[] };
+  at_spot: { now: number; scenario: number; expiry?: number };
+  greeks: { delta: number; gamma: number; theta: number; vega: number; rho: number };
+  spot: number; days_forward: number; iv_shift: number; max_days_forward: number; expiry: string | null;
+  scenario_at: string; as_of: string; legs: WhatIfLeg[]; note: string;
 }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */

@@ -33,7 +33,7 @@ import ssl
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from email.message import EmailMessage
-from typing import Any, Dict, List, MutableMapping, Optional, Set, Tuple
+from typing import Any, Dict, List, MutableMapping, Optional, Set, Tuple, Union
 
 import httpx
 
@@ -43,8 +43,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.observability.metrics import ALERT_DELIVERIES
-from app.alerts.channels import EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, decrypt_config, decrypt_raw, encrypt_config, severity_reaches
-from app.alerts import staleness, webpush
+from app.alerts.channels import (DLT_FIELDS, EmailConfig, PushConfig, SmsConfig, TelegramConfig, WebhookConfig, WhatsAppConfig, decrypt_config,
+                                 decrypt_raw, encrypt_config, severity_reaches)
+from app.alerts import s10_gate, staleness, webpush
 from app.alerts.deeplink import app_path, open_in_app_row, push_wanted
 from app.core.enums import NotificationType, AlertChannelType, AlertDeliveryStatus
 from app.db.models import AlertChannelRecord, AlertDeliveryRecord, NotificationRecord
@@ -269,7 +270,7 @@ async def send_webhook(config: WebhookConfig, notification: NotificationRecord, 
             await client.aclose()
 
 
-_PLACEHOLDER = re.compile(r"\{(to|text|title|severity|event_type)\}")
+_PLACEHOLDER = re.compile(r"\{(to|text|title|severity|event_type|dlt_entity_id|dlt_template_id|sender_id|template|language)\}")
 
 
 def _fill_template(template: str, values: dict) -> str:
@@ -278,13 +279,19 @@ def _fill_template(template: str, values: dict) -> str:
     return _PLACEHOLDER.sub(lambda m: values[m.group(1)], template)
 
 
-def render_sms(config: SmsConfig, notification: NotificationRecord, to_number: str) -> Tuple[str, Optional[str]]:
+def render_sms(config: Union[SmsConfig, WhatsAppConfig], notification: NotificationRecord, to_number: str) -> Tuple[str, Optional[str]]:
     """(body, query) for one recipient: the template with placeholders filled and JSON-escaped when
     the content type is JSON, so an alert message containing quotes cannot break the request."""
     plain, _ = render_text(notification)
     text = plain[: config.max_length]
     values = {"to": to_number, "text": text, "title": notification.title[:120], "severity": notification.severity,
               "event_type": notification.event_type}
+    for field in DLT_FIELDS:                                         # S10: India DLT registration (empty when not set)
+        values[field] = str(getattr(config, field, None) or "")
+    if isinstance(config, WhatsAppConfig):                           # S10: the approved template and its language
+        values.update(template=config.template_name, language=config.language)
+    else:
+        values.update(template="", language="")
     if "json" in (config.content_type or "").lower():
         values = {k: json.dumps(v)[1:-1] for k, v in values.items()}  # escape for insertion inside JSON strings
     else:
@@ -294,9 +301,12 @@ def render_sms(config: SmsConfig, notification: NotificationRecord, to_number: s
     return _fill_template(config.body_template, values), None
 
 
-async def send_sms(config: SmsConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
+async def send_sms(config: Union[SmsConfig, WhatsAppConfig], notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None,
                    idempotency_key: Optional[str] = None) -> None:
-    """Phase O3: one gateway request per recipient; the first failure is raised after trying all."""
+    """Phase O3: one gateway request per recipient; the first failure is raised after trying all. S10: also the
+    WhatsApp gateway (POST only, its approved template filled in)."""
+    kind = "WhatsApp gateway" if isinstance(config, WhatsAppConfig) else "SMS gateway"
+    method = "POST" if isinstance(config, WhatsAppConfig) else config.method
     await check_url_resolved(str(config.url))                       # P0.2 / S5
     owns_client = client is None
     client = client or httpx.AsyncClient(timeout=10.0)
@@ -308,7 +318,7 @@ async def send_sms(config: SmsConfig, notification: NotificationRecord, client: 
             if idempotency_key:
                 headers["Idempotency-Key"] = hashlib.sha256(f"{idempotency_key}|{number}".encode()).hexdigest()  # one per recipient
             try:
-                if config.method == "GET":
+                if method == "GET":
                     # decoded once here (httpx encodes again); duplicates kept as sent, so nothing is silently overridden
                     response = await client.get(str(config.url), params=httpx.QueryParams(tuple(parse_qsl(body, keep_blank_values=True))),
                                                 headers=headers)
@@ -322,7 +332,7 @@ async def send_sms(config: SmsConfig, notification: NotificationRecord, client: 
         if owns_client:
             await client.aclose()
     if errors:
-        raise RuntimeError("SMS gateway: " + "; ".join(errors))
+        raise RuntimeError(f"{kind}: " + "; ".join(errors))
 
 
 async def send_push(config: PushConfig, notification: NotificationRecord, client: Optional[httpx.AsyncClient] = None) -> List[str]:
@@ -389,6 +399,7 @@ async def send_via_channel(
     A PUSH channel whose devices have gone gets its config rewritten in place (caller commits).
     `idempotency_key` (Z10-b) goes to receivers that can dedupe a repeated send: webhook / SMS headers, email Message-ID."""
     config = decrypt_config(channel)
+    await s10_gate.enforce(session, channel.tenant_id, channel.channel_type, config)   # S10: WhatsApp / SMS DLT, every path
     plain, html_body = render_text(notification)
     mail_headers = {"Message-ID": _message_id(idempotency_key)} if idempotency_key else None
     if channel.channel_type == AlertChannelType.TELEGRAM.value:
@@ -417,7 +428,7 @@ async def send_via_channel(
                 channel.encrypted_config = encrypt_config(PushConfig(subscriptions=remaining, categories=config.categories),  # type: ignore[union-attr]
                                                           channel.tenant_id)
             logger.info("Pruned %d gone push subscription(s) for tenant %s", len(gone), channel.tenant_id)
-    elif channel.channel_type == AlertChannelType.SMS.value:
+    elif channel.channel_type in (AlertChannelType.SMS.value, AlertChannelType.WHATSAPP.value):
         await send_sms(config, notification, client, idempotency_key=idempotency_key)  # type: ignore[arg-type]
     else:
         raise RuntimeError(f"Unknown channel type {channel.channel_type}")
@@ -661,7 +672,15 @@ async def dispatch_pending(
                 await asyncio.wait_for(_send_one(session, channel, notification, delivery, client, delivery.idem_key), timeout=budget)
             else:
                 await _send_one(session, channel, notification, delivery, client, None)
-        except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
+        except s10_gate.Refused as refused:
+            # S10 (checked in send_via_channel, inside this try): the flag was turned off or the plan no longer pays for
+            # WhatsApp - nothing is sent and the reason is kept; not retried.
+            channel.last_error = refused.reason[:500]
+            if await _finish(session, delivery, claim, status=AlertDeliveryStatus.SUPPRESSED.value, reason_code=s10_gate.REASON_CODE,
+                             last_error=refused.reason[:500]):
+                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=AlertDeliveryStatus.SUPPRESSED.value).inc()
+        except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row (an undecryptable
+            # channel included: one organisation's broken channel never stops another's deliveries)
             error = (str(exc) or type(exc).__name__)[:500]
             channel.last_error = error
             outcome: Dict[str, Any] = {"attempts": attempts, "last_error": error}

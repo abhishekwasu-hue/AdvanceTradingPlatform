@@ -68,6 +68,15 @@ SHOULD_BLOCK = [
     "Short interest rose - buy RELIANCE now.", "Buy when ready, sell TCS.", "Status: BUY 10 RELIANCE filled - sell TCS now.",
     "Status: BUY 10 RELIANCE filled - buy more RELIANCE.", "Order: SELL 5 TCS at 4000 filled; next buy INFY.",
     "Rule: Buy RELIANCE when RSI < 30 - and buy TCS too.",
+    # review round 5: how-to exemptions never cover a trade verb or "now"; " and " / " then " open a clause
+    "Buy RELIANCE on the daily chart.", "Buy RELIANCE on the daily chart now.", "Buy RELIANCE on the weekly chart breakout.",
+    "Sell TCS on this chart.", "Buy RELIANCE chart setup.", "Buy the RELIANCE chart setup.", "Buy RELIANCE's chart breakout.",
+    "Buy RELIANCE from the order page.", "Sell TCS from the positions tab right away.", "Buy RELIANCE from your watchlist page now.",
+    "Buy RELIANCE in this view.", "Buy RELIANCE for the long view.", "Buy RELIANCE from the market screen.", "Buy the RELIANCE page dip.",
+    "Open the chart and buy RELIANCE.", "Check the levels and sell TCS now.", "Read this and buy RELIANCE.",
+    "Buy the 20 EMA pullback in RELIANCE now.", "Buy a 20 EMA bounce on RELIANCE.", "Buy the 50 DMA retest in TCS.",
+    "Sell the 200 SMA break in INFY.", "Add RELIANCE to the basket now", "Buy RELIANCE to the basket", "Buy TCS to your watchlist",
+    "Sell INFY to the comparison panel",
 ]
 
 SHOULD_PASS = [

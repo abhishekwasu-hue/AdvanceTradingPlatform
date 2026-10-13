@@ -118,7 +118,8 @@ def lists(path: str) -> Lists:
     deva = _alt([v for v in verbs.get("mr", []) + verbs.get("hi", []) + verbs.get("romanised", []) if v not in light_words])
     light = _alt(sorted(light_words))
     # LOW10: [ \t]* after the anchor (a newline is an anchor of its own), so runs of newlines stay linear
-    start = r"(?:^|(?<=[\n.!?;:,(\u0964\u0965—–])|(?<=\s-)|(?<=->))[ \t]*"
+    # round 5: "Open the chart and buy RELIANCE" - " and " / " then " open a clause too (an object is still required)
+    start = r"(?:^|(?<=[\n.!?;:,(\u0964\u0965—–])|(?<=\s-)|(?<=->)|(?<=\sand)|(?<=\sthen))[ \t]*"
     prefix = rf"(?:(?:{_alt(calls.get('clause_prefixes', []))})\s+){{0,2}}"
     # #230 review round 4: a lookahead, so a first verb-shaped word ("Long story short, buy RELIANCE") never consumes the
     # real call after it - finditer then tries every later position too.
@@ -243,11 +244,20 @@ _NOUN_PHRASE = re.compile(r"^\s*(?:\S+\s+){0,1}?(?:was|were|is|are|has|have|had|
 _PRONOUN_OBJECT = re.compile(r"^\s*(?:(?:some|a|bit|little|few)\s+)*(?:more|it|them|this|that|those|these)?\s*(?:now|here|today)?\s*$", re.I)
 _PRONOUN_ALWAYS = re.compile(r"^\s*(?:it|them|this one|that one)\s*(?:now|here|today|too|again)?\s*$", re.I)
 _WATCHLIST_TAIL = re.compile(r"^\s*to\s+(?:your|the|a|my)?\s*(?:watch\s*list|watchlist|chart|list|screen|screener|alerts?|alert rule|"
-                             r"basket(?: view)?|backtest|strategy|template|comparison(?: panel| view)?|panel)\b", re.I)
+                             r"backtest|strategy|template|comparison(?: panel| view)?|panel)\b", re.I)
 # App how-to wording: the instrument names a page / chart / view of the app, not a trade ("Exit the RELIANCE page",
 # "Grab the RELIANCE chart from the Charts tab", "Hold RELIANCE for the next session's analysis view").
 _UI_TAIL = re.compile(r"^\s*(?:'s\s+)?(?:chart|page|tab|view|panel|card|screen)s?\b|"
-                      r"^\s*(?:from|in|on|for)\s+(?:the|your|a|this)?\s*(?:[\w']+\s+){0,3}(?:view|page|tab|panel|chart|screen)\b", re.I)
+                      r"^\s*(?:from|in|on|for)\s+(?:the|your|a|this)?\s*(?:[\w']+\s+){0,3}(?:view|page|tab|panel|screen)\b", re.I)
+# The how-to exemptions above apply only to app verbs, never to a trade verb or with anything about now (round 5).
+@functools.lru_cache(maxsize=256)
+def _acts_now(s: str) -> bool:
+    """Whether sentence `s` says "take it / act now" anywhere - once per sentence, not once per verb."""
+    return bool(_ACT_NOW.search(s))
+
+
+_HOWTO_NOW = re.compile(r"\b(?:now|today|tomorrow|tonight|asap|immediately|right away|this week)\b", re.I)
+_HOWTO_VERBS = frozenset({"add", "grab", "open", "view", "plot", "exit", "hold", "pin", "show", "load", "remove", "close"})
 # "Add a 20 EMA on the RELIANCE chart": an indicator length, not a price level.
 _INDICATOR_LENGTH = re.compile(r"^\s*(?:an?\s+|the\s+)?\d+[\s-]*(?:period\s+|day\s+|bar\s+)?"
                                r"(?:EMA|SMA|DMA|WMA|MA|RSI|VWAP|ATR|ADX|MACD|bollinger|supertrend|CCI|OBV)\b", re.I)
@@ -399,7 +409,7 @@ def _has_instrument(text: str, L: Lists) -> bool:
     return any(instrument_names.prefix_len(words[i:i + instrument_names.MAX_WORDS]) for i in range(len(words)))
 
 
-def _object(rest: str, L: Lists, s: str, *, allow_level: bool) -> Optional[str]:
+def _object(rest: str, L: Lists, s: str, *, allow_level: bool, verb: str = "") -> Optional[str]:
     """What an imperative / modal verb is aimed at (None = not a call): an instrument, a share word or a price level after
     the fillers; "a signal / setup / rating on RELIANCE"; a pronoun ("buy more") when the sentence names an instrument.
     A noun phrase ("Sell HDFCBANK was the most common signal") is not a call."""
@@ -415,19 +425,20 @@ def _object(rest: str, L: Lists, s: str, *, allow_level: bool) -> Optional[str]:
         obj = _instrument_at_start(rest[legs.end():], L, allow_level=False)
         if obj:
             return obj
-    if _INDICATOR_LENGTH.match(rest):
+    howto = verb.lower() in _HOWTO_VERBS and not _HOWTO_NOW.search(rest) and not _acts_now(s)
+    if howto and _INDICATOR_LENGTH.match(rest):
         return None
     lead_the = re.match(r"^\s*the\s+", rest, re.I)
     obj = _instrument_at_start(rest, L, allow_level=allow_level)
     if obj is not None:
         last = obj.split()[-1]
         after = rest[rest.find(last) + len(last):] if last in rest else ""
-        if _UI_TAIL.match(after) and (lead_the or re.match(r"^\s*(?:from|in|on|for)\b", after, re.I)
+        if howto and _UI_TAIL.match(after) and (lead_the or re.match(r"^\s*(?:from|in|on|for)\b", after, re.I)
                                       or re.match(r"^\s*(?:'s\s+)?(?:chart|page|tab|view|panel|card|screen)", after, re.I)):
             return None                                         # app how-to wording about a page / chart / view
         if _NOUN_PHRASE.match(re.sub(r"^\s*(?:positions?|shares?|stocks?|calls?|puts?|orders?|signals?)\b", "", after, flags=re.I)):
             return None
-        if _WATCHLIST_TAIL.match(after):
+        if howto and _WATCHLIST_TAIL.match(after):
             return None                                         # "Add RELIANCE to your watchlist": not a trade
         return obj
     if _PRONOUN_ALWAYS.match(rest) or (_PRONOUN_OBJECT.match(rest) and _has_instrument(s, L)):
@@ -457,14 +468,14 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
     for m in L.imperative.finditer(s):
         if exempt(m, howto_ok=True):
             continue
-        obj = _object(m.group("rest"), L, s, allow_level=True)
+        obj = _object(m.group("rest"), L, s, allow_level=True, verb=m.group("verb"))
         if obj:
             add(m.group("verb"), obj)
     for pattern in (L.modal, L.gerund):
         for m in pattern.finditer(s):
             if exempt(m, howto_ok=True):
                 continue
-            obj = _object(m.group("rest"), L, s, allow_level=False)
+            obj = _object(m.group("rest"), L, s, allow_level=False, verb=m.group("verb"))
             if obj:
                 add(m.group("verb"), obj)
     for m in _GERUND_SUBJECT.finditer(s):
@@ -545,12 +556,16 @@ def _paragraph_levels(p: str, L: Lists) -> bool:
     return _has_instrument(p, L)
 
 
+_POSSESSIVE = re.compile(r"\b([A-Z][A-Z0-9&]{1,19})['\u2019]s\b")
+
+
 def detect(text: str, path: str) -> List[str]:
     """The call labels in `text` (module docstring), in order of appearance."""
     if len(text or "") > MAX_CHARS:
         return [f"call: text too long to check (over {MAX_CHARS} characters)"]
     L = lists(path)
     body = L.verb_line.sub(r"\1 ", normalise(text))            # "Buy\nRELIANCE": a verb alone on its line opens the next one
+    body = _POSSESSIVE.sub(r"\1", body)                        # "Buy RELIANCE's chart breakout": the ticker itself
     found: List[str] = []
     for s in sentences(body):
         for item in _sentence_calls(s, L):

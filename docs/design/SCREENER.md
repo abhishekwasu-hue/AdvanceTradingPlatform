@@ -1333,6 +1333,98 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
   (P1 §1.6), the Turtles "Then" template (ATR sizing, 2N stop), short mirrors (TX2), the remaining catalogue (LG2,
   LG3), search by style chips beyond the taxonomy's setup chips.
 
+## U7 LG2: five more Legends cards (flag `screener_legends_lg2`)
+
+The spec's "LG2 remaining trend / pullback / options" (U7 §6), limited to cards whose rules a published work states
+and that run on bars alone (OPEN_QUESTIONS LG2-1 lists what is left out and why).
+
+- **The five cards.** They are in `legends.json` with `"slice": "lg2"`, and the same lint as LG1 applies to the whole
+  library.
+  - Livermore-style pivotal-point breakout (*How to Trade in Stocks*, 1940; `unverified`: no catalogue record found).
+  - Wyckoff-style trading-range spring (Pruden, *The Three Skills of Top Trading*, 2007).
+  - Raschke-style false 20-day breakdown reversal (the second *Street Smarts* card; the branded name stays out of the
+    title).
+  - Crabel-style opening-range breakout (5-minute bars, `ORHigh`).
+  - Tudor Jones-style 200-day regime filter (the interview in Robbins, *Money: Master the Game*, 2014).
+  - The screens use only plain registry functions: no breakout or zone family and no new function, so there is no
+    new Z10-a causal case.
+- **The flag.** `screener_legends_lg2` is default OFF, on top of `screener_legends`.
+  - API: `GET /api/screener/legends` adds the LG2 cards only while it is on (`legends.payload(..., slices=)`), and
+    `/legends/{id}` answers 404 for an LG2 card while it is off.
+  - Taxonomy: a per-screen flag (`taxonomy.register_screen_flags`; route `hidden_ids`) hides the LG2 screens and their
+    counts. The cards keep the `legends.` ids and source, so the gallery's card rule is unchanged.
+  - No new route.
+- **Sources.** `legends_sources.json` adds `livermore_1940`, `pruden_2007` and `robbins_2014`, each with its public
+  record URLs and a review note (LG2-3). The `covers` of `raschke_connors_1995` now also names the false-breakout
+  reversal.
+- **Tests.** `tests/test_n3_lg2_legends.py` covers:
+  - the slice, lint and links;
+  - the review status of the new sources;
+  - no new or flagged function;
+  - a positive and a negative bar fixture per card through `run_screen`;
+  - the flag: off hides the cards and taxonomy entries, on shows them, LG2 alone shows nothing;
+  - per-screen hiding in the taxonomy.
+
+  The LG1 tests read the LG1 slice. The frontend samples are regenerated (the LG1 view; LG2 stays hidden in them).
+
+## N3 S6a (built): screen history - who passed on a date, and screen fitness (flag `screener_history`, off)
+
+Spec §2.6 and §2.7, the first of S6's two PRs. S6b is the rolling screen backtest: rebalance, top-N by rank,
+weighting, the part C cost and slippage models, and the benchmark comparison.
+
+- **Routes.** Both are behind `screener_v2` and `screener_history` (503 while either is off), are trader routes, use
+  the run rate limit and are classified in the tenancy table:
+  - `POST /api/screener/history/asof`: a saved screen or a source, a date, and a universe (an index code or up to 300
+    symbols); returns the matches on that date.
+  - `POST /api/screener/history/fitness`: start, end, a step (daily / weekly / 4-weekly / monthly) and horizons
+    (default 1 / 5 / 20 sessions).
+  - Daily screens on bars only. Another timeframe, the zone functions and the functions that need data the run does
+    not load are refused with the reason.
+- **Data.**
+  - Only the shared lake's end-of-day bars (NSE bhavcopies). A company's bars come by ISIN across renames, adjusted
+    (`by_isin.isin_candles`); without ISIN runs, the symbol's own bars are used and the result notes "unadjusted".
+  - An index universe is the U1-b membership **as of each date**, so leavers and delisted names are included while
+    they were members. Dates before the first membership file are refused.
+  - The sealed holdout is refused, including for the forward-return window.
+- **No look-ahead.**
+  - The screen at date d sees bars that closed on or before d. A symbol is evaluated only if it traded that session.
+  - A screen's history starts with a warm-up: max(3 x lookback, lookback + 100) sessions before the first date, so
+    smoothed indicators have settled.
+  - The fast path evaluates the full series once per symbol (or once per group of symbols sharing a bar index, the
+    Z10-d panel) and reads it at each date. That is valid because every ScreenQL function is causal (Z10-a). The
+    tests check it against the cut-bars run at each date, and check that changing every bar after a date changes
+    nothing at that date.
+  - A cross-sectional screen (Rank / PercentileRank) runs date by date on cut bars, at most 60 dates.
+  - No new ScreenQL function, so no new Z10-a causal cases.
+- **Fitness.** For each horizon:
+  - the passers' mean forward return against the eligible universe's equal-weight mean on the same dates;
+  - the hit rate (a passer beating that mean);
+  - the per-date excess and its t-statistic.
+  Also reported:
+  - turnover and the average number of passers;
+  - a breadth regime split at the main horizon (5): more or fewer than half the universe above its 50-session
+    average, known at d;
+  - a "low sample" flag below 30 observations, and a confidence note in plain words.
+  Forward returns are taken at d + h sessions on the trading calendar, at the last close on or before that day: a
+  delisted name keeps its last price, and a date whose horizon has not finished is left out.
+- **Deflation (trial ledger).**
+  - Each fitness run is one trial in `research_trials`, with `kind: screen_fitness` and the per-date excess returns.
+  - The result's Deflated Sharpe is taken against every screen fitness trial of the organisation in the last 30 days,
+    and it says how many there were.
+- **Not modelled here:** costs and execution (S6b). It is information, never a recommendation; the disclaimer is in
+  every answer.
+- **Perf (Z10-d):** `screen_fitness` covers the 50-factor EOD screen over 300 symbols, weekly over a year, with
+  1 / 5 / 20-session statistics. The target is 3 s, times the CI factor, in the `perf` job; locally it took 1.6 s.
+
+### Review of S6a (fixed)
+- HIGH: a screen with a last-bar-only function runs date by date on cut bars (the fast path read a single last-date
+  answer onto every date); the fast path refuses a non-series; a test compares the fast path with the cut-bar run for
+  every registry function the history path takes.
+- MED: prices as known at each date (S6-9); non-overlapping dates for the t-statistic and deflation (S6-10).
+- LOW: a symbol reused by another company gets its ISIN in the label; picks with no bar at d + h are counted
+  (`no_bar_at_horizon`); unadjusted bars across a split leave those dates out; the deflation family is keyed by step and
+  horizon; a forward window into the holdout is refused (tested).
+
 ## S10 (Phase 0 slice, built): the ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
 
 Source: SCREENER_SPEC §5 S10 ("J (ETF/MF), SMS/WhatsApp, mobile push, marketplace") within ATP_PHASE0_FREEZE (no

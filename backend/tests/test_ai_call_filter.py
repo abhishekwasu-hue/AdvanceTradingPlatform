@@ -145,6 +145,35 @@ SHOULD_BLOCK = [
     "INFY: close below the 20-DMA and walk away", "INFY: close below the 20-DMA before results", "TCS: close above the 20-DMA for upside",
     "TCS: close above 4000, a buying opportunity", "TCS: hold above 4000 kept the trend, stay long", "TCS: close 4050 is a good sign to add",
     "INFY: close 1500 vs holding", "INFY: close at 1500 for a 2% gain",
+    # follow-ups of round 12: verdict asides, a trade verb on a level, "pick it up", English verbs with Hindi / Marathi light verbs
+    "INFY: close at 1500 considering the risk", "INFY: close at 1500 in view of results", "INFY: close at 1500 on weakness",
+    "INFY: close at 1500 into the rally", "INFY: close at 1500 on a bounce", "INFY: close at 1500 on any bounce",
+    "INFY: close at 1500 with a trailing stop", "INFY: close at 1500 with discipline",
+    "INFY: close at 1500, no questions asked", "INFY: close at 1500, no hesitation", "INFY: close at 1500, full stop",
+    "INFY: close at 1500 at the earliest", "INFY: close at 1500 on priority", "INFY: close at 1500 first thing",
+    "INFY: close at 1500 when it opens", "INFY: close at 1500 once it trades there", "INFY: close at 1500 whenever possible",
+    "TCS: hold above 4000 through expiry", "TCS: hold above 4000 into results", "TCS: hold above 4000 for the long term",
+    "TCS: hold above 4000 for the medium term", "TCS: hold above 4000 with patience", "TCS: hold above 4000 is my advice",
+    "TCS: hold above 4000 is my view", "TCS: hold above 4000 is what I'd do", "INFY: close at 1500 is what I'd do",
+    "INFY: close at 1500 is the prudent thing", "INFY: close at 1500 - that's the trade",
+    "INFY: close at 1500; that is the plan", "INFY: close at 1500. That is the plan.",
+    "INFY: close at 1500 and stop worrying", "INFY: close at 1500 and forget it", "INFY: close at 1500 and wait for 1450",
+    "INFY: close at 1500 and look for 1450", "INFY: close at 1500, wait for 1450", "INFY: close at 1500, re-buy near 1450",
+    "INFY: close at 1500, rebuy near 1450", "INFY: close at 1500, pick it up near 1450",
+    "INFY: close at 1500, scoop it up at 1450", "INFY: close at 1500, load up at 1450",
+    "INFY: close at 1500, short below 1490", "TCS: close at 4050, go long above 4060",
+    "INFY: close at 1500 on strength, for the record", "INFY: close at 1500 with a profit",
+    "INFY: close at 1500 at a profit", "INFY: close at 1500 at a loss if needed", "INFY: close at 1500 कर दो",
+    "INFY: close at 1500 कर लो", "INFY: 1500 पर close करें", "INFY: close at 1500 kar do", "INFY: close at 1500 karo",
+    "INFY: 1500 la close kara", "INFY: close at 1500 क्लोज करा", "INFY: close at 1500; prudent to exit",
+    "INFY: close at 1500; it is the wise thing", "INFY: close at 1500; safest option", "INFY: close at 1500; a must",
+    "INFY: close at 1500; prudent", "INFY: close at 1500; recommended.", "INFY: close at 1500, period.",
+    "INFY: close at 1500. It is the right call.", "INFY: close at 1500. That's my advice.", "TCS: weak, sell below 4000",
+    "TCS looks weak; short under 4000.", "INFY: close at 1500, just do it", "INFY: close at 1500, or else",
+    "INFY: close at 1500, no doubt", "INFY: close at 1500 without hesitation", "INFY 1500 par exit karo",
+    "TCS 4000 के नीचे sell करो", "INFY: close at 1500, so the risk is capped", "INFY: close at 1500 to end the week flat",
+    "INFY: close 1500 and cut losses", "INFY: close at 1500, right call", "INFY: close 1500 to gain 2%; then re-buy",
+    "INFY: close at 1500, better than holding",
 ]
 
 SHOULD_PASS = [
@@ -234,6 +263,38 @@ SHOULD_PASS = [
     "TCS: close 4050 was the week's best.", "TCS: close 4050 is bullish.", "TCS: close 4050 was a strong finish.",
     "TCS: close 4050; book value 1200.", "NIFTY: close 25100, smart money flows 2 cr.", "TCS: close 4050; then-CEO comments drew volume.",
     "TCS: close 4050 vs 4000, worth 2,000 cr in turnover.",
+    # follow-ups of round 12: advice words only in the field's own ;-clause, recap infinitives, events after before / until,
+    # sector and quarter words are never the level's instrument, Hindi / Marathi predicates
+    "TCS: close 4050, better than peers.", "INFY: close 1500, right at the 50-DMA.",
+    "TCS: close 4050, just above the 50-DMA.", "INFY: close 1500 after good results.",
+    "NIFTY: close 25100 as banks did well; IT was the best performer.",
+    "TCS: close 4050; Q2 results were better than expected.", "NIFTY: close 25100, up 0.4% until the last-hour sell-off.",
+    "TCS: close 4050 ahead of results on Thursday.", "TCS: close 4050, up 2% before results.",
+    "INFY: close 1500 and cut its weekly loss to 1%.", "TCS: close 4050 to gain 1.2% on the day.",
+    "TCS: close 4050 to cap a 3-session rally.", "TCS: close 4050 to stop a 3-day slide.",
+    "TCS: close 4050 to end the week up 2%.", "TCS: close 4050, to finish 2% higher for the week.",
+    "TCS: close 4050, or 1.2% above Monday.", "TCS: close 4050, so the weekly gain is 2%.",
+    "TCS: close 4050; the company plans a buyback.", "TCS: close 4050; FII entry was 2,000 cr.",
+     "TCS: close 4050, the right shoulder of the pattern.",
+    "TCS: close 4050, a clear breakout.", "TCS: close 4050 on clear volume.",
+    "NIFTY: close 25100; FIIs net sold 2,000 cr and DIIs bought 1,500 cr.", "NIFTY: close 25100 while banks lagged.",
+    "NIFTY: close 25100 despite weak global cues.", "TCS: close 4050 after the company announced a buyback.",
+    "TCS: close 4050 after results beat estimates.",
+    "TCS: close 4050, a 3-week high, on 1.4x volume; INFY: close 1500, flat.",
+    "TCS: close 4050 (+1.2%), RSI 62, above the 20-DMA; volume 1.1x the 20-day average.",
+    "NIFTY: close 25100, up 0.4%; BANKNIFTY: close 52000, down 0.2%; IT led, metals lagged.",
+    "TCS: close 4050, यानी 1.2% की बढ़त।", "TCS: close 4050 रहा, 1.2% ऊपर।", "TCS: close 4050 झाला, 1.2% वाढ.",
+    "NIFTY: close 25100, 0.4% वर.", "TCS: close 4050 पर हुआ।", "TCS ka close 4050 raha, 1.2% upar.",
+    "INFY: close 1500, kal se 1% upar.", "TCS: close 4050, the strongest close in 5 sessions.",
+    "TCS: close 4050, its best close since July.", "TCS: close 4050, which is 2% above the 20-DMA.",
+    "TCS: close 4050, which was a 3-week high.", "TCS: close 4050 and held above the 50-DMA all week.",
+    "TCS: close 4050, marking a 3-week high.", "TCS: close 4050, extending gains to a third session.",
+    "TCS: close 4050, snapping a 3-day losing streak.", "TCS: close 4050, helped by strong deal wins.",
+    "TCS: close 4050, led by IT stocks.", "TCS: close 4050, in a good session for IT.",
+    "NIFTY: close 25100. If banks hold, the trend stays up.", 
+    "TCS: close 4050, just shy of the high.", "TCS: close 4050, or about 1% higher.",
+    "TCS: close 4050 to end the session higher.", "TCS: close 4050 to snap a 4-day losing streak.",
+    "TCS: close 4050 to extend gains.",
 ]
 
 
@@ -254,9 +315,10 @@ def test_descriptive_analysis_passes(text):
 
 
 def test_short_build_up_after_a_price_field_is_not_blocked():
-    for text in ("NIFTY: close 25100, short build-up in futures.", "NIFTY: close 25100, short covering seen."):
+    for text in ("NIFTY: close 25100, short build-up in futures.", "NIFTY: close 25100, short covering seen.",
+                 "TCS: close 4050; brokerages kept a buy rating."):
         s = output_filter.screen(text, "en")
-        assert s.ok and not s.blocked, text                  # review round 9: framed (the word "short"), never blocked
+        assert s.ok and not s.blocked, text                  # review round 9: framed (the word "short" / "buy"), never blocked
 
 
 def test_price_field_floods_stay_linear():
@@ -265,7 +327,8 @@ def test_price_field_floods_stay_linear():
     path = "app/ai/data/advice_terms.json"
     for text in ("TCS: close 1, " * 3000, "Close above 2450 in INFY. " * 1500, "INFY: close at 1500 - x " * 1700,
                  "TCS: close 1 after " * 2000, "- a " * 9500, "as per " * 5500, "is the a a " * 3500, "1.1.1." * 6400,
-                 "TCS: close 1; analysts target 1; " * 1200, "Close above 1 in INFY was the a " * 1200):
+                 "TCS: close 1; analysts target 1; " * 1200, "Close above 1 in INFY was the a " * 1200,
+                 "INFY: 1 पर close करें " * 1800, "INFY: weak, short below 1 " * 1500, "TCS: close 1; a " * 2400):
         started = time.monotonic()
         detect(text[:38000], path)
         assert time.monotonic() - started < 5, text[:30]            # review round 10: once per sentence, never per field

@@ -5,6 +5,7 @@ import pytest
 from app.ai import output_filter
 
 SHOULD_BLOCK = [
+    "Close/exit INFY.",
     # imperative verbs aimed at an instrument
     "Sell RELIANCE", "Go long RELIANCE", "Go short NIFTY here.", "Accumulate RELIANCE", "Short sell TCS.", "Book profits in TCS.",
     "Price is weak. Exit INFY now.", "Please buy HDFCBANK above 1650.", "Average down INFY.", "Load up on SBIN.",
@@ -62,6 +63,88 @@ SHOULD_BLOCK = [
     "Invest in RELIANCE (now)", "Put money in RELIANCE", "that said buy RELIANCE", "Buying RELIANCE here makes sense",
     "RELIANCE: Buy rating", "RELIANCE मध्ये गुंतवणूक करा", "RELIANCE में निवेश करें।", "रिलायन्सला खरेदी करा",
     "RELIANCE will hit 3000 for sure as it did last week", "Hold RELIANCE", "Add RELIANCE", "Grab RELIANCE", "Dump TCS", "Buy it",
+    # review round 4: an earlier verb-shaped word must not hide the real call
+    "Long story short, buy RELIANCE.", "Short answer: buy RELIANCE.", "Hold on, sell TCS now.", "Add to that, sell TCS now.",
+    "Exit, then buy RELIANCE.", "Exit rules are listed, sell TCS now.", "Exit: SMA cross down, sell TCS now.",
+    "Short interest rose - buy RELIANCE now.", "Buy when ready, sell TCS.", "Status: BUY 10 RELIANCE filled - sell TCS now.",
+    "Status: BUY 10 RELIANCE filled - buy more RELIANCE.", "Order: SELL 5 TCS at 4000 filled; next buy INFY.",
+    "Rule: Buy RELIANCE when RSI < 30 - and buy TCS too.",
+    # review round 5: how-to exemptions never cover a trade verb or "now"; " and " / " then " open a clause
+    "Buy RELIANCE on the daily chart.", "Buy RELIANCE on the daily chart now.", "Buy RELIANCE on the weekly chart breakout.",
+    "Sell TCS on this chart.", "Buy RELIANCE chart setup.", "Buy the RELIANCE chart setup.", "Buy RELIANCE's chart breakout.",
+    "Buy RELIANCE from the order page.", "Sell TCS from the positions tab right away.", "Buy RELIANCE from your watchlist page now.",
+    "Buy RELIANCE in this view.", "Buy RELIANCE for the long view.", "Buy RELIANCE from the market screen.", "Buy the RELIANCE page dip.",
+    "Open the chart and buy RELIANCE.", "Check the levels and sell TCS now.", "Read this and buy RELIANCE.",
+    "Buy the 20 EMA pullback in RELIANCE now.", "Buy a 20 EMA bounce on RELIANCE.", "Buy the 50 DMA retest in TCS.",
+    "Sell the 200 SMA break in INFY.", "Add RELIANCE to the basket now", "Buy RELIANCE to the basket", "Buy TCS to your watchlist",
+    "Sell INFY to the comparison panel",
+    # review round 6: exit / close / hold are trades even when a tab or view is named; close / open a position are trades
+    "Exit INFY from the positions tab.", "Exit INFY from the positions page.", "Exit INFY from the holdings page.",
+    "Exit INFY from the positions tab before the close.", "Exit INFY from the positions tab before results.",
+    "Close INFY from the positions tab.", "Close your INFY position from the positions tab.", "Close INFY on the orders page.",
+    "Hold RELIANCE for the long view.", "Hold TCS in your holdings view.", "Hold TCS in the portfolio view.",
+    "Exit INFY from the comparison view.", "Hold RELIANCE for the next session's analysis view.",
+    "Close the RELIANCE position.", "Close RELIANCE.", "Close INFY.", "Close out INFY now.", "Close all INFY positions.",
+    "Open a position in RELIANCE.", "Open a long in RELIANCE.", "Open RELIANCE long.", "Open a short position in TCS.",
+    "Open short NIFTY.", "Open the positions tab and close INFY.", "Exit the RELIANCE chart before the close.",
+    "Buy and hold RELIANCE now.", "You should buy and hold RELIANCE.", "Buy and sell RELIANCE intraday.", "Sell and short TCS.",
+    "Go long and buy RELIANCE.", "Close RELIANCE at 2450.",
+    "TCS: close", "INFY: close now.", "RELIANCE: hold", "Close RELIANCE above 2500.", "Close TCS at market.",
+    "Hold RELIANCE into results.",
+    # review round 8: a quantity, "at market" or an order word keeps close / open / hold an order
+    "TCS: close at market", "RELIANCE: open at market", "INFY: close 50% now", "INFY: close 100 shares", "TCS: hold 100 shares",
+    "NIFTY: open at 25000 with a long", "INFY: hold above 1500 or exit", "RELIANCE - hold above 2500 for 2600",
+    "Close of the RELIANCE position now.", "Close 50% of INFY.", "Close 2 lots of NIFTY.", "Open 2 lots of NIFTY long.",
+    "Close half of RELIANCE.", "Close at 2450 RELIANCE.", "Sell 50% of INFY.", "Sell half of RELIANCE.",
+    # review round 9: urgency / time words, a target, more quantity units, an advice predicate, the instrument after the level
+    "INFY: close at 1500 immediately", "INFY: close at 1500 asap", "INFY: close at 1500 right away", "INFY: close at 1500 please",
+    "INFY: close at 1500 tomorrow", "INFY: close at 1500 by Friday", "INFY: close at 1500, then re-enter at 1450",
+    "TCS: hold above 4000 till 4500", "TCS: hold above 4000 to 4500", "TCS: hold above 4000 towards 4500",
+    "TCS: hold above 4000 till results", "TCS: close 2 contracts", "TCS: close 50 pc", "TCS: close 50 per cent",
+    "TCS: close 75 quantity", "TCS: close 100 nos", "INFY: close 100 stocks", "INFY: close 1/2", "TCS: hold is the call",
+    "INFY: close is wise", "INFY: close and move on", "INFY: close below 1500 and walk away", "INFY: close below 1500 and stay out",
+    "INFY: close at 1500 is wise", "Close at 2450 on RELIANCE.", "Close above 2450 in INFY.", "Hold above 2500 with RELIANCE.",
+    "Close at 2450 all RELIANCE.", "Hold above 2500 your RELIANCE shares.", "Hold above 2500 - RELIANCE.", "Close half INFY.",
+    "Close 50pc of INFY.",
+    # review round 10: only a recap tail keeps a price field a recap (everything else stays an order)
+    "INFY: close at 1500 pronto", "INFY: close at 1500 at once", "INFY: close at 1500 without delay", "INFY: close at 1500 urgently",
+    "INFY: close at 1500, quickly", "INFY: close at 1500 - do it", "INFY: close at 1500 before results",
+    "INFY: close at 1500 ahead of results", "INFY: close at 1500 on Monday", "INFY: close at 1500 this week",
+    "INFY: close at 1500 by end of day", "INFY: close at 1500 before the close", "INFY: close at 1500 into strength",
+    "INFY: close at 1500 on strength", "INFY: close at 1500 is advisable", "INFY: close at 1500 is recommended",
+    "INFY: close at 1500 is prudent", "INFY: close at 1500 is ideal", "INFY: close at 1500 makes sense",
+    "INFY: close at 1500 is a good idea", "INFY: close at 1500 is the way", "INFY: close at 1500 if you own it",
+    "INFY: close at 1500 if you hold it", "INFY: close at 1500 if it breaks", "TCS: hold above 4000 if you own it",
+    "TCS: hold above 4000 for gains", "TCS: hold above 4000 for more upside", "TCS: hold above 4000 and ride it",
+    "TCS: hold above 4000, don't sell", "TCS: hold at 4000 for the next leg", "TCS: hold above 4000; it can go to 4500",
+    "INFY: close at 1500 and lock gains", "INFY: close at 1500 and take profits", "Close at 2450 against RELIANCE.",
+    "Close at 2450 via RELIANCE.", "Close 1/2 of INFY.", "INFY: close 1 lakh qty", "TCS: open at 4000 with a small lot",
+    "TCS: hold above 4000 up to 4500", "Close at 2450, RELIANCE.",
+    # review round 12 (HIGH-1): every tail is read for advice; a subordinate clause must report the past; "hold above / at N"
+    # is an order unless a predicate follows; dash asides, "per ...", gains and copula complements are closed forms
+    "INFY: close at 1500 after results", "TCS: hold above 4000 after results", "INFY: close at 1500 following the results",
+    "INFY: close at 1500 post results, re-buy lower", "INFY: close at 1500 as a precaution", "INFY: close at 1500 as a hedge",
+    "INFY: close at 1500 as it is weak", "TCS: hold above 4000 as long as it holds", "INFY: close at 1500 while you can",
+    "TCS: hold above 4000 despite the noise", "INFY: close at 1500 amid the selloff to protect capital",
+    "INFY: close at 1500 since it is weak", "TCS: hold above 4000 since it is strong", "TCS: hold above 4000 since the trend is up",
+    "INFY: close at 1500 - a prudent step", "INFY: close at 1500 - the safest choice", "INFY: close at 1500 – the obvious choice",
+    "TCS: hold above 4000 — a no-brainer", "INFY: close at 1500 as per your plan", "INFY: close at 1500 per the strategy",
+    "INFY: close at 1500 according to the plan", "INFY: close at 1500 in line with your risk plan",
+    "TCS: hold above 4000 for a 10% gain", "TCS: hold above 4000 for a rise to 4500", "INFY: close at 1500 for a quick gain",
+    "INFY: close at 1500 is a smart move", "INFY: close at 1500 is a wise move", "INFY: close at 1500 is a good move",
+    "INFY: close at 1500 is a sound move", "INFY: close at 1500 is a strong move", "INFY: close at 1500 is the safest",
+    "INFY: close at 1500 is the smartest", "INFY: close at 1500 is the cleanest", "INFY: close at 1500 from 1520 entry",
+    "TCS: hold above 4000 again", "TCS: hold above 4000 should signal a buy", "TCS: hold above 4000 with RSI above 60 as confirmation",
+    "INFY: close at 1500 by 2%", "TCS: hold above 4000", "TCS: hold at 4000", "TCS: hold 4000", "TCS: hold above 4000 for the week",
+    "INFY: close at 1500, as it is weak", "INFY: close at 1500, since it is weak", "INFY: close at 1500, a prudent step",
+    "INFY: close at 1500, the obvious choice", "INFY: close at 1500, if it breaks", "INFY: close at 1500, to be safe",
+    "INFY: close 1500, a no brainer", "INFY: close at 1500 is fine", "INFY: close 1500 is fine to do", "INFY: close 1500 as a safety measure",
+    "INFY: close 1500 after results come out", "INFY: close at 1500 after Monday", "INFY: close at 1500 amid the selloff",
+    "INFY: close at 1500 because it rallied", "TCS: close 4050; target 4500", "TCS: close 4050, analysts target 4500",
+    "Close at 1500 in INFY as a precaution.", "Hold above 2500 in RELIANCE after results.", "Close above 1500 in INFY, the obvious choice.",
+    "INFY: close below the 20-DMA and walk away", "INFY: close below the 20-DMA before results", "TCS: close above the 20-DMA for upside",
+    "TCS: close above 4000, a buying opportunity", "TCS: hold above 4000 kept the trend, stay long", "TCS: close 4050 is a good sign to add",
+    "INFY: close 1500 vs holding", "INFY: close at 1500 for a 2% gain",
 ]
 
 SHOULD_PASS = [
@@ -96,6 +179,61 @@ SHOULD_PASS = [
     # third review of #230
     "Short interest in TCS rose.", "Rule: Buy NIFTY when the close crosses above the 20-day high.",
     "Hold on - the data is still loading.", "Add SMA(close, 20) and RELIANCE to the chart.",
+    # review round 4: app how-to wording
+    "Add RELIANCE to the backtest.", "Add RELIANCE to your strategy.", "Add RELIANCE to the screener.", "Add RELIANCE to the template.",
+    "Add RELIANCE to the comparison panel.", "Add a 20 EMA on the RELIANCE chart.", "Exit the RELIANCE page.",
+    "Grab the RELIANCE chart from the Charts tab.",
+    # review round 6: the benchmark's name, the candle's close / open, and the app's own open
+    "The strategy will buy and hold NIFTY in the backtest.",
+    "A buy and hold NIFTY portfolio lagged.", "Close above 2450 would confirm the breakout.", "Close at 2450 would be bullish.",
+    "Close below 2400 invalidates the setup.", "RELIANCE close was 2450.", "The close in RELIANCE was weak.",
+    "Open: 2440, High: 2460, Low: 2430, Close: 2450", "Open interest in NIFTY rose.", "Open positions in TCS rose.",
+    "Open RELIANCE in a new tab.", "Open the RELIANCE chart.", "Close the RELIANCE chart.", "Close the order ticket.",
+    "Close the chart and review INFY.", "Open the positions tab.",
+    # review round 7: close / open / hold as a bar's price fields, in the "TICKER: verb" form too
+    "TCS: close 4050, RSI 62.", "NIFTY: open 25000, close 25100.", "TCS - close 4050.",
+    "TCS: close ₹4,050.", "TCS: close 4,050.25.", "TCS: close 4050 for a 1.2% gain.", "NIFTY: close 25100. TCS: close 4050.",
+    "TCS: close 4050; INFY: close 1500.", "TCS: close 4050 near its 50-DMA.", "INFY: close 1500 as per NSE.", "RELIANCE: close above SMA 20.",
+    "INFY: close below 1500 on volume.", "RELIANCE: close 2480, open 2455.", "HDFCBANK: hold above 1650 kept the trend.",
+    "Close price: INFY 1500.", "NIFTY: hold of 25000 matters.",
+    # review round 8: recaps with a copula or comparative after the field
+    "TCS: close was flat.", "TCS: close unchanged at 4050.", "NIFTY: close higher by 0.4%.", "TCS: open flat, close higher.",
+    "HDFCBANK: open gap-up, close near the high.", "TCS: Close/Open ratio 1.01.", "INFY: open and close within 0.2%.",
+    "RELIANCE: close at a 52-week high.",
+    # review round 9: a later descriptive clause, a duration, a percentage move, more level nouns
+    "RELIANCE: close 2480, open interest in long positions rose.", "NIFTY: close 25100 vs target-date 25000 average.",
+    "INFY: close at 1500, best close of the month.", "INFY: close near 1500 for 3 sessions.", "TCS: close 50% above its IPO price.",
+    "TCS: close at record high.", "TCS: close near the day's low.", "TCS: close in the top quartile.",
+    "Close above 2450 confirms the RELIANCE breakout.", "RELIANCE: close above 2500 should confirm the breakout.",
+    # review round 10: a recap predicate after the instrument, several fields or instruments, recap clauses
+    "Close above 1500 in INFY was the week's best.", "Close at 1500 in INFY marked a 3-week high.",
+    "Hold above 1500 in INFY lasted 5 sessions.", "Close above 25000 in NIFTY for the third session.",
+    "Open 1490, close 1500 in INFY.", "Close near 1500 on INFY, near 4050 on TCS.", "Close 1500 for INFY and 4050 for TCS.",
+    "INFY: close 1500 on TCS results day.", "TCS: close 4050, then 4080 on Tuesday.",
+    "NIFTY: close 25100 vs 25000 last week, then 24900 the week before.", "NIFTY: close 25100, now 0.4% above the 20-day SMA.",
+    "INFY: close 1500 today, up 1%.", "NIFTY: close 25100, the move from 25000 was 0.4%.",
+    "TCS: close 4050 to 4080 range over 5 sessions.", "BANKNIFTY: hold of 52000 support was tested.",
+    "RELIANCE: close above the 200-day moving average.", "INFY: close near 1500 for the week.", "TCS: close above VWAP all session.",
+    "NIFTY: close 25100 at the bell; trading stopped at 15:30.", "TCS: close 4050 for the week.", "INFY: close 1500 with RSI 62.",
+    "INFY: close 1500 in a range of 1480-1520.", "TCS: close 4050; exit poll results due.",
+    # review round 12 (MED-1): an advice word before a level / candle noun describes it; "is fine" as the whole complement;
+    # a third party's target in another clause; "now up / down"
+    "INFY: close 1500 is fine.", "INFY: close 1500 is key support.", "TCS: close 4050 is a strong close.",
+    "TCS: close 4050 is a good sign for the trend.", "TCS: close 4050 is the best close in 5 sessions.",
+    "TCS: close 4050, now up 3 sessions straight.", "TCS: close 4050; brokerage target 4500 unchanged.",
+    "INFY: close 1500 versus 1480; analysts see a target of 1600.", "TCS: close 4050 now 2% above the 50-DMA.",
+    "TCS: close 4050 near the consensus target price.", "TCS: close 4050 marks a breakout from the range.",
+    # round 12: recaps the structural reading keeps (past evidence, a bare value with an event, hold with a predicate)
+    "TCS: close 4050 after results.", "TCS: close 4050 after results, up 2%.", "TCS: close 4050 after results on Thursday.",
+    "TCS: close 4050 as IT rallied.", "TCS: close 4050 amid sector weakness.", "TCS: close 4050 despite FII outflows.",
+    "TCS: close above 4000 since Monday.", "TCS: close above 4000 after 3 sessions below.", "TCS: close above 4000 again.",
+    "TCS: hold above 4000 since the gap.", "TCS: hold above 4000 is intact.", "TCS: hold above 4000 continues.",
+    "TCS: hold above 4000 for 5 sessions so far.", "TCS: hold of 4000 failed on Friday.", "INFY: close 1500 since Monday, a 2% gain.",
+    "TCS: close 4050 - a 3-week high.", "INFY: close 1500 per the exchange data.", "INFY: close 1500, in line with the sector.",
+    "TCS: close 4050 for a weekly gain of 2%.", "TCS: close 4050 for a 2% weekly gain.", "TCS: close 4050 is the highest since March.",
+    "TCS: close 4050 was the week's best.", "TCS: close 4050 is bullish.", "TCS: close 4050 was a strong finish.",
+    "TCS: close 4050; book value 1200.", "NIFTY: close 25100, smart money flows 2 cr.", "TCS: close 4050; then-CEO comments drew volume.",
+    "TCS: close 4050 vs 4000, worth 2,000 cr in turnover.",
 ]
 
 
@@ -113,6 +251,38 @@ def test_descriptive_analysis_passes(text):
     for lang in ("en", "mr", "hi"):
         s = output_filter.screen(text, lang)
         assert s.ok and s.text == text, (text, lang, s.blocked)
+
+
+def test_short_build_up_after_a_price_field_is_not_blocked():
+    for text in ("NIFTY: close 25100, short build-up in futures.", "NIFTY: close 25100, short covering seen."):
+        s = output_filter.screen(text, "en")
+        assert s.ok and not s.blocked, text                  # review round 9: framed (the word "short"), never blocked
+
+
+def test_price_field_floods_stay_linear():
+    import time
+    from app.ai.call_detect import detect
+    path = "app/ai/data/advice_terms.json"
+    for text in ("TCS: close 1, " * 3000, "Close above 2450 in INFY. " * 1500, "INFY: close at 1500 - x " * 1700,
+                 "TCS: close 1 after " * 2000, "- a " * 9500, "as per " * 5500, "is the a a " * 3500, "1.1.1." * 6400,
+                 "TCS: close 1; analysts target 1; " * 1200, "Close above 1 in INFY was the a " * 1200):
+        started = time.monotonic()
+        detect(text[:38000], path)
+        assert time.monotonic() - started < 5, text[:30]            # review round 10: once per sentence, never per field
+
+
+def test_a_price_field_is_read_at_its_own_offset():
+    from app.ai.call_detect import _price_field, lists
+    L = lists("app/ai/data/advice_terms.json")
+    s = "WIPRO: close 4050 on volume as a precaution; TCS: close 4050 on volume"
+    assert not _price_field("close", " 4050 on volume", L, s, s.index(" 4050 on volume"))
+    assert _price_field("close", " 4050 on volume", L, s, s.rindex(" 4050 on volume"))   # review round 12, LOW: its own copy
+
+
+def test_buy_and_hold_as_a_benchmark_is_not_blocked():
+    s = output_filter.screen("Buy and hold NIFTY returned 12%.", "en")
+    assert s.ok and not s.blocked                             # review round 6: framed (an imperative-shaped start), not blocked
+    assert output_filter.call_terms("Buy and hold NIFTY returned 12%.") == []
 
 
 def test_the_call_labels_name_what_was_found():

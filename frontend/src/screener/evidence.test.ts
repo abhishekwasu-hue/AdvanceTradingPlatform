@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import sample from "./evidenceSample.json";
-import { barTimeText, chartSummary, drawableColor, evidenceGeometry, verifyRows, visibleDrawables, type EvidencePack } from "./evidence";
+import {
+  barTimeText, chartSummary, drawableColor, evidenceGeometry, replaySteps, stepReplay, trendTone, verifyRows, visibleDrawables,
+  type EvidenceDrawable, type EvidencePack,
+} from "./evidence";
 
 const pack = sample as unknown as EvidencePack;
 
@@ -64,5 +67,40 @@ describe("evidence pack helpers (U8 EV1)", () => {
     const text = chartSummary(pack, visibleDrawables(pack, new Set(), false));
     expect(text).toContain("BRK 1d candles up to the matched bar of");
     expect(text).toContain("range high");
+  });
+});
+
+describe("evidence context helpers (U8 EV3)", () => {
+  it("replay steps are the window's bar closes up to the pack's own bar, oldest first; the last is the stored pack", () => {
+    const steps = replaySteps(pack);
+    expect(steps).toHaveLength(pack.bars.t.length);
+    expect(steps[0]).toBe(new Date(Date.parse(pack.bars.t[0]) + 86400e3).toISOString());
+    expect(Date.parse(steps[steps.length - 1])).toBe(Date.parse(pack.as_of.bar_close));
+    expect(steps.every((t, i) => i === 0 || Date.parse(t) > Date.parse(steps[i - 1]))).toBe(true);
+    expect(replaySteps({ ...pack, base_tf: "1w" })).toEqual([]);                          // weekly screens are not replayed
+    const fiveMin = { ...pack, base_tf: "5m", bars: { ...pack.bars, t: ["2026-10-09T03:45:00+00:00", "2026-10-09T03:50:00+00:00"] },
+                      as_of: { bar_start: "2026-10-09T03:50:00+00:00", bar_close: "2026-10-09T03:55:00+00:00" } };
+    expect(replaySteps(fiveMin)).toEqual(["2026-10-09T03:50:00.000Z", "2026-10-09T03:55:00.000Z"]);
+  });
+
+  it("steps back and forward inside the window, and returns to the stored pack at the match", () => {
+    expect(stepReplay(null, -1, 40)).toBe(38);
+    expect(stepReplay(38, -1, 40)).toBe(37);
+    expect(stepReplay(0, -1, 40)).toBe(0);
+    expect(stepReplay(38, 1, 40)).toBeNull();
+    expect(stepReplay(null, 1, 40)).toBeNull();
+    expect(stepReplay(null, -1, 1)).toBeNull();
+  });
+
+  it("names trend tones in words-first order and labels option-chain levels on the price pane", () => {
+    expect([trendTone("UP"), trendTone("DOWN"), trendTone("SIDEWAYS"), trendTone(null)]).toEqual(["up", "down", "flat", "flat"]);
+    const wall: EvidenceDrawable = { id: "dc", row: pack.rows[0].id, kind: "overlay", pane: "price", label: "PCR(): option chain 2026-11-26", failed: false,
+      series: [], levels: [{ value: 101, label: "call OI wall", value_text: "101.00" }, { value: 99, label: "put OI wall", value_text: "99.00" }],
+      chain: { underlying: "BRK", expiry: "2026-11-26" } };
+    const g = evidenceGeometry(pack, [wall]);
+    expect(g.shapes.filter((s) => s.kind === "line")).toHaveLength(2);
+    expect(g.shapes.filter((s) => s.kind === "text").map((s) => s.text)).toEqual(["call OI wall 101.00", "put OI wall 99.00"]);
+    const plain = evidenceGeometry(pack, [{ ...wall, chain: undefined }]);
+    expect(plain.shapes.filter((s) => s.kind === "text")).toHaveLength(0);              // EV1 / EV2 levels unchanged
   });
 });

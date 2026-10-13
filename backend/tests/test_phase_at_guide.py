@@ -52,7 +52,7 @@ class _Provider:
 def test_ai_answer_is_grounded_and_falls_back():
     p = _Provider()
     r = asyncio.run(k.ai_answer(p, "RSI म्हणजे काय?", "mr", MEMORY, {"experience": "new", "style": "intraday"}))
-    assert r["source"] == "ai" and r["answer"].startswith("RSI") and "Marathi" in p.seen
+    assert r["source"] == "library" and "Marathi" in p.seen     # #230 cleanup: AI text in Devanagari is withheld (English only)
     assert "RSI (0-100)" in p.seen and "NIFTY BANK" in p.seen and "experience=new" in p.seen
     down = asyncio.run(k.ai_answer(_Provider(fail=True), "RSI म्हणजे काय?", "mr", MEMORY, None))
     assert down["source"] == "library" and "unavailable" in down["note"]

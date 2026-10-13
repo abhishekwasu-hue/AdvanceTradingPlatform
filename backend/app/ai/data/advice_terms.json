@@ -26,32 +26,25 @@
     "after": ["नाही", "नव्हे", "नसते", "नसतो", "नहीं", "नही"]
   },
   "action_verbs": {
-    "en": ["buy", "sell", "short", "go long", "go short"],
-    "mr": ["खरेदी", "विक्री", "विका", "घ्या"]
+    "en": ["buy", "sell", "short", "go long", "go short"]
   },
   "calls": {
-    "_comment": "Calls aimed at an instrument - blocked, not framed (app/ai/call_detect.py). The text is normalised first (NFKC, zero-width and format characters removed, Latin look-alikes mapped, nukta dropped, markdown, bullets, quotes and emoji turned into clause breaks). Blocked: an imperative trade verb opening a clause (after a list marker, a sentence end, ',', ':', ' - ', '->' or a bracket) followed by an instrument, a share word or a price level; 'TICKER: buy'; a Marathi / Hindi / romanised trade verb next to an instrument; 'I would / one could buy TICKER', 'consider buying TICKER'; 'my pick is TICKER', 'TICKER is a buy'; a stop AND a target with price levels in one paragraph plus an entry level or an instrument; a price level with certainty. An instrument is an upper-case ticker (not in not_tickers or the grounding acronyms) or a name from the instrument index (app/ai/instrument_names.py: the instrument master plus data/instrument_names.json), any case. Not calls: percentages, status / log / backtest / rule / how-to text, 'when <condition>' rules, negated sayings, past-tense certainty.",
+    "_comment": "Calls aimed at an instrument in English AI text (text with Devanagari is withheld, never read) - blocked, not framed (app/ai/call_detect.py). The text is normalised first (NFKC, zero-width and format characters removed, Latin look-alikes mapped, markdown, bullets, quotes and emoji turned into clause breaks). Blocked: an imperative trade verb opening a clause (after a list marker, a sentence end, ',', ':', ' - ', '->' or a bracket) followed by an instrument, a share word or a price level; 'TICKER: buy'; 'I would / one could buy TICKER', 'consider buying TICKER'; 'my pick is TICKER', 'TICKER is a buy'; a stop AND a target with price levels in one paragraph plus an entry level or an instrument; a price level with certainty. An instrument is an upper-case ticker (not in not_tickers or the grounding acronyms) or a name from the instrument index (app/ai/instrument_names.py: the instrument master plus data/instrument_names.json), any case. Not calls: percentages, status / log / backtest / rule / how-to text, 'when <condition>' rules, negated sayings, past-tense certainty.",
     "verbs": {
-      "en": ["accumulate", "add", "average down", "book profit", "book profits", "buy", "buy and hold", "buy and sell", "close", "close out", "close your", "cover", "dump", "exit", "exit all", "exit your", "go long", "go long on", "go short", "go short on", "grab", "hold", "invest", "invest in", "load up", "load up on", "long", "open", "open a long in", "open a long on", "open a long position in", "open a position in", "open a short in", "open a short on", "open a short position in", "open long", "open short", "park money in", "pick up", "purchase", "put money in", "put money into", "sell", "sell all", "short", "short sell", "square off"],
-      "mr": ["खरेदी करा", "खरेदी करायला हरकत नाही", "खरेदी करायला हवा", "खरेदी करायला हवी", "खरेदी करायला हवे", "खरेदी करावा", "खरेदी करावी", "खरेदी करावे", "गुंतवणूक करा", "गुंतवणूक करावी", "घेऊ शकता", "घेऊन टाका", "घ्या", "घ्यावा", "घ्यावी", "घ्यावे", "विका", "विकायला हरकत नाही", "विकायला हवा", "विकायला हवे", "विकावा", "विकावे", "विकून टाका", "विक्री करा"],
-      "hi": ["खरीद लें", "खरीद लेना चाहिए", "खरीद लो", "खरीद सकते हैं", "खरीदना चाहिए", "खरीदनी चाहिए", "खरीदारी कर लें", "खरीदारी करें", "खरीदारी करो", "खरीदें", "खरीदो", "निवेश कर लें", "निवेश करें", "निवेश करो", "बिकवाली करें", "बिकवाली करो", "बेच दें", "बेच देना चाहिए", "बेच दो", "बेच सकते हैं", "बेचना चाहिए", "बेचें", "बेचो", "ले लें", "ले लो"],
-      "romanised": ["kharedi kara", "khareedi kara", "kharidi kara", "khareed lo", "kharid lo", "kharido", "khareedo", "kharidein", "becho",
-        "bech do", "bechein", "le lo", "ghya", "vika", "vikun taka", "ghevun taka", "kharedi karavi"]
+      "en": ["accumulate", "add", "average down", "book profit", "book profits", "buy", "buy and hold", "buy and sell", "close", "close out", "close your", "cover", "dump", "exit", "exit all", "exit your", "go long", "go long on", "go short", "go short on", "grab", "hold", "invest", "invest in", "load up", "load up on", "long", "open", "open a long in", "open a long on", "open a long position in", "open a position in", "open a short in", "open a short on", "open a short position in", "open long", "open short", "park money in", "pick up", "purchase", "put money in", "put money into", "sell", "sell all", "short", "short sell", "square off"]
     },
-    "share_words": ["share", "shares", "stock", "शेअर", "शेअर्स", "शेयर", "शेयर्स", "स्टॉक", "समभाग"],
+    "share_words": ["share", "shares", "stock"],
     "entry": ["buy above", "buy at", "buy below", "buy near", "enter above", "enter at", "enter long", "enter short", "entering long",
       "entering short", "entry", "go long above", "go short below", "long above", "long at", "long near", "sell above", "sell at", "sell below",
-      "short at", "short below", "short near", "एन्ट्री", "प्रवेश"],
-    "stop": ["sl", "stop loss", "stop-loss", "stoploss", "stop", "स्टॉप लॉस", "स्टॉपलॉस", "स्टॉप-लॉस", "स्टॉप"],
-    "target": ["tgt", "target", "targets", "t1", "t2", "लक्ष्य", "टार्गेट", "टारगेट"],
-    "certainty": ["certainly", "definitely", "for certain", "for sure", "pakka", "surely", "जरूर", "ज़रूर", "नक्की", "निश्चित", "निश्चितच",
-      "पक्का", "पक्के"],
+      "short at", "short below", "short near"],
+    "stop": ["sl", "stop loss", "stop-loss", "stoploss", "stop"],
+    "target": ["tgt", "target", "targets", "t1", "t2"],
+    "certainty": ["certainly", "definitely", "for certain", "for sure", "surely"],
     "moves": ["be at", "cross", "crosses", "fall to", "go to", "hit", "hits", "rally to", "reach", "reaches", "target", "targets", "test", "tests",
-      "till", "to", "touch", "touches", "up to", "upto", "टार्गेट", "तक", "पर्यंत", "लक्ष्य"],
+      "till", "to", "touch", "touches", "up to", "upto"],
     "not_tickers": ["CE", "PE", "SL", "TGT", "RSI", "SMA", "EMA", "ATR", "ADX", "VWAP", "OI", "PCR", "IV", "AND", "OR", "NOT", "THE", "IF", "MACD",
       "DMA", "OHLC", "BOS", "CHOCH", "AI", "API", "PAPER", "LIVE", "NSE", "BSE", "MCX", "EOD", "IST", "ATM", "OTM", "ITM", "UP", "DOWN", "T1",
       "T2", "PNL", "P&L", "FII", "DII", "GTT", "MIS", "CNC", "NRML", "OK", "SEBI", "RBI", "GDP", "CPI"],
-    "light_verbs": ["घ्या", "ले लो", "ले लें", "घेऊ शकता", "le lo", "ghya", "घ्यायला हवा", "घ्यायला हवे", "घ्यायला हवी", "घ्यायला हरकत नाही"],
     "descriptive_nouns": ["signal", "signals", "side", "pressure", "volume", "volumes", "order", "orders", "interest", "zone", "zones", "area", "areas", "setup", "setups", "count", "counts", "ratio", "rating", "ratings", "rules", "rule", "button", "off", "-off", "off-", "programme", "program", "trigger", "triggers", "price", "levels", "level"],
     "clause_prefixes": ["please", "now", "so", "then", "just", "simply", "and", "also", "maybe", "perhaps", "kindly", "time to", "it's time to", "it is time to", "better to", "go ahead and", "you should", "you must", "but", "or", "yet", "otherwise", "that said", "having said that", "hence", "therefore", "thus", "we say", "i say", "i'd say", "we'd say", "next", "after that", "afterwards", "first", "finally"],
     "fillers": ["a", "all", "an", "at", "bit", "cash", "cmp", "eight", "existing", "few", "fifty", "five", "four", "fresh", "fut", "futures", "here", "hundred", "in", "into", "lot", "lots", "market", "more", "my", "nine", "now", "of", "on", "one", "open", "our", "out", "position", "positions", "qty", "quantity", "seven", "share", "shares", "six", "some", "stock", "stocks", "ten", "that", "the", "these", "this", "those", "three", "today", "twenty", "two", "units", "your"],
@@ -66,17 +59,15 @@
     "context_phrases": ["awaiting your approval", "awaiting approval", "waiting for your approval", "in paper mode", "paper mode", "in the app",
       "button", "click", "tap ", "filled", "was placed", "were placed", "order status"],
     "condition_words": ["when"],
-    "past_markers": ["ago", "back-test", "backtest", "backtested", "climbed", "closed", "did", "dropped", "earlier today", "ended", "exited", "fell", "filled", "gained", "had", "had been", "has been", "have been", "historical", "history", "journal", "jumped", "last friday", "last monday", "last month", "last session", "last thursday", "last tuesday", "last wednesday", "last week", "last year", "lost", "on friday", "on monday", "on thursday", "on tuesday", "on wednesday", "rallied", "rose", "simulated", "simulation", "slipped", "stopped out", "surged", "trade log", "was", "were", "yesterday", "कल", "काल", "गेल्या", "पिछले"],
+    "past_markers": ["ago", "back-test", "backtest", "backtested", "climbed", "closed", "did", "dropped", "earlier today", "ended", "exited", "fell", "filled", "gained", "had", "had been", "has been", "have been", "historical", "history", "journal", "jumped", "last friday", "last monday", "last month", "last session", "last thursday", "last tuesday", "last wednesday", "last week", "last year", "lost", "on friday", "on monday", "on thursday", "on tuesday", "on wednesday", "rallied", "rose", "simulated", "simulation", "slipped", "stopped out", "surged", "trade log", "was", "were", "yesterday"],
     "negated_sayings": {
       "en": ["never say", "never said", "not say", "don't say", "do not say", "not saying", "never recommend", "not recommend", "don't recommend",
         "do not recommend", "not suggest", "don't suggest", "do not suggest", "never suggest", "not advise", "don't advise", "do not advise",
-        "never advise", "won't tell", "will not tell", "never tell"],
-      "mr": ["सांगत नाही", "सुचवत नाही", "शिफारस करत नाही", "सल्ला देत नाही", "म्हणत नाही", "देत नाही"],
-      "hi": ["नहीं कहते", "नहीं कहता", "सलाह नहीं", "नहीं देते", "सुझाव नहीं"]
+        "never advise", "won't tell", "will not tell", "never tell"]
     },
     "number_words": ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten", "eleven", "twelve", "fifteen", "twenty",
       "twenty-five", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety", "hundred", "thousand", "lakh", "crore"],
-    "certainty_lead": ["surely", "certainly", "definitely", "for sure", "pakka", "नक्की", "पक्का", "ज़रूर", "जरूर"]
+    "certainty_lead": ["surely", "certainly", "definitely", "for sure"]
   },
   "framing": {
     "en": "Educational illustration only - not investment advice or a recommendation to trade. Check it against your own plan and risk limits.",

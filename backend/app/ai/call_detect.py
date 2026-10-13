@@ -1,21 +1,23 @@
-"""H-C1 c (review of #230): trade calls aimed at an instrument, in English, Marathi, Hindi and romanised Hindi / Marathi,
-whatever the answer language. `call_terms(text)` returns short labels (empty = no call); the output filter blocks a text
-with any. The word lists are data (the "calls" block of `data/advice_terms.json`).
+"""H-C1 c (review of #230): trade calls aimed at an instrument in English AI text. `call_terms(text)` returns short labels
+(empty = no call); the output filter blocks a text with any. The word lists are data (the "calls" block of
+`data/advice_terms.json`).
+
+**English only.** ATP answers in English. A text with any Devanagari (or other Indic-script) character is not read: it
+answers one label (`SCRIPT_LABEL`) and is withheld - fail closed, never a pattern list per language.
 
 **Normalisation first** (`normalise`): NFKC (full-width and mathematical letters), Unicode format characters removed
-(zero-width space / joiner, bidi marks), Latin look-alikes from Cyrillic / Greek mapped (`app.support.normalize`), the
-Devanagari nukta dropped ("ख़रीदें" reads "खरीदें"), markdown emphasis and code marks removed, and list markers, bullets,
-block quotes, quotes, brackets and pictographs (emoji) turned into clause breaks. Newlines are kept (paragraphs).
+(zero-width space / joiner, bidi marks), Latin look-alikes from Cyrillic / Greek mapped (`app.support.normalize`),
+markdown emphasis and code marks removed, and list markers, bullets, block quotes, quotes, brackets and pictographs
+(emoji) turned into clause breaks. Newlines are kept (paragraphs).
 
 **What is a call** (each one blocked):
 
 * an imperative trade verb opening a clause - at the start, after a sentence end, a list marker, ``,`` ``;`` ``:``,
   `` - `` / ``->`` or a bracket, optionally after "please / then / just / time to ..." - followed (past at most four
   filler words such as "all", "a few shares of") by an instrument, a share word or a price level ("Sell RELIANCE",
-  "- Buy: RELIANCE", "Exit all INFY positions", "Buy 25000 CE above 120");
+  "- Buy: RELIANCE", "Exit all INFY positions", "Buy 25000 CE above 120"); a trade verb on a level when the sentence
+  names an instrument ("INFY: weak, short below 1490"); "pick / scoop it up near 1450";
 * ``INSTRUMENT: buy`` (not "NIFTY: buy signals were rare");
-* a Marathi / Hindi / romanised trade verb next to an instrument or a share word ("RELIANCE खरेदी करा", "यह शेयर
-  खरीदें", "रिलायंस खरीदें", "TCS kharido"); the light verbs (घ्या, ले लो) only right after the instrument;
 * a modal call ("I would / I'd / one could buy RELIANCE"), "consider buying RELIANCE", "my pick is RELIANCE",
   "RELIANCE is a buy";
 * a stop AND a target with price levels in one paragraph, plus an entry level ("entry", "buy above", "long above") or an
@@ -24,13 +26,14 @@ block quotes, quotes, brackets and pictographs (emoji) turned into clause breaks
 * any of the above once a disguised spelling is undone ("B u y RELIANCE", "8uy RELIANCE").
 
 An **instrument** is an upper-case ticker (not a platform or indicator acronym) or a name from the instrument index
-(`app.ai.instrument_names`: the instrument master plus a seed with Marathi / Hindi spellings), in any case.
+(`app.ai.instrument_names`: the instrument master plus a seed), in any case.
 
 **Not calls:** percentages ("stop 1%, target 2%"), status / log / backtest / rule / how-to text ("Status: BUY RELIANCE
 filled", "Backtest trade 3: entry 2480, stop 2430, target 2580", "Rule: Buy NIFTY when RSI < 30", "How to: Buy RELIANCE in
-paper mode"), "when <condition>" rules, negated sayings ("We never say: Sell RELIANCE", "...असे आम्ही सांगत नाही") and
-past-tense certainty ("hit 25000 for sure on Friday"). A modal call with a price level but no instrument ("One could buy
-the 25000 CE above 120") stays a framed specific call (output_filter), as the spec allows.
+paper mode"), "when <condition>" rules, negated sayings ("We never say: Sell RELIANCE"), past-tense certainty ("hit 25000
+for sure on Friday") and a candle's price fields ("TCS: close 4050, RSI 62"; `_price_field`). A modal call with a price
+level but no instrument ("One could buy the 25000 CE above 120") stays a framed specific call (output_filter), as the
+spec allows.
 
 Texts longer than `MAX_CHARS` are not read: they answer one label ("too long to check") and are blocked.
 """
@@ -48,7 +51,10 @@ from typing import FrozenSet, List, Optional, Pattern, Sequence, Tuple
 from app.ai import instrument_names
 
 MAX_CHARS = 40_000
-_WORD = "\\w\u0900-\u0963\u0966-\u097f"            # Devanagari letters and signs are word characters; the dandas are not
+# English only: any Devanagari (or other Indic-script) character withholds the text (fail closed).
+_INDIC = re.compile("[\u0900-\u0dff\ua8e0-\ua8ff\u1cd0-\u1cff]")
+SCRIPT_LABEL = "call: text not in English (Devanagari / Indic script) - withheld"
+_WORD = "\\w"
 _TICKER = re.compile(r"[A-Z][A-Z0-9&]{1,19}(?:-[A-Z]{1,4})?")
 # A number starts where a digit run starts (review of #230, MED perf: no backtracking into a run of digits).
 _NUMBER = r"(?<![\d,.])₹?\s*(?<![\d,.])\d[\d,]*(?:\.\d+)?"
@@ -70,7 +76,7 @@ def normalise(text: str) -> str:
     from app.support.normalize import _CONFUSABLES
     t = unicodedata.normalize("NFKC", text or "")
     t = "".join(ch for ch in t if unicodedata.category(ch) != "Cf")
-    t = t.translate(_CONFUSABLES).translate(_ARROWS).replace("\u093c", "")
+    t = t.translate(_CONFUSABLES).translate(_ARROWS)
     t = re.sub("[\ufe00-\ufe0f]", "", t)                                           # emoji variation selectors
     t = "".join("\n" if unicodedata.category(ch) in ("So", "Sk") else ch for ch in t)   # pictographs (emoji) break a clause
     t = _MARKDOWN.sub("", t)
@@ -88,8 +94,6 @@ class Lists:
     modal: Pattern
     gerund: Pattern
     colon: Pattern
-    deva: Pattern
-    deva_light: Pattern
     opinion: Pattern
     rated: Pattern
     certainty: Tuple[Pattern, ...]
@@ -114,18 +118,15 @@ def lists(path: str) -> Lists:
     calls = json.loads(open(path, encoding="utf-8").read()).get("calls") or {}
     verbs = calls.get("verbs", {})
     en = _alt(verbs.get("en", []))
-    light_words = set(calls.get("light_verbs", []))
-    deva = _alt([v for v in verbs.get("mr", []) + verbs.get("hi", []) + verbs.get("romanised", []) if v not in light_words])
-    light = _alt(sorted(light_words))
     # LOW10: [ \t]* after the anchor (a newline is an anchor of its own), so runs of newlines stay linear
     # round 5: "Open the chart and buy RELIANCE" - " and " / " then " open a clause too (an object is still required);
     # round 6: not after "buy" - "buy and hold" / "buy and sell" are verbs of their own (an object is still required, so
     # "Buy and hold NIFTY returned 12%" stays a benchmark's name)
-    start = r"(?:^|(?<=[\n.!?;:,(\u0964\u0965—–])|(?<=\s-)|(?<=->)|(?<=\sand)(?<!buy\sand)|(?<=\sthen))[ \t]*"
+    start = r"(?:^|(?<=[\n.!?;:,(—–])|(?<=\s-)|(?<=->)|(?<=\sand)(?<!buy\sand)|(?<=\sthen))[ \t]*"
     prefix = rf"(?:(?:{_alt(calls.get('clause_prefixes', []))})\s+){{0,2}}"
     # #230 review round 4: a lookahead, so a first verb-shaped word ("Long story short, buy RELIANCE") never consumes the
     # real call after it - finditer then tries every later position too.
-    rest = r"(?=(?P<rest>[^\n.!?;\u0964]{0,120}))"
+    rest = r"(?=(?P<rest>[^\n.!?;]{0,120}))"
     sep = r"\s*(?:[:\-–—>=]+\s*)?"
     number_words = _alt(calls.get("number_words", []))
     number = rf"(?:{_NUMBER}|(?<![{_WORD}])(?:(?:{number_words})[\s-]*)+(?![{_WORD}]))"
@@ -141,9 +142,7 @@ def lists(path: str) -> Lists:
         gerund=re.compile(rf"(?<![{_WORD}])(?:consider|considering|worth|try)\s+(?P<verb>{_alt(calls.get('gerunds', []))})(?![{_WORD}-]){sep}{rest}", re.I),
         # Round 12 (perf): anchored at the separator - the instrument before it is read back from there (`_sentence_calls`),
         # never by a lazy scan from every position ("- a - a ..." floods were quadratic in the verb alternation).
-        colon=re.compile(rf"\s*[:\-–—]\s*(?P<verb>{en})(?![{_WORD}-])(?=(?P<after>[^\n.!?;\u0964]{{0,40}}))", re.I),
-        deva=re.compile(rf"(?<![{_WORD}])(?P<verb>{deva})(?![{_WORD}])", re.I),
-        deva_light=re.compile(rf"(?<![{_WORD}])(?P<verb>{light})(?![{_WORD}])", re.I),
+        colon=re.compile(rf"\s*[:\-–—]\s*(?P<verb>{en})(?![{_WORD}-])(?=(?P<after>[^\n.!?;]{{0,40}}))", re.I),
         opinion=re.compile(rf"(?<![{_WORD}])(?:my|our|top|best)\s+(?:top\s+)?(?:{_alt(calls.get('opinion_nouns', []))})\s*(?:for\s+\w+\s+)?(?:is|are|=|:|-)\s*{rest}", re.I),
         rated=re.compile(rf"\s+(?:is|looks like|looks|seems like|seems|remains|stays|is rated)\s+(?:a|an)?\s*(?:{_alt(calls.get('rating_words', []))})(?![{_WORD}-])", re.I),
         certainty=(
@@ -160,7 +159,7 @@ def lists(path: str) -> Lists:
                            rf"(?<![{_WORD}])(?:{_alt(calls.get('context_phrases', []))})(?![{_WORD}])", re.I),
         condition=re.compile(rf"(?<![{_WORD}])(?:{_alt(calls.get('condition_words', []))})(?![{_WORD}])", re.I),
         past=re.compile(rf"(?<![{_WORD}])(?:{_alt(calls.get('past_markers', []))})(?![{_WORD}])|\d{{4}}-\d{{2}}-\d{{2}}|trade\s*#?\s*\d+", re.I),
-        negated=re.compile(rf"(?<![{_WORD}])(?:{_alt(neg.get('en', []) + neg.get('mr', []) + neg.get('hi', []))})(?![{_WORD}])", re.I),
+        negated=re.compile(rf"(?<![{_WORD}])(?:{_alt(neg.get('en', []))})(?![{_WORD}])", re.I),
         howto=re.compile(r"\b(?:paper mode|in the app|button|page|tab|click|tap|screen|menu|watchlist|symbol box)\b", re.I),
         verb_line=re.compile(rf"(?im)^([ \t]*(?:{en})[ \t]*[:\-–—>=]*)[ \t]*\n(?=[ \t]*\S)"),
     )
@@ -172,7 +171,7 @@ _TOKEN = re.compile(r"[^\s,;:]+")
 
 
 def _words(text: str) -> List[str]:
-    return [w.strip("\"'.,!?;:()[]{}\u0964\u0965") for w in _TOKEN.findall(text or "")]
+    return [w.strip("\"'.,!?;:()[]{}") for w in _TOKEN.findall(text or "")]
 
 
 def _is_ticker(word: str, L: Lists) -> bool:
@@ -220,9 +219,9 @@ def _instrument_at_start(rest: str, L: Lists, *, allow_level: bool) -> Optional[
 
 # --- detection ----------------------------------------------------------------------------------------------------------
 
-_SENTENCE = re.compile(r"(?<!\d)[.!?](?!\d)|[\n\u0964\u0965]")
+_SENTENCE = re.compile(r"(?<!\d)[.!?](?!\d)|\n")
 # Clause breaks inside a sentence: the scope of a "when", a negation or a past marker (review of #230: never the sentence).
-_CLAUSE = re.compile(r"[,;—–]|\s-\s|\sbut\s|\sand then\s|\s(?:पण|लेकिन|पर|मात्र|परंतु|किंतु|परन्तु)\s", re.I)
+_CLAUSE = re.compile(r"[,;—–]|\s-\s|\sbut\s|\sand then\s", re.I)
 _CLAUSE_OR_COLON = re.compile(_CLAUSE.pattern + r"|:", re.I)
 # Words that make a line a call now, not a record or a rule ("buy RELIANCE again tomorrow", "when the market opens").
 _NOW = re.compile(r"\b(?:now|today|tomorrow|tonight|again|next|asap|immediately|right away|this week|opens?|open|you|your)\b", re.I)
@@ -482,7 +481,6 @@ _RECAP_TAIL = re.compile(
     r"|(?:on|with)\s+(?:[\w-]+\s+){0,2}volumes?\b" + _MORE +
     r"|and\s+(?:held|closed|ended|finished|rose|fell|gained|lost|trimmed|extended|snapped|capped|added|shed|slipped|climbed|stayed|"
     r"remained|marked|posted|logged|(?:cut|hit|set|put)\s+(?:its|their))\b" + _MORE +
-    r"|(?:पर\s+)?(?:रहा|रही|रहे|हुआ|हुई|हुए|झाला|झाली|झाले|होता|होती|होते)(?![\u0900-\u097f])" + _MORE +
     r"|(?:(?:up|down)(?!\s+(?:to|till|until)\b)|higher|lower|flat|unchanged|green|red)\b" + _MORE +
     r"|(?:vs\.?|versus|compared\s+(?:to|with))\s+(?!(?:holding|selling|buying|exiting|staying|waiting|adding|booking)\b)" + _WORD_ + _MORE +
     r"|against\s+(?:₹?\d|the|its|last|yesterday|previous|prior|a\b)" + _WORD_.replace("+", "*") + _MORE +
@@ -700,17 +698,12 @@ def _price_field(verb: str, text: str, L: "Lists", sentence: str = "", at: int =
 # Words a level is never "in" or "on" as an instrument: quarters and sectors ("close 4050; Q2 results ...", "IT was ...").
 _NOT_LEVEL_TICKERS = frozenset({"Q1", "Q2", "Q3", "Q4", "H1", "H2", "FY", "IT", "PSU", "PSUS", "FMCG", "BFSI", "MNC", "CPSE", "OMC", "OMCS"})
 # Follow-ups of #230 round 12: a trade verb on a level when the sentence names an instrument ("INFY: weak, short below
-# 1490"), "pick / scoop it up near 1450", and an English trade verb with a Hindi / Marathi light verb ("1500 पर close करें",
-# "1500 la close kara").
+# 1490"), and "pick / scoop it up near 1450".
 _LEVEL_TRADE_VERBS = frozenset({"short", "sell", "buy", "long", "go long", "go short", "short sell", "accumulate", "load up", "add"})
 _ON_LEVEL = re.compile(r"^\s*(?:below|under|above|over|near|around|at|on\s+a\s+(?:break|move|dip)\s+(?:below|above|under|over|to))\s+₹?\d", re.I)
 _PICK_UP = re.compile(r"(?:^|(?<=[\n,;:.!?—–])|(?<=\sand)|(?<=\sthen))[ \t]*(?P<verb>pick|scoop|snap|mop|gobble|grab|load)\s+"
                       r"(?:it|them|some|these|those|this|that|more|shares)\s+up\s+(?:near|at|around|below|under|above|on\s+dips?\s+(?:to|near|at))\s+₹?\d",
                       re.I)
-_LIGHT_TRADE = re.compile(
-    rf"(?<![{_WORD}])(?P<verb>close|exit|buy|sell|short|book|hold|square\s*off|enter|cover|accumulate|purchase)\s+"
-    r"(?:कर(?:ें|ो|ना|िए|ा|ावे|ावा|ावी)|कर\s+(?:दो|दें|दीजिए|लो|लें|ले|द्या|टाका)|करा|karo|kara|karein|karen|kariye|"
-    rf"kar\s+(?:do|lo|den|len|dijiye|dya|taka))(?![{_WORD}])", re.I)
 _OPEN_TRADE = re.compile(r"^\s*(?:(?:an?|new|fresh|the)\s+)*(?:long|short|position|trade)s?\b", re.I)
 # "Add a 20 EMA on the RELIANCE chart": an indicator length, not a price level.
 _INDICATOR_LENGTH = re.compile(r"^\s*(?:an?\s+|the\s+)?\d+[\s-]*(?:period\s+|day\s+|bar\s+)?"
@@ -719,10 +712,6 @@ _GERUND_SUBJECT = re.compile(r"(?:^|(?<=[\n.!?;:,]))[ \t]*(?P<verb>buying|sellin
                              r"investing in)\s+(?P<rest>[^\n.!?;]{0,80}?)\s+(?:makes sense|is a good idea|is worth it|is worth a try|"
                              r"looks good|is wise|is sensible|is the move|is the play|could work|should work|is smart)\b", re.I)
 _ACT_NOW = re.compile(r"\b(?:take it|take this|take the trade|act now|go for it|grab it|enter now|jump in)\b", re.I)
-_DEVA_SAYING_LEAD = re.compile(r"(?:असे|अस|ऐसा|ऐसी|ऐसे|यह|ये)\s+(?:\S+\s+){0,3}$")
-_OBJECT_MARKERS = ("ला", "ना", "को", "में", "मध्ये")
-_ATTACHED_MARKERS = ("मध्ये", "ला", "ना")                       # "रिलायन्सला खरेदी करा": the marker written on the name
-_GENITIVES = ("चा", "ची", "चे", "च्या", "का", "की", "के")
 
 
 def sentences(text: str) -> List[str]:
@@ -794,8 +783,7 @@ def _negations(s: str, pattern: Pattern[str]) -> Tuple["re.Match[str]", ...]:
 
 def _negated(s: str, verb_start: int, L: Lists) -> bool:
     """A negated saying that governs the verb at `verb_start`: before it with no clause break in between, or ending in ':'
-    DIRECTLY after the negated verb ("We never say: Sell RELIANCE", not "We never recommend stocks: buy RELIANCE"); a
-    Marathi / Hindi one after it, led by असे / ऐसा ("RELIANCE खरेदी करा, असे आम्ही सांगत नाही")."""
+    DIRECTLY after the negated verb ("We never say: Sell RELIANCE", not "We never recommend stocks: buy RELIANCE")."""
     negs = _negations(s, L.negated)
     if not negs:
         return False
@@ -815,44 +803,22 @@ def _negated(s: str, verb_start: int, L: Lists) -> bool:
                     return True
             elif not _CLAUSE_OR_COLON.search(between):
                 return True
-        elif re.search(r"[\u0900-\u097f]", m.group(0)) and _DEVA_SAYING_LEAD.search(s[max(0, m.start() - 60):m.start()]):
-            between = s[verb_start:m.start()]
-            if not re.search(r"\s(?:पण|लेकिन|पर|मात्र|परंतु|किंतु)\s", between):
-                return True
     return False
 
 
-def _strip_markers(words: List[str]) -> List[str]:
-    while words and words[-1] in _OBJECT_MARKERS:               # "RELIANCE ला खरेदी करा", "TCS को खरीदें": object markers
-        words = words[:-1]
-    return words
-
-
-def _instrument_at_end(before: str, L: Lists, *, gap: int) -> Optional[str]:
-    """The instrument (or share word) that ends `before`, past at most `gap` words that are not genitives (object
-    markers ला / ना / को / में are skipped)."""
-    words = _strip_markers([w for w in _words(before) if w])
-    for skip in range(0, gap + 1):
-        if skip > len(words):
-            break
-        head = words[:len(words) - skip] if skip else words
-        between = words[len(words) - skip:] if skip else []
-        if any(w in _GENITIVES for w in between):
-            return None
-        head = _strip_markers(head)
-        if not head:
-            break
-        last = head[-1]
-        if _is_ticker(last, L):
-            return last
-        for marker in _ATTACHED_MARKERS:
-            if last.endswith(marker) and len(last) > len(marker) + 1 and instrument_names.suffix_len([*head[:-1], last[:-len(marker)]]):
-                return last[:-len(marker)]
-        n = instrument_names.suffix_len(head)
-        if n:
-            return " ".join(head[-n:])
-        if last.lower() in L.share_words:
-            return last
+def _instrument_at_end(before: str, L: Lists) -> Optional[str]:
+    """The instrument (or share word) that ends `before`."""
+    words = [w for w in _words(before) if w]
+    if not words:
+        return None
+    last = words[-1]
+    if _is_ticker(last, L):
+        return last
+    n = instrument_names.suffix_len(words)
+    if n:
+        return " ".join(words[-n:])
+    if last.lower() in L.share_words:
+        return last
     return None
 
 
@@ -967,11 +933,10 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
             obj = _object(m.group("rest"), L, s, allow_level=False, verb=m.group("verb"), at=m.start("rest"))
             if obj:
                 add(m.group("verb"), obj)
-    for pattern in (_PICK_UP, _LIGHT_TRADE):
-        for m in pattern.finditer(s):
-            if _negated(s, m.start("verb"), L) or record_line(s, m.start("verb")) or not _has_instrument(s, L):
-                continue
-            add(m.group("verb"), m.group(0).strip()[:30])
+    for m in _PICK_UP.finditer(s):
+        if _negated(s, m.start("verb"), L) or record_line(s, m.start("verb")) or not _has_instrument(s, L):
+            continue
+        add(m.group("verb"), m.group(0).strip()[:30])
     for m in _GERUND_SUBJECT.finditer(s):
         obj = _instrument_at_start(m.group("rest"), L, allow_level=False)
         if obj and not _negated(s, m.start("verb"), L):
@@ -979,7 +944,7 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
     taken = 0
     for m in L.colon.finditer(s):
         head = s[max(taken, m.start() - 60):m.start()]
-        head = head[max(head.rfind(c) for c in "\n.!?;:\u0964") + 1:]
+        head = head[max(head.rfind(c) for c in "\n.!?;:") + 1:]
         if not head:
             continue                                              # nothing names an object before the separator
         taken = m.end()
@@ -988,28 +953,15 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
             continue
         if _price_field(m.group("verb"), s[m.end("verb"):], L, s, m.end("verb")):
             continue                                              # "TCS: close 4050, RSI 62" - a price field, not a call
-        obj = _instrument_at_end(head, L, gap=0)
+        obj = _instrument_at_end(head, L)
         if obj and obj.lower() not in L.share_words:
             add(f"{obj}:", m.group("verb"))
-    for m in L.deva.finditer(s):
-        if _negated(s, m.start(), L) or record_line(s, m.start()):
-            continue
-        verb = m.group("verb")
-        obj = _instrument_at_end(s[max(0, m.start() - 80):m.start()], L, gap=2) or _instrument_at_start(s[m.end():m.end() + 80], L, allow_level=False)
-        if obj:
-            add(obj, verb)
-    for m in L.deva_light.finditer(s):
-        if _negated(s, m.start(), L):
-            continue
-        obj = _instrument_at_end(s[max(0, m.start() - 80):m.start()], L, gap=0)
-        if obj:
-            add(obj, m.group("verb"))
     for m in L.opinion.finditer(s):
         obj = _instrument_at_start(m.group("rest"), L, allow_level=False)
         if obj and not _negated(s, m.start(), L):
             add("pick", obj)
     for m in L.rated.finditer(s):
-        obj = _instrument_at_end(s[max(0, m.start() - 80):m.start()], L, gap=0)
+        obj = _instrument_at_end(s[max(0, m.start() - 80):m.start()], L)
         if obj and not _negated(s, m.start(), L):
             add(obj, "rated a buy / sell")
     for pattern in L.certainty:
@@ -1065,6 +1017,8 @@ def detect(text: str, path: str) -> List[str]:
     """The call labels in `text` (module docstring), in order of appearance."""
     if len(text or "") > MAX_CHARS:
         return [f"call: text too long to check (over {MAX_CHARS} characters)"]
+    if _INDIC.search(text or ""):
+        return [SCRIPT_LABEL]                                   # English only: never read, always withheld
     L = lists(path)
     _has_instrument.cache_clear()                              # the instrument index may have grown since the last text
     body = L.verb_line.sub(r"\1 ", normalise(text))            # "Buy\nRELIANCE": a verb alone on its line opens the next one
@@ -1094,4 +1048,4 @@ def detect(text: str, path: str) -> List[str]:
     return found
 
 
-__all__ = ["detect", "normalise", "lists", "sentences", "MAX_CHARS"]
+__all__ = ["detect", "normalise", "lists", "sentences", "MAX_CHARS", "SCRIPT_LABEL"]

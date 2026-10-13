@@ -9,6 +9,7 @@ import { api } from "../api/client";
 import { PriceActionLayer } from "../charting/PriceActionLayer";
 import { StudiesPanel } from "../charting/StudiesPanel";
 import { ReplayBar } from "../charting/ReplayBar";
+import { TradesLayer } from "../charting/TradesLayer";
 import { layerTf } from "../charting/priceAction";
 import { REPLAY_OFF, parseCandleTime, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
 import ExpectedMoveLayer from "../progression/ExpectedMoveLayer";
@@ -88,6 +89,9 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
       <div className="mt-2"><PriceActionLayer engine={engine} instrument={`${exchange}:${symbol}`} timeframe={timeframe} at={at}
                                               start={windowStart(at, replay.start)} onAvailable={setPaAvailable} onWindow={onWindow}
                                               refreshKey={replay.active ? null : chart.candles[chart.candles.length - 1]?.timestamp ?? null} /></div>
+      {/* N4 CH4a: the user's own PAPER trades (flag chart_trades_layer; nothing shows while it is off) - as of the replay bar */}
+      <div className="mt-2"><TradesLayer engine={engine} instrument={`${exchange}:${symbol}`} candles={shown} at={at}
+                                          refreshKey={replay.active ? null : chart.candles[chart.candles.length - 1]?.timestamp ?? null} /></div>
       {/* N4 CH6: ScreenQL studies from the server's screener runtime (flag chart_studies; nothing shows while it is off) */}
       <div className="mt-2"><StudiesPanel engine={engine} instrument={`${exchange}:${symbol}`} timeframe={timeframe} at={at} start={windowStart(at, replay.start)}
                                           refreshKey={replay.active ? null : chart.candles[chart.candles.length - 1]?.timestamp ?? null}

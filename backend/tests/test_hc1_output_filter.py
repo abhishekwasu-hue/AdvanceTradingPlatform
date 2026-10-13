@@ -1,4 +1,5 @@
-"""H-C1 c: the server-side advice/guarantee filter, in English and Marathi."""
+"""H-C1 c: the server-side advice/guarantee filter. ATP answers in English: AI text with Devanagari is withheld outright;
+the Marathi word lists remain only for the support bot's input guard (`blocked_terms` on a trader's question)."""
 import asyncio
 import json
 
@@ -17,20 +18,28 @@ def _run(coro):
     ("Risk-free money on expiry day.", "risk-free"),
     ("I recommend buying NIFTY here.", "i recommend"),
     ("You should buy the dip.", "you should buy"),
-    ("ही strategy खात्रीशीर नफा देते.", "खात्रीशीर"),
-    ("हमखास नफा मिळेल.", "हमखास"),
-    ("मी शिफारस करतो की थांबा.", "मी शिफारस करतो"),
 ])
-def test_guarantee_and_advice_words_are_blocked_in_both_languages(text, word):
+def test_guarantee_and_advice_words_are_blocked(text, word):
     s = output_filter.screen(text, "en")
     assert not s.ok and s.blocked == [word]
+
+
+@pytest.mark.parametrize("text, words", [
+    ("ही strategy खात्रीशीर नफा देते.", ["खात्रीशीर"]),
+    ("हमखास नफा मिळेल.", ["हमखास"]),
+    ("मी शिफारस करतो की थांबा.", ["मी शिफारस करतो"]),
+    ("हा सल्ला नाही आणि शिफारस नाही.", []),
+])
+def test_marathi_words_stay_for_the_input_guard_but_ai_output_in_devanagari_is_withheld(text, words):
+    assert output_filter.blocked_terms(text) == words                # the support bot's input guard (a question)
+    ok, shown, why = output_filter.check(text, "mr")                 # AI output: English only, fail closed
+    assert not ok and shown is None and why == output_filter.NOT_ENGLISH_REASON
 
 
 @pytest.mark.parametrize("text", [
     "This is not a recommendation to buy anything.",
     "Nothing here is guaranteed.",
     "It is never guaranteed and a loss can happen.",
-    "हा सल्ला नाही आणि शिफारस नाही.",
     "NIFTY 50 trend is up; support near 24850.",
     "Bulls hold 25200.00; room to 25550.00, wrong below 24850.00.",
     "Shorting is risky.",
@@ -42,11 +51,11 @@ def test_neutral_and_negated_text_passes_unchanged(text):
     assert s.ok and not s.framed and s.text == text
 
 
-def test_a_specific_call_is_kept_with_educational_framing_in_the_answer_language():
-    en = output_filter.screen("Buy NIFTY 25000 CE above 120.", "en")
-    assert en.ok and en.framed and en.text.startswith("Buy NIFTY 25000 CE") and "not investment advice" in en.text
-    mr = output_filter.screen("25200 च्या वर खरेदी चा विचार होऊ शकतो.", "mr")
-    assert mr.ok and mr.framed and "शिक्षणासाठी" in mr.text
+def test_a_specific_call_is_kept_with_educational_framing():
+    # (an imperative call aimed at an instrument - "Buy NIFTY 25000 CE above 120." - is now blocked, tests/test_ai_call_filter.py)
+    en = output_filter.screen("One could buy the 25000 CE above 120.", "en")
+    assert en.ok and en.framed and en.text.startswith("One could buy the 25000 CE") and "not investment advice" in en.text
+    assert not output_filter.screen("25200 च्या वर खरेदी चा विचार होऊ शकतो.", "mr").ok     # Devanagari: withheld
     again = output_filter.screen(en.text, "en")                                   # framing is added once
     assert again.text.count("not investment advice") == 1
 
@@ -81,7 +90,10 @@ def test_copilot_retries_once_then_keeps_the_rule_text():
     assert text == "NIFTY 50 is at 25200 and the trend is up." and retry.calls == 2 and "not allowed" in retry.last_user
     stubborn = _Provider(["25200 वर हमी आहे.", "Buy now at 25200."])
     text, why = _run(copilot.narrate(stubborn, "mr", "market", "nifty?", facts))
-    assert text is None and "advice/guarantee" in why
+    assert text is None and "advice/guarantee" in why and "English only" in stubborn.last_user
+    marathi = _Provider(["NIFTY 50 25200 वर आहे.", "NIFTY 50 25200 वर आहे."])
+    text, why = _run(copilot.narrate(marathi, "mr", "market", "nifty?", facts))
+    assert text is None and why == output_filter.NOT_ENGLISH_REASON
 
 
 def test_knowledge_answer_falls_back_to_the_library_on_blocked_words():

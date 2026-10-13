@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -251,6 +252,16 @@ def promote_to_shared(record: CompanyRecord, fetched: CompanyProfile) -> None:
     record.industry = fetched.industry or "Unknown"
     merge_profile(record, fetched)
     record.tenant_id = None
+    record.created_by = None          # the provider's content now, nobody's: who asked for it is in the audit log
+
+
+def replace_profile(record: CompanyRecord, fetched: CompanyProfile) -> None:
+    """Every profile field becomes the provider's (empty where it gives none) - unlike `merge_profile`, nothing entered
+    by hand survives. For a shared profile whose content cannot be trusted (`repair_shared --refetch`)."""
+    db.apply_company_fields(record, fetched)
+    record.name = fetched.name or record.symbol
+    record.sector = fetched.sector or "Unknown"
+    record.industry = fetched.industry or "Unknown"
 
 
 def merge_profile(record: CompanyRecord, fetched: CompanyProfile) -> List[str]:
@@ -285,25 +296,58 @@ class RefreshSummary:
                 "shareholding_added": self.shareholding_added, "announcements_added": self.announcements_added, "errors": self.errors}
 
 
+SHARED_PROFILE_EVENT = "fundamentals.shared_profile_from_provider"
+
+
+async def _audit_shared_profile(session: AsyncSession, tenant_id: Optional[int], user_id: Optional[int], company: CompanyRecord, how: str,
+                                *, private_author: Optional[int] = None) -> None:
+    """Who made a shared profile from the provider (the row itself records no author - its content is the provider's)."""
+    from app.audit.log import write_audit_log
+    detail: Dict[str, object] = {"company_id": company.id, "symbol": company.symbol, "how": how, "requested_by": user_id}
+    if private_author is not None:
+        detail["private_profile_author"] = private_author
+    await write_audit_log(session, tenant_id, user_id, SHARED_PROFILE_EVENT, json.dumps(detail, sort_keys=True))
+
+
 async def refresh_from_provider(session: AsyncSession, company: Optional[CompanyRecord], symbol: str, provider: FundamentalDataProvider, user_id: Optional[int], *,
                                 profile: bool = True, shareholding: bool = True, announcements: bool = True, announcement_limit: int = 20,
-                                create_missing: bool = False) -> Tuple[Optional[CompanyRecord], RefreshSummary]:
+                                create_missing: bool = False, tenant_id: Optional[int]) -> Tuple[Optional[CompanyRecord], RefreshSummary]:
     """Pull what the provider offers and store what is new. Does not commit. Each part fails on its own; the
-    others still land, and the summary names what failed."""
+    others still land, and the summary names what failed. `company` is the shared profile or the caller organisation's
+    (`tenant_id`) own - never another organisation's (refused here too)."""
     symbol = symbol.upper().strip()
     summary = RefreshSummary(symbol=symbol, provider=getattr(provider, "name", "provider"))
+    if company is not None and company.tenant_id is not None and company.tenant_id != tenant_id:
+        summary.errors.append("profile: not this organisation's company profile")              # never another organisation's
+        return None, summary
     if company is not None and company.tenant_id is not None:
-        # A profile one organisation entered: the provider's profile replaces it and it becomes shared reference data
-        # (its hand-entered fields are cleared - they were that organisation's, never shown to others). Without the
-        # provider's profile nothing is written to a company that is not shared.
+        shared = await db.find_shared_company(session, symbol)
+        if shared is not None:
+            # The organisation's own profile of a symbol that now has a shared one: its own rows move onto the shared
+            # profile (still its own, still private) and its private profile is removed - its own action, its own rows.
+            clash = await db.fold_conflicts(session, company.id, shared.id, tenant_id=company.tenant_id)
+            if clash:
+                summary.errors.append(f"profile: this organisation already has these periods on the shared profile: {', '.join(clash[:5])}")
+                return company, summary
+            await db.move_children(session, company.id, shared.id, tenant_id=company.tenant_id)
+            await session.delete(company)
+            await session.flush()
+            company = shared
+            summary.profile_changed = ["folded into shared"]
+    if company is not None and company.tenant_id is not None:
+        # The organisation's own profile and no shared one yet: the provider's profile replaces it and it becomes shared
+        # reference data (its hand-entered fields are cleared - they were that organisation's, never shown to others).
+        # Without the provider's profile nothing is written to a company that is not shared.
         try:
             fetched = await provider.get_company_profile(symbol)
         except FundamentalDataProviderError as exc:
             summary.errors.append(f"profile: {exc} (an organisation's own company profile becomes shared only from the provider)")
             return company, summary
         before = {name: getattr(company, name) for name in PROFILE_REFRESH_FIELDS}
+        member = company.created_by
         promote_to_shared(company, fetched)
         summary.profile_changed = [name for name in PROFILE_REFRESH_FIELDS if getattr(company, name) != before[name]] + ["shared"]
+        await _audit_shared_profile(session, tenant_id, user_id, company, "promoted", private_author=member)
         profile = False
     if company is None:
         if not create_missing:
@@ -314,17 +358,20 @@ async def refresh_from_provider(session: AsyncSession, company: Optional[Company
         except FundamentalDataProviderError as exc:
             summary.errors.append(f"profile: {exc}")
             return None, summary
-        company = CompanyRecord(symbol=symbol, created_by=user_id, name=fetched.name or symbol, sector=fetched.sector or "Unknown", industry=fetched.industry or "Unknown")
+        # created_by stays empty: the content is the provider's, not the caller's (a member-authored shared profile is
+        # what `repair_shared` treats as suspect) - who asked for it is in the audit log
+        company = CompanyRecord(symbol=symbol, created_by=None, name=fetched.name or symbol, sector=fetched.sector or "Unknown", industry=fetched.industry or "Unknown")
         db.apply_company_fields(company, fetched)
         session.add(company)
         await session.flush()
+        await _audit_shared_profile(session, tenant_id, user_id, company, "created")
         summary.created_company = True
         summary.profile_changed = ["created"]
         profile = False
     if profile:
         try:
             fetched = await provider.get_company_profile(symbol)
-            summary.profile_changed = merge_profile(company, fetched)
+            summary.profile_changed += merge_profile(company, fetched)          # after a fold: "folded into shared" stays first
         except FundamentalDataProviderError as exc:
             summary.errors.append(f"profile: {exc}")
     if shareholding:

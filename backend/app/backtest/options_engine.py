@@ -31,12 +31,13 @@ import pandas as pd
 
 from app.backtest.analytics import build_analytics
 from app.backtest.options import (
-    ExpiryCalendar, OptionPricer, PricingUnavailable, SnapshotPricer, SyntheticPricer, VolatilityModel, bars_per_year,
+    Black76Pricer, ExpiryCalendar, OptionPricer, PricingUnavailable, SnapshotPricer, SyntheticPricer, VolatilityModel, bars_per_year,
     default_lot_size, default_strike_step, lot_size_for, strike_ladder, to_utc, underlying_name,
 )
 from app.core.enums import AssetClass, ExpiryRule, InstrumentKind, OptionPosition, OptionStrategy, OrderSide, SignalDirection, StrikeRule
 from app.core.models import BacktestResult, RiskConfig, Signal, Trade
 from app.core.resampling import resample_ohlc
+from app.backtest.models import ModelError, ModelSet
 from app.backtest.windows import WindowCursor, decision_time
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.execution.contract_execution import DEFAULT_WRITE_MAX_LOTS
@@ -189,6 +190,7 @@ def run_option_backtest(
     config: OptionBacktestConfig,
     exit_rules: Optional[ExitRules] = None,
     pricer: Optional[OptionPricer] = None,
+    models: Optional[ModelSet] = None,
 ) -> BacktestResult:
     frames: Dict[str, pd.DataFrame] = {}
     for tf in strategy.timeframes:
@@ -219,7 +221,25 @@ def run_option_backtest(
     if config.option_strategy == OptionStrategy.CUSTOM and not config.custom_legs:
         raise OptionBacktestError("CUSTOM structure has no legs")
 
+    # N7 C2c: execution models - slippage (fixed_pct / spread_half), span_like margin, black76 for missing strikes. A
+    # fill or latency model, or a volume-based slippage, has nothing to act on here (premiums are priced, not traded
+    # bars): refused, never ignored. The default set is exactly the engine before (golden test).
+    models = models or ModelSet()
+    if models.fill != "touch" or models.latency != "zero" or models.slippage == "volume_share":
+        raise ModelError("fill / latency models and volume_share slippage apply to single-leg backtests only")
     broker = PaperBroker()
+    if not models.is_default:
+        broker.slippage_model = models.slippage_model(broker.slippage_pct)
+    margin = models.margin_model()
+    margin_on = margin.name != "none"
+    margin_refused = 0
+    margin_calls = 0
+    b76: Optional[Black76Pricer] = None
+    if models.pricing == "black76":
+        if not isinstance(pricer, SnapshotPricer):
+            raise ModelError("black76 prices strikes missing from a recorded or uploaded chain; this run has no chain (synthetic pricing)")
+        b76 = Black76Pricer(pricer.rows, vol, config.risk_free_rate, **{"max_age_minutes": pricer.max_age_minutes, **models.pricing_params()})
+        pricer.fallback = b76  # type: ignore[assignment]
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
     time_rules = exit_rules if exit_rules is not None and exit_rules.active else None
@@ -292,6 +312,21 @@ def run_option_backtest(
     def structure_value(prices: Dict[int, float], pos: _Open) -> float:
         return sum((prices[i] if leg.role == "SHORT" else -prices[i]) * leg.ratio for i, leg in enumerate(pos.legs))
 
+    def margin_required(pos: _Open, spot: float) -> float:
+        """N7 C2c: span_like on a structure - its defined maximum loss, or the short legs' underlying notional x the
+        short-option %; bought options are paid for (no extra margin)."""
+        shorts = [leg for leg in pos.legs if leg.role == "SHORT"]
+        if not shorts:
+            return margin.required("OPTION_LONG", 0.0)
+        max_loss = pos.meta.get("max_loss")
+        if not pos.single and max_loss is not None:
+            return margin.required("OPTION_DEFINED", 0.0, max_loss=float(max_loss) * pos.quantity)
+        return margin.required("OPTION_SHORT", spot * sum(leg.quantity for leg in shorts))
+
+    def unrealised(pos: _Open, prices: Dict[int, float]) -> float:
+        return sum((leg.entry_price - prices[i] if leg.role == "SHORT" else prices[i] - leg.entry_price) * leg.quantity
+                   for i, leg in enumerate(pos.legs))
+
     for i in range(min_hist, len(primary_df)):
         bar = primary_df.iloc[i]
         ts = primary_df.index[i]
@@ -358,6 +393,9 @@ def run_option_backtest(
                             reason = f"Premium ceiling ({pos.premium_level:g})"
                     else:
                         reason = structure_exit_reason(pos.meta, structure_value(prices, pos), None)
+                if reason is None and margin_on and margin.call(equity + unrealised(pos, prices), margin_required(pos, exit_spot)):
+                    reason = "Margin call"                  # N7 C2c: marked at this bar's close against the requirement then
+                    margin_calls += 1
                 if reason is not None:
                     fills = {idx: (p if settle else round(broker._slip(p, SignalDirection.LONG if pos.legs[idx].role == "SHORT" else SignalDirection.SHORT), 2))
                              for idx, p in prices.items()}
@@ -404,6 +442,11 @@ def run_option_backtest(
             except (ContractResolutionError, PricingUnavailable, _Skip) as exc:
                 skipped[_skip_key(str(exc))] += 1
                 continue
+            if margin_on and open_pos is not None and margin_required(open_pos, spot) > equity:
+                open_pos = None                             # N7 C2c: the equity cannot margin it - no entry, counted
+                margin_refused += 1
+                skipped["margin: equity below the span_like requirement"] += 1
+                continue
             state.trades_today += 1
             state.open_positions += 1
 
@@ -444,6 +487,13 @@ def run_option_backtest(
     }
     if isinstance(pricer, SnapshotPricer):
         options.update({"snapshot_hits": pricer.hits, "synthetic_fallbacks": pricer.fallbacks, "snapshot_contracts": pricer.contracts})
+    if b76 is not None:
+        # N7 C2c: every model price flagged - the count, the contracts, and per leg whether any of its prices was a model's
+        priced = {f"{int(k[1])} {k[2]} {k[0]}" for k in b76.priced}
+        options.update({"model_prices": b76.count, "model_priced_contracts": sorted(priced)[:100], "model_pricing": b76.describe()})
+        for st in structures:
+            for leg in st["legs"]:
+                leg["model_priced"] = f"{int(leg['strike'])} {leg['right']} {leg['expiry']}" in priced
     return BacktestResult(
         strategy_id=strategy.id, symbol=symbol, total_trades=total, winning_trades=len(winners), losing_trades=len(losers),
         win_rate=round(len(winners) / total * 100, 2) if total else 0.0, net_pnl=round(net_pnl, 2),
@@ -453,6 +503,8 @@ def run_option_backtest(
         expectancy=round(net_pnl / total, 2) if total else 0.0, trades=trades, equity_curve=equity_curve,
         analytics=build_analytics(trades, equity_curve, risk_config.capital),
         exit_rules=time_rules.to_json() if time_rules is not None else None, options=options,
+        execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
+                                                  "model_prices": b76.count if b76 is not None else 0},
     )
 
 

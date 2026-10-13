@@ -62,6 +62,8 @@ RELEASE=""          # image tag compose uses (ATP_RELEASE)
 DB_AHEAD=""         # MIGRATION_ALLOW_DB_AHEAD for compose: the exact database revision an older image may start on
 RESTORE_CHECKOUT="" # on a failed exit, the checkout goes back to this commit (the release that still runs)
 SCRATCH_DB=""       # a verify copy to drop on exit
+VERIFY_ROLE="atp_restore"  # the non-superuser role verify_backup.sh restores the copy as (its VERIFY_RESTORE_ROLE default)
+VERIFY_ROLE_LOGIN=0 # 1 while that role can log in for the audit-chain check; NOLOGIN again on exit
 WORKER_STARTED=0    # epoch when this run restarted the worker; health then wants a heartbeat newer than that
 OWNER_ACTION=""     # what health found that only the owner can do (exit 10)
 WARNS=0
@@ -80,6 +82,7 @@ on_err() { [ "$BASHPID" = "$$" ] || return 0; printf '\nFAILED: a command failed
 on_exit() {
   local rc=$?
   [ "$BASHPID" = "$$" ] || return 0
+  if [ "$VERIFY_ROLE_LOGIN" = "1" ]; then verify_role_login "" || true; fi
   if [ -n "$SCRATCH_DB" ]; then
     dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres -c "DROP DATABASE IF EXISTS \"$SCRATCH_DB\"" >/dev/null 2>&1 || true
   fi
@@ -168,6 +171,15 @@ dc_as() { local keep="$RELEASE" rc=0; RELEASE="$1"; shift; dc "$@" || rc=$?; REL
 
 psql_q() {
   dc exec -T postgres psql -X -A -t -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d "${2:-$(pg_db)}" -c "$1" 2>/dev/null
+}
+# Z11: lets the verify role log in with a one-run password ($1), or makes it NOLOGIN again ($1 empty). The SQL goes to
+# psql on stdin, so the password never reaches an argv.
+verify_role_login() {
+  if [ -n "$1" ]; then
+    printf 'ALTER ROLE "%s" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT PASSWORD '"'"'%s'"'"';\n' "$VERIFY_ROLE" "$1"
+  else
+    printf 'ALTER ROLE "%s" NOLOGIN PASSWORD NULL;\n' "$VERIFY_ROLE"
+  fi | dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres >/dev/null 2>&1
 }
 # "-" = no schema yet; "unknown" = the database could not be read (callers fail closed on it).
 db_revision() {
@@ -1165,13 +1177,25 @@ except Exception:
     c = {}
 if c:
     print("    rows (copy / live): " + ", ".join("%s %s/%s" % (t, v.get("copy"), v.get("source")) for t, v in c.items()))'
-  local chain="not_run"
+  local chain="not_run" verify_pw
   if [ -n "$SCRATCH_DB" ] && [ "$status" != "restore_failed" ] && [ "$status" != "none" ]; then
-    # shellcheck disable=SC2016  # expands inside the backend container (its own DATABASE_URL, never printed)
-    if dc run --rm --no-deps -T -e ATP_VERIFY_DB="$SCRATCH_DB" backend sh -c \
-      'DATABASE_URL="${DATABASE_URL%/*}/$ATP_VERIFY_DB" python -m app.audit.verify_chain' >/dev/null 2>&1; then
-      chain="intact"; ok "audit hash chain intact in the restored copy"
-    else chain="broken"; bad "audit hash chain does NOT verify in the restored copy"; fi
+    # Z11: the chain check reads the copy logged in AS the role that restored it (owner of every object in it), never as
+    # the superuser: a view or function the archive created runs with the reader's rights. The role gets a fresh password
+    # for this check only (handed to the container through the environment, not argv) and is NOLOGIN again right after.
+    verify_pw="$(openssl rand -hex 24)"
+    VERIFY_ROLE_LOGIN=1   # before the call: if it half-succeeds (or the run stops there), on_exit still sets NOLOGIN
+    if verify_role_login "$verify_pw"; then
+      # shellcheck disable=SC2016  # expands inside the backend container (its own DATABASE_URL, never printed)
+      if ATP_VERIFY_PW="$verify_pw" dc run --rm --no-deps -T -e ATP_VERIFY_DB="$SCRATCH_DB" -e ATP_VERIFY_ROLE="$VERIFY_ROLE" -e ATP_VERIFY_PW \
+        backend sh -c 'u="${DATABASE_URL%/*}"; case "$u" in *@*) ;; *) exit 1 ;; esac
+          DATABASE_URL="${u%%://*}://$ATP_VERIFY_ROLE@${u##*@}/$ATP_VERIFY_DB" PGPASSWORD="$ATP_VERIFY_PW" python -m app.audit.verify_chain' >/dev/null 2>&1; then
+        chain="intact"; ok "audit hash chain intact in the restored copy (read as $VERIFY_ROLE)"
+      else chain="broken"; bad "audit hash chain does NOT verify in the restored copy"; fi
+      if verify_role_login ""; then VERIFY_ROLE_LOGIN=0; else warn "could not make $VERIFY_ROLE NOLOGIN again - retried on exit"; fi
+    else
+      chain="not_checked"; bad "audit chain: could not let $VERIFY_ROLE log in to read the restored copy - not checked as the superuser"
+      if verify_role_login ""; then VERIFY_ROLE_LOGIN=0; fi
+    fi
   else info "audit chain: not run (nothing restored)"; fi
   if [ -n "$SCRATCH_DB" ]; then
     dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres -c "DROP DATABASE IF EXISTS \"$SCRATCH_DB\"" >/dev/null 2>&1 || true

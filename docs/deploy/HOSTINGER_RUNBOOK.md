@@ -9,9 +9,10 @@ The Marathi runbook `docs/DEPLOY_HOSTINGER_MR.md` describes the earlier blocks (
 `docs/DEPLOY_HOSTINGER_ONELINERS.txt`, and once `atp.sh` has recorded a release they refuse to run, so the two cannot
 be mixed on one server.
 
-**Owner blockers:** the server IP (`<SERVER_IP>` below), and the R2 bucket and token in the server's `.env`
-(section 6). Until R2 is filled in, everything works and backups stay on the server. Every `atp.sh` run then prints
-a warning.
+**Owner blockers (the four in docs/ROADMAP_STATUS.md):** (1) the Hostinger server IP (`<SERVER_IP>` below);
+(2) the R2 bucket and token in the server's `.env` (section 6); (3) the Dhan partner application; (4) company
+registration. This runbook needs (1) and (2). Until R2 is filled in, everything works and backups stay on the server.
+Every `atp.sh` run then prints a warning.
 
 ## 1. The commands
 
@@ -342,6 +343,10 @@ It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEE
   non-superuser role that owns the scratch database. It gets a one-run random password and is set back to NOLOGIN
   afterwards. Archive SQL cannot get superuser rights back (a `SET ROLE` would not do, because `RESET ROLE` undoes
   it), so even a bad dump cannot run `COPY ... TO PROGRAM` on the cluster.
+- Every check that reads the copy afterwards (row counts, `alembic_version`, the audit hash chain) logs in as
+  `atp_restore` too, never as the superuser: a view or function the dump created runs with the rights of whoever
+  queries it. `restore-check` gives the role a fresh password for the chain check and sets it back to NOLOGIN right
+  after; if the role cannot log in, the chain is reported `not_checked` (a failure), never re-run as the superuser.
 
 **Seal.** `openssl enc` has no authenticated mode. A `.sha256` file can be recomputed by whoever changed the dump, so
 `scripts/backup/backup.sh` seals every dump where it is made, and `atp.sh` seals the files archive. A seal is a

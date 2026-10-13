@@ -194,8 +194,8 @@ def test_migration_is_rollback_safe_and_the_only_head():
     backend = Path(__file__).resolve().parents[1]
     script = ScriptDirectory.from_config(Config(str(backend / "alembic.ini")))
     heads = script.get_heads()
-    assert len(heads) == 1                                                     # a single head; later migrations chain on HB2
-    assert "f3b5d7a9c1e2" in {rev.revision for rev in script.walk_revisions("base", heads[0])}
+    assert len(heads) == 1                                                       # one head; later migrations may sit on top
+    assert "f3b5d7a9c1e2" in {rev.revision for rev in script.walk_revisions()}
     text_ = (backend / "alembic" / "versions" / "f3b5d7a9c1e2_hb2_intraday_history.py").read_text()
     assert "ROLLBACK_SAFE = True" in text_ and "purely additive" in text_
 
@@ -653,6 +653,29 @@ def test_mcx_session_request_cap_and_blackout_dates(monkeypatch):
     assert not hb2.quiet_hours(datetime(2023, 3, 11, 20, 0, tzinfo=IST), set())
     with pytest.raises(hb2.IntradayConfigError, match="blackout"):
         owner.run(held, symbols=["NSE:HBIM1"], clock=lambda: datetime(2023, 3, 11, 20, 0, tzinfo=IST))
+
+
+def test_a_cds_deployment_in_session_holds_the_pass_until_17_00():
+    """BK2-8: currency derivatives trade to 17:00 IST on the same broker account - HB2 waits for their close too."""
+    owner = Owner("hb2-cds@example.com")
+    _flag(True)
+    days = [FRI - timedelta(days=n) for n in range(0, 4)]
+    bars = {"HBIC1": [b for d in days for b in day_bars(d)]}
+    from app.db.models import StrategyDeploymentRecord
+
+    async def cds_deployment():
+        async with _session_factory() as session:
+            session.add(StrategyDeploymentRecord(tenant_id=owner.tenant_id, strategy_id="ema_crossover", symbol="USDINR",
+                                                 exchange="CDS", timeframe="5min", mode="PAPER", status="ACTIVE"))
+            await session.commit()
+    _run(cds_deployment())
+    held = FakeBroker(bars)
+    report = owner.run(held, symbols=["NSE:HBIC1"], start=FRI - timedelta(days=3),
+                       clock=lambda: datetime(2023, 3, 10, 16, 30, tzinfo=IST))           # NSE closed, CDS open
+    assert report.status == "mcx_session" and held.calls == [] and "CDS" in " ".join(report.notes)
+    late = owner.run(held, symbols=["NSE:HBIC1"], start=FRI - timedelta(days=3),
+                     clock=lambda: datetime(2023, 3, 10, 17, 5, tzinfo=IST))            # CDS closed at 17:00
+    assert late.status != "mcx_session" and held.calls
 
 
 def test_hours_and_flag_are_checked_again_after_waiting_for_a_token():

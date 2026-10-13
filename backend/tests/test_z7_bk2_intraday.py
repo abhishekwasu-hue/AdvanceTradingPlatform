@@ -394,7 +394,7 @@ def test_one_alert_per_leg_through_the_bar_close_engine():
             states = []
             for k in range(3, 16):                                   # 09:30 .. 10:30 closes on the test day
                 now = f.index[21 * SESSION_5M + k] + timedelta(minutes=5, seconds=30)
-                states.append(await barclose.evaluate_rule(session, rule, now.to_pydatetime(), fetch))
+                states.append(await barclose.evaluate_rule(session, rule, now.to_pydatetime(), fetch, breakouts_enabled=True))
                 await session.commit()
             events = list(await session.scalars(select(AlertEventRecord).where(AlertEventRecord.rule_id == rule.id)))
             rule.status = "paused"                                       # leave nothing active for other modules' run_due tests
@@ -706,12 +706,13 @@ def _mcx_frame():
     return sessions_frame(days, starts={k: "03:30" for k in range(22)})  # 09:00 IST
 
 
-def test_currency_derivatives_have_their_own_clock_in_the_screener_only():
+def test_currency_derivatives_have_their_own_clock_in_the_screener_and_the_worker():
     cds = ses.calendar_for("CDS")
-    assert (cds.name, cds.open, cds.close) == ("CDS", time(9, 0), time(17, 0)) and ses.calendar_for("BCD").name == "CDS"
-    # the platform calendar - the trading worker's clock - is untouched (ADR-0004): CDS stays on the equity family
-    assert mcal.session_family("CDS") == mcal.session_family("NSE_CD") == "NSE" and "CDS" not in mcal.EXCHANGE_SESSIONS
-    assert mcal.intraday_cutoffs("CDS") == mcal.intraday_cutoffs("NSE") == (time(15, 0), time(15, 15))
+    assert (cds.name, cds.open, cds.close, cds.cutoff) == ("CDS", time(9, 0), time(17, 0), time(16, 30))
+    assert ses.calendar_for("BCD").name == ses.calendar_for("NSE_CD").name == "CDS"
+    # BK2-8: the screener reads the platform calendar's CDS family - the trading worker's clock (tests/test_bk2_8_cds_worker.py)
+    assert mcal.session_family("CDS") == mcal.session_family("NSE_CD") == "CDS" and "CDS" in mcal.EXCHANGE_SESSIONS
+    assert mcal.intraday_cutoffs("CDS") == (time(16, 30), time(16, 45)) and mcal.intraday_cutoffs("NSE") == (time(15, 0), time(15, 15))
 
 
 def test_mcx_screenql_and_the_breakout_run_read_the_same_exchange_clock(monkeypatch):
@@ -833,7 +834,7 @@ def test_the_alert_engine_rechecks_the_clock_and_keeps_a_failing_screen_on_its_r
         async def go():
             async with _session_factory() as session:
                 rule = await session.get(AlertRuleRecord, rid)
-                out = await barclose.evaluate_rule(session, rule, now, fetch)
+                out = await barclose.evaluate_rule(session, rule, now, fetch, breakouts_enabled=True)
                 problem = rule.last_problem
                 rule.status = "paused"
                 await session.commit()

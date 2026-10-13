@@ -38,7 +38,10 @@ from app.screener.runtime import SymbolData, run_screen  # noqa: E402
 
 EOD_SYMBOLS, EOD_BARS = 2_500, 300                # about 14 months of sessions: room for the 200-bar factors
 BARCLOSE_SYMBOLS, BARCLOSE_RULE_SIZE, BARCLOSE_SESSIONS = 200, 50, 5
-TARGETS = {"eod_screen": 3.0, "eod_cached": 0.2, "barclose_scan": 1.0}
+TARGETS = {"eod_screen": 3.0, "eod_cached": 0.2, "barclose_scan": 1.0, "screen_fitness": 3.0}
+# N3 S6a: screen fitness - the 50-factor EOD screen over FITNESS_SYMBOLS symbols, weekly over a year of sessions,
+# with 1 / 5 / 20-session forward returns (signals + statistics; the lake read is not timed).
+FITNESS_SYMBOLS, FITNESS_BARS = 300, 400
 REFERENCE_CALIBRATION_SECONDS = 0.08              # calibrate() on a GitHub-hosted ubuntu-latest runner (0.079 s, docs/PERFORMANCE.md)
 
 # 50 factors: trend, momentum, volatility, range, volume and pattern-count filters at several windows - the mix a
@@ -159,6 +162,23 @@ def bench_eod(symbols: int = EOD_SYMBOLS, repeat: int = 5, vectorized: bool = Tr
     return {"symbols": symbols, "bars": EOD_BARS, "factors": len(EOD_FACTORS), "vectorized": vectorized,
             "matched": sum(m.matched for m in matches), "with_reason": sum(1 for m in matches if m.reason),
             "eod_screen": timed, "eod_cached": cached, "eod_cached_by_bars": by_bars}
+
+
+def bench_fitness(symbols: int = FITNESS_SYMBOLS, repeat: int = 5) -> Dict[str, Any]:
+    from app.screener import history as H
+    index = daily_index(FITNESS_BARS)
+    frames = {d.symbol: d.frames["1d"] for d in with_tf(universe(symbols, index), "1d")}
+    ast, validated = compile_screen(eod_text(), base_tf="1d", cost_cap=1e9)
+    assert validated.ok, validated.problems
+    calendar = H.session_dates(index)
+    dates = H.rebalance_dates(calendar, calendar[-250], calendar[-21], H.EVERY["weekly"])
+    out: Dict[str, Any] = {}
+
+    def once() -> None:
+        sig = H.signals(ast, validated, frames, dates)
+        out["stats"] = H.fitness(sig, frames, calendar, H.HORIZONS)
+    timed = median_time(once, repeat)
+    return {"symbols": symbols, "dates": len(dates), "bars": FITNESS_BARS, "factors": len(EOD_FACTORS), "screen_fitness": timed}
 
 
 def barclose_universe(symbols: int = BARCLOSE_SYMBOLS) -> List[SymbolData]:

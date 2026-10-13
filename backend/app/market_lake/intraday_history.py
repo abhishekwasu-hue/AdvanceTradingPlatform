@@ -256,16 +256,23 @@ async def owner_session(session: AsyncSession, tenant_id: int, now: datetime,
     return None
 
 
+# Venues that keep trading after the NSE close on the owner's broker account: MCX (to 23:30 IST) and, since BK2-8, the
+# currency derivatives (CDS, to 17:00 IST).
+_AFTER_NSE_FAMILIES = ("MCX", "CDS")
+
+
 async def mcx_in_session(session: AsyncSession, tenant_id: int, now: datetime) -> bool:
-    """True while the owner tenant has a non-stopped MCX deployment and the MCX session is open (it trades to 23:30 IST):
-    its exits may need the same broker account's rate limit, so HB2 neither starts nor continues a pass then."""
-    from app.market_data.calendar import session_family, session_status
+    """True while the owner tenant has a non-stopped MCX or CDS deployment and that venue's session is open (MCX trades
+    to 23:30 IST, CDS to 17:00): its exits may need the same broker account's rate limit, so HB2 neither starts nor
+    continues a pass then."""
+    from app.market_data.calendar import family_holidays, session_family, session_status
     rows = await session.scalars(select(StrategyDeploymentRecord.exchange).where(
         StrategyDeploymentRecord.tenant_id == tenant_id, StrategyDeploymentRecord.status != "STOPPED").distinct())
-    if not any(session_family(exchange) == "MCX" for exchange in rows):
-        return False
-    status = session_status(now, await load_holidays(session, MCX_SESSION.holiday_calendar), "MCX")
-    return bool(status.is_open)
+    families = {session_family(exchange) for exchange in rows} & set(_AFTER_NSE_FAMILIES)
+    for family in sorted(families):
+        if session_status(now, await family_holidays(session, family), family).is_open:
+            return True
+    return False
 
 
 # --- what ------------------------------------------------------------------------------------------------------------
@@ -466,7 +473,7 @@ async def run_pass(session_factory: Any, *, budget_for: Optional[BudgetFor] = No
             return report
         if await mcx_in_session(session, tenant_id, now):
             report.status = "mcx_session"
-            report.notes.append("the owner's MCX deployments are in session - nothing asked until MCX closes")
+            report.notes.append("the owner's MCX / CDS deployments are in session - nothing asked until that venue closes")
             return report
         session_user, record = found
         targets, notes = await instruments(session, tenant_id, symbols)
@@ -606,7 +613,7 @@ async def _should_stop(session_factory: Any, report: PassReport, tenant_id: int,
         return "partial", f"the '{FLAG}' flag was turned off - stopped"
     async with session_factory() as session:
         if await mcx_in_session(session, tenant_id, now):
-            return "mcx_session", "the owner's MCX deployments are in session - stopped until MCX closes"
+            return "mcx_session", "the owner's MCX / CDS deployments are in session - stopped until that venue closes"
     return None
 
 

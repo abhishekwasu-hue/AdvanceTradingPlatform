@@ -19,8 +19,15 @@ export interface LayerLine { price: number; color?: string; title?: string; styl
 export interface LayerMarker { time: number; position: "aboveBar" | "belowBar" | "inBar"; shape: "arrowUp" | "arrowDown" | "circle" | "square"; color?: string; text?: string }
 /** Z7a-3: a horizontal price band across the pane (low == high: a line), with its label at the right edge. */
 export interface LayerBand { low: number; high: number; color?: string; opacity?: number; style?: "solid" | "dashed" | "dotted"; label?: string }
+/** CH3: a straight line between two data points (a price-action leg, a broken level's run), placed by time and price. */
+export interface LayerSegment { t1: number; p1: number; t2: number; p2: number; color?: string; width?: number; style?: "solid" | "dashed" | "dotted"; label?: string }
+/** CH3: a text at a data point (a swing's "HH 512.30", a break), above or below it. */
+export interface LayerLabel { time: number; price: number; text: string; color?: string; position?: "above" | "below" }
 /** A platform overlay (price-action levels, market-zone bands, option walls, trade markers...), computed server-side with an as-of time. */
-export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[]; bands?: LayerBand[] }
+export interface LayerData { asOf?: string; lines?: LayerLine[]; markers?: LayerMarker[]; bands?: LayerBand[]; segments?: LayerSegment[]; labels?: LayerLabel[] }
+
+/** N4 CH6: a study line from the server (ScreenQL via the screener runtime): on the price pane or in its own pane. */
+export interface StudyLine { data: { time: number; value: number }[]; color?: string; pane: "price" | "own"; title?: string }
 
 export interface EngineLayout { engine: string; symbol: string | null; timeframe: string | null; studies: StudySpec[]; drawings: Record<string, DrawingV1> }
 
@@ -45,6 +52,8 @@ export interface ChartEngine {
   updateDrawing(id: string, drawing: DrawingV1): void;
   removeDrawing(id: string): void;
   setLayer(id: string, data: LayerData | null): void;
+  /** N4 CH6: draw (or with null remove) one study line; an engine without study series ignores it (optional). */
+  setStudy?(id: string, line: StudyLine | null): void;
   serialize(): EngineLayout;
   deserialize(layout: EngineLayout): void;
   /** CH5: shows the crosshair at this time (its own bar at or before it), or hides it with null - for the workspace's

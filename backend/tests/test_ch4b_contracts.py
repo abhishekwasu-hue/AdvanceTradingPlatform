@@ -144,6 +144,41 @@ def test_computed_iv_is_black76_and_labelled(headers):
     assert body["legs"][0]["iv"][0] == pytest.approx(want, abs=1e-4) and 0.01 < body["legs"][0]["iv"][0] < 1.0
     assert C.computed_iv(200, None, 25000, "CE", EXP, DAYS[0], RISK_FREE_RATE) is None             # no future that day
     assert C.computed_iv(200, 25100, 25000, "CE", EXP, EXP + timedelta(days=1), RISK_FREE_RATE) is None   # expired
+    assert C.computed_iv(200, 25100, 25000, "CE", EXP, EXP, RISK_FREE_RATE) is None                       # expiry day itself
+
+
+def test_black76_solves_a_deep_itm_put_below_k_minus_f():
+    """The put floor is e^(-rT)(K-F), not K-S: a deep ITM put priced under K-F used to read as an arbitrage (None)."""
+    from app.option_chain.greeks import implied_volatility
+    from app.option_chain.models import OptionType
+    f, k, t, r = 20000.0, 25000.0, 0.25, 0.07
+    price = C.black76_price(f, k, t, r, 0.15, call=False)
+    assert price == pytest.approx(4913.9, abs=0.5) and price < k - f
+    assert implied_volatility(price, f, k, t, r, OptionType.PUT) is None                 # the old Black-Scholes-bounds path
+    assert C.black76_iv(price, f, k, t, r, call=False) == pytest.approx(0.15, abs=1e-4)
+    call = C.black76_price(f, 18000.0, t, r, 0.22, call=True)
+    assert C.black76_iv(call, f, 18000.0, t, r, call=True) == pytest.approx(0.22, abs=1e-4)
+    disc = math.exp(-r * t)
+    assert C.black76_iv(disc * (k - f) - 1, f, k, t, r, call=False) is None              # under the Black-76 floor
+    assert C.black76_iv(disc * k + 1, f, k, t, r, call=False) is None                    # over e^(-rT)K
+    assert C.black76_iv(disc * f + 1, f, 18000.0, t, r, call=True) is None               # over e^(-rT)F
+    day = EXP - timedelta(days=91)
+    assert C.computed_iv(round(price, 2), f, k, "PE", EXP, day, r) is not None
+
+
+def test_the_daily_winner_is_per_ist_trade_date_by_source_rank_then_version():
+    key = f"NFO:{SYM}:FUT:2026-12-29"
+    d = date(2026, 9, 3)
+    late_vendor = _bar(key, d, 777.0, source="vendor:x")                    # a lower-ranked source stamped later the same day
+    late_vendor.ts = datetime.combine(d, time(18, 30), tzinfo=timezone.utc)  # midnight IST: still the day's bar
+    _put([_bar(key, d, 500.0), _bar(key, d, 505.0, version=2, ingested=_end(d)), late_vendor])
+
+    async def go():
+        async with _session_factory() as session:
+            return await C.daily_bars(session, key, _end(d - timedelta(days=1)), _end(d + timedelta(days=2)))
+    got = _run(go())
+    assert list(got) == [d] and got[d]["c"] == 505.0 and got[d]["source"] == "nse_bhav"
+    assert C.trade_date(_end(d)) == d and C.trade_date(datetime.combine(d, time(18, 30), tzinfo=timezone.utc)) == d
 
 
 def test_search_lists_each_contract_once_nearest_first(headers):
@@ -153,6 +188,49 @@ def test_search_lists_each_contract_once_nearest_first(headers):
     assert body["contracts"][0]["lot_size"] == 75 and body["total"] == 2
     every = client.get("/api/charts/contracts/search", params={"underlying": SYM, "expiry": EXP.isoformat()}, headers=headers).json()
     assert sorted(c["key"] for c in every["contracts"]) == sorted([CE, PE, FUT, f"NFO:{SYM}:CE:{EXP}:25500"])
+    assert every["total"] == 4 and every["exchange"] == "NFO"
+
+
+def test_search_orders_and_caps_in_the_query_and_never_keys_another_exchange(headers):
+    """Many strikes across brokers: the first page is the right one (ordered before the cap), `total` counts distinct
+    contracts, and a BFO / MCX contract of the same underlying name never becomes an NFO key."""
+    sym, exp2 = "CH4BMANY", date(2026, 11, 24)
+    rows = [InstrumentRecord(broker=b, exchange="NFO", instrument_key=f"{b}|{sym}{e}{k}", tradingsymbol=f"{sym}{e:%y%b}{k}CE".upper(),
+                             underlying=sym, instrument_type="CE", expiry=e, strike=float(k), lot_size=50)
+            for b in ("upstox", "kite") for e in (exp2, EXP) for k in range(20000, 30001, 100)]
+    rows += [InstrumentRecord(broker="upstox", exchange=x, instrument_key=f"upstox|{x}{sym}", tradingsymbol=f"{x}{sym}", underlying=sym,
+                              instrument_type="CE", expiry=EXP, strike=25050.0, lot_size=20) for x in ("BFO", "MCX")]
+    _put(rows)
+    try:
+        url = "/api/charts/contracts/search"
+        body = client.get(url, params={"underlying": sym, "kind": "CE", "near": 25000, "limit": 3}, headers=headers).json()
+        assert [c["strike"] for c in body["contracts"]] == [25000.0, 24900.0, 25100.0]
+        assert all(c["expiry"] == EXP.isoformat() for c in body["contracts"])           # the nearest expiry first
+        assert body["total"] == 2 * 101                                                  # distinct contracts, not broker rows
+        windowed = client.get(url, params={"underlying": sym, "kind": "CE", "near": 22000, "limit": 1}, headers=headers).json()
+        assert windowed["total"] == 2 * len(range(20000, 27501, 100))                    # strikes within +-25% of `near`
+        assert all(c["strike"] != 25050.0 for c in client.get(url, params={"underlying": sym, "near": 25050, "limit": 100},
+                                                               headers=headers).json()["contracts"])
+        plain = client.get(url, params={"underlying": sym, "limit": 2}, headers=headers).json()
+        assert [c["strike"] for c in plain["contracts"]] == [20000.0, 20100.0] and plain["total"] == 2 * 101
+    finally:
+        async def clean():
+            async with _session_factory() as session:
+                await session.execute(delete(InstrumentRecord).where(InstrumentRecord.underlying == sym))
+                await session.commit()
+        _run(clean())
+
+
+def test_series_is_rate_limited_per_user(headers):
+    import time as _time
+
+    from app.core import rate_limit
+    uid = client.get("/api/auth/me", headers=headers).json()["id"]
+    rate_limit._WINDOWS[("chart_contracts_series", f"u{uid}")].extend([_time.monotonic()] * C.SERIES_RATE_PER_MIN)
+    try:
+        assert client.get("/api/charts/contracts/series", params={"leg": CE}, headers=headers).status_code == 429
+    finally:
+        rate_limit.reset("chart_contracts_series")
 
 
 def test_refusals_and_the_flag(headers):

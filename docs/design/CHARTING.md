@@ -455,14 +455,21 @@ CH4-1's data-ready slice.
 - **Backend** (`app/charts/contracts.py`; tenancy "member", platform reference data):
   - **`GET /api/charts/contracts/series?leg=[qty*]KEY&...&at=&start=&iv=`**
     - Daily F&O bars from the shared lake (HB1 `nse_bhav:fo` keys; shared-licensed sources only, the preferred
-      source then the highest version per day, corrections point-in-time), as of `at`. Expired contracts included.
+      source then the highest version per IST trade date - max(-rank, version), whatever END time each source
+      stamps - corrections point-in-time), as of `at`. Expired contracts included. Rate limited: 60 calls a minute
+      per user.
     - One leg: its OHLC, volume and OI.
     - Up to 4 legs: the spread close = sum of close x qty on the days every leg traded (no invented OHLC), with each
       leg's OI.
     - `iv=true`: a COMPUTED daily IV per option leg (Black-76 from the close and the same-expiry future's close,
-      `RISK_FREE_RATE`), labelled in `iv_note`; null where unsolvable or with no future that day.
+      `RISK_FREE_RATE`), labelled in `iv_note`. The solve uses Black-76's own bounds (call e^(-rT)max(F-K,0) .. e^(-rT)F,
+      put e^(-rT)max(K-F,0) .. e^(-rT)K), so a deep in-the-money put priced under K-F still solves. Null where
+      unsolvable, on expiry day (no life left at the close) or with no future that day.
   - **`GET /api/charts/contracts/search?underlying=&kind=&expiry=&near=`** lists the instrument master's contracts
-    with their lake keys, one row per contract across brokers, nearest expiry then nearest strike first.
+    with their lake keys. NFO contracts only (the lake's keys are NSE F&O's; a BFO or MCX contract never becomes an
+    NFO key). One row per (expiry, kind, strike) across brokers, ordered and capped in the query: nearest expiry, then
+    nearest strike to `near` (or by strike). With `near`, strikes within +-25% of it (futures always); `total` counts
+    the distinct contracts.
 - **Frontend:**
   - `charting/contracts.ts`: API, keys (the bhavcopy's strike text), URLs, candles, chain links.
   - `pages/ContractChartWindow.tsx`: `/?contract=<leg>&contract=<leg>`, its own tab. The ProChart daily candles (a
@@ -475,8 +482,10 @@ CH4-1's data-ready slice.
   - one leg's OHLC / OI from shared sources only (no `stream:` row);
   - a correction counts only once ingested by `at`;
   - spread = sum of legs on common days;
-  - computed IV = the Greeks library's Black-76 solve;
-  - search de-duplication and order;
+  - computed IV = the Greeks library's solve; a deep ITM put under K-F solves (Black-76 bounds); none on expiry day;
+  - the daily winner per IST trade date (source rank, then version - not the latest END);
+  - search de-duplication, order and cap in the query, the strike window, `total`, no BFO / MCX contract;
+  - the per-user rate limit on `/series`;
   - refusals and the flag.
 
   Frontend `contracts.test.tsx` covers keys, URLs, chain links (not for a sample chain), candles, the IV label and

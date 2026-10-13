@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -86,21 +86,34 @@ def require_role(*allowed: UserRole, active_tenant: bool = False, scope: Optiona
     """
 
     async def _check(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> User:
-        if user.role != UserRole.SUPER_ADMIN.value and user.role not in {r.value for r in allowed}:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role for this action")
-        if scope is not None:
-            # Phase N2: a per-member scope denial (users.scope_overrides) bites even when the role allows.
-            from app.auth.scopes import has_scope, scope_denied
-            if not has_scope(user, scope):
-                raise scope_denied(user, scope)
-        if active_tenant and user.role != UserRole.SUPER_ADMIN.value:
-            # A suspended organisation keeps read access (its people can still see their positions
-            # and history) but every trading/configuration write is refused (app/plans/limits.py).
-            from app.plans.limits import ensure_tenant_active, load_tenant
-            ensure_tenant_active(await load_tenant(session, user.tenant_id))
+        refused = await role_refusal(session, user, allowed, active_tenant=active_tenant, scope=scope)
+        if refused is not None:
+            raise refused
         return user
 
     return _check
+
+
+async def role_refusal(session: AsyncSession, user: User, allowed: Sequence[UserRole], *, active_tenant: bool = False,
+                       scope: Optional[str] = None) -> Optional[HTTPException]:
+    """The refusal `require_role(*allowed, ...)` would raise for this user, or None when it lets them through - the one
+    check behind the dependency and behind the screens that only show a control the user may use (N2-6 Exit now)."""
+    if user.role != UserRole.SUPER_ADMIN.value and user.role not in {r.value for r in allowed}:
+        return HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role for this action")
+    if scope is not None:
+        # Phase N2: a per-member scope denial (users.scope_overrides) bites even when the role allows.
+        from app.auth.scopes import has_scope, scope_denied
+        if not has_scope(user, scope):
+            return scope_denied(user, scope)
+    if active_tenant and user.role != UserRole.SUPER_ADMIN.value:
+        # A suspended organisation keeps read access (its people can still see their positions
+        # and history) but every trading/configuration write is refused (app/plans/limits.py).
+        from app.plans.limits import ensure_tenant_active, load_tenant
+        try:
+            ensure_tenant_active(await load_tenant(session, user.tenant_id))
+        except HTTPException as exc:
+            return exc
+    return None
 
 
 # The two tenant-side gates every write endpoint uses. Reads stay on get_current_user, so a
@@ -108,7 +121,13 @@ def require_role(*allowed: UserRole, active_tenant: bool = False, scope: Optiona
 TRADING_ROLES = (UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR)
 
 # Anything that places, configures or stops trading, or touches broker/alert credentials.
-require_trader = require_role(*TRADING_ROLES, active_tenant=True, scope="trading:write")
+TRADER_SCOPE = "trading:write"
+require_trader = require_role(*TRADING_ROLES, active_tenant=True, scope=TRADER_SCOPE)
+
+
+async def may_trade(session: AsyncSession, user: User) -> bool:
+    """Whether `require_trader` lets this user through (same check, no exception)."""
+    return await role_refusal(session, user, TRADING_ROLES, active_tenant=True, scope=TRADER_SCOPE) is None
 # Team management (invites, roles, removing members): the tenant's owner(s) only.
 require_owner = require_role(UserRole.OWNER, active_tenant=True, scope="team:manage")
 # Z10-c: shared reference data every organisation sees (fundamentals, cited news events). Writes are attributed

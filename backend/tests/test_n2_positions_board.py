@@ -175,8 +175,18 @@ def test_a_viewer_sees_automatic_not_a_button_that_would_403():
     trade_id = _open({"tenant_id": owner["tenant_id"], "user_id": me["id"]}, "WIPRO")
     body = client.get("/api/positions/board", headers=headers).json()
     assert body["positions"][0]["exit"] == "automatic"
+    assert body["exits"] == service.EXITS_NOTE_AUTOMATIC and "Exit now" not in body["exits"]     # no promise it cannot keep
     assert client.post(f"/api/positions/{trade_id}/exit-now", headers=headers).status_code == 403
     # The owner (a trader) still gets the one-click exit on their own position.
     own = _open(owner, "HCLTECH")
     rows = {p["trade_id"]: p for p in client.get("/api/positions/board", headers=owner["headers"]).json()["positions"]}
     assert rows[own]["exit"] == "one_click"
+
+
+def test_the_board_s_exit_now_check_is_require_trader_s_own():
+    """Review LOW: the board shows Exit now exactly when `require_trader` would let the user through - one check."""
+    from app.auth import dependencies as deps
+    from app.core.enums import UserRole
+    import inspect
+    assert "may_trade" in inspect.getsource(service.may_use_exit_now)
+    assert deps.TRADER_SCOPE == "trading:write" and set(deps.TRADING_ROLES) == {UserRole.OWNER, UserRole.USER, UserRole.STRATEGY_CREATOR}

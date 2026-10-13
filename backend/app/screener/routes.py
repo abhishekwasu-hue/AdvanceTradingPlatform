@@ -576,7 +576,7 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
     from app.ai import settings as ai_settings
     from app.ai.prompt_versions import stamp
     from app.ai.providers import ProviderError, RuleBasedProvider
-    from app.ai.tools.screener import free_text_literals
+    from app.ai.tools.screener import free_text_in
     from app.audit.log import write_audit_log
     from app.billing.service import meter
     from app.db.models import Tenant
@@ -607,7 +607,7 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
         ast, validated = _compiled(draft["text"], body.base_tf, {})
         await _gate(session, user, ast, validated, {})
         problems = [p.as_dict() for p in validated.problems]
-        if ast is not None and free_text_literals(ast):
+        if ast is not None and await free_text_in(session, user.tenant_id, ast):
             # review of S9 (MED, ADR-0006): a string literal other than a function's fixed choices is the model's free
             # text; it would reach the page inside the canonical screen. Refused (not echoed) and repaired like any problem.
             problems.append({"message": "a drafted screen may use quoted text only for a function's fixed choices "
@@ -622,9 +622,8 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
     ok = bool(validated.ok) and not problems
     if not ok:
         # review of S9 (MED, ADR-0006): an invalid draft returns its problems only - never the model's text or the
-        # canonical text of it - and a problem that quotes the model's words passes the output filter or is withheld
-        problems = [{**p, "message": nl.screened(str(p.get("message") or ""), body.language)
-                     or "a problem in the draft (withheld: it quoted words the output filter does not show)"} for p in problems]
+        # canonical text of it - and every word of the model's in a problem is withheld (nl.withheld; `pos` kept)
+        problems = [{**p, "message": nl.withheld(str(p.get("message") or ""), draft["text"])} for p in problems]
     explanation = nl.screened(draft["explanation"], body.language)
     await write_audit_log(session, user.tenant_id, user.id, "screener_nl_drafted",
                           f"{getattr(provider, 'name', 'ai')}: {'valid' if ok else 'invalid'} screen from {len(body.text)} chars")

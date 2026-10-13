@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Set
 
 from app.ai.prompt_versions import version_of
 
@@ -73,6 +73,45 @@ def parse(raw: str) -> Dict[str, Any]:
             "assumptions": [str(a).strip()[:200] for a in assumptions if str(a).strip()][:10] if isinstance(assumptions, list) else []}
 
 
+_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+
+
+def _vocabulary() -> Set[str]:
+    """The words a problem may show as they are: the registry's own names, argument names and fixed choices, and the
+    ScreenQL keywords - never the model's."""
+    from app.screener.parser import KEYWORDS
+    from app.screener.registry import FIELDS, FUNCTIONS
+    words: Set[str] = {k.lower() for k in KEYWORDS} | {"all", "any"}
+    for spec in (*FIELDS.values(), *FUNCTIONS.values()):
+        words.add(spec.name.lower())
+        words.update(str(v).lower() for v in getattr(spec, "values", ()) or ())
+        for arg in spec.args:
+            words.add(arg.name.lower())
+            words.update(str(c).lower() for c in arg.choices or ())
+    return words
+
+
+def withheld(message: str, draft: str) -> str:
+    """Review of S9 (MED-1, ADR-0006): a problem with a drafted screen, with every word of the model's withheld. The
+    validator quotes what it rejects ("unknown field 'X'", "holder 'X' is not one of ..."), names $parameters, and a
+    parse error can show a token - each comes from the model's draft. Quoted text is replaced unless it is punctuation
+    or the registry's own word; $names are replaced; and, as a net, any other word that is in the draft and not the
+    registry's or ScreenQL's own. The output filter is not relied on: it passes neutral-looking words."""
+    vocab = _vocabulary()
+
+    def quoted(m: "re.Match[str]") -> str:
+        inner = m.group(0)[1:-1]
+        if not re.search(r"[A-Za-z0-9]", inner) or inner.lower() in vocab:
+            return m.group(0)
+        before = message[:m.start()].rstrip().lower()
+        return "(name withheld)" if before.endswith(("unknown field", "unknown function", "unknown parameter")) else "(value withheld)"
+    out = _QUOTED.sub(quoted, message)
+    out = re.sub(r"\$[A-Za-z_][A-Za-z0-9_]*", "$(name withheld)", out)
+    model_words = {w.lower() for w in _IDENT.findall(draft or "")} - vocab
+    return _IDENT.sub(lambda m: "(withheld)" if m.group(0).lower() in model_words else m.group(0), out)
+
+
 def screened(text: str, lang: str) -> Optional[str]:
     """The H-C1 c output filter on the model's words: None when they may not be shown."""
     from app.ai import output_filter
@@ -80,4 +119,4 @@ def screened(text: str, lang: str) -> Optional[str]:
     return shown if ok else None
 
 
-__all__ = ["FLAG", "SYSTEM", "PROMPT_VERSION", "DISCLAIMER", "registry_text", "system_prompt", "parse", "screened"]
+__all__ = ["FLAG", "SYSTEM", "PROMPT_VERSION", "DISCLAIMER", "registry_text", "system_prompt", "parse", "withheld", "screened"]

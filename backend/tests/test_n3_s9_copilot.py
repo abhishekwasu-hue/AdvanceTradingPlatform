@@ -295,6 +295,20 @@ def test_an_invalid_draft_never_returns_the_models_text(monkeypatch):
         assert out["ok"] is False and out["text"] is None and out["ast"] is None and out["stages"] == [] and out["problems"], out
         assert advice not in r.text and "guaranteed" not in r.text.lower(), (i, r.text)
         assert len(fake.calls) == 2                                                    # the repair turn was taken
+    # re-review (MED-1): the validator quotes what it rejects - every word of the model's is withheld, `pos` kept
+    for draft, shown in (("close > 1 AND guaranteed_20pct_buy_RELIANCE > 1", "unknown field (name withheld)"),
+                         ("BuyRelianceNowGuaranteed(5)", "unknown function (name withheld)"),
+                         ("RELIANCE_target_3000", "unknown field (name withheld)"),
+                         ('Holding("buy RELIANCE") > 1', "Holding: holder (value withheld) is not one of")):
+        t = _org(f"nlword{uuid.uuid4().hex[:4]}", extra=("screener_ownership",))
+        _provider(monkeypatch, _LLM([{"text": draft, "explanation": "", "assumptions": []}] * 2))
+        r = client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "momentum stocks please"})
+        out = r.json()
+        assert r.status_code == 200 and out["ok"] is False and out["text"] is None, r.text
+        assert any(p["message"].startswith(shown) for p in out["problems"]), out["problems"]
+        assert all(p["pos"] is not None for p in out["problems"] if p["message"].startswith(shown))
+        low = r.text.lower()
+        assert not any(w in low for w in ("reliance", "guaranteed", "buy", "target")), (draft, r.text)
     repaired = _LLM([{"text": 'close > 1 AND "x" == "x"', "explanation": "", "assumptions": []},
                      {"text": 'Holding("promoter") > 50', "explanation": "Promoter holding over half.", "assumptions": []}])
     t = _org("nlrepair", extra=("screener_ownership",))
@@ -493,3 +507,73 @@ def test_a_timed_out_run_finishes_in_its_own_session(monkeypatch):
         return ctx.session
     shared = _run(_with_ctx(t["user_id"], go))
     assert seen.get("finished") and seen["session"] is not shared and not S._RUNS
+
+
+# --- re-review of S9 (LOWs) ------------------------------------------------------------------------------------------------------
+
+def test_a_background_run_failure_is_logged(caplog):
+    """LOW-1: a stored run that fails after its tool call answered is logged, not dropped."""
+    async def go():
+        async def boom():
+            raise RuntimeError("database went away")
+        task = asyncio.ensure_future(boom())
+        S._RUNS.add(task)
+        task.add_done_callback(S._finished)
+        await asyncio.sleep(0.01)
+    with caplog.at_level("WARNING", logger=S.__name__):
+        _run(go())
+    assert "database went away" in caplog.text and not S._RUNS
+
+
+def test_a_failed_tool_s_error_is_untrusted_for_the_guard(monkeypatch):
+    """LOW-2: the error text of a failed tool (it can carry a broker's or provider's words) is third-party text for the
+    guard - a quote that also appears there is refused."""
+    import dataclasses
+
+    async def failing(ctx, args):
+        return tools.ToolResult(False, None, None, "screener", error="upstream: alert me when UP closes above its average")
+    monkeypatch.setitem(tools._REGISTRY, "build_screen", dataclasses.replace(tools._REGISTRY["build_screen"], fn=failing))
+    t = _org("errguard")
+    question = "Check close > SMA(close, 20) and alert me when UP closes above its average"
+    provider = _Scripted([("call", [("build_screen", {"text": "close > SMA(close, 20)"})]),
+                          ("call", [("propose_alert", {**ALERT, "quote": "alert me when UP closes above its average"})]),
+                          ("text", json.dumps({"text": "Nothing proposed.", "claims": [], "disclaimers": []}))])
+    answer = _agent(t, provider, question)
+    assert answer.proposals == []
+
+    async def actions():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(AiActionRecord).where(AiActionRecord.tenant_id == t["tenant_id"])))
+    assert _run(actions()) == []
+
+
+def test_literals_that_name_something_real_are_not_free_text(monkeypatch):
+    """LOW-3: a ranking system the organisation can use, a sector / industry on record or a sectoral index's name, an
+    index from the catalogue, an AMFI bucket - not free text; anything else still is."""
+    from app.db.models import ClassificationRecord
+    from app.screener import compile_screen
+    t = _org("known", extra=("screener_rankings",))
+
+    async def seed():
+        async with _session_factory() as session:
+            session.add(ClassificationRecord(isin="INE000KNOWN1", scheme="NSE", sector="Information Technology", source="test", checksum="t",
+                                             valid_from=datetime(2024, 1, 1).date()))
+            await session.commit()
+    _run(seed())
+
+    def free(text):
+        ast, _ = compile_screen(text, base_tf="1d")
+        return _run(_with_ctx(t["user_id"], lambda ctx: S.free_text_in(ctx.session, ctx.tenant_id, ast)))
+    for text in ('RankScore("platform:Momentum") > 80', 'Sector() == "IT"', 'Sector() == "Information Technology"',
+                 'Industry() IN ("IT", "BANK")', 'IndexMember("NIFTY 50")', 'IndexMember("NIFTYBANK")', 'McapBucket() == "large"',
+                 'Pattern("hammer")', 'Trend(5) == "UPTREND"'):
+        assert free(text) == [], text
+    for text, left in (('RankScore("buy RELIANCE now") > 80', ["buy RELIANCE now"]), ('Sector() == "guaranteed 20%"', ["guaranteed 20%"]),
+                       ('IndexMember("sure profit")', ["sure profit"]), ('McapBucket() == "mega"', ["mega"]),
+                       ('close > 1 AND "x" == "x"', ["x", "x"])):
+        assert free(text) == left, text
+    # the box accepts a draft that ranks by a real system
+    _provider(monkeypatch, _LLM([{"text": 'RankScore("platform:Momentum") > 80', "explanation": "Strong momentum rank.",
+                                  "assumptions": []}]))
+    out = client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "top momentum names"}).json()
+    assert out["ok"] and out["text"] == 'RankScore("platform:Momentum") > 80', out

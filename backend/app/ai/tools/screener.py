@@ -18,13 +18,16 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from datetime import date
-from typing import Any, Dict, List, Optional, Set, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.ai.tools import Tool, ToolContext, ToolResult, register
+
+log = logging.getLogger(__name__)
 
 FLAG = "screener_copilot"
 SCREENER_FLAG = "screener_v2"
@@ -101,24 +104,110 @@ def final_name(name: str) -> str:
     return neutral(name.strip()[:120], FIXED_NAME) or FIXED_NAME
 
 
-def free_text_literals(ast: Any) -> List[str]:
+def _compared(ast: Any) -> List[Tuple[Any, Any]]:
+    """(string literal, the call it is compared with) for every `call == "x"` / `"x" != call` / `call IN ("x", ...)`."""
+    from app.screener import nodes
+    out: List[Tuple[Any, Any]] = []
+    for node in nodes.walk(ast):
+        if isinstance(node, nodes.Compare):
+            for side, other in ((node.left, node.right), (node.right, node.left)):
+                if isinstance(side, nodes.Str) and isinstance(other, nodes.Call):
+                    out.append((side, other))
+        elif isinstance(node, nodes.In) and isinstance(node.value, nodes.Call):
+            out.extend((item, node.value) for item in node.items if isinstance(item, nodes.Str))
+    return out
+
+
+def free_text_literals(ast: Any, known: Optional[Set[int]] = None) -> List[str]:
     """Re-check (MED): string literals in a condition other than a function's fixed choices ("promoter", "hammer"...).
-    Free text would survive into the canonical condition and from there into the rule and the proposal."""
+    Free text would survive into the canonical condition and from there into the rule and the proposal. `known`: the
+    literals (by node id, from `known_literals`) that name something real - a ranking system, a sector, an index."""
     from app.screener import nodes
     from app.screener.registry import FUNCTIONS
-    allowed: set = set()
+    allowed: Set[int] = set(known or ())
     for node in nodes.walk(ast):
         spec = FUNCTIONS.get(node.name) if isinstance(node, nodes.Call) else None
         if spec is not None:
             for arg, value in zip(spec.args, node.args):
                 if isinstance(value, nodes.Str) and arg.choices and value.value in arg.choices:
                     allowed.add(id(value))
-        if isinstance(node, nodes.Compare):           # a classifier against one of its own values: ZoneRole() == "DEMAND"
-            for side, other in ((node.left, node.right), (node.right, node.left)):
-                ospec = FUNCTIONS.get(other.name) if isinstance(other, nodes.Call) else None
-                if isinstance(side, nodes.Str) and ospec is not None and ospec.values and side.value in ospec.values:
-                    allowed.add(id(side))
+    for side, other in _compared(ast):                # a classifier against one of its own values: ZoneRole() == "DEMAND"
+        ospec = FUNCTIONS.get(other.name)
+        if ospec is not None and ospec.values and side.value in ospec.values:
+            allowed.add(id(side))
     return [n.value for n in nodes.walk(ast) if isinstance(n, nodes.Str) and id(n) not in allowed]
+
+
+MCAP_BUCKETS = frozenset({"large", "mid", "small"})        # AMFI's buckets (McapBucket)
+SECTOR_CALLS = frozenset({"Sector", "Industry"})
+
+
+async def _sector_names(session: Any) -> Set[str]:
+    """The sector / industry names on record (U1-b classifications, any level) and the sectoral indices' own names
+    ("NIFTY IT" -> "IT"), upper-cased."""
+    from sqlalchemy import select
+
+    from app.db.models import ClassificationRecord
+    from app.universe.indices import catalogue
+    names: Set[str] = set()
+    for col in (ClassificationRecord.macro_sector, ClassificationRecord.sector, ClassificationRecord.industry,
+                ClassificationRecord.basic_industry):
+        names.update(str(v).strip().upper() for v in await session.scalars(select(col).distinct()) if v)
+    for row in catalogue():
+        if row.get("family") == "SECTORAL":
+            names.add(str(row["name"]).upper().removeprefix("NIFTY ").removesuffix(" INDEX").strip())
+    return names
+
+
+async def _index_names(session: Any) -> Set[str]:
+    from sqlalchemy import select
+
+    from app.db.models import IndexRecord
+    from app.universe.indices import catalogue
+    names = {str(r["name"]).upper() for r in catalogue()} | {str(r["index_code"]).upper() for r in catalogue()}
+    for code, name in (await session.execute(select(IndexRecord.index_code, IndexRecord.name))).all():
+        names.update({str(code).upper(), str(name).upper()})
+    return names
+
+
+async def known_literals(session: Any, tenant_id: int, ast: Any) -> Set[int]:
+    """Re-review (LOW-3): the string literals (node ids) that resolve to something real, so they are not free text -
+    a RankScore system the organisation can use (its own or platform:...), an index from the catalogue / the indices
+    table, a sector or industry on record, an AMFI market-cap bucket. Anything else stays free text."""
+    from app.screener import nodes
+    from app.screener import ranking as ranking_gate
+    known: Set[int] = set()
+    if ast is None:
+        return known
+    sectors: Optional[Set[str]] = None
+    indices: Optional[Set[str]] = None
+    for node in nodes.walk(ast):
+        if not isinstance(node, nodes.Call) or node.name not in ("RankScore", "IndexMember"):
+            continue
+        value = node.args[0] if node.args else node.kwargs.get("system" if node.name == "RankScore" else "index")
+        if not isinstance(value, nodes.Str):
+            continue
+        if node.name == "RankScore":
+            found, problems = await ranking_gate.resolve(session, tenant_id, [value.value])
+            if value.value in found and not problems:
+                known.add(id(value))
+        elif node.name == "IndexMember":
+            indices = indices if indices is not None else await _index_names(session)
+            if value.value.strip().upper() in indices:
+                known.add(id(value))
+    for side, other in _compared(ast):
+        if other.name in SECTOR_CALLS:
+            sectors = sectors if sectors is not None else await _sector_names(session)
+            if side.value.strip().upper() in sectors:
+                known.add(id(side))
+        elif other.name == "McapBucket" and side.value.strip().lower() in MCAP_BUCKETS:
+            known.add(id(side))
+    return known
+
+
+async def free_text_in(session: Any, tenant_id: int, ast: Any) -> List[str]:
+    """`free_text_literals` with the literals that name something real for this organisation allowed."""
+    return free_text_literals(ast, await known_literals(session, tenant_id, ast)) if ast is not None else []
 
 
 async def known_symbol(session: Any, symbol: str) -> bool:
@@ -205,8 +294,13 @@ _RUNS: Set["asyncio.Task[Any]"] = set()          # stored runs still finishing a
 
 def _finished(task: "asyncio.Task[Any]") -> None:
     _RUNS.discard(task)
-    if not task.cancelled():
-        task.exception()                           # retrieved: a run nobody awaits any more is not logged as never retrieved
+    if task.cancelled():
+        return
+    exc = task.exception()                         # retrieved: a run nobody awaits any more is not logged as never retrieved
+    if exc is not None and not isinstance(exc, HTTPException):
+        # re-review (LOW-1): a run that failed after its tool call had answered is still seen (an HTTPException is
+        # the route's own refusal, already the tool's answer when it was awaited)
+        log.warning("copilot screener run failed in the background: %s: %s", type(exc).__name__, str(exc)[:300])
 
 
 async def _stored_run(ctx: ToolContext, body: Any) -> Dict[str, Any]:
@@ -304,7 +398,7 @@ async def propose_alert(ctx: ToolContext, args: _Alert) -> ToolResult:
         return ToolResult(False, None, None, "ai_actions", error=f"{symbol} is not a known instrument (instrument master, index or NSE listing)")
     from app.screener import compile_screen
     parsed, _ = compile_screen(args.condition, base_tf=args.base_tf)
-    texts = free_text_literals(parsed) if parsed is not None else []
+    texts = await free_text_in(ctx.session, ctx.tenant_id, parsed)
     if texts:
         return ToolResult(False, None, None, "ai_actions", error="a Copilot alert condition takes no free-text literals (only a function's fixed choices)")
     body = RuleBody(name=f"{symbol} alert", kind="instrument", symbol=symbol, condition=args.condition, base_tf=args.base_tf,

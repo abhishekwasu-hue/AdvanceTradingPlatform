@@ -16,7 +16,7 @@ here sizes, places or recommends a trade. N2-3's calculators reuse these with ty
 from __future__ import annotations
 
 import math
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 KELLY_FORMULA = "f = (p·b − q) / (b·(p + q))"
 RUIN_METHOD = "lundberg_upper_bound"
@@ -56,16 +56,24 @@ def kelly_fraction(wins: int, losses: int, payoff_ratio: Optional[float]) -> Opt
 
 
 def adjustment_coefficient(pnls: Sequence[float]) -> Optional[float]:
-    """Lundberg's R > 0 with mean(e^(−R·x)) = 1, by bisection on the P&Ls scaled to |x| <= 1. None when there is no root
-    (no losing trade, or a non-positive mean). Capped at _R_CAP / scale: the bound it gives is then still valid."""
-    xs = [float(x) for x in pnls]
-    if not xs or not any(x < 0 for x in xs) or math.fsum(xs) <= 0:
+    """Lundberg's R > 0 with mean(e^(−R·x)) = 1 over the past P&Ls. None when there is no root (no losing trade, or a
+    non-positive mean)."""
+    return weighted_adjustment_coefficient([(float(x), 1.0) for x in pnls])
+
+
+def weighted_adjustment_coefficient(outcomes: Sequence[Tuple[float, float]]) -> Optional[float]:
+    """R > 0 with Σ w·e^(−R·x) / Σ w = 1 over (outcome x, weight w) pairs, by bisection on the outcomes scaled to
+    |x| <= 1. None when there is no root (no losing outcome with weight, or a non-positive mean). Capped at
+    _R_CAP / scale: the bound it gives is then still valid (smaller than the true one is never claimed)."""
+    pairs = [(float(x), float(w)) for x, w in outcomes if w > 0]
+    total = math.fsum(w for _, w in pairs)
+    if not pairs or not any(x < 0 for x, _ in pairs) or math.fsum(x * w for x, w in pairs) <= 0:
         return None
-    scale = max(abs(x) for x in xs)
-    ys = [x / scale for x in xs]
+    scale = max(abs(x) for x, _ in pairs)
+    ys = [(x / scale, w / total) for x, w in pairs]
 
     def excess(r: float) -> float:
-        return math.fsum(math.exp(-r * y) for y in ys) / len(ys) - 1.0
+        return math.fsum(w * math.exp(-r * y) for y, w in ys) - 1.0
 
     hi = 1.0
     while excess(hi) <= 0.0:

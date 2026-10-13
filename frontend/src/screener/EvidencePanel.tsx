@@ -4,15 +4,27 @@
  * value at the matched bar and whether it passed) and "Send to my Telegram" (the same chart as an image, to the user's
  * own linked chat). Failed conditions stay hidden unless "Show failed conditions" is on (the pack is then read with
  * debug). Informational: the panel explains a match; it never suggests a trade.
+ *
+ * EV3 (flag evidence_context; the pack then carries `context`): the trend strip (the engine's DowTrend on the screen's
+ * timeframe and above, as of the matched bar) and replay - step back bar by bar through the pack's window and see the
+ * screen recomputed from the shared history as of that bar (never stored, never sent), then return to the match.
  */
-import { Send } from "lucide-react";
+import { ChevronLeft, ChevronRight, RotateCcw, Send } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { ApiError } from "../api/client";
 import { Button, Dialog, cx } from "../components/primitives";
 import { EvidenceChart, EvidenceLegend } from "./EvidenceChart";
-import { barTimeText, evidenceApi, verifyRows, visibleDrawables, type EvidencePack } from "./evidence";
+import {
+  barTimeText, evidenceApi, replaySteps, stepReplay, trendTone, verifyRows, visibleDrawables, type EvidenceContext, type EvidencePack,
+} from "./evidence";
 
 export type SendState = { status: "idle" | "sending" | "sent" | "failed"; message?: string };
+
+/** EV3 replay controls: `index` of `steps` (the last step is the stored pack itself). */
+export interface ReplayControls {
+  steps: number; index: number; loading: boolean; error?: string | null;
+  onStep: (delta: number) => void; onReset: () => void;
+}
 
 export interface EvidenceViewProps {
   pack: EvidencePack;
@@ -23,6 +35,58 @@ export interface EvidenceViewProps {
   onSend?: () => void;
   send?: SendState;
   chartWidth?: number;
+  replay?: ReplayControls;
+}
+
+const TONE = { up: "border-signal/50 text-signal", down: "border-warn/50 text-warn", flat: "border-border text-fg-muted" } as const;
+const ARROW = { up: "▲", down: "▼", flat: "◆" } as const;
+
+/** EV3: the trend strip - one chip per timeframe, the tag in words (never colour alone), its expression and bar in the title. */
+export function ContextStrip({ context, rowText }: { context: readonly EvidenceContext[]; rowText: (id: string) => string }) {
+  return (
+    <section aria-label="Trend on other timeframes" className="flex flex-wrap items-center gap-1.5 text-t12" data-testid="context-strip">
+      <span className="text-fg-muted">Trend (Dow):</span>
+      {context.map((c) => {
+        const tone = trendTone(c.tag);
+        const reads = c.used_by.map(rowText).filter(Boolean);
+        const title = [c.expr, c.bar_close ? `as of the bar that closed ${c.bar_close}` : null, c.note, reads.length ? `read by: ${reads.join("; ")}` : null]
+          .filter(Boolean).join(" · ");
+        return (
+          <span key={c.tf} title={title} data-tf={c.tf}
+                className={cx("inline-flex items-center gap-1 rounded-control border bg-surface-2 px-1.5 py-0.5 font-tabular", TONE[tone], reads.length > 0 && "font-semibold")}>
+            <span aria-hidden>{ARROW[tone]}</span>{c.text}{reads.length ? <span className="sr-only"> (read by the screen)</span> : null}
+          </span>
+        );
+      })}
+    </section>
+  );
+}
+
+/** EV3: step back / forward through the pack's window, and back to the matched bar. */
+export function ReplayBar({ replay, pack }: { replay: ReplayControls; pack: EvidencePack }) {
+  const atMatch = replay.index >= replay.steps - 1;
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-t12" data-testid="replay-bar">
+      <span className="text-fg-muted">Replay:</span>
+      <Button variant="secondary" onClick={() => replay.onStep(-1)} disabled={replay.index <= 0 || replay.loading} aria-label="Step back one bar">
+        <ChevronLeft size={14} aria-hidden />
+      </Button>
+      <span className="font-tabular text-fg" aria-live="polite">bar {replay.index + 1} of {replay.steps}{atMatch ? " (the match)" : ""}</span>
+      <Button variant="secondary" onClick={() => replay.onStep(1)} disabled={atMatch || replay.loading} aria-label="Step forward one bar">
+        <ChevronRight size={14} aria-hidden />
+      </Button>
+      {!atMatch && (
+        <Button variant="secondary" onClick={replay.onReset} aria-label="Back to the matched bar">
+          <RotateCcw size={14} aria-hidden /> Back to the match
+        </Button>
+      )}
+      {replay.loading && <span role="status" className="text-fg-muted">Replaying…</span>}
+      {replay.error && <span role="alert" className="text-warn">{replay.error}</span>}
+      {pack.replay && !replay.loading && (
+        <span role="status" className="basis-full text-fg-muted">Replayed as of the {barTimeText(pack)}. {pack.replay.note}</span>
+      )}
+    </div>
+  );
 }
 
 function Mark({ passed }: { passed: boolean | null }) {
@@ -33,7 +97,7 @@ function Mark({ passed }: { passed: boolean | null }) {
 }
 
 /** The panel's content (no dialog), for tests and the story. */
-export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, onShowFailed, onSend, send, chartWidth = 720 }: EvidenceViewProps) {
+export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, onShowFailed, onSend, send, chartWidth = 720, replay }: EvidenceViewProps) {
   const [highlight, setHighlight] = useState<string | null>(null);
   const drawables = useMemo(() => visibleDrawables(pack, hiddenBlocks, showFailed), [pack, hiddenBlocks, showFailed]);
   const rows = verifyRows(pack, showFailed);
@@ -48,6 +112,8 @@ export function EvidenceView({ pack, hiddenBlocks, showFailed, onToggleBlock, on
         </span>
         <span>{pack.screen.name ? <>Screen: <span className="text-fg">{pack.screen.name}</span></> : <span className="font-mono">{pack.screen.text}</span>}</span>
       </div>
+      {pack.context && pack.context.length > 0 && <ContextStrip context={pack.context} rowText={(id) => rowById.get(id)?.text ?? ""} />}
+      {replay && replay.steps > 1 && <ReplayBar replay={replay} pack={pack} />}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
         <div className="min-w-0 rounded-panel border border-border bg-surface-1 p-2">
           <EvidenceChart pack={pack} drawables={drawables} width={chartWidth} highlight={highlight} />
@@ -129,6 +195,11 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
   const [showFailed, setShowFailed] = useState(false);
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [send, setSend] = useState<SendState>({ status: "idle" });
+  const [step, setStep] = useState<number | null>(null);                 // EV3: null = the stored pack
+  const [replayed, setReplayed] = useState<EvidencePack | null>(null);
+  const [replayLoading, setReplayLoading] = useState(false);
+  const [replayError, setReplayError] = useState<string | null>(null);
+  const steps = useMemo(() => (pack?.context ? replaySteps(pack) : []), [pack]);
 
   useEffect(() => {
     if (evidenceId == null) return;
@@ -141,7 +212,27 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
     return () => { live = false; };
   }, [evidenceId, showFailed]);
 
-  useEffect(() => { setHidden(new Set()); setSend({ status: "idle" }); setPack(null); setShowFailed(false); }, [evidenceId]);
+  useEffect(() => {
+    setHidden(new Set()); setSend({ status: "idle" }); setPack(null); setShowFailed(false);
+    setStep(null); setReplayed(null); setReplayError(null); setReplayLoading(false);
+  }, [evidenceId]);
+
+  // EV3 replay: one request per step; a newer step (or closing / going back to the match) drops an older answer.
+  useEffect(() => {
+    setReplayError(null);
+    if (evidenceId == null || step == null || step >= steps.length - 1) { setReplayed(null); setReplayLoading(false); return; }
+    let live = true;
+    setReplayLoading(true);
+    evidenceApi.replay(evidenceId, steps[step], showFailed).then(
+      (p) => { if (live) { setReplayed(p); setReplayLoading(false); } },
+      (e: unknown) => {
+        if (!live) return;
+        setReplayLoading(false);
+        setReplayError(e instanceof ApiError && e.status !== 404 ? e.message : "Replay is not available for this evidence.");
+      },
+    );
+    return () => { live = false; };
+  }, [evidenceId, step, steps, showFailed]);
 
   const toggle = (id: string) => setHidden((h) => { const next = new Set(h); if (next.has(id)) next.delete(id); else next.add(id); return next; });
   const doSend = async () => {
@@ -160,8 +251,13 @@ export function EvidencePanel({ evidenceId, symbol, onClose }: { evidenceId: num
             title={`Why ${pack?.symbol ?? symbol ?? ""} matched`} description="Only the screen's own conditions are drawn, with the engine's numbers.">
       {error ? <p role="alert" className="text-warn">{error}</p>
         : !pack ? <p className="text-fg-muted">Loading the evidence…</p>
-          : <EvidenceView pack={pack} hiddenBlocks={hidden} showFailed={showFailed} onToggleBlock={toggle} onShowFailed={setShowFailed}
-                          onSend={doSend} send={send} />}
+          : <EvidenceView pack={replayed ?? pack} hiddenBlocks={hidden} showFailed={showFailed} onToggleBlock={toggle} onShowFailed={setShowFailed}
+                          onSend={doSend} send={send}
+                          replay={steps.length > 1 ? {
+                            steps: steps.length, index: step ?? steps.length - 1, loading: replayLoading, error: replayError,
+                            onStep: (delta) => setStep((s) => stepReplay(s, delta, steps.length)),
+                            onReset: () => setStep(null),
+                          } : undefined} />}
     </Dialog>
   );
 }

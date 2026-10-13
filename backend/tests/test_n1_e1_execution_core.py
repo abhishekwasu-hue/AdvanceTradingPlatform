@@ -494,3 +494,37 @@ def test_no_function_of_the_core_reaches_a_broker_order_method():
     core = {name for name in graph.functions if name.startswith("app.execution.core.")}
     assert "app.execution.core.dispatcher.drain" in core and "app.execution.core.intents.submit" in core
     assert not core & graph.reaching()
+
+
+def test_a_sql_error_in_one_intent_is_undone_in_its_savepoint_and_the_next_intent_runs(monkeypatch):
+    """ADR-0004 / savepoints: an intent whose dispatch hits a SQL error (a failed flush) fails alone - its savepoint is
+    rolled back, never the whole shared session - and the next intent in the same batch is dispatched."""
+    from datetime import date
+    from app.db.models import MarketHolidayRecord
+    t = _org("sqlfail")
+    real = approval.propose_entry
+
+    async def flaky(session, tenant_id, **kwargs):
+        if kwargs["signal"].symbol == "SQLBROKEN":
+            session.add_all([MarketHolidayRecord(exchange="ZZE1", holiday_date=date(2031, 7, 1), description="dup"),
+                             MarketHolidayRecord(exchange="ZZE1", holiday_date=date(2031, 7, 1), description="dup")])
+            await session.flush()
+        return await real(session, tenant_id, **kwargs)
+    monkeypatch.setattr(approval, "propose_entry", flaky)
+    bad, _ = _submit(t, "ONE_CLICK", signal=_sig(symbol="SQLBROKEN"))
+    good, _ = _submit(t, "ONE_CLICK")
+
+    async def go():
+        async with _session_factory() as session:
+            report = await dispatcher.drain(session, datetime.now(UTC))
+            still = (await session.execute(select(Tenant.id).where(Tenant.id == t["tenant_id"]))).scalar()   # session usable
+            return report, still
+    report, still = _run(go())
+    assert still == t["tenant_id"] and report.failed >= 1 and report.done >= 1
+    assert _intent(bad).status == intents.FAILED and "IntegrityError" in _intent(bad).reason
+    assert _intent(good).status == intents.DONE and len(_rows(AiActionRecord, t["tenant_id"])) == 1
+
+    async def dup_rows():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(MarketHolidayRecord).where(MarketHolidayRecord.exchange == "ZZE1")))
+    assert _run(dup_rows()) == []

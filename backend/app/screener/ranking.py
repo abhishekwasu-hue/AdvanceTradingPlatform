@@ -491,6 +491,15 @@ def within(systems: Dict[str, System], fn: Any, *args: Any, **kwargs: Any) -> An
         ACTIVE.reset(token)
 
 
+async def sectors_by_date(session: Any, symbols: Sequence[str], dates: Sequence[Any]) -> Dict[Any, Dict[str, Optional[str]]]:
+    """Each date's NSE sector of each symbol AS OF that date (U1-b ranges open on the day the classification file showed
+    them, so a later reclassification never reaches back). The history ranking's sector-neutral input."""
+    if not dates or not symbols:
+        return {d: {} for d in dates}
+    ranges = await sector_ranges(session, sorted(symbols), min(dates), max(dates))
+    return {d: {s: sector_on(r, d) for s, r in ranges.items()} for d in dates}
+
+
 async def sector_ranges(session: Any, symbols: Sequence[str], start: Any, end: Any) -> Dict[str, List[Tuple[Any, Optional[Any], Optional[str]]]]:
     """Each symbol's NSE sector ranges overlapping [start, end] (U1-b classifications). The ISIN is the one the symbol
     traded under on each date (every symbol_history range in the window: A -> B -> A or A -> B -> C included - re-check

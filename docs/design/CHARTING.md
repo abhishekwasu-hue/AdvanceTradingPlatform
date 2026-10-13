@@ -505,6 +505,57 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
   interval / crosshair links and alignment, active chart and timeframe steps, shortcuts, the crosshair link (echoes
   dropped synchronously and asynchronously, unregister), `setCrosshair` bar placement, the API client's 409 / 404.
 
+## CH5-b (built): chart types, session breaks, the 24x7 axis
+
+Same flag (`chart_workspace`): the workspace's charts get a chart-type picker (Alt+T cycles it) and the venue axis.
+ProChart takes two new props, `chartType` (default `candles`) and `venueAxis` (default off), so every chart outside the
+workspace looks exactly as before.
+
+- **Pure functions** (`frontend/src/charting/chartTypes.ts`, no chart library):
+  - Heikin Ashi: close (O+H+L+C)/4, open the mean of the previous HA open and close (first: (O+C)/2), high / low
+    including them; one bar per source bar at the same time, bar i from bars 0..i only.
+  - Renko (close-based): a brick per full box beyond the last brick's top (up) or bottom (down); a reversal needs a box
+    beyond the last brick's other side, i.e. two boxes from its close. The first brick is measured from the first close.
+  - Range bars: each spans exactly the range from high to low; the next opens where the last closed. Inside a source
+    bar the path is assumed open -> low -> high -> close (up bar) or open -> high -> low -> close (down bar).
+  - Several bricks completed inside one bar get that bar's time, then +1 s each (the chart needs rising times).
+  - **No forming bar, no repainting.** Renko and range are built from `closedBars` (a bar counts once its period has
+    ended) of the bars as received - never the live-priced forming candle - and only completed bricks are returned.
+    The default box / range is a round 0.5 % of the first bar's close (1 / 2 / 2.5 / 5 x 10^k), fixed by the start of
+    the data, so appending bars never changes it. Together: the bricks of any prefix of the bars are a prefix of the
+    bricks of all of them.
+  - **Prepending redraws.** Loading older history (scrolling back) moves the first bar, the anchor of the first brick,
+    so every Renko / range brick is rebuilt and may sit at other prices and times. ProChart keeps the box size it first
+    derived for the (symbol, timeframe, type), so the box itself does not change, and keeps the visible time window
+    (not a brick count) across the redraw.
+  - **Gaps.** A gap between two bars (overnight, a halt, news) is bridged by whole bricks / range bars at prices that
+    may never have traded, all stamped at the gapped bar's time (+1 s each) - the usual convention without ticks
+    (OPEN_QUESTIONS CH5-8).
+  - Hollow candles: hollow when close >= open, filled otherwise; green or red by the close against the previous close.
+  - Line / area: the closes, on their own series; the candle series stays (transparent) because drawings, layers and
+    markers are anchored to it.
+- **On the chart.** Heikin Ashi and hollow candles keep the source times, so indicators, volume, drawings and the live
+  forming bar work as on candles. Renko and range bricks have their own times: they carry no indicators or volume, are
+  rebuilt (not updated in place), and the header says "Renko · box 20". On a live tick the view is shifted by the bricks
+  added on the left, counted over the bricks' own times (a tick that adds no brick does not move the view). The legend
+  shows the source bar's OHLC on the candle types and the brick's own OHLC on Renko / range (no volume or indicators);
+  a marker sits on the brick completed at or after its time (none while its move is still forming).
+- **Session breaks** (`sessionBreaks` + `sessionBreaksPrimitive.ts`): a dotted vertical line at the first bar of each
+  session, where the calendar date changes in the venue's zone - IST for NSE / BSE / MCX (MCX's 23:30 close stays on
+  its day), UTC for 24x7 crypto venues (midnight UTC, weekends included). None on daily bars. The day is integer
+  arithmetic, `floor((t + 19800) / 86400)` for IST and `floor(t / 86400)` for UTC (neither has daylight saving), not an
+  `Intl` call per bar (that took about 4 s on 50k bars), and the result is memoized on the bar times, so a live tick
+  that adds no bar reuses it.
+- **24x7 axis**: tick labels and the crosshair time in the venue's zone (`formatTick`: the date on day / month / year
+  marks, the time otherwise; "UTC" after crypto times), instead of IST times on every tick.
+- **Tests** (`src/charting/chartTypes.test.ts`, 12): hand-worked Heikin Ashi, Renko (multi-brick bar, non-reversal,
+  reversal) and range bars (exact span, open at the last close, the OHLC path); truncation invariance over all 400
+  prefixes of a seeded walk for Renko, range and Heikin Ashi; a forming bar (even a spike) never reaches the bricks;
+  hollow colours; the box size; goldens for Heikin Ashi, Renko and range over the walk
+  (`src/charting/__fixtures__/chart_types_golden.json.gz`, gzipped JSON; `UPDATE_GOLDEN=1` regenerates after a
+  deliberate change); session breaks for NSE, MCX, crypto and daily bars, the IST / UTC midnight edges, 50k bars well
+  under 100 ms and the memo; markers on bricks; tick labels per zone; the break lines.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

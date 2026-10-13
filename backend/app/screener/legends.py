@@ -495,9 +495,26 @@ def payload(library: Library, taxonomy: Optional[tx.Taxonomy] = None, slices: Se
 ACTIONS_FLAG = "screener_legends_actions"   # U7 LG4a: Run on my list / Alert me / Copy from a card
 
 
+def filled_source(card: Card) -> str:
+    """The card's ScreenQL with its default parameters written in - what the card's Run / Alert actions send (the page's
+    `filledSource`)."""
+    by = card.defaults()
+
+    def put(m: "re.Match[str]") -> str:
+        if m.group(1) not in by:
+            return m.group(0)
+        v = by[m.group(1)]
+        return str(int(v)) if isinstance(v, float) and v.is_integer() else str(v)
+    return re.sub(r"\$([A-Za-z_][A-Za-z0-9_]*)", put, card.source)
+
+
 def card_actions(card: Card) -> Dict[str, Any]:
-    """U7 LG4a: what a card offers. Run on my list always; an alert rule only when an instrument rule can hold the
-    screen - never one that ranks within a list (cross-sectional) or reads fundamentals (alerts do not load them)."""
+    """U7 LG4a: what a card offers, from the card alone. Run on my list always; an alert rule only when a one-symbol
+    bar-close rule can hold the screen - never one that ranks within a list (cross-sectional), reads fundamentals
+    (alerts do not load them) or is on a timeframe the bar-close engine does not evaluate (`barclose.SUPPORTED`). The
+    organisation's own refusals (flags, role, every check `POST /api/alerts/rules` runs) are added per request by the
+    route (`rules_routes.instrument_rule_refusal`)."""
+    from app.alerts.barclose import SUPPORTED
     from app.screener import fundamentals as fundamentals_gate
     ast, validated = compile_screen(card.source, base_tf=card.base_tf, params=card.defaults())
     why: Optional[str] = None
@@ -505,6 +522,9 @@ def card_actions(card: Card) -> Dict[str, Any]:
         why = "This screen ranks symbols within a list, so it runs on a list rather than as a one-symbol alert."
     elif fundamentals_gate.flagged_calls(ast):
         why = "Alert rules do not read reported fundamentals yet; run the screen on your list instead."
+    elif card.base_tf not in SUPPORTED:
+        why = (f"Alert rules are evaluated on 1-minute to daily bars; this screen is on {card.base_tf} bars, so run it on your list "
+               "instead.")
     return {"run": True, "alert": why is None, "alert_reason": why}
 
 
@@ -526,7 +546,7 @@ tx.register_source(SOURCE, _ids, flag=FLAG)
 tx.register_screen_flags(SOURCE, _screen_flags)
 
 
-__all__ = ["ACTIONS_FLAG", "actions", "card_actions", "DATA_FILE", "DISCLAIMER", "FLAG", "FLAG_LG2", "FLAG_LG3", "SLICES", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
+__all__ = ["ACTIONS_FLAG", "actions", "card_actions", "filled_source", "DATA_FILE", "DISCLAIMER", "FLAG", "FLAG_LG2", "FLAG_LG3", "SLICES", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
            "LegendsError", "Line", "Param", "Source", "card_payload", "english_problems", "link_problems", "lint", "load", "parse",
            "payload", "people_named", "wording_problems"]
 

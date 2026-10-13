@@ -149,6 +149,42 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
             "universe_json": None, "exchange": body.exchange}
 
 
+def _reason(detail: Any) -> str:
+    """The message of a refusal's detail (a string, or {message, problems}: the message and the first problem)."""
+    if isinstance(detail, dict):
+        message = str(detail.get("message") or "")
+        problems = [str(p.get("message")) for p in detail.get("problems") or [] if isinstance(p, dict) and p.get("message")]
+        return f"{message}: {problems[0]}" if problems and problems[0] != message else message
+    return str(detail)
+
+
+async def instrument_rule_refusal(session: AsyncSession, user: User, condition: str, base_tf: str, *, exchange: str = "NSE") -> Optional[str]:
+    """U7 LG4a: why a bar-close instrument rule with this condition would be refused for this user now, or None - the
+    same checks `POST /rules` runs (the alerts flag, the trading role and `alerts:write`, and `_checked`: validation,
+    the breakout / zone / fundamentals refusals and their flags), plus the timeframes the bar-close engine evaluates.
+    Nothing is saved."""
+    from app.alerts.barclose import SUPPORTED
+    from app.auth.dependencies import TRADING_ROLES
+    from app.auth.scopes import has_scope
+    from app.core.enums import UserRole
+    if not await flag_enabled(session, FLAG, user.tenant_id):
+        return f"Alert rules are off for this organisation (flag {FLAG})."
+    if user.role != UserRole.SUPER_ADMIN.value:                 # require_trader + require_scope("alerts:write"), as create_rule
+        if user.role not in {r.value for r in TRADING_ROLES} or not (has_scope(user, "trading:write") and has_scope(user, "alerts:write")):
+            return "Your role cannot create alert rules; ask an administrator of your organisation."
+    if base_tf not in SUPPORTED:
+        return f"Alert rules are evaluated on 1-minute to daily bars; a {base_tf} rule would not run."
+    try:
+        if user.role != UserRole.SUPER_ADMIN.value:
+            from app.plans.limits import ensure_tenant_active, load_tenant
+            ensure_tenant_active(await load_tenant(session, user.tenant_id))
+        await _checked(session, user, RuleBody(name="check", kind="instrument", symbol="CHECK", condition=condition, base_tf=base_tf,
+                                               exchange=exchange))
+    except HTTPException as exc:
+        return _reason(exc.detail)
+    return None
+
+
 async def _own_rules_only(session: AsyncSession, user: User) -> bool:
     """BT1b: with `byob_data_tier` on a rule is evaluated on its creator's own broker feed, so its events (live values),
     its last problem (the creator's session state) and the rule itself are the creator's only."""

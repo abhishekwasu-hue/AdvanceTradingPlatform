@@ -38,3 +38,61 @@ def test_card_actions_follow_their_flag_and_say_why_an_alert_cannot_hold_a_scree
         assert made.status_code == 201, made.text                                       # what the card's alert action sends
     finally:
         _set_flags(screener_v2=False, screener_legends=False, screener_legends_lg3=False, screener_legends_actions=False)
+
+
+def test_alert_me_is_refused_with_the_reason_where_a_rule_would_not_run_or_be_made():
+    """LG4a review: a weekly card offers no alert (the bar-close engine evaluates 1m-1d only); the organisation's and
+    the user's refusals come from the same checks POST /api/alerts/rules runs, per request."""
+    import asyncio
+
+    from app.alerts.barclose import SUPPORTED
+    from tests.test_auth_api import _session_factory
+    weinstein = lg.load().card("legends.weinstein_stage2_breakout")
+    assert weinstein.base_tf not in SUPPORTED
+    static = lg.card_actions(weinstein)
+    assert static["alert"] is False and "1-minute to daily" in static["alert_reason"]
+    headers, me = _owner(f"lg4-tf-{uuid.uuid4().hex[:8]}@example.com")
+    _set_flags(screener_v2=True, screener_legends=True, screener_legends_actions=True)
+    try:
+        acts = client.get("/api/screener/legends", headers=headers).json()["actions"]
+        assert acts["legends.weinstein_stage2_breakout"]["alert"] is False
+        assert acts["legends.darvas_box_breakout"]["alert"] is True
+        darvas = lg.load().card("legends.darvas_box_breakout")
+        assert "$" not in lg.filled_source(darvas)
+
+        async def demote():
+            async with _session_factory() as session:
+                from app.db.models import User
+                user = await session.get(User, me["id"])
+                user.role = "VIEWER"
+                await session.commit()
+        asyncio.run(demote())
+        viewer = client.get("/api/screener/legends/legends.darvas_box_breakout", headers=headers).json()["actions"]
+        assert viewer["alert"] is False and "role" in viewer["alert_reason"]                 # create_rule would answer 403
+        assert viewer["run"] is True
+    finally:
+        _set_flags(screener_v2=False, screener_legends=False, screener_legends_actions=False)
+
+
+def test_the_refusal_is_the_create_routes_own():
+    """instrument_rule_refusal runs create_rule's checks: a condition the route refuses is refused with its reason."""
+    import asyncio
+
+    from app.alerts.rules_routes import instrument_rule_refusal
+    from tests.test_auth_api import _session_factory
+    _, me = _owner(f"lg4-chk-{uuid.uuid4().hex[:8]}@example.com")
+    _set_flags(screener_v2=True)
+    try:
+        async def go(condition, tf="1d"):
+            async with _session_factory() as session:
+                from app.db.models import User
+                user = await session.get(User, me["id"])
+                return await instrument_rule_refusal(session, user, condition, tf)
+        assert asyncio.run(go("close > SMA(close, 20)")) is None
+        assert "do not read fundamentals" in asyncio.run(go("EarningsYield() > 5"))
+        assert "did not pass validation" in asyncio.run(go("close >"))
+        assert "1-minute to daily" in asyncio.run(go("close > 1", "1M"))
+        _set_flags(screener_v2=False)
+        assert "screener_v2" in asyncio.run(go("close > 1"))
+    finally:
+        _set_flags(screener_v2=False)

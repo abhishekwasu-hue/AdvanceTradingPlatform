@@ -166,8 +166,20 @@ async def legends(user: User = Depends(get_current_user), session: AsyncSession 
     slices = await _legend_slices(session, user)
     body = lg.payload(lg.load(), tx.load(), slices=slices)
     if await flag_enabled(session, lg.ACTIONS_FLAG, user.tenant_id):     # U7 LG4a: Run on my list / Alert me from a card
-        body["actions"] = lg.actions(lg.load(), slices)
+        body["actions"] = {c.id: await _card_actions(session, user, c) for c in lg.load().of(slices)}
     return body
+
+
+async def _card_actions(session: AsyncSession, user: User, card: Any) -> Dict[str, Any]:
+    """U7 LG4a: the card's own refusals (`legends.card_actions`), then this organisation's and this user's - the same
+    checks `POST /api/alerts/rules` runs on the card's filled-in screen (flags, role, validation) - per request."""
+    out = lg.card_actions(card)
+    if out["alert"]:
+        from app.alerts.rules_routes import instrument_rule_refusal
+        why = await instrument_rule_refusal(session, user, lg.filled_source(card), card.base_tf)
+        if why:
+            out = {**out, "alert": False, "alert_reason": why}
+    return out
 
 
 @router.get("/legends/{card_id}")
@@ -181,7 +193,7 @@ async def legend_card(card_id: str, user: User = Depends(get_current_user), sess
         raise HTTPException(status_code=404, detail="no such Legends card")
     out = {**lg.card_payload(card, library, tx.load()), "header": lg.HEADER}
     if await flag_enabled(session, lg.ACTIONS_FLAG, user.tenant_id):
-        out["actions"] = lg.card_actions(card)
+        out["actions"] = await _card_actions(session, user, card)
     return out
 
 

@@ -10,11 +10,15 @@
  * U7 LG1: with the Legends library (flag `screener_legends`), a Legends screen's card carries the disclaimer and an
  * "About" button that opens its full card (LegendCard) in place of the grid; the library header (the disclaimer for
  * the people named) is shown above any grid that lists a Legends screen.
+ *
+ * U9 TX2: with the library tools (flag `screener_tx2`), a long screen's card also shows its generated mirror (the same
+ * rules on reflected prices) or why it has none.
  */
 import { Search } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Button, cx } from "../components/primitives";
 import { LegendCard } from "./LegendCard";
+import type { MirrorEntry } from "./library";
 import { cardFor, withLegendCards, type LegendCardData, type LegendsLibrary } from "./legends";
 import {
   cellCount, chipCount, emptyText, filterScreens, NO_FILTER, placeText, railCount, tagLabel,
@@ -31,9 +35,11 @@ export interface ScreenGalleryProps {
   legends?: LegendsLibrary | null;
   /** A Legends card shown in full when the gallery opens (stories and tests). */
   initialDetail?: string | null;
+  /** U9 TX2: the mirror of each long screen, by screen id (absent while `screener_tx2` is off). */
+  mirrors?: Record<string, MirrorEntry>;
 }
 
-export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null }: ScreenGalleryProps) {
+export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, legends = null, initialDetail = null, mirrors = {} }: ScreenGalleryProps) {
   // L1: a Legends screen is shown only with its card (and so its disclaimer); without the library they leave the counts too.
   const taxonomy = useMemo(() => withLegendCards(served, legends), [served, legends]);
   const [filter, setFilter] = useState<GalleryFilter>({ ...NO_FILTER, ...initial });
@@ -102,7 +108,7 @@ export function ScreenGallery({ taxonomy: served, canOpen, onOpen, initial, lege
             {shown.map((s) => (
               <li key={s.id}>
                 <ScreenCard taxonomy={taxonomy} screen={s} canOpen={canOpen(s)} onOpen={() => onOpen(s)}
-                            legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} />
+                            legend={cardFor(legends, s.id)} onAbout={() => setDetail({ id: s.id, focus: true })} mirror={mirrors[s.id] ?? null} />
               </li>
             ))}
           </ul>
@@ -151,8 +157,9 @@ function Count({ n }: { n: number }) {
   );
 }
 
-function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout }: {
+function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout, mirror }: {
   taxonomy: Taxonomy; screen: TaxScreen; canOpen: boolean; onOpen: () => void; legend: LegendCardData | null; onAbout: () => void;
+  mirror: MirrorEntry | null;
 }) {
   const method = taxonomy.methods.find((m) => m.id === screen.method);
   const setup = taxonomy.setups.find((s) => s.id === screen.setup);
@@ -163,6 +170,11 @@ function ScreenCard({ taxonomy, screen, canOpen, onOpen, legend, onAbout }: {
       <h4 id={`screen-${screen.id}`} className="mt-1 text-t15 font-semibold text-fg">{screen.name}</h4>
       <p className="mt-1 flex-1 text-t13 text-fg-muted">{screen.definition}</p>
       {legend && <p className="mt-1 text-t12 text-fg-muted" data-testid="legend-card-disclaimer">{legend.disclaimer}</p>}
+      {mirror && (
+        <p className="mt-1 text-t12 text-fg-muted" data-testid="screen-mirror">
+          {mirror.text ? <>Mirror (down side): <code className="break-words font-mono text-fg">{mirror.text}</code></> : mirror.reason}
+        </p>
+      )}
       <ul aria-label="Tags" className="mt-2 flex flex-wrap gap-1">
         {t.timeframe_family.map((tf) => <Tag key={tf}>{tagLabel(taxonomy, "timeframe_family", tf)}</Tag>)}
         <Tag>{tagLabel(taxonomy, "direction", t.direction)}</Tag>

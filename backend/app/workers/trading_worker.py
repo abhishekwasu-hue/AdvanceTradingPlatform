@@ -281,12 +281,12 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._intraday_task is not None and not self._intraday_task.done():
+            self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
         if self._then_warm_task is not None and not self._then_warm_task.done():
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
             self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
-        if self._intraday_task is not None and not self._intraday_task.done():
-            self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)

@@ -84,6 +84,16 @@ def test_screen_fitness_meets_the_target(factor):
     assert result["screen_fitness"]["median"] < budget
 
 
+def test_screen_backtest_meets_the_target(factor):
+    """N3 S6b: the rolling screen backtest (signals, ranks, weekly rebalances with costs, daily marks)."""
+    symbols = int(os.environ.get("ATP_PERF_FITNESS_SYMBOLS", bench.FITNESS_SYMBOLS))
+    result = bench.bench_backtest(symbols, REPEAT)
+    budget = bench.TARGETS["screen_backtest"] * factor * symbols / bench.FITNESS_SYMBOLS
+    _say(f"screen_backtest ({symbols} symbols x {result['factors']} factors, {result['dates']} weekly rebalances, top 20)",
+         result["screen_backtest"]["median"], budget, result["screen_backtest"]["runs"], factor)
+    assert result["screen_backtest"]["median"] < budget
+
+
 def test_bar_close_scan_meets_the_target(factor):
     from sqlalchemy import update
 

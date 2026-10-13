@@ -69,8 +69,8 @@ class Resolved:
                 "mirror_of": self.mirror_of}
 
 
-# The breakout template sources: BK1/BK2's and BK3's (registered separately so each keeps its own flag).
-BREAKOUT_SOURCES = frozenset({"breakouts", "breakouts_bk3"})
+# The breakout template sources: BK1/BK2's, BK3's and BK4's (registered separately so each keeps its own flag).
+BREAKOUT_SOURCES = frozenset({"breakouts", "breakouts_bk3", "breakouts_bk4"})
 
 
 def _breakout_text(screen_id: str, direction: Optional[str] = None) -> Tuple[Optional[str], str, Optional[str]]:

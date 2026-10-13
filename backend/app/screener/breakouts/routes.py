@@ -2,7 +2,8 @@
 text, every parameter with its default and research note) and a run over server bars with the quality overlay.
 
 Behind `screener_v2` AND `screener_breakouts` (both off by default); the U6 BK3 screens (B3 VCP, B10 / B11 / B12 / B15
-indicator breakouts) also need `screener_breakouts_bk3` (off by default) - left out of the catalog and refused by the run. Bars come through the organisation's broker session
+indicator breakouts) also need `screener_breakouts_bk3`, and the U6 BK4 screens (B5 / B6 / B8 / B9) `screener_breakouts_bk4`
+(both off by default) - left out of the catalog and refused by the run. Bars come through the organisation's broker session
 (the same `fetch_frames` as a screen run; never bars a browser posted), closed bars only. Results are matches with a
 grade and the reasons, never advice; nothing here places, changes or blocks an order.
 """
@@ -21,11 +22,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_trader
 from app.db.models import User
 from app.db.session import get_session
-from app.platform.controls import require_flag
+from app.platform.controls import flag_enabled, require_flag
 from app.screener.breakouts import gate, quality, style, templates
 from app.screener.breakouts import params as bp
 from app.screener.breakouts import session as ses
-from app.screener.breakouts.screens import BK3_SCREENS, INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS
+from app.screener.breakouts.screens import BK3_SCREENS, BK4_SCREENS, INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS
 from app.screener.routes import fetch_frames, run_rate_limit
 
 router = APIRouter(prefix="/api/screener/breakouts", tags=["screener"])
@@ -42,8 +43,8 @@ FETCH_TF = {"2h": "1h", "4h": "1h"}  # screenql/1 has no 2h / 4h: fetched as 1h 
 
 class RunBody(BaseModel):
     template_id: Optional[str] = None
-    screen: Optional[str] = Field(default=None, description="B1 / B2 / B4 / B7 / B13 / B14 / B16 / B17 / B18 (BK3: B3 / B10 / B11 / B12 / B15)"
-                                                            " when no template is given")
+    screen: Optional[str] = Field(default=None, description="B1 / B2 / B4 / B7 / B13 / B14 / B16 / B17 / B18 (BK3: B3 / B10 / B11 / B12 / B15;"
+                                                            " BK4: B5 / B6 / B8 / B9) when no template is given")
     signal_tf: Optional[str] = Field(default=None, pattern=r"^(1m|3m|5m|15m|30m|1h|2h|4h|1d|1w)$")
     params: Dict[str, Union[float, int, str, bool, Dict[str, List[str]]]] = Field(default_factory=dict)
     symbols: List[str] = Field(min_length=1, max_length=MAX_SYMBOLS)
@@ -69,9 +70,11 @@ async def _flags(session: AsyncSession, user: User) -> None:
 @router.get("/catalog")
 async def catalog(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
-    bk3 = await gate.bk3_enabled(session, user.tenant_id)          # U6 BK3: its screens, templates and parameters only when on
-    screens = {k: v for k, v in SCREENS.items() if bk3 or k not in BK3_SCREENS}
-    return {**templates.catalog(bk3), "screens": screens, "disclaimer": quality.DISCLAIMER}
+    bk3 = await gate.bk3_enabled(session, user.tenant_id)          # U6 BK3 / BK4: their screens, templates and parameters only when on
+    bk4 = await flag_enabled(session, gate.BK4_FLAG, user.tenant_id)
+    hidden = (() if bk3 else BK3_SCREENS) + (() if bk4 else BK4_SCREENS)
+    screens = {k: v for k, v in SCREENS.items() if k not in hidden}
+    return {**templates.catalog(bk3, bk4), "screens": screens, "disclaimer": quality.DISCLAIMER}
 
 
 def _resolve(body: RunBody) -> Dict[str, Any]:
@@ -97,6 +100,10 @@ def _resolve(body: RunBody) -> Dict[str, Any]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return {"screen": screen, "signal_tf": signal_tf, "params": overrides, "context": context}
+
+
+def _intraday_gap(screen: str, signal_tf: str) -> bool:
+    return screen == "B8" and bp.TF_MINUTES[signal_tf] < bp.TF_MINUTES["1d"]
 
 
 def _windows(screen: str, params: Dict[str, Any]) -> List[int]:
@@ -135,17 +142,21 @@ def min_signal_bars(screen: str, params: Dict[str, Any]) -> int:
 
 def history_bars(screen: str, signal_tf: str, params: Dict[str, Any]) -> int:
     """Signal bars to fetch. U6 BK2: an intraday screen needs whole sessions - the time-of-day average reads the same slot
-    in the previous `tod_sessions` sessions - so it asks for that many sessions plus the current one. U6 BK3: a BK3 screen
-    asks for its two longest windows end to end plus the ATR warm-up (the trend template's 200-day line read over its
-    one-month slope and the 52-week range; a band-width low over the band's own length; ...), at least the default."""
+    in the previous `tod_sessions` sessions - so it asks for that many sessions plus the current one. U6 BK4: an intraday
+    gap screen needs the sessions its level reads (the previous one, or `gap_base_n`) plus the current one. U6 BK3: a BK3
+    screen asks for its two longest windows end to end plus the ATR warm-up (the trend template's 200-day line read over
+    its one-month slope and the 52-week range; a band-width low over the band's own length; ...), at least the default."""
     if screen in BK3_SCREENS:
         w = _windows(screen, params)
         p, _ = bp.validate(params)
         return max(SIGNAL_HISTORY_BARS, sum(w[:2]) + int(p["atr_n"]) + 1)
-    if screen not in INTRADAY_SCREENS:
+    if screen not in INTRADAY_SCREENS and not _intraday_gap(screen, signal_tf):
         return SIGNAL_HISTORY_BARS
     p, _ = bp.validate(params)
     per_session = -(-bp.TF_MINUTES["1d"] // bp.TF_MINUTES[signal_tf])
+    if screen == "B8":
+        sessions = 1 if p["gap_level"] == "prev_day" else int(p["gap_base_n"])
+        return max(SIGNAL_HISTORY_BARS, (sessions + int(p["atr_n"]) + 1) * per_session)
     return max(SIGNAL_HISTORY_BARS, (int(p["tod_sessions"]) + 1) * per_session)
 
 
@@ -218,12 +229,14 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     asked = templates.BY_ID[body.template_id].screen if body.template_id in templates.BY_ID else body.screen
     if asked in BK3_SCREENS:                    # U6 BK3: VCP / indicator breakouts need their own flag too - checked first (review L5)
         await require_flag(session, gate.BK3_FLAG, user.tenant_id)
+    if asked in BK4_SCREENS:                    # U6 BK4: trendline / pattern / gap / retest likewise
+        await require_flag(session, gate.BK4_FLAG, user.tenant_id)
     spec = _resolve(body)
     symbols = list(dict.fromkeys(body.symbols))
     if body.within * len(symbols) > MAX_WORK:
         raise HTTPException(status_code=422, detail=f"within x symbols is at most {MAX_WORK} per run ({body.within} x {len(symbols)})")
     calendar = None
-    if spec["screen"] in INTRADAY_SCREENS:                                   # U6 BK2: the exchange's session clock
+    if spec["screen"] in INTRADAY_SCREENS or _intraday_gap(spec["screen"], spec["signal_tf"]):   # U6 BK2 / BK4: the exchange's clock
         try:
             calendar = ses.calendar_for(body.exchange)
         except ValueError as exc:

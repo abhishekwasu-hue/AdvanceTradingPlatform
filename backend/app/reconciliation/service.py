@@ -220,13 +220,19 @@ async def reconcile_accounts(
     `run_reconciliation`; the flag is then left standing whatever the other accounts say."""
     reports: List[ReconciliationReport] = []
     failed: List[str] = []
+    from app.db.savepoint import guarded
+    tenant_id = tenant.id
     for account, adapter in pairs:
+        label = f"{account.broker_name}/{account.account_label}"
         try:
-            reports.append(await run_reconciliation(session, tenant, account.broker_name, adapter, user_id=user_id, source=source,
-                                                    account=account, settle=False))
+            # Review MED-2 (ADR-0004): one savepoint per account - a SQL error in one account's run undoes that run only and
+            # never leaves the shared session aborted for the tenant's square-off and monitoring.
+            async with guarded(session, keep=(tenant, account)):
+                reports.append(await run_reconciliation(session, tenant, account.broker_name, adapter, user_id=user_id, source=source,
+                                                        account=account, settle=False))
         except Exception as exc:  # noqa: BLE001 - flagged, audited and notified by run_reconciliation
-            failed.append(f"{account.broker_name}/{account.account_label}")
-            logger.warning("Tenant %s: reconciliation of %s/%s failed: %s", tenant.id, account.broker_name, account.account_label, exc)
+            failed.append(label)
+            logger.warning("Tenant %s: reconciliation of %s failed: %s", tenant_id, label, exc)
     if not reports and not failed:
         return reports
     if failed:

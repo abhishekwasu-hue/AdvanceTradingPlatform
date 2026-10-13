@@ -178,6 +178,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
     # Research only - matches, never orders.
     "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
+    # U6 BK3 (spec §8 BK3): the VCP breakout + Watchlist (B3) and the indicator breakouts - Donchian (B10), Bollinger / TTM
+    # squeeze (B11), moving average (B12), RSI / ADX regime (B15). Needs `screener_breakouts` too. OFF: their ScreenQL
+    # functions are hidden and refused, their templates and screens are left out of the catalog and the run, and alert
+    # rules using them pause. Research only - matches, never orders.
+    "screener_breakouts_bk3": "Breakout screens, set 2: VCP breakout and watchlist, Donchian, Bollinger / TTM squeeze, moving-average and RSI / ADX regime breakouts (needs screener_breakouts; research only, places no orders)",
     # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
     # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
     # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
@@ -232,15 +237,23 @@ FEATURE_FLAGS: Dict[str, str] = {
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
     "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
+    # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
+    "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
+    # S10 (SCREENER_SPEC §5 S10, Phase 0 slice): the ETF screen (J) - NSE ETFs from the shared end-of-day history with
+    # traded value and the tracking difference against the index each tracks. OFF: GET /api/screener/etf answers 503 and
+    # the Screener page shows no ETF button. Information only, no recommendation, places no orders.
+    "screener_etf": "ETF screen: NSE ETFs with traded value and tracking difference against their index, from the shared end-of-day history (information only)",
+    # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
+    # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
+    "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels",
-                               "chart_workspace", "scan_then", "scan_auto_paper"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "scan_auto_paper"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

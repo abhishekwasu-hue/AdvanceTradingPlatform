@@ -49,6 +49,7 @@ from app.core.enums import DeploymentStatus, ExecutionMode, InstrumentKind, Noti
 from app.core.logging_config import bind_log_context, configure_logging
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import StrategyDeploymentRecord, Tenant, TradeRecord, User, VisionReportRecord, WorkerHeartbeatRecord
+from app.db.savepoint import guarded
 from app.plans.limits import live_allowed, tenant_is_active
 from app.retention.service import RetentionReport, run_retention
 from app.billing.service import sweep as billing_sweep
@@ -417,7 +418,8 @@ class TradingWorker:
                         await session.rollback()
                 # H-1: Redis memory against its cap (every REDIS_MEMORY_CHECK_SECONDS), a WARNING at 70 %.
                 try:
-                    report.redis_memory_ratio = await self.redis_guard.check_memory(session)
+                    async with guarded(session):
+                        report.redis_memory_ratio = await self.redis_guard.check_memory(session)
                 except Exception as exc:  # noqa: BLE001 - a monitoring read never breaks trading
                     logger.exception("Redis memory check failed")
                     report.errors.append(f"redis memory check: {exc}")
@@ -471,35 +473,38 @@ class TradingWorker:
                 # (never an order), before the outbox drain so they go out this cycle. Market open or not; an intent
                 # nobody dispatched in time expires. One flags read when the flag is off everywhere.
                 try:
-                    from app.execution.core import dispatcher as intent_dispatcher
-                    await intent_dispatcher.drain(session, now)
+                    async with guarded(session):
+                        from app.execution.core import dispatcher as intent_dispatcher
+                        await intent_dispatcher.drain(session, now)
                 except Exception as exc:  # noqa: BLE001 - the core must never break trading or delivery
                     logger.exception("Execution intent drain failed")
-                    await session.rollback()
                     report.errors.append(f"execution intents: {exc}")
                 try:
-                    await dispatch_pending(session)
+                    async with guarded(session):
+                        await dispatch_pending(session)
                 except Exception as exc:  # noqa: BLE001 - alerting must never break trading
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
                 try:
-                    if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1)) is not None:
-                        self._spawn_vision_drain()
+                    async with guarded(session):
+                        if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1)) is not None:
+                            self._spawn_vision_drain()
                 except Exception as exc:  # noqa: BLE001 - Vision is advisory; never breaks trading
                     logger.warning("Vision audit check failed: %s", exc.__class__.__name__)
-                    await session.rollback()
                 # Phase AR: the Copilot's market memory - every 15 minutes while NSE is open and in
                 # the hour after the close (the day's final read); before the open only the global
                 # cues (no broker read). Never blocks trading.
                 if nse.is_open or _just_closed(now) or _pre_open(now):
                     try:
-                        report.memory_snapshots = await self._market_memory(session, now, broker_reads=nse.is_open or _just_closed(now))
+                        async with guarded(session):
+                            report.memory_snapshots = await self._market_memory(session, now, broker_reads=nse.is_open or _just_closed(now))
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Market memory failed")
                         report.errors.append(f"market memory: {exc}")
                 # OI Banner O2: one OI snapshot per enabled underlying per slot while its venue is open.
                 try:
-                    report.oi_snapshots = await self._oi_banner(session, now)
+                    async with guarded(session):
+                        report.oi_snapshots = await self._oi_banner(session, now)
                 except Exception as exc:  # noqa: BLE001 - reference data; never blocks trading
                     logger.exception("OI banner collection failed")
                     report.errors.append(f"oi banner: {exc}")
@@ -516,7 +521,8 @@ class TradingWorker:
                 if eod_summary.eod_due(now) and self._last_eod_summary_day != ist_now.date():
                     self._last_eod_summary_day = ist_now.date()      # a failure retries tomorrow, not every minute
                     try:
-                        report.eod_summaries = await eod_summary.send_all(session, now)
+                        async with guarded(session):
+                            report.eod_summaries = await eod_summary.send_all(session, now)
                     except Exception as exc:  # noqa: BLE001 - a report must never break trading
                         logger.exception("EOD summary failed")
                         report.errors.append(f"eod summary: {exc}")
@@ -542,13 +548,14 @@ class TradingWorker:
                 # Phase BB: the live news feed - one fetch for every organisation (flag `news_feed`,
                 # off by default), then each organisation's own AI classification. Never trades.
                 try:
-                    if await news_feed.enabled(session):
-                        cadence = await news_feed.cadence_seconds(session, now)
-                        if news_feed.due(self._last_news_fetch, now, cadence):
-                            self._last_news_fetch = now
-                            result = await news_feed.ingest(session, now)
-                            report.news_items = result["new"]
-                            report.news_classified = await news_feed.classify_all(session, now)
+                    async with guarded(session):
+                        if await news_feed.enabled(session):
+                            cadence = await news_feed.cadence_seconds(session, now)
+                            if news_feed.due(self._last_news_fetch, now, cadence):
+                                self._last_news_fetch = now
+                                result = await news_feed.ingest(session, now)
+                                report.news_items = result["new"]
+                                report.news_classified = await news_feed.classify_all(session, now)
                 except Exception as exc:  # noqa: BLE001 - news must never break trading
                     logger.exception("News feed failed")
                     report.errors.append(f"news feed: {exc}")
@@ -556,9 +563,10 @@ class TradingWorker:
                 # so contracts/expiries/lot sizes are current before the 09:15 open.
                 if INSTRUMENT_SYNC_EXCHANGES and self._last_master_sync_day != ist_now.date() and ist_now.hour >= INSTRUMENT_SYNC_HOUR_IST:
                     try:
-                        report.master_synced = await sync_upstox(session, INSTRUMENT_SYNC_EXCHANGES)
-                        self._last_master_sync_day = ist_now.date()
-                        logger.info("Instrument master synced: %s", report.master_synced)
+                        async with guarded(session):
+                            report.master_synced = await sync_upstox(session, INSTRUMENT_SYNC_EXCHANGES)
+                            self._last_master_sync_day = ist_now.date()
+                            logger.info("Instrument master synced: %s", report.master_synced)
                     except Exception as exc:  # noqa: BLE001 - a failed download must not stop trading
                         logger.exception("Instrument master sync failed")
                         report.errors.append(f"instrument master: {exc}")
@@ -569,25 +577,27 @@ class TradingWorker:
                         and ist_now.hour >= app_config.UNIVERSE_SYNC_HOUR_IST:
                     self._last_universe_sync_day = ist_now.date()      # success or failure: next try is tomorrow
                     try:
-                        from app.universe.sources import NseArchiveSource
-                        from app.universe.sync import sync_equity_lists
-                        u = await sync_equity_lists(session, NseArchiveSource(), ist_now.date())
-                        report.universe_synced = {"inserted": u.inserted, "updated": u.updated, "seen": u.seen, "refused": len(u.refused)}
-                        from app.universe import indices as universe_indices                     # U1-b: constituents after the list
-                        idx = await universe_indices.sync_indices(session, NseArchiveSource(universe_indices.source_urls()), ist_now.date())
-                        report.universe_synced.update(indices=len(idx), rebalanced=sum(1 for r in idx if r.entered or r.exited),
-                                                      indices_refused=sum(1 for r in idx if r.refused))
-                        from app.universe import fo_eod                                          # U1-c: closes, lots, ban list
-                        fo = await fo_eod.sync_fo_and_index_eod(session, NseArchiveSource(fo_eod.dated_urls(ist_now.date())), ist_now.date())
-                        report.universe_synced.update(index_closes=fo.index_rows, fo_changes=len(fo.fo_entered) + len(fo.fo_exited) + len(fo.lot_changes),
-                                                      banned=len(fo.banned), fo_refused=len(fo.refused))
+                        async with guarded(session):
+                            from app.universe.sources import NseArchiveSource
+                            from app.universe.sync import sync_equity_lists
+                            u = await sync_equity_lists(session, NseArchiveSource(), ist_now.date())
+                            report.universe_synced = {"inserted": u.inserted, "updated": u.updated, "seen": u.seen, "refused": len(u.refused)}
+                            from app.universe import indices as universe_indices                     # U1-b: constituents after the list
+                            idx = await universe_indices.sync_indices(session, NseArchiveSource(universe_indices.source_urls()), ist_now.date())
+                            report.universe_synced.update(indices=len(idx), rebalanced=sum(1 for r in idx if r.entered or r.exited),
+                                                          indices_refused=sum(1 for r in idx if r.refused))
+                            from app.universe import fo_eod                                          # U1-c: closes, lots, ban list
+                            fo = await fo_eod.sync_fo_and_index_eod(session, NseArchiveSource(fo_eod.dated_urls(ist_now.date())), ist_now.date())
+                            report.universe_synced.update(index_closes=fo.index_rows, fo_changes=len(fo.fo_entered) + len(fo.fo_exited) + len(fo.lot_changes),
+                                                          banned=len(fo.banned), fo_refused=len(fo.refused))
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Universe sync failed")
                         report.errors.append(f"universe sync: {exc}")
                 # HB1: the nightly EOD job - once per IST day from HISTORY_BACKFILL_HOUR_IST, only while the
                 # `history_backfill` flag is on; it runs in its own task, so a slow archive never holds up a cycle.
                 try:
-                    report.history_eod_started = await self._maybe_start_history_eod(session, now)
+                    async with guarded(session):
+                        report.history_eod_started = await self._maybe_start_history_eod(session, now)
                 except Exception as exc:  # noqa: BLE001 - market data history must never stop trading
                     logger.exception("History EOD job not started")
                     report.errors.append(f"history eod: {exc}")
@@ -615,21 +625,22 @@ class TradingWorker:
                 # competes with order flow for the database.
                 if not nse.is_open and self._last_retention_day != now.astimezone(IST).date():
                     try:
-                        report.retention = await run_retention(session, now)
-                        # P0.3 / S7: pin the audit chain's head once a day (cheap; lets verification start from here).
-                        try:
-                            from app.audit.log import record_anchor
-                            if await record_anchor(session, now) is not None:
-                                await session.commit()
-                        except Exception as exc:  # noqa: BLE001 - an anchor never blocks the cycle
-                            await session.rollback()
-                            report.errors.append(f"audit anchor: {exc}")
-                        self._last_retention_day = now.astimezone(IST).date()
-                        if report.retention.total:
-                            logger.info("Retention deleted %s", report.retention.deleted)
-                            for table, count in report.retention.deleted.items():
-                                if count:
-                                    RETENTION_DELETED.labels(table=table).inc(count)
+                        async with guarded(session):
+                            report.retention = await run_retention(session, now)
+                            # P0.3 / S7: pin the audit chain's head once a day (cheap; lets verification start from here).
+                            try:
+                                async with guarded(session):
+                                    from app.audit.log import record_anchor
+                                    if await record_anchor(session, now) is not None:
+                                        await session.commit()
+                            except Exception as exc:  # noqa: BLE001 - an anchor never blocks the cycle
+                                report.errors.append(f"audit anchor: {exc}")
+                            self._last_retention_day = now.astimezone(IST).date()
+                            if report.retention.total:
+                                logger.info("Retention deleted %s", report.retention.deleted)
+                                for table, count in report.retention.deleted.items():
+                                    if count:
+                                        RETENTION_DELETED.labels(table=table).inc(count)
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Retention run failed")
                         report.errors.append(f"retention: {exc}")
@@ -637,10 +648,11 @@ class TradingWorker:
                 # grace periods that ran out (tenant suspended), cancellations falling due.
                 if self._last_billing_day != now.astimezone(IST).date():
                     try:
-                        report.billing = await billing_sweep(session, now)
-                        self._last_billing_day = now.astimezone(IST).date()
-                        if any(report.billing.values()):
-                            logger.info("Billing sweep: %s", report.billing)
+                        async with guarded(session):
+                            report.billing = await billing_sweep(session, now)
+                            self._last_billing_day = now.astimezone(IST).date()
+                            if any(report.billing.values()):
+                                logger.info("Billing sweep: %s", report.billing)
                     except Exception as exc:  # noqa: BLE001
                         logger.exception("Billing sweep failed")
                         report.errors.append(f"billing: {exc}")
@@ -874,9 +886,10 @@ class TradingWorker:
                 break   # H-1: another replica holds the lock now - it trades (and exits) the remaining tenants
             with bind_log_context(tenant_id=tenant_id):
                 try:
-                    await ensure_tenant_key(session, tenant_id)  # Phase N1: credentials decrypt under the tenant key
-                    await self._process_tenant(session, tenant_id, tenant_deployments, now, report)
-                    report.tenants_processed += 1
+                    async with guarded(session):
+                        await ensure_tenant_key(session, tenant_id)  # Phase N1: credentials decrypt under the tenant key
+                        await self._process_tenant(session, tenant_id, tenant_deployments, now, report)
+                        report.tenants_processed += 1
                 except Exception as exc:  # noqa: BLE001 - one tenant must never block the others
                     logger.exception("Tenant %s cycle failed", tenant_id)
                     report.errors.append(f"tenant {tenant_id}: {exc}")
@@ -983,13 +996,18 @@ class TradingWorker:
             pairs = [(a, adapters[_adapter_key(a.broker_name, a.account_label)]) for a in accounts
                      if a.status == "ACTIVE" and _adapter_key(a.broker_name, a.account_label) in adapters]
             if pairs:
-                reports = await reconcile_accounts(session, tenant_row, pairs, user_id=user_id, source="worker")
-                report.reconciled += 1 if reports else 0
+                try:
+                    async with guarded(session, keep=(tenant_row,)):
+                        reports = await reconcile_accounts(session, tenant_row, pairs, user_id=user_id, source="worker")
+                        report.reconciled += 1 if reports else 0
+                except Exception as exc:  # noqa: BLE001 - flagged and audited by the service; exits below still run
+                    logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
             elif live_broker is not None:
                 try:
-                    await run_reconciliation(session, tenant_row, live_broker_name or live_broker.name, live_broker,
-                                             user_id=user_id, source="worker")
-                    report.reconciled += 1
+                    async with guarded(session, keep=(tenant_row,)):
+                        await run_reconciliation(session, tenant_row, live_broker_name or live_broker.name, live_broker,
+                                                 user_id=user_id, source="worker")
+                        report.reconciled += 1
                 except Exception as exc:  # noqa: BLE001 - flagged and audited by the service
                     logger.warning("Tenant %s: reconciliation while uncertain failed: %s", tenant_id, exc)
         open_families = getattr(self, "_open_families", None) or {"NSE"}
@@ -1009,7 +1027,8 @@ class TradingWorker:
         # Phase T: checked per account, against that account's own order book.
         if tenant_row is not None:
             try:
-                report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user_id, families=open_families)
+                async with guarded(session, keep=(tenant_row,)):
+                    report.stops_rearmed += await self._guard_stops(session, tenant_row, accounts, adapters, user_id, families=open_families)
             except Exception as exc:  # noqa: BLE001 - advisory safety net; never stops the cycle
                 logger.warning("Tenant %s: stop guard failed: %s", tenant_id, exc)
         if user is None:
@@ -1097,12 +1116,13 @@ class TradingWorker:
                             await session.commit()
                         continue
                     dep_user = resolved
-                    executed = await self._evaluate_deployment(
-                        session, dep, dep_user, market_data, adapters, now, entries_allowed,
-                    )
-                    report.deployments_evaluated += 1
-                    if executed:
-                        report.signals_executed += 1
+                    async with guarded(session, keep=(dep, tenant, user, dep_user)):
+                        executed = await self._evaluate_deployment(
+                            session, dep, dep_user, market_data, adapters, now, entries_allowed,
+                        )
+                        report.deployments_evaluated += 1
+                        if executed:
+                            report.signals_executed += 1
                 except Exception as exc:  # noqa: BLE001 - recorded on the deployment, never fatal
                     await self._record_failure(session, dep, exc, dep_user.id)
                     report.errors.append(f"deployment {dep.id}: {exc}")
@@ -1111,24 +1131,26 @@ class TradingWorker:
         # Phase W: sample the option chains of this tenant's ACTIVE option deployments for later
         # backtests - one fetch per underlying per interval, platform-wide, never on a closed venue.
         try:
-            if not byob:   # BT1b: platform-wide reference rows are not recorded from a per-user (BYOB) broker session
-                report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
+            async with guarded(session):
+                if not byob:   # BT1b: platform-wide reference rows are not recorded from a per-user (BYOB) broker session
+                    report.chain_rows_recorded += await self._record_chains(session, active, market_data, now, open_families)
         except Exception as exc:  # noqa: BLE001 - reference data; never stops the cycle
             logger.warning("Tenant %s: option-chain recording failed: %s", tenant_id, exc)
 
         # Phase L4: the monitoring agent observes this tenant's deployments and raises proposals
         # for a human to decide on. It never acts on its own.
         try:
-            open_dep_ids = set(await session.scalars(select(TradeRecord.deployment_id).where(
-                TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.deployment_id.is_not(None))))
-            self._regime_wanted = open_dep_ids
-            # BK2-8 review LOW-3: only deployments whose own venue is trading now (no CDS "exit?" question at 20:00 because
-            # MCX is open). Advisory only - the monitor and square-off above already judged every open position.
-            observed = [d for d in deployments if session_family(d.exchange) in open_families]
-            proposals = await ai_monitor.observe(session, tenant_id, observed, now, regime_lookup=lambda d: self._regimes.get(d.id))
-            if proposals:
-                created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
-                report.ai_proposals += len(created)
+            async with guarded(session):
+                open_dep_ids = set(await session.scalars(select(TradeRecord.deployment_id).where(
+                    TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None), TradeRecord.deployment_id.is_not(None))))
+                self._regime_wanted = open_dep_ids
+                # BK2-8 review LOW-3: only deployments whose own venue is trading now (no CDS "exit?" question at 20:00 because
+                # MCX is open). Advisory only - the monitor and square-off above already judged every open position.
+                observed = [d for d in deployments if session_family(d.exchange) in open_families]
+                proposals = await ai_monitor.observe(session, tenant_id, observed, now, regime_lookup=lambda d: self._regimes.get(d.id))
+                if proposals:
+                    created = await ai_monitor.raise_proposals(session, tenant_id, proposals, now)
+                    report.ai_proposals += len(created)
         except Exception as exc:  # noqa: BLE001 - advisory layer; never stops trading
             logger.exception("Monitoring agent failed for tenant %s", tenant_id)
             report.errors.append(f"ai monitor: {exc}")
@@ -1529,10 +1551,11 @@ class TradingWorker:
                     logger.info("Start-up reconciliation: tenant %s %s/%s -> %d mismatch(es)", tenant_id, r.broker_name, r.account_label, r.mismatched_count)
                 for account, adapter in pairs:
                     try:
-                        guard = await verify_protective_stops(session, tenant, adapter, user_id=user.id, source="startup", account_id=account.id,
-                                                              include_unassigned=bool(account.is_default) or len(accounts) == 1)
-                        if guard["rearmed"] or guard["failed"]:
-                            logger.warning("Start-up stop guard: tenant %s %s/%s -> %s", tenant_id, account.broker_name, account.account_label, guard)
+                        async with guarded(session, keep=(tenant,)):
+                            guard = await verify_protective_stops(session, tenant, adapter, user_id=user.id, source="startup", account_id=account.id,
+                                                                  include_unassigned=bool(account.is_default) or len(accounts) == 1)
+                            if guard["rearmed"] or guard["failed"]:
+                                logger.warning("Start-up stop guard: tenant %s %s/%s -> %s", tenant_id, account.broker_name, account.account_label, guard)
                     except Exception as exc:  # noqa: BLE001
                         logger.error("Start-up stop guard: tenant %s %s/%s failed: %s", tenant_id, account.broker_name, account.account_label, exc)
                     checked += 1
@@ -1654,8 +1677,14 @@ class TradingWorker:
                 # a session - a LIVE position with no deployment is squared off too (an exit: the Phase 0 chokepoint lets
                 # it through).
                 broker = live_broker or await broker_for_trade(session, trade)
-            outcome = await close_position(session, trade, price, "Intraday square-off", broker=broker, user_id=user_id)
-            closed += int(outcome.closed)
+            trade_id = trade.id
+            try:
+                # Review LOW-2 (ADR-0004): one savepoint per position - one close that fails never ends the square-off.
+                async with guarded(session, keep=(trade,)):
+                    outcome = await close_position(session, trade, price, "Intraday square-off", broker=broker, user_id=user_id)
+                closed += int(outcome.closed)
+            except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
+                logger.error("Square-off of trade %s failed: %s", trade_id, exc)
         if closed:
             logger.info("Square-off closed %d position(s) for tenant %s", closed, tenant_id)
         return closed

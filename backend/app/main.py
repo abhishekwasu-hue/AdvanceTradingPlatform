@@ -125,6 +125,7 @@ from app.charts.zones_layer import router as chart_zones_layer_router
 from app.charts.price_action_layer import router as chart_price_action_layer_router
 from app.charts.trades_layer import router as chart_trades_layer_router
 from app.charts.contracts import router as chart_contracts_router
+from app.charts.futures_basis import router as chart_futures_basis_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
 from app.journal.routes import router as journal_router
 from app.legal.routes import router as legal_router
@@ -257,6 +258,7 @@ app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer 
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
 app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
 app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
+app.include_router(chart_futures_basis_router)  # N4 CH4c: futures basis / carry / rollover from the shared lake (flag chart_futures_basis, off)
 app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)

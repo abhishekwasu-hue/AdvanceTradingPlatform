@@ -16,6 +16,7 @@ import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
 const ContractChartWindow = lazy(() => import("./pages/ContractChartWindow"));
+const FuturesBasisWindow = lazy(() => import("./pages/FuturesBasisWindow"));
 // Z10-e (G7): the public status page - no login, no shell, its own small chunk.
 const StatusPage = lazy(() => import("./pages/StatusPage"));
 // PW6: loaded on first open. The top bar sits outside every error boundary, so a chunk that fails to load (offline)
@@ -265,7 +266,11 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          {params.has("contract") ? (
+          {params.has("basis") ? (
+            <ErrorBoundary title="The futures basis chart">
+              <Suspense fallback={null}><FuturesBasisWindow params={params} /></Suspense>
+            </ErrorBoundary>
+          ) : params.has("contract") ? (
             <ErrorBoundary title="The contract chart">
               <Suspense fallback={null}><ContractChartWindow params={params} /></Suspense>
             </ErrorBoundary>

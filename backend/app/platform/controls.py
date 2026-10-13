@@ -214,6 +214,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # bhavcopy rows, contract search from the instrument master, chain -> chart links, a COMPUTED daily IV (labelled).
     # OFF: /api/charts/contracts/* answer 503 and the option chain shows no chart links. Reference only - places no orders.
     "chart_contracts": "Contract charts: daily option / future and spread charts with OI from the shared history (reference only, places no orders)",
+    # N4 CH4c: on top of chart_contracts - an underlying's futures basis, annualised carry, calendar spread and rollover %
+    # per trade date from the shared daily history (shared-licensed sources only). OFF: the route answers 503 and the
+    # contract chart shows no link to it. Reference only, places no orders.
+    "chart_futures_basis": "Futures basis charts: basis, cost of carry, calendar spread and rollover from the shared history (reference only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -221,7 +225,8 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "chart_trades_layer", "chart_contracts"})
+                               "chart_price_action", "chart_trades_layer", "chart_contracts",
+                               "chart_futures_basis"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

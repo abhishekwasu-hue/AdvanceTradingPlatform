@@ -476,6 +476,40 @@ CH4-1's data-ready slice.
   no chain history store), the basis / participant / rollover charts (CH4-4), and the options layer on the
   underlying.
 
+## CH4c (built): futures basis, cost of carry, calendar spread and rollover
+
+Flag `chart_futures_basis`, off by default, on top of `chart_contracts`. Built on CH4b's branch. It uses the daily data
+the shared lake already holds: the CH4-4 charts that are data-ready.
+
+- **Backend.** `GET /api/charts/contracts/basis?underlying=&at=&start=` (`app/charts/futures_basis.py`; tenancy
+  "member", platform reference data). Per trade date, as of `at`:
+  - near, next and far months by expiry, each with its close and OI. A contract is live on its expiry day; the next day
+    the near month rolls, and the response lists the roll days.
+  - The spot: the cash close, or the index close for an index future.
+  - basis, basis %, annualised carry, calendar spread (next - near), all-expiry OI and rollover %.
+  - Reads come from shared-licensed sources only. Per contract and trade date the preferred source wins, then its
+    highest version; a correction counts once ingested by `at`.
+  - The futures keys are every possible monthly expiry date in the window, read by exact key in chunks of 5,000
+    (under Postgres's bind-parameter limit).
+- **Frontend.**
+  - `charting/futuresBasis.ts`: the API, the URL and the line geometry.
+  - `pages/FuturesBasisWindow.tsx`: `/?basis=<SYM>`, its own tab. It draws four small lines (basis %, carry %,
+    calendar spread, rollover %) with the roll days dashed, and the last day's reading in words.
+  - A single futures contract's chart links to the page, only when the page is on.
+  - There is no order control anywhere.
+- **Tests.** `tests/test_ch4c_futures_basis.py` checks:
+  - near / next / far and the roll after the expiry day;
+  - the figures;
+  - as of `at`;
+  - that broker and stream rows are never read, and the bhavcopy wins per trade date;
+  - the index spot;
+  - chunked reads;
+  - flags and refusals.
+
+  `futuresBasis.test.tsx` checks the URL, the last reading, the lines, the panel's wording and the link.
+- **Not yet:** the participant-wise OI chart (the NSE participant file is not ingested), intraday basis, and the
+  options layer on the underlying (CH4-1, CH4-5).
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

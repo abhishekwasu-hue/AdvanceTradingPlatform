@@ -875,7 +875,7 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
 class AnalyzeBody(BaseModel):
     symbol: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9 &._:-]+$")
     exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
-    language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")
+    language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")      # accepted, not used: analyses are English only
 
 
 @router.post("/analyze")
@@ -888,14 +888,13 @@ async def analyze_symbol(body: AnalyzeBody, request: Request, user: User = Depen
 
     Review of H-C4: one 60 s budget covers the tools and the model calls (each call bounded by the time left), the plan's
     AI budget is checked before every model call, a client that disconnects stops the analysis, and the usage is metered
-    as `multiview` (not under the tier's task name)."""
+    as `multiview` (not under the tier's task name). English only (owner, 13 Oct): `language` is accepted and not used."""
     from fastapi.responses import JSONResponse
 
     from app.ai import metering, multiview
     from app.ai.tools import ToolContext
     await require_flag(session, "ai_copilot", user.tenant_id)
     await require_flag(session, multiview.FLAG, user.tenant_id)
-    lang = body.language or _ai_language(user)
     tenant = await _tenant(session, user)
     cheap = await ai_settings.provider_for(session, tenant, task="classification", user_id=user.id)
     strong = await ai_settings.provider_for(session, tenant, task="general", user_id=user.id)
@@ -907,7 +906,7 @@ async def analyze_symbol(body: AnalyzeBody, request: Request, user: User = Depen
         return await metering.budget_exhausted(session, tenant)
 
     try:
-        out = await multiview.analyze(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange, lang=lang,
+        out = await multiview.analyze(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange,
                                       gather_provider=cheap, synth_provider=strong, budget_spent=budget_spent,
                                       client_gone=request.is_disconnected)
     except multiview.Cancelled:

@@ -106,7 +106,7 @@ not recorded); **parked** (with the reason); **check** (no branch or PR found; t
 | Lane D | Shared LTP rate budget per broker credential | `claude/ltp-shared-budget` | - | on branch, awaiting review |
 | Lane D | CI backend timeout 55 min + slowest-test report | `claude/ci-backend-timeout` | #224 | merged |
 | Fix | Alert gateway: body injection and secret reuse after a destination change (SMS/email) | `claude/fix-alert-gateway-injection` | #228 | merged |
-| N3 | BK3 VCP / Donchian / squeeze / MA / regime breakouts (flag `screener_breakouts_bk3`) | `claude/n3-bk3` | #229 | PR open |
+| N3 | BK3 VCP / Donchian / squeeze / MA / regime breakouts (flag `screener_breakouts_bk3`) | `claude/n3-bk3` | #229 | merged |
 | Fix | AI output filter: trading-call wording in EN/MR/HI (ADR-0006) | `claude/fix-ai-output-filter` | #230 | PR open; review fixes in progress |
 | N1 | X1b scan Then panel + read APIs + take-over guard (flag `scan_then`) | `claude/n1-x1b` | #231 | PR open |
 | Lane D | Tests read today's IST date at call time; zones loop-gap test | `claude/fix-ist-midnight-tests`, `claude/fix-zones-loop-gap` | #216, #208 | merged |

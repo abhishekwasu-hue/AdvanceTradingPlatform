@@ -463,5 +463,20 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
       - Hinglish: -ega / -egi / -enge, wala hai, raha hai, ki taraf.
 
       Hinglish future forms are blocked anywhere ("paisa banega").
+  - **Fifth review: labels do not launder destinations; MR / HI descriptions pass.**
+    - A movement or destination word in a sentence with a number blocks the text, whatever label sits next to the
+      number (`_MOVEMENT`): heads / goes / going, destination, magnet, gravitates, pulls, drawn to, objective, taken
+      out, breaks, comes into view, extends, continues, floor / ceiling, playing the range, "means a 3% move", from
+      here, soon, into expiry, Hinglish "jaata hai", Hindi / Marathi "तक ... जाता है" / "पर्यंत ... जातो". Examples:
+      "Max pain 22800 is where it heads", "The high 22800 gets taken out soon". Judgements such as "worth a look" and
+      "the safer side" are blocked anywhere.
+    - More labels bind a number:
+      - Marathi / Hindi fact names (मॅक्स पेन, कॉल / पुट OI, बंद भाव, उच्चांक / नीचांक, दिवस, सत्र / सत्रों);
+      - a verb-final past right after a price or a change (वाढला, घसरला, बढ़ा, गिरा);
+      - "up / down" right before a change;
+      - "highest at", "concentrated at" and call / put writers for a top-OI strike;
+      - CE / PE / call / put right after that strike.
+
+      The second number of "X - Y" is read with the words before X.
 - **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
   `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

@@ -458,7 +458,11 @@ def test_numbers_must_sit_next_to_their_own_fact_label():
     assert mv.unbound_numbers("Max pain 2480; the highest call OI at 2600 and the largest put open interest at 2400.", bindings) == []
     assert mv.unbound_numbers("PCR 1.3, ADX 28.4, India VIX 21.5, SPX -0.8%.", bindings) == []
     assert mv.unbound_numbers("The close rose 4.6% over 250 daily bars; range 2310.0 - 2600.0.", bindings) == []
-    assert mv.unbound_numbers("The 2600 call is worth a look.", bindings) == ["2600"]          # a strike without its OI label
+    assert mv.unbound_numbers("The 2600 call is worth a look.", bindings) == []                # "call" right after a strike is its label ...
+    shown, why = mv.check_text("The 2600 call is worth a look.", v["options"].numbers(), "\n".join(v["options"].lines), "en", None,
+                               v["options"].bindings())
+    assert shown is None and "worth a look" in why                                             # ... and the judgement is blocked
+    assert mv.unbound_numbers("The 2600 is worth a look.", bindings) == ["2600"]              # no label at all
     assert mv.unbound_numbers("Above 2510.5, 2600 opens up.", bindings) == ["2510.5", "2600"]
     assert mv.unbound_numbers("ADX 28.4 and 2600 next.", bindings) == ["2600"]              # a label binds only its own number
 
@@ -471,3 +475,81 @@ def test_the_model_never_writes_the_possibilities(fake_tools):
     out = _run(_analyze(me["id"], _Words([]), _Words([json.dumps(summary)])))
     assert out["summary"]["source"] == "ai" and out["summary"]["possibilities"] == mv.rules_summary(_views())["possibilities"]
     assert "opens up" not in json.dumps(out["summary"]) and "possibilities" not in mv.SYNTH_SYSTEM
+
+
+# --- round 5: a label next to a destination number is not a description; descriptions in MR / HI pass -------------------
+R5_REGIME = ToolResult(True, {"regime": "TRENDING_UP", "confidence": 0.72, "adx": 28.4, "ema_slope_pct": 1.2, "atr_pct": 1.1, "atr_ratio": 1.6},
+                       AS_OF, "rules:regime")
+R5_CANDLES = ToolResult(True, {"bars": 20, "first_close": 21796.6, "last_close": 22450.5, "change_pct": 3.0, "high": 22800.0, "low": 22000.0,
+                               "from": "2026-09-11", "to": "2026-10-09"}, AS_OF, "broker:fake")
+R5_CHAIN = ToolResult(True, {"expiry": "2026-10-30", "underlying_ltp": 22450.5, "atm_strike": 22450, "pcr": 1.3, "max_pain": 22800,
+                             "total_call_oi": 1500000, "total_put_oi": 1950000, "top_call_oi": [{"strike": 23000, "oi": 400000}],
+                             "top_put_oi": [{"strike": 22000, "oi": 520000}]}, AS_OF, "broker:fake")
+R5_DESTINATIONS = [
+    "Max pain 22800 is where it heads", "Price gravitates to max pain 22800 into expiry", "Max pain 22800 acts as a magnet",
+    "Max pain 22800 pulls the price up", "The highest call OI at 23000 is the destination", "It heads for the high 22800",
+    "The high 22800 gets taken out soon", "The range 22000 - 22800 breaks upward soon", "The high 22800 comes into view",
+    "Put OI at 22000 is the floor, call OI at 23000 the ceiling: playing the range works", "Max pain 22800 tak bhav jaata hai",
+    "ATR 1.1% means a 3% move up", "the move from 21796.6 extends",
+    # variants
+    "Max pain 22800 is the objective", "Price is drawn to max pain 22800", "The rally from 21796.6 continues", "Max pain 22800 tak bhav jaati hai",
+    "The close of 22450.5 is going higher", "The high 22800 is where it goes", "Up 3% from here", "मॅक्स पेन 22800 पर्यंत भाव जातो",
+    "मैक्स पेन 22800 तक भाव जाता है", "The 22000 put is the safer side",
+]
+R5_DESCRIPTIONS = [
+    "Max pain is 22800; OI is highest at 23000 CE.",
+    "open interest is highest at the 23000 call strike and the 22000 put strike",
+    "The last close was 22450.5, up 3% over 20 daily bars, within a range of 22000 - 22800.",
+    "The index closed at 22,450.5, up 3% over 20 sessions.",
+    "Put writers are concentrated at 22000 and call writers at 23000.",
+    "Risk: the range is narrow at 22000 - 22800, and a move outside it would change the reading.",
+    "A close outside 22000 - 22800 would change the picture.",
+    "मॅक्स पेन 22800 आहे; सर्वाधिक कॉल OI 23000 वर आहे.",
+    "मागील 20 दिवसांत बंद भाव 3% वाढला.",
+    "पिछले 20 सत्रों में भाव 3% बढ़ा।",
+    # the earlier descriptions, on these facts
+    "The daily regime reads trending up; the close rose 3% over 20 daily bars.",
+    "The close is 22450.5, inside the window's range of 22000 - 22800.",
+    "The average true range reads 1.1% of the price.",
+    "The window's high was 22800 and its low was 22000.",
+    "PCR 1.3 with max pain 22800; the largest put open interest sits at 22000.",
+    "ADX 28.4 with ATR 1.1% of price, 1.6x its median.",
+    "Max pain 22800; the highest call OI at 23000 and the largest put open interest at 22000.",
+    "The last close of 22450.5 came after 20 daily bars.",
+    "The close fell to 22000 early in the window and rose to 22450.5 since.",
+    "The window began at 21796.6 and the last close was 22450.5.",
+    "The close fell 3% over 20 daily bars.",
+    "पिछले 20 सत्रों में भाव 3% गिरा।",
+    "मागील 20 दिवसांत बंद भाव 3% घसरला.",
+]
+
+
+def _r5():
+    views = {"technical": mv.technical_view(R5_REGIME, R5_CANDLES), "options": mv.options_view(R5_CHAIN)}
+    allowed = set().union(*(v.numbers() for v in views.values()))
+    facts = "\n".join(line for v in views.values() for line in v.lines)
+    return allowed, facts, [b for v in views.values() for b in v.bindings()]
+
+
+@pytest.mark.parametrize("text", R5_DESTINATIONS)
+def test_round5_a_fact_label_next_to_a_destination_number_is_still_blocked(text):
+    allowed, facts, bindings = _r5()
+    for lang in ("en", "mr", "hi"):
+        shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", R5_DESCRIPTIONS)
+def test_round5_descriptions_in_english_marathi_and_hindi_pass(text):
+    allowed, facts, bindings = _r5()
+    lang = "mr" if any("\u0900" <= c <= "\u097f" for c in text) else "en"
+    shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+    assert shown == text and why is None, (text, why)
+
+
+def test_round5_the_new_labels_bind_only_their_own_numbers():
+    _, _, bindings = _r5()
+    assert mv.unbound_numbers("up 20", bindings) == ["20"]                     # "up" binds a change, not the bar count
+    assert mv.unbound_numbers("The 22450.5 CE", bindings) == ["22450.5"]       # CE binds a top-OI strike, not the close
+    assert mv.unbound_numbers("range 22000 - 1.3", bindings) == ["1.3"]        # the range's words do not bind the PCR
+    assert mv.unbound_numbers("ADX 28.4 - 23000", bindings) == ["23000"]       # nor does ADX bind the strike after it

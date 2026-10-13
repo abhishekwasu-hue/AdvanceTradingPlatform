@@ -119,25 +119,36 @@ class Binding:
     values: frozenset
     labels: Tuple[str, ...]
     past_ok: bool = False             # a past verb right before the number binds it (prices and changes)
+    right_after: Tuple[str, ...] = ()  # words that bind only as the very next word ("23000 CE", "23000 call strike")
+    right_before: Tuple[str, ...] = ()  # words that bind only as the word just before ("up 3%", "down 1.2%")
 
 
 _PAST_GOVERNS = re.compile(r"\b(?:rose|fell|closed|ended|opened|moved|gained|lost|dropped|climbed|slipped|declined|advanced|"
                            r"traded|touched|was|were|stood|settled|finished)\s+(?:(?:by|to|at|from|near|around|about|of)\s+)?(?:₹\s*)?$", re.I)
 _OI = ("call oi", "call open interest", "calls oi", "put oi", "put open interest", "puts oi")
+# Marathi / Hindi verb-final past (round 5): "3% वाढला", "3% बढ़ा" - the past verb right after the number binds it
+_PAST_AFTER_DEVA = frozenset({"वाढला", "वाढली", "वाढले", "घसरला", "घसरली", "घसरले", "चढला", "उतरला", "बढ़ा", "बढ़ी", "बढ़े", "बढा",
+                              "गिरा", "गिरी", "गिरे", "चढ़ा", "चढ़ी", "उतरा", "उतरी"})
+_STRIKE_WORDS = {"call": ("call writers", "call writing", "highest at", "concentrated at", "कॉल oi", "कॉल ओआय", "कॉल ओआई", "सर्वाधिक कॉल",
+                          "सबसे ज्यादा कॉल"),
+                 "put": ("put writers", "put writing", "highest at", "concentrated at", "पुट oi", "पुट ओआय", "पुट ओआई", "सर्वाधिक पुट",
+                         "सबसे ज्यादा पुट")}
+_STRIKE_AFTER = {"call": ("ce", "call", "calls", "कॉल"), "put": ("pe", "put", "puts", "पुट")}
 FACT_LABELS: Dict[str, Tuple[Tuple[str, ...], bool]] = {
     "confidence": (("confidence",), False), "adx": (("adx", "average directional"), False),
     "ema_slope_pct": (("slope",), False), "atr_pct": (("atr", "average true range"), False),
     "atr_ratio": (("atr", "average true range", "median", "times"), False),
-    "bars": (("bars", "bar", "sessions", "candles", "days"), False),
+    "bars": (("bars", "bar", "sessions", "candles", "days", "दिवस", "दिवसांत", "दिवसांमध्ये", "सत्र", "सत्रांत", "सत्रों", "सत्रों में", "दिन",
+              "दिनों", "दिनों में"), False),
     "first_close": (("first close", "opening close", "started", "window began", "began", "from"), True),
-    "last_close": (("close", "closed", "closing", "last close", "last price"), True),
+    "last_close": (("close", "closed", "closing", "last close", "last price", "बंद भाव", "बंद", "क्लोज"), True),
     "change_pct": (("change", "changed", "move", "moved"), True),
-    "high": (("high", "highest", "range", "peak", "top of the range"), True),
-    "low": (("low", "lowest", "range", "trough", "bottom of the range"), True),
+    "high": (("high", "highest", "range", "peak", "top of the range", "outside", "inside", "between", "within", "उच्चांक", "रेंज"), True),
+    "low": (("low", "lowest", "range", "trough", "bottom of the range", "outside", "inside", "between", "within", "नीचांक", "निचांक", "रेंज"), True),
     "underlying_ltp": (("ltp", "underlying", "spot", "last price", "last traded"), True),
     "atm_strike": (("atm", "at-the-money", "at the money"), False),
     "pcr": (("pcr", "put-call ratio", "put call ratio", "put/call"), False),
-    "max_pain": (("max pain", "maximum pain", "max-pain"), False),
+    "max_pain": (("max pain", "maximum pain", "max-pain", "मॅक्स पेन", "मैक्स पेन", "मॅक्स पेन"), False),
     "total_call_oi": (("call oi", "call open interest", "total call"), False),
     "total_put_oi": (("put oi", "put open interest", "total put"), False),
     "count": (("headline", "headlines", "item", "items"), False),
@@ -147,10 +158,11 @@ FACT_LABELS: Dict[str, Tuple[Tuple[str, ...], bool]] = {
 }
 
 
-def _binding(value: Any, labels: Tuple[str, ...], past_ok: bool = False) -> Optional[Binding]:
+def _binding(value: Any, labels: Tuple[str, ...], past_ok: bool = False, right_after: Tuple[str, ...] = (),
+             right_before: Tuple[str, ...] = ()) -> Optional[Binding]:
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         return None
-    return Binding(frozenset(grounding.numbers_in_values([value])), labels, past_ok)
+    return Binding(frozenset(grounding.numbers_in_values([value])), labels, past_ok, right_after, right_before)
 
 
 def fact_bindings(view: "View") -> List[Binding]:
@@ -158,12 +170,13 @@ def fact_bindings(view: "View") -> List[Binding]:
     for key, value in view.facts.items():
         if key in FACT_LABELS:
             labels, past_ok = FACT_LABELS[key]
-            out.append(_binding(value, labels, past_ok))
+            out.append(_binding(value, labels, past_ok, right_before=("up", "down") if key == "change_pct" else ()))
     for side in ("call", "put"):
         for row in view.facts.get(f"top_{side}_oi") or []:
             if isinstance(row, dict):
                 oi_words = tuple(w for w in _OI if w.startswith(side))
-                out.append(_binding(row.get("strike"), oi_words + (f"largest {side} open interest", f"highest {side} open interest")))
+                out.append(_binding(row.get("strike"), oi_words + (f"largest {side} open interest", f"highest {side} open interest")
+                                    + _STRIKE_WORDS[side], right_after=_STRIKE_AFTER[side]))
                 out.append(_binding(row.get("oi"), ("oi", "open interest", "contracts")))
     for key in ("cues", "globals"):
         for row in view.facts.get(key) or []:
@@ -182,8 +195,15 @@ _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}:\d{2}\b")
 _WINDOW_STOP = re.compile(r"[;!?\n]|(?<!\d)\.(?!\d)")
 
 
+_RANGE_SECOND = re.compile(r"(?<![\w.,])(\d[\d,]*(?:\.\d+)?)\s*(?:-|–|—|to)\s*$")
+
+
 def unbound_numbers(text: str, bindings: List[Binding]) -> List[str]:
-    """The numbers in `text` written without a label of their own nearby (empty = every number is bound)."""
+    """The numbers in `text` written without a label of their own nearby (empty = every number is bound). A label is a
+    word of the fact within five words before or three after in the same clause, a side word right after a strike
+    ("23000 CE"), "up" / "down" right before a change, a past verb governing a price or a change ("closed at", "rose";
+    in Marathi / Hindi the past verb right after it, "3% वाढला"); the second number of a range "X - Y" is read with the
+    words before X."""
     from app.ai.call_detect import normalise
     body = _DATE.sub(" ", normalise(text or ""))
     low = body.lower()
@@ -195,17 +215,28 @@ def unbound_numbers(text: str, bindings: List[Binding]) -> List[str]:
             continue
         mine = [b for b in bindings if b.values & values]
         start = max([x.end() for x in _WINDOW_STOP.finditer(low, 0, m.start())] or [0])
-        before_words = low[start:m.start()].split()[-5:]
+        lead = m.start()
+        first = _RANGE_SECOND.search(low[start:m.start()])
+        if first:                                     # "range 22000 - 22800": the second number has the first's words
+            lead = start + first.start()
+        before_words = low[start:lead].split()[-5:]
         stop = _WINDOW_STOP.search(low, m.end())
-        after_words = low[m.end():stop.start() if stop else len(low)].split()[:3]
+        after_all = low[m.end():stop.start() if stop else len(low)]
+        after_words = after_all.split()[:3]
         window = re.sub(r"[,:()'\"]|'s\b", " ", " ".join(before_words + ["#"] + after_words))
+        next_word = re.sub(r"[,:()'\"।]", " ", after_all).split()[:1]
+        prev_word = re.sub(r"[,:()'\"]", " ", low[start:m.start()]).split()[-1:]
         ok = False
         for b in mine:
             if any(re.search(rf"(?<![\w-]){re.escape(lab)}(?![\w-])", window) for lab in b.labels):
                 ok = True
-                break
-            if b.past_ok and _PAST_GOVERNS.search(body[start:m.start()]):
+            elif next_word and next_word[0] in b.right_after:
                 ok = True
+            elif prev_word and prev_word[0] in b.right_before:
+                ok = True
+            elif b.past_ok and (_PAST_GOVERNS.search(body[start:m.start()]) or (next_word and next_word[0] in _PAST_AFTER_DEVA)):
+                ok = True
+            if ok:
                 break
         if not ok:
             bad.append(raw)
@@ -377,6 +408,8 @@ _ANYWHERE = (
     "risk-reward", "risk/reward", "reward to risk", "reward-to-risk", "good entry", "good level", "good zone", "good risk",
     "thousand", "hundred", "lakh", "lakhs", "crore", "crores", "हजार", "लाख", "कोटी", "करोड़", "करोड",
     "le lo", "lelo", "bech do", "kharid lo", "khareed lo", "lena sahi", "sahi rahega", "abhi le",
+    "worth a look", "worth a try", "worth buying", "worth selling", "worth watching", "worth a punt", "safer side", "safe bet",
+    "safer bet", "better bet",
 )
 # Future / progressive morphology next to a number (review of H-C4, round 3): Hindi -गा / -गी / -गे, होगा, रहा है, की ओर;
 # Marathi -ेल / -तील, असेल, शकतो / शकते; Hinglish -ega / -egi / -enge, wala hai, raha hai, ki taraf / ki or.
@@ -384,6 +417,17 @@ _MORPH_NEAR_NUMBER = re.compile(
     r"[\u0900-\u097f]+(?:गा|गी|गे)(?![\u0900-\u097f])|होगा|होगी|होंगे|रहा है|रही है|रहे हैं|की ओर|"
     r"(?<![\u0900-\u097f])(?!तेल)[\u0900-\u097f]{2,}(?:ेल|तील)(?![\u0900-\u097f])|असेल|शकतो|शकते|शकेल|शकतात|"
     r"\b(?!(?:vega|omega|mega|bodega)\b)[a-z]+(?:ega|egi|enge)\b|\bwal[ae] hain?\b|\bwali hai\b|\bra(?:ha|hi|he) hai\b|\bki (?:taraf|or)\b",
+    re.I)
+# Movement / destination words in a sentence with a number (review of H-C4, round 5) - blocked whatever label sits next
+# to the number: a fact's own name does not make "max pain 22800 is where it heads" a description.
+_MOVEMENT = re.compile(
+    r"\b(?:head|heads|heading|headed|go|goes|going|gone to|destination|destinations|magnet\w*|gravitat\w*|pull\w*|drawn to|draws?|"
+    r"objective|objectives|taken out|take out|takes out|taking out|break|breaks|breaking|comes? into view|coming into view|in view|"
+    r"extend|extends|extending|extension|continue|continues|continuing|continuation|floor|ceiling|"
+    r"play(?:s|ing)? the range|range[- ]play\w*|range[- ]trad\w*|from here|from current levels|from these levels|soon|shortly|"
+    r"into expiry|ja+t[aie] ha[ií]n?|ja+te hain|jata|jati)\b|"
+    r"\b(?:means|implies|signals|suggests)\s+(?:a|an)\s+(?:[\w%.,+-]+\s+){0,3}?(?:move|swing|rally|drop|fall|rise|gain|decline)\b|"
+    r"(?:तक|पर्यंत)(?:\s+[\u0900-\u097f]+){0,2}?\s+(?:जाता|जाती|जाते|जातो|जातात)(?![\u0900-\u097f])",
     re.I)
 _HINGLISH_FUTURE = re.compile(r"\b(?!(?:vega|omega|mega|bodega)\b)[a-z]+(?:ega|egi|enge)\b|\bwal[ae] hain?\b|\bwali hai\b", re.I)
 _PAST_BEFORE_NUMBER = re.compile(r"\b(?:rose|fell|closed|ended|moved|gained|lost|dropped|climbed|rallied|traded|touched|slipped|surged|"
@@ -442,10 +486,15 @@ def advice_problems(text: str) -> List[str]:
         if governed and not _FUTURE.search(clause):
             continue                                    # "the close rose 3.6%": a past verb governs this very number
         found.append(f"'{(m.group('a') or m.group('b')).lower()}' next to a number (a forecast)")
-    for sentence in re.split(r"[.!?\n\u0964]", text):
-        morph = _MORPH_NEAR_NUMBER.search(sentence) if re.search(r"\d", sentence) else None
+    for sentence in re.split(r"[!?\n\u0964]|(?<!\d)\.(?!\d)", text):
+        if not re.search(r"\d", sentence):
+            continue
+        morph = _MORPH_NEAR_NUMBER.search(sentence)
         if morph:
             found.append(f"'{morph.group(0)}' (a future / progressive form next to a number)")
+        move = _MOVEMENT.search(sentence)
+        if move:
+            found.append(f"'{move.group(0).lower()}' (a movement or destination word with a number)")
     for m in _HINGLISH_FUTURE.finditer(text):
         found.append(f"'{m.group(0).lower()}' (a Hinglish future form)")
     for m in _ADJACENT.finditer(text):

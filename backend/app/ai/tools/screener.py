@@ -15,10 +15,11 @@ Matches are what passed the filters on the data shown - never advice.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 from datetime import date
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Set, Union
 
 from fastapi import HTTPException
 from pydantic import BaseModel, ConfigDict, Field
@@ -182,20 +183,57 @@ async def run_screen(ctx: ToolContext, args: _Run) -> ToolResult:
                     "not_evaluated": dict(list(out["not_evaluated"].items())[:20]), "notes": out["notes"], "data": out["data"],
                     "disclaimer": out["disclaimer"]}
             return ToolResult(True, data, out["date"], "screen_history", {"bars_closed_by": out["date"]})
-        from app.screener.routes import RunBody, run
-        out = await run(RunBody(source=args.text, base_tf=args.base_tf, params=dict(args.params), symbols=args.symbols, exchange=args.exchange),
-                        user=ctx.user, session=ctx.session)
+        from app.screener.routes import RunBody
+        out = await _stored_run(ctx, RunBody(source=args.text, base_tf=args.base_tf, params=dict(args.params), symbols=args.symbols,
+                                             exchange=args.exchange))
     except HTTPException as exc:
         return ToolResult(False, None, None, "screener", error=_detail(exc))
-    not_run = {r["symbol"]: r["reason"] for r in out["results"] if not r["matched"] and r.get("reason")}
+    not_run = dict(list({r["symbol"]: r["reason"] for r in out["results"] if not r["matched"] and r.get("reason")}.items())[:20])
     data = {"run_id": out["run_id"], "text": out["text"], "base_tf": out["base_tf"], "matched": out["matched"], "scanned": out["scanned"],
-            "not_evaluated": dict(list(not_run.items())[:20]),
+            "not_evaluated": not_run,
             "stages": [{"text": st["text"], "survivors": st["survivors"]} for st in out["funnel"]["stages"]],
             "data_source": out["data_source"], "disclaimer": out["disclaimer"]}
     stamps = {"run_at": _now(ctx), "bars": "the last closed bar of each symbol"}
     if out.get("data_tier"):
         stamps["data_tier"] = out["data_tier"]
-    return ToolResult(True, data, _now(ctx), "screener_run", stamps)
+    # review of S9 (LOW): a reason can be the broker's own error text - third-party text for the proposal guard
+    return ToolResult(True, data, _now(ctx), "screener_run", stamps, third_party=[str(v) for v in not_run.values()])
+
+
+_RUNS: Set["asyncio.Task[Any]"] = set()          # stored runs still finishing after their tool call timed out
+
+
+def _finished(task: "asyncio.Task[Any]") -> None:
+    _RUNS.discard(task)
+    if not task.cancelled():
+        task.exception()                           # retrieved: a run nobody awaits any more is not logged as never retrieved
+
+
+async def _stored_run(ctx: ToolContext, body: Any) -> Dict[str, Any]:
+    """Review of S9 (LOW): the live run stores a row and commits. run_tool's timeout must not cancel it mid-commit on the
+    request's shared session, so it runs in a session of its own, shielded: on a timeout the agent goes on with its own
+    session and this run still finishes (stored, reproducible) or rolls back alone. The request's pending writes are
+    committed first (the run committed this shared session before too), so the two sessions never hold one write
+    transaction between them."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.db.models import User
+    from app.screener.routes import run
+    bind = ctx.session.bind
+    user_id = ctx.user.id
+    await ctx.session.commit()
+
+    async def own() -> Dict[str, Any]:
+        async with AsyncSession(bind=bind, expire_on_commit=False) as session:
+            user = await session.get(User, user_id)
+            if user is None:
+                raise HTTPException(status_code=404, detail="user not found")
+            return await run(body, user=user, session=session)
+
+    task = asyncio.ensure_future(own())
+    _RUNS.add(task)
+    task.add_done_callback(_finished)
+    return await asyncio.shield(task)
 
 
 async def explain_results(ctx: ToolContext, args: _Explain) -> ToolResult:
@@ -247,7 +285,9 @@ async def explain_results(ctx: ToolContext, args: _Explain) -> ToolResult:
     data = {"text": nodes.to_text(ast), "symbols": explained, "data_source": source,
             "note": "Each condition's numbers are the screen engine's own, on the last closed bar shown; a rank (if any) is across these symbols only."
             if validated.cross_sectional else "Each condition's numbers are the screen engine's own, on the last closed bar shown."}
-    return ToolResult(True, data, max(stamps.values()) if stamps else _now(ctx), "screen_evidence", stamps)
+    # review of S9 (LOW): a symbol's fetch problem can be the broker's own error text - third-party for the proposal guard
+    return ToolResult(True, data, max(stamps.values()) if stamps else _now(ctx), "screen_evidence", stamps,
+                      third_party=[str(v) for v in problems.values()])
 
 
 async def propose_alert(ctx: ToolContext, args: _Alert) -> ToolResult:

@@ -40,6 +40,9 @@ class ToolResult:
     source: str
     data_timestamps: Dict[str, Any] = field(default_factory=dict)
     untrusted: bool = False                 # third-party text inside: wrapped as data, never instructions
+    # third-party strings inside an otherwise first-party result (a broker's error text): the agent hands them to the
+    # proposal guard's quote check as untrusted text read in this request (review of N3 S9)
+    third_party: List[str] = field(default_factory=list)
     error: Optional[str] = None
     duration_ms: int = 0
 

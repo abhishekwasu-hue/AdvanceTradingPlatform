@@ -1441,9 +1441,14 @@ while it is off for the organisation the tool is neither offered to the model no
   creates the alert rule through the same checks as the Alerts API. An alert notifies; it never places an order.
 - `POST /api/screener/copilot/nl` (trader, tenancy table; also needs `ai_copilot` and the AI acknowledgement):
   plain language -> a validated ScreenQL draft with stages, assumptions and an explanation through the H-C1 c output
-  filter; one repair turn with the validator's problems; nothing run or stored (S9-4, S9-5). The page box waits for
+  filter; one repair turn with the validator's problems; nothing run or stored (S9-4, S9-5). A draft with quoted text
+  other than a function's fixed choices is refused like any problem; an invalid draft returns its problems only (each
+  through the output filter), never the model's text (review of S9, ADR-0006). The page box waits for
   the builder to load text (TX1-7).
 - `/run`'s universe loading is now `routes.load_universe`, shared by the run route and the tools. No migration.
+- Review of S9: `run_screen` (live) stores its run in a session of its own, shielded from the tool timeout; a symbol's
+  reason (possibly the broker's error text) goes to the proposal guard as third-party text; a CREATE_ALERT proposal's
+  notification is addressed to the asker.
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

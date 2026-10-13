@@ -560,6 +560,7 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
     from app.ai import settings as ai_settings
     from app.ai.prompt_versions import stamp
     from app.ai.providers import ProviderError, RuleBasedProvider
+    from app.ai.tools.screener import free_text_literals
     from app.audit.log import write_audit_log
     from app.billing.service import meter
     from app.db.models import Tenant
@@ -590,24 +591,35 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
         ast, validated = _compiled(draft["text"], body.base_tf, {})
         await _gate(session, user, ast, validated, {})
         problems = [p.as_dict() for p in validated.problems]
-        if validated.ok:
+        if ast is not None and free_text_literals(ast):
+            # review of S9 (MED, ADR-0006): a string literal other than a function's fixed choices is the model's free
+            # text; it would reach the page inside the canonical screen. Refused (not echoed) and repaired like any problem.
+            problems.append({"message": "a drafted screen may use quoted text only for a function's fixed choices "
+                                        "(\"promoter\", \"results\"...) - other quoted text is not allowed", "pos": None})
+        if validated.ok and not problems:
             break
         prompt = (f"REQUEST:\n{body.text.strip()}\n\nYour screen {draft['text']!r} has problems: "
                   + "; ".join(p["message"] for p in problems)[:800] + "\nAnswer again with a corrected screen, same JSON shape.")
     await ai_settings.mark_used(session, user.tenant_id)
     if draft is None or validated is None:
         raise HTTPException(status_code=502, detail="The AI did not answer; write the screen in the builder")
+    ok = bool(validated.ok) and not problems
+    if not ok:
+        # review of S9 (MED, ADR-0006): an invalid draft returns its problems only - never the model's text or the
+        # canonical text of it - and a problem that quotes the model's words passes the output filter or is withheld
+        problems = [{**p, "message": nl.screened(str(p.get("message") or ""), body.language)
+                     or "a problem in the draft (withheld: it quoted words the output filter does not show)"} for p in problems]
     explanation = nl.screened(draft["explanation"], body.language)
     await write_audit_log(session, user.tenant_id, user.id, "screener_nl_drafted",
-                          f"{getattr(provider, 'name', 'ai')}: {'valid' if validated.ok else 'invalid'} screen from {len(body.text)} chars")
+                          f"{getattr(provider, 'name', 'ai')}: {'valid' if ok else 'invalid'} screen from {len(body.text)} chars")
     await meter(session, user.tenant_id, "ai_screener_nl", 1, source="api", metadata={"provider": getattr(provider, "name", "ai")}, commit=False)
     await session.commit()
     stages = []
-    if ast is not None:
+    if ok:
         items = list(ast.items) if isinstance(ast, nodes.Logic) and ast.op == "ALL" else [ast]
         stages = [nodes.to_text(i) for i in items]
-    return {"ok": bool(validated.ok), "text": nodes.to_text(ast) if ast is not None else draft["text"], "stages": stages,
-            "ast": nodes.to_json(ast) if ast is not None and validated.ok else None, "problems": problems, "base_tf": body.base_tf,
+    return {"ok": ok, "text": nodes.to_text(ast) if ok else None, "stages": stages,
+            "ast": nodes.to_json(ast) if ok else None, "problems": problems, "base_tf": body.base_tf,
             "explanation": explanation, "explanation_withheld": explanation is None and bool(draft["explanation"]),
             "assumptions": [a for a in (nl.screened(x, body.language) for x in draft["assumptions"]) if a],
             "provider": getattr(provider, "name", None), "model": getattr(provider, "model", None), "prompt_version": nl.PROMPT_VERSION,

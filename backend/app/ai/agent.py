@@ -224,6 +224,7 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
                 by_call[call.id] = found
                 if res.untrusted:
                     untrusted_seen.append(proposals.untrusted_text(res.data))
+                untrusted_seen.extend(res.third_party)
             calls.append({"id": call.id, "name": call.name, "arguments": call.arguments, "ok": res.ok, "as_of": res.as_of, "duration_ms": res.duration_ms,
                           "error": res.error})
             ctx.session.add(AgentStepRecord(run_id=run.id, step=step, tool_name=call.name[:60], arguments_json=json.dumps(call.arguments, default=str)[:4000],

@@ -165,7 +165,10 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
         AI_PROPOSALS.labels(action=p.action).inc()
         await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"AI proposes {p.action.replace('_', ' ').lower()}",
                      message=f"{p.reason} Approve or reject it under AI Copilot - nothing happens until you do.",
-                     severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id, ai_action_id=row.id)
+                     severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id, ai_action_id=row.id,
+                     # review of S9 (LOW): addressed to the person it is for (only they or the OWNER decide it, and the
+                     # AI_PROPOSAL kind stays in the organisation feed the OWNER reads); None = organisation-wide, as before
+                     user_id=p.owner_user_id)
         # BYOK-V2: queue the deployment creator's Vision audit (flag vision_byok; a DB row only, in a savepoint, never
         # raises). The audit itself runs later in the worker and only comments - it never touches this proposal.
         from app.ai import vision_audit

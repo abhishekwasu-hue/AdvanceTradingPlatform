@@ -26,6 +26,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,7 +44,7 @@ from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.parser import ScreenQLSyntaxError, parse
-from app.screener.routes import DISCLAIMER, FLAG, GALLERY_FLAG, MAX_SYMBOLS, _cost_cap, _gate, _owned, fetch_frames, missing_data
+from app.screener.routes import DISCLAIMER, FLAG, GALLERY_FLAG, MAX_SYMBOLS, _cost_cap, _gate, _owned, charge_runs, fetch_frames, missing_data
 from app.screener.runtime import SymbolData, run_screen
 
 router = APIRouter(prefix="/api/screener/library", tags=["screener"])
@@ -189,7 +190,15 @@ async def _run(session: AsyncSession, user: User, ast: Any, validated: Any, univ
     return {m.symbol: (m.matched, m.reason) for m in matches}
 
 
-@router.post("/confluence", dependencies=[Depends(library_rate_limit)])
+def confluence_units(screens: int, fetches: int) -> int:
+    """`/run` calls a confluence is charged as (review of TX2): one per screen evaluated, plus every fetch past the first."""
+    return max(1, int(screens)) + max(0, int(fetches) - 1)
+
+
+WATCH_UNITS = 2                     # watch-trigger: one fetch, the ready and the trigger condition each evaluated once
+
+
+@router.post("/confluence")
 async def confluence(body: ConfluenceBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
     refs = list(dict.fromkeys(body.screens))
@@ -205,6 +214,9 @@ async def confluence(body: ConfluenceBody, user: User = Depends(require_trader),
     by_tf: Dict[str, Dict[str, int]] = {}
     for s, _, validated in compiled:
         _merge(by_tf.setdefault(s.base_tf, {}), validated.fetch_lookback)
+    # Review of TX2 (MED): up to six screens over up to six fetches is several `/run`s of work - charged as such on the
+    # shared per-user `/run` bucket (before any bar is fetched), not on a bucket of its own.
+    await charge_runs(user, confluence_units(len(compiled), len(by_tf)))
     results: Dict[str, Dict[str, Tuple[bool, Optional[str]]]] = {}
     fetch_problems: Dict[str, Dict[str, str]] = {}
     sources: Dict[str, Dict[str, Any]] = {}
@@ -228,7 +240,52 @@ def _parsed(label: str, text: str) -> Any:
         raise HTTPException(status_code=422, detail={"message": f"{label}: {exc.message}", "problems": [{"message": exc.message, "pos": exc.pos}]}) from exc
 
 
-@router.post("/watch-trigger", dependencies=[Depends(library_rate_limit)])
+def watch_eval(ready: Any, trigger: Any, ready_v: Any, transition_v: Any, universe: List[SymbolData], base_tf: str
+               ) -> Tuple[Dict[str, Tuple[bool, Optional[str]]], Dict[str, Tuple[bool, Optional[str]]]]:
+    """(ready now, triggered) per symbol, evaluating the ready and the trigger condition ONCE each (review of TX2): the
+    transition `Count(1, ready)[1] >= 1 AND trigger` is read off the ready series' bar before the last and the trigger's
+    last bar - the same answer as running the transition screen (tested), without evaluating `ready` a second time.
+    History is checked like `run_screen`: the ready condition against its own lookback, the transition against its."""
+    import math
+
+    from app.screener import nodes as nn
+    from app.screener.runtime import ScreenRuntimeError, _Eval, _last
+
+    def truthy(v: Any) -> bool:
+        return v is not None and not (isinstance(v, float) and math.isnan(v)) and bool(v)
+
+    def short(ev: Any, d: SymbolData, validated: Any) -> List[str]:
+        return [tf for tf, bars in validated.lookback.items()
+                if (tf in d.frames or nn.TF_MINUTES.get(tf, 0) > nn.TF_MINUTES[base_tf]) and len(ev.frame(tf)) < bars]
+
+    ready_out: Dict[str, Tuple[bool, Optional[str]]] = {}
+    hit_out: Dict[str, Tuple[bool, Optional[str]]] = {}
+    for d in universe:
+        frame = d.frames.get(base_tf)
+        if frame is None or frame.empty:
+            ready_out[d.symbol] = hit_out[d.symbol] = (False, f"no {base_tf} bars")
+            continue
+        ev = _Eval(d, base_tf, {}, {})
+        ready_short, hit_short = short(ev, d, ready_v), short(ev, d, transition_v)
+        try:
+            r = ev.ev(ready, base_tf)
+            t = ev.ev(trigger, base_tf) if not hit_short else None
+        except ScreenRuntimeError as exc:
+            ready_out[d.symbol] = hit_out[d.symbol] = (False, str(exc))
+            continue
+        except Exception as exc:  # noqa: BLE001 - one symbol's bad data never aborts the list (as run_screen)
+            ready_out[d.symbol] = hit_out[d.symbol] = (False, f"could not be evaluated ({type(exc).__name__})")
+            continue
+        ready_out[d.symbol] = (False, f"not enough history on {', '.join(sorted(ready_short))}") if ready_short else (truthy(_last(r)), None)
+        if hit_short:
+            hit_out[d.symbol] = (False, f"not enough history on {', '.join(sorted(hit_short))}")
+            continue
+        before = r.iloc[-2] if isinstance(r, pd.Series) and len(r) >= 2 else None
+        hit_out[d.symbol] = (truthy(before) and truthy(_last(t)), None)
+    return ready_out, hit_out
+
+
+@router.post("/watch-trigger")
 async def watch_trigger(body: WatchBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
     if body.list_id is not None:
@@ -250,9 +307,12 @@ async def watch_trigger(body: WatchBody, user: User = Depends(require_trader), s
     _merge(lookback, ready_v.fetch_lookback)
     _merge(lookback, transition_v.fetch_lookback)
     symbols = _symbols(body.symbols)
+    await charge_runs(user, WATCH_UNITS)                   # review of TX2 (MED): the shared `/run` bucket
     universe, problems, source = await _universe(session, user, symbols, body.exchange, base_tf, lookback)
-    ready_hits = {**{s: (False, why) for s, why in problems.items()}, **await _run(session, user, ready, ready_v, universe, base_tf, body.exchange)}
-    hits = await _run(session, user, transition, transition_v, universe, base_tf, body.exchange)
+    if zone_gate.flagged_calls(transition):
+        await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), transition, base_tf, {})
+    ready_got, hits = await asyncio.to_thread(watch_eval, ready, trigger, ready_v, transition_v, universe, base_tf)
+    ready_hits = {**{s: (False, why) for s, why in problems.items()}, **ready_got}
     return {**lib.watch_split(ready_hits, hits, symbols), "name": name, "base_tf": base_tf, "ready_text": nodes.to_text(ready),
             "trigger_text": nodes.to_text(trigger), "transition_text": nodes.to_text(transition), "scanned": len(symbols), **source,
             "disclaimer": DISCLAIMER}

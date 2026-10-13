@@ -5,7 +5,14 @@ The mirror is defined, not guessed: `mirror(S)` holds on a symbol's bars exactly
 reflected through a price level C (every price p becomes C - p: highs and lows swap, a rise becomes a fall, volume
 and time are unchanged). The breakout screens already define their down side this way (SCREENER.md U6 BK1).
 `tests/test_tx2_library.py` checks every rule below on synthetic bars, bar by bar, against the original screen on
-the reflected bars.
+the reflected bars (prices on whole ticks, several seeds).
+
+"Exactly" has one warm-up: the swing functions (SwingHigh / SwingLow / SwingDirection / SwingZone*, and the screens
+built on swings) agree from the third confirmed swing of the bars on (`SWING_WARMUP`). Before it, the zigzag's opening
+swing can differ on reflected bars: it starts out testing a high before a low, so when both could confirm on the same
+early bar the two sides open with different swings (seen on bars 13-32 of the test bars in 6 of 40 seeds). Equal highs
+or lows also only mirror when the reflected prices are exact (whole ticks); a float reflection can break such a tie
+the other way.
 
 Each sub-expression is rewritten into an expression on the real bars plus how its value relates to the original's
 value on the reflected bars:
@@ -28,6 +35,7 @@ from typing import Dict, List, Optional, Tuple
 from app.screener import nodes as n
 
 INV, REFL, NEG, COMP = "inv", "refl", "neg", "comp"
+SWING_WARMUP = 3                       # swings: exact from the third confirmed swing on (see the module note)
 FLIP = {">": "<", ">=": "<=", "<": ">", "<=": ">=", "==": "==", "!=": "!="}
 
 # Fields: what each one is on the reflected bars.
@@ -341,5 +349,5 @@ def reflect_bars(frame, level: Optional[float] = None):  # type: ignore[no-untyp
     return out
 
 
-__all__ = ["Mirror", "NoMirror", "mirror", "rewrite", "reflect_bars", "INV", "REFL", "NEG", "COMP", "CATEGORIES", "SIDED_FILTERS",
+__all__ = ["SWING_WARMUP", "Mirror", "NoMirror", "mirror", "rewrite", "reflect_bars", "INV", "REFL", "NEG", "COMP", "CATEGORIES", "SIDED_FILTERS",
            "NOT_SYMMETRIC", "FIELD_RULES", "LEVELS", "LINEAR", "EXTREMES", "PATTERN_SWAP"]

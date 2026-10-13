@@ -932,16 +932,27 @@ Flag `screener_tx2` (default OFF) on top of `screener_v2` and `screener_gallery`
   hammer / shooting star. A screen that reads both sides alike (Crabel NR7) is its own mirror. The breakout
   templates' mirror is the template's own down side (the engine defines it). Mirrors are `<id>.short`, generated per
   request, never filed in taxonomy.json; a card shows "Mirror (down side): <text>" or the reason.
+  - One warm-up (review of TX2): the swing functions (SwingHigh / SwingLow / SwingDirection / SwingZone* and screens
+    built on swings) are exact from the third confirmed swing on (`mirror.SWING_WARMUP`). Before that, the zigzag's
+    opening swing can differ on reflected bars: it tests a high before a low, so when both could confirm on the same
+    early bar the two sides open differently. On the test bars that was bars 13-32 in 6 of 40 seeds.
+  - The exactness test uses prices on whole ticks (so an equal high or low stays equal after the reflection) and
+    three seeds, and skips that warm-up.
 - **Confluence.** `POST /api/screener/library/confluence` runs 2-6 screens (library ids, their mirrors, or
   `saved:<id>` of the organisation) over up to 50 symbols - one fetch per timeframe, closed bars, the BT1b own-session
   path - and ranks symbols by the number of different methods (taxonomy axis 1) that flag them, then screens, then
   symbol. Each row lists the screens that flagged it with their text (the evidence). Stores nothing. A count of
   agreement: never a score or a recommendation.
+  - Rate limit (review of TX2): a confluence is charged as k + f - 1 `/run` calls (k screens, f fetches) on the same
+    per-user bucket as `/run` (60 a minute), before any bar is fetched. A watch-trigger is charged as 2.
 - **Watch-then-trigger lists.** A list is a ready and a trigger condition (three pre-built lists in
   `library.WATCH_LISTS`, or the user's own). On the last closed bar: triggered = the trigger holds and ready held on
   the bar before - the transition screen `Count(1, ready)[1] >= 1 AND trigger`; ready = ready now and not triggered.
   The transition is an ordinary screen: "Save the trigger screen" saves it, and the existing screen alert rules give
   the alert on the transition (no second alert engine). Z10-a case: `Count(1, close > EMA(close, 20))[1]`.
+  - The route evaluates `ready` and `trigger` once each (`library_routes.watch_eval`). Triggered is read from the
+    ready series' bar before the last and the trigger's last bar. A test checks this against running the ready and
+    transition screens, on every prefix of three seeds' bars.
 - **No new ScreenQL function.** TX2 adds no registry entry; the transition uses `Count` with an offset.
 - **Routes** (`tests/tenancy_route_table.py`): `GET /library/mirrors`, `GET /library/watch-lists` (member);
   `POST /library/confluence`, `POST /library/watch-trigger` (trader, rate limited 20 / min, like `/run`).

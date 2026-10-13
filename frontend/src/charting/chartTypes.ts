@@ -64,7 +64,9 @@ export function niceStep(value: number): number {
 }
 
 /** Default box / range: a round 0.5 % of the FIRST bar's close - fixed by the start of the data, so appending bars
- * never changes it (a box sized on the latest ATR would redraw every brick). */
+ * never changes it (a box sized on the latest ATR would redraw every brick). ProChart keeps the first box it derives
+ * for a (symbol, timeframe, type), so loading older history does not change the box either; see `renko` for what a
+ * prepend does change. */
 export function autoBoxSize(bars: readonly OhlcBar[], fraction = 0.005): number | null {
   const first = bars.find((b) => Number.isFinite(b.close) && b.close > 0);
   return first ? niceStep(first.close * fraction) : null;
@@ -78,7 +80,12 @@ function stamp(out: OhlcBar[], time: number): number {
 
 /** Close-based Renko: an up brick when the close is a full box above the last brick's top, a down brick a box below
  * its bottom; a reversal needs a full box beyond the last brick's other side (two boxes from its close). The first
- * brick is measured from the first close. Pass CLOSED bars only (`closedBars`); completed bricks only. */
+ * brick is measured from the first close. Pass CLOSED bars only (`closedBars`); completed bricks only.
+ *
+ * Appending bars never changes a brick already built (truncation-invariant). PREPENDING older bars (scrolling back
+ * loads history) moves the anchor to the new first close, so every brick is rebuilt and may sit at other prices and
+ * times: the chart redraws all bricks then (keeping the visible time window). A gap between two bars (overnight, a
+ * halt) is bridged by whole bricks at prices that may never have traded - the usual Renko convention. */
 export function renko(bars: readonly OhlcBar[], box: number): OhlcBar[] {
   const out: OhlcBar[] = [];
   if (!(box > 0) || bars.length === 0) return out;
@@ -105,7 +112,12 @@ export function barPath(b: OhlcBar): number[] {
 }
 
 /** Range bars: each spans exactly `range` from its high to its low; the next opens where the last closed. Built along
- * `barPath` of CLOSED bars; completed range bars only (the one still filling is never returned). */
+ * `barPath` of CLOSED bars; completed range bars only (the one still filling is never returned).
+ *
+ * Gaps: the path runs from one bar's close to the next bar's open as if price moved through every level in between,
+ * so an overnight or news gap of several ranges becomes several range bars stamped at the gapped bar's time, at
+ * prices that never traded (true range bars need ticks - OPEN_QUESTIONS CH5-8). Prepending older bars rebuilds every
+ * range bar from the new first open, as for `renko`. */
 export function rangeBars(bars: readonly OhlcBar[], range: number): OhlcBar[] {
   const out: OhlcBar[] = [];
   if (!(range > 0) || bars.length === 0) return out;
@@ -181,21 +193,50 @@ export function is24x7(exchange: string | undefined): boolean {
   return venueZone(exchange) === "UTC";
 }
 
-const dayKey = (t: number, zone: string) => new Date(t * 1000).toLocaleDateString("en-CA", { timeZone: zone });
+/** Seconds east of UTC of each venue zone. Neither observes daylight saving (IST is fixed at +05:30), so a calendar day
+ * is plain arithmetic - no `Intl` call per bar (that cost ~4 s on 50k bars, on every live tick). */
+export const ZONE_OFFSET_SEC: Readonly<Record<"UTC" | "Asia/Kolkata", number>> = { UTC: 0, "Asia/Kolkata": 19_800 };
+
+/** The venue-zone calendar day of an epoch second, as a day number (days since 1970-01-01 in that zone). */
+export const dayNumber = (t: number, offsetSec: number) => Math.floor((t + offsetSec) / 86_400);
 
 /** The time of the first bar of every session after the first: where the calendar date (in the venue's zone) changes
- * between two bars. Daily and longer bars have no breaks. */
+ * between two bars. Daily and longer bars have no breaks. O(n) integer arithmetic. */
 export function sessionBreaks(times: readonly number[], exchange: string | undefined, periodSec: number): number[] {
   if (periodSec >= 86_400 || times.length < 2) return [];
-  const zone = venueZone(exchange);
+  const off = ZONE_OFFSET_SEC[venueZone(exchange)];
   const out: number[] = [];
-  let prev = dayKey(times[0], zone);
+  let prev = dayNumber(times[0], off);
   for (let i = 1; i < times.length; i++) {
-    const k = dayKey(times[i], zone);
+    const k = dayNumber(times[i], off);
     if (k !== prev) out.push(times[i]);
     prev = k;
   }
   return out;
+}
+
+/** `sessionBreaks` memoized on the bar times: a live tick re-renders the chart with a fresh but equal times array (the
+ * forming bar moves, no time changes), so the result is reused while (length, first, last, venue, period) are the
+ * same - bar times only ever grow at either end. Returns the same array instance when nothing changed. */
+export function sessionBreaksCache(): (times: readonly number[], exchange: string | undefined, periodSec: number) => number[] {
+  let key = "";
+  let last: number[] = [];
+  return (times, exchange, periodSec) => {
+    const k = `${times.length}|${times[0]}|${times[times.length - 1]}|${venueZone(exchange)}|${periodSec}`;
+    if (k !== key) { key = k; last = sessionBreaks(times, exchange, periodSec); }
+    return last;
+  };
+}
+
+/** The bar a marker at time `t` belongs to on a synthetic (Renko / range) chart: the first brick completed at or after
+ * `t` - the brick whose move contains it. null after the last completed brick (that move is still forming). */
+export function brickAt(t: number, brickTimes: readonly number[]): number | null {
+  let lo = 0, hi = brickTimes.length - 1, found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (brickTimes[mid] >= t) { found = mid; hi = mid - 1; } else lo = mid + 1;
+  }
+  return found < 0 ? null : brickTimes[found];
 }
 
 /** Tick label in the venue's zone: the date (with the year at a year mark) for day / month / year marks, the time

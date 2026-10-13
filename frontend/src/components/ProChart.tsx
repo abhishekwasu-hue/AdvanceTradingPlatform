@@ -16,7 +16,7 @@ import { useChartStrategies } from "./ChartStrategies";
 import type { ChartEngine } from "../charting/engine";
 import { LightweightEngine } from "../charting/lightweight";
 import { DrawingToolbar, useDrawingTools } from "../charting/DrawingToolbar";
-import { CHART_TYPE_LABELS, chartView, formatTick, periodSeconds, sessionBreaks, venueZone } from "../charting/chartTypes";
+import { CHART_TYPE_LABELS, brickAt, chartView, formatTick, periodSeconds, sessionBreaksCache, venueZone } from "../charting/chartTypes";
 import { SessionBreaksPrimitive } from "../charting/sessionBreaksPrimitive";
 import type { ChartType } from "../charting/workspace";
 import { Sheet } from "./primitives";
@@ -210,13 +210,31 @@ export default function ProChart({
   const timeIndex = useMemo(() => { const m = new Map<number, number>(); times.forEach((t, i) => m.set(t, i)); return m; }, [times]);
   // CH5-b: what the price series shows for the chart type. Renko / range use the bars as received (`candles`), closed
   // ones only; the candle types show the live-priced forming bar like before.
+  // The Renko box / range size is kept per (symbol, timeframe, type) once derived, so loading older history (which moves
+  // the first bar) does not change it; the bricks are still rebuilt from the new first bar (chartTypes.renko).
+  const boxRef = useRef<{ key: string; size: number | null }>({ key: "", size: null });
   const view = useMemo(() => {
     const live = display.map((c, i) => ({ time: times[i] as number, open: c.open, high: c.high, low: c.low, close: c.close }));
-    const source = chartType === "renko" || chartType === "range"
+    const synthetic = chartType === "renko" || chartType === "range";
+    const source = synthetic
       ? candles.map((c) => ({ time: toTime(c.timestamp) as number, open: c.open, high: c.high, low: c.low, close: c.close })) : live;
-    return chartView(chartType, live, source, { periodSec: periodSeconds(timeframe), nowSec: Date.now() / 1000, up: COLORS.up, down: COLORS.down });
+    const boxKey = `${symbol ?? ""}|${timeframe ?? ""}|${chartType}`;
+    if (boxRef.current.key !== boxKey) boxRef.current = { key: boxKey, size: null };
+    const v = chartView(chartType, live, source, { periodSec: periodSeconds(timeframe), nowSec: Date.now() / 1000, size: boxRef.current.size,
+                                                   up: COLORS.up, down: COLORS.down });
+    if (synthetic && boxRef.current.size == null && v.size != null) boxRef.current = { key: boxKey, size: v.size };
+    return v;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [display, times, candles, chartType, timeframe, themeTick]);
+  }, [display, times, candles, chartType, timeframe, symbol, themeTick]);
+  // The times the price series is keyed by: the source bars', or the bricks' own on Renko / range. Every lookup by a
+  // chart time (the view shift on reload, the legend, markers, session breaks) goes through these, never `times`.
+  const rowTimes = useMemo(() => (view.synthetic ? view.bars.map((b) => b.time as UTCTimestamp) : times), [view, times]);
+  const rowIndex = useMemo(() => {
+    if (!view.synthetic) return timeIndex;
+    const m = new Map<number, number>(); rowTimes.forEach((t, i) => m.set(t, i)); return m;
+  }, [view.synthetic, rowTimes, timeIndex]);
+  const breaksCache = useRef(sessionBreaksCache());
+  const breaks = useMemo(() => breaksCache.current(rowTimes, exchange, periodSeconds(timeframe)), [rowTimes, exchange, timeframe]);
 
   const ind = useMemo(() => {
     const cl = closes(display);
@@ -388,7 +406,6 @@ export default function ProChart({
     const key = `${display[0].timestamp}|${chartKey}`;
     // CH5-b: the chart type's bars (the plain candles, Heikin Ashi, hollow colours, or Renko / range bricks).
     const candleData = view.bars.map((b) => ({ ...b, time: b.time as UTCTimestamp }));
-    const rowTimes = view.synthetic ? candleData.map((b) => b.time) : times;
     const transparent = "rgba(0,0,0,0)";
     s.candles.applyOptions(view.line
       ? { upColor: transparent, downColor: transparent, wickUpColor: transparent, wickDownColor: transparent, borderVisible: false }
@@ -396,7 +413,7 @@ export default function ProChart({
     const closeLine = view.line ? candleData.map((b) => ({ time: b.time, value: b.close })) : [];
     s.typeLine?.setData(chartType === "line" ? closeLine : []);
     s.typeArea?.setData(chartType === "area" ? closeLine : []);
-    breaksRef.current?.setTimes(sessionBreaks(rowTimes, exchange, periodSeconds(timeframe)));
+    breaksRef.current?.setTimes(breaks);
     // Incremental only when this is the same series grown by at most one bar (a live tick moved
     // or opened the forming candle); anything else is a new dataset. Lightweight Charts refuses an
     // `update` older than the last bar, so bars are applied oldest first and a refusal falls back
@@ -417,6 +434,7 @@ export default function ProChart({
     // shifted by the bars added on the left. A new symbol or timeframe fits all candles instead.
     const sameChart = !incremental && prev.len > 0 && dataKey.current.endsWith(`|${chartKey}`);
     const keepRange = sameChart ? main.timeScale().getVisibleLogicalRange() : null;
+    const keepTimes = sameChart && view.synthetic ? main.timeScale().getVisibleRange() : null;   // bricks rebuilt on a prepend
     const prevFirst = prevFirstTime.current;
     if (!incremental) {
       s.candles.setData(candleData);
@@ -450,19 +468,34 @@ export default function ProChart({
     // Markers snap to the last bar at or before their time so they never vanish on a coarser timeframe.
     const snapped = markers.map((m) => {
       const t = toTime(m.timestamp);
+      if (view.synthetic) {                                        // a brick's time is when it completed: the brick at or after
+        const at = brickAt(t, rowTimes);
+        return at == null ? null : { time: at as UTCTimestamp, position: m.position, color: resolveChartColor(m.color), shape: m.shape, text: m.text };
+      }
       let lo = 0, hi = rowTimes.length - 1, best = -1;
       while (lo <= hi) { const mid = (lo + hi) >> 1; if (rowTimes[mid] <= t) { best = mid; lo = mid + 1; } else hi = mid - 1; }
       return best < 0 ? null : { time: rowTimes[best], position: m.position, color: resolveChartColor(m.color), shape: m.shape, text: m.text };
     }).filter((m): m is NonNullable<typeof m> => m !== null).sort((a, b) => a.time - b.time);
     markersPlugin.current?.setMarkers(snapped);
-    if (keepRange) {
-      const added = Math.max(0, timeIndex.get(prevFirst) ?? 0);
+    const prevAt = rowIndex.get(prevFirst);
+    if (keepRange && view.synthetic && prevAt === undefined && keepTimes) {
+      // Renko / range after older history was loaded: every brick was rebuilt (new anchor), so the old first brick is
+      // gone - keep the visible time window instead of a brick count.
+      try { main.timeScale().setVisibleRange(keepTimes); } catch { main.timeScale().fitContent(); }
+    } else if (keepRange) {
+      // Shift by the rows added on the left, counted in the series' own rows (bricks on Renko / range: a live tick that
+      // adds no brick shifts nothing).
+      const added = Math.max(0, prevAt ?? 0);
       const range = { from: keepRange.from + added, to: keepRange.to + added };
       for (const c of Object.values(charts.current)) c?.timeScale().setVisibleLogicalRange(range);
     } else if (!incremental) for (const c of Object.values(charts.current)) c?.timeScale().fitContent();
-  }, [display, times, timeIndex, ind, priceLines, zones, markers, symbol, timeframe, themeTick, view, chartType, exchange]);
+  }, [display, times, timeIndex, ind, priceLines, zones, markers, symbol, timeframe, themeTick, view, chartType, exchange, rowTimes, rowIndex, breaks]);
 
-  const idx = hover != null ? timeIndex.get(hover) ?? null : display.length - 1;
+  // On Renko / range the legend reads the brick under the crosshair (its own OHLC, no volume, no indicators): a brick's
+  // time is not a source bar's, so the source-bar lookup would show another bar.
+  const brickIdx = view.synthetic ? (hover != null ? rowIndex.get(hover) ?? null : view.bars.length - 1) : null;
+  const brick = brickIdx != null && brickIdx >= 0 ? view.bars[brickIdx] : undefined;
+  const idx = view.synthetic ? null : hover != null ? timeIndex.get(hover) ?? null : display.length - 1;
   const bar = idx != null ? display[idx] : undefined;
   const prev = idx != null && idx > 0 ? display[idx - 1] : undefined;
   const dayOpen = useMemo(() => {
@@ -500,7 +533,7 @@ export default function ProChart({
         {(title || symbol) && <span className={`font-bold text-fg ${compact ? "text-sm" : "text-base"}`}>{title ?? symbol}</span>}
         {chartType !== "candles" && (
           <span className="rounded border border-border px-1.5 py-0.5 text-[10px] font-semibold text-fg-muted"
-                title={view.synthetic ? "Built from closed bars only: a brick never changes once shown. No indicators or volume on bricks." : undefined}>
+                title={view.synthetic ? "Built from closed bars only: a brick never changes once shown as bars arrive. Loading older history rebuilds every brick from the new first bar (same box size). Gaps are bridged by bricks at prices that may not have traded. No indicators or volume; a marker sits on the brick completed at or after its time." : undefined}>
             {CHART_TYPE_LABELS[chartType]}{view.size != null ? ` · ${view.synthetic && chartType === "range" ? "range" : "box"} ${view.size}` : ""}
           </span>
         )}
@@ -565,6 +598,15 @@ export default function ProChart({
       )}
 
       {/* Legend */}
+      {brick && !compact && (
+        <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-[11px] text-fg-muted">
+          <span className="text-fg-muted">{fmtIst(brick.time, true)}</span>
+          <span>{chartType === "range" ? "Range bar" : "Brick"}</span>
+          <span>O <b className="text-fg">{fmt(brick.open)}</b></span><span>H <b className="text-fg">{fmt(brick.high)}</b></span>
+          <span>L <b className="text-fg">{fmt(brick.low)}</b></span>
+          <span>C <b className={brick.close < brick.open ? "text-down" : "text-up"}>{fmt(brick.close)}</b></span>
+        </div>
+      )}
       {bar && !compact && (
         <div className="mb-1 flex flex-wrap gap-x-3 gap-y-0.5 font-tabular text-[11px] text-fg-muted">
           <span className="text-fg-muted">{fmtIst(times[idx as number], true)}</span>

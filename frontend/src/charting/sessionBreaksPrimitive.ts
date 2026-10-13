@@ -45,6 +45,7 @@ export class SessionBreaksPrimitive implements ISeriesPrimitive<Time> {
   paneViews() { return this.views; }
 
   setTimes(times: readonly number[]) {
+    if (times === this.times) return;                       // memoized upstream: an unchanged list repaints nothing
     this.times = times;
     this.requestUpdate?.();
   }

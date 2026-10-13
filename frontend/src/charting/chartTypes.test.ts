@@ -1,9 +1,15 @@
 import { describe, expect, it } from "vitest";
-import golden from "./__fixtures__/chart_types_golden.json";
 import {
-  autoBoxSize, barPath, chartView, closedBars, formatTick, heikinAshi, hollowCandles, is24x7, niceStep, periodSeconds, rangeBars, renko,
-  sessionBreaks, venueZone, type OhlcBar,
+  autoBoxSize, barPath, brickAt, chartView, closedBars, formatTick, heikinAshi, hollowCandles, is24x7, niceStep, periodSeconds, rangeBars, renko,
+  sessionBreaks, sessionBreaksCache, venueZone, type OhlcBar,
 } from "./chartTypes";
+
+// Node built-ins for the gzip golden, imported at run time so the browser build never sees them.
+const node = async () => ({
+  fs: (await import(/* @vite-ignore */ `node:${"fs"}`)) as { readFileSync(p: URL): Uint8Array; writeFileSync(p: URL, d: Uint8Array): void },
+  zlib: (await import(/* @vite-ignore */ `node:${"zlib"}`)) as { gunzipSync(b: Uint8Array): Uint8Array; gzipSync(b: Uint8Array, o?: { level: number }): Uint8Array },
+});
+const GOLDEN = new URL("./__fixtures__/chart_types_golden.json.gz", import.meta.url);
 
 const T0 = 1_772_430_300;                                    // a bar start (epoch s); every test counts from here
 
@@ -128,12 +134,15 @@ describe("goldens (CH5-b)", () => {
     const box = 20;
     const now = { input_seed: 7, bars: data.length, box, heikin_ashi: heikinAshi(data), renko: renko(data, box), range: rangeBars(data, box) };
     // Regenerate after a deliberate change: UPDATE_GOLDEN=1 npx vitest run src/charting/chartTypes.test.ts
+    // (stored gzipped: the golden is ~116 KB of JSON).
     const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
+    const { fs, zlib } = await node();
     if (env.UPDATE_GOLDEN === "1") {
-      const fs = (await import(/* @vite-ignore */ `node:${"fs"}`)) as { writeFileSync(p: URL, d: string): void };
-      fs.writeFileSync(new URL("./__fixtures__/chart_types_golden.json", import.meta.url), `${JSON.stringify(now)}\n`);
+      fs.writeFileSync(GOLDEN, zlib.gzipSync(new TextEncoder().encode(`${JSON.stringify(now)}\n`), { level: 9 }));
       return;
     }
+    const golden = JSON.parse(new TextDecoder().decode(zlib.gunzipSync(fs.readFileSync(GOLDEN))));
+    expect(golden.renko.length).toBeGreaterThan(0);
     expect(now).toEqual(golden);
   });
 });
@@ -155,12 +164,43 @@ describe("sessions and the 24x7 axis", () => {
     expect([is24x7("CRYPTO"), is24x7("MCX")]).toEqual([true, false]);
   });
 
+  it("finds the session breaks of 50k bars well under 100 ms (integer day numbers, no Intl per bar), and memoizes them", () => {
+    const start = ist("2026-01-05T09:15:00");
+    const times: number[] = [];
+    for (let d = 0; times.length < 50_000; d++) for (let m = 0; m < 375 && times.length < 50_000; m++) times.push(start + d * 86_400 + m * 60);
+    const t0 = performance.now();
+    const breaks = sessionBreaks(times, "NSE", 60);
+    const ms = performance.now() - t0;
+    expect(breaks).toHaveLength(Math.ceil(50_000 / 375) - 1);
+    expect(ms).toBeLessThan(100);
+    const cached = sessionBreaksCache();
+    const first = cached(times, "NSE", 60);
+    expect(cached([...times], "NSE", 60)).toBe(first);                                // a live tick: equal times, same array
+    expect(cached([...times, times[times.length - 1] + 60], "NSE", 60)).not.toBe(first); // a new bar: recomputed
+    expect(cached(times, "CRYPTO", 60)).not.toBe(first);
+  });
+
+  it("matches the calendar date in the zone at the edges (IST midnight is 18:30 UTC)", () => {
+    const edge = [utc("2026-03-02T18:29:00"), utc("2026-03-02T18:30:00"), utc("2026-03-02T23:59:00"), utc("2026-03-03T00:00:00")];
+    expect(sessionBreaks(edge, "NSE", 60)).toEqual([edge[1]]);
+    expect(sessionBreaks(edge, "CRYPTO", 60)).toEqual([edge[3]]);
+  });
+
   it("labels ticks in the venue's zone: dates on day marks, times otherwise", () => {
     const t = utc("2026-03-02T22:30:00");
     expect(formatTick(t, 3, "UTC")).toBe("22:30");
     expect(formatTick(t, 3, "Asia/Kolkata")).toBe("04:00");
     expect(formatTick(t, 2, "UTC")).toMatch(/02 Mar/);
     expect(formatTick(t, 2, "Asia/Kolkata")).toMatch(/03 Mar/);
+  });
+});
+
+describe("markers on bricks", () => {
+  it("sit on the brick completed at or after their time; none after the last completed brick", () => {
+    const bricks = [100, 160, 161, 400];
+    expect([brickAt(50, bricks), brickAt(100, bricks), brickAt(120, bricks), brickAt(161, bricks), brickAt(300, bricks), brickAt(401, bricks)])
+      .toEqual([100, 100, 160, 161, 400, null]);
+    expect(brickAt(1, [])).toBeNull();
   });
 });
 

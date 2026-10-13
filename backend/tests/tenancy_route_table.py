@@ -207,6 +207,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/alerts/rules/{rule_id}/then"): "member",
     ("PUT", "/api/alerts/rules/{rule_id}/then"): "trader",
     ("DELETE", "/api/alerts/rules/{rule_id}/then"): "trader",
+    ("GET", "/api/alerts/rules/{rule_id}/then/intents"): "member",
+    ("GET", "/api/alerts/then"): "member",                   # review of X1b: every Then of the rules the caller sees, one read
     ("DELETE", "/api/alerts/telegram/link"): S_OWN_TELEGRAM,
     ("GET", "/api/alerts/telegram/link"): "member",
     ("POST", "/api/alerts/telegram/link-code"): S_OWN_TELEGRAM,

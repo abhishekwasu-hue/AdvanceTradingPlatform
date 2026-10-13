@@ -72,7 +72,8 @@ def test_screenql_argument_defaults_are_the_parameter_defaults():
             "RangeExpansion": {"k": "expansion_k", "v": "vol_mult"}, "VolumeBreakout": {"v": "shock_mult", "n": "range_n"},
             "RelVolume": {"n": "vol_avg_n"}, "ATRPercentile": {"n": "atr_n", "lookback": "atr_pct_lookback"}, "DowTrend": {"degree": "htf_degree"}}
     bk2 = {"ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP"}   # tests/test_z7_bk2_intraday.py
-    assert set(want) | bk2 == set(BREAKOUT_FUNCTIONS)
+    bk3 = {"VCPBreakout", "VCPReady", "DonchianBreakout", "SqueezeBreakout", "MABreakout", "RegimeBreakout"}   # tests/test_z7_bk3_breakouts.py
+    assert set(want) | bk2 | bk3 == set(BREAKOUT_FUNCTIONS)
     for fn, args in want.items():
         spec = {a.name: a for a in FUNCTIONS[fn].args}
         for arg, param in args.items():
@@ -500,6 +501,9 @@ def test_every_template_can_match_on_the_alert_fetch_window(tid):
         matched += int(evaluate(ast, data, base_tf=t.signal_tf).fillna(False).astype(bool).sum())
     if t.screen in INTRADAY_SCREENS:
         return    # U6 BK2: these need a break on time-of-day volume; tests/test_z7_bk2_intraday.py injects one and proves the match
+    if t.screen in ("B3", "B15"):
+        return    # U6 BK3: a VCP base / an RSI-ADX compression is not in a random walk; tests/test_z7_bk3_breakouts.py injects one
+        #           into the same 272-session daily window and proves the match
     assert matched > 0, tid
 
 

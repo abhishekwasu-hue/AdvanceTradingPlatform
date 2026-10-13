@@ -70,3 +70,39 @@ async def ladder(user: User = Depends(get_current_user), session: AsyncSession =
     await _enabled(session, user)
     from app.platform.controls import flag_enabled
     return await service.ladder(session, user, evidence=await flag_enabled(session, service.EVIDENCE_FLAG, user.tenant_id))
+
+
+# --- N2-2: experience levels (flag `experience_levels`) ------------------------------------------------------------------
+
+class OptOutBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    gate: str = Field(max_length=32)
+    reason: str = Field(max_length=300)
+
+
+async def _experience_on(session: AsyncSession, user: User) -> None:
+    from app.paper import experience
+    if not await experience.enabled(session, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": experience.FLAG})
+
+
+@router.get("/experience")
+async def experience_status(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """The caller's experience level from their own PAPER record, each level's criteria, the gates and the opt-out counts."""
+    from app.paper import experience
+    await _experience_on(session, user)
+    return await experience.status(session, user)
+
+
+@router.post("/experience/opt-out")
+async def experience_opt_out(body: OptOutBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> dict:
+    """The caller's explicit opt-out of one gate for the rest of the IST day, with a reason: logged and counted. It only
+    ever affects the caller's own new entries; exits are never gated."""
+    from app.paper import experience
+    await _experience_on(session, user)
+    try:
+        return await experience.opt_out(session, user, body.gate, body.reason)
+    except experience.NothingToOptOut as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except experience.OptOutError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

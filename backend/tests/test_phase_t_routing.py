@@ -3,6 +3,7 @@ and the worker routing a LIVE entry to the account the policy picks."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+import pytest
 
 from app.accounts.routing import RoutingPolicy, choose_account, policy_for, utilisation
 from app.brokers import token_lifecycle
@@ -13,6 +14,8 @@ from tests.test_accounts import _mark_valid
 from tests.test_auth_api import _session_factory, client
 from tests.test_deployments_api import _auth, _create, _store_broker
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
+
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
 
 NOW = datetime(2026, 9, 28, 5, 0, tzinfo=timezone.utc)
 

@@ -74,6 +74,16 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def test_screen_fitness_meets_the_target(factor):
+    """N3 S6a: screen fitness (signals at every weekly date + 1 / 5 / 20-session statistics) for the 50-factor screen."""
+    symbols = int(os.environ.get("ATP_PERF_FITNESS_SYMBOLS", bench.FITNESS_SYMBOLS))
+    result = bench.bench_fitness(symbols, REPEAT)
+    budget = bench.TARGETS["screen_fitness"] * factor * symbols / bench.FITNESS_SYMBOLS
+    _say(f"screen_fitness ({symbols} symbols x {result['factors']} factors, {result['dates']} weekly dates)", result["screen_fitness"]["median"],
+         budget, result["screen_fitness"]["runs"], factor)
+    assert result["screen_fitness"]["median"] < budget
+
+
 def test_bar_close_scan_meets_the_target(factor):
     from sqlalchemy import update
 

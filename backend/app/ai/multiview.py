@@ -424,15 +424,26 @@ _FORECAST_WORDS = (
     "sambhavna", "sambhavana", "andaza", "andaaza",
     # round 8: probability / chance wording (EN / HI / MR / Hinglish) and watch / anchor / approach words next to a level
     "probability", "probabilities", "probable", "probably", "possibility", "possibilities", "odds", "in reach", "within reach",
-    "on track", "drift to", "drift toward", "drift towards", "drifts", "drifting", "nearing", "keep an eye", "eye", "monitor", "monitoring", "offers support",
+    "drift to", "drift toward", "drift towards", "drifts", "drifting", "nearing", "keep an eye", "offers support",
     "offer support", "provides support", "lends support", "to watch", "worth watching", "pakka", "shayad", "shaayad", "ummid", "umeed",
-    "ummeedein", "anuman", "anumaan", "sambhav", "sambhavtah", "shakyata", "aasha", "asha", "राहील", "राहतील", "कडे कल", "वाटचाल",
+    "ummeedein", "anuman", "anumaan", "sambhav", "sambhavtah", "shakyata", "ki asha", "ki aasha", "राहील", "राहतील", "कडे कल", "वाटचाल",
+    # round 9: more forecast synonyms (EN / HI / MR / Hinglish); should / would are among _FORECAST_PATTERNS
+    "poised for", "poised to", "bound for", "set up for", "look for", "looking for", "likeliest", "most likely",
+    "favoured", "favored", "favour", "favor", "favours", "favors", "defend", "defends", "defending", "defended by", "gravity", "the bet",
+    "आसार", "के आसार", "लगता है", "लगती है", "लगते हैं", "असे वाटते", "वाटते", "चिन्हे", "lagta hai", "lagti hai", "aasar", "asaar",
+    "ke aasar",
 )
 # Patterns among the forecast words (round 8): stems so that inflections are caught ("उम्मीदें", "शक्यतेने", "संभाव्य"),
 # "watch" / "anchors" next to a level (never "Watch list: 5 symbols", "the anchor for these numbers"), and "अपेक्षित" only as
 # a predicate or before a level ("22800 अपेक्षित आहे", "अपेक्षित पातळी 22800" - never "अपेक्षित माहिती: 5 सत्रे").
 _FORECAST_PATTERNS = (
     r"watch(?:es|ing)?(?!\s*-?\s*list)", r"anchors|anchoring", r"bias(?:\s+is)?\s+(?:to|toward|towards)",
+    # round 9: monitor / eye only as a verb before a level ("Monitor 22800", "Eye 22800" - never "the risk monitor shows 3
+    # alerts", "Monitoring window: 20 sessions", "the eye of the range is 22750"); never "on track record"
+    r"(?:monitor(?:s|ing)?|eye(?:s|ing)?)(?=\s+(?:(?:on|the|a|an|max|pain|level|its|call|put|oi|strike|close|high|low|spot|closely)\s+){0,3}[₹\d])",
+    r"on\s+track(?!\s+record)",
+    # should / would (round 9) - never the rules' own "a close outside 22000 - 22800 would change the reading"
+    r"(?:should|would)(?!\s+change\s+(?:the|this|that)\b)",
     r"शायद", r"संभवतः", r"संभव[\u0900-\u097f]*", r"संभाव[\u0900-\u097f]*", r"शक्य[\u0900-\u097f]*", r"उम्मीद[\u0900-\u097f]*",
     r"अनुमान[\u0900-\u097f]*", r"आशा[\u0900-\u097f]*", r"अंदाज[\u0900-\u097f]*", r"अपेक्षा[\u0900-\u097f]*", r"अपेक्षे[\u0900-\u097f]*",
     r"अपेक्षित(?=[\s,]*(?:आहे|आहेत|है|हैं|था|थी|थे|असेल|होगा|होगी|पातळी|स्तर|लेवल|भाव|किंमत|कीमत|दर|टार्गेट|लक्ष्य|[।.!?]|$))",
@@ -451,6 +462,10 @@ _ANYWHERE = (
 _MORPH_NEAR_NUMBER = re.compile(
     r"[\u0900-\u097f]+(?:गा|गी|गे)(?![\u0900-\u097f])|होगा|होगी|होंगे|रहा है|रही है|रहे हैं|की ओर|"
     r"(?<![\u0900-\u097f])(?!तेल)[\u0900-\u097f]{2,}(?:ेल|तील)(?![\u0900-\u097f])|असेल|शकतो|शकते|शकेल|शकतात|"
+    # round 9: Marathi -ईल futures (होईल, येईल, देईल, जाईल; never a noun - मोबाईल, फाईल) and the -ील futures of a verb
+    # stem (राहील, करील, पाहील) - never the -ील of a postposition or adjective (मागील, वरील, मधील, खालील) or a noun (शील, वकील)
+    r"(?<![\u0900-\u097f])(?!(?:मोबाईल|फाईल|प्रोफाईल|स्टाईल|टाईल|माईल|व्हाईल)(?![\u0900-\u097f]))[\u0900-\u097f]+ईल(?![\u0900-\u097f])|"
+    r"(?<![\u0900-\u097f])(?:राह|पाह|लिह|वाह|सह|कर|धर|ठर|सांग|बस|उतर|चढ|पोहोच)ील(?![\u0900-\u097f])|"
     r"(?<![\u0900-\u097f])सक(?:ता|ती|ते)(?![\u0900-\u097f])|(?<![\u0900-\u097f])हो(?:गा|गी|गे|ंगे|ंगी)(?![\u0900-\u097f])|"
     r"\b(?:sakta|sakti|sakte|hoga|hogi|honge|hogaa|ho sakta|ho sakti)\b|"
     r"\b(?!(?:vega|omega|mega|bodega)\b)[a-z]+(?:ega|egi|enge)\b|\bwal[ae] hain?\b|\bwali hai\b|\bra(?:ha|hi|he) hai\b|\bki (?:taraf|or)\b",

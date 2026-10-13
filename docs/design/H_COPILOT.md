@@ -546,5 +546,18 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
       - each forecast match reads its clause in a bounded window;
       - an AI text over `MAX_CHECK_CHARS` (20,000) is refused without being scanned.
       Before the fix, `"1" * 38000` took about 40 s and `"संभावना 1 "` repeated took about 10 s; each is now well under 1 s.
+  - **Ninth review: Marathi -ईल futures, should / would, more synonyms.**
+    - Blocked in a sentence with a number: Marathi -ईल futures (होईल, येईल, देईल, जाईल) and the -ील futures of a verb
+      stem (राहील, करील, पाहील). Nouns (मोबाईल, फाईल, वकील, शील) and the -ील of a postposition or adjective
+      (मागील, वरील, मधील) are not futures.
+    - Blocked next to a number:
+      - should / would ("NIFTY should be near 22800 at expiry"); a past verb before the number does not excuse them.
+        The rules' own "a close outside 22000 - 22800 would change the reading" passes.
+      - poised for, bound for, set up for, look for, likeliest / most likely, favoured / favored, defend(s), gravity,
+        "the bet";
+      - के आसार, लगता है, होईल असे वाटते, ची चिन्हे; Hinglish lagta hai, ke aasar, ki asha.
+    - Monitor / eye block only as a verb before a level ("Monitor 22800", "Eye 22800"). These pass: "the risk monitor
+      shows 3 alerts", "Monitoring window: 20 sessions", "the eye of the range is 22750", "on track record grounds",
+      "Asha Industries 3%".
 - **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
   `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

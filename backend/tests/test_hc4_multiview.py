@@ -705,7 +705,9 @@ def test_round8_descriptive_prose_passes_the_advice_check(text):
 
 
 @pytest.mark.parametrize("unit", ["1", "1.", "1,", "1 ", "1% ", "1 is ", "22800 is the ", "संभावना 1 ", "शक्यतेने 1 ", "watching 1 ",
-                                  "settle at max 1 ", "approach of the 1", "1. ", "Max pain 22800; call OI 23000. "])
+                                  "settle at max 1 ", "approach of the 1", "1. ", "Max pain 22800; call OI 23000. ", "1.1.", ".1", "a.",
+                                  "settle near a b c ", "1 probability ", "had gone to 1 ", "probability odds eye monitor ", "monitor 1 ",
+                                  "होईल 1 ", "should 1 "])
 def test_round8_advice_problems_is_linear_on_long_adversarial_text(unit, monkeypatch):
     import time
     monkeypatch.setattr(mv, "MAX_CHECK_CHARS", 10 ** 6)                        # time the scans themselves, not the cap
@@ -721,3 +723,50 @@ def test_round8_an_over_long_text_is_refused_not_scanned():
     assert mv.advice_problems("1" * (mv.MAX_CHECK_CHARS + 1))
     assert time.perf_counter() - t0 < 0.1
     assert mv.advice_problems("Max pain 22800. " * 10) == []
+
+
+# --- round 9: Marathi -ईल / -ील futures, should / would, more synonyms; monitor / eye only as verbs ----------------------
+R9_BLOCK = [
+    # Marathi futures
+    "निफ्टी 22800 होईल.", "निफ्टी 22800 वर बंद होईल.", "निफ्टी 22800 ला येईल.", "कॉल OI 23000 आधार देईल.", "निफ्टी 22800 जवळ राहील.",
+    "निफ्टी 22800 वर बंद करील.",
+    # should / would
+    "NIFTY should be near 22800 at expiry.", "NIFTY would be near 22800 at expiry.", "Expiry should end near max pain 22800.",
+    "Max pain 22800 is where expiry should land.",
+    # synonyms
+    "Poised for max pain 22800.", "Bound for max pain 22800.", "Set up for max pain 22800.", "Look for max pain 22800.",
+    "Max pain 22800 is the likeliest close.", "Max pain 22800 is the most likely settlement.", "Settlement near max pain 22800 is favoured.",
+    "Settlement near max pain 22800 is favored.", "Call writers defend 23000.", "Call writers defends 23000.",
+    "Max pain 22800 is the gravity zone.", "Max pain 22800 is the bet.",
+    "मैक्स पेन 22800 के आसार हैं।", "लगता है मैक्स पेन 22800।", "मॅक्स पेन 22800 होईल असे वाटते.", "मॅक्स पेन 22800 ची चिन्हे आहेत.",
+    "max pain 22800 lagta hai", "max pain 22800 ke aasar", "22800 ki asha hai",
+    # monitor / eye as verbs before a level still block
+    "Monitor 22800 closely.", "Eye 22800.", "Keep an eye on 22800.", "On track for 22800.",
+]
+R9_PASS = [
+    "The risk monitor shows 3 alerts.", "Monitoring window: 20 sessions.", "The eye of the range is 22750 (the midpoint).",
+    "On track record grounds, 3 of 5 signals were right.", "Asha Industries 3%", "Asha Industries rose 3%.",
+    "An eye-catching 5% move on Monday.", "Track record: 5 sessions of data.",
+    "A close outside 22000 - 22800 would change the picture.",
+    # Marathi -ील that is not a future: a postposition / adjective or a noun
+    "मागील 20 दिवसांत बंद भाव 3% वाढला.", "22800 वरील पुट OI 5% वाढला.", "वकील 5 दिवस.", "फाईल 5 आहेत.",
+]
+
+
+@pytest.mark.parametrize("text", R9_BLOCK)
+def test_round9_marathi_futures_modals_and_synonyms_are_blocked(text):
+    assert mv.advice_problems(text), text
+    allowed, facts, bindings = _r5()
+    for lang in ("en", "mr", "hi"):
+        shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", R9_PASS)
+def test_round9_nouns_and_descriptions_pass_the_advice_check(text):
+    assert mv.advice_problems(text) == [], text
+
+
+def test_round9_a_past_recap_with_a_modal_elsewhere_is_still_read_as_future():
+    # should / would are future in _FUTURE, so a past verb before the number does not excuse them
+    assert mv.advice_problems("The close rose 3.6% and should hold.")

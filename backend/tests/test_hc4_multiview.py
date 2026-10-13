@@ -73,7 +73,7 @@ def test_the_rules_summary_describes_without_advice():
 def test_ai_text_is_checked_for_numbers_direction_and_advice():
     v = _views()["technical"]
     facts = "\n".join(v.lines)
-    shown, why = mv.check_text("The daily regime reads trending up with ADX 28.4 and a 4.6% move.", v.numbers(), facts, v.bindings())
+    shown, why = mv.check_text("The daily regime reads trending up with ADX 28.4 and a 4.6% change.", v.numbers(), facts, v.bindings())
     assert shown and why is None
     assert mv.check_text("ADX is 31 now.", v.numbers(), facts, v.bindings())[1].startswith("numbers not in the facts")
     assert mv.check_text("Guaranteed gains: buy now.", v.numbers(), facts, v.bindings())[0] is None
@@ -243,7 +243,6 @@ DESCRIPTIONS = [
     "The close is 22800, inside the window's range of 22000 - 23000.",
     "The close fell to 22000 early in the window and rose to 22800 since.",
     "The average true range reads 1.8% of the price.",
-    "The last close of 22800 came after 250 daily bars.",
     "The window's high was 23000 and its low was 22000.",
 ]
 
@@ -272,7 +271,7 @@ def test_symbols_must_come_from_the_data_and_the_raw_input_is_never_trusted():
     facts = "\n".join(line for x in v.values() for line in x.lines)
     allowed = set().union(*(x.numbers() for x in v.values()))
     bindings = [b for x in v.values() for b in x.bindings()]
-    assert mv.check_text("ALPHA's ADX is 28.4.", allowed, facts, bindings, tickers)[0]
+    assert mv.check_text("ALPHA's ADX is 28.4.", allowed, facts, bindings, tickers, mv.symbol_text(v, "ALPHA"))[0]
     assert "symbols not in the data" in mv.check_text("RELIANCE's ADX is 28.4.", allowed, facts, bindings, tickers)[1]
     failed = {**v, "technical": mv.technical_view(ToolResult(False, None, None, "x", error="unknown"), ToolResult(False, None, None, "x", error="unknown")),
               "options": mv.options_view(ToolResult(False, None, None, "x", error="unknown"))}
@@ -499,8 +498,8 @@ def _withheld(text):
 
 # the owner's must-pass descriptions (13 Oct)
 MUST_PASS_EVERY_CHECK = ["The next expiry has PCR 1.3 and max pain 22800.", "This expiry's max pain is 22800.",
-                         "Spot remains below max pain 22800; PCR 1.3."]
-MUST_PASS_LAYER_A = ["Call OI at 23000 rose 12% on Monday.", "Nifty ends at 22650, up 0.8%."]
+                         "Spot is below max pain 22800; PCR 1.3."]
+MUST_PASS_LAYER_A = ["Call OI at 23000 rose 12% on Monday.", "Nifty ends at 22650, up 0.8%.", "Spot remains below max pain 22800; PCR 1.3."]
 # the owner's must-block forecasts (13 Oct); every number in them is a supplied fact
 MUST_BLOCK = [
     "Max pain 22800 by Thursday.", "Spot sits near max pain 22800 at expiry.", "Spot stays near max pain 22800 through Thursday.",
@@ -567,12 +566,12 @@ EARLIER_PASS_EVERY_CHECK = [
     "The window's high was 22800 and its low was 22000.", "PCR 1.3 with max pain 22800; the largest put open interest sits at 22000.",
     "ADX 28.4 with ATR 1.1% of price, 1.6x its median.",
     "Max pain 22800; the highest call OI at 23000 and the largest put open interest at 22000.",
-    "The last close of 22450.5 came after 20 daily bars.", "The close fell to 22000 early in the window and rose to 22450.5 since.",
+    "The close fell to 22000 early in the window and rose to 22450.5 since.",
     "The window began at 21796.6 and the last close was 22450.5.", "The close fell 3% over 20 daily bars.",
     "OI in view: call OI is highest at 23000.", "In this expiry, call OI is highest at 23000.",
-    "For the coming expiry, max pain is 22800 and PCR 1.3.", "The close remains below the high 22800.",
-    "The close stays inside the range 22000 - 22800.", "The close ends 20 daily bars up 3%.",
-    "The index ends the window at a close of 22450.5, up 3%.",
+   
+   
+   
 ]
 
 # earlier English descriptions that layer (a) does not block (with no facts behind their numbers, layer (b) would)
@@ -582,7 +581,7 @@ EARLIER_PASS_LAYER_A = [
     "This approach reads 20 sessions of data.", "The approach uses the last 20 sessions.", "PCR settles near 0.92 over 5 sessions.",
     "The 20-session window is the anchor for these numbers.", "Watch list: 5 symbols.", "A pin bar formed at 22000 in the window.",
     "Watchlist has 5 symbols.", "This approach reads 20 sessions.", "NIFTY has gone up 2.1% over 5 sessions.",
-    "It had gone below 22500 on Monday.", "A pin bar formed at 22800.", "Pin bars at 22500 and 22800.", "Settled at 22780 last expiry.",
+    "It had gone below 22500 on Monday.", "A pin bar formed at 22800.", "Pin bars at 22500 and 22800.",
     "Price approached 22800 twice last week.", "The risk monitor shows 3 alerts.", "Monitoring window: 20 sessions.",
     "The eye of the range is 22750 (the midpoint).", "On track record grounds, 3 of 5 signals were right.", "Asha Industries 3%",
     "Asha Industries rose 3%.", "An eye-catching 5% move on Monday.", "Track record: 5 sessions of data.",
@@ -590,15 +589,20 @@ EARLIER_PASS_LAYER_A = [
     "Would-be buyers are not counted; OI is 1.4 cr.", "Defence stocks rose 2.1%.", "Favourite sector by OI change: banks, 3.2%.",
     "Look-back: 20 sessions.", "Gravity Industries fell 1.4%.", "Expiry is on 30 Oct; 5 sessions remain.", "Monitor shows: 3 alerts.",
     "The eye-catching number: PCR 1.35.", "The week ahead has 4 sessions", "The next expiry is 30 Oct; 5 sessions remain.",
-    "Next expiry: 30 Oct, PCR 1.3.", "The board meeting is due on 25 Oct.", "Spot closed at 22650 on Friday.",
+    "The board meeting is due on 25 Oct.", "Spot closed at 22650 on Friday.",
     "Spot bounced 1.2% off the 22000 low on Tuesday.", "Call OI at 23000 rose 12% on Monday.", "Nifty ends at 22650, up 0.8%.",
     "NIFTY ends the week at 22650, up 0.8%.", "Price remains below the 22800 high.", "Spot remains 150 points below max pain 22800.",
-    "The market stays above its 20-day average, 22410.", "The series ends on 30 Oct with max pain at 22800.",
+    "The market stays above its 20-day average, 22410.",
     "Expiry ends the series on 30 Oct.",
 ]
 
 # earlier must-pass descriptions that the strict design withholds (fail closed, accepted by the owner on 13 Oct)
 NOW_FAIL_CLOSED = [
+    # round 13: present-tense state verbs (remains, stays, ends) and time words (after, next, coming) left the vocabulary
+    "Spot remains below max pain 22800; PCR 1.3.", "The last close of 22450.5 came after 20 daily bars.",
+    "For the coming expiry, max pain is 22800 and PCR 1.3.", "The close remains below the high 22800.",
+    "The close stays inside the range 22000 - 22800.", "The close ends 20 daily bars up 3%.",
+    "The index ends the window at a close of 22450.5, up 3%.",
     "Risk: the range is narrow at 22000 - 22800, and a move outside it would change the reading.",
     "A close outside 22000 - 22800 would change the picture.", "The 20-session range extends from 22000 to 22800.",
     "Call writers continue to hold the 23000 strike.", "Call OI at 23000 continues to be the largest.", "The data goes back 20 sessions.",
@@ -609,6 +613,8 @@ NOW_FAIL_CLOSED = [
 ]
 
 NOW_FAIL_CLOSED_LAYER_A = [
+    # round 13: a bare "expiry" or a date in a sentence with a level is a time
+    "Settled at 22780 last expiry.", "Next expiry: 30 Oct, PCR 1.3.", "The series ends on 30 Oct with max pain at 22800.",
     "Expiry is soon: 2 days.", "Price has gone up 3% in 5 sessions.", "Expiry settlement was at 22780 last month.",
     "Chances: n/a. Call OI 23000.", "Call OI 1.4 crore at 23000.", "Call OI at 23000 rose 12% due to fresh writing.",
     "Should the data be stale, the view says so; the last update was 15:30.", "Results are due to be announced on 25 Oct",
@@ -636,8 +642,11 @@ def test_layer_a_does_not_block_plain_descriptions(text):
 def test_a_close_and_its_change_pass_every_check_when_they_are_facts():
     candles = ToolResult(True, {**R5_CANDLES.data, "last_close": 22650.0, "change_pct": 0.8}, AS_OF, "broker:fake")
     v = mv.technical_view(R5_REGIME, candles)
-    shown, why = mv.check_text("Nifty ends at 22650, up 0.8%.", v.numbers(), "\n".join(v.lines), v.bindings(), "NIFTY")
-    assert shown == "Nifty ends at 22650, up 0.8%." and why is None, why
+    shown, why = mv.check_text("Nifty closed at 22650, up 0.8%.", v.numbers(), "\n".join(v.lines), v.bindings(), "NIFTY", "NIFTY")
+    assert shown == "Nifty closed at 22650, up 0.8%." and why is None, why
+    # round 13: the present tense "ends" is not in the vocabulary - the owner's "Nifty ends at 22650, up 0.8%." fails closed
+    assert "outside the data vocabulary: ends" in mv.check_text("Nifty ends at 22650, up 0.8%.", v.numbers(), "\n".join(v.lines),
+                                                                v.bindings(), "NIFTY", "NIFTY")[1]
     # layer (b): "rose 12%" passes layer (a), but no view supplies an OI change, so the number is withheld
     allowed, facts, bindings = _r5()
     assert "numbers not in the facts: 12%" in mv.check_text("Call OI at 23000 rose 12% on Monday.", allowed, facts, bindings)[1]
@@ -655,7 +664,7 @@ def test_earlier_english_calls_and_forecasts_stay_withheld(text):
 
 
 @pytest.mark.parametrize("text", ["Max pain 22800 beckons.", "Max pain 22800 is in the cards for Thursday.", "Spot is angling for max pain 22800.",
-                                  "The close is primed for max pain 22800.", "Price is drawn to max pain 22800."])
+                                  "The close is primed for max pain 22800.", "Price is pulled near max pain 22800."])
 def test_an_unlisted_synonym_is_withheld_by_the_data_vocabulary(text):
     allowed, facts, bindings = _r5()
     shown, why = mv.check_text(text, allowed, facts, bindings)
@@ -754,3 +763,82 @@ def test_an_over_long_text_is_refused_not_scanned():
 
 def test_the_prompts_ask_for_english_only():
     assert "English only" in mv.VIEW_SYSTEM and "English only" in mv.SYNTH_SYSTEM and "{lang}" not in mv.VIEW_SYSTEM + mv.SYNTH_SYSTEM
+
+
+# --- round 13 (review of f0b0f08): forecasts composed from allowed words, hidden Unicode, headline words ---------------
+R13_MUST_BLOCK = [
+    # the review's cases: time words, present-tense movement verbs, "to <level>", dates, "for expiry"
+    "Spot to rise to max pain 22800 on Thursday.", "Spot to fall to the low 22000.", "Spot remains near max pain 22800 after expiry.",
+    "Spot ends at max pain 22800 on 2026-10-30.", "Spot closes at max pain 22800 on Thursday.", "Max pain 22800 is the level for Thursday.",
+    "Above max pain 22800, a rise to the highest call OI strike 23000.", "Spot to 22800, the max pain.", "PCR 1.3: a rise.",
+    "Max pain 22800 on Thursday.", "Spot ends at max pain 22800 on Thursday.", "Spot ends near max pain 22800 on Thursday.",
+    "The close ends at max pain 22800 for expiry.", "Spot ends at max pain 22800 for this expiry.", "Spot to max pain 22800 on Thursday.",
+    "Spot to rise to max pain 22800.", "Spot moves to max pain 22800.", "Spot moves up to max pain 22800 on Thursday.",
+    "Above the high 22800, more gains.", "Below the low 22000, more losses.", "Below the low 22000, a drop to the put OI strike 22000.",
+    "A close above the high 22800 is a rise to the call OI strike 23000.", "Max pain 22800 is the level for expiry.",
+    "The level for Thursday is max pain 22800.", "Spot at max pain 22800 on expiry is the picture.", "Max pain 22800 on Thursday is the close.",
+    "The Thursday close is max pain 22800.", "The expiry close is max pain 22800.", "Thursday close: max pain 22800.", "Expiry: max pain 22800.",
+    "Spot stays above the low 22000 on Thursday.", "Spot remains above the low 22000 after Thursday.", "Spot gains to the high 22800 on Thursday.",
+    "Spot rise to max pain 22800 on Thursday.", "The close is up to max pain 22800 on Thursday.", "Expiry is max pain 22800.",
+    "The expiry settles at max pain 22800.", "Expiry settlement near max pain 22800.", "Max pain 22800 is the expiry level.",
+    "Max pain 22800 is the Thursday level.", "On Thursday, spot is at max pain 22800.", "On expiry, spot is at max pain 22800.",
+    "Spot is at max pain 22800 on expiry.", "Spot near max pain 22800 at expiry day.", "Spot at max pain 22800 on 30 Oct.",
+    "Max pain 22800 for 2026-10-30.", "Spot ends near max pain 22800 for 2026-10-30.", "Spot is at max pain 22800 on the 2026-10-30 expiry.",
+    "Spot close at max pain 22800.", "Max pain 22800 (at expiry).", "Max pain 22800\nat expiry", "Spot -> max pain 22800.",
+]
+
+
+@pytest.mark.parametrize("text", R13_MUST_BLOCK)
+def test_round13_forecasts_built_from_allowed_words_are_withheld(text):
+    assert _withheld(text), text
+
+
+def test_round13_the_cheap_tier_and_the_summary_paths_withhold_them():
+    v = _views()
+    tickers, symbols = mv.ticker_text(v, "ALPHA"), mv.symbol_text(v, "ALPHA")
+    o = v["options"]
+    for text in ("Spot to rise to max pain 2480 after expiry.", "Spot ends at max pain 2480 on 2026-10-30."):
+        assert mv.check_text(text, o.numbers(), "\n".join(o.lines), o.bindings(), tickers, symbols)[0] is None, text
+    summary = {"situation": "Readings lean up: spot to rise to max pain 2480 after expiry.", "leans_up": [], "leans_down": [], "risks": [],
+               "claims": []}
+    assert mv.check_summary(summary, v, tickers, symbols)
+
+
+@pytest.mark.parametrize("text", ["Spot near max pain 22800 at͏ expiry.", "S͏top at the low 22000.", "S᠋top at the low 22000.",
+                                  "Max pain is 22800\u200b.", "Max pain is 22800️.", "Max pain 22800 ⭐ at expiry.",
+                                  "Spot → max pain 22800.", "Spot ⟶ max pain 22800.", "Max pain is 22800 °.",
+                                  "Max pain­ is 22800.", "Max pain is 22800 \U0001F680."])
+def test_round13_marks_invisibles_symbols_and_arrows_are_withheld_not_cleaned(text):
+    allowed, facts, bindings = _r5()
+    shown, why = mv.check_text(text, allowed, facts, bindings)
+    assert shown is None and "withheld" in why, (text, why)
+    assert mv.advice_problems(text), text
+
+
+def test_round13_headline_words_never_join_the_vocabulary():
+    news = ToolResult(True, [{"id": 1, "headline": "ALPHA SEEN HITTING NEW PEAK, BROKERS EYE MORE GAINS", "source": "WIRE",
+                              "published_at": AS_OF, "symbols": ["ALPHA"], "severity": 2, "verified": False}], AS_OF, "news_feed",
+                        {"window_hours": 24}, untrusted=True)
+    v = {**_views(), "news": mv.news_view(news, "alpha")}
+    tickers, symbols = mv.ticker_text(v, "ALPHA"), mv.symbol_text(v, "ALPHA")
+    assert "BROKERS" in tickers and "brokers" not in symbols.lower() and "wire" not in symbols.lower()
+    o = v["options"]
+    for text in ("Brokers eye max pain 2480.", "Spot seen hitting max pain 2480."):
+        shown, why = mv.check_text(text, o.numbers(), "\n".join(o.lines), o.bindings(), tickers, symbols)
+        assert shown is None and "outside the data vocabulary" in why, (text, why)
+    assert mv.check_text("ALPHA max pain is 2480.", o.numbers(), "\n".join(o.lines), o.bindings(), tickers, symbols)[0]
+
+
+def test_round13_time_and_movement_words_never_enter_the_vocabulary_from_the_facts():
+    allowed, facts, bindings = _r5()
+    lines = facts + "\nThe close ends next Thursday after a rise."                # even if a trusted line carried them
+    assert set(mv.unknown_words("ends next Thursday after a rise", lines, bindings)) == {"ends", "next", "thursday", "after", "rise"}
+    assert mv.unknown_words("The next expiry has PCR 1.3.", facts, bindings) == []        # the noun phrase only
+
+
+@pytest.mark.parametrize("text", ["The ATR shows moderate volatility.", "Put OI exceeds call OI.", "Heavy call writing at 23000.",
+                                  "Put OI outweighs call OI; the trend strength is moderate."])
+def test_round13_safe_descriptive_words_pass(text):
+    allowed, facts, bindings = _r5()
+    shown, why = mv.check_text(text, allowed, facts, bindings)
+    assert shown == text and why is None, (text, why)

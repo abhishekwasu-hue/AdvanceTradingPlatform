@@ -27,6 +27,7 @@ import hashlib
 import json
 import re
 import time
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
@@ -140,7 +141,7 @@ FACT_LABELS: Dict[str, Tuple[Tuple[str, ...], bool]] = {
     "bars": (("bars", "bar", "sessions", "session", "candles", "days", "day"), False),
     "first_close": (("first close", "opening close", "started", "window began", "began", "from"), True),
     "last_close": (("close", "closed", "closing", "last close", "last price"), True),
-    "change_pct": (("change", "changed", "move", "moved"), True),
+    "change_pct": (("change", "changed", "moved"), True),
     "high": (("high", "highest", "range", "peak", "top of the range", "outside", "inside", "between", "within"), True),
     "low": (("low", "lowest", "range", "trough", "bottom of the range", "outside", "inside", "between", "within"), True),
     "underlying_ltp": (("ltp", "underlying", "spot", "last price", "last traded"), True),
@@ -398,11 +399,17 @@ def _facts_json(view: View) -> str:
 #    any number other than a plain date or a session count.
 # 2. Layer (b), structural (in check_text, on every output): every number is a supplied fact, written next to its own
 #    fact's name (`unbound_numbers`).
-MAX_CHECK_CHARS = 20000            # an AI text longer than this is not checked, it is refused (a defensive bound)
+MAX_CHECK_CHARS = 8000             # an AI text longer than this is not checked, it is refused (round 13: a view is at most
+                                   # 400 tokens and a summary part 1,200 characters, so 8,000 is ample)
 
 # Devanagari letters, or any letter outside the Latin script (after normalise() has mapped look-alikes to Latin)
 _DEVANAGARI = re.compile(r"[\u0900-\u097f\u1cd0-\u1cff\ua8e0-\ua8ff]")
 _NON_LATIN = re.compile(r"(?![A-Za-z\u00c0-\u024f\u1e00-\u1eff])[^\W\d_]")
+# Unicode Default_Ignorable_Code_Point (beyond category Cf) and the arrow blocks (round 13)
+_IGNORABLE = ((0x00AD, 0x00AD), (0x034F, 0x034F), (0x061C, 0x061C), (0x115F, 0x1160), (0x17B4, 0x17B5), (0x180B, 0x180F),
+              (0x200B, 0x200F), (0x202A, 0x202E), (0x2060, 0x206F), (0x3164, 0x3164), (0xFE00, 0xFE0F), (0xFEFF, 0xFEFF),
+              (0xFFA0, 0xFFA0), (0xFFF0, 0xFFF8), (0x1BCA0, 0x1BCA3), (0x1D173, 0x1D17A), (0xE0000, 0xE0FFF))
+_ARROWS = ((0x2190, 0x21FF), (0x27F0, 0x27FF), (0x2900, 0x297F), (0x2B00, 0x2BFF), (0x1F800, 0x1F8FF))
 
 _WEEKDAY = r"(?:mon|tues|wednes|thurs|fri|satur|sun)day"
 _MONTH = (r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|june?|july?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|"
@@ -432,6 +439,8 @@ _FORECAST_WORDS = (
     # movement ahead, and levels to act at
     r"heads?", r"heading", r"towards?", r"reach\w*", r"upside", r"downside", r"break(?:s|ing|out)?", r"rall(?:y|ies)",
     r"bounces?", r"support(?:s|ed|ing)?", r"resistance", r"soon", r"from here", r"ends? up",
+    # round 13: "close" is a noun in the vocabulary; after a subject it is a bare verb ("Spot close at max pain 22800")
+    r"(?:spot|prices?|index|nifty|sensex|market|stock|it|ltp|underlying) close",
 )
 # a word of either list, whole words only; "it'll", "it'd" are future / conditional forms too
 _ANYWHERE_RE = re.compile(rf"(?<![\w-])(?:{'|'.join(_ADVICE_WORDS + _FORECAST_WORDS)})(?![\w-])|(?<=\w)'(?:ll|d)\b", re.I)
@@ -445,12 +454,25 @@ _TIME_AHEAD = re.compile(
     r"\b(?:next|coming|upcoming)\b(?!\s+expiry\b)|"            # "the next expiry has PCR 1.3" names the expiry: not a time
     r"\b(?:ahead|tomorrow|later|from now)\b|"
     r"\b(?:in|within|after)\s+(?:the\s+)?(?:next\s+)?\d++\s+(?:more\s+)?(?:trading\s+)?(?:sessions?|days?|weeks?|months?)\b|"
-    rf"\b{_WEEKDAY}\s*:", re.I)
+    rf"\b{_WEEKDAY}\s*:|"
+    # round 13: "expiry" as a time ("Expiry: max pain 22800", "for expiry") - only "this / next / <date> expiry" names one
+    r"(?<!\bthis )(?<!\bnext )(?<!\d )\bexpiry\b(?!'s)", re.I)
+# round 13: a date in a sentence with a level is a time ahead ("ends at max pain 22800 on 2026-10-30"), except "<date>
+# expiry" as a noun phrase with no time word before it ("PCR 1.3 for the 2026-10-30 expiry")
+_DATE_RE = re.compile(rf"(?<!\d)(?:\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}\s+{_MONTH}(?:\s+\d{{4}})?|{_MONTH}\s+\d{{1,2}}(?!\d)(?:,?\s+\d{{4}})?)", re.I)
+_DATE_NAMES_EXPIRY = re.compile(r"\s+expiry\b", re.I)
+_TIME_WORD_BEFORE = re.compile(r"\b(?:on|at|by|until|till|through|thru|into|before|after)\s+(?:the\s+)?$", re.I)
+# round 13: "to <level>" ("Spot to 22800", "a rise to the call OI strike 23000") unless a past verb governs it ("rose 3% to
+# 22450.5") or it closes a range ("22000 to 22800"); arrows used as a verb ("Spot -> 22800")
+_TO_LEVEL = re.compile(r"(?<![\w-])to\s+(?:[A-Za-z'-]+\s+){0,5}?[₹]?\d", re.I)
+_PAST_BEFORE_TO = re.compile(r"(?:\b(?:rose|fell|climbed|dropped|declined|slipped|moved|gained|lost|traded|rallied|surged|jumped|dipped|"
+                             r"eased|advanced|extended|ranged|closed|ended|added|shed|grew)\b(?:\s+\S+){0,3}|\d[\d,.]*%?)\s*$", re.I)
+_ARROW_TEXT = re.compile(r"-+>|=+>")
 _DATE_OR_COUNT = re.compile(
     rf"(?<!\d)(?:\d{{4}}-\d{{1,2}}-\d{{1,2}}|\d{{1,2}}:\d{{2}}|\d{{1,2}}\s+{_MONTH}(?:\s+\d{{4}})?|"
     r"\d++\s+(?:more\s+|trading\s+|daily\s+)?(?:sessions?|days?|weeks?|months?|bars?)\b)|"
     rf"\b{_MONTH}\s+\d{{1,2}}(?:,?\s+\d{{4}})?(?!\d)", re.I)
-_SENTENCE_END = re.compile(r"[!?\n]|\.(?!\d)")
+_SENTENCE_END = re.compile(r"[!?]|\.(?!\d)")         # never a line break, a bracket or a quote (round 13)
 
 
 def _has_level(sentence: str) -> bool:
@@ -466,11 +488,10 @@ DATA_WORDS = frozenset("""
 a an the of in on at to for from with and or but nor than as while both each every all any not no only also just its it
 this that these those their there here is are was were be been being has have had do does did s per vs versus
 over across between inside outside within below above under near around about beyond since ago earlier prior previous
-recent recently latest current currently now today yesterday last first next coming after early late one two three four
-five six seven eight nine ten
-monday tuesday wednesday thursday friday saturday sunday week weeks month months year years day days daily session
+recent recently latest current currently now today yesterday last first early one two three four five six seven eight
+nine ten week weeks month months year years day days daily session
 sessions bar bars candle candles window period hour hours time
-market markets index indices spot price prices level levels value values close closes closing closed open opened opening
+market markets index indices spot price prices value values close closing closed open opened opening
 high highs highest low lows lowest range ranges midpoint middle top bottom
 regime regimes trend trends trending ranging volatile sideways flat unknown up down confidence adx atr average true
 directional slope ema median times x percent pct points point
@@ -479,38 +500,73 @@ largest biggest smallest atm ce pe writers writing written unwinding contracts u
 news headline headlines feed item items severity severe third party unverified verified marked source sources wire symbol
 india vix global cue cues sentiment score risk on off neutral fear macro technical view views
 nifty sensex bank banknifty finnifty midcap
-is reads read shows show showed shown sits sat stands stood remains remained rose fell gained lost dropped declined
-climbed slipped ended ends closes traded touched began started came moved changed added shed counts listed carries
-carried lean leans leaned leaning reading readings measures measured stays stayed
-change changes move moves movement gain gains loss losses rise fall drop decline increase decrease
+is reads read shows show showed shown sits sat stands stood remained rose fell gained lost dropped declined climbed
+slipped ended traded touched began started came moved changed added shed counts listed carries carried lean leans
+leaned leaning reading readings measures measured stayed exceeds outweighs
+change
 more less fewer most least higher lower wider narrower wide narrow usual normal elevated strong weak weaker stronger
-positive negative mixed same steady calm quiet firm soft broad high-fear
+positive negative mixed same steady calm quiet firm soft broad heavy moderate volatility strength high
 situation picture data fact facts note notes partial reported compared relative respectively mostly overall together
 """.split())
+# round 13: never allowed, whatever the facts' lines or labels say - time words and present-tense movement verbs compose a
+# forecast from allowed words ("Spot to rise to max pain 22800 on Thursday", "Spot remains near max pain 22800 after expiry")
+NEVER_WORDS = frozenset("""
+monday tuesday wednesday thursday friday saturday sunday next coming upcoming after later tomorrow ahead soon
+rise rises fall falls drop drops decline declines increase increases decrease decreases gain gains loss losses move moves
+end ends closes stay stays remain remains settle settles level levels
+""".split())
 _WORD = re.compile(r"[A-Za-z]+")
+_NEXT_EXPIRY = re.compile(r"\bnext(?=\s+expiry\b)", re.I)         # "the next expiry" names the expiry
 
 
-def unknown_words(text: str, facts_text: str, bindings: List[Binding], tickers: Optional[str] = None) -> List[str]:
-    """The words of `text` outside the data vocabulary (empty = every word describes the data)."""
+def unknown_words(text: str, facts_text: str, bindings: List[Binding], symbols: str = "") -> List[str]:
+    """The words of `text` outside the data vocabulary (empty = every word describes the data). `symbols` holds only
+    symbol fields (`symbol_text`), never headline or source text (round 13: an all-caps headline word was allowed)."""
     from app.ai.call_detect import normalise
     allowed = set(DATA_WORDS)
     allowed.update(w.lower() for w in _WORD.findall(facts_text or ""))
     for b in bindings:
         for label in b.labels + b.right_after + b.right_before:
             allowed.update(w.lower() for w in _WORD.findall(label))
-    for symbol in grounding.tickers_in(tickers or ""):
-        allowed.update(w.lower() for w in _WORD.findall(symbol))
-    return list(dict.fromkeys(w.lower() for w in _WORD.findall(normalise(text or "")) if w.lower() not in allowed))
+    allowed.update(w.lower() for w in _WORD.findall(symbols or ""))
+    allowed -= NEVER_WORDS
+    body = _NEXT_EXPIRY.sub(" ", normalise(text or ""))
+    return list(dict.fromkeys(w.lower() for w in _WORD.findall(body) if w.lower() not in allowed))
+
+
+def symbol_text(views: Dict[str, "View"], resolved_symbol: Optional[str]) -> str:
+    """The symbol names an AI text may use as words: the resolved symbol and the macro view's cue / global symbol fields."""
+    names = [resolved_symbol or ""]
+    macro = views.get("macro")
+    if macro is not None and macro.ok:
+        for key in ("cues", "globals"):
+            names += [str(row.get("symbol") or "") for row in macro.facts.get(key) or [] if isinstance(row, dict)]
+    return "\n".join(n for n in names if n)
+
+def _hidden_or_symbol(text: str) -> Optional[str]:
+    """Round 13: a combining mark, a default-ignorable code point (zero-width, joiners, variation selectors), an arrow or
+    a pictograph / symbol hides or replaces a word - the text is withheld, never cleaned or split on it."""
+    for ch in unicodedata.normalize("NFKC", text or ""):
+        cp, cat = ord(ch), unicodedata.category(ch)
+        if cat in ("Mn", "Me") and not _DEVANAGARI.match(ch):
+            return f"a combining mark U+{cp:04X}"
+        if cat == "Cf" or any(lo <= cp <= hi for lo, hi in _IGNORABLE):
+            return f"an invisible character U+{cp:04X}"
+        if cat == "So" or any(lo <= cp <= hi for lo, hi in _ARROWS) or (cat == "Sk" and cp > 0x7F):
+            return f"a symbol or arrow U+{cp:04X}"
+    return None
+
 
 def not_english(text: str) -> Optional[str]:
-    """Why `text` is not shown as English (None = it is): the AI answers in English only (owner, 13 Oct)."""
+    """Why `text` is not shown as plain English (None = it is): the AI answers in English only (owner, 13 Oct)."""
     from app.ai.call_detect import normalise
+    hidden = _hidden_or_symbol(text)
     body = normalise(text or "")
     if _DEVANAGARI.search(body):
         return "Devanagari text (the AI answers in English only)"
     if _NON_LATIN.search(body):
         return "non-Latin text (the AI answers in English only)"
-    return None
+    return f"{hidden} (withheld)" if hidden else None
 
 
 def advice_problems(text: str) -> List[str]:
@@ -523,31 +579,45 @@ def advice_problems(text: str) -> List[str]:
     language = not_english(text)
     if language:
         return [language]
-    body = normalise(text or "")                       # markdown, zero-width characters and look-alikes undone first
+    body = normalise(text or "")                       # markdown and look-alikes undone first
     found: List[str] = []
     for m in _ANYWHERE_RE.finditer(body):
         kind = "advice" if _ADVICE_RE.fullmatch(m.group(0)) else "forecast"
         found.append(f"'{m.group(0).lower()}' ({kind} wording)")
+    flat = re.sub(r"[*_`~]+", "", unicodedata.normalize("NFKC", text or ""))
+    for m in _TO_LEVEL.finditer(flat):
+        if not _PAST_BEFORE_TO.search(flat, max(0, m.start() - 60), m.start()):
+            found.append(f"'{m.group(0).lower()}' (a destination)")
+    if _ARROW_TEXT.search(flat):
+        found.append("an arrow (a destination)")
     start = 0
-    for stop in [*_SENTENCE_END.finditer(body), None]:
-        end = stop.start() if stop else len(body)
-        sentence = body[start:end]
+    for stop in [*_SENTENCE_END.finditer(flat), None]:       # brackets, quotes and line breaks never end a sentence
+        end = stop.start() if stop else len(flat)
+        sentence = flat[start:end]
         if stop is not None:
             start = stop.end()
+        if not _has_level(sentence):
+            continue
         ahead = _TIME_AHEAD.search(sentence)
-        if ahead and _has_level(sentence):
+        if ahead:
             found.append(f"'{ahead.group(0).strip().lower()}' (a time ahead next to a level)")
+        for d in _DATE_RE.finditer(sentence):
+            if _DATE_NAMES_EXPIRY.match(sentence, d.end()) and not _TIME_WORD_BEFORE.search(sentence, max(0, d.start() - 20), d.start()):
+                continue
+            found.append(f"'{d.group(0).lower()}' (a date next to a level)")
     return list(dict.fromkeys(found))
 
 
 def check_text(text: str, allowed: set, facts_text: str, bindings: List[Binding],
-               tickers: Optional[str] = None) -> Tuple[Optional[str], Optional[str]]:
+               tickers: Optional[str] = None, symbols: str = "") -> Tuple[Optional[str], Optional[str]]:
     """(text to show, None) or (None, why not). English only; layer (b): every number a supplied fact, next to its own
     fact's name (`bindings`, required: it runs on every output); layer (a): no advice or forecast wording (blocked, never
     disclaimed); only symbols the data names; a direction the facts carry; layer (b): every word from the data
     vocabulary; and the platform filter (H-C1 c)."""
     if not text.strip():
         return None, "empty"
+    if len(text) > MAX_CHECK_CHARS:
+        return None, f"longer than {MAX_CHECK_CHARS} characters (not checked, not shown)"
     language = not_english(text)
     if language:
         return None, language
@@ -567,7 +637,7 @@ def check_text(text: str, allowed: set, facts_text: str, bindings: List[Binding]
     ok, bad = grounding.check_direction(text, facts_text)
     if not ok:
         return None, f"unsupported {', '.join(bad)}"
-    unknown = unknown_words(text, facts_text, bindings, tickers)
+    unknown = unknown_words(text, facts_text, bindings, symbols)
     if unknown:
         return None, f"words outside the data vocabulary: {', '.join(unknown[:5])}"
     passed, shown, reason = output_filter.check(text, "en", where="multiview")
@@ -606,7 +676,7 @@ def ticker_text(views: Dict[str, View], resolved_symbol: Optional[str]) -> str:
     return "\n".join(parts)
 
 
-def check_summary(summary: Dict[str, Any], views: Dict[str, View], tickers: Optional[str] = None) -> Optional[str]:
+def check_summary(summary: Dict[str, Any], views: Dict[str, View], tickers: Optional[str] = None, symbols: str = "") -> Optional[str]:
     """None when every part of the AI summary may be shown (the parts are replaced by what is shown); else why not."""
     allowed = set().union(*(v.numbers() for v in views.values() if v.ok)) if views else set()
     facts_text = "\n".join(line for v in views.values() for line in v.lines)
@@ -614,7 +684,7 @@ def check_summary(summary: Dict[str, Any], views: Dict[str, View], tickers: Opti
     for key in ("situation", "leans_up", "leans_down", "risks"):
         parts = [summary[key]] if key == "situation" else summary[key]
         for i, part in enumerate(parts):
-            shown, why = check_text(part, allowed, facts_text, bindings, tickers)
+            shown, why = check_text(part, allowed, facts_text, bindings, tickers, symbols)
             if shown is None:
                 return f"{key}[{i}]: {why}"
             if key == "situation":
@@ -627,7 +697,7 @@ def check_summary(summary: Dict[str, Any], views: Dict[str, View], tickers: Opti
             return f"claim {i + 1} cites {claim['source'] or 'no view'}, which was not read"
         # Review of H-C4 (LOW): a claim gets every check a summary line gets (numbers from the view it cites, direction,
         # no call or forecast, symbols, the platform filter), and what is shown is the checked text.
-        shown, why = check_text(claim["statement"], view.numbers(), "\n".join(view.lines), view.bindings(), tickers)
+        shown, why = check_text(claim["statement"], view.numbers(), "\n".join(view.lines), view.bindings(), tickers, symbols)
         if shown is None:
             return f"claim {i + 1}: {why}"
         claim["statement"] = shown
@@ -680,7 +750,7 @@ class Budget:
             return None
 
 
-async def word_view(provider: Any, view: View, budget: Budget, tickers: Optional[str] = None) -> None:
+async def word_view(provider: Any, view: View, budget: Budget, tickers: Optional[str] = None, symbols: str = "") -> None:
     """The cheap tier words one view; the deterministic lines stay when it is unavailable or fails a check."""
     if not view.ok or getattr(provider, "name", "rule_based") == "rule_based" or not await budget.take():
         return
@@ -690,12 +760,13 @@ async def word_view(provider: Any, view: View, budget: Budget, tickers: Optional
                                     max_tokens=400)
     except ProviderError:
         return
-    shown, _ = check_text(raw or "", view.numbers(), "\n".join(view.lines), view.bindings(), tickers)
+    shown, _ = check_text(raw or "", view.numbers(), "\n".join(view.lines), view.bindings(), tickers, symbols)
     if shown:
         view.report, view.report_source = shown.strip(), "ai"
 
 
-async def synthesise(provider: Any, views: Dict[str, View], budget: Budget, tickers: Optional[str] = None) -> Dict[str, Any]:
+async def synthesise(provider: Any, views: Dict[str, View], budget: Budget, tickers: Optional[str] = None,
+                     symbols: str = "") -> Dict[str, Any]:
     fallback = rules_summary(views)
     if getattr(provider, "name", "rule_based") == "rule_based":
         return fallback
@@ -712,7 +783,7 @@ async def synthesise(provider: Any, views: Dict[str, View], budget: Budget, tick
         if raw is None:
             break
         parsed = parse_summary(raw)
-        why = "not the JSON object asked for" if parsed is None else check_summary(parsed, views, tickers)
+        why = "not the JSON object asked for" if parsed is None else check_summary(parsed, views, tickers, symbols)
         if parsed is not None and why is None:
             # Review of H-C4 (round 3): the possibilities are never the model's - always the rules' own, from the facts.
             return {**parsed, "possibilities": fallback["possibilities"], "source": "ai"}
@@ -778,10 +849,11 @@ async def analyze(ctx: ToolContext, symbol: str, exchange: str, *, gather_provid
     await ctx.session.flush()
     try:
         views = await gather(ctx, run.id, sym, exchange, budget)
-        tickers = ticker_text(views, resolved_symbol(views, sym))
+        resolved = resolved_symbol(views, sym)
+        tickers, symbols = ticker_text(views, resolved), symbol_text(views, resolved)
         for v in views.values():
-            await word_view(gather_provider, v, budget, tickers)
-        summary = await synthesise(synth_provider, views, budget, tickers)
+            await word_view(gather_provider, v, budget, tickers, symbols)
+        summary = await synthesise(synth_provider, views, budget, tickers, symbols)
     except Cancelled:
         run.outcome, run.steps, run.tool_calls = "cancelled", budget.calls, budget.tool_calls
         run.finished_at = datetime.now(timezone.utc)
@@ -799,6 +871,6 @@ async def analyze(ctx: ToolContext, symbol: str, exchange: str, *, gather_provid
 
 
 __all__ = ["FLAG", "FEATURE", "VIEWS", "NOTE", "MAX_LLM_CALLS", "PROMPT_VERSION", "View", "Budget", "Cancelled", "analyze", "gather", "rules_summary",
-           "advice_problems", "ticker_text", "resolved_symbol",
+           "advice_problems", "ticker_text", "symbol_text", "resolved_symbol",
            "technical_view", "options_view", "news_view", "macro_view", "check_text", "check_summary", "parse_summary", "synthesise",
            "word_view"]

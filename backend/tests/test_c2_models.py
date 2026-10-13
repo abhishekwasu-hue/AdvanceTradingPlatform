@@ -64,7 +64,7 @@ def test_slippage_model_moves_entries_against_the_trade():
 
 
 def test_unknown_or_unavailable_models_fail_loudly():
-    for bad in ({"fill": "magic"}, {"slippage": "zero_cost"}, {"latency": "fixed_ms"}, {"params": {"weather": {}}}):
+    for bad in ({"fill": "magic"}, {"slippage": "zero_cost"}, {"latency": "sampled"}, {"margin": "span_like"}, {"params": {"weather": {}}}):
         with pytest.raises(ModelError):
             ModelSet(**bad)
 

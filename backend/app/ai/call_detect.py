@@ -67,11 +67,15 @@ def _symbol(ch: str) -> bool:
 def not_plain_english(text: str) -> bool:
     """Whether `text` is not plain English (review of #254, F2: fail closed, one structural rule instead of a pattern list
     per language): after NFKC and the Latin look-alike map, any letter outside ASCII (another script, small caps, an
-    accented letter - except a lone options greek such as "Δ 0.45"), any combining mark after NFKD ("B\u0301UY",
-    "S\u0336ELL"), any format or default-ignorable character (zero-width, variation selectors, Hangul fillers). The emoji
+    accented letter - except a lone options greek such as "Δ 0.45"), any combining or enclosing mark after NFKD
+    ("B\u0301UY", "S\u0336ELL", "B\u20ddUY"), a letter drawn as a symbol ("🅱🆄🆈"), any format or default-ignorable character (zero-width, variation selectors, Hangul fillers). The emoji
     joiner and presentation selectors are allowed next to a pictograph ("⚠️")."""
     from app.support.normalize import _CONFUSABLES
-    t = unicodedata.normalize("NFKC", text or "").translate(_CONFUSABLES)
+    raw = text or ""
+    if not raw.isascii() and any(not ch.isascii() and unicodedata.category(ch)[0] != "L" and "LETTER" in unicodedata.name(ch, "")
+                                 for ch in raw):
+        return True                                             # a letter drawn as a symbol: "🇧🇺🇾", "🅱🆄🆈", "⒝⒰⒴", "Ⓑ"
+    t = unicodedata.normalize("NFKC", raw).translate(_CONFUSABLES)
     if t.isascii():
         return False
     d = unicodedata.normalize("NFKD", t)
@@ -83,7 +87,7 @@ def not_plain_english(text: str) -> bool:
         prev, nxt = (d[i - 1] if i else ""), (d[i + 1] if i + 1 < n else "")
         if ch in _EMOJI_JOINERS and (_symbol(prev) or prev in _EMOJI_JOINERS) and (ch != "\u200d" or _symbol(nxt)):
             continue                                            # "⚠️", "👨‍💻"
-        if cat in ("Mn", "Cf", "Co", "Cn") or cp in _IGNORABLE or 0xE0000 <= cp <= 0xE0FFF:
+        if cat in ("Mn", "Mc", "Me", "Cf", "Co", "Cn") or cp in _IGNORABLE or 0xE0000 <= cp <= 0xE0FFF:
             return True
         if cat[0] == "L":
             if ch in _GREEKS and not prev.isalpha() and not nxt.isalpha():
@@ -396,7 +400,7 @@ _ORDER_CLAUSE = re.compile(
     r"so(?!\s+(?:far|the|that\s+the)\b)|then(?![-\w])(?!\s+₹?\d)|please|"
     r"so\s+(?:the\s+|your\s+|my\s+|our\s+)?(?:risk|loss|downside|profit|gain|exposure|drawdown)s?\s+(?:is|are|stays?|remains?|gets?)\b|"
     r"just(?!\s+(?:above|below|under|over|shy|short\s+of|off|at|near|around|₹?\d|\d|up|down|higher|lower)\b)|"
-    r"no\s+(?:hesitation|questions?(?:\s+asked)?|doubt|doubts|delay|second\s+thoughts|excuses|ifs)|full\s+stop|period\s*$|"
+    r"no\s+(?:hesitation|questions?(?:\s+asked)?|doubt|doubts|delay|second\s+thoughts|excuses|ifs)\s*$|full\s+stop|period\s*$|"
     r"end\s+of\s+(?:story|discussion)|without\s+(?:hesitation|fail|delay|question)|"
     r"to\s+(?!₹?\d)[a-z]|(?:and\s+)?(?:then\s+(?!₹?\d)[a-z]|add|buy|sell|exit(?!\s+polls?\b)|book\s+(?:profits?|gains?|it)|hold|wait|stay|"
     r"remain|keep|walk|move|ride|lock|take|avoid|consider|look\s+to|prefer|try|go|let|switch|rotate|reduce|trim|cut)\b|"
@@ -410,7 +414,7 @@ _VERDICT = re.compile(
     rf"recommended|ideal|optimal|best|smart|sensible|safest|safer|right)\b(?!\s+(?:[\w-]+\s+)?(?:{_LEVEL_NOUN})\b)", re.I)
 # A verdict in the next sentence ("TCS: close 4050 before results. That is the plan.", "... Full stop.").
 _NEXT_VERDICT = re.compile(rf"(?:{_VERDICT.pattern})|^\s*(?:full\s+stop|period|no\s+(?:questions?(?:\s+asked)?|hesitation|doubts?|ifs|"
-                           r"excuses|second\s+thoughts)|end\s+of\s+(?:story|discussion)|without\s+(?:hesitation|fail|question))\b", re.I)
+                           r"excuses|second\s+thoughts)|end\s+of\s+(?:story|discussion)|without\s+(?:hesitation|fail|question))\s*(?:[.!]|$)", re.I)
 # Subordinate clauses: present tense (a reason, a condition now) never reports a bar; past evidence (a past-tense verb, a
 # past time) does. An order-shaped field (at / above N, or hold) needs the evidence; a bare field ("close 4050 after
 # results", "close 4050 amid sector weakness") only needs the present tense absent.
@@ -1073,6 +1077,12 @@ def _undot(m: "re.Match[str]") -> str:
     return word if word.lower() in _DOTTED_WORDS else m.group(0)
 
 
+# A sentence that is only an order ("Sell.", "Exit now.", "Do it.", "Get out.", "Act on it.") in a paragraph that names an
+# instrument (review of #254: "TCS: close 4050 before results. Exit.", "TCS looks weak. Sell.").
+_SHORT_ORDER = re.compile(
+    r"^\s*(?:(?:just|now|then|so|please)\s+)?(?:sell|buy|exit|short|cover|hold|add|accumulate|book(?:\s+(?:it|profits?|gains?))?|"
+    r"do\s+it|get\s+out|get\s+in|act\s+on\s+it|act|go\s+long|go\s+short|square\s+off|take\s+it|grab\s+it|jump\s+in|"
+    r"bail(?:\s+out)?|dump\s+it|close\s+it|trim|enter)(?:\s+(?:now|it|today|here|immediately|asap))?\s*$", re.I)
 _FIELD_WORD = re.compile(r"\b(?:close|open|hold)\b", re.I)
 
 
@@ -1096,6 +1106,11 @@ def detect(text: str, path: str) -> List[str]:
             if item not in found:
                 found.append(item)
     for p in _paragraphs(body):
+        for s in sentences(p):
+            if len(s.split()) <= 4 and _SHORT_ORDER.match(s) and _has_instrument(p, L):
+                item = f"call: order {' '.join(s.split()).lower()}"[:60]
+                if item not in found:
+                    found.append(item)
         if _paragraph_levels(p, L):
             item = "call: entry / stop / target levels"
             if item not in found:

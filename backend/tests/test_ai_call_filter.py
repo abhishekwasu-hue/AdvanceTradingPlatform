@@ -174,6 +174,10 @@ SHOULD_BLOCK = [
     "TCS: close 4050 before results. That is the plan.", "TCS: close 4050 to end the week up 2%. That is the call.",
     "TCS: close 4050. Full stop.", "TCS: close 4050, so the risk is capped.", "TCS: close 4050, so the loss is limited.",
     "TCS: close 4050, so the profit is locked.", "B.U.Y INFY",
+    # #254 merge check: a short order sentence in a paragraph that names an instrument
+    "TCS: close 4050 before results. Exit.", "TCS: close 4050 before results. Sell.", "TCS: close 4050 before results. Do it.",
+    "TCS: close 4050 before results. Get out.", "TCS: close 4050 before results. Act on it.", "TCS looks weak. Sell.",
+    "TCS hit 4050 before results. Exit.", "TCS looks weak. Book it.", "TCS looks weak.\nBuy.",
 ]
 
 SHOULD_PASS = [
@@ -291,6 +295,8 @@ SHOULD_PASS = [
     "TCS: close 4050, better than the index.", "NIFTY: close 25100, stronger than the sector.",
     "TCS: close 4050. That is the highest close in 5 sessions.", "TCS: close 4050 before results. INFY: close 1500.",
     "NIFTY 25000 CE: Δ 0.45, θ -12, IV 14%.", "Volatility (σ) rose to 1.2%.",
+    "TCS: close 4050. It was the best session in a month.", "TCS: close 4050. No doubt the bulls are in control.",
+    "It was the best session in a month.", "No doubt the bulls are in control.", "TCS rose 2%. Buyers held 4000.",
 ]
 
 
@@ -350,6 +356,8 @@ NOT_PLAIN_ENGLISH = [
     "INFY \U0001160e\U00011630\U00011628 1500", "INFY \u1c60\u1c64\u1c71 1500",          # Modi, Ol Chiki
     "B\u3164UY INFY", "B\u0301UY INFY", "S\u0336E\u0336L\u0336L\u0336 INFY", "B\u034fUY INFY", "BUY\U000e0101 INFY",
     "\u0299\u1d1c\u028f INFY", "B\u00f9y RELIANCE", "B\u00adUY INFY",                    # small caps, an accent, soft hyphen
+    "B\u20ddUY INFY", "B\u0903UY INFY", "BU\u093eY INFY",                                   # enclosing and spacing marks
+    "\U0001f1e7\U0001f1fa\U0001f1fe INFY", "\U0001f171\U0001f184\U0001f188 INFY", "\u249d\u24b0\u24b4", "\u24b7UY INFY",   # letters as symbols
 ]
 
 

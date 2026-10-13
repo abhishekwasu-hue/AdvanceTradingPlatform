@@ -316,6 +316,10 @@ is `/trade` (`src/pages/TradeWorkspacePage.tsx`). It is not in the sidebar; the 
 the flag is on. While the flag is off the page says it is not turned on. **No new route** (tested): it reuses worker
 status, the P1-d ticket, the positions board, broker candles and Exit now.
 
+**Depends on `positions_board` (N2-6).** The positions panel, the x key and Shift+F all read `/api/positions/board`,
+which answers 404 while `positions_board` is off: the panel is then empty and flatten all reports the error. Turn
+`positions_board` on with (or before) `trade_workspace` for an organisation.
+
 - **Layout:**
   - chart (the user's own broker candles through `useBrokerChart`, symbol and timeframe saved) on the left;
   - the PAPER ticket on the right;
@@ -331,9 +335,11 @@ status, the P1-d ticket, the positions board, broker candles and Exit now.
 - **Keyboard** (never while typing, never with Ctrl / Cmd / Alt):
   - t: go to the ticket;
   - c: go to the chart symbol;
-  - x: on a focused position row, Exit now (one key, the same call as the button);
+  - x: on a focused position row, Exit now (one key, the same call as the button). Only in the workspace: the board on
+    the Positions page has no row focus and no x key;
   - Shift+F: flatten all, after one confirmation that lists the positions, through Exit now for each position the user
-    can close here (LIVE ones close in the broker app);
+    can close here (LIVE ones close in the broker app). A multi-leg structure is one exit (Exit now on a leg closes its
+    whole leg group), so its other legs are not tried again and reported as failures;
   - ?: show or hide the shortcut list.
 - **Exits** stay one click or one key, never gated. Entries go through the ticket's own checks.
 - **Visual regression:** a Playwright run in dark, light and mobile is left to the e2e job (OPEN_QUESTIONS N2-24).

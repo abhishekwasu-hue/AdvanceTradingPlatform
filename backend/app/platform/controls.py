@@ -274,7 +274,8 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N2-9 (P1 spec 2.1, 2.5, docs/design/N2_P1FGH.md): the Trade workspace page - chart, the P1-d PAPER ticket and the
     # positions board on one screen, keyboard shortcuts (ticket, close the focused position, flatten all with a
     # confirmation), a phone bottom-sheet ticket, market / lockout / stale states and a per-viewer saved layout. It uses
-    # existing routes only (exits through Exit now, never gated). OFF: the page says it is not turned on.
+    # existing routes only (exits through Exit now, never gated). OFF: the page says it is not turned on. Depends on
+    # positions_board: without it the positions panel is empty and "x" / flatten all have nothing to act on.
     "trade_workspace": "Trade workspace: chart, PAPER ticket and positions on one screen with keyboard shortcuts and a saved layout (exits never gated)",
     # N2-10 (P1 spec 1.6, docs/design/N2_P1FGH.md): the method library (trend, level, pullback, commitment, reward to
     # risk) and glossary at /learn, each step linked to its chart layer, screens, checklist item and journal tags.

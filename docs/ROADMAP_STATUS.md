@@ -35,13 +35,13 @@ not recorded); **parked** (with the reason); **check** (no branch or PR found; t
 | N1 | E1 execution core: intent queue + policy routing (flag `execution_core`) | `claude/n1-e1` | #206 | merged |
 | N1 | L1 Trade level-gate port, golden parity (pure library) | `claude/n1-l1` | #210 | merged |
 | N1 | L2 Trade Daily trend fold port, golden parity (pure library) | `claude/n1-l2` | #213 | merged |
-| N1 | X1 scan Then: Notify / One-click through the level gate (flags `scan_then` + `execution_core`) | `claude/n1-x1` | #214 | PR open (draft) |
+| N1 | X1 scan Then: Notify / One-click through the level gate (flags `scan_then` + `execution_core`) | `claude/n1-x1` | #214 | merged |
 | N1 | X1b Then mode chip and drawer on each alert rule (includes U5 D4) | `claude/n1-x1b` | - | on branch, awaiting review |
 | N1 | X2 Auto PAPER from armed scan templates (flag `scan_auto_paper`) | `claude/n1-x2` | - | review fixes pushed (delta re-review LOWs), re-review: check |
-| N1 | F1 + F2 portfolio risk model and entry-only caps; F3 cards on the same branch (flags `portfolio_risk`, `portfolio_risk_caps`) | `claude/n1-f` | #219 | PR open |
+| N1 | F1 + F2 portfolio risk model and entry-only caps; F3 cards on the same branch (flags `portfolio_risk`, `portfolio_risk_caps`) | `claude/n1-f` | #219 | merged |
 | N1 | E2 hardening (CLOSING pre-claim, intents read API, venue contract suite) | - | - | check |
 | N2 | N2-1 ladder evidence (flag `ladder_evidence`) | `claude/n2-p1f` | #203 | merged |
-| N2 | N2-2 experience levels (flag `experience_levels`) | `claude/n2-2` | #207 | PR open (draft) |
+| N2 | N2-2 experience levels (flag `experience_levels`) | `claude/n2-2` | #207 | merged |
 | N2 | N2-3 decision tools I (flag `decision_tools`) | `claude/n2-3` | #211 | PR open (draft); review fixes pushed |
 | N2 | N2-4 decision tools II | `claude/n2-4` | - | review fixes pushed, re-review: check |
 | N2 | N2-5 market context panel | `claude/n2-5` | - | review fixes pushed, re-review: check |
@@ -81,13 +81,13 @@ not recorded); **parked** (with the reason); **check** (no branch or PR found; t
 | N4 | CH3b legs, BOS / CHoCH, liquidity, trendlines (Trade parity) | `claude/n4-ch3b` | #218 | merged |
 | N4 | CH4a trades layer (flag `chart_trades_layer`) | `claude/n4-ch4a` | - | on branch, awaiting review |
 | N4 | CH4b contract and spread charts (on CH4a; flag `chart_contracts`) | `claude/n4-ch4b` | - | on branch, awaiting review |
-| N4 | CH5-a multi-chart workspace (flag `chart_workspace`) | `claude/n4-ch5` | #215 | PR open (draft); review fixes pushed |
+| N4 | CH5-a multi-chart workspace (flag `chart_workspace`) | `claude/n4-ch5` | #215 | merged |
 | N4 | CH5-b chart types, session breaks, 24x7 axis (on CH5-a) | `claude/n4-ch5b` | - | on branch, awaiting review |
 | N4 | CH6a ScreenQL studies on charts (flag `chart_studies`) | `claude/n4-ch6` | #223 | merged |
 | N4 | CH6a re-review LOWs | `claude/n4-ch6-lows` | - | on branch, awaiting review |
 | N4 | CH6-2 50k-candle timing + render smoke checks | `claude/n4-render-checks` | - | on branch, awaiting review |
 | N4 | CH7 TradingView Advanced Charts adapter | - | - | parked: waits for TradingView access (owner) |
-| N5 | BYOK-V3 Vision reviews on the user's own key | `claude/n5-byok-v3` | #217 | PR open (draft) |
+| N5 | BYOK-V3 Vision reviews on the user's own key | `claude/n5-byok-v3` | #217 | PR open (re-chained onto X1; CI) |
 | N6 | G Trade engine port | - | - | parked: waits for the owner's "stable" mark per module |
 | N7 | C2b fill / slippage / latency models (flag `backtest_models`) | `claude/n7-c2b` | - | on branch, awaiting review |
 | N8-N9 | Phase 1 items behind flags; crypto / IBKR / K | - | - | check |
@@ -96,15 +96,19 @@ not recorded); **parked** (with the reason); **check** (no branch or PR found; t
 | Fix | Sources verified (LG1-2, TX-1) | `claude/sources-verify` | #205 | merged |
 | Fix | Worker: watch every open position for exits (ADR-0004) | `claude/fix-exit-sweep` | #221 | merged |
 | Fix | Tax report: own trades only (BT1b) + FY statute citations | `claude/fix-tax-report-own` | #225 | merged |
-| Fix | Worker: savepoint per step on the shared cycle session (ADR-0004) | `claude/fix-session-savepoints` | #220 | PR open |
+| Fix | Worker: savepoint per step on the shared cycle session (ADR-0004) | `claude/fix-session-savepoints` | #220 | merged |
 | Fix | Exit safety: re-exit guard and naked-short guard (stacked on #220) | `claude/fix-reexit-guard` | - | on branch, awaiting review |
-| Fix | Worker: entries filed under the deployment's creator (TX-3 / TX-4) | `claude/fix-worker-acting-user` | #226 | PR open |
+| Fix | Worker: entries filed under the deployment's creator (TX-3 / TX-4) | `claude/fix-worker-acting-user` | #226 | merged |
 | Fix | SMS gateway template injection and stored-header exfiltration | `claude/fix-alert-gateway-injection` | - | on branch, awaiting review |
-| Fix | Dark-theme primary buttons meet WCAG AA contrast | `claude/fix-dark-primary-contrast` | #227 | PR open |
+| Fix | Dark-theme primary buttons meet WCAG AA contrast | `claude/fix-dark-primary-contrast` | #227 | merged |
 | Lane D | Phase 0 exit criteria in CI: staging stack, acceptance, load-500, rollback rehearsal | `claude/ci-staging-stack` | #222 | PR open (draft) |
 | Lane D | Load-500 p95 work (LD-7) | `claude/perf-500` | - | on branch, in progress |
 | Lane D | Shared LTP rate budget per broker credential | `claude/ltp-shared-budget` | - | on branch, awaiting review |
 | Lane D | CI backend timeout 55 min + slowest-test report | `claude/ci-backend-timeout` | #224 | merged |
+| Fix | Alert gateway: body injection and secret reuse after a destination change (SMS/email) | `claude/fix-alert-gateway-injection` | #228 | merged |
+| N3 | BK3 VCP / Donchian / squeeze / MA / regime breakouts (flag `screener_breakouts_bk3`) | `claude/n3-bk3` | #229 | PR open |
+| Fix | AI output filter: trading-call wording in EN/MR/HI (ADR-0006) | `claude/fix-ai-output-filter` | #230 | PR open; review fixes in progress |
+| N1 | X1b scan Then panel + read APIs + take-over guard (flag `scan_then`) | `claude/n1-x1b` | #231 | PR open |
 | Lane D | Tests read today's IST date at call time; zones loop-gap test | `claude/fix-ist-midnight-tests`, `claude/fix-zones-loop-gap` | #216, #208 | merged |
 | Docs | Earlier N-list status draft | `claude/roadmap-n-list-1` | - | superseded by this update |
 
@@ -144,7 +148,7 @@ docs/design/HB2_INTRADAY_HISTORY.md (HB2-1..11), charting docs/design/CHARTING.m
 
 docs/TRADE_PORT_MAP.md maps every Trade repo module (Trade@eafc872; the N-list rows at Trade@1e6c9ac) to ATP, with status and parity tests.
 N-list ports: E1 (ATP's own, #206), L1 level gate (ported, #210), L2 Daily trend fold (ported, #213), CH3a layer on the ported
-engines (#212), CH3b structure / legs / trendlines / liquidity (ported, #218); X1 (partial, PR #214), F (partial, PR #219),
+engines (#212), CH3b structure / legs / trendlines / liquidity (ported, #218); X1 (merged #214), F (merged #219),
 X2 (partial, branch) and BK4 (reuses the CH3b trendline rule, branch).
 Each port PR updates its row in the map and these counts.
 
@@ -198,7 +202,7 @@ Merge train (owner's MERGE_NOW): finished 09:52 IST. PRs #82-#155 are all merged
 | B5 | history API with as_of / adjusted / quality | done | #102 | 100 |
 | B6-B7 | backtests read the lake, retention/compression/metrics | next | - | 0 |
 | E | Execution core and scale (ADR-0014) | E1 merged (N1): intent queue, routing policy, worker drain (flag `execution_core` off); E2 (CLOSING pre-claim, intents read API, venue contract suite): check | #206 | 15 |
-| F | Portfolio risk | F1 + F2 in PR #219 (open); F3 on the same branch `claude/n1-f` (flags `portfolio_risk`, `portfolio_risk_caps` off) | #219 | 0 |
+| F | Portfolio risk | F1-F3 merged in #219; on main `claude/n1-f` (flags `portfolio_risk`, `portfolio_risk_caps` off) | #219 | merged |
 | G | Trade repo engine port (ADR-0015) | not started | - | 0 |
 | H | Copilot v2 (ATP_COPILOT_SPEC): design note, review findings G1-G13 checked | done (design) | #103 | 100 |
 | H-C1 | Safety: a server-side evidence, b AI rate limit, c output filter (en+mr), d grounding, e llm_calls hygiene, f prompt_version | a-c done (#103); d-f done (full suite 1364 passed) | #103, #108 | 100 |

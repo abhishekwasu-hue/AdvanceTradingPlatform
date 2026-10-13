@@ -1829,6 +1829,10 @@ export interface AiAction {
   risk_check?: ProposalRiskCheck | null;
   /** Z5 (flag risk_by_default): each short strike's breach chance, when the proposal carries option legs. */
   strike_breach?: StrikeBreachBlock | null;
+  /** N1 F3 (flag portfolio_risk): the owner's own PAPER book after this entry, taken at its most (server text). */
+  portfolio_impact?: { line: string; bucket: string; bucket_gross_pct: number | null; bucket_risk_pct: number | null;
+    total_risk_pct: number | null; positions: number; entry_risk: number;
+    limits: { max_sector_pct: number; max_correlated_risk_pct: number; max_open_positions: number } } | null;
 }
 
 export interface BrokerTicket {
@@ -2403,6 +2407,18 @@ export interface LadderEvidence {
   expectancy?: number | null; profit_factor?: number | null;
   kelly?: { fraction: number | null; status: "ok" | "negative" | "no_losses" | "no_wins"; formula: string; note: string };
   ruin?: { probability: number | null; status: "ok" | "certain" | "no_losses"; ruin_pct: number; distance: number | null; method: string; note: string };
+}
+
+/** N2-2 (flag `experience_levels`): the caller's experience level from their own PAPER record, the gates and opt-outs. */
+export type ExperienceLevelKey = "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
+export interface ExperienceStatus {
+  level: ExperienceLevelKey; level_label: string;
+  levels: { key: ExperienceLevelKey; label: string; reached: boolean; opens: string[]; criteria: LadderCriterion[] }[];
+  record: { closed_trades: number; sessions: number; max_drawdown_pct: number };
+  gates: { key: string; label: string; opens_at: ExperienceLevelKey; opens_at_label: string; allowed_by_level: boolean; opted_out_today: boolean; allowed: boolean }[];
+  opt_outs: { today: number; last_7_days: number; total: number; recent: { gate: string; gate_label: string; level: string; reason: string; day: string }[] };
+  min_reason_chars: number; day: string; exits: string; as_of: string;
+  created?: boolean;
 }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */

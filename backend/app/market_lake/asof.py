@@ -42,6 +42,26 @@ async def candles_as_of(session: AsyncSession, instrument_key: str, timeframe: s
     return [best[ts][1] for ts in sorted(best)]
 
 
+async def candle_values_as_of(session: AsyncSession, instrument_key: str, timeframe: str, start: datetime, end: datetime, *,
+                              as_of: Optional[datetime] = None, sources: Optional[Sequence[str]] = None
+                              ) -> List[Tuple[datetime, float, float, float, float]]:
+    """`candles_as_of` as plain (ts, open, high, low, close) tuples: only those columns are selected (no ORM rows), for a
+    long read such as ten years of Daily bars (N1 X1, review W1). Same choice per ts: the preferred source, then its
+    highest visible version."""
+    query = select(MdCandleRecord.ts, MdCandleRecord.source, MdCandleRecord.version, MdCandleRecord.open, MdCandleRecord.high,
+                   MdCandleRecord.low, MdCandleRecord.close).where(
+        MdCandleRecord.instrument_key == instrument_key, MdCandleRecord.timeframe == timeframe,
+        MdCandleRecord.ts > start, MdCandleRecord.ts <= end, *_visible(MdCandleRecord, as_of))
+    if sources:
+        query = query.where(MdCandleRecord.source.in_(list(sources)))
+    best: Dict[datetime, Tuple[Tuple[int, int], Tuple[datetime, float, float, float, float]]] = {}
+    for ts, source, version, o, h, low, c in (await session.execute(query)).all():
+        key = (_rank(sources, source), -int(version or 0))
+        if ts not in best or key < best[ts][0]:
+            best[ts] = (key, (ts, float(o), float(h), float(low), float(c)))
+    return [best[ts][1] for ts in sorted(best)]
+
+
 async def instrument_as_of(session: AsyncSession, instrument_key: str, day: date, *, as_of: Optional[datetime] = None,
                            source: Optional[str] = None) -> Optional[InstrumentMasterVersionRecord]:
     """The contract terms in force on `day` (latest valid_from <= day) as known at `as_of`."""

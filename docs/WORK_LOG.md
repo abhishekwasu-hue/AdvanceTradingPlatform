@@ -1842,7 +1842,32 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   instance (`src/progression/i18n.ts`); there is a story.
 - No migration and no new route. Flag off returns the Z3-b answer unchanged.
 - Tests: backend `tests/test_n2_ladder_evidence.py` (9); vitest `src/progression` (12). Open questions N2-1..N2-5.
+### 2026-10-12 IST - N2-2 experience levels (`claude/n2-2`, cut from `claude/n2-p1f` because N2-1 was not merged yet)
+- Flag `experience_levels` (off). Levels come from the user's own PAPER record. They gate futures (Intermediate) and
+  naked short options (Advanced, single legs and structures with an unhedged short side) in
+  `execute_signal_for_user` / `execute_structure`. Exits are never gated.
+- A day's opt-out with a reason is logged and counted (`experience_opt_outs`, migration `a4c6e8f0b2d1` on
+  `e8a1c4d2f9b7`, ROLLBACK_SAFE).
+- Routes `GET /api/paper/experience` (member) and `POST /api/paper/experience/opt-out` (trader) are classified in the
+  tenancy table.
+- Frontend: "Experience level" card on Positions (progression i18n), with a story.
+- Tests: backend `tests/test_n2_experience_levels.py` (11); vitest `src/progression` (16). Open questions N2-6..N2-9.
 
+## Fix: the trading worker acts per deployment as its creator (TX-3)
+
+- Branch `claude/fix-worker-acting-user` (from main). The worker filed every deployment's entries of an organisation
+  under one acting user (`_acting_user`: the first deployment's creator, else the owner), so member B's automated trades
+  could carry member A's user id (and land in A's own-trades tax report, #225 / OPEN_QUESTIONS TX-3).
+- Now `_deployment_user`: a deployment's entries (and its failure alert) act as `dep.created_by` when that user is an
+  active member of the same organisation with a trading role; no recorded creator keeps the organisation's acting user. Exits, square-off, stop guard and reconciliation are unchanged (ADR-0004).
+- Review: a creator who is removed, inactive, of another organisation, or without a trading role / `trading:write`
+  makes the deployment open NO new entries (skipped with `last_error`; OPEN_QUESTIONS TX-4) instead of re-attributing
+  them; exits untouched. The lookup sits inside the per-deployment try (a failure falls back to the acting user and the
+  loop goes on). Approval-only proposals use the same resolved user.
+- No backfill: existing rows keep the user id they were filed under. No flag (a correctness fix).
+- Tests: `tests/test_worker_acting_user.py` (owner and member deployments each file their own trades; square-off
+  still closes both; removed / foreign / VIEWER creators open no entries while the removed member's open position is
+  still squared off; no creator and a failed lookup fall back; approval-only proposals go to the resolved user).
 ## Fix: tax report reads only the caller's own trades (BT1b) + FY-dependent statute (TX-1 follow-up)
 
 - Branch `claude/fix-tax-report-own` (from main). Phase 0 bug: `/api/tax/report`, `/api/tax/report.csv` and
@@ -1861,3 +1886,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
+
+## Fix: SMS gateway template injection and header handling (S10 security review)
+
+- Branch `claude/fix-alert-gateway-injection` (from main).
+- `dispatcher.render_sms`: the content type is compared case-insensitively; JSON bodies get JSON-escaped values, every
+  other body (form, query, text) percent-encoded values - an alert title like `x&To=+1555...&Body=spam` stays one value.
+  The GET path decodes the query once with `parse_qsl` (duplicates kept, nothing silently overridden; httpx encodes).
+- `channels.merge_secrets`: the stored write-only SMS headers are kept only when the gateway URL keeps its scheme, host
+  and port; a moved gateway gets no stored header (the user types it again).
+- `SmsConfig.headers`: names must be HTTP tokens, values carry no CR / LF / control characters, at most 20 headers. (The
+  webhook channel has no free-form headers - its secret signs the body and is never sent.)
+- Tests: `tests/test_alert_gateway_injection.py`.
+- Review round (HIGH): the origin check now parses both URLs with the same WHATWG parser that validated them (pydantic;
+  `https://evil.example\@api.twilio.com/` is evil.example to pydantic / httpx but api.twilio.com to urllib), and a
+  backslash, space or control character in a gateway URL (SMS, webhook) is refused before parsing. Email: the stored
+  SMTP password is dropped when the host, port or user changes or TLS is turned off; `smtp_host` goes through the egress
+  policy on save (literal) and on send (resolved, in production / staging).
+- Review round (LOW): header values printable ASCII only; `Host` / `Content-Length` / `Transfer-Encoding` / hop-by-hop
+  headers refused; `content_type` validated; one recipient's failure (any exception) never stops the others; GET params
+  through `httpx.QueryParams`; Twilio preset writes `From=%2B...`; OPERATIONS 1.6e documents quoting and `%2B`.

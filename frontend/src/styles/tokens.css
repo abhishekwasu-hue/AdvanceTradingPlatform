@@ -12,9 +12,13 @@
   --border: 36 44 63;
   --fg: 241 245 249;           /* primary text */
   --fg-muted: 194 202 216;     /* labels, captions - still AA on every surface */
-  --brand: 59 130 246;         /* links, primary buttons, focus */
+  --brand: 59 130 246;         /* links, focus rings, brand text */
   --brand-strong: 29 78 216;
   --on-brand: 255 255 255;
+  /* Filled brand surfaces (primary buttons: `bg-brand`, `hover:bg-brand-strong`). WCAG AA: white text on them is 6.7:1 and
+     8.7:1 - the link blue (--brand) under white text was only 3.7:1 (U5 D5, axe). */
+  --brand-fill: 29 78 216;
+  --brand-fill-strong: 30 64 175;
   --up: 34 197 94;
   --down: 239 68 68;
   --warn: 245 158 11;
@@ -46,6 +50,8 @@
   --brand: 37 99 235;
   --brand-strong: 29 78 216;
   --on-brand: 255 255 255;
+  --brand-fill: 37 99 235;     /* white on it 5.2:1 */
+  --brand-fill-strong: 29 78 216;
   --up: 21 128 61;
   --down: 185 28 28;
   --warn: 180 83 9;

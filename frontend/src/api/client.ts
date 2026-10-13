@@ -43,6 +43,9 @@ import type {
   PaperAccount,
   PaperLadder,
   ExperienceStatus,
+  RuinCalc,
+  WhatIfResult,
+  WhatIfSubject,
   PaperRiskStatus,
   RiskByDefaultSettings,
   TicketPlan,
@@ -128,7 +131,7 @@ import type {
   ByokProviderName,
   ByokStatus,
   ByokTestResponse,
-  VisionReportsResponse,
+  VisionReportsResponse, VisionSubjectKind,
   VerificationSendResult,
   TaxReport,
   FxRate,
@@ -153,6 +156,7 @@ import type {
   StaticIpOverview,
 } from "../types";
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
+import type { ThenBody, ThenIntent, ThenTemplate } from "../screener/then/model";
 import type { BetaCohort } from "../beta/rollout";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
@@ -513,6 +517,12 @@ export const api = {
   paperExperience: () => request<ExperienceStatus>("/paper/experience"),
   paperExperienceOptOut: (gate: string, reason: string) =>
     request<ExperienceStatus>("/paper/experience/opt-out", { method: "POST", body: JSON.stringify({ gate, reason }) }),
+  /** N2-3: decision tools (404 while `decision_tools` is off). Information only. */
+  decisionRuin: (body: { win_rate: number; payoff_ratio: number; risk_pct: number; ruin_pct: number; compare?: number[] }) =>
+    request<RuinCalc>("/decision/ruin", { method: "POST", body: JSON.stringify(body) }),
+  decisionPositions: () => request<{ subjects: WhatIfSubject[] }>("/decision/positions"),
+  decisionWhatIf: (body: { underlying: string; spot: number; iv?: number; days_forward: number; iv_shift: number; range_pct: number }) =>
+    request<WhatIfResult>("/decision/what-if", { method: "POST", body: JSON.stringify(body) }),
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
@@ -790,6 +800,13 @@ export const api = {
   byokSavePrefs: (body: ByokPrefsInput) => request<ByokStatus>("/ai/byok/prefs", { method: "PUT", body: JSON.stringify(body) }),
   // BYOK-V2: the caller's own Vision reports on proposals (404 while vision_byok is off).
   byokReports: (actionId?: number) => request<VisionReportsResponse>(`/ai/byok/reports${actionId ? `?action_id=${actionId}` : ""}`),
+  /** BYOK-V3: the caller's own reports of one kind (scan_alert / daily_review) or for one scan-alert notification. */
+  byokReportsBy: (q: { kind?: VisionSubjectKind; notificationId?: number }) => {
+    const params = new URLSearchParams();
+    if (q.kind) params.set("kind", q.kind);
+    if (q.notificationId) params.set("notification_id", String(q.notificationId));
+    return request<VisionReportsResponse>(`/ai/byok/reports?${params.toString()}`);
+  },
   byokDeleteReport: (id: number) => request<{ deleted: number }>(`/ai/byok/reports/${id}`, { method: "DELETE" }),
   aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
     request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }), signal }),
@@ -929,6 +946,16 @@ export const api = {
   createAlertRule: (body: AlertRuleInput) => request<AlertRule>("/alerts/rules", { method: "POST", body: JSON.stringify(body) }),
   setAlertRuleStatus: (id: number, action: "pause" | "resume") => request<AlertRule>(`/alerts/rules/${id}/${action}`, { method: "POST" }),
   alertRuleEvents: (id: number, limit = 50) => request<AlertEventRow[]>(`/alerts/rules/${id}/events?limit=${limit}`),
+  // N1 X1b (flag scan_then): a rule's Then template and the setups it sent to the caller (503 while the flag is off).
+  ruleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`),
+  /** Review of X1b: every rule's Then in one read (rule id -> template) for the panel's chips. */
+  allThen: () => request<{ templates: Record<string, ThenTemplate> }>("/alerts/then"),
+  putRuleThen: (id: number, body: ThenBody) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "DELETE" }),
+  // N1 X2: the template owner arms Auto PAPER (typed confirmation) / the owner or the organisation OWNER disarms it.
+  armRuleThen: (id: number, confirm: string) => request<ThenTemplate>(`/alerts/rules/${id}/then/arm`, { method: "PUT", body: JSON.stringify({ confirm }) }),
+  disarmRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then/arm`, { method: "DELETE" }),
+  ruleThenIntents: (id: number, limit = 50) => request<ThenIntent[]>(`/alerts/rules/${id}/then/intents?limit=${limit}`),
   getNotificationPolicy: () => request<NotificationPolicy>("/alerts/policy"),
   putNotificationPolicy: (body: NotificationPolicy) => request<NotificationPolicy>("/alerts/policy", { method: "PUT", body: JSON.stringify(body) }),
   listDeadLetters: () => request<DeadLetter[]>("/alerts/dead-letters"),

@@ -35,6 +35,11 @@ SOURCES_FILE = DATA_DIR / "legends_sources.json"
 SOURCE = "legends"                      # the taxonomy template source and the taxonomy method id
 METHOD = "legends"
 FLAG = "screener_legends"
+# U7 LG2: the second slice of cards, behind its own flag on top of FLAG. A card's `slice` says which one it belongs to
+# (default lg1). Every card is filed under the one `legends` source; the taxonomy hides the LG2 screens while their
+# flag is off (`register_screen_flags`), and the API leaves the LG2 cards out.
+FLAG_LG2 = "screener_legends_lg2"
+SLICES: Dict[str, Optional[str]] = {"lg1": None, "lg2": FLAG_LG2}        # slice -> the flag it needs beyond FLAG
 LINES: Tuple[str, ...] = ("who", "style", "looks_for", "timeframe")   # plus the source line: five lines in all
 MAX_CARD_LINES = 5
 MAX_LINE_CHARS = tx.MAX_DEFINITION_CHARS
@@ -153,6 +158,7 @@ class Card:
     params: Tuple[Param, ...]
     review: str = "unverified"
     review_note: str = ""
+    slice: str = "lg1"
 
     def cited(self) -> List[str]:
         """Every source id the card cites, in order of first use."""
@@ -173,6 +179,10 @@ class Library:
 
     def card(self, ident: str) -> Optional[Card]:
         return next((c for c in self.cards if c.id == ident), None)
+
+    def of(self, slices: Sequence[str]) -> Tuple[Card, ...]:
+        """The cards of these slices, in file order."""
+        return tuple(c for c in self.cards if c.slice in slices)
 
 
 # --- lint ------------------------------------------------------------------------------------------------------------
@@ -379,10 +389,13 @@ def _cards(raw: Any, sources: Dict[str, Source], problems: List[str]) -> Tuple[C
         unchecked = [s.id for s in cited if s.review != "verified"]
         if review == "verified" and unchecked:
             problems.append(f"{where}: verified, but it cites unverified sources ({', '.join(unchecked)})")
-        unknown = set(row) - {"id", "legend", "short", "name", "approximation", "screen", "review", "review_note", *LINES}
+        part = str(row.get("slice", "lg1"))
+        if part not in SLICES:
+            problems.append(f"{where}: slice must be one of {', '.join(SLICES)} ({part!r} given)")
+        unknown = set(row) - {"id", "legend", "short", "name", "approximation", "screen", "review", "review_note", "slice", *LINES}
         if unknown:
             problems.append(f"{where}: unknown fields {', '.join(sorted(unknown))}")
-        out.append(Card(ident, legend, short, name, lines, approximation, source, base_tf, params, review, review_note))
+        out.append(Card(ident, legend, short, name, lines, approximation, source, base_tf, params, review, review_note, part))
     if not out:
         problems.append("cards: none defined")
     if len(LINES) + 1 > MAX_CARD_LINES:          # the source line is the fifth
@@ -467,21 +480,28 @@ def card_payload(card: Card, library: Library, taxonomy: Optional[tx.Taxonomy] =
     }
 
 
-def payload(library: Library, taxonomy: Optional[tx.Taxonomy] = None) -> Dict[str, Any]:
+def payload(library: Library, taxonomy: Optional[tx.Taxonomy] = None, slices: Sequence[str] = ("lg1",)) -> Dict[str, Any]:
+    """The library as an organisation sees it: the cards of `slices` (LG1 by default; the API adds LG2 with its flag)."""
     tax = taxonomy or tx.load()
     return {"version": library.version, "header": HEADER, "note": NOTE,
-            "cards": [card_payload(c, library, tax) for c in library.cards]}
+            "cards": [card_payload(c, library, tax) for c in library.of(slices)]}
 
 
 def _ids() -> List[str]:
     return load().ids()
 
 
-# The taxonomy's CI guard: every card is a pre-built screen of this source, hidden while the flag is off.
+def _screen_flags() -> Dict[str, str]:
+    return {c.id: flag for c in load().cards if (flag := SLICES.get(c.slice))}
+
+
+# The taxonomy's CI guard: every card is a pre-built screen of this source, hidden while the flag is off; an LG2 screen
+# is also hidden while its own flag is off.
 tx.register_source(SOURCE, _ids, flag=FLAG)
+tx.register_screen_flags(SOURCE, _screen_flags)
 
 
-__all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
+__all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "FLAG_LG2", "SLICES", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
            "LegendsError", "Line", "Param", "Source", "card_payload", "english_problems", "link_problems", "lint", "load", "parse",
            "payload", "people_named", "wording_problems"]
 
@@ -498,6 +518,6 @@ if __name__ == "__main__":
     from app.screener import taxonomy as _tx
     if sys.argv[1:] == ["taxonomy"]:
         hidden = [name for name in _tx.default_hidden() if name != _lg.SOURCE]
-        print(json.dumps(_tx.payload(_tx.load(), hidden_sources=hidden), indent=1, ensure_ascii=False))
+        print(json.dumps(_tx.payload(_tx.load(), hidden_sources=hidden, hidden_ids=_tx.default_hidden_ids()), indent=1, ensure_ascii=False))
     else:
         print(json.dumps(_lg.payload(_lg.load()), indent=1, ensure_ascii=False))

@@ -1597,6 +1597,9 @@ class CompanyRecord(Base):
     __tablename__ = "companies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     bse_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -1633,9 +1636,12 @@ class FinancialPeriodRecord(Base):
     """
 
     __tablename__ = "financial_periods"
-    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", name="uq_company_period"),)
+    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", name="uq_company_period_tenant"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     period_type: Mapped[str] = mapped_column(String(10), nullable=False)
     period_label: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -1679,6 +1685,9 @@ class ShareholdingSnapshotRecord(Base):
     __tablename__ = "shareholding_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
     promoter_pct: Mapped[float] = mapped_column(Float, nullable=False)
@@ -1695,6 +1704,9 @@ class CorporateActionRecord(Base):
     __tablename__ = "corporate_actions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     action_type: Mapped[str] = mapped_column(String(50), nullable=False)
     announced_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -1718,6 +1730,9 @@ class EarningsCalendarEventRecord(Base):
     __tablename__ = "earnings_calendar_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
@@ -1737,6 +1752,9 @@ class SectorMetricRecord(Base):
     __tablename__ = "sector_metrics"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     period_label: Mapped[str] = mapped_column(String(50), nullable=False)
     metric_code: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -1755,6 +1773,9 @@ class QualitativeFactorRecord(Base):
     __tablename__ = "qualitative_factors"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     label: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -1779,6 +1800,9 @@ class NewsEventRecord(Base):
     __tablename__ = "news_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     category: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     headline: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -2252,15 +2276,29 @@ class VisionReportRecord(Base):
     user only. Queued as `pending` when the proposal is raised (never blocking it), audited later by the worker:
     `ok` (report written), `skipped` (no call made: vision off, no key, a cap, no chart data, proposal already decided)
     or `failed` (the provider call failed; `reason` is sanitised and never contains the key). The chart image is not
-    stored - only its SHA-256. The report only comments: nothing here approves, rejects or changes anything."""
+    stored - only its SHA-256. The report only comments: nothing here approves, rejects or changes anything.
+
+    BYOK-V3: the subject is a kind - `proposal` (V2, `ai_action_id`), `scan_alert` (one screen-alert notification of a
+    rule this user created: `notification_id`, `alert_rule_id`, the matched symbol) or `daily_review` (one symbol of this
+    user's own after-close review, `subject_date` in IST). `subject_key` ("proposal:<id>", "scan:<notification id>",
+    "daily:<date>:<EXCHANGE>:<SYMBOL>") is unique per user, so a subject is never audited twice for the same user."""
 
     __tablename__ = "vision_reports"
-    __table_args__ = (UniqueConstraint("user_id", "ai_action_id", name="uq_vision_reports_user_action"),)
+    __table_args__ = (UniqueConstraint("user_id", "ai_action_id", name="uq_vision_reports_user_action"),
+                      UniqueConstraint("user_id", "subject_key", name="uq_vision_reports_user_subject"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    ai_action_id: Mapped[int] = mapped_column(ForeignKey("ai_actions.id", ondelete="CASCADE"), nullable=False, index=True)
+    ai_action_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="CASCADE"), nullable=True, index=True)
+    subject_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="proposal", server_default="proposal", index=True)
+    subject_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True, index=True)
+    alert_rule_id: Mapped[int | None] = mapped_column(ForeignKey("alert_rules.id", ondelete="SET NULL"), nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    subject_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", index=True)   # pending/running/ok/skipped/failed
     provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
     model: Mapped[str | None] = mapped_column(String(80), nullable=True)

@@ -18,6 +18,8 @@ export interface EvidenceDrawable {
   unit?: string | null; series?: EvidenceSeries[]; levels?: EvidenceLevel[]; marker?: { index: number; text: string };
   from?: number; to?: number; low?: number; high?: number; level?: number; index?: number[];
   role?: "demand" | "supply"; state?: string; touch_text?: string; formed_at?: string | null;
+  /** EV3: the option chain whose OI walls / max pain these levels are (a chain is a snapshot of the newest bar's time). */
+  chain?: { underlying: string; expiry: string };
 }
 export interface EvidenceTerm { text: string; value: number | string | boolean | null; value_text: string; unit: string | null; literal: boolean; note?: string }
 export interface EvidenceRow {
@@ -25,6 +27,12 @@ export interface EvidenceRow {
   note?: string; negated?: boolean; zone_as_of?: string | null;
 }
 export interface EvidenceBlock { id: string; text: string; passed: boolean | null; rows: string[] }
+/** EV3 (flag evidence_context): the engine's DowTrend on one timeframe as of the matched bar, and the rows reading it. */
+export interface EvidenceContext {
+  tf: string; tag: string | null; expr: string; bar_close: string | null; used_by: string[]; note: string | null; text: string;
+}
+/** EV3: present on a replayed pack - recomputed from the shared history as of `at`, never stored, never sent. */
+export interface EvidenceReplay { at: string; source: string | null; note: string; stored_as_of: { bar_start: string; bar_close: string } }
 export interface EvidencePack {
   schema: "evidence/1"; evidence_id?: number; pack_sha256?: string; can_send?: boolean;
   symbol: string; exchange: string; base_tf: string;
@@ -41,10 +49,15 @@ export interface EvidencePack {
   summary: { conditions: number; shown: number; not_shown: number; drawn: number; debug: boolean };
   caption: string[];
   disclaimer: string;
+  context?: EvidenceContext[];
+  replay?: EvidenceReplay;
 }
 
 export const evidenceApi = {
   get: (id: number, debug = false) => request<EvidencePack>(`/screener/evidence/${id}${debug ? "?debug=true" : ""}`),
+  /** EV3: the stored pack's screen as of an earlier bar of its window (`at` = that bar's close, with its zone). */
+  replay: (id: number, at: string, debug = false) =>
+    request<EvidencePack>(`/screener/evidence/${id}/replay?at=${encodeURIComponent(at)}${debug ? "&debug=true" : ""}`),
   sendTelegram: (id: number) => request<{ sent: boolean; reason: string | null }>(`/screener/evidence/${id}/telegram`, { method: "POST" }),
 };
 
@@ -60,6 +73,40 @@ export function drawableColor(d: EvidenceDrawable, all: readonly EvidenceDrawabl
 }
 
 const INTRADAY = new Set(["1m", "3m", "5m", "15m", "30m", "1h"]);
+
+/** EV3: the timeframes a replay reads from the shared history (the backend's REPLAY_TFS). */
+export const REPLAY_TFS: ReadonlySet<string> = new Set(["1m", "3m", "5m", "15m", "30m", "1h", "1d"]);
+const TF_MS: Record<string, number> = { "1m": 60e3, "3m": 180e3, "5m": 300e3, "15m": 900e3, "30m": 1800e3, "1h": 3600e3, "1d": 86400e3 };
+
+/**
+ * EV3: the replay steps of a stored pack - each bar's close (the runtime's bar_close: start + the timeframe) from the
+ * window's first bar up to the pack's own bar, oldest first. Empty for a timeframe that is not replayed. The last step is
+ * the stored pack itself.
+ */
+export function replaySteps(pack: Pick<EvidencePack, "base_tf" | "bars" | "as_of" | "matched_index">): string[] {
+  const ms = TF_MS[pack.base_tf];
+  if (!ms || !REPLAY_TFS.has(pack.base_tf)) return [];
+  const last = Date.parse(pack.as_of.bar_close);
+  const out: string[] = [];
+  for (const t of pack.bars.t) {
+    const close = Date.parse(t) + ms;
+    if (Number.isFinite(close) && close <= last) out.push(new Date(close).toISOString());
+  }
+  return out;
+}
+
+/** EV3: the replay step after moving `delta` bars from `current` (null = the stored pack, the last step); null again at the match. */
+export function stepReplay(current: number | null, delta: number, count: number): number | null {
+  if (count < 2) return null;
+  const next = Math.min(count - 1, Math.max(0, (current ?? count - 1) + delta));
+  return next >= count - 1 ? null : next;
+}
+
+/** EV3: a trend chip's tone - up / down / neither (the tag itself is always shown as text, never by colour alone). */
+export function trendTone(tag: string | null): "up" | "down" | "flat" {
+  const t = (tag ?? "").toUpperCase();
+  return t === "UP" ? "up" : t === "DOWN" ? "down" : "flat";
+}
 
 /** "bar closed 10 Oct 2026, 11:15 IST" for intraday bars, "bar of 19 Jul 2026" for daily and longer. */
 export function barTimeText(pack: Pick<EvidencePack, "base_tf" | "as_of">): string {
@@ -160,7 +207,10 @@ export function evidenceGeometry(pack: EvidencePack, drawables: readonly Evidenc
         const p = path(s.values, (v) => yOf(v));
         if (p) shapes.push({ ...base, kind: "path", key: `${d.id}-s${si}`, d: p, dash: si ? "4 3" : undefined });
       });
-      (d.levels ?? []).forEach((lv, li) => shapes.push({ ...base, kind: "line", key: `${d.id}-l${li}`, x1: left, x2: right, y1: yOf(lv.value), y2: yOf(lv.value), dash: "6 4" }));
+      (d.levels ?? []).forEach((lv, li) => {
+        shapes.push({ ...base, kind: "line", key: `${d.id}-l${li}`, x1: left, x2: right, y1: yOf(lv.value), y2: yOf(lv.value), dash: "6 4" });
+        if (d.chain) shapes.push({ ...base, kind: "text", key: `${d.id}-lt${li}`, x: left + 4, y: yOf(lv.value) - 3, text: `${lv.label} ${lv.value_text}` });
+      });
     }
   });
   let subInfo: Geometry["sub"] = null;

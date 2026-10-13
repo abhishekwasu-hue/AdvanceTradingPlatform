@@ -6,7 +6,7 @@ treated as over (and a fresh exit goes out) only once this is later than `exit_s
 `exit_filled_price`: what earlier exits of the position filled before the recorded one, so the booking blends every part.
 
 Revision ID: e2a4c6e8f0b3
-Revises: c9e1f3a5b7d2 (BYOK-V3 vision subjects, main's head)
+Revises: e2a4c6b8d0f1 (company symbol per scope, main's head after #247; re-chained from c9e1f3a5b7d2)
 Create Date: 2026-10-13 12:00:00
 """
 from typing import Sequence, Union
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e2a4c6e8f0b3'
-down_revision: Union[str, Sequence[str], None] = 'c9e1f3a5b7d2'
+down_revision: Union[str, Sequence[str], None] = 'e2a4c6b8d0f1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - four nullable columns the previous release never reads; a code-only rollback runs unchanged on

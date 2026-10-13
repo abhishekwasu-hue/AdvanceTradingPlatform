@@ -37,6 +37,15 @@ SHOULD_BLOCK = [
     "INFY vika", "TCS खरेदी करावी", "RELIANCE खरीदना चाहिए", "TCS घेऊ शकता", "RELIANCE ख़रीदें",
     # LOW9: an imperative with a level and no ticker, and a modal call on a ticker with a level
     "Buy 25000 CE above 120", "I would sell TCS above 4000",
+    # second review of #230: exemptions are scoped to the clause / a record line only
+    "Step 1: Buy RELIANCE.", "Example: Buy RELIANCE now", "Backtest: Buy RELIANCE", "Status: Buy RELIANCE (now)", "Template: Buy RELIANCE",
+    "Journal: Buy RELIANCE now", "Proposal: Buy RELIANCE now", "Buy RELIANCE when the market opens", "Buy RELIANCE when you can",
+    "We never say this, but buy RELIANCE.", "I won't tell you what to do; sell INFY.", "Buy RELIANCE in paper mode.",
+    "Buy RELIANCE now - click the button.", "RELIANCE was weak.\nEntry 2500\nSL 2450\nTarget 2600",
+    "RELIANCE will hit 3000 for sure, as it did last week.", "Buy calls on NIFTY", "Buy puts on NIFTY", "Buy signal on RELIANCE - act now",
+    "Buy setup RELIANCE", "Sell rating on TCS", "RELIANCE ला खरेदी करा", "TCS को खरीदें", "Buy\nRELIANCE", "Buy two lots of NIFTY",
+    "Buy ten shares of RELIANCE", "You bought RELIANCE, buy more.", "Buy => RELIANCE", "TCS घ्यायला हवा", "TCS खरेदी करायला हरकत नाही",
+    "RELIANCE में खरीदारी करें",
 ]
 
 SHOULD_PASS = [
@@ -62,6 +71,12 @@ SHOULD_PASS = [
     "NIFTY hit 25000 for sure on Friday.", "Buy when the close is above the 20-day high.", "The long-term trend is up.",
     "Short-term momentum faded near 2450.", "Long upper wicks near 2500 show supply.", "Cover image of the report.",
     "Exit all is under the Positions page.", "The trade was closed at the target 2600 after the stop 2450 moved up; entry was 2500.",
+    # second review of #230: records, noun phrases, past moves, template levels
+    "PAPER order placed: BUY 10 RELIANCE at 2500.", "Drafted: Sell TCS 5 qty (PAPER) - needs your approval.",
+    "Your order: Buy RELIANCE x 10 (PAPER).", "Short TCS positions were squeezed.", "Sell HDFCBANK was the most common signal.",
+    "Exit INFY positions are shown in the journal.", "NIFTY rose to 25000 surely because the banks rallied.",
+    "RELIANCE खरेदी करा असे संकेत आम्ही देत नाही.",
+    "Buy-side breakout on RELIANCE: entry 2500, stop 2450, target 2600 per the template.",
 ]
 
 
@@ -120,7 +135,44 @@ def test_names_from_the_instrument_master_count_in_any_case():
 def test_long_inputs_are_linear_and_capped():
     import time
     started = time.monotonic()
+    assert output_filter.screen("1" * 4_000 + " for sure", "en") is not None          # a digit run: no cubic backtracking
+    assert output_filter.screen(("stop 1 target 2 word " * 1_500) + "\n", "en") is not None
+    assert time.monotonic() - started < 3
     assert not output_filter.screen("\n" * 39_000 + "Buy RELIANCE", "en").ok
     assert output_filter.screen("a, " * 13_000, "en").ok
     assert time.monotonic() - started < 5
     assert not output_filter.screen("x" * 40_001, "en").ok
+
+
+def test_refresh_loads_long_symbols_and_rolls_back_a_failed_read():
+    import asyncio
+
+    from app.ai import instrument_names
+
+    class _Rows:
+        def all(self):
+            return [("KAYNES", "Kaynes Technology India Limited"), ("ABB", "ABB India Limited")]
+
+    class _Session:
+        rolled_back = False
+
+        async def execute(self, *_a, **_k):
+            return _Rows()
+
+        async def rollback(self):
+            _Session.rolled_back = True
+
+    class _Broken(_Session):
+        async def execute(self, *_a, **_k):
+            raise RuntimeError("no table")
+    try:
+        assert asyncio.run(instrument_names.refresh(_Session())) >= 2
+        assert not output_filter.screen("buy kaynes now", "en").ok              # a symbol of five letters or more, any case
+        assert not output_filter.screen("Buy Kaynes Technology India", "en").ok
+        assert output_filter.screen("abb is short for an abbreviation", "en").ok
+        broken = _Broken()
+        assert asyncio.run(instrument_names.refresh(broken)) == 0 and _Broken.rolled_back
+    finally:
+        for name in ("kaynes", "kaynes technology india", "abb india"):
+            instrument_names._NAMES.discard(name)
+            instrument_names._FROM_MASTER.discard(name)

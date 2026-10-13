@@ -36,6 +36,7 @@ Texts longer than `MAX_CHARS` are not read: they answer one label ("too long to 
 """
 from __future__ import annotations
 
+import bisect
 import json
 import re
 import unicodedata
@@ -48,7 +49,8 @@ from app.ai import instrument_names
 MAX_CHARS = 40_000
 _WORD = "\\w\u0900-\u0963\u0966-\u097f"            # Devanagari letters and signs are word characters; the dandas are not
 _TICKER = re.compile(r"[A-Z][A-Z0-9&]{1,19}(?:-[A-Z]{1,4})?")
-_NUMBER = r"₹?\s*\d[\d,]*(?:\.\d+)?"
+# A number starts where a digit run starts (review of #230, MED perf: no backtracking into a run of digits).
+_NUMBER = r"(?<![\d,.])₹?\s*(?<![\d,.])\d[\d,]*(?:\.\d+)?"
 
 
 def _alt(words: Sequence[str]) -> str:
@@ -102,6 +104,7 @@ class Lists:
     past: Pattern
     negated: Pattern
     howto: Pattern
+    verb_line: Pattern
 
 
 @lru_cache(maxsize=4)
@@ -117,7 +120,7 @@ def lists(path: str) -> Lists:
     start = r"(?:^|(?<=[\n.!?;:,(\u0964\u0965—–])|(?<=\s-)|(?<=->))[ \t]*"
     prefix = rf"(?:(?:{_alt(calls.get('clause_prefixes', []))})\s+){{0,2}}"
     rest = r"(?P<rest>[^\n.!?;\u0964]{0,120})"
-    sep = r"\s*(?:[:\-–—>]+\s*)?"
+    sep = r"\s*(?:[:\-–—>=]+\s*)?"
     number_words = _alt(calls.get("number_words", []))
     number = rf"(?:{_NUMBER}|(?<![{_WORD}])(?:(?:{number_words})[\s-]*)+(?![{_WORD}]))"
     certainty = _alt(calls.get("certainty", []))
@@ -151,6 +154,7 @@ def lists(path: str) -> Lists:
         past=re.compile(rf"(?<![{_WORD}])(?:{_alt(calls.get('past_markers', []))})(?![{_WORD}])|\d{{4}}-\d{{2}}-\d{{2}}|trade\s*#?\s*\d+", re.I),
         negated=re.compile(rf"(?<![{_WORD}])(?:{_alt(neg.get('en', []) + neg.get('mr', []) + neg.get('hi', []))})(?![{_WORD}])", re.I),
         howto=re.compile(r"\b(?:paper mode|in the app|button|page|tab|click|tap|screen|menu|watchlist|symbol box)\b", re.I),
+        verb_line=re.compile(rf"(?im)^([ \t]*(?:{en})[ \t]*[:\-–—>=]*)[ \t]*\n(?=[ \t]*\S)"),
     )
 
 
@@ -167,14 +171,23 @@ def _is_ticker(word: str, L: Lists) -> bool:
     return bool(_TICKER.fullmatch(word)) and word.upper() not in L.not_tickers
 
 
+_QTY_UNITS = {"lots", "lot", "shares", "share", "qty", "units", "unit", "stocks"}
+
+
 def _instrument_at_start(rest: str, L: Lists, *, allow_level: bool) -> Optional[str]:
-    """The instrument (or share word / price level) the words of `rest` open with, past at most four filler words."""
+    """The instrument (or share word / price level) the words of `rest` open with, past at most five filler words
+    ("all", "a few shares of", "two lots of", "10 shares of")."""
     words = [w for w in _words(rest) if w]
     i = 0
-    while i < len(words) and i < 4 and words[i].lower() in L.fillers and not _is_ticker(words[i], L):
-        nxt = words[i + 1].lower() if i + 1 < len(words) else ""
-        if words[i].lower() in L.share_words and nxt not in ("of", "in"):
-            break                                   # "Buy this stock now": the share word is the object
+    while i < len(words) and i < 5 and not _is_ticker(words[i], L):
+        w, nxt = words[i].lower(), (words[i + 1].lower() if i + 1 < len(words) else "")
+        if re.fullmatch(r"\d+", w) and nxt in _QTY_UNITS:           # "10 shares of": a quantity, not a level
+            i += 1
+            continue
+        if w not in L.fillers:
+            break
+        if w in L.share_words and nxt not in ("of", "in"):
+            break                                               # "Buy this stock now": the share word is the object
         i += 1
     tail = words[i:]
     if not tail:
@@ -194,16 +207,87 @@ def _instrument_at_start(rest: str, L: Lists, *, allow_level: bool) -> Optional[
     return None
 
 
+# --- detection ----------------------------------------------------------------------------------------------------------
+
+_SENTENCE = re.compile(r"(?<!\d)[.!?](?!\d)|[\n\u0964\u0965]")
+# Clause breaks inside a sentence: the scope of a "when", a negation or a past marker (review of #230: never the sentence).
+_CLAUSE = re.compile(r"[,;—–]|\s-\s|\sbut\s|\sand then\s", re.I)
+# A record line: a status / log line with a past or passive status word, a quantity field or an approval state - only a
+# line that opens with a label ("Status:", "PAPER order placed:", "Proposal:") and reads like a record is not a call.
+_LABEL = re.compile(r"^\s*(?P<label>[^\W\d][\w &'/-]{0,40}?)\s*(?:#?\s*\d+\s*)?:")
+_RECORD = re.compile(r"\b(?:placed|filled|executed|drafted|bought|sold|closed|exited|cancelled|canceled|rejected|pending|awaiting|"
+                     r"needs your approval|was|were|squeezed|triggered)\b|\b\d+\s*(?:shares?|qty|lots?|units?)\b|\bqty\s*[:=]?\s*\d+|"
+                     r"\bx\s*\d+\b", re.I)
+_FIELD_LABELS = {"side"}                                          # a field of an order record: the line is the record itself
+_RULE_LABELS = {"rule", "rules", "entry rule", "exit rule", "strategy", "template", "condition", "setup rule"}
+_HOWTO_LABEL = re.compile(r"^\s*how[ -]?to\b", re.I)
+_NOUN_PHRASE = re.compile(r"^\s*(?:\S+\s+){0,1}?(?:was|were|is|are|has|have|had|remain|remained|stay|stayed|appear|appeared|"
+                          r"get|got|shown|listed)\b", re.I)
+_PRONOUN_OBJECT = re.compile(r"^\s*(?:(?:some|a|bit|little|few)\s+)*(?:more|it|them|this|that|those|these)?\s*(?:now|here|today)?\s*$", re.I)
+_DEVA_SAYING_LEAD = re.compile(r"(?:असे|अस|ऐसा|ऐसी|ऐसे|यह|ये)\s+(?:\S+\s+){0,3}$")
+_OBJECT_MARKERS = ("ला", "ना", "को", "में", "मध्ये")
+_GENITIVES = ("चा", "ची", "चे", "च्या", "का", "की", "के")
+
+
+def sentences(text: str) -> List[str]:
+    return [s for s in _SENTENCE.split(text) if s and s.strip()]
+
+
+def _paragraphs(text: str) -> List[str]:
+    return [p for p in re.split(r"\n[ \t]*\n", text) if p.strip()]
+
+
+def _clause(s: str, start: int, end: int) -> str:
+    """The clause of sentence `s` around s[start:end] (clause breaks: , ; dashes, "but")."""
+    lo = max((m.end() for m in _CLAUSE.finditer(s, 0, start)), default=0)
+    nxt = _CLAUSE.search(s, end)
+    return s[lo:nxt.start() if nxt else len(s)]
+
+
+def record_line(s: str) -> bool:
+    label = _LABEL.match(s)
+    if label is None:
+        return False
+    return label.group("label").strip().lower() in _FIELD_LABELS or bool(_RECORD.search(s))
+
+
+def _rule_line(s: str) -> bool:
+    label = _LABEL.match(s)
+    return label is not None and label.group("label").strip().lower() in _RULE_LABELS
+
+
+def _negated(s: str, start: int, L: Lists) -> bool:
+    """A negated saying that governs the call at `start`: before it in the same clause, or ending in ':' right before it
+    ("We never say: Sell RELIANCE"); a Marathi / Hindi one after it, led by असे / ऐसा ("RELIANCE खरेदी करा, असे आम्ही सांगत
+    नाही")."""
+    for m in L.negated.finditer(s):
+        if m.start() < start:
+            between = s[m.end():start]
+            if not _CLAUSE.search(between) or re.match(r"^\s*(?:\w+\s+){0,2}?:", between):
+                return True
+        elif re.search(r"[\u0900-\u097f]", m.group(0)) and _DEVA_SAYING_LEAD.search(s[max(0, m.start() - 60):m.start()]):
+            return True
+    return False
+
+
+def _strip_markers(words: List[str]) -> List[str]:
+    while words and words[-1] in _OBJECT_MARKERS:               # "RELIANCE ला खरेदी करा", "TCS को खरीदें": object markers
+        words = words[:-1]
+    return words
+
+
 def _instrument_at_end(before: str, L: Lists, *, gap: int) -> Optional[str]:
-    """The instrument (or share word) that ends `before`, past at most `gap` words that are not genitives."""
-    words = [w for w in _words(before) if w]
+    """The instrument (or share word) that ends `before`, past at most `gap` words that are not genitives (object
+    markers ला / ना / को / में are skipped)."""
+    words = _strip_markers([w for w in _words(before) if w])
     for skip in range(0, gap + 1):
         if skip > len(words):
             break
         head = words[:len(words) - skip] if skip else words
         between = words[len(words) - skip:] if skip else []
-        if any(w in ("चा", "ची", "चे", "च्या", "का", "की", "के", "ला", "ना", "को") for w in between):
+        if any(w in _GENITIVES for w in between):
             return None
+        head = _strip_markers(head)
         if not head:
             break
         last = head[-1]
@@ -217,84 +301,134 @@ def _instrument_at_end(before: str, L: Lists, *, gap: int) -> Optional[str]:
     return None
 
 
-# --- detection ----------------------------------------------------------------------------------------------------------
-
-_SENTENCE = re.compile(r"(?<!\d)[.!?](?!\d)|[\n\u0964\u0965]")
-
-
-def sentences(text: str) -> List[str]:
-    return [s for s in _SENTENCE.split(text) if s and s.strip()]
+def _has_instrument(text: str, L: Lists) -> bool:
+    words = [w for w in _words(text) if w]
+    if any(_is_ticker(w, L) for w in words):
+        return True
+    return any(instrument_names.prefix_len(words[i:i + instrument_names.MAX_WORDS]) for i in range(len(words)))
 
 
-def _paragraphs(text: str) -> List[str]:
-    return [p for p in re.split(r"\n[ \t]*\n", text) if p.strip()]
+def _object(rest: str, L: Lists, s: str, *, allow_level: bool) -> Optional[str]:
+    """What an imperative / modal verb is aimed at (None = not a call): an instrument, a share word or a price level after
+    the fillers; "a signal / setup / rating on RELIANCE"; a pronoun ("buy more") when the sentence names an instrument.
+    A noun phrase ("Sell HDFCBANK was the most common signal") is not a call."""
+    if L.descriptive.match(rest):
+        tail = L.descriptive.sub("", rest, count=1)
+        tail = re.sub(r"^\s*(?:on|in|for|of)\s+", "", tail, flags=re.I)
+        obj = _instrument_at_start(tail, L, allow_level=False)
+        if obj is None or _NOUN_PHRASE.match(tail[tail.find(obj.split()[-1]) + len(obj.split()[-1]):] if obj.split()[-1] in tail else ""):
+            return None
+        return obj
+    legs = re.match(r"^\s*(?:(?:the|some|a few|more)\s+)?(?:calls?|puts?|options?|futures?|ce|pe)\s+(?:on|in|of)\s+", rest, re.I)
+    if legs:                                                    # "Buy calls on NIFTY": an option leg of the instrument
+        obj = _instrument_at_start(rest[legs.end():], L, allow_level=False)
+        if obj:
+            return obj
+    obj = _instrument_at_start(rest, L, allow_level=allow_level)
+    if obj is not None:
+        last = obj.split()[-1]
+        after = rest[rest.find(last) + len(last):] if last in rest else ""
+        if _NOUN_PHRASE.match(re.sub(r"^\s*(?:positions?|shares?|stocks?|calls?|puts?|orders?|signals?)\b", "", after, flags=re.I)):
+            return None
+        return obj
+    if _PRONOUN_OBJECT.match(rest) and _has_instrument(s, L):
+        return "it"
+    return None
 
 
 def _sentence_calls(s: str, L: Lists) -> List[str]:
     found: List[str] = []
-    if L.negated.search(s) or L.context.search(s):
+    record, rule = record_line(s), _rule_line(s)
+    if record:
         return found
 
     def add(label: str, what: str) -> None:
         item = f"call: {label} {what}".strip().lower()[:60]
         if item not in found:
             found.append(item)
+
+    def exempt(m: "re.Match[str]", *, howto_ok: bool = False) -> bool:
+        clause = _clause(s, m.start(), m.end())
+        if _negated(s, m.start(), L):
+            return True
+        if rule and L.condition.search(clause):                  # "Rule: Buy NIFTY when RSI < 30" - a rule subject
+            return True
+        if howto_ok and _HOWTO_LABEL.match(s) and L.howto.search(s):
+            return True
+        return False
     for m in L.imperative.finditer(s):
-        rest = m.group("rest")
-        if L.descriptive.match(rest) or L.condition.search(rest):
+        if exempt(m, howto_ok=True):
             continue
-        obj = _instrument_at_start(rest, L, allow_level=True)
+        obj = _object(m.group("rest"), L, s, allow_level=True)
         if obj:
             add(m.group("verb"), obj)
     for pattern in (L.modal, L.gerund):
         for m in pattern.finditer(s):
-            rest = m.group("rest")
-            if L.descriptive.match(rest) or L.condition.search(rest) or L.howto.search(rest):
+            if exempt(m, howto_ok=True):
                 continue
-            obj = _instrument_at_start(rest, L, allow_level=False)
+            obj = _object(m.group("rest"), L, s, allow_level=False)
             if obj:
                 add(m.group("verb"), obj)
     for m in L.colon.finditer(s):
-        if L.descriptive.match(m.group("after")):
+        if L.descriptive.match(m.group("after")) or _negated(s, m.start("verb"), L):
             continue
         obj = _instrument_at_end(m.group("obj"), L, gap=0)
         if obj and obj.lower() not in L.share_words:
             add(f"{obj}:", m.group("verb"))
     for m in L.deva.finditer(s):
+        if _negated(s, m.start(), L):
+            continue
         verb = m.group("verb")
         obj = _instrument_at_end(s[max(0, m.start() - 80):m.start()], L, gap=2) or _instrument_at_start(s[m.end():m.end() + 80], L, allow_level=False)
         if obj:
             add(obj, verb)
     for m in L.deva_light.finditer(s):
+        if _negated(s, m.start(), L):
+            continue
         obj = _instrument_at_end(s[max(0, m.start() - 80):m.start()], L, gap=0)
         if obj:
             add(obj, m.group("verb"))
     for m in L.opinion.finditer(s):
         obj = _instrument_at_start(m.group("rest"), L, allow_level=False)
-        if obj:
+        if obj and not _negated(s, m.start(), L):
             add("pick", obj)
     for m in L.rated.finditer(s):
         obj = _instrument_at_end(s[max(0, m.start() - 80):m.start()], L, gap=0)
-        if obj:
+        if obj and not _negated(s, m.start(), L):
             add(obj, "rated a buy / sell")
-    if not L.past.search(s):
-        for pattern in L.certainty:
-            hit = pattern.search(s)
-            if hit:
-                add("level with certainty", hit.group(0).strip()[:30])
-                break
+    for pattern in L.certainty:
+        for hit in pattern.finditer(s):
+            if L.past.search(_clause(s, hit.start(), hit.end())) or _negated(s, hit.start(), L):
+                continue                                          # past tense in ITS clause only ("as it did last week" is not)
+            add("level with certainty", hit.group(0).strip()[:30])
+            break
     return found
 
 
+_TEMPLATE_CONTEXT = re.compile(r"\b(?:per|in|from)\s+(?:the|your|this)\s+(?:template|rule|strategy|plan|backtest)\b|"
+                               r"\b(?:template|strategy|rule|plan)'s\b", re.I)
+
+
 def _paragraph_levels(p: str, L: Lists) -> bool:
-    """A stop and a target with price levels, plus an entry level or an instrument, in one paragraph (not a log)."""
-    if L.past.search(p) or L.context.search(p) or L.negated.search(p):
+    """A stop and a target with price levels, plus an entry level or an instrument, in one paragraph. Not a call when the
+    sentence holding the stop or the target is a record, past / backtest text, a template's levels or negated."""
+    stops, targets = list(L.stop.finditer(p)), list(L.target.finditer(p))
+    if not stops or not targets:
         return False
-    if not (L.stop.search(p) and L.target.search(p)):
-        return False
+    bounds = [0] + [m.end() for m in _SENTENCE.finditer(p)] + [len(p) + 1]        # sentence starts, computed once
+    seen: set = set()
+    for m in stops + targets:
+        k = bisect.bisect_right(bounds, m.start()) - 1
+        if k in seen:
+            continue
+        seen.add(k)
+        sentence = p[bounds[k]:bounds[k + 1]]
+        if (L.past.search(sentence) or record_line(sentence) or _TEMPLATE_CONTEXT.search(sentence)
+                or _negated(sentence, len(sentence), L)):
+            return False
     if L.entry.search(p):
         return True
-    return any(_is_ticker(w, L) for w in _words(p)) or any(instrument_names.prefix_len(_words(p)[i:]) for i in range(len(_words(p))))
+    return _has_instrument(p, L)
 
 
 def detect(text: str, path: str) -> List[str]:
@@ -302,7 +436,7 @@ def detect(text: str, path: str) -> List[str]:
     if len(text or "") > MAX_CHARS:
         return [f"call: text too long to check (over {MAX_CHARS} characters)"]
     L = lists(path)
-    body = normalise(text)
+    body = L.verb_line.sub(r"\1 ", normalise(text))            # "Buy\nRELIANCE": a verb alone on its line opens the next one
     found: List[str] = []
     for s in sentences(body):
         for item in _sentence_calls(s, L):
@@ -315,9 +449,13 @@ def detect(text: str, path: str) -> List[str]:
                 found.append(item)
     if not found:
         from app.support.normalize import deobfuscated
+        trade_word = re.compile(r"\b(?:buy|sell|short|hold|exit|accumulate|purchase|square\s*off|cover|long)\b", re.I)
         for s in sentences(body):
             plain = set(_sentence_calls(s, L))
+            words = len(trade_word.findall(s))
             for reading in deobfuscated(" ".join(s.split())):
+                if len(trade_word.findall(reading)) <= words:
+                    continue                                    # nothing was disguised as a trade word in this reading
                 for item in _sentence_calls(reading, L):
                     if item not in plain and item not in found:
                         found.append(f"{item} (disguised)")

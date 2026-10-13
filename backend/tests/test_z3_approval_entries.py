@@ -23,6 +23,8 @@ from app.platform import controls
 from tests.test_auth_api import _session_factory, client
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _get, _signal, _tenant, _trades, _worker
 
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+
 UTC = timezone.utc
 BACKEND = Path(__file__).resolve().parents[1]
 
@@ -291,7 +293,13 @@ def test_every_order_entry_point_is_reviewed_for_approval():
     assert _pipeline_callers() == {"app/main.py": {"execute_signal_for_user"}, "app/webhooks/routes.py": {"execute_signal_for_user"},
                                    "app/public_api/routes.py": {"execute_signal_for_user"}, "app/execution/approval.py": {"execute_signal_for_user"},
                                    "app/workers/trading_worker.py": {"execute_signal_for_user", "execute_structure"},
-                                   "app/paper/ticket.py": {"execute_signal_for_user"}}
+                                   "app/paper/ticket.py": {"execute_signal_for_user"},
+                                   "app/execution/core/dispatcher.py": {"execute_signal_for_user"}}
+    # N1 X2: the core's Auto PAPER route asks approval-only mode again right before the pipeline (falls back to a
+    # proposal), PAPER only and without a broker (tests/test_n1_e1_execution_core.py checks the call).
+    core = (BACKEND / "app" / "execution" / "core" / "dispatcher.py").read_text()
+    paper = core[core.index("async def _paper("):core.index("async def _placed(")]
+    assert paper.index("approval.required(") < paper.index("execute_signal_for_user(")
     # Z5 / P1-d: the plan-before-trade PAPER ticket proposes first under approval-only mode (like the console), PAPER only.
     ticket_src = (BACKEND / "app" / "paper" / "ticket.py").read_text()
     assert "mode=by_default.MODE" in ticket_src

@@ -282,7 +282,11 @@ export default function ProChart({
     dataKey.current = "";
     // CH1: the same chart behind the ChartEngine interface - ProChart keeps drawing everything it drew before.
     const engine = new LightweightEngine(mainChart, s.candles as ISeriesApi<"Candlestick">,
-      (y) => (s.candles as ISeriesApi<"Candlestick">).coordinateToPrice(y));
+      (y) => (s.candles as ISeriesApi<"Candlestick">).coordinateToPrice(y),
+      // N4 CH6: study lines from the server, on the price pane (0) or the study pane under it
+      { add: (pane, color, title) => mainChart.addSeries(LineSeries, { color, lineWidth: 2, priceLineVisible: false, lastValueVisible: true, title,
+                                                                      crosshairMarkerVisible: false }, pane) as unknown as { setData(d: { time: number; value: number }[]): void },
+        remove: (line) => mainChart.removeSeries(line as unknown as ISeriesApi<"Line">) });
     onEngineRef.current?.(engine);
     setToolEngine(engine);
 

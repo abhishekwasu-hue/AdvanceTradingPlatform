@@ -19,6 +19,7 @@ import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultBoard } from "../screener/ResultBoard";
+import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
 import {
@@ -78,6 +79,9 @@ export default function ScreenerPage(_props: PageProps) {
   const [digest, setDigest] = useState<DigestState | null>(null);
   // U9 TX4 (flag `screener_tx4`): Learn and Fork on the gallery's cards.
   const [learnOn, setLearnOn] = useState(false);
+  // S10 J (flag `screener_etf`): the ETF screen in a dialog.
+  const [etfOn, setEtfOn] = useState(false);
+  const [etfOpen, setEtfOpen] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
@@ -87,7 +91,8 @@ export default function ScreenerPage(_props: PageProps) {
     screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
     screenerApi.regime().then((r) => setRegime(isRegime(r) ? r : null)).catch(() => setRegime(null));
     screenerApi.digest().then((d) => setDigest(isDigestState(d) ? d : null)).catch(() => setDigest(null));
-    api.myFeatures().then((f) => setLearnOn(Boolean(f.screener_tx4))).catch(() => setLearnOn(false));
+    api.myFeatures().then((f) => { setLearnOn(Boolean(f.screener_tx4)); setEtfOn(Boolean(f.screener_etf)); })
+      .catch(() => { setLearnOn(false); setEtfOn(false); });
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
@@ -220,6 +225,7 @@ export default function ScreenerPage(_props: PageProps) {
         {taxonomy && (mirrors || digest) && (
           <Button size="sm" onClick={() => setToolsOpen(true)} data-testid="library-tools-open"><Layers size={14} /> Library tools</Button>
         )}
+        {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
           <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
@@ -296,6 +302,13 @@ export default function ScreenerPage(_props: PageProps) {
         <Dialog wide open={toolsOpen} onOpenChange={setToolsOpen} title="Library tools"
                 description="Run several screens together to see where they agree, or watch a list for a ready-then-triggered move.">
           <LibraryTools taxonomy={taxonomy} mirrors={mirrors} watchLists={watchLists} symbolsText={symbolsText} digest={digest} tx2={!!mirrors} />
+        </Dialog>
+      )}
+
+      {etfOn && (
+        <Dialog wide open={etfOpen} onOpenChange={setEtfOpen} title="ETFs"
+                description="NSE ETFs from the shared end-of-day history: traded value and how each moved against the index it tracks.">
+          <EtfPanel />
         </Dialog>
       )}
 

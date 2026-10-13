@@ -256,6 +256,11 @@ class TradeRecord(Base):
     """
 
     __tablename__ = "trades"
+    # #221: the worker reads the open positions of every organisation every cycle (ADR-0004); this index keeps that read
+    # on the open rows only, however many closed trades accumulate.
+    __table_args__ = (
+        Index("ix_trades_open", "tenant_id", postgresql_where=text("exit_time IS NULL"), sqlite_where=text("exit_time IS NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -1259,6 +1264,31 @@ class AiActionRecord(Base):
     owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
 
 
+class ScanThenTemplateRecord(Base):
+    """N1 U4 X1 (flag `scan_then`, off by default): a scan alert rule's "Then" template. Once the rule matches a symbol, the
+    level gate (Trade's level-bot rules: Daily trend first -> a Z7a zone as the area -> handover study -> a dominant
+    commitment candle on higher volume) watches it on closed `confirm_tf` bars for the rest of the session; a CONFIRMED
+    setup becomes an execution-core intent for `user_id` in `mode` (NOTIFY / ONE_CLICK / AUTO_PAPER, which the core turns
+    into a proposal). Never an order. One template per rule."""
+
+    __tablename__ = "scan_then_templates"
+    __table_args__ = (UniqueConstraint("rule_id", name="uq_scan_then_templates_rule_id"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    rule_id: Mapped[int] = mapped_column(ForeignKey("alert_rules.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    mode: Mapped[str] = mapped_column(String(12), nullable=False, default="NOTIFY")
+    confirm_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="5m")
+    gate_settings_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default=true())
+    last_bar_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)      # the last confirm bar evaluated
+    last_status_json: Mapped[str | None] = mapped_column(Text, nullable=True)              # per symbol: the gate's code + line
+    last_problem: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class ExecutionIntentRecord(Base):
     """N1 E1 (ADR-0014): one entry intent on the execution core's queue - "this setup, for this person, in this mode".
     A producer (a scan's "Then" template, X1) only writes the row; the trading worker claims it and the core's policy
@@ -1567,6 +1597,9 @@ class CompanyRecord(Base):
     __tablename__ = "companies"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     symbol: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     bse_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -1603,9 +1636,12 @@ class FinancialPeriodRecord(Base):
     """
 
     __tablename__ = "financial_periods"
-    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", name="uq_company_period"),)
+    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", name="uq_company_period_tenant"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     period_type: Mapped[str] = mapped_column(String(10), nullable=False)
     period_label: Mapped[str] = mapped_column(String(20), nullable=False)
@@ -1649,6 +1685,9 @@ class ShareholdingSnapshotRecord(Base):
     __tablename__ = "shareholding_snapshots"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     as_of_date: Mapped[date] = mapped_column(Date, nullable=False)
     promoter_pct: Mapped[float] = mapped_column(Float, nullable=False)
@@ -1665,6 +1704,9 @@ class CorporateActionRecord(Base):
     __tablename__ = "corporate_actions"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     action_type: Mapped[str] = mapped_column(String(50), nullable=False)
     announced_date: Mapped[date] = mapped_column(Date, nullable=False)
@@ -1688,6 +1730,9 @@ class EarningsCalendarEventRecord(Base):
     __tablename__ = "earnings_calendar_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     event_type: Mapped[str] = mapped_column(String(50), nullable=False)
     event_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
@@ -1707,6 +1752,9 @@ class SectorMetricRecord(Base):
     __tablename__ = "sector_metrics"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     period_label: Mapped[str] = mapped_column(String(50), nullable=False)
     metric_code: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -1725,6 +1773,9 @@ class QualitativeFactorRecord(Base):
     __tablename__ = "qualitative_factors"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False, index=True)
     category: Mapped[str] = mapped_column(String(50), nullable=False)
     label: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -1749,6 +1800,9 @@ class NewsEventRecord(Base):
     __tablename__ = "news_events"
 
     id: Mapped[int] = mapped_column(primary_key=True)
+    # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
+    # that organisation and visible to it only (app/fundamentals/visibility.py).
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
     category: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
     headline: Mapped[str] = mapped_column(String(500), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -2222,15 +2276,29 @@ class VisionReportRecord(Base):
     user only. Queued as `pending` when the proposal is raised (never blocking it), audited later by the worker:
     `ok` (report written), `skipped` (no call made: vision off, no key, a cap, no chart data, proposal already decided)
     or `failed` (the provider call failed; `reason` is sanitised and never contains the key). The chart image is not
-    stored - only its SHA-256. The report only comments: nothing here approves, rejects or changes anything."""
+    stored - only its SHA-256. The report only comments: nothing here approves, rejects or changes anything.
+
+    BYOK-V3: the subject is a kind - `proposal` (V2, `ai_action_id`), `scan_alert` (one screen-alert notification of a
+    rule this user created: `notification_id`, `alert_rule_id`, the matched symbol) or `daily_review` (one symbol of this
+    user's own after-close review, `subject_date` in IST). `subject_key` ("proposal:<id>", "scan:<notification id>",
+    "daily:<date>:<EXCHANGE>:<SYMBOL>") is unique per user, so a subject is never audited twice for the same user."""
 
     __tablename__ = "vision_reports"
-    __table_args__ = (UniqueConstraint("user_id", "ai_action_id", name="uq_vision_reports_user_action"),)
+    __table_args__ = (UniqueConstraint("user_id", "ai_action_id", name="uq_vision_reports_user_action"),
+                      UniqueConstraint("user_id", "subject_key", name="uq_vision_reports_user_subject"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    ai_action_id: Mapped[int] = mapped_column(ForeignKey("ai_actions.id", ondelete="CASCADE"), nullable=False, index=True)
+    ai_action_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="CASCADE"), nullable=True, index=True)
+    subject_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="proposal", server_default="proposal", index=True)
+    subject_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True, index=True)
+    alert_rule_id: Mapped[int | None] = mapped_column(ForeignKey("alert_rules.id", ondelete="SET NULL"), nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    subject_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", index=True)   # pending/running/ok/skipped/failed
     provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
     model: Mapped[str | None] = mapped_column(String(80), nullable=True)
@@ -2268,6 +2336,25 @@ class PaperAccountRecord(Base):
     entries_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, onupdate=_utcnow, nullable=False)
+
+
+class ExperienceOptOutRecord(Base):
+    """N2-2 (P1 spec 1.4, flag `experience_levels`): a user's explicit opt-out of one experience gate (naked short options,
+    futures) for one IST day, with the reason they typed. Logged (audit) and counted on the level card; it lets that
+    user's own entries of that kind through until the day ends. Personal: tenant + user; exits never consult it."""
+
+    __tablename__ = "experience_opt_outs"
+    __table_args__ = (UniqueConstraint("user_id", "gate", "day", name="uq_experience_opt_outs_user_gate_day"),
+                      Index("ix_experience_opt_outs_user_day", "user_id", "day"))
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    gate: Mapped[str] = mapped_column(String(32), nullable=False)
+    level: Mapped[str] = mapped_column(String(16), nullable=False)     # the user's level when they opted out
+    reason: Mapped[str] = mapped_column(String(300), nullable=False)
+    day: Mapped[date] = mapped_column(Date, nullable=False)              # IST day it covers
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
 class TradePlanRecord(Base):
@@ -3066,6 +3153,24 @@ class ChartDrawingRecord(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class ChartLayoutRecord(Base):
+    """CH5: one saved multi-chart workspace layout of one user (`layout/1`: grid of 1/2/4/6/8 charts, each with its
+    symbol, timeframe, chart type and link group; which link groups sync symbol / interval / crosshair). Per user and
+    tenant, named, versioned for optimistic concurrency. A picture of the screen: nothing in it places an order."""
+
+    __tablename__ = "chart_layouts"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_chart_layouts_user_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    layout_json: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 

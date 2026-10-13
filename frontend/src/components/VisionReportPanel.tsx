@@ -11,17 +11,21 @@ import { splitJudgement, visionView } from "./visionReport";
  */
 export default function VisionReportPanel({ actionId }: { actionId: number }) {
   const [resp, setResp] = useState<VisionReportsResponse | null>(null);
-  const [busy, setBusy] = useState(false);
-
   const load = () => { api.byokReports(actionId).then(setResp).catch(() => setResp(null)); };
   useEffect(load, [actionId]);
+  return <VisionReportView resp={resp} onChanged={load} />;
+}
 
+/** BYOK-V2/V3: one report (or its line) from a response the caller already has - the proposal card, a scan-alert
+ * notification, a daily-review entry. Only "Delete report" acts, and only on the user's own copy. */
+export function VisionReportView({ resp, onChanged }: { resp: VisionReportsResponse | null; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
   const view = visionView(resp);
   if (view.kind === "hidden") return null;
 
   async function remove(id: number) {
     setBusy(true);
-    try { await api.byokDeleteReport(id); load(); } catch { /* the list reload shows the truth */ } finally { setBusy(false); }
+    try { await api.byokDeleteReport(id); onChanged(); } catch { /* the list reload shows the truth */ } finally { setBusy(false); }
   }
   const deleteButton = (id: number | null) => id == null ? null : (
     <button type="button" className="ml-auto text-[11px] text-fg-muted hover:text-down hover:underline disabled:opacity-50" disabled={busy}

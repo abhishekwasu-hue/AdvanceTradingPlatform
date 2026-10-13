@@ -7,6 +7,7 @@ import type {
   ConfluenceResponse, Digest, DigestSettings, DigestState, ExamplesResponse, LearnResponse, MirrorsResponse, RegimeResponse,
   WatchListsResponse, WatchResponse,
 } from "./library";
+import type { EtfResponse } from "./etf";
 import type { Taxonomy } from "./taxonomy";
 
 export interface Problem { message: string; pos: number | null }
@@ -58,6 +59,8 @@ export const screenerApi = {
     request<ExamplesResponse>(`/screener/library/screens/${encodeURIComponent(id)}/examples`, { method: "POST", body: JSON.stringify({ symbols }) }),
   fork: (id: string) => request<SavedScreen & { forked_from: string; forked_version: number }>("/screener/library/fork",
     { method: "POST", body: JSON.stringify({ screen_id: id }) }),
+  /** S10 J (flag `screener_etf`; 503 while off - the page then shows no ETF button). */
+  etf: (query: string) => request<EtfResponse>(`/screener/etf?${query}`),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

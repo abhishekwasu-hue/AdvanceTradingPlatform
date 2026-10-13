@@ -1,7 +1,7 @@
 """U9 TX3: screen_digests - one user's setup-of-the-day digest (pinned screens, symbols, time, last digest)
 
 Revision ID: b7d9f1a3c5e7
-Revises: f3b5d7a9c1e2
+Revises: c9e1f3a5b7d2
 Create Date: 2026-10-12 22:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'b7d9f1a3c5e7'
-down_revision: Union[str, Sequence[str], None] = 'f3b5d7a9c1e2'
+down_revision: Union[str, Sequence[str], None] = 'c9e1f3a5b7d2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: additive - a new table only; the previous release runs on this schema (code-only rollback ok)

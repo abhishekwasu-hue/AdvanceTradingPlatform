@@ -29,6 +29,7 @@ from app.core import config as app_config
 from app.core.enums import NotificationSeverity, NotificationType
 from app.core.models import Signal
 from app.db.models import ExecutionIntentRecord, Tenant, User
+from app.db.savepoint import guarded
 from app.execution import approval
 from app.execution.core import intents, policy
 from app.platform import phase0_lock
@@ -79,16 +80,18 @@ async def drain(session: AsyncSession, now: Optional[datetime] = None, limit: Op
 
 
 async def _dispatch_batch(session: AsyncSession, ids: List[int], now: datetime, report: DrainReport) -> None:
-    # Ids first: a rollback after one intent's error expires every loaded row, so each is read again before it runs.
+    # Ids first: a failed intent's rollback expires the rows it touched, so each is read again before it runs.
     for intent_id in ids:
         try:
-            row = await session.get(ExecutionIntentRecord, intent_id, populate_existing=True)
-            if row is None or row.status != intents.CLAIMED:
-                continue
-            status = await dispatch_one(session, row, now)
+            # A savepoint per intent (ADR-0004): a failure undoes this intent's own work only - never the shared cycle
+            # session's other pending work - and leaves the session usable (no aborted transaction on Postgres).
+            async with guarded(session, discard_after_commit=True):
+                row = await session.get(ExecutionIntentRecord, intent_id, populate_existing=True)
+                if row is None or row.status != intents.CLAIMED:
+                    continue
+                status = await dispatch_one(session, row, now)
         except Exception as exc:  # noqa: BLE001 - fail closed: this intent fails, the next one runs
             logger.exception("Execution intent %s failed", intent_id)
-            await session.rollback()
             await intents.finish(session, intent_id, intents.FAILED, route=None, now=now,
                                  reason=f"Dispatch error ({type(exc).__name__}); the worker log has the details")
             status = intents.FAILED

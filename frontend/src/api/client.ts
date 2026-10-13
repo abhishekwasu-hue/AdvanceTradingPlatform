@@ -160,6 +160,7 @@ import type {
   StaticIpOverview,
 } from "../types";
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
+import type { ThenBody, ThenIntent, ThenTemplate } from "../screener/then/model";
 import type { BetaCohort } from "../beta/rollout";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
@@ -950,6 +951,13 @@ export const api = {
   createAlertRule: (body: AlertRuleInput) => request<AlertRule>("/alerts/rules", { method: "POST", body: JSON.stringify(body) }),
   setAlertRuleStatus: (id: number, action: "pause" | "resume") => request<AlertRule>(`/alerts/rules/${id}/${action}`, { method: "POST" }),
   alertRuleEvents: (id: number, limit = 50) => request<AlertEventRow[]>(`/alerts/rules/${id}/events?limit=${limit}`),
+  // N1 X1b (flag scan_then): a rule's Then template and the setups it sent to the caller (503 while the flag is off).
+  ruleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`),
+  /** Review of X1b: every rule's Then in one read (rule id -> template) for the panel's chips. */
+  allThen: () => request<{ templates: Record<string, ThenTemplate> }>("/alerts/then"),
+  putRuleThen: (id: number, body: ThenBody) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "DELETE" }),
+  ruleThenIntents: (id: number, limit = 50) => request<ThenIntent[]>(`/alerts/rules/${id}/then/intents?limit=${limit}`),
   getNotificationPolicy: () => request<NotificationPolicy>("/alerts/policy"),
   putNotificationPolicy: (body: NotificationPolicy) => request<NotificationPolicy>("/alerts/policy", { method: "PUT", body: JSON.stringify(body) }),
   listDeadLetters: () => request<DeadLetter[]>("/alerts/dead-letters"),

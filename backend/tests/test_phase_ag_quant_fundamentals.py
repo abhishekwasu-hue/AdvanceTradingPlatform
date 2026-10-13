@@ -61,7 +61,7 @@ def test_factors_endpoint_fills_value_and_quality_from_stored_financials():
     symbols = [{"symbol": "qfund", "candles": _candles(up)}, {"symbol": "NOPROFILE", "candles": _candles(down)},
                {"symbol": "GIVEN", "candles": _candles(flat), "fundamentals": {"pe": 10, "pb": 2, "roe_pct": 15, "debt_to_equity": 0.1, "earnings_growth_pct": 5}}]
 
-    res = client.post("/api/quant/factors", json={"symbols": symbols})
+    res = client.post("/api/quant/factors", headers=headers, json={"symbols": symbols})   # the organisation's own financials
     assert res.status_code == 200, res.text
     body = res.json()
     rows = {r["symbol"]: r for r in body["rows"]}

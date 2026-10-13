@@ -37,6 +37,18 @@ describe("U5 tokens", () => {
     }
   });
 
+  it.each(Object.entries(themes))("%s: text on filled brand surfaces (primary buttons, hover) is AA, and the old dark fill was not", (_, t) => {
+    for (const fill of ["brand-fill", "brand-fill-strong"]) {
+      expect(t[fill], `${fill} defined`).toBeDefined();
+      expect(contrast(t["on-brand"], t[fill]), `on-brand on ${fill}`).toBeGreaterThanOrEqual(4.5);
+    }
+    expect(contrast(t["brand"], t["surface"]), "brand (links, focus) on the page").toBeGreaterThanOrEqual(4.5);
+  });
+
+  it("the regression: white on the dark --brand was 3.67:1, which is why fills have their own tokens", () => {
+    expect(contrast(dark["on-brand"], dark["brand"])).toBeLessThan(4.5);
+  });
+
   it("keeps every meaning a distinct hue in the colour-blind variant (signal and armed move off the new up / down)", () => {
     for (const t of [cvdDark, cvdLight]) {
       const set = new Set(["up", "down", "warn", "signal", "armed"].map((k) => t[k].join(",")));

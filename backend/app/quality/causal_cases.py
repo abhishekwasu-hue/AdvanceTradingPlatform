@@ -116,6 +116,14 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "DayExtremeBreak": ['DayExtremeBreak("up", 0, FALSE, 15, 0)', 'DayExtremeBreak("down", 0, FALSE, 0, 0)@15m'],
     "RelVolumeTOD": ["RelVolumeTOD(5)", 'RelVolumeTOD(3, "cumulative")@1h'],
     "SessionVWAP": ["SessionVWAP()", "SessionVWAP()@1h"],
+    # U6 BK3: VCP (Daily in screens; daily cases below) and the indicator breakouts; volume and distance conditions off
+    "VCPBreakout": ['VCPBreakout("up", 2, 1, 0, 0, FALSE)', 'VCPBreakout("down", 2, 1, 0, 0, FALSE, FALSE)'],
+    "VCPReady": ['VCPReady("up", 2, 1, 5, FALSE)', 'VCPReady("down", 2, 1, 10, FALSE, FALSE)'],
+    "DonchianBreakout": ['DonchianBreakout("up", 20, 0)', 'DonchianBreakout("down", 55, 0.1)', 'DonchianBreakout("up", 10, 0)@1h'],
+    "SqueezeBreakout": ['SqueezeBreakout("up", "bollinger", 20, 50, 0)', 'SqueezeBreakout("down", "ttm", 20, 50, 0)',
+                        'SqueezeBreakout("up", "ttm", 10, 20, 0)@1h'],
+    "MABreakout": ['MABreakout("up", 50, "sma", 0)', 'MABreakout("down", 20, "ema", 0)', 'MABreakout("up", 10, "sma", 0)@1h'],
+    "RegimeBreakout": ['RegimeBreakout("up", 15, 10, 30, 0)', 'RegimeBreakout("down", 15, 10, 30, 0)', 'RegimeBreakout("down", 20, 10, 35, 0)@1h'],
     # S5-C: F&O / open interest (own-bar OI added causally; the EOD figures from a causal synthetic timeline)
     "OIChange": ["OIChange(1)", "OIChange(5)", "OIChange(2)@1h"],
     "Buildup": ["Buildup(1)", 'Buildup(3, 0.1, 0.5) == "LONG_BUILDUP"', "Buildup(1)@1h"],
@@ -133,7 +141,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
 SCREENQL_FIELDS: List[str] = ["close", "volume", "close@1h", "high@1d[1]", "low[2]"]
 # A daily screen: weekly and monthly bars built from the daily ones (W-MON / month-start buckets, close-time alignment).
 SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "close@1M[1]", "Max(high, 3)@1M", "PDH()",
-                             'NewHighBreakout("up", 4, 0, 0)', 'NewHighBreakout("down", 26, 0, 0)', "DowTrend(0)@1w"]   # U6 BK1
+                             'NewHighBreakout("up", 4, 0, 0)', 'NewHighBreakout("down", 26, 0, 0)', "DowTrend(0)@1w",   # U6 BK1
+                             'VCPBreakout("up", 2, 1, 0, 0, FALSE, FALSE)', 'VCPBreakout("down", 2, 1, 0, 0, FALSE)',   # U6 BK3
+                             'VCPReady("up", 2, 1, 10, FALSE)', 'DonchianBreakout("up", 55, 0)', 'SqueezeBreakout("up", "bollinger", 20, 125, 0)',
+                             'SqueezeBreakout("down", "ttm")', 'MABreakout("down", 50, "sma", 0)', 'RegimeBreakout("up", 15, 10, 30, 0)']
 # Answered for the last bar only (not series): causal by construction, kept out of history-reading functions.
 SCREENQL_LAST_BAR: Dict[str, List[str]] = {
     "Trend": ["Trend(3)"],
@@ -373,7 +384,7 @@ def _register_zones() -> None:
 def _register_screenql() -> None:
     for exprs in SCREENQL_SERIES.values():
         for text in exprs:
-            heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType"))
+            heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")

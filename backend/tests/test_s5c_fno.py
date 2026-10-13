@@ -456,3 +456,20 @@ def test_the_preferred_source_wins_per_trade_date_whatever_its_stamp():
             return await fno.load_timeline(session, SYM, ist(D1, 0, 0) - timedelta(days=5), ist(D2, 20, 0))
     tl = _run(go())
     assert len(tl.close_ns) == 1 and tl.closes[0][f"NFO:{SYM}:FUT:{MAR26.isoformat()}"] == 100.0 and tl.total_oi[0] == 1000.0
+
+
+def test_screen_history_refuses_the_eod_fno_functions_with_the_reason():
+    """S5-C x S6a (merge): screen history neither attaches the shared EOD F&O figures nor has OI on its bars, so a screen using
+    an F&O function is refused with the reason before it runs (never a per-symbol failure)."""
+    from tests.test_n1_e1_execution_core import _flag
+    from tests.test_n3_s6_history import _org, _symbols
+    t = _org("s5c-hist")
+    _flag("screener_fno", t["tenant_id"])
+    frames, days = _symbols(2, "F")
+    base = {"universe": {"symbols": list(frames)}, "date": str(days[120])}
+    r = client.post("/api/screener/history/asof", headers=t["headers"], json={**base, "source": "FutOIChange(1) > 0"})
+    assert r.status_code == 422 and "FutOIChange()" in r.text and "need data it does not load" in r.text, r.text
+    own = client.post("/api/screener/history/asof", headers=t["headers"], json={**base, "source": "OIChange(1) > 0"})
+    assert own.status_code == 422 and "OIChange()" in own.text, own.text
+    ok = client.post("/api/screener/history/asof", headers=t["headers"], json={**base, "source": "close > 0"})
+    assert ok.status_code == 200, ok.text

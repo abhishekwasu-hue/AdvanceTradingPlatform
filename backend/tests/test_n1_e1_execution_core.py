@@ -385,14 +385,15 @@ def test_a_claim_interrupted_too_often_links_its_proposal_if_one_was_raised():
     assert row.status == intents.DONE and row.ai_action_id == action_id
 
 
-def test_the_paper_route_is_refused_until_x2(monkeypatch):
-    """Review L2: even if the policy ever answered PAPER, E1's dispatcher places nothing."""
+def test_the_paper_route_places_nothing_without_an_armed_scan_template(monkeypatch):
+    """Review L2 (E1), kept by N1 X2: even if the policy ever answered PAPER, the dispatcher places nothing unless the
+    intent's own scan template has all three Auto PAPER switches on (tests/test_n1_x2_auto_paper.py covers that)."""
     t = _org("paper-route")
     monkeypatch.setattr(policy, "decide", lambda inputs: policy.Decision(policy.ROUTE_PAPER, "Auto PAPER"))
     intent_id, _ = _submit(t, "AUTO_PAPER")
     _drain()
     row = _intent(intent_id)
-    assert row.status == intents.REFUSED and row.reason == dispatcher.WHY_PAPER_LATER
+    assert row.status == intents.REFUSED and row.reason == dispatcher.WHY_PAPER_NOT_SCAN
     assert _rows(OrderRecord, t["tenant_id"]) == [] and _rows(AiActionRecord, t["tenant_id"]) == []
 
 
@@ -476,15 +477,32 @@ FORBIDDEN = {"place_order", "modify_order", "place_stop_loss_order", "exit_posit
 
 
 def test_the_core_names_no_broker_and_no_order_pipeline():
+    """The core imports no broker and no order path. The one exception (N1 X2): the dispatcher's `_paper` calls the
+    PAPER pipeline `execute_signal_for_user` - once, with mode "PAPER" and never a broker (a GATED callee)."""
+    pipeline_calls = []
     for path in sorted(CORE.glob("*.py")):
         tree = ast.parse(path.read_text())
         for node in ast.walk(tree):
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 modules = [node.module or ""] if isinstance(node, ast.ImportFrom) else [a.name for a in node.names]
-                assert not any(m.startswith(("app.brokers", "app.trading", "app.execution.router", "app.execution.signal_execution",
-                                             "app.execution.multileg")) for m in modules), (path.name, modules)
+                allowed = path.name == "dispatcher.py" and modules == ["app.execution.signal_execution"] \
+                    and [a.name for a in node.names] == ["execute_signal_for_user"]
+                assert allowed or not any(m.startswith(("app.brokers", "app.trading", "app.execution.router", "app.execution.signal_execution",
+                                                        "app.execution.multileg")) for m in modules), (path.name, modules)
+            if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "execute_signal_for_user":
+                pipeline_calls.append((path.name, node))
+                continue
             name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
+            if name == "execute_signal_for_user" and path.name == "dispatcher.py":
+                continue
             assert name not in FORBIDDEN, (path.name, name)
+    assert len(pipeline_calls) == 1 and pipeline_calls[0][0] == "dispatcher.py"
+    call = pipeline_calls[0][1]
+    keywords = {k.arg: k.value for k in call.keywords}
+    # Review of X2 (L2): no **kwargs (a keyword with no name) and no *args could smuggle a broker in.
+    assert all(k.arg is not None for k in call.keywords) and not any(isinstance(a, ast.Starred) for a in call.args)
+    assert "broker" not in keywords and "quote_broker" not in keywords and len(call.args) == 2      # (session, owner) only
+    assert isinstance(keywords["mode"], ast.Constant) and keywords["mode"].value == "PAPER"
 
 
 def test_no_function_of_the_core_reaches_a_broker_order_method():

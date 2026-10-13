@@ -105,6 +105,20 @@ SHOULD_BLOCK = [
     "INFY: close at 1500 is wise", "Close at 2450 on RELIANCE.", "Close above 2450 in INFY.", "Hold above 2500 with RELIANCE.",
     "Close at 2450 all RELIANCE.", "Hold above 2500 your RELIANCE shares.", "Hold above 2500 - RELIANCE.", "Close half INFY.",
     "Close 50pc of INFY.",
+    # review round 10: only a recap tail keeps a price field a recap (everything else stays an order)
+    "INFY: close at 1500 pronto", "INFY: close at 1500 at once", "INFY: close at 1500 without delay", "INFY: close at 1500 urgently",
+    "INFY: close at 1500, quickly", "INFY: close at 1500 - do it", "INFY: close at 1500 before results",
+    "INFY: close at 1500 ahead of results", "INFY: close at 1500 on Monday", "INFY: close at 1500 this week",
+    "INFY: close at 1500 by end of day", "INFY: close at 1500 before the close", "INFY: close at 1500 into strength",
+    "INFY: close at 1500 on strength", "INFY: close at 1500 is advisable", "INFY: close at 1500 is recommended",
+    "INFY: close at 1500 is prudent", "INFY: close at 1500 is ideal", "INFY: close at 1500 makes sense",
+    "INFY: close at 1500 is a good idea", "INFY: close at 1500 is the way", "INFY: close at 1500 if you own it",
+    "INFY: close at 1500 if you hold it", "INFY: close at 1500 if it breaks", "TCS: hold above 4000 if you own it",
+    "TCS: hold above 4000 for gains", "TCS: hold above 4000 for more upside", "TCS: hold above 4000 and ride it",
+    "TCS: hold above 4000, don't sell", "TCS: hold at 4000 for the next leg", "TCS: hold above 4000; it can go to 4500",
+    "INFY: close at 1500 and lock gains", "INFY: close at 1500 and take profits", "Close at 2450 against RELIANCE.",
+    "Close at 2450 via RELIANCE.", "Close 1/2 of INFY.", "INFY: close 1 lakh qty", "TCS: open at 4000 with a small lot",
+    "TCS: hold above 4000 up to 4500", "Close at 2450, RELIANCE.",
 ]
 
 SHOULD_PASS = [
@@ -163,6 +177,17 @@ SHOULD_PASS = [
     "INFY: close at 1500, best close of the month.", "INFY: close near 1500 for 3 sessions.", "TCS: close 50% above its IPO price.",
     "TCS: close at record high.", "TCS: close near the day's low.", "TCS: close in the top quartile.",
     "Close above 2450 confirms the RELIANCE breakout.", "RELIANCE: close above 2500 should confirm the breakout.",
+    # review round 10: a recap predicate after the instrument, several fields or instruments, recap clauses
+    "Close above 1500 in INFY was the week's best.", "Close at 1500 in INFY marked a 3-week high.",
+    "Hold above 1500 in INFY lasted 5 sessions.", "Close above 25000 in NIFTY for the third session.",
+    "Open 1490, close 1500 in INFY.", "Close near 1500 on INFY, near 4050 on TCS.", "Close 1500 for INFY and 4050 for TCS.",
+    "INFY: close 1500 on TCS results day.", "TCS: close 4050, then 4080 on Tuesday.",
+    "NIFTY: close 25100 vs 25000 last week, then 24900 the week before.", "NIFTY: close 25100, now 0.4% above the 20-day SMA.",
+    "INFY: close 1500 today, up 1%.", "NIFTY: close 25100, the move from 25000 was 0.4%.",
+    "TCS: close 4050 to 4080 range over 5 sessions.", "BANKNIFTY: hold of 52000 support was tested.",
+    "RELIANCE: close above the 200-day moving average.", "INFY: close near 1500 for the week.", "TCS: close above VWAP all session.",
+    "NIFTY: close 25100 at the bell; trading stopped at 15:30.", "TCS: close 4050 for the week.", "INFY: close 1500 with RSI 62.",
+    "INFY: close 1500 in a range of 1480-1520.", "TCS: close 4050; exit poll results due.",
 ]
 
 
@@ -186,6 +211,16 @@ def test_short_build_up_after_a_price_field_is_not_blocked():
     for text in ("NIFTY: close 25100, short build-up in futures.", "NIFTY: close 25100, short covering seen."):
         s = output_filter.screen(text, "en")
         assert s.ok and not s.blocked, text                  # review round 9: framed (the word "short"), never blocked
+
+
+def test_price_field_floods_stay_linear():
+    import time
+    from app.ai.call_detect import detect
+    path = "app/ai/data/advice_terms.json"
+    for text in ("TCS: close 1, " * 3000, "Close above 2450 in INFY. " * 1500, "INFY: close at 1500 - x " * 1700):
+        started = time.monotonic()
+        detect(text[:38000], path)
+        assert time.monotonic() - started < 5, text[:30]            # review round 10: once per sentence, never per field
 
 
 def test_buy_and_hold_as_a_benchmark_is_not_blocked():

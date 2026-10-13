@@ -73,8 +73,11 @@ async def enabled(session: AsyncSession, tenant_id: Optional[int]) -> bool:
 
 
 def check_holdout(window: LakeWindow) -> None:
-    """The window's trade dates, in the exchange's clock, must end before the sealed holdout (HoldoutError)."""
-    check_range(pd.Timestamp(window.start), pd.Timestamp(window.end), holdout_start())
+    """The window's bars - stamped at their session's open, IST - must end before the sealed holdout (HoldoutError).
+    Review of C3 (LOW): the last bar's own time, not its date at midnight, so a boundary set during that day refuses it."""
+    first = pd.Timestamp(datetime.combine(window.start, SESSION_OPEN, tzinfo=IST))
+    last = pd.Timestamp(datetime.combine(window.end, SESSION_OPEN, tzinfo=IST))
+    check_range(first, last, holdout_start())
 
 
 async def lake_candles(session: AsyncSession, symbol: str, base_timeframe: str, window: LakeWindow) -> List[OHLCVBar]:
@@ -122,7 +125,17 @@ async def earlier_sharpes(session: AsyncSession, tenant_id: int, since: datetime
     rows = await session.scalars(select(ResearchTrialRecord).where(
         ResearchTrialRecord.tenant_id == tenant_id, ResearchTrialRecord.status == "ok", ResearchTrialRecord.created_at >= since,
         ResearchTrialRecord.dsl_json.like(f'%"kind": "{KIND}"%')))
-    return [sharpe(json.loads(r.returns_json or "[]")) for r in rows]
+    # the LIKE is a pre-filter only: a strategy parameter could contain the same text - the kind is checked exactly
+    return [sharpe(json.loads(r.returns_json or "[]")) for r in rows if _kind_of(r.dsl_json) == KIND]
+
+
+def _kind_of(dsl_json: Optional[str]) -> Optional[str]:
+    import json
+    try:
+        value = json.loads(dsl_json or "{}")
+    except ValueError:
+        return None
+    return value.get("kind") if isinstance(value, dict) else None
 
 
 async def record(session: AsyncSession, *, tenant_id: int, user_id: Optional[int], body: Any, result: Any, df: pd.DataFrame,

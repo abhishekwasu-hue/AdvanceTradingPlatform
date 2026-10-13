@@ -110,6 +110,9 @@ def test_each_run_is_a_trial_deflated_for_this_organisation_s_search_only():
     assert len(rows) == 2 and {json.loads(r.dsl_json)["data_source"] for r in rows} == {"uploaded"}   # a posted label is not trusted
     assert json.loads(rows[1].dsl_json)["params"] == {"fast": 5} and json.loads(rows[0].metrics_json)["run_id"] == first.json()["run_id"]
     assert client.get("/api/backtests", headers=headers).json()[0]["data_source"] == "uploaded"
+    # a strategy parameter that spells the kind is not a trial of that kind (the LIKE is only a pre-filter)
+    sneaky = client.post("/api/backtest", headers=headers, json={**BODY, "candles": _candles(), "strategy_params": {"x": '"kind": "backtest"'}})
+    assert sneaky.json()["deflation"]["n_trials"] == 3
     # BT1b: another organisation's search is not this one's
     other, _ = _org("other")
     assert client.post("/api/backtest", headers=other, json={**BODY, "candles": _candles()}).json()["deflation"]["n_trials"] == 1
@@ -151,6 +154,13 @@ def test_a_lake_window_that_reaches_the_sealed_holdout_is_refused(monkeypatch):
     L.check_holdout(L.LakeWindow(start=days[0], end=days[59]))
     with pytest.raises(L.HoldoutError):
         L.check_holdout(L.LakeWindow(start=days[61], end=days[70]))
+    # review of C3 (LOW): a boundary during the last day (at its 09:15 IST bar) refuses that day; just after it, too
+    for boundary in (f"{days[59]}T09:15:00+05:30", f"{days[59]}T09:00:00+05:30"):
+        monkeypatch.setenv("BACKTEST_HOLDOUT_START", boundary)
+        with pytest.raises(L.HoldoutError):
+            L.check_holdout(L.LakeWindow(start=days[0], end=days[59]))
+    monkeypatch.setenv("BACKTEST_HOLDOUT_START", f"{days[59]}T09:16:00+05:30")
+    L.check_holdout(L.LakeWindow(start=days[0], end=days[59]))
 
 
 def test_a_lake_run_never_changes_when_later_bars_or_actions_arrive():

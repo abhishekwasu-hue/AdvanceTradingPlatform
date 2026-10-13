@@ -10,9 +10,10 @@
 #   deploy/ci/stack.sh load [options]     the sharded load test (backend/scripts/loadtest.py); see cmd_load
 #   deploy/ci/stack.sh run ARGS...        python ARGS in the ci-runner tool container
 #   deploy/ci/stack.sh api-workers N [--cpus C]  restart the API with N processes (default 2, as on the KVM 2), at most C CPUs
-#   deploy/ci/stack.sh pin [SERVER CLIENT]  the server side (API, worker, Postgres, Redis, Caddy, frontend) on the CPUs
-#                                         SERVER, the load clients and the fake broker on CLIENT (`pin 0,1 2,3`: the KVM 2);
-#                                         no arguments: every container on every CPU again
+#   deploy/ci/stack.sh pin [SERVER CLIENT | kvm2]  the server side (API, worker, Postgres, Redis, Caddy, frontend) on
+#                                         the CPUs SERVER, the load clients and the fake broker on CLIENT; `kvm2`: two CPUs
+#                                         on two physical cores for the server, the rest for the clients; no arguments:
+#                                         every container on every CPU again
 #   deploy/ci/stack.sh logs | ps | diag   container logs / state; diag writes them under $STATE/diag
 #   deploy/ci/stack.sh down               stop and delete the stack and its volumes
 #
@@ -276,11 +277,32 @@ cmd_api_workers() {
 # vCPUs does not have - while Postgres, the worker and Caddy ran on the other CPUs for free. Pinned, everything the
 # owner's box runs shares SERVER's CPUs, and the load clients and the fake broker (elsewhere in production) use CLIENT.
 SERVER_SERVICES="backend worker postgres redis caddy frontend"
+# Two CPUs on two different physical cores for the server side, every other CPU for the clients: a VPS's 2 vCPUs are
+# two host threads, while on an SMT runner (4 vCPUs = 2 cores x 2 threads) CPUs 0 and 1 can be one core's two threads.
+kvm2_cpus() {
+  local c key seen=" " server="" client="" n=0
+  for c in $(seq 0 $(( $(nproc) - 1 ))); do
+    key="$(cat "/sys/devices/system/cpu/cpu$c/topology/physical_package_id" 2>/dev/null || echo 0):$(cat "/sys/devices/system/cpu/cpu$c/topology/core_id" 2>/dev/null || echo "$c")"
+    if [ "$n" -lt 2 ] && [ "${seen#* $key }" = "$seen" ]; then server="${server:+$server,}$c"; seen="$seen$key "; n=$((n + 1))
+    else client="${client:+$client,}$c"; fi
+  done
+  echo "$server ${client:-$server}"
+}
+
 cmd_pin() {
   ensure_env
-  local all server client svc id
+  local all server client svc id c
   all="0-$(( $(nproc) - 1 ))"
-  server="${1:-$all}"; client="${2:-$all}"
+  if [ "${1:-}" = "kvm2" ]; then
+    read -r server client < <(kvm2_cpus)
+    echo "    CPU topology: $(lscpu 2>/dev/null | sed -n 's/^\(Model name\|Thread(s) per core\|Core(s) per socket\):[[:space:]]*/\1 /p' | paste -sd';' -)"
+    for c in $(seq 0 $(( $(nproc) - 1 ))); do
+      printf '    cpu%s: core %s, threads %s\n' "$c" "$(cat "/sys/devices/system/cpu/cpu$c/topology/core_id" 2>/dev/null)" \
+        "$(cat "/sys/devices/system/cpu/cpu$c/topology/thread_siblings_list" 2>/dev/null)"
+    done
+  else
+    server="${1:-$all}"; client="${2:-$all}"
+  fi
   case "$server$client" in *[!0-9,-]*) die "pin takes CPU lists such as 0,1 and 2,3" 2 ;; esac
   step "server side (API, worker, Postgres, Redis, Caddy, frontend) on CPUs $server; load clients and fake broker on CPUs $client"
   for svc in $SERVER_SERVICES; do
@@ -327,7 +349,7 @@ main() {
     pin) cmd_pin "$@" ;;
     down) cmd_down ;;
     env) ensure_env; grep -E '^(DOMAIN|ATP_CI_)' "$ENV_FILE" ;;
-    help|-h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
+    help|-h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;
     *) die "unknown command $cmd (try: help)" 2 ;;
   esac
 }

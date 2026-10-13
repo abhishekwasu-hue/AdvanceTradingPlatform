@@ -5,8 +5,9 @@ with the market open every route but the public status read was over 0.5 s at p9
 login 8.90 s). Run 10 was the first run inside an NSE session: runs 1-9 had all run outside one (below, "Run 10: the
 market was open"), so run 9's 0.52 s chart and 0.91 s screener were measured on a lighter load. A local cross-check on
 2 pinned cores (API, worker, Postgres and Redis sharing them, market open) put chart at 0.41 s, screener at 0.75 s and
-the dashboard reads at 0.13 s or less, login at 8.7 s. Run 11 (the next commit, below) decides on the KVM 2 shape
-by CPU placement instead of a CPU quota, inside a session.
+the dashboard reads at 0.13 s or less, login at 8.7 s. Run 11 (887c744) decided on the KVM 2 shape by CPU placement
+inside a session and failed harder (chart 1.43 s, screener 2.15 s, 86 logins timed out): its 2 CPUs were most likely
+one physical core's two threads. Run 12 places them on two cores (below, "Run 11" and "Run 12").
 
 The bar (coordinator, 13 Oct) is the owner's production box, a Hostinger KVM 2 (2 vCPU, 8 GB): the run that decides the
 CI job runs as that box does. Runs 8-10 approximated it with a CPU quota on the API alone; from run 11 the API, worker,
@@ -16,8 +17,8 @@ runner without a cap is kept as a secondary run. The SLO limits are unchanged fr
 ## Setup
 
 - **Stack.** The production compose files plus `deploy/ci/compose.ci.yml`, with images built from the commit; from
-  run 11 inside an NSE session (the real clock between 09:30 and 14:00 IST, else shifted by libfaketime): Caddy over HTTPS, then the API (`API_WORKERS` processes), Postgres 17, Redis 7, the worker and a fake
-  Upstox / Dhan broker. Memory limits, Postgres settings and pool sizes come from `docker-compose.hostinger.yml`; the
+  run 11 inside an NSE session (the real clock between 09:30 and 14:00 IST, else shifted by libfaketime): Caddy over
+  HTTPS, then the API (`API_WORKERS` processes), Postgres 17, Redis 7, the worker and a fake Upstox / Dhan broker. Memory limits, Postgres settings and pool sizes come from `docker-compose.hostinger.yml`; the
   CI overlay only adds `pg_stat_statements` to Postgres (a test pins the rest of its command to the KVM 2's).
 - **Runner.** GitHub-hosted `ubuntu-latest`, 4 vCPU, 15 GB. The 25 generator containers and the fake broker run on the
   same machine.
@@ -32,7 +33,8 @@ runner without a cap is kept as a secondary run. The SLO limits are unchanged fr
 - **Profiles** (job `load-500`, from run 11):
   - **Primary, decides the job:** think 30 s (the Dashboard page's own refresh), 300 s after the ramp, the KVM 2
     shape: 2 API processes; the API, worker, Postgres, Redis, Caddy and frontend pinned to CPUs 0-1, the 25 load
-    clients and the fake broker to CPUs 2-3 (`stack.sh pin 0,1 2,3`).
+    clients and the fake broker to the other CPUs (`stack.sh pin kvm2` from run 12: two CPUs on two physical cores;
+    run 11 used CPUs 0-1, `pin 0,1 2,3`).
   - Login burst (secondary): the same shape, the shards in step - 25 logins at the same instant every 7.5 s, a
     market-open rush. 60 s after the ramp.
   - Busy (secondary): think 10 s, 180 s, the same shape. Twice the primary's demand.
@@ -143,9 +145,9 @@ it for free.
 1. **The CI runs inside an NSE session** (`ATP_CI_CLOCK: auto` for `load-500`): the real clock between 09:30 and
    14:00 IST on a trading day, else shifted into a session by libfaketime (as the acceptance job), so the job no
    longer measures a lighter load when it happens to start before 09:15 IST. The report's first line names the clock.
-2. **The KVM 2 shape by CPU placement** (`deploy/ci/stack.sh pin 0,1 2,3`): the API, worker, Postgres, Redis, Caddy
-   and the frontend on CPUs 0-1; the 25 load clients (`loadtest.py --pin-cpus`) and the fake broker on CPUs 2-3. It
-   decides the job. Runs 8-10's quota shape stays as a secondary run (`load-quota`), and so does the whole runner.
+2. **The KVM 2 shape by CPU placement** (`deploy/ci/stack.sh pin 0,1 2,3` in run 11, `pin kvm2` from run 12): the
+   API, worker, Postgres, Redis, Caddy and the frontend on two CPUs; the 25 load clients (`loadtest.py --pin-cpus`) and
+   the fake broker on the others. It decides the job. Runs 8-10's quota shape stays as a secondary run (`load-quota`), and so does the whole runner.
 3. **A screen run fetches its symbols side by side**, at most 3 at a time and never more than the broker's burst
    allowance (`app/brokers/rate_budget.py`: 3 for Dhan, Zerodha and any broker it does not list), in the symbols'
    order. Every load-test user's first screen is a cold fetch (BT1b: each user's bars are cached under their own
@@ -161,7 +163,61 @@ Not changed, considered: a longer cache for completed daily bars. Per user (BT1b
 
 ### Run 11 (the KVM 2 shape by CPU placement, inside a session)
 
-Not finished when this was written (the job runs on the commit that adds this section); its numbers follow in the next commit.
+[38352433995](https://github.com/abhishekwasu-hue/AdvanceTradingPlatform/actions/runs/38352433995), job `load-500`,
+887c744, 05:44-06:30 UTC; primary on the real clock (11:16 IST, inside the session). p50 / p95 / p99 ms:
+
+| Profile | Shape | Chart | Screener | Login | Dashboard p95 (5 reads) | Proposals / positions / paper p95 | req/s | Server errors |
+|---|---|---|---|---|---|---|---|---|
+| **Primary (decides)** | pinned: API, worker, Postgres, Redis, Caddy, frontend on CPUs 0-1 | 210 / 1,429 / 2,389 | 385 / 2,146 / 2,889 | 3,131 / 30,010 / 30,024 | 161 / 527 / 576 / 607 / 660 | 464 / 301 / 496 | 76.2 | 0.23% (86 logins timed out at 30 s) |
+| Login burst | same | 448 / 2,625 / 4,042 | 763 / 4,123 / 5,933 | 6,177 / 30,060 / 30,072 | 269 / 949 / 1,022 / 1,156 / 1,239 | 852 / 685 / 1,004 | 58.0 | 0.71% (104 logins timed out, 1 error) |
+| Busy (think 10 s) | same | 969 / 3,328 / 5,095 | 1,596 / 3,923 / 5,899 | 30,006 / 30,020 / 30,034 | 794 / 1,983 / 1,907 / 2,027 / 2,077 | 1,374 / 1,355 / 1,557 | 95.1 | 0.96% (315 without a login) |
+| KVM 2 as a quota | 2 processes, `--cpus 2`, rest unpinned | 147 / 1,446 / 2,973 | 243 / 2,192 / 3,107 | 580 / 7,008 / 9,914 | 135 / 654 / 695 / 730 / 820 | 500 / 346 / 536 | 89.6 | 0.00% |
+| Whole runner | 3 processes, no cap | 109 / 737 / 1,687 | 186 / 1,195 / 2,182 | 342 / 3,429 / 5,956 | 97 / 266 / 304 / 334 / 380 | 285 / 165 / 271 | 90.4 | 0.00% |
+
+Primary, after the login ramp only: chart p95 1,352 ms, screener 1,965 ms, dashboard 149-628 ms. Server side: login
+12.1 s mean (waiting for a bcrypt thread 11.1 s mean, the check 749 ms mean against 0.28 s of CPU on an idle core),
+pooled-connection wait 22.5 ms mean; containers' CPU mean / peak: API 81% / 186%, Postgres 15 / 38, fake broker
+19 / 63, Caddy 9 / 18, worker 7 / 55 (% of one CPU).
+
+Reading run 11:
+
+- **The pinned run is harsher than the 2 cores it stands for.** The runner's 4 vCPUs are 2 physical cores with 2
+  threads each on GitHub's hosts, and CPUs 0 and 1 are usually one core's two threads: the server side had about one
+  core. The local pinned runs (4 vCPUs without SMT, so 2 real cores) put the reads at 0.13-0.23 s p95 and the chart at
+  0.43-0.57 s. From run 12, `stack.sh pin kvm2` picks two CPUs on two physical cores from the topology and the job
+  prints it.
+- **Login cannot keep up on 2 vCPUs.** 500 checks in 150 s at the unchanged cost is 0.94 CPU of bcrypt for the whole
+  ramp; at nice +5 bcrypt gets the CPU the reads leave, and the queue grew past the clients' 30 s timeout for 86
+  users. Running bcrypt at nice 0 instead (local L7, below) did not help login (p95 11.7 s) and put the reads at
+  1.7-1.8 s: the CPU is not there either way. Login is the owner's decision (What remains, OPEN_QUESTIONS LD-9).
+- Inside a session every profile is slower than runs 8-9 were outside one, on every shape.
+
+### Local runs after 887c744 (2 pinned cores, market open; 150 s after the ramp)
+
+The same local setup as L1 (above). Foreign CPU: the other agents' work measured on CPUs 0-1 over the run (`/proc/stat`
+minus the stack's own processes).
+
+| # | When (UTC) | Code | Chart p50 / p95 / p99 | Screener | Login | Dashboard p95 | req/s | Server errors | Foreign CPU on 0-1 |
+|---|---|---|---|---|---|---|---|---|---|
+| L3 | 05:39-05:48 | 887c744 (300 s after the ramp) | 447 / 9,179 / 15,669 | 776 / 11,105 / 17,135 | 4,268 / 13,826 / 16,698 | 5.6-8.6 s | 79.7 | 0.00% | not measured (machine 83% busy) |
+| L4 | 05:48-05:54 | 6e63404 | 196 / 668 / 1,151 | 459 / 1,455 / 2,960 | 14,503 / 30,005 / 30,013 | 85-261 ms | 72.2 | 0.17% (43 logins timed out) | 84 s |
+| L5 | 05:54-06:00 | 948e32d | 119 / 426 / 735 | 256 / 898 / 1,439 | 539 / 10,155 / 12,933 | 56-162 ms | 81.0 | 0.00% | 28 s |
+| L6 | 06:01-06:07 | 948e32d | 121 / 574 / 1,058 | 264 / 936 / 1,669 | 438 / 14,138 / 16,676 | 64-228 ms | 80.5 | 0.00% | 46 s |
+| L7 | 06:31-06:37 | 948e32d, bcrypt at nice 0 (experiment) | 148 / 2,599 / 4,241 | 295 / 4,091 / 7,728 | 464 / 11,656 / 14,196 | 325-1,832 ms | 78.5 | 0.00% | 68 s |
+
+After the ramp: chart p95 387 (L1), 677 (L4), 348 (L5), 595 (L6) ms; screener 677, 1,554, 591, 892 ms.
+
+L3 ran 887c744 as pushed, whose screen ran each symbol's pandas step on its own thread (up to 3 CPU-bound threads per
+run); "idle in transaction" connections averaged 12.5 against 4-5 in the other runs. With foreign load unmeasured it
+cannot be told apart from noise, but more CPU-bound threads per process is the known way to slow the event loop (run 6),
+so 948e32d runs a run's pandas steps in turn on one thread. L5 and L6 (948e32d) against L1 and L4 (6e63404): the
+screener's p50 fell from 386-459 ms to 256-264 ms; its p95 stayed above 0.5 s (0.90-0.94 s), the chart's p95 was 0.43
+and 0.57 s.
+
+### Run 12 (the KVM 2 shape on two physical cores; the screen's pandas on one thread, 948e32d)
+
+Not finished when this was written (the job runs on the commit that adds this section); its numbers follow in the
+next commit.
 
 
 ## The generator change (d9a8f89) - what it changed and how much of the gain it is

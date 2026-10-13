@@ -150,15 +150,16 @@ jobs:
           nohup deploy/ci/profile_api.sh 250 60 "$RUNNER_TEMP/atp-ci-state/load-profile-steady" > /dev/null 2>&1 &
 
       # LD-7: the run that decides the job runs as the owner's production box does - the Hostinger KVM 2: 2 API processes,
-      # and the API, the worker, Postgres, Redis, Caddy and the frontend all on the same 2 CPUs (pinned: `stack.sh pin`);
-      # the 25 load clients and the fake broker, elsewhere in production, on the runner's other 2.
+      # and the API, the worker, Postgres, Redis, Caddy and the frontend all on the same 2 CPUs (`stack.sh pin kvm2`: two
+      # CPUs on two physical cores - on an SMT runner CPUs 0 and 1 can be one core's two threads); the 25 load clients and
+      # the fake broker, elsewhere in production, on the runner's other CPUs.
       - name: Load test, primary profile, the KVM 2 shape (think time = the app's own dashboard refresh)
         id: primary
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem/ {print $2}') GB; $(deploy/ci/stack.sh env | sed -n 's/^ATP_CI_CLOCK_NOTE=//p')"
-          deploy/ci/stack.sh pin 0,1 2,3
+          deploy/ci/stack.sh pin kvm2
           deploy/ci/stack.sh load --name load-primary --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
-            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, KVM 2 shape (2 API processes; API, worker, Postgres, Redis, Caddy on 2 CPUs); $(deploy/ci/stack.sh env | sed -n 's/^ATP_CI_CLOCK_NOTE=//p')" \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, KVM 2 shape (2 API processes; API, worker, Postgres, Redis, Caddy on 2 CPUs of 2 cores); $(deploy/ci/stack.sh env | sed -n 's/^ATP_CI_CLOCK_NOTE=//p')" \
             --report "$RUNNER_TEMP/atp-ci-state/load-primary.md"
 
       - name: Where the API's time went in the primary run (py-spy summary)

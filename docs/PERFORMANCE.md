@@ -183,9 +183,10 @@ Upstox / Dhan broker), built from the commit. Results and analysis: `docs/report
   - Login burst and busy (a page load every 10 s, 3 minutes): the same shape, for comparison.
   - The KVM 2 as a CPU quota (runs 8-10's shape): only the API limited, `docker update --cpus 2`, everything else
     unpinned; and the whole runner (3 API processes, no limit). For comparison.
-- **The KVM 2 shape (LD-7, `stack.sh pin 0,1 2,3`).** The owner's box runs the API (2 processes), the worker,
-  Postgres, Redis, Caddy and the frontend on the same 2 vCPUs, so the CI pins all of them to CPUs 0 and 1 and the 25
-  load clients (`loadtest.py --pin-cpus`) and the fake broker to CPUs 2 and 3. A CPU quota instead (`--cpus 2`) is
+- **The KVM 2 shape (LD-7, `stack.sh pin kvm2`).** The owner's box runs the API (2 processes), the worker,
+  Postgres, Redis, Caddy and the frontend on the same 2 vCPUs, so the CI pins all of them to two CPUs on two physical
+  cores (on the SMT runner CPUs 0 and 1 can be one core's two threads; the job prints the topology) and the 25 load
+  clients (`loadtest.py --pin-cpus`) and the fake broker to the other CPUs. A CPU quota instead (`--cpus 2`) is
   not the same machine: the API's threads spread over all 4 CPUs, spend the quota early in each 100 ms period and
   stall for the rest of it, while Postgres and the worker run on the other CPUs for free.
 - **Clock (LD-7).** The job runs inside an NSE session (`ATP_CI_CLOCK=auto`: the real clock between 09:30 and 14:00

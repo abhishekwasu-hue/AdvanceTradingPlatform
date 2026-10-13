@@ -244,3 +244,72 @@ def test_fork_copies_the_screen_with_its_provenance(tx4_on):
     other, _ = _owner("tx4-fork-other@example.com")
     assert all(s["id"] != row["id"] for s in client.get("/api/screener/screens", headers=other).json())
     assert client.post("/api/screener/library/fork", json={"screen_id": "nope.x"}, headers=headers).status_code == 404
+
+
+# --- review of TX4 ----------------------------------------------------------------------------------------------------------
+
+def _walk_frame(seed, n=1250):
+    rng = np.random.default_rng(seed)
+    c = 100 * np.exp(np.cumsum(rng.normal(0.0003, 0.015, n)))
+    idx = pd.bdate_range(end="2026-09-30", periods=n, tz="UTC")
+    return pd.DataFrame({"open": c, "high": c * 1.01, "low": c * 0.99, "close": c, "volume": 1e5}, index=idx)
+
+
+def test_the_lazy_choice_equals_confirming_every_hit_and_fits_the_time_budget():
+    """MED: the newest candidates are re-checked only until three are confirmed - the same examples as re-checking every
+    hit first - and ten symbols x five years of a busy screen take well under the old 9-24 s."""
+    import time
+    ast = parse("close > SMA(close, 50) AND RSI(14) > 50")
+    frames_by = {f"S{k}": {"1d": _walk_frame(k)} for k in range(10)}
+    blocked = {"S3": [(frames_by["S3"]["1d"].index[-40].to_pydatetime(),) * 2]}
+    t0 = time.perf_counter()
+    got, problems, seen = ln.choose(ast, frames_by, "1d", blocked)
+    elapsed = time.perf_counter() - t0
+    assert not problems and seen > 1000 and len(got) == ln.EXAMPLES and elapsed < 3.0, elapsed
+    small = {s: {"1d": f["1d"].iloc[-400:]} for s, f in list(frames_by.items())[:4]}          # every hit re-checked: the old way
+    for limit in (None, {"S1": [(small["S1"]["1d"].index[-30].to_pydatetime(),) * 2]}):
+        lazy, _, _ = ln.choose(ast, small, "1d", limit or {})
+        old = ln.pick([(s, i, f["1d"]) for s, f in small.items() for i in ln.matches_of(ast, f, "1d", s)], limit or {})
+        assert [(e.symbol, e.bar, e.after) for e in lazy] == [(e.symbol, e.bar, e.after) for e in old] and lazy
+
+
+def test_examples_run_off_the_event_loop_within_a_time_limit(lake, monkeypatch):
+    import threading
+    days = [d.date() for d in pd.bdate_range(end=date(2026, 9, 30), periods=320)]
+    _seed("TXFOURT", _wave(320, 1.0), days)
+    threads = []
+    real = ln.choose
+
+    def spy(*args, **kwargs):
+        threads.append(threading.current_thread() is threading.main_thread())
+        return real(*args, **kwargs)
+    monkeypatch.setattr(ln, "choose", spy)
+
+    async def go():
+        from app.screener import compile_screen
+        ast, validated = compile_screen("CrossAbove(close, SMA(close, 20))", base_tf="1d")
+        async with _session_factory() as session:
+            return await ln.examples(session, ast, validated, "1d", ["TXFOURT"], "Cross", now=datetime(2026, 10, 12, tzinfo=timezone.utc))
+    out = _run(go())
+    assert threads == [False] and out["examples"]
+    capped, problems, _ = real(parse("CrossAbove(close, SMA(close, 20))"), {"A": {"1d": _daily()}}, "1d", {}, time_limit=0.0)
+    assert capped == [] and any("stopped after" in p or "time limit" in p for p in problems)
+
+
+def test_a_weekly_screen_counts_what_happened_next_in_sessions():
+    """LOW: AFTER is 5 / 10 / 20 sessions from the week's last session, never 5 / 10 / 20 weeks."""
+    from app.screener.runtime import resample
+    daily = _walk_frame(7, n=600)
+    frames = {"1d": daily, "1w": resample(daily, "1d", "1w")}
+    got, _, _ = ln.choose(parse("close > SMA(close, 10)"), {"W": frames}, "1w", {})
+    assert got
+    for e in got:
+        week_close = frames["1w"]["close"].iloc[e.bar]
+        j = int(daily.index.searchsorted(frames["1w"].index[e.bar] + pd.Timedelta(days=7))) - 1
+        assert daily["close"].iloc[j] == week_close and e.close == week_close
+        assert e.after["5"] == round((daily["close"].iloc[j + 5] / week_close - 1) * 100, 2)
+
+
+def test_a_last_bar_only_screen_says_why_it_has_no_examples():
+    got, problems, seen = ln.choose(parse("PatternBullish()"), {"A": {"1d": _daily()}}, "1d", {})
+    assert got == [] and seen == 0 and any("answered for the last bar only" in p and "PatternBullish()" in p for p in problems)

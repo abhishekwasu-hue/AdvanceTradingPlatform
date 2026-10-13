@@ -1028,6 +1028,15 @@ Learn button. Flag `screener_tx4` (default OFF) with `screener_v2` and `screener
   copy never follows later versions.
 - **No new ScreenQL function.** Z10-a needs no new case; the examples use the registered (causal) functions and the
   prefix re-check.
+- **Review fixes (TX4 review).**
+  - The examples' CPU work runs in a worker thread (`learn.choose`): one full-series evaluation per symbol, then only
+    the newest candidates are re-checked on their own bars, until three are confirmed (MIN_GAP and the split windows
+    still apply).
+  - The work has a wall-clock limit (`TIME_LIMIT_SECONDS`, 8 s). When it is reached, the answer says it stopped.
+  - Ten symbols x five years of a busy screen take about 1-2 s (they were 9-24 s on the event loop). A test checks
+    the time and that the result equals re-checking every hit.
+  - What happened next is counted in daily sessions for a weekly screen too, from the week's last session.
+  - A screen answered for the last bar only (`LAST_BAR_ONLY`) gets that reason instead of no examples.
 - **Not in TX4:** screen fitness statistics (S6) - examples are illustrations only; listing forks under "My screens"
   in the gallery (TX1-4); a reassign / update-to-latest action for a fork.
 

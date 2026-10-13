@@ -839,3 +839,87 @@ def test_round10_long_devanagari_runs_are_linear(text, monkeypatch):
     t0 = time.perf_counter()
     mv.advice_problems(text)
     assert time.perf_counter() - t0 < 1.5                                       # the -गा branch was 5.1 s at 38k characters
+
+
+# --- round 11: a time word naming the expiry is a description; the expiry / a weekday as a time next to a level, a stated
+# view and a subjunctive of the close are forecasts; bounded lakh / crore windows ------------------------------------------
+R11_PASS_FACTS = [
+    "The next expiry has PCR 1.3 and max pain 22800.", "This expiry's max pain is 22800.", "In this expiry, call OI is highest at 23000.",
+    "आगामी एक्सपायरी का मैक्स पेन 22800 है।", "पुढील एक्सपायरीचा मॅक्स पेन 22800 आहे.", "येत्या एक्सपायरीसाठी मॅक्स पेन 22800 आहे.",
+    "next expiry ka max pain 22800 hai", "This is not a forecast: PCR is 1.3.", "पुढील आकडे मागील 20 सत्रांचे आहेत.",
+    "अगली एक्सपायरी का पीसीआर 1.3 है।", "For the coming expiry, max pain is 22800 and PCR 1.3.",
+    "Max pain 22800 is the strike where option buyers lose the most at expiry.",
+]
+R11_PASS = [
+    "Results are due to be announced on 25 Oct", "Results are due to be declared on 25 Oct.", "The week ahead has 4 sessions",
+    "अगले 5 सत्रों में एक्सपायरी है", "आने वाले नतीजे 25 अक्टूबर को", "आने वाले नतीजे 25 अक्टूबर को हैं।",
+    "The next expiry is 30 Oct; 5 sessions remain.", "Next expiry: 30 Oct, PCR 1.3.", "No forecast is made; max pain is 22800.",
+    "The board meeting is due on 25 Oct.", "Spot closed at 22650 on Friday.", "Spot bounced 1.2% off the 22000 low on Tuesday.",
+    "It had gone below 22500 on Monday.", "An eye-catching 5% move on Monday.", "पुढील तक्त्यात 5 स्ट्राइक आहेत.",
+    "पुढील एक्सपायरी 30 ऑक्टोबरला आहे.", "येत्या 5 सत्रांत एक्सपायरी आहे.", "आगामी निकाल 25 ऑक्टोबरला आहेत.",
+    "आगामी एक्सपायरी 30 अक्टूबर है, पीसीआर 1.3 है।", "next expiry 30 Oct ko hai, PCR 1.3 hai", "अगली एक्सपायरी 30 अक्टूबर को है; 5 सत्र बाकी हैं।",
+    "मॅक्स पेन 22800 आहे; पुढीलप्रमाणे कॉल OI 23000 वर सर्वाधिक.", "Option open interest is centred near max pain 22800 for this expiry.",
+    # OI quantities: the OI / contracts word a few words before the figure, or right after the amount
+    "कॉल OI 23000 वर सर्वाधिक, 1.4 कोटी.", "Call OI 1.4 crore at 23000.", "The 22000 put has 5.2 lakh contracts of open interest.",
+]
+R11_BLOCK = [
+    "Base case: max pain 22800.", "The close ends the series near max pain 22800.", "The close stays pinned to max pain 22800 through Thursday.",
+    "Thursday: max pain 22800.", "We think the close holds max pain 22800.", "PCR stays near 1.3 over the next few sessions.",
+    "मैक्स पेन 22800 के आसपास बंद हो।", "मैक्स पेन 22800 पर एक्सपायरी तय मानिए।", "एक्सपायरीला मॅक्स पेन 22800.", "गुरुवारी मॅक्स पेन 22800.",
+    "भाव मॅक्स पेन 22800 कडे झुकलेला आहे.", "expiry tak max pain 22800", "Thursday ko max pain 22800", "max pain 22800 ke aas paas rahe",
+    # the reviewer's other round-11 probes
+    "By the close of the series, max pain 22800.", "Expiry close at max pain 22800 is the base case.", "Into the weekly close, max pain 22800.",
+    "The close to hold the range low 22000 over the next few sessions.", "bhav max pain 22800 ke aas paas rahe",
+    "I think the close holds the range low 22000.", "Max pain 22800 at this expiry.", "Max pain 22800 on Thursday.",
+    "एक्सपायरी तक मैक्स पेन 22800 के आसपास रहे।", "गुरुवार को मैक्स पेन 22800।", "मैक्स पेन 22800 गुरुवार तक।",
+    # a time word with a count is a calendar only when no level sits in the clause; the expiry as a time stays a time
+    "अगले 5 सत्रों में मैक्स पेन 22800।", "येत्या एक्सपायरीला मॅक्स पेन 22800.", "The week ahead has 4 sessions and max pain 22800.",
+]
+R11_BLOCK_ADVICE = [
+    "Spot to hold 22500 over the next few sessions.", "We think spot holds 22500.", "Spot ends the series near max pain 22800.",
+    "Spot stays pinned to 22800 through Thursday.", "Into the weekly close, 22800.", "स्पॉट एक्सपायरी तक 22800 के आसपास रहे।",
+    "स्पॉट 22800 के आसपास बंद हो।", "22800 पर एक्सपायरी तय मानिए।", "एक्सपायरीला 22800.", "गुरुवारी 22800.", "स्पॉट 22800 कडे झुकलेला आहे.",
+    "expiry tak 22800", "Thursday ko 22800", "spot 22800 ke aas paas rahe", "Results are due to be 23000.",
+    # a spelled-out amount: ";" ends the clause, and the OI word must sit just before the figure
+    "कॉल OI 1.4 कोटी; भाव 2 लाख पर्यंत.", "The 23000 call has OI 1.4 crore and 2.3 lakh above it.",
+    "Call OI is the largest at 23000 and spot is worth 2 lakh crore.",
+]
+
+
+@pytest.mark.parametrize("text", R11_PASS_FACTS)
+def test_round11_descriptions_of_the_expiry_pass_every_check(text):
+    assert mv.advice_problems(text) == [], text
+    allowed, facts, bindings = _r5()
+    lang = "mr" if any("ऀ" <= c <= "ॿ" for c in text) else "en"
+    shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+    assert shown == text and why is None, (text, why)
+
+
+@pytest.mark.parametrize("text", R11_PASS)
+def test_round11_calendars_schedules_and_oi_quantities_pass_the_advice_check(text):
+    assert mv.advice_problems(text) == [], text
+
+
+@pytest.mark.parametrize("text", R11_BLOCK)
+def test_round11_time_references_stated_views_and_subjunctives_are_blocked(text):
+    assert mv.advice_problems(text), text
+    allowed, facts, bindings = _r5()
+    for lang in ("en", "mr", "hi"):
+        shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", R11_BLOCK_ADVICE)
+def test_round11_bare_level_forecasts_and_amounts_are_blocked_by_the_advice_check(text):
+    assert mv.advice_problems(text), text
+
+
+@pytest.mark.parametrize("unit", ["1 लाख ", "1 कोटी ", "1 crore ", "OI 1 crore ", "1 crore contracts ", "OI x x x 1 lakh ",
+                                  "week ahead 4 sessions ", "on Monday 5% ", "अगले 5 सत्रों ", "25 Oct ", "Thursday: 1 ", "बंद हो 1 "])
+def test_round11_a_run_of_amounts_or_calendars_is_linear_up_to_the_cap(unit):
+    import time
+    text = (unit * (mv.MAX_CHECK_CHARS // len(unit) + 1))[:mv.MAX_CHECK_CHARS]
+    assert len(text) == mv.MAX_CHECK_CHARS                                      # checked, not refused
+    t0 = time.perf_counter()
+    mv.advice_problems(text)
+    assert time.perf_counter() - t0 < 1.0, unit                                 # was 2.5 s ("1 लाख " at 20k characters)

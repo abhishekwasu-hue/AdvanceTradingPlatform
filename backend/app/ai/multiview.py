@@ -150,7 +150,7 @@ FACT_LABELS: Dict[str, Tuple[Tuple[str, ...], bool]] = {
              "निचांक", "रेंज"), True),
     "underlying_ltp": (("ltp", "underlying", "spot", "last price", "last traded"), True),
     "atm_strike": (("atm", "at-the-money", "at the money"), False),
-    "pcr": (("pcr", "put-call ratio", "put call ratio", "put/call"), False),
+    "pcr": (("pcr", "put-call ratio", "put call ratio", "put/call", "पीसीआर"), False),
     "max_pain": (("max pain", "maximum pain", "max-pain", "मॅक्स पेन", "मैक्स पेन", "मॅक्स पेन"), False),
     "total_call_oi": (("call oi", "call open interest", "total call"), False),
     "total_put_oi": (("put oi", "put open interest", "total put"), False),
@@ -435,33 +435,65 @@ _FORECAST_WORDS = (
     # round 10: more forecast synonyms, and a future time reference next to a number (a past verb governing the number
     # still excuses it: "closed at 22650 last week" is not "22800 next week")
     "ought to", "in the cards", "good bet", "a good bet", "tipped to", "tipped for", "odds-on", "primed for", "primed to",
-    "gearing up for", "gearing up", "angling for", "due for", "beckons", "beckon", "looms", "looming", "in sight", "forecast",
-    "forecasts", "forecasted", "projected", "projection", "projections", "my view", "our view", "tends to", "tend to", "gonna",
+    "gearing up for", "gearing up", "angling for", "due for", "beckons", "beckon", "looms", "looming", "in sight",
+    "projected", "projection", "projections", "my view", "our view", "tends to", "tend to", "gonna",
     "to stay", "to remain", "to finish", "bounce", "bounces", "rebound", "rebounds", "hints at", "bullish for", "bearish for",
     "guarding", "guards", "protecting", "protects", "holding the line", "hold the line", "mujhe lagta", "lagta", "lagti",
-    "next week", "next session", "next sessions", "next expiry", "week ahead", "weeks ahead", "days ahead", "sessions ahead",
+    "next week", "next session", "next sessions", "week ahead", "weeks ahead", "days ahead", "sessions ahead",
     "coming week", "coming days", "coming sessions", "at expiry", "on expiry day", "on expiry", "tomorrow",
-    "अगले", "अगले हफ्ते", "अगले सप्ताह", "आने वाले दिनों में", "आने वाले", "निकट भविष्य में", "निकट भविष्य", "भविष्य में",
-    "पुढील", "पुढील आठवड्यात", "येत्या", "आगामी", "aane wale", "agle hafte",
+    "अगले हफ्ते", "अगले सप्ताह", "आने वाले दिनों में", "निकट भविष्य में", "निकट भविष्य", "भविष्य में",
+    "पुढील आठवड्यात", "agle hafte",
+    # round 11: a stated view - "base case", "we think" / "I think" next to a level; "the next few sessions"
+    "base case", "base-case", "we think", "i think", "we believe", "i believe", "next few sessions", "next few days", "next few weeks",
+    "next couple of sessions", "next couple of days", "coming few sessions", "coming few days", "few sessions ahead",
 )
 # Patterns among the forecast words (round 8): stems so that inflections are caught ("उम्मीदें", "शक्यतेने", "संभाव्य"),
 # "watch" / "anchors" next to a level (never "Watch list: 5 symbols", "the anchor for these numbers"), and "अपेक्षित" only as
 # a predicate or before a level ("22800 अपेक्षित आहे", "अपेक्षित पातळी 22800" - never "अपेक्षित माहिती: 5 सत्रे").
+_WEEKDAY = r"(?:mon|tues|wednes|thurs|fri|satur|sun)day"
+_WEEKDAY_DEVA = r"(?:सोम|मंगल|मंगळ|बुध|गुरु|बृहस्पति|शुक्र|शनि|रवि)वार"
+_NOT_EXPIRY = r"(?!\s*(?:एक्सपायरी|एक्स्पायरी|expiry))"      # a time word right before the expiry names the expiry (round 11)
 _FORECAST_PATTERNS = (
     r"watch(?:es|ing)?(?!\s*-?\s*list)", r"anchors|anchoring", r"bias(?:\s+is)?\s+(?:to|toward|towards)",
     # round 9: monitor / eye only as a verb before a level ("Monitor 22800", "Eye 22800" - never "the risk monitor shows 3
     # alerts", "Monitoring window: 20 sessions", "the eye of the range is 22750"); never "on track record"
     r"(?:monitor(?:s|ing)?|eye(?:s|ing)?)(?=\s+(?:(?:on|the|a|an|max|pain|level|its|call|put|oi|strike|close|high|low|spot|closely)\s+){0,3}[₹\d])",
     r"on\s+track(?!\s+record)(?!\s*:)",                  # "On track: 3 of 5 sessions" is a label (round 10)
-    # round 10: "due to" a verb or "is due" at a clause end (never "rose 12% due to fresh writing"); "this expiry" as a
-    # time (never "max pain 22800 for this expiry", a description of the chain)
-    r"due\s+to\s+(?:drop|fall|rise|rally|test|hit|reach|bounce|break|close|end|finish|settle|move|climb|decline|stay|remain|be|cool|ease|spike)",
-    r"is\s+due(?=\s*(?:[.;,!?]|$))", r"(?<!\bfor )(?<!\bof )this\s+expiry", r"signals\s+an?\s+(?:bounce|rebound|rally|fall|drop|move|turn)",
+    # round 10: "due to" a verb or "is due" at a clause end (never "rose 12% due to fresh writing")
+    r"due\s+to\s+(?:drop|fall|rise|rally|test|hit|reach|bounce|break|close|end|finish|settle|move|climb|decline|stay|remain|cool|ease|spike)",
+    # round 11: "due to be announced / declared" is a schedule, not a forecast
+    r"due\s+to\s+be(?!\s+(?:announced|declared|held|published|released|reported|paid|listed|out)\b)",
+    r"is\s+due(?=\s*(?:[.;,!?]|$))", r"signals\s+an?\s+(?:bounce|rebound|rally|fall|drop|move|turn)",
     # should / would (round 9) - never the rules' own "a close outside 22000 - 22800 would change the reading"
     r"(?:should|would)(?!\s+change\s+(?:the|this|that)\b)",
     r"शायद", r"संभवतः", r"संभव[\u0900-\u0963\u0966-\u097f]*", r"संभाव[\u0900-\u0963\u0966-\u097f]*", r"शक्य[\u0900-\u0963\u0966-\u097f]*", r"उम्मीद[\u0900-\u0963\u0966-\u097f]*",
     r"अनुमान[\u0900-\u0963\u0966-\u097f]*", r"आशा[\u0900-\u0963\u0966-\u097f]*", r"अंदाज[\u0900-\u0963\u0966-\u097f]*", r"अपेक्षा[\u0900-\u0963\u0966-\u097f]*", r"अपेक्षे[\u0900-\u0963\u0966-\u097f]*",
     r"अपेक्षित(?=[\s,]*(?:आहे|आहेत|है|हैं|था|थी|थे|असेल|होगा|होगी|पातळी|स्तर|लेवल|भाव|किंमत|कीमत|दर|टार्गेट|लक्ष्य|[।॥.!?]|$))",
+    # round 11: a time word is a forecast unless it modifies the expiry ("आगामी एक्सपायरी का मैक्स पेन 22800 है", "पुढील
+    # एक्सपायरीचा", "येत्या एक्सपायरीसाठी" describe the chain); पुढील before a plain noun is "following" ("पुढील आकडे",
+    # "पुढील तक्त्यात"), not a time word
+    rf"(?:अगले|आगामी|येत्या|आने\s+वाले|aane\s+wale){_NOT_EXPIRY}",
+    rf"पुढील{_NOT_EXPIRY}(?!\s*(?:आकड|तक्त|प्रमाण|माहिती|यादी|सारणी|मुद्द|विभाग|परिच्छेद|ओळ|उदाहरण|टेबल|आलेख|चार्ट|स्ट्राइक|पान|भाग|नोंद|तपशील))",
+    # a negated forecast is exempt ("This is not a forecast: PCR is 1.3", "No forecast is made")
+    r"(?<!\bnot a )(?<!\bnot )(?<!\bno )(?<!\bnor a )forecast(?:s|ed)?",
+    # round 11 (structural): the expiry or a weekday read as a time, next to a level - "through Thursday", "at this expiry",
+    # "Thursday:", "expiry tak", "Thursday ko", "एक्सपायरी तक", "गुरुवार को", "एक्सपायरीला", "गुरुवारी"; "into the weekly close"
+    rf"(?:by|at|into|through|thru|on|till|until|before)\s+(?:(?:the|this|next|coming|upcoming|weekly|monthly|series)\s+){{0,2}}"
+    rf"(?:{_WEEKDAY}|expiry)",
+    r"(?:by|into|through|till|until)\s+(?:the\s+)?(?:weekly\s+|monthly\s+|series\s+)?(?:close|bell|settlement)",
+    rf"{_WEEKDAY}(?=\s*:)", rf"(?:{_WEEKDAY}|expiry)\s+(?:tak|ko)\b",
+    rf"(?:एक्सपायरी|एक्स्पायरी|{_WEEKDAY_DEVA})\s+(?:को|तक|के\s+दिन)",
+    rf"(?:एक्सपायरी|एक्स्पायरी)(?:ला|पर्यंत|दिवशी)|{_WEEKDAY_DEVA}(?:ी|ला|पर्यंत)",
+    # a present-tense state of the close / price next to a level reads as a call on it ("the close holds max pain 22800",
+    # "the close ends the series near 22800", "the close stays pinned to 22800"), and a subjunctive or an imperative of
+    # close / stay / settle ("22800 के आसपास बंद हो", "22800 पर एक्सपायरी तय मानिए", "22800 ke aas paas rahe")
+    r"(?:close|spot|price|prices|index|nifty|market|expiry|series|stock)\s+(?:stays|stay|holds|hold|ends|end|settles|settle|pins|"
+    r"remains|remain|finishes|finish|lands|sticks)\b",
+    r"बंद\s+हो(?![\u0900-\u0963\u0966-\u097f])(?!\s+(?:गया|गई|गयी|गए|चुका|चुकी|चुके|था|थी|थे))",
+    r"(?:रहे|रहें|टिके|टिकें)(?=\s*(?:[।॥.!?,;]|$))", r"तय\s+(?:मानिए|मानें|मानो|मान\s+लें|समझिए|समझें|समझो|है|हैं)",
+    r"(?:व्हावा|व्हावी|व्हावे|राहावा|राहावी|राहावे|रहावा)",
+    r"(?:rahe|rahein|tike|ho\s+jaye|ho\s+jaaye|band\s+ho|close\s+ho|settle\s+ho)(?=\s*(?:[.!?,;।]|$))",
+    r"tay\s+(?:maniye|maano|mano|samjho|samjhiye|hai)", r"कडे\s+(?:झुक|कल|ओढ|खेच)[\u0900-\u0963\u0966-\u097f]*",
 )
 # C - anywhere: value judgements, spelled-out amounts, Hinglish calls
 _ANYWHERE = (
@@ -487,7 +519,6 @@ _MORPH_NEAR_NUMBER = re.compile(
     re.I)
 # Movement / destination words in a sentence with a number (review of H-C4, round 5) - blocked whatever label sits next
 # to the number: a fact's own name does not make "max pain 22800 is where it heads" a description.
-_WEEKDAY = r"(?:mon|tues|wednes|thurs|fri|satur|sun)day"
 _MOVEMENT = re.compile(
     # forward-looking forms only (round 6): "heads to", "goes to", "will break" - never "goes back", "pulled back", "did not
     # break", "no break of", "extends from X to Y", "continues to be / hold", "in view:", "expiry is soon"
@@ -516,6 +547,8 @@ _MOVEMENT = re.compile(
     r"\b(?:on|en)\s+(?:route|course)\b|\bon\s+(?:its|their|the)\s+way\b|\bmaking\s+(?:its|their|a)\s+way\b|"
     r"(?<![ऀ-ॣ०-ॿ])वाल(?:ा|ी|े)\s+(?:है|हैं)(?![ऀ-ॣ०-ॿ])|(?<![ऀ-ॣ०-ॿ])(?:जात|सरकत|चालला|चालली|निघाला)\s+आहे(?![ऀ-ॣ०-ॿ])|"
     r"(?<![ऀ-ॣ०-ॿ])कडे\s+(?:जात|सरकत|वाटचाल)(?![ऀ-ॣ०-ॿ])|"
+    # round 11: a level followed by कडे ("toward") - "भाव मॅक्स पेन 22800 कडे झुकलेला आहे"
+    r"\d\s*कडे(?![ऀ-ॣ०-ॿ])|"
     # round 7: only next to a level - "approaches the high 22800", "22800 is the anchor", "Watch the high 22800" - never
     # "this approach reads 20 sessions", "the 20-session window is the anchor for these numbers", "Watch list: 5 symbols"
     r"\bapproach(?:es|ing)?\s+(?:(?:the|a|an|max|pain|high|low|level|of|its|call|put|oi|strike|close|range|mark|spot|to|toward|towards|"
@@ -530,7 +563,8 @@ _MOVEMENT = re.compile(
     re.I)
 _HINGLISH_FUTURE = re.compile(r"\b(?!(?:vega|omega|mega|bodega)\b)[a-z]+(?:ega|egi|enge)\b|\bwal[ae] hain?\b|\bwali hai\b", re.I)
 _PAST_BEFORE_NUMBER = re.compile(r"\b(?:rose|fell|closed|ended|moved|gained|lost|dropped|climbed|rallied|traded|touched|slipped|surged|"
-                                 r"jumped|declined|advanced|was|were)\s+(?:(?:by|to|at|from|near|around|about)\s+)?(?:₹\s*)?$", re.I)
+                                 r"jumped|declined|advanced|bounced|rebounded|recovered|peaked|dipped|eased|was|were|"
+                                 r"(?:had|has|have)\s+(?:gone|been|moved|traded|stayed)(?:\s+(?:below|above|past|under|over|up|down))?)\s+(?:(?:by|to|at|from|near|around|about)\s+)?(?:₹\s*)?$", re.I)
 _PAST = re.compile(r"\b(?:rose|fell|closed|ended|moved|was|were|had|has been|have been|gained|lost|dropped|climbed|rallied|traded|"
                    r"touched|slipped|surged|jumped|declined|advanced)\b", re.I)
 _FUTURE = re.compile(r"\b(?:will|could|may|might|likely|expect\w*|set to|can|going to|should|would|next)\b|"
@@ -562,7 +596,10 @@ _AMOUNT_WORDS = ("lakh", "lakhs", "crore", "crores", "लाख", "कोटी"
 _AMOUNT_RE = re.compile(rf"(?<![{_DEVA}-]){_alt_words(_AMOUNT_WORDS)}(?![{_DEVA}-])", re.IGNORECASE)
 _AFTER_FIGURE = re.compile(r"\d\s*$")
 _OI_WORDS = re.compile(r"\b(?:oi|open interest|contracts)\b|ओआय|ओआई|कॉन्ट्रॅक्ट|कॉन्ट्रैक्ट", re.IGNORECASE)
-_SENTENCE_END = re.compile(r"[!?\n\u0964\u0965]|(?<!\d)\.(?!\d)")
+_OI_AFTER = re.compile(r"\s*(?:\b(?:oi|open interest|contracts)\b|ओआय|ओआई|कॉन्ट्रॅक्ट|कॉन्ट्रैक्ट)", re.IGNORECASE)
+_OI_REACH = 5                      # round 11: the OI / contracts word sits within this many words before the figure
+_SENTENCE_END = re.compile(r"[!?;\n\u0964\u0965]|(?<!\d)\.(?!\d)")        # round 11: ";" ends the clause too
+_FIGURE = re.compile(r"\d[\d,]*(?:\.\d+)?\s*$")
 _ADJACENT = re.compile(rf"(?:another|further|additional|extra)\s+{_NUM}|{_NUM}\s*(?:more|further|higher|lower|extra)\b|"
                        rf"\b(?:higher|lower|up|down)\s+by\s+{_NUM}|{_NUM}\s+next\b|\bnext\s+(?:level|target|stop|leg|move|zone)\b",
                        re.IGNORECASE)
@@ -587,6 +624,56 @@ def _clause_near(text: str, start: int, end: int) -> str:
     return _clause(text[lo:min(len(text), end + _CLAUSE_REACH)], start - lo, end - lo)
 
 
+def _oi_quantity(text: str, lo: int, m: "re.Match[str]") -> bool:
+    """The amount word `m` counts an OI quantity: right after a figure, with the OI / contracts word right after it or
+    within a few words before the figure in the same clause, and no other amount in between ("call OI 1.4 crore",
+    "कॉल OI 23000 वर सर्वाधिक, 1.4 कोटी" - never "कॉल OI 1.4 कोटी; भाव 2 लाख पर्यंत", "OI 1.4 crore and 2.3 lakh")."""
+    figure = _FIGURE.search(text, max(lo, m.start() - 24), m.start())
+    if figure is None or not _AFTER_FIGURE.search(text, max(0, m.start() - 12), m.start()):
+        return False
+    if _OI_AFTER.match(text, m.end()):
+        return True
+    words = text[lo:figure.start()].split()[-_OI_REACH:]
+    before = " ".join(words)
+    oi = None
+    for oi in _OI_WORDS.finditer(before):
+        pass
+    return oi is not None and not _AMOUNT_RE.search(before, oi.end())
+
+
+# the forecast words that name a time, or a state of the close at one (round 11): a date or a count next to them is a calendar
+_TIME_WORD = re.compile(rf"\b(?:next|ahead|coming|tomorrow|weeks?|sessions?|days|expiry|{_WEEKDAY}|aane|agle|close|bell|"
+                        rf"settlement|ends?|series)\b|अगल|आने|आगामी|पुढील|येत्या|भविष्य|एक्सपायरी|एक्स्पायरी|वार", re.I)
+_MONTH = (r"(?:jan|january|feb|february|mar|march|apr|april|jun|june|jul|july|aug|august|sep|sept|september|oct|october|nov|"
+          r"november|dec|december)\b\.?|जनवरी|फ़रवरी|फरवरी|मार्च|अप्रैल|मई|जून|जुलाई|अगस्त|सितंबर|सितम्बर|अक्टूबर|अक्तूबर|नवंबर|नवम्बर|"
+          r"दिसंबर|दिसम्बर|जानेवारी|फेब्रुवारी|एप्रिल|जुलै|ऑगस्ट|सप्टेंबर|ऑक्टोबर|नोव्हेंबर|डिसेंबर")
+_DATE_OR_COUNT_AFTER = re.compile(
+    rf"\s*(?:{_MONTH}|(?:more\s+|trading\s+|daily\s+)?(?:sessions?|days?|weeks?|months?|bars?|years?)\b|"
+    r"सत्र|दिन|दिवस|हफ्त|हफ़्त|सप्ताह|आठवड|महीन|महिन|वर्ष|साल|din\b|hafte\b|-\d{1,2}-\d{1,2})", re.I)
+_DATE_BEFORE = re.compile(rf"(?:{_MONTH})\s*$|\d{{4}}-(?:\d{{1,2}}-)?$", re.I)
+_NUM_RE = re.compile(_NUM)
+_ON_WEEKDAY = re.compile(rf"on\s+(?:the\s+)?{_WEEKDAY}$", re.I)     # a percentage on a weekday is a recap, not a level
+_STOP = re.compile(r"[!?;\n\u0964\u0965]|(?<!\d)\.(?!\d)")
+
+
+def _date_or_count(text: str, start: int, end: int) -> bool:
+    """The number text[start:end] is a date ("25 Oct", "30 ऑक्टोबरला", "2026-10-30") or a count of sessions / days ("4
+    sessions", "5 सत्रों"), not a price level."""
+    end = start + len(text[start:end].rstrip())
+    return bool(_DATE_OR_COUNT_AFTER.match(text, end) or _DATE_BEFORE.search(text, max(0, start - 12), start))
+
+
+def _only_dates_and_counts(text: str, start: int, end: int, percent_ok: bool = False) -> bool:
+    """Every number near text[start:end] in its clause (60 characters each side, up to a sentence or clause end) is a date
+    or a count (or, with `percent_ok`, a percentage): a time word there describes the calendar ("the week ahead has 4
+    sessions", "अगले 5 सत्रों में एक्सपायरी है", "आने वाले नतीजे 25 अक्टूबर को", "a 5% move on Monday")."""
+    lo = max([max(0, start - 60)] + [x.end() for x in _STOP.finditer(text, max(0, start - 60), start)])
+    nxt = _STOP.search(text, end, end + 60)
+    hi = nxt.start() if nxt else min(len(text), end + 60)
+    return all(_date_or_count(text, n.start(), n.end()) or (percent_ok and n.group(0).rstrip().endswith("%"))
+               for n in _NUM_RE.finditer(text, lo, hi))
+
+
 def advice_problems(text: str) -> List[str]:
     """Why `text` reads as a trade call, a forecast or a value judgement (empty = it does not). Blocked by the multi-view
     checks: a trade action next to a number; a forecast / possibility word next to a number or a percentage unless its
@@ -607,6 +694,9 @@ def advice_problems(text: str) -> List[str]:
         clause = _clause_near(text, m.start(), m.end())
         if governed and not _FUTURE.search(clause):
             continue                                    # "the close rose 3.6%": a past verb governs this very number
+        word = m.group("a") or m.group("b")
+        if _TIME_WORD.search(word) and _only_dates_and_counts(text, m.start(), m.end(), percent_ok=bool(_ON_WEEKDAY.match(word))):
+            continue                                    # a calendar: "the week ahead has 4 sessions", "a 5% move on Monday" (round 11)
         found.append(f"'{(m.group('a') or m.group('b')).lower()}' next to a number (a forecast)")
     for sentence in re.split(r"[!?\n\u0964\u0965]|(?<!\d)\.(?!\d)", text):
         if not re.search(r"\d", sentence):
@@ -624,11 +714,10 @@ def advice_problems(text: str) -> List[str]:
     for m in _ANYWHERE_RE.finditer(text):
         found.append(f"'{m.group(0).lower()}' (a judgement or a spelled-out amount)")
     for m in _AMOUNT_RE.finditer(text):
-        lo = max([0] + [x.end() for x in _SENTENCE_END.finditer(text, max(0, m.start() - 300), m.start())])
-        nxt = _SENTENCE_END.search(text, m.end(), m.end() + 300)
-        sentence = text[lo:nxt.start() if nxt else min(len(text), m.end() + 300)]
-        if _AFTER_FIGURE.search(text, max(0, m.start() - 12), m.start()) and _OI_WORDS.search(sentence):
-            continue                                    # an OI quantity: "call OI 1.4 crore"
+        # the window is bounded (round 11): never the text from its start, so a run of amounts stays linear
+        lo = max([max(0, m.start() - 300)] + [x.end() for x in _SENTENCE_END.finditer(text, max(0, m.start() - 300), m.start())])
+        if _oi_quantity(text, lo, m):
+            continue                                    # an OI quantity: "call OI 1.4 crore", "3 lakh contracts"
         found.append(f"'{m.group(0).lower()}' (a spelled-out amount)")
     if _MODAL_ADVICE.search(text):
         found.append("tells traders what to do")

@@ -132,7 +132,7 @@ import type {
   ByokProviderName,
   ByokStatus,
   ByokTestResponse,
-  VisionReportsResponse,
+  VisionReportsResponse, VisionSubjectKind,
   VerificationSendResult,
   TaxReport,
   FxRate,
@@ -801,6 +801,13 @@ export const api = {
   byokSavePrefs: (body: ByokPrefsInput) => request<ByokStatus>("/ai/byok/prefs", { method: "PUT", body: JSON.stringify(body) }),
   // BYOK-V2: the caller's own Vision reports on proposals (404 while vision_byok is off).
   byokReports: (actionId?: number) => request<VisionReportsResponse>(`/ai/byok/reports${actionId ? `?action_id=${actionId}` : ""}`),
+  /** BYOK-V3: the caller's own reports of one kind (scan_alert / daily_review) or for one scan-alert notification. */
+  byokReportsBy: (q: { kind?: VisionSubjectKind; notificationId?: number }) => {
+    const params = new URLSearchParams();
+    if (q.kind) params.set("kind", q.kind);
+    if (q.notificationId) params.set("notification_id", String(q.notificationId));
+    return request<VisionReportsResponse>(`/ai/byok/reports?${params.toString()}`);
+  },
   byokDeleteReport: (id: number) => request<{ deleted: number }>(`/ai/byok/reports/${id}`, { method: "DELETE" }),
   aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
     request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }), signal }),
@@ -948,6 +955,9 @@ export const api = {
   allThen: () => request<{ templates: Record<string, ThenTemplate> }>("/alerts/then"),
   putRuleThen: (id: number, body: ThenBody) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "PUT", body: JSON.stringify(body) }),
   deleteRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "DELETE" }),
+  // N1 X2: the template owner arms Auto PAPER (typed confirmation) / the owner or the organisation OWNER disarms it.
+  armRuleThen: (id: number, confirm: string) => request<ThenTemplate>(`/alerts/rules/${id}/then/arm`, { method: "PUT", body: JSON.stringify({ confirm }) }),
+  disarmRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then/arm`, { method: "DELETE" }),
   ruleThenIntents: (id: number, limit = 50) => request<ThenIntent[]>(`/alerts/rules/${id}/then/intents?limit=${limit}`),
   getNotificationPolicy: () => request<NotificationPolicy>("/alerts/policy"),
   putNotificationPolicy: (body: NotificationPolicy) => request<NotificationPolicy>("/alerts/policy", { method: "PUT", body: JSON.stringify(body) }),

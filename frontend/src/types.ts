@@ -1617,6 +1617,9 @@ export interface ByokStatus {
   audit: ByokAuditScope;
   channels: ByokChannels;
   notes: { subscription: string; privacy: string };
+  /** BYOK-V3: whether scan-alert and daily-review audits are on for the organisation (flag vision_byok_v3), and their limits. */
+  scope?: { v3_enabled: boolean; scan_audits_per_hour: number; daily_review_at: string; daily_review_timezone: string;
+            daily_review_max_symbols: number; daily_review_timeframe: string };
 }
 
 export interface ByokTestResponse {
@@ -1638,9 +1641,19 @@ export interface ByokPrefsInput {
 
 export type VisionReportStatus = "pending" | "running" | "ok" | "skipped" | "failed";
 
+export type VisionSubjectKind = "proposal" | "scan_alert" | "daily_review";
+
 export interface VisionReport {
   id: number;
-  ai_action_id: number;
+  ai_action_id: number | null;
+  /** BYOK-V3: what was reviewed - a proposal (V2), a scan-alert notification, or one symbol of the daily review. */
+  kind?: VisionSubjectKind;
+  notification_id?: number | null;
+  alert_rule_id?: number | null;
+  symbol?: string | null;
+  exchange?: string | null;
+  timeframe?: string | null;
+  subject_date?: string | null;
   status: VisionReportStatus;
   provider: ByokProviderName | null;
   model: string | null;

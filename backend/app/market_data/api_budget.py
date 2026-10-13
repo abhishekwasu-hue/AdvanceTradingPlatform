@@ -4,13 +4,20 @@ same symbol on many screens - can never spend the broker allowance the trading w
 
 - **Shared, per credential.** The counters live in Redis, keyed by the credential row (`record.id`) - so every API
   worker and replica counts together, and two members who each brought their own broker (BYOK / BT1) never share one -
-  exactly where `app.core.rate_limit` keeps its counters (production and staging, or `RATE_LIMIT_BACKEND=redis`). With
-  Redis not configured (one dev process) or unreachable, an in-process window takes over, as for the rate limiter.
-- **Windows.** A token is granted only when every window has room, checked and counted in one Redis script: per second
-  (a burst guard at the worker's own conservative rate, far below the broker's), per minute at half the worker's
-  conservative limit, and - for Upstox, whose standard APIs allow 2,000 requests per 30 minutes per user - per 30
-  minutes, at most UPSTOX_API_PER_30MIN (500) for the API. So API plus worker stay inside the broker's allowance
-  whatever the number of API workers.
+  exactly where `app.core.rate_limit` keeps its counters (production and staging, or `RATE_LIMIT_BACKEND=redis`). The
+  keys carry the credential as a hash tag (`ab:{<id>}:<seconds>`), so the one multi-key script stays on one slot under
+  Redis Cluster.
+- **Redis missing or down.** Each API process then counts in its own in-process windows, at its part of the share:
+  every limit divided by the host's API processes (`API_WORKERS`), a limit below one per process becoming one per
+  proportionally longer window. Together the processes stay at the share; what this cannot see is another host's
+  replicas (production runs one host).
+- **Windows.** A token is granted only when every window has room, checked and counted in one Redis script. The windows
+  slide (a sorted set of call times per window, timed by the Redis server's clock): a fixed window would let twice the
+  limit through across its boundary. Per second at API_SHARE of the worker's conservative rate, per minute at
+  API_SHARE of the worker's per-minute limit, and - for Upstox, whose standard APIs allow 2,000 requests per 30 minutes
+  per user - per 30 minutes, at most UPSTOX_API_PER_30MIN (500) for the API. So API plus worker stay inside the
+  broker's allowance whatever the number of API workers (ADR-0004: Kite allows 3 quote calls a second; the worker takes
+  up to 2, the API at most 1).
 - **No queue.** Only the per-second window is waited for (it refills within a second); a full minute or 30-minute window
   refuses at once. `/ltp` waits at most TOKEN_WAIT_SECONDS, then answers 429 (the chart keeps its last price); a
   `/candles` request waits at most CANDLE_WAIT_SECONDS in all, and a symbol without a token says "budget used".
@@ -21,6 +28,7 @@ Nothing here places an order.
 """
 import asyncio
 import json
+import os
 import time
 import uuid
 from collections import defaultdict, deque
@@ -29,7 +37,7 @@ from typing import Any, Deque, Dict, List, Optional, Tuple
 
 from app.brokers.rate_budget import limits_for
 
-API_SHARE = 0.5                   # of the worker's conservative per-broker limits
+API_SHARE = 0.5                   # of the worker's conservative per-broker limits (per second and per minute)
 UPSTOX_API_PER_30MIN = 500        # of Upstox's 2,000 standard requests per 30 minutes per user
 TOKEN_WAIT_SECONDS = 2.0
 RETRY_EVERY_SECONDS = 0.2
@@ -54,35 +62,57 @@ class ApiLimits:
 def api_limits(broker: str) -> ApiLimits:
     """The API's share for one credential of this broker."""
     base = limits_for(broker)
-    share = ApiLimits(per_second=max(1, int(base.per_second)), per_minute=max(1, int(base.per_minute * API_SHARE)))
+    # ADR-0004: the per-second share too - the worker's own budget keeps the whole conservative rate for its exits.
+    share = ApiLimits(per_second=max(1, int(base.per_second * API_SHARE)), per_minute=max(1, int(base.per_minute * API_SHARE)))
     if (broker or "").lower() == "upstox":
         return ApiLimits(share.per_second, share.per_minute, UPSTOX_API_PER_30MIN)
     return share
 
 
 # --- the shared windows --------------------------------------------------------------------------------------------------
-# Check every window, then count in every window - in one script, so two workers never both take the last token, and a
-# refused call costs nothing in any window. Returns 1 (granted) or -i (refused by the i-th window, 1-based; the longest
-# full window is reported, so a caller never waits on the second when the minute or the 30 minutes are used up).
+# Sliding windows: KEYS[i] is a sorted set of call times (Redis server clock, seconds) for window i; ARGV holds
+# (seconds, limit) per window, then a unique member. Prune, check every window (the longest first), then record the call
+# in every one - in one script, so two workers never both take the last token, and a refused call costs nothing in any
+# window. Returns 1 (granted) or -i (refused by the i-th window, 1-based; the longest full window is reported, so a caller
+# never waits on the second when the minute or the 30 minutes are used up).
 _TAKE_LUA = (
-    "for i = #KEYS, 1, -1 do local c = tonumber(redis.call('get', KEYS[i]) or '0'); "
-    "if c + 1 > tonumber(ARGV[2 * i]) then return -i end end; "
-    "for i = 1, #KEYS do local c = redis.call('incr', KEYS[i]); "
-    "if c == 1 then redis.call('expire', KEYS[i], ARGV[2 * i - 1]) end end; return 1"
+    "local t = redis.call('time'); local now = tonumber(t[1]) + tonumber(t[2]) / 1000000; "
+    "for i = #KEYS, 1, -1 do local w = tonumber(ARGV[2 * i - 1]); "
+    "redis.call('zremrangebyscore', KEYS[i], '-inf', now - w); "
+    "if redis.call('zcard', KEYS[i]) + 1 > tonumber(ARGV[2 * i]) then return -i end end; "
+    "local member = ARGV[2 * #KEYS + 1]; "
+    "for i = 1, #KEYS do redis.call('zadd', KEYS[i], now, member); "
+    "redis.call('expire', KEYS[i], math.ceil(tonumber(ARGV[2 * i - 1])) + 1) end; return 1"
 )
 _LOCAL: Dict[str, Deque[float]] = defaultdict(deque)
 
 
 def _keys(record_id: int, windows: List[Tuple[int, int]]) -> List[str]:
-    return [f"ab:{int(record_id)}:{seconds}" for seconds, _ in windows]
+    return [f"ab:{{{int(record_id)}}}:{seconds}" for seconds, _ in windows]
+
+
+def _api_processes() -> int:
+    try:
+        return max(1, int(os.environ.get("API_WORKERS", "1") or "1"))
+    except ValueError:
+        return 1
+
+
+def _local_windows(windows: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
+    """This process's part of each window when the processes count apart (no Redis): the limit divided by the API
+    processes, or - where that is under one call - one call per window as many times longer. N processes together then
+    stay at the shared limit."""
+    n = _api_processes()
+    return [(seconds, limit // n) if limit >= n else (seconds * -(-n // limit), 1) for seconds, limit in windows]
 
 
 def _local_take(record_id: int, windows: List[Tuple[int, int]]) -> int:
     now = time.monotonic()
+    windows = _local_windows(windows)
     buckets = [(_LOCAL[key], seconds, limit) for key, (seconds, limit) in zip(_keys(record_id, windows), windows)]
     for i in range(len(buckets), 0, -1):                       # the longest window first, as in the script
         bucket, seconds, limit = buckets[i - 1]
-        while bucket and now - bucket[0] > seconds:
+        while bucket and now - bucket[0] >= seconds:
             bucket.popleft()
         if len(bucket) + 1 > limit:
             return -i
@@ -96,10 +126,11 @@ async def _redis_take(record_id: int, windows: List[Tuple[int, int]]) -> Optiona
     args: List[Any] = []
     for seconds, limit in windows:
         args += [seconds, limit]
+    args.append(uuid.uuid4().hex)
     try:
         client: Any = _get_client()                       # redis-py types eval as sync-or-async
         return int(await client.eval(_TAKE_LUA, len(windows), *_keys(record_id, windows), *args))
-    except Exception:  # noqa: BLE001 - Redis down: the in-process window takes over (never fails open)
+    except Exception:  # noqa: BLE001 - Redis down: this process's part of the share, in-process (_local_windows)
         return None
 
 

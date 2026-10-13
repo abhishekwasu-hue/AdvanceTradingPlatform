@@ -45,14 +45,16 @@ def _record(record_id: int, broker: str = "upstox") -> BrokerCredentialRecord:
 
 
 class FakeRedis:
-    """Enough of Redis for the budget script (emulated: check every window, then count in every one), the quote
-    cache and the fetch lock - shared by every 'process' that talks to it."""
+    """Enough of Redis for the budget script (emulated: sliding windows - prune, check every window, then record the
+    call in every one), the quote cache and the fetch lock - shared by every 'process' that talks to it."""
 
     def __init__(self):
         self.store: Dict[str, str] = {}
+        self.zsets: Dict[str, List[float]] = {}
         self.evals: List[tuple] = []
 
     async def eval(self, script, numkeys, *args):
+        import time
         keys, argv = list(args[:numkeys]), list(args[numkeys:])
         self.evals.append((tuple(keys), tuple(argv)))
         if "redis.call('get', KEYS[1]) == ARGV[1]" in script:          # cache_release_lock
@@ -60,11 +62,13 @@ class FakeRedis:
                 self.store.pop(keys[0], None)
                 return 1
             return 0
+        now = time.monotonic()
         for i in range(len(keys) - 1, -1, -1):
-            if int(self.store.get(keys[i], "0")) + 1 > int(argv[2 * i + 1]):
+            calls = self.zsets[keys[i]] = [t for t in self.zsets.get(keys[i], []) if t > now - float(argv[2 * i])]
+            if len(calls) + 1 > int(argv[2 * i + 1]):
                 return -(i + 1)
         for key in keys:
-            self.store[key] = str(int(self.store.get(key, "0")) + 1)
+            self.zsets.setdefault(key, []).append(now)
         return 1
 
     async def get(self, key):
@@ -90,10 +94,61 @@ def _use_redis(monkeypatch, fake: Optional[FakeRedis]):
 
 def test_the_api_share_per_broker_and_its_upstox_30_minute_window():
     up = api_budget.api_limits("upstox")
-    assert (up.per_second, up.per_minute, up.per_30min) == (8, 100, 500)            # 8/s burst guard, half of 200/min, 500 of 2,000 per 30 min
+    assert (up.per_second, up.per_minute, up.per_30min) == (4, 100, 500)            # half of 8/s and of 200/min, 500 of 2,000 per 30 min
     assert [w for w, _ in up.windows()] == [1, 60, 1800]
     zerodha = api_budget.api_limits("zerodha")
-    assert (zerodha.per_second, zerodha.per_minute, zerodha.per_30min) == (2, 50, None)
+    assert (zerodha.per_second, zerodha.per_minute, zerodha.per_30min) == (1, 50, None)
+
+
+# The brokers' own published per-second allowances for the calls the API budgets (quotes, history): Kite 3/s on quotes
+# and historical data, Upstox about 25/s (app/brokers/rate_budget.py).
+PUBLISHED_PER_SECOND = {"zerodha": 3, "upstox": 25}
+
+
+def test_api_and_worker_together_stay_inside_each_brokers_per_second_allowance():
+    """ADR-0004 (review HIGH): the worker keeps its whole conservative rate for exits; the API's per-second window is
+    API_SHARE of it, so the two together never exceed what the broker allows - Kite's 429s would land on exit price reads."""
+    from app.brokers.rate_budget import BROKER_RATE_LIMITS, DEFAULT_RATE_LIMITS, limits_for
+    for broker, allowed in PUBLISHED_PER_SECOND.items():
+        assert api_budget.api_limits(broker).per_second + limits_for(broker).per_second <= allowed, broker
+    for broker in [*BROKER_RATE_LIMITS, "some-new-broker"]:
+        worker = limits_for(broker)
+        api = api_budget.api_limits(broker)
+        assert api.per_second <= max(1, worker.per_second * api_budget.API_SHARE), broker
+        assert api.per_minute <= max(1, worker.per_minute * api_budget.API_SHARE), broker
+    assert api_budget.api_limits("some-new-broker").per_second <= DEFAULT_RATE_LIMITS.per_second * api_budget.API_SHARE
+
+
+def test_windows_slide_so_no_boundary_lets_a_double_burst_through(monkeypatch):
+    """Review LOW: with fixed windows, the last moment of one second and the first of the next allowed 2x the limit."""
+    import time as t
+    for fake in (FakeRedis(), None):                                              # the shared script, then the local fallback
+        _use_redis(monkeypatch, fake)
+        api_budget.reset()
+        monkeypatch.setattr(api_budget, "api_limits", lambda broker: api_budget.ApiLimits(per_second=1, per_minute=100))
+        assert run(api_budget.try_take(71, "zerodha")) is True
+        t.sleep(0.6)                                                              # a fixed 1 s window may roll over here
+        assert run(api_budget.try_take(71, "zerodha")) is False
+        t.sleep(0.5)                                                              # a full second since the first call
+        assert run(api_budget.try_take(71, "zerodha")) is True
+    api_budget.reset()
+
+
+def test_without_redis_each_api_process_takes_its_part_of_the_share(monkeypatch):
+    """Review LOW: the fallback is per process, so each process counts at limit / API_WORKERS (a limit under one per
+    process becomes one per longer window); the processes together stay at the share."""
+    monkeypatch.setenv("API_WORKERS", "2")
+    assert api_budget._local_windows([(1, 1), (60, 50), (1800, 500)]) == [(2, 1), (60, 25), (1800, 250)]
+    monkeypatch.setenv("API_WORKERS", "3")
+    assert api_budget._local_windows([(1, 4), (60, 2)]) == [(1, 1), (120, 1)]
+    monkeypatch.setenv("API_WORKERS", "1")
+    assert api_budget._local_windows([(1, 4), (60, 50)]) == [(1, 4), (60, 50)]
+    _use_redis(monkeypatch, None)
+    monkeypatch.setenv("API_WORKERS", "2")
+    monkeypatch.setattr(api_budget, "api_limits", lambda broker: api_budget.ApiLimits(per_second=100, per_minute=6))
+    api_budget.reset()
+    assert [run(api_budget.try_take(72, "upstox")) for _ in range(4)] == [True, True, True, False]
+    api_budget.reset()
 
 
 def test_tokens_are_counted_in_redis_per_credential_by_every_process(monkeypatch):
@@ -106,8 +161,8 @@ def test_tokens_are_counted_in_redis_per_credential_by_every_process(monkeypatch
     assert run(api_budget.try_take(41, "upstox")) is False                          # the shared minute window is full
     assert run(api_budget.try_take(42, "upstox")) is True                           # another member's own credential (BYOK)
     keys, argv = fake.evals[0]
-    assert keys == ("ab:41:1", "ab:41:60", "ab:41:1800") and argv == (1, 100, 60, 3, 1800, 10)
-    assert fake.store["ab:41:60"] == "3"                                           # the refused call counted nowhere
+    assert keys == ("ab:{41}:1", "ab:{41}:60", "ab:{41}:1800") and argv[:6] == (1, 100, 60, 3, 1800, 10)   # one hash slot
+    assert len(fake.zsets["ab:{41}:60"]) == 3                                      # the refused call counted nowhere
 
     _use_redis(monkeypatch, None)                                                  # Redis unreachable: the local window limits
     api_budget.reset()
@@ -249,13 +304,13 @@ def test_real_redis_counts_across_clients_refusals_cost_nothing_and_keys_expire(
         current["c"] = b
         api_budget.reset()                                       # no local state: Redis alone decides
         got.append(await api_budget.try_take(rid, "upstox"))
-        counts = {s: await a.get(f"ab:{rid}:{s}") for s in (1, 60, 1800)}
-        ttls = {s: await a.ttl(f"ab:{rid}:{s}") for s in (1, 60, 1800)}
+        counts = {s: await a.zcard(f"ab:{{{rid}}}:{s}") for s in (1, 60, 1800)}
+        ttls = {s: await a.ttl(f"ab:{{{rid}}}:{s}") for s in (1, 60, 1800)}
         return got, counts, ttls
     got, counts, ttls = _with_real_redis(monkeypatch, body)
     assert got == [True, True, True, False]
-    assert counts == {1: "3", 60: "3", 1800: "3"}                  # the refused call counted in no window
-    assert 0 < ttls[1] <= 1 and 0 < ttls[60] <= 60 and 1790 < ttls[1800] <= 1800
+    assert counts == {1: 3, 60: 3, 1800: 3}                        # the refused call counted in no window
+    assert 0 < ttls[1] <= 2 and 0 < ttls[60] <= 61 and 1790 < ttls[1800] <= 1801
 
 
 def test_real_redis_per_second_window_expires_and_the_30_minute_window_holds(monkeypatch):
@@ -266,9 +321,22 @@ def test_real_redis_per_second_window_expires_and_the_30_minute_window_holds(mon
         second = await api_budget.try_take(rid, "upstox")
         await asyncio.sleep(1.2)
         third = await api_budget.try_take(rid, "upstox")         # per-second room again, but 2 of 2 in 30 minutes used
-        return first, second, third, await clients[0].get(f"ab:{rid}:1800")
+        return first, second, third, await clients[0].zcard(f"ab:{{{rid}}}:1800")
     first, second, third, used = _with_real_redis(monkeypatch, body)
-    assert first == [True, False] and second is True and third is False and used == "2"
+    assert first == [True, False] and second is True and third is False and used == 2
+
+
+def test_real_redis_windows_slide(monkeypatch):
+    """The script's windows slide on the Redis server's clock: half a second after a call, still refused."""
+    async def body(clients, current, rid):
+        monkeypatch.setattr(api_budget, "api_limits", lambda broker: api_budget.ApiLimits(per_second=1, per_minute=100))
+        first = await api_budget.try_take(rid, "zerodha")
+        await asyncio.sleep(0.6)
+        second = await api_budget.try_take(rid, "zerodha")
+        await asyncio.sleep(0.5)
+        third = await api_budget.try_take(rid, "zerodha")
+        return first, second, third
+    assert _with_real_redis(monkeypatch, body) == (True, False, True)
 
 
 def test_real_redis_fetch_lock_and_shared_quote(monkeypatch):

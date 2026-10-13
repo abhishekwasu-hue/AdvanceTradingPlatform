@@ -229,6 +229,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # from the lake), refused when the instrument master's lot differs from the exchange's lot for the series; short
     # options on their expiry day carry the rule set's margin multiplier (LIVE sizing). OFF: nothing changes. Exits never.
     "fo_position_limits": "F&O client position limit, lot size of the series and expiry-day margin on new derivative entries (exits never refused)",
+    # N7 I: options analytics from recorded chain quotes, as of a time - ATM IV, term structure, skew, expected move, PCR,
+    # max pain, IV rank / percentile (BT1b: only own uploads under byob_data_tier). OFF: GET /api/options/analytics -> 503.
+    "options_analytics": "Options analytics from recorded chain quotes as of a time: ATM IV, term structure, skew, expected move, PCR, max pain, IV rank (information only)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -238,7 +241,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
                                "chart_price_action", "chart_studies", "backtest_models",
                                "backtest_ledger", "backtest_portfolio", "backtest_distributed",
-                               "fo_position_limits"})
+                               "fo_position_limits", "options_analytics"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

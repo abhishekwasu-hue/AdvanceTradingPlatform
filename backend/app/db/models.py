@@ -1871,6 +1871,9 @@ class OptionChainSnapshotRecord(Base):
     oi: Mapped[float | None] = mapped_column(Float, nullable=True)
     underlying_ltp: Mapped[float | None] = mapped_column(Float, nullable=True)
     source: Mapped[str] = mapped_column(String(30), nullable=False, default="worker")   # worker / <broker> / upload
+    # N7 I1: when the platform stored the quote (an upload of older captures is known only from then on); NULL on rows a
+    # release before d7e9f1a3b5c7 wrote - the recorder's count from their capture, uploads not at all (chain_recorder.known_by).
+    ingested_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True, default=_utcnow)
 
 class AgentRunRecord(Base):
     """H-C2 (ADR-0019): one Copilot agent request - who asked (the question only as a hash; its text is in llm_calls,

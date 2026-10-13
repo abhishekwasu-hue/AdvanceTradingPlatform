@@ -58,6 +58,14 @@ def visible_to(tenant_id: Optional[int]):
     return or_(_recorded(), OptionChainSnapshotRecord.source == upload_source(tenant_id))
 
 
+def known_by(at: datetime):
+    """N7 I1: rows the platform had stored by `at` (`ingested_at <= at`). A row without `ingested_at` (written by a release
+    before the column) counts from its capture when the recorder wrote it live, and never when it was an upload (its upload
+    time is unknown)."""
+    return or_(OptionChainSnapshotRecord.ingested_at <= at,
+               and_(OptionChainSnapshotRecord.ingested_at.is_(None), _recorded(), OptionChainSnapshotRecord.captured_at <= at))
+
+
 def rows_from_chain(chain: OptionChain, underlying: str, now: datetime, *, span: int = CHAIN_SNAPSHOT_ATM_SPAN,
                     source: str = "worker") -> List[OptionChainSnapshotRecord]:
     """The strikes around the money with a real LTP, as records. No LTP, no row - the recorder

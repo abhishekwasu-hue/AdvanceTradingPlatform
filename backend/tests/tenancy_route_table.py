@@ -248,6 +248,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/backtest/sweeps"): S_BACKTEST,
     ("GET", "/api/backtest/sweeps"): "member: the caller's own sweeps only",
     ("GET", "/api/backtest/sweeps/{sweep_id}"): "member: the caller's own sweeps only",
+    ("GET", "/api/options/analytics"): "member: the recorder's shared quotes and the caller's own uploads only",
     ("GET", "/api/backtest/option-chain/coverage"): "member",
     ("GET", "/api/backtest/option-chain/snapshots"): "member",
     ("POST", "/api/backtest/option-chain/snapshots"): "trader",

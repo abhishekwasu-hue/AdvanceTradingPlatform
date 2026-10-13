@@ -1,0 +1,31 @@
+"""N7 I1: `option_chain_snapshots.ingested_at` - when the platform stored the quote, so options analytics as of a time
+read only the quotes known by then (a later upload of older captures does not change an earlier answer).
+
+Existing rows: the recorder's (written live, as captured) get their capture time; uploads get the migration time (their
+real upload time was not kept - the conservative choice: they count only from now on for any time asked).
+
+Revision ID: d7e9f1a3b5c7
+Revises: c6d8e0f2a4b6
+Create Date: 2026-10-13 14:00:00
+"""
+from typing import Sequence, Union
+
+import sqlalchemy as sa
+from alembic import op
+
+revision: str = 'd7e9f1a3b5c7'
+down_revision: Union[str, Sequence[str], None] = 'c6d8e0f2a4b6'
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
+ROLLBACK_SAFE = True     # Z11: additive - one nullable column the previous release neither reads nor writes (code-only rollback ok)
+ROLLBACK_SAFE_REASON = "the UPDATEs only fill the new column; no existing column or row the previous release reads is changed"
+
+
+def upgrade() -> None:
+    op.add_column('option_chain_snapshots', sa.Column('ingested_at', sa.DateTime(timezone=True), nullable=True))
+    op.execute("UPDATE option_chain_snapshots SET ingested_at = captured_at WHERE source NOT LIKE 'upload%'")
+    op.execute("UPDATE option_chain_snapshots SET ingested_at = CURRENT_TIMESTAMP WHERE source LIKE 'upload%'")
+
+
+def downgrade() -> None:
+    op.drop_column('option_chain_snapshots', 'ingested_at')

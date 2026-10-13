@@ -1885,6 +1885,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Routes are classified in the tenancy table (member).
 - Tests: `tests/test_n2_exposure_cone.py` (6, seeded lake bars with built-in beta 1 / 2 and r = 1); vitest
   `src/progression/exposure.test.tsx` (4). Open questions N2-14..N2-16.
+### 2026-10-12 IST - N2-5 market context panel (`claude/n2-5`, stacked on `claude/n2-4`)
+- Flag `context_panel` (off). `GET /api/context/panel` ("member") returns six tiles, each with status, source and
+  as-of, and NA on its own failure:
+  - regime: Dow structure of the NIFTY 50, daily and weekly;
+  - breadth from the lake;
+  - India VIX close, change, 1-year rank and percentile, plus the gate's live value under its viewer rule;
+  - FII / DII: the seam, NA until a source is set;
+  - global cues: the shared cache;
+  - events today and this week: global plus the user's own organisation.
+- Shared data only; no broker session.
+- Frontend: "Market context" card on the dashboard (progression i18n).
+- Tests: `tests/test_n2_context_panel.py` (4); vitest `src/progression/context.test.tsx` (2). Open questions
+  N2-17..N2-19.
 
 ## Fix: the trading worker acts per deployment as its creator (TX-3)
 

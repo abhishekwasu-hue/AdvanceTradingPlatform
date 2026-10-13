@@ -28,7 +28,7 @@ Standing rules for every slice:
 | **N2-2** | §1.4 | **Experience levels** (`claude/n2-2`): Beginner / Intermediate / Advanced, derived from the user's own PAPER record. They gate futures (Intermediate) and naked short options (Advanced), single-leg and structures, in the order pipeline. An explicit opt-out for the IST day, with a reason, is logged (audit) and counted. Exits are never gated. | `experience_levels` | table `experience_opt_outs` (`ROLLBACK_SAFE = True`) / `GET /api/paper/experience`, `POST /api/paper/experience/opt-out` (tenancy table) | ~1.3k |
 | **N2-3** | §1.5 | **Decision tools I** (`claude/n2-3`): a risk-of-ruin and Kelly calculator with editable inputs, prefilled from N2-1's figures, and a what-if for the user's own open positions grouped by underlying (price / IV / days forward; now, scenario and expiry curves) on the builder's model. | `decision_tools` | none / `POST /api/decision/ruin`, `GET /api/decision/positions`, `POST /api/decision/what-if` (tenancy table) | ~1.6k |
 | **N2-4** | §1.5 | **Decision tools II** (`claude/n2-4`): an exposure and correlation view across the user's own open positions (by underlying and sector, risk at stops, beta to the NIFTY 50 and pairs that move together, from the daily lake), plus an expected-move cone (±1 / ±2 sd from historical volatility or a typed IV) as a chart layer. | `decision_tools` | none / `GET /api/decision/exposure`, `GET /api/decision/expected-move` | ~1.3k |
-| N2-5 | §1.5 | **Market context panel**: one tile each for regime (Dow on W / D, `ai.regime`), breadth (advance / decline from the lake EOD), India VIX and IV rank (the vix_gate reading, chain IV history), FII / DII flows (NSE provider, daily cache), global cues (`ai/global_cues`) and events today / this week (`news_events`). Each tile shows its source, as-of time and stale state, and says NA on its own failure. | `context_panel` | none / `GET /api/context/panel` | ~2.0k |
+| **N2-5** | §1.5 | **Market context panel** (`claude/n2-5`): one tile each for regime (Dow structure of the NIFTY 50, daily and weekly, from the lake), breadth (advances / declines across NSE cash shares on the last two lake days), India VIX (close, change, 1-year rank and percentile, plus the VIX gate's live reading under its own viewer rule), FII / DII (the existing seam, NA until a source with clear terms is configured), global cues (the shared free cache) and events today / this week. Each tile shows its source, as-of time and stale state, and says NA on its own failure. | `context_panel` | none / `GET /api/context/panel` | ~1.1k |
 | N2-6 | §2.4 | **Positions v2**: live P&L in ₹ and R, Greeks per position and for the portfolio, SL / target status, time in trade, plan vs current (a drifted stop is highlighted) and an exit ladder. Exits stay available during a lockout (a test covers this). | `positions_v2` | none / none | ~1.8k |
 | N2-7 | §3.2 | **Builder adjustments**: roll a leg (up / down / out), add a hedge, convert to an iron condor, close one side. Each shows the before / after payoff and Greeks. Pure functions with golden tests. Fills the P1-c "Adjustments and compare" drawer. | `builder_adjustments` | none / `POST /api/options-builder/adjust` | ~1.8k |
 | N2-8 | §3.2 | **Builder compare**: up to three strategies side by side (payoff, PoP, max loss, margin, theta per day, breakevens). Saved strategies when `options_builder_saved` is on. | `builder_compare` | none / none (client-side over `/payoff`) | ~1.2k |
@@ -216,6 +216,27 @@ the market-zones layer.
 **UI**: the Decision tools card gains "Exposure and correlation", loaded on demand
 (`src/progression/ExposureSection.tsx`).
 
+## N2-5 Market context panel
+
+**Flag** `context_panel` (off by default; 404 while off, tested). The service is `app/context_panel/service.py` and the
+route is `GET /api/context/panel` ("member").
+
+Every tile is built on its own and carries `status` (ok / stale / na), `source` and `as_of`. A tile that raises
+becomes "na" with the error's kind; the panel never fails as a whole (tested). Daily lake data is "stale" when more
+than one NSE session is missing (holidays from the calendar).
+
+| Tile | Read | Data |
+|---|---|---|
+| regime | Dow structure: UPTREND after HH + HL, DOWNTREND after LH + LL, else RANGE (`price_action.market_structure`), daily (3-bar fractals) and weekly (W-FRI, 2-bar) | NSE_INDEX:NIFTY50 daily lake bars |
+| breadth | advances, declines and unchanged across `NSE:*` cash closes on the last two lake days (dated by the index's own bars) | daily lake (bhavcopy) |
+| vix | last close, day change, rank = (last − low) / (high − low) and percentile over 252 sessions; the gate's live value only when `vix_gate.status` reveals it to this viewer (BT1b) | NSE_INDEX:INDIAVIX daily lake; the VIX gate |
+| fii_dii | NA until `ai.sentiment.fii_dii_provider` has a configured source (no source with clear terms today) | seam |
+| global | each market's last value and change from `ai.global_cues.fetch_all` (shared cache, free public sources, delayed) | public |
+| events | `market_events` today and the rest of this IST week, global and the caller's organisation (another organisation's never) | calendar |
+
+No broker session of anyone is read. The UI is a "Market context" card on the dashboard
+(`src/progression/ContextPanelCard.tsx`), with tiles in a grid, a stale mark, the NA reason and a Refresh button.
+
 ## Open questions
 
-These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-16), each with a provisional default.
+These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-19), each with a provisional default.

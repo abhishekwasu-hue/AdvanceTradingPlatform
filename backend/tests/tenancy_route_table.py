@@ -26,9 +26,11 @@ P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
 P_BROKER_CATALOGUE = "public: the broker catalogue"
 P_PARSE_ONLY = "public: parses the strategy text in the request; stores nothing"
-P_FUNDAMENTALS = "public: shared market reference data and computations over it (no organisation data)"
+P_FUNDAMENTALS = ("public: shared market reference data and computations over it; a logged-in caller also reads its own organisation's "
+                  "contributed rows, never another organisation's (app/fundamentals/visibility.py)")
 P_INSTRUMENTS = "public: the instrument catalogue"
-P_NEWS_EVENTS = "public: shared cited news events (reference data)"
+P_NEWS_EVENTS = ("public: the shared news feed; a logged-in caller also reads its own organisation's manual entries, never "
+                 "another organisation's (app/fundamentals/visibility.py)")
 P_API_DOCS = "public: public API documentation"
 P_API_SCOPES = "public: public API scope catalogue"
 P_PWA = "public: PWA install/update counters only (rate limited)"
@@ -207,6 +209,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/alerts/rules/{rule_id}/then"): "member",
     ("PUT", "/api/alerts/rules/{rule_id}/then"): "trader",
     ("DELETE", "/api/alerts/rules/{rule_id}/then"): "trader",
+    ("GET", "/api/alerts/rules/{rule_id}/then/intents"): "member",
+    ("GET", "/api/alerts/then"): "member",                   # review of X1b: every Then of the rules the caller sees, one read
     ("DELETE", "/api/alerts/telegram/link"): S_OWN_TELEGRAM,
     ("GET", "/api/alerts/telegram/link"): "member",
     ("POST", "/api/alerts/telegram/link-code"): S_OWN_TELEGRAM,
@@ -532,6 +536,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/screens/{screen_id}/archive"): "trader",
     ("GET", "/api/screener/taxonomy"): "member",
     ("POST", "/api/screener/validate"): S_COMPUTE,
+    ("GET", "/api/screener/etf"): "member",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,

@@ -396,6 +396,7 @@ async def _backtest_trials(session: AsyncSession, tenant_id: int, since: datetim
 async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_validated: Any, params: Dict[str, Any]) -> None:
     """Review of S6b (MED): rank_by passes the gates a screen passes - the flagged families (breakouts, zones...), the
     data the history run does not load, the last-bar-only functions (no series to read back) - and must be a number."""
+    from app.screener import ownership as ownership_gate
     from app.screener import zones as zone_gate
     from app.screener.registry import NUM
     from app.screener.validator import NOT_A_CONDITION, _Checker
@@ -404,6 +405,9 @@ async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_val
     problems = [p.message for p in probe.problems if p.message != NOT_A_CONDITION]
     if problems:
         raise HTTPException(status_code=422, detail="rank_by: " + "; ".join(problems))
+    owned = ownership_gate.flagged_calls(rank_ast)
+    if owned:       # review of S8 (LOW): missing_data counts ownership as loaded (by /run); history does not load it - as _screen
+        raise HTTPException(status_code=422, detail="rank_by: " + ownership_gate.elsewhere_refusal(owned, "screen history runs"))
     extra = missing_data(rank_ast) + zone_gate.flagged_calls(rank_ast) + H.last_bar_only_calls(rank_ast)
     if extra:
         raise HTTPException(status_code=422, detail=f"rank_by: {', '.join(sorted(set(n + '()' for n in extra)))} cannot be read at each date "
@@ -474,8 +478,7 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
     if system is not None:
         sectors = None
         if system.sector_neutral:                             # each date's sector AS OF that date (U1-b classifications)
-            ranges = await RK.sector_ranges(session, sorted(frames), min(dates), max(dates))
-            sectors = {d: {s: RK.sector_on(r, d) for s, r in ranges.items()} for d in dates}
+            sectors = await RK.sectors_by_date(session, list(frames), dates)
         ranks = await asyncio.to_thread(RK.rank_at_dates, system, frames, dates, sectors, eligible, scales)
     nifty_bars = await _index_bars(session, "NSE_INDEX:NIFTY50", first, body.end)
     nifty = nifty_bars[1] if nifty_bars is not None else None

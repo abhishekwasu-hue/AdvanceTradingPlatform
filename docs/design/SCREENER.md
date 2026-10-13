@@ -1353,8 +1353,9 @@ tree of weighted factors that ranks a universe 0-100, with every component shown
 
 ### Review of S7a (fixed)
 - MED-2: factors read bars only and need their family's flag everywhere (S7-8). MED-3: a history work budget (S7-9).
-  MED-4: a sector-neutral backtest test with a reclassification between rebalances. MED-1: the migration is re-chained
-  at merge (S7-10).
+  MED-4: a sector-neutral backtest test with a reclassification between rebalances, and a causal test on stored
+  classifications (`sectors_by_date`: the rank at each date equals bars cut there with only the rows known by then; a
+  later reclassification changes nothing earlier). MED-1: the migration is chained onto main's head (S7-10, tested).
 - LOW: no '/' in node names; sector ranges follow the ISIN the symbol had in each period; factors longer than the
   fetch window are refused; editing a screen that an alert rule runs is checked against that rule; archiving frees the
   name; the result cache key carries the ranking trees.
@@ -1403,6 +1404,29 @@ runnable) with its bar fields, the data families (`Spec.needs`) its data carries
 - LOW: ex-dates de-duplicated per (symbol, ex-date, action) from the first version; DaysToEvent vectorised (tested
   against the bar-by-bar rule); the S8c venue check also covers alert rules (screen and instrument) and ranking
   factors. As-of company / symbol mapping stays with S8-1.
+
+## S10 (Phase 0 slice, built): the ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
+
+Source: SCREENER_SPEC §5 S10 ("J (ETF/MF), SMS/WhatsApp, mobile push, marketplace") within ATP_PHASE0_FREEZE (no
+marketplace, no store apps).
+
+- **ETF screen (J)** - `app/screener/etf.py`, `GET /api/screener/etf` (member; shared reference data only). Every NSE
+  ETF the universe lists (`securities.is_etf`) from the lake's daily bars as known now, closed sessions only: last close,
+  average traded value (20 sessions), the change over a window (1-250 sessions), the tracked index's change over the
+  same sessions (`securities.underlying` -> `NSE_INDEX:<code>`, with "Index" / "TRI" stripped as a second try) and the
+  tracking difference. Filters (min traded value, text, max |tracking difference|), sorts (liquidity, change, closest
+  tracking, symbol); a row says why a column is empty. Facts, not a ranking. Frontend: "ETFs" on the Screener page.
+  Not a ScreenQL function: the run path loads bars only (the ETF -> index mapping is reference data).
+- **Mutual funds** are not here: AMFI NAVs are not ingested yet (OPEN_QUESTIONS S10-1).
+- **SMS DLT (India)** - optional `dlt_entity_id`, `dlt_template_id`, `sender_id` on the SMS channel, filled into the
+  `{dlt_entity_id}` / `{dlt_template_id}` / `{sender_id}` placeholders; a template that uses one must set it. Existing SMS
+  channels are untouched.
+- **WhatsApp channel** - `AlertChannelType.WHATSAPP`, a Business gateway through a request template (no vendor SDK, the
+  SMS sender and egress checks): `{template}` must be in the body (business-initiated messages are approved templates
+  only), `template_name` / `language` fill it, `opt_in_confirmed` must be true, headers are write-only secrets, paid
+  plans only (402 on Free). With the flag off a WhatsApp channel or DLT fields are refused (403).
+- **Mobile push** stays the PWA's Web Push (installed on a phone it is a mobile push); native FCM / APNs come with the
+  store apps (frozen). **Marketplace** is frozen (K).
 
 ## N3 S9 (built): the screener in the Copilot, and the plain-language box (flag `screener_copilot`, off)
 

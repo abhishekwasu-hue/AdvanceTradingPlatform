@@ -193,7 +193,7 @@ def test_the_store_read_knows_each_row_from_its_time():
 
     async def go(until):
         async with _session_factory() as session:
-            return (await O.load(session, [sym.lower()], "NSE", until=until))[sym]
+            return (await O.load(session, [sym.lower()], "NSE", until=until, viewer=None))[sym]
     everything = _run(go(None))
     assert [p.known_from for p in everything.patterns] == [datetime(2025, 4, 21, 3, 45, tzinfo=UTC), stored]
     assert sorted((e.kind, e.day) for e in everything.events) == [("ex_date", date(2025, 8, 18)), ("results", date(2025, 8, 12))]
@@ -260,6 +260,20 @@ def test_history_and_alerts_refuse_ownership_functions():
         _ownership_check(ast)
 
 
+def test_a_backtest_rank_by_refuses_ownership_functions():
+    """Review of S8 (LOW): rank_by passed missing_data (ownership counts as loaded by /run) and ranked every symbol NaN;
+    history does not load ownership, so rank_by is refused with the reason, as the screen itself is."""
+    from app.screener import backtest as B
+    t = _org("rankby")
+    _flag(H.FLAG, t["tenant_id"])
+    _flag(B.FLAG, t["tenant_id"])
+    body = {"source": "close > 1", "start": "2025-06-02", "end": "2025-06-30", "universe": {"symbols": ["X"]}, "top_n": 1}
+    for rank_by in ('Holding("promoter")', 'DaysToEvent("results")'):
+        r = client.post("/api/screener/history/backtest", headers=t["headers"], json={**body, "rank_by": rank_by})
+        assert r.status_code == 422, (rank_by, r.text)
+        assert "rank_by" in r.text and "do not read ownership or events" in r.text, (rank_by, r.text)
+
+
 # --- review of S8 ----------------------------------------------------------------------------------------------------------------
 
 def test_a_correction_never_reaches_back_and_a_backfill_is_as_published():
@@ -277,7 +291,7 @@ def test_a_correction_never_reaches_back_and_a_backfill_is_as_published():
 
     async def go(until):
         async with _session_factory() as session:
-            return (await O.load(session, [sym], "NSE", until=until))[sym]
+            return (await O.load(session, [sym], "NSE", until=until, viewer=None))[sym]
     own = _run(go(None))
     by_value = {p.stakes["promoter"]: p for p in own.patterns}
     assert by_value[50.0].known_from == datetime(2025, 4, 21, 3, 45, tzinfo=UTC)
@@ -307,3 +321,65 @@ def test_days_to_event_vectorised_matches_the_bar_by_bar_rule():
         ahead = [e.day for e in events if pd.Timestamp(e.known_from).value <= closes[i] and e.day >= d]
         expect = float((min(ahead) - d).days) if ahead else np.nan
         assert (np.isnan(got[i]) and np.isnan(expect)) or got[i] == expect, (d, got[i], expect)
+
+
+# --- review of S8 (HIGH-1, on top of #234) ----------------------------------------------------------------------------------------
+
+def test_another_organisation_s_contributed_rows_are_never_read_nor_change_known_from(monkeypatch):
+    """HIGH-1: since #234 a contributed company / pattern / calendar row belongs to the organisation that entered it. A
+    run reads the shared rows plus the caller's own only - org A's row is never seen by org B, and (filtered in SQL, before
+    the first-row-of-a-quarter rule) it never turns B's shared row of the same quarter into a "correction" known later."""
+    a, b = _org("contrib-a"), _org("contrib-b")
+    shared_sym, own_sym = f"OWS{uuid.uuid4().hex[:5].upper()}", f"OWA{uuid.uuid4().hex[:5].upper()}"
+    cid = _company(shared_sym)                                                                       # a shared company (tenant NULL)
+    q1 = date(2025, 3, 31)
+    _seed(ShareholdingSnapshotRecord(company_id=cid, as_of_date=q1, promoter_pct=10.0, promoter_pledge_pct=0.0, tenant_id=a["tenant_id"],
+                                     source_json=_cite(date(2025, 4, 20)), created_at=datetime(2025, 4, 25, tzinfo=UTC)),   # A's, stored first
+          ShareholdingSnapshotRecord(company_id=cid, as_of_date=q1, promoter_pct=50.0, promoter_pledge_pct=0.0,
+                                     source_json=_cite(date(2025, 4, 20)), created_at=datetime(2025, 5, 10, tzinfo=UTC)),   # the shared row
+          EarningsCalendarEventRecord(company_id=cid, event_type="RESULTS", event_date=date(2025, 8, 12), tenant_id=a["tenant_id"],
+                                      created_at=datetime(2025, 7, 1, tzinfo=UTC)))
+
+    async def own_company():
+        async with _session_factory() as session:
+            row = CompanyRecord(symbol=own_sym, name=own_sym, sector="IT", industry="Software", tenant_id=a["tenant_id"])
+            session.add(row)
+            await session.flush()
+            session.add(ShareholdingSnapshotRecord(company_id=row.id, as_of_date=q1, promoter_pct=61.0, promoter_pledge_pct=0.0,
+                                                   tenant_id=a["tenant_id"], created_at=datetime(2025, 5, 1, tzinfo=UTC)))
+            session.add(EarningsCalendarEventRecord(company_id=row.id, event_type="RESULTS", event_date=date(2025, 8, 14),
+                                                    created_at=datetime(2025, 7, 1, tzinfo=UTC)))            # shared row on A's company
+            await session.commit()
+    _run(own_company())
+
+    async def go(viewer):
+        async with _session_factory() as session:
+            return await O.load(session, [shared_sym, own_sym], "NSE", viewer=viewer)
+    for viewer in (b["tenant_id"], None):
+        seen = _run(go(viewer))
+        assert [(p.stakes["promoter"], p.known_from) for p in seen[shared_sym].patterns] == [(50.0, datetime(2025, 4, 21, 3, 45, tzinfo=UTC))]
+        assert seen[shared_sym].events == []                                    # A's calendar row is not B's
+        assert seen[own_sym].patterns == [] and seen[own_sym].events == []      # nor is A's company, with anything under it
+    mine = _run(go(a["tenant_id"]))
+    assert sorted(p.stakes["promoter"] for p in mine[shared_sym].patterns) == [10.0, 50.0]
+    assert [p.stakes["promoter"] for p in mine[own_sym].patterns] == [61.0] and len(mine[own_sym].events) == 1
+    assert [e.day for e in mine[shared_sym].events] == [date(2025, 8, 12)]
+
+    # through the run route: the caller's organisation is the viewer
+    long_ago = datetime.now(UTC) - timedelta(days=40)
+    quarter = (datetime.now(UTC) - timedelta(days=60)).date()
+
+    async def recent():
+        from sqlalchemy import select
+        async with _session_factory() as session:
+            row = await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == own_sym))
+            session.add(ShareholdingSnapshotRecord(company_id=row.id, as_of_date=quarter, promoter_pct=61.0, promoter_pledge_pct=0.0,
+                                                   tenant_id=a["tenant_id"], created_at=long_ago))
+            await session.commit()
+    _run(recent())
+    _broker(monkeypatch, {own_sym})
+    body = {"source": 'Holding("promoter") > 50', "symbols": [own_sym]}
+    as_a = client.post("/api/screener/run", headers=a["headers"], json=body)
+    as_b = client.post("/api/screener/run", headers=b["headers"], json=body)
+    assert as_a.status_code == 200 and as_b.status_code == 200, (as_a.text, as_b.text)
+    assert as_a.json()["matched"] == [own_sym] and as_b.json()["matched"] == []

@@ -436,7 +436,7 @@ async def load_universe(session: AsyncSession, user: User, ast: Any, validated: 
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
-        await ownership_gate.attach(session, universe, exchange, datetime.now(timezone.utc))
+        await ownership_gate.attach(session, universe, exchange, datetime.now(timezone.utc), viewer=user.tenant_id)
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     return universe, fetch_problems, data_source, systems
 
@@ -498,10 +498,11 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                          base_tf, tier)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
-    matches = await asyncio.to_thread(ranking_gate.within, systems, run_screen, ast, validated, universe, base_tf=base_tf, params=params,
-                                      vectorized=vectorized)
-    stages = await asyncio.to_thread(ranking_gate.within, systems, stage_survivors, ast, validated, universe, base_tf=base_tf, params=params,
-                                     matches=matches, vectorized=vectorized)
+    # (RankScore's systems ride the context asyncio.to_thread copies into the worker - N3 S7a)
+    with ranking_gate.active(systems):
+        matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
+        stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
+                                         vectorized=vectorized)
     results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),

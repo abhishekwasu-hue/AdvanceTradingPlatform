@@ -76,7 +76,7 @@ def config_hash(**parts: Any) -> str:
 
 
 def result_hash(result: Any) -> str:
-    skip = {"run_id", "reproducibility"} | ({"execution"} if getattr(result, "execution", None) is None else set())
+    skip = {"run_id", "reproducibility", "deflation"} | ({"execution"} if getattr(result, "execution", None) is None else set())
     payload = result.model_dump(mode="json", exclude=skip)
     return _sha256(canonical_json(payload).encode())
 

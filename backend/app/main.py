@@ -30,6 +30,8 @@ from app.core.models import (
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
+from app.backtest import ledger as backtest_ledger
+from app.backtest.ledger import LakeWindow
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
@@ -286,7 +288,7 @@ class BacktestRequest(BaseModel):
     strategy_id: str
     symbol: str
     base_timeframe: str
-    candles: List[OHLCVBar]
+    candles: List[OHLCVBar] = Field(default_factory=list)
     risk_config: Optional[RiskConfig] = None
     strategy_params: Optional[Dict] = None
     # Phase J: dynamic exits and a label for where the candles came from (recorded on the run).
@@ -295,6 +297,8 @@ class BacktestRequest(BaseModel):
     # Phase W: present = run the signals as option structures (app/backtest/options_engine.py).
     options: Optional[OptionBacktestBody] = None
     execution_models: Optional[Dict[str, Any]] = None   # realism C2 (omitted = default models)
+    # N7 C5 (flag backtest_ledger): the server's own lake bars instead of `candles` - the sealed holdout applies.
+    lake: Optional[LakeWindow] = None
 
 
 class PaperExecuteResponse(BaseModel):
@@ -510,15 +514,42 @@ async def backtest(
     if request.strategy_params:
         strategy.params = {**strategy.params, **request.strategy_params}
 
-    base_df = bars_to_dataframe(request.candles)
+    tenant_id = user.tenant_id if user is not None else None
+    ledger_on = await backtest_ledger.enabled(session, tenant_id)
+    candles, data_source = request.candles, request.data_source
+    if request.lake is not None:
+        # N7 C5: the server reads the bars itself (holdout first); never mixed with posted candles
+        if not ledger_on:
+            raise HTTPException(status_code=403, detail=f"lake: backtests on the server's lake bars are not enabled for this "
+                                                        f"organisation (flag {backtest_ledger.FLAG})")
+        if request.candles:
+            raise HTTPException(status_code=422, detail="lake: send either candles or a lake window, not both")
+        try:
+            candles = await backtest_ledger.lake_candles(session, request.symbol, request.base_timeframe, request.lake)
+        except backtest_ledger.HoldoutError as exc:
+            raise HTTPException(status_code=422, detail=f"lake: {exc}; the holdout is kept for one final check") from exc
+        except backtest_ledger.LedgerError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        data_source = backtest_ledger.lake_label(request.lake)
+    elif not candles:
+        raise HTTPException(status_code=422, detail="candles: at least one bar (or, with the trial ledger on, a lake window)")
+    elif ledger_on:
+        data_source = "uploaded"                         # N7 C5: posted bars are the client's, whatever the label says
+
+    base_df = bars_to_dataframe(candles)
     risk_config = request.risk_config or _default_risk_config
 
-    body = BacktestBody(**request.model_dump())
-    runner = await BacktestRunner.build(body, risk_config, session, tenant_id=user.tenant_id if user is not None else None)
+    body = BacktestBody(**{**request.model_dump(exclude={"lake", "candles", "data_source"}), "candles": candles, "data_source": data_source})
+    runner = await BacktestRunner.build(body, risk_config, session, tenant_id=tenant_id)
     result = await run_in_threadpool(runner.run, strategy, base_df)        # CPU-bound pandas work off the event loop (P0.1 / S3)
     # Phase J2: the run is recorded (strategy, params, data span, metrics) and metered against the plan.
     result.run_id = await record_run(session, user, body, result)
-    await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(request.candles)})
+    await meter(session, user.tenant_id, "backtest", 1, source="api", metadata={"strategy_id": request.strategy_id, "bars": len(candles)})
+    if ledger_on and user is not None:
+        # N7 C5: a trial in the organisation's ledger, deflated against its recent backtests
+        result.deflation = await backtest_ledger.record(session, tenant_id=user.tenant_id, user_id=user.id, body=body, result=result,
+                                                        df=base_df, capital=float(risk_config.capital), data_source=data_source,
+                                                        exchange=request.lake.exchange if request.lake is not None else "NSE")
     return result
 
 

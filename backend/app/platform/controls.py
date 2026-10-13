@@ -213,6 +213,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
+    # N7 C5: every logged-in /api/backtest run becomes a trial in the organisation's research ledger and its Sharpe is
+    # deflated for the organisation's recent backtests; `lake` runs read the shared NSE bhavcopy day bars on the server,
+    # behind the sealed holdout. OFF: /api/backtest as before (no trial, no deflation, a lake window refused).
+    "backtest_ledger": "Backtest trial ledger: each backtest recorded as a trial and its Sharpe deflated for the search; server lake runs behind the sealed holdout",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -220,7 +224,8 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "chart_studies", "backtest_models"})
+                               "chart_price_action", "chart_studies", "backtest_models",
+                               "backtest_ledger"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

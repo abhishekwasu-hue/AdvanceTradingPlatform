@@ -131,3 +131,5 @@ class BacktestResult(BaseModel):
     # N7 C2c: what non-default execution models did (margin refusals and calls, model-priced strikes); None on a default
     # run (and then left out of the result hash, so default hashes stay as they were).
     execution: Optional[Dict[str, Any]] = None
+    # N7 C5 (flag backtest_ledger): the run as a trial in the organisation's ledger, its Sharpe deflated for that search
+    deflation: Optional[Dict[str, Any]] = None

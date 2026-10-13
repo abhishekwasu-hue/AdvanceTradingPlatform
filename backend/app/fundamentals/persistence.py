@@ -4,11 +4,12 @@ routes.py so the analysis engines (which only ever see the Pydantic models) neve
 SQLAlchemy.
 """
 import json
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db import models as _models
 from app.db.models import (
     CompanyRecord,
     CorporateActionRecord,
@@ -203,18 +204,33 @@ async def list_visible_companies(session: AsyncSession, *, viewer: Optional[int]
     return [best[k] for k in sorted(best)]
 
 
-# The tables whose rows hang off a company (company_id): folding a private profile into the shared one moves them.
-COMPANY_CHILDREN = (FinancialPeriodRecord, ShareholdingSnapshotRecord, CorporateActionRecord, QualitativeFactorRecord,
-                    EarningsCalendarEventRecord, SectorMetricRecord)
+# The period-version chain (LG3, `financial_period_versions`) where this build has it: its rows hang off a company too.
+_PERIOD_VERSIONS: Optional[Any] = getattr(_models, "FinancialPeriodVersionRecord", None)
+
+# Every table whose rows hang off a company (company_id): folding a private profile into the shared one moves them -
+# then the private profile is deleted, and anything left on it would go with it (ON DELETE CASCADE). The fold test
+# (tests/test_shared_fundamentals_lows.py) fails when a table with a foreign key to `companies` is missing here.
+COMPANY_CHILDREN: Tuple[Any, ...] = (FinancialPeriodRecord, ShareholdingSnapshotRecord, CorporateActionRecord, QualitativeFactorRecord,
+                                     EarningsCalendarEventRecord, SectorMetricRecord) + ((_PERIOD_VERSIONS,) if _PERIOD_VERSIONS is not None else ())
+
+# The children keyed by period (company, period_type, period_label, tenant[, version]): moving one onto a company that
+# already has the organisation's own row for that period would break the key.
+PERIOD_KEYED: Tuple[Any, ...] = (FinancialPeriodRecord,) + ((_PERIOD_VERSIONS,) if _PERIOD_VERSIONS is not None else ())
 
 
 async def fold_conflicts(session: AsyncSession, from_company_id: int, to_company_id: int, *, tenant_id: int) -> List[str]:
-    """The organisation's own periods present on both companies (moving would break the period key): labels."""
-    mine = await session.scalars(select(FinancialPeriodRecord).where(FinancialPeriodRecord.company_id == from_company_id,
-                                                                     FinancialPeriodRecord.tenant_id == tenant_id))
-    there = {(r.period_type, r.period_label) for r in await session.scalars(
-        select(FinancialPeriodRecord).where(FinancialPeriodRecord.company_id == to_company_id, FinancialPeriodRecord.tenant_id == tenant_id))}
-    return [f"{r.period_type} {r.period_label}" for r in mine if (r.period_type, r.period_label) in there]
+    """The organisation's own periods (or period versions) present on both companies (moving would break the period
+    key): labels."""
+    out: List[str] = []
+    for model in PERIOD_KEYED:
+        mine = await session.scalars(select(model).where(model.company_id == from_company_id, model.tenant_id == tenant_id))
+        there = {(r.period_type, r.period_label) for r in await session.scalars(
+            select(model).where(model.company_id == to_company_id, model.tenant_id == tenant_id))}
+        for r in mine:
+            label = f"{r.period_type} {r.period_label}"
+            if (r.period_type, r.period_label) in there and label not in out:
+                out.append(label)
+    return out
 
 
 async def move_children(session: AsyncSession, from_company_id: int, to_company_id: int, *, tenant_id: int) -> int:

@@ -253,6 +253,15 @@ def promote_to_shared(record: CompanyRecord, fetched: CompanyProfile) -> None:
     record.tenant_id = None
 
 
+def replace_profile(record: CompanyRecord, fetched: CompanyProfile) -> None:
+    """Every profile field becomes the provider's (empty where it gives none) - unlike `merge_profile`, nothing entered
+    by hand survives. For a shared profile whose content cannot be trusted (`repair_shared --refetch`)."""
+    db.apply_company_fields(record, fetched)
+    record.name = fetched.name or record.symbol
+    record.sector = fetched.sector or "Unknown"
+    record.industry = fetched.industry or "Unknown"
+
+
 def merge_profile(record: CompanyRecord, fetched: CompanyProfile) -> List[str]:
     """Copy the provider's non-empty fields onto the record; hand-entered fields it lacks survive. Returns the changed columns."""
     changed: List[str] = []

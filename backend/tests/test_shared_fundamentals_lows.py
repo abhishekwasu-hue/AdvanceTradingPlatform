@@ -4,7 +4,8 @@
   organisations (a symbol is unique per scope: one shared profile, at most one per organisation);
 * the shared financial periods have their own unique key (NULL tenant ids would otherwise never clash);
 * the one-off repair of shared profiles a member wrote before the fix (`python -m app.fundamentals.repair_shared`):
-  quarantined in place, refilled from the provider on request, never the operator's or the provider's own, idempotent.
+  every member-written one quarantined in place whatever citation it carries, refilled (replaced, never merged) from the
+  provider on request, never the operator's or the untouched provider's own, idempotent.
 """
 import asyncio
 import json
@@ -103,7 +104,7 @@ def test_shared_financial_periods_have_their_own_unique_key():
     _run(go())
 
 
-def _poison(sym, *, by_email=None, source=None, admin=False):
+def _poison(sym, *, by_email=None, source=None, admin=False, hand=True):
     """A shared profile as a member could leave it before #234 (or a provider-made / operator one)."""
     async def go():
         async with _session_factory() as session:
@@ -112,56 +113,96 @@ def _poison(sym, *, by_email=None, source=None, admin=False):
                 author = await session.scalar(select(User).where(User.email == by_email))
                 if admin:
                     author.role = "SUPER_ADMIN"
-            row = CompanyRecord(symbol=sym, name="Poisoned Ltd", sector="Banking", industry="Banks", website="https://evil.example",
-                                business_description="buy now", market_cap=1.0, isin="INE999X01999", created_by=author.id if author else None,
-                                source_json=json.dumps({"source": source}) if source else None)
+            extra = {"website": "https://evil.example", "business_description": "buy now", "business_segments_json": '["Fake"]'} if hand else {}
+            row = CompanyRecord(symbol=sym, name="Poisoned Ltd", sector="Banking", industry="Banks", market_cap=1.0, isin="INE999X01999",
+                                created_by=author.id if author else None, source_json=json.dumps({"source": source}) if source else None, **extra)
             session.add(row)
             await session.commit()
             return row.id
     return _run(go())
 
 
-def test_the_repair_quarantines_member_written_shared_profiles_only():
-    member = f"repair-m-{uuid.uuid4().hex[:8]}@example.com"
-    admin = f"repair-a-{uuid.uuid4().hex[:8]}@example.com"
-    _register(member)
-    _register(admin)
-    poisoned, provider_made, operator_made, unknown = _sym("RP"), _sym("RV"), _sym("RO"), _sym("RU")
-    poisoned_id = _poison(poisoned, by_email=member)
-    _poison(provider_made, by_email=member, source="NSE India (nseindia.com/api/quote-equity)")
-    _poison(operator_made, by_email=admin, admin=True)
-    unknown_id = _poison(unknown)
-    mine = {poisoned, provider_made, operator_made, unknown}
+NSE = "NSE India (nseindia.com/api/quote-equity)"
 
-    async def run(**kw):
+
+def _repair(mine, **kw):
+    async def go():
         async with _session_factory() as session:
             found = await repair_shared.repair(session, **kw)
             await session.commit()
             return {f.symbol: f for f in found if f.symbol in mine}
+    return _run(go())
 
-    dry = _run(run())
-    assert set(dry) == {poisoned, unknown} and dry[poisoned].action == "none (dry run)" and dry[unknown].action.startswith("left")
+
+def _assert_quarantined(sym):
+    view = client.get(f"/api/fundamentals/companies/{sym}").json()
+    assert view["name"] == sym and view["sector"] == "Unknown" and view["website"] is None and view["business_description"] is None
+    assert view["market_cap"] is None and view["isin"] is None and view["business_segments"] == []
+
+
+def test_the_repair_quarantines_every_member_written_shared_profile():
+    member = f"repair-m-{uuid.uuid4().hex[:8]}@example.com"
+    admin = f"repair-a-{uuid.uuid4().hex[:8]}@example.com"
+    _register(member)
+    _register(admin)
+    poisoned, forged, edited, provider_made, operator_made, unknown = (_sym(t) for t in ("RP", "RF", "RE", "RV", "RO", "RU"))
+    poisoned_id = _poison(poisoned, by_email=member)
+    forged_id = _poison(forged, by_email=member, source=NSE)              # a member wrote the provider's citation itself
+    edited_id = _poison(edited, source=NSE)                               # the provider's profile, a member's website on it
+    _poison(provider_made, source=NSE, hand=False)                        # the provider's own, untouched
+    _poison(operator_made, by_email=admin, admin=True)
+    unknown_id = _poison(unknown)
+    mine = {poisoned, forged, edited, provider_made, operator_made, unknown}
+
+    dry = _repair(mine)
+    assert set(dry) == {poisoned, forged, edited, unknown}
+    assert all(dry[s].action == "none (dry run)" for s in (poisoned, forged, edited)) and dry[unknown].action.startswith("left")
+    assert "citation" in dry[forged].reason and "website" in dry[edited].reason
     assert client.get(f"/api/fundamentals/companies/{poisoned}").json()["name"] == "Poisoned Ltd"     # a dry run changes nothing
-    done = _run(run(apply=True))
-    assert done[poisoned].action == "quarantined" and done[poisoned].author_tenant is not None
-    view = client.get(f"/api/fundamentals/companies/{poisoned}").json()
-    assert view["name"] == poisoned and view["sector"] == "Unknown" and view["website"] is None and view["business_description"] is None
-    assert view["market_cap"] is None and view["isin"] is None
+    done = _repair(mine, apply=True)
+    assert {s for s, f in done.items() if f.action == "quarantined"} == {poisoned, forged, edited}
+    assert done[poisoned].author_tenant is not None and done[forged].author_tenant is not None
+    for sym in (poisoned, forged, edited):
+        _assert_quarantined(sym)
     assert client.get(f"/api/fundamentals/companies/{unknown}").json()["name"] == "Poisoned Ltd"     # not without the option
     for untouched in (provider_made, operator_made):
         assert client.get(f"/api/fundamentals/companies/{untouched}").json()["name"] == "Poisoned Ltd"
-    assert poisoned not in _run(run(apply=True))                                                   # idempotent
+    assert not set(_repair(mine, apply=True)) & {poisoned, forged, edited}                          # idempotent
     # the unattributed one on request, refilled from the provider
-    refilled = _run(run(apply=True, include_unattributed=True, refetch=_mock_nse()()))
+    refilled = _repair(mine, apply=True, include_unattributed=True, refetch=_mock_nse()())
     assert refilled[unknown].action == "quarantined and refilled from the provider"
-    assert client.get(f"/api/fundamentals/companies/{unknown}").json()["name"] == "Refreshed Co Ltd"
-    assert unknown not in _run(run(apply=True, include_unattributed=True))                        # now provider-cited
+    view = client.get(f"/api/fundamentals/companies/{unknown}").json()
+    assert view["name"] == "Refreshed Co Ltd" and view["website"] is None and view["business_segments"] == []
+    assert unknown not in _repair(mine, apply=True, include_unattributed=True)                     # now provider-cited, no author
 
     async def audit():
         async with _session_factory() as session:
             rows = await session.scalars(select(AuditLogRecord.detail).where(AuditLogRecord.event == repair_shared.EVENT))
             return {json.loads(d)["company_id"] for d in rows}
-    assert {poisoned_id, unknown_id} <= _run(audit())
+    assert {poisoned_id, forged_id, edited_id, unknown_id} <= _run(audit())
+
+
+def test_a_provider_profile_a_member_edited_is_replaced_not_merged_on_refetch():
+    c = _org("repair-c")
+    sym = _sym("RR")
+    res = _with_provider(lambda: client.post("/api/fundamentals/refresh", headers=c, json={"symbols": [sym]}))
+    assert res.status_code == 200 and res.json()["created"] == 1, res.text      # the shared profile; its author is C's member
+
+    async def member_edits():                                                    # as a member could before #234
+        async with _session_factory() as session:
+            row = await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == sym, CompanyRecord.tenant_id.is_(None)))
+            row.website, row.business_description, row.headquarters = "https://evil.example", "buy now", "Nowhere"
+            row.business_segments_json = '["Fake"]'
+            await session.commit()
+    _run(member_edits())
+    found = _repair({sym})
+    assert sym in found and found[sym].reason.startswith("entered by a member")   # its citation is the provider's: still a suspect
+    done = _repair({sym}, apply=True, refetch=_mock_nse()())
+    assert done[sym].action == "quarantined and refilled from the provider"
+    view = client.get(f"/api/fundamentals/companies/{sym}", headers=c).json()
+    assert view["name"] == "Refreshed Co Ltd" and view["isin"] == "INE000A01001"
+    assert view["website"] is None and view["business_description"] is None and view["headquarters"] is None and view["business_segments"] == []
+    assert sym not in _repair({sym})                                              # repaired: the provider's, nobody's
 
 
 def test_the_repair_command_is_a_dry_run_by_default(monkeypatch, capsys):
@@ -175,3 +216,26 @@ def test_the_repair_command_is_a_dry_run_by_default(monkeypatch, capsys):
     assert asyncio.run(repair_shared._main([])) == 0
     assert calls == {"apply": False, "refetch": None, "include_unattributed": False}
     assert json.loads(capsys.readouterr().out)["applied"] is False
+
+
+def test_the_fold_moves_every_table_that_hangs_off_a_company():
+    """The refresh fold deletes the organisation's private profile after moving its rows onto the shared one: a table
+    with a foreign key to `companies` that the fold does not move would be cascade-deleted with it (LG3's period
+    versions, say). Fails when such a table is added without its COMPANY_CHILDREN (and, if unique per company, PERIOD_KEYED) entry."""
+    import app.db.models  # noqa: F401 - registers every table
+    from app.db.base import Base
+    from app.fundamentals import persistence
+
+    children = {t.name for t in Base.metadata.tables.values() if any(fk.column.table.name == "companies" for fk in t.foreign_keys)}
+    assert children, "no table references companies?"
+    moved = {m.__tablename__ for m in persistence.COMPANY_CHILDREN}
+    assert children - moved == set(), f"tables hanging off companies that the fold would cascade-delete: {sorted(children - moved)}"
+    assert moved <= children
+    for name in children:
+        table = Base.metadata.tables[name]
+        assert "company_id" in table.c and "tenant_id" in table.c, f"{name}: the fold moves rows by company_id per tenant_id"
+        keys = [[c.name for c in k.columns] for k in table.constraints if k.__class__.__name__ == "UniqueConstraint"]
+        keys += [[c.name for c in i.columns] for i in table.indexes if i.unique]
+        if any("company_id" in k for k in keys):         # moving a row could break its key: the fold must check it first
+            assert name in {m.__tablename__ for m in persistence.PERIOD_KEYED}, f"{name}: unique per company, so fold_conflicts must check it"
+            assert all({"period_type", "period_label"} <= set(k) for k in keys if "company_id" in k), f"{name}: fold_conflicts compares periods"

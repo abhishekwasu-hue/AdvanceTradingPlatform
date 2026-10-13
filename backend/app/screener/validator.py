@@ -433,4 +433,40 @@ def kind_of(ast: Any, *, base_tf: str = "1d") -> str:
     return str(kind)
 
 
-__all__ = ["validate", "kind_of", "Validated", "Problem", "MAX_OFFSET", "DEFAULT_COST_CAP"]
+@dataclass
+class StudyCheck:
+    """N4 CH6: a ScreenQL expression as a chart study - its validation, its kind (num: a line; bool: true / false marks)
+    and its unit ("price" draws on the price pane, anything else in its own pane)."""
+    validated: Validated
+    kind: Optional[str] = None
+    unit: Optional[str] = None
+
+
+def validate_study(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP) -> StudyCheck:
+    """The screen checks (types, units, timeframes, look-ahead, cost) for an expression drawn as a series: a number or a
+    condition. Refused as studies: cross-sectional functions (they rank a universe, not one chart) and functions that
+    only have a value on the last bar (fundamentals, sector / index membership: no series to draw)."""
+    if base_tf not in n.TF_MINUTES:
+        return StudyCheck(Validated(False, [Problem(f"unknown study timeframe {base_tf!r}")]))
+    checker = _Checker(base_tf, dict(params or {}), True)
+    kind, unit = checker.check(ast)
+    if kind not in (NUM, BOOL):
+        checker.err("a study must be a number (a line) or a condition (true / false marks), e.g. SMA(close, 20)", ast)
+    for node in n.walk(ast):
+        name = getattr(node, "name", "") if isinstance(node, n.Call) else ""
+        spec = FUNCTIONS.get(name) if name else None
+        if spec is not None and spec.cross_sectional:
+            checker.err(f"{name} ranks a universe of symbols - it has no series on one chart", node)
+        elif spec is not None and name in LAST_BAR_ONLY:
+            checker.err(f"{name} has a value on the last bar only - there is no series to draw", node)
+    unused = set((params or {}).keys()) - checker.out.params_used
+    if unused:
+        checker.err(f"unknown parameter(s): {', '.join(sorted('$' + u for u in unused))}", None)
+    if checker.out.cost > cost_cap:
+        checker.err(f"study cost {checker.out.cost:.1f} is over the cap {cost_cap:g}", None)
+    if checker.out.problems:
+        checker.out.ok = False
+    return StudyCheck(checker.out, kind, None if unit == ANY_UNIT else unit)
+
+
+__all__ = ["validate", "validate_study", "kind_of", "StudyCheck", "Validated", "Problem", "MAX_OFFSET", "DEFAULT_COST_CAP"]

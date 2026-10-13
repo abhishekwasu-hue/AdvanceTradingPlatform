@@ -311,8 +311,12 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "Pattern": 'Pattern("inside_bar")',
     "RangeBreakout": 'RangeBreakout("down", 5, 0, 0)',
     "SwingBreakType": 'SwingBreakType("up", 0, 0) != ""',
+    "DonchianBreakout": 'DonchianBreakout("up", 20, 0)',                     # U6 BK3 (main #229): rare events, every date
+    "MABreakout": 'MABreakout("up", 5, "sma", 0)',
+    "RegimeBreakout": 'RegimeBreakout("up", 20, 5, 60, 0)',
 }
-SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt"}   # rare events: every date
+SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt",   # rare events: every date
+               "DonchianBreakout", "MABreakout", "RegimeBreakout"}
 
 
 def _sweep_cases():
@@ -451,3 +455,16 @@ def test_scales_are_rounded_so_a_split_is_one_evaluation_per_side():
     started = time.monotonic()
     sig = H.signals(ast, validated, frames, dates, scales=scales)
     assert time.monotonic() - started < 30.0 and sig.shape == (len(dates), 50)
+
+
+def test_the_history_path_honours_bk3_s_second_flag():
+    """A BK3 function (Spec.also_flags = screener_breakouts_bk3) is refused on the history path until both its family flag
+    and its own flag are on - the same gate as a screen run (`routes._gate` -> breakouts.gate)."""
+    t = _org("bk3")
+    frames, days = _symbols(3, "K")
+    body = {"source": 'DonchianBreakout("up", 20, 0)', "date": str(days[120]), "universe": {"symbols": list(frames)}}
+    _flag("screener_breakouts", t["tenant_id"])
+    refused = client.post("/api/screener/history/asof", headers=t["headers"], json=body)
+    assert refused.status_code == 422 and "screener_breakouts_bk3" in refused.text
+    _flag("screener_breakouts_bk3", t["tenant_id"])
+    assert client.post("/api/screener/history/asof", headers=t["headers"], json=body).status_code == 200

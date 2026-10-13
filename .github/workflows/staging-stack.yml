@@ -170,22 +170,44 @@ jobs:
       - name: Hostinger-shaped (approximation, does not decide the job) - the primary profile, 2 API processes on 2 CPUs
         if: always() && steps.primary.outcome != 'skipped'
         continue-on-error: true
+        env:
+          PROFILE: ${{ github.event.inputs.profile }}
         run: |
           deploy/ci/stack.sh api-workers 2 --cpus 2
+          if [ "$PROFILE" = "true" ]; then
+            nohup deploy/ci/profile_api.sh 60 60 "$RUNNER_TEMP/atp-ci-state/load-profile-kvm2-ramp" > /dev/null 2>&1 &
+            nohup deploy/ci/profile_api.sh 220 60 "$RUNNER_TEMP/atp-ci-state/load-profile-kvm2-steady" > /dev/null 2>&1 &
+          fi
           deploy/ci/stack.sh load --name load-kvm2 --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
             --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API as on the KVM 2 (2 processes, 2 CPUs)" \
             --report "$RUNNER_TEMP/atp-ci-state/load-kvm2.md"
+
+      - name: Where the API's time went in the Hostinger-shaped run (py-spy summary)
+        if: always() && steps.primary.outcome != 'skipped' && github.event.inputs.profile == 'true'
+        continue-on-error: true
+        run: |
+          for phase in kvm2-ramp kvm2-steady; do
+            echo "=== $phase"; cat "$RUNNER_TEMP/atp-ci-state/load-profile-$phase.txt" "$RUNNER_TEMP/atp-ci-state/load-profile-$phase.log" || true
+          done
+
+      - name: Login burst, Hostinger-shaped (secondary, does not decide the job) - the shards in step, 25 logins at once every 7.5 s
+        if: always() && steps.primary.outcome != 'skipped'
+        continue-on-error: true
+        run: |
+          deploy/ci/stack.sh load --name load-burst --users "$USERS" --seconds 60 --ramp 150 --think "$THINK" --in-step \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API as on the KVM 2, login bursts (shards in step)" \
+            --report "$RUNNER_TEMP/atp-ci-state/load-burst.md"
 
       - name: Summary
         if: always()
         run: |
           {
             echo "## Load test ($USERS users)"
-            for f in load-primary load-busy load-kvm2; do
+            for f in load-primary load-busy load-kvm2 load-burst; do
               [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && { echo; echo "### $f"; cat "$RUNNER_TEMP/atp-ci-state/$f.md"; }
             done
           } >> "$GITHUB_STEP_SUMMARY" || true
-          for f in load-primary load-busy load-kvm2; do
+          for f in load-primary load-busy load-kvm2 load-burst; do
             [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && echo "::notice title=$f::$(head -n 1 "$RUNNER_TEMP/atp-ci-state/$f.md" | cut -c1-900)"
           done
           true

@@ -129,15 +129,15 @@ cmd_seed() {
 
 # The load test, sharded: each shard is its own ci-runner container (its own IP on the stack network) running
 # backend/scripts/loadtest.py for its slice of users and accounts, through Caddy; the raw samples are merged after.
-#   --users 500 --seconds 300 --ramp 150 --think 30 [--shards N] [--name DIR] [--label TEXT] [--report FILE]
+#   --users 500 --seconds 300 --ramp 150 --think 30 [--shards N] [--name DIR] [--label TEXT] [--report FILE] [--in-step]
 cmd_load() {
   ensure_env
-  local users=500 seconds=450 ramp=150 think=10 shards=0 label="" name="load" report=""
+  local users=500 seconds=450 ramp=150 think=10 shards=0 label="" name="load" report="" in_step=0
   while [ $# -gt 0 ]; do
     case "$1" in
       --users) users="$2"; shift 2 ;; --seconds) seconds="$2"; shift 2 ;; --ramp) ramp="$2"; shift 2 ;;
       --think) think="$2"; shift 2 ;; --shards) shards="$2"; shift 2 ;; --label) label="$2"; shift 2 ;;
-      --report) report="$2"; shift 2 ;; --name) name="$2"; shift 2 ;;
+      --report) report="$2"; shift 2 ;; --name) name="$2"; shift 2 ;; --in-step) in_step=1; shift ;;
       *) die "unknown load option $1" 2 ;;
     esac
   done
@@ -149,21 +149,22 @@ cmd_load() {
   case "$name" in ""|*/*|.*) die "--name must be a plain directory name" 2 ;; esac
   rm -rf "${STATE:?}/$name"; mkdir -p "$STATE/$name"
   local per=$(( (users + shards - 1) / shards )) i offset n pids=()
-  step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s"
+  step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s$([ "$in_step" = 1 ] && echo ', shards in step (login bursts)')"
   scrape_metrics > "$STATE/$name/metrics-before.prom" || true
   pg_statements_reset || true
   sample_stats "$STATE/$name/docker-stats.csv" & local sampler=$!
   sample_db "$STATE/$name/db-connections.csv" & local db_sampler=$!
   # LD-7: one schedule for all shards - every ramp starts at the same instant (time for the containers to come up first)
   # and shard i takes the i/shards-th part of each start slot, so the logins arrive evenly over the ramp instead of one
-  # per shard at the same moment every ramp/per seconds.
+  # per shard at the same moment every ramp/per seconds. --in-step keeps the shards in step on purpose (the burst
+  # profile: one login per shard at the same instant, every ramp/per seconds - a market-open rush).
   local start_at=$(( $(date +%s) + 20 + shards ))
   for i in $(seq 0 $((shards - 1))); do
     offset=$((i * per)); n=$(( users - offset < per ? users - offset : per ))
     [ "$n" -gt 0 ] || break
     dc --profile tools run --rm -T ci-runner /ci-scripts/loadtest.py --base "https://$(env_value DOMAIN)" --cacert /state/caddy-root.crt \
       --accounts /state/load_accounts.csv --account-offset "$offset" --users "$n" --seconds "$seconds" --ramp "$ramp" \
-      --think "$think" --seed "$((54 + i))" --shard "$i" --shards "$shards" --start-at "$start_at" \
+      --think "$think" --seed "$((54 + i))" --shard "$((in_step ? 0 : i))" --shards "$((in_step ? 1 : shards))" --start-at "$start_at" \
       --raw-out "/state/$name/shard-$i.json" > "$STATE/$name/shard-$i.log" 2>&1 &
     pids+=("$!")
   done

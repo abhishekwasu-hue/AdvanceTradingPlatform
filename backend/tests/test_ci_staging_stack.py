@@ -245,7 +245,7 @@ def test_shards_interleave_their_start_times_over_the_ramp():
     assert min(gaps) == pytest.approx(0.3) and max(gaps) == pytest.approx(0.3)
     assert loadtest.start_offsets(4, 8.0) == [0.0, 2.0, 4.0, 6.0]                      # one process: as before
     stack = (CI / "stack.sh").read_text()
-    assert '--shard "$i" --shards "$shards" --start-at "$start_at"' in stack
+    assert '--shard "$((in_step ? 0 : i))" --shards "$((in_step ? 1 : shards))" --start-at "$start_at"' in stack
 
 
 @pytest.mark.parametrize("minutes", [1, 5, None])

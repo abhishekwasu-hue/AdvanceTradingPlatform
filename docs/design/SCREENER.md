@@ -1066,6 +1066,90 @@ questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
 - **Z10-a harness.** `app/quality/causal_cases.py` covers the 15 breakout functions (BK1 and BK2), each with an
   `@` variant where the data allows. Z10-6 records BK2's VWAP answer (NaN without volume).
 
+## U6 BK3 (built): VCP and indicator breakouts (flag `screener_breakouts_bk3` on top of `screener_breakouts`, both off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §8 BK3 (B3 VCP + B10 / B11 / B12 / B15). Code:
+`app/screener/breakouts/vcp.py` and `indicator_breaks.py`, wired into `screens.py` like BK2's `intraday.py`. Research
+notes, sources and the parameter table: `docs/research/breakouts.md`. Open questions BK3-1..BK3-7 in
+`docs/OPEN_QUESTIONS.md`.
+- **Flag.** `screener_breakouts_bk3` (DEFAULT_OFF_FLAGS) is a second flag on the breakout family (`Spec.also_flags`):
+  a BK3 function needs both. While either is off, the registry endpoint hides the six functions, and a screen, saved
+  screen or run that uses one fails validation with the flags named. The breakout catalog leaves out the BK3
+  screens, templates and parameters, and `/breakouts/run` answers 503 for a BK3 screen or template. Alert rules are
+  refused at creation, and an existing rule pauses (stays active, `last_problem` says why) until the flag is back. The
+  taxonomy files the templates under a second source, `breakouts_bk3`, hidden unless both flags are on. There are no
+  new routes and no migration.
+- **Screens** (all closed bars; a value at bar j uses bars 0..j; down = the up rule on mirrored prices; one signal per
+  leg through BK1's `one_per_leg`, except the Watchlist):
+  - **B3 VCP** (Daily). Contractions are read from a causal zigzag whose swing size is `vcp_pivot_atr` x ATR; depths are
+    in %. Walking back from the last confirmed swing low, each earlier contraction must be deeper than the next one by
+    `vcp_ratio`, with no later high above an earlier one, inside `vcp_max_bars`. The run needs at least
+    `vcp_min_contractions` contractions. If the base's left side is deeper than `vcp_max_depth_pct`, the base is
+    rejected. Optional rules: volume dry-up (last contraction's mean volume below the first's) and Minervini's trend
+    template (close > SMA 50 > 150 > 200, the 200 rising for 21 bars, within 25 % of the year's high, 30 % above its
+    low). The breakout is the first close above the pivot (the last contraction's high) by `min_break_atr` ATR on
+    `vol_mult` volume, on swings confirmed by the bar before. **Watchlist** (`vcp_mode` = watchlist, `VCPReady`): every
+    bar where the base is ready - same rules, close at most `vcp_ready_pct` % under the pivot, no close above it since
+    the last low. It is a state, so there is no per-leg dedupe, and the run's status is `ready`. The RS rating is not
+    in the engine (BK3-1).
+  - **B10 Donchian.** Close beyond the previous `donchian_n` bars' high / low by `min_break_atr` ATR (the "ATR filter",
+    BK3-2). Templates for 20 and 55.
+  - **B11 squeeze.** `bollinger`: band width ((upper - lower) / middle, 20 / 2) at its lowest of `squeeze_lookback`
+    bars, then within `squeeze_within` bars a close outside the band on `vol_mult` volume. `ttm`: the release of the
+    TTM squeeze (Bollinger bands back outside the Keltner channel EMA 20 +/- 1.5 ATR 20), with the linear-regression
+    momentum on the breakout side.
+  - **B12 moving average.** A close above the key MA (`ma_n`, SMA / EMA) by `min_break_atr` ATR and above every close of
+    the `ma_consol_n` bars before. Those closes must have stayed within `ma_band_atr` ATRs of the line, and the line
+    must be flat or rising (down by at most `ma_flat_pct` % over `ma_slope_n` bars). A plain cross inside the chop is not
+    a break (BK3-4). Optional MA stack (`ma_stack`: fast > key > slow).
+  - **B15 RSI / ADX regime.** RSI held 50 +/- `rsi_band` for `regime_n` bars and leaves the band on this bar. ADX was at or
+    below `adx_low` in that window and rises on this bar, with the DI of the side leading. The close clears the window's
+    high by `min_break_atr` ATR.
+- **ScreenQL.** `VCPBreakout(side, contractions, ratio, v, k, template, dryup)`,
+  `VCPReady(side, contractions, ratio, pct, template, dryup)`, `DonchianBreakout(side, n, k)`,
+  `SqueezeBreakout(side, mode, n, lookback, v)`, `MABreakout(side, n, type, k)` and
+  `RegimeBreakout(side, band, n, adx, k)`. Defaults, ranges and choices come from the parameters (`registry._bk`). The
+  number settings are literal-only (Z10-a). History: the VCP needs a year (251 bars, `timeframes` 1d only), the squeeze
+  needs n + lookback (`window_sum`), the MA break needs n + 11 and the regime break n + 30 (`extra_bars`).
+- **Templates.** Eight: daily VCP breakout and watchlist, Donchian 20 / 55, the daily Bollinger squeeze, the 15m TTM squeeze,
+  the 50-day MA breakout and the RSI / ADX regime. Titles say "VCP-style" (LG1-5). Each template's ScreenQL text equals
+  the engine bar by bar, ScreenQL-AND-context against the engine-plus-overlay filter (tested). The VCP and regime
+  templates are proven on an injected 272-session daily history (the broker's daily fetch) with `check_history`, because
+  a random walk does not form those bases.
+- **Shared engine changes (performance, values unchanged and tested).**
+  - `Bars` computes the true range once with numpy: ATR, the Keltner channel and ADX read it, and the values are equal
+    to `app.indicators`.
+  - `Bars.pivots` runs the causal zigzag on the bars' own arrays instead of building a timestamped frame, so the pivots
+    equal `causal_swings.degree_pivots` (fractal mode keeps the old path).
+  - RSI and ADX for B15 are numpy versions of the platform's definitions (tested equal).
+- **Perf (Z10-d).** `tests/test_z10d_perf.py::test_bk3_breakout_screens_fit_the_bar_close_target` (perf job,
+  `ATP_PERF=1`) times each BK3 screen over the bar-close universe (200 symbols; 5m, the VCP on 300 daily bars) against
+  the bar-close target of 1 s x the CI factor. Locally (factor 1.29) the medians run from 0.60 s (Donchian) to 0.94 s
+  (VCP). Breakout functions run per symbol, not vectorised (as BK1 / BK2).
+- **Z10-a.** Each of the six functions has causal cases on 5m, with an `@1h` variant where the data allows, plus daily
+  cases. Every case produces values, and the VCP cases run with the template off so that the synthetic bars form
+  bases.
+- **Review fixes (BK3 review).**
+  - The VCP zigzag: when a swing is confirmed at bar t, it now tracks the new opposite extreme from the most extreme bar
+    after the pivot (up to t), as `causal_swings.zigzag_pivots` does. It used to start from bar t, which skipped a deeper
+    low or higher high in between, so contractions came out too shallow and the base low too high. It also starts from
+    the first bar with prices. An equal high or low moves the extreme to the later bar, and no reversal is read on a bar
+    that ties it, as in `zigzag_pivots`. Tests: a regression case, plus equality with `zigzag_pivots` on random series
+    and on tick-rounded (0.05) series with ties, in both orientations.
+  - `Bars.pivots` returns no swings on fewer than 3 bars, as `degree_pivots` does. The parity test now covers the
+    percentage swing mode as well.
+  - `/api/screener/breakouts/run`:
+    - It checks the BK3 flag before reading the request.
+    - A BK3 screen fetches its two longest look-backs end to end plus the ATR warm-up (486 daily bars for the VCP
+      defaults; a week counts as 5 sessions). Only the look-backs the chosen mode reads count: the trend template
+      only when `tt_filter` is on, Bollinger or TTM, and the MA stack only when it is on.
+    - A symbol with fewer bars than the screen's longest look-back is listed as "not enough history" instead of
+      running to a silent no-match.
+  - Evidence packs draw the BK3 breakouts from the engine (`evidence.BREAKOUT_ARGS`: the pivot, channel, band, line or
+    window high, with the same parity test). BK2's intraday screens read the session clock, so they stay in the strip.
+  - `barclose.evaluate_rule` defaults every flag argument to off. `run_due` passes each organisation's own flags.
+- **Not in BK3.** Frontend changes: the builder reads the catalog, so the new blocks and templates appear when the flag
+  is on.
+
 ## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
 Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
 - Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own
@@ -1127,6 +1211,87 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
 - **Not in LG1:** fitness sparkline and stats (LG4 / S6), Alert and Show on chart from a card, the method-library page
   (P1 §1.6), the Turtles "Then" template (ATR sizing, 2N stop), short mirrors (TX2), the remaining catalogue (LG2,
   LG3), search by style chips beyond the taxonomy's setup chips.
+
+## N3 S6a (built): screen history - who passed on a date, and screen fitness (flag `screener_history`, off)
+
+Spec §2.6 and §2.7, the first of S6's two PRs. S6b is the rolling screen backtest: rebalance, top-N by rank,
+weighting, the part C cost and slippage models, and the benchmark comparison.
+
+- **Routes.** Both are behind `screener_v2` and `screener_history` (503 while either is off), are trader routes, use
+  the run rate limit and are classified in the tenancy table:
+  - `POST /api/screener/history/asof`: a saved screen or a source, a date, and a universe (an index code or up to 300
+    symbols); returns the matches on that date.
+  - `POST /api/screener/history/fitness`: start, end, a step (daily / weekly / 4-weekly / monthly) and horizons
+    (default 1 / 5 / 20 sessions).
+  - Daily screens on bars only. Another timeframe, the zone functions and the functions that need data the run does
+    not load are refused with the reason.
+- **Data.**
+  - Only the shared lake's end-of-day bars (NSE bhavcopies). A company's bars come by ISIN across renames, adjusted
+    (`by_isin.isin_candles`); without ISIN runs, the symbol's own bars are used and the result notes "unadjusted".
+  - An index universe is the U1-b membership **as of each date**, so leavers and delisted names are included while
+    they were members. Dates before the first membership file are refused.
+  - The sealed holdout is refused, including for the forward-return window.
+- **No look-ahead.**
+  - The screen at date d sees bars that closed on or before d. A symbol is evaluated only if it traded that session.
+  - A screen's history starts with a warm-up: max(3 x lookback, lookback + 100) sessions before the first date, so
+    smoothed indicators have settled.
+  - The fast path evaluates the full series once per symbol (or once per group of symbols sharing a bar index, the
+    Z10-d panel) and reads it at each date. That is valid because every ScreenQL function is causal (Z10-a). The
+    tests check it against the cut-bars run at each date, and check that changing every bar after a date changes
+    nothing at that date.
+  - A cross-sectional screen (Rank / PercentileRank) runs date by date on cut bars, at most 60 dates.
+  - No new ScreenQL function, so no new Z10-a causal cases.
+- **Fitness.** For each horizon:
+  - the passers' mean forward return against the eligible universe's equal-weight mean on the same dates;
+  - the hit rate (a passer beating that mean);
+  - the per-date excess and its t-statistic.
+  Also reported:
+  - turnover and the average number of passers;
+  - a breadth regime split at the main horizon (5): more or fewer than half the universe above its 50-session
+    average, known at d;
+  - a "low sample" flag below 30 observations, and a confidence note in plain words.
+  Forward returns are taken at d + h sessions on the trading calendar, at the last close on or before that day: a
+  delisted name keeps its last price, and a date whose horizon has not finished is left out.
+- **Deflation (trial ledger).**
+  - Each fitness run is one trial in `research_trials`, with `kind: screen_fitness` and the per-date excess returns.
+  - The result's Deflated Sharpe is taken against every screen fitness trial of the organisation in the last 30 days,
+    and it says how many there were.
+- **Not modelled here:** costs and execution (S6b). It is information, never a recommendation; the disclaimer is in
+  every answer.
+- **Perf (Z10-d):** `screen_fitness` covers the 50-factor EOD screen over 300 symbols, weekly over a year, with
+  1 / 5 / 20-session statistics. The target is 3 s, times the CI factor, in the `perf` job; locally it took 1.6 s.
+
+### Review of S6a (fixed)
+- HIGH: a screen with a last-bar-only function runs date by date on cut bars (the fast path read a single last-date
+  answer onto every date); the fast path refuses a non-series; a test compares the fast path with the cut-bar run for
+  every registry function the history path takes.
+- MED: prices as known at each date (S6-9); non-overlapping dates for the t-statistic and deflation (S6-10).
+- LOW: a symbol reused by another company gets its ISIN in the label; picks with no bar at d + h are counted
+  (`no_bar_at_horizon`); unadjusted bars across a split leave those dates out; the deflation family is keyed by step and
+  horizon; a forward window into the holdout is refused (tested).
+
+## S10 (Phase 0 slice, built): the ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
+
+Source: SCREENER_SPEC §5 S10 ("J (ETF/MF), SMS/WhatsApp, mobile push, marketplace") within ATP_PHASE0_FREEZE (no
+marketplace, no store apps).
+
+- **ETF screen (J)** - `app/screener/etf.py`, `GET /api/screener/etf` (member; shared reference data only). Every NSE
+  ETF the universe lists (`securities.is_etf`) from the lake's daily bars as known now, closed sessions only: last close,
+  average traded value (20 sessions), the change over a window (1-250 sessions), the tracked index's change over the
+  same sessions (`securities.underlying` -> `NSE_INDEX:<code>`, with "Index" / "TRI" stripped as a second try) and the
+  tracking difference. Filters (min traded value, text, max |tracking difference|), sorts (liquidity, change, closest
+  tracking, symbol); a row says why a column is empty. Facts, not a ranking. Frontend: "ETFs" on the Screener page.
+  Not a ScreenQL function: the run path loads bars only (the ETF -> index mapping is reference data).
+- **Mutual funds** are not here: AMFI NAVs are not ingested yet (OPEN_QUESTIONS S10-1).
+- **SMS DLT (India)** - optional `dlt_entity_id`, `dlt_template_id`, `sender_id` on the SMS channel, filled into the
+  `{dlt_entity_id}` / `{dlt_template_id}` / `{sender_id}` placeholders; a template that uses one must set it. Existing SMS
+  channels are untouched.
+- **WhatsApp channel** - `AlertChannelType.WHATSAPP`, a Business gateway through a request template (no vendor SDK, the
+  SMS sender and egress checks): `{template}` must be in the body (business-initiated messages are approved templates
+  only), `template_name` / `language` fill it, `opt_in_confirmed` must be true, headers are write-only secrets, paid
+  plans only (402 on Free). With the flag off a WhatsApp channel or DLT fields are refused (403).
+- **Mobile push** stays the PWA's Web Push (installed on a phone it is a mobile push); native FCM / APNs come with the
+  store apps (frozen). **Marketplace** is frozen (K).
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

@@ -45,22 +45,22 @@ def test_create_list_get_delete_news_event():
     assert body["source"]["source"] == "RBI Monetary Policy Statement"
     event_id = body["id"]
 
-    listed = client.get("/api/news-events")
+    listed = client.get("/api/news-events", headers=headers)
     assert listed.status_code == 200
     assert any(e["id"] == event_id for e in listed.json())
 
-    fetched = client.get(f"/api/news-events/{event_id}")
+    fetched = client.get(f"/api/news-events/{event_id}", headers=headers)
     assert fetched.status_code == 200
     assert fetched.json()["headline"] == body["headline"]
 
     other_token = _register("news_other@example.com")
     other_headers = {"Authorization": f"Bearer {other_token}"}
     forbidden = client.delete(f"/api/news-events/{event_id}", headers=other_headers)
-    assert forbidden.status_code == 403
+    assert forbidden.status_code == 404                       # another organisation's entry: not even visible to it
 
     deleted = client.delete(f"/api/news-events/{event_id}", headers=headers)
     assert deleted.status_code == 204
-    assert client.get(f"/api/news-events/{event_id}").status_code == 404
+    assert client.get(f"/api/news-events/{event_id}", headers=headers).status_code == 404
 
 
 def test_get_unknown_event_returns_404():
@@ -88,15 +88,15 @@ def test_filter_by_category_symbol_and_since_date():
     )
     assert corporate.status_code == 201
 
-    by_category = client.get("/api/news-events", params={"category": "CORPORATE"})
+    by_category = client.get("/api/news-events", headers=headers, params={"category": "CORPORATE"})
     categories = {e["category"] for e in by_category.json()}
     assert categories == {"CORPORATE"}
 
-    by_symbol = client.get("/api/news-events", params={"symbol": "reliance"})
+    by_symbol = client.get("/api/news-events", headers=headers, params={"symbol": "reliance"})
     assert all("RELIANCE" in e["affected_symbols"] for e in by_symbol.json())
     assert len(by_symbol.json()) >= 1
 
-    since_march = client.get("/api/news-events", params={"since": "2026-03-01"})
+    since_march = client.get("/api/news-events", headers=headers, params={"since": "2026-03-01"})
     assert all(e["event_date"] >= "2026-03-01" for e in since_march.json())
 
 

@@ -550,6 +550,40 @@ def _filled_before(trade: TradeRecord, order: BrokerOrderStatus, book: List[Brok
     return prior
 
 
+async def _still_open_now(trade: TradeRecord, broker: BrokerInterface, ledger: Optional[_ExitLedger], outcome: CloseOutcome,
+                          what: str) -> bool:
+    """Round 5: the last check before a replacement for a missing exit goes out - the broker's positions, read now, still
+    hold exactly what the platform has open on the symbol (`reconciliation.service.exit_peers`, the same comparison
+    reconciliation makes). A reconciliation stamp can be older than a close made since (in the broker app, or by an order
+    that could not be adopted); sending on it would open a position the other way. Anything else - another quantity, flat,
+    or the positions cannot be read - waits, flagged, with the stamp cleared: reconciliation runs every cycle while the
+    tenant is flagged, and once it shows the position open again (stamped anew) this check passes and the exit goes out
+    (ADR-0004)."""
+    try:
+        positions = list(await broker.get_positions())
+    except Exception as exc:  # noqa: BLE001 - unreadable is not "still open"
+        reason = f"the broker's positions could not be read ({exc})"
+    else:
+        if ledger is not None:
+            from app.reconciliation.service import exit_peers   # local: reconciliation imports this module
+            peers = await exit_peers(ledger.session, trade, broker.name)
+        else:
+            peers = [trade]
+        platform = sum(float(t.quantity) if t.direction == "LONG" else -float(t.quantity) for t in peers)
+        held = sum(float(p.quantity) for p in positions if p.symbol == trade.symbol)
+        if abs(platform - held) <= 1e-9:
+            return True
+        reason = f"the broker now holds {held:g} of {trade.symbol} where the platform has {platform:g} open"
+    outcome.exit_waiting = True
+    outcome.broker_uncertain = (f"trade {trade.id}: {what} and a reconciliation had found it open, but {reason} - no "
+                                "replacement exit until a reconciliation shows it open again")
+    outcome.warnings.append(outcome.broker_uncertain)
+    if getattr(trade, "reconciled_open_at", None) is not None and ledger is not None:
+        trade.reconciled_open_at = None          # the proof no longer holds (the stop guard reads it too)
+        await ledger.session.commit()
+    return False
+
+
 async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: BrokerInterface, reference_price: float,
                               outcome: CloseOutcome, ledger: Optional[_ExitLedger], resume_only: bool,
                               exit_tag: Optional[str] = None, exchange: Optional[str] = None) -> _Earlier:
@@ -564,7 +598,8 @@ async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: Broke
       (P2, `adoptable_exit`: this platform's exit tag - or its product and exchange - placed inside the claim window);
       else a new exit once a reconciliation since it was sent shows the position still open (`absent_exit_dead_reason`);
       until then the tenant is flagged so reconciliation runs, and the wait is counted towards the "exit not completed"
-      alert. An order still working that may be the exit but cannot be shown to be (round 4: the broker gives no time
+      alert. Round 5: the replacement goes out only if the broker's positions, re-read right then, still hold what the
+      platform has open on the symbol (`_still_open_now`); else it waits, flagged. An order still working that may be the exit but cannot be shown to be (round 4: the broker gives no time
       for it, or no tag / product / exchange) is never adopted - a manual order would be booked as the close - and never
       sent over either: the position waits, flagged, and the wait raises the CRITICAL alert, until that order ends (or
       is cancelled at the broker); then the reconciliation proof above lets the exit out (ADR-0004).
@@ -616,6 +651,9 @@ async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: Broke
         if resume_only:
             outcome.warnings.append(f"Trade {trade.id}: {what} and it is over ({dead}); a new exit goes out when its exit "
                                     "rule fires again (the stop guard re-arms its stop meanwhile)")
+            return _Earlier(False)
+        held = await _still_open_now(trade, broker, ledger, outcome, what)
+        if not held:
             return _Earlier(False)
         if ledger is not None:
             await ledger.cleared(earlier_id, dead)

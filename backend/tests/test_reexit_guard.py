@@ -1007,3 +1007,140 @@ def test_an_exit_part_filled_while_open_then_cancelled_sends_exactly_the_rest():
     row = _get(TradeRecord, trade_id)
     assert outcome.closed and [float(o.quantity) for o in broker.placed] == [10.0, 7.0]
     assert row.exit_price == pytest.approx((3 * 97.0 + 7 * 95.0) / 10) and row.exit_order_id == "NEW-2"
+
+
+# --- Round 5: an old "still open" stamp never lets a replacement exit out on a position closed since ----------------------
+
+class _Unclear(_Book):
+    """The exit send times out and the order never reaches the broker; later sends fill. `positions_error` makes the
+    positions read fail."""
+
+    def __init__(self, positions_error=None, **kw):
+        super().__init__(**kw)
+        self.positions_error = positions_error
+        self.lost_once = False
+        self.position_reads = 0
+
+    async def place_order(self, order):
+        if not self.lost_once:
+            self.lost_once = True
+            self.placed.append(order)
+            raise TimeoutError("read timed out")
+        return await super().place_order(order)
+
+    async def get_positions(self):
+        self.position_reads += 1
+        if self.positions_error is not None:
+            raise self.positions_error
+        return list(self.positions)
+
+
+def _stamped_lost_exit(t, broker):
+    """An unclear send that never reached the broker, then a reconciliation that stamps the position open (nothing working)."""
+    trade_id = _live_trade(t, exit_order_id=None)
+    first = _close(trade_id, broker, t["user_id"])
+    row = _get(TradeRecord, trade_id)
+    assert not first.closed and row.exit_order_id == pm.EXIT_PENDING and len(broker.placed) == 1
+    _reconcile(t, broker)
+    row = _get(TradeRecord, trade_id)
+    assert row.reconciled_open_at is not None and row.reconciled_open_at > row.exit_sent_at
+    return trade_id, row.exit_sent_at
+
+
+def _after_claim_window():
+    return datetime.now(timezone.utc) + timedelta(seconds=pm.CLAIM_INFLIGHT_SECONDS + 60)
+
+
+def _assert_no_replacement(t, trade_id, broker, outcome):
+    row = _get(TradeRecord, trade_id)
+    assert not outcome.closed and outcome.exit_waiting and row.exit_time is None
+    assert len(broker.placed) == 1                                            # only the lost send - nothing new
+    assert broker_uncertain_reason(_get(Tenant, t["tenant_id"])) is not None
+    assert row.reconciled_open_at is None
+
+
+@pytest.mark.parametrize("reconcile_after_close", [True, False])
+def test_r2_a_manual_cnc_close_after_the_stamp_never_gets_a_replacement_exit(reconcile_after_close):
+    """Review round 4, R2: the send is unclear and never reaches the broker; a reconciliation stamps the position open; the
+    user then closes it in the broker app with an untagged CNC order (someone else's order, not adopted). A later
+    reconciliation finds it flat and clears the stamp (a); without that run the fresh positions read before sending
+    catches it (b). Either way no SELL goes out on a flat position (a reverse position)."""
+    t = _tenant(f"rxg-r2-{uuid.uuid4().hex[:6]}@example.com")
+    broker = _Unclear(positions=_open_at_broker())
+    trade_id, sent = _stamped_lost_exit(t, broker)
+    broker.orders["MAN-1"] = _lookalike("MAN-1", "COMPLETE", placed_at=sent + timedelta(seconds=90), product="CNC", exchange="NFO")
+    broker.positions = []                                                     # flat at the broker
+    if reconcile_after_close:
+        _reconcile(t, broker)
+        assert _get(TradeRecord, trade_id).reconciled_open_at is None         # (a) the stamp is gone
+    outcome = _close(trade_id, broker, t["user_id"], now=_after_claim_window())
+    _assert_no_replacement(t, trade_id, broker, outcome)
+
+
+@pytest.mark.parametrize("reconcile_after_fill", [True, False])
+def test_r1_an_order_that_cannot_be_adopted_filling_after_the_stamp_never_gets_a_replacement_exit(reconcile_after_fill):
+    """Review round 4, R1: after the stamp, an order that may be the exit but cannot be adopted (Shoonya-style, no order
+    time) fills and the broker is flat. The old stamp must not let a replacement out."""
+    t = _tenant(f"rxg-r1-{uuid.uuid4().hex[:6]}@example.com")
+    broker = _Unclear(positions=_open_at_broker())
+    trade_id, sent = _stamped_lost_exit(t, broker)
+    broker.orders["UNTIMED-1"] = _lookalike("UNTIMED-1", "COMPLETE", tag=_exit_tag(broker), placed_at=None)
+    broker.positions = []
+    if reconcile_after_fill:
+        _reconcile(t, broker)
+        assert _get(TradeRecord, trade_id).reconciled_open_at is None
+    outcome = _close(trade_id, broker, t["user_id"], now=_after_claim_window())
+    _assert_no_replacement(t, trade_id, broker, outcome)
+
+
+def test_a_reconciliation_clears_the_stamp_while_an_order_works_on_the_symbol():
+    t = _tenant(f"rxg-r5-working-{uuid.uuid4().hex[:6]}@example.com")
+    broker = _Unclear(positions=_open_at_broker())
+    trade_id, sent = _stamped_lost_exit(t, broker)
+    broker.orders["MAN-1"] = _lookalike("MAN-1", "OPEN", product="CNC", exchange="NFO", placed_at=sent + timedelta(seconds=90))
+    _reconcile(t, broker)
+    assert _get(TradeRecord, trade_id).reconciled_open_at is None
+
+
+def test_a_position_still_open_gets_its_replacement_after_the_fresh_positions_check():
+    t = _tenant(f"rxg-r5-open-{uuid.uuid4().hex[:6]}@example.com")
+    broker = _Unclear(positions=_open_at_broker())
+    trade_id, sent = _stamped_lost_exit(t, broker)
+    reads = broker.position_reads
+    outcome = _close(trade_id, broker, t["user_id"], now=_after_claim_window())
+    row = _get(TradeRecord, trade_id)
+    assert outcome.closed and broker.position_reads == reads + 1             # read again right before sending
+    assert len(broker.placed) == 2 and row.exit_order_id == "NEW-2"
+    assert any("gone:" in d for d in _audit(t["tenant_id"], "exit_order_replaced"))
+
+
+def test_unreadable_positions_wait_and_a_later_reconciliation_lets_the_exit_out():
+    """(b) never sends blind, and never blocks for good (ADR-0004): once the positions can be read again and a
+    reconciliation shows the position open, the replacement goes out."""
+    t = _tenant(f"rxg-r5-unreadable-{uuid.uuid4().hex[:6]}@example.com")
+    broker = _Unclear(positions=_open_at_broker())
+    trade_id, sent = _stamped_lost_exit(t, broker)
+    broker.positions_error = BrokerAPIError("positions endpoint down")
+    outcome = _close(trade_id, broker, t["user_id"], now=_after_claim_window())
+    _assert_no_replacement(t, trade_id, broker, outcome)
+    assert any("could not be read" in w for w in outcome.warnings)
+    broker.positions_error = None
+    _reconcile(t, broker)
+    assert _get(TradeRecord, trade_id).reconciled_open_at is not None
+    again = _close(trade_id, broker, t["user_id"], now=_after_claim_window())
+    assert again.closed and len(broker.placed) == 2
+
+
+def test_another_quantity_at_the_broker_waits_and_the_exit_goes_out_once_the_books_agree():
+    """A momentary difference (another fill on the symbol landing) holds the replacement; it goes out once a
+    reconciliation shows the position open again."""
+    t = _tenant(f"rxg-r5-qty-{uuid.uuid4().hex[:6]}@example.com")
+    broker = _Unclear(positions=_open_at_broker())
+    trade_id, sent = _stamped_lost_exit(t, broker)
+    broker.positions = _open_at_broker(quantity=2)
+    outcome = _close(trade_id, broker, t["user_id"], now=_after_claim_window())
+    _assert_no_replacement(t, trade_id, broker, outcome)
+    broker.positions = _open_at_broker()
+    _reconcile(t, broker)
+    again = _close(trade_id, broker, t["user_id"], now=_after_claim_window())
+    assert again.closed and len(broker.placed) == 2

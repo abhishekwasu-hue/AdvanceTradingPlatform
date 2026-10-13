@@ -205,23 +205,53 @@ async def _note_still_open(adapter: BrokerInterface, report: ReconciliationRepor
     MATCHED - the broker still holds it - and has no order working on it in the book is stamped `reconciled_open_at`. That
     is the only proof that an exit order missing from the book is over (position_monitor.absent_exit_dead_reason). An
     order still working on the symbol (an exit sent without a clear answer, a circuit-locked exit) or an unreadable book
-    proves nothing (a protective stop standing on it does not count)."""
+    proves nothing (a protective stop standing on it does not count).
+
+    Round 5: a proof holds only until the next run that cannot repeat it. Every other position with a recorded exit - its
+    symbol no longer matched (flat at the broker, or another quantity), an order working on it, or a book that cannot say -
+    has its stamp cleared, so an old stamp never lets a replacement exit out on a position closed since (a reverse
+    position)."""
     pending = [t for t in trades if t.exit_order_id]
     if not pending:
         return
     matched = {i.symbol for i in report.items if i.status == ReconciliationStatus.MATCHED}
-    if not any(t.symbol in matched for t in pending):
-        return
-    try:
-        book = await adapter.get_order_book()
-    except Exception as exc:  # noqa: BLE001 - no stamp: an unreadable book cannot rule out a working exit
-        logger.warning("Reconciliation: order book unavailable, no position marked still open: %s", exc)
-        return
-    # A protective stop standing on the symbol is expected (another position's, or a re-armed one) and is not an exit.
-    working = {o.symbol for o in book if (o.status or "").upper() not in _OVER and not (o.order_type or "").upper().startswith("SL")}
+    working: Optional[set] = None
+    if any(t.symbol in matched for t in pending):
+        try:
+            book = await adapter.get_order_book()
+        except Exception as exc:  # noqa: BLE001 - no stamp: an unreadable book cannot rule out a working exit
+            logger.warning("Reconciliation: order book unavailable, no position marked still open: %s", exc)
+        else:
+            # A protective stop standing on the symbol is expected (another position's, or a re-armed one) and is not an exit.
+            working = {o.symbol for o in book
+                       if (o.status or "").upper() not in _OVER and not (o.order_type or "").upper().startswith("SL")}
     for trade in pending:
-        if trade.symbol in matched and trade.symbol not in working:
+        if trade.symbol in matched and working is not None and trade.symbol not in working:
             trade.reconciled_open_at = read_at
+        elif trade.reconciled_open_at is not None:
+            trade.reconciled_open_at = None
+
+
+async def exit_peers(session: AsyncSession, trade: TradeRecord, broker_name: str) -> List[TradeRecord]:
+    """Re-exit guard round 5: the open LIVE positions on `trade`'s symbol that reconciliation compares with the same broker
+    session's positions - those in `trade`'s account (Phase AL, with the broker's default account also holding trades
+    recorded before accounts were tracked), or every open LIVE trade of the organisation when it has no account for this
+    broker (the tenant-wide run). `trade` itself is always among them."""
+    from app.accounts.service import default_account, get_account
+    account: Optional[BrokerAccountRecord] = None
+    if trade.broker_account_id is not None:
+        account = await get_account(session, trade.tenant_id, trade.broker_account_id)
+    else:
+        account = await default_account(session, trade.tenant_id, broker_name)
+    if account is None:
+        trades = await open_trades(session, trade.tenant_id, mode="LIVE")
+    else:
+        trades = await trades_in_account(session, trade.tenant_id, account, mode="LIVE",
+                                         include_unassigned=await _is_default_for_broker(session, account))
+    peers = [t for t in trades if t.symbol == trade.symbol]
+    if all(t.id != trade.id for t in peers):
+        peers.append(trade)
+    return peers
 
 
 def _mismatch_lines(report: ReconciliationReport) -> List[str]:

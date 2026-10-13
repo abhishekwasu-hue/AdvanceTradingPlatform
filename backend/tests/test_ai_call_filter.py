@@ -1,5 +1,7 @@
-"""H-C1 c, Phase 0 gap fix: trade calls aimed at an instrument are blocked in every supported language (EN / MR / HI),
-whatever the answer language - and descriptive analysis still passes. A corpus of both sides."""
+"""H-C1 c, Phase 0 gap fix: trade calls aimed at an instrument are blocked - and descriptive analysis still passes. A
+corpus of both sides, in English: ATP answers in English only, and AI text with Devanagari is withheld outright."""
+import re
+
 import pytest
 
 from app.ai import output_filter
@@ -12,15 +14,9 @@ SHOULD_BLOCK = [
     "RELIANCE: buy the dip", "TATAMOTORS - sell", "Buy this stock now", "Buy the shares before results",
     # entry / stop / target sets
     "Entry RELIANCE 2500 SL 2450 TGT 2600", "Buy above 2500, SL 2450, target 2600.", "NIFTY: stop 24800, target 25200",
-    "Entry 2500 stop-loss 2450 targets 2600", "एन्ट्री 2500, स्टॉप लॉस 2450, लक्ष्य 2600",
+    "Entry 2500 stop-loss 2450 targets 2600",
     # price-target certainty
-    "RELIANCE to 3000 for sure", "NIFTY will hit 26000 definitely", "TCS 4500 तक पक्का", "NIFTY 25500 पर्यंत नक्की",
-    # Marathi
-    "RELIANCE खरेदी करा", "TCS घ्या", "INFY विका", "हा शेअर खरेदी करा", "विक्री करा RELIANCE",
-    # Hindi
-    "RELIANCE खरीदें", "यह शेयर खरीदें", "TCS बेचें", "INFY ले लो", "बेच दो RELIANCE",
-    # review of #230, HIGH1: a danda ends the verb
-    "RELIANCE खरीदें।", "यह शेयर खरीदें।", "TCS बेचें।", "RELIANCE खरेदी करा।", "NIFTY 25500 तक पक्का।", "अभी खरीदें।",
+    "RELIANCE to 3000 for sure", "NIFTY will hit 26000 definitely",
     # HIGH2: markdown, lists, emoji, quotes, brackets, labels and arrows
     "- Buy RELIANCE", "* Buy RELIANCE", "• Buy RELIANCE", "- Buy: RELIANCE", "**Buy** RELIANCE", "`Buy RELIANCE`", "> Buy RELIANCE",
     "🚀 Buy RELIANCE", "(Buy RELIANCE)", "\"Buy RELIANCE\"", "Recommendation - Buy RELIANCE", "BUY: RELIANCE", "Buy -> RELIANCE",
@@ -28,14 +24,13 @@ SHOULD_BLOCK = [
     # HIGH3: entry / stop / target across lines and sentences
     "Entry 2500\nSL 2450\nTarget 2600", "Entry 2500. SL 2450. Target 2600.", "Long above 2500, stop 2450, target 2600",
     # HIGH4: instruments by name, in any case and in Devanagari
-    "buy reliance", "Buy Reliance Industries", "रिलायन्स खरेदी करा", "रिलायंस खरीदें", "Sell infosys now.", "इन्फोसिस विका",
+    "buy reliance", "Buy Reliance Industries", "Sell infosys now.",
     # MED7: more calls
     "Price is weak, sell INFY.", "Long RELIANCE", "Purchase RELIANCE", "Square off all INFY positions", "Exit all INFY positions",
     "Buy a few shares of RELIANCE", "Then buy RELIANCE", "Just buy RELIANCE", "Time to buy RELIANCE!", "Consider buying RELIANCE.",
     "I would buy RELIANCE here", "I'd buy RELIANCE", "I’d buy RELIANCE", "One could buy RELIANCE here", "My pick is RELIANCE",
     "RELIANCE is a buy", "RELIANCE looks like a buy", "NIFTY will surely reach 26000", "It will certainly reach 3000",
-    "three thousand for sure", "RELIANCE kharedi kara", "TCS khareed lo", "kharido RELIANCE", "INFY becho", "TCS le lo", "TCS ghya",
-    "INFY vika", "TCS खरेदी करावी", "RELIANCE खरीदना चाहिए", "TCS घेऊ शकता", "RELIANCE ख़रीदें",
+    "three thousand for sure",
     # LOW9: an imperative with a level and no ticker, and a modal call on a ticker with a level
     "Buy 25000 CE above 120", "I would sell TCS above 4000",
     # second review of #230: exemptions are scoped to the clause / a record line only
@@ -44,9 +39,8 @@ SHOULD_BLOCK = [
     "We never say this, but buy RELIANCE.", "I won't tell you what to do; sell INFY.", "Buy RELIANCE in paper mode.",
     "Buy RELIANCE now - click the button.", "RELIANCE was weak.\nEntry 2500\nSL 2450\nTarget 2600",
     "RELIANCE will hit 3000 for sure, as it did last week.", "Buy calls on NIFTY", "Buy puts on NIFTY", "Buy signal on RELIANCE - act now",
-    "Buy setup RELIANCE", "Sell rating on TCS", "RELIANCE ला खरेदी करा", "TCS को खरीदें", "Buy\nRELIANCE", "Buy two lots of NIFTY",
-    "Buy ten shares of RELIANCE", "You bought RELIANCE, buy more.", "Buy => RELIANCE", "TCS घ्यायला हवा", "TCS खरेदी करायला हरकत नाही",
-    "RELIANCE में खरीदारी करें",
+    "Buy setup RELIANCE", "Sell rating on TCS", "Buy\nRELIANCE", "Buy two lots of NIFTY",
+    "Buy ten shares of RELIANCE", "You bought RELIANCE, buy more.", "Buy => RELIANCE",
     # third review of #230: records only on record labels and their first clause; rules need a market condition;
     # negation scope; more objects and verbs
     "Summary: momentum was strong, buy RELIANCE.", "Analysis: RELIANCE was strong; buy RELIANCE above 2500.",
@@ -59,9 +53,9 @@ SHOULD_BLOCK = [
     "In the backtest it worked: entry 2500, SL 2450, target 2600 on RELIANCE today.",
     "Rule: Buy RELIANCE when the market opens.", "Rule: Buy RELIANCE today when it opens.", "Strategy: buy RELIANCE when you see this message.",
     "Template: sell TCS when you can.", "We never say this - but buy RELIANCE.", "We never recommend stocks: buy RELIANCE.",
-    "Never say never: sell TCS.", "We never say buy RELIANCE, we say BUY RELIANCE NOW.", "हे सांगत नाही पण TCS विका.",
+    "Never say never: sell TCS.", "We never say buy RELIANCE, we say BUY RELIANCE NOW.",
     "Invest in RELIANCE (now)", "Put money in RELIANCE", "that said buy RELIANCE", "Buying RELIANCE here makes sense",
-    "RELIANCE: Buy rating", "RELIANCE मध्ये गुंतवणूक करा", "RELIANCE में निवेश करें।", "रिलायन्सला खरेदी करा",
+    "RELIANCE: Buy rating",
     "RELIANCE will hit 3000 for sure as it did last week", "Hold RELIANCE", "Add RELIANCE", "Grab RELIANCE", "Dump TCS", "Buy it",
     # review round 4: an earlier verb-shaped word must not hide the real call
     "Long story short, buy RELIANCE.", "Short answer: buy RELIANCE.", "Hold on, sell TCS now.", "Add to that, sell TCS now.",
@@ -145,6 +139,45 @@ SHOULD_BLOCK = [
     "INFY: close below the 20-DMA and walk away", "INFY: close below the 20-DMA before results", "TCS: close above the 20-DMA for upside",
     "TCS: close above 4000, a buying opportunity", "TCS: hold above 4000 kept the trend, stay long", "TCS: close 4050 is a good sign to add",
     "INFY: close 1500 vs holding", "INFY: close at 1500 for a 2% gain",
+    # follow-ups of round 12: verdict asides, a trade verb on a level, "pick it up"
+    "INFY: close at 1500 considering the risk", "INFY: close at 1500 in view of results", "INFY: close at 1500 on weakness",
+    "INFY: close at 1500 into the rally", "INFY: close at 1500 on a bounce", "INFY: close at 1500 on any bounce",
+    "INFY: close at 1500 with a trailing stop", "INFY: close at 1500 with discipline",
+    "INFY: close at 1500, no questions asked", "INFY: close at 1500, no hesitation", "INFY: close at 1500, full stop",
+    "INFY: close at 1500 at the earliest", "INFY: close at 1500 on priority", "INFY: close at 1500 first thing",
+    "INFY: close at 1500 when it opens", "INFY: close at 1500 once it trades there", "INFY: close at 1500 whenever possible",
+    "TCS: hold above 4000 through expiry", "TCS: hold above 4000 into results", "TCS: hold above 4000 for the long term",
+    "TCS: hold above 4000 for the medium term", "TCS: hold above 4000 with patience", "TCS: hold above 4000 is my advice",
+    "TCS: hold above 4000 is my view", "TCS: hold above 4000 is what I'd do", "INFY: close at 1500 is what I'd do",
+    "INFY: close at 1500 is the prudent thing", "INFY: close at 1500 - that's the trade",
+    "INFY: close at 1500; that is the plan", "INFY: close at 1500. That is the plan.",
+    "INFY: close at 1500 and stop worrying", "INFY: close at 1500 and forget it", "INFY: close at 1500 and wait for 1450",
+    "INFY: close at 1500 and look for 1450", "INFY: close at 1500, wait for 1450", "INFY: close at 1500, re-buy near 1450",
+    "INFY: close at 1500, rebuy near 1450", "INFY: close at 1500, pick it up near 1450",
+    "INFY: close at 1500, scoop it up at 1450", "INFY: close at 1500, load up at 1450",
+    "INFY: close at 1500, short below 1490", "TCS: close at 4050, go long above 4060",
+    "INFY: close at 1500 on strength, for the record", "INFY: close at 1500 with a profit",
+    "INFY: close at 1500 at a profit", "INFY: close at 1500 at a loss if needed",
+    "INFY: close at 1500; prudent to exit",
+    "INFY: close at 1500; it is the wise thing", "INFY: close at 1500; safest option", "INFY: close at 1500; a must",
+    "INFY: close at 1500; prudent", "INFY: close at 1500; recommended.", "INFY: close at 1500, period.",
+    "INFY: close at 1500. It is the right call.", "INFY: close at 1500. That's my advice.", "TCS: weak, sell below 4000",
+    "TCS looks weak; short under 4000.", "INFY: close at 1500, just do it", "INFY: close at 1500, or else",
+    "INFY: close at 1500, no doubt", "INFY: close at 1500 without hesitation",
+    "INFY: close at 1500, so the risk is capped", "INFY: close at 1500 to end the week flat",
+    "INFY: close 1500 and cut losses", "INFY: close at 1500, right call", "INFY: close 1500 to gain 2%; then re-buy",
+    "INFY: close at 1500, better than holding",
+    # review of #254 (F1): a comparison after an order, a verdict in the next sentence, a "so the risk ..." rationale
+    "INFY: close at 1500, better than a bigger loss.", "INFY: close at 1500, better than the alternative.",
+    "INFY: close at 1500, better than a stop-out.", "INFY: close at 1500, safer than the alternative.",
+    "INFY: close at 1500, smarter than the alternative.", "TCS: close 4050, safer than peers.", "TCS: close 4050, wiser than the index.",
+    "TCS: close 4050 before results. That is the plan.", "TCS: close 4050 to end the week up 2%. That is the call.",
+    "TCS: close 4050. Full stop.", "TCS: close 4050, so the risk is capped.", "TCS: close 4050, so the loss is limited.",
+    "TCS: close 4050, so the profit is locked.", "B.U.Y INFY",
+    # #254 merge check: a short order sentence in a paragraph that names an instrument
+    "TCS: close 4050 before results. Exit.", "TCS: close 4050 before results. Sell.", "TCS: close 4050 before results. Do it.",
+    "TCS: close 4050 before results. Get out.", "TCS: close 4050 before results. Act on it.", "TCS looks weak. Sell.",
+    "TCS hit 4050 before results. Exit.", "TCS looks weak. Book it.", "TCS looks weak.\nBuy.",
 ]
 
 SHOULD_PASS = [
@@ -157,16 +190,11 @@ SHOULD_PASS = [
     "Entry and exit rules are listed below.", "Your PAPER position in RELIANCE closed at the stop.",
     "RELIANCE closed at 2480, below its 20-day average.", "Exits are never blocked.", "Add RELIANCE to your watchlist.",
     "Enter NIFTY in the symbol box to load its chart.",
-    # Marathi
-    "हे लक्षात घ्या: कल वरचा आहे.", "बाजार 24850 च्या वर बंद झाला.", "RELIANCE चा भाव 2480 वर बंद झाला.", "विक्रीचा दबाव कमी झाला.",
-    "तुमच्या template मधील स्टॉप लॉस नियम 2% आहे.",
-    # Hindi
-    "कीमत 2450 के ऊपर बंद हुई।", "खरीदारों ने बिकवाली को सोख लिया।", "RELIANCE का भाव 20 दिन के औसत से नीचे है।", "बाज़ार में बिकवाली का दबाव रहा।",
     # review of #230, MED6: logs, backtests, percentages, status, rules, help, negations, past certainty
     "Backtest trade 3: entry 2480, stop 2430, target 2580", "Trade log: RELIANCE long, entry 2480, SL 2430",
     "ORB: stop 1%, target 2%", "Proposal: buy RELIANCE, 10 shares, awaiting your approval", "Status: BUY RELIANCE filled",
     "Side: SELL TCS", "Rule: Buy NIFTY when RSI < 30", "How to: Buy RELIANCE in paper mode", "NIFTY: buy signals were rare",
-    "NIFTY चा आढावा घ्या", "RELIANCE खरेदी करा, असे आम्ही सांगत नाही.", "We never say: Sell RELIANCE",
+    "We never say: Sell RELIANCE",
     "NIFTY hit 25000 for sure on Friday.", "Buy when the close is above the 20-day high.", "The long-term trend is up.",
     "Short-term momentum faded near 2450.", "Long upper wicks near 2500 show supply.", "Cover image of the report.",
     "Exit all is under the Positions page.", "The trade was closed at the target 2600 after the stop 2450 moved up; entry was 2500.",
@@ -174,7 +202,6 @@ SHOULD_PASS = [
     "PAPER order placed: BUY 10 RELIANCE at 2500.", "Drafted: Sell TCS 5 qty (PAPER) - needs your approval.",
     "Your order: Buy RELIANCE x 10 (PAPER).", "Short TCS positions were squeezed.", "Sell HDFCBANK was the most common signal.",
     "Exit INFY positions are shown in the journal.", "NIFTY rose to 25000 surely because the banks rallied.",
-    "RELIANCE खरेदी करा असे संकेत आम्ही देत नाही.",
     "Buy-side breakout on RELIANCE: entry 2500, stop 2450, target 2600 per the template.",
     # third review of #230
     "Short interest in TCS rose.", "Rule: Buy NIFTY when the close crosses above the 20-day high.",
@@ -234,6 +261,42 @@ SHOULD_PASS = [
     "TCS: close 4050 was the week's best.", "TCS: close 4050 is bullish.", "TCS: close 4050 was a strong finish.",
     "TCS: close 4050; book value 1200.", "NIFTY: close 25100, smart money flows 2 cr.", "TCS: close 4050; then-CEO comments drew volume.",
     "TCS: close 4050 vs 4000, worth 2,000 cr in turnover.",
+    # follow-ups of round 12: advice words only in the field's own ;-clause, recap infinitives, events after before / until,
+    # sector and quarter words are never the level's instrument
+    "TCS: close 4050, better than peers.", "INFY: close 1500, right at the 50-DMA.",
+    "TCS: close 4050, just above the 50-DMA.", "INFY: close 1500 after good results.",
+    "NIFTY: close 25100 as banks did well; IT was the best performer.",
+    "TCS: close 4050; Q2 results were better than expected.", "NIFTY: close 25100, up 0.4% until the last-hour sell-off.",
+    "TCS: close 4050 ahead of results on Thursday.", "TCS: close 4050, up 2% before results.",
+    "INFY: close 1500 and cut its weekly loss to 1%.", "TCS: close 4050 to gain 1.2% on the day.",
+    "TCS: close 4050 to cap a 3-session rally.", "TCS: close 4050 to stop a 3-day slide.",
+    "TCS: close 4050 to end the week up 2%.", "TCS: close 4050, to finish 2% higher for the week.",
+    "TCS: close 4050, or 1.2% above Monday.", "TCS: close 4050, so the weekly gain is 2%.",
+    "TCS: close 4050; the company plans a buyback.", "TCS: close 4050; FII entry was 2,000 cr.",
+     "TCS: close 4050, the right shoulder of the pattern.",
+    "TCS: close 4050, a clear breakout.", "TCS: close 4050 on clear volume.",
+    "NIFTY: close 25100; FIIs net sold 2,000 cr and DIIs bought 1,500 cr.", "NIFTY: close 25100 while banks lagged.",
+    "NIFTY: close 25100 despite weak global cues.", "TCS: close 4050 after the company announced a buyback.",
+    "TCS: close 4050 after results beat estimates.",
+    "TCS: close 4050, a 3-week high, on 1.4x volume; INFY: close 1500, flat.",
+    "TCS: close 4050 (+1.2%), RSI 62, above the 20-DMA; volume 1.1x the 20-day average.",
+    "NIFTY: close 25100, up 0.4%; BANKNIFTY: close 52000, down 0.2%; IT led, metals lagged.",
+    "TCS: close 4050, the strongest close in 5 sessions.",
+    "TCS: close 4050, its best close since July.", "TCS: close 4050, which is 2% above the 20-DMA.",
+    "TCS: close 4050, which was a 3-week high.", "TCS: close 4050 and held above the 50-DMA all week.",
+    "TCS: close 4050, marking a 3-week high.", "TCS: close 4050, extending gains to a third session.",
+    "TCS: close 4050, snapping a 3-day losing streak.", "TCS: close 4050, helped by strong deal wins.",
+    "TCS: close 4050, led by IT stocks.", "TCS: close 4050, in a good session for IT.",
+    "NIFTY: close 25100. If banks hold, the trend stays up.", 
+    "TCS: close 4050, just shy of the high.", "TCS: close 4050, or about 1% higher.",
+    "TCS: close 4050 to end the session higher.", "TCS: close 4050 to snap a 4-day losing streak.",
+    "TCS: close 4050 to extend gains.",
+    # review of #254: comparisons with the market after a bare value, a descriptive next sentence, a plain options greek
+    "TCS: close 4050, better than the index.", "NIFTY: close 25100, stronger than the sector.",
+    "TCS: close 4050. That is the highest close in 5 sessions.", "TCS: close 4050 before results. INFY: close 1500.",
+    "NIFTY 25000 CE: Δ 0.45, θ -12, IV 14%.", "Volatility (σ) rose to 1.2%.",
+    "TCS: close 4050. It was the best session in a month.", "TCS: close 4050. No doubt the bulls are in control.",
+    "It was the best session in a month.", "No doubt the bulls are in control.", "TCS rose 2%. Buyers held 4000.",
 ]
 
 
@@ -243,7 +306,7 @@ def test_calls_aimed_at_an_instrument_are_blocked(text):
         s = output_filter.screen(text, lang)
         assert not s.ok, (text, lang)
         ok, shown, why = output_filter.check(text, lang)
-        assert not ok and shown is None and "advice/guarantee" in why
+        assert not ok and shown is None and ("advice/guarantee" in why or why == output_filter.NOT_ENGLISH_REASON)
 
 
 @pytest.mark.parametrize("text", SHOULD_PASS)
@@ -254,9 +317,10 @@ def test_descriptive_analysis_passes(text):
 
 
 def test_short_build_up_after_a_price_field_is_not_blocked():
-    for text in ("NIFTY: close 25100, short build-up in futures.", "NIFTY: close 25100, short covering seen."):
+    for text in ("NIFTY: close 25100, short build-up in futures.", "NIFTY: close 25100, short covering seen.",
+                 "TCS: close 4050; brokerages kept a buy rating."):
         s = output_filter.screen(text, "en")
-        assert s.ok and not s.blocked, text                  # review round 9: framed (the word "short"), never blocked
+        assert s.ok and not s.blocked, text                  # review round 9: framed (the word "short" / "buy"), never blocked
 
 
 def test_price_field_floods_stay_linear():
@@ -265,10 +329,59 @@ def test_price_field_floods_stay_linear():
     path = "app/ai/data/advice_terms.json"
     for text in ("TCS: close 1, " * 3000, "Close above 2450 in INFY. " * 1500, "INFY: close at 1500 - x " * 1700,
                  "TCS: close 1 after " * 2000, "- a " * 9500, "as per " * 5500, "is the a a " * 3500, "1.1.1." * 6400,
-                 "TCS: close 1; analysts target 1; " * 1200, "Close above 1 in INFY was the a " * 1200):
+                 "TCS: close 1; analysts target 1; " * 1200, "Close above 1 in INFY was the a " * 1200,
+                 "INFY: 1 la close then " * 1800, "INFY: weak, short below 1 " * 1500, "TCS: close 1; a " * 2400):
         started = time.monotonic()
         detect(text[:38000], path)
         assert time.monotonic() - started < 5, text[:30]            # review round 10: once per sentence, never per field
+
+
+DEVANAGARI = ["RELIANCE खरेदी करा", "TCS बेचें।", "बाजार 24850 च्या वर बंद झाला.", "RELIANCE का भाव 20 दिन के औसत से नीचे है।",
+              "NIFTY closed at 25100 (निफ्टी).", "TCS: close 4050 रहा, 1.2% ऊपर।", "Price closed above SMA 20. ठीक आहे"]
+
+
+@pytest.mark.parametrize("text", DEVANAGARI)
+def test_ai_text_with_devanagari_is_withheld_with_a_neutral_reason(text):
+    from app.ai.call_detect import SCRIPT_LABEL
+    for lang in ("en", "mr", "hi"):                                   # English only, whatever the request language
+        ok, shown, why = output_filter.check(text, lang)
+        assert not ok and shown is None and why == output_filter.NOT_ENGLISH_REASON, (text, lang)
+    assert SCRIPT_LABEL in output_filter.call_terms(text)
+    assert "English only" in output_filter.retry_hint(output_filter.findings(text))
+
+
+NOT_PLAIN_ENGLISH = [
+    "RELIANCE ખરીદો", "TCS কিনুন", "INFY வாங்கு",                       # Gujarati, Bengali, Tamil
+    "КУПИТЬ INFY 1500", "INFY خریدیں 1500", "ΑΓΟΡΑΣΤΕ INFY 1500", "买入 INFY 1500", "INFY 매수 1500",   # review of #254, F2
+    "INFY \U0001160e\U00011630\U00011628 1500", "INFY \u1c60\u1c64\u1c71 1500",          # Modi, Ol Chiki
+    "B\u3164UY INFY", "B\u0301UY INFY", "S\u0336E\u0336L\u0336L\u0336 INFY", "B\u034fUY INFY", "BUY\U000e0101 INFY",
+    "\u0299\u1d1c\u028f INFY", "B\u00f9y RELIANCE", "B\u00adUY INFY",                    # small caps, an accent, soft hyphen
+    "B\u20ddUY INFY", "B\u0903UY INFY", "BU\u093eY INFY",                                   # enclosing and spacing marks
+    "\U0001f1e7\U0001f1fa\U0001f1fe INFY", "\U0001f171\U0001f184\U0001f188 INFY", "\u249d\u24b0\u24b4", "\u24b7UY INFY",   # letters as symbols
+]
+
+
+@pytest.mark.parametrize("text", NOT_PLAIN_ENGLISH)
+def test_text_that_is_not_plain_english_is_withheld(text):
+    ok, shown, why = output_filter.check(text)
+    assert not ok and shown is None and why == output_filter.NOT_ENGLISH_REASON, text
+
+
+def test_plain_english_with_emoji_and_options_greeks_is_read():
+    from app.ai.call_detect import not_plain_english
+    for text in ("\u26a0\ufe0f NIFTY closed at 25100.", "Price closed above SMA 20 \U0001f680.", "NIFTY 25000 CE: \u0394 0.45.",
+                 "Team \U0001f468\u200d\U0001f4bb notes: \u20b94,050 \u2013 RSI 62 \u2014 \u201cflat\u201d."):
+        assert not not_plain_english(text), text
+    assert not_plain_english("\u0394\u03b5\u03bb\u03c4\u03b1 rose")                      # greek letters next to letters
+
+
+def test_the_strategy_interview_never_routes_its_stored_translations_through_the_filter():
+    import inspect
+
+    from app.ai import interview
+    src = inspect.getsource(interview)
+    assert "output_filter" not in src and "call_detect" not in src   # fixed, stored strings - not AI text
+    assert any(re.search("[\u0900-\u097f]", str(q.as_dict())) for q in interview.QUESTIONS)
 
 
 def test_a_price_field_is_read_at_its_own_offset():

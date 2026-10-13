@@ -270,6 +270,14 @@ FEATURE_FLAGS: Dict[str, str] = {
     # their instrument, as of a time (replay never shows a trade or an exit before it happened). OFF: GET
     # /api/charts/layers/trades answers 503 and the chart shows no trades. Read-only - places no orders.
     "chart_trades_layer": "Trades chart layer: your own PAPER trades on the chart, as of any bar (read-only, places no orders)",
+    # N4 CH4b: option / future contract charts and synthetic spreads - daily bars and OI from the shared lake's F&O
+    # bhavcopy rows, contract search from the instrument master, chain -> chart links, a COMPUTED daily IV (labelled).
+    # OFF: /api/charts/contracts/* answer 503 and the option chain shows no chart links. Reference only - places no orders.
+    "chart_contracts": "Contract charts: daily option / future and spread charts with OI from the shared history (reference only, places no orders)",
+    # N4 CH4c: on top of chart_contracts - an underlying's futures basis, annualised carry, calendar spread and rollover %
+    # per trade date from the shared daily history (shared-licensed sources only). OFF: the route answers 503 and the
+    # contract chart shows no link to it. Reference only, places no orders.
+    "chart_futures_basis": "Futures basis charts: basis, cost of carry, calendar spread and rollover from the shared history (reference only, places no orders)",
     # U9 TX2 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md §4): the screen library's confluence view (symbols ranked by
     # how many methods flag them), generated short mirrors of the long pre-built screens and watch-then-trigger lists,
     # on top of `screener_v2` and `screener_gallery`. OFF: /api/screener/library/* answer 503 and the Screener page shows
@@ -279,7 +287,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
     # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information
     # only: nothing sizes, places or closes an order.
-    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, and a what-if for your own open positions (price, IV, days forward; information only)",
+    # N2-4: also the exposure view (own positions by underlying and sector, beta, correlated pairs, from the daily lake)
+    # and the expected-move cone on the chart.
+    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, what-if for your own open positions, exposure and correlation view, expected-move cone on the chart (information only)",
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
@@ -296,7 +306,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "screener_rankings"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "chart_contracts", "chart_futures_basis", "screener_rankings"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

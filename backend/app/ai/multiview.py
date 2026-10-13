@@ -240,28 +240,58 @@ def _facts_json(view: View) -> str:
 # जाएगा"), when it tells a group of traders what to do ("shorts should cover"), or when it uses an imperative trade verb
 # in Marathi / Hindi. Past-tense descriptions ("rose 1.2%", "fell to 22000") stay allowed: they describe the data.
 _DEVA = "\\w\u0900-\u097F"
+# A - trade actions next to a number: always a call ("entering long above 22800", "लक्ष्य 23000", "Buy 23000 CE").
 _ACTION_WORDS = (
-    # English: entries, exits and levels
     "enter", "enters", "entering", "entry", "entries", "long", "longs", "short", "shorts", "go long", "go short", "target", "targets",
     "stop", "stops", "stop loss", "stop-loss", "stoploss", "sl", "exit", "exits", "exiting", "book profit", "book profits",
     "booking profits", "profit booking", "accumulate", "accumulating", "buy", "buying", "sell", "selling", "cover", "covering",
-    "add", "adding", "trim", "average",
-    # English: forecasts
-    "rally", "rallies", "rallying", "rise", "rises", "rising", "fall", "falls", "falling", "upside", "downside", "will reach",
-    "reach", "reaches", "will hit", "will touch", "will test", "will go", "will move", "will climb", "will drop", "breakout above",
-    "breakdown below", "head toward", "heads toward", "headed toward", "towards", "toward",
-    # Marathi
-    "लक्ष्य", "टार्गेट", "स्टॉप", "स्टॉपलॉस", "स्टॉप लॉस", "एन्ट्री", "प्रवेश", "खरेदी", "विक्री", "विका", "घ्या", "जाईल", "वाढेल",
-    "घसरेल", "पोहोचेल",
-    # Hindi
-    "टारगेट", "खरीदो", "खरीदें", "खरीद", "बेचो", "बेचें", "बेच", "जाएगा", "जाएगी", "जायेगा", "बढ़ेगा", "बढ़ेगी", "गिरेगा", "गिरेगी",
-    "पहुंचेगा", "पहुँचेगा", "स्टॉपलॉस",
+    "add", "adding", "trim", "average down", "average out",
+    "लक्ष्य", "टार्गेट", "स्टॉप", "स्टॉपलॉस", "स्टॉप लॉस", "एन्ट्री", "प्रवेश", "खरेदी", "विक्री", "विका", "घ्या",
+    "टारगेट", "खरीदो", "खरीदें", "खरीद", "बेचो", "बेचें", "बेच",
 )
-_ACTION = "(?:" + "|".join(re.escape(w) for w in sorted(set(_ACTION_WORDS), key=len, reverse=True)) + ")"
-_NUM = r"(?<![\w.])[-+]?₹?\d[\d,]*(?:\.\d+)?"
+# B - forecasts, possibilities and value judgements next to a number or a percentage (second review of H-C4): blocked unless
+# the clause only describes the past ("the close rose 3.6%", "fell to 22000").
+_FORECAST_WORDS = (
+    "rally", "rallies", "rallying", "rise", "rises", "rising", "fall", "falls", "falling", "climb", "climbs", "upside", "downside",
+    "reach", "reaches", "will", "head toward", "heads toward", "headed toward", "towards", "toward", "breakout above",
+    "breakdown below", "expect", "expected", "expecting", "likely", "plausible", "possible", "potential", "set to", "on the cards",
+    "could", "may", "might", "by expiry", "room to", "in play", "gives way", "can go", "could go", "scope", "trade at", "near-term",
+    "जाईल", "वाढेल", "घसरेल", "पोहोचेल", "जा सकता", "जा सकती", "जाऊ शकतो", "जाऊ शकते", "पर्यंत जाईल",
+    "जाएगा", "जाएगी", "जायेगा", "बढ़ेगा", "बढ़ेगी", "बढेगा", "गिरेगा", "गिरेगी", "पहुंचेगा", "पहुँचेगा", "तेजी आ",
+    "jayega", "jaayega", "jaega", "ja sakta", "ja sakti", "tezi aa", "aa sakti", "aa sakta",
+)
+# C - anywhere: value judgements, spelled-out amounts, Hinglish calls
+_ANYWHERE = (
+    "cheap", "cheaper", "expensive", "attractive", "undervalued", "overvalued", "bargain", "opportunity", "risk reward",
+    "risk-reward", "risk/reward", "reward to risk", "reward-to-risk", "good entry", "good level", "good zone", "good risk",
+    "thousand", "hundred", "lakh", "lakhs", "crore", "crores", "हजार", "लाख", "कोटी", "करोड़", "करोड",
+    "le lo", "lelo", "bech do", "kharid lo", "khareed lo", "lena sahi", "sahi rahega", "abhi le",
+)
+_PAST = re.compile(r"\b(?:rose|fell|closed|ended|moved|was|were|had|has been|have been|gained|lost|dropped|climbed|rallied|traded|"
+                   r"touched|slipped|surged|jumped|declined|advanced)\b", re.I)
+_FUTURE = re.compile(r"\b(?:will|could|may|might|likely|expect\w*|set to|can|going to|should|would|next)\b|"
+                     r"jayega|jaayega|jaega|sakta|sakti|जाएगा|जाईल|सकता|सकती|शकतो|शकते", re.I)
+
+
+def _alt_words(words: Tuple[str, ...]) -> str:
+    return "(?:" + "|".join(re.escape(w) for w in sorted(set(words), key=len, reverse=True)) + ")"
+
+
+_NUM = r"(?<![\w.,])[-+]?₹?(?<![\d,.])\d[\d,]*(?:\.\d+)?\s*%?"
 _GAP = r"[^!?\n;।]{0,40}?"                    # same clause: no sentence end in between (a decimal point is allowed)
-_ACTION_NEAR_NUMBER = re.compile(
-    rf"(?<![{_DEVA}-])(?P<a>{_ACTION})(?![{_DEVA}-]){_GAP}{_NUM}|{_NUM}{_GAP}(?<![{_DEVA}-])(?P<b>{_ACTION})(?![{_DEVA}-])", re.IGNORECASE)
+
+
+def _near(words: str) -> "re.Pattern[str]":
+    return re.compile(rf"(?<![{_DEVA}-])(?P<a>{words})(?![{_DEVA}-]){_GAP}{_NUM}|{_NUM}{_GAP}(?<![{_DEVA}-])(?P<b>{words})(?![{_DEVA}-])",
+                      re.IGNORECASE)
+
+
+_ACTION_NEAR_NUMBER = _near(_alt_words(_ACTION_WORDS))
+_FORECAST_NEAR_NUMBER = _near(_alt_words(_FORECAST_WORDS))
+_ANYWHERE_RE = re.compile(rf"(?<![{_DEVA}-]){_alt_words(_ANYWHERE)}(?![{_DEVA}-])", re.IGNORECASE)
+_ADJACENT = re.compile(rf"(?:another|further|additional|extra)\s+{_NUM}|{_NUM}\s*(?:more|further|higher|lower|extra)\b|"
+                       rf"\b(?:higher|lower|up|down)\s+by\s+{_NUM}|{_NUM}\s+next\b|\bnext\s+(?:level|target|stop|leg|move|zone)\b",
+                       re.IGNORECASE)
 _TRADE_VERB = ("buy", "sell", "cover", "exit", "enter", "add", "book", "hold", "accumulate", "short", "go long", "go short", "trim",
                "average", "initiate", "take profits", "take profit", "square off", "stay long", "stay short")
 _VERB = "(?:" + "|".join(re.escape(w) for w in sorted(_TRADE_VERB, key=len, reverse=True)) + r")\b"
@@ -273,12 +303,25 @@ _IMPERATIVE_DEVA = re.compile(rf"(?<![{_DEVA}])(?:खरीदो|खरीद�
 
 
 def advice_problems(text: str) -> List[str]:
-    """Why `text` reads as a trade call or a forecast (empty = it does not). Blocked by the multi-view checks."""
-    from app.ai.call_detect import normalise
+    """Why `text` reads as a trade call, a forecast or a value judgement (empty = it does not). Blocked by the multi-view
+    checks: a trade action next to a number; a forecast / possibility word next to a number or a percentage unless its
+    clause only describes the past; "another 3%", "higher by 3%", "23000 next"; value words ("cheap", "risk reward"),
+    spelled-out amounts ("twenty-three thousand") and Hinglish calls ("le lo") anywhere; telling traders what to do; a
+    Marathi / Hindi imperative."""
+    from app.ai.call_detect import _clause, normalise
     text = normalise(text or "")                       # markdown, zero-width characters and look-alikes undone first
     found: List[str] = []
     for m in _ACTION_NEAR_NUMBER.finditer(text):
         found.append(f"'{(m.group('a') or m.group('b')).lower()}' next to a number")
+    for m in _FORECAST_NEAR_NUMBER.finditer(text):
+        clause = _clause(text, m.start(), m.end())
+        if _PAST.search(clause) and not _FUTURE.search(clause):
+            continue                                    # "the close rose 3.6% over 250 bars": the data, not a forecast
+        found.append(f"'{(m.group('a') or m.group('b')).lower()}' next to a number (a forecast)")
+    for m in _ADJACENT.finditer(text):
+        found.append(f"'{m.group(0).strip().lower()[:20]}' (a move ahead)")
+    for m in _ANYWHERE_RE.finditer(text):
+        found.append(f"'{m.group(0).lower()}' (a judgement or a spelled-out amount)")
     if _MODAL_ADVICE.search(text):
         found.append("tells traders what to do")
     if _IMPERATIVE_DEVA.search(text):

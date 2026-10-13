@@ -435,6 +435,16 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
     time is spent. Every model call runs inside `asyncio.wait_for(time left)`. The plan's AI budget is checked before
     each call. A client that disconnects stops the analysis (`Cancelled`, run outcome `cancelled`, HTTP 499). The
     answer carries `limits_note` when the analysis stopped early.
-  - **Metering.** Model calls are metered under the feature `multiview`.
+  - **Metering.** Model calls are metered under the feature `multiview`. A call cut by the time budget or a gone
+    client still writes its `llm_calls` row (status `cancelled`).
+  - **Second review.** Three more kinds of text are blocked:
+    - forecasts, possibilities and value words next to a number or a percentage ("likely", "could", "expect", "set to",
+      "on the cards", "room to", "in play", "by expiry", "cheap", "attractive"), unless their clause only describes the
+      past ("rose 3.6%");
+    - relative moves ("another 3%", "higher by 3%", "23000 next");
+    - anywhere in the text: value judgements ("risk reward"), spelled-out amounts ("twenty-three thousand") and Hinglish
+      calls ("le lo", "jaayega").
+
+    Descriptions of OI, PCR, max pain and past moves still pass.
 - **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
   `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

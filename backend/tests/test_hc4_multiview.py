@@ -227,11 +227,21 @@ CALLS_AND_FORECASTS = [
     "**Upside** toward 23000 looks open.", "A move to 23000 will reach the top of the range.", "Downside is limited to 22000.",
     "Longs can hold with a stop near 22000.", "Traders should accumulate.", "22000 पर्यंत घसरेल", "भाव 23000 पर्यंत जाईल",
     "RELIANCE बेचो", "Entry 22800\nSL 22000", "Target 23000.",
+    # second review: spelled-out amounts, ranges, relative moves, forecasts, value calls, Hinglish, "can go to"
+    "twenty-three thousand looks reachable", "22800-23000 zone looks likely", "Another 3.6% from here is plausible",
+    "+3.6% move looks likely", "set to climb 3.6% more", "higher by 3.6%", "Gains of 3.6% are on the cards",
+    "Expect the index near 23000 by expiry", "It could well trade at 23000", "Room to 23000 remains open",
+    "If 22800 gives way, 23000 is in play", "Bias: positive; level 23000 next", "Calls at 23000 look cheap", "23000 CE looks attractive",
+    "This is a good risk reward zone", "Nifty 23000 jaayega, abhi le lo", "23000 tak tezi aa sakti hai", "22000 ke paas lena sahi rahega",
+    "भाव 23000 पर्यंत जाऊ शकतो", "23000 तक जा सकता है", "RELIANCE will rise to 23000 as it did last week",
 ]
 DESCRIPTIONS = [
     "The daily regime reads trending up; the close rose 3.6% over 250 daily bars.",
     "The close is 22800, inside the window's range of 22000 - 23000.",
     "The close fell to 22000 early in the window and rose to 22800 since.",
+    "The average true range reads 1.8% of the price.",
+    "Shares have been bought on the way toward 22800 over 250 bars.",
+    "The window's high was 23000 and its low was 22000.",
 ]
 
 
@@ -399,3 +409,35 @@ def test_model_calls_are_metered_as_multiview(fake_tools, monkeypatch):
         async with _session_factory() as session:
             return set(await session.scalars(select(LlmCallRecord.feature).where(LlmCallRecord.tenant_id == me["tenant_id"])))
     assert _run(features()) == {mv.FEATURE}
+
+
+def test_option_and_macro_descriptions_still_pass():
+    v = _views()
+    for view, text in (("options", "PCR 1.3 with max pain 2480; the largest put open interest sits at 2400."),
+                       ("macro", "India VIX 21.5 and SPX -0.8%."),
+                       ("technical", "ADX 28.4 with ATR 1.8% of price, 1.6x its median.")):
+        shown, why = mv.check_text(text, v[view].numbers(), "\n".join(v[view].lines), "en")
+        assert shown == text and why is None, (text, why)
+
+
+def test_a_cancelled_model_call_is_still_logged():
+    from app.ai import metering
+    from app.db.models import LlmCallRecord
+
+    class _Hang:
+        name, model = "anthropic", "test-model"
+
+        async def complete_full(self, system, user, *, max_tokens=2000):
+            await asyncio.sleep(10)
+
+    _, me = _owner("hc4-cancel-log@example.com")
+
+    async def go():
+        async with _session_factory() as session:
+            provider = metering.MeteredProvider(_Hang(), session, me["tenant_id"], feature=mv.FEATURE, user_id=me["id"])
+            with pytest.raises(asyncio.TimeoutError):
+                await asyncio.wait_for(provider.complete("s", "u"), timeout=0.2)
+            await session.commit()
+        async with _session_factory() as session:
+            return list(await session.scalars(select(LlmCallRecord.status).where(LlmCallRecord.tenant_id == me["tenant_id"])))
+    assert _run(go()) == ["cancelled"]

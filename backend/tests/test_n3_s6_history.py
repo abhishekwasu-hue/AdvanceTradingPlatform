@@ -302,9 +302,22 @@ def test_refusals_holdout_timeframe_and_data(monkeypatch):
 
 # --- review of S6a ---------------------------------------------------------------------------------------------------------------
 
+SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false on the fixture (review of S6a re-check)
+    "Greatest": "Greatest(open, close) > SMA(close, 5)",
+    "Least": "Least(open, close, low) < SMA(close, 5)",
+    "NearSupport": "NearSupport(0.05, 3)",
+    "NearResistance": "NearResistance(0.05, 3)",
+    "StructureEvent": 'StructureEvent(1) == "BOS_BEARISH"',
+    "Pattern": 'Pattern("inside_bar")',
+    "RangeBreakout": 'RangeBreakout("down", 5, 0, 0)',
+    "SwingBreakType": 'SwingBreakType("up", 0, 0) != ""',
+}
+SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt"}   # rare events: every date
+
+
 def _sweep_cases():
     """One daily screen per registry function the history path runs (no data needs, not cross-sectional, daily): its own
-    Z10-a case made a condition."""
+    Z10-a case made a condition (or a tuned one, SWEEP_OVERRIDES)."""
     from app.quality import causal_cases as C
     from app.screener.registry import BOOL, CAT, FUNCTIONS
     out = []
@@ -312,6 +325,9 @@ def _sweep_cases():
         if spec.needs or spec.cross_sectional or (spec.timeframes and "1d" not in spec.timeframes):
             continue
         texts = [t for t in (C.SCREENQL_SERIES.get(name, []) + C.SCREENQL_LAST_BAR.get(name, [])) if "@" not in t]
+        if name in SWEEP_OVERRIDES:
+            out.append(pytest.param(name, SWEEP_OVERRIDES[name], id=name))
+            continue
         if not texts:
             continue
         e = texts[0]
@@ -330,15 +346,26 @@ def _sweep_cases():
     return out
 
 
+def _sweep_frames():
+    """Session-shaped daily bars with awkward bars (gaps, wide and flat bars) - events do happen on them."""
+    from app.quality.lookahead import synthetic_bars
+    frames = {f"S{i}": synthetic_bars(300, tf="1d", seed=30 + i) for i in range(4)}
+    days = sorted({d for f in frames.values() for d in H.session_dates(f.index)})
+    return frames, days
+
+
 @pytest.mark.parametrize("name, cond", _sweep_cases())
 def test_every_registry_function_reads_the_same_fast_as_on_cut_bars(name, cond):
     """HIGH: the fast path (one series read at each date) equals the as-of run on bars cut at each date, for every
-    function the history path takes - including the last-bar-only ones, which now run date by date."""
-    frames, days = _universe(n=3, bars=260, seed=17)
+    function the history path takes - including the last-bar-only ones, which now run date by date. Each case has both
+    matches and non-matches on the fixture, so none passes vacuously."""
+    frames, days = _sweep_frames()
     ast, validated = compile_screen(cond, base_tf="1d")
     assert validated.ok, (cond, validated.problems)
-    dates = days[200::6]
+    dates = days[200:] if name in SWEEP_DENSE else days[240::4]
     sig = H.signals(ast, validated, frames, dates)
+    cells = sig.to_numpy()
+    assert cells.any() and not cells.all(), (name, cond, int(cells.sum()), cells.size)
     for d in dates:
         assert sorted(sig.columns[sig.loc[d].to_numpy()]) == H.passers_on(ast, validated, frames, d)["matched"], (name, d)
 
@@ -402,3 +429,20 @@ def test_a_forward_window_that_crosses_the_holdout_is_refused(monkeypatch):
     assert r.status_code == 422 and "horizon" in r.text and "holdout" in r.text
     short = client.post("/api/screener/history/fitness", headers=t["headers"], json={**body, "end": str(days[125]), "horizons": [1]})
     assert short.status_code != 422 or "holdout" not in short.text
+
+
+def test_scales_are_rounded_so_a_split_is_one_evaluation_per_side():
+    """Re-check (LOW): adjusted / raw ratios carry float noise; rounded, a 1:2 bonus gives one scale before the ex-date
+    and one after - two evaluations per symbol, not one per date (perf case: 50 symbols x 120 dates)."""
+    import time
+    noisy = {H.scale_of(100.0 * k / 3, 200.0 * k / 3, 2000.0 * k, 1000.0 * k) for k in range(1, 400)}
+    assert noisy == {(0.5, 0.5)}
+    assert H.scale_of(100.0, 100.0000000001, 10.0, 10.0) == (1.0, 1.0)
+    frames, days = _universe(n=50, bars=200, seed=3)
+    dates = days[80:200]
+    split = days[140]
+    scales = {s: {d: ((0.5, 2.0) if d < split else (1.0, 1.0)) for d in days} for s in frames}
+    ast, validated = _compiled("close > 50 AND close > SMA(close, 20)")
+    started = time.monotonic()
+    sig = H.signals(ast, validated, frames, dates, scales=scales)
+    assert time.monotonic() - started < 30.0 and sig.shape == (len(dates), 50)

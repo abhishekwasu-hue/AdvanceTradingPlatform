@@ -137,10 +137,7 @@ async def _bars_by_isin(session: AsyncSession, isin: str, start: date, end: date
                       for b in await isin_candles(session, isin, start, end, adjusted=False)])
         both = frame.join(raw, rsuffix="_raw", how="inner")
         for ts, row in both.iterrows():
-            p = row["close"] / row["close_raw"] if row["close_raw"] else 1.0
-            v = row["volume_raw"] / row["volume"] if row["volume"] else 1.0
-            p, v = (1.0 if abs(p - 1.0) < 1e-9 else float(p)), (1.0 if abs(v - 1.0) < 1e-9 else float(v))
-            scale_out[H.session_dates(pd.DatetimeIndex([ts]))[0]] = (p, v)
+            scale_out[H.session_dates(pd.DatetimeIndex([ts]))[0]] = H.scale_of(row["close"], row["close_raw"], row["volume"], row["volume_raw"])
     return frame
 
 

@@ -4,6 +4,8 @@ GET  /api/screener/evidence/runs/{run_id}            the run's evidence ids by s
 GET  /api/screener/evidence/{evidence_id}?debug=      the pack (`evidence/1`); failed conditions' drawings only with debug
 GET  /api/screener/evidence/{evidence_id}/image.png   the server-rendered chart (theme=light|dark), the Telegram image
 POST /api/screener/evidence/{evidence_id}/telegram    the image + caption to the caller's OWN linked private chat
+GET  /api/screener/evidence/{evidence_id}/replay?at=  EV3 (flag `evidence_context`): the pack recomputed as of an
+                                                       earlier bar of its window, from the shared lake's bars
 
 Behind `screener_v2` and `evidence_charts` (both off by default). With `evidence_charts` off every route answers 404 -
 the feature is hidden, not advertised. Reads follow `evidence_store.readable` (organisation; with BT1 `byob_data_tier`
@@ -12,7 +14,8 @@ on, the user whose broker session read the bars). Informational: nothing here pl
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Literal
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +30,10 @@ from app.screener import evidence_store
 router = APIRouter(prefix="/api/screener/evidence", tags=["screener"])
 telegram_rate_limit = user_rate_limit("evidence_telegram", limit=10, window_seconds=60)
 image_rate_limit = user_rate_limit("evidence_image", limit=30, window_seconds=60)      # rendering is CPU work
+replay_rate_limit = user_rate_limit("evidence_replay", limit=60, window_seconds=60)    # replay steps a bar at a time
+REPLAY_TFS = ("1m", "3m", "5m", "15m", "30m", "1h", "1d")       # the lake loader's timeframes (no weekly / monthly yet)
+REPLAY_NOTE = ("Replayed from the shared market-data history as of this bar - the stored pack's own bars came from the run "
+               "and can differ slightly.")
 NOT_FOUND = "Evidence not found"
 
 
@@ -82,6 +89,88 @@ async def send_evidence(evidence_id: int, user: User = Depends(get_current_user)
     if not result["sent"]:
         raise HTTPException(status_code=409, detail=result["reason"])
     return result
+
+
+def _refuse(detail: str) -> HTTPException:
+    return HTTPException(status_code=422, detail=detail)
+
+
+@router.get("/{evidence_id}/replay", dependencies=[Depends(replay_rate_limit)])
+async def replay_evidence(evidence_id: int, at: datetime, debug: bool = False, user: User = Depends(get_current_user),
+                          session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """U8 EV3: the pack as of an earlier bar of its window (`at` = that bar's close), recomputed by the same builder from
+    the shared lake's bars that ended by `at` (the CH3 loader: shared-licensed sources only, corrections point-in-time) -
+    so the user can step back and see when each condition became true. Nothing after `at` is read; nothing is stored.
+    Refused (422) where a replay could not be the screen's own computation: a cross-sectional screen (its ranks need
+    the whole universe), market-zone functions (the zone timeline is not attached here), a weekly / monthly screen, or
+    a time outside the stored pack's window. Option-chain conditions show in the strip only (a chain is a snapshot of
+    its own time)."""
+    row = await _row(session, user, evidence_id)
+    if not await evidence_store.context_enabled(session, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not Found")
+    if at.tzinfo is None:
+        raise _refuse("`at` must carry its time zone (for example 2026-10-09T15:30:00+05:30)")
+    at = at.astimezone(timezone.utc)
+    pack = evidence_store.load(row)
+    base_tf = str(pack["base_tf"])
+    if base_tf not in REPLAY_TFS:
+        raise _refuse(f"replay reads {', '.join(REPLAY_TFS)} bars from the shared history; a {base_tf} screen is not replayed yet")
+    times = [datetime.fromisoformat(t) for t in pack["bars"]["t"]]
+    from app.screener.runtime import bar_close
+    import pandas as pd
+    closes = list(bar_close(pd.DatetimeIndex(times), base_tf))
+    if not closes or at < closes[0].to_pydatetime() or at > datetime.fromisoformat(pack["as_of"]["bar_close"]):
+        raise _refuse("`at` must be a bar of the pack's window (its first bar's close up to the pack's own bar)")
+    from app.screener import compile_screen, nodes
+    from app.screener.evidence import ZONE_CALLS
+    ast, validated = compile_screen(pack["screen"]["text"], base_tf=base_tf, params=pack["screen"].get("params") or {})
+    if ast is None or not validated.ok:
+        raise _refuse("the stored screen no longer passes validation")
+    if validated.cross_sectional:
+        raise _refuse("a cross-sectional screen ranks a whole universe - its replay would not be the run's computation")
+    if any(isinstance(node, nodes.Call) and node.name in ZONE_CALLS for node in nodes.walk(ast)):
+        raise _refuse("market-zone conditions are not replayed yet (the zone timeline is not attached to a replay)")
+    from app.charts import price_action_layer as PAL
+    from app.price_action.zones.store import normalise_key
+    try:
+        key: Optional[str] = normalise_key(f"{pack.get('exchange') or 'NSE'}:{pack['symbol']}")
+    except ValueError:
+        key = None
+    if key is None or key == "*":
+        raise _refuse("this instrument has no shared history")
+    start = replay_start(validated, base_tf, len(times), at, key)
+    try:
+        frame, source = await PAL.load_frame(session, key, base_tf, start, at)
+    except PAL.WindowTooLarge as exc:
+        raise _refuse(str(exc)) from None
+    if not len(frame):
+        raise HTTPException(status_code=404, detail="no shared history for this instrument and bar")
+    replayed = await asyncio.to_thread(_replay_pack, frame, ast, validated, pack, base_tf, at, debug, source)
+    return {**evidence_store.view(replayed, debug=debug), "evidence_id": row.id, "can_send": False,
+            "replay": {"at": at.isoformat(), "source": source, "note": REPLAY_NOTE, "stored_as_of": pack["as_of"]}}
+
+
+def replay_start(validated: Any, base_tf: str, window: int, at: datetime, key: str) -> datetime:
+    """The first day a replay reads: the screen's own warm-up (its fetch lookback, as the run sizes it) plus the pack's
+    window, before `at` - the same history the run would have had, so the recomputed indicators are the run's."""
+    from app.price_action.zones import job
+    need = max([int(v) for v in validated.fetch_lookback.values()] or [1]) + int(window)
+    return at - timedelta(days=job.warmup_days(base_tf, need, job.exchange_session(key)) + 1)
+
+
+def _replay_pack(frame: Any, ast: Any, validated: Any, pack: Dict[str, Any], base_tf: str, at: datetime, debug: bool,
+                 source: Optional[str]) -> Dict[str, Any]:
+    import pandas as pd
+    from app.screener import evidence as ev
+    from app.screener.runtime import SymbolData
+    df = frame.reset_index(drop=True)
+    bars = pd.DataFrame({k: df[k].astype(float) for k in ("open", "high", "low", "close")})
+    bars["volume"] = df["volume"].astype(float) if "volume" in df.columns else 0.0
+    bars.index = pd.DatetimeIndex(pd.to_datetime(df["timestamp"], utc=True), name="timestamp")
+    data = SymbolData(str(pack["symbol"]), {base_tf: bars}, exchange=pack.get("exchange") or "NSE")
+    return ev.build_pack(ast, validated, data, base_tf=base_tf, params=pack["screen"].get("params") or {}, as_of=at,
+                         window=len(pack["bars"]["t"]), debug=True, exchange=pack.get("exchange") or "NSE",
+                         data_source=f"replay:{source}" if source else "replay", screen_name=pack["screen"].get("name"), context=True)
 
 
 __all__ = ["router"]

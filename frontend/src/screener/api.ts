@@ -4,6 +4,7 @@ import type { DataTierBadgeInfo } from "../types";
 import type { FunnelResult, Registry } from "./model";
 import type { LegendsLibrary } from "./legends";
 import type { StagesResponse } from "./importStages";
+import type { ConfluenceResponse, MirrorsResponse, WatchListsResponse, WatchResponse } from "./library";
 import type { EtfResponse } from "./etf";
 import type { Taxonomy } from "./taxonomy";
 
@@ -40,6 +41,13 @@ export const screenerApi = {
   /** U2 (flag `screener_builder_u2`; 503 while off): a screen -> the funnel's stages (top-level conjuncts). */
   stages: (body: { library_id?: string; source?: string; base_tf?: string }) =>
     request<StagesResponse>("/screener/stages", { method: "POST", body: JSON.stringify(body) }),
+  /** U9 TX2 (flag `screener_tx2`; 503 while it is off - the page then shows no library tools). */
+  libraryMirrors: () => request<MirrorsResponse>("/screener/library/mirrors"),
+  watchLists: () => request<WatchListsResponse>("/screener/library/watch-lists"),
+  confluence: (screens: string[], symbols: string[], exchange = "NSE") =>
+    request<ConfluenceResponse>("/screener/library/confluence", { method: "POST", body: JSON.stringify({ screens, symbols, exchange }) }),
+  watchTrigger: (body: { list_id?: string; ready?: string; trigger?: string; base_tf?: string; symbols: string[]; exchange?: string }) =>
+    request<WatchResponse>("/screener/library/watch-trigger", { method: "POST", body: JSON.stringify(body) }),
   /** S10 J (flag `screener_etf`; 503 while off - the page then shows no ETF button). */
   etf: (query: string) => request<EtfResponse>(`/screener/etf?${query}`),
   save: (name: string, source: string, baseTf: string, id?: number) =>

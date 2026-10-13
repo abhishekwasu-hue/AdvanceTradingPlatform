@@ -190,7 +190,7 @@ def _instrument_at_start(rest: str, L: Lists, *, allow_level: bool) -> Optional[
         if re.fullmatch(r"\d+", w) and nxt in _QTY_UNITS:           # "10 shares of": a quantity, not a level
             i += 1
             continue
-        if (re.fullmatch(r"\d+(?:\.\d+)?%", w) or w in _PART_WORDS) and nxt == "of":   # "50% of", "half of": a quantity
+        if (re.fullmatch(r"\d+(?:\.\d+)?(?:%|pc)", w) and nxt == "of") or w in _PART_WORDS:   # "50% of", "half (of)": a quantity
             i += 1
             continue
         if w not in L.fillers:
@@ -282,14 +282,26 @@ _FIELD_VERBS = frozenset({"close", "open", "hold"})
 # ("TCS: close was flat", "open gap-up, close higher", "Close/Open ratio").
 _PRICE_FIELD = re.compile(
     r"^[\s,:\-–—]*(?:"
-    r"(?:at|above|below|near|over|under|around)\s+(?:(?:a|an|the)\s+)?(?:₹|\d|(?:\d+[\s-]*(?:day|week|month|period|session)s?\s+)?"
-    r"(?:sma|ema|dma|wma|vwap|high|low|52[\s-]*week|average|moving average|band|level|support|resistance|range)\b)"
+    r"(?:at|above|below|near|over|under|around|in|within)\s+(?:(?:a|an|the|its|record)\s+)?(?:₹|\d|(?:\d+[\s-]*(?:day|week|month|period|session)s?\s+)?"
+    r"(?:sma|ema|dma|wma|vwap|high|low|52[\s-]*week|average|moving average|band|level|support|resistance|range|record|"
+    r"day'?s|week'?s|session'?s|top|bottom|upper|lower|quartile|half)\b)"
     r"|of\s+₹?\d"
-    r"|₹?\d[\d,]*(?:\.\d+)?(?!\s*(?:%|percent\b|shares?\b|lots?\b|qty\b|units?\b|of\b|[\d,.]))"
-    r"|(?:price|prices|level|levels|was|is|were|unchanged|flat|higher|lower|gap|gapped|and|ratio)\b"
+    r"|\d[\d,.]*\s*%\s+(?:above|below|higher|lower|up|down|over|from)\b"
+    r"|₹?\d[\d,]*(?:\.\d+)?(?!\s*(?:%|percent\b|per\s*cent\b|pc\b|shares?\b|lots?\b|qty\b|quantity\b|units?\b|contracts?\b|nos\b|"
+    r"stocks?\b|of\b|/\s*\d|[\d,.]))"
+    r"|(?:was|is|were)\s+(?:flat|unchanged|higher|lower|up|down|above|below|near|at|around|₹?\d|the\s+(?:highest|lowest))"
+    r"|and\s+(?:open|close|high|low|volume)\b"
+    r"|(?:price|prices|level|levels|unchanged|flat|higher|lower|gap|gapped|ratio)\b"
     r"|/)", re.I)
-# ...but never with an order word in the clause ("TCS: close at market", "hold above 1500 or exit", "hold above 2500 for 2600").
-_FIELD_ORDER = re.compile(r"\b(?:now|today|position|long|short|exit|target|market|cmp|best|limit|book|sl|stop)\b|\bfor\s+₹?\d", re.I)
+# Round 9: an order word anywhere in the sentence voids the exemption ("INFY: close at 1500 immediately", "..., then re-enter
+# at 1450"); the weaker words only in the field's own clause, so a later descriptive clause ("short covering seen", "open
+# interest in long positions rose", "best close of the month") does not.
+_FIELD_ORDER = re.compile(r"\b(?:now|today|tonight|tomorrow|immediately|asap|please|right away|then|re-?enter|exit|book|sl|"
+                          r"stop[- ]?loss|stop|target(?![-\w])|by\s+(?:mon|tue|wed|thu|fri|sat|sun)\w*|by\s+(?:expiry|eod|the close)|"
+                          r"wise|smart|sensible|the (?:call|play|move|trade)|walk away|stay out|step aside|move on|you should|you must|better to)\b", re.I)
+_FIELD_ORDER_CLAUSE = re.compile(r"\b(?:position|long|short|market|cmp|best|limit)\b|\bfor\s+₹?\d[\d,.]*(?!\s*(?:sessions?|days?|"
+                                 r"weeks?|months?|bars?|years?)\b)|\b(?:till|until|to|towards?)\s+(?:₹?\d|results|expiry|earnings)", re.I)
+_FIELD_CONNECTORS = frozenset({"on", "in", "with", "all", "your", "the", "of", "-", "–", "—", "for", "my", "our", "this", "and"})
 
 
 def _price_field(verb: str, text: str, L: "Lists") -> bool:
@@ -299,11 +311,17 @@ def _price_field(verb: str, text: str, L: "Lists") -> bool:
     if verb.lower() not in _FIELD_VERBS:
         return False
     m = _PRICE_FIELD.match(text)
-    if m is None or _FIELD_ORDER.search(text):
+    clause = re.split(r"[,;]", text, maxsplit=1)[0]
+    if m is None or _FIELD_ORDER.search(text) or _FIELD_ORDER_CLAUSE.search(clause):
         return False
-    after = re.match(r"[\w,.₹-]*\s*([^\s,;:]+)?", text[m.end():])
-    nxt = after.group(1) if after else None
-    return not (nxt is not None and _is_ticker(nxt, L))
+    if re.match(r"[\s,:\-–—]*(?:price|prices|level|levels|ratio|/)", m.group(0), re.I):
+        return True                                             # "Close price: INFY 1500" - a label, not an order
+    rest = re.sub(r"^[\w.₹%-]*", "", text[m.end():])            # the rest of the number / level word the match ended in
+    for word in [w for w in _words(rest) if w][:4]:              # "Close at 2450 on / with / - RELIANCE"
+        if word.lower() in _FIELD_CONNECTORS:
+            continue
+        return not _is_ticker(word.rstrip(".!?"), L)
+    return True
 
 
 _OPEN_TRADE = re.compile(r"^\s*(?:(?:an?|new|fresh|the)\s+)*(?:long|short|position|trade)s?\b", re.I)
@@ -463,7 +481,12 @@ def _object(rest: str, L: Lists, s: str, *, allow_level: bool, verb: str = "") -
     the fillers; "a signal / setup / rating on RELIANCE"; a pronoun ("buy more") when the sentence names an instrument.
     A noun phrase ("Sell HDFCBANK was the most common signal") is not a call."""
     if _price_field(verb, rest, L):
-        return None                                             # "Close above 2450", "SMA(close, 20)": the candle, not an order
+        return None
+    if verb.lower() in _FIELD_VERBS and _PRICE_FIELD.match(rest):
+        # "Close above 2450 in INFY", "Hold above 2500 - RELIANCE": an order on the instrument named after the level
+        for word in [w for w in _words(rest[:80]) if w][:6]:
+            if _is_ticker(word.rstrip(".!?"), L):
+                return word.rstrip(".!?")                                             # "Close above 2450", "SMA(close, 20)": the candle, not an order
     if L.descriptive.match(rest):
         tail = L.descriptive.sub("", rest, count=1)
         tail = re.sub(r"^\s*(?:on|in|for|of)\s+", "", tail, flags=re.I)

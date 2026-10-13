@@ -95,6 +95,16 @@ SHOULD_BLOCK = [
     "NIFTY: open at 25000 with a long", "INFY: hold above 1500 or exit", "RELIANCE - hold above 2500 for 2600",
     "Close of the RELIANCE position now.", "Close 50% of INFY.", "Close 2 lots of NIFTY.", "Open 2 lots of NIFTY long.",
     "Close half of RELIANCE.", "Close at 2450 RELIANCE.", "Sell 50% of INFY.", "Sell half of RELIANCE.",
+    # review round 9: urgency / time words, a target, more quantity units, an advice predicate, the instrument after the level
+    "INFY: close at 1500 immediately", "INFY: close at 1500 asap", "INFY: close at 1500 right away", "INFY: close at 1500 please",
+    "INFY: close at 1500 tomorrow", "INFY: close at 1500 by Friday", "INFY: close at 1500, then re-enter at 1450",
+    "TCS: hold above 4000 till 4500", "TCS: hold above 4000 to 4500", "TCS: hold above 4000 towards 4500",
+    "TCS: hold above 4000 till results", "TCS: close 2 contracts", "TCS: close 50 pc", "TCS: close 50 per cent",
+    "TCS: close 75 quantity", "TCS: close 100 nos", "INFY: close 100 stocks", "INFY: close 1/2", "TCS: hold is the call",
+    "INFY: close is wise", "INFY: close and move on", "INFY: close below 1500 and walk away", "INFY: close below 1500 and stay out",
+    "INFY: close at 1500 is wise", "Close at 2450 on RELIANCE.", "Close above 2450 in INFY.", "Hold above 2500 with RELIANCE.",
+    "Close at 2450 all RELIANCE.", "Hold above 2500 your RELIANCE shares.", "Hold above 2500 - RELIANCE.", "Close half INFY.",
+    "Close 50pc of INFY.",
 ]
 
 SHOULD_PASS = [
@@ -148,6 +158,11 @@ SHOULD_PASS = [
     "TCS: close was flat.", "TCS: close unchanged at 4050.", "NIFTY: close higher by 0.4%.", "TCS: open flat, close higher.",
     "HDFCBANK: open gap-up, close near the high.", "TCS: Close/Open ratio 1.01.", "INFY: open and close within 0.2%.",
     "RELIANCE: close at a 52-week high.",
+    # review round 9: a later descriptive clause, a duration, a percentage move, more level nouns
+    "RELIANCE: close 2480, open interest in long positions rose.", "NIFTY: close 25100 vs target-date 25000 average.",
+    "INFY: close at 1500, best close of the month.", "INFY: close near 1500 for 3 sessions.", "TCS: close 50% above its IPO price.",
+    "TCS: close at record high.", "TCS: close near the day's low.", "TCS: close in the top quartile.",
+    "Close above 2450 confirms the RELIANCE breakout.", "RELIANCE: close above 2500 should confirm the breakout.",
 ]
 
 
@@ -165,6 +180,12 @@ def test_descriptive_analysis_passes(text):
     for lang in ("en", "mr", "hi"):
         s = output_filter.screen(text, lang)
         assert s.ok and s.text == text, (text, lang, s.blocked)
+
+
+def test_short_build_up_after_a_price_field_is_not_blocked():
+    for text in ("NIFTY: close 25100, short build-up in futures.", "NIFTY: close 25100, short covering seen."):
+        s = output_filter.screen(text, "en")
+        assert s.ok and not s.blocked, text                  # review round 9: framed (the word "short"), never blocked
 
 
 def test_buy_and_hold_as_a_benchmark_is_not_blocked():

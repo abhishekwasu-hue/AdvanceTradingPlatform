@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 from zoneinfo import ZoneInfo
 
+import pytest
 from sqlalchemy import select
 
 from app.brokers import token_lifecycle
@@ -20,6 +21,8 @@ from app.strategy_engine.registry import registry
 from app.workers import trading_worker as tw
 from app.workers.trading_worker import TradingWorker
 from tests.test_auth_api import _register, _session_factory, client
+
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
 
 IST = ZoneInfo("Asia/Kolkata")
 OPEN_NOW = datetime(2026, 9, 25, 10, 30, tzinfo=IST)          # Friday, mid-session

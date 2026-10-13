@@ -1,10 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { EvidenceChart } from "./EvidenceChart";
-import { EvidenceView } from "./EvidencePanel";
+import { EvidenceView, type ReplayControls } from "./EvidencePanel";
 import { ResultBoard } from "./ResultBoard";
 import sample from "./evidenceSample.json";
-import { visibleDrawables, type EvidencePack } from "./evidence";
+import { visibleDrawables, type EvidenceContext, type EvidencePack } from "./evidence";
 
 const pack = sample as unknown as EvidencePack;
 const none = new Set<string>();
@@ -79,5 +79,47 @@ describe("ResultBoard Show on chart (U8 EV1)", () => {
     expect(html.match(/data-testid="show-on-chart"/g)?.length).toBe(1);
     expect(html).toContain('aria-label="Show AAA on chart"');
     expect(renderToStaticMarkup(<ResultBoard results={rows} />)).not.toContain("show-on-chart");    // flag off: no ids, no handler
+  });
+});
+
+describe("EvidenceView context and replay (U8 EV3)", () => {
+  const context: EvidenceContext[] = [
+    { tf: "1d", tag: "UP", expr: "DowTrend(1)", bar_close: pack.as_of.bar_close, used_by: [pack.rows[0].id], note: null, text: "1d up" },
+    { tf: "1w", tag: null, expr: "DowTrend(1)@1w", bar_close: null, used_by: [], note: "not enough bars on this timeframe", text: "1w n/a" },
+  ];
+  const withContext = { ...pack, context } as EvidencePack;
+  const replay = (over: Partial<ReplayControls> = {}): ReplayControls =>
+    ({ steps: 40, index: 39, loading: false, error: null, onStep: () => undefined, onReset: () => undefined, ...over });
+
+  it("shows the trend strip in words (not colour alone) with each chip's expression, only when the pack has one", () => {
+    const html = renderToStaticMarkup(<EvidenceView pack={withContext} hiddenBlocks={none} showFailed={false} />);
+    const at = html.indexOf('aria-label="Trend on other timeframes"');
+    const strip = html.slice(at, html.indexOf("</section>", at));
+    expect(at).toBeGreaterThan(-1);
+    expect(strip).toContain('data-testid="context-strip"');
+    expect(strip).toContain("1d up");
+    expect(strip).toContain("1w n/a");
+    expect(strip).toContain("DowTrend(1)@1w · not enough bars on this timeframe");
+    expect(strip).toContain("(read by the screen)");
+    expect(renderToStaticMarkup(<EvidenceView pack={pack} hiddenBlocks={none} showFailed={false} />)).not.toContain("context-strip");
+  });
+
+  it("offers replay controls: at the match only step back; earlier, forward and back to the match", () => {
+    const atMatch = renderToStaticMarkup(<EvidenceView pack={withContext} hiddenBlocks={none} showFailed={false} replay={replay()} />);
+    expect(atMatch).toContain("bar 40 of 40 (the match)");
+    expect(atMatch).toMatch(/aria-label="Step forward one bar"[^>]*disabled=""|disabled=""[^>]*aria-label="Step forward one bar"/);
+    expect(atMatch).not.toContain("Back to the match");
+    const earlier = { ...withContext, can_send: false,
+                      replay: { at: pack.as_of.bar_close, source: "lake:1d", note: "Replayed from the shared market-data history.", stored_as_of: pack.as_of } };
+    const html = renderToStaticMarkup(<EvidenceView pack={earlier} hiddenBlocks={none} showFailed={false} onSend={() => undefined} replay={replay({ index: 10 })} />);
+    expect(html).toContain("bar 11 of 40");
+    expect(html).toContain("Back to the match");
+    expect(html).toContain("Replayed as of the bar of");
+    expect(html).not.toContain("Send to my Telegram");                                   // a replay is never sent
+    expect(renderToStaticMarkup(<EvidenceView pack={earlier} hiddenBlocks={none} showFailed={false} replay={replay({ index: 10, loading: true })} />))
+      .toContain("Replaying…");
+    expect(renderToStaticMarkup(<EvidenceView pack={withContext} hiddenBlocks={none} showFailed={false} replay={replay({ index: 3, error: "Replay is not available for this evidence." })} />))
+      .toContain('role="alert" class="text-warn">Replay is not available');
+    expect(renderToStaticMarkup(<EvidenceView pack={pack} hiddenBlocks={none} showFailed={false} />)).not.toContain("replay-bar");
   });
 });

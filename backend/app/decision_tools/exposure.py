@@ -28,8 +28,10 @@ MAX_COMPUTED = 40          # review (DoS): beta and pairs for at most this many 
 
 def computed_names(rows: Mapping[str, Mapping[str, Any]], limit: Optional[int] = None) -> List[str]:
     """The underlyings that get market data, beta and correlations: the `limit` with the largest risk at the stops (then
-    notional, then name). The pair work grows with the square of this number, so it is capped."""
-    ranked = sorted(rows.values(), key=lambda r: (-float(r["risk_at_stop"]), -float(r["notional"]), r["underlying"]))
+    money at stake - notional plus the absolute option premium, so an options-only underlying with no stop is not ranked
+    last - then name). The pair work grows with the square of this number, so it is capped."""
+    ranked = sorted(rows.values(), key=lambda r: (-float(r["risk_at_stop"]), -(float(r["notional"]) + abs(float(r["option_premium"]))),
+                                                  r["underlying"]))
     return [r["underlying"] for r in ranked[:MAX_COMPUTED if limit is None else limit]]
 
 

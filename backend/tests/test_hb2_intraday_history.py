@@ -193,9 +193,8 @@ def test_migration_is_rollback_safe_and_the_only_head():
     from alembic.script import ScriptDirectory
     backend = Path(__file__).resolve().parents[1]
     script = ScriptDirectory.from_config(Config(str(backend / "alembic.ini")))
-    heads = script.get_heads()
-    assert len(heads) == 1                                                       # one head; later migrations may sit on top
-    assert "f3b5d7a9c1e2" in {rev.revision for rev in script.walk_revisions()}
+    heads = script.get_heads()                                          # one head, with HB2's revision in its history
+    assert len(heads) == 1 and "f3b5d7a9c1e2" in {r.revision for r in script.walk_revisions("base", heads[0])}
     text_ = (backend / "alembic" / "versions" / "f3b5d7a9c1e2_hb2_intraday_history.py").read_text()
     assert "ROLLBACK_SAFE = True" in text_ and "purely additive" in text_
 

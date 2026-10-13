@@ -521,6 +521,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/scanner/ai/read"): "trader",
     ("POST", "/api/scanner/run"): S_COMPUTE,
     ("GET", "/api/screener/breakouts/catalog"): "member",
+    ("GET", "/api/screener/breakouts/fitness"): "member",
     ("POST", "/api/screener/breakouts/run"): "trader",
     ("GET", "/api/screener/evidence/runs/{run_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}"): "member",

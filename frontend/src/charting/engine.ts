@@ -32,7 +32,8 @@ export interface StudyLine { data: { time: number; value: number }[]; color?: st
 export interface EngineLayout { engine: string; symbol: string | null; timeframe: string | null; studies: StudySpec[]; drawings: Record<string, DrawingV1> }
 
 export type EngineEvent =
-  | { type: "crosshair"; time: number | null; price: number | null }
+  /** `user`: false when the move did not come from the user's pointer (CH5: such moves are never passed on by a link). */
+  | { type: "crosshair"; time: number | null; price: number | null; user?: boolean }
   | { type: "click"; time: number | null; price: number | null }
   | { type: "drawingChanged"; id: string; drawing: DrawingV1 }
   | { type: "visibleRangeChanged"; from: number; to: number };
@@ -55,6 +56,9 @@ export interface ChartEngine {
   setStudy?(id: string, line: StudyLine | null): void;
   serialize(): EngineLayout;
   deserialize(layout: EngineLayout): void;
+  /** CH5: shows the crosshair at this time (its own bar at or before it), or hides it with null - for the workspace's
+   * crosshair link. Optional: an engine without it is simply not followed. */
+  setCrosshair?(time: number | null): void;
   on(listener: (event: EngineEvent) => void): () => void;
   dispose(): void;
 }

@@ -3,17 +3,25 @@
 The ScreenQL functions of the breakout family stay in the one registry (so the validator, the runtime and the parity
 tests see them), but while the flag is off for a tenant the registry endpoint does not list them and a screen, a saved
 screen or an alert rule that uses one is refused with the reason. Nothing in the family places an order either way.
+
+U6 BK3: the VCP and indicator breakouts (VCPBreakout, VCPReady, DonchianBreakout, SqueezeBreakout, MABreakout,
+RegimeBreakout) are in the same family (bar close only, the same pause / refusal paths) and need a second flag on top,
+`screener_breakouts_bk3` (registry Spec.also_flags; off by default). U6 BK4's TrendlineBreakout, PatternBreakout,
+GapBreakout, GapType and RetestEntry likewise need `screener_breakouts_bk4`.
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.screener import nodes
-from app.screener.registry import BREAKOUT_FLAG, FUNCTIONS
+from app.screener.registry import BREAKOUT_BK3_FLAG, BREAKOUT_BK4_FLAG, BREAKOUT_FLAG, FUNCTIONS
 
 FLAG = BREAKOUT_FLAG
+BK3_FLAG = BREAKOUT_BK3_FLAG
+BK4_FLAG = BREAKOUT_BK4_FLAG
+EXTRA_FLAGS = (BK3_FLAG, BK4_FLAG)                   # the set flags layered on the family flag (Spec.also_flags)
 
 
 def flagged_calls(ast: Any) -> List[str]:
@@ -29,7 +37,7 @@ def flagged_calls(ast: Any) -> List[str]:
 
 
 # U6 BK2: functions that read the exchange session (open, VWAP from the open, time-of-day slots)
-SESSION_FUNCTIONS = ("ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP")
+SESSION_FUNCTIONS = ("ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP", "GapBreakout", "GapType")
 
 
 def session_calls(ast: Any) -> List[str]:
@@ -52,8 +60,33 @@ def alert_clock_refusal(ast: Any, exchange: Optional[str]) -> Optional[str]:
             f"functions run in screens and the breakout run, not in alert rules yet (open question BK2-5)")
 
 
+def required_flags(names: List[str]) -> List[str]:
+    """The flags the named breakout functions need, in order (the family flag first)."""
+    out = [FLAG]
+    for name in names:
+        spec = FUNCTIONS.get(name)
+        out += [f for f in (spec.also_flags if spec is not None else ()) if f not in out]
+    return out
+
+
+def extra_flag_calls(ast: Any) -> List[str]:
+    """U6 BK3 / BK4: breakout functions in a screen that need a flag beyond the family's (each once, in order)."""
+    return [n for n in flagged_calls(ast) if FUNCTIONS[n].also_flags]
+
+
+def extra_flags_needed(ast: Any) -> Dict[str, List[str]]:
+    """{extra flag: the functions in the screen that need it} (U6 BK3 / BK4)."""
+    out: Dict[str, List[str]] = {}
+    for name in extra_flag_calls(ast):
+        for f in FUNCTIONS[name].also_flags:
+            out.setdefault(f, []).append(name)
+    return out
+
+
 def refusal(names: List[str]) -> str:
-    return f"{', '.join(n + '()' for n in names)}: the breakout screens are not enabled for this organisation (flag {FLAG})"
+    flags = required_flags(names)
+    return (f"{', '.join(n + '()' for n in names)}: the breakout screens are not enabled for this organisation "
+            f"(flag{'s' if len(flags) > 1 else ''} {', '.join(flags)})")
 
 
 async def enabled(session: AsyncSession, tenant_id: Any) -> bool:
@@ -61,12 +94,26 @@ async def enabled(session: AsyncSession, tenant_id: Any) -> bool:
     return await flag_enabled(session, FLAG, tenant_id)
 
 
+async def bk3_enabled(session: AsyncSession, tenant_id: Any) -> bool:
+    from app.platform.controls import flag_enabled
+    return await flag_enabled(session, BK3_FLAG, tenant_id)
+
+
 async def blocked_calls(session: AsyncSession, tenant_id: Any, ast: Any) -> List[str]:
-    """The breakout functions a screen uses while the flag is off for the tenant (empty: nothing to refuse)."""
+    """The breakout functions a screen uses while a flag they need is off for the tenant (empty: nothing to refuse).
+    The family flag off blocks every one; with it on, the BK3 functions still need `screener_breakouts_bk3`."""
     names = flagged_calls(ast)
-    if not names or await enabled(session, tenant_id):
+    if not names:
         return []
-    return names
+    if not await enabled(session, tenant_id):
+        return names
+    extra = [n for n in names if FUNCTIONS[n].also_flags]
+    if not extra:
+        return []
+    from app.platform.controls import flag_enabled
+    off = {f for f in {f for n in extra for f in FUNCTIONS[n].also_flags} if not await flag_enabled(session, f, tenant_id)}
+    return [n for n in extra if set(FUNCTIONS[n].also_flags) & off]
 
 
-__all__ = ["FLAG", "SESSION_FUNCTIONS", "flagged_calls", "session_calls", "alert_clock_refusal", "refusal", "enabled", "blocked_calls"]
+__all__ = ["FLAG", "BK3_FLAG", "BK4_FLAG", "EXTRA_FLAGS", "SESSION_FUNCTIONS", "flagged_calls", "extra_flag_calls", "extra_flags_needed", "session_calls", "alert_clock_refusal", "required_flags",
+           "refusal", "enabled", "bk3_enabled", "blocked_calls"]

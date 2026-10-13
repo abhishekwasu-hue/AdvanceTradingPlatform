@@ -453,6 +453,58 @@ own output on the frozen fixtures, checked against Trade live when the repositor
   engine's study lines.
 - **No new ScreenQL function**, so no new Z10-a causal case. Open questions CH6-1 .. CH6-3.
 
+## CH5-a (built): the multi-chart workspace - layouts, link groups, saved layouts, shortcuts
+
+Flag **`chart_workspace`** (off by default, in `DEFAULT_OFF_FLAGS`): while it is off `/api/charts/layouts` answers 503
+and the workspace page says it is not enabled. Charts only; nothing here places, changes or proposes an order.
+
+- **Where.** Its own browser tab, like the single chart: `/?workspace=1` (optionally `&chart=SYMBOL&tf=5min&exchange=NSE`
+  to start from one chart). The single-chart window shows "Open in workspace" while the flag is on.
+- **Layout `layout/1`** (`frontend/src/charting/workspace.ts`, mirrored by `backend/app/charts/layouts.py`):
+  - `grid` 1, 2, 4, 6 or 8 (1x1, 2x1, 2x2, 3x2, 4x2) and one cell per chart: symbol, exchange, timeframe, chart type
+    (stored now, drawn in CH5-b) and an optional link group A-D;
+  - `groups`: per group, which links are on - `symbol`, `interval`, `crosshair` (a new group links the symbol and the
+    crosshair; the interval only when asked, so one symbol on 5m and 1h is one click);
+  - `active`: the chart the keyboard and the drawing tools work on.
+- **Link groups.** A symbol change travels to the charts its group links by symbol, a timeframe change to those linked
+  by interval. A chart joining a group takes the group's linked symbol / interval from a chart already in it, and
+  switching a link on aligns the group to its first chart, so a group never shows two symbols it claims to share. The
+  chart type is per chart, never linked. All of it is pure functions over the layout (tested without a browser).
+- **Crosshair link** (`charting/crosshairLink.ts`). Each chart's engine reports its crosshair time; the link moves the
+  crosshair of the charts its group links by crosshair to the same time. `ChartEngine.setCrosshair(time)` is new
+  (optional on the interface); the lightweight engine puts it on its own bar at or before that time, at that bar's
+  close, so a 5m and a 1h chart line up. Only moves the user made are passed on: the engine marks a crosshair event
+  without a pointer event behind it `user: false` (lightweight-charts 5.2 does not report a programmatic
+  `setCrosshairPosition` at all), so the link keeps no echo bookkeeping that could swallow a real move.
+- **Charts.** Each cell is the same ProChart as the single-chart window (own candles, older history on scroll back).
+- **Last price, without starving exits (review HIGH, ADR-0004).** The workspace polls each (symbol, exchange) once
+  (`charting/ltpHub.ts`), shared by every chart showing it: every 5 s for the active chart's symbol, every 20 s for the
+  others, only while the tab is visible; a chart that gets focus again reuses a recent price. On the server
+  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`), and every broker call it makes (when no
+  fresh tick answers) first takes a token from the session's API budget (`app/market_data/api_budget.py`: per
+  tenant + broker + account, at half the conservative per-broker limits the worker's own budget uses, in the API
+  process); with none within 2 s it answers 429 (Retry-After 5) and the chart keeps its last price, instead of a queue
+  that grows while the worker's exits need the same API key. The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
+  window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
+  cell's button) shows the active chart at full size.
+- **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and
+  tenant, a unique name per user, at most 50 (the user's row is locked with `SELECT ... FOR UPDATE` before the count, and re-counted after the insert, so two racing creates cannot pass it),
+  versioned: the save and the delete are a conditional `UPDATE` / `DELETE ... WHERE id, user, tenant AND version`
+  with a row-count check, so of two tabs saving at once exactly one wins and the other gets 409 with the current
+  layout; the page says so. `GET/POST /api/charts/layouts`, `PUT/DELETE /api/charts/layouts/{id}` (the
+  delete names its version), classified in `tests/tenancy_route_table.py` (list "member", writes "self"). The unsaved
+  layout is kept in the browser (`localStorage`), and the last layout used is opened again.
+- **Shortcuts** (`charting/shortcuts.ts`, all with Alt so none collides with the drawing tools or the browser's
+  editing keys; digits by physical key, since Option+1 types "¡" on a Mac; nothing fires while typing in a field):
+  Alt+1/2/4/6/8 grid, Alt+Shift+→/← next/previous chart, Alt+↑/↓ timeframe, Alt+G link group, Alt+T chart type,
+  Alt+Enter full size, Alt+K symbol box, Alt+Shift+S save, "?" the list. Plain Alt+←/→ (the browser's back / forward)
+  and Alt+S (a menu in some browsers) are left to the browser.
+- **Tests.** Backend `tests/test_ch5_chart_layouts.py` (4): schema per grid and refusals, flag off -> 503 and the
+  tenant allow-list, per user (another organisation and a teammate get 404), versions and 409, unique names, the cap.
+  Frontend `src/charting/workspace.test.ts` (11): grid shapes and the server's rules, shrinking and growing, symbol /
+  interval / crosshair links and alignment, active chart and timeframe steps, shortcuts, the crosshair link (echoes
+  dropped synchronously and asynchronously, unregister), `setCrosshair` bar placement, the API client's 409 / 404.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

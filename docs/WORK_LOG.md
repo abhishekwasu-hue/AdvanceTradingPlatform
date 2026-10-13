@@ -1842,3 +1842,104 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   instance (`src/progression/i18n.ts`); there is a story.
 - No migration and no new route. Flag off returns the Z3-b answer unchanged.
 - Tests: backend `tests/test_n2_ladder_evidence.py` (9); vitest `src/progression` (12). Open questions N2-1..N2-5.
+### 2026-10-12 IST - N2-2 experience levels (`claude/n2-2`, cut from `claude/n2-p1f` because N2-1 was not merged yet)
+- Flag `experience_levels` (off). Levels come from the user's own PAPER record. They gate futures (Intermediate) and
+  naked short options (Advanced, single legs and structures with an unhedged short side) in
+  `execute_signal_for_user` / `execute_structure`. Exits are never gated.
+- A day's opt-out with a reason is logged and counted (`experience_opt_outs`, migration `a4c6e8f0b2d1` on
+  `e8a1c4d2f9b7`, ROLLBACK_SAFE).
+- Routes `GET /api/paper/experience` (member) and `POST /api/paper/experience/opt-out` (trader) are classified in the
+  tenancy table.
+- Frontend: "Experience level" card on Positions (progression i18n), with a story.
+- Tests: backend `tests/test_n2_experience_levels.py` (11); vitest `src/progression` (16). Open questions N2-6..N2-9.
+
+## Fix: the trading worker acts per deployment as its creator (TX-3)
+
+- Branch `claude/fix-worker-acting-user` (from main). The worker filed every deployment's entries of an organisation
+  under one acting user (`_acting_user`: the first deployment's creator, else the owner), so member B's automated trades
+  could carry member A's user id (and land in A's own-trades tax report, #225 / OPEN_QUESTIONS TX-3).
+- Now `_deployment_user`: a deployment's entries (and its failure alert) act as `dep.created_by` when that user is an
+  active member of the same organisation with a trading role; no recorded creator keeps the organisation's acting user. Exits, square-off, stop guard and reconciliation are unchanged (ADR-0004).
+- Review: a creator who is removed, inactive, of another organisation, or without a trading role / `trading:write`
+  makes the deployment open NO new entries (skipped with `last_error`; OPEN_QUESTIONS TX-4) instead of re-attributing
+  them; exits untouched. The lookup sits inside the per-deployment try (a failure falls back to the acting user and the
+  loop goes on). Approval-only proposals use the same resolved user.
+- No backfill: existing rows keep the user id they were filed under. No flag (a correctness fix).
+- Tests: `tests/test_worker_acting_user.py` (owner and member deployments each file their own trades; square-off
+  still closes both; removed / foreign / VIEWER creators open no entries while the removed member's open position is
+  still squared off; no creator and a failed lookup fall back; approval-only proposals go to the resolved user).
+## Fix: tax report reads only the caller's own trades (BT1b) + FY-dependent statute (TX-1 follow-up)
+
+- Branch `claude/fix-tax-report-own` (from main). Phase 0 bug: `/api/tax/report`, `/api/tax/report.csv` and
+  `/api/tax/years` read every trade of the organisation, so a member saw colleagues' trades. `closed_trades` and
+  `available_years` now filter on the caller's user id too. No flag: this is the only behaviour.
+- Tenancy table: the three routes are `M_OWN_TAX` ("member: the caller's own closed trades only"); the class docstring
+  now allows "member: <why>" for own-rows reads.
+- TX-1 follow-up: `report.statute(fy)` / `report.disclaimer(fy)`. FY up to 2025-26 cites ss.115BBH / 194S / 44AB of the
+  1961 Act; FY 2026-27 onwards cites the Income-tax Act 2025 (TDS s.393(1); the 30% section and the tax-audit section
+  "to be verified"). Each cited section has an incometaxindia.gov.in URL or a verify note; the CSV lists them as
+  `source` rows. The "a chartered accountant should confirm" / "Verify with a chartered accountant" wording is gone.
+  TX-2 (MCX commodity-option CTT) stays open.
+- Tests: `tests/test_tax_report_own.py` (members A and B and the owner each see only their own trades in the report,
+  the CSV and the years; statute by year; disclaimer wording); `test_phase_p_closure.py` updated for FY 2026-27.
+- #225 review fixes: chartered-accountant referral restored (backend disclaimer and the Analytics banner; for FY 2026-27
+  on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
+  `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
+  "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
+
+## Fix: contributed reference data is the contributing organisation's own (security)
+
+- Branch `claude/fix-shared-fundamentals-writes` (from main). Found in the S8 review: shared tables writable by any
+  trading member of any organisation (`require_contributor`), unbounded dates, self-cited publication dates.
+- `tenant_id` (NULL = shared) on companies, financial_periods, shareholding_snapshots, corporate_actions,
+  qualitative_factors, earnings_calendar_events, sector_metrics, news_events; migration `d7f9a1c3e5b7` (ROLLBACK_SAFE
+  with reason; backfill by creator; `uq_company_period` widened with tenant_id; upgrade / check / downgrade run on
+  Postgres).
+- Every reader takes the viewer: fundamentals pages and analyses, the upcoming calendar, the fundamentals screener,
+  sector rotation and peers, the Factor Lab fill (`quant/fundamentals_bridge.py`), news events list / get / delete.
+  The financials import updates only the organisation's own periods. Provider refresh rows stay shared.
+- Shared company profiles: PUT only by SUPER_ADMIN; an organisation's own company becomes shared from the provider
+  refresh (hand fields cleared). Date checks on every contributed row (`visibility.check_dates`).
+- Tests: `tests/test_shared_fundamentals_scope.py` (cross-tenant poisoning attempt on every kind of row, dates, the
+  private company, the Factor Lab fill, manual news); fundamentals / news / quant tests read with the caller's token.
+  OPEN_QUESTIONS SF-1.
+## S10 (Phase 0 slice): ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
+
+- Branch `claude/n3-s10` (from main). Design: SCREENER.md "S10".
+- Backend: `app/screener/etf.py` + `GET /api/screener/etf` (member, classified); `WhatsAppConfig` + `AlertChannelType.WHATSAPP`
+  (template + opt-in, paid plans, the SMS sender); SMS DLT fields and placeholders; both behind `alerts_whatsapp_dlt`
+  at channel save. No migration (channel types and config are stored as text / encrypted JSON); no new ScreenQL function.
+- Frontend: "ETFs" dialog on the Screener page (`EtfPanel`); WhatsApp section and DLT fields in the alert channels card.
+- Tests: `tests/test_s10_etf_whatsapp.py`; vitest `src/screener/etf.test.tsx`. Open questions S10-1..S10-5.
+- Security review round: `app/alerts/s10_gate.py` is the one gate (flag + paid plan for WhatsApp) used on save, on
+  `POST /api/alert-channels/{type}/test` (403 / 402) and on every delivery in `dispatch_pending` - a flag turned off or a
+  plan downgrade after the channel was created SUPPRESSES the delivery with `reason_code=feature_off` and the reason in
+  `last_error`; nothing is sent. `WhatsAppConfig.opt_in_confirmed` is required (no default) and its headers are validated
+  like SMS. `GET /api/screener/etf`: per-user rate limit (30 / min) and a 120 s per-process cache by window.
+  Merges `claude/fix-alert-gateway-injection`.
+- Second review round: the gate now runs inside `dispatcher.send_via_channel` (`s10_gate.enforce`, raising `Refused`), so
+  the outbox, the Settings test button and `first_paper_day_check.py` are gated the same way, and the config decrypt it
+  needs sits inside the per-row try - one organisation's undecryptable channel becomes a retry on its own row, never an
+  exception that stops every organisation's deliveries (test: A's corrupt SMS + B's webhook SENT in one drain); the test
+  button answers ok=False for it. ETF screen: the closes are read once per 120 s per process (single flight per event
+  loop) and every request measures its own window on them. Merges PR #228's head.
+
+## Fix: SMS gateway template injection and header handling (S10 security review)
+
+- Branch `claude/fix-alert-gateway-injection` (from main).
+- `dispatcher.render_sms`: the content type is compared case-insensitively; JSON bodies get JSON-escaped values, every
+  other body (form, query, text) percent-encoded values - an alert title like `x&To=+1555...&Body=spam` stays one value.
+  The GET path decodes the query once with `parse_qsl` (duplicates kept, nothing silently overridden; httpx encodes).
+- `channels.merge_secrets`: the stored write-only SMS headers are kept only when the gateway URL keeps its scheme, host
+  and port; a moved gateway gets no stored header (the user types it again).
+- `SmsConfig.headers`: names must be HTTP tokens, values carry no CR / LF / control characters, at most 20 headers. (The
+  webhook channel has no free-form headers - its secret signs the body and is never sent.)
+- Tests: `tests/test_alert_gateway_injection.py`.
+- Review round (HIGH): the origin check now parses both URLs with the same WHATWG parser that validated them (pydantic;
+  `https://evil.example\@api.twilio.com/` is evil.example to pydantic / httpx but api.twilio.com to urllib), and a
+  backslash, space or control character in a gateway URL (SMS, webhook) is refused before parsing. Email: the stored
+  SMTP password is dropped when the host, port or user changes or TLS is turned off; `smtp_host` goes through the egress
+  policy on save (literal) and on send (resolved, in production / staging).
+- Review round (LOW): header values printable ASCII only; `Host` / `Content-Length` / `Transfer-Encoding` / hop-by-hop
+  headers refused; `content_type` validated; one recipient's failure (any exception) never stops the others; GET params
+  through `httpx.QueryParams`; Twilio preset writes `From=%2B...`; OPERATIONS 1.6e documents quoting and `%2B`.

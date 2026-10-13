@@ -56,6 +56,10 @@ BOUNDS: Dict[str, Tuple[float, float]] = {
     "daily_loss_pct": (0.1, 20.0),
     "max_trades_per_day": (0, 500),
     "min_rr": (0.0, 10.0),
+    # N1 F2 (flag portfolio_risk_caps): the user's own portfolio caps on new PAPER entries; 0 = no limit.
+    "max_sector_pct": (0.0, 500.0),
+    "max_correlated_risk_pct": (0.0, 50.0),
+    "max_open_positions": (0, 200),
 }
 LABELS = {
     "risk_per_trade_pct": "Risk per trade, % of capital",
@@ -63,7 +67,11 @@ LABELS = {
     "daily_loss_pct": "Daily loss limit, % of capital",
     "max_trades_per_day": "New PAPER entries per day (0 = no limit)",
     "min_rr": "Minimum reward:risk",
+    "max_sector_pct": "Exposure in one sector bucket, % of capital (0 = no limit)",
+    "max_correlated_risk_pct": "Open risk at the stops in one bucket, % of capital (0 = no limit)",
+    "max_open_positions": "Open PAPER positions (0 = no limit)",
 }
+INT_KEYS = ("max_trades_per_day", "max_open_positions")
 
 
 @dataclass(frozen=True)
@@ -73,6 +81,9 @@ class RiskSettings:
     daily_loss_pct: float
     max_trades_per_day: int
     min_rr: float
+    max_sector_pct: float = 0.0               # N1 F2 portfolio caps (0 = no limit)
+    max_correlated_risk_pct: float = 0.0
+    max_open_positions: int = 0
 
     @classmethod
     def defaults(cls) -> "RiskSettings":
@@ -92,7 +103,7 @@ class RiskSettings:
             for key, (low, high) in BOUNDS.items():
                 value = stored.get(key)
                 if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and low <= value <= high:
-                    base[key] = int(value) if key == "max_trades_per_day" else float(value)
+                    base[key] = int(value) if key in INT_KEYS else float(value)
         return cls(**base)
 
     def to_json(self) -> str:
@@ -103,7 +114,8 @@ class RiskSettings:
 
 
 PENDING_KEY = "_pending"
-NO_LIMIT_ZERO = ("risk_per_trade_amount", "max_trades_per_day")      # 0 means "no limit" for these
+NO_LIMIT_ZERO = ("risk_per_trade_amount", "max_trades_per_day", "max_sector_pct", "max_correlated_risk_pct",
+                 "max_open_positions")                               # 0 means "no limit" for these
 
 
 def loosens(key: str, old: float, new: float) -> bool:
@@ -151,7 +163,7 @@ def plan_change(text: Optional[str], values: Dict[str, Any], today: date) -> Tup
     deferred: Dict[str, Any] = dict(pending["values"]) if pending is not None and str(pending["from"]) > today.isoformat() else {}
     applied: Dict[str, Any] = {}
     for key, raw in values.items():
-        new = int(raw) if key == "max_trades_per_day" else float(raw)
+        new = int(raw) if key in INT_KEYS else float(raw)
         if loosens(key, float(current[key]), float(new)):
             deferred[key] = new
         else:
@@ -192,7 +204,8 @@ def effective_settings(settings: RiskSettings, ceilings: Dict[str, float]) -> Tu
     if daily > ceilings.get("max_daily_loss_pct", math.inf):
         daily = ceilings["max_daily_loss_pct"]
         notes.append(f"Your daily loss limit is capped at the platform ceiling {daily:g}%")
-    return RiskSettings(pct, settings.risk_per_trade_amount, daily, settings.max_trades_per_day, settings.min_rr), notes
+    from dataclasses import replace
+    return replace(settings, risk_per_trade_pct=pct, daily_loss_pct=daily), notes
 
 
 # --- pure rules --------------------------------------------------------------------------------------------------------

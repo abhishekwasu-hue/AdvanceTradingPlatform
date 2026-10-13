@@ -42,6 +42,7 @@ import type {
   ExitNowResponse,
   PaperAccount,
   PaperLadder,
+  ExperienceStatus,
   PaperRiskStatus,
   RiskByDefaultSettings,
   TicketPlan,
@@ -152,6 +153,7 @@ import type {
   StaticIpOverview,
 } from "../types";
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
+import type { ThenBody, ThenIntent, ThenTemplate } from "../screener/then/model";
 import type { BetaCohort } from "../beta/rollout";
 
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
@@ -508,6 +510,10 @@ export const api = {
     request<PaperAccount>("/paper/account", { method: "PUT", body: JSON.stringify({ starting_capital: startingCapital }) }),
   paperPause: (reason?: string) => request<{ paused: boolean; paused_reason: string | null }>("/paper/pause", { method: "POST", body: JSON.stringify(reason ? { reason } : {}) }),
   paperResume: () => request<{ paused: boolean; paused_reason: string | null }>("/paper/resume", { method: "POST" }),
+  /** N2-2: the caller's experience level and gates, and a logged opt-out for today (404 while `experience_levels` is off). */
+  paperExperience: () => request<ExperienceStatus>("/paper/experience"),
+  paperExperienceOptOut: (gate: string, reason: string) =>
+    request<ExperienceStatus>("/paper/experience/opt-out", { method: "POST", body: JSON.stringify({ gate, reason }) }),
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
@@ -680,6 +686,8 @@ export const api = {
     request<BrokerTokenInfo>(`/broker/${name}/login-code?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify({ code }) }),
 
   positionGreeks: () => request<PositionGreeks>("/positions/greeks"),
+  // N1 F3 (flag portfolio_risk): the caller's own PAPER book as a risk view (typed in portfolio/model.ts).
+  portfolioRisk: () => request<unknown>("/portfolio/risk"),
 
   reconciliationStatus: () => request<ReconciliationStatus>("/reconciliation/status"),
   runReconciliation: (brokerName: string) =>
@@ -922,6 +930,13 @@ export const api = {
   createAlertRule: (body: AlertRuleInput) => request<AlertRule>("/alerts/rules", { method: "POST", body: JSON.stringify(body) }),
   setAlertRuleStatus: (id: number, action: "pause" | "resume") => request<AlertRule>(`/alerts/rules/${id}/${action}`, { method: "POST" }),
   alertRuleEvents: (id: number, limit = 50) => request<AlertEventRow[]>(`/alerts/rules/${id}/events?limit=${limit}`),
+  // N1 X1b (flag scan_then): a rule's Then template and the setups it sent to the caller (503 while the flag is off).
+  ruleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`),
+  /** Review of X1b: every rule's Then in one read (rule id -> template) for the panel's chips. */
+  allThen: () => request<{ templates: Record<string, ThenTemplate> }>("/alerts/then"),
+  putRuleThen: (id: number, body: ThenBody) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "DELETE" }),
+  ruleThenIntents: (id: number, limit = 50) => request<ThenIntent[]>(`/alerts/rules/${id}/then/intents?limit=${limit}`),
   getNotificationPolicy: () => request<NotificationPolicy>("/alerts/policy"),
   putNotificationPolicy: (body: NotificationPolicy) => request<NotificationPolicy>("/alerts/policy", { method: "PUT", body: JSON.stringify(body) }),
   listDeadLetters: () => request<DeadLetter[]>("/alerts/dead-letters"),

@@ -62,9 +62,35 @@ BREAKOUT_ARGS: Dict[str, Tuple[str, Tuple[Tuple[str, str, Any], ...]]] = {
     "RangeExpansion": ("B13", (("expansion_k", "num", 2.0), ("vol_mult", "num", 1.5))),
     "VolumeBreakout": ("B14", (("shock_mult", "num", 2.0), ("range_n", "int", 20))),
 }
+
+
+def _bk3_default(name: str) -> Any:
+    from app.screener.breakouts.params import BY_NAME
+    return BY_NAME[name].default
+
+
+# U6 BK3 (review L6): the VCP and indicator breakouts - defaults are the breakout parameters' own, as the runtime's; a
+# "fixed" entry is set without reading an argument (VCPReady is the watchlist mode of B3). The BK2 intraday screens read
+# the exchange session clock (their own Bars), so they stay in the strip, not drawn (OPEN_QUESTIONS BK3-8).
+BREAKOUT_ARGS.update({
+    "VCPBreakout": ("B3", tuple((k, kind, _bk3_default(k)) for k, kind in (("vcp_min_contractions", "int"), ("vcp_ratio", "num"),
+                                                                          ("vol_mult", "num"), ("min_break_atr", "num"), ("tt_filter", "bool"),
+                                                                          ("vcp_vol_dryup", "bool")))),
+    "VCPReady": ("B3", tuple((k, kind, _bk3_default(k)) for k, kind in (("vcp_min_contractions", "int"), ("vcp_ratio", "num"),
+                                                                       ("vcp_ready_pct", "num"), ("tt_filter", "bool"), ("vcp_vol_dryup", "bool")))
+                 + (("vcp_mode", "fixed", "watchlist"),)),
+    "DonchianBreakout": ("B10", (("donchian_n", "int", _bk3_default("donchian_n")), ("min_break_atr", "num", _bk3_default("min_break_atr")))),
+    "SqueezeBreakout": ("B11", tuple((k, kind, _bk3_default(k)) for k, kind in (("squeeze_mode", "text"), ("bb_n", "int"),
+                                                                               ("squeeze_lookback", "int"), ("vol_mult", "num")))),
+    "MABreakout": ("B12", tuple((k, kind, _bk3_default(k)) for k, kind in (("ma_n", "int"), ("ma_type", "text"), ("min_break_atr", "num")))),
+    "RegimeBreakout": ("B15", tuple((k, kind, _bk3_default(k)) for k, kind in (("rsi_band", "num"), ("regime_n", "int"), ("adx_low", "num"),
+                                                                              ("min_break_atr", "num")))),
+})
 BREAKOUT_LEVEL_WORDS: Dict[str, Tuple[str, str]] = {
     "B1": ("range high", "range low"), "B2": ("swing high", "swing low"), "B4": ("setup bar high", "setup bar low"),
     "B7": ("N-week high", "N-week low"), "B13": ("bar midpoint", "bar midpoint"), "B14": ("level", "level"),
+    "B3": ("pivot", "pivot"), "B10": ("channel high", "channel low"), "B11": ("band", "band"), "B12": ("moving average", "moving average"),
+    "B15": ("N-bar high", "N-bar low"),
 }
 ZONE_CALLS = ("NearZone", "ZoneRole", "ZoneState", "ZoneStrength")
 CROSS_CALLS = ("CrossAbove", "CrossBelow")
@@ -298,9 +324,10 @@ def _breakout(ctx: _Ctx, call: n.Call, row: Dict[str, Any]) -> Optional[Dict[str
     side = str(ctx.ev.ev(call.args[0], ctx.base_tf)) if call.args else "up"
     overrides: Dict[str, Any] = {}
     for i, (name, kind, default) in enumerate(spec, start=1):
-        if len(call.args) > i:
+        if kind != "fixed" and len(call.args) > i:
             raw = _last(ctx.ev.ev(call.args[i], ctx.base_tf))
-            overrides[name] = int(float(raw)) if kind == "int" else (str(raw) if kind == "text" else float(raw))
+            overrides[name] = (int(float(raw)) if kind == "int" else str(raw) if kind == "text" else bool(raw) if kind == "bool"
+                               else float(raw))
         else:
             overrides[name] = default
     p = bp.settings(**overrides)

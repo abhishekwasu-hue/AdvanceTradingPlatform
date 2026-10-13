@@ -192,6 +192,14 @@ async def screen_stages(body: StagesBody, user: User = Depends(get_current_user)
         src = tx.sources().get(body.library_id.split(".", 1)[0])
         if src is not None and src.flag and not await flag_enabled(session, src.flag, user.tenant_id):
             raise HTTPException(status_code=404, detail="that screen's family is turned off for this organisation")
+        if body.library_id.startswith("legends."):
+            # U7 LG2: a card of a slice this organisation does not see is not there (as GET /legends/{id} answers)
+            card = lg.load().card(body.library_id)
+            if card is not None and card.slice not in await _legend_slices(session, user):
+                raise HTTPException(status_code=404, detail="no such Legends card")
+        own_flag = tx.screen_flags().get(body.library_id)                 # any single screen behind a flag of its own
+        if own_flag is not None and not await flag_enabled(session, own_flag, user.tenant_id):
+            raise HTTPException(status_code=404, detail="no such screen")
         found, why = st.library_source(body.library_id)
         if found is None:
             raise HTTPException(status_code=404, detail=why)

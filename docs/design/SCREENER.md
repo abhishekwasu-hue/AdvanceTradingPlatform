@@ -854,7 +854,8 @@ breakout screens could not open in the builder (TX1-7, LG1-7).
   bracketed so it stays ONE funnel stage (`needsBrackets`, string- and bracket-aware). Empty = a problem on the block.
   Offered in "Add a condition" only with the flag on; groups keep the other forms.
 - **Open a shipped screen** (`POST /api/screener/stages`, `app/screener/stages.py`; S_COMPUTE like `/validate`): a
-  Legends card or breakout template (its family's flag must be on) or any source -> validated and gated like
+  Legends card or breakout template (its family's flag must be on; a Legends card of a slice the organisation does not
+  see - LG2 with `screener_legends_lg2` off - or a screen behind its own flag answers 404, as `GET /legends/{id}` does) or any source -> validated and gated like
   `/validate`, parameters inlined, split into the top-level conjuncts the run path counts as stages, each with its
   canonical text, its bracketed form and its AST. `importStages.ts` maps a conjunct to an indicator, filter, category or
   rank block only when that block writes back exactly the server's text; everything else is a formula block. Tested:

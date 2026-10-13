@@ -91,3 +91,21 @@ def test_stages_of_a_source_and_of_a_library_screen(u2_on):
     assert client.post("/api/screener/stages", json={"library_id": "legends.nope"}, headers=headers).status_code == 404
     assert client.post("/api/screener/stages", json={"library_id": "starter.momentum"}, headers=headers).status_code == 404
     assert client.post("/api/screener/stages", json={"library_id": "breakouts.daily_52w_high"}, headers=headers).status_code == 404  # flag off
+
+
+def test_a_card_of_a_slice_that_is_off_is_not_read_through_stages(u2_on):
+    """U7 LG2: an LG2 card (flag `screener_legends_lg2` on top of `screener_legends`) is not there while its slice is off -
+    /stages answers as `GET /legends/{id}` does (404), so its source cannot be read through the builder."""
+    headers, _ = _owner("u2-lg2@example.com")
+    lg2 = next(c for c in lg.load().cards if c.slice == "lg2")
+    _set_flags(screener_legends=True, **{lg.FLAG_LG2: False})
+    try:
+        hidden = client.post("/api/screener/stages", json={"library_id": lg2.id}, headers=headers)
+        assert hidden.status_code == 404, hidden.text
+        assert client.get(f"/api/screener/legends/{lg2.id}", headers=headers).status_code == 404     # the same answer
+        assert client.post("/api/screener/stages", json={"library_id": "legends.turtle_channel_breakout"}, headers=headers).status_code == 200
+        _set_flags(**{lg.FLAG_LG2: True})
+        shown = client.post("/api/screener/stages", json={"library_id": lg2.id}, headers=headers)
+        assert shown.status_code == 200 and shown.json()["stages"], shown.text
+    finally:
+        _set_flags(**{lg.FLAG_LG2: False})

@@ -178,12 +178,20 @@ Upstox / Dhan broker), built from the commit. Results and analysis: `docs/report
   shard i of n takes the i/n-th part of each start slot (`--shard / --shards`), so the 25 shards between them start a
   user every 0.3 s. Before, each shard started its 20 users on its own clock: 25 logins arrived together every 7.5 s.
 - **Profiles.**
-  - Primary: a page load every 30 s on average (the Dashboard page's own refresh), for 5 minutes after the ramp.
-    It decides the job.
-  - Busy: a page load every 10 s, for 3 minutes, for comparison.
-  - Hostinger-shaped: the primary profile again with the API as the KVM 2 runs it: 2 processes, capped at 2 CPUs
-    with `docker update --cpus 2`. It is an approximation. On the real host, the worker, Postgres and Caddy share
-    those 2 vCPUs.
+  - Primary: a page load every 30 s on average (the Dashboard page's own refresh), for 5 minutes after the ramp, in
+    the KVM 2 shape (below). It decides the job.
+  - Login burst and busy (a page load every 10 s, 3 minutes): the same shape, for comparison.
+  - The KVM 2 as a CPU quota (runs 8-10's shape): only the API limited, `docker update --cpus 2`, everything else
+    unpinned; and the whole runner (3 API processes, no limit). For comparison.
+- **The KVM 2 shape (LD-7, `stack.sh pin 0,1 2,3`).** The owner's box runs the API (2 processes), the worker,
+  Postgres, Redis, Caddy and the frontend on the same 2 vCPUs, so the CI pins all of them to CPUs 0 and 1 and the 25
+  load clients (`loadtest.py --pin-cpus`) and the fake broker to CPUs 2 and 3. A CPU quota instead (`--cpus 2`) is
+  not the same machine: the API's threads spread over all 4 CPUs, spend the quota early in each 100 ms period and
+  stall for the rest of it, while Postgres and the worker run on the other CPUs for free.
+- **Clock (LD-7).** The job runs inside an NSE session (`ATP_CI_CLOCK=auto`: the real clock between 09:30 and 14:00
+  IST on a trading day, else shifted by libfaketime). While the market is open the worker keeps every user's broker
+  session (`byob_data_tier`, on in the CI posture) and the bars include the day so far; runs 1-9 ran outside a
+  session and measured a lighter load.
 - **Diagnostics.**
   - Every report also lists the requests started after the login ramp on their own. This table is diagnostic only;
     the verdict covers every request.

@@ -121,7 +121,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
-      ATP_CI_CLOCK: real            # the load test needs no market session; libfaketime costs the API CPU
+      # LD-7 (run 10): the market state changes the load - while NSE is open the worker keeps every user's broker session
+      # (500 of them) and the bars include today's - and runs 1-9 had all run outside a session on the real clock. `auto`
+      # runs every profile inside one: the real clock inside 09:30-14:00 IST on a trading day, else shifted (libfaketime,
+      # some API CPU - the label says which).
+      ATP_CI_CLOCK: auto
       USERS: ${{ github.event.inputs.users || '500' }}
       SECONDS_STEADY: ${{ github.event.inputs.seconds || '300' }}
       THINK: ${{ github.event.inputs.think || '30' }}
@@ -145,15 +149,16 @@ jobs:
           nohup deploy/ci/profile_api.sh 90 60 "$RUNNER_TEMP/atp-ci-state/load-profile-ramp" > /dev/null 2>&1 &
           nohup deploy/ci/profile_api.sh 250 60 "$RUNNER_TEMP/atp-ci-state/load-profile-steady" > /dev/null 2>&1 &
 
-      # LD-7: the run that decides the job has the API as the owner's production box runs it - the Hostinger KVM 2:
-      # 2 processes capped at its 2 CPUs (an approximation: on the real host the worker, Postgres and Caddy share them).
-      - name: Load test, primary profile, API as on the KVM 2 (think time = the app's own dashboard refresh)
+      # LD-7: the run that decides the job runs as the owner's production box does - the Hostinger KVM 2: 2 API processes,
+      # and the API, the worker, Postgres, Redis, Caddy and the frontend all on the same 2 CPUs (pinned: `stack.sh pin`);
+      # the 25 load clients and the fake broker, elsewhere in production, on the runner's other 2.
+      - name: Load test, primary profile, the KVM 2 shape (think time = the app's own dashboard refresh)
         id: primary
         run: |
-          echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem/ {print $2}') GB"
-          deploy/ci/stack.sh api-workers 2 --cpus 2
+          echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem/ {print $2}') GB; $(deploy/ci/stack.sh env | sed -n 's/^ATP_CI_CLOCK_NOTE=//p')"
+          deploy/ci/stack.sh pin 0,1 2,3
           deploy/ci/stack.sh load --name load-primary --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
-            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API as on the KVM 2 (2 processes, 2 CPUs)" \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, KVM 2 shape (2 API processes; API, worker, Postgres, Redis, Caddy on 2 CPUs); $(deploy/ci/stack.sh env | sed -n 's/^ATP_CI_CLOCK_NOTE=//p')" \
             --report "$RUNNER_TEMP/atp-ci-state/load-primary.md"
 
       - name: Where the API's time went in the primary run (py-spy summary)
@@ -164,20 +169,32 @@ jobs:
             echo "=== $phase"; cat "$RUNNER_TEMP/atp-ci-state/load-profile-$phase.txt" "$RUNNER_TEMP/atp-ci-state/load-profile-$phase.log" || true
           done
 
-      - name: Login burst, API as on the KVM 2 (secondary, does not decide the job) - the shards in step, 25 logins at once every 7.5 s
+      - name: Login burst, the KVM 2 shape (secondary, does not decide the job) - the shards in step, 25 logins at once every 7.5 s
         if: always() && steps.primary.outcome != 'skipped'
         continue-on-error: true
         run: |
           deploy/ci/stack.sh load --name load-burst --users "$USERS" --seconds 60 --ramp 150 --think "$THINK" --in-step \
-            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API as on the KVM 2, login bursts (shards in step)" \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, KVM 2 shape, login bursts (shards in step)" \
             --report "$RUNNER_TEMP/atp-ci-state/load-burst.md"
 
-      - name: Load test, busy profile, API as on the KVM 2 (think 10 s, for comparison - does not decide the job)
+      - name: Load test, busy profile, the KVM 2 shape (think 10 s, for comparison - does not decide the job)
         if: always() && steps.primary.outcome != 'skipped'
         continue-on-error: true
         run: |
           deploy/ci/stack.sh load --name load-busy --users "$USERS" --seconds 180 --ramp 150 --think 10 \
-            --label "GitHub-hosted runner ($(nproc) vCPU), think 10 s, API as on the KVM 2" --report "$RUNNER_TEMP/atp-ci-state/load-busy.md"
+            --label "GitHub-hosted runner ($(nproc) vCPU), think 10 s, KVM 2 shape" --report "$RUNNER_TEMP/atp-ci-state/load-busy.md"
+
+      # LD-7: runs 8-10's KVM 2 approximation, kept for comparison: only the API limited, by a CPU quota of 2 over the
+      # runner's 4 CPUs (`docker --cpus 2`), everything else unpinned.
+      - name: The KVM 2 as a CPU quota (secondary, does not decide the job) - the primary profile, API capped at 2 CPUs
+        if: always() && steps.primary.outcome != 'skipped'
+        continue-on-error: true
+        run: |
+          deploy/ci/stack.sh pin
+          deploy/ci/stack.sh api-workers 2 --cpus 2
+          deploy/ci/stack.sh load --name load-quota --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, 2 API processes capped at 2 CPUs (quota), the rest unpinned" \
+            --report "$RUNNER_TEMP/atp-ci-state/load-quota.md"
 
       - name: The whole runner (secondary, does not decide the job) - the primary profile, 3 API processes, no CPU cap
         if: always() && steps.primary.outcome != 'skipped'
@@ -193,12 +210,15 @@ jobs:
         run: |
           {
             echo "## Load test ($USERS users)"
-            for f in load-primary load-burst load-busy load-runner; do
+            for f in load-primary load-burst load-busy load-quota load-runner; do
               [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && { echo; echo "### $f"; cat "$RUNNER_TEMP/atp-ci-state/$f.md"; }
             done
           } >> "$GITHUB_STEP_SUMMARY" || true
-          for f in load-primary load-burst load-busy load-runner; do
-            [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && echo "::notice title=$f::$(head -n 1 "$RUNNER_TEMP/atp-ci-state/$f.md" | cut -c1-900)"
+          for f in load-primary load-burst load-busy load-quota load-runner; do
+            [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] || continue
+            echo "::notice title=$f::$(head -n 1 "$RUNNER_TEMP/atp-ci-state/$f.md" | cut -c1-900)"
+            # LD-7: the per-route p50 / p95 / p99 as an annotation too (job logs are not always readable from outside)
+            echo "::notice title=$f p50/p95/p99 ms::$(awk -F'|' '/^After the login ramp/ {exit} /^\| (chart|login|screener_run|dashboard|paper_account|positions|proposals)/ {gsub(/ +/, " "); printf "%s %s/%s/%s;", $2, $4, $5, $6}' "$RUNNER_TEMP/atp-ci-state/$f.md" | cut -c1-900)"
           done
           true
 

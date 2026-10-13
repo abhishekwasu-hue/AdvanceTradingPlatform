@@ -10,6 +10,9 @@
 #   deploy/ci/stack.sh load [options]     the sharded load test (backend/scripts/loadtest.py); see cmd_load
 #   deploy/ci/stack.sh run ARGS...        python ARGS in the ci-runner tool container
 #   deploy/ci/stack.sh api-workers N [--cpus C]  restart the API with N processes (default 2, as on the KVM 2), at most C CPUs
+#   deploy/ci/stack.sh pin [SERVER CLIENT]  the server side (API, worker, Postgres, Redis, Caddy, frontend) on the CPUs
+#                                         SERVER, the load clients and the fake broker on CLIENT (`pin 0,1 2,3`: the KVM 2);
+#                                         no arguments: every container on every CPU again
 #   deploy/ci/stack.sh logs | ps | diag   container logs / state; diag writes them under $STATE/diag
 #   deploy/ci/stack.sh down               stop and delete the stack and its volumes
 #
@@ -149,6 +152,7 @@ cmd_load() {
   case "$name" in ""|*/*|.*) die "--name must be a plain directory name" 2 ;; esac
   rm -rf "${STATE:?}/$name"; mkdir -p "$STATE/$name"
   local per=$(( (users + shards - 1) / shards )) i offset n pids=()
+  local client_cpus; client_cpus="$(env_value ATP_CI_CLIENT_CPUS)"     # `stack.sh pin`: the clients off the server's CPUs
   step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s$([ "$in_step" = 1 ] && echo ', shards in step (login bursts)')"
   scrape_metrics > "$STATE/$name/metrics-before.prom" || true
   pg_statements_reset || true
@@ -165,7 +169,7 @@ cmd_load() {
     dc --profile tools run --rm -T ci-runner /ci-scripts/loadtest.py --base "https://$(env_value DOMAIN)" --cacert /state/caddy-root.crt \
       --accounts /state/load_accounts.csv --account-offset "$offset" --users "$n" --seconds "$seconds" --ramp "$ramp" \
       --think "$think" --seed "$((54 + i))" --shard "$((in_step ? 0 : i))" --shards "$((in_step ? 1 : shards))" --start-at "$start_at" \
-      --raw-out "/state/$name/shard-$i.json" > "$STATE/$name/shard-$i.log" 2>&1 &
+      ${client_cpus:+--pin-cpus "$client_cpus"} --raw-out "/state/$name/shard-$i.json" > "$STATE/$name/shard-$i.log" 2>&1 &
     pids+=("$!")
   done
   local failed=0 pid
@@ -267,6 +271,31 @@ cmd_api_workers() {
   fi
 }
 
+# LD-7: the KVM 2 shape by CPU placement. `docker update --cpus` (a CFS quota) lets the API's threads spread over all the
+# runner's CPUs and then stalls them for the rest of each 100 ms period once the quota is spent - a stall a VM with 2
+# vCPUs does not have - while Postgres, the worker and Caddy ran on the other CPUs for free. Pinned, everything the
+# owner's box runs shares SERVER's CPUs, and the load clients and the fake broker (elsewhere in production) use CLIENT.
+SERVER_SERVICES="backend worker postgres redis caddy frontend"
+cmd_pin() {
+  ensure_env
+  local all server client svc id
+  all="0-$(( $(nproc) - 1 ))"
+  server="${1:-$all}"; client="${2:-$all}"
+  case "$server$client" in *[!0-9,-]*) die "pin takes CPU lists such as 0,1 and 2,3" 2 ;; esac
+  step "server side (API, worker, Postgres, Redis, Caddy, frontend) on CPUs $server; load clients and fake broker on CPUs $client"
+  for svc in $SERVER_SERVICES; do
+    id="$(dc ps -q "$svc")"
+    if [ -n "$id" ]; then docker update --cpuset-cpus "$server" "$id" > /dev/null; fi
+  done
+  id="$(dc ps -q fake-broker)"
+  if [ -n "$id" ]; then docker update --cpuset-cpus "$client" "$id" > /dev/null; fi
+  sed -i '/^ATP_CI_CLIENT_CPUS=/d' "$ENV_FILE"
+  if [ "$client" != "$all" ]; then echo "ATP_CI_CLIENT_CPUS=$client" >> "$ENV_FILE"; fi
+  # the API sizes its bcrypt threads from the CPUs it may run on at start-up (app/auth/security.py): restart it
+  docker restart "$(dc ps -q backend)" > /dev/null
+  dc up -d --wait --wait-timeout 300 backend
+}
+
 cmd_diag() {
   mkdir -p "$STATE/diag"
   dc ps -a > "$STATE/diag/ps.txt" 2>&1 || true
@@ -295,6 +324,7 @@ main() {
     ps) ensure_env; dc ps -a ;;
     diag) ensure_env; cmd_diag ;;
     api-workers) cmd_api_workers "$@" ;;
+    pin) cmd_pin "$@" ;;
     down) cmd_down ;;
     env) ensure_env; grep -E '^(DOMAIN|ATP_CI_)' "$ENV_FILE" ;;
     help|-h|--help) sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' ;;

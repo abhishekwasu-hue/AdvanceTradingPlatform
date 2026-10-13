@@ -102,7 +102,7 @@ def test_slow_routes_release_before_their_broker_calls():
     assert body.index("await release_connection(session)") < body.index("for raw in body.symbols:")
     screener = (BACKEND / "app/screener/routes.py").read_text()
     fetch = screener[screener.index("async def fetch_frames("):screener.index("async def _attach_daily(")]
-    assert fetch.index("await release_connection(session)") < fetch.index("for symbol in symbols:")
+    assert fetch.index("await release_connection(session)") < fetch.index("await asyncio.gather(")
     run = screener[screener.index("async def run("):]
     assert "release=True" in run[:run.index("run_screen")]
     assert run.index("await release_connection(session)") < run.index("asyncio.to_thread(run_screen")

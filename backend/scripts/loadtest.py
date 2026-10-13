@@ -380,6 +380,15 @@ def _slo_factor(value: str) -> float:
     return float(bench_screener.ci_factor())
 
 
+def pin_cpus(spec: str) -> set:
+    """"2,3" or "2-3" -> {2, 3}."""
+    cpus: set = set()
+    for part in spec.split(","):
+        low, _, high = part.strip().partition("-")
+        cpus.update(range(int(low), int(high or low) + 1))
+    return cpus
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Session-shaped API load test (see the module docstring).")
     parser.add_argument("--base", default="http://localhost:8000")
@@ -407,7 +416,11 @@ def main() -> int:
     parser.add_argument("--markdown", default=None, help="write the report as a Markdown table here")
     parser.add_argument("--label", default="", help="where it ran (for --markdown)")
     parser.add_argument("--stats", default=None, help="docker stats CSV to summarise in --markdown")
+    parser.add_argument("--pin-cpus", default=None, help="run on these CPUs only, e.g. 2,3 (Linux; the CI's KVM 2 shape keeps the "
+                                                          "load clients off the server's CPUs)")
     args = parser.parse_args()
+    if args.pin_cpus:
+        os.sched_setaffinity(0, pin_cpus(args.pin_cpus))
     if args.ramp is None:
         args.ramp = args.seconds / 10
     if args.merge:

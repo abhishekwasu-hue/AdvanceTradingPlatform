@@ -56,6 +56,15 @@ DISCLAIMER = "Matches are symbols that passed the screen's filters on the data s
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
 HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
 MAX_INTRADAY_FETCH_DAYS = 60
+FETCH_CONCURRENCY = 3     # LD-7: one screen run's broker fetches in flight at once (capped by the broker's burst)
+
+
+def fetch_concurrency(broker_name: str) -> int:
+    """How many of one screen run's symbol fetches may be in flight at once: the broker's burst allowance in the worker's
+    rate budget (app/brokers/rate_budget.py - about a third of the published limit; 3 for a broker it does not list,
+    Dhan among them), never more than FETCH_CONCURRENCY."""
+    from app.brokers.rate_budget import limits_for
+    return max(1, min(FETCH_CONCURRENCY, limits_for(broker_name).burst))
 _FETCH = {"1m": "1min", "3m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "day", "1M": "day"}
 _FETCH_TF = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", "day": "1d"}
 
@@ -289,15 +298,23 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         await release_connection(session)
     universe: List[SymbolData] = []
     newest: List[datetime] = []
-    for symbol in symbols:
-        try:
-            bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
-                          else service.get_candles(symbol, exchange, interval))
-        except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
-            problems[symbol] = f"{type(exc).__name__}: {str(exc)[:120]}"
-            continue
+    # LD-7: the symbols are fetched a few at a time instead of one after another (a cold five-symbol run waited for five
+    # broker round trips in a row). At most the broker's burst allowance at once (`fetch_concurrency`); the results keep
+    # the symbols' order.
+    gate = asyncio.Semaphore(fetch_concurrency(record.broker_name))
+
+    async def fetch_one(symbol: str) -> Tuple[Any, Dict[str, Any], str]:
+        async with gate:
+            try:
+                bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
+                              else service.get_candles(symbol, exchange, interval))
+            except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
+                return None, {}, f"{type(exc).__name__}: {str(exc)[:120]}"
         # LD-7: the pandas work per symbol runs on a worker thread, so a screen does not hold the event loop.
-        df, frames, problem = await asyncio.to_thread(_symbol_frames, bars, interval, base_tf, include_forming, now)
+        return await asyncio.to_thread(_symbol_frames, bars, interval, base_tf, include_forming, now)
+
+    fetched = await asyncio.gather(*(fetch_one(symbol) for symbol in symbols))
+    for symbol, (df, frames, problem) in zip(symbols, fetched):
         if problem:
             problems[symbol] = problem
             continue

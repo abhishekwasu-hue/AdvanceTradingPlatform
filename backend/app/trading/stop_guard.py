@@ -32,7 +32,8 @@ from app.reconciliation.service import broker_uncertain_reason
 from app.core import config
 from app.trading import stop_state
 from app.trading.position_monitor import (_find_order, absent_exit_dead_reason, adoptable_exit, claim_in_flight, close_position,
-                                          is_pending_exit, venue_for)
+                                          exit_ids_elsewhere, expected_exit_tag, is_pending_exit, unverified_working_exits,
+                                          venue_for)
 
 logger = logging.getLogger(__name__)
 
@@ -196,19 +197,24 @@ async def verify_protective_stops(
 _DEAD_EXIT = frozenset({"REJECTED", "CANCELLED", "CANCELED", "CANCELLED AMO", "EXPIRED", "LAPSED"})
 
 
-def _exit_died_unfilled(trade: TradeRecord, book: Dict) -> bool:
+def _exit_died_unfilled(trade: TradeRecord, book: Dict, *, exclude: frozenset = frozenset(), exit_tag: Optional[str] = None,
+                        exchange: Optional[str] = None) -> bool:
     """Re-exit guard: True when the exit this position sent is over with nothing filled - rejected / cancelled, or gone
     from the book / a claim that never recorded an order once a reconciliation since it was sent found the position still
-    open (`absent_exit_dead_reason`) and no order in the book may be it (`adoptable_exit`). The position is then open
-    without a stop and one is re-armed. Still working, filled, part-filled (the monitor sends the rest), being placed right
-    now, or gone but not proven over (a day order that filled yesterday is gone too): pending - never a stop on a
+    open (`absent_exit_dead_reason`) and no order in the book is it (`adoptable_exit`, with the same exclusions, tag and
+    claim-window rules the monitor uses) or may be it and still works (`unverified_working_exits`). The position is then
+    open without a stop and one is re-armed. Still working, filled, part-filled (the monitor sends the rest), being placed
+    right now, or gone but not proven over (a day order that filled yesterday is gone too): pending - never a stop on a
     position that may already be flat."""
     exit_id = trade.exit_order_id
     exit_order = None if is_pending_exit(exit_id) else book.get(exit_id)
     if exit_order is None:
         if is_pending_exit(exit_id) and claim_in_flight(trade):
             return False
-        if adoptable_exit(trade, list(book.values())) is not None:
+        orders = list(book.values())
+        if adoptable_exit(trade, orders, exclude, tag=exit_tag, exchange=exchange) is not None:
+            return False
+        if unverified_working_exits(trade, orders, exclude, tag=exit_tag, exchange=exchange):
             return False
         return absent_exit_dead_reason(trade) is not None
     return (exit_order.status or "").upper() in _DEAD_EXIT and float(exit_order.filled_quantity or 0) <= 0
@@ -230,7 +236,10 @@ async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterf
     if getattr(trade, "exit_order_id", None):
         # Re-exit guard: an exit already went out for this position (its booking is pending). A new stop on a position
         # that is closing - or already flat - could open one the other way. Re-arm only when that exit died unfilled.
-        if not _exit_died_unfilled(trade, book):
+        died = _exit_died_unfilled(trade, book, exclude=await exit_ids_elsewhere(session, trade),
+                                   exit_tag=expected_exit_tag(trade, broker, order_algo_id(tenant.algo_id, broker.name)),
+                                   exchange=await venue_for(session, trade))
+        if not died:
             counts.setdefault("exit_pending", 0)
             counts["exit_pending"] += 1
             return

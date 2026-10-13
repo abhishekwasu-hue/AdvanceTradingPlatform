@@ -72,6 +72,22 @@ def _old(status, filled=0.0, price=None, quantity=1):
                              order_type="MARKET", status=status, average_price=price)
 
 
+def _lookalike(order_id, status, *, tag=None, placed_at=None, product=None, exchange=None, quantity=1, filled=None, price=None):
+    """A SELL MARKET on RXG that looks like the position's exit: whether it is one is down to its tag / product /
+    exchange and when the broker took it."""
+    filled = (quantity if status == "COMPLETE" else 0) if filled is None else filled
+    return BrokerOrderStatus(order_id=order_id, symbol="RXG", transaction_type=OrderSide.SELL, quantity=quantity, filled_quantity=filled,
+                             order_type="MARKET", status=status, average_price=price if price is not None else (96.0 if filled else None),
+                             tag=tag, placed_at=placed_at, product=product, exchange=exchange)
+
+
+def _exit_tag(broker):
+    """The tag this platform's exits of a STRATEGY position carry at `broker` (no algo id registered)."""
+    from types import SimpleNamespace
+    from app.compliance.algo_id import order_algo_id
+    return pm.expected_exit_tag(SimpleNamespace(strategy_id=STRATEGY), broker, order_algo_id(None, broker.name))
+
+
 # A fixed clock early in today's IST trading day: "sent" at T0, judged a few minutes later on the same day (a real
 # reconciliation, stamped with the wall clock, comes after T0).
 T0 = to_ist(datetime.now(timezone.utc)).replace(hour=0, minute=1, second=0, microsecond=0).astimezone(timezone.utc)
@@ -498,7 +514,8 @@ def test_an_unclear_send_that_reached_the_broker_is_adopted_never_sent_twice():
         async def place_order(self, order):
             self.placed.append(order)
             self.orders["LOST-1"] = BrokerOrderStatus(order_id="LOST-1", symbol=order.symbol, transaction_type=order.transaction_type,
-                                                      quantity=order.quantity, order_type="MARKET", status="OPEN")
+                                                      quantity=order.quantity, order_type="MARKET", status="OPEN", tag=order.tag,
+                                                      placed_at=datetime.now(timezone.utc))
             raise TimeoutError("read timed out")
     broker = _Lost(positions=_open_at_broker())
     first = _close(trade_id, broker, t["user_id"])
@@ -518,11 +535,10 @@ def test_an_unclear_send_that_reached_the_broker_is_adopted_never_sent_twice():
 
 def test_the_stop_guard_does_not_rearm_next_to_an_adoptable_exit():
     t = _tenant(f"rxg-unclear-guard-{uuid.uuid4().hex[:6]}@example.com")
-    trade_id = _live_trade(t, exit_order_id=pm.EXIT_PENDING, exit_sent_at=datetime.now(timezone.utc) - timedelta(minutes=10),
-                           sl_order_id="SL-GONE")
+    sent = datetime.now(timezone.utc) - timedelta(minutes=10)
+    trade_id = _live_trade(t, exit_order_id=pm.EXIT_PENDING, exit_sent_at=sent, sl_order_id="SL-GONE")
     broker = _Book(positions=_open_at_broker())
-    broker.orders["LOST-1"] = BrokerOrderStatus(order_id="LOST-1", symbol="RXG", transaction_type=OrderSide.SELL, quantity=1,
-                                                order_type="MARKET", status="OPEN")
+    broker.orders["LOST-1"] = _lookalike("LOST-1", "OPEN", tag=_exit_tag(broker), placed_at=sent + timedelta(seconds=2))
 
     async def stamp():                                                        # even with a (stale) proof on record
         async with _session_factory() as session:
@@ -756,3 +772,238 @@ def test_an_exit_the_broker_took_and_then_rejected_is_never_booked_as_closed():
     assert any("not booked" in w for w in outcome.warnings)
     again = _close(trade_id, broker, t["user_id"])                           # the stop fires again: a new full exit
     assert again.closed and [float(o.quantity) for o in broker.placed] == [1.0, 1.0]
+
+
+# --- Round 4, finding 1: only this platform's exit, placed inside the claim window, is ever adopted ----------------------
+
+def _stale_claim(t, minutes=10, sl_order_id=None):
+    """A claim that never recorded a broker order, `minutes` old (stale), and when it was sent."""
+    sent = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(minutes=minutes)
+    return _live_trade(t, exit_order_id=pm.EXIT_PENDING, exit_sent_at=sent, sl_order_id=sl_order_id), sent
+
+
+def _naive_ist(moment):
+    """How Kite / Upstox spell a time: the IST wall clock, no offset."""
+    return to_ist(moment).replace(tzinfo=None)
+
+
+def _assert_not_adopted(t, trade_id, broker, outcome):
+    row = _get(TradeRecord, trade_id)
+    assert not outcome.closed and row.exit_time is None and broker.placed == []
+    assert row.exit_order_id == pm.EXIT_PENDING and _audit(t["tenant_id"], "exit_order_adopted") == []
+    assert outcome.exit_waiting and broker_uncertain_reason(_get(Tenant, t["tenant_id"])) is not None
+
+
+def test_a_manual_sell_placed_hours_before_with_a_naive_ist_time_is_never_adopted():
+    """Review round 3, HIGH: a manual SELL MARKET on the symbol, COMPLETE, placed 2 h before the exit was claimed, its time
+    naive IST as Kite / Upstox send it. Read as UTC it looked 3.5 h after the claim and was adopted - the position booked
+    closed on someone else's order. Read as IST it is 2 h before the claim window: not this exit."""
+    t = _tenant(f"rxg-manual-ist-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t)
+    broker = _Book(positions=_open_at_broker())
+    broker.orders["MAN-1"] = _lookalike("MAN-1", "COMPLETE", placed_at=_naive_ist(sent - timedelta(hours=2)),
+                                        product=product_of(trade_id), exchange="NFO")
+    outcome = _close(trade_id, broker, t["user_id"])
+    _assert_not_adopted(t, trade_id, broker, outcome)
+
+
+def test_a_lookalike_with_no_time_is_never_adopted():
+    """Shoonya sent no order time: the window could not be checked and the order was adopted. Now it never is."""
+    t = _tenant(f"rxg-manual-notime-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t)
+    broker = _Book(positions=_open_at_broker())
+    broker.orders["MAN-1"] = _lookalike("MAN-1", "COMPLETE", tag=_exit_tag(broker), placed_at=None)
+    outcome = _close(trade_id, broker, t["user_id"])
+    _assert_not_adopted(t, trade_id, broker, outcome)
+
+
+def test_an_untimed_lookalike_still_working_holds_the_exit_until_it_ends_then_the_exit_goes_out():
+    """The safe path for an order that may be the exit but cannot be shown to be: never adopted, never sent over while it
+    works - even with a reconciliation proof on record - and raised CRITICAL while it waits; once it ends (or is cancelled
+    at the broker) the proof lets the exit out (ADR-0004)."""
+    t = _tenant(f"rxg-untimed-working-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t, sl_order_id="SL-GONE")
+    broker = _Book(positions=_open_at_broker())
+    broker.orders["MAN-1"] = _lookalike("MAN-1", "OPEN", tag=_exit_tag(broker), placed_at=None)
+
+    async def stamp():                                                        # a reconciliation found the position open
+        async with _session_factory() as session:
+            row = await session.get(TradeRecord, trade_id)
+            row.reconciled_open_at = sent + timedelta(minutes=5)
+            await session.commit()
+    _run(stamp())
+    for _ in range(pm.EXIT_WAIT_ALERT_CHECKS):
+        outcome = _close(trade_id, broker, t["user_id"])
+        assert not outcome.closed and outcome.exit_waiting and broker.placed == []
+        assert any("MAN-1" in w for w in outcome.warnings)
+    assert any(n.severity == "CRITICAL" for n in _notifications(t["tenant_id"], trade_id))
+    assert _guard(t, broker).get("exit_pending") == 1 and broker.placed == []      # no stop next to it either
+    broker.orders["MAN-1"] = broker.orders["MAN-1"].model_copy(update={"status": "CANCELLED"})
+    outcome = _close(trade_id, broker, t["user_id"])
+    assert outcome.closed and len(broker.placed) == 1 and _get(TradeRecord, trade_id).exit_order_id == "NEW-1"
+
+
+def test_a_lookalike_on_another_product_is_never_adopted():
+    """A manual CNC SELL (no tag) on the symbol of an MIS / NRML position, inside the window: not this exit."""
+    t = _tenant(f"rxg-manual-cnc-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t)
+    broker = _Book(positions=_open_at_broker())
+    assert product_of(trade_id) != "CNC"
+    broker.orders["MAN-1"] = _lookalike("MAN-1", "COMPLETE", placed_at=sent + timedelta(seconds=2), product="CNC", exchange="NFO")
+    outcome = _close(trade_id, broker, t["user_id"])
+    _assert_not_adopted(t, trade_id, broker, outcome)
+
+
+def test_a_lookalike_with_another_tag_is_never_adopted():
+    t = _tenant(f"rxg-manual-tag-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t)
+    broker = _Book(positions=_open_at_broker())
+    broker.orders["MAN-1"] = _lookalike("MAN-1", "COMPLETE", tag="MANUAL", placed_at=sent + timedelta(seconds=2))
+    outcome = _close(trade_id, broker, t["user_id"])
+    _assert_not_adopted(t, trade_id, broker, outcome)
+
+
+def test_our_exit_placed_after_the_claim_window_is_never_adopted():
+    """The window is closed at both ends: an order placed after `exit_sent_at + CLAIM_INFLIGHT_SECONDS` was not this send."""
+    t = _tenant(f"rxg-late-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t)
+    broker = _Book(positions=_open_at_broker())
+    late = sent + timedelta(seconds=pm.CLAIM_INFLIGHT_SECONDS + 30)
+    broker.orders["MAN-1"] = _lookalike("MAN-1", "COMPLETE", tag=_exit_tag(broker), placed_at=late)
+    outcome = _close(trade_id, broker, t["user_id"])
+    _assert_not_adopted(t, trade_id, broker, outcome)
+
+
+def test_our_tagged_exit_inside_the_window_is_adopted_and_booked():
+    t = _tenant(f"rxg-ours-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t)
+    broker = _Book(positions=_open_at_broker())
+    broker.orders["LOST-1"] = _lookalike("LOST-1", "COMPLETE", tag=_exit_tag(broker), price=96.5,
+                                         placed_at=_naive_ist(sent + timedelta(seconds=1)))      # naive IST, inside the window
+    outcome = _close(trade_id, broker, t["user_id"])
+    row = _get(TradeRecord, trade_id)
+    assert outcome.closed and broker.placed == [] and row.exit_order_id == "LOST-1" and row.exit_price == 96.5
+    assert any("LOST-1" in d for d in _audit(t["tenant_id"], "exit_order_adopted"))
+
+
+def test_an_untagged_order_on_the_positions_product_and_exchange_inside_the_window_is_adopted():
+    t = _tenant(f"rxg-ours-untagged-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t)
+    broker = _Book(positions=_open_at_broker())
+    broker.orders["LOST-1"] = _lookalike("LOST-1", "COMPLETE", placed_at=sent - timedelta(seconds=2), product=product_of(trade_id),
+                                         exchange="NFO", price=96.5)
+    outcome = _close(trade_id, broker, t["user_id"])
+    assert outcome.closed and broker.placed == [] and _get(TradeRecord, trade_id).exit_order_id == "LOST-1"
+
+
+def test_the_stop_guard_never_counts_an_order_another_position_records_as_this_exit():
+    """Round 3, LOW: the stop guard used no exclusion set - another position's own exit, on the same symbol and inside the
+    window, held this position's stop off. It is excluded as the monitor excludes it; with the position proven open and
+    no exit of its own in the book, the stop is re-armed."""
+    t = _tenant(f"rxg-guard-elsewhere-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id, sent = _stale_claim(t, sl_order_id="SL-GONE")
+    _live_trade(t, exit_order_id="OTHER-EXIT")                               # another position on RXG records it
+    broker = _Book(positions=_open_at_broker())
+    broker.orders["OTHER-EXIT"] = _lookalike("OTHER-EXIT", "OPEN", tag=_exit_tag(broker), placed_at=sent + timedelta(seconds=1))
+
+    async def stamp():
+        async with _session_factory() as session:
+            row = await session.get(TradeRecord, trade_id)
+            row.reconciled_open_at = sent + timedelta(minutes=5)
+            await session.commit()
+    _run(stamp())
+    counts = _guard(t, broker)
+    assert counts["rearmed"] == 1 and counts.get("exit_pending") == 1             # the other position's exit is pending
+    assert _get(TradeRecord, trade_id).sl_order_id == "NEW-1"                     # this one got its stop back
+
+
+def test_adapters_read_a_naive_order_time_as_ist():
+    """Kite and Upstox send `order_timestamp` as a naive IST wall time; Noren sends `norentm` as "HH:MM:SS DD-MM-YYYY"."""
+    import httpx
+    from app.brokers.models import BrokerCredentials
+    from app.brokers.shoonya import ShoonyaBroker
+    from app.brokers.upstox import UpstoxBroker
+    from app.brokers.zerodha import ZerodhaBroker
+    utc = datetime(2026, 10, 13, 4, 0, 0, tzinfo=timezone.utc)                # 09:30 IST
+    kite = {"order_id": "K1", "tradingsymbol": "RXG", "transaction_type": "SELL", "quantity": 1, "order_type": "MARKET",
+            "status": "COMPLETE", "order_timestamp": "2026-10-13 09:30:00", "tag": "T-EXIT", "product": "MIS", "exchange": "NFO"}
+    upstox = {"order_id": "U1", "trading_symbol": "RXG", "transaction_type": "SELL", "quantity": 1, "order_type": "MARKET",
+              "status": "complete", "order_timestamp": "2026-10-13 09:30:00", "tag": "T-EXIT", "product": "I", "exchange": "NFO"}
+    noren = {"norenordno": "S1", "tsym": "RXG", "trantype": "S", "qty": "1", "prctyp": "MKT", "status": "COMPLETE",
+             "norentm": "09:30:00 13-10-2026", "remarks": "T-EXIT", "prd": "I", "exch": "NFO"}
+
+    def handler(request):
+        if "OrderBook" in request.url.path:
+            return httpx.Response(200, json={"stat": "Ok", "values": [noren]})
+        if "retrieve-all" in request.url.path:
+            return httpx.Response(200, json={"status": "success", "data": [upstox]})
+        return httpx.Response(200, json={"status": "success", "data": [kite]})
+
+    def client(base):
+        return httpx.AsyncClient(base_url=base, transport=httpx.MockTransport(handler))
+    creds = BrokerCredentials(api_key="k", access_token="t", client_id="u", api_secret="s")
+    shoonya = ShoonyaBroker(creds, client=client(ShoonyaBroker.BASE_URL))
+    shoonya._session_token = "x"
+    books = [_run(ZerodhaBroker(creds, client=client(ZerodhaBroker.BASE_URL)).get_order_book()),
+             _run(UpstoxBroker(creds, client=client(UpstoxBroker.BASE_URL)).get_order_book()),
+             _run(shoonya.get_order_book())]
+    for (order,) in books:
+        assert order.placed_at == utc and order.placed_at.tzinfo is not None
+        assert (order.tag, order.product, order.exchange) == ("T-EXIT", "MIS", "NFO")
+
+
+def product_of(trade_id):
+    from app.execution.products import product_for_trade
+    return product_for_trade(_get(TradeRecord, trade_id))
+
+
+# --- Round 4, finding 2: a part fill while the exit still works is never booked as closed --------------------------------
+
+class _Working(_Book):
+    """Each MARKET exit is taken and part-fills `first_fill` units, still OPEN; the test moves it on."""
+
+    def __init__(self, first_fill, **kw):
+        super().__init__(**kw)
+        self.first_fill = first_fill
+
+    async def place_order(self, order):
+        self.placed.append(order)
+        oid = f"NEW-{len(self.placed)}"
+        first = len(self.placed) == 1
+        filled = self.first_fill if first else order.quantity
+        self.orders[oid] = BrokerOrderStatus(order_id=oid, symbol=order.symbol, transaction_type=order.transaction_type,
+                                             quantity=order.quantity, filled_quantity=filled, order_type=order.order_type,
+                                             status="OPEN" if first else "COMPLETE", average_price=self.ltp)
+        return BrokerOrderResponse(order_id=oid, status="OPEN")
+
+
+def test_an_exit_part_filled_and_still_open_is_not_booked_until_it_completes():
+    t = _tenant(f"rxg-open-part-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, exit_order_id=None, quantity=10)
+    broker = _Working(first_fill=3, ltp=97.0)
+    first = _close(trade_id, broker, t["user_id"])
+    row = _get(TradeRecord, trade_id)
+    assert not first.closed and first.exit_waiting and row.exit_time is None and row.exit_order_id == "NEW-1"
+    assert any("still working" in w for w in first.warnings)
+    again = _close(trade_id, broker, t["user_id"])                            # still OPEN with 3: wait, nothing new
+    assert not again.closed and again.exit_waiting and len(broker.placed) == 1
+    broker.orders["NEW-1"] = broker.orders["NEW-1"].model_copy(update={"status": "COMPLETE", "filled_quantity": 10,
+                                                                       "average_price": 96.8})
+    done = _close(trade_id, broker, t["user_id"])
+    row = _get(TradeRecord, trade_id)
+    assert done.closed and len(broker.placed) == 1 and [float(o.quantity) for o in broker.placed] == [10.0]
+    assert row.exit_price == 96.8 and row.exit_order_id == "NEW-1"
+    assert row.pnl is not None and row.pnl < (96.8 - 100.0) * 10 + 1e-9       # booked for all 10 (less charges)
+
+
+def test_an_exit_part_filled_while_open_then_cancelled_sends_exactly_the_rest():
+    t = _tenant(f"rxg-open-cancel-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, exit_order_id=None, quantity=10)
+    broker = _Working(first_fill=3, ltp=97.0)
+    assert not _close(trade_id, broker, t["user_id"]).closed
+    broker.orders["NEW-1"] = broker.orders["NEW-1"].model_copy(update={"status": "CANCELLED"})
+    broker.ltp = 95.0
+    outcome = _close(trade_id, broker, t["user_id"])
+    row = _get(TradeRecord, trade_id)
+    assert outcome.closed and [float(o.quantity) for o in broker.placed] == [10.0, 7.0]
+    assert row.exit_price == pytest.approx((3 * 97.0 + 7 * 95.0) / 10) and row.exit_order_id == "NEW-2"

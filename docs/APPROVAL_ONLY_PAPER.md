@@ -173,6 +173,15 @@ same `GET /api/paper/ladder` also carries:
 
 With the flag off, the answer is the Z3-b one, unchanged (tested).
 
+**N2-2 experience levels** (flag `experience_levels`, off by default; `docs/design/N2_P1FGH.md`):
+
+- **Level**: derived from the same PAPER record. Beginner -> Intermediate at the ladder's sessions, trades and drawdown
+  criteria; Advanced at 100 trades over 60 sessions.
+- **Gates**: Intermediate opens futures, and Advanced opens naked short options (single written legs and structures with
+  an unhedged short side). They refuse new entries in the order pipeline. Exits are never gated (tested).
+- **Opt-out**: `GET /api/paper/experience` and `POST /api/paper/experience/opt-out` lift one gate for the rest of the
+  IST day, with a reason. Each opt-out is logged in the audit trail and counted on the card.
+
 **Telegram** (the existing bot, with the existing whitelist and approver mapping; `paper_account` flag):
 
 - `/status`: market, kill switch, your PAPER pause, approval-only on/off, your open positions and the proposals waiting

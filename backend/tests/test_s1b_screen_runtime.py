@@ -214,6 +214,18 @@ def test_intraday_breakout_series_u6_bk2():
     assert _ev("SessionVWAP()", data).notna().any()
 
 
+def test_vcp_and_indicator_breakout_series_u6_bk3():
+    # deeper checks (VCP fixtures, squeeze / MA / regime fixtures, no look-ahead, parity with the engine) are in
+    # tests/test_z7_bk3_breakouts.py
+    closes = [100 + 3 * np.sin(i / 6) + i * 0.05 for i in range(300)]
+    data = _sym(closes)
+    for text in ('VCPBreakout("up")', 'VCPReady("up", 2, 1, 5, FALSE, FALSE)', 'DonchianBreakout("down", 55)',
+                 'SqueezeBreakout("up", "ttm")', 'MABreakout("up", 20, "ema", 0)', 'RegimeBreakout("down")'):
+        assert _ev(text, data).dtype == bool, text
+    jump = _sym([100.0] * 60 + [104.0])                                         # closes 3 above the 20-bar high (101)
+    assert bool(_ev('DonchianBreakout("up", 20, 0)', jump).iloc[-1]) and not _ev('DonchianBreakout("up", 20, 0)', jump).iloc[:-1].any()
+
+
 def test_market_zone_functions_z7a3():
     # deeper checks (as-of per bar, no look-ahead, text vs engine, tenant scope) are in tests/test_zones_chart_screenql.py
     from datetime import datetime, timezone

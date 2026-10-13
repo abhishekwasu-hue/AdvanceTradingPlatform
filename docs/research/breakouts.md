@@ -1,11 +1,11 @@
-# Breakout screens - research notes (U6 BK1, BK2)
+# Breakout screens - research notes (U6 BK1, BK2, BK3)
 
 Source spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` (§1 research summary). Code: `backend/app/screener/breakouts/`.
 
 Rule: no fitted numbers. Every threshold is an editable parameter (`params.py`) whose default is a published convention or
 the practitioner range named below, with a one-line note. The table at the end is the parameter list; a test
 (`tests/test_z7_bk1_breakouts.py`) checks that every parameter and its note appear here word for word (BK2's intraday
-parameters included).
+parameters and BK3's VCP / indicator parameters included).
 
 ## What the sources say (spec §1, summarised)
 
@@ -106,6 +106,43 @@ How BK2 uses them:
 - **"Then" template stop.** For the ORB templates the stop reference is the opening-range midpoint (`stop_mode` =
   midpoint). `base` gives the opposite side of the range.
 
+## BK3: VCP and the indicator breakouts
+
+Sources (in addition to the ones above):
+- Mark Minervini, *Trade Like a Stock Market Wizard* (2013): the **trend template** (price above the 50-, 150- and 200-day
+  averages in that order, the 200-day rising for at least a month, within 25 % of the 52-week high, at least 30 % above
+  the 52-week low, RS rating of 70 or more) and the **VCP** (two to six contractions, each shallower than the one before,
+  volume drying up, the pivot at the top of the last contraction, the break on expanding volume).
+- Richard Donchian's channel and the Turtle rules (Curtis Faith, *Way of the Turtle*, 2007): System 1 = 20-day breakout,
+  System 2 = 55-day.
+- John Bollinger, *Bollinger on Bollinger Bands* (2001): 20-period, 2-standard-deviation bands; the "squeeze" = band width
+  at a six-month low, followed by an expansion.
+- John Carter, *Mastering the Trade* (2005): the TTM squeeze - Bollinger bands inside a 20-period, 1.5-ATR Keltner channel;
+  the "fire" when they move back outside, in the direction of a linear-regression momentum oscillator.
+- J. Welles Wilder, *New Concepts in Technical Trading Systems* (1978): RSI(14), ADX(14); ADX below about 20 reads as no
+  trend, a rising ADX from there as a new trend. Andrew Cardwell's RSI range rules: 40-60 is the band a trendless RSI
+  holds (bull ranges hold 40-80, bear ranges 20-60).
+- The 50-day line as the key intermediate average (O'Neil, Minervini) and the 20 / 50 / 200 stack.
+
+How BK3 uses them:
+- **B3 VCP.** The base is read from a causal zigzag whose swing size is `vcp_pivot_atr` x ATR (the market's own noise,
+  as every other breakout distance); depths are then measured in % as in Minervini's examples. The walk back from the last
+  confirmed swing low stops at the first contraction that is not deeper than the next one by `vcp_ratio`, is older than
+  `vcp_max_bars`, deeper than `vcp_max_depth_pct`, or has a lower high than a later one. The trend template is applied as
+  written except the RS rating: that rating ranks a stock's year against the whole market, which a per-symbol series
+  cannot do (open question BK3-1). In ScreenQL it can be added with `PercentileRank(PctChange(close, 250)) >= 70` on a
+  universe run. The Watchlist variant is a state (every day the base stays ready), not an event.
+- **B10 Donchian.** The spec's "ATR filter" is read as the common break distance `min_break_atr` x ATR (open question
+  BK3-2). No volume condition: the Turtle rules have none; the quality overlay still grades volume.
+- **B11 squeeze.** Two forms. The Bollinger form needs volume on the close outside the band (spec wording); the TTM form
+  needs the momentum on the breakout side and no volume. `squeeze_within` keeps the expansion tied to its squeeze.
+- **B12 moving average.** "Flat or rising" is the MA's change over `ma_slope_n` bars of at least -`ma_flat_pct` %;
+  "after consolidation around it" is every close of the `ma_consol_n` bars before within `ma_band_atr` ATRs of the MA. The
+  MA stack is optional (off by default).
+- **B15 regime.** The compression is RSI inside 50 +/- `rsi_band` for `regime_n` bars; the break needs RSI out of the band,
+  ADX that was at or below `adx_low` inside the window and rises on the bar, the DI of the breakout side leading, and the
+  close beyond the window's high (low) by `min_break_atr` x ATR.
+
 ## Parameters
 
 | Parameter | Group | Default | Research note |
@@ -164,4 +201,43 @@ How BK2 uses them:
 | `or_minutes` | B16 | 15 | Crabel (1990) opening range; 15 / 30 / 60 minutes are the windows named in spec B16 (15 = the platform's ORB strategy). |
 | `day_level` | B17 | first_hour | The B17 levels named in the spec. |
 | `first_hour_min` | B17 | 60 | The first trading hour (09:15-10:15 on NSE) by name. |
+| `vcp_mode` | B3 | breakout | Spec B3 names both: the pivot breakout and a 'Watchlist' of bases ready but not yet broken. |
+| `vcp_min_contractions` | B3 | 2 | Spec B3: at least 2 successive contractions; Minervini's examples run from 2 to 6 ('T' count). |
+| `vcp_ratio` | B3 | 1 | Spec B3 wording 'each smaller than the previous' (1.0 = simply smaller); Minervini's examples roughly halve (0.5). |
+| `vcp_pivot_atr` | B3 | 1 | One ATR: a swing must clear one bar's noise; a VCP's final contraction is often only a few percent, about one daily ATR. |
+| `vcp_max_depth_pct` | B3 | 35 | Minervini: a correction much deeper than about 35 % (in a normal market) is too deep for a sound base. |
+| `vcp_min_bars` | B3 | 15 | Three weeks on Daily, the shortest VCP base in Minervini's range (3 to 65 weeks). |
+| `vcp_max_bars` | B3 | 125 | About six months on Daily; bounds the walk (raise it for the longer bases in Minervini's 3-65 week range). |
+| `vcp_vol_dryup` | B3 | True | Minervini: volume contracts with the price contractions and dries up in the last one. |
+| `vcp_ready_pct` | B3 | 5 | The pivot level sits at the top of the last contraction; within about 5 % of it the base is 'ready'. |
+| `tt_filter` | B3 | True | Minervini's trend template (2013), without the RS rating (open question BK3-1). |
+| `tt_ma_fast` | B3 | 50 | Minervini's trend template: the 50-day line. |
+| `tt_ma_mid` | B3 | 150 | Minervini's trend template: the 150-day line. |
+| `tt_ma_slow` | B3 | 200 | Minervini's trend template: the 200-day line. |
+| `tt_slow_rising_n` | B3 | 21 | Minervini: the 200-day line rising for at least one month (about 21 sessions). |
+| `tt_year_bars` | B3 | 250 | About 52 weeks of NSE sessions. |
+| `tt_near_high_pct` | B3 | 25 | Minervini's trend template: within 25 % of the 52-week high. |
+| `tt_above_low_pct` | B3 | 30 | Minervini's trend template: at least 30 % above the 52-week low. |
+| `donchian_n` | B10 | 20 | Donchian / Turtle System 1 = 20 bars, System 2 = 55 (Faith, Way of the Turtle). |
+| `squeeze_mode` | B11 | bollinger | Both forms named in spec B11: Bollinger's band-width squeeze and the TTM squeeze (Carter, Mastering the Trade, 2005). |
+| `bb_n` | B11 | 20 | Bollinger's default: 20-period bands (Bollinger on Bollinger Bands, 2001). |
+| `bb_k` | B11 | 2 | Bollinger's default: 2 standard deviations. |
+| `squeeze_lookback` | B11 | 125 | Bollinger: the squeeze is band width at a six-month low (about 125 sessions). |
+| `squeeze_within` | B11 | 10 | Two trading weeks on Daily: the expansion follows the squeeze, not a later unrelated move; no fitted value. |
+| `kc_n` | B11 | 20 | TTM squeeze default: a 20-period Keltner channel (Carter 2005). |
+| `kc_mult` | B11 | 1.5 | TTM squeeze default: 1.5 ATR (Carter 2005). |
+| `ma_n` | B12 | 50 | The 50-day line, the key intermediate average in O'Neil's and Minervini's work. |
+| `ma_type` | B12 | sma | Both are in use; the simple average is the classic key line. |
+| `ma_slope_n` | B12 | 10 | Two trading weeks on Daily. |
+| `ma_flat_pct` | B12 | 0.5 | Half a percent over two weeks reads as flat for a 50-bar average on Daily; no fitted value. |
+| `ma_consol_n` | B12 | 10 | Two trading weeks of closes hugging the line = a consolidation around it. |
+| `ma_band_atr` | B12 | 1 | One ATR: inside one bar's noise of the line. |
+| `ma_stack` | B12 | False | Spec B12 'MA stack alignment'; off by default because a break from a base around the line often comes before the stack aligns. |
+| `ma_stack_fast` | B12 | 20 | 20 / 50 / 200: the common short / intermediate / long stack. |
+| `ma_stack_slow` | B12 | 200 | The 200-day line, the common long-term average. |
+| `rsi_n` | B15 | 14 | Wilder (1978) RSI length. |
+| `rsi_band` | B15 | 10 | The 40-60 RSI band reads as no trend (Cardwell's RSI range rules). |
+| `regime_n` | B15 | 20 | About one trading month on Daily: a 'long' compression. |
+| `adx_n` | B15 | 14 | Wilder (1978) ADX length. |
+| `adx_low` | B15 | 20 | Common reading of Wilder's ADX: below 20 = no trend; rising from there = a trend being born. |
 | `context_ladder` | style | 15m -> 1h + 1d, 1h -> 1d + 1w, 1d -> 1w, ... (see params.py) | Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w). |

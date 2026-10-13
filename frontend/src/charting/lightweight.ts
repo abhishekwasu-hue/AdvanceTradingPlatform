@@ -11,7 +11,7 @@
  * Studies are recorded in the layout; ProChart draws its own until CH6 moves them onto ScreenQL.
  */
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
-import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudySpec } from "./engine";
+import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudyLine, StudySpec } from "./engine";
 import { layerShapes, timeToLogical, type Converters } from "./geometry";
 import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
@@ -32,9 +32,12 @@ export interface CandleSeriesLike {
   attachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
   detachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
 }
-interface MouseParamsLike { time?: unknown; point?: { x: number; y: number } }
+interface MouseParamsLike { time?: unknown; point?: { x: number; y: number }; sourceEvent?: unknown }
 export interface ChartLike {
   applyOptions(options: { handleScroll?: boolean; handleScale?: boolean }): void;
+  // CH5 crosshair link (optional in the structural slice: test fakes without them simply are not followed).
+  setCrosshairPosition?(price: number, time: never, series: never): void;
+  clearCrosshairPosition?(): void;
   paneSize(): { width: number; height: number };
   priceScale(id: string): { width(): number };
   subscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
@@ -48,6 +51,12 @@ export interface ChartLike {
     coordinateToLogical(x: number): number | null;
   };
 }
+
+/** N4 CH6: how the engine adds study lines (ProChart passes the real `addSeries(LineSeries, ..., pane)`; tests a fake). */
+export interface LineSeriesLike { setData(data: { time: number; value: number }[]): void }
+export interface LineFactory { add(pane: number, color: string, title: string): LineSeriesLike; remove(line: LineSeriesLike): void }
+/** The pane every "own"-pane study shares, under the candles (pane 0). */
+export const STUDY_PANE = 1;
 
 const LINE_STYLE = { solid: 0, dotted: 1, dashed: 2 } as const;
 const SUPPORTED: ReadonlySet<DrawingKind> = new Set(Object.keys(ANCHOR_RULES) as DrawingKind[]);
@@ -63,13 +72,18 @@ export class LightweightEngine implements ChartEngine {
   private drawings = new Map<string, DrawingV1>();
   private rendered = new Map<string, Rendered>();
   private layers = new Map<string, { lines: PriceLineLike[]; bands: LayerPrimitive | null }>();
+  private studyLines = new Map<string, { line: LineSeriesLike; pane: number; color: string }>();
   private listeners = new Set<(e: EngineEvent) => void>();
   private unsubs: (() => void)[] = [];
   private disposed = false;
   private barTimes: number[] | null = null;                    // the candles' times (epoch s), rebuilt when the data changes
 
-  constructor(private readonly chart: ChartLike, private readonly candles: CandleSeriesLike, private readonly priceOf?: (y: number) => number | null) {
-    const cross = (p: MouseParamsLike) => this.emit({ type: "crosshair", time: typeof p.time === "number" ? p.time : null, price: this.price(p) });
+  constructor(private readonly chart: ChartLike, private readonly candles: CandleSeriesLike, private readonly priceOf?: (y: number) => number | null,
+              private readonly lines?: LineFactory) {
+    // CH5: a move with a point but no pointer event behind it was not the user's (a programmatic crosshair); leaving the
+    // pane (no point) counts as the user's, so linked charts let go too.
+    const cross = (p: MouseParamsLike) => this.emit({ type: "crosshair", time: typeof p.time === "number" ? p.time : null, price: this.price(p),
+                                                       user: p.point == null || p.sourceEvent != null });
     const click = (p: MouseParamsLike) => this.emit({ type: "click", time: typeof p.time === "number" ? p.time : null, price: this.price(p) });
     const range = (r: { from: unknown; to: unknown } | null) => {
       if (r && typeof r.from === "number" && typeof r.to === "number") this.emit({ type: "visibleRangeChanged", from: r.from, to: r.to });
@@ -205,6 +219,24 @@ export class LightweightEngine implements ChartEngine {
     this.layers.set(id, { lines: made, bands });
   }
 
+  /** N4 CH6: one line series per study id, kept while its pane and colour stay (only the data is replaced). */
+  setStudy(id: string, line: StudyLine | null) {
+    const old = this.studyLines.get(id);
+    const pane = line?.pane === "own" ? STUDY_PANE : 0;
+    const color = line?.color ?? "#2563eb";
+    if (old && (!line || old.pane !== pane || old.color !== color)) {
+      this.lines?.remove(old.line);
+      this.studyLines.delete(id);
+    }
+    if (!line || !this.lines) return;
+    let cur = this.studyLines.get(id);
+    if (!cur) {
+      cur = { line: this.lines.add(pane, color, line.title ?? ""), pane, color };
+      this.studyLines.set(id, cur);
+    }
+    cur.line.setData(line.data);
+  }
+
   serialize(): EngineLayout {
     return { engine: this.name, symbol: this.symbol, timeframe: this.timeframe, studies: [...this.studies.values()],
              drawings: Object.fromEntries(this.drawings) };
@@ -218,6 +250,19 @@ export class LightweightEngine implements ChartEngine {
     for (const [id, d] of Object.entries(layout.drawings)) this.addDrawing(id, d);
   }
 
+  /** CH5: the crosshair on this chart's own bar at or before `time` (at that bar's close), or hidden with null. */
+  setCrosshair(time: number | null) {
+    if (this.disposed) return;
+    const times = this.times();
+    if (time == null || times.length === 0 || time < times[0]) { this.chart.clearCrosshairPosition?.(); return; }
+    let lo = 0, hi = times.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (times[mid] <= time) lo = mid; else hi = mid - 1; }
+    const bar = this.candles.data()[lo] as { close?: number; value?: number } | undefined;
+    const price = bar?.close ?? bar?.value;
+    if (price == null || !Number.isFinite(price)) { this.chart.clearCrosshairPosition?.(); return; }
+    this.chart.setCrosshairPosition?.(price, times[lo] as never, this.candles as never);
+  }
+
   on(listener: (event: EngineEvent) => void) {
     this.listeners.add(listener);
     return () => { this.listeners.delete(listener); };
@@ -229,6 +274,7 @@ export class LightweightEngine implements ChartEngine {
     for (const u of this.unsubs) u();
     for (const id of [...this.drawings.keys()]) this.removeDrawing(id);
     for (const id of [...this.layers.keys()]) this.setLayer(id, null);
+    for (const id of [...this.studyLines.keys()]) this.setStudy(id, null);
     this.listeners.clear();
   }
 }

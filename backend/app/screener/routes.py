@@ -303,17 +303,22 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     # the symbols' order.
     gate = asyncio.Semaphore(fetch_concurrency(record.broker_name))
 
-    async def fetch_one(symbol: str) -> Tuple[Any, Dict[str, Any], str]:
+    async def fetch_one(symbol: str) -> Tuple[Any, str]:
         async with gate:
             try:
-                bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
-                              else service.get_candles(symbol, exchange, interval))
+                return await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
+                              else service.get_candles(symbol, exchange, interval)), ""
             except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
-                return None, {}, f"{type(exc).__name__}: {str(exc)[:120]}"
-        # LD-7: the pandas work per symbol runs on a worker thread, so a screen does not hold the event loop.
-        return await asyncio.to_thread(_symbol_frames, bars, interval, base_tf, include_forming, now)
+                return None, f"{type(exc).__name__}: {str(exc)[:120]}"
 
-    fetched = await asyncio.gather(*(fetch_one(symbol) for symbol in symbols))
+    got = await asyncio.gather(*(fetch_one(symbol) for symbol in symbols))
+
+    def frames_of_all() -> List[Tuple[Any, Dict[str, Any], str]]:
+        return [(None, {}, failed) if failed else _symbol_frames(bars, interval, base_tf, include_forming, now) for bars, failed in got]
+
+    # LD-7: the pandas work runs on a worker thread, so a screen does not hold the event loop - one thread for the run's
+    # symbols in turn, not one each (more CPU-bound threads only take the GIL from the event loop more often).
+    fetched = await asyncio.to_thread(frames_of_all)
     for symbol, (df, frames, problem) in zip(symbols, fetched):
         if problem:
             problems[symbol] = problem

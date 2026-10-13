@@ -49,9 +49,17 @@ export function shortcutFor(e: { key: string; shiftKey: boolean; ctrlKey: boolea
 }
 
 /** The positions "flatten all" exits: every one the caller can close with Exit now here (LIVE ones close in the broker
- * app; automatic ones have no button). */
+ * app; automatic ones have no button). Exit now on one leg closes its whole leg group, so a multi-leg structure is
+ * one target (its first leg): the other legs would otherwise be reported as failures after the group has closed. */
 export function flattenTargets(board: PositionsBoard | null): BoardPosition[] {
-  return (board?.positions ?? []).filter((p) => p.exit === "one_click");
+  const groups = new Set<string>();
+  return (board?.positions ?? []).filter((p) => {
+    if (p.exit !== "one_click") return false;
+    if (!p.leg_group_id) return true;
+    if (groups.has(p.leg_group_id)) return false;
+    groups.add(p.leg_group_id);
+    return true;
+  });
 }
 
 /** Minutes since the last bar, or null; "stale" when more than three bars late while the market is open. */

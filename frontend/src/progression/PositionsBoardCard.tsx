@@ -9,9 +9,10 @@ import { useProgressionT } from "./i18n";
  * N2-6 (flag `positions_board`): the caller's own open positions with P&L in ₹ and R, stop and target status, time in
  * trade, plan vs current stop (a widened stop is highlighted) and the exit. The exit is the existing "Exit now": ONE
  * click, no dialog, never disabled by a lockout or a pause (ADR-0004); its text says exactly what happens. Hidden while
- * the flag is off (the API answers 404).
+ * the flag is off (the API answers 404). `exitKey` (the Trade workspace only) makes rows focusable with "x" as Exit now;
+ * elsewhere, such as the Positions page, the button is the only way. The flag never gates the exit itself.
  */
-export default function PositionsBoardCard({ onChanged }: { onChanged?: () => void }) {
+export default function PositionsBoardCard({ onChanged, exitKey = false }: { onChanged?: () => void; exitKey?: boolean }) {
   const [board, setBoard] = useState<PositionsBoard | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [exiting, setExiting] = useState<number | null>(null);
@@ -29,11 +30,11 @@ export default function PositionsBoardCard({ onChanged }: { onChanged?: () => vo
       load(); onChanged?.();
     } catch (e) { setMessage(String(e)); } finally { setExiting(null); }
   }
-  return <PositionsBoardView board={board} exiting={exiting} message={message} onExit={(p) => void exit(p)} />;
+  return <PositionsBoardView board={board} exiting={exiting} message={message} onExit={(p) => void exit(p)} exitKey={exitKey} />;
 }
 
-export function PositionsBoardView({ board, exiting, message, onExit }: {
-  board: PositionsBoard; exiting: number | null; message: string | null; onExit: (p: BoardPosition) => void;
+export function PositionsBoardView({ board, exiting, message, onExit, exitKey = false }: {
+  board: PositionsBoard; exiting: number | null; message: string | null; onExit: (p: BoardPosition) => void; exitKey?: boolean;
 }) {
   const t = useProgressionT();
   const tot = board.totals;
@@ -53,10 +54,12 @@ export function PositionsBoardView({ board, exiting, message, onExit }: {
                 const target = targetLine(p, t);
                 const tone = (p.pnl ?? 0) > 0 ? "text-up" : (p.pnl ?? 0) < 0 ? "text-down" : "text-fg";
                 return (
-                  // N2-9: a row takes focus; "x" on a focused row is Exit now (one key, the same call as the button)
-                  <li key={p.trade_id} tabIndex={0} className={`rounded-lg border p-2 outline-none focus:ring-2 focus:ring-info ${p.stop_drift === "widened" ? "border-warn" : "border-border"}`}
+                  // N2-9: in the Trade workspace (exitKey) a row takes focus and "x" on it is Exit now (one key, the same
+                  // call as the button); elsewhere the row is not focusable and "x" does nothing
+                  <li key={p.trade_id} tabIndex={exitKey ? 0 : undefined}
+                      className={`rounded-lg border p-2 ${exitKey ? "outline-none focus:ring-2 focus:ring-info " : ""}${p.stop_drift === "widened" ? "border-warn" : "border-border"}`}
                       data-testid={`board-${p.trade_id}`} data-drift={p.stop_drift ?? ""}
-                      onKeyDown={(e) => { if (e.key === "x" && !e.ctrlKey && !e.metaKey && !e.altKey && p.exit === "one_click" && exiting !== p.trade_id) { e.preventDefault(); e.stopPropagation(); onExit(p); } }}>
+                      onKeyDown={exitKey ? (e) => { if (e.key === "x" && !e.ctrlKey && !e.metaKey && !e.altKey && p.exit === "one_click" && exiting !== p.trade_id) { e.preventDefault(); e.stopPropagation(); onExit(p); } } : undefined}>
                     <div className="flex flex-wrap items-baseline justify-between gap-2">
                       <span className="font-semibold text-fg">{p.direction} {p.symbol} ×{p.quantity.toLocaleString("en-IN")} · {p.mode}</span>
                       <span className={`tabular-nums ${tone}`}>

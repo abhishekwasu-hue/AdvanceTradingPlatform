@@ -17,6 +17,8 @@ import type { WorkerStatus } from "../types";
  * stale-data states are shown. Keyboard: t ticket, c chart, x exit the focused position, Shift+F flatten all (one
  * confirmation), ? help. The layout is kept per viewer in this browser. Existing routes only: exits are Exit now, never
  * gated; entries go through the ticket's own checks.
+ * Depends on `positions_board` (N2-6): the positions panel, the "x" key and Shift+F all read /api/positions/board, which
+ * answers 404 while that flag is off - the panel is then empty and flatten all reports the error. Turn both on together.
  */
 export default function TradeWorkspacePage() {
   const t = useProgressionT();
@@ -125,7 +127,7 @@ export default function TradeWorkspacePage() {
         )}
         {layout.panels.ticket && !phone && <aside aria-label={t("workspace.panel.ticket")}>{ticket}</aside>}
       </div>
-      {layout.panels.positions && <PositionsBoardCard key={boardKey} />}
+      {layout.panels.positions && <PositionsBoardCard key={boardKey} exitKey />}
       {layout.panels.ticket && phone && (
         <>
           <button type="button" onClick={() => setSheet(true)}

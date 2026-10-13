@@ -392,6 +392,72 @@ class SnapshotPricer:
         return base + (f"; synthetic fallback ({self.fallback.describe()})" if self.fallback is not None else "; no fallback")
 
 
+def black76(right: str, forward: float, strike: float, t: float, r: float, sigma: float) -> float:
+    """Black-76: e^(-rT) [F N(d1) - K N(d2)] (call), e^(-rT) [K N(-d2) - F N(-d1)] (put)."""
+    if forward <= 0 or strike <= 0 or sigma <= 0 or t <= 0:
+        raise PricingUnavailable(f"cannot price {int(strike)} {right} off forward {forward}")
+    n = lambda x: 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))  # noqa: E731
+    d1 = (math.log(forward / strike) + 0.5 * sigma * sigma * t) / (sigma * math.sqrt(t))
+    d2 = d1 - sigma * math.sqrt(t)
+    disc = math.exp(-r * t)
+    if right.upper() == "CE":
+        return disc * (forward * n(d1) - strike * n(d2))
+    return disc * (strike * n(-d2) - forward * n(-d1))
+
+
+@dataclass
+class Black76Pricer:
+    """N7 C2c (`pricing: black76`): a strike missing from the recorded chain priced by Black-76 on the forward
+    F = spot x e^(rT), at the implied volatility of the NEAREST quoted strike of the same expiry and right known by
+    then (a row at or before the bar, within `max_age_minutes`; recorded IV in % or as a fraction), else the run's
+    volatility model. Every model price is counted and named (`priced`) - the result flags each one. Never reads a row
+    from after the bar."""
+    rows: Sequence[OptionChainSnapshotRow]
+    vol: VolatilityModel
+    risk_free_rate: float = DEFAULT_RISK_FREE_RATE
+    max_age_minutes: int = 15
+    name: str = "black76"
+    count: int = field(default=0, init=False)
+    priced: Dict[Tuple[str, float, str], int] = field(default_factory=dict, init=False)
+    _iv: Dict[Tuple[date, str], List[Tuple[datetime, float, float]]] = field(default_factory=dict, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        for row in self.rows:
+            if row.iv is None or row.iv <= 0:
+                continue
+            iv = float(row.iv) / 100.0 if float(row.iv) > 3.0 else float(row.iv)
+            self._iv.setdefault((row.expiry, row.right.upper()), []).append((to_utc(row.timestamp), float(row.strike), iv))
+        for points in self._iv.values():
+            points.sort()
+
+    def implied_vol(self, right: str, strike: float, expiry: date, at: datetime) -> Tuple[float, str]:
+        points = self._iv.get((expiry, right.upper()), [])
+        since = at - timedelta(minutes=self.max_age_minutes)
+        lo = bisect.bisect_left(points, (since, -math.inf, -math.inf))
+        hi = bisect.bisect_right(points, (at, math.inf, math.inf))
+        fresh = [(abs(k - strike), k, iv) for _, k, iv in points[lo:hi]]
+        if fresh:
+            _, k, iv = min(fresh)
+            return min(MAX_IV, max(MIN_IV, iv)), f"IV of the {int(k)} strike"
+        return self.vol.current, self.vol.describe()
+
+    def price(self, right: str, strike: float, expiry: date, *, spot: float, at: datetime) -> float:
+        if spot <= 0 or strike <= 0:
+            raise PricingUnavailable(f"cannot price {int(strike)} {right} off spot {spot}")
+        if (expiry_instant(expiry) - at).total_seconds() <= 0:
+            return round_tick(max(spot - strike, 0.0) if right.upper() == "CE" else max(strike - spot, 0.0))
+        t = years_to_expiry(expiry, at)
+        sigma, _ = self.implied_vol(right, strike, expiry, at)
+        forward = spot * math.exp(self.risk_free_rate * t)
+        self.count += 1
+        key = (expiry.isoformat(), float(strike), right.upper())
+        self.priced[key] = self.priced.get(key, 0) + 1
+        return round_tick(black76(right, forward, strike, t, self.risk_free_rate, sigma))
+
+    def describe(self) -> str:
+        return f"Black-76 for strikes missing from the chain (nearest quoted strike's IV, else {self.vol.describe()}), r={self.risk_free_rate:.1%}"
+
+
 def underlying_name(symbol: str) -> Tuple[str, str]:
     """(master underlying, candle symbol) for a deployment/backtest symbol: NIFTY 50 -> (NIFTY, NIFTY 50)."""
     underlying = underlying_of(symbol)

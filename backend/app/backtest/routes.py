@@ -157,9 +157,12 @@ class BacktestRunner:
             self.models.built()                       # N7 C2b: a bad model parameter is a 422 here, not a 500 mid-run
         except (ModelError, TypeError) as exc:
             raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
-        if body.options is not None and not self.models.is_default:
-            # Never silently ignored: the option engine takes its models in a later C2 PR.
-            raise HTTPException(status_code=422, detail="execution_models apply to single-leg backtests only for now")
+        if body.options is not None and (self.models.fill != "touch" or self.models.latency != "zero" or self.models.slippage == "volume_share"):
+            # N7 C2c: the option engine takes slippage, margin and pricing models; fills and latency act on traded bars only
+            raise HTTPException(status_code=422, detail="execution_models: fill / latency models and volume_share slippage apply to single-leg "
+                                                        "backtests only")
+        if body.options is None and self.models.pricing != "recorded_only":
+            raise HTTPException(status_code=422, detail="execution_models: the pricing model applies to option backtests only")
 
     @classmethod
     async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None) -> "BacktestRunner":
@@ -167,6 +170,7 @@ class BacktestRunner:
             runner = cls(body, risk)
             await _models_allowed(session, runner.models, tenant_id)
             return runner
+        await _models_allowed(session, cls(body, risk).models, tenant_id)       # N7 C2c: the option engine's models too
         opts = body.options
         holidays = await load_holidays(session)
         pricer = None
@@ -199,7 +203,9 @@ class BacktestRunner:
         else:
             try:
                 result = run_option_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, self.config,
-                                             exit_rules=self.rules, pricer=self.pricer)
+                                             exit_rules=self.rules, pricer=self.pricer, models=self.models)
+            except ModelError as exc:
+                raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
             except OptionBacktestError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         # Realism C4: what produced this result, as hashes (recorded with the run).

@@ -10,7 +10,8 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from sqlalchemy import delete
 
-from app.db.models import MdCandleRecord, ScreenEvidenceRecord, ScreenRunRecord
+from app.db.models import MdCandleRecord, MdCorporateActionRecord, ScreenEvidenceRecord, ScreenRunRecord
+from app.market_lake.ingest import trade_date
 from app.screener import board as B
 from app.screener import compile_screen, nodes
 from tests.test_auth_api import _session_factory, client  # noqa: F401 - fixtures
@@ -48,6 +49,57 @@ def test_rrg_math_and_quadrants():
     last = B.rrg_points(fading, bench)[-1]
     assert last["rs_ratio"] > 100 > last["rs_momentum"]                                  # still ahead, losing momentum: Weakening
     assert B.QUADRANTS[(True, False)] == "Weakening"
+    marked = B.rrg_points(rising, bench, forming=weeks[-1])
+    assert marked[-1]["forming"] is True and not any(p["forming"] for p in marked[:-1])
+
+
+def test_forming_week_is_the_ist_week_until_fridays_close():
+    from app.market_data.calendar import IST
+    wed = datetime(2026, 10, 7, 12, 0, tzinfo=IST)
+    assert B.forming_week(wed) == (2026, 41)
+    assert B.forming_week(datetime(2026, 10, 9, 15, 29, tzinfo=IST)) == (2026, 41)        # Friday before the close
+    assert B.forming_week(datetime(2026, 10, 9, 15, 30, tzinfo=IST)) is None              # Friday's close: the week is complete
+    assert B.forming_week(datetime(2026, 10, 10, 10, 0, tzinfo=IST)) is None              # Saturday
+
+
+def test_rrg_adjusts_the_symbol_for_a_split():
+    """A symbol that tracks the benchmark exactly but split 1:2 mid-window: unadjusted, its RS would halve (a fake
+    collapse into Lagging); adjusted by the split known now, RS-Ratio and RS-Momentum stay at 100."""
+    tag = uuid.uuid4().hex[:6].upper()
+    sym, bench_key = f"RSP{tag}", "NSE_INDEX:NIFTY50"
+    split_day = NOW - timedelta(days=40)
+    rows, have_bench = [], set()
+    for d in range(B.RRG_LOOKBACK_DAYS - 5, 0, -1):
+        ts = NOW - timedelta(days=d)
+        if ts.weekday() > 4:
+            continue
+        level = 100.0 * (1.0 + 0.002 * ((B.RRG_LOOKBACK_DAYS - d) % 17))                 # wiggles, the symbol tracks it
+        raw = level * 2 if trade_date(ts) < trade_date(split_day) else level
+        rows.append(MdCandleRecord(instrument_key=f"NSE:{sym}", timeframe="day", ts=ts, source="nse_bhav:cm", version=1, open=raw, high=raw, low=raw,
+                                   close=raw, volume=1, ingested_at=ts + timedelta(hours=1)))
+        have_bench.add(ts)
+        rows.append(MdCandleRecord(instrument_key=bench_key, timeframe="day", ts=ts, source="nse_bhav:index", version=1, open=level * 100,
+                                   high=level * 100, low=level * 100, close=level * 100, volume=1, ingested_at=ts + timedelta(hours=1)))
+    rows.append(MdCorporateActionRecord(symbol=sym, exchange="NSE", ex_date=trade_date(split_day), action="SPLIT", ratio_new=2, ratio_old=1,
+                                        version=1, source="nse:ca", ingested_at=split_day - timedelta(days=3)))
+    _put(rows)
+    headers, _ = _owner(f"u5d3b-s-{uuid.uuid4().hex[:8]}@example.com")
+    _set_flags(screener_v2=True, screener_board_views=True)
+    try:
+        body = client.post("/api/screener/board/rrg", json={"symbols": [sym]}, headers=headers).json()
+        tail = body["symbols"][0]["tail"]
+        assert len(tail) == B.RRG_TAIL
+        assert all(p["rs_ratio"] == pytest.approx(100.0, abs=0.01) and p["rs_momentum"] == pytest.approx(100.0, abs=0.01) for p in tail), tail
+        assert "adjusted for splits" in body["note"]
+    finally:
+        _set_flags(screener_v2=False, screener_board_views=False)
+
+        async def clean():
+            async with _session_factory() as session:
+                await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.in_([bench_key, f"NSE:{sym}"])))
+                await session.execute(delete(MdCorporateActionRecord).where(MdCorporateActionRecord.symbol == sym))
+                await session.commit()
+        _run(clean())
 
 
 def test_rrg_endpoint_reads_the_shared_lake_only():
@@ -73,6 +125,8 @@ def test_rrg_endpoint_reads_the_shared_lake_only():
         assert body["benchmark_key"] == bench_key and body["reason"] is None
         assert got[sym]["quadrant"] == "Leading" and len(got[sym]["tail"]) == B.RRG_TAIL
         assert got["NOPE"] == {"symbol": "NOPE", "tail": [], "quadrant": None}
+        assert [p["forming"] for p in got[sym]["tail"][:-1]] == [False] * (B.RRG_TAIL - 1)
+        assert got[sym]["tail"][-1]["forming"] == (body["forming_week"] == got[sym]["tail"][-1]["week"])
         assert "approximation" in body["note"]
     finally:
         _set_flags(screener_v2=False, screener_board_views=False)
@@ -101,7 +155,10 @@ def test_template_runs_are_the_organisations_own_latest_with_a_readable_thumbnai
                                data_source="broker:test", scanned=10, matched=matched, result_json="[]",
                                created_at=NOW - timedelta(minutes=minutes))
     old, new, theirs = run(me["tenant_id"], me["id"], 60, 2), run(me["tenant_id"], me["id"], 5, 3), run(them["tenant_id"], them["id"], 1, 9)
-    _put([old, new, theirs])
+    src2 = "close > EMA(close, 50)"
+    other = run(me["tenant_id"], me["id"], 30, 4)
+    other.ast_sha256 = _stored_hash(src2)
+    _put([old, new, theirs, other])
 
     async def add_evidence():
         async with _session_factory() as session:
@@ -118,6 +175,9 @@ def test_template_runs_are_the_organisations_own_latest_with_a_readable_thumbnai
         assert body["runs"]["starter.momentum"] == {"run_id": new.id, "at": body["runs"]["starter.momentum"]["at"], "base_tf": "1d", "scanned": 10,
                                                     "matched": 3, "evidence_id": ev}
         assert body["runs"]["x"] is None
+        both = client.post("/api/screener/board/template-runs", json={"templates": [{"id": "a", "source": src}, {"id": "b", "source": src2},
+                                                                                    {"id": "c", "source": "close >"}]}, headers=headers).json()["runs"]
+        assert both["a"]["run_id"] == new.id and both["b"]["run_id"] == other.id and both["b"]["evidence_id"] is None and both["c"] is None
         _set_flags(screener_board_views=False)
         assert client.post("/api/screener/board/template-runs", json={"templates": [{"id": "a", "source": src}]}, headers=headers).status_code == 404
     finally:

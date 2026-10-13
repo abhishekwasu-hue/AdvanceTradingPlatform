@@ -33,6 +33,16 @@ describe("RRG and the template sheet (U5 D3b)", () => {
     expect(html).not.toMatch(/\b(buy|sell|order)\b/i);
   });
 
+  it("draws the forming week's point hollow and says so", () => {
+    const forming: RrgResponse = { ...rrg, forming_week: "2026-W41", symbols: rrg.symbols.map((r) => ({ ...r, tail: r.tail.map((p, i) => ({ ...p, forming: i === r.tail.length - 1 && p.week === "2026-W41" })) })) };
+    const html = renderToStaticMarkup(<RrgView rrg={forming} />);
+    expect(html).toContain('data-forming="true"');
+    expect(html).toContain("forming week (2026-W41, to date)");
+    expect(html).toContain("(last point: the forming week)");
+    const closed = renderToStaticMarkup(<RrgView rrg={rrg} />);
+    expect(closed).not.toContain("forming");
+  });
+
   it("groups templates by setup and shows the last run and a live thumbnail or says it never ran", () => {
     const tax = taxonomySample as unknown as Taxonomy;
     const t: SheetTemplate = { id: "starter.momentum", name: "Momentum", definition: "RSI above 60", setup: tax.setups[0].id, source: "RSI(14) > 60", canOpen: true };

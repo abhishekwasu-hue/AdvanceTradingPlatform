@@ -183,6 +183,21 @@ async def for_run(session: AsyncSession, user: User, run_id: int) -> List[Screen
     return [r for r in rows if r.user_id == user.id or not (r.per_user or byob)]
 
 
+async def first_for_runs(session: AsyncSession, user: User, run_ids: List[int]) -> Dict[int, ScreenEvidenceRecord]:
+    """{run_id: the first pack (by symbol) of that run the user may read} for several runs in one read - `for_run`'s rule."""
+    if not run_ids:
+        return {}
+    rows = await session.scalars(select(ScreenEvidenceRecord).where(ScreenEvidenceRecord.run_id.in_(run_ids),
+                                                                    ScreenEvidenceRecord.tenant_id == user.tenant_id)
+                                 .order_by(ScreenEvidenceRecord.run_id, ScreenEvidenceRecord.symbol))
+    byob = await _byob(session, user)
+    out: Dict[int, ScreenEvidenceRecord] = {}
+    for r in rows:
+        if r.run_id is not None and r.run_id not in out and (r.user_id == user.id or not (r.per_user or byob)):
+            out[r.run_id] = r
+    return out
+
+
 def load(row: ScreenEvidenceRecord) -> Dict[str, Any]:
     pack = json.loads(row.pack_json)
     pack["evidence_id"] = row.id

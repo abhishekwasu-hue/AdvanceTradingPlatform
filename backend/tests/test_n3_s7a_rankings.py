@@ -373,6 +373,12 @@ def test_archiving_frees_the_name():
     archived = client.post(f"/api/screener/rankings/{sid}/archive", headers=t["headers"]).json()
     assert archived["name"] == f"Again (archived #{sid})"
     assert client.post("/api/screener/rankings", headers=t["headers"], json={"name": "Again", "tree": TREE}).status_code == 201
+    # re-check of S7a (LOW): a live system already named like the archived name - a further suffix, never a 500
+    second = client.post("/api/screener/rankings", headers=t["headers"], json={"name": "Twice", "tree": TREE}).json()["id"]
+    taken = f"Twice (archived #{second})"
+    assert client.post("/api/screener/rankings", headers=t["headers"], json={"name": taken, "tree": TREE}).status_code == 201
+    renamed = client.post(f"/api/screener/rankings/{second}/archive", headers=t["headers"])
+    assert renamed.status_code == 200 and renamed.json()["name"] == f"Twice (archived #{second}.1)"
 
 
 def test_the_history_ranking_has_a_work_budget(monkeypatch):
@@ -455,3 +461,33 @@ def test_the_cache_key_carries_the_ranking_tree():
     k1 = RK.within({"Mine": one}, cache_key, ("t", 1), ast, "1d", {}, [], as_of="x")
     k2 = RK.within({"Mine": two}, cache_key, ("t", 1), ast, "1d", {}, [], as_of="x")
     assert k1 != k2
+
+
+@pytest.mark.parametrize("third", ["A", "C"])
+def test_sector_ranges_follow_every_isin_switch_of_a_symbol(third):
+    """Re-check of S7a (LOW): A -> B -> A and A -> B -> C in one window - each date reads the sector of the ISIN the
+    symbol traded under then (the old bisection found one switch only)."""
+    from app.db.models import SymbolHistoryRecord
+    sym = f"SW{uuid.uuid4().hex[:6].upper()}"
+    isin = {k: f"INE{uuid.uuid4().hex[:7].upper()}0{i}" for i, k in enumerate("ABC")}
+    third_isin = isin[third]
+    _seed(SymbolHistoryRecord(isin=isin["A"], symbol=sym, valid_from=None, valid_to=date(2025, 3, 1), source="t", checksum="a"),
+          SymbolHistoryRecord(isin=isin["B"], symbol=sym, valid_from=date(2025, 3, 1), valid_to=date(2025, 6, 1), source="t", checksum="b"),
+          SymbolHistoryRecord(isin=third_isin, symbol=sym, valid_from=date(2025, 6, 1), valid_to=None, source="t", checksum="c"),
+          *[ClassificationRecord(isin=v, scheme="NSE", sector=f"S{k}", valid_from=date(2020, 1, 1), valid_to=None, source="t",
+                                 checksum=k) for k, v in isin.items()])
+
+    async def go():
+        async with _session_factory() as session:
+            return await RK.sector_ranges(session, [sym], date(2025, 1, 1), date(2025, 9, 1))
+    ranges = _run(go())[sym]
+    assert [RK.sector_on(ranges, d) for d in (date(2025, 2, 1), date(2025, 4, 1), date(2025, 8, 1))] == ["SA", "SB", f"S{third}"]
+
+
+def test_leaf_flags_include_a_function_s_further_flags(monkeypatch):
+    """Re-check of S7a (LOW): Spec.also_flags (BK3) count as the factor's flags too."""
+    from app.screener import registry
+    system = _system({"nodes": [{"name": "adx", "factor": "ADX(14)", "weight": 100}]})
+    assert RK.leaf_flags(system) == []
+    monkeypatch.setitem(registry.FUNCTIONS, "ADX", types.SimpleNamespace(flag="own_flag", also_flags=("further_flag", "own_flag")))
+    assert RK.leaf_flags(system) == ["own_flag", "further_flag"]

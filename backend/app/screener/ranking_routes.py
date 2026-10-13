@@ -154,10 +154,17 @@ async def archive_system(system_id: int, user: User = Depends(require_trader), s
     if not row.archived:
         # review of S7a (LOW): the name is freed for a new system (names are unique per organisation); a backtest's ledger
         # entry keeps the tree it ran, so nothing refers to the archived one by name
-        suffix = f" (archived #{row.id})"
-        row.name = row.name[:60 - len(suffix)] + suffix
+        # re-check of S7a (LOW): a name already taken (another system named like an archived one) gets a further suffix
+        taken = set(await session.scalars(select(RankingSystemRecord.name).where(
+            RankingSystemRecord.tenant_id == row.tenant_id, RankingSystemRecord.id != row.id)))
+        for n in range(100):
+            suffix = f" (archived #{row.id})" if n == 0 else f" (archived #{row.id}.{n})"
+            candidate = row.name[:60 - len(suffix)] + suffix
+            if candidate not in taken:
+                break
+        row.name = candidate
     row.archived, row.updated_at = True, datetime.now(timezone.utc)
-    await session.commit()
+    await _save(session, row)                                  # a race on the name: 409, never a 500
     return _dict(row)
 
 

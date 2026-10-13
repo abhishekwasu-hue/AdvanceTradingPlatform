@@ -105,13 +105,16 @@ async def _load_periods(session: AsyncSession, company_id: int, viewer: Optional
 async def create_company(
     profile: CompanyProfile, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> CompanyProfile:
-    """A company the platform does not have yet, as this organisation's own (only its members see it; a provider refresh
-    later replaces it with the shared profile)."""
-    existing = await db.find_company_any(session, profile.symbol)
-    if existing is not None:
-        mine = existing.tenant_id is None or existing.tenant_id == user.tenant_id
-        raise HTTPException(status_code=409, detail=(f"Company '{profile.symbol.upper()}' already exists - use PUT to update it" if mine else
-                                                     f"Company '{profile.symbol.upper()}' cannot be added here - refresh it from the provider instead"))
+    """A company the platform does not have yet, as this organisation's own (only its members see it; its own provider
+    refresh later makes it the shared profile, or folds its rows onto the shared one). Another organisation's private
+    profile of the symbol neither blocks this nor is revealed (a symbol is unique per scope)."""
+    # Only the shared profile and this organisation's own count: another organisation's private profile of the symbol
+    # neither blocks this one nor is revealed (a symbol is unique per scope).
+    if await db.find_own_company(session, profile.symbol, user.tenant_id) is not None:
+        raise HTTPException(status_code=409, detail=f"Company '{profile.symbol.upper()}' already exists - use PUT to update it")
+    if await db.find_shared_company(session, profile.symbol) is not None:
+        raise HTTPException(status_code=409, detail=f"Company '{profile.symbol.upper()}' already exists as shared reference data - "
+                                                    "refresh it from the provider instead")
     _check_source(profile.source)
     record = CompanyRecord(symbol=profile.symbol.upper(), created_by=user.id, tenant_id=user.tenant_id, sector=profile.sector,
                            industry=profile.industry, name=profile.name)
@@ -239,7 +242,8 @@ async def refresh_company(
     company = await _get_company_or_404(session, symbol, user.tenant_id)
     provider = _provider_or_400(body.provider)
     _, summary = await ingest.refresh_from_provider(session, company, company.symbol, provider, user.id, profile=body.profile,
-                                                    shareholding=body.shareholding, announcements=body.announcements, announcement_limit=body.announcement_limit)
+                                                    shareholding=body.shareholding, announcements=body.announcements, announcement_limit=body.announcement_limit,
+                                                    tenant_id=user.tenant_id)
     await session.commit()
     if summary.errors and not (summary.profile_changed or summary.shareholding_added or summary.announcements_added):
         raise HTTPException(status_code=502, detail={"message": "provider returned nothing usable", **summary.as_dict()})
@@ -254,11 +258,12 @@ async def refresh_many(
     provider = _provider_or_400(body.provider)
     results = []
     for raw in dict.fromkeys(s.upper().strip() for s in body.symbols if s.strip()):
-        # the row whoever owns it (the symbol is unique): another organisation's own profile is replaced by the
-        # provider's and becomes shared, or left alone when the provider has no profile (refresh_from_provider)
-        company = await db.find_company_any(session, raw)
+        # the shared profile, else this organisation's own (folded into / promoted to the shared one by the provider), else
+        # none (created as shared) - another organisation's private profile is never read or changed (security LOW #234)
+        company = await db.find_shared_company(session, raw) or await db.find_own_company(session, raw, user.tenant_id)
         _, summary = await ingest.refresh_from_provider(session, company, raw, provider, user.id, profile=body.profile, shareholding=body.shareholding,
-                                                        announcements=body.announcements, announcement_limit=body.announcement_limit, create_missing=body.create_missing)
+                                                        announcements=body.announcements, announcement_limit=body.announcement_limit, create_missing=body.create_missing,
+                                                        tenant_id=user.tenant_id)
         results.append(summary.as_dict())
     await session.commit()
     return {"provider": getattr(provider, "name", "provider"), "results": results,

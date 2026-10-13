@@ -170,21 +170,63 @@ def qualitative_factor_from_model(company_id: int, factor: QualitativeFactor, cr
 
 
 async def get_company_by_symbol(session: AsyncSession, symbol: str, *, viewer: Optional[int]) -> Optional[CompanyRecord]:
-    """The company the viewer may see: a shared profile, or one its own organisation entered (app/fundamentals/visibility.py)."""
-    return await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper(), visible(CompanyRecord, viewer)))
+    """The company the viewer may see: its own organisation's profile for the symbol when it entered one, else the shared
+    one (app/fundamentals/visibility.py). Another organisation's private profile is never returned and never hides the
+    shared one (a symbol is unique per scope, not globally)."""
+    rows = list(await session.scalars(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper(), visible(CompanyRecord, viewer))
+                                      .order_by(CompanyRecord.id)))
+    own = [r for r in rows if viewer is not None and r.tenant_id == viewer]
+    shared = [r for r in rows if r.tenant_id is None]
+    return own[0] if own else (shared[0] if shared else None)
 
 
-async def find_company_any(session: AsyncSession, symbol: str) -> Optional[CompanyRecord]:
-    """The company row whoever owns it - for the write paths that must not create a second row for a symbol (the symbol is
-    unique). Never returned to a caller who cannot see it."""
-    return await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper()))
+async def find_shared_company(session: AsyncSession, symbol: str) -> Optional[CompanyRecord]:
+    """The shared (provider / platform) profile of a symbol - at most one (a partial unique index)."""
+    return await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper(), CompanyRecord.tenant_id.is_(None)))
+
+
+async def find_own_company(session: AsyncSession, symbol: str, tenant_id: int) -> Optional[CompanyRecord]:
+    """The organisation's own profile of a symbol - at most one per organisation."""
+    return await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper(), CompanyRecord.tenant_id == tenant_id))
 
 
 async def list_visible_companies(session: AsyncSession, *, viewer: Optional[int], sector: Optional[str] = None) -> List[CompanyRecord]:
+    """One profile per symbol, as `get_company_by_symbol` picks it (the viewer's own over the shared one)."""
     q = select(CompanyRecord).where(visible(CompanyRecord, viewer))
     if sector is not None:
         q = q.where(CompanyRecord.sector.ilike(sector))
-    return list(await session.scalars(q.order_by(CompanyRecord.symbol)))
+    best: dict = {}
+    for r in await session.scalars(q.order_by(CompanyRecord.symbol, CompanyRecord.id)):
+        cur = best.get(r.symbol)
+        if cur is None or (r.tenant_id is not None and cur.tenant_id is None):
+            best[r.symbol] = r
+    return [best[k] for k in sorted(best)]
+
+
+# The tables whose rows hang off a company (company_id): folding a private profile into the shared one moves them.
+COMPANY_CHILDREN = (FinancialPeriodRecord, ShareholdingSnapshotRecord, CorporateActionRecord, QualitativeFactorRecord,
+                    EarningsCalendarEventRecord, SectorMetricRecord)
+
+
+async def fold_conflicts(session: AsyncSession, from_company_id: int, to_company_id: int, *, tenant_id: int) -> List[str]:
+    """The organisation's own periods present on both companies (moving would break the period key): labels."""
+    mine = await session.scalars(select(FinancialPeriodRecord).where(FinancialPeriodRecord.company_id == from_company_id,
+                                                                     FinancialPeriodRecord.tenant_id == tenant_id))
+    there = {(r.period_type, r.period_label) for r in await session.scalars(
+        select(FinancialPeriodRecord).where(FinancialPeriodRecord.company_id == to_company_id, FinancialPeriodRecord.tenant_id == tenant_id))}
+    return [f"{r.period_type} {r.period_label}" for r in mine if (r.period_type, r.period_label) in there]
+
+
+async def move_children(session: AsyncSession, from_company_id: int, to_company_id: int, *, tenant_id: int) -> int:
+    """Re-point the `tenant_id` organisation's own rows from one company to another (their scope is unchanged). Does
+    not commit. Returns how many rows moved."""
+    from sqlalchemy import update
+    moved = 0
+    for model in COMPANY_CHILDREN:
+        res = await session.execute(update(model).where(model.company_id == from_company_id, model.tenant_id == tenant_id)
+                                    .values(company_id=to_company_id).execution_options(synchronize_session=False))
+        moved += int(getattr(res, "rowcount", 0) or 0)
+    return moved
 
 
 async def list_financial_periods(session: AsyncSession, company_id: int, *, viewer: Optional[int]) -> List[FinancialPeriodRecord]:

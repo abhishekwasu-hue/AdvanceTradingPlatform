@@ -287,15 +287,33 @@ class RefreshSummary:
 
 async def refresh_from_provider(session: AsyncSession, company: Optional[CompanyRecord], symbol: str, provider: FundamentalDataProvider, user_id: Optional[int], *,
                                 profile: bool = True, shareholding: bool = True, announcements: bool = True, announcement_limit: int = 20,
-                                create_missing: bool = False) -> Tuple[Optional[CompanyRecord], RefreshSummary]:
+                                create_missing: bool = False, tenant_id: Optional[int]) -> Tuple[Optional[CompanyRecord], RefreshSummary]:
     """Pull what the provider offers and store what is new. Does not commit. Each part fails on its own; the
-    others still land, and the summary names what failed."""
+    others still land, and the summary names what failed. `company` is the shared profile or the caller organisation's
+    (`tenant_id`) own - never another organisation's (refused here too)."""
     symbol = symbol.upper().strip()
     summary = RefreshSummary(symbol=symbol, provider=getattr(provider, "name", "provider"))
+    if company is not None and company.tenant_id is not None and company.tenant_id != tenant_id:
+        summary.errors.append("profile: not this organisation's company profile")              # never another organisation's
+        return None, summary
     if company is not None and company.tenant_id is not None:
-        # A profile one organisation entered: the provider's profile replaces it and it becomes shared reference data
-        # (its hand-entered fields are cleared - they were that organisation's, never shown to others). Without the
-        # provider's profile nothing is written to a company that is not shared.
+        shared = await db.find_shared_company(session, symbol)
+        if shared is not None:
+            # The organisation's own profile of a symbol that now has a shared one: its own rows move onto the shared
+            # profile (still its own, still private) and its private profile is removed - its own action, its own rows.
+            clash = await db.fold_conflicts(session, company.id, shared.id, tenant_id=company.tenant_id)
+            if clash:
+                summary.errors.append(f"profile: this organisation already has these periods on the shared profile: {', '.join(clash[:5])}")
+                return company, summary
+            await db.move_children(session, company.id, shared.id, tenant_id=company.tenant_id)
+            await session.delete(company)
+            await session.flush()
+            company = shared
+            summary.profile_changed = ["folded into shared"]
+    if company is not None and company.tenant_id is not None:
+        # The organisation's own profile and no shared one yet: the provider's profile replaces it and it becomes shared
+        # reference data (its hand-entered fields are cleared - they were that organisation's, never shown to others).
+        # Without the provider's profile nothing is written to a company that is not shared.
         try:
             fetched = await provider.get_company_profile(symbol)
         except FundamentalDataProviderError as exc:

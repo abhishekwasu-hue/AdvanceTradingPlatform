@@ -1595,12 +1595,19 @@ class CompanyRecord(Base):
     """
 
     __tablename__ = "companies"
+    # A symbol is unique per scope (security LOW follow-up of #234): one shared profile (a partial unique index) and at most
+    # one per organisation - an organisation's private profile never blocks or shadows the shared one for the others.
+    __table_args__ = (
+        UniqueConstraint("symbol", "tenant_id", name="uq_companies_symbol_tenant"),
+        Index("uq_companies_symbol_shared", "symbol", unique=True, postgresql_where=text("tenant_id IS NULL"),
+              sqlite_where=text("tenant_id IS NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
     # that organisation and visible to it only (app/fundamentals/visibility.py).
     tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
-    symbol: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     bse_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     isin: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -1636,7 +1643,10 @@ class FinancialPeriodRecord(Base):
     """
 
     __tablename__ = "financial_periods"
-    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", name="uq_company_period_tenant"),)
+    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", name="uq_company_period_tenant"),
+                      # NULLs differ in a unique key: the shared periods get their own partial unique index
+                      Index("uq_company_period_shared", "company_id", "period_type", "period_label", unique=True,
+                            postgresql_where=text("tenant_id IS NULL"), sqlite_where=text("tenant_id IS NULL")))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by

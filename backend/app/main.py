@@ -1,10 +1,8 @@
 import asyncio
 import copy
-import gc
 import hashlib
 import json
 import logging
-import os
 import uuid
 from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
@@ -157,12 +155,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if backtest_sweep_inline_on():
         # N7 C6: the sweeps a stopped API process left queued are run again here (nothing else would without a worker).
         resume = asyncio.create_task(_resume_backtest_sweeps())
-    if os.environ.get("API_GC_FREEZE", "1") != "0":
-        # N7 I1 review: everything imported and warmed at start-up leaves the cyclic collector's view, so a full collection
-        # triggered by a request that allocates many rows scans only what requests made (measured on a 360k-object API
-        # process: 0.3-0.4 s -> ~0.05 s per full collection, each a stall of the event loop). API_GC_FREEZE=0 turns it off.
-        gc.collect()
-        gc.freeze()
     yield
     if resume is not None and not resume.done():
         resume.cancel()

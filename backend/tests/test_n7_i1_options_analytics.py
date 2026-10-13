@@ -324,3 +324,45 @@ def test_the_concurrency_cap_and_the_coverage_note(monkeypatch):
     busy = client.get(_url(name, AT), headers=headers)
     assert busy.status_code == 429 and busy.headers.get("Retry-After")
     rate_limit.reset("options_analytics")
+
+
+def test_a_cancelled_request_keeps_its_slot_until_the_thread_finishes(monkeypatch):
+    """The client went away mid-computation: the worker thread cannot be stopped, so the slot stays taken until it ends."""
+    import threading
+    import time
+    started, finished = threading.Event(), threading.Event()
+
+    def slow(rows, at, lookback_days):
+        started.set()
+        time.sleep(0.4)
+        finished.set()
+        return {}
+    monkeypatch.setattr(OR.A, "analytics", slow)
+    monkeypatch.setattr(OR, "_busy", 0)
+
+    async def go():
+        async def request():
+            async with OR.analytics_slot():
+                await OR._compute([], AT, 365)
+        task = asyncio.create_task(request())
+        while not started.is_set():
+            await asyncio.sleep(0.01)
+        task.cancel()                                                            # the client disconnects
+        await asyncio.sleep(0.1)
+        held = (OR._busy, finished.is_set(), task.done())
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        return held, OR._busy, finished.is_set()
+    held, after, done = asyncio.run(go())
+    assert held == (1, False, False)                                             # still counted while the thread runs
+    assert after == 0 and done                                                   # given back only once it finished
+
+
+def test_an_upload_with_fraction_ivs_is_refused():
+    headers = _auth(f"n7i1-u-{uuid.uuid4().hex[:6]}@example.com")
+    row = {"timestamp": "2026-10-05T09:15:00+05:30", "expiry": "2026-10-06", "strike": 24500, "right": "PE", "ltp": 95.5}
+    name = f"OU{uuid.uuid4().hex[:6].upper()}"
+    bad = client.post("/api/backtest/option-chain/snapshots", headers=headers, json={"underlying": name, "rows": [{**row, "iv": 0.142}]})
+    assert bad.status_code == 422 and "percent" in bad.json()["detail"]
+    ok = client.post("/api/backtest/option-chain/snapshots", headers=headers, json={"underlying": name, "rows": [{**row, "iv": 14.2}, {**row, "strike": 24600}]})
+    assert ok.status_code == 200 and ok.json()["written"] == 2

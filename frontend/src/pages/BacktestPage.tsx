@@ -15,7 +15,7 @@ import { PageHeader } from "../components/primitives";
 const INDEX_START_PRICES: Record<string, number> = { NIFTY: 24500, "NIFTY 50": 24500, BANKNIFTY: 52500, "NIFTY BANK": 52500, FINNIFTY: 23500, MIDCPNIFTY: 12500, SENSEX: 80500, BANKEX: 60500 };
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
 
-/** Parses a chain-recorder CSV (timestamp,expiry,strike,right,ltp[,iv,oi,underlying_ltp]) into upload rows. */
+/** Parses a chain-recorder CSV (timestamp,expiry,strike,right,ltp[,iv,oi,underlying_ltp]) into upload rows; iv in percent (14.2). */
 function parseSnapshotCsv(text: string): OptionChainSnapshotRow[] {
   const lines = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   if (lines.length < 2) return [];
@@ -441,7 +441,7 @@ export default function BacktestPage() {
               {pricing === "uploaded" && (
                 <div className="text-xs">
                   <input type="file" accept=".csv,text/csv" onChange={(e) => onSnapshotFile(e.target.files?.[0] ?? null)} />
-                  <span className="ml-2 text-fg-muted">columns: timestamp, expiry, strike, right, ltp [, iv, oi, underlying_ltp]</span>
+                  <span className="ml-2 text-fg-muted">columns: timestamp, expiry, strike, right, ltp [, iv, oi, underlying_ltp] - iv in percent (14.2 for 14.2 %)</span>
                   {uploadedRows.length > 0 && user && <button className="ml-2 text-brand" onClick={saveUploadedRows}>store as platform history</button>}
                   {uploadNote && <div className="text-fg-muted mt-1">{uploadNote}</div>}
                 </div>

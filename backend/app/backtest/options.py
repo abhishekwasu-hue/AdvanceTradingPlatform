@@ -345,7 +345,7 @@ class OptionChainSnapshotRow(BaseModel):
     strike: float = Field(gt=0)
     right: str = Field(pattern="^(CE|PE|ce|pe)$")
     ltp: float = Field(gt=0)
-    iv: Optional[float] = None
+    iv: Optional[float] = Field(default=None, description="implied volatility in percent (14.2 for 14.2 %)")
     oi: Optional[float] = None
     underlying_ltp: Optional[float] = None
 

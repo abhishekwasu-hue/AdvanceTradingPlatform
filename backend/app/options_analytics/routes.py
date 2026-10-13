@@ -10,7 +10,8 @@ upload of older captures made after `at` never changes the answer at `at`.
 
 Bounds: one call reads at most MAX_STAMPS distinct capture times and MAX_ROWS quotes (the newest first, cut only at a
 whole session's window; the answer says when), in IN lists of at most IN_CHUNK keys; at most MAX_CONCURRENT answers are
-computed at once per API process (then 429) on top of the per-user rate limit. The event loop is never held: quotes are
+computed at once per API process (then 429; a slot is held until its worker thread has finished, even when the client
+went away) on top of the per-user rate limit. The event loop is never held: quotes are
 read as plain column tuples in partitions of PARTITION rows (an await between partitions) and the analytics run in a
 worker thread.
 
@@ -22,8 +23,9 @@ from __future__ import annotations
 
 import asyncio
 from bisect import bisect_left, bisect_right
+from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, AsyncIterator, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
@@ -127,9 +129,35 @@ async def _rows(session: AsyncSession, underlying: str, at: datetime, lookback_d
     return [r for r in loaded[:MAX_ROWS] if r.timestamp in whole], limits
 
 
+@asynccontextmanager
+async def analytics_slot() -> AsyncIterator[None]:
+    """One of MAX_CONCURRENT answers computed at once in this API process; none free -> 429."""
+    global _busy
+    if _busy >= MAX_CONCURRENT:
+        raise HTTPException(status_code=429, detail="Options analytics are busy - try again in a few seconds", headers={"Retry-After": "5"})
+    _busy += 1
+    try:
+        yield
+    finally:
+        _busy -= 1
+
+
 async def _compute(rows: List[A.Row], when: datetime, lookback_days: int) -> Dict[str, Any]:
-    """The analytics in a worker thread, so the event loop keeps serving other requests."""
-    return await asyncio.to_thread(A.analytics, rows, when, lookback_days=lookback_days)
+    """The analytics in a worker thread, so the event loop keeps serving other requests. A thread cannot be stopped: when
+    the request is cancelled (the client went away) this waits for the thread before the cancellation goes on, so the
+    slot it runs in is held until the work has really finished (never more than MAX_CONCURRENT running)."""
+    work = asyncio.ensure_future(asyncio.to_thread(A.analytics, rows, when, lookback_days=lookback_days))
+    try:
+        return await asyncio.shield(work)
+    except asyncio.CancelledError:
+        while not work.done():
+            try:
+                await asyncio.shield(work)
+            except asyncio.CancelledError:
+                continue
+            except Exception:  # noqa: BLE001 - the work's own failure no longer matters to a cancelled request
+                break
+        raise
 
 
 @router.get("/api/options/analytics", dependencies=[Depends(analytics_rate_limit)])
@@ -146,15 +174,9 @@ async def options_analytics(underlying: str = Query(min_length=1, max_length=30)
         raise HTTPException(status_code=422, detail="at: a time in the future has no recorded quotes")
     name = underlying_of(underlying)
     own_only = await live_access.byob_on(session, user.tenant_id)
-    global _busy
-    if _busy >= MAX_CONCURRENT:
-        raise HTTPException(status_code=429, detail="Options analytics are busy - try again in a few seconds", headers={"Retry-After": "5"})
-    _busy += 1
-    try:
+    async with analytics_slot():
         rows, limits = await _rows(session, name, when, lookback_days, user.tenant_id, own_only)
         out = await _compute(rows, when, lookback_days)
-    finally:
-        _busy -= 1
     from app.backtest.chain_recorder import CHAIN_SNAPSHOT_ATM_SPAN
     coverage = (f"PCR, max pain and skew cover only the strikes quoted (each expiry's `strikes`): the recorder keeps "
                 f"{CHAIN_SNAPSHOT_ATM_SPAN} strikes either side of the money at each capture, not the whole chain; "

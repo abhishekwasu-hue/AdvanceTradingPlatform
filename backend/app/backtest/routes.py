@@ -344,6 +344,9 @@ async def option_chain_snapshots(underlying: str, start: datetime, end: datetime
     return [r.model_dump(mode="json") for r in rows]
 
 
+IV_FRACTION_CEILING = 3.0     # an uploaded IV at or under this (but above 0) is taken for a fraction and refused
+
+
 class SnapshotUploadBody(BaseModel):
     underlying: str = Field(min_length=1, max_length=50)
     rows: List[OptionChainSnapshotRow] = Field(min_length=1, max_length=200_000)
@@ -355,6 +358,13 @@ async def upload_option_chain_snapshots(body: SnapshotUploadBody, user: User = D
     """Bring your own quotes: rows exported from another recorder become this organisation's history (Z10-c: only its
     own backtests see them - never another organisation's, and they never stand in for the recorder's capture)."""
     underlying, _ = underlying_name(body.underlying)
+    # N7 I1: a stored IV is in percent (14.2 for 14.2 %), the unit options analytics read; a fraction (0.142) would be
+    # read as 0.142 %, so IVs in (0, 3] are refused rather than guessed.
+    fractions = sum(1 for r in body.rows if r.iv is not None and 0 < r.iv <= IV_FRACTION_CEILING)
+    if fractions:
+        raise HTTPException(status_code=422, detail=(
+            f"iv is in percent (14.2 for 14.2 %): {fractions} row(s) have an IV between 0 and {IV_FRACTION_CEILING:g}, which looks "
+            "like a fraction - multiply those IVs by 100 and upload again"))
     written = await chain_recorder.store_uploaded(session, underlying, body.rows, tenant_id=user.tenant_id)
     return {"underlying": underlying, "received": len(body.rows), "written": written}
 

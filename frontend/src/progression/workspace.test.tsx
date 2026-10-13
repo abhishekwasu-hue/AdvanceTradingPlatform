@@ -56,6 +56,10 @@ describe("workspace helpers (N2-9)", () => {
   it("flattens only the positions Exit now can close here", () => {
     expect(flattenTargets(board([pos(1, "one_click"), pos(2, "broker_app"), pos(3, "automatic"), pos(4, "one_click")])).map((p) => p.trade_id)).toEqual([1, 4]);
     expect(flattenTargets(null)).toEqual([]);
+    // Exit now on one leg closes the whole group: a condor is one target, not four (no false failures)
+    const legs = [1, 2, 3, 4].map((id) => ({ ...pos(id, "one_click"), leg_group_id: "g1" }));
+    expect(flattenTargets(board([...legs, pos(5, "one_click"), { ...pos(6, "one_click"), leg_group_id: "g2" }, { ...pos(7, "one_click"), leg_group_id: "g2" }]))
+      .map((p) => p.trade_id)).toEqual([1, 5, 6]);
   });
 
   it("calls intraday data stale only while the market is open and three bars late", () => {
@@ -86,7 +90,11 @@ describe("workspace views (N2-9)", () => {
 
   it("lists the shortcuts and makes position rows focusable", () => {
     expect(text(renderToStaticMarkup(<ShortcutHelp />))).toContain("Shift+F - flatten all: exit every position you can close here, after one confirmation");
-    const html = renderToStaticMarkup(<PositionsBoardView board={board([pos(1, "one_click")])} exiting={null} message={null} onExit={() => undefined} />);
+    const html = renderToStaticMarkup(<PositionsBoardView board={board([pos(1, "one_click")])} exiting={null} message={null} onExit={() => undefined} exitKey />);
     expect(html).toContain('tabindex="0"');
+    // the Positions page's board (no exitKey): no row focus, so no "x" exit there; the button stays
+    const plain = renderToStaticMarkup(<PositionsBoardView board={board([pos(1, "one_click")])} exiting={null} message={null} onExit={() => undefined} />);
+    expect(plain).not.toContain("tabindex");
+    expect(plain).toMatch(/<button/);
   });
 });

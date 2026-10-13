@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import type { Evaluation, Leg } from "../optionsBuilder/model";
 import { CompareView } from "./CompareSection";
-import { MAX_SLOTS, addSlot, compareTable, overlay, signature, type CompareSlot } from "./compare";
+import { MAX_SLOTS, addSlot, compareTable, otherUnderlying, overlay, signature, type CompareSlot } from "./compare";
 import { tProgression as t } from "./i18n";
 
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&amp;/g, "&").replace(/\s+/g, " ");
@@ -32,6 +32,15 @@ describe("compare helpers (N2-8)", () => {
     expect(addSlot(s.slice(0, 1), slot("y", [leg(22000, "SELL", "z")])).refused).toBe("same");
   });
 
+  it("refuses a saved strategy on another underlying than the page's", () => {
+    const bank: CompareSlot = { ...slot("Bank condor", [leg(48000)]), underlying: "BANKNIFTY" };
+    expect(addSlot([], bank, "NIFTY")).toEqual({ slots: [], refused: "underlying" });
+    expect(addSlot([], bank, "")).toEqual({ slots: [], refused: "underlying" });        // no page underlying: not provable
+    expect(addSlot([], bank, " banknifty ").refused).toBeNull();                       // case and spaces do not matter
+    expect(otherUnderlying(slot("page", [leg(22000)]), "NIFTY")).toBe(false);           // the page's own legs carry none
+    expect(t("compare.otherUnderlying", { name: "Bank condor", theirs: "BANKNIFTY", ours: "NIFTY" })).toContain("BANKNIFTY and this page is on NIFTY");
+  });
+
   it("lays the engine's numbers side by side", () => {
     const strangle = ev({ extremes: { max_profit: 6000, max_loss: null, unbounded_profit: false, unbounded_loss: true }, margin: { value: null, estimated: true, basis: "", note: "" },
                           reward_to_risk: null });
@@ -53,11 +62,25 @@ describe("compare helpers (N2-8)", () => {
 
 describe("CompareView (N2-8)", () => {
   it("draws one curve per strategy and the table, with no control", () => {
-    const html = renderToStaticMarkup(<CompareView names={["Condor", "Strangle"]} evals={[ev({}), ev({ net_premium: 6000 })]} />);
+    const html = renderToStaticMarkup(<CompareView columns={[{ key: "a", name: "Condor" }, { key: "b", name: "Strangle" }]}
+                                                   evals={[ev({}), ev({ net_premium: 6000 })]} />);
     expect(html.match(/<path /g)?.length).toBe(2);
     const words = text(html);
     expect(words).toContain("Condor Strangle");
     expect(words).toContain("Net premium +₹5,750 +₹6,000");
     expect(html).not.toMatch(/<button/);
+  });
+
+  it("keys the columns by slot, so two strategies with one name both show", () => {
+    const errors: unknown[] = [];
+    const orig = console.error;
+    console.error = (...a: unknown[]) => { errors.push(a); };
+    try {
+      const html = renderToStaticMarkup(<CompareView columns={[{ key: "saved-1", name: "Condor" }, { key: "saved-2", name: "Condor" }]}
+                                                     evals={[ev({}), ev({ net_premium: 6000 })]} />);
+      expect(text(html)).toContain("Condor Condor");
+      expect(text(html)).toContain("Net premium +₹5,750 +₹6,000");
+    } finally { console.error = orig; }
+    expect(errors.filter((e) => String(e).includes("same key"))).toEqual([]);
   });
 });

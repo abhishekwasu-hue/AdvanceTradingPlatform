@@ -2,8 +2,9 @@
 (empty = no call); the output filter blocks a text with any. The word lists are data (the "calls" block of
 `data/advice_terms.json`).
 
-**English only.** ATP answers in English. A text with any Devanagari (or other Indic-script) character is not read: it
-answers one label (`SCRIPT_LABEL`) and is withheld - fail closed, never a pattern list per language.
+**English only.** ATP answers in English. A text that is not plain English - a letter of another script (Devanagari,
+Cyrillic, Greek, CJK, ...), small caps or an accented letter, a combining mark, a hidden character - is not read: it
+answers one label (`SCRIPT_LABEL`) and is withheld (`not_plain_english`; fail closed, never a pattern list per language).
 
 **Normalisation first** (`normalise`): NFKC (full-width and mathematical letters), Unicode format characters removed
 (zero-width space / joiner, bidi marks), Latin look-alikes from Cyrillic / Greek mapped (`app.support.normalize`),
@@ -51,9 +52,44 @@ from typing import FrozenSet, List, Optional, Pattern, Sequence, Tuple
 from app.ai import instrument_names
 
 MAX_CHARS = 40_000
-# English only: any Devanagari (or other Indic-script) character withholds the text (fail closed).
-_INDIC = re.compile("[\u0900-\u0dff\ua8e0-\ua8ff\u1cd0-\u1cff]")
-SCRIPT_LABEL = "call: text not in English (Devanagari / Indic script) - withheld"
+SCRIPT_LABEL = "call: text not in plain English (another script, a combining mark or a hidden character) - withheld"
+# A lone options greek ("Δ 0.45", "θ -12") is the one non-ASCII letter plain English may carry.
+_GREEKS = frozenset("ΔδΘθσΣγΓνρβ")
+# Default-ignorable code points that are not format characters (Cf, all withheld) or combining marks (Mn, all withheld).
+_IGNORABLE = frozenset([0x115F, 0x1160, 0x17B4, 0x17B5, 0x3164, 0xFFA0, *range(0x180B, 0x1810), *range(0xFFF0, 0xFFF9)])
+_EMOJI_JOINERS = frozenset("\u200d\ufe0e\ufe0f")
+
+
+def _symbol(ch: str) -> bool:
+    return bool(ch) and unicodedata.category(ch) in ("So", "Sk")
+
+
+def not_plain_english(text: str) -> bool:
+    """Whether `text` is not plain English (review of #254, F2: fail closed, one structural rule instead of a pattern list
+    per language): after NFKC and the Latin look-alike map, any letter outside ASCII (another script, small caps, an
+    accented letter - except a lone options greek such as "Δ 0.45"), any combining mark after NFKD ("B\u0301UY",
+    "S\u0336ELL"), any format or default-ignorable character (zero-width, variation selectors, Hangul fillers). The emoji
+    joiner and presentation selectors are allowed next to a pictograph ("⚠️")."""
+    from app.support.normalize import _CONFUSABLES
+    t = unicodedata.normalize("NFKC", text or "").translate(_CONFUSABLES)
+    if t.isascii():
+        return False
+    d = unicodedata.normalize("NFKD", t)
+    n = len(d)
+    for i, ch in enumerate(d):
+        if ch.isascii():
+            continue
+        cat, cp = unicodedata.category(ch), ord(ch)
+        prev, nxt = (d[i - 1] if i else ""), (d[i + 1] if i + 1 < n else "")
+        if ch in _EMOJI_JOINERS and (_symbol(prev) or prev in _EMOJI_JOINERS) and (ch != "\u200d" or _symbol(nxt)):
+            continue                                            # "⚠️", "👨‍💻"
+        if cat in ("Mn", "Cf", "Co", "Cn") or cp in _IGNORABLE or 0xE0000 <= cp <= 0xE0FFF:
+            return True
+        if cat[0] == "L":
+            if ch in _GREEKS and not prev.isalpha() and not nxt.isalpha():
+                continue
+            return True
+    return False
 _WORD = "\\w"
 _TICKER = re.compile(r"[A-Z][A-Z0-9&]{1,19}(?:-[A-Z]{1,4})?")
 # A number starts where a digit run starts (review of #230, MED perf: no backtracking into a run of digits).
@@ -320,11 +356,22 @@ _LEVEL_NOUN = (r"close|closes|closing|open|opening|high|highs|low|lows|level|lev
 # Advice adjectives: advice unless a level / candle noun follows (one word may sit between) or a period possessive leads
 # ("the week's best"); "fine" only as the whole complement of a bare field ("INFY: close 1500 is fine.").
 _ADVICE_ADJ = re.compile(r"\b(?:wise|wisest|advisable|recommended|prudent|ideal|optimal|preferable|preferred|suggested|safe|safer|safest|"
-                         r"needed|key|good|great|fine|best|better|smart|smarter|smartest|sensible|sound|obvious|easiest|simplest|"
+                         r"needed|key|good|great|fine|best|better|smart|smarter|smartest|wiser|sensible|sound|obvious|easiest|simplest|"
                          r"cleanest|surest|clear)\b", re.I)
 _ADVICE_FOLLOWED = re.compile(rf"\s+(?:[\w%.-]+\s+)?(?:{_LEVEL_NOUN}|results|earnings|numbers|data|news|guidance|performers?|"
-                             r"performance|cues|demand|deal\s+wins|wins|quarter|show)\b|(?<=smart)\s+money\b|"
-                             r"\s+than\s+(?!\w+ing\b)", re.I)
+                             r"performance|cues|demand|deal\s+wins|wins|quarter|show)\b|(?<=smart)\s+money\b", re.I)
+# A comparison describes a bare value only against the market or its peers ("close 4050, better than peers"); never after
+# an order-shaped field ("close at 1500, better than a bigger loss") or after safer / wiser / smarter.
+_THAN_PEERS = re.compile(r"\s+than\s+(?:(?:the|its|their|most)\s+)?(?:(?:broader|broad|wider|overall)\s+)?(?:index|indices|sector|"
+                         r"sectors|peers?|most|rest|market|markets|benchmark|nifty|sensex|group|pack|expected|estimates?)\b", re.I)
+
+
+def _adj_describes(text: str, m: "re.Match[str]", bare: bool) -> bool:
+    """Whether the advice adjective `m` in `text` describes a level, a candle, an event or (after a bare value) the
+    market's peers, rather than advising."""
+    if _ADVICE_FOLLOWED.match(text, m.end()):
+        return True
+    return bare and m.group(0).lower() not in ("safer", "wiser", "smarter") and bool(_THAN_PEERS.match(text, m.end()))
 _PERIOD_POSSESSIVE = re.compile(r"(?:week|month|day|session|year|quarter|decade)'s\s+$", re.I)
 _ADVICE_HARD = re.compile(
     r"\b(?:a must|worth it|makes sense|my pick|our pick|best bet|no[- ]?brainer|you|your|yours|plans?|strateg(?:y|ies)|"
@@ -347,6 +394,7 @@ _PURPOSE = re.compile(r"\bto\s+(?:protect|stay|be\s+safe|keep|lock|limit|avoid|c
 _ORDER_CLAUSE = re.compile(
     r"^\s*(?:if|unless|in\s+case|until|till|before|ahead\s+of|or(?!\s+(?:₹?\d|about|nearly|roughly|almost|around)\b)|else|otherwise|"
     r"so(?!\s+(?:far|the|that\s+the)\b)|then(?![-\w])(?!\s+₹?\d)|please|"
+    r"so\s+(?:the\s+|your\s+|my\s+|our\s+)?(?:risk|loss|downside|profit|gain|exposure|drawdown)s?\s+(?:is|are|stays?|remains?|gets?)\b|"
     r"just(?!\s+(?:above|below|under|over|shy|short\s+of|off|at|near|around|₹?\d|\d|up|down|higher|lower)\b)|"
     r"no\s+(?:hesitation|questions?(?:\s+asked)?|doubt|doubts|delay|second\s+thoughts|excuses|ifs)|full\s+stop|period\s*$|"
     r"end\s+of\s+(?:story|discussion)|without\s+(?:hesitation|fail|delay|question)|"
@@ -359,7 +407,10 @@ _ORDER_CLAUSE = re.compile(
 _VERDICT = re.compile(
     r"^\s*(?-i:[Tt]hat|[Tt]his|[Ii]t)(?:'s|\s+(?:is|was|would\s+be|remains|seems|looks))\s+(?:(?:the|a|an|my|our)\s+)?(?:[\w-]+\s+){0,2}?"
     r"(?:plan|call|trade|move|idea|play|way|step|choice|pick|advice|view|strategy|bet|thing\s+to\s+do|wise|prudent|advisable|"
-    r"recommended|ideal|optimal|best|smart|sensible|safest|safer|right)\b", re.I)
+    rf"recommended|ideal|optimal|best|smart|sensible|safest|safer|right)\b(?!\s+(?:[\w-]+\s+)?(?:{_LEVEL_NOUN})\b)", re.I)
+# A verdict in the next sentence ("TCS: close 4050 before results. That is the plan.", "... Full stop.").
+_NEXT_VERDICT = re.compile(rf"(?:{_VERDICT.pattern})|^\s*(?:full\s+stop|period|no\s+(?:questions?(?:\s+asked)?|hesitation|doubts?|ifs|"
+                           r"excuses|second\s+thoughts)|end\s+of\s+(?:story|discussion)|without\s+(?:hesitation|fail|question))\b", re.I)
 # Subordinate clauses: present tense (a reason, a condition now) never reports a bar; past evidence (a past-tense verb, a
 # past time) does. An order-shaped field (at / above N, or hold) needs the evidence; a bare field ("close 4050 after
 # results", "close 4050 amid sector weakness") only needs the present tense absent.
@@ -587,7 +638,7 @@ def _advice_after(rest: str, bare: bool) -> bool:
         return True
     for m in _ADVICE_ADJ.finditer(own):
         word = m.group(0).lower()
-        if _ADVICE_FOLLOWED.match(own, m.end()) or _PERIOD_POSSESSIVE.search(own[max(0, m.start() - 20):m.start()]):
+        if _adj_describes(own, m, bare) or _PERIOD_POSSESSIVE.search(own[max(0, m.start() - 20):m.start()]):
             continue                                            # "a good sign", "key support", "the week's best"
         if word == "fine" and bare and re.fullmatch(r"\s*is\s*", own[:m.start()]) and not own[m.end():].strip(" ."):
             continue                                            # "INFY: close 1500 is fine." - the whole complement
@@ -617,7 +668,7 @@ def _clause_order(c: str, strict: bool) -> bool:
     if _ORDER_CLAUSE.match(c) or _VERDICT.match(c):
         return True
     if len(c.split()) <= 4 and (_ADVICE_HARD.search(c) or any(
-            not _ADVICE_FOLLOWED.match(c, m.end()) for m in _ADVICE_ADJ.finditer(c))):
+            not _adj_describes(c, m, not strict) for m in _ADVICE_ADJ.finditer(c))):
         return True                                             # a bare verdict fragment ("; a must", "; prudent")
     sub = _SUBORDINATE.match(c)
     if sub is None or re.match(r"as\s+per\b", c, re.I):
@@ -658,7 +709,7 @@ def _field_ok(verb: str, kind: str, rest: str, L: "Lists") -> bool:
     """Whether `rest` (everything after a price field of `kind`, up to the sentence end) keeps the field a recap."""
     v = verb.lower()
     sentence_end = _SENTENCE_END.search(rest)                   # the field's own sentence; the next one only for a verdict
-    if sentence_end and _VERDICT.match(rest[sentence_end.end():sentence_end.end() + 120]):
+    if sentence_end and _NEXT_VERDICT.match(rest[sentence_end.end():sentence_end.end() + 120]):
         return False                                            # "INFY: close at 1500. That is the plan."
     rest = rest[:sentence_end.end()] if sentence_end else rest
     parts = re.split(r";|,(?!\d)", rest[:200])                # never inside "2,000"
@@ -1013,18 +1064,34 @@ def _paragraph_levels(p: str, L: Lists) -> bool:
 _POSSESSIVE = re.compile(r"\b([A-Z][A-Z0-9&]{1,19})['\u2019]s\b")
 
 
+_DOTTED = re.compile(r"(?<![\w.])(?:[A-Za-z]\.){2,4}[A-Za-z](?![\w])")
+_DOTTED_WORDS = frozenset({"buy", "sell", "exit", "hold", "short", "long", "cover", "add"})
+
+
+def _undot(m: "re.Match[str]") -> str:
+    word = m.group(0).replace(".", "")
+    return word if word.lower() in _DOTTED_WORDS else m.group(0)
+
+
+_FIELD_WORD = re.compile(r"\b(?:close|open|hold)\b", re.I)
+
+
 def detect(text: str, path: str) -> List[str]:
     """The call labels in `text` (module docstring), in order of appearance."""
     if len(text or "") > MAX_CHARS:
         return [f"call: text too long to check (over {MAX_CHARS} characters)"]
-    if _INDIC.search(text or ""):
+    if not_plain_english(text or ""):
         return [SCRIPT_LABEL]                                   # English only: never read, always withheld
     L = lists(path)
     _has_instrument.cache_clear()                              # the instrument index may have grown since the last text
     body = L.verb_line.sub(r"\1 ", normalise(text))            # "Buy\nRELIANCE": a verb alone on its line opens the next one
     body = _POSSESSIVE.sub(r"\1", body)                        # "Buy RELIANCE's chart breakout": the ticker itself
+    body = _DOTTED.sub(_undot, body)                            # "B.U.Y INFY": a trade word spelled with dots
     found: List[str] = []
-    for s in sentences(body):
+    parts = sentences(body)
+    for i, s in enumerate(parts):
+        if i + 1 < len(parts) and _FIELD_WORD.search(s) and _NEXT_VERDICT.match(parts[i + 1]):
+            s = f"{s.rstrip()}. {parts[i + 1]}"                # the verdict the sentence split cut off (review of #254, F1b)
         for item in _sentence_calls(s, L):
             if item not in found:
                 found.append(item)
@@ -1048,4 +1115,4 @@ def detect(text: str, path: str) -> List[str]:
     return found
 
 
-__all__ = ["detect", "normalise", "lists", "sentences", "MAX_CHARS", "SCRIPT_LABEL"]
+__all__ = ["detect", "normalise", "lists", "sentences", "not_plain_english", "MAX_CHARS", "SCRIPT_LABEL"]

@@ -167,6 +167,13 @@ SHOULD_BLOCK = [
     "INFY: close at 1500, so the risk is capped", "INFY: close at 1500 to end the week flat",
     "INFY: close 1500 and cut losses", "INFY: close at 1500, right call", "INFY: close 1500 to gain 2%; then re-buy",
     "INFY: close at 1500, better than holding",
+    # review of #254 (F1): a comparison after an order, a verdict in the next sentence, a "so the risk ..." rationale
+    "INFY: close at 1500, better than a bigger loss.", "INFY: close at 1500, better than the alternative.",
+    "INFY: close at 1500, better than a stop-out.", "INFY: close at 1500, safer than the alternative.",
+    "INFY: close at 1500, smarter than the alternative.", "TCS: close 4050, safer than peers.", "TCS: close 4050, wiser than the index.",
+    "TCS: close 4050 before results. That is the plan.", "TCS: close 4050 to end the week up 2%. That is the call.",
+    "TCS: close 4050. Full stop.", "TCS: close 4050, so the risk is capped.", "TCS: close 4050, so the loss is limited.",
+    "TCS: close 4050, so the profit is locked.", "B.U.Y INFY",
 ]
 
 SHOULD_PASS = [
@@ -280,6 +287,10 @@ SHOULD_PASS = [
     "TCS: close 4050, just shy of the high.", "TCS: close 4050, or about 1% higher.",
     "TCS: close 4050 to end the session higher.", "TCS: close 4050 to snap a 4-day losing streak.",
     "TCS: close 4050 to extend gains.",
+    # review of #254: comparisons with the market after a bare value, a descriptive next sentence, a plain options greek
+    "TCS: close 4050, better than the index.", "NIFTY: close 25100, stronger than the sector.",
+    "TCS: close 4050. That is the highest close in 5 sessions.", "TCS: close 4050 before results. INFY: close 1500.",
+    "NIFTY 25000 CE: Δ 0.45, θ -12, IV 14%.", "Volatility (σ) rose to 1.2%.",
 ]
 
 
@@ -289,7 +300,7 @@ def test_calls_aimed_at_an_instrument_are_blocked(text):
         s = output_filter.screen(text, lang)
         assert not s.ok, (text, lang)
         ok, shown, why = output_filter.check(text, lang)
-        assert not ok and shown is None and "advice/guarantee" in why
+        assert not ok and shown is None and ("advice/guarantee" in why or why == output_filter.NOT_ENGLISH_REASON)
 
 
 @pytest.mark.parametrize("text", SHOULD_PASS)
@@ -333,9 +344,27 @@ def test_ai_text_with_devanagari_is_withheld_with_a_neutral_reason(text):
     assert "English only" in output_filter.retry_hint(output_filter.findings(text))
 
 
-def test_other_indic_scripts_fail_closed_too():
-    for text in ("RELIANCE ખરીદો", "TCS কিনুন", "INFY வாங்கு"):        # Gujarati, Bengali, Tamil
-        assert not output_filter.check(text)[0], text
+NOT_PLAIN_ENGLISH = [
+    "RELIANCE ખરીદો", "TCS কিনুন", "INFY வாங்கு",                       # Gujarati, Bengali, Tamil
+    "КУПИТЬ INFY 1500", "INFY خریدیں 1500", "ΑΓΟΡΑΣΤΕ INFY 1500", "买入 INFY 1500", "INFY 매수 1500",   # review of #254, F2
+    "INFY \U0001160e\U00011630\U00011628 1500", "INFY \u1c60\u1c64\u1c71 1500",          # Modi, Ol Chiki
+    "B\u3164UY INFY", "B\u0301UY INFY", "S\u0336E\u0336L\u0336L\u0336 INFY", "B\u034fUY INFY", "BUY\U000e0101 INFY",
+    "\u0299\u1d1c\u028f INFY", "B\u00f9y RELIANCE", "B\u00adUY INFY",                    # small caps, an accent, soft hyphen
+]
+
+
+@pytest.mark.parametrize("text", NOT_PLAIN_ENGLISH)
+def test_text_that_is_not_plain_english_is_withheld(text):
+    ok, shown, why = output_filter.check(text)
+    assert not ok and shown is None and why == output_filter.NOT_ENGLISH_REASON, text
+
+
+def test_plain_english_with_emoji_and_options_greeks_is_read():
+    from app.ai.call_detect import not_plain_english
+    for text in ("\u26a0\ufe0f NIFTY closed at 25100.", "Price closed above SMA 20 \U0001f680.", "NIFTY 25000 CE: \u0394 0.45.",
+                 "Team \U0001f468\u200d\U0001f4bb notes: \u20b94,050 \u2013 RSI 62 \u2014 \u201cflat\u201d."):
+        assert not not_plain_english(text), text
+    assert not_plain_english("\u0394\u03b5\u03bb\u03c4\u03b1 rose")                      # greek letters next to letters
 
 
 def test_the_strategy_interview_never_routes_its_stored_translations_through_the_filter():

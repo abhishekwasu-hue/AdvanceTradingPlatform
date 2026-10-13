@@ -9,8 +9,9 @@ Three kinds of finding:
 * **blocked calls** - a trade call aimed at an instrument or a price level (`app/ai/call_detect.py`, which lists what is
   and is not a call): "Sell RELIANCE", "- Buy: RELIANCE", "Buy 25000 CE above 120", "I'd buy RELIANCE", "RELIANCE is a
   buy", an entry / stop / target set across lines, a level with certainty.
-* **not English** - ATP answers in English only: an AI text with any Devanagari (or other Indic-script) character is
-  withheld, never read (`call_detect.SCRIPT_LABEL`; fail closed, no per-language pattern lists). The Copilot strategy
+* **not plain English** - ATP answers in English only: an AI text with a letter of another script (Devanagari,
+  Cyrillic, Greek, CJK, ...), small caps or an accented letter, a combining mark or a hidden character is withheld, never
+  read (`call_detect.not_plain_english`, `SCRIPT_LABEL`; fail closed, no per-language pattern lists). The Copilot strategy
   interview's Marathi lines are fixed, stored translations (`app/ai/interview.py`), never AI text, and never pass here.
 * **framed** - a specific call that is not imperative and names no instrument ("One could buy the 25000 CE above 120"):
   the text is kept, with an educational framing line appended (the spec allows framing here).
@@ -162,7 +163,7 @@ def screen(text: str, lang: str = "en", *, where: str = "ai") -> Screened:
     return out
 
 
-NOT_ENGLISH_REASON = "not in English: the reply used Devanagari / Indic script and was withheld"
+NOT_ENGLISH_REASON = "not in plain English: the reply used another script, a combining mark or a hidden character and was withheld"
 
 
 def retry_hint(blocked: List[str]) -> str:

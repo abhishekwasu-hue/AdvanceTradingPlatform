@@ -82,6 +82,15 @@ async def _get_channel(session: AsyncSession, tenant_id: int, channel_type: str)
     )
 
 
+async def _s10_gate(session: AsyncSession, user: User, kind: str, config: Any) -> None:
+    """S10 seam (app/alerts/s10_gate.py): refused while the flag is off (403) or, for WhatsApp, on an unpaid plan (402)."""
+    from app.alerts import s10_gate
+    refused = await s10_gate.blocked(session, user.tenant_id, kind, config)
+    if refused is not None:
+        status_code, reason = refused
+        raise HTTPException(status_code=status_code, detail=reason, headers={"X-Feature-Disabled": s10_gate.FLAG} if status_code == 403 else None)
+
+
 @router.get("/push/public-key")
 async def push_public_key(user: User = Depends(get_current_user)) -> dict:
     """Phase O3: the VAPID public key the browser passes as `applicationServerKey`."""
@@ -123,6 +132,7 @@ async def upsert_alert_channel(
         # Never str(exc): pydantic's text includes the rejected input, i.e. the bot token / password.
         raise HTTPException(status_code=400, detail=safe_validation_message(exc)) from exc
 
+    await _s10_gate(session, user, kind, config)
     if record is None:
         await check_can_add_alert_channel(session, await load_tenant(session, user.tenant_id))
         record = AlertChannelRecord(tenant_id=user.tenant_id, channel_type=kind, created_by=user.id, encrypted_config=encrypt_config(config, user.tenant_id))
@@ -170,9 +180,13 @@ async def test_alert_channel(
         message=f"If you can read this, {kind.lower()} alerts for your account are working. Sent by {user.email}.",
         created_at=datetime.now(timezone.utc),
     )
+    from app.alerts import s10_gate
     try:
-        await send_via_channel(record, probe)
-    except Exception as exc:  # noqa: BLE001 - the whole point is to surface the error
+        await send_via_channel(record, probe, session=session)          # S10: the flag and the plan are checked in there
+    except s10_gate.Refused as refused:
+        raise HTTPException(status_code=refused.status_code, detail=refused.reason,
+                            headers={"X-Feature-Disabled": s10_gate.FLAG} if refused.status_code == 403 else None) from refused
+    except Exception as exc:  # noqa: BLE001 - the whole point is to surface the error (an undecryptable channel included)
         record.last_error = str(exc)[:500]
         await session.commit()
         return TestSendResponse(ok=False, detail=str(exc)[:500])

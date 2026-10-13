@@ -579,7 +579,23 @@ async def _risk_text(session: AsyncSession, user: User, lang: str) -> str:
         if d.get("active") or d.get("trades_today"):
             out.append(f"{mode}: {tr(lang, 'realised today', 'आजचा P&L')} {d.get('realised_pnl', 0):+,.0f}, {tr(lang, 'loss budget left', 'उरलेले तोटा-बजेट')} {d.get('loss_left', 0):,.0f}, "
                        f"{tr(lang, 'open', 'open')} {d.get('open_positions', 0)}")
+    out += await _portfolio_lines(session, user, lang)
     return "\n".join(out)
+
+
+async def _portfolio_lines(session: AsyncSession, user: User, lang: str) -> List[str]:
+    """N1 F3 (flag portfolio_risk): the user's own PAPER book as risk lines - numbers and their own limits, no advice."""
+    from app.platform.controls import flag_enabled
+    from app.portfolio import caps, risk_data, risk_text
+    if not await flag_enabled(session, risk_data.FLAG, user.tenant_id):
+        return []
+    try:
+        async with session.begin_nested():                       # a failed read rolls back this savepoint only
+            view = await risk_data.risk_view(session, user)
+            limits = await caps.limits_of(session, user) if await caps.enabled(session, user.tenant_id) else None
+    except Exception:  # noqa: BLE001 - the rest of /risk still answers
+        return [tr(lang, "Portfolio risk could not be read just now.", "Portfolio risk आत्ता वाचता आली नाही.")]
+    return risk_text.telegram_lines(view, lang, limits)
 
 
 async def _news_text(session: AsyncSession, tenant_id: int, lang: str) -> str:

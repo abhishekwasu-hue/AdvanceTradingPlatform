@@ -11,7 +11,7 @@ Companies stay shared (the symbol is the join key); feed news rows stay shared. 
 so two organisations can each hold their own figures for a period.
 
 Revision ID: d7f9a1c3e5b7
-Revises: a4c6e8f0b2d1 (N2-2 experience opt-outs, main's head after #207)
+Revises: b9e4c2d7a1f3 (N1 X1 scan Then templates #214, main's head)
 Create Date: 2026-10-13 09:00:00
 """
 from typing import Sequence, Union
@@ -20,7 +20,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd7f9a1c3e5b7'
-down_revision: Union[str, Sequence[str], None] = 'a4c6e8f0b2d1'
+down_revision: Union[str, Sequence[str], None] = 'b9e4c2d7a1f3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: the previous release runs unchanged on this schema - it never reads or writes the new nullable columns (its

@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Literal, Optional
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -178,8 +178,16 @@ async def instrument_rule_refusal(session: AsyncSession, user: User, condition: 
         if user.role != UserRole.SUPER_ADMIN.value:
             from app.plans.limits import ensure_tenant_active, load_tenant
             ensure_tenant_active(await load_tenant(session, user.tenant_id))
-        await _checked(session, user, RuleBody(name="check", kind="instrument", symbol="CHECK", condition=condition, base_tf=base_tf,
-                                               exchange=exchange))
+    except HTTPException as exc:
+        return _reason(exc.detail)
+    try:
+        body = RuleBody(name="check", kind="instrument", symbol="CHECK", condition=condition, base_tf=base_tf, exchange=exchange)
+    except ValidationError as exc:                    # e.g. a condition longer than a rule takes: refused, never a 500
+        errors = exc.errors()
+        where = ".".join(str(p) for p in errors[0]["loc"]) if errors else "rule"
+        return f"an alert rule cannot hold this screen: {where or 'rule'}: {errors[0]['msg'] if errors else 'invalid'}"
+    try:
+        await _checked(session, user, body)
     except HTTPException as exc:
         return _reason(exc.detail)
     return None

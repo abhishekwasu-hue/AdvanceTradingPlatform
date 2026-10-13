@@ -96,3 +96,30 @@ def test_the_refusal_is_the_create_routes_own():
         assert "screener_v2" in asyncio.run(go("close > 1"))
     finally:
         _set_flags(screener_v2=False)
+
+
+def test_a_card_a_rule_cannot_hold_is_refused_with_the_reason_never_a_500(monkeypatch):
+    """LG4a review (LOW): a card screen the rule body refuses (e.g. longer than a rule condition may be) answers with the
+    reason; the Legends page never fails."""
+    import asyncio
+
+    from app.alerts.rules_routes import instrument_rule_refusal
+    from tests.test_auth_api import _session_factory
+    headers, me = _owner(f"lg4-val-{uuid.uuid4().hex[:8]}@example.com")
+    _set_flags(screener_v2=True, screener_legends=True, screener_legends_actions=True)
+    try:
+        async def go(condition, exchange="NSE"):
+            async with _session_factory() as session:
+                from app.db.models import User
+                user = await session.get(User, me["id"])
+                return await instrument_rule_refusal(session, user, condition, "1d", exchange=exchange)
+        long_condition = "close > 1 and " * 400 + "close > 1"
+        assert "cannot hold this screen" in asyncio.run(go(long_condition))
+        assert "cannot hold this screen" in asyncio.run(go("close > 1", exchange="nse!"))
+        monkeypatch.setattr(lg, "filled_source", lambda card: long_condition)
+        r = client.get("/api/screener/legends", headers=headers)
+        assert r.status_code == 200, r.text
+        darvas = r.json()["actions"]["legends.darvas_box_breakout"]
+        assert darvas["alert"] is False and "cannot hold this screen" in darvas["alert_reason"] and darvas["run"] is True
+    finally:
+        _set_flags(screener_v2=False, screener_legends=False, screener_legends_actions=False)

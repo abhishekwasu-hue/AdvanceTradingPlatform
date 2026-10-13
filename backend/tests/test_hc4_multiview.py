@@ -923,3 +923,94 @@ def test_round11_a_run_of_amounts_or_calendars_is_linear_up_to_the_cap(unit):
     t0 = time.perf_counter()
     mv.advice_problems(text)
     assert time.perf_counter() - t0 < 1.0, unit                                 # was 2.5 s ("1 लाख " at 20k characters)
+
+
+# --- round 12: the Marathi -णार future; recaps in every language excuse a weekday / the expiry; state verbs describe the
+# close; "in 20 sessions" is a time; "time word + expiry" needs a link; the scans stay linear at 38k characters ----------
+R12_PASS_FACTS = [
+    "The close remains below the high 22800.", "The close stays inside the range 22000 - 22800.", "The close ends 20 daily bars up 3%.",
+    "Spot remains below max pain 22800; PCR 1.3.", "The index ends the window at a close of 22450.5, up 3%.", "Monday: PCR 1.3, max pain 22800.",
+    "The last close of 22450.5 holds above the low 22000.", "पिछले 20 सत्रों में भाव रेंज 22000 - 22800 में रहे।", "सोमवार को पीसीआर 1.3 था।",
+    "पिछली एक्सपायरी को मैक्स पेन 22800 था।", "मागील एक्सपायरीला नव्हे, या एक्सपायरीचा मॅक्स पेन 22800 आहे.", "सोमवारी पीसीआर 1.3 होता.",
+    "मागील एक्सपायरीला मॅक्स पेन 22800 होता.", "बंद भाव 22450.5 असून तो उच्चांक 22800 च्या खाली राहिला.", "Monday ko PCR 1.3 tha",
+    "pichhli expiry ko max pain 22800 tha",
+]
+R12_PASS = [
+    "Call OI at 23000 rose 12% on Monday.", "Through Thursday, call writers added 12% at 23000.", "By Friday's close, call OI at 23000 had grown 12%.",
+    "On expiry day last month, NIFTY settled at 22710.", "Nifty ends at 22650, up 0.8%.", "NIFTY ends the week at 22650, up 0.8%.",
+    "Put OI at 22500 added 1.2 crore contracts on Thursday.", "Spot holds above 22500 for a third session; PCR is 1.3.",
+    "Max pain was 22800 at expiry last month.", "PCR at expiry was 1.1 for the September series.", "Price remains below the 22800 high.",
+    "Spot remains 150 points below max pain 22800.", "The market stays above its 20-day average, 22410.", "Until Friday, PCR was 1.1; it is now 1.3.",
+    "Spot traded between 22400 and 22700 through the week.", "The series ends on 30 Oct with max pain at 22800.", "Expiry ends the series on 30 Oct.",
+    "Thursday's close was 22650.", "Price did not break 22800 in 20 sessions.",
+    "गुरुवार को निफ्टी 22650 पर बंद हुआ।", "शुक्रवार तक कॉल OI 12% बढ़ा।", "एक्सपायरी के दिन निफ्टी 22650 पर बंद हुआ था।", "भाव 22000 से 22800 के बीच रहे।",
+    "पिछले 5 सत्रों में भाव 22000 से 22800 के बीच रहे।", "भाव 22000 से 22800 के बीच बने रहे।", "निफ्टी 22650 पर बंद हो गया।",
+    "गुरुवारी निफ्टी 22650 वर बंद झाला.", "शुक्रवारपर्यंत कॉल OI 12% वाढला.", "एक्सपायरीच्या दिवशी निफ्टी 22710 वर बंद झाला.",
+    "भाव 22000 ते 22800 दरम्यान राहिला.", "5 कंपन्यांकडे 12% हिस्सा आहे.",
+    "Thursday ko nifty 22650 pe band hua", "Friday tak call OI 12% badha", "nifty 22650 pe band ho gaya", "bhav 22000 se 22800 ke beech rahe the",
+]
+R12_BLOCK = [
+    "मॅक्स पेन 22800 वर एक्सपायरी होणार.", "बंद भाव मॅक्स पेन 22800 पार करणार.", "बंद भाव उच्चांक 22800 गाठणार आहे.",
+    "बंद भाव मॅक्स पेन 22800 च्या जवळ जाणार.", "close max pain 22800 cross karne wala", "close max pain 22800 hone wala",
+    "Max pain 22800 in 20 sessions.", "The close at max pain 22800 within 20 sessions.", "The close set for max pain 22800.",
+    "The close has stayed above the low 22000 and keeps doing so.", "Next expiry close: max pain 22800.", "आगामी एक्सपायरी मैक्स पेन 22800 पर।",
+    "This expiry, spot 22800.", "next expiry 22800 pe", "मैक्स पेन 22800 के आसपास रहे तो", "Max pain 22800 is where Thursday ends.",
+    "Max pain 22800 5 sessions from now.", "After 5 sessions: max pain 22800.",
+]
+R12_BLOCK_ADVICE = [
+    "Spot set for 23000.", "Spot has been basing near 22500, set for the 23000 call strike.", "The 23000 Oct call next week.", "23000 Oct next week.",
+    "Spot has stayed above 22500 and keeps doing so.", "NIFTY ends Thursday's expiry near max pain 22800.", "Spot has gone above 22800 and stays there.",
+    "Max pain 22800 on the expiry.", "In 3 sessions spot reaches 22800.", "Spot 22800 within 3 sessions.", "22800 एक्सपायरी तक।", "गुरुवार तक 22800।",
+    "निफ्टी 22800 पार करेल.", "निफ्टी 22800 पार करणार.", "निफ्टी 22800 गाठणार आहे.", "nifty 22800 cross karne wala",
+    "The coming expiry: max pain 22800 is where spot lands.", "आगामी एक्सपायरी 22800 पर।", "Next expiry close: 22800.", "येत्या एक्सपायरीला 22800.",
+    # a past marker does not excuse a future in the same sentence
+    "Spot closed at 22650 last week and will hold 22800 through Thursday.", "पिछले हफ्ते 22650 था, गुरुवार तक 22800 होगा।",
+]
+
+
+@pytest.mark.parametrize("text", R12_PASS_FACTS)
+def test_round12_recaps_and_descriptions_of_the_close_pass_every_check(text):
+    assert mv.advice_problems(text) == [], text
+    allowed, facts, bindings = _r5()
+    lang = "mr" if any("ऀ" <= c <= "ॿ" for c in text) else "en"
+    shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+    assert shown == text and why is None, (text, why)
+
+
+@pytest.mark.parametrize("text", R12_PASS)
+def test_round12_recaps_in_every_language_pass_the_advice_check(text):
+    assert mv.advice_problems(text) == [], text
+
+
+@pytest.mark.parametrize("text", R12_BLOCK)
+def test_round12_futures_times_and_unlinked_expiries_are_blocked(text):
+    assert mv.advice_problems(text), text
+    allowed, facts, bindings = _r5()
+    for lang in ("en", "mr", "hi"):
+        shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", R12_BLOCK_ADVICE)
+def test_round12_bare_level_forecasts_are_blocked_by_the_advice_check(text):
+    assert mv.advice_problems(text), text
+
+
+@pytest.mark.parametrize("unit", ["1 लाख ", "1 crore ", "1 कोटी ", "OI 1 crore ", "1 crore OI ", "next week 5 sessions ", "on Monday 1 ",
+                                  "Monday: 1 ", "गुरुवारी 1 ", "एक्सपायरीला 1 ", "close stays 1 ", "1 रहे। ", "1 बंद हो ", "next week 1 Oct ",
+                                  "next week 2026-10-30 ", "1 2 3 4 5 6 7 8 9 ", "अगले 1 ", "पुढील 1 ", "तय मानिए 1 ", "1 कडे ",
+                                  "next week " + "1 sessions " * 20, "गुरुवार को 1 था ", "1 होणार ", "in 20 sessions 1 "])
+def test_round12_advice_problems_stays_under_a_second_at_38k_characters(unit, monkeypatch):
+    import time
+    monkeypatch.setattr(mv, "MAX_CHECK_CHARS", 10 ** 6)
+    text = (unit * (38000 // len(unit) + 1))[:38000]
+    t0 = time.perf_counter()
+    mv.advice_problems(text)
+    assert time.perf_counter() - t0 < 1.0, unit                                 # "गुरुवारी 1 " was 2.1 s, "1 लाख " 1.3 s
+
+
+def test_round12_the_word_trie_matches_the_longest_word():
+    import re
+    assert re.fullmatch(mv._trie(("next", "next week", "next session", "next sessions")), "next sessions")
+    assert re.match(mv._trie(("on expiry", "on expiry day")) + "$", "on expiry day")
+    assert mv._start_script("(?<!\\bnot )forecast") == "latin" and mv._start_script("(?:अगले|आगामी)") == "deva"

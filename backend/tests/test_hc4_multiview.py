@@ -553,3 +553,72 @@ def test_round5_the_new_labels_bind_only_their_own_numbers():
     assert mv.unbound_numbers("The 22450.5 CE", bindings) == ["22450.5"]       # CE binds a top-OI strike, not the close
     assert mv.unbound_numbers("range 22000 - 1.3", bindings) == ["1.3"]        # the range's words do not bind the PCR
     assert mv.unbound_numbers("ADX 28.4 - 23000", bindings) == ["23000"]       # nor does ADX bind the strike after it
+
+
+# --- round 6: Hindi / Hinglish modal and future forms, forecast synonyms, descriptive prose ------------------------------
+R6_MODAL = [
+    "मैक्स पेन 22800 तक पहुँच सकता है।", "मैक्स पेन 22800 पर आ सकता है।", "Max pain 22800 tak jaa sakta hai.", "Max pain 22800 pe settle hoga.",
+    "मैक्स पेन 22800 तक जा सकती है।", "कॉल OI 23000 पर भाव रुक सकते हैं।", "Max pain 22800 tak aa sakti hai.", "Max pain 22800 pe close hogi.",
+    "Max pain 22800 ke paas expiry honge.", "मैक्स पेन 22800 पर होगी।",
+]
+R6_SYNONYMS = [
+    "Price ends up near max pain 22800.", "It settles there, at max pain 22800.", "Price settles at max pain 22800 into expiry.",
+    "Max pain 22800 is the anchor.", "Max pain 22800 attracts the price.", "The high 22800 is achievable.", "The high 22800 is reachable.",
+    "Eyes on the high 22800.", "Watch the high 22800.", "Max pain 22800 is the path of least resistance.", "Max pain 22800 is the gravity point.",
+    "The index aims for the high 22800.", "It aims at max pain 22800.", "Put OI at 22000 is a cushion.", "Call OI at 23000 caps it.",
+    "Call OI at 23000 is resistance overhead.", "The index should approach max pain 22800.", "The index approaches the high 22800.",
+    "Room up to the high 22800.", "Max pain 22800 into Thursday.", "Max pain 22800 by Thursday.", "The high 22800 before Friday.",
+    "Price will break the high 22800.", "Price heads to the high 22800.", "The index is heading for max pain 22800.",
+    "The close of 22450.5 goes to the high 22800.",
+]
+R6_DESCRIPTIVE = [
+    "The 20-session range extends from 22000 to 22800.",
+    "Call writers continue to hold the 23000 strike.",
+    "Call OI at 23000 continues to be the largest.",
+    "Put writers pulled back from 22500; put OI fell 5%.",
+    "The data goes back 20 sessions.",
+    "Data covers 20 sessions going back to September.",
+    "There was no break of 22800 in the last 20 sessions.",
+    "Price did not break 22800 in 20 sessions.",
+    "Expiry is soon: 2 days.",
+    "OI in view: call OI is highest at 23000.",
+]
+
+
+@pytest.mark.parametrize("text", R6_MODAL + R6_SYNONYMS)
+def test_round6_modal_future_and_synonym_forecasts_are_blocked_by_the_advice_check(text):
+    assert mv.advice_problems(text), text                                       # the advice check itself, not only the binding
+    allowed, facts, bindings = _r5()
+    for lang in ("en", "mr", "hi"):
+        shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", R6_DESCRIPTIVE)
+def test_round6_descriptive_prose_is_not_a_movement_word(text):
+    assert mv.advice_problems(text) == [], text
+
+
+@pytest.mark.parametrize("text", [
+    "The 20-session range extends from 22000 to 22800.", "Call writers continue to hold the 23000 strike.",
+    "Call OI at 23000 continues to be the largest.", "The data goes back 20 sessions.", "Data covers 20 sessions going back to September.",
+    "There was no break of 22800 in the last 20 sessions.", "Price did not break 22800 in 20 sessions.",
+    "OI in view: call OI is highest at 23000.",
+])
+def test_round6_descriptions_on_the_facts_pass_every_check(text):
+    allowed, facts, bindings = _r5()
+    shown, why = mv.check_text(text, allowed, facts, "en", None, bindings)
+    assert shown == text and why is None, (text, why)
+
+
+def test_round6_unbound_numbers_is_linear():
+    import time
+    _, _, bindings = _r5()
+    small = "Max pain 22800, " * 200
+    big = "Max pain 22800, " * 3200
+    t0 = time.perf_counter()
+    assert mv.unbound_numbers(small, bindings) == []
+    t1 = time.perf_counter()
+    assert mv.unbound_numbers(big, bindings) == []
+    t2 = time.perf_counter()
+    assert (t2 - t1) < max(0.05, (t1 - t0)) * 40                                 # 16x the text: far from 256x the time

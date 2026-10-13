@@ -129,22 +129,25 @@ _OI = ("call oi", "call open interest", "calls oi", "put oi", "put open interest
 # Marathi / Hindi verb-final past (round 5): "3% वाढला", "3% बढ़ा" - the past verb right after the number binds it
 _PAST_AFTER_DEVA = frozenset({"वाढला", "वाढली", "वाढले", "घसरला", "घसरली", "घसरले", "चढला", "उतरला", "बढ़ा", "बढ़ी", "बढ़े", "बढा",
                               "गिरा", "गिरी", "गिरे", "चढ़ा", "चढ़ी", "उतरा", "उतरी"})
-_STRIKE_WORDS = {"call": ("call writers", "call writing", "highest at", "concentrated at", "कॉल oi", "कॉल ओआय", "कॉल ओआई", "सर्वाधिक कॉल",
+_STRIKE_WORDS = {"call": ("call writers", "call writing", "highest at", "concentrated at", "strike", "कॉल oi", "कॉल ओआय", "कॉल ओआई", "सर्वाधिक कॉल",
                           "सबसे ज्यादा कॉल"),
-                 "put": ("put writers", "put writing", "highest at", "concentrated at", "पुट oi", "पुट ओआय", "पुट ओआई", "सर्वाधिक पुट",
+                 "put": ("put writers", "put writing", "highest at", "concentrated at", "strike", "पुट oi", "पुट ओआय", "पुट ओआई", "सर्वाधिक पुट",
                          "सबसे ज्यादा पुट")}
 _STRIKE_AFTER = {"call": ("ce", "call", "calls", "कॉल"), "put": ("pe", "put", "puts", "पुट")}
 FACT_LABELS: Dict[str, Tuple[Tuple[str, ...], bool]] = {
     "confidence": (("confidence",), False), "adx": (("adx", "average directional"), False),
     "ema_slope_pct": (("slope",), False), "atr_pct": (("atr", "average true range"), False),
     "atr_ratio": (("atr", "average true range", "median", "times"), False),
-    "bars": (("bars", "bar", "sessions", "candles", "days", "दिवस", "दिवसांत", "दिवसांमध्ये", "सत्र", "सत्रांत", "सत्रों", "सत्रों में", "दिन",
+    "bars": (("bars", "bar", "sessions", "session", "candles", "days", "day", "दिवस", "दिवसांत", "दिवसांमध्ये", "सत्र", "सत्रांत", "सत्रों", "सत्रों में", "दिन",
               "दिनों", "दिनों में"), False),
     "first_close": (("first close", "opening close", "started", "window began", "began", "from"), True),
     "last_close": (("close", "closed", "closing", "last close", "last price", "बंद भाव", "बंद", "क्लोज"), True),
     "change_pct": (("change", "changed", "move", "moved"), True),
-    "high": (("high", "highest", "range", "peak", "top of the range", "outside", "inside", "between", "within", "उच्चांक", "रेंज"), True),
-    "low": (("low", "lowest", "range", "trough", "bottom of the range", "outside", "inside", "between", "within", "नीचांक", "निचांक", "रेंज"), True),
+    # "break" / "breach" (round 6): "no break of 22800", "did not break 22800" - a forward break is blocked by _MOVEMENT
+    "high": (("high", "highest", "range", "peak", "top of the range", "outside", "inside", "between", "within", "break", "breach", "उच्चांक",
+              "रेंज"), True),
+    "low": (("low", "lowest", "range", "trough", "bottom of the range", "outside", "inside", "between", "within", "break", "breach", "नीचांक",
+             "निचांक", "रेंज"), True),
     "underlying_ltp": (("ltp", "underlying", "spot", "last price", "last traded"), True),
     "atm_strike": (("atm", "at-the-money", "at the money"), False),
     "pcr": (("pcr", "put-call ratio", "put call ratio", "put/call"), False),
@@ -195,6 +198,7 @@ _DATE = re.compile(r"\b\d{4}-\d{2}-\d{2}\b|\b\d{1,2}:\d{2}\b")
 _WINDOW_STOP = re.compile(r"[;!?\n]|(?<!\d)\.(?!\d)")
 
 
+_WINDOW_CHARS = 160                             # five words before / three after never need more than this
 _RANGE_SECOND = re.compile(r"(?<![\w.,])(\d[\d,]*(?:\.\d+)?)\s*(?:-|–|—|to)\s*$")
 
 
@@ -204,28 +208,42 @@ def unbound_numbers(text: str, bindings: List[Binding]) -> List[str]:
     ("23000 CE"), "up" / "down" right before a change, a past verb governing a price or a change ("closed at", "rose";
     in Marathi / Hindi the past verb right after it, "3% वाढला"); the second number of a range "X - Y" is read with the
     words before X."""
+    from bisect import bisect_left
+
     from app.ai.call_detect import normalise
     body = _DATE.sub(" ", normalise(text or ""))
     low = body.lower()
     bad: List[str] = []
+    # linear (review round 6): the clause stops are found once, and each number reads a bounded slice around itself
+    stops = [(x.start(), x.end()) for x in _WINDOW_STOP.finditer(low)]
+    stop_starts = [a for a, _ in stops]
     for m in grounding._NUMBER.finditer(grounding._MINUS.sub("-", body)):
         raw = m.group(0).strip()
         values = {v for _, val in grounding.numbers_in_text(raw) for v in grounding._norm(val)}
         if not values:
             continue
         mine = [b for b in bindings if b.values & values]
-        start = max([x.end() for x in _WINDOW_STOP.finditer(low, 0, m.start())] or [0])
+        if not mine:
+            bad.append(raw)
+            continue
+        k = bisect_left(stop_starts, m.start())
+        start = max(stops[k - 1][1] if k else 0, m.start() - _WINDOW_CHARS)
+        j = bisect_left(stop_starts, m.end())
+        end = min(stop_starts[j] if j < len(stops) else len(low), m.end() + _WINDOW_CHARS)
         lead = m.start()
-        first = _RANGE_SECOND.search(low[start:m.start()])
+        first = _RANGE_SECOND.search(low, max(start, m.start() - 40), m.start())
         if first:                                     # "range 22000 - 22800": the second number has the first's words
-            lead = start + first.start()
+            lead = first.start()
+            start = max(stops[bisect_left(stop_starts, lead) - 1][1] if bisect_left(stop_starts, lead) else 0, lead - _WINDOW_CHARS)
         before_words = low[start:lead].split()[-5:]
-        stop = _WINDOW_STOP.search(low, m.end())
-        after_all = low[m.end():stop.start() if stop else len(low)]
+        after_all = low[m.end():end]
+        if after_all.startswith("-"):                 # "20-session": the hyphenated word after the number is its label
+            after_all = " " + after_all[1:]
         after_words = after_all.split()[:3]
         window = re.sub(r"[,:()'\"]|'s\b", " ", " ".join(before_words + ["#"] + after_words))
         next_word = re.sub(r"[,:()'\"।]", " ", after_all).split()[:1]
-        prev_word = re.sub(r"[,:()'\"]", " ", low[start:m.start()]).split()[-1:]
+        prev_word = re.sub(r"[,:()'\"]", " ", low[max(start, m.start() - 40):m.start()]).split()[-1:]
+        governed = _PAST_GOVERNS.search(body, max(start, m.start() - 40), m.start())
         ok = False
         for b in mine:
             if any(re.search(rf"(?<![\w-]){re.escape(lab)}(?![\w-])", window) for lab in b.labels):
@@ -234,7 +252,7 @@ def unbound_numbers(text: str, bindings: List[Binding]) -> List[str]:
                 ok = True
             elif prev_word and prev_word[0] in b.right_before:
                 ok = True
-            elif b.past_ok and (_PAST_GOVERNS.search(body[start:m.start()]) or (next_word and next_word[0] in _PAST_AFTER_DEVA)):
+            elif b.past_ok and (governed or (next_word and next_word[0] in _PAST_AFTER_DEVA)):
                 ok = True
             if ok:
                 break
@@ -416,18 +434,34 @@ _ANYWHERE = (
 _MORPH_NEAR_NUMBER = re.compile(
     r"[\u0900-\u097f]+(?:गा|गी|गे)(?![\u0900-\u097f])|होगा|होगी|होंगे|रहा है|रही है|रहे हैं|की ओर|"
     r"(?<![\u0900-\u097f])(?!तेल)[\u0900-\u097f]{2,}(?:ेल|तील)(?![\u0900-\u097f])|असेल|शकतो|शकते|शकेल|शकतात|"
+    r"(?<![\u0900-\u097f])सक(?:ता|ती|ते)(?![\u0900-\u097f])|(?<![\u0900-\u097f])हो(?:गा|गी|गे|ंगे|ंगी)(?![\u0900-\u097f])|"
+    r"\b(?:sakta|sakti|sakte|hoga|hogi|honge|hogaa|ho sakta|ho sakti)\b|"
     r"\b(?!(?:vega|omega|mega|bodega)\b)[a-z]+(?:ega|egi|enge)\b|\bwal[ae] hain?\b|\bwali hai\b|\bra(?:ha|hi|he) hai\b|\bki (?:taraf|or)\b",
     re.I)
 # Movement / destination words in a sentence with a number (review of H-C4, round 5) - blocked whatever label sits next
 # to the number: a fact's own name does not make "max pain 22800 is where it heads" a description.
+_WEEKDAY = r"(?:mon|tues|wednes|thurs|fri|satur|sun)day"
 _MOVEMENT = re.compile(
-    r"\b(?:head|heads|heading|headed|go|goes|going|gone to|destination|destinations|magnet\w*|gravitat\w*|pull\w*|drawn to|draws?|"
-    r"objective|objectives|taken out|take out|takes out|taking out|break|breaks|breaking|comes? into view|coming into view|in view|"
-    r"extend|extends|extending|extension|continue|continues|continuing|continuation|floor|ceiling|"
-    r"play(?:s|ing)? the range|range[- ]play\w*|range[- ]trad\w*|from here|from current levels|from these levels|soon|shortly|"
-    r"into expiry|ja+t[aie] ha[ií]n?|ja+te hain|jata|jati)\b|"
+    # forward-looking forms only (round 6): "heads to", "goes to", "will break" - never "goes back", "pulled back", "did not
+    # break", "no break of", "extends from X to Y", "continues to be / hold", "in view:", "expiry is soon"
+    r"\b(?:heads?|heading|headed)\s+(?:to|for|toward|towards|into|up|down|higher|lower|back up)\b|"
+    r"\b(?:go|goes|going|gone)\s+(?:to|toward|towards|for|higher|lower|up|down|past|beyond|above|below|through)\b|"
+    r"\bwhere\s+(?:it|price|prices|the price|the index|the stock|the market|nifty|this)\s+(?:heads|goes|is going|is headed|is heading|"
+    r"ends up|settles|lands|gets to)\b|"
+    r"\b(?:will|to|could|may|might|can|would|should|set to|likely to)\s+(?:break|breach|clear|crack|take out)\b|"
+    r"\b(?:breaks|breaking|breaches|breaching)\s+(?:upward|upwards|downward|downwards|up|down|out|above|below|higher|lower|through|past)\b|"
+    r"\b(?:destination|destinations|magnet\w*|gravitat\w*|pull|pulls|pulling|drawn to|draws?|objective|objectives|taken out|take out|"
+    r"takes out|taking out|comes? into view|coming into view|extends|extend|extending)\b(?!\s+(?:from|between|over|across)\b)|"
+    r"\b(?:continue|continues|continuing)\b(?!\s+to\s+(?:be|hold|sit|stand|show|read|lead|carry|rank)\b)|\bcontinuation\b|"
+    r"\b(?:floor|ceiling|cushion|caps? it|capping|resistance overhead|overhead resistance|play(?:s|ing)? the range|range[- ]play\w*|"
+    r"range[- ]trad\w*|from here|from current levels|from these levels|shortly|into expiry|ends? up|ending up|settles?|"
+    r"settling|anchor|anchors|anchoring|attract|attracts|attracting|achievable|reachable|eyes on|eyes|eyeing|watch|watching|"
+    r"path of least resistance|gravity point|aims?\s+(?:for|at)|aiming|approach|approaches|approaching|room up to|"
+    rf"(?:into|by|before)\s+{_WEEKDAY}|"
+    r"ja+t[aie] ha[ií]n?|ja+te hain|jata|jati)\b|"
+    r"(?<!expiry is )(?<!expiry )\bsoon\b|"
     r"\b(?:means|implies|signals|suggests)\s+(?:a|an)\s+(?:[\w%.,+-]+\s+){0,3}?(?:move|swing|rally|drop|fall|rise|gain|decline)\b|"
-    r"(?:तक|पर्यंत)(?:\s+[\u0900-\u097f]+){0,2}?\s+(?:जाता|जाती|जाते|जातो|जातात)(?![\u0900-\u097f])",
+    r"(?:तक|पर्यंत)(?:\s+[ऀ-ॿ]+){0,2}?\s+(?:जाता|जाती|जाते|जातो|जातात)(?![ऀ-ॿ])",
     re.I)
 _HINGLISH_FUTURE = re.compile(r"\b(?!(?:vega|omega|mega|bodega)\b)[a-z]+(?:ega|egi|enge)\b|\bwal[ae] hain?\b|\bwali hai\b", re.I)
 _PAST_BEFORE_NUMBER = re.compile(r"\b(?:rose|fell|closed|ended|moved|gained|lost|dropped|climbed|rallied|traded|touched|slipped|surged|"

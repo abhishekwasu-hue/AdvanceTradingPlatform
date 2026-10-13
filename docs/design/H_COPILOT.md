@@ -478,5 +478,30 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
       - CE / PE / call / put right after that strike.
 
       The second number of "X - Y" is read with the words before X.
+  - **Sixth review: modal futures, synonyms, and forward forms only.**
+    - Next to a number:
+      - Hindi सकता / सकती / सकते and हो-गा / गी / गे / ंगे;
+      - Hinglish sakta / sakti / sakte and hoga / hogi / honge ("Max pain 22800 pe settle hoga").
+    - Synonym forecasts in a sentence with a number:
+      - ends up, settles, anchor, attracts, achievable, reachable;
+      - eyes (on), watch, path of least resistance, gravity point, aims for / at;
+      - cushion, caps it, resistance overhead, approach, room up to;
+      - "into / by / before <weekday>".
+    - `_MOVEMENT` matches forward forms only:
+      - heads to / for, goes to / higher;
+      - "where it heads / goes / settles";
+      - will / to / could break, breaks upward / out / above.
+
+      Not matched:
+      - "goes back" and "going back";
+      - "pulled back";
+      - "did not break", "no break of";
+      - "extends from X to Y";
+      - "continues to be / hold";
+      - "in view:";
+      - "expiry is soon".
+
+      "break", "strike", "session" and a hyphenated word after a number ("20-session") are labels.
+    - `unbound_numbers` is linear: the clause stops are found once, and each number reads a bounded slice.
 - **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
   `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

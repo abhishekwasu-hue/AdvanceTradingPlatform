@@ -5,6 +5,7 @@ import pytest
 from app.ai import output_filter
 
 SHOULD_BLOCK = [
+    "Close/exit INFY.",
     # imperative verbs aimed at an instrument
     "Sell RELIANCE", "Go long RELIANCE", "Go short NIFTY here.", "Accumulate RELIANCE", "Short sell TCS.", "Book profits in TCS.",
     "Price is weak. Exit INFY now.", "Please buy HDFCBANK above 1650.", "Average down INFY.", "Load up on SBIN.",
@@ -165,7 +166,9 @@ SHOULD_PASS = [
     "Open RELIANCE in a new tab.", "Open the RELIANCE chart.", "Close the RELIANCE chart.", "Close the order ticket.",
     "Close the chart and review INFY.", "Open the positions tab.",
     # review round 7: close / open / hold as a bar's price fields, in the "TICKER: verb" form too
-    "TCS: close 4050, RSI 62.", "NIFTY: open 25000, close 25100.", "TCS - close 4050.", "RELIANCE: close above SMA 20.",
+    "TCS: close 4050, RSI 62.", "NIFTY: open 25000, close 25100.", "TCS - close 4050.",
+    "TCS: close ₹4,050.", "TCS: close 4,050.25.", "TCS: close 4050 for a 1.2% gain.", "NIFTY: close 25100. TCS: close 4050.",
+    "TCS: close 4050; INFY: close 1500.", "TCS: close 4050 near its 50-DMA.", "INFY: close 1500 as per NSE.", "RELIANCE: close above SMA 20.",
     "INFY: close below 1500 on volume.", "RELIANCE: close 2480, open 2455.", "HDFCBANK: hold above 1650 kept the trend.",
     "Close price: INFY 1500.", "NIFTY: hold of 25000 matters.",
     # review round 8: recaps with a copula or comparative after the field

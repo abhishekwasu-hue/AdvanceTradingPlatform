@@ -164,7 +164,8 @@ def test_template_checks():
         T.check_mode("SOMETHING")
     assert T.check_gate({"min_rr": 2, "wait_next_candle": True}) == {"min_rr": 2.0, "wait_next_candle": True}
     for bad in ({"min_rr": 0.5}, {"max_armed_bars": 99}, {"wait_next_candle": 1}, {"trend_retry_min": 5}, {"min_rr": "3"},
-                {"max_armed_bars": 2.5}):                                       # review of X1b: an integer is never truncated
+                {"max_armed_bars": 2.5}, {"max_armed_bars": float("inf")}, {"min_rr": float("nan")},
+                {"mr_n": float("-inf")}):                                     # review of X1b: never truncated, never int(inf)
         with pytest.raises(T.TemplateError):
             T.check_gate(bad)
     assert T.FLAG in __import__("app.platform.controls", fromlist=["x"]).DEFAULT_OFF_FLAGS
@@ -627,6 +628,9 @@ def test_then_routes(monkeypatch):
     assert live.status_code == 422 and "Auto LIVE" in live.text
     assert client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "gate": {"min_rr": 0.1}}).status_code == 422
     assert client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "confirm_tf": "1h"}).status_code == 422
+    for raw in ('{"mode": "NOTIFY", "gate": {"max_armed_bars": Infinity}}', '{"mode": "NOTIFY", "gate": {"min_rr": NaN}}'):
+        sent = client.put(url, headers={**t["headers"], "content-type": "application/json"}, content=raw)
+        assert sent.status_code == 422, sent.text                       # JSON Infinity / NaN: a 422, not a 500
     ok = client.put(url, headers=t["headers"], json={"mode": "NOTIFY", "confirm_tf": "15m", "gate": {"min_rr": 2.5}})
     assert ok.status_code == 200 and ok.json()["gate"] == {"min_rr": 2.5} and ok.json()["confirm_tf"] == "15m"
     member = _member(_email("member"), t["tenant_id"], "USER")
@@ -687,6 +691,51 @@ def test_scan_then_is_not_an_order_path():
         for node in ast.walk(ast.parse(path.read_text())):
             name = node.id if isinstance(node, ast.Name) else node.attr if isinstance(node, ast.Attribute) else None
             assert name not in forbidden, (path.name, name)
+
+
+# --- X1b: the intents list and the frontend sample ------------------------------------------------------------------------
+
+SAMPLE = BACKEND.parent / "frontend" / "src" / "screener" / "then" / "thenSample.json"
+
+
+def _confirmed_rule(monkeypatch, tag):
+    _patch_market(monkeypatch)
+    t, rule_id = _setup(tag)
+    assert _runner().submitted == 1
+    _drain()
+    return t, rule_id
+
+
+def test_the_intents_list_is_the_caller_s_own(monkeypatch):
+    t, rule_id = _confirmed_rule(monkeypatch, "intents")
+    rows = client.get(f"/api/alerts/rules/{rule_id}/then/intents", headers=t["headers"]).json()
+    assert len(rows) == 1 and rows[0]["gate_status"] == ST.CONFIRMED_ENTRY and rows[0]["route"] == "PROPOSE"
+    assert rows[0]["ai_action_id"] is not None and rows[0]["stop_loss"] == CASE["out"]["sl"] and rows[0]["study"].startswith("inside demand")
+    member = _member(_email("intents-member"), t["tenant_id"], "USER")
+    assert client.get(f"/api/alerts/rules/{rule_id}/then/intents", headers=member).json() == []     # not theirs
+
+
+def test_then_payloads_match_the_frontend_sample(monkeypatch):
+    """frontend/src/screener/then/thenSample.json is the server's own payload (the Then drawer's tests render it): the
+    same keys as the live GET /then and GET /then/intents, so the sample cannot drift from the API."""
+    t, rule_id = _confirmed_rule(monkeypatch, "sample")
+    template = client.get(f"/api/alerts/rules/{rule_id}/then", headers=t["headers"]).json()
+    intents_ = client.get(f"/api/alerts/rules/{rule_id}/then/intents", headers=t["headers"]).json()
+    sample = json.loads(SAMPLE.read_text())
+    assert set(sample["template"]) == set(template)
+    assert set(sample["template"]["gate_defaults"]) == set(template["gate_defaults"])
+    assert set(sample["intents"][0]) == set(intents_[0])
+    assert set(next(iter(sample["template"]["status"].values()))) == set(next(iter(template["status"].values())))
+    assert not any(m == "AUTO_LIVE" for m in sample["template"]["modes"])
+    assert template["status_shown"] is True and sample["template"]["status_shown"] is True
+    member = _member(_email("sample-member"), t["tenant_id"], "USER")
+    theirs = client.get(f"/api/alerts/rules/{rule_id}/then", headers=member).json()
+    assert theirs["status_shown"] is False and theirs["status"] == {} and set(theirs) == set(template)
+    # Review of X1b: the batch read gives every visible rule's template in the same shape (one read for the panel)
+    batch = client.get("/api/alerts/then", headers=t["headers"]).json()["templates"]
+    assert batch[str(rule_id)] == template and template["set_by_you"] is True and template["may_change"] is True
+    their_batch = client.get("/api/alerts/then", headers=member).json()["templates"]
+    assert their_batch[str(rule_id)]["status"] == {} and their_batch[str(rule_id)]["may_change"] is False
 
 
 # --- shared-session safety (review of #219's pattern, applied to X1) ---------------------------------------------------------

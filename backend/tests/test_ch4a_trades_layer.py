@@ -154,3 +154,47 @@ def test_the_flag_is_per_organisation():
 def test_split_instrument():
     assert T.split_instrument(" nse:reliance ") == ("NSE", "RELIANCE")
     assert T.split_instrument("NIFTY  50") == (None, "NIFTY 50")
+
+
+def _me(headers):
+    return client.get("/api/auth/me", headers=headers).json()
+
+
+def test_replay_draws_the_initial_stop_not_a_stop_trailed_after_at(world):
+    """position_monitor overwrites `stop_loss` as the stop trails: as of a past `at` the row's stop is a later one."""
+    owner, _, _ = world
+    me = _me(owner)
+    trailed = _trade(me["tenant_id"], me["id"], "CH4ATRAIL", hours=1, price=100.0)
+    trailed.initial_stop_loss, trailed.stop_loss = 97.0, 101.5               # trailed above the entry later in the week
+    recent = datetime.now(timezone.utc) - timedelta(days=2)
+    live = _trade(me["tenant_id"], me["id"], "CH4ATRAIL", price=100.0)
+    live.entry_time, live.initial_stop_loss, live.stop_loss = recent, 96.0, 99.0
+    legacy = _trade(me["tenant_id"], me["id"], "CH4ATRAIL", hours=2, price=200.0)   # no initial stop recorded: its stop
+    _put([trailed, live, legacy])
+    past = _get(owner, instrument="NSE:CH4ATRAIL", at=(T0 + timedelta(hours=3)).isoformat())["trades"]
+    by_price = {t["entry"]["price"]: t for t in past}
+    assert by_price[100.0]["stop_loss"] == pytest.approx(97.0) and by_price[100.0]["stop_label"] == "initial stop"
+    assert by_price[200.0]["stop_loss"] == pytest.approx(196.0) and by_price[200.0]["stop_label"] == "initial stop"
+    r = client.get(URL, params={"instrument": "NSE:CH4ATRAIL"}, headers=owner)          # live: the stop in force now
+    assert r.status_code == 200, r.text
+    by_entry = {t["entry"]["time"]: t for t in r.json()["trades"]}                  # all three are still open now
+    assert by_entry[int(recent.timestamp())]["stop_loss"] == pytest.approx(99.0) and by_entry[int(recent.timestamp())]["stop_label"] == "stop"
+    assert by_entry[int((T0 + timedelta(hours=1)).timestamp())]["stop_loss"] == pytest.approx(101.5)
+
+
+def test_the_exchange_filter_is_applied_before_the_cap(world, monkeypatch):
+    owner, _, _ = world
+    monkeypatch.setattr(T, "MAX_TRADES", 3)
+    body = _get(owner)                                       # newest first: short, option, (BSE row), closed long
+    assert len(body["trades"]) == 3 and body["capped"] is True
+    assert sorted(t["symbol"] for t in body["trades"]) == ["CH4ATEST", "CH4ATEST", "CH4ATEST26OCT100CE"]
+
+
+def test_an_index_chart_shows_option_trades_named_by_the_fo_underlying(world):
+    owner, _, _ = world
+    me = _me(owner)
+    _put([_trade(me["tenant_id"], me["id"], "NIFTY26OCT25000CE", hours=6, price=120.0, instrument_kind="OPTION",
+                 underlying_symbol="NIFTY", exchange="NFO", expiry=date(2026, 10, 27), option_position="LONG", lot_size=75)])
+    trades = _get(owner, instrument="NSE:NIFTY 50")["trades"]
+    assert [(t["symbol"], t["on_price_axis"]) for t in trades] == [("NIFTY26OCT25000CE", False)]
+    assert T.underlying_names("NIFTY 50") == ["NIFTY", "NIFTY 50"] and T.underlying_names("RELIANCE") == ["RELIANCE"]

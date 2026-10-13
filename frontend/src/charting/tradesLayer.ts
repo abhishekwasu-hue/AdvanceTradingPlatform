@@ -19,6 +19,9 @@ export interface TradeMark {
   entry: { time: number; price: number };
   exit: { time: number; price: number; reason: string | null } | null;
   open: boolean; stop_loss: number | null; target: number | null; pnl: number | null; label: string;
+  /** "initial stop" when replaying the past: the row's stop trails, so the stop in force then is not recorded - the
+   * trade's initial stop is drawn; "stop" (the current one) only on the live chart. */
+  stop_label?: "stop" | "initial stop" | null;
 }
 export interface TradesResponse {
   schema: "trades/1"; instrument: string; at: string; start: string; mode: string; trades: TradeMark[]; open: number; capped: boolean; note: string;
@@ -80,7 +83,7 @@ export function toTradesLayer(resp: TradesResponse, bars: readonly LayerBar[]): 
       }
     }
     if (t.open && t.on_price_axis) {
-      if (t.stop_loss != null) lines.push({ price: t.stop_loss, color, style: "dashed", title: `Stop ${money(t.stop_loss)}` });
+      if (t.stop_loss != null) lines.push({ price: t.stop_loss, color, style: "dashed", title: `${t.stop_label === "initial stop" ? "Initial stop" : "Stop"} ${money(t.stop_loss)}` });
       if (t.target != null) lines.push({ price: t.target, color, style: "dotted", title: `Target ${money(t.target)}` });
     }
   }

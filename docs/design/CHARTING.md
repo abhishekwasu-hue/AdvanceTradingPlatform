@@ -402,8 +402,15 @@ The first CH4 slice that the data ATP has supports (dependency check below; OPEN
     at its times only (`on_price_axis: false`). Its premium never goes on the underlying's axis.
   - As of `at`: no trade entered after it, no exit after it (the trade is open then, without P&L), so replay shows
     nothing before it happened.
-  - The window is the trades active in (`start`, `at`], at most 200. Read-only: it writes nothing and offers no
-    action.
+  - The stop, as of `at`: the position monitor overwrites `stop_loss` as a stop trails, so the row holds the latest
+    stop, not the one in force at `at`. Replaying the past (`at` before now, or a trade exiting after `at`) draws the
+    trade's `initial_stop_loss` (its `stop_loss` when none was recorded), labelled "Initial stop"; only the live chart
+    draws the current stop. The stop history is not recorded, so the trail itself is not replayed.
+  - The window is the trades active in (`start`, `at`], at most 200. The exchange filter (an underlying on another
+    exchange is another chart) runs in the query, before the cap, so the cap and `capped` count only drawn trades.
+    Read-only: it writes nothing and offers no action.
+  - An index chart (`NSE:NIFTY 50`) matches derived trades whose underlying is the F&O master's name (`NIFTY`), via
+    `app/instruments/master.py` aliases.
 - **Frontend.** `charting/tradesLayer.ts` (API, bar snapping, `toTradesLayer`, a loader that clears on every new
   question) and `TradesLayer.tsx`, a read-only panel ("My trades": count, open count, show / hide). They are mounted on
   the full-window chart, following replay.
@@ -415,6 +422,8 @@ The first CH4 slice that the data ATP has supports (dependency check below; OPEN
   - own trades only (a teammate's and another organisation's are never drawn, a LIVE row never);
   - instrument, exchange and contract matching;
   - as-of (no trade and no exit before it happened) and the window;
+  - a stop trailed after `at` (the replay draws the initial stop; the live chart the current one);
+  - the exchange filter before the cap, and an index chart showing `NIFTY` option trades;
   - flag off / per organisation;
   - writes nothing.
 

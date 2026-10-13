@@ -31,6 +31,8 @@ describe("trades layer (N4 CH4a)", () => {
     const open = toTradesLayer(resp([trade()]), bars);
     expect(open.labels).toEqual([{ time: T0, price: 100, text: "▲ Buy 10 @ 100.00", color: TRADE_COLORS.long, position: "below" }]);
     expect(open.lines?.map((l) => [l.price, l.title])).toEqual([[98, "Stop 98.00"], [104, "Target 104.00"]]);
+    const replay = toTradesLayer(resp([trade({ stop_loss: 97, stop_label: "initial stop" })]), bars);   // the past: not the trailed stop
+    expect(replay.lines?.[0].title).toBe("Initial stop 97.00");
     const closed = toTradesLayer(resp([trade({ open: false, stop_loss: null, target: null, exit: { time: T0 + 3 * 3600 + 60, price: 102, reason: "TARGET" }, pnl: 20 })]), bars);
     expect(closed.labels?.[1]).toMatchObject({ time: T0 + 3 * 3600, price: 102, text: "✕ Exit @ 102.00 (TARGET) · P&L +20.00" });
     expect(closed.segments).toEqual([{ t1: T0, p1: 100, t2: T0 + 3 * 3600, p2: 102, color: TRADE_COLORS.long, width: 1, style: "dashed" }]);

@@ -520,13 +520,19 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/evidence/runs/{run_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}/image.png"): "member",
+    ("GET", "/api/screener/evidence/{evidence_id}/replay"): "member",  # U8 EV3: the pack recomputed from the shared lake (readable rule)
     ("POST", "/api/screener/evidence/{evidence_id}/telegram"): S_OWN_EVIDENCE_TELEGRAM,
+    ("GET", "/api/screener/library/mirrors"): "member",
+    ("GET", "/api/screener/library/watch-lists"): "member",
+    ("POST", "/api/screener/library/confluence"): "trader",
+    ("POST", "/api/screener/library/watch-trigger"): "trader",
     ("GET", "/api/screener/legends"): "member",
     ("GET", "/api/screener/legends/{card_id}"): "member",
     ("GET", "/api/screener/registry"): "member",
     ("POST", "/api/screener/run"): "trader",
     ("POST", "/api/screener/history/asof"): "trader",        # N3 S6a: shared lake bars; the caller's own screens only
     ("POST", "/api/screener/history/fitness"): "trader",     # N3 S6a: writes one trial to the caller's organisation's ledger
+    ("POST", "/api/screener/history/backtest"): "trader",    # N3 S6b: a simulation; writes one trial to the ledger
     ("GET", "/api/screener/runs/{run_id}"): "member",
     ("GET", "/api/screener/screens"): "member",
     ("POST", "/api/screener/screens"): "trader",

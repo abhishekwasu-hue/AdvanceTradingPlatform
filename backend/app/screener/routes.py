@@ -205,10 +205,17 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
             validated.ok = False
             validated.problems.append(Problem(ranking_gate.refusal()))
             return
-        _, problems = await ranking_gate.resolve(session, user.tenant_id, ranking_gate.names_in(ast, params))
+        found, problems = await ranking_gate.resolve(session, user.tenant_id, ranking_gate.names_in(ast, params))
         if problems:
             validated.ok = False
             validated.problems.extend(Problem(p) for p in problems)
+        if exchange and await venue_gate.enabled(session, user.tenant_id):
+            # re-check of S8: a named system's factors read this venue's data too - the same venue check as the screen's
+            for name, system in found.items():
+                for leaf in system.leaves():
+                    for m in venue_gate.unavailable(leaf.ast, exchange):
+                        validated.ok = False
+                        validated.problems.append(Problem(f'RankScore("{name}"), factor "{leaf.name}" - {m}'))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:

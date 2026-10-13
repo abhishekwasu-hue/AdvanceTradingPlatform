@@ -15,14 +15,17 @@ Point in time - what a bar may know is decided by `known_from`, never by the row
   correction, known only from the time it was stored - a correction never reaches back, whatever date it cites (review
   of S8, MED-1; the LG3 rule for reported figures). Rows are ordered by (stored time, id); among rows known at a bar
   the latest stored wins - deterministic.
-  Semantics (provisional, OPEN_QUESTIONS S8-7): "as published" - a quarter first loaded late (a backfill) is known
-  from its cited publication date, so a backfill fills in past bars that had no pattern; it never changes a value a
-  bar already had from an earlier-stored row of that quarter (tested). A pattern whose quarter ended more than
-  STALE_DAYS before the bar is not used.
+  Semantics (provisional, OPEN_QUESTIONS S8-7): "as published", not "as stored" - a quarter first loaded late (a
+  backfill) is known from its cited publication date. So on past bars it can fill in a value where none was known,
+  AND replace the value of an even older quarter that was the latest known there (the late quarter was published
+  before those bars, so it is what an investor could have read). It never changes a value a bar had from an
+  earlier-stored row of the SAME quarter (a correction never reaches back; tested). A pattern whose quarter ended
+  more than STALE_DAYS before the bar is not used.
 * a calendar event (`earnings_calendar_events`, append-only, entered with a citation): the same rule, without the
   quarter-end condition - it is known from the day after its cited publication, or from when it was stored.
 * an ex-date (`md_corporate_actions`, the lake's splits / bonuses / dividends): from its ingestion (`ingested_at`).
-So a value at bar t never changes when later bars or later rows are added (tested, Z10-a causal cases).
+So a value at bar t never changes when later bars are added, nor when a later row corrects a quarter (tested, Z10-a
+causal cases); the one exception is the "as published" backfill of a whole quarter above (S8-7).
 
 While the flag is off the registry endpoint hides the functions and a screen using one is refused with the reason;
 alert rules and screen history do not load this data yet (refused with the reason; OPEN_QUESTIONS S8-4). Research only -

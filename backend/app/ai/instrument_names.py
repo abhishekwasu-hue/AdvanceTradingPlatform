@@ -65,14 +65,24 @@ def add(names: Iterable[str]) -> int:
     before = len(_NAMES)
     for name in names:
         n = norm_name(str(name or ""))
-        if n and len(n.split()) <= MAX_WORDS and (" " in n or len(n) >= 5):
+        if n and len(n.split()) <= MAX_WORDS and (" " in n or (len(n) >= 5 and n not in ORDINARY_WORDS)):
             _NAMES.add(n)
             _FROM_MASTER.add(n)
     return len(_NAMES) - before
 
 
 REFRESH_SECONDS = 6 * 3600
+RETRY_SECONDS = 600                     # after a failed read, try again in ten minutes (not six hours)
 _LAST_REFRESH = {"at": 0.0}
+# Listed symbols that are ordinary words: never matched in lower case (the upper-case ticker rule still applies).
+ORDINARY_WORDS = frozenset({
+    "campus", "safari", "dollar", "signature", "apollo", "global", "future", "capital", "united", "nature", "focus", "prime",
+    "smart", "orient", "sterling", "trident", "power", "steel", "cement", "energy", "india", "metal", "silver", "golden",
+    "bharat", "royal", "vision", "unity", "trust", "union", "excel", "ideal", "alpha", "omega", "delta", "sigma", "matrix",
+    "infinity", "fusion", "pioneer", "premier", "classic", "modern", "quality", "superior", "balance", "control", "action",
+    "active", "stable", "secure", "simple", "silly", "happy", "honest", "master", "magic", "marine", "ocean", "river", "forest",
+    "garden", "sunrise", "sunset", "zenith", "eagle", "tiger", "lotus", "rainbow", "crystal", "diamond", "pearl", "jewel",
+})
 
 
 async def refresh(session) -> int:  # type: ignore[no-untyped-def]
@@ -91,9 +101,11 @@ async def refresh(session) -> int:  # type: ignore[no-untyped-def]
             await session.rollback()
         except Exception:  # noqa: BLE001 - nothing more to undo
             pass
+        _LAST_REFRESH["at"] = time.monotonic() - REFRESH_SECONDS + RETRY_SECONDS
         return 0
     _LAST_REFRESH["at"] = time.monotonic()
-    return add([name for symbol, company in rows for name in (company, symbol if len(symbol or "") >= 5 else "")])
+    symbols = [symbol for symbol, _ in rows if len(symbol or "") >= 5 and norm_word(symbol) not in ORDINARY_WORDS]
+    return add([company for _, company in rows] + symbols)
 
 
 async def refresh_if_stale(session) -> int:  # type: ignore[no-untyped-def]

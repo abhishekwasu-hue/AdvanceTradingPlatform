@@ -161,12 +161,13 @@ ALERT = {"reason": "The trader asked to be told when this condition holds.", "sy
 
 
 def _instrument(symbol="UP"):
-    """The alert's symbol must be a real instrument (re-check MED): one row in the instrument master."""
+    """The alert's symbol must be a real instrument (re-check MED): one row in the instrument master - of a test broker
+    of its own, so the shared test database's upstox / NSE master (read by LIVE pre-checks elsewhere) is not touched."""
     from app.db.models import InstrumentRecord
 
     async def go():
         async with _session_factory() as session:
-            session.add(InstrumentRecord(broker="upstox", exchange="NSE", instrument_key=f"NSE_EQ|{uuid.uuid4().hex[:8]}", tradingsymbol=symbol,
+            session.add(InstrumentRecord(broker="n3s9-test", exchange="NSE", instrument_key=f"NSE_EQ|{uuid.uuid4().hex[:8]}", tradingsymbol=symbol,
                                          instrument_type="EQ"))
             await session.commit()
     _run(go())

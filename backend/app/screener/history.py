@@ -95,8 +95,18 @@ def scale_of(adj_close: float, raw_close: float, adj_volume: float, raw_volume: 
     re-check: per-bar float noise would otherwise make every date its own scale and its own evaluation)."""
     p = float(adj_close) / float(raw_close) if raw_close else 1.0
     v = float(raw_volume) / float(adj_volume) if adj_volume else 1.0
-    p, v = float(f"{p:.6g}"), float(f"{v:.6g}")
-    return (1.0 if abs(p - 1.0) < 1e-6 else p, 1.0 if abs(v - 1.0) < 1e-6 else v)
+    p = float(f"{p:.6g}")
+    p = 1.0 if abs(p - 1.0) < 1e-6 else p
+    # re-check of S6a (LOW): the adjusted volume is stored rounded to whole shares, so its ratio is noisy for a factor
+    # like 3:2 (1.50075 for 1.5). A split or bonus moves the volume by the price's own factor: within 1 % of it (or of
+    # 1, for a price-only adjustment) the volume scale is taken from the price; anything else is kept, rounded.
+    if p != 1.0 and abs(v / p - 1.0) < 0.01:
+        v = p
+    elif abs(v - 1.0) < 0.01:
+        v = 1.0
+    else:
+        v = float(f"{v:.6g}")
+    return (p, v)
 
 
 def rescaled(frame: pd.DataFrame, scale: Optional[Scale]) -> pd.DataFrame:

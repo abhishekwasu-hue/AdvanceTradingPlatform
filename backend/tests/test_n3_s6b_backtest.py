@@ -298,3 +298,55 @@ def test_the_benchmark_s_first_day_is_measured_from_its_open(monkeypatch):
     res = B.simulate(sig, None, frames, sess, sess[-1], FREE, benchmark_closes={"nifty_50": closes},
                      benchmark_opens={"nifty_50": opens})
     assert res.benchmark_returns["nifty_50"][:2] == pytest.approx([101 / 100.5 - 1, 102 / 101 - 1])
+
+
+@pytest.mark.parametrize("slip", [0.5, 1.0, 2.0])
+def test_buys_come_from_the_cash_the_sells_left(slip):
+    """Re-verify of S6b (MED): rotating A -> B at slippage the API allows. Sized on the book valued at the open, the buy
+    of B spent cash the sale of A never brought in (its slippage and charges): -2,164 at 0.5 %. Now the buys come from
+    the cash after the sells, scaled down until they fit."""
+    sess = _sessions(6)
+    frames = {"A": _bars([100.0] * 6, [100.0] * 6, sess), "B": _bars([100.0] * 6, [100.0] * 6, sess)}
+    sig = pd.DataFrame(False, index=pd.Index([sess[0], sess[2]]), columns=["A", "B"])
+    sig.loc[sess[0], "A"] = True
+    sig.loc[sess[2], "B"] = True
+    res = B.simulate(sig, None, frames, sess, sess[-1], B.Settings(capital=1_000_000.0, slippage_pct=slip, brokerage=20.0))
+    assert [r["held"] for r in res.rebalances] == [["A"], ["B"]] and res.holdings == [1, 1]
+    assert min(res.cash) >= 0 and res.cash[-1] < 0.01 * 1_000_000                  # still invested, not left in cash
+
+
+@pytest.mark.parametrize("capital,brokerage", [(1_000_000.0, 20.0), (10_000.0, 1_000.0)])
+def test_random_books_never_borrow_at_the_highest_slippage(capital, brokerage):
+    for seed in range(30):
+        rng = np.random.default_rng(seed)
+        sess = _sessions(60)
+        frames = {}
+        for i in range(6):
+            closes = 100 * np.cumprod(1 + rng.normal(0, 0.03, len(sess)))
+            f = _bars(closes * (1 + rng.normal(0, 0.01, len(sess))), closes, sess)
+            frames[f"S{i}"] = f.drop(f.index[rng.choice(len(sess), 8, replace=False)])
+        dates = sess[:-1:2]
+        sig = pd.DataFrame(rng.random((len(dates), 6)) > 0.5, index=pd.Index(dates), columns=list(frames))
+        res = B.simulate(sig, None, frames, sess, sess[-1],
+                         B.Settings(capital=capital, top_n=3, slippage_pct=2.0, brokerage=brokerage))
+        assert min(res.cash) >= 0, (seed, min(res.cash))
+
+
+def test_an_order_whose_charges_exceed_its_value_is_not_placed():
+    sess = _sessions(4)
+    frames = {"A": _bars([100.0] * 4, [100.0] * 4, sess)}
+    sig = pd.DataFrame(True, index=pd.Index([sess[0]]), columns=["A"])
+    res = B.simulate(sig, None, frames, sess, sess[-1], B.Settings(capital=1_000.0, slippage_pct=0.0, brokerage=5_000.0))
+    assert res.holdings == [0] and res.costs == 0.0 and res.cash == [1_000.0] * len(res.days)
+
+
+def test_a_kept_holding_over_a_split_is_counted(monkeypatch):
+    _no_charges(monkeypatch)
+    sess = _sessions(6)
+    a = _bars([100, 100, 100, 50, 50, 50], [100, 100, 100, 50, 50, 50], sess).drop(H.bar_index([sess[3]])[0])
+    frames = {"A": a, "B": _bars([20.0] * 6, [20.0] * 6, sess)}
+    sig = pd.DataFrame(False, index=pd.Index([sess[0], sess[2]]), columns=["A", "B"])
+    sig.loc[sess[0], "A"] = True
+    sig.loc[sess[2], "B"] = True                                       # A has no open on day 3 (its ex-date): kept
+    res = B.simulate(sig, None, frames, sess, sess[-1], FREE, excluded={("A", sess[3]), ("A", sess[4])})
+    assert res.stuck_near_split == 1 and B.report(res, FREE)["stuck_near_split"] == 1

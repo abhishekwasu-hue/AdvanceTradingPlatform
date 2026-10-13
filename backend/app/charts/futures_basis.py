@@ -3,12 +3,13 @@
 GET /api/charts/contracts/basis?underlying=NIFTY&at=&start=
   Per trade date, from the F&O bhavcopy's futures rows (`NFO:<SYM>:FUT:<expiry>`) and the underlying's own close
   (`NSE:<SYM>`, or the index close `NSE_INDEX:<code>` for an index future), as of `at`:
-  * the near, next and far months - the live contracts (expiry on or after the trade date) by expiry, so the expiry day
+  * the near, next and far months - the first three expiries on or after the trade date in the window's list of
+    expiries (not ranked by that day's rows: a contract with no row that day is a gap, not a roll), so the expiry day
     is still the near month's - with each one's close and OI;
   * basis = near close - spot close, and as % of the spot; the annualised cost of carry = basis % x 365 / the
     calendar days to the near expiry (at least 1);
   * the calendar spread = next close - near close;
-  * all expiries' OI and the rollover % = (all - near OI) / all OI.
+  * the three months' OI and the rollover % = (next + far OI) / all three (null when one of them has no row that day).
   Reads: shared-licensed sources only (NSE bhavcopy, vendor, the operator's history - never a row an organisation's
   broker session or stream wrote), per contract and trade date the preferred source, then its highest version; a
   correction (version > 1) counts only once it was ingested by `at`. The futures keys are every date a monthly expiry
@@ -105,45 +106,53 @@ def _r(x: Optional[float], k: int = 4) -> Optional[float]:
 
 
 def build(underlying: str, futures: Dict[str, Dict[date, Dict[str, Any]]], spot: Dict[date, Dict[str, Any]]) -> Dict[str, Any]:
-    """The per-day series (pure)."""
-    by_day: Dict[date, List[Tuple[date, Dict[str, Any]]]] = {}
+    """The per-day series (pure). The near, next and far months of a day are the first three expiries on or after it in
+    the window's own list of expiries (every contract with a row in the window, counted from its first row) - never
+    ranked by that day's rows, so a contract with no row on a day (the bhavcopy leaves an untraded contract out) is a gap
+    there (null close / OI and the numbers built on it), not a shift of the next month into its place and not a roll."""
+    rows: Dict[date, Dict[date, Dict[str, Any]]] = {}                # expiry -> trade date -> row
     for key, rows_by_day in futures.items():
         expiry = C.parse_key(key)["expiry"]
-        for d, row in rows_by_day.items():
-            if expiry >= d:                                          # live on that day (the expiry day is the near month's)
-                by_day.setdefault(d, []).append((expiry, row))
-    days = sorted(by_day)
+        live_rows = {d: row for d, row in rows_by_day.items() if expiry >= d}   # live that day (the expiry day is the near month's)
+        if live_rows:
+            rows.setdefault(expiry, {}).update(live_rows)
+    expiries = sorted(rows)
+    first = {e: min(by_day) for e, by_day in rows.items()}        # a contract counts from its first row in the window (listed)
+    days = sorted({d for by_day in rows.values() for d in by_day})
     months: List[Dict[str, List[Any]]] = [{"expiry": [], "close": [], "oi": []} for _ in range(MONTHS)]
     out: Dict[str, List[Any]] = {k: [] for k in ("spot", "basis", "basis_pct", "carry_pct", "calendar", "total_oi", "rollover_pct", "dte")}
     sources: set = set()
     for d in days:
-        live = sorted(by_day[d], key=lambda c: c[0])
+        live = [e for e in expiries if e >= d and first[e] <= d][:MONTHS]   # non-empty: d has a row of a live contract
+        picked: List[Optional[Dict[str, Any]]] = []
         for i in range(MONTHS):
-            if i < len(live):
-                exp, row = live[i]
-                months[i]["expiry"].append(exp.isoformat())
-                months[i]["close"].append(row["c"])
-                months[i]["oi"].append(row["oi"])
+            exp = live[i] if i < len(live) else None
+            row = rows[exp].get(d) if exp is not None else None
+            picked.append(row)
+            months[i]["expiry"].append(None if exp is None else exp.isoformat())
+            months[i]["close"].append(None if row is None else row["c"])
+            months[i]["oi"].append(None if row is None else row["oi"])
+            if row is not None:
                 sources.add(row["source"])
-            else:
-                for k in ("expiry", "close", "oi"):
-                    months[i][k].append(None)
-        near_exp, near = live[0]
+        near_exp, near = live[0], picked[0]
         s = spot.get(d, {}).get("c")
         if s is not None:
             sources.add(spot[d]["source"])
+        nc = None if near is None else near["c"]
         dte = max(1, (near_exp - d).days)
-        basis = None if s is None else near["c"] - s
-        basis_pct = None if s is None or s <= 0 else (near["c"] / s - 1.0) * 100.0
-        ois = [row["oi"] for _e, row in live]
-        total = float(sum(ois)) if ois and all(o is not None for o in ois) else None
+        basis = None if s is None or nc is None else nc - s
+        basis_pct = None if s is None or s <= 0 or nc is None else (nc / s - 1.0) * 100.0
+        listed = picked[:len(live)]
+        ois = [None if row is None else row["oi"] for row in listed]
+        total = float(sum(o for o in ois if o is not None)) if all(o is not None for o in ois) else None
+        nxt = picked[1] if len(live) > 1 else None
         out["spot"].append(s)
         out["basis"].append(_r(basis))
         out["basis_pct"].append(_r(basis_pct))
         out["carry_pct"].append(_r(None if basis_pct is None else basis_pct * 365.0 / dte))
-        out["calendar"].append(_r(live[1][1]["c"] - near["c"]) if len(live) > 1 else None)
+        out["calendar"].append(_r(nxt["c"] - nc) if nxt is not None and nc is not None else None)
         out["total_oi"].append(None if total is None else int(total))
-        out["rollover_pct"].append(_r(None if not total or near["oi"] is None else (total - near["oi"]) / total * 100.0))
+        out["rollover_pct"].append(_r(None if not total or ois[0] is None else (total - ois[0]) / total * 100.0))
         out["dte"].append((near_exp - d).days)
     rolls = [days[i].isoformat() for i in range(1, len(days)) if months[0]["expiry"][i] != months[0]["expiry"][i - 1]]
     return {"underlying": underlying, "days": [d.isoformat() for d in days], "times": [C._start_epoch(d) for d in days],

@@ -1,8 +1,9 @@
 """N4 CH4c: an underlying's futures basis, carry, calendar spread and rollover from the shared lake
 (GET /api/charts/contracts/basis).
 
-* near / next / far by expiry per trade date (the expiry day is still the near month's), the roll to the next month;
-* basis, basis %, annualised carry, calendar spread, all-expiry OI and rollover %, the index spot for an index future;
+* near / next / far by expiry per trade date (the expiry day is still the near month's), the roll to the next month; a
+  contract with no row on a day is a gap there, not a roll;
+* basis, basis %, annualised carry, calendar spread, the three months' OI and rollover %, the index spot for an index future;
 * as of `at`: later bars and a correction ingested after `at` change nothing; broker / stream rows are never read; a
   later-stamped vendor row never beats the bhavcopy on the same trade date;
 * the futures keys in chunks under the bind-parameter limit;
@@ -118,6 +119,26 @@ def test_basis_carry_calendar_and_rollover():
     # after the roll: the next month is near (105 vs spot 103), the far month next
     assert out["near"]["close"][3] == 105.0 and out["basis"][3] == 2.0 and out["calendar"][3] == 1.0
     assert out["total_oi"][3] == 500 + 50 and out["rollover_pct"][3] == round(50 / 550 * 100, 4)
+
+
+def test_a_near_month_with_no_row_on_a_day_is_a_gap_not_a_roll():
+    # the bhavcopy leaves an untraded contract out: the near month has no row on the 28th
+    async def drop():
+        async with _session_factory() as session:
+            await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key == _fut(OCT), MdCandleRecord.ts == _end(DAYS[1])))
+            await session.commit()
+    _run(drop())
+    out = _read()
+    assert out["days"] == [d.isoformat() for d in DAYS]
+    assert out["near"]["expiry"] == [OCT.isoformat()] * 3 + [NOV.isoformat()]          # still October's on the 28th
+    assert out["next"]["expiry"][1] == NOV.isoformat() and out["far"]["expiry"][1] == DEC.isoformat()
+    assert out["rolls"] == [DAYS[3].isoformat()]                                       # no spurious roll on the 28th / 29th
+    assert out["near"]["close"][1] is None and out["near"]["oi"][1] is None
+    assert out["next"]["close"][1] == 103.0 and out["far"]["close"][1] == 104.0        # the other months keep their places
+    assert out["spot"][1] == 101.0 and out["dte"][1] == 1
+    for k in ("basis", "basis_pct", "carry_pct", "calendar", "total_oi", "rollover_pct"):
+        assert out[k][1] is None, k                                                    # nothing built on the next month instead
+    assert out["basis"][0] == 1.0 and out["basis"][2] == 1.0                           # the days around it are unchanged
 
 
 def test_as_of_shared_sources_and_the_trade_date_preference():

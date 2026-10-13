@@ -1,8 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BasisPanel } from "../pages/FuturesBasisWindow";
 import { basisLinkFor, ContractPanel } from "../pages/ContractChartWindow";
-import { basisUrl, latest, linePaths, pctText, type BasisSeries } from "./futuresBasis";
+import { basisAvailable, basisUrl, latest, linePaths, pctText, PROBE_DAYS, type BasisSeries } from "./futuresBasis";
 import type { ContractSeries, SeriesLeg } from "./contracts";
 
 const month = (expiry: (string | null)[], close: (number | null)[], oi: (number | null)[]) => ({ expiry, close, oi });
@@ -53,5 +53,24 @@ describe("futures basis charts (N4 CH4c)", () => {
     expect(basisLinkFor(cs([leg({}), leg({ key: "x", qty: -1 })]))).toBeNull();
     expect(renderToStaticMarkup(<ContractPanel series={cs([leg({})])} basisLink="/?basis=NIFTY" />)).toContain('data-testid="basis-link"');
     expect(renderToStaticMarkup(<ContractPanel series={cs([leg({})])} />)).not.toContain("basis-link");
+  });
+
+  it("probes availability with a short window, not the page's full year", async () => {
+    const now = new Date("2026-10-13T06:00:00.000Z");
+    const respond = (status: number) => vi.fn(async () => new Response(status === 200 ? JSON.stringify(series()) : JSON.stringify({ detail: "off" }),
+                                                                    { status, headers: { "content-type": "application/json" } }));
+    try {
+      const ok = respond(200);
+      vi.stubGlobal("fetch", ok);
+      expect(await basisAvailable(" nifty ", now)).toBe(true);
+      const url = decodeURIComponent(String((ok.mock.calls as unknown as [string][])[0][0]));
+      const start = new Date(now.getTime() - PROBE_DAYS * 86_400_000).toISOString();
+      expect(url).toContain(`/charts/contracts/basis?underlying=NIFTY&start=${start}`);
+      expect(PROBE_DAYS).toBeLessThanOrEqual(7);
+      vi.stubGlobal("fetch", respond(503));
+      expect(await basisAvailable("NIFTY", now)).toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 });

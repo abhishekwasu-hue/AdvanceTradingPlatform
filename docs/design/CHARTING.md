@@ -483,10 +483,12 @@ the shared lake already holds: the CH4-4 charts that are data-ready.
 
 - **Backend.** `GET /api/charts/contracts/basis?underlying=&at=&start=` (`app/charts/futures_basis.py`; tenancy
   "member", platform reference data). Per trade date, as of `at`:
-  - near, next and far months by expiry, each with its close and OI. A contract is live on its expiry day; the next day
-    the near month rolls, and the response lists the roll days.
+  - near, next and far months by expiry, each with its close and OI. They are the first three expiries on or after the
+    day in the window's own list of expiries (each counted from its first row), not ranked by that day's rows: a
+    contract with no row on a day is a gap (null close, OI and the numbers built on it), never a roll. A contract is
+    live on its expiry day; the next day the near month rolls, and the response lists the roll days.
   - The spot: the cash close, or the index close for an index future.
-  - basis, basis %, annualised carry, calendar spread (next - near), all-expiry OI and rollover %.
+  - basis, basis %, annualised carry, calendar spread (next - near), the three months' OI and rollover % (next + far OI as % of all three).
   - Reads come from shared-licensed sources only. Per contract and trade date the preferred source wins, then its
     highest version; a correction counts once ingested by `at`.
   - The futures keys are every possible monthly expiry date in the window, read by exact key in chunks of 5,000

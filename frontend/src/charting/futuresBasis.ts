@@ -65,10 +65,14 @@ export function linePaths(values: (number | null)[], width: number, height: numb
   return out;
 }
 
-/** Whether the basis page is on for this organisation (a 503 means a flag is off). */
-export async function basisAvailable(underlying: string): Promise<boolean> {
+/** Days the availability probe asks for: a few days of bars, not the page's default year (review LOW). */
+export const PROBE_DAYS = 3;
+
+/** Whether the basis page is on for this organisation (a 503 means a flag is off). A cheap probe: a `start` a few days
+ *  before now, so the server reads a handful of keys and rows; the page itself asks for the full window. */
+export async function basisAvailable(underlying: string, now: Date = new Date()): Promise<boolean> {
   try {
-    await basisApi.basis(underlying);
+    await basisApi.basis(underlying, { start: new Date(now.getTime() - PROBE_DAYS * 86_400_000).toISOString() });
     return true;
   } catch (e) {
     return !(e instanceof ApiError && e.status === 503);

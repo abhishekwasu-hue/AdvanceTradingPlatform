@@ -139,3 +139,71 @@ constants. Every number is the engine's number at the matched bar, not a re-comp
 - Frontend: `evidence.test.ts` (geometry, filtering, colours, IST, summary) and `EvidencePanel.test.tsx` (accessible
   SVG, nothing outside the pack, theme tokens, verify strip, failed toggle, Devanagari name, Show on chart), plus the
   story `Screener/Evidence chart`.
+
+## 7. EV3: option-chain levels, the trend strip and replay (flag `evidence_context`, off by default)
+
+A second flag on top of `evidence_charts`. With it off, packs are exactly the EV1 / EV2 packs (no `context` key, no
+chain drawing) and the replay route answers 404. Informational only, like the rest of the pack.
+
+- **Option-chain levels.** A condition on `PCR`, `ChainBias` or `MaxPainDistancePct` draws the chain's levels on the
+  price pane: the call and put OI walls (`MaxPainDistancePct`: max pain and the underlying). The numbers come from the
+  same `analyze_option_chain` the runtime calls, and they are added to the row's terms. The drawable carries
+  `chain: {underlying, expiry}`, and the chart labels these levels. A chain is a snapshot of its own time, so a pack
+  built as of an earlier bar (`as_of`, or `_trim` cutting a frame) drops the chain. The row then says why nothing is
+  drawn. No look-ahead.
+- **Trend strip (`pack.context`).** For each timeframe at or above the screen's own (the screen's timeframes plus 1H, D
+  and W), it gives the engine's `DowTrend(d)` as of the matched bar's close:
+  - `d` is the screen's own DowTrend degree, or 1 when the screen does not read one;
+  - each chip carries the expression, the bar of that timeframe that had closed by then, the rows that read that
+    timeframe, and a note when there are too few bars.
+  - The tag equals `runtime.evaluate` of the same expression on the same bars.
+  - The caption gains a "Trend: …" line.
+- **Replay (`GET /api/screener/evidence/{id}/replay?at=&debug=`).**
+  - Access: tenancy class `member`, with the same read rule as the pack (`readable`: another organisation, or a BT1
+    teammate, gets 404). Rate limit: 60 requests per minute per user.
+  - What it returns: the stored pack's screen, recomputed by `build_pack` as of `at` (a bar close inside the stored
+    pack's window), from the shared lake. It uses the CH3 loader `price_action_layer.load_frame`:
+    - only shared-licensed sources (`nse_bhav:` / `vendor:` / `r2:`), never `stream:` / `broker:`;
+    - corrections count only once they were ingested by `at`;
+    - history from `replay_start`, which is the screen's fetch lookback plus the window, the same warm-up a run has.
+  - Nothing after `at` is read. Nothing is stored, and the replayed pack is never sent (`can_send: false`). It carries
+    `replay: {at, source, note, stored_as_of}`.
+  - Refused (422):
+    - a time zone-naive `at`, or an `at` outside the window;
+    - a weekly or monthly screen;
+    - a cross-sectional screen (its ranks need the universe);
+    - market-zone functions (the zone timeline is not attached);
+    - a screen that no longer validates.
+- **Frontend.**
+  - `ContextStrip` shows the chips, with the tag in words and an arrow (never colour alone) and the expression in the
+    title.
+  - `ReplayBar` has step back, step forward and "Back to the match". It is shown when the stored pack has `context`.
+    Steps come from `replaySteps` (each bar's close, the runtime's `bar_close`).
+  - Each step makes one request, and a newer step drops an older answer. The stored pack stays the one shown at the
+    match.
+
+## 8. EV4: every registry entry declares how it shows
+
+- `evidence.DRAWN_AS` and `drawn_as(name)` give one declaration per ScreenQL function:
+  - `series`: a number, drawn through its comparison;
+  - `box`: a breakout base;
+  - `band`: a market zone;
+  - `bars`: pattern candles, or B13's expansion bar;
+  - `overlay`: a crossing, a level or a reversal;
+  - `levels`: option-chain walls;
+  - `strip`: a category or filter without geometry, shown in the verify strip with the reason.
+- The lint (`tests/test_u8_ev3_ev4.py`) fails when a new registry entry has no declaration. It also builds a
+  one-condition pack for every function with a Z10-a harness expression (`SCREENQL_SERIES`) and checks that the drawing
+  is what the declaration says.
+- Coverage: every Legends card and every breakout template with a ScreenQL text builds a pack in which each condition
+  is drawn or carries a note saying why not. A breakout row whose engine found no base or level now says so.
+- Tests: `tests/test_u8_ev3_ev4.py` covers:
+  - chain levels, and no chain as of an earlier bar;
+  - strip parity with `evaluate`;
+  - truncation invariance at many `n` with altered later bars;
+  - the lint and the coverage above;
+  - replay parity with the builder on the lake frame;
+  - later corrections and `stream:` rows leave replay unchanged;
+  - refusals, flag off (404) and another organisation (404).
+- Frontend tests: `evidence.test.ts` covers the replay steps, stepping, tones and chain labels; `EvidencePanel.test.tsx`
+  covers the strip and the replay bar.

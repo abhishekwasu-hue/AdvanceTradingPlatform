@@ -530,6 +530,123 @@ the shared lake already holds: the CH4-4 charts that are data-ready.
 - **Not yet:** the participant-wise OI chart (the NSE participant file is not ingested), intraday basis, and the
   options layer on the underlying (CH4-1, CH4-5).
 
+## CH6a (built): ScreenQL studies on charts from the screener runtime, a study WebWorker, 50k-bar performance
+
+- **Backend.** `GET /api/charts/studies?instrument=&tf=&at=&start=&expr=...` (`app/charts/studies.py`; flag `chart_studies`,
+  off -> 503, per organisation; "member" in the tenancy table; 60 requests a minute per user).
+  - Up to 6 ScreenQL expressions, each a number (a line) or a condition (marks where it turns true), checked like a
+    screen plus `validator.validate_study`: no cross-sectional and no last-bar-only function, no data a chart does not
+    load. A refused study says why; the others are still drawn.
+  - Review fixes (CH6a review):
+    - **HIGH, compute budget.** Each request is estimated as the sum, over its studies' function calls, of each
+      call's weight × the bars read. Weights (`CALL_WEIGHT`) are ms per 1,000 bars, about twice the measured times
+      of the per-bar-loop functions (swing, structure, zones, breakouts); everything else weighs 1.
+      - Studies are admitted in order up to 8 s estimated (about 4 s real).
+      - A study with a function of weight 50 or more (Trend, StructureEvent, ReversalAt, RealBreak, the
+        swing-zone and support functions) is refused above 20,000 bars.
+      - A refused study says "too heavy for this window".
+      - The computation runs inside CH3b's build semaphore (`_slots`). Answers are cached for 30 s in the
+        layer's byte-bounded cache, keyed by (instrument, timeframe, read start, window, `at`, studies and their
+        flag refusals).
+    - **MED, function flags.** A study using a U6 breakout function while `screener_breakouts` is off, or a
+      market-zone function while `market_zones` is off, is refused with the flag's reason, as a screen is
+      (`studies.gate`, the screener's own gates).
+    - **Re-review MED, build slots (`price_action_layer.build_slot`, used by the layer, the top-down rows and the
+      studies).**
+      - Every bar is read first. The request's DB session is then closed, so its pooled connection is back in the
+        pool before any wait (the top-down rows split into `mtf_frames`, the DB half, and `mtf_build`, the
+        computation).
+      - One build is in flight per user; that user's next request waits for it.
+      - At most 2 builds run per process.
+      - The whole wait is bounded at 2 s, after which the answer is 503 "busy, retry" with Retry-After: 2.
+      - The chart's loaders ask again after 2 s (three times at most), and still treat a 503 without "busy" as the
+        flag being off.
+      - Tested: a waiting request holds no pool connection, on a one-connection pool (CI's Postgres when
+        `Z5_TEST_PG_URL` is set).
+    - **Re-review LOW.** The studies cache key carries each study's refusal messages word for word, so one
+      organisation's refusal text is never served to another.
+    - **Re-review LOWs (2):**
+      - A cancelled request (the client went away) keeps its slot and the user's lock until its worker thread has
+        finished, because a thread cannot be stopped. The cancellation then goes on, so the builds actually running
+        never exceed 2, nor one per user.
+      - `owner` is required: `mtf_rows(..., *, owner)`, and `build_slot` refuses `None`, so there is no shared lock.
+      - The layer loader's busy-retry is tested.
+    - **LOW, read caps per study.** When the warm-up read is refused (the 180-day 1-minute rebuild cap, the row
+      cap), the study whose own warm-up reaches furthest back is refused with the reason and the read is retried.
+      Only a window too large on its own refuses the request.
+  - Values: `app.screener.runtime.evaluate` - the screener's own engine (screens, alert rules, the screener backtest),
+    so a chart study and a screen of the same expression cannot disagree (tested against `run_screen`).
+  - As of `at` with the CH3 loader (bars that ended by `at`, shared-licensed sources, corrections point-in-time, row
+    caps); the studies' look-back before `start` is read too (per timeframe, `@1d` included), so the first drawn value
+    is a full one. Columnar answer: `times` once, `values` per line study, `fires` per condition; `fingerprint`.
+  - A price-unit study that lives at the price (median |value / close - 1| < 25 %) draws on the price pane; distances
+    (ATR) and other units in the study pane.
+- **Frontend.** `studies.ts` (API, loader that clears on every new question), `StudiesPanel.tsx` (add / remove,
+  each study's last value or refusal, kept per browser), `LightweightEngine.setStudy` (one line series per study, on
+  pane 0 or the study pane 1), `studyMath.ts` + `studyWorker.ts` + `studyClient.ts` (the WebWorker that turns values
+  into chart series and runs SMA / EMA / Wilder RSI kernels; main-thread fallback). Mounted on the full-window chart,
+  following replay (`at`) like the price-action layer.
+- **Tests.** `backend/tests/test_ch6_chart_studies.py`: values = the runtime's, conditions fire where a screen matches;
+  truncation invariance over every ScreenQL series expression of the Z10-a harness; later bars added / altered (and a
+  `stream:` row) leave the answer at `at` byte-identical; warm-up; refusals and caps; flag; 50,000 bars x 6 studies +
+  JSON < 1 s x CI factor in the perf job (0.4 s locally) and < 5 s in the normal suite. Frontend `studies.test.ts`: the
+  kernels equal the backend on `__fixtures__/study_parity.json` (a byte-identical copy of the backend's) to 1e-9;
+  50,000 bars of three kernels + the line conversion < 1 s; the worker protocol and its fallback; the loader; the
+  engine's study lines.
+- **No new ScreenQL function**, so no new Z10-a causal case. Open questions CH6-1 .. CH6-3.
+
+## CH5-a (built): the multi-chart workspace - layouts, link groups, saved layouts, shortcuts
+
+Flag **`chart_workspace`** (off by default, in `DEFAULT_OFF_FLAGS`): while it is off `/api/charts/layouts` answers 503
+and the workspace page says it is not enabled. Charts only; nothing here places, changes or proposes an order.
+
+- **Where.** Its own browser tab, like the single chart: `/?workspace=1` (optionally `&chart=SYMBOL&tf=5min&exchange=NSE`
+  to start from one chart). The single-chart window shows "Open in workspace" while the flag is on.
+- **Layout `layout/1`** (`frontend/src/charting/workspace.ts`, mirrored by `backend/app/charts/layouts.py`):
+  - `grid` 1, 2, 4, 6 or 8 (1x1, 2x1, 2x2, 3x2, 4x2) and one cell per chart: symbol, exchange, timeframe, chart type
+    (stored now, drawn in CH5-b) and an optional link group A-D;
+  - `groups`: per group, which links are on - `symbol`, `interval`, `crosshair` (a new group links the symbol and the
+    crosshair; the interval only when asked, so one symbol on 5m and 1h is one click);
+  - `active`: the chart the keyboard and the drawing tools work on.
+- **Link groups.** A symbol change travels to the charts its group links by symbol, a timeframe change to those linked
+  by interval. A chart joining a group takes the group's linked symbol / interval from a chart already in it, and
+  switching a link on aligns the group to its first chart, so a group never shows two symbols it claims to share. The
+  chart type is per chart, never linked. All of it is pure functions over the layout (tested without a browser).
+- **Crosshair link** (`charting/crosshairLink.ts`). Each chart's engine reports its crosshair time; the link moves the
+  crosshair of the charts its group links by crosshair to the same time. `ChartEngine.setCrosshair(time)` is new
+  (optional on the interface); the lightweight engine puts it on its own bar at or before that time, at that bar's
+  close, so a 5m and a 1h chart line up. Only moves the user made are passed on: the engine marks a crosshair event
+  without a pointer event behind it `user: false` (lightweight-charts 5.2 does not report a programmatic
+  `setCrosshairPosition` at all), so the link keeps no echo bookkeeping that could swallow a real move.
+- **Charts.** Each cell is the same ProChart as the single-chart window (own candles, older history on scroll back).
+- **Last price, without starving exits (review HIGH, ADR-0004).** The workspace polls each (symbol, exchange) once
+  (`charting/ltpHub.ts`), shared by every chart showing it: every 5 s for the active chart's symbol, every 20 s for the
+  others, only while the tab is visible; a chart that gets focus again reuses a recent price. On the server
+  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`), and every broker call it makes (when no
+  fresh tick answers) first takes a token from the session's API budget (`app/market_data/api_budget.py`: per
+  tenant + broker + account, at half the conservative per-broker limits the worker's own budget uses, in the API
+  process); with none within 2 s it answers 429 (Retry-After 5) and the chart keeps its last price, instead of a queue
+  that grows while the worker's exits need the same API key. The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
+  window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
+  cell's button) shows the active chart at full size.
+- **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and
+  tenant, a unique name per user, at most 50 (the user's row is locked with `SELECT ... FOR UPDATE` before the count, and re-counted after the insert, so two racing creates cannot pass it),
+  versioned: the save and the delete are a conditional `UPDATE` / `DELETE ... WHERE id, user, tenant AND version`
+  with a row-count check, so of two tabs saving at once exactly one wins and the other gets 409 with the current
+  layout; the page says so. `GET/POST /api/charts/layouts`, `PUT/DELETE /api/charts/layouts/{id}` (the
+  delete names its version), classified in `tests/tenancy_route_table.py` (list "member", writes "self"). The unsaved
+  layout is kept in the browser (`localStorage`), and the last layout used is opened again.
+- **Shortcuts** (`charting/shortcuts.ts`, all with Alt so none collides with the drawing tools or the browser's
+  editing keys; digits by physical key, since Option+1 types "¡" on a Mac; nothing fires while typing in a field):
+  Alt+1/2/4/6/8 grid, Alt+Shift+→/← next/previous chart, Alt+↑/↓ timeframe, Alt+G link group, Alt+T chart type,
+  Alt+Enter full size, Alt+K symbol box, Alt+Shift+S save, "?" the list. Plain Alt+←/→ (the browser's back / forward)
+  and Alt+S (a menu in some browsers) are left to the browser.
+- **Tests.** Backend `tests/test_ch5_chart_layouts.py` (4): schema per grid and refusals, flag off -> 503 and the
+  tenant allow-list, per user (another organisation and a teammate get 404), versions and 409, unique names, the cap.
+  Frontend `src/charting/workspace.test.ts` (11): grid shapes and the server's rules, shrinking and growing, symbol /
+  interval / crosshair links and alignment, active chart and timeframe steps, shortcuts, the crosshair link (echoes
+  dropped synchronously and asynchronously, unregister), `setCrosshair` bar placement, the API client's 409 / 404.
+
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:
   - Undo/redo cover create, move and delete, in this tab, until the page reloads.

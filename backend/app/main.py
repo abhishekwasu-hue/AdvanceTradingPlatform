@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi import Request, Depends, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -78,6 +78,7 @@ from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
 from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
+from app.decision_tools.routes import router as decision_tools_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
@@ -114,18 +115,24 @@ from app.tax.routes import router as tax_router
 from app.fx.routes import admin_router as fx_admin_router, router as fx_router
 from app.incidents.routes import router as incidents_router
 from app.screener.routes import router as screener_router
+from app.screener.history_routes import router as screener_history_router
 from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.screener.evidence_routes import router as screener_evidence_router
+from app.screener.library_routes import router as screener_library_router
+from app.screener.etf_routes import router as screener_etf_router
 from app.alerts.rules_routes import router as alert_rules_router
+from app.screener.then.routes import router as scan_then_router
 from app.alerts.links_routes import router as alert_links_router
 from app.alerts.outbox_admin import router as alert_outbox_admin_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
+from app.charts.layouts import router as chart_layouts_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.charts.price_action_layer import router as chart_price_action_layer_router
 from app.charts.trades_layer import router as chart_trades_layer_router
 from app.charts.contracts import router as chart_contracts_router
 from app.charts.futures_basis import router as chart_futures_basis_router
+from app.charts.studies import router as chart_studies_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
 from app.journal.routes import router as journal_router
 from app.legal.routes import router as legal_router
@@ -247,23 +254,30 @@ app.include_router(fx_router)
 app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 app.include_router(screener_router)
+app.include_router(screener_history_router)  # N3 S6a: who passed on a date, screen fitness (flag screener_history, off)
 app.include_router(screener_breakouts_router)
 app.include_router(screener_evidence_router)  # U8 EV1/EV2: evidence charts (flag evidence_charts, off)
+app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
+app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
 app.include_router(alert_rules_router)
+app.include_router(scan_then_router)
 app.include_router(alert_links_router)
 app.include_router(alert_outbox_admin_router)  # Z10-b: alert outbox state, dead letters and replay (SUPER_ADMIN)
 app.include_router(compliance_router)
 app.include_router(chart_drawings_router)
+app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace layouts per user (flag chart_workspace)
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
 app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
 app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
 app.include_router(chart_futures_basis_router)  # N4 CH4c: futures basis / carry / rollover from the shared lake (flag chart_futures_basis, off)
+app.include_router(chart_studies_router)  # N4 CH6: ScreenQL studies on charts from the screener runtime (flag chart_studies, off)
 app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
+app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
@@ -279,6 +293,14 @@ class SignalRequest(BaseModel):
 class PaperExecuteRequest(SignalRequest):
     risk_config: Optional[RiskConfig] = None
     idempotency_key: Optional[str] = None
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def not_reserved(cls, value: Optional[str]) -> Optional[str]:
+        """N1 X2 (review L1): `intent:` keys belong to the execution core's Auto PAPER orders - a caller may not claim one."""
+        if value is not None and value.strip().lower().startswith("intent:"):
+            raise ValueError("idempotency keys starting with 'intent:' are reserved")
+        return value
 
 
 class EnrichSignalRequest(SignalRequest):

@@ -1,8 +1,8 @@
 {
-  "_comment": "U5 starter templates (the empty canvas's buttons), shared with the server: U9 TX1 files each id in backend/app/screener/data/taxonomy.json and backend/tests/test_z8_tx1_taxonomy.py fails CI when one is not filed or its name differs. A new starter needs a row here, a build function in FunnelCanvas.tsx (STARTER_BUILDS) and a taxonomy entry.",
+  "_comment": "U5 starter templates (the empty canvas's buttons), shared with the server: U9 TX1 files each id in backend/app/screener/data/taxonomy.json and backend/tests/test_z8_tx1_taxonomy.py fails CI when one is not filed or its name differs. A new starter needs a row here, a build function in FunnelCanvas.tsx (STARTER_BUILDS) and a taxonomy entry. U9 TX2: `text` is the ScreenQL the row's build prints (model.screenText; checked by a vitest) and the server's library.STARTERS (checked by tests/test_tx2_library.py); `base_tf` the default scan timeframe.",
   "starters": [
-    { "id": "starter.momentum", "name": "Momentum", "summary": "RSI(14) above 60 and close above EMA(close, 20)" },
-    { "id": "starter.oversold", "name": "Oversold", "summary": "RSI(14) at or below 30" },
-    { "id": "starter.daily_trend", "name": "Trend on the daily", "summary": "close above EMA(close, 50) on 1d" }
+    { "id": "starter.momentum", "name": "Momentum", "summary": "RSI(14) above 60 and close above EMA(close, 20)", "text": "RSI(14) > 60 AND close > EMA(close, 20)", "base_tf": "1d" },
+    { "id": "starter.oversold", "name": "Oversold", "summary": "RSI(14) at or below 30", "text": "RSI(14) <= 30", "base_tf": "1d" },
+    { "id": "starter.daily_trend", "name": "Trend on the daily", "summary": "close above EMA(close, 50) on 1d", "text": "close@1d > EMA(close, 50)@1d", "base_tf": "1d" }
   ]
 }

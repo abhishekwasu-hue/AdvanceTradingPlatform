@@ -292,10 +292,27 @@ def _source_rank() -> Tuple[Tuple[str, ...], Any]:
     return tuple(SHARED_SOURCES), rank
 
 
+KEYS_PER_QUERY = 5000           # instrument keys bound in one IN (...) - well under Postgres / asyncpg's 32,767 parameters
+
+
+def key_chunks(keys: Sequence[str], size: int = KEYS_PER_QUERY) -> List[List[str]]:
+    """The keys in chunks of at most `size` (each chunk is one query: review of S5-C - FutOIChange(500) on 50 symbols
+    names ~47k candidate futures keys)."""
+    return [list(keys[i:i + size]) for i in range(0, len(keys), size)]
+
+
+def _better(new: Tuple[int, int, Any], old: Optional[Tuple[int, int, Any]]) -> bool:
+    """A row's preference within one (key, trade date): the preferred shared source first, then its highest version, then
+    the later stamp (review of S5-C: the preference is per TRADE DATE, never decided by which source stamps later)."""
+    if old is None:
+        return True
+    return (new[0], -new[1]) < (old[0], -old[1]) or ((new[0], -new[1]) == (old[0], -old[1]) and new[2] > old[2])
+
+
 async def load_timelines(session: AsyncSession, symbols: Sequence[str], start: datetime, end: datetime) -> Dict[str, FnoTimeline]:
-    """Each underlying's futures rows, spot closes and ban dates from the shared lake, ended and ingested by `end` - one
-    futures read, one spot read and one ban read for all of them (review of S5-C). Per row stamp the preferred shared
-    source wins, then its highest version (rows are ordered so the winner comes last)."""
+    """Each underlying's futures rows, spot closes and ban dates from the shared lake, ended and ingested by `end` - the
+    futures keys in chunks of KEYS_PER_QUERY, one spot read and one ban read for all of them (review of S5-C). Per
+    instrument and IST trade date the preferred shared source wins, then its highest version (`_better`)."""
     from sqlalchemy import Float, cast, or_, select
 
     from app.db.models import FoBanRecord, MdCandleRecord
@@ -309,29 +326,42 @@ async def load_timelines(session: AsyncSession, symbols: Sequence[str], start: d
     spot_of = {_spot_key(sym): sym for sym in syms}
     window = (MdCandleRecord.timeframe.in_(LAKE_TIMEFRAMES), MdCandleRecord.ts > start, MdCandleRecord.ts <= end,
               MdCandleRecord.ingested_at <= end, shared)
-    fut = await session.execute(select(MdCandleRecord.instrument_key, MdCandleRecord.ts, cast(MdCandleRecord.close, Float), MdCandleRecord.oi)
-                                .where(MdCandleRecord.instrument_key.in_(keys), *window)
-                                .order_by(MdCandleRecord.instrument_key, MdCandleRecord.ts, rank.desc(), MdCandleRecord.version))
-    spot = await session.execute(select(MdCandleRecord.instrument_key, MdCandleRecord.ts, cast(MdCandleRecord.close, Float))
-                                 .where(MdCandleRecord.instrument_key.in_(list(spot_of)), *window)
-                                 .order_by(MdCandleRecord.instrument_key, MdCandleRecord.ts, rank.desc(), MdCandleRecord.version))
-    bans = await session.execute(select(FoBanRecord.underlying, FoBanRecord.trade_date).where(
-        FoBanRecord.underlying.in_(syms), FoBanRecord.trade_date > (start - timedelta(days=1)).date(),
-        FoBanRecord.trade_date <= _ist_date(end), FoBanRecord.fetched_at <= end))
+    best: Dict[Tuple[str, date], Tuple[Tuple[int, int, Any], float, Optional[float]]] = {}
+    for chunk in key_chunks(keys):
+        fut = await session.execute(select(MdCandleRecord.instrument_key, MdCandleRecord.ts, cast(MdCandleRecord.close, Float), MdCandleRecord.oi,
+                                           rank.label("rk"), MdCandleRecord.version)
+                                    .where(MdCandleRecord.instrument_key.in_(chunk), *window))
+        for key, ts, close, oi, rk, version in fut:
+            slot, pref = (str(key), _ist_date(ts)), (int(rk), int(version), ts)
+            if _better(pref, best[slot][0] if slot in best else None):
+                best[slot] = (pref, float(close), None if oi is None else float(oi))
+    spot_best: Dict[Tuple[str, date], Tuple[Tuple[int, int, Any], float]] = {}
+    for chunk in key_chunks(list(spot_of)):
+        spot = await session.execute(select(MdCandleRecord.instrument_key, MdCandleRecord.ts, cast(MdCandleRecord.close, Float),
+                                            rank.label("rk"), MdCandleRecord.version)
+                                     .where(MdCandleRecord.instrument_key.in_(chunk), *window))
+        for key, ts, close, rk, version in spot:
+            slot, pref = (str(key), _ist_date(ts)), (int(rk), int(version), ts)
+            if _better(pref, spot_best[slot][0] if slot in spot_best else None):
+                spot_best[slot] = (pref, float(close))
+    banned: Dict[str, List[date]] = {sym: [] for sym in syms}
+    for chunk in key_chunks(syms):
+        bans = await session.execute(select(FoBanRecord.underlying, FoBanRecord.trade_date).where(
+            FoBanRecord.underlying.in_(chunk), FoBanRecord.trade_date > (start - timedelta(days=1)).date(),
+            FoBanRecord.trade_date <= _ist_date(end), FoBanRecord.fetched_at <= end))
+        for sym, day in bans:
+            banned.setdefault(str(sym), []).append(day)
     by_day: Dict[str, Dict[date, Dict[str, Tuple[date, float, Optional[float]]]]] = {sym: {} for sym in syms}
-    for key, ts, close, oi in fut:                               # ordered: the winning row of each (key, stamp) comes last
-        parts = str(key).split(":")
+    for (key, day), (_pref, close, oi) in best.items():
+        parts = key.split(":")
         try:
             sym, expiry = parts[1], date.fromisoformat(parts[3])
         except (IndexError, ValueError):
             continue
-        by_day.setdefault(sym, {}).setdefault(_ist_date(ts), {})[str(key)] = (expiry, float(close), None if oi is None else float(oi))
+        by_day.setdefault(sym, {}).setdefault(day, {})[key] = (expiry, close, oi)
     spots: Dict[str, Dict[date, float]] = {sym: {} for sym in syms}
-    for key, ts, close in spot:
-        spots[spot_of[str(key)]][_ist_date(ts)] = float(close)
-    banned: Dict[str, List[date]] = {sym: [] for sym in syms}
-    for sym, day in bans:
-        banned.setdefault(str(sym), []).append(day)
+    for (key, day), (_pref, close) in spot_best.items():
+        spots[spot_of[key]][day] = close
     out: Dict[str, FnoTimeline] = {}
     for sym in syms:
         days = [DayRow(d, [(k, v[0], v[1], v[2]) for k, v in contracts.items()], spots[sym].get(d)) for d, contracts in by_day[sym].items()]
@@ -445,5 +475,5 @@ _register_taxonomy()
 
 
 __all__ = ["expiry_candidates", "FLAG", "PRESETS", "PRESETS_BY_ID", "Preset", "presets_payload", "BUILDUPS", "EOD_FUNCTIONS", "flagged_calls", "eod_calls", "refusal", "enabled", "blocked_calls", "classify", "oi_change",
-           "buildup", "DayRow", "FnoTimeline", "build_timeline", "fno_series", "underlying", "load_timeline", "load_timelines", "attach_fno",
+           "buildup", "DayRow", "FnoTimeline", "build_timeline", "fno_series", "underlying", "load_timeline", "load_timelines", "attach_fno", "key_chunks", "KEYS_PER_QUERY",
            "eod_lookback", "margin_days"]

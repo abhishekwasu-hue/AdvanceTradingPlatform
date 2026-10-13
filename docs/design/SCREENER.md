@@ -936,7 +936,12 @@ Spec §2.3 (Category C, India first). This first part builds what ATP's data alr
     key).
   - The loader reads as many trade dates before the frame as the calls look back (`eod_lookback`: `FutOIChange(60)`
     reads 60). It used to use a fixed 60-day margin, which left an intraday `FutOIChange(60)` empty.
-  - The universe is read in one batch: one futures query, one spot query and one ban query.
+  - The universe is read in one batch: the futures keys in chunks of at most 5,000 per query (`KEYS_PER_QUERY`;
+    `FutOIChange(500)` on 50 symbols names tens of thousands of candidate keys, over Postgres's 32,767 bind
+    parameters), one spot query and one ban query.
+  - The source preference is decided per instrument and IST trade date: the preferred source, then the highest
+    version, then the later stamp. A vendor row stamped later on the same date never beats the bhavcopy.
+  - A correction ingested later also changes how earlier bars read that date (S5C-10, open).
   - Chart studies refuse the EOD functions with the reason and gate the family on `screener_fno`.
 - No migration: everything reads existing tables.
 

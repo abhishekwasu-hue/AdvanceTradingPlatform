@@ -417,3 +417,42 @@ def test_chart_studies_refuse_the_eod_functions_and_gate_the_family():
             return await studies.gate(session, None, rows)
     gated = _run(go())                                                       # screener_fno is off: the bar OI study is refused too
     assert not gated[1]["ok"] and "screener_fno" in gated[1]["problems"][-1]["message"] and gated[2]["ok"]
+
+
+def test_the_futures_keys_are_read_in_chunks_under_the_bind_parameter_limit():
+    """MED (S5-C re-check): FutOIChange(500) on 50 symbols names ~47k candidate keys - read in chunks, so no statement
+    binds more than Postgres / asyncpg's 32,767 parameters (SQLite would not notice)."""
+    from sqlalchemy import event
+
+    from tests.test_auth_api import _engine
+    symbols = [f"S5CX{i:02d}" for i in range(50)]
+    start = ist(D1, 0, 0) - timedelta(days=fno.margin_days(500) + 600)          # a daily frame of ~400 bars, then 500 dates back
+    assert len(symbols) * len(fno.expiry_candidates(start.date(), D3)) > 32767
+    counts = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        counts.append(len(parameters) if isinstance(parameters, (list, tuple, dict)) else 0)
+    event.listen(_engine.sync_engine, "before_cursor_execute", capture)
+    try:
+        async def go():
+            async with _session_factory() as session:
+                return await fno.load_timelines(session, symbols, start, ist(D3, 20, 0))
+        out = _run(go())
+    finally:
+        event.remove(_engine.sync_engine, "before_cursor_execute", capture)
+    assert set(out) == set(symbols) and len(counts) >= 3 and max(counts) <= fno.KEYS_PER_QUERY + 20 < 32767
+    assert [len(c) for c in fno.key_chunks(list(range(12001)))] == [5000, 5000, 2001]
+
+
+def test_the_preferred_source_wins_per_trade_date_whatever_its_stamp():
+    """LOW (S5-C re-check): a vendor row stamped later on the same trade date never beats the bhavcopy's."""
+    late = ist(D1, 23, 59)
+    _put([_fut(SYM, D1, MAR26, 100.0, 1000),
+          MdCandleRecord(instrument_key=f"NFO:{SYM}:FUT:{MAR26.isoformat()}", timeframe="day", ts=late, source="vendor:test", version=1,
+                         open=500.0, high=500.0, low=500.0, close=500.0, volume=1, oi=5, ingested_at=late)])
+
+    async def go():
+        async with _session_factory() as session:
+            return await fno.load_timeline(session, SYM, ist(D1, 0, 0) - timedelta(days=5), ist(D2, 20, 0))
+    tl = _run(go())
+    assert len(tl.close_ns) == 1 and tl.closes[0][f"NFO:{SYM}:FUT:{MAR26.isoformat()}"] == 100.0 and tl.total_oi[0] == 1000.0

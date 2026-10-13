@@ -360,13 +360,16 @@ class BacktestBody(FitnessBody):
         return self
 
 
-async def _index_closes(session: AsyncSession, key: str, start: date, end: date) -> Optional[pd.Series]:
+async def _index_bars(session: AsyncSession, key: str, start: date, end: date) -> Optional[Tuple[pd.Series, pd.Series]]:
+    """(opens, closes) of an index by session date, or None when the lake has none in the window."""
     from app.market_lake.asof import candles_as_of
     from app.market_lake.bhavcopy_backfill import SOURCE, TIMEFRAME, bar_end
     rows = await candles_as_of(session, key, TIMEFRAME, bar_end(start) - timedelta(hours=1), bar_end(end), sources=[SOURCE["index"]])
     if not rows:
         return None
-    return pd.Series({(r.ts if r.ts.tzinfo else r.ts.replace(tzinfo=timezone.utc)).astimezone(H.IST).date(): float(r.close) for r in rows})
+    days = [(r.ts if r.ts.tzinfo else r.ts.replace(tzinfo=timezone.utc)).astimezone(H.IST).date() for r in rows]
+    return (pd.Series({d: float(r.open) for d, r in zip(days, rows) if r.open is not None}, dtype=float),
+            pd.Series({d: float(r.close) for d, r in zip(days, rows)}, dtype=float))
 
 
 async def _backtest_trials(session: AsyncSession, tenant_id: int, since: datetime) -> List[float]:
@@ -442,14 +445,18 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
         ranks = await asyncio.to_thread(B.rank_table, rank_ast, frames, dates, params, rank_validated, scales) if rank_ast is not None else None
     except H.HistoryError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    nifty = await _index_closes(session, "NSE_INDEX:NIFTY50", first, body.end)
+    nifty_bars = await _index_bars(session, "NSE_INDEX:NIFTY50", first, body.end)
+    nifty = nifty_bars[1] if nifty_bars is not None else None
     settings = B.Settings(top_n=body.top_n, weighting=body.weighting, descending=body.descending, capital=body.capital,
                           slippage_pct=body.slippage_pct, brokerage=body.brokerage_per_order)
     result = await asyncio.to_thread(B.simulate, sig, ranks, frames, calendar, body.end, settings, eligible,
-                                     {"nifty_50": nifty} if nifty is not None else None)
+                                     {"nifty_50": nifty} if nifty is not None else None, excluded,
+                                     {"nifty_50": nifty_bars[0]} if nifty_bars is not None else None)
     out = B.report(result, settings)
     if nifty is None:
         notes.append("NIFTY 50 closes are not in the lake for this window: the equal-weight universe is the only benchmark.")
+    if excluded:
+        notes.append(f"{len({s for s, _ in excluded})} symbol(s) on unadjusted bars are not held over a period touching a split or bonus.")
     for name, n in result.benchmark_missing.items():
         notes.append(f"{name}: {n} session(s) without a close were skipped (not counted as 0 %).")
     label = (f"index:{body.universe.index}" if body.universe.index else f"list:{len(frames)}")[:40]

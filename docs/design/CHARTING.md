@@ -388,6 +388,65 @@ own output on the frozen fixtures, checked against Trade live when the repositor
   process; the layer cache is bounded by bytes and never holds debug answers; 60 requests a minute per user; a
   top-down row over 5,000 bars is refused, not cut; a daily chart reads its daily bars once for the chart and D / W.
 
+## CH4a (built): the trades layer - your own PAPER trades on the chart
+
+The first CH4 slice that the data ATP has supports (dependency check below; OPEN_QUESTIONS CH4-1 .. CH4-3). Flag
+`chart_trades_layer`, off by default.
+
+- **Backend.** `GET /api/charts/layers/trades?instrument=&at=&start=` (`app/charts/trades_layer.py`).
+  - Off -> 503, per organisation. Tenancy: "member", but the rows are the caller's own (`user_id` = the caller and
+    `tenant_id` = the caller's organisation), never a teammate's, never another organisation's. The trade list itself
+    is organisation-wide; a chart layer is personal.
+  - PAPER rows only.
+  - The instrument's own trades are drawn at their prices; a derived contract (an option or future on this underlying)
+    at its times only (`on_price_axis: false`). Its premium never goes on the underlying's axis.
+  - As of `at`: no trade entered after it, no exit after it (the trade is open then, without P&L), so replay shows
+    nothing before it happened.
+  - The stop, as of `at`: the position monitor overwrites `stop_loss` as a stop trails, so the row holds the latest
+    stop, not the one in force at `at`. Replaying the past (`at` before now, or a trade exiting after `at`) draws the
+    trade's `initial_stop_loss` (its `stop_loss` when none was recorded), labelled "Initial stop"; only the live chart
+    draws the current stop. The stop history is not recorded, so the trail itself is not replayed.
+  - The window is the trades active in (`start`, `at`], at most 200. The exchange filter (an underlying on another
+    exchange is another chart) runs in the query, before the cap, so the cap and `capped` count only drawn trades.
+    Read-only: it writes nothing and offers no action.
+  - An index chart (`NSE:NIFTY 50`) matches derived trades whose underlying is the F&O master's name (`NIFTY`), via
+    `app/instruments/master.py` aliases.
+- **Frontend.** `charting/tradesLayer.ts` (API, bar snapping, `toTradesLayer`, a loader that clears on every new
+  question) and `TradesLayer.tsx`, a read-only panel ("My trades": count, open count, show / hide). They are mounted on
+  the full-window chart, following replay.
+  - Each entry and exit is a label in the bar it falls in.
+  - A closed trade on its own chart has a dashed entry-to-exit segment.
+  - An open trade on its own chart has its stop and target as price lines.
+  - Colours are Okabe-Ito, by side.
+- **Tests.** `tests/test_ch4a_trades_layer.py` covers:
+  - own trades only (a teammate's and another organisation's are never drawn, a LIVE row never);
+  - instrument, exchange and contract matching;
+  - as-of (no trade and no exit before it happened) and the window;
+  - a stop trailed after `at` (the replay draws the initial stop; the live chart the current one);
+  - the exchange filter before the cap, and an index chart showing `NIFTY` option trades;
+  - flag off / per organisation;
+  - writes nothing.
+
+  Frontend `tradesLayer.test.tsx` covers snapping, shapes, the contract case, the loader and the read-only panel.
+- **Dependencies of the rest of CH4, checked on main 53c54ee:**
+  - **Part B lake.** The shared lake has daily F&O contract bars with OI from the F&O bhavcopy (HB1,
+    `nse_bhav:fo`, keys `NFO:<SYM>:FUT:<expiry>` and `NFO:<SYM>:<CE|PE>:<expiry>:<strike>`), once the backfill has
+    run. There is no IV history and no intraday chain history: the `md_option_chain_snapshots` table exists but
+    nothing writes it, and `option_chain_snapshots` (Phase W) holds only near-the-money samples of running option
+    deployments plus uploads, trimmed by retention.
+  - **U1-c.** Lots (`instrument_master_versions`, `instruments.lot_size`) and the exchange ban list
+    (`fo_ban_history`) exist (`app/universe/fo_eod.py`).
+  - **S3 Notification Service.** It exists (`app/notifications/service.notify` with the alert dispatcher).
+- **Next (CH4b, data-ready):**
+  - option and future contract charts and synthetic spreads from the lake's daily `NFO:` bars (sum of legs with sign
+    and quantity);
+  - an OI pane from the same rows;
+  - option symbol search from `instruments`;
+  - chain -> chart linking.
+
+  Intraday contract charts, IV / Greeks panes and IV / PCR / max-pain history wait for an intraday chain store
+  (CH4-1).
+
 ## CH6a (built): ScreenQL studies on charts from the screener runtime, a study WebWorker, 50k-bar performance
 
 - **Backend.** `GET /api/charts/studies?instrument=&tf=&at=&start=&expr=...` (`app/charts/studies.py`; flag `chart_studies`,
@@ -480,11 +539,20 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
 - **Last price, without starving exits (review HIGH, ADR-0004).** The workspace polls each (symbol, exchange) once
   (`charting/ltpHub.ts`), shared by every chart showing it: every 5 s for the active chart's symbol, every 20 s for the
   others, only while the tab is visible; a chart that gets focus again reuses a recent price. On the server
-  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`), and every broker call it makes (when no
-  fresh tick answers) first takes a token from the session's API budget (`app/market_data/api_budget.py`: per
-  tenant + broker + account, at half the conservative per-broker limits the worker's own budget uses, in the API
-  process); with none within 2 s it answers 429 (Retry-After 5) and the chart keeps its last price, instead of a queue
-  that grows while the worker's exits need the same API key. The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
+  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`). When no fresh tick answers, the quote
+  is shared: cached in Redis for 4 s per (credential, exchange, symbol), with one request at a time making the broker
+  call (a short Redis lock) while the others wait for its result - every user and tab on that credential shares it.
+  That one call first takes a token from the credential's API budget (`app/market_data/api_budget.py`): sliding
+  windows in Redis (a sorted set of call times, the Redis server's clock) keyed by the credential row (`ab:{record.id}:
+  <seconds>` - a hash tag, one Cluster slot; BYOK members never share one), counted by every API worker and replica
+  together, checked and counted in one script (a refused call counts nowhere) - per second and per minute at half the
+  worker's conservative limits (Kite: the API 1/s plus the worker 2/s stays within Kite's 3/s, so exits are never
+  starved of quotes), and for Upstox at most 500 per 30 minutes (of its 2,000). Only the per-second window is waited for; a full minute or 30 minutes refuses at once. `/ltp` waits
+  at most 2 s, then 429 (Retry-After 5) and the chart keeps its last price - never a queue that grows while the
+  worker's exits need the same API key. `/candles` uses the same budget: every broker call in its symbol loop takes a
+  token (a cached answer costs none), the request waits at most 8 s in all, and a symbol that gets no token comes back
+  with `error: "budget used"` (and a warning) while the others load. Without Redis (dev) or with Redis unreachable,
+  each API process counts in-process windows at its part of the share (every limit divided by `API_WORKERS`). CI runs the real script and lock against its redis:7 service (`REDIS_URL`). The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
   window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
   cell's button) shows the active chart at full size.
 - **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and
@@ -504,6 +572,57 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
   Frontend `src/charting/workspace.test.ts` (11): grid shapes and the server's rules, shrinking and growing, symbol /
   interval / crosshair links and alignment, active chart and timeframe steps, shortcuts, the crosshair link (echoes
   dropped synchronously and asynchronously, unregister), `setCrosshair` bar placement, the API client's 409 / 404.
+
+## CH5-b (built): chart types, session breaks, the 24x7 axis
+
+Same flag (`chart_workspace`): the workspace's charts get a chart-type picker (Alt+T cycles it) and the venue axis.
+ProChart takes two new props, `chartType` (default `candles`) and `venueAxis` (default off), so every chart outside the
+workspace looks exactly as before.
+
+- **Pure functions** (`frontend/src/charting/chartTypes.ts`, no chart library):
+  - Heikin Ashi: close (O+H+L+C)/4, open the mean of the previous HA open and close (first: (O+C)/2), high / low
+    including them; one bar per source bar at the same time, bar i from bars 0..i only.
+  - Renko (close-based): a brick per full box beyond the last brick's top (up) or bottom (down); a reversal needs a box
+    beyond the last brick's other side, i.e. two boxes from its close. The first brick is measured from the first close.
+  - Range bars: each spans exactly the range from high to low; the next opens where the last closed. Inside a source
+    bar the path is assumed open -> low -> high -> close (up bar) or open -> high -> low -> close (down bar).
+  - Several bricks completed inside one bar get that bar's time, then +1 s each (the chart needs rising times).
+  - **No forming bar, no repainting.** Renko and range are built from `closedBars` (a bar counts once its period has
+    ended) of the bars as received - never the live-priced forming candle - and only completed bricks are returned.
+    The default box / range is a round 0.5 % of the first bar's close (1 / 2 / 2.5 / 5 x 10^k), fixed by the start of
+    the data, so appending bars never changes it. Together: the bricks of any prefix of the bars are a prefix of the
+    bricks of all of them.
+  - **Prepending redraws.** Loading older history (scrolling back) moves the first bar, the anchor of the first brick,
+    so every Renko / range brick is rebuilt and may sit at other prices and times. ProChart keeps the box size it first
+    derived for the (symbol, timeframe, type), so the box itself does not change, and keeps the visible time window
+    (not a brick count) across the redraw.
+  - **Gaps.** A gap between two bars (overnight, a halt, news) is bridged by whole bricks / range bars at prices that
+    may never have traded, all stamped at the gapped bar's time (+1 s each) - the usual convention without ticks
+    (OPEN_QUESTIONS CH5-8).
+  - Hollow candles: hollow when close >= open, filled otherwise; green or red by the close against the previous close.
+  - Line / area: the closes, on their own series; the candle series stays (transparent) because drawings, layers and
+    markers are anchored to it.
+- **On the chart.** Heikin Ashi and hollow candles keep the source times, so indicators, volume, drawings and the live
+  forming bar work as on candles. Renko and range bricks have their own times: they carry no indicators or volume, are
+  rebuilt (not updated in place), and the header says "Renko · box 20". On a live tick the view is shifted by the bricks
+  added on the left, counted over the bricks' own times (a tick that adds no brick does not move the view). The legend
+  shows the source bar's OHLC on the candle types and the brick's own OHLC on Renko / range (no volume or indicators);
+  a marker sits on the brick completed at or after its time (none while its move is still forming).
+- **Session breaks** (`sessionBreaks` + `sessionBreaksPrimitive.ts`): a dotted vertical line at the first bar of each
+  session, where the calendar date changes in the venue's zone - IST for NSE / BSE / MCX (MCX's 23:30 close stays on
+  its day), UTC for 24x7 crypto venues (midnight UTC, weekends included). None on daily bars. The day is integer
+  arithmetic, `floor((t + 19800) / 86400)` for IST and `floor(t / 86400)` for UTC (neither has daylight saving), not an
+  `Intl` call per bar (that took about 4 s on 50k bars), and the result is memoized on the bar times, so a live tick
+  that adds no bar reuses it.
+- **24x7 axis**: tick labels and the crosshair time in the venue's zone (`formatTick`: the date on day / month / year
+  marks, the time otherwise; "UTC" after crypto times), instead of IST times on every tick.
+- **Tests** (`src/charting/chartTypes.test.ts`, 12): hand-worked Heikin Ashi, Renko (multi-brick bar, non-reversal,
+  reversal) and range bars (exact span, open at the last close, the OHLC path); truncation invariance over all 400
+  prefixes of a seeded walk for Renko, range and Heikin Ashi; a forming bar (even a spike) never reaches the bricks;
+  hollow colours; the box size; goldens for Heikin Ashi, Renko and range over the walk
+  (`src/charting/__fixtures__/chart_types_golden.json.gz`, gzipped JSON; `UPDATE_GOLDEN=1` regenerates after a
+  deliberate change); session breaks for NSE, MCX, crypto and daily bars, the IST / UTC midnight edges, 50k bars well
+  under 100 ms and the memo; markers on bricks; tick labels per zone; the break lines.
 
 ## Open questions (provisional answers, work continues)
 - **CH-7. What undo covers.** Provisional:

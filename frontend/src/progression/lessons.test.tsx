@@ -15,7 +15,7 @@ const DATA: JournalLessons = {
 
 describe("LessonsView (N2-11)", () => {
   it("states the trader's own counts and links each lesson", () => {
-    const html = renderToStaticMarkup(<LessonsView data={DATA} />);
+    const html = renderToStaticMarkup(<LessonsView data={DATA} learnOn />);
     const words = text(html);
     expect(words).toContain("Learn from your journal");
     expect(words).toContain("Entry chasing beyond the plan's entry");
@@ -27,8 +27,15 @@ describe("LessonsView (N2-11)", () => {
     expect(html).not.toMatch(/<button/);
   });
 
+  it("hides the lesson links while education_pages is off, keeping the facts", () => {
+    const html = renderToStaticMarkup(<LessonsView data={DATA} learnOn={false} />);
+    expect(html).not.toContain("/learn");
+    expect(text(html)).not.toContain("Read the lesson");
+    expect(text(html)).toContain("3 of your trades in the last 8 weeks carried this tag; 2 of them closed at a loss, -₹400 net together.");
+  });
+
   it("says when there is nothing to show", () => {
-    expect(text(renderToStaticMarkup(<LessonsView data={{ ...DATA, cards: [], count_unconfirmed: false }} />)))
+    expect(text(renderToStaticMarkup(<LessonsView data={{ ...DATA, cards: [], count_unconfirmed: false }} learnOn />)))
       .toContain("No behaviour tag on a losing trade of yours in the last 8 weeks.");
   });
 

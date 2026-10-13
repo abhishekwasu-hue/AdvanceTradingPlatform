@@ -5,7 +5,8 @@ Covers:
 - the caller's own counted tags on their own trades in the window;
 - only tags with a losing trade get a card, the costliest first;
 - DISMISSED never counts, and SUGGESTED counts only while count_unconfirmed is on;
-- another user's tags never count;
+- another user's tags never count, including a teammate's in the same organisation with the same tags (and a
+  teammate's tag on the caller's own trade);
 - each card's lesson is a step of the method library that lists the tag (drift check against the frontend);
 - flag off 404, discipline engine off 503.
 """
@@ -130,3 +131,25 @@ def test_cards_are_the_callers_own_losing_patterns(engine_on):
     _set(lessons.FLAG, {"on": False, "tenants": [owner["tenant_id"]]})
     mine = client.get("/api/journal/lessons", headers=member["headers"]).json()["cards"]
     assert [c["tag"] for c in mine] == ["averaging_loser"] and mine[0]["losing_net_pnl"] == -900.0
+
+
+def test_a_teammates_tags_never_count(engine_on):
+    owner = _tenant(_email("own2"))
+    _set(lessons.FLAG, {"on": False, "tenants": [owner["tenant_id"]]})
+    mate = _member(owner)                                    # a second user of the same organisation
+    assert mate["tenant_id"] == owner["tenant_id"] and mate["user_id"] != owner["user_id"]
+    a = _trade(owner, -200.0)
+    _tag(owner, a, "fomo_entry", status="CONFIRMED")
+    # The teammate has the same tags on their own losing trades, and one on the owner's trade.
+    for pnl in (-700.0, -500.0):
+        tid = _trade(mate, pnl)
+        _tag(mate, tid, "fomo_entry", status="CONFIRMED")
+        _tag(mate, tid, "no_stop", status="CONFIRMED")
+    _tag(mate, a, "no_stop", status="CONFIRMED")
+
+    cards = client.get("/api/journal/lessons", headers=owner["headers"]).json()["cards"]
+    assert cards == [{"tag": "fomo_entry", "lesson": "pullback", "trades": 1, "losing_trades": 1, "losing_net_pnl": -200.0,
+                      "last_date": cards[0]["last_date"]}]
+    theirs = client.get("/api/journal/lessons", headers=mate["headers"]).json()["cards"]
+    assert {c["tag"]: (c["trades"], c["losing_trades"], c["losing_net_pnl"]) for c in theirs} == {
+        "fomo_entry": (2, 2, -1200.0), "no_stop": (2, 2, -1200.0)}

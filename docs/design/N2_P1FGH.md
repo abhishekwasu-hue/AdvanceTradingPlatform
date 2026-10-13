@@ -385,7 +385,10 @@ then 503 while `discipline_engine` is off, like every journal route (tested). Th
   keeps it in step with `src/progression/learn.ts`.
 - **UI**: `src/progression/LessonsCard.tsx` at the top of the Journal page. Its strings are in the `learn` namespace, so
   they pass the same advice / claim check as the library. It states counts and links "Read the lesson: 3. Pullback";
-  there is no instruction and no promise.
+  there is no instruction and no promise. The link shows only while `education_pages` (N2-10) is on, since `/learn` is
+  off otherwise; the counts show either way.
+- **Teammates**: a second user of the same organisation, with the same tags on their own losing trades and one on the
+  caller's trade, changes nothing in the caller's cards (tested).
 
 ## Open questions
 

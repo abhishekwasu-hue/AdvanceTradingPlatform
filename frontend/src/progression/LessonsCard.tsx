@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { api } from "../api/client";
 import { journalApi } from "../journal/api";
 import type { JournalLessons, LessonCard } from "../journal/types";
 import { pathFor } from "../routes";
@@ -7,20 +8,25 @@ import { useLearnT } from "./i18n";
 /**
  * N2-11 (flag `journal_lessons`): "learn from your journal" - each behaviour tag on the trader's own losing trades with
  * its counts and net P&L, linked to the method-library lesson (N2-10). Own data only; it states facts and links a
- * lesson, never what to do. Hidden while the flag (or the discipline engine) is off.
+ * lesson, never what to do. Hidden while the flag (or the discipline engine) is off. The link to the lesson shows only
+ * while `education_pages` is on (the /learn page is off otherwise); the card's facts show either way.
  */
 export default function LessonsCard() {
   const [data, setData] = useState<JournalLessons | null>(null);
-  useEffect(() => { journalApi.lessons().then(setData).catch(() => setData(null)); }, []);
+  const [learnOn, setLearnOn] = useState(false);
+  useEffect(() => {
+    journalApi.lessons().then(setData).catch(() => setData(null));
+    api.myFeatures().then((f) => setLearnOn(Boolean(f.education_pages))).catch(() => setLearnOn(false));
+  }, []);
   if (!data) return null;
-  return <LessonsView data={data} />;
+  return <LessonsView data={data} learnOn={learnOn} />;
 }
 
 export function rupees(n: number): string {
   return `${n < 0 ? "-" : ""}₹${Math.abs(Math.round(n)).toLocaleString("en-IN")}`;
 }
 
-export function LessonsView({ data }: { data: JournalLessons }) {
+export function LessonsView({ data, learnOn }: { data: JournalLessons; learnOn: boolean }) {
   const t = useLearnT();
   return (
     <section className="mb-4 space-y-2 rounded-xl border border-border bg-surface-1 p-4 text-xs" aria-label={t("lessons.title")} data-testid="journal-lessons">
@@ -33,7 +39,7 @@ export function LessonsView({ data }: { data: JournalLessons }) {
               <p className="font-semibold text-fg">{t(`tags.${c.tag}`, { defaultValue: c.tag })}</p>
               <p className="text-fg">{t("lessons.card", { trades: c.trades, weeks: data.weeks, losing: c.losing_trades, pnl: rupees(c.losing_net_pnl) })}</p>
               {c.last_date && <p className="text-fg-muted">{t("lessons.last", { date: c.last_date })}</p>}
-              {c.lesson && (
+              {c.lesson && learnOn && (
                 <a href={`${pathFor("learn")}#learn-${c.lesson}`} className="text-info underline">
                   {t("lessons.read", { title: t(`concepts.${c.lesson}.title`) })}
                 </a>

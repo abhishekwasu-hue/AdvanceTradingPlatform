@@ -1903,3 +1903,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_shared_fundamentals_scope.py` (cross-tenant poisoning attempt on every kind of row, dates, the
   private company, the Factor Lab fill, manual news); fundamentals / news / quant tests read with the caller's token.
   OPEN_QUESTIONS SF-1.
+## Fix: SMS gateway template injection and header handling (S10 security review)
+
+- Branch `claude/fix-alert-gateway-injection` (from main).
+- `dispatcher.render_sms`: the content type is compared case-insensitively; JSON bodies get JSON-escaped values, every
+  other body (form, query, text) percent-encoded values - an alert title like `x&To=+1555...&Body=spam` stays one value.
+  The GET path decodes the query once with `parse_qsl` (duplicates kept, nothing silently overridden; httpx encodes).
+- `channels.merge_secrets`: the stored write-only SMS headers are kept only when the gateway URL keeps its scheme, host
+  and port; a moved gateway gets no stored header (the user types it again).
+- `SmsConfig.headers`: names must be HTTP tokens, values carry no CR / LF / control characters, at most 20 headers. (The
+  webhook channel has no free-form headers - its secret signs the body and is never sent.)
+- Tests: `tests/test_alert_gateway_injection.py`.
+- Review round (HIGH): the origin check now parses both URLs with the same WHATWG parser that validated them (pydantic;
+  `https://evil.example\@api.twilio.com/` is evil.example to pydantic / httpx but api.twilio.com to urllib), and a
+  backslash, space or control character in a gateway URL (SMS, webhook) is refused before parsing. Email: the stored
+  SMTP password is dropped when the host, port or user changes or TLS is turned off; `smtp_host` goes through the egress
+  policy on save (literal) and on send (resolved, in production / staging).
+- Review round (LOW): header values printable ASCII only; `Host` / `Content-Length` / `Transfer-Encoding` / hop-by-hop
+  headers refused; `content_type` validated; one recipient's failure (any exception) never stops the others; GET params
+  through `httpx.QueryParams`; Twilio preset writes `From=%2B...`; OPERATIONS 1.6e documents quoting and `%2B`.

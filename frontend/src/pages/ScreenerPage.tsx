@@ -19,6 +19,7 @@ import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultBoard } from "../screener/ResultBoard";
+import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
 import { stagesFromServer } from "../screener/importStages";
@@ -66,12 +67,16 @@ export default function ScreenerPage(_props: PageProps) {
   const [legends, setLegends] = useState<LegendsLibrary | null>(null);
   // U2 (flag `screener_builder_u2`): formula blocks, and Legends / breakout screens open in the builder.
   const [builderU2, setBuilderU2] = useState(false);
+  // S10 J (flag `screener_etf`): the ETF screen in a dialog.
+  const [etfOn, setEtfOn] = useState(false);
+  const [etfOpen, setEtfOpen] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
-    api.myFeatures().then((f) => setBuilderU2(Boolean(f.screener_builder_u2))).catch(() => setBuilderU2(false));
+    api.myFeatures().then((f) => { setBuilderU2(Boolean(f.screener_builder_u2)); setEtfOn(Boolean(f.screener_etf)); })
+      .catch(() => { setBuilderU2(false); setEtfOn(false); });
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
@@ -212,6 +217,7 @@ export default function ScreenerPage(_props: PageProps) {
         {taxonomy && (
           <Button size="sm" onClick={() => setGalleryOpen(true)} data-testid="browse-screens"><LayoutGrid size={14} /> Browse screens</Button>
         )}
+        {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
           <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
@@ -281,6 +287,13 @@ export default function ScreenerPage(_props: PageProps) {
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
                 description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">
           <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} legends={legends} />
+        </Dialog>
+      )}
+
+      {etfOn && (
+        <Dialog wide open={etfOpen} onOpenChange={setEtfOpen} title="ETFs"
+                description="NSE ETFs from the shared end-of-day history: traded value and how each moved against the index it tracks.">
+          <EtfPanel />
         </Dialog>
       )}
 

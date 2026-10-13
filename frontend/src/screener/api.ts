@@ -4,6 +4,7 @@ import type { DataTierBadgeInfo } from "../types";
 import type { FunnelResult, Registry } from "./model";
 import type { LegendsLibrary } from "./legends";
 import type { StagesResponse } from "./importStages";
+import type { EtfResponse } from "./etf";
 import type { Taxonomy } from "./taxonomy";
 
 export interface Problem { message: string; pos: number | null }
@@ -39,6 +40,8 @@ export const screenerApi = {
   /** U2 (flag `screener_builder_u2`; 503 while off): a screen -> the funnel's stages (top-level conjuncts). */
   stages: (body: { library_id?: string; source?: string; base_tf?: string }) =>
     request<StagesResponse>("/screener/stages", { method: "POST", body: JSON.stringify(body) }),
+  /** S10 J (flag `screener_etf`; 503 while off - the page then shows no ETF button). */
+  etf: (query: string) => request<EtfResponse>(`/screener/etf?${query}`),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),

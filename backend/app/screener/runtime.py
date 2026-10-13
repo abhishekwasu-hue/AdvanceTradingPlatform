@@ -151,6 +151,10 @@ class _Eval:
             self._session_bars[key] = b
         return self._session_bars[key]
 
+    def _gap_bars(self, tf: str) -> Any:
+        """U6 BK4: B8 reads the exchange session on intraday bars (the BK2 session Bars); on Daily it needs none."""
+        return self.session_bars(tf) if n.TF_MINUTES.get(tf, 0) < n.TF_MINUTES["1d"] else None
+
     def frame(self, tf: str) -> pd.DataFrame:
         if tf not in self.frames:
             src = self.base_tf
@@ -312,6 +316,37 @@ class _Eval:
             "RelVolumeTOD": lambda: pd.Series(self.session_bars(tf, win(0, 20), min(5, win(0, 20)), _text(1, "bar")).tod_rvol(), index=f.index,
                                               dtype=float),
             "SessionVWAP": lambda: pd.Series(self.session_bars(tf).vwap(), index=f.index, dtype=float),
+            # U6 BK3: VCP and the indicator breakouts (app/screener/breakouts/vcp.py, indicator_breaks.py); defaults = the parameters'
+            "VCPBreakout": lambda: _breakout(f, "B3", str(self.ev(args[0], tf)), {
+                "vcp_min_contractions": num(1, _bkd("vcp_min_contractions")), "vcp_ratio": num(2, _bkd("vcp_ratio")),
+                "vol_mult": num(3, _bkd("vol_mult")), "min_break_atr": num(4, _bkd("min_break_atr")), "tt_filter": _bool(5, _bkd("tt_filter")),
+                "vcp_vol_dryup": _bool(6, _bkd("vcp_vol_dryup"))}),
+            "VCPReady": lambda: _breakout(f, "B3", str(self.ev(args[0], tf)), {
+                "vcp_mode": "watchlist", "vcp_min_contractions": num(1, _bkd("vcp_min_contractions")), "vcp_ratio": num(2, _bkd("vcp_ratio")),
+                "vcp_ready_pct": num(3, _bkd("vcp_ready_pct")), "tt_filter": _bool(4, _bkd("tt_filter")),
+                "vcp_vol_dryup": _bool(5, _bkd("vcp_vol_dryup"))}),
+            "DonchianBreakout": lambda: _breakout(f, "B10", str(self.ev(args[0], tf)), {
+                "donchian_n": win(1, _bkd("donchian_n")), "min_break_atr": num(2, _bkd("min_break_atr"))}),
+            "SqueezeBreakout": lambda: _breakout(f, "B11", str(self.ev(args[0], tf)), {
+                "squeeze_mode": _text(1, _bkd("squeeze_mode")), "bb_n": win(2, _bkd("bb_n")), "squeeze_lookback": win(3, _bkd("squeeze_lookback")),
+                "vol_mult": num(4, _bkd("vol_mult"))}),
+            "MABreakout": lambda: _breakout(f, "B12", str(self.ev(args[0], tf)), {
+                "ma_n": win(1, _bkd("ma_n")), "ma_type": _text(2, _bkd("ma_type")), "min_break_atr": num(3, _bkd("min_break_atr"))}),
+            "RegimeBreakout": lambda: _breakout(f, "B15", str(self.ev(args[0], tf)), {
+                "rsi_band": num(1, _bkd("rsi_band")), "regime_n": win(2, _bkd("regime_n")), "adx_low": num(3, _bkd("adx_low")),
+                "min_break_atr": num(4, _bkd("min_break_atr"))}),
+            # U6 BK4: trendline / pattern / gap / retest breakouts (app/screener/breakouts/lines.py, gaps.py, retest.py)
+            "TrendlineBreakout": lambda: _breakout(f, "B5", str(self.ev(args[0], tf)), {
+                "tl_mode": _text(1, _bkd("tl_mode")), "tl_min_touches": num(2, _bkd("tl_min_touches")), "min_break_atr": num(3, _bkd("min_break_atr"))}),
+            "PatternBreakout": lambda: _breakout(f, "B6", str(self.ev(args[0], tf)), {
+                "pattern": _text(1, _bkd("pattern")), "vol_mult": num(2, _bkd("vol_mult")), "min_break_atr": num(3, _bkd("min_break_atr"))}),
+            "GapBreakout": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
+                "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, tf=tf, bars=self._gap_bars(tf)),
+            "GapType": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
+                "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, "class", tf=tf, bars=self._gap_bars(tf)),
+            "RetestEntry": lambda: _breakout(f, "B9", str(self.ev(args[0], tf)), {
+                "retest_of": _text(1, _bkd("retest_of")), "retest_max_bars": num(2, _bkd("retest_max_bars")),
+                "retest_reversal": _bool(3, _bkd("retest_reversal"))}),
             # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
             "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
@@ -541,6 +576,12 @@ def break_scan_start(closes: np.ndarray, j: int, level: float, side: str, n_: in
     return None if hit.size == 0 else lo + int(hit[0]) + 1
 
 
+def _bkd(name: str) -> Any:
+    """U6 BK3: a breakout parameter's default (the ScreenQL argument's default when it is left out)."""
+    from app.screener.breakouts.params import DEFAULTS
+    return DEFAULTS[name]
+
+
 def _breakout_params(overrides: Dict[str, Any]) -> Dict[str, Any]:
     from app.screener.breakouts import params as bp
     try:
@@ -559,11 +600,14 @@ def _breakout(f: pd.DataFrame, screen: str, side: str, overrides: Dict[str, Any]
         raise ScreenRuntimeError(f"unknown breakout side {side!r}")
     p = _breakout_params(overrides)
     try:
-        out = evaluate_screen(f, screen, p, sides=(side,), tf=tf, bars=bars)[side]
+        out = evaluate_screen(f, screen, p, sides=(side,), tf=tf, bars=bars, columns=("signal", "event"))[side]
     except ValueError as exc:
         raise ScreenRuntimeError(str(exc)) from exc
     if what == "type":
         return out["event"].where(out["signal"], "").astype(object)
+    if what == "class":                                     # U6 BK4 GapType: the class on every gap bar, a fill included
+        from app.screener.breakouts.gaps import CLASSES
+        return out["event"].where(out["event"].isin(CLASSES), "").astype(object)
     return out["signal"].astype(bool)
 
 

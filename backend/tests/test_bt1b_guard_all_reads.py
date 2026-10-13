@@ -28,6 +28,8 @@ from tests.test_passwords import _headers, _tenant_pro
 from tests.test_phase_aa_market_data_api import _Broker, _store_credentials
 from tests.test_phase_k_commercial import _owner
 
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+
 UTC = timezone.utc
 run = asyncio.run
 FLAG = "byob_data_tier"

@@ -130,6 +130,17 @@ async def _strategy(body: BacktestBody, user: Optional[User], session: AsyncSess
     return strategy
 
 
+async def _models_allowed(session: AsyncSession, models: ModelSet, tenant_id: Optional[int]) -> None:
+    """N7 C2b: the models added after C2 PR 1 (next_open, spread_half, volume_share, fixed_ms) need the operator flag
+    `backtest_models` (off by default); without it the request is refused with the reason, never run on other models."""
+    from app.backtest.models import FLAG as MODELS_FLAG
+    from app.platform.controls import flag_enabled
+    chosen = models.flagged()
+    if chosen and not await flag_enabled(session, MODELS_FLAG, tenant_id):
+        raise HTTPException(status_code=403, detail=f"execution_models {', '.join(f'{k}={v}' for k, v in sorted(chosen.items()))}: "
+                                                    f"these models are not enabled for this organisation (flag {MODELS_FLAG})")
+
+
 class BacktestRunner:
     """Phase W: one object that runs `body` as an underlying or an option backtest, so every
     endpoint (plain, Monte Carlo, walk-forward) dispatches the same way. Built once per request:
@@ -143,16 +154,23 @@ class BacktestRunner:
         self.pricer = pricer
         try:
             self.models = ModelSet(**(body.execution_models or {}))
+            self.models.built()                       # N7 C2b: a bad model parameter is a 422 here, not a 500 mid-run
         except (ModelError, TypeError) as exc:
             raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
-        if body.options is not None and not self.models.is_default:
-            # Never silently ignored: the option engine takes its models in a later C2 PR.
-            raise HTTPException(status_code=422, detail="execution_models apply to single-leg backtests only for now")
+        if body.options is not None and (self.models.fill != "touch" or self.models.latency != "zero" or self.models.slippage == "volume_share"):
+            # N7 C2c: the option engine takes slippage, margin and pricing models; fills and latency act on traded bars only
+            raise HTTPException(status_code=422, detail="execution_models: fill / latency models and volume_share slippage apply to single-leg "
+                                                        "backtests only")
+        if body.options is None and self.models.pricing != "recorded_only":
+            raise HTTPException(status_code=422, detail="execution_models: the pricing model applies to option backtests only")
 
     @classmethod
     async def build(cls, body: BacktestBody, risk: RiskConfig, session: AsyncSession, tenant_id: Optional[int] = None) -> "BacktestRunner":
         if body.options is None:
-            return cls(body, risk)
+            runner = cls(body, risk)
+            await _models_allowed(session, runner.models, tenant_id)
+            return runner
+        await _models_allowed(session, cls(body, risk).models, tenant_id)       # N7 C2c: the option engine's models too
         opts = body.options
         holidays = await load_holidays(session)
         pricer = None
@@ -185,7 +203,9 @@ class BacktestRunner:
         else:
             try:
                 result = run_option_backtest(strategy, df, self.body.symbol, self.body.base_timeframe, self.risk, self.config,
-                                             exit_rules=self.rules, pricer=self.pricer)
+                                             exit_rules=self.rules, pricer=self.pricer, models=self.models)
+            except ModelError as exc:
+                raise HTTPException(status_code=422, detail=f"execution_models: {exc}") from exc
             except OptionBacktestError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         # Realism C4: what produced this result, as hashes (recorded with the run).
@@ -289,7 +309,8 @@ async def backtest_walk_forward(
     risk = body.risk_config or RiskConfig()
     runner = await BacktestRunner.build(body, risk, session, tenant_id=user.tenant_id)
     return await run_in_threadpool(walk_forward, strategy, bars_to_dataframe(body.candles), body.symbol, body.base_timeframe, risk, folds=folds,
-                                   runner=runner.run if body.options is not None else None)
+                                   # N7 C2b: chosen execution models apply to every window (never silently dropped)
+                                   runner=runner.run if body.options is not None or not runner.models.is_default else None)
 
 
 # --- Phase W: recorded option-chain quotes -------------------------------------------------

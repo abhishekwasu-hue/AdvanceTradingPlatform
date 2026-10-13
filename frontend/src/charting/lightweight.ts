@@ -32,9 +32,12 @@ export interface CandleSeriesLike {
   attachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
   detachPrimitive(primitive: DrawingPrimitive | LayerPrimitive): void;
 }
-interface MouseParamsLike { time?: unknown; point?: { x: number; y: number } }
+interface MouseParamsLike { time?: unknown; point?: { x: number; y: number }; sourceEvent?: unknown }
 export interface ChartLike {
   applyOptions(options: { handleScroll?: boolean; handleScale?: boolean }): void;
+  // CH5 crosshair link (optional in the structural slice: test fakes without them simply are not followed).
+  setCrosshairPosition?(price: number, time: never, series: never): void;
+  clearCrosshairPosition?(): void;
   paneSize(): { width: number; height: number };
   priceScale(id: string): { width(): number };
   subscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
@@ -77,7 +80,10 @@ export class LightweightEngine implements ChartEngine {
 
   constructor(private readonly chart: ChartLike, private readonly candles: CandleSeriesLike, private readonly priceOf?: (y: number) => number | null,
               private readonly lines?: LineFactory) {
-    const cross = (p: MouseParamsLike) => this.emit({ type: "crosshair", time: typeof p.time === "number" ? p.time : null, price: this.price(p) });
+    // CH5: a move with a point but no pointer event behind it was not the user's (a programmatic crosshair); leaving the
+    // pane (no point) counts as the user's, so linked charts let go too.
+    const cross = (p: MouseParamsLike) => this.emit({ type: "crosshair", time: typeof p.time === "number" ? p.time : null, price: this.price(p),
+                                                       user: p.point == null || p.sourceEvent != null });
     const click = (p: MouseParamsLike) => this.emit({ type: "click", time: typeof p.time === "number" ? p.time : null, price: this.price(p) });
     const range = (r: { from: unknown; to: unknown } | null) => {
       if (r && typeof r.from === "number" && typeof r.to === "number") this.emit({ type: "visibleRangeChanged", from: r.from, to: r.to });
@@ -242,6 +248,19 @@ export class LightweightEngine implements ChartEngine {
     this.timeframe = layout.timeframe;
     this.studies = new Map(layout.studies.map((s) => [s.id, s]));
     for (const [id, d] of Object.entries(layout.drawings)) this.addDrawing(id, d);
+  }
+
+  /** CH5: the crosshair on this chart's own bar at or before `time` (at that bar's close), or hidden with null. */
+  setCrosshair(time: number | null) {
+    if (this.disposed) return;
+    const times = this.times();
+    if (time == null || times.length === 0 || time < times[0]) { this.chart.clearCrosshairPosition?.(); return; }
+    let lo = 0, hi = times.length - 1;
+    while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (times[mid] <= time) lo = mid; else hi = mid - 1; }
+    const bar = this.candles.data()[lo] as { close?: number; value?: number } | undefined;
+    const price = bar?.close ?? bar?.value;
+    if (price == null || !Number.isFinite(price)) { this.chart.clearCrosshairPosition?.(); return; }
+    this.chart.setCrosshairPosition?.(price, times[lo] as never, this.candles as never);
   }
 
   on(listener: (event: EngineEvent) => void) {

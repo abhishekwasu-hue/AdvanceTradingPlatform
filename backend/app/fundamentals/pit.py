@@ -8,6 +8,11 @@ time the figures became public (`known_from`):
   the ingestion; otherwise from the ingestion itself;
 * a LATER version (a restatement, a correction): only from its ingestion - a restated figure never reaches back.
 `as_of(versions, t)` gives, per period, the latest version known by `t`; nothing known after `t` is ever returned.
+
+Scope (app/fundamentals/visibility.py): a version carries its period row's `tenant_id` - NULL for the shared chain
+(provider-ingested), set for figures an organisation entered, read by that organisation only. Each (period, tenant) has
+its own version chain. A reader passes `viewer`; for a period the viewer's own chain (once a version of it is known)
+wins over the shared chain - another organisation's figures are never read.
 Periods written before this store existed have no version and are never used (re-import them to give them one).
 Reference data only - nothing here touches an order.
 """
@@ -38,6 +43,7 @@ class Version:
     version: int
     figures: Dict[str, Optional[float]]
     known_from: datetime
+    own: bool = False                   # the viewer organisation's own chain (else the shared one)
 
     def get(self, name: str) -> Optional[float]:
         v = self.figures.get(name)
@@ -58,21 +64,24 @@ def known_from(*, version: int, publication_date: Optional[date], period_end: da
     return ingested
 
 
-async def record_version(session: AsyncSession, company_id: int, period: FinancialPeriod, *, now: Optional[datetime] = None) -> Optional[FinancialPeriodVersionRecord]:
-    """Append a version when the figures differ from the period's latest version (or it has none). Does not commit."""
+async def record_version(session: AsyncSession, company_id: int, period: FinancialPeriod, *, tenant_id: Optional[int],
+                         now: Optional[datetime] = None) -> Optional[FinancialPeriodVersionRecord]:
+    """Append a version to the period's chain for `tenant_id` (the period row's own: None = shared) when the figures
+    differ from that chain's latest version (or it has none). Does not commit."""
     now = now or datetime.now(timezone.utc)
     figs = figures_of(period)
     latest = await session.scalar(
         select(FinancialPeriodVersionRecord).where(FinancialPeriodVersionRecord.company_id == company_id,
                                                    FinancialPeriodVersionRecord.period_type == period.period_type.value,
-                                                   FinancialPeriodVersionRecord.period_label == period.period_label)
+                                                   FinancialPeriodVersionRecord.period_label == period.period_label,
+                                                   FinancialPeriodVersionRecord.tenant_id.is_not_distinct_from(tenant_id))
         .order_by(FinancialPeriodVersionRecord.version.desc()).limit(1))
     if latest is not None and json.loads(latest.figures_json) == figs and latest.period_end_date == period.period_end_date:
         return None
     version = 1 if latest is None else latest.version + 1
     pub = period.source.publication_date if period.source is not None else None
     row = FinancialPeriodVersionRecord(
-        company_id=company_id, period_type=period.period_type.value, period_label=period.period_label, period_end_date=period.period_end_date,
+        tenant_id=tenant_id, company_id=company_id, period_type=period.period_type.value, period_label=period.period_label, period_end_date=period.period_end_date,
         version=version, figures_json=json.dumps(figs, sort_keys=True), publication_date=pub,
         known_from=known_from(version=version, publication_date=pub, period_end=period.period_end_date, ingested_at=now), ingested_at=now,
         source_json=period.source.model_dump_json() if period.source is not None else None)
@@ -81,32 +90,43 @@ async def record_version(session: AsyncSession, company_id: int, period: Financi
     return row
 
 
-async def load_versions(session: AsyncSession, symbols: Iterable[str], until: Optional[datetime] = None) -> Dict[str, List[Version]]:
-    """Every version of the symbols' periods known by `until` (all of them when None), oldest knowledge first."""
+async def load_versions(session: AsyncSession, symbols: Iterable[str], until: Optional[datetime] = None, *,
+                        viewer: Optional[int]) -> Dict[str, List[Version]]:
+    """Every version the `viewer` organisation may read (the shared chains and its own; None = shared only) of the
+    symbols' periods known by `until` (all of them when None), oldest knowledge first."""
+    from app.fundamentals.visibility import visible
     names = sorted({s.strip().upper() for s in symbols if s and s.strip()})
     if not names:
         return {}
     q = (select(CompanyRecord.symbol, FinancialPeriodVersionRecord)
          .join(CompanyRecord, CompanyRecord.id == FinancialPeriodVersionRecord.company_id)
-         .where(func.upper(CompanyRecord.symbol).in_(names)))
+         .where(func.upper(CompanyRecord.symbol).in_(names), visible(CompanyRecord, viewer), visible(FinancialPeriodVersionRecord, viewer)))
     if until is not None:
         q = q.where(FinancialPeriodVersionRecord.known_from <= until)
     out: Dict[str, List[Version]] = {n: [] for n in names}
     for sym, r in (await session.execute(q.order_by(FinancialPeriodVersionRecord.known_from, FinancialPeriodVersionRecord.id))).all():
         kf = r.known_from if r.known_from.tzinfo else r.known_from.replace(tzinfo=timezone.utc)
-        out[sym.upper()].append(Version(r.period_type, r.period_label, r.period_end_date, r.version, json.loads(r.figures_json), kf))
+        own = viewer is not None and r.tenant_id == viewer
+        out[sym.upper()].append(Version(r.period_type, r.period_label, r.period_end_date, r.version, json.loads(r.figures_json), kf, own))
     return out
 
 
-def as_of(versions: Sequence[Version], t: datetime) -> List[Version]:
-    """Per period, the latest version known by `t`, ordered by period end (oldest first)."""
-    best: Dict[Any, Version] = {}
+def latest_per_period(versions: Iterable[Any]) -> List[Any]:
+    """Per period, the latest version of its chain - the viewer's own chain when one of its versions is among
+    `versions`, else the shared chain (versions are numbered per chain, so chains are never compared by number)."""
+    best: Dict[Any, Any] = {}
     for v in versions:
-        if v.known_from <= t:
-            key = (v.period_type, v.period_label)
-            if key not in best or v.version > best[key].version:
-                best[key] = v
-    return sorted(best.values(), key=lambda v: (v.period_end, v.period_type))
+        key = (v.period_type, v.period_label)
+        cur = best.get(key)
+        mine = bool(getattr(v, "own", False))
+        if cur is None or (mine, v.version) > (bool(getattr(cur, "own", False)), cur.version):
+            best[key] = v
+    return list(best.values())
 
 
-__all__ = ["FIGURES", "Version", "figures_of", "known_from", "record_version", "load_versions", "as_of"]
+def as_of(versions: Sequence[Version], t: datetime) -> List[Version]:
+    """Per period, the latest version known by `t` (the viewer's own chain over the shared one), by period end."""
+    return sorted(latest_per_period(v for v in versions if v.known_from <= t), key=lambda v: (v.period_end, v.period_type))
+
+
+__all__ = ["FIGURES", "Version", "figures_of", "known_from", "record_version", "load_versions", "latest_per_period", "as_of"]

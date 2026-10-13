@@ -1271,7 +1271,7 @@ see later restatements and later reports, so it is never read by a screen. LG3 a
   - The run path loads them (`RUN_PROVIDES`, `fundamentals.attach`).
   - Z10-a causal cases: a synthetic report timeline built from the bars up to each report, with restatements.
 - **Cards (`slice: lg3`, flag `screener_legends_lg3`, off):**
-  - Graham-style net current asset bargain;
+  - Graham-style net current asset value screen;
   - Graham-style defensive value (Graham number);
   - Greenblatt-style earnings yield and return on capital rank;
   - O'Neil-style growth breakout.

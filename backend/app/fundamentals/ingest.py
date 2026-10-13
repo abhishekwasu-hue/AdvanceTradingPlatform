@@ -189,7 +189,7 @@ async def upsert_financial_periods(session: AsyncSession, company: CompanyRecord
                     continue
                 setattr(record, column, getattr(fresh, column))
             summary.updated += 1
-        await pit.record_version(session, company.id, period)        # U7 LG3: the point-in-time version (when it changed)
+        await pit.record_version(session, company.id, period, tenant_id=tenant_id)   # U7 LG3: this org's chain (when it changed)
         summary.labels.append(period.period_label)
     return summary
 

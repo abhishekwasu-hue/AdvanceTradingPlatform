@@ -413,7 +413,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
-        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc))
+        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)

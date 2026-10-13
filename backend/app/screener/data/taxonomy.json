@@ -590,7 +590,7 @@
   {
    "id": "legends.graham_net_net",
    "source": "legends",
-   "name": "Graham-style net current asset bargain",
+   "name": "Graham-style net current asset value screen",
    "definition": "A price at or below two-thirds of net current asset value per share: current assets minus all liabilities, per share.",
    "method": "legends",
    "setup": "mean_reversion",

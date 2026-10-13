@@ -2371,7 +2371,7 @@ export interface MultiView {
   untrusted: boolean;
   error: string | null;
   report: string;
-  report_source: "ai" | "rules";
+  report_source: "rules";              // H-C4 round cap: rules-only wording
 }
 export interface MultiViewSummary {
   situation: string;
@@ -2380,8 +2380,7 @@ export interface MultiViewSummary {
   risks: string[];
   possibilities: string[];
   claims: { statement: string; source: string }[];
-  source: "ai" | "rules";
-  note?: string;
+  source: "rules";
 }
 export interface MultiViewUsage { calls: number; tokens_input: number; tokens_output: number; cost_inr: number }
 export interface MultiViewAnalysis {
@@ -2394,8 +2393,7 @@ export interface MultiViewAnalysis {
   run_id: number;
   llm_calls: number;
   prompt_version: string;
-  ai_note?: string;
-  /** H-C4 review: the analysis stopped early (time, call cap, plan budget); the rest is worded by the rules. */
+  /** H-C4 review: the analysis stopped early (time budget or a gone client); the views not read are marked. */
   limits_note?: string;
   usage?: { cheap: MultiViewUsage | null; strong: MultiViewUsage | null };
 }

@@ -401,182 +401,53 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 - **Headless check.** Against a mocked API: the list renders; "Open" shows the report (DSR 0.31, PBO "n/a" with its
   note); queueing sends one POST with the Lab's symbol; the worker hint shows for an old queued study; no page errors.
 
-## H-C4 (built, flag `ai_multiview` off): multi-view analysis
-- **`POST /api/ai/analyze`** (`{symbol, exchange, language?}`; acknowledged AI user; flags `ai_copilot` + `ai_multiview`;
-  tenancy S_COPILOT; 8 AI rate units). `app/ai/multiview.py`.
-- **Views by tools, no model.** Technical (`get_market_regime` + `get_candles`, daily), options (`get_option_chain`: PCR,
-  max pain, ATM, the largest OI strikes), news (`get_news`, 24 h, the symbol's headlines - untrusted) and macro
-  (`get_market_snapshot`). Each tool call is an `agent_steps` row of one `agent_runs` row (`limits_json.kind =
-  "multiview"`); each view keeps its `as_of` and sources.
-- **Cheap tier gathers, strong tier synthesises.** Each view's facts are worded by the cheap tier (task
-  `classification`), the summary (situation, readings that lean up / down, risks, possibilities, claims with their view)
-  by the strong tier (task `general`). Every AI text is checked: numbers from the view(s) it uses, a claim's numbers
-  from the view it cites, a direction the facts carry, and the H-C1 c output filter. One rewrite, then the rules'
-  wording with a note. With the rules provider everything is deterministic.
-- **Caps.** At most 6 model calls and 60 s per analysis; the plan's AI budget through the metered provider.
-- **No action.** The model is offered no tool - it can neither place an order nor file a proposal (ADR-0006). Headlines
-  reach it only inside `<untrusted_data>`. The answer is "the situation and the possibilities", never advice.
-- **Keys.** The organisation's provider, metered under the asking user; no BYOK key (OPEN_QUESTIONS HC4-2).
-- **UI.** `MultiViewPanel` on Copilot > Ask: symbol + exchange, progress with Cancel, the summary (AI / rules badge,
-  cost chip, fallback note), the four view cards (report, facts used, headlines as plain text marked third-party,
-  data time and sources), and the disclaimer. A flag off (503) shows that the analysis is off.
-- **Review of H-C4 (security).**
-  - **Calls and forecasts are blocked, never disclaimed.** `advice_problems` blocks an action or forecast word next to a
-    number in one clause ("entering long above 22800", "rally toward 23000", "लक्ष्य 23000", "23000 तक जाएगा"). It also
-    blocks a sentence that tells traders what to do ("shorts should cover") and a Marathi / Hindi imperative trade verb.
-    The text is normalised first (`call_detect.normalise`). Past-tense descriptions ("rose 3.6%") pass.
-  - **Other checks.** The platform filter (#230) also applies, and a text it would frame is blocked here. Symbols must
-    come from the views' data (`grounding.check_tickers`). The analysed symbol counts only once a platform tool found it.
-  - **Claims.** Each claim gets the same checks, against the view it cites, and the checked text is what is returned.
-  - **Untrusted strings stay out of trusted lines.** The user's symbol is never written into a trusted line, so its
-    words and figures cannot loosen the checks. Cue and sentiment strings reach the model as `<untrusted_data
-    source="market_memory">`. Only the closed sentiment vocabulary (RISK_ON / RISK_OFF / NEUTRAL) appears in a line.
-  - **One `Budget` for the whole analysis.** Its clock starts before the tool reads, and a read is skipped once the
-    time is spent. Every model call runs inside `asyncio.wait_for(time left)`. The plan's AI budget is checked before
-    each call. A client that disconnects stops the analysis (`Cancelled`, run outcome `cancelled`, HTTP 499). The
-    answer carries `limits_note` when the analysis stopped early.
-  - **Metering.** Model calls are metered under the feature `multiview`. A call cut by the time budget or a gone
-    client still writes its `llm_calls` row (status `cancelled`).
-  - **Second review.** Three more kinds of text are blocked:
-    - forecasts, possibilities and value words next to a number or a percentage ("likely", "could", "expect", "set to",
-      "on the cards", "room to", "in play", "by expiry", "cheap", "attractive"), unless their clause only describes the
-      past ("rose 3.6%");
-    - relative moves ("another 3%", "higher by 3%", "23000 next");
-    - anywhere in the text: value judgements ("risk reward"), spelled-out amounts ("twenty-three thousand") and Hinglish
-      calls ("le lo", "jaayega").
+## H-C4 (built, flag `ai_multiview` off): multi-view analysis - rules-only wording
+- **`POST /api/ai/analyze`**: `{symbol, exchange, language?}`, for an acknowledged AI user, behind the flags `ai_copilot`
+  and `ai_multiview` (503 while either is off); tenancy S_COPILOT; 8 AI rate units (OPEN_QUESTIONS HC4-1).
+  `language` is accepted and ignored: ATP is English only. Code: `app/ai/multiview.py`.
+- **Views by tools.**
+  - Technical: `get_market_regime` + `get_candles`, daily bars.
+  - Options: `get_option_chain` (PCR, max pain, ATM, the largest OI strikes).
+  - News: `get_news`, the symbol's headlines from the last 24 h. These are untrusted, shown as third-party data and never
+    worded.
+  - Macro: `get_market_snapshot`.
 
-    Descriptions of OI, PCR, max pain and past moves still pass.
-  - **Third review: a structural gate.** Word lists alone do not converge, so the checks now work on structure:
-    - **No possibilities from the model.** The possibilities are always the rules' own (`rules_summary`). The model is
-      no longer asked for them, and is told to write each number next to the name of its fact.
-    - **Every number is bound to its fact's label.** In every AI text (views, summary, claims), each number must sit
-      within a few words of the label of the fact it is. Examples: "max pain 2480", "ADX 28.4", "highest call OI at
-      2600", "range 2310 - 2600". A price or a change may instead be bound by a past verb that governs it directly
-      ("closed at 22450.5", "rose 3.6%", "fell to 22000"). Labels come from the facts dict (`FACT_LABELS`,
-      `fact_bindings`). Dates are exempt. Examples that fail: "heads for 23000", "Above 22800, 23000 opens up", "the
-      23000 call is worth a look". A failing text falls back to the rules' wording.
-    - **The past exemption is narrower.** It applies only when a past verb governs the number itself, never because the
-      clause has a past verb somewhere.
-    - **Future / progressive forms next to any number are blocked:**
-      - Hindi: -गा / -गी / -गे, होगा, रहा है, की ओर;
-      - Marathi: -ेल / -तील, असेल, शकतो / शकते;
-      - Hinglish: -ega / -egi / -enge, wala hai, raha hai, ki taraf.
+  Each tool call is an `agent_steps` row of one `agent_runs` row (`limits_json.kind = "multiview"`, `max_llm_calls: 0`),
+  and each view keeps its `as_of` and its sources.
+- **Rules-only wording (round cap, 13 Oct - OPEN_QUESTIONS HC4-5).**
+  - The analysis shows only text the platform generates: each view's deterministic `lines` (`report` is their join,
+    `report_source: "rules"`) and `rules_summary`, which gives the situation, the readings that lean up and down, the
+    risks, the possibilities and the claims, with `source: "rules"`.
+  - No model is called and no AI-written text is ever shown: `llm_calls` is 0 and `usage` is empty.
+  - Background: the earlier design let the cheap and strong tiers word the views and the summary, behind a checker of
+    free text. It went through 12 trilingual rounds and then 2 rounds on an English two-layer design (strict word list,
+    fact-bound numbers, a closed vocabulary). Each review still found forecasts composed from allowed words, so the
+    free-text design was retired, together with its checker and tests.
+  - Follow-up: AI ordering. The model may only select and order sentence ids from the rules-generated set; the server
+    validates the ids and otherwise falls back to the rules' order; risk lines are never omissible.
+- **Untrusted strings stay out of the lines.**
+  - The user's symbol is never written into a line.
+  - Cue and sentiment strings from the market memory reach a line only through the closed sentiment vocabulary
+    (RISK_ON / RISK_OFF / NEUTRAL). A global market is named only if it is one of the memory's own markets
+    (`global_cues.MARKETS`).
+- **No action.** The analysis has no model and no tool that writes, so it can neither place an order nor file a proposal
+  (ADR-0006). The answer is "the situation and the possibilities", never advice.
+- **One `Budget`.**
+  - Its 60 s clock starts before the tool reads, and a read is skipped once the time is spent; the answer then carries
+    `limits_note`.
+  - A client that disconnects stops the analysis between reads (`Cancelled`, run outcome `cancelled`, HTTP 499).
+- **UI.** `MultiViewPanel` on Copilot > Ask. It shows:
+  - the symbol and exchange inputs, and progress with Cancel;
+  - the summary with a "From the rules" badge;
+  - the four view cards: report, facts used, headlines as plain text marked third-party, data time and sources;
+  - the disclaimer.
 
-      Hinglish future forms are blocked anywhere ("paisa banega").
-  - **Fifth review: labels do not launder destinations; MR / HI descriptions pass.**
-    - A movement or destination word in a sentence with a number blocks the text, whatever label sits next to the
-      number (`_MOVEMENT`): heads / goes / going, destination, magnet, gravitates, pulls, drawn to, objective, taken
-      out, breaks, comes into view, extends, continues, floor / ceiling, playing the range, "means a 3% move", from
-      here, soon, into expiry, Hinglish "jaata hai", Hindi / Marathi "तक ... जाता है" / "पर्यंत ... जातो". Examples:
-      "Max pain 22800 is where it heads", "The high 22800 gets taken out soon". Judgements such as "worth a look" and
-      "the safer side" are blocked anywhere.
-    - More labels bind a number:
-      - Marathi / Hindi fact names (मॅक्स पेन, कॉल / पुट OI, बंद भाव, उच्चांक / नीचांक, दिवस, सत्र / सत्रों);
-      - a verb-final past right after a price or a change (वाढला, घसरला, बढ़ा, गिरा);
-      - "up / down" right before a change;
-      - "highest at", "concentrated at" and call / put writers for a top-OI strike;
-      - CE / PE / call / put right after that strike.
+  While the flag is off (503), the panel says the analysis is off.
+- **Tests.** `tests/test_hc4_multiview.py` checks that:
+  - the output equals the rules-generated lines exactly;
+  - no provider is asked for and no LLM call is recorded;
+  - an injected headline stays data;
+  - the retired free-text paths are gone;
+  - the flag, the budget and the gone-client stop work.
 
-      The second number of "X - Y" is read with the words before X.
-  - **Sixth review: modal futures, synonyms, and forward forms only.**
-    - Next to a number:
-      - Hindi सकता / सकती / सकते and हो-गा / गी / गे / ंगे;
-      - Hinglish sakta / sakti / sakte and hoga / hogi / honge ("Max pain 22800 pe settle hoga").
-    - Synonym forecasts in a sentence with a number:
-      - ends up, settles, anchor, attracts, achievable, reachable;
-      - eyes (on), watch, path of least resistance, gravity point, aims for / at;
-      - cushion, caps it, resistance overhead, approach, room up to;
-      - "into / by / before <weekday>".
-    - `_MOVEMENT` matches forward forms only:
-      - heads to / for, goes to / higher;
-      - "where it heads / goes / settles";
-      - will / to / could break, breaks upward / out / above.
-
-      Not matched:
-      - "goes back" and "going back";
-      - "pulled back";
-      - "did not break", "no break of";
-      - "extends from X to Y";
-      - "continues to be / hold";
-      - "in view:";
-      - "expiry is soon".
-
-      "break", "strike", "session" and a hyphenated word after a number ("20-session") are labels.
-    - `unbound_numbers` is linear: the clause stops are found once, and each number reads a bounded slice.
-  - **Seventh review: probability wording and narrower synonyms.**
-    - Blocked next to a number: probability and expectation words.
-      - Hindi / Marathi: संभावना, शक्यता, अपेक्षा, उम्मीद, अंदाज.
-      - Hinglish: chances, ummeed, sambhavna.
-    - Blocked in a sentence with a number: pin / pins / pinning and "support / resistance to lean on".
-    - These now block only next to a level:
-      - "approach" ("approaches the high 22800", "should approach");
-      - "anchor" ("22800 is the anchor");
-      - "settle" ("settles there", "will settle");
-      - "watch" (an imperative at the start of a sentence, or "watch for").
-    - These pass:
-      - "this approach reads 20 sessions";
-      - "PCR settles near 0.92";
-      - "the 20-session window is the anchor for these numbers";
-      - "Watch list: 5 symbols";
-      - "worth watching";
-      - "has / had gone up 3%";
-      - "pin bar".
-    - **Decision:** "Put OI at 22500 is the floor of the OI distribution" stays blocked. "The floor" of a level reads as
-      a support call, and a description can say "the lowest strike with put OI" instead.
-  - **Eighth review: the narrowing reopened forecasts; probability wording; linear scans.**
-    - Blocked next to a number, in the same clause:
-      - watch / watching / to watch / worth watching ("Max pain 22800 is the level to watch"), keep an eye, monitor,
-        nearing, on track, bias is to, offers support;
-      - anchors / anchoring ("Max pain 22800 anchors expiry");
-      - probability, probable, probably, possibility, odds.
-      - Hindi / Marathi stems, so inflections are caught: शायद, संभवतः, संभाव- / संभव-, शक्य-, उम्मीद-, अनुमान-, आशा-,
-        राहील, कडे कल, वाटचाल.
-      - Hinglish: shayad, ummid, anuman, sambhav, pakka.
-    - Blocked in a sentence with a number: settle / settles / settling at / near / around a level within three words
-      ("Spot settling near max pain 22800"); "an approach to / toward 22800"; "would / 'd have gone to 22800".
-    - These still pass: "Watch list: 5 symbols", "this approach reads 20 sessions", "the anchor for these numbers",
-      "has / had gone up", "pin bar(s)", "PCR settles near 0.92", "Settled at 22780 last expiry".
-    - "The 23000 strike is worth watching" now blocks. Round 7 let it pass; it is a judgement about a level.
-    - A full stop ends the clause unless it touches a digit: "Chances: n/a. Call OI 23000." passes.
-    - "अपेक्षित" blocks only as a predicate or before a level: "22800 अपेक्षित आहे" and "अपेक्षित पातळी 22800" are
-      blocked; "अपेक्षित माहिती: 5 सत्रे" passes.
-    - The scans are linear:
-      - number runs are matched possessively and start only at a number's first digit;
-      - the clause gap's branches are disjoint;
-      - each forecast match reads its clause in a bounded window;
-      - an AI text over `MAX_CHECK_CHARS` (20,000) is refused without being scanned.
-      Before the fix, `"1" * 38000` took about 40 s and `"संभावना 1 "` repeated took about 10 s; each is now well under 1 s.
-  - **Ninth review: Marathi -ईल futures, should / would, more synonyms.**
-    - Blocked in a sentence with a number: Marathi -ईल futures (होईल, येईल, देईल, जाईल) and the -ील futures of a verb
-      stem (राहील, करील, पाहील). Nouns (मोबाईल, फाईल, वकील, शील) and the -ील of a postposition or adjective
-      (मागील, वरील, मधील) are not futures.
-    - Blocked next to a number:
-      - should / would ("NIFTY should be near 22800 at expiry"); a past verb before the number does not excuse them.
-        The rules' own "a close outside 22000 - 22800 would change the reading" passes.
-      - poised for, bound for, set up for, look for, likeliest / most likely, favoured / favored, defend(s), gravity,
-        "the bet";
-      - के आसार, लगता है, होईल असे वाटते, ची चिन्हे; Hinglish lagta hai, ke aasar, ki asha.
-    - Monitor / eye block only as a verb before a level ("Monitor 22800", "Eye 22800"). These pass: "the risk monitor
-      shows 3 alerts", "Monitoring window: 20 sessions", "the eye of the range is 22750", "on track record grounds",
-      "Asha Industries 3%".
-  - **Tenth review: the dandas, time references, progressive motion.**
-    - **HIGH fixed:** the dandas "।" and "॥" are no longer word characters. The Devanagari class of every word boundary
-      (`_DEVA`, `_MORPH_NEAR_NUMBER`, `_IMPERATIVE_DEVA`, the stems, `_MOVEMENT`) is `\u0900-\u0963\u0966-\u097f`, as
-      `call_detect._WORD`. "मैक्स पेन 22800 पर खरीदें।" and "Max pain 22800 is the target।" are blocked. "॥" also ends a
-      sentence and a clause.
-    - Blocked next to a number unless a past verb governs it, as a future time reference: next week / session / expiry,
-      the week ahead, at expiry, on expiry day, this expiry (never "for this expiry"), tomorrow; अगले, अगले हफ्ते, आने वाले
-      दिनों में, निकट भविष्य में; पुढील, पुढील आठवड्यात, येत्या, आगामी.
-    - Blocked in a sentence with a number, as progressive motion: on / en route, on course, on its way, making its way;
-      होने वाला है; जात / सरकत आहे; कडे जात.
-    - More words next to a number: ought to, in the cards, a good bet, tipped to, odds-on, primed for, gearing up for,
-      angling for, due for, due to + a verb, "is due", beckons, looms, in sight, forecast, projected / projection, my view,
-      tends to, gonna, to stay / remain / finish, signals / hints at a bounce, bullish / bearish for, guarding,
-      protecting, holding the line, mujhe lagta; एंट्री; सस्ता / महंगा / स्वस्त / महाग anywhere.
-    - Lakh / crore is an OI quantity when it follows a figure in a sentence with OI or contracts ("कॉल OI 23000 वर
-      सर्वाधिक, 1.4 कोटी"). Anywhere else it is still a spelled-out amount.
-    - "On track:" is a label.
-    - `_MORPH_NEAR_NUMBER`'s -गा / -गी / -गे branch starts only at a word start. It was quadratic: 5.1 s on 38,000
-      characters.
-- **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
-  `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.
+  vitest: `copilot/tabs/analyze/multiview.test.ts`. Open questions: HC4-1 to HC4-5.

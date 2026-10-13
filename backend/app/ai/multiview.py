@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
+from app.ai.global_cues import MARKETS as _GLOBAL_MARKETS
 from app.ai.prompt_versions import version_of
 from app.ai.tools import ToolContext, ToolResult, run_tool
 from app.db.models import AgentRunRecord, AgentStepRecord
@@ -33,6 +34,7 @@ LABELS = {"technical": "Technical", "options": "Options and volatility", "news":
 MAX_SECONDS = 60.0
 MAX_HEADLINES = 5
 SENTIMENT_LABELS = frozenset({"RISK_ON", "RISK_OFF", "NEUTRAL"})      # app/ai/sentiment.label_for
+_GLOBAL_KEYS = frozenset(m.key for m in _GLOBAL_MARKETS)               # app/ai/global_cues: the markets the memory stores
 NOTE = ("The situation and the possibilities, from the platform's own data and tools. Not a trade recommendation and not "
         "advice; past and present readings do not say what will happen.")
 # the audited version of the wording: rules only (no prompt); bump the marker when the rules' sentences change
@@ -53,13 +55,6 @@ class View:
     def as_dict(self) -> Dict[str, Any]:
         return {"id": self.id, "label": LABELS[self.id], "ok": self.ok, "facts": self.facts, "as_of": self.as_of, "sources": self.sources,
                 "untrusted": self.untrusted, "error": self.error, "report": " ".join(self.lines), "report_source": "rules"}
-
-
-def _r(x: Any, nd: int = 2) -> Optional[float]:
-    try:
-        return None if x is None else round(float(x), nd)
-    except (TypeError, ValueError):
-        return None
 
 
 
@@ -129,12 +124,11 @@ def macro_view(snapshot: ToolResult) -> View:
     lines = []
     if vix and vix.get("last_price") is not None:
         lines.append(f"India VIX {vix.get('last_price')}.")
-    if glob:
-        lines.append("Global markets: " + ", ".join(f"{g['symbol']} {g['change_pct']}%" for g in glob if g.get("change_pct") is not None) + ".")
+    known = [g for g in glob if g.get("symbol") in _GLOBAL_KEYS and isinstance(g.get("change_pct"), (int, float))]
+    if known:                                   # only the market memory's own global markets are named in a line
+        lines.append("Global markets: " + ", ".join(f"{g['symbol']} {g['change_pct']}%" for g in known) + ".")
     if sent and str(sent.get("label")) in SENTIMENT_LABELS:
         lines.append(f"Market sentiment read: {sent.get('label')}.")       # a closed vocabulary only (review of H-C4)
-    # Review of H-C4 (LOW): cue and sentiment strings are stored text, not the platform's own wording - the model gets
-    # them inside <untrusted_data>.
     return View("macro", True, facts, d.get("updated_at"), [snapshot.source], untrusted=True,
                 lines=lines or ["Market cues are present without changes."])
 

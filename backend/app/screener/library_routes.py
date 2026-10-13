@@ -183,8 +183,8 @@ def _parsed(label: str, text: str) -> Any:
         raise HTTPException(status_code=422, detail={"message": f"{label}: {exc.message}", "problems": [{"message": exc.message, "pos": exc.pos}]}) from exc
 
 
-def watch_eval(ready: Any, trigger: Any, ready_v: Any, transition_v: Any, universe: List[SymbolData], base_tf: str
-               ) -> Tuple[Dict[str, Tuple[bool, Optional[str]]], Dict[str, Tuple[bool, Optional[str]]]]:
+def watch_eval(ready: Any, trigger: Any, ready_v: Any, transition_v: Any, universe: List[SymbolData], base_tf: str,
+               transition: Any = None) -> Tuple[Dict[str, Tuple[bool, Optional[str]]], Dict[str, Tuple[bool, Optional[str]]]]:
     """(ready now, triggered) per symbol, evaluating the ready and the trigger condition ONCE each (review of TX2): the
     transition `Count(1, ready)[1] >= 1 AND trigger` is read off the ready series' bar before the last and the trigger's
     last bar - the same answer as running the transition screen (tested), without evaluating `ready` a second time.
@@ -192,7 +192,7 @@ def watch_eval(ready: Any, trigger: Any, ready_v: Any, transition_v: Any, univer
     import math
 
     from app.screener import nodes as nn
-    from app.screener.runtime import ScreenRuntimeError, _Eval, _last
+    from app.screener.runtime import ScreenRuntimeError, _cross_sectional, _Eval, _last
 
     def truthy(v: Any) -> bool:
         return v is not None and not (isinstance(v, float) and math.isnan(v)) and bool(v)
@@ -201,6 +201,21 @@ def watch_eval(ready: Any, trigger: Any, ready_v: Any, transition_v: Any, univer
         return [tf for tf, bars in validated.lookback.items()
                 if (tf in d.frames or nn.TF_MINUTES.get(tf, 0) > nn.TF_MINUTES[base_tf]) and len(ev.frame(tf)) < bars]
 
+    def evaluated(ev: Any, node: Any) -> Tuple[Any, Optional[str]]:
+        try:
+            return ev.ev(node, base_tf), None
+        except ScreenRuntimeError as exc:
+            return None, str(exc)
+        except Exception as exc:  # noqa: BLE001 - one symbol's bad data never aborts the list (as run_screen)
+            return None, f"could not be evaluated ({type(exc).__name__})"
+
+    # A trigger that ranks across the list (Rank / PercentileRank) reads the universe's values, as run_screen computes them
+    # for the transition screen (the trigger's nodes are the transition's own) - review of TX2 re-check.
+    if transition_v.cross_sectional:
+        tree = transition if transition is not None else lib.transition_ast(ready, trigger)     # shares the trigger's nodes
+        constants = _cross_sectional(tree, universe, base_tf, {})
+    else:
+        constants = {d.symbol: {} for d in universe}
     ready_out: Dict[str, Tuple[bool, Optional[str]]] = {}
     hit_out: Dict[str, Tuple[bool, Optional[str]]] = {}
     for d in universe:
@@ -208,20 +223,19 @@ def watch_eval(ready: Any, trigger: Any, ready_v: Any, transition_v: Any, univer
         if frame is None or frame.empty:
             ready_out[d.symbol] = hit_out[d.symbol] = (False, f"no {base_tf} bars")
             continue
-        ev = _Eval(d, base_tf, {}, {})
+        ev = _Eval(d, base_tf, {}, constants[d.symbol])
         ready_short, hit_short = short(ev, d, ready_v), short(ev, d, transition_v)
-        try:
-            r = ev.ev(ready, base_tf)
-            t = ev.ev(trigger, base_tf) if not hit_short else None
-        except ScreenRuntimeError as exc:
-            ready_out[d.symbol] = hit_out[d.symbol] = (False, str(exc))
-            continue
-        except Exception as exc:  # noqa: BLE001 - one symbol's bad data never aborts the list (as run_screen)
-            ready_out[d.symbol] = hit_out[d.symbol] = (False, f"could not be evaluated ({type(exc).__name__})")
+        r, ready_err = evaluated(ev, ready)
+        if ready_err is not None:                         # the transition reads `ready` too: neither has an answer
+            ready_out[d.symbol] = hit_out[d.symbol] = (False, ready_err)
             continue
         ready_out[d.symbol] = (False, f"not enough history on {', '.join(sorted(ready_short))}") if ready_short else (truthy(_last(r)), None)
         if hit_short:
             hit_out[d.symbol] = (False, f"not enough history on {', '.join(sorted(hit_short))}")
+            continue
+        t, trigger_err = evaluated(ev, trigger)
+        if trigger_err is not None:                       # only the trigger failed: the ready answer stands
+            hit_out[d.symbol] = (False, trigger_err)
             continue
         before = r.iloc[-2] if isinstance(r, pd.Series) and len(r) >= 2 else None
         hit_out[d.symbol] = (truthy(before) and truthy(_last(t)), None)
@@ -254,7 +268,7 @@ async def watch_trigger(body: WatchBody, user: User = Depends(require_trader), s
     universe, problems, source = await _universe(session, user, symbols, body.exchange, base_tf, lookback)
     if zone_gate.flagged_calls(transition):
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), transition, base_tf, {})
-    ready_got, hits = await asyncio.to_thread(watch_eval, ready, trigger, ready_v, transition_v, universe, base_tf)
+    ready_got, hits = await asyncio.to_thread(watch_eval, ready, trigger, ready_v, transition_v, universe, base_tf, transition)
     ready_hits = {**{s: (False, why) for s, why in problems.items()}, **ready_got}
     return {**lib.watch_split(ready_hits, hits, symbols), "name": name, "base_tf": base_tf, "ready_text": nodes.to_text(ready),
             "trigger_text": nodes.to_text(trigger), "transition_text": nodes.to_text(transition), "scanned": len(symbols), **source,

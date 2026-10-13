@@ -491,3 +491,64 @@ def test_leaf_flags_include_a_function_s_further_flags(monkeypatch):
     assert RK.leaf_flags(system) == []
     monkeypatch.setitem(registry.FUNCTIONS, "ADX", types.SimpleNamespace(flag="own_flag", also_flags=("further_flag", "own_flag")))
     assert RK.leaf_flags(system) == ["own_flag", "further_flag"]
+
+
+def test_sector_neutral_history_is_causal_against_the_stored_classifications():
+    """Review of S7a (MED-4, causal): with the U1-b classification rows really stored, the history ranking's rank at each
+    date equals ranking bars cut at that date with only the classifications known by then (valid_from <= date); a
+    reclassification stored later never changes an earlier date; and the as-of sector is what decides (the end date's
+    sector for every date gives a different rank)."""
+    tag = uuid.uuid4().hex[:7].upper()
+    frames_raw, days = _universe(n=4, bars=200, seed=47)
+    names = [f"IN{tag}{i:03d}" for i in range(4)]                  # ISIN-shaped labels: sector_ranges reads them as ISINs
+    frames = dict(zip(names, frames_raw.values()))
+    dates = list(days[90::12])
+    switch, later = dates[len(dates) // 2], dates[-1] + timedelta(days=30)
+    system = _system({"nodes": [{"name": "mom", "factor": "PctChange(close, 20)", "weight": 100, "neutral": "sector"}]})
+    rows = [ClassificationRecord(isin=names[0], scheme="NSE", sector="IT", valid_from=date(2000, 1, 1), valid_to=switch, source="t", checksum="a"),
+            ClassificationRecord(isin=names[0], scheme="NSE", sector="BANK", valid_from=switch, valid_to=None, source="t", checksum="b")]
+    rows += [ClassificationRecord(isin=s, scheme="NSE", sector="IT" if i % 2 else "BANK", valid_from=date(2000, 1, 1), valid_to=None,
+                                  source="t", checksum=f"c{i}") for i, s in enumerate(names) if i]
+    _seed(*rows)
+
+    async def as_of(ds):
+        async with _session_factory() as session:
+            return await RK.sectors_by_date(session, names, ds)
+    sectors = _run(as_of(dates))
+    full = RK.rank_at_dates(system, frames, dates, sectors)
+    for d in dates:
+        known = {r.isin: r.sector for r in sorted(rows, key=lambda r: r.valid_from) if r.valid_from <= d}   # stored by d
+        cut = _cut_rank(system, frames, d, known)
+        assert full.loc[d].dropna().to_dict() == pytest.approx(cut.dropna().to_dict()), d
+    assert all(sectors[d][names[0]] == ("IT" if d < switch else "BANK") for d in dates)
+    # a reclassification stored after the window: nothing in it changes
+    async def reclassify():
+        from sqlalchemy import update
+        async with _session_factory() as session:
+            await session.execute(update(ClassificationRecord).where(ClassificationRecord.isin == names[1]).values(valid_to=later))
+            session.add(ClassificationRecord(isin=names[1], scheme="NSE", sector="BANK", valid_from=later, valid_to=None, source="t", checksum="d"))
+            await session.commit()
+    _run(reclassify())
+    again = RK.rank_at_dates(system, frames, dates, _run(as_of(dates)))
+    assert again.equals(full)
+    # the as-of sector decides: ranking every date with the last date's sectors differs before the switch
+    end_sectors = {d: sectors[dates[-1]] for d in dates}
+    wrong = RK.rank_at_dates(system, frames, dates, end_sectors)
+    assert any(not np.isclose(wrong.loc[d, names[0]], full.loc[d, names[0]]) for d in dates if d < switch)
+
+
+def test_the_ranking_systems_migration_keeps_one_head():
+    """Review of S7a (MED-1): c3d5e7f9a1b2 is chained onto main's head - one head, and it is in that head's history."""
+    from pathlib import Path
+
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+    root = Path(__file__).resolve().parents[1]
+    cfg = Config(str(root / "alembic.ini"))
+    cfg.set_main_option("script_location", str(root / "alembic"))
+    script = ScriptDirectory.from_config(cfg)
+    heads = script.get_heads()
+    assert len(heads) == 1
+    assert "c3d5e7f9a1b2" in {r.revision for r in script.walk_revisions(heads[0])}
+    text = (root / "alembic/versions/c3d5e7f9a1b2_add_ranking_systems.py").read_text()
+    assert "ROLLBACK_SAFE = True" in text

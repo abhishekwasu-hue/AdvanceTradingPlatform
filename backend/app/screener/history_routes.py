@@ -474,8 +474,7 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
     if system is not None:
         sectors = None
         if system.sector_neutral:                             # each date's sector AS OF that date (U1-b classifications)
-            ranges = await RK.sector_ranges(session, sorted(frames), min(dates), max(dates))
-            sectors = {d: {s: RK.sector_on(r, d) for s, r in ranges.items()} for d in dates}
+            sectors = await RK.sectors_by_date(session, list(frames), dates)
         ranks = await asyncio.to_thread(RK.rank_at_dates, system, frames, dates, sectors, eligible, scales)
     nifty_bars = await _index_bars(session, "NSE_INDEX:NIFTY50", first, body.end)
     nifty = nifty_bars[1] if nifty_bars is not None else None

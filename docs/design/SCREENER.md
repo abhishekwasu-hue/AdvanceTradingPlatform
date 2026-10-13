@@ -1353,8 +1353,9 @@ tree of weighted factors that ranks a universe 0-100, with every component shown
 
 ### Review of S7a (fixed)
 - MED-2: factors read bars only and need their family's flag everywhere (S7-8). MED-3: a history work budget (S7-9).
-  MED-4: a sector-neutral backtest test with a reclassification between rebalances. MED-1: the migration is re-chained
-  at merge (S7-10).
+  MED-4: a sector-neutral backtest test with a reclassification between rebalances, and a causal test on stored
+  classifications (`sectors_by_date`: the rank at each date equals bars cut there with only the rows known by then; a
+  later reclassification changes nothing earlier). MED-1: the migration is chained onto main's head (S7-10, tested).
 - LOW: no '/' in node names; sector ranges follow the ISIN the symbol had in each period; factors longer than the
   fetch window are refused; editing a screen that an alert rule runs is checked against that rule; archiving frees the
   name; the result cache key carries the ranking trees.

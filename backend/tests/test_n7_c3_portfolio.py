@@ -192,6 +192,10 @@ def test_a_lake_portfolio_reads_the_server_s_bars_and_stops_before_the_holdout(m
             await session.commit()
     _run(seed())
     body = {"strategy_id": STRATEGY, "base_timeframe": "day", "symbols": syms, "lake": {"start": str(days[0]), "end": str(days[-1])}}
+    off = client.post("/api/backtest/portfolio", headers=headers, json=body)
+    assert off.status_code == 403 and "backtest_ledger" in off.text            # review of C3 (LOW): lake reads are C5's
+    from app.backtest.ledger import FLAG as LEDGER_FLAG
+    _flag(LEDGER_FLAG, client.get("/api/auth/me", headers=headers).json()["tenant_id"])
     r = client.post("/api/backtest/portfolio", headers=headers, json=body)
     assert r.status_code == 200, r.text
     assert r.json()["data_source"] == "lake:nse_bhav:cm:adjusted" and r.json()["per_symbol"][syms[0]]["bars"] == 90
@@ -202,3 +206,31 @@ def test_a_lake_portfolio_reads_the_server_s_bars_and_stops_before_the_holdout(m
                        json={**body, "lake": {"start": str(days[0]), "end": str(days[69])}}).status_code == 200
     both = client.post("/api/backtest/portfolio", headers=headers, json={**body, "candles": {syms[0]: _bars(_frame(7, days=1))}})
     assert both.status_code == 422
+
+
+def test_the_route_is_rate_limited_and_capped_before_any_read(monkeypatch):
+    """Review of C3 (MED): the analysis rate limit, and a cap on symbols x bars - posted bars counted, a lake window
+    estimated from its weekdays before any lake read."""
+    from app.backtest import ledger, routes
+    from app.core import rate_limit
+    headers, tenant = _org("caps")
+    _flag(ledger.FLAG, tenant)
+    monkeypatch.setattr(routes, "MAX_PORTFOLIO_BARS", 1000)
+    candles = {"AAA": _bars(_frame(7, days=1)), "BBB": _bars(_frame(20, days=1)), "CCC": _bars(_frame(33, days=1))}   # 900 bars
+    assert client.post("/api/backtest/portfolio", headers=headers, json={**BODY, "symbols": ["aaa", "bbb", "ccc"], "candles": candles}).status_code == 200
+    candles["DDD"] = _bars(_frame(40, days=1))
+    over = client.post("/api/backtest/portfolio", headers=headers, json={**BODY, "symbols": ["aaa", "bbb", "ccc", "ddd"], "candles": candles})
+    assert over.status_code == 422 and "1000" in over.text
+
+    async def never(*a, **k):
+        raise AssertionError("the lake was read before the cap")
+    monkeypatch.setattr(ledger, "lake_candles", never)
+    lake = {"strategy_id": STRATEGY, "base_timeframe": "day", "symbols": [f"S{i}" for i in range(5)],
+            "lake": {"start": "2020-01-01", "end": "2021-01-01"}}                   # 5 x 262 weekdays > 1000
+    refused = client.post("/api/backtest/portfolio", headers=headers, json=lake)
+    assert refused.status_code == 422 and "1000 bars" in refused.text
+
+    async def no(*a, **k):
+        return False
+    monkeypatch.setattr(rate_limit, "allow", no)
+    assert client.post("/api/backtest/portfolio", headers=headers, json={**BODY, "candles": candles}).status_code == 429

@@ -10,7 +10,7 @@
 """
 import copy
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -33,6 +33,7 @@ from app.market_data.calendar import load_holidays
 from app.backtest.optimizer import MAX_COMBOS, optimize
 from app.backtest.robustness import monte_carlo, walk_forward
 from app.core.models import BacktestResult, OHLCVBar, RiskConfig, bars_to_dataframe
+from app.core.rate_limit import user_rate_limit
 from app.custom_strategies.resolver import resolve_strategy
 from app.db.models import BacktestRunRecord, User
 from app.db.session import get_session
@@ -401,9 +402,18 @@ class PortfolioBody(BaseModel):
 
 
 PORTFOLIO_KIND = "portfolio_backtest"
+MAX_PORTFOLIO_BARS = 30_000             # symbols x bars in one portfolio run (review of C3, MED; OPEN_QUESTIONS C3-5)
+# Review of C3 (MED): the same per-user budget as /api/backtest (one "analysis" window shared by both).
+portfolio_rate_limit = user_rate_limit("analysis", limit=60, window_seconds=60)
 
 
-@router.post("/api/backtest/portfolio")
+def _weekdays(start: Any, end: Any) -> int:
+    """Sessions a lake window can hold at most (weekdays) - the bar estimate made before any lake read."""
+    import numpy as np
+    return int(np.busday_count(start, end + timedelta(days=1)))
+
+
+@router.post("/api/backtest/portfolio", dependencies=[Depends(portfolio_rate_limit)])
 async def backtest_portfolio(body: PortfolioBody, user: User = Depends(get_current_user),
                              session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """N7 C3 (flag `backtest_portfolio`, off by default): the portfolio backtest (app/backtest/portfolio.py), recorded as a
@@ -433,6 +443,13 @@ async def backtest_portfolio(body: PortfolioBody, user: User = Depends(get_curre
     if window is not None:
         if body.candles:
             raise HTTPException(status_code=422, detail="lake: send either candles or a lake window, not both")
+        if not await ledger.enabled(session, user.tenant_id):       # review of C3 (LOW): lake reads are C5's, behind its flag
+            raise HTTPException(status_code=403, detail=f"lake: backtests on the server's lake bars are not enabled for this "
+                                                        f"organisation (flag {ledger.FLAG})")
+        estimate = len(symbols) * _weekdays(window.start, window.end)
+        if estimate > MAX_PORTFOLIO_BARS:
+            raise HTTPException(status_code=422, detail=f"lake: {len(symbols)} symbols x up to {estimate // len(symbols)} sessions is over "
+                                                        f"{MAX_PORTFOLIO_BARS} bars in one portfolio run - fewer symbols or a shorter window")
         data_source = ledger.lake_label(window)
         for sym in symbols:
             try:
@@ -447,6 +464,10 @@ async def backtest_portfolio(body: PortfolioBody, user: User = Depends(get_curre
         missing = [s for s in symbols if not posted.get(s)]
         if missing:
             raise HTTPException(status_code=422, detail=f"candles: no bars for {', '.join(missing[:10])} (or send a lake window)")
+        total = sum(len(posted[s]) for s in symbols)
+        if total > MAX_PORTFOLIO_BARS:
+            raise HTTPException(status_code=422, detail=f"candles: {total} bars over {len(symbols)} symbols is over {MAX_PORTFOLIO_BARS} "
+                                                        "in one portfolio run - fewer symbols or fewer bars")
         frames = {s: bars_to_dataframe(posted[s]) for s in symbols}
     try:
         models = ModelSet(**(body.execution_models or {}))

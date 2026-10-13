@@ -164,12 +164,16 @@ def test_bar_close_scan_meets_the_target(factor):
 
 
 BK3_SCREENS = [('DonchianBreakout("up")', "5m"), ('SqueezeBreakout("up")', "5m"), ('SqueezeBreakout("down", "ttm")', "5m"),
-               ('MABreakout("up")', "5m"), ('RegimeBreakout("up")', "5m"), ('VCPBreakout("up")', "1d"), ('VCPReady("up")', "1d")]
+               ('MABreakout("up")', "5m"), ('RegimeBreakout("up")', "5m"), ('VCPBreakout("up")', "1d"), ('VCPReady("up")', "1d"),
+               # U6 BK4
+               ('TrendlineBreakout("up")', "5m"), ('TrendlineBreakout("down", "channel")', "5m"), ('PatternBreakout("up")', "5m"),
+               ('PatternBreakout("down", "triangle")', "5m"), ('GapBreakout("up")', "5m"), ('GapType("down") == "GAP_FILL"', "5m"),
+               ('RetestEntry("up")', "5m"), ('RetestEntry("down", "trendline")', "1d")]
 
 
 @pytest.mark.parametrize("text,tf", BK3_SCREENS)
 def test_bk3_breakout_screens_fit_the_bar_close_target(factor, text, tf):
-    """U6 BK3: one VCP / indicator breakout screen over the bar-close universe (about 200 symbols; the VCP on daily bars,
+    """U6 BK3 / BK4: one VCP / indicator / trendline / pattern / gap / retest breakout screen over the bar-close universe (about 200 symbols; the VCP on daily bars,
     300 sessions) within the bar-close target. Breakout functions run per symbol (not vectorised, as BK1 / BK2), so this
     times the per-symbol runtime itself - the larger part of a bar-close cycle."""
     from app.screener import compile_screen
@@ -180,5 +184,5 @@ def test_bk3_breakout_screens_fit_the_bar_close_target(factor, text, tf):
     assert validated.ok, validated.problems
     result = bench.median_time(lambda: run_screen(ast, validated, data, base_tf=tf), REPEAT)
     budget = bench.TARGETS["barclose_scan"] * factor * BARCLOSE_SYMBOLS / bench.BARCLOSE_SYMBOLS
-    _say(f"bk3 {text} ({BARCLOSE_SYMBOLS} symbols, {tf})", result["median"], budget, result["runs"], factor)
+    _say(f"breakouts {text} ({BARCLOSE_SYMBOLS} symbols, {tf})", result["median"], budget, result["runs"], factor)
     assert result["median"] <= budget

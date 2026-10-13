@@ -9,9 +9,10 @@ The Marathi runbook `docs/DEPLOY_HOSTINGER_MR.md` describes the earlier blocks (
 `docs/DEPLOY_HOSTINGER_ONELINERS.txt`, and once `atp.sh` has recorded a release they refuse to run, so the two cannot
 be mixed on one server.
 
-**Owner blockers:** the server IP (`<SERVER_IP>` below), and the R2 bucket and token in the server's `.env`
-(section 6). Until R2 is filled in, everything works and backups stay on the server. Every `atp.sh` run then prints
-a warning.
+**Owner blockers (the four in docs/ROADMAP_STATUS.md):** (1) the Hostinger server IP (`<SERVER_IP>` below);
+(2) the R2 bucket and token in the server's `.env` (section 6); (3) the Dhan partner application; (4) company
+registration. This runbook needs (1) and (2). Until R2 is filled in, everything works and backups stay on the server.
+Every `atp.sh` run then prints a warning.
 
 ## 1. The commands
 

@@ -1,4 +1,4 @@
-"""U6 BK1 / BK2 / BK3 (spec §4): pre-built breakout templates, the "Breakout" / "Breakout quality" builder block families, and the
+"""U6 BK1 / BK2 / BK3 / BK4 (spec §4): pre-built breakout templates, the "Breakout" / "Breakout quality" builder block families, and the
 ScreenQL text of a template.
 
 A template is (screen, signal timeframe, parameters, direction). Its ScreenQL text is built as an AST (app/screener/nodes)
@@ -50,6 +50,16 @@ SIGNAL_KEYS.update({
                       "min_break_atr"),
     "B15": _COMMON + ("rsi_n", "rsi_band", "regime_n", "adx_n", "adx_low", "min_break_atr"),
 })
+# U6 BK4: trendline / pattern / gap / retest
+_TL = ("tl_order", "tl_min_touches", "tl_min_gap", "tl_max_slope", "tl_touch_tol", "tl_max_bars")
+SIGNAL_KEYS.update({
+    "B5": _COMMON + ("tl_mode",) + _TL + ("min_break_atr",),
+    "B6": _COMMON + ("pattern", "pole_min_atr", "pole_max_bars", "flag_min_bars", "flag_max_bars", "flag_max_retrace") + _TL
+    + ("vol_mult", "min_break_atr"),
+    "B8": ("atr_n", "gap_level", "gap_base_n", "gap_min_atr", "gap_hold_min"),
+})
+SIGNAL_KEYS["B9"] = tuple(dict.fromkeys(("retest_of", "retest_max_bars", "retest_reversal", "retest_tol_atr")
+                                        + SIGNAL_KEYS["B1"] + SIGNAL_KEYS["B2"] + SIGNAL_KEYS["B10"] + SIGNAL_KEYS["B5"]))
 CONTEXT_KEYS: Tuple[str, ...] = ("dow_min_bars",)   # changes the context filter, not a ScreenQL argument
 CALLS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "B1": ("RangeBreakout", ("range_n", "min_break_atr", "vol_mult", "range_mode")),
@@ -66,6 +76,10 @@ CALLS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "B11": ("SqueezeBreakout", ("squeeze_mode", "bb_n", "squeeze_lookback", "vol_mult")),
     "B12": ("MABreakout", ("ma_n", "ma_type", "min_break_atr")),
     "B15": ("RegimeBreakout", ("rsi_band", "regime_n", "adx_low", "min_break_atr")),
+    "B5": ("TrendlineBreakout", ("tl_mode", "tl_min_touches", "min_break_atr")),
+    "B6": ("PatternBreakout", ("pattern", "vol_mult", "min_break_atr")),
+    "B8": ("GapBreakout", ("gap_level", "gap_hold_min")),
+    "B9": ("RetestEntry", ("retest_of", "retest_max_bars", "retest_reversal")),
 }
 # U6 BK3: the B3 Watchlist is its own ScreenQL function; volume and the break distance do not apply to a base not yet broken
 WATCHLIST_CALL: Tuple[str, Tuple[str, ...]] = ("VCPReady", ("vcp_min_contractions", "vcp_ratio", "vcp_ready_pct", "tt_filter", "vcp_vol_dryup"))
@@ -81,7 +95,7 @@ def call_for(screen: str, p: Dict[str, Any]) -> Tuple[str, Tuple[str, ...], Tupl
     return CALLS[screen][0], CALLS[screen][1], ()
 # Columns a result row shows (spec §4): base metrics, breakout distance in ATR, relative volume, HTF agreement, grade.
 RESULT_COLUMNS: Tuple[str, ...] = ("symbol", "side", "grade", "why", "base_len", "base_height_pct", "dist_atr", "rvol", "htf", "event",
-                                   "status", "retest", "level", "stop_ref", "time")
+                                   "status", "retest", "level", "stop_ref", "measured_move", "time")
 # U6 BK2: the intraday screens add the session VWAP at the signal bar and its exchange-clock time
 INTRADAY_COLUMNS: Tuple[str, ...] = ("vwap", "clock")
 
@@ -134,8 +148,26 @@ TEMPLATES: Tuple[Template, ...] = (
              note="first close beyond a flat or rising 50-day SMA after two weeks of closes around it"),
     Template("daily_rsi_adx_regime", "Daily RSI / ADX regime breakout", "B15", "1d",
              note="RSI leaves the 40-60 band it held for a month, ADX rises from below 20, price clears the month's range"),
+    # U6 BK4 (flag screener_breakouts_bk4 on top of screener_breakouts)
+    Template("daily_trendline_break", "Daily trendline breakout", "B5", "1d",
+             note="first close beyond a falling resistance / rising support line with two or more touches, by an ATR buffer"),
+    Template("swing_1h_channel_break", "Swing 1H channel breakout", "B5", "1h", params={"tl_mode": "channel"},
+             note="close beyond the far edge of a rising / falling channel on 1H; measured move = the channel's width beyond the edge"),
+    Template("daily_flag", "Daily flag breakout", "B6", "1d", direction="up",
+             note="a fast pole of 3+ ATR, a shallow consolidation of one to three weeks, then a close above it on volume; measured move"),
+    Template("daily_triangle", "Daily triangle breakout", "B6", "1d", params={"pattern": "triangle"},
+             note="converging resistance and support lines, then a close beyond on volume; measured move = the triangle's height"),
+    Template("intraday_5m_gap_and_go", "Intraday gap beyond the previous day's high / low on 5m", "B8", "5m",
+             note="the session opens beyond yesterday's high / low and every close of the first 30 minutes holds it"),
+    Template("daily_gap_base", "Daily gap beyond a 20-day base", "B8", "1d", direction="up", params={"gap_level": "base"},
+             note="the day opens above the last 20 sessions' high and closes above it"),
+    Template("daily_range_retest", "Daily range-breakout retest", "B9", "1d",
+             note="after a 20-day range breakout, price leaves the level, comes back within two weeks and reverses there"),
+    Template("swing_1h_range_retest", "Swing 1H range-breakout retest", "B9", "1h",
+             note="the 1H version: a reversal at the broken 20-bar range within 10 bars; context Daily + Weekly"),
 )
 BK3_TEMPLATE_SCREENS: Tuple[str, ...] = ("B3", "B10", "B11", "B12", "B15")
+BK4_TEMPLATE_SCREENS: Tuple[str, ...] = ("B5", "B6", "B8", "B9")
 BY_ID: Dict[str, Template] = {t.id: t for t in TEMPLATES}
 
 
@@ -194,21 +226,31 @@ def template_params(t: Template, overrides: Optional[Dict[str, Any]] = None) -> 
     return {**t.params, "direction": t.direction, **(overrides or {})}
 
 
+def _set_params(group: Tuple[str, ...]) -> set:
+    """Parameters only a set's screens read (left out of the catalog while its flag is off)."""
+    own = {k for code in group for k in SIGNAL_KEYS[code]}
+    rest = {k for code, keys in SIGNAL_KEYS.items() if code not in group for k in keys}
+    shared = {p.name for p in bp.PARAMS if p.group in ("common", "quality", "style")}      # the overlay's and the family's own
+    return own - rest - shared
+
+
 def _bk3_params() -> set:
-    """Parameters only the BK3 screens read (left out of the catalog while `screener_breakouts_bk3` is off)."""
-    own = {k for code in BK3_TEMPLATE_SCREENS for k in SIGNAL_KEYS[code]}
-    rest = {k for code, keys in SIGNAL_KEYS.items() if code not in BK3_TEMPLATE_SCREENS for k in keys}
-    return own - rest - {"vol_mult", "min_break_atr"}
+    return _set_params(BK3_TEMPLATE_SCREENS)
 
 
-def blocks(bk3: bool = True) -> Dict[str, Any]:
+def _hidden_screens(bk3: bool, bk4: bool) -> Tuple[str, ...]:
+    return (() if bk3 else BK3_TEMPLATE_SCREENS) + (() if bk4 else BK4_TEMPLATE_SCREENS)
+
+
+def blocks(bk3: bool = True, bk4: bool = True) -> Dict[str, Any]:
     """The builder's block families (spec §4): one "Breakout" block per screen with its fields, and the "Breakout quality"
     overlay block - field lists come from the parameter table, so the builder, the docs and the engine never drift.
     `bk3`: whether the U6 BK3 screens are shown (flag `screener_breakouts_bk3`)."""
     described = {d["name"]: d for d in bp.describe()}
     family = []
+    hide = _hidden_screens(bk3, bk4)
     for code, name in SCREENS.items():
-        if code in BK3_TEMPLATE_SCREENS and not bk3:
+        if code in hide:
             continue
         fn, args = CALLS[code]
         own = [k for k in SIGNAL_KEYS[code] if k not in _COMMON]
@@ -223,19 +265,20 @@ def blocks(bk3: bool = True) -> Dict[str, Any]:
             "common": common, "intraday": intraday, "result_columns": list(RESULT_COLUMNS), "intraday_columns": list(INTRADAY_COLUMNS)}
 
 
-def catalog(bk3: bool = True) -> Dict[str, Any]:
-    """Everything the builder needs for the breakout family: selector, blocks, templates with their ScreenQL text. `bk3`:
-    whether the U6 BK3 screens, templates and parameters are included (flag `screener_breakouts_bk3`)."""
+def catalog(bk3: bool = True, bk4: bool = True) -> Dict[str, Any]:
+    """Everything the builder needs for the breakout family: selector, blocks, templates with their ScreenQL text. `bk3` /
+    `bk4`: whether the U6 BK3 / BK4 screens, templates and parameters are included (flags `screener_breakouts_bk3` / `_bk4`)."""
     rows = []
+    hide = _hidden_screens(bk3, bk4)
     for t in TEMPLATES:
-        if t.screen in BK3_TEMPLATE_SCREENS and not bk3:
+        if t.screen in hide:
             continue
         text, why = screenql(t.screen, t.signal_tf, template_params(t))
         rows.append({"id": t.id, "name": t.name, "screen": t.screen, "signal_tf": t.signal_tf, "style": style.style_of(t.signal_tf),
                      "direction": t.direction, "params": dict(t.params), "note": t.note,
                      "context_tfs": list(style.context_timeframes(t.signal_tf)), "screenql": text, "engine_only_reason": why})
-    hidden = set() if bk3 else _bk3_params()
-    return {"selector": style.selector(), "blocks": blocks(bk3), "templates": rows,
+    hidden = (set() if bk3 else _bk3_params()) | (set() if bk4 else _set_params(BK4_TEMPLATE_SCREENS))
+    return {"selector": style.selector(), "blocks": blocks(bk3, bk4), "templates": rows,
             "params": [d for d in bp.describe() if d["name"] not in hidden]}
 
 
@@ -243,15 +286,19 @@ def _register_taxonomy() -> None:
     """U9 TX1: every template is filed in the screen taxonomy (app/screener/data/taxonomy.json, OPEN_QUESTIONS TX1-6); the
     CI guard (taxonomy.coverage_problems) fails on an unfiled one. Hidden while `screener_breakouts` is off."""
     from app.screener import taxonomy
-    taxonomy.register_source("breakouts", lambda: [f"breakouts.{t.id}" for t in TEMPLATES if t.screen not in BK3_TEMPLATE_SCREENS],
+    taxonomy.register_source("breakouts", lambda: [f"breakouts.{t.id}" for t in TEMPLATES
+                                                   if t.screen not in BK3_TEMPLATE_SCREENS + BK4_TEMPLATE_SCREENS],
                              flag="screener_breakouts")
     # U6 BK3: its templates are a second source, hidden while either flag is off
     taxonomy.register_source("breakouts_bk3", lambda: [f"breakouts_bk3.{t.id}" for t in TEMPLATES if t.screen in BK3_TEMPLATE_SCREENS],
                              flag="screener_breakouts", also=("screener_breakouts_bk3",))
+    # U6 BK4: the third source, hidden while screener_breakouts or screener_breakouts_bk4 is off
+    taxonomy.register_source("breakouts_bk4", lambda: [f"breakouts_bk4.{t.id}" for t in TEMPLATES if t.screen in BK4_TEMPLATE_SCREENS],
+                             flag="screener_breakouts", also=("screener_breakouts_bk4",))
 
 
 _register_taxonomy()
 
 
 __all__ = ["TEMPLATES", "BY_ID", "Template", "screenql", "screenql_ast", "screen_call", "blocks", "catalog", "template_params",
-           "SIGNAL_KEYS", "CALLS", "WATCHLIST_CALL", "call_for", "BK3_TEMPLATE_SCREENS", "RESULT_COLUMNS", "INTRADAY_COLUMNS"]
+           "SIGNAL_KEYS", "CALLS", "WATCHLIST_CALL", "call_for", "BK3_TEMPLATE_SCREENS", "BK4_TEMPLATE_SCREENS", "RESULT_COLUMNS", "INTRADAY_COLUMNS"]

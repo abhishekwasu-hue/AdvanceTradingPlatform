@@ -87,3 +87,16 @@ def test_the_venue_check_also_covers_alert_rules_and_ranking_factors():
     ranked = client.post("/api/screener/rankings/run", headers=t["headers"],
                          json={"tree": {"nodes": [{"name": "oi", "factor": "oi", "weight": 100}]}, "symbols": ["X"], "exchange": "NSE"})
     assert ranked.status_code == 422 and "has no oi" in ranked.text
+
+
+def test_a_screen_s_rankscore_checks_the_named_system_s_factors_on_the_venue():
+    """Re-check of S8 (LOW): RankScore("name") in a screen reads the system's factors - they are venue-checked too."""
+    t = _org("rankscore")
+    _flag("screener_rankings", t["tenant_id"])
+    made = client.post("/api/screener/rankings", headers=t["headers"],
+                       json={"name": "OI rank", "tree": {"nodes": [{"name": "oi", "factor": "oi", "weight": 100}]}})
+    assert made.status_code == 201, made.text
+    body = {"source": 'RankScore("OI rank") > 50', "exchange": "NSE"}
+    checked = client.post("/api/screener/validate", headers=t["headers"], json=body).json()
+    assert not checked["ok"] and 'factor \\"oi\\" - oi: NSE cash equities data has no oi' in json.dumps(checked["problems"])
+    assert client.post("/api/screener/validate", headers=t["headers"], json={**body, "exchange": "NFO"}).json()["ok"]

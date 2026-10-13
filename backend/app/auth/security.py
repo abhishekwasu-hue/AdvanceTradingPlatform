@@ -43,11 +43,29 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(raw, hashed.encode())
 
 
+CGROUP_CPU_MAX = "/sys/fs/cgroup/cpu.max"
+
+
+def _cgroup_cpu_quota(path: str = CGROUP_CPU_MAX) -> Optional[int]:
+    """The CPUs a container's CPU quota allows (cgroup v2 `cpu.max`: "<quota> <period>", rounded up), or None when there
+    is no quota (`max`) or no such file (not Linux, cgroup v1)."""
+    try:
+        with open(path, encoding="ascii") as handle:
+            quota, period = handle.read().split()[:2]
+        if quota == "max":
+            return None
+        return max(1, -(-int(quota) // int(period)))
+    except (OSError, ValueError):
+        return None
+
+
 def _cpu_count() -> int:
     try:
-        return max(1, len(os.sched_getaffinity(0)))           # the CPUs this process may use (a container's share)
+        cpus = max(1, len(os.sched_getaffinity(0)))           # the CPUs this process may run on
     except (AttributeError, OSError):
-        return max(1, os.cpu_count() or 1)
+        cpus = max(1, os.cpu_count() or 1)
+    quota = _cgroup_cpu_quota()                               # LD-7: and a container's CPU quota (`docker --cpus`)
+    return min(cpus, quota) if quota else cpus
 
 
 def _bcrypt_concurrency() -> int:

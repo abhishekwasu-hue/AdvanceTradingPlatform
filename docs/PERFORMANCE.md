@@ -228,9 +228,12 @@ What each process keeps for itself, checked for N processes:
   runs about one check per CPU on the host.
 - **Merged:** with more than one process, `PROMETHEUS_MULTIPROC_DIR` is set and emptied at start-up. `/metrics`
   (whichever process answers) sums the counters and histograms, and gives each gauge its most recently set value.
-- **Pools:** each process has its own database pool (`DB_POOL_SIZE` 5 + `DB_MAX_OVERFLOW`, 10 by default, 5 on
-  Hostinger). On Hostinger that is API 2 x 10 + trading worker 15 + research worker 15 = 50, under Postgres'
-  `max_connections` of 60.
+- **Pools:** each process has its own database pool (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`: 5 + 10 by default, 10 + 5
+  on Hostinger). On Hostinger that is API 2 x 15 + trading worker 15 + research worker 15 = 60, under Postgres'
+  `max_connections` of 75 (12 left for backups, restores and psql beside the 3 reserved). The 10 are kept warm: with
+  5 + 5 the overflow connections were closed at every check-in and opened again, and a request waited for a new
+  connection (14.5% of the 500-user test's request time on the KVM 2 shape, `atp_db_pool_wait_seconds`).
+  `pool_pre_ping` stays: a connection left dead by a database restart is replaced, not answered with a 500.
 
 **No pool connection is held across a slow step.** `app.db.session.release_connection` ends a read-only transaction
 before bcrypt (login, sign-up, invite, password reset/change, MFA disable), before a chart's broker calls, and before a
@@ -241,6 +244,24 @@ transaction" and 1,411 pool time-outs.
 **The event loop does no pandas work for a chart or a screen.** The chart's resampling and serialising, and the
 screener's per-symbol frames, run on worker threads. The request-body cap is a pure ASGI middleware, not
 `BaseHTTPMiddleware`.
+
+**The route scan is skipped for paths already resolved** (`app/core/route_cache.py`). FastAPI asks each of the 98
+top-level routes in turn whether it matches, and an included router answers by scanning its own routes: 1.5-3.5 ms per
+request for routes near the end of the list, 12.7% of the API's CPU after the ramp on the KVM 2 shape. The cache keeps,
+per (method, root path, path) without path parameters, the index of the top-level entry FastAPI's own loop picked, and
+next time asks that entry first and handles it the way the loop does. No full match, a 404, a 405, a path with
+parameters or a changed route list go through FastAPI's loop unchanged. It is only installed when the installed
+FastAPI's loop is the one it mirrors (checked at start-up), and `tests/test_ld7_route_cache.py` resolves every served
+path both ways.
+
+**Broker connections are reused** (`app/brokers/shared_http.py`). An adapter is built per request; each built its own
+HTTP client, so every chart and screener run paid a new TLS context and handshake, and the client was never closed.
+Adapters built without a client now share one per broker host and event loop. It carries no credential (they go per
+request) and keeps no cookie at all, so nothing of one user's session reaches another's request. Dhan uses it so far.
+
+**Dhan's scrip master is read once per process**, not per request: the symbol map (`_resolve`'s three fields per
+symbol) is built from one download and kept for 6 hours. Every chart and screener run used to download and parse the
+whole public master (tens of MB on the real host; small on the CI fake, so the test did not show it).
 
 ### Bottlenecks found and fixed
 

@@ -9,7 +9,7 @@
 #   deploy/ci/stack.sh seed N             N load-test users (deploy/ci/seed_users.py) -> $STATE/load_accounts.csv
 #   deploy/ci/stack.sh load [options]     the sharded load test (backend/scripts/loadtest.py); see cmd_load
 #   deploy/ci/stack.sh run ARGS...        python ARGS in the ci-runner tool container
-#   deploy/ci/stack.sh api-workers N [--cpus C]  restart the API with N processes (CI default 3; Hostinger 2), at most C CPUs
+#   deploy/ci/stack.sh api-workers N [--cpus C]  restart the API with N processes (default 2, as on the KVM 2), at most C CPUs
 #   deploy/ci/stack.sh logs | ps | diag   container logs / state; diag writes them under $STATE/diag
 #   deploy/ci/stack.sh down               stop and delete the stack and its volumes
 #
@@ -216,7 +216,7 @@ pg_statements() {
   echo
   pg_sql -A -F ' | ' -c "select calls, round(total_exec_time::numeric / 1000, 2) as total_s,
       round(mean_exec_time::numeric, 2) as mean_ms, round(max_exec_time::numeric, 1) as max_ms, rows,
-      round(100 * total_exec_time / nullif(sum(total_exec_time) over (), 0), 1) as pct,
+      round((100 * total_exec_time / nullif(sum(total_exec_time) over (), 0))::numeric, 1) as pct,
       left(regexp_replace(query, '\s+', ' ', 'g'), 160) as query
     from pg_stat_statements where dbid = (select oid from pg_database where datname = current_database())
     order by total_exec_time desc limit 15" -P footer=off
@@ -246,7 +246,7 @@ sample_db() {
   done
 }
 
-# Restart the API with N processes (API_WORKERS, backend/scripts/serve_api.sh; CI default 3, Hostinger 2), optionally
+# Restart the API with N processes (API_WORKERS, backend/scripts/serve_api.sh; CI and Hostinger default 2), optionally
 # capped at C CPUs (`--cpus C`: the Hostinger-shaped run gives the API the KVM 2's two vCPUs).
 cmd_api_workers() {
   ensure_env
@@ -258,7 +258,13 @@ cmd_api_workers() {
   echo "API_WORKERS=$n" >> "$ENV_FILE"
   step "API with $n process(es)${cpus:+, at most $cpus CPUs}"
   dc up -d --wait --wait-timeout 300 backend
-  if [ -n "$cpus" ]; then docker update --cpus "$cpus" "$(dc ps -q backend)" > /dev/null; fi
+  if [ -n "$cpus" ]; then
+    # Capped, then restarted: the processes size their bcrypt threads from the CPUs they may use at start-up
+    # (app/auth/security.py reads the cgroup quota), as on a host with that many CPUs.
+    docker update --cpus "$cpus" "$(dc ps -q backend)" > /dev/null
+    docker restart "$(dc ps -q backend)" > /dev/null
+    dc up -d --wait --wait-timeout 300 backend
+  fi
 }
 
 cmd_diag() {

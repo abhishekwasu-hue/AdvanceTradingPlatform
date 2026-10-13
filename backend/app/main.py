@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rate_limit import user_rate_limit
+from app.core.route_cache import install as install_route_cache
 from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, tables_created_at_startup, validate_production_config
 from app.core.logging_config import configure_logging
 from app.core.enums import ExecutionMode, OrderStatus
@@ -705,3 +706,7 @@ def get_instrument(symbol: str) -> ContractSpec:
 @app.get("/api/system/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
+
+
+# LD-7: a request for a path already resolved skips the scan of every route before its own (app/core/route_cache.py).
+install_route_cache(app)

@@ -110,6 +110,24 @@ def test_slow_routes_release_before_their_broker_calls():
 
 # --- several processes -------------------------------------------------------------------------------------------------
 
+def test_cpu_count_honours_a_containers_cpu_quota(tmp_path, monkeypatch):
+    """LD-7: a container capped at 2 CPUs (`docker --cpus 2`) on a 4-CPU host sizes its bcrypt threads for 2."""
+    from app.auth import security
+    cpu_max = tmp_path / "cpu.max"
+    cpu_max.write_text("200000 100000\n")
+    assert security._cgroup_cpu_quota(str(cpu_max)) == 2
+    cpu_max.write_text("150000 100000\n")
+    assert security._cgroup_cpu_quota(str(cpu_max)) == 2                       # 1.5 CPUs: rounded up
+    cpu_max.write_text("max 100000\n")
+    assert security._cgroup_cpu_quota(str(cpu_max)) is None
+    assert security._cgroup_cpu_quota(str(tmp_path / "missing")) is None
+    monkeypatch.setattr(security, "_cgroup_cpu_quota", lambda path=None: 2)
+    monkeypatch.setattr(security.os, "sched_getaffinity", lambda pid: {0, 1, 2, 3}, raising=False)
+    assert security._cpu_count() == 2
+    monkeypatch.setattr(security, "_cgroup_cpu_quota", lambda path=None: None)
+    assert security._cpu_count() == 4
+
+
 def test_bcrypt_limit_is_shared_between_api_processes(monkeypatch):
     from app.auth import security
     from app.core import config
@@ -159,11 +177,14 @@ def test_container_command_and_sizes():
         return int(re.fullmatch(r"\$\{[A-Z_]+:-(\d+)\}", value).group(1))
     workers = default(host["backend"]["environment"]["API_WORKERS"])
     overflow = default(host["backend"]["environment"]["DB_MAX_OVERFLOW"])
-    pool = default(base["DB_POOL_SIZE"])
+    pool = default(host["backend"]["environment"]["DB_POOL_SIZE"])
     max_connections = int(re.search(r"max_connections=\$\{PG_MAX_CONNECTIONS:-(\d+)\}", hostinger).group(1))
     assert workers == 2                                                       # KVM 2: one per vCPU
-    # API pools + the trading worker's and the research worker's default pools (5 + 10 each) + Postgres' 3 reserved
-    assert workers * (pool + overflow) + 2 * 15 + 3 <= max_connections
+    assert pool >= 10                                                         # kept warm (LD-7: no overflow churn)
+    # API pools + the trading worker's and the research worker's default pools (5 + 10 each) + Postgres' 3 reserved,
+    # and at least 10 left for a backup, a restore, a migration and psql
+    assert workers * (pool + overflow) + 2 * 15 + 3 + 10 <= max_connections
+    assert max_connections * 10 + 512 <= 2048                                 # about 10 MB a backend + shared_buffers, in 2 GB
 
 
 # --- the public status: a few seconds per process ----------------------------------------------------------------------

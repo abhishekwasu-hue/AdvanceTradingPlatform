@@ -142,15 +142,19 @@ jobs:
         continue-on-error: true
         run: |
           pipx install py-spy==0.4.0
-          nohup deploy/ci/profile_api.sh 60 60 "$RUNNER_TEMP/atp-ci-state/load-profile-ramp" > /dev/null 2>&1 &
-          nohup deploy/ci/profile_api.sh 220 60 "$RUNNER_TEMP/atp-ci-state/load-profile-steady" > /dev/null 2>&1 &
+          nohup deploy/ci/profile_api.sh 90 60 "$RUNNER_TEMP/atp-ci-state/load-profile-ramp" > /dev/null 2>&1 &
+          nohup deploy/ci/profile_api.sh 250 60 "$RUNNER_TEMP/atp-ci-state/load-profile-steady" > /dev/null 2>&1 &
 
-      - name: Load test, primary profile (think time = the app's own dashboard refresh)
+      # LD-7: the run that decides the job has the API as the owner's production box runs it - the Hostinger KVM 2:
+      # 2 processes capped at its 2 CPUs (an approximation: on the real host the worker, Postgres and Caddy share them).
+      - name: Load test, primary profile, API as on the KVM 2 (think time = the app's own dashboard refresh)
         id: primary
         run: |
           echo "runner: $(nproc) vCPU, $(free -g | awk '/Mem/ {print $2}') GB"
+          deploy/ci/stack.sh api-workers 2 --cpus 2
           deploy/ci/stack.sh load --name load-primary --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
-            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s" --report "$RUNNER_TEMP/atp-ci-state/load-primary.md"
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API as on the KVM 2 (2 processes, 2 CPUs)" \
+            --report "$RUNNER_TEMP/atp-ci-state/load-primary.md"
 
       - name: Where the API's time went in the primary run (py-spy summary)
         if: always() && steps.primary.outcome != 'skipped' && github.event.inputs.profile == 'true'
@@ -160,37 +164,7 @@ jobs:
             echo "=== $phase"; cat "$RUNNER_TEMP/atp-ci-state/load-profile-$phase.txt" "$RUNNER_TEMP/atp-ci-state/load-profile-$phase.log" || true
           done
 
-      - name: Load test, busy profile (think 10 s, for comparison - does not decide the job)
-        if: always() && steps.primary.outcome != 'skipped'
-        continue-on-error: true
-        run: |
-          deploy/ci/stack.sh load --name load-busy --users "$USERS" --seconds 180 --ramp 150 --think 10 \
-            --label "GitHub-hosted runner ($(nproc) vCPU), think 10 s" --report "$RUNNER_TEMP/atp-ci-state/load-busy.md"
-
-      - name: Hostinger-shaped (approximation, does not decide the job) - the primary profile, 2 API processes on 2 CPUs
-        if: always() && steps.primary.outcome != 'skipped'
-        continue-on-error: true
-        env:
-          PROFILE: ${{ github.event.inputs.profile }}
-        run: |
-          deploy/ci/stack.sh api-workers 2 --cpus 2
-          if [ "$PROFILE" = "true" ]; then
-            nohup deploy/ci/profile_api.sh 60 60 "$RUNNER_TEMP/atp-ci-state/load-profile-kvm2-ramp" > /dev/null 2>&1 &
-            nohup deploy/ci/profile_api.sh 220 60 "$RUNNER_TEMP/atp-ci-state/load-profile-kvm2-steady" > /dev/null 2>&1 &
-          fi
-          deploy/ci/stack.sh load --name load-kvm2 --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
-            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API as on the KVM 2 (2 processes, 2 CPUs)" \
-            --report "$RUNNER_TEMP/atp-ci-state/load-kvm2.md"
-
-      - name: Where the API's time went in the Hostinger-shaped run (py-spy summary)
-        if: always() && steps.primary.outcome != 'skipped' && github.event.inputs.profile == 'true'
-        continue-on-error: true
-        run: |
-          for phase in kvm2-ramp kvm2-steady; do
-            echo "=== $phase"; cat "$RUNNER_TEMP/atp-ci-state/load-profile-$phase.txt" "$RUNNER_TEMP/atp-ci-state/load-profile-$phase.log" || true
-          done
-
-      - name: Login burst, Hostinger-shaped (secondary, does not decide the job) - the shards in step, 25 logins at once every 7.5 s
+      - name: Login burst, API as on the KVM 2 (secondary, does not decide the job) - the shards in step, 25 logins at once every 7.5 s
         if: always() && steps.primary.outcome != 'skipped'
         continue-on-error: true
         run: |
@@ -198,16 +172,32 @@ jobs:
             --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, API as on the KVM 2, login bursts (shards in step)" \
             --report "$RUNNER_TEMP/atp-ci-state/load-burst.md"
 
+      - name: Load test, busy profile, API as on the KVM 2 (think 10 s, for comparison - does not decide the job)
+        if: always() && steps.primary.outcome != 'skipped'
+        continue-on-error: true
+        run: |
+          deploy/ci/stack.sh load --name load-busy --users "$USERS" --seconds 180 --ramp 150 --think 10 \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think 10 s, API as on the KVM 2" --report "$RUNNER_TEMP/atp-ci-state/load-busy.md"
+
+      - name: The whole runner (secondary, does not decide the job) - the primary profile, 3 API processes, no CPU cap
+        if: always() && steps.primary.outcome != 'skipped'
+        continue-on-error: true
+        run: |
+          deploy/ci/stack.sh api-workers 3
+          deploy/ci/stack.sh load --name load-runner --users "$USERS" --seconds "$SECONDS_STEADY" --ramp 150 --think "$THINK" \
+            --label "GitHub-hosted runner ($(nproc) vCPU), think ${THINK} s, 3 API processes, no CPU cap" \
+            --report "$RUNNER_TEMP/atp-ci-state/load-runner.md"
+
       - name: Summary
         if: always()
         run: |
           {
             echo "## Load test ($USERS users)"
-            for f in load-primary load-busy load-kvm2 load-burst; do
+            for f in load-primary load-burst load-busy load-runner; do
               [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && { echo; echo "### $f"; cat "$RUNNER_TEMP/atp-ci-state/$f.md"; }
             done
           } >> "$GITHUB_STEP_SUMMARY" || true
-          for f in load-primary load-busy load-kvm2 load-burst; do
+          for f in load-primary load-burst load-busy load-runner; do
             [ -f "$RUNNER_TEMP/atp-ci-state/$f.md" ] && echo "::notice title=$f::$(head -n 1 "$RUNNER_TEMP/atp-ci-state/$f.md" | cut -c1-900)"
           done
           true

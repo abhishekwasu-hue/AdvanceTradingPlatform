@@ -18,10 +18,12 @@ order until the tenant has logged in and the platform's risk path has approved t
 """
 from __future__ import annotations
 
+import asyncio
 import csv
 import io
 import logging
 import time
+import weakref
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
 
@@ -31,6 +33,7 @@ from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
                                 BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, OptionChainRow, Quote)
+from app.brokers.shared_http import shared_client
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
 
@@ -58,6 +61,16 @@ AUTH_ERROR_CODES = ("DH-901", "DH-902", "DH-903", "DH-808", "DH-809")
 QUOTE_BATCH = 500
 MASTER_CACHE_TTL_SECONDS = 6 * 60 * 60
 
+# LD-7: the symbol map (platform exchange + symbol -> segment, security id, kind), built from the public scrip master
+# once per process (and again after MASTER_CACHE_TTL_SECONDS) for every adapter built without a client of its own. An
+# adapter is built per request; with its own map, every chart and screener run downloaded and parsed the whole master
+# again (tens of MB on the real Dhan host). Only the three fields `_resolve` needs are kept, not the master's rows or
+# the instrument list (instrument search still reads the master itself). Public data, the same for every user - no
+# credential is sent to fetch it.
+_SHARED_SYMBOLS: Dict[str, Tuple[float, Dict[Tuple[str, str], Tuple[str, str, str, dict]]]] = {}
+_SHARED_LOCKS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
+_NO_ROW: dict = {}
+
 
 def _parse_time(raw) -> Optional[datetime]:
     if raw in (None, ""):
@@ -81,7 +94,10 @@ class DhanBroker(BrokerInterface):
         if not (credentials.access_token and credentials.client_id):
             raise BrokerAuthenticationError("Dhan adapter requires credentials.access_token (from the Dhan console) and client_id")
         self.credentials = credentials
-        self._client = client or httpx.AsyncClient(base_url=self.BASE_URL, timeout=15.0)
+        # LD-7: built without a client (the app's own path), the adapter uses the process's shared connection to Dhan and
+        # the shared scrip master (app/brokers/shared_http.py, _SHARED_*); an injected client (tests, tools) keeps its own.
+        self._shared = client is None
+        self._client = client or shared_client(self.BASE_URL, 15.0)
         self._access_token: Optional[str] = credentials.access_token
         self._profile: Optional[BrokerProfile] = None
         self._master: Optional[Tuple[float, List[dict]]] = None
@@ -130,6 +146,29 @@ class DhanBroker(BrokerInterface):
         rows = list(csv.DictReader(io.StringIO(response.text)))
         self._master = (time.monotonic(), rows)
         return rows
+
+    async def _shared_symbols(self) -> Dict[Tuple[str, str], Tuple[str, str, str, dict]]:
+        """The process's symbol map (LD-7, `_SHARED_SYMBOLS`): built once from one download of the master - every
+        exchange, exactly as `get_instruments` maps it - and rebuilt after MASTER_CACHE_TTL_SECONDS. One build at a
+        time per event loop; the others wait for it."""
+        entry = _SHARED_SYMBOLS.get("map")
+        if entry and (time.monotonic() - entry[0]) < MASTER_CACHE_TTL_SECONDS:
+            return entry[1]
+        loop = asyncio.get_running_loop()
+        lock = _SHARED_LOCKS.get(loop)
+        if lock is None:
+            lock = _SHARED_LOCKS[loop] = asyncio.Lock()
+        async with lock:
+            entry = _SHARED_SYMBOLS.get("map")
+            if entry and (time.monotonic() - entry[0]) < MASTER_CACHE_TTL_SECONDS:
+                return entry[1]
+            await self._scrip_master()
+            for exchange in SEGMENTS:
+                await self.get_instruments(exchange)
+            table = {key: (hit[0], hit[1], hit[2], _NO_ROW) for key, hit in self._symbol_map.items()}
+            _SHARED_SYMBOLS["map"] = (time.monotonic(), table)
+            # this adapter's own copies (the rows, the instrument lists) go with it at the end of the request
+            return table
 
     @staticmethod
     def _exchange_of(segment: str) -> str:
@@ -188,9 +227,12 @@ class DhanBroker(BrokerInterface):
         alias = INDEX_ALIASES.get(key)
         if alias and alias in INDEX_SECURITY_IDS and exchange in ("NSE", "BSE"):
             return ("IDX_I", INDEX_SECURITY_IDS[alias], "INDEX")
-        if (exchange, key) not in self._symbol_map:
-            await self.get_instruments(exchange)
-        hit = self._symbol_map.get((exchange, key))
+        if self._shared and (exchange, key) not in self._symbol_map:
+            hit = (await self._shared_symbols()).get((exchange, key))
+        else:
+            if (exchange, key) not in self._symbol_map:
+                await self.get_instruments(exchange)
+            hit = self._symbol_map.get((exchange, key))
         if hit is None:
             raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found in the Dhan scrip master")
         return hit[0], hit[1], hit[2]

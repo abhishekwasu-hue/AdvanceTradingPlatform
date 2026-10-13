@@ -33,7 +33,7 @@ services:
               "-c", "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}",
               "-c", "work_mem=${PG_WORK_MEM:-8MB}",
               "-c", "maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}",
-              "-c", "max_connections=${PG_MAX_CONNECTIONS:-60}",
+              "-c", "max_connections=${PG_MAX_CONNECTIONS:-75}",
               "-c", "random_page_cost=1.1",
               "-c", "effective_io_concurrency=200"]
     shm_size: 256m
@@ -58,9 +58,13 @@ services:
       # PAPER-only with nothing for the owner to set - first boot seeds live_trading OFF and phase0_paper_only ON where no
       # entry is stored (never overwriting a later owner change). Leaving Phase 0 is a later owner decision (.env).
       ATP_DEPLOYMENT_PHASE: ${ATP_DEPLOYMENT_PHASE:-phase0}
-      # LD-7: one API process per vCPU (KVM 2). bcrypt is shared out between them (app/auth/security.py), and the pools
-      # stay under PG_MAX_CONNECTIONS (60): API 2 x (5 + 5) + trading worker 15 + research worker 15 = 50.
+      # LD-7: one API process per vCPU (KVM 2). bcrypt is shared out between them (app/auth/security.py). Each process
+      # keeps 10 connections warm (+5 overflow): with 5 + 5 the overflow connections were closed on every check-in and
+      # opened again (TLS attempt, SCRAM auth), 14.5% of the 500-user test's request time spent waiting for one. Under
+      # PG_MAX_CONNECTIONS (75): API 2 x (10 + 5) + trading worker 15 + research worker 15 = 60, leaving 12 for backups,
+      # restores, migrations and psql beside Postgres' 3 reserved; at about 10 MB a backend, 75 fit the 2 GB limit.
       API_WORKERS: ${API_WORKERS:-2}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-10}
       DB_MAX_OVERFLOW: ${DB_MAX_OVERFLOW:-5}
     deploy:
       resources:

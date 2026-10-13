@@ -166,3 +166,64 @@ def test_orders_books_funds_chain_and_errors():
     stale = DhanBroker(BrokerCredentials(access_token="old", client_id="1000001"), client=httpx.AsyncClient(transport=httpx.MockTransport(expired), base_url=DhanBroker.BASE_URL))
     with pytest.raises(BrokerAuthenticationError):
         run(stale.get_profile())
+
+
+# --- LD-7: shared connection and scrip master for adapters built without a client -----------------------------------------
+
+def _mock(client: httpx.AsyncClient, handler) -> None:
+    """Points a shared client at a mock transport (and past any proxy the environment configures)."""
+    client._transport = httpx.MockTransport(handler)
+    client._mounts = {}
+
+
+def _shared_state_reset():
+    from app.brokers import dhan
+    dhan._SHARED_SYMBOLS.clear()
+
+
+def test_adapters_without_a_client_share_one_connection_and_one_scrip_master():
+    from app.brokers import dhan
+    _shared_state_reset()
+    server = _Server()
+    creds = BrokerCredentials(access_token="tok-1", client_id="1000001")
+
+    async def go():
+        first = DhanBroker(creds)
+        _mock(first._client, server)                                  # the shared client of this loop, mocked
+        second = DhanBroker(creds)
+        assert second._client is first._client                        # one connection pool per host and loop
+        assert await first._resolve("RELIANCE") == ("NSE_EQ", "2885", "EQUITY")
+        assert await second._resolve("RELIANCE") == ("NSE_EQ", "2885", "EQUITY")
+        await second.get_historical_data("RELIANCE", "NSE", "5min", datetime(2026, 9, 29, tzinfo=timezone.utc), datetime(2026, 9, 29, tzinfo=timezone.utc))
+        assert await second._resolve("NIFTY-Oct2026-26000-CE", "NFO") == ("NSE_FNO", "43001", "OPTIDX")
+        assert await second._resolve("NIFTY") == ("IDX_I", "13", "INDEX")
+        with pytest.raises(BrokerAPIError):
+            await second._resolve("NOSUCH")
+        table = dhan._SHARED_SYMBOLS["map"][1]
+        assert all(entry[3] == {} for entry in table.values())         # the three fields only, not the master's rows
+        injected = DhanBroker(creds, client=httpx.AsyncClient(transport=httpx.MockTransport(server), base_url=DhanBroker.BASE_URL))
+        assert await injected._resolve("RELIANCE") == ("NSE_EQ", "2885", "EQUITY")   # a tool's own client: its own master
+        return [str(r.url) for r in server.requests]
+    urls = run(go())
+    assert urls.count(SCRIP_MASTER_URL) == 2                          # once for the shared map, once for the tool's own
+    assert any(u.endswith("/charts/intraday") for u in urls)
+    _shared_state_reset()
+
+
+def test_the_shared_client_keeps_no_cookie_between_requests():
+    """BT1b: a cookie a broker sets on one user's response must never ride along on another user's request."""
+    seen = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.headers.get("cookie"))
+        return httpx.Response(200, json={}, headers={"set-cookie": "session=user-a; Path=/; Domain=api.dhan.co"})
+
+    async def go():
+        from app.brokers.shared_http import shared_client
+        client = shared_client("https://api.dhan.co/v2", 15.0)
+        _mock(client, handler)
+        await client.get("/profile", headers={"access-token": "user-a"})
+        await client.get("/profile", headers={"access-token": "user-b"})
+        assert shared_client("https://api.dhan.co/v2", 15.0) is client and len(client.cookies) == 0
+    run(go())
+    assert seen == [None, None]

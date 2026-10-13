@@ -55,7 +55,7 @@ services:
               "-c", "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}",
               "-c", "work_mem=${PG_WORK_MEM:-8MB}",
               "-c", "maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}",
-              "-c", "max_connections=${PG_MAX_CONNECTIONS:-60}",
+              "-c", "max_connections=${PG_MAX_CONNECTIONS:-75}",
               "-c", "random_page_cost=1.1",
               "-c", "effective_io_concurrency=200",
               "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=top"]
@@ -71,14 +71,14 @@ services:
       args:
         BASE_IMAGE: atp-backend:${ATP_RELEASE:-latest}
     pull_policy: never
-    # The image's own CMD (scripts/serve_api.sh). LD-7: API_WORKERS processes, sized for the runner (4 vCPU, shared with
-    # the load generator, the fake broker and Postgres): 3 unless the env file says otherwise (`stack.sh api-workers N`;
-    # the Hostinger overlay's own default is 2, one per vCPU).
+    # The image's own CMD (scripts/serve_api.sh). LD-7: API_WORKERS processes, as on the Hostinger KVM 2 (2, one per
+    # vCPU) unless the env file says otherwise (`stack.sh api-workers N [--cpus C]`); the load-500 job also caps them at
+    # the KVM 2's 2 CPUs for the run that decides it.
     command: ["sh", "scripts/serve_api.sh"]
     environment:
       <<: *faketime
       GLOBAL_CUES_ENABLED: "false"
-      API_WORKERS: ${API_WORKERS:-3}
+      API_WORKERS: ${API_WORKERS:-2}
     extra_hosts: *broker_hosts
     volumes:
       - ci_tls:/ci-tls:ro

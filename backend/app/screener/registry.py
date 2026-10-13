@@ -87,6 +87,7 @@ _DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
 _SIDE = Arg("side", STR, choices=("up", "down"))
 BREAKOUT_FLAG = "screener_breakouts"
 BREAKOUT_BK3_FLAG = "screener_breakouts_bk3"        # U6 BK3: VCP + indicator breakouts, on top of `screener_breakouts`
+BREAKOUT_BK4_FLAG = "screener_breakouts_bk4"        # U6 BK4: trendline / pattern / gap / retest, on top of `screener_breakouts`
 
 
 def _bk(name: str, arg: str, type_: str, required: bool = False, choices: Tuple[object, ...] = ()) -> Arg:
@@ -114,6 +115,13 @@ _N = Arg("n", "window")
 # the MA breakout reads the slope / consolidation window behind the average (10 + 1 bars); the regime breakout the RSI /
 # ADX warm-up (ADX settles after about 2 x 14 bars) behind its window.
 _BK3 = (BREAKOUT_BK3_FLAG,)
+_BK4 = (BREAKOUT_BK4_FLAG,)
+# U6 BK4 history: a trendline's first anchor may be tl_max_bars (120) back with its swing window before it; a retest of a
+# swing break reads the D1 swings (250 bars, SWING_DEGREE_MIN_BARS); a gap reads the previous session (intraday: whole sessions)
+LINE_MIN_BARS = 125
+RETEST_MIN_BARS = 250
+GAP_TFS = ("1m", "3m", "5m", "15m", "1d")
+GAP_CLASSES = ("GAP_AND_GO", "GAP_HOLD", "GAP_FILL")
 _TT_ARG = _bk("tt_filter", "template", BOOL)
 _DRY_ARG = _bk("vcp_vol_dryup", "dryup", BOOL)
 VCP_MIN_BARS = 251
@@ -304,6 +312,29 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          extra_bars=REGIME_EXTRA_BARS, flag=BREAKOUT_FLAG, also_flags=_BK3,
          doc="B15: RSI leaves the 50 +/- band it held for n bars, ADX rises from at or below adx with the DI of the side leading, and"
              " the close clears the n-bar high (up) / low (down) by k ATR"),
+    # U6 BK4: trendline / channel (B5), flag / pennant / triangle (B6), gap (B8) and retest (B9) breakouts
+    # (app/screener/breakouts/lines.py, gaps.py, retest.py); behind `screener_breakouts` AND `screener_breakouts_bk4`.
+    Spec("TrendlineBreakout", "filter", BOOL, None, (_SIDE, _bk("tl_mode", "mode", STR), _bk("tl_min_touches", "touches", NUM), _K), cost=4.0,
+         min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B5: mode line - the first close above the falling resistance (up) / below the rising support (down) trendline with at least"
+             " `touches` swings, by k ATR; mode channel - beyond the far edge of a rising (up) / falling (down) channel"),
+    Spec("PatternBreakout", "filter", BOOL, None, (_SIDE, _bk("pattern", "pattern", STR), _bk("vol_mult", "v", NUM), _K), cost=4.0,
+         min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B6: a close above (up) / below (down) a flag, a pennant or a converging triangle by k ATR on volume >= v x average"),
+    Spec("GapBreakout", "filter", BOOL, None, (_SIDE, _bk("gap_level", "level", STR), _bk("gap_hold_min", "hold", NUM)), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, min_sessions=2, timeframes=GAP_TFS, tf_multiple_args=("hold",), flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B8: the session opened beyond the previous session's high (up) / low (down) - level base: the last 20 sessions' - and every"
+             " close of its first `hold` minutes stayed beyond it (Daily: the day's close); true on the bar that ends the window"),
+    Spec("GapType", "classifier", CAT, None, (_SIDE, _bk("gap_level", "level", STR), _bk("gap_hold_min", "hold", NUM)), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, min_sessions=2, timeframes=GAP_TFS, tf_multiple_args=("hold",), values=GAP_CLASSES + ("",),
+         flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B8: on the bar that ends a gap's hold window, GAP_AND_GO (held, close at or beyond the open), GAP_HOLD (held, faded"
+             " toward the level) or GAP_FILL (a close back inside the level); empty on other bars"),
+    Spec("RetestEntry", "filter", BOOL, None, (_SIDE, _bk("retest_of", "of", STR), _bk("retest_max_bars", "bars", NUM),
+                                               _bk("retest_reversal", "reversal", BOOL)), cost=4.0, min_bars=RETEST_MIN_BARS,
+         flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B9: after a range / swing / Donchian / trendline breakout, price left the level and came back within `bars` bars to"
+             " hold it - a logical reversal at the level (reversal) or a touch - closing at or beyond it; once per breakout"),
     # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
     Spec("NearZone", "filter", BOOL, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
          doc="true when there is a zone of that role" + _ZDOC),
@@ -318,6 +349,7 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
 BREAKOUT_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == BREAKOUT_FLAG)
 BREAKOUT_BK3_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if BREAKOUT_BK3_FLAG in spec.also_flags)
+BREAKOUT_BK4_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if BREAKOUT_BK4_FLAG in spec.also_flags)
 
 
 # Z10-a (U3 G2): functions answered for the LAST bar only - the structure / pattern / zone filters, the option chain,
@@ -345,6 +377,6 @@ def describe() -> Dict[str, Dict[str, object]]:
 
 
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
-           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS",
+           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS",
            "ZONES_FLAG", "MAX_WINDOW",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

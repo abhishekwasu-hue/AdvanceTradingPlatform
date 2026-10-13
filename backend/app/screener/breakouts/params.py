@@ -1,4 +1,4 @@
-"""U6 BK1 / BK2 / BK3: every breakout threshold as an editable parameter - a documented default and a one-line research note.
+"""U6 BK1 / BK2 / BK3 / BK4: every breakout threshold as an editable parameter - a documented default and a one-line research note.
 
 Nothing here is fitted to data. Each default is a published convention or the practitioner range named in
 docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md §1; the note says which, and docs/research/breakouts.md gives the sources.
@@ -22,7 +22,7 @@ class Param:
     low: Optional[float] = None               # inclusive range for numbers
     high: Optional[float] = None
     choices: Tuple[Any, ...] = ()
-    group: str = "common"                     # common / B1 / B2 / B3 / B4 / B7 / B10 / B11 / B12 / B13 / B14 / B15 / B16 / B17 /
+    group: str = "common"                     # common / B1 .. B17 (the screen's own) /
     #                                           intraday / quality / style
 
 
@@ -246,6 +246,56 @@ PARAMS: Tuple[Param, ...] = (
     Param("adx_low", 20.0, "ADX was at or below this inside the compression (a low base) and rises on the break bar, with the DI on the "
           "breakout side leading", "Common reading of Wilder's ADX: below 20 = no trend; rising from there = a trend being born.",
           5.0, 60.0, group="B15"),
+    # --- B5 trendline / channel (U6 BK4, flag screener_breakouts_bk4) -----------------------------------------------------
+    Param("tl_mode", "line", "line: close beyond a falling resistance line (up) / rising support line (down); channel: close beyond the far "
+          "edge of a rising (up) / falling (down) channel - the parallel through the farthest extreme between the line's anchors",
+          "Both forms named in spec B5; the lines and channels are the platform's trendline port (CH3b, Trade trendlines).",
+          choices=("line", "channel"), group="B5"),
+    Param("tl_order", 3, "trendline swings: a swing high / low is the extreme of the 2 x order + 1 bars around it (known order bars later)",
+          "Trade trendlines default: the extreme of 3 bars either side.", 2, 10, group="B5"),
+    Param("tl_min_touches", 2, "the line has at least this many swings on it (its two anchors included)", "Spec B5: at least 2 touches.",
+          2, 10, group="B5"),
+    Param("tl_min_gap", 5, "the line's two anchors are at least this many bars apart", "Trade trendlines default: anchors at least 5 bars apart.",
+          2, 100, group="B5"),
+    Param("tl_max_slope", 0.5, "angle filter: the line moves at most this many median bar ranges per bar",
+          "Trade trendlines default (0.5 x the median range per bar): a steeper line is a leg, not a trendline.", 0.05, 5.0, group="B5"),
+    Param("tl_touch_tol", 0.25, "a swing touches the line within this many median bar ranges",
+          "Trade trendlines default: within a quarter of the median range.", 0.0, 2.0, group="B5"),
+    Param("tl_max_bars", 120, "age filter: the line's first anchor is at most this many bars before the bar",
+          "About six months on Daily; spec B5's age filter, which also bounds the cost.", 20, 500, group="B5"),
+    # --- B6 flag / pennant / triangle (U6 BK4) ----------------------------------------------------------------------------
+    Param("pattern", "flag", "flag: a fast pole, then a shallow consolidation, then a close above it; pennant: the same with a contracting "
+          "consolidation; triangle: a falling resistance and a rising support line converging, then a close above the resistance",
+          "The three patterns named in spec B6 (Edwards & Magee, Technical Analysis of Stock Trends; Bulkowski, Encyclopedia of Chart Patterns).",
+          choices=("flag", "pennant", "triangle"), group="B6"),
+    Param("pole_min_atr", 3.0, "flag / pennant: the pole rises at least this many ATRs (ATR at the pole's top)",
+          "A pole is a fast, outsized move; 3 ATR is a common flagpole threshold, not fitted.", 0.5, 20.0, group="B6"),
+    Param("pole_max_bars", 10, "flag / pennant: the pole takes at most this many bars", "Bulkowski: flag poles are steep and short (two weeks on Daily).",
+          2, 50, group="B6"),
+    Param("flag_min_bars", 5, "flag / pennant: the consolidation lasts at least this many bars", "One trading week on Daily.", 2, 100, group="B6"),
+    Param("flag_max_bars", 15, "flag / pennant: the consolidation lasts at most this many bars",
+          "Bulkowski: flags and pennants last up to about three weeks; longer is a base (B1).", 3, 200, group="B6"),
+    Param("flag_max_retrace", 0.5, "flag / pennant: the consolidation gives back at most this fraction of the pole",
+          "Classic rule: a flag retraces less than half of the pole (Edwards & Magee).", 0.05, 1.0, group="B6"),
+    # --- B8 gap breakout (U6 BK4) -----------------------------------------------------------------------------------------
+    Param("gap_level", "prev_day", "the level the gap clears: prev_day (the previous session's high / low) or base (the highest high / "
+          "lowest low of the previous gap_base_n sessions)", "Spec B8 'gap beyond a level/base on the open'.",
+          choices=("prev_day", "base"), group="B8"),
+    Param("gap_base_n", 20, "base: the sessions whose high / low make the level", "About one trading month, as vol_avg_n.", 2, 250, group="B8"),
+    Param("gap_min_atr", 0.0, "the session opens beyond the level by at least this many daily ATRs (ATR of the sessions before; 0 = any gap)",
+          "ATR-scaled, not points; 0 keeps every open beyond the level - raise it for larger gaps only.", 0.0, 10.0, group="B8"),
+    Param("gap_hold_min", 30, "intraday: every close of the session's first N minutes stays beyond the level; the signal is the bar that ends "
+          "them (a whole number of bars); Daily: the day's close", "Spec B8 'holding above the level by the end of the first N minutes'; 30 "
+          "minutes = the second opening-range window of spec B16.", 1, 240, group="B8"),
+    # --- B9 retest entry (U6 BK4) -----------------------------------------------------------------------------------------
+    Param("retest_of", "range", "the breakout a retest follows: range (B1), swing (B2), donchian (B10) or trendline (B5), with their own "
+          "parameters", "Spec B9 'breakout already happened'; the fixed-level breakouts of this family.",
+          choices=("range", "swing", "donchian", "trendline"), group="B9"),
+    Param("retest_max_bars", 10, "the retest comes within this many bars after the breakout (and before any close back inside the level)",
+          "Two trading weeks on Daily: a later return is a new base, not a retest.", 1, 100, group="B9"),
+    Param("retest_reversal", True, "the retest bar is a logical reversal at the level (app/price_action/reversal.py, as ReversalAt); False: "
+          "a touch within retest_tol_atr ATR with the close held is enough", "Spec B9: the same commitment forms as the pullback screens (ReversalAt).",
+          group="B9"),
     # --- style / timeframes -----------------------------------------------------------------------------------------------
     Param("context_ladder", DEFAULT_CONTEXT_LADDER, "signal timeframe -> the higher timeframes read for context (closed bars only)",
           "Elder's triple screen: each screen about 4-6x the one below (spec §2 examples 15m -> 1h + 1d, 1h -> 1d + 1w).", group="style"),
@@ -332,6 +382,9 @@ def validate(overrides: Optional[Dict[str, Any]] = None) -> Tuple[Dict[str, Any]
     if clean["tod_min_sessions"] > clean["tod_sessions"]:
         errors.append("tod_min_sessions must not be above tod_sessions - defaults used")
         clean["tod_sessions"], clean["tod_min_sessions"] = DEFAULTS["tod_sessions"], DEFAULTS["tod_min_sessions"]
+    if clean["flag_min_bars"] > clean["flag_max_bars"]:
+        errors.append("flag_min_bars must not be above flag_max_bars - defaults used")
+        clean["flag_min_bars"], clean["flag_max_bars"] = DEFAULTS["flag_min_bars"], DEFAULTS["flag_max_bars"]
     if clean["vcp_min_bars"] > clean["vcp_max_bars"]:
         errors.append("vcp_min_bars must not be above vcp_max_bars - defaults used")
         clean["vcp_min_bars"], clean["vcp_max_bars"] = DEFAULTS["vcp_min_bars"], DEFAULTS["vcp_max_bars"]

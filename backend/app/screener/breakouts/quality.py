@@ -269,6 +269,7 @@ def run_breakout(screen: str, frames: Dict[str, pd.DataFrame], signal_tf: str, *
                                     if np.isfinite(base_high) and np.isfinite(base_low) and base_low != 0 else None),
                 "event": row["event"], "days_since": None if not np.isfinite(row["days_since"]) else int(row["days_since"]),
                 "through": bool(row["through"]) if screen == "B14" else None,
+                "measured_move": round(float(row["measured_move"]), 6) if np.isfinite(row["measured_move"]) else None,   # U6 BK4
                 "htf": tr, "htf_pass": htf_pass(list(tr.values()), side, p["htf_filter"]),
                 "grade": g["grade"], "points": g["points"], "why": g["why"], "checks": g["checks"], "stop_ref": g["stop_ref"],
                 "status": status, "retest": retest, "decided_bar": decided,

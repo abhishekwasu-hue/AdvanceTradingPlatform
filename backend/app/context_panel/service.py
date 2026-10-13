@@ -208,11 +208,13 @@ async def fii_dii_tile(session: AsyncSession, user: Viewer, today: date, holiday
     return {"status": "ok", "source": source, "as_of": data.get("as_of"), **{k: v for k, v in data.items() if k != "as_of"}}
 
 
-_global_failed_at: Dict[str, float] = {"at": 0.0}
+# None = no failure yet. Not 0.0: time.monotonic() counts from an arbitrary point (on Linux, the host's boot), so in a
+# container started less than GLOBAL_FAIL_BACKOFF_SECONDS after boot a 0.0 sentinel would read as "just failed".
+_global_failed_at: Dict[str, Optional[float]] = {"at": None}
 
 
 def reset_global_backoff() -> None:
-    _global_failed_at["at"] = 0.0
+    _global_failed_at["at"] = None
 
 
 async def global_tile(session: AsyncSession, user: Viewer, today: date, holidays: Sequence[date]) -> Dict[str, Any]:
@@ -222,7 +224,8 @@ async def global_tile(session: AsyncSession, user: Viewer, today: date, holidays
         return na("Global cues are switched off on this server (GLOBAL_CUES_ENABLED)", source)
     # Review: during an outage a panel load does not fan out to every upstream again for GLOBAL_FAIL_BACKOFF_SECONDS
     # (the shared cache keeps only successful reads).
-    if time.monotonic() - _global_failed_at["at"] < GLOBAL_FAIL_BACKOFF_SECONDS:
+    failed_at = _global_failed_at["at"]
+    if failed_at is not None and time.monotonic() - failed_at < GLOBAL_FAIL_BACKOFF_SECONDS:
         return na("No global market answered a moment ago; asked again shortly", source)
     quotes, errors = await global_cues.fetch_all()
     if not quotes:

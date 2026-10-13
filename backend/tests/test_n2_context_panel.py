@@ -224,3 +224,23 @@ def test_a_failed_global_fetch_is_not_retried_on_every_panel_load(monkeypatch):
     _run(service.global_tile(None, viewer, _today(), []))
     assert len(calls) == 2
     service.reset_global_backoff()
+
+
+def test_the_first_global_fetch_after_a_fresh_boot_is_not_backed_off(monkeypatch):
+    """N2 review LOW: time.monotonic() may be smaller than the backoff right after the host boots; no failure yet must
+    never read as "failed a moment ago"."""
+    import time as time_module
+
+    from app.ai import global_cues
+    calls = []
+
+    async def failing(*args, **kwargs):
+        calls.append(1)
+        return [], ["x"]
+    monkeypatch.setattr(global_cues, "enabled", lambda: True)
+    monkeypatch.setattr(global_cues, "fetch_all", failing)
+    monkeypatch.setattr(time_module, "monotonic", lambda: 5.0)            # five seconds after boot
+    service.reset_global_backoff()
+    _run(service.global_tile(None, service.Viewer(id=1, tenant_id=1), _today(), []))
+    assert len(calls) == 1
+    service.reset_global_backoff()

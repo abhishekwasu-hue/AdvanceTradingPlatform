@@ -232,10 +232,12 @@ def run_option_backtest(
         broker.slippage_model = models.slippage_model(broker.slippage_pct)
     margin = models.margin_model()
     margin_on = margin.name != "none"
-    # N7 C2d: physical settlement of stock options (index options always settle in cash)
-    from app.execution.prechecks import is_index_symbol
-    physical = models.settlement_model().physical(is_index_symbol(symbol))
+    # N7 C2d: physical settlement of stock options (index options always settle in cash) - review of C2d: classified on
+    # the resolved F&O underlying, not the raw symbol (an index's full name is an alias of its underlying)
+    from app.instruments.master import INDEX_SYMBOLS
+    physical = models.settlement_model().physical(underlying in INDEX_SYMBOLS)
     physical_legs = 0
+    physical_no_close = 0                 # expiries settled from a later bar: cash-settled instead (no expiry-day close)
     margin_refused = 0
     margin_calls = 0
     b76: Optional[Black76Pricer] = None
@@ -260,7 +262,7 @@ def run_option_backtest(
     step_used: Optional[float] = None
 
     def close_position(pos: _Open, exit_prices: Dict[int, float], when, reason: str, spot: Optional[float] = None) -> None:
-        nonlocal equity, settlements, open_pos, physical_legs
+        nonlocal equity, settlements, open_pos, physical_legs, physical_no_close
         gross = 0.0
         charges = 0.0
         settled = reason.startswith("Expiry")
@@ -277,8 +279,12 @@ def run_option_backtest(
                                                             entry_date=pos.entry_time, exit_date=when)
                 if physical and price > 0 and spot is not None:
                     # N7 C2d: an in-the-money stock option leg (bought or written) becomes a delivery of the underlying at
-                    # the settlement price, squared there: delivery charges on both legs, no exercise STT
-                    charges += broker.estimate_round_trip_costs(spot, spot, leg.quantity, "UNDERLYING", delivery=True,
+                    # the strike, squared at the settlement price: delivery charges on both legs, no exercise STT. Review of
+                    # C2d: (buy, sell) - a bought call takes delivery at the strike and sells at spot, a written call buys
+                    # at spot to deliver at the strike; puts the other way round.
+                    bought = leg.role == "LONG"
+                    buy_px, sell_px = (leg.strike, spot) if (leg.right == "CE") == bought else (spot, leg.strike)
+                    charges += broker.estimate_round_trip_costs(buy_px, sell_px, leg.quantity, "UNDERLYING", delivery=True,
                                                                 entry_date=when, exit_date=when)
                     physical_legs += 1
                 elif leg.role == "LONG":
@@ -409,7 +415,12 @@ def run_option_backtest(
                 if reason is not None:
                     fills = {idx: (p if settle else round(broker._slip(p, SignalDirection.LONG if pos.legs[idx].role == "SHORT" else SignalDirection.SHORT), 2))
                              for idx, p in prices.items()}
-                    close_position(pos, fills, ts, reason, spot=exit_spot if settle else None)
+                    # review of C2d: physical settlement needs the expiry day's own close; settled from a later bar (the data
+                    # skipped it), the expiry is cash-settled instead and counted
+                    on_the_day = settle and bar_day == pos.near_expiry
+                    if settle and physical and not on_the_day:
+                        physical_no_close += 1
+                    close_position(pos, fills, ts, reason, spot=exit_spot if on_the_day else None)
             except PricingUnavailable as exc:
                 skipped[f"open position not repriced: {exc}"] += 1
 
@@ -515,7 +526,8 @@ def run_option_backtest(
         exit_rules=time_rules.to_json() if time_rules is not None else None, options=options,
         execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
                                                   "model_prices": b76.count if b76 is not None else 0,
-                                                  "settlement": "physical" if physical else "cash", "physically_settled_legs": physical_legs},
+                                                  "settlement": "physical" if physical else "cash", "physically_settled_legs": physical_legs,
+                                                  "physical_without_expiry_close": physical_no_close},
     )
 
 

@@ -104,10 +104,11 @@ Rules that apply across all six:
   hence the C4 `config_hash`) and in the fingerprint's `seed`. With `sigma` 0 it is `fixed_ms` at `median_ms` (tested).
   The fill is `fixed_ms`'s: the open of the bar trading when the order arrives.
 - `physical` settlement (option engine): an in-the-money leg of an expiring STOCK option - bought or written - settles
-  by delivery of the underlying at the settlement price, squared there (the run holds no stock): delivery charges on
-  both legs (STT 0.1 % each side, stamp on the buy, exchange, SEBI, GST, brokerage per order) on the settlement value,
-  instead of the exercise STT. Index options stay cash-settled; out-of-the-money legs are unchanged; the option's P&L
-  is still its intrinsic value. Counted in `execution.physically_settled_legs` (C2-8).
+  by delivery of the underlying at the strike, squared at the settlement price (the run holds no stock): delivery
+  charges on both legs (STT 0.1 % each side, stamp on the buy, exchange, SEBI, GST, brokerage per order), instead of the
+  exercise STT. Index options (by the resolved underlying) stay cash-settled; out-of-the-money legs are unchanged; the
+  option's P&L is still its intrinsic value. An expiry without its own close in the data is cash-settled and counted.
+  Counted in `execution.physically_settled_legs` (C2-8).
 - Both need `backtest_models` at the API. Settlement applies to option backtests only (a single-leg request is a 422);
   the portfolio backtest (C3) refuses `sampled` and `physical`. The defaults are unchanged (golden test).
 

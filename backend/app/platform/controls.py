@@ -208,6 +208,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    # N1 X2: Auto PAPER from scans. OFF (the default, and while the owner has not decided N1-3): an AUTO_PAPER template
+    # stays a proposal. ON: a template its owner armed places one PAPER order per confirmed setup (approval-only mode
+    # off, within the scan limits, re-quoted) - PAPER only, never a broker order. Only the platform operator sets it.
+    "scan_auto_paper": "Auto PAPER from armed scan templates (N1 X2): a confirmed setup is placed as a PAPER order without a proposal (approval-only mode off; PAPER only, never a broker order)",
     # U7 LG2: the second slice of Legends cards (trend, pullback and intraday methods; data/legends.json `slice: lg2`), on
     # top of screener_legends. OFF: the LG2 cards are left out of /api/screener/legends and their screens out of the
     # taxonomy. Educational only - never a recommendation, never an endorsement; places no orders.
@@ -279,7 +283,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

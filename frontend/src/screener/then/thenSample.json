@@ -46,6 +46,14 @@
   },
   "status_shown": true,
   "updated_at": "2026-10-12T18:29:12.426215",
+  "auto_paper": {
+   "available": false,
+   "armed": false,
+   "why": "Auto PAPER is not offered on this platform (the operator's scan_auto_paper switch is off): a proposal instead",
+   "today": 0,
+   "max_per_day": 3,
+   "armed_at": null
+  },
   "set_by_you": true,
   "may_change": true
  },

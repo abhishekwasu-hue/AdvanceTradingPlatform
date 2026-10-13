@@ -945,6 +945,9 @@ export const api = {
   allThen: () => request<{ templates: Record<string, ThenTemplate> }>("/alerts/then"),
   putRuleThen: (id: number, body: ThenBody) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "PUT", body: JSON.stringify(body) }),
   deleteRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then`, { method: "DELETE" }),
+  // N1 X2: the template owner arms Auto PAPER (typed confirmation) / the owner or the organisation OWNER disarms it.
+  armRuleThen: (id: number, confirm: string) => request<ThenTemplate>(`/alerts/rules/${id}/then/arm`, { method: "PUT", body: JSON.stringify({ confirm }) }),
+  disarmRuleThen: (id: number) => request<ThenTemplate>(`/alerts/rules/${id}/then/arm`, { method: "DELETE" }),
   ruleThenIntents: (id: number, limit = 50) => request<ThenIntent[]>(`/alerts/rules/${id}/then/intents?limit=${limit}`),
   getNotificationPolicy: () => request<NotificationPolicy>("/alerts/policy"),
   putNotificationPolicy: (body: NotificationPolicy) => request<NotificationPolicy>("/alerts/policy", { method: "PUT", body: JSON.stringify(body) }),

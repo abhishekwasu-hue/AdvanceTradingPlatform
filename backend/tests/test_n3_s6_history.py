@@ -438,6 +438,9 @@ def test_scales_are_rounded_so_a_split_is_one_evaluation_per_side():
     noisy = {H.scale_of(100.0 * k / 3, 200.0 * k / 3, 2000.0 * k, 1000.0 * k) for k in range(1, 400)}
     assert noisy == {(0.5, 0.5)}
     assert H.scale_of(100.0, 100.0000000001, 10.0, 10.0) == (1.0, 1.0)
+    # a 3:2 bonus: the adjusted volume is whole shares, so raw / adjusted is noisy - the price's factor is used
+    assert {H.scale_of(100.0 * k, 150.0 * k, round(1333.3 * k * 1.5), 1333 * k) for k in range(1, 50)} == {(0.666667, 0.666667)}
+    assert H.scale_of(98.0, 100.0, 1000.0, 1000.0) == (0.98, 1.0)                  # a price-only (dividend) adjustment
     frames, days = _universe(n=50, bars=200, seed=3)
     dates = days[80:200]
     split = days[140]

@@ -280,3 +280,38 @@ def test_dhan_bars_are_the_same_as_validated_ones():
     validated = OHLCVBar(timestamp=datetime.fromtimestamp(stamp, tz=timezone.utc).astimezone(IST), open=1.0, high=2.0, low=0.5,
                          close=1.5, volume=10.0)
     assert built == validated and built.model_dump(mode="json") == validated.model_dump(mode="json")
+
+
+# --- where requests wait (diagnostics) ------------------------------------------------------------------------------
+
+def _hist_count(histogram) -> float:
+    return next(s.value for m in histogram.collect() for s in m.samples if s.name.endswith("_count"))
+
+
+def test_password_checks_record_their_queue_wait_and_run_time():
+    from app.auth import security
+    from app.observability.metrics import BCRYPT_QUEUE_WAIT, BCRYPT_SECONDS
+    waits, runs = _hist_count(BCRYPT_QUEUE_WAIT), _hist_count(BCRYPT_SECONDS)
+    hashed = asyncio.run(security.hash_password_async("correct-horse-battery-staple"))
+    assert asyncio.run(security.verify_password_async("correct-horse-battery-staple", hashed)) is True
+    assert asyncio.run(security.verify_password_async("wrong", hashed)) is False
+    assert _hist_count(BCRYPT_QUEUE_WAIT) == waits + 3 and _hist_count(BCRYPT_SECONDS) == runs + 3
+
+
+def test_the_timed_pool_records_each_checkout_and_changes_nothing_else(tmp_path):
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from app.db.session import TimedQueuePool
+    from app.observability.metrics import DB_POOL_WAIT
+
+    async def go():
+        engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'pool.db'}", poolclass=TimedQueuePool, pool_size=1, max_overflow=0)
+        before = _hist_count(DB_POOL_WAIT)
+        for _ in range(3):
+            async with engine.connect() as conn:
+                assert (await conn.execute(text("select 1"))).scalar() == 1
+        await engine.dispose()
+        return _hist_count(DB_POOL_WAIT) - before
+
+    assert asyncio.run(go()) == 3

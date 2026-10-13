@@ -201,6 +201,8 @@ jobs:
           path: |
             ${{ runner.temp }}/atp-ci-state/load-*.md
             ${{ runner.temp }}/atp-ci-state/load-*/result.*
+            ${{ runner.temp }}/atp-ci-state/load-*/*.md
+            ${{ runner.temp }}/atp-ci-state/load-*/*.prom
             ${{ runner.temp }}/atp-ci-state/load-*/*.csv
             ${{ runner.temp }}/atp-ci-state/load-*/*.log
             ${{ runner.temp }}/atp-ci-state/load-profile.*

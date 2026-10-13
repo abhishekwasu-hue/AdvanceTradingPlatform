@@ -174,6 +174,9 @@ Upstox / Dhan broker), built from the commit. Results and analysis: `docs/report
 - **The login wave and the rate limit.** Nothing is bypassed. The generator runs as 25 shards, each its own container
   and so its own client IP on the stack network, through Caddy, which passes that IP on; each IP logs in at most
   8 times a minute against the limit of 10. `backend/scripts/loadtest.py --account-offset / --raw-out / --merge`.
+- **One schedule for all shards (LD-7).** Every shard's ramp starts at the same wall-clock instant (`--start-at`) and
+  shard i of n takes the i/n-th part of each start slot (`--shard / --shards`), so the 25 shards between them start a
+  user every 0.3 s. Before, each shard started its 20 users on its own clock: 25 logins arrived together every 7.5 s.
 - **Profiles.**
   - Primary: a page load every 30 s on average (the Dashboard page's own refresh), for 5 minutes after the ramp.
     It decides the job.
@@ -184,8 +187,14 @@ Upstox / Dhan broker), built from the commit. Results and analysis: `docs/report
 - **Diagnostics.**
   - Every report also lists the requests started after the login ramp on their own. This table is diagnostic only;
     the verdict covers every request.
-  - The CI job samples the API processes with py-spy for 60 s inside the ramp and 60 s after it, and prints a summary
-    (`deploy/ci/profile_api.sh`).
+  - Database connections by state (`pg_stat_activity`) every 5 s: peak and mean per state.
+  - What the API measured itself over the run (`deploy/ci/metrics_summary.py`, two scrapes of `/metrics`): the
+    server-side time per route and its share of all request time, the waits for a pooled connection
+    (`atp_db_pool_wait_seconds`) and for a bcrypt thread (`atp_bcrypt_queue_wait_seconds`), and the bcrypt checks' own
+    time (`atp_bcrypt_seconds`).
+  - The statements by total time (`pg_stat_statements`, preloaded by the CI overlay's Postgres only).
+  - On request (workflow input `profile`), the CI job samples the API processes with py-spy for 60 s inside the ramp
+    and 60 s after it, and prints a summary (`deploy/ci/profile_api.sh`). Off by default: it costs the runner CPU.
 - **Clock.** The real clock: the load needs no market session, and libfaketime (used by the acceptance flow) costs the
   API about half its throughput in a local comparison.
 

@@ -46,6 +46,19 @@ volumes:
 services:
   postgres:
     ports: !override []
+    # docker-compose.hostinger.yml's command, unchanged, plus pg_stat_statements (LD-7 diagnostics: the load test's
+    # statements by total time, deploy/ci/stack.sh load). CI only; a Compose override replaces the whole command.
+    command: ["postgres",
+              "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_timeout=300",
+              "-c", "archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f",
+              "-c", "shared_buffers=${PG_SHARED_BUFFERS:-512MB}",
+              "-c", "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}",
+              "-c", "work_mem=${PG_WORK_MEM:-8MB}",
+              "-c", "maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}",
+              "-c", "max_connections=${PG_MAX_CONNECTIONS:-60}",
+              "-c", "random_page_cost=1.1",
+              "-c", "effective_io_concurrency=200",
+              "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=top"]
 
   redis:
     ports: !override []

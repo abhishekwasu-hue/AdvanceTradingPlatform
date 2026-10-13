@@ -1,13 +1,31 @@
-from typing import AsyncIterator
+import time
+from typing import Any, AsyncIterator
 
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import AsyncAdaptedQueuePool
 
 from app.core.config import DATABASE_URL, DB_MAX_OVERFLOW, DB_POOL_SIZE, DB_POOL_TIMEOUT_SECONDS
 from app.db.base import Base
 
 # LD-7: the pool is sized per process (DB_POOL_SIZE / DB_MAX_OVERFLOW / DB_POOL_TIMEOUT_SECONDS, app/core/config.py);
 # a pool-less URL (SQLite in a tool) keeps its own pool.
-_pool_args = ({"pool_size": DB_POOL_SIZE, "max_overflow": DB_MAX_OVERFLOW, "pool_timeout": DB_POOL_TIMEOUT_SECONDS}
+
+
+class TimedQueuePool(AsyncAdaptedQueuePool):
+    """LD-7: the async queue pool, recording how long each checkout waited (`atp_db_pool_wait_seconds`): a full pool
+    shows as waits here, not as CPU. Nothing else changes."""
+
+    def _do_get(self) -> Any:
+        started = time.perf_counter()
+        try:
+            return super()._do_get()
+        finally:
+            from app.observability.metrics import DB_POOL_WAIT
+            DB_POOL_WAIT.observe(time.perf_counter() - started)
+
+
+_pool_args = ({"pool_size": DB_POOL_SIZE, "max_overflow": DB_MAX_OVERFLOW, "pool_timeout": DB_POOL_TIMEOUT_SECONDS,
+               "poolclass": TimedQueuePool}
               if DATABASE_URL.startswith("postgresql") else {})
 _engine: AsyncEngine = create_async_engine(
     DATABASE_URL, echo=False,

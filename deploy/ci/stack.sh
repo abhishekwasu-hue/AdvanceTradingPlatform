@@ -150,6 +150,8 @@ cmd_load() {
   rm -rf "${STATE:?}/$name"; mkdir -p "$STATE/$name"
   local per=$(( (users + shards - 1) / shards )) i offset n pids=()
   step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s"
+  scrape_metrics > "$STATE/$name/metrics-before.prom" || true
+  pg_statements_reset || true
   sample_stats "$STATE/$name/docker-stats.csv" & local sampler=$!
   sample_db "$STATE/$name/db-connections.csv" & local db_sampler=$!
   # LD-7: one schedule for all shards - every ramp starts at the same instant (time for the containers to come up first)
@@ -174,6 +176,12 @@ cmd_load() {
   awk -F, 'NR > 1 { if (!($1 in seen)) { seen[$1] = 1; samples++ } sum[$2] += $3; if ($3 > peak[$2]) peak[$2] = $3 }
            END { for (s in sum) printf "    db connections %-28s peak %3d  mean %5.1f\n", s, peak[s], sum[s] / samples }' \
     "$STATE/$name/db-connections.csv" 2>/dev/null | sort || true
+  # LD-7: what the API measured itself (time per route, pool and bcrypt waits) and the statements by total time
+  scrape_metrics > "$STATE/$name/metrics-after.prom" || true
+  python3 "$SCRIPT_DIR/metrics_summary.py" "$STATE/$name/metrics-before.prom" "$STATE/$name/metrics-after.prom" \
+    > "$STATE/$name/server-side.md" 2>&1 || true
+  pg_statements > "$STATE/$name/pg-statements.md" 2>&1 || true
+  sed 's/^/    /' "$STATE/$name/server-side.md" "$STATE/$name/pg-statements.md" 2>/dev/null || true
   local files=() f
   for f in "$STATE/$name"/shard-*.json; do [ -e "$f" ] && files+=("/state/$name/$(basename "$f")"); done
   [ "${#files[@]}" -gt 0 ] || die "no shard wrote its samples - see $STATE/$name/shard-*.log"
@@ -185,6 +193,32 @@ cmd_load() {
     if [ -n "$report" ]; then cp "$STATE/$name/result.md" "$report"; fi
   fi
   return "$rc"
+}
+
+# LD-7 diagnostics. The API's /metrics (every process merged), read from inside its container with its own token.
+scrape_metrics() {
+  dc exec -T backend python -c 'import os, urllib.request
+req = urllib.request.Request("http://127.0.0.1:8000/metrics", headers={"Authorization": "Bearer " + os.environ.get("METRICS_TOKEN", "")})
+print(urllib.request.urlopen(req, timeout=30).read().decode())'
+}
+
+# pg_stat_statements (the CI overlay preloads it): emptied before a load run, the top statements by total time after.
+pg_sql() {
+  # shellcheck disable=SC2016  # expanded by the shell inside the postgres container, on purpose
+  dc exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q "$@"' psql "$@"
+}
+pg_statements_reset() {
+  pg_sql -c "create extension if not exists pg_stat_statements" -c "select pg_stat_statements_reset()" > /dev/null
+}
+pg_statements() {
+  echo "Statements by total time (pg_stat_statements, this run):"
+  echo
+  pg_sql -A -F ' | ' -c "select calls, round(total_exec_time::numeric / 1000, 2) as total_s,
+      round(mean_exec_time::numeric, 2) as mean_ms, round(max_exec_time::numeric, 1) as max_ms, rows,
+      round(100 * total_exec_time / nullif(sum(total_exec_time) over (), 0), 1) as pct,
+      left(regexp_replace(query, '\s+', ' ', 'g'), 160) as query
+    from pg_stat_statements where dbid = (select oid from pg_database where datname = current_database())
+    order by total_exec_time desc limit 15" -P footer=off
 }
 
 # CPU / memory of each container every 10 s while the load runs (what saturated, if anything).

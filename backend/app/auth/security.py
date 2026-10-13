@@ -8,6 +8,7 @@ iss/aud) are accepted while `JWT_ACCEPT_LEGACY` is on - they expire within minut
 import asyncio
 import hashlib
 import os
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -90,17 +91,28 @@ def _bcrypt_executor() -> Any:
     return executor
 
 
+def _timed(queued_at: float, fn: Any, *args: Any) -> Any:
+    """Runs `fn` on a bcrypt thread, recording how long it waited for the thread and how long it ran (LD-7)."""
+    started = time.perf_counter()
+    try:
+        return fn(*args)
+    finally:
+        from app.observability.metrics import BCRYPT_QUEUE_WAIT, BCRYPT_SECONDS
+        BCRYPT_QUEUE_WAIT.observe(started - queued_at)
+        BCRYPT_SECONDS.observe(time.perf_counter() - started)
+
+
 async def verify_password_async(password: str, hashed: str) -> bool:
     """`verify_password` on one of bcrypt's own threads. bcrypt is slow on purpose (a quarter of a second or more per
     check); run inline in an async route it holds the event loop, so every other request of that API process waits
     behind each login (Z10-d load test: dashboard p99 about 2 s while users logged in). bcrypt releases the GIL while it
     works."""
-    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor(), verify_password, password, hashed)
+    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor(), _timed, time.perf_counter(), verify_password, password, hashed)
 
 
 async def hash_password_async(password: str) -> str:
     """`hash_password` on bcrypt's own threads (same reason and the same pool as `verify_password_async`)."""
-    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor(), hash_password, password)
+    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor(), _timed, time.perf_counter(), hash_password, password)
 
 
 def create_access_token(user_id: int, email: Optional[str] = None, session_id: Optional[int] = None) -> str:

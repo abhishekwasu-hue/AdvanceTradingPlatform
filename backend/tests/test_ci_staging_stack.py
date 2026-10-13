@@ -206,6 +206,35 @@ def test_after_ramp_split_is_a_diagnostic_beside_the_verdict(tmp_path):
     assert "**SLO FAIL**" in md and "After the login ramp only (diagnostic" in md
 
 
+def test_ci_postgres_is_hostingers_plus_pg_stat_statements_only():
+    """LD-7 diagnostics: the CI overlay's Postgres command is the KVM 2's, unchanged, plus the statements extension."""
+    def command(path: Path) -> list:
+        return yaml.safe_load(path.read_text().replace("!override", "").replace("!reset", ""))["services"]["postgres"]["command"]
+
+    hostinger, ci = command(ROOT / "docker-compose.hostinger.yml"), command(CI / "compose.ci.yml")
+    assert ci == hostinger + ["-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=top"]
+
+
+def test_metrics_summary_reports_route_time_shares_and_waits(tmp_path, capsys):
+    summary = _load("metrics_summary", CI / "metrics_summary.py")
+    route = 'atp_http_request_duration_seconds_{0}{{method="GET",route="{1}"}} {2}'
+    before = tmp_path / "before.prom"
+    before.write_text("\n".join([route.format("count", "/api/a", 10), route.format("sum", "/api/a", 1.0)]))
+    after = tmp_path / "after.prom"
+    after.write_text("\n".join([
+        route.format("count", "/api/a", 110), route.format("sum", "/api/a", 4.0),
+        route.format("count", "/api/b", 10), route.format("sum", "/api/b", 1.0),
+        'atp_bcrypt_queue_wait_seconds_bucket{le="0.5"} 9', 'atp_bcrypt_queue_wait_seconds_bucket{le="1.0"} 10',
+        'atp_bcrypt_queue_wait_seconds_bucket{le="+Inf"} 10',
+        "atp_bcrypt_queue_wait_seconds_count 10", "atp_bcrypt_queue_wait_seconds_sum 4.0",
+    ]))
+    summary.main(str(before), str(after))
+    out = capsys.readouterr().out
+    assert "| GET /api/a | 100 | 3.0 | 30.0 | 75.0% |" in out and "| GET /api/b | 10 | 1.0 | 100.0 | 25.0% |" in out
+    assert "| bcrypt: waiting for a thread | 10 | 4.0 | 400.0 | 1000 | 1000 |" in out
+    assert "| pool connection checkout | 0 |" in out
+
+
 def test_shards_interleave_their_start_times_over_the_ramp():
     """LD-7: 25 shards of 20 users on a 150 s ramp start one user every 0.3 s between them - not 25 at once every 7.5 s
     (each shard's own schedule alone repeats at the same instants). The same 500 logins over the same 150 s."""

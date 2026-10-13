@@ -55,6 +55,13 @@ HTTP_REQUESTS = _counter("http_requests", "HTTP requests by method, route templa
 HTTP_LATENCY = _histogram("http_request_duration_seconds", "HTTP request latency by route template", ("method", "route"),
                           buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10))
 
+# LD-7: where a request waits rather than works - for a pooled database connection (checkout, including a new
+# connection's connect) and for a bcrypt thread (queued, then the check itself). Per process, summed by /metrics.
+_WAIT_BUCKETS = (0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
+DB_POOL_WAIT = _histogram("db_pool_wait_seconds", "Time to get a pooled database connection", buckets=_WAIT_BUCKETS)
+BCRYPT_QUEUE_WAIT = _histogram("bcrypt_queue_wait_seconds", "Time a password check waited for a bcrypt thread", buckets=_WAIT_BUCKETS)
+BCRYPT_SECONDS = _histogram("bcrypt_seconds", "Time of one password check on its bcrypt thread", buckets=_WAIT_BUCKETS)
+
 # --- trading -----------------------------------------------------------------------------------
 ORDERS = _counter("orders", "Order attempts by mode and final status", ("mode", "status"))
 LOGIN_ATTEMPTS = _counter("login_attempts", "Login attempts by outcome", ("success", "reason"))

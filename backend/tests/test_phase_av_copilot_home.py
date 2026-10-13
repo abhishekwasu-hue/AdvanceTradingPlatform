@@ -138,7 +138,8 @@ def test_coach_endpoint_and_copilot_routing(monkeypatch):
     monkeypatch.setattr(ai_routes.ai_settings, "provider_for", provider_for)
     client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"})      # the AI writes in the chosen language
     narrated = ask("आज काय करू?")
-    assert narrated["source"] == "ai" and narrated["answer"].startswith("आज बाजार") and "Marathi" in Provider.seen and "=== FACTS ===" in Provider.seen
+    # #230 cleanup: ATP is English only - the AI's Devanagari reply is withheld and the rule text is shown
+    assert narrated["source"] == "rules" and "Marathi" in Provider.seen and "=== FACTS ===" in Provider.seen
 
 
 def test_intents():

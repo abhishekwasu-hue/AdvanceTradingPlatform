@@ -3,7 +3,7 @@ each symbol's last closed bar (SCREENER_SPEC §5: every run stores AST version, 
 can be replayed).
 
 Revision ID: d7f1a3c5e9b2
-Revises: b4e6d8f0a2c3 (#221 ix_trades_open, main's head when U3 was cut)
+Revises: d7f9a1c3e5b7 (#234 contributed reference rows tenant scope, main's head at the merge; first cut on b4e6d8f0a2c3)
 Create Date: 2026-10-12 23:30:00
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd7f1a3c5e9b2'
-down_revision: Union[str, Sequence[str], None] = 'b4e6d8f0a2c3'
+down_revision: Union[str, Sequence[str], None] = 'd7f9a1c3e5b7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - five nullable columns the previous release never reads or writes (its inserts leave them NULL,

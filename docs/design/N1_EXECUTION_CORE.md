@@ -204,3 +204,16 @@ The owner is asked to mark `decision3.daily` stable or accept the pinned port (O
 ## 6. Open questions
 
 Recorded in `docs/OPEN_QUESTIONS.md` as N1-1 ... N1-9, each with a provisional decision.
+
+## 7. X1 as built (branch `claude/n1-x1`, flag `scan_then`)
+
+- **Template.** `scan_then_templates` (migration `b9e4c2d7a1f3` on `a7d3e9c1b5f2`): one per alert rule. It holds the mode (NOTIFY / ONE_CLICK / AUTO_PAPER; AUTO_LIVE is refused with 422), `confirm_tf` (5m / 15m), gate-setting overrides within bounds, and the last status per symbol (Trade's `SKIPPED_GATE_*` codes, plus `GATE_CONFIRMED`).
+- **Routes.** `GET` / `PUT` / `DELETE /api/alerts/rules/{rule_id}/then`. Only the rule's creator or the organisation OWNER may change a template. The routes write the template row only.
+- **Runner.** `app/screener/then/runner.py` runs every worker cycle, once per new closed confirmation bar:
+  1. it reads the symbols the rule matched today;
+  2. it reads their closed bars through the rule's own server path (BT1b: the owner's own session);
+  3. it takes the Daily context from the lake (`trend.py`: once per symbol and day, known at yesterday's close, fail-closed, retried after 15 minutes);
+  4. it takes the areas from the organisation's live Z7a zones (`areas.py`);
+  5. it runs `level_gate.safe_evaluate` per area. A live entry becomes `intents.submit`, with key `scan:<rule>:<symbol>:<area>:<commitment bar>` and the ticket as evidence.
+- **Data checks.** Data short of the expected bar is never evaluated; the bar is retried.
+- **Order paths.** The Z10-c graph test asserts that no `app.screener.then` function reaches an order sink.

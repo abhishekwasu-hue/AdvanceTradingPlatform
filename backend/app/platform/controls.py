@@ -233,13 +233,20 @@ FEATURE_FLAGS: Dict[str, str] = {
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
     "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # S10 (SCREENER_SPEC §5 S10, Phase 0 slice): the ETF screen (J) - NSE ETFs from the shared end-of-day history with
+    # traded value and the tracking difference against the index each tracks. OFF: GET /api/screener/etf answers 503 and
+    # the Screener page shows no ETF button. Information only, no recommendation, places no orders.
+    "screener_etf": "ETF screen: NSE ETFs with traded value and tracking difference against their index, from the shared end-of-day history (information only)",
+    # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
+    # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
+    "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

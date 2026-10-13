@@ -96,17 +96,18 @@ class Source:
     name: str
     ids: Callable[[], Iterable[str]]
     flag: Optional[str] = None
+    also: Tuple[str, ...] = ()          # U6 BK3: further flags that must be on too (hidden while any is off)
 
 
 _SOURCES: Dict[str, Source] = {}
 
 
-def register_source(name: str, ids: Callable[[], Iterable[str]], *, flag: Optional[str] = None) -> None:
+def register_source(name: str, ids: Callable[[], Iterable[str]], *, flag: Optional[str] = None, also: Tuple[str, ...] = ()) -> None:
     """A backend template module calls this at import (re-registering replaces). `ids` is called lazily, so the module's
     own template list stays its single source of truth."""
     if not _ID.match(name) or name in FRONTEND_SOURCES:
         raise ValueError(f"template source name {name!r} is not allowed")
-    _SOURCES[name] = Source(name, ids, flag)
+    _SOURCES[name] = Source(name, ids, flag, tuple(also))
 
 
 def unregister_source(name: str) -> None:
@@ -295,9 +296,27 @@ def coverage_problems(taxonomy: Optional[Taxonomy] = None, registered: Optional[
     return problems
 
 
-def visible(taxonomy: Taxonomy, hidden_sources: Iterable[str] = ()) -> List[Screen]:
-    hidden = set(hidden_sources)
-    return [s for s in taxonomy.screens if s.source not in hidden]
+# U7 LG2: single screens of a source behind a flag of their own (on top of the source's flag), e.g. the LG2 Legends
+# cards: {screen id: flag}, asked lazily like a source's ids.
+_SCREEN_FLAGS: Dict[str, Callable[[], Dict[str, str]]] = {}
+
+
+def register_screen_flags(source: str, flags: Callable[[], Dict[str, str]]) -> None:
+    """A template module names the screens of its source that need their own flag (re-registering replaces)."""
+    _SCREEN_FLAGS[source] = flags
+
+
+def screen_flags() -> Dict[str, str]:
+    """Every flagged screen: {screen id: the flag it needs}."""
+    out: Dict[str, str] = {}
+    for flags in _SCREEN_FLAGS.values():
+        out.update(flags())
+    return out
+
+
+def visible(taxonomy: Taxonomy, hidden_sources: Iterable[str] = (), hidden_ids: Iterable[str] = ()) -> List[Screen]:
+    hidden, ids = set(hidden_sources), set(hidden_ids)
+    return [s for s in taxonomy.screens if s.source not in hidden and s.id not in ids]
 
 
 def matrix(taxonomy: Taxonomy, screens: Sequence[Screen]) -> Dict[str, Dict[str, int]]:
@@ -309,10 +328,10 @@ def matrix(taxonomy: Taxonomy, screens: Sequence[Screen]) -> Dict[str, Dict[str,
 
 
 def payload(taxonomy: Taxonomy, *, hidden_sources: Iterable[str] = (), method: Optional[str] = None,
-            setup: Optional[str] = None) -> Dict[str, Any]:
+            setup: Optional[str] = None, hidden_ids: Iterable[str] = ()) -> Dict[str, Any]:
     """The API shape: both axes, the tag vocabulary, the screens (optionally one method and / or setup) and the full
     matrix of counts (always over every visible screen, so the rail and chips can show what each cell holds)."""
-    shown = visible(taxonomy, hidden_sources)
+    shown = visible(taxonomy, hidden_sources, hidden_ids)
     picked = [s for s in shown if (method is None or s.method == method) and (setup is None or s.setup == setup)]
     return {"version": taxonomy.version, "methods": [m.as_dict() for m in taxonomy.methods],
             "setups": [s.as_dict() for s in taxonomy.setups],
@@ -321,14 +340,20 @@ def payload(taxonomy: Taxonomy, *, hidden_sources: Iterable[str] = (), method: O
 
 
 __all__ = ["NOTE", "DATA_FILE", "FRONTEND_SOURCES", "TAG_KEYS", "Axis", "Screen", "Source", "Taxonomy", "TaxonomyError", "advice_words",
-           "coverage_problems", "lint", "load", "matrix", "parse", "payload", "register_source", "sources", "unregister_source",
-           "visible"]
+           "coverage_problems", "lint", "load", "matrix", "parse", "payload", "register_screen_flags", "register_source", "screen_flags",
+           "sources", "unregister_source", "visible", "default_hidden", "default_hidden_ids"]
 
 
 def default_hidden() -> List[str]:
     """Registered sources whose flag starts OFF (U6 breakouts): what a new organisation's gallery leaves out."""
     from app.platform.controls import DEFAULT_OFF_FLAGS
-    return [name for name, src in _SOURCES.items() if src.flag in DEFAULT_OFF_FLAGS]
+    return [name for name, src in _SOURCES.items() if any(f in DEFAULT_OFF_FLAGS for f in (src.flag, *src.also))]
+
+
+def default_hidden_ids() -> List[str]:
+    """Flagged screens whose own flag starts OFF (U7 LG2): left out for a new organisation even with their source on."""
+    from app.platform.controls import DEFAULT_OFF_FLAGS
+    return [ident for ident, flag in screen_flags().items() if flag in DEFAULT_OFF_FLAGS]
 
 
 if __name__ == "__main__":      # regenerates the frontend's sample: python -m app.screener.taxonomy > ../frontend/src/screener/taxonomySample.json

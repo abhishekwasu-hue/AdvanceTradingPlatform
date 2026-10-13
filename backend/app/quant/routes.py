@@ -14,6 +14,8 @@ debt_to_equity, earnings_growth_pct` from the Fundamentals module's stored compa
 from typing import Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
+
+from app.fundamentals.visibility import viewer_tenant
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -67,7 +69,7 @@ def _inputs(symbols: List[QuantSymbol]) -> List[factor_model.FactorInputs]:
     return out
 
 
-async def _fill_fundamentals(session: AsyncSession, inputs: List[factor_model.FactorInputs], enabled: bool) -> dict:
+async def _fill_fundamentals(session: AsyncSession, inputs: List[factor_model.FactorInputs], enabled: bool, viewer: Optional[int]) -> dict:
     """Phase AG: derive the value/quality inputs from stored financials for symbols the caller left without fundamentals."""
     if not enabled:
         return {"enabled": False, "filled": {}, "note": "fundamentals fill disabled by the caller"}
@@ -75,7 +77,7 @@ async def _fill_fundamentals(session: AsyncSession, inputs: List[factor_model.Fa
     if not wanted:
         return {"enabled": True, "filled": {}, "note": "every symbol came with its own fundamentals"}
     closes = {i.symbol: float(i.df["close"].iloc[-1]) for i in wanted if i.df is not None and not i.df.empty}
-    fills = await fundamentals_bridge.fundamentals_for(session, [i.symbol for i in wanted], closes)
+    fills = await fundamentals_bridge.fundamentals_for(session, [i.symbol for i in wanted], closes, viewer=viewer)
     for i in wanted:
         fill = fills.get(i.symbol)
         if fill is not None and fill.values:
@@ -89,9 +91,9 @@ async def _fill_fundamentals(session: AsyncSession, inputs: List[factor_model.Fa
 
 
 @router.post("/factors")
-async def factors(body: FactorsBody, session: AsyncSession = Depends(get_session)) -> dict:
+async def factors(body: FactorsBody, session: AsyncSession = Depends(get_session), viewer: Optional[int] = Depends(viewer_tenant)) -> dict:
     inputs = _inputs(body.symbols)
-    fundamentals = await _fill_fundamentals(session, inputs, body.use_fundamentals)
+    fundamentals = await _fill_fundamentals(session, inputs, body.use_fundamentals, viewer)
     try:
         table = factor_model.score_universe(inputs, body.weights, momentum_lookback=body.momentum_lookback, skip_recent=body.skip_recent,
                                             reversal_lookback=body.reversal_lookback, vol_lookback=body.vol_lookback, liquidity_lookback=body.liquidity_lookback)
@@ -118,7 +120,7 @@ async def risk(body: RiskBody) -> dict:
 @router.post("/exposure")
 async def exposure(body: ExposureBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
     inputs = _inputs(body.symbols)
-    fundamentals = await _fill_fundamentals(session, inputs, body.use_fundamentals)
+    fundamentals = await _fill_fundamentals(session, inputs, body.use_fundamentals, user.tenant_id)
     try:
         table = factor_model.score_universe(inputs, body.factor_weights)
     except ValueError as exc:

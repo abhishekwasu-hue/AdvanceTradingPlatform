@@ -47,6 +47,7 @@ export function EvidenceChart({ pack, drawables, width = 720, height = 360, high
       {g.shapes.filter((s) => s.kind !== "rect" || s.fill === "none").map((s) => {
         if (s.kind === "path") return <path key={s.key} data-drawable={s.drawable} d={s.d} fill="none" stroke={s.color} strokeWidth={2} strokeDasharray={s.dash} opacity={fade(s.drawable)} />;
         if (s.kind === "line") return <line key={s.key} data-drawable={s.drawable} x1={s.x1} x2={s.x2} y1={s.y1} y2={s.y2} stroke={s.color} strokeWidth={1.5} strokeDasharray={s.dash} opacity={fade(s.drawable)} />;
+        if (s.kind === "text") return <text key={s.key} data-drawable={s.drawable} x={s.x} y={s.y} fontSize={10} fill="rgb(var(--chart-text))" opacity={fade(s.drawable)}>{s.text}</text>;
         return <rect key={s.key} data-drawable={s.drawable} x={s.x} y={s.y} width={s.w} height={s.h} fill="none" stroke={s.color} strokeWidth={2} opacity={fade(s.drawable)} />;
       })}
       {g.matchedX != null && (

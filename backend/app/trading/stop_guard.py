@@ -23,6 +23,7 @@ from app.brokers.base import BrokerInterface, round_stop_trigger
 from app.brokers.exceptions import is_clear_rejection
 from app.core.enums import ExecutionMode, NotificationSeverity, NotificationType, OrderSide
 from app.db.models import Tenant, TradeRecord
+from app.db.savepoint import guarded
 from app.compliance.algo_id import order_algo_id
 from app.execution.tagging import LEG_STOP, build_order_tag
 from app.market_data.calendar import market_session_status
@@ -156,7 +157,7 @@ async def verify_protective_stops(
         counts["closed"] = 0
     query = select(TradeRecord).where(
         TradeRecord.tenant_id == tenant.id, TradeRecord.exit_time.is_(None), TradeRecord.mode == ExecutionMode.LIVE.value,
-        TradeRecord.leg_group_id.is_(None))
+        TradeRecord.leg_group_id.is_(None)).order_by(TradeRecord.id)
     if account_id is not None:
         from sqlalchemy import or_
         scope = TradeRecord.broker_account_id == account_id
@@ -177,88 +178,106 @@ async def verify_protective_stops(
         logger.warning("Stop guard: order book unavailable for tenant %s: %s", tenant.id, exc)
         return counts
     for trade in trades:
-        counts["checked"] += 1
-        order = book.get(trade.sl_order_id) if trade.sl_order_id else None
-        status = (order.status or "").upper() if order is not None else ""
-        if status in _STANDING:
-            counts["standing"] += 1
-            if stop_state.rearmed_order.get(trade.id) == trade.sl_order_id:
-                # The guard's own stop survived a whole cycle: it was accepted, the streak is over.
-                stop_state.rearm_rejects.pop(trade.id, None)
-                stop_state.rearmed_order.pop(trade.id, None)
-            continue
-        if status in _FILLED:
-            counts["filled_pending"] += 1   # the exchange closed us; the monitor books it this cycle
-            continue
-        # Missing, cancelled or rejected. A re-armed stop the broker accepted and then rejected counts against the trade;
-        # any other reason (cancelled by hand, lost across a session) breaks the streak.
-        if status in _REJECTED:
-            streak = _note_rearm_rejected(trade.id, trade.sl_order_id)
-        else:
-            stop_state.rearm_rejects.pop(trade.id, None)
-            stop_state.rearmed_order.pop(trade.id, None)
-            streak = 0
-        if streak >= config.STOP_REARM_MAX_REJECTS:
-            counts["failed"] += 1
-            await _give_up_rearming(session, tenant, trade, broker, streak, counts)
-            continue
-        # Re-arm.
-        side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
-        tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_STOP, algo_id=order_algo_id(tenant.algo_id, broker.name),
-                              max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name)
-        previous = trade.sl_order_id
-        venue = await venue_for(session, trade)
-        trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol, exchange=venue)   # on the tick, away from the market
+        # One savepoint per position (ADR-0004): an error on one never ends the pass for the others, and what an earlier
+        # position committed (a new stop id) stays committed. (Review LOW-3: one savepoint per position per cycle - a
+        # handful per transaction; Postgres keeps them cheap well past that.)
+        trade_id = trade.id
         try:
-            response = await broker.place_stop_loss_order(trade.symbol, venue, side, trade.quantity,
-                                                          trigger_price=trigger,
-                                                          product=product_for_trade(trade) if (getattr(trade, "holding", None) or "INTRADAY") == "SWING" else product,
-                                                          tag=tag)
-        except Exception as exc:  # noqa: BLE001 - alert, keep the software stop, try again next cycle
+            async with guarded(session, keep=(tenant, trade)):
+                await _guard_one(session, tenant, broker, trade, book, counts, user_id=user_id, source=source, product=product)
+        except Exception as exc:  # noqa: BLE001 - the software stop still monitors it; the next position is checked
             counts["failed"] += 1
-            logger.error("Stop guard: could not re-arm stop for trade %s: %s", trade.id, exc)
-            if config.LIVE_EXIT_IF_NO_STOP:
-                try:
-                    done = await exit_unprotected(session, trade, broker, f"stop re-arm failed: {exc}",
-                                                  rejected=is_clear_rejection(exc))
-                except Exception as exit_exc:  # noqa: BLE001 - never lose the rest of the guard pass; today's alert follows
-                    logger.error("No-stop exit errored for trade %s: %s", trade.id, exit_exc)
-                    done = None
-                if done:
-                    counts["closed"] += 1
-                if done is not None:      # tried: exit_unprotected already alerted (or is inside its cooldown)
-                    continue
-            if _failure_alert_due(trade.id):
-                await notify(session, tenant.id, NotificationType.SYSTEM_FAILURE, title=f"No broker-side stop on {trade.symbol}",
-                             message=f"Position #{trade.id} has no standing protective stop and re-placing it failed: {exc}. "
-                                     "The software stop still monitors it every cycle; consider closing it by hand.",
-                             severity=NotificationSeverity.CRITICAL, related_trade_id=trade.id)
-            continue
-        trade.sl_order_id = response.order_id
-        stop_state.rearmed_order[trade.id] = response.order_id
-        reason = "no stop order on record" if previous is None else f"stop {previous} was {(order.status if order else 'missing at the broker')}"
-        await write_audit_log(session, tenant.id, user_id, "protective_stop_rearmed",
-                              f"trade {trade.id} {trade.symbol}: {reason}; new stop {response.order_id} @ {trigger:g} ({source}) tag={tag}")
-        # One look at the new stop: a broker can take it and reject it a moment later (RMS / margin).
-        placed = await _find_order(broker, response.order_id)
-        if placed is not None and (placed.status or "").upper() in _REJECTED:
-            counts["failed"] += 1
-            streak = _note_rearm_rejected(trade.id, response.order_id)
-            logger.error("Stop guard: re-armed stop %s for trade %s was rejected (%s in a row): %s", response.order_id, trade.id,
-                         streak, placed.status)
-            if streak >= config.STOP_REARM_MAX_REJECTS:
-                await _give_up_rearming(session, tenant, trade, broker, streak, counts)
-            elif _failure_alert_due(trade.id):
-                await notify(session, tenant.id, NotificationType.SYSTEM_FAILURE, title=f"Re-armed stop rejected on {trade.symbol}",
-                             message=f"Position #{trade.id}: the broker accepted the new stop {response.order_id} and then rejected it "
-                                     f"({placed.status}). Rejection {streak} of {config.STOP_REARM_MAX_REJECTS} before "
-                                     "the guard stops re-arming; the software stop still monitors it.",
-                             severity=NotificationSeverity.CRITICAL, related_trade_id=trade.id)
-            continue
-        counts["rearmed"] += 1
-        await notify(session, tenant.id, NotificationType.RISK_REJECTION, title=f"Protective stop re-armed on {trade.symbol}",
-                     message=f"Position #{trade.id}: {reason}. A new SL-M at {trigger:g} was placed ({response.order_id}).",
-                     severity=NotificationSeverity.WARNING, related_trade_id=trade.id)
-        logger.warning("Stop guard: re-armed stop for trade %s (%s)", trade.id, reason)
+            logger.error("Stop guard: trade %s failed: %s", trade_id, exc)
     await session.commit()
     return counts
+
+
+async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterface, trade: TradeRecord, book: Dict, counts: Dict[str, int], *,
+                     user_id: Optional[int], source: str, product: str) -> None:
+    """One position of `verify_protective_stops`: re-arm its stop when the book has none standing."""
+    counts["checked"] += 1
+    order = book.get(trade.sl_order_id) if trade.sl_order_id else None
+    status = (order.status or "").upper() if order is not None else ""
+    if status in _STANDING:
+        counts["standing"] += 1
+        if stop_state.rearmed_order.get(trade.id) == trade.sl_order_id:
+            # The guard's own stop survived a whole cycle: it was accepted, the streak is over.
+            stop_state.rearm_rejects.pop(trade.id, None)
+            stop_state.rearmed_order.pop(trade.id, None)
+        return
+    if status in _FILLED:
+        counts["filled_pending"] += 1   # the exchange closed us; the monitor books it this cycle
+        return
+    # Missing, cancelled or rejected. A re-armed stop the broker accepted and then rejected counts against the trade;
+    # any other reason (cancelled by hand, lost across a session) breaks the streak.
+    if status in _REJECTED:
+        streak = _note_rearm_rejected(trade.id, trade.sl_order_id)
+    else:
+        stop_state.rearm_rejects.pop(trade.id, None)
+        stop_state.rearmed_order.pop(trade.id, None)
+        streak = 0
+    if streak >= config.STOP_REARM_MAX_REJECTS:
+        counts["failed"] += 1
+        await _give_up_rearming(session, tenant, trade, broker, streak, counts)
+        return
+    # Re-arm.
+    side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
+    tag = build_order_tag(strategy_id=trade.strategy_id, leg=LEG_STOP, algo_id=order_algo_id(tenant.algo_id, broker.name),
+                          max_length=getattr(broker, "max_tag_length", None) or 20, broker=broker.name)
+    previous = trade.sl_order_id
+    venue = await venue_for(session, trade)
+    trigger = round_stop_trigger(float(trade.stop_loss), side, symbol=trade.symbol, exchange=venue)   # on the tick, away from the market
+    try:
+        response = await broker.place_stop_loss_order(trade.symbol, venue, side, trade.quantity,
+                                                      trigger_price=trigger,
+                                                      product=product_for_trade(trade) if (getattr(trade, "holding", None) or "INTRADAY") == "SWING" else product,
+                                                      tag=tag)
+    except Exception as exc:  # noqa: BLE001 - alert, keep the software stop, try again next cycle
+        counts["failed"] += 1
+        logger.error("Stop guard: could not re-arm stop for trade %s: %s", trade.id, exc)
+        if config.LIVE_EXIT_IF_NO_STOP:
+            try:
+                done = await exit_unprotected(session, trade, broker, f"stop re-arm failed: {exc}",
+                                              rejected=is_clear_rejection(exc))
+            except Exception as exit_exc:  # noqa: BLE001 - never lose the rest of the guard pass; today's alert follows
+                logger.error("No-stop exit errored for trade %s: %s", trade.id, exit_exc)
+                done = None
+            if done:
+                counts["closed"] += 1
+            if done is not None:      # tried: exit_unprotected already alerted (or is inside its cooldown)
+                return
+        if _failure_alert_due(trade.id):
+            await notify(session, tenant.id, NotificationType.SYSTEM_FAILURE, title=f"No broker-side stop on {trade.symbol}",
+                         message=f"Position #{trade.id} has no standing protective stop and re-placing it failed: {exc}. "
+                                 "The software stop still monitors it every cycle; consider closing it by hand.",
+                         severity=NotificationSeverity.CRITICAL, related_trade_id=trade.id)
+        return
+    trade.sl_order_id = response.order_id
+    stop_state.rearmed_order[trade.id] = response.order_id
+    reason = "no stop order on record" if previous is None else f"stop {previous} was {(order.status if order else 'missing at the broker')}"
+    await write_audit_log(session, tenant.id, user_id, "protective_stop_rearmed",
+                          f"trade {trade.id} {trade.symbol}: {reason}; new stop {response.order_id} @ {trigger:g} ({source}) tag={tag}")
+    # Review MED-1: the new stop's id and its audit row are committed now, before anything else can fail - a later error
+    # (this trade's or the next one's) must never roll back to the old id, or the next cycle would place a second stop.
+    await session.commit()
+    # One look at the new stop: a broker can take it and reject it a moment later (RMS / margin).
+    placed = await _find_order(broker, response.order_id)
+    if placed is not None and (placed.status or "").upper() in _REJECTED:
+        counts["failed"] += 1
+        streak = _note_rearm_rejected(trade.id, response.order_id)
+        logger.error("Stop guard: re-armed stop %s for trade %s was rejected (%s in a row): %s", response.order_id, trade.id,
+                     streak, placed.status)
+        if streak >= config.STOP_REARM_MAX_REJECTS:
+            await _give_up_rearming(session, tenant, trade, broker, streak, counts)
+        elif _failure_alert_due(trade.id):
+            await notify(session, tenant.id, NotificationType.SYSTEM_FAILURE, title=f"Re-armed stop rejected on {trade.symbol}",
+                         message=f"Position #{trade.id}: the broker accepted the new stop {response.order_id} and then rejected it "
+                                 f"({placed.status}). Rejection {streak} of {config.STOP_REARM_MAX_REJECTS} before "
+                                 "the guard stops re-arming; the software stop still monitors it.",
+                         severity=NotificationSeverity.CRITICAL, related_trade_id=trade.id)
+        return
+    counts["rearmed"] += 1
+    await notify(session, tenant.id, NotificationType.RISK_REJECTION, title=f"Protective stop re-armed on {trade.symbol}",
+                 message=f"Position #{trade.id}: {reason}. A new SL-M at {trigger:g} was placed ({response.order_id}).",
+                 severity=NotificationSeverity.WARNING, related_trade_id=trade.id)
+    logger.warning("Stop guard: re-armed stop for trade %s (%s)", trade.id, reason)

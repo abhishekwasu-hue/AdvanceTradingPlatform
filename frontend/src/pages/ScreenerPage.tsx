@@ -8,6 +8,7 @@
 import { LayoutGrid, Play, Rows3, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
@@ -18,6 +19,7 @@ import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
 import { ResultViews } from "../screener/ResultViews";
+import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { filledSource, isLegends, type LegendsLibrary } from "../screener/legends";
 import { boardApi } from "../screener/boardViews";
@@ -67,12 +69,16 @@ export default function ScreenerPage(_props: PageProps) {
   // U5 D3b (flag `screener_board_views`): the template sheet; a probe of its endpoint says whether the flag is on.
   const [sheetOn, setSheetOn] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // S10 J (flag `screener_etf`): the ETF screen in a dialog.
+  const [etfOn, setEtfOn] = useState(false);
+  const [etfOpen, setEtfOpen] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
     screenerApi.taxonomy().then((t) => setTaxonomy(isTaxonomy(t) ? t : null)).catch(() => setTaxonomy(null));
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
     boardApi.templateRuns([{ id: "probe", source: "close > 0" }]).then(() => setSheetOn(true), () => setSheetOn(false));
+    api.myFeatures().then((f) => setEtfOn(Boolean(f.screener_etf))).catch(() => setEtfOn(false));
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
@@ -220,6 +226,7 @@ export default function ScreenerPage(_props: PageProps) {
         {taxonomy && sheetOn && registry && (
           <Button size="sm" onClick={() => setSheetOpen(true)} data-testid="template-sheet-open"><Rows3 size={14} /> Templates</Button>
         )}
+        {etfOn && <Button size="sm" onClick={() => setEtfOpen(true)} data-testid="etf-open"><LayoutGrid size={14} /> ETFs</Button>}
         <div className="hidden items-center gap-2 sm:flex">
           <Button size="sm" onClick={() => void doSave()} disabled={!text}><Save size={14} /> Save</Button>
           <Button size="sm" variant="primary" onClick={() => void doRun()} disabled={!canRun} loading={running} data-testid="run-scan">
@@ -298,6 +305,13 @@ export default function ScreenerPage(_props: PageProps) {
         <Dialog wide open={galleryOpen} onOpenChange={setGalleryOpen} title="Screen library"
                 description="Pre-built screens filed by method (how a screen reasons) and setup type (what it looks for).">
           <ScreenGallery taxonomy={taxonomy} canOpen={canOpen} onOpen={openScreen} legends={legends} />
+        </Dialog>
+      )}
+
+      {etfOn && (
+        <Dialog wide open={etfOpen} onOpenChange={setEtfOpen} title="ETFs"
+                description="NSE ETFs from the shared end-of-day history: traded value and how each moved against the index it tracks.">
+          <EtfPanel />
         </Dialog>
       )}
 

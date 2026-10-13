@@ -301,7 +301,7 @@
       "id": "IN-SEBI.risk.futeq_mwpl",
       "title": "FutEq / OI (MWPL) limits, expiry-day margin, lot sizes as of the trade date",
       "source": "NSE F&O position limits; SEBI margin framework",
-      "status": "enforced",
+      "status": "partial",
       "params": {
         "expiry_day_margin_multiplier": 1.0,
         "ban_threshold_pct": 95,
@@ -322,9 +322,12 @@
         "tests/test_d7_fo_limits_rest.py::test_the_client_limit_caps_new_quantity_and_refuses_when_no_lot_fits",
         "tests/test_d7_fo_limits_rest.py::test_no_lake_row_is_a_note_and_a_stale_lot_is_refused",
         "tests/test_d7_fo_limits_rest.py::test_expiry_day_margin_applies_to_short_legs_on_their_own_expiry_day",
-        "tests/test_d7_fo_limits_rest.py::test_the_flag_is_off_by_default_and_off_changes_nothing"
+        "tests/test_d7_fo_limits_rest.py::test_the_flag_is_off_by_default_and_off_changes_nothing",
+        "tests/test_d7_fo_ban.py::test_no_look_ahead_the_previous_session_known_at_the_signal_time",
+        "tests/test_d7_fo_limits_rest.py::test_the_client_limit_does_not_look_ahead",
+        "tests/test_d7_fo_limits_rest.py::test_the_expiry_day_margin_follows_the_flag"
       ],
-      "flag": "FO_BAN_CHECK_ENABLED"
+      "flag": ["FO_BAN_CHECK_ENABLED", "fo_position_limits"]
     }
   ]
 }

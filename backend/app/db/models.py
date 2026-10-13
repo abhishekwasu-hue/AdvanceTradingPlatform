@@ -2435,7 +2435,13 @@ class MdOptionChainRecord(Base):
 
 
 class MdPositionLimitRecord(Base):
-    """Market-wide position limit and open interest per underlying per day (NSE F&O) - the data D7 (FutEq / MWPL) needs."""
+    """Market-wide position limit and open interest per underlying per day (NSE F&O) - the data D7 (FutEq / MWPL) needs.
+
+    Writer contract (OPEN_QUESTIONS D7-5; no writer exists yet): `trade_date` is the session the figures are OF - the
+    exchange's end-of-day MWPL / OI file for that date, published after its close - and `ingested_at` is when the row was
+    written. Readers (`asof.position_limit_before`) apply a row only to LATER sessions (the limits for day D come from
+    D-1's EOD data) and only when it was ingested at or before the decision time, so a same-day or later file is never
+    looked ahead to."""
 
     __tablename__ = "md_position_limits"
 

@@ -13,6 +13,7 @@ import pytest
 
 from app.compliance import rules
 from app.core import config
+from app.platform.controls import FEATURE_FLAGS
 
 BACKEND = Path(__file__).resolve().parents[1]
 DOC = BACKEND.parent / "docs/COMPLIANCE_IN.md"
@@ -43,8 +44,10 @@ def test_every_named_test_code_path_and_flag_exists():
             assert name in _test_names(path), (rule.id, ref)
         for code in rule.code:
             assert (BACKEND / code).exists(), (rule.id, code)
-        if rule.flag and rule.status in ("enforced", "partial"):
-            assert hasattr(config, rule.flag), (rule.id, rule.flag)       # planned flags arrive with their code
+        if rule.status in ("enforced", "partial"):                     # planned flags arrive with their code
+            for flag in rule.flags:                                      # a config setting or a platform feature flag
+                assert hasattr(config, flag) or flag in FEATURE_FLAGS, (rule.id, flag)
+    assert rs.rule("IN-SEBI.risk.futeq_mwpl").flags == ["FO_BAN_CHECK_ENABLED", "fo_position_limits"]
 
 
 def test_the_compliance_doc_is_generated_from_the_rule_set():

@@ -10,7 +10,7 @@
 - flag off: nothing changes. Every check is on NEW entries; exits are never refused (ADR-0004).
 """
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 
 from sqlalchemy import delete
 
@@ -28,11 +28,16 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-def _limits(underlying, day, *, mwpl, oi):
+def _limits(underlying, day, *, mwpl, oi, trade_date=None, ingested_at=None):
+    """The limits that apply on `day`: the previous session's EOD row, ingested that evening (before any decision on `day`)."""
+    trade_date = trade_date or (day - timedelta(days=3 if day.weekday() == 0 else 1))
+    ingested_at = ingested_at or datetime.combine(trade_date, time(14, 0), tzinfo=timezone.utc)
+
     async def go():
         async with _session_factory() as session:
             await session.execute(delete(MdPositionLimitRecord).where(MdPositionLimitRecord.underlying == underlying))
-            session.add(MdPositionLimitRecord(underlying=underlying, trade_date=day, source="test", version=1, mwpl=mwpl, open_interest=oi))
+            session.add(MdPositionLimitRecord(underlying=underlying, trade_date=trade_date, source="test", version=1, mwpl=mwpl,
+                                              open_interest=oi, ingested_at=ingested_at))
             await session.commit()
     _run(go())
 
@@ -112,10 +117,14 @@ def test_expiry_day_margin_applies_to_short_legs_on_their_own_expiry_day(monkeyp
     real = rules.load()
     monkeypatch.setattr(fo_limits.rules, "load", lambda: type("R", (), {"param": lambda self, rule, name, default=None:
                                                                          1.5 if name == "expiry_day_margin_multiplier" else real.param(rule, name, default)})())
-    today = datetime.now(timezone.utc).astimezone(IST).date()
-    assert fo_limits.expiry_day_factor(today, datetime.now(timezone.utc)) == 1.5
-    assert fo_limits.expiry_day_factor(today + timedelta(days=1), datetime.now(timezone.utc)) == 1.0
-    assert fo_limits.expiry_day_factor(None, datetime.now(timezone.utc)) == 1.0
+    now = datetime.now(timezone.utc)
+    today = now.astimezone(IST).date()
+    assert fo_limits.expiry_day_factor(today, now) == 1.5
+    assert fo_limits.expiry_day_factor(today + timedelta(days=1), now) == 1.0
+    assert fo_limits.expiry_day_factor(None, now) == 1.0
+    assert fo_limits.expiry_day_factor(today, None) == 1.0                     # flag off: callers pass no time
+    # the SIGNAL's time decides, not the wall clock: a signal of the day before expiry is not on expiry day
+    assert fo_limits.expiry_day_factor(today, now - timedelta(days=1)) == 1.0
 
     class _Leg:
         def __init__(self, expiry):
@@ -127,6 +136,38 @@ def test_expiry_day_margin_applies_to_short_legs_on_their_own_expiry_day(monkeyp
             self.short_legs = [_Leg(expiry)]
             self.lot_size = NIFTY_LOT
     broker = _FnoBroker(margin_per_lot=50_000.0, available=1_000_000.0)
-    later, _ = _run(multileg._live_lot_cap(broker, _S(today + timedelta(days=7))))
-    on_the_day, note = _run(multileg._live_lot_cap(broker, _S(today)))
+    later, _ = _run(multileg._live_lot_cap(broker, _S(today + timedelta(days=7)), expiry_margin_at=now))
+    on_the_day, note = _run(multileg._live_lot_cap(broker, _S(today), expiry_margin_at=now))
     assert on_the_day < later and "75,000" in note                              # 50,000 x 1.5 per lot on expiry day
+    flag_off, note_off = _run(multileg._live_lot_cap(broker, _S(today)))       # flag off: no multiplier
+    assert flag_off == later and "50,000" in note_off
+
+
+def test_the_expiry_day_margin_follows_the_flag(monkeypatch):
+    user = _user("d7r-expflag@example.com")
+    when = _signal().timestamp
+
+    async def at():
+        async with _session_factory() as session:
+            return await fo_limits.expiry_margin_at(session, user.tenant_id, when)
+    assert _run(at()) is None                                                   # off by default: the multiplier never applies
+    _flag(fo_limits.FLAG, user.tenant_id)
+    assert _run(at()) == when                                                   # on: judged at the signal's time
+
+
+def test_the_client_limit_does_not_look_ahead(monkeypatch):
+    user = _user("d7r-look@example.com")
+    signal = _signal()
+    day = signal.timestamp.astimezone(IST).date()
+    underlying = signal.symbol.upper()
+    pct = float(rules.load().param(fo_limits.RULE, "client_limit_mwpl_pct"))
+    mwpl = int(NIFTY_LOT * 3.5 * 100 / pct)
+    _limits(underlying, day, mwpl=mwpl, oi=0, trade_date=day, ingested_at=signal.timestamp - timedelta(hours=1))
+    cap, refusal, note = _run(_cap(user))                                       # the day's own row: never for that day
+    assert cap is None and refusal is None and "not checked" in note
+    _limits(underlying, day, mwpl=mwpl, oi=0, ingested_at=signal.timestamp + timedelta(minutes=1))
+    cap, refusal, note = _run(_cap(user))                                       # ingested after the signal: not seen yet
+    assert cap is None and "not checked" in note
+    _limits(underlying, day, mwpl=mwpl, oi=0)                                   # the previous session's, known in time
+    cap, refusal, note = _run(_cap(user))
+    assert cap == 3 * NIFTY_LOT and refusal is None

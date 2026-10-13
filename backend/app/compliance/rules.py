@@ -3,8 +3,8 @@
 A rule-set is one JSON file in `app/compliance/rulesets/` (`<id>.json`): its jurisdiction, version, the date it took
 effect, and a list of rules. Each rule has an id (`IN-SEBI.ops.throttle`), the source it implements (circular / exchange
 / broker policy), its parameters (numbers live here, never in code), where it is enforced (`code`), the tests that
-prove it (`tests`), the feature flag that switches its enforcement on (`flag`, None = always on) and a status
-(`enforced` | `partial` | `planned`). SEBI is one rule-set among the ones v1.2/v1.3 add (crypto venues, IBKR).
+prove it (`tests`), the switch that turns its enforcement on (`flag`, None = always on; a list when parts of the rule
+have their own switches - a config setting or a platform feature flag) and a status (`enforced` | `partial` | `planned`). SEBI is one rule-set among the ones v1.2/v1.3 add (crypto venues, IBKR).
 
 docs/COMPLIANCE_IN.md is the human table of the same rules; tests/test_compliance_rules.py keeps the two in step and
 checks that every test a rule names exists.
@@ -30,7 +30,8 @@ class Rule:
     params: Dict[str, Any] = field(default_factory=dict)
     code: List[str] = field(default_factory=list)
     tests: List[str] = field(default_factory=list)
-    flag: Optional[str] = None
+    flag: Optional[str] = None                       # the first switch (kept for callers that read one)
+    flags: List[str] = field(default_factory=list)   # every switch: config settings and/or platform feature flags
 
 
 @dataclass(frozen=True)
@@ -51,9 +52,11 @@ class RuleSet:
 def _parse(raw: Dict[str, Any]) -> RuleSet:
     rules: Dict[str, Rule] = {}
     for item in raw["rules"]:
+        raw_flag = item.get("flag")
+        flags = [str(f) for f in raw_flag] if isinstance(raw_flag, list) else ([str(raw_flag)] if raw_flag else [])
         rule = Rule(id=item["id"], title=item["title"], source=item["source"], status=item["status"],
                     params=dict(item.get("params") or {}), code=list(item.get("code") or []),
-                    tests=list(item.get("tests") or []), flag=item.get("flag"))
+                    tests=list(item.get("tests") or []), flag=flags[0] if flags else None, flags=flags)
         if rule.status not in STATUSES:
             raise ValueError(f"{rule.id}: status must be one of {STATUSES}")
         if not rule.id.startswith(raw["id"] + "."):

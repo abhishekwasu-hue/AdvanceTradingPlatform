@@ -234,13 +234,22 @@ CALLS_AND_FORECASTS = [
     "If 22800 gives way, 23000 is in play", "Bias: positive; level 23000 next", "Calls at 23000 look cheap", "23000 CE looks attractive",
     "This is a good risk reward zone", "Nifty 23000 jaayega, abhi le lo", "23000 tak tezi aa sakti hai", "22000 ke paas lena sahi rahega",
     "भाव 23000 पर्यंत जाऊ शकतो", "23000 तक जा सकता है", "RELIANCE will rise to 23000 as it did last week",
+    # third review: present-tense forecasts, conditionals, past-exemption bypass, MR / HI / Hinglish futures, value calls
+    "The index heads for 23000", "It is poised for 23000", "Momentum points to 23000", "Above 22800, 23000 opens up",
+    "The index rose 3.6% and heads to 23000", "It is due for another leg of 3.6%", "23000 is the next stop",
+    "A push to 23000 is in the making", "Price eyes 23000", "Buyers target 23000", "Charts suggest 23000",
+    "भाव 23000 गाठेल", "भाव 23000 पर्यंत वाढू शकतो", "भाव 23000 वर असेल", "23000 तक पहुंच सकता है", "23000 को छू लेगा",
+    "23000 पर होगा", "23000 की ओर बढ़ रहा है", "Nifty 23000 touch karega", "Nifty 23000 pahunchega", "23000 jaane wala hai",
+    "23000 ki taraf ja raha hai", "Is trade se paisa banega", "The 23000 call is worth a look", "The 22000 put is the safer side",
+    "Watch 23000", "23000 matters", "Keep 22000 in mind", "22800 is the level to watch", "23000 should cap it", "22000 holds the key",
+    "On a close over 22800, 23000", "Next up: 23000",
 ]
 DESCRIPTIONS = [
     "The daily regime reads trending up; the close rose 3.6% over 250 daily bars.",
     "The close is 22800, inside the window's range of 22000 - 23000.",
     "The close fell to 22000 early in the window and rose to 22800 since.",
     "The average true range reads 1.8% of the price.",
-    "Shares have been bought on the way toward 22800 over 250 bars.",
+    "The last close of 22800 came after 250 daily bars.",
     "The window's high was 23000 and its low was 22000.",
 ]
 
@@ -253,14 +262,14 @@ def _level_view():
 def test_calls_and_forecasts_with_fact_numbers_are_blocked_not_disclaimed(text):
     v = _level_view()
     for lang in ("en", "mr"):
-        shown, why = mv.check_text(text, v.numbers(), "\n".join(v.lines), lang)
+        shown, why = mv.check_text(text, v.numbers(), "\n".join(v.lines), lang, None, v.bindings())
         assert shown is None and why, (text, lang, shown)
 
 
 @pytest.mark.parametrize("text", DESCRIPTIONS)
 def test_descriptions_of_the_data_still_pass(text):
     v = _level_view()
-    shown, why = mv.check_text(text, v.numbers(), "\n".join(v.lines), "en", mv.ticker_text({"technical": v}, "ALPHA"))
+    shown, why = mv.check_text(text, v.numbers(), "\n".join(v.lines), "en", mv.ticker_text({"technical": v}, "ALPHA"), v.bindings())
     assert shown == text and why is None, why
 
 
@@ -300,7 +309,7 @@ def test_claims_get_every_check_and_the_checked_text_is_returned():
     bearish = mv.check_summary({**base, "claims": [{"statement": "The picture is bearish.", "source": "technical"}]}, v, "en")
     assert bearish and "unsupported" in bearish
     level = mv.check_summary({**base, "claims": [{"statement": "Target 2600 for the 2026-10-30 expiry.", "source": "options"}]}, v, "en")
-    assert level and "trade call or forecast" in level
+    assert level and ("trade call or forecast" in level or "not next to their fact's name" in level)
     ok = {**base, "claims": [{"statement": "PCR is 1.3.", "source": "options"}]}
     assert mv.check_summary(ok, v, "en") is None and ok["claims"][0]["statement"] == "PCR is 1.3."
 
@@ -416,7 +425,7 @@ def test_option_and_macro_descriptions_still_pass():
     for view, text in (("options", "PCR 1.3 with max pain 2480; the largest put open interest sits at 2400."),
                        ("macro", "India VIX 21.5 and SPX -0.8%."),
                        ("technical", "ADX 28.4 with ATR 1.8% of price, 1.6x its median.")):
-        shown, why = mv.check_text(text, v[view].numbers(), "\n".join(v[view].lines), "en")
+        shown, why = mv.check_text(text, v[view].numbers(), "\n".join(v[view].lines), "en", None, v[view].bindings())
         assert shown == text and why is None, (text, why)
 
 
@@ -441,3 +450,24 @@ def test_a_cancelled_model_call_is_still_logged():
         async with _session_factory() as session:
             return list(await session.scalars(select(LlmCallRecord.status).where(LlmCallRecord.tenant_id == me["tenant_id"])))
     assert _run(go()) == ["cancelled"]
+
+
+def test_numbers_must_sit_next_to_their_own_fact_label():
+    v = _views()
+    bindings = [b for x in v.values() for b in x.bindings()]
+    assert mv.unbound_numbers("Max pain 2480; the highest call OI at 2600 and the largest put open interest at 2400.", bindings) == []
+    assert mv.unbound_numbers("PCR 1.3, ADX 28.4, India VIX 21.5, SPX -0.8%.", bindings) == []
+    assert mv.unbound_numbers("The close rose 4.6% over 250 daily bars; range 2310.0 - 2600.0.", bindings) == []
+    assert mv.unbound_numbers("The 2600 call is worth a look.", bindings) == ["2600"]          # a strike without its OI label
+    assert mv.unbound_numbers("Above 2510.5, 2600 opens up.", bindings) == ["2510.5", "2600"]
+    assert mv.unbound_numbers("ADX 28.4 and 2600 next.", bindings) == ["2600"]              # a label binds only its own number
+
+
+def test_the_model_never_writes_the_possibilities(fake_tools):
+    _, me = _owner("hc4-possible@example.com")
+    summary = {"situation": "Readings lean up while India VIX 21.5 is high.", "leans_up": ["Trending up regime, ADX 28.4."],
+               "leans_down": [], "risks": ["India VIX 21.5."], "possibilities": ["Above 2510.5, 2600 opens up."],
+               "claims": [{"statement": "PCR is 1.3.", "source": "options"}]}
+    out = _run(_analyze(me["id"], _Words([]), _Words([json.dumps(summary)])))
+    assert out["summary"]["source"] == "ai" and out["summary"]["possibilities"] == mv.rules_summary(_views())["possibilities"]
+    assert "opens up" not in json.dumps(out["summary"]) and "possibilities" not in mv.SYNTH_SYSTEM

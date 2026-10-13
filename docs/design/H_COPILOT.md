@@ -446,5 +446,22 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
       calls ("le lo", "jaayega").
 
     Descriptions of OI, PCR, max pain and past moves still pass.
+  - **Third review: a structural gate.** Word lists alone do not converge, so the checks now work on structure:
+    - **No possibilities from the model.** The possibilities are always the rules' own (`rules_summary`). The model is
+      no longer asked for them, and is told to write each number next to the name of its fact.
+    - **Every number is bound to its fact's label.** In every AI text (views, summary, claims), each number must sit
+      within a few words of the label of the fact it is. Examples: "max pain 2480", "ADX 28.4", "highest call OI at
+      2600", "range 2310 - 2600". A price or a change may instead be bound by a past verb that governs it directly
+      ("closed at 22450.5", "rose 3.6%", "fell to 22000"). Labels come from the facts dict (`FACT_LABELS`,
+      `fact_bindings`). Dates are exempt. Examples that fail: "heads for 23000", "Above 22800, 23000 opens up", "the
+      23000 call is worth a look". A failing text falls back to the rules' wording.
+    - **The past exemption is narrower.** It applies only when a past verb governs the number itself, never because the
+      clause has a past verb somewhere.
+    - **Future / progressive forms next to any number are blocked:**
+      - Hindi: -गा / -गी / -गे, होगा, रहा है, की ओर;
+      - Marathi: -ेल / -तील, असेल, शकतो / शकते;
+      - Hinglish: -ega / -egi / -enge, wala hai, raha hai, ki taraf.
+
+      Hinglish future forms are blocked anywhere ("paisa banega").
 - **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
   `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

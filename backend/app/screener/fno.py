@@ -13,17 +13,20 @@ Two kinds of ScreenQL function:
   symbol's screen: `FutOIChange(n)` (all expiries' OI), `FutBuildup(n, price_pct, oi_pct)` (the near-month contract's
   close against ITS OWN close n trade dates back, and the OI of all expiries), `RolloverPct()` ((next + far OI) / all
   OI), `CostOfCarry()` (near-month premium over the spot, annualised over the calendar days to expiry) and `InFnoBan()`.
-  The lake holds exchange data, the same for everyone; no user's broker data and no tenant store is read.
+  Only the lake's shared-licensed sources are read (NSE bhavcopy, vendor, the operator's history: `SHARED_SOURCES`, the
+  preferred one per row), never a row an organisation's broker session or stream wrote - the same data for every
+  organisation; no tenant store is read.
 
 As-of rules (no look-ahead): a trade date's figures belong to that session's close (the lake labels a daily bar by its
 END, 15:30 IST) and are published after it; a bar sees the newest trade date whose close is strictly before the bar's own
 close (every intraday bar of day d, the 15:25 one too, sees d-1; the daily bar of d sees d). The ban list for trade date
 d is known before d's open (NSE publishes it the evening before), so every bar of d reads it. The loader reads only rows
-ingested by the run time.
+ingested by the run time, as many trade dates before the frame as the calls read back (`eod_lookback`).
 Places no orders; informational screens only.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -40,6 +43,7 @@ EOD_FUNCTIONS: Tuple[str, ...] = ("FutOIChange", "FutBuildup", "RolloverPct", "C
 LAKE_TIMEFRAMES: Tuple[str, ...] = ("day", "1d")
 CLOSE_IST = (15, 30)                                   # NSE's regular close: a trade date's figures belong to it
 IST_OFFSET = timedelta(hours=5, minutes=30)
+MIN_MARGIN_DAYS = 60                                   # calendar days read before a frame's first bar, at least
 # Index futures underlyings -> the index whose close is the spot (U1 index catalogue names; the code via fo_eod.code_for)
 INDEX_SPOT: Dict[str, str] = {"NIFTY": "NIFTY 50", "BANKNIFTY": "NIFTY BANK", "FINNIFTY": "NIFTY FINANCIAL SERVICES",
                               "MIDCPNIFTY": "NIFTY MIDCAP SELECT", "NIFTYNXT50": "NIFTY NEXT 50"}
@@ -276,49 +280,114 @@ def _ist_date(t: datetime) -> date:
     return ((ts.tz_convert("UTC") if ts.tzinfo else ts.tz_localize("UTC")) + IST_OFFSET).date()
 
 
-async def load_timeline(session: AsyncSession, symbol: str, start: datetime, end: datetime) -> FnoTimeline:
-    """The underlying's futures rows, spot closes and ban dates from the shared lake, ended and ingested by `end`."""
-    from sqlalchemy import Float, cast, select
+def _source_rank() -> Tuple[Tuple[str, ...], Any]:
+    """The shared-licensed lake sources only (NSE bhavcopy, vendor, the operator's history - never a row an
+    organisation's broker session or stream wrote: review of S5-C, HIGH) and their preference (the first prefix wins),
+    as the CH3 chart layer reads the lake (app/charts/price_action_layer.py)."""
+    from sqlalchemy import case
+
+    from app.charts.price_action_layer import SHARED_SOURCES
+    from app.db.models import MdCandleRecord
+    rank = case(*[(MdCandleRecord.source.like(f"{prefix}%"), i) for i, prefix in enumerate(SHARED_SOURCES)], else_=len(SHARED_SOURCES))
+    return tuple(SHARED_SOURCES), rank
+
+
+async def load_timelines(session: AsyncSession, symbols: Sequence[str], start: datetime, end: datetime) -> Dict[str, FnoTimeline]:
+    """Each underlying's futures rows, spot closes and ban dates from the shared lake, ended and ingested by `end` - one
+    futures read, one spot read and one ban read for all of them (review of S5-C). Per row stamp the preferred shared
+    source wins, then its highest version (rows are ordered so the winner comes last)."""
+    from sqlalchemy import Float, cast, or_, select
 
     from app.db.models import FoBanRecord, MdCandleRecord
-    sym = underlying(symbol)
-    keys = [f"NFO:{sym}:FUT:{d.isoformat()}" for d in expiry_candidates(_ist_date(start), _ist_date(end))]
-    fut = await session.execute(select(MdCandleRecord.instrument_key, MdCandleRecord.ts, MdCandleRecord.version, cast(MdCandleRecord.close, Float),
-                                       MdCandleRecord.oi).where(
-        MdCandleRecord.instrument_key.in_(keys), MdCandleRecord.timeframe.in_(LAKE_TIMEFRAMES),
-        MdCandleRecord.ts > start, MdCandleRecord.ts <= end, MdCandleRecord.ingested_at <= end).order_by(MdCandleRecord.ts, MdCandleRecord.version))
-    spot = await session.execute(select(MdCandleRecord.ts, MdCandleRecord.version, cast(MdCandleRecord.close, Float)).where(
-        MdCandleRecord.instrument_key == _spot_key(sym), MdCandleRecord.timeframe.in_(LAKE_TIMEFRAMES), MdCandleRecord.ts > start,
-        MdCandleRecord.ts <= end, MdCandleRecord.ingested_at <= end).order_by(MdCandleRecord.ts, MdCandleRecord.version))
-    bans = await session.scalars(select(FoBanRecord.trade_date).where(
-        FoBanRecord.underlying == sym, FoBanRecord.trade_date > (start - timedelta(days=1)).date(),
+    syms = sorted({underlying(s) for s in symbols if underlying(s)})
+    if not syms:
+        return {}
+    sources, rank = _source_rank()
+    shared = or_(*[MdCandleRecord.source.like(f"{prefix}%") for prefix in sources])
+    candidates = expiry_candidates(_ist_date(start), _ist_date(end))
+    keys = [f"NFO:{sym}:FUT:{d.isoformat()}" for sym in syms for d in candidates]
+    spot_of = {_spot_key(sym): sym for sym in syms}
+    window = (MdCandleRecord.timeframe.in_(LAKE_TIMEFRAMES), MdCandleRecord.ts > start, MdCandleRecord.ts <= end,
+              MdCandleRecord.ingested_at <= end, shared)
+    fut = await session.execute(select(MdCandleRecord.instrument_key, MdCandleRecord.ts, cast(MdCandleRecord.close, Float), MdCandleRecord.oi)
+                                .where(MdCandleRecord.instrument_key.in_(keys), *window)
+                                .order_by(MdCandleRecord.instrument_key, MdCandleRecord.ts, rank.desc(), MdCandleRecord.version))
+    spot = await session.execute(select(MdCandleRecord.instrument_key, MdCandleRecord.ts, cast(MdCandleRecord.close, Float))
+                                 .where(MdCandleRecord.instrument_key.in_(list(spot_of)), *window)
+                                 .order_by(MdCandleRecord.instrument_key, MdCandleRecord.ts, rank.desc(), MdCandleRecord.version))
+    bans = await session.execute(select(FoBanRecord.underlying, FoBanRecord.trade_date).where(
+        FoBanRecord.underlying.in_(syms), FoBanRecord.trade_date > (start - timedelta(days=1)).date(),
         FoBanRecord.trade_date <= _ist_date(end), FoBanRecord.fetched_at <= end))
-    by_day: Dict[date, Dict[str, Tuple[date, float, Optional[float]]]] = {}
-    for key, ts, _version, close, oi in fut:                     # ascending versions: the last one wins
+    by_day: Dict[str, Dict[date, Dict[str, Tuple[date, float, Optional[float]]]]] = {sym: {} for sym in syms}
+    for key, ts, close, oi in fut:                               # ordered: the winning row of each (key, stamp) comes last
+        parts = str(key).split(":")
         try:
-            expiry = date.fromisoformat(str(key).split(":")[3])
+            sym, expiry = parts[1], date.fromisoformat(parts[3])
         except (IndexError, ValueError):
             continue
-        day = (pd.Timestamp(ts).tz_convert("UTC") + IST_OFFSET).date() if pd.Timestamp(ts).tzinfo else (pd.Timestamp(ts) + IST_OFFSET).date()
-        by_day.setdefault(day, {})[str(key)] = (expiry, float(close), None if oi is None else float(oi))
-    spots: Dict[date, float] = {}
-    for ts, _version, close in spot:
-        t = pd.Timestamp(ts)
-        t = t.tz_convert("UTC") if t.tzinfo else t.tz_localize("UTC")
-        spots[(t + IST_OFFSET).date()] = float(close)
-    days = [DayRow(d, [(k, v[0], v[1], v[2]) for k, v in contracts.items()], spots.get(d)) for d, contracts in by_day.items()]
-    return build_timeline(sym, days, list(bans))
+        by_day.setdefault(sym, {}).setdefault(_ist_date(ts), {})[str(key)] = (expiry, float(close), None if oi is None else float(oi))
+    spots: Dict[str, Dict[date, float]] = {sym: {} for sym in syms}
+    for key, ts, close in spot:
+        spots[spot_of[str(key)]][_ist_date(ts)] = float(close)
+    banned: Dict[str, List[date]] = {sym: [] for sym in syms}
+    for sym, day in bans:
+        banned.setdefault(str(sym), []).append(day)
+    out: Dict[str, FnoTimeline] = {}
+    for sym in syms:
+        days = [DayRow(d, [(k, v[0], v[1], v[2]) for k, v in contracts.items()], spots[sym].get(d)) for d, contracts in by_day[sym].items()]
+        out[sym] = build_timeline(sym, days, banned.get(sym, []))
+    return out
 
 
-async def attach_fno(session: AsyncSession, universe: List[Any], end: datetime, base_tf: str) -> None:
-    """Every symbol's F&O timeline from its frame's first bar (less a margin for the n-date changes) up to `end`."""
-    margin = timedelta(days=60)
+async def load_timeline(session: AsyncSession, symbol: str, start: datetime, end: datetime) -> FnoTimeline:
+    """One underlying's timeline (`load_timelines` for one)."""
+    sym = underlying(symbol)
+    return (await load_timelines(session, [sym], start, end)).get(sym) or build_timeline(sym, [])
+
+
+def eod_lookback(ast: Any, params: Optional[Dict[str, Any]] = None) -> int:
+    """The most trade dates an EOD F&O call reads back (its `n`; a parameter or an expression counts as the largest
+    window allowed) - the loader reads that many dates before the frame's first bar (review of S5-C)."""
+    from app.screener.registry import MAX_WINDOW
+    most = 1
+    for node in nodes.walk(ast) if ast is not None else ():
+        if not (isinstance(node, nodes.Call) and node.name in ("FutOIChange", "FutBuildup")):
+            continue
+        arg = node.args[0] if node.args else None
+        if arg is None:
+            n = 1
+        elif isinstance(arg, nodes.Num):
+            n = int(arg.value)
+        elif isinstance(arg, nodes.Param) and params and isinstance(params.get(arg.name), (int, float)):
+            n = int(params[arg.name])
+        else:
+            n = int(MAX_WINDOW)
+        most = max(most, n)
+    return most
+
+
+def margin_days(lookback_dates: int) -> int:
+    """Calendar days that hold `lookback_dates` NSE trade dates before a bar (weekends and holidays included)."""
+    return max(MIN_MARGIN_DAYS, int(math.ceil(int(lookback_dates) * 7 / 5 * 1.1)) + 15)
+
+
+async def attach_fno(session: AsyncSession, universe: List[Any], end: datetime, base_tf: str, ast: Any = None,
+                     params: Optional[Dict[str, Any]] = None) -> None:
+    """Every symbol's F&O timeline from its frame's first bar less the dates its calls read back (`eod_lookback`) up to
+    `end` - in one batched read for the universe."""
+    margin = timedelta(days=margin_days(eod_lookback(ast, params)))
+    starts: List[datetime] = []
     for data in universe:
         frame = data.frames.get(base_tf)
         first = frame.index[0] if frame is not None and len(frame) else pd.Timestamp(end) - pd.Timedelta(days=30)
-        start = pd.Timestamp(first)
-        start = (start.tz_convert("UTC") if start.tzinfo else start.tz_localize("UTC")).to_pydatetime() - margin
-        data.fno = await load_timeline(session, data.symbol, start, end)
+        t = pd.Timestamp(first)
+        starts.append((t.tz_convert("UTC") if t.tzinfo else t.tz_localize("UTC")).to_pydatetime() - margin)
+    if not universe:
+        return
+    found = await load_timelines(session, [d.symbol for d in universe], min(starts), end)
+    for data in universe:
+        sym = underlying(data.symbol)
+        data.fno = found.get(sym) or build_timeline(sym, [])
 
 
 # ---------------------------------------------------------------------------------------------- pre-built F&O screens
@@ -376,4 +445,5 @@ _register_taxonomy()
 
 
 __all__ = ["expiry_candidates", "FLAG", "PRESETS", "PRESETS_BY_ID", "Preset", "presets_payload", "BUILDUPS", "EOD_FUNCTIONS", "flagged_calls", "eod_calls", "refusal", "enabled", "blocked_calls", "classify", "oi_change",
-           "buildup", "DayRow", "FnoTimeline", "build_timeline", "fno_series", "underlying", "load_timeline", "attach_fno"]
+           "buildup", "DayRow", "FnoTimeline", "build_timeline", "fno_series", "underlying", "load_timeline", "load_timelines", "attach_fno",
+           "eod_lookback", "margin_days"]

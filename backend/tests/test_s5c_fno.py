@@ -263,13 +263,13 @@ def test_index_futures_read_the_index_close_as_spot():
 
     async def go():
         async with _session_factory() as session:
-            session.add_all([_fut("NIFTY", D1, MAR26, 22100.0, 10_000), _row(key, D1, 22000.0, source="nse_index:test")])
+            session.add_all([_fut("NIFTY", D1, MAR26, 22100.0, 10_000), _row(key, D1, 22000.0, source="nse_bhav:index")])
             await session.commit()
             try:
                 return await fno.load_timeline(session, "NIFTY", ist(D1, 0, 0) - timedelta(days=2), ist(D1, 20, 0))
             finally:
                 await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key.in_([key, f"NFO:NIFTY:FUT:{MAR26.isoformat()}"]),
-                                                                   MdCandleRecord.source.in_(["nse_bhav:fo", "nse_index:test"]),
+                                                                   MdCandleRecord.source.in_(["nse_bhav:fo", "nse_bhav:index"]),
                                                                    MdCandleRecord.ts == ist(D1, 15, 30)))
                 await session.commit()
     tl = _run(go())
@@ -362,3 +362,58 @@ def test_fno_rules_pause_while_off_and_resume_at_bar_close(screener_on):
     _set(screener_fno=True)
     status, problem, fired = cycle(now + timedelta(minutes=2))
     assert status == "active" and problem is None and fired == 1                                # D4's bars see D3 vs D2: +20 %
+
+
+# --- review of S5-C ---------------------------------------------------------------------------------------------------------
+
+def test_the_loader_reads_only_the_shared_sources_the_preferred_one_first():
+    """HIGH: a row an organisation's broker session or stream wrote (broker: / stream:) never reaches the shared figures,
+    whatever its version; among shared sources the bhavcopy wins over a vendor row of the same stamp."""
+    _put([_fut(SYM, D1, MAR26, 100.0, 1000), _row(f"NSE:{SYM}", D1, 99.5, source="nse_bhav:cm"),
+          _fut(SYM, D1, MAR26, 999.0, 1, version=3, source="stream:kite"),                       # one organisation's stream
+          _row(f"NSE:{SYM}", D1, 10.0, version=3, source="broker:kite"),                         # one organisation's broker bars
+          _fut(SYM, D1, MAR26, 500.0, 5, version=2, source="vendor:test"),                       # shared, but less preferred
+          _fut(SYM, D2, MAR26, 101.0, 1100, source="stream:kite")])                              # a date only a stream has
+
+    async def go():
+        async with _session_factory() as session:
+            return await fno.load_timeline(session, SYM, ist(D1, 0, 0) - timedelta(days=5), ist(D3, 20, 0))
+    tl = _run(go())
+    assert len(tl.close_ns) == 1 and tl.closes[0][f"NFO:{SYM}:FUT:{MAR26.isoformat()}"] == 100.0 and tl.total_oi[0] == 1000.0
+    np.testing.assert_allclose(tl.carry_pct, [(100.0 / 99.5 - 1) * 365 / 21 * 100])
+
+
+def test_the_loader_reads_as_many_dates_back_as_the_calls_need():
+    """MED: FutOIChange(60) on a few days of 5m bars reads 60 trade dates before the first bar (a fixed 60-day margin
+    held about 42), so it has a value; the reads are batched for the universe."""
+    from app.screener.runtime import SymbolData as SD
+    assert fno.eod_lookback(parse('FutOIChange(60) > 1 AND FutBuildup() == ""')) == 60
+    assert fno.eod_lookback(parse("FutOIChange($n) > 1"), {"n": 30}) == 30 and fno.eod_lookback(parse("RolloverPct() > 1")) == 1
+    assert fno.margin_days(1) == fno.MIN_MARGIN_DAYS and fno.margin_days(60) >= 60 * 7 / 5
+    days = [d.date() for d in pd.bdate_range(end=D3, periods=75)]
+    _put([_fut(SYM, d, MAR26 if d < MAR26 else APR30, 100.0 + i, 1000 + 10 * i) for i, d in enumerate(days)]
+         + [_fut(OTHER, d, MAR26 if d < MAR26 else APR30, 50.0, 500 + i) for i, d in enumerate(days)])
+    frame = _intraday([D4])
+    universe = [SD(SYM, {"5m": frame}), SD(OTHER, {"5m": frame})]
+    ast = parse("FutOIChange(60) > 1")
+
+    async def go():
+        async with _session_factory() as session:
+            await fno.attach_fno(session, universe, ist(D4, 15, 30), "5m", ast)
+    _run(go())
+    got = evaluate(parse("FutOIChange(60)"), universe[0], base_tf="5m")
+    assert got.notna().all() and round(float(got.iloc[0]), 6) == round((1000 + 10 * 74) / (1000 + 10 * 14) * 100 - 100, 6)
+    assert len(universe[1].fno.close_ns) == 75 and len(universe[0].fno.close_ns) == 75
+
+
+def test_chart_studies_refuse_the_eod_functions_and_gate_the_family():
+    from app.charts import studies
+    rows = studies.check(["FutOIChange(1)", "OIChange(1)", "close"], "1d")
+    assert not rows[0]["ok"] and "end-of-day F&O figures" in rows[0]["problems"][-1]["message"]
+    assert rows[1]["ok"] and rows[2]["ok"]
+
+    async def go():
+        async with _session_factory() as session:
+            return await studies.gate(session, None, rows)
+    gated = _run(go())                                                       # screener_fno is off: the bar OI study is refused too
+    assert not gated[1]["ok"] and "screener_fno" in gated[1]["problems"][-1]["message"] and gated[2]["ok"]

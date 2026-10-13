@@ -929,6 +929,15 @@ Spec §2.3 (Category C, India first). This first part builds what ATP's data alr
   - the credit spread finder;
   - ban-list proximity (MWPL %);
   - OI walls and max-OI strikes.
+- **Review fixes (S5-C review).**
+  - The loader reads only the lake's shared-licensed sources (`SHARED_SOURCES`: NSE bhavcopy, vendor, the operator's
+    history) and prefers them in that order per row, then the highest version, as the chart layer does. A `broker:` or
+    `stream:` row one organisation's session wrote never feeds another's figures (tested on a futures key and a spot
+    key).
+  - The loader reads as many trade dates before the frame as the calls look back (`eod_lookback`: `FutOIChange(60)`
+    reads 60). It used to use a fixed 60-day margin, which left an intraday `FutOIChange(60)` empty.
+  - The universe is read in one batch: one futures query, one spot query and one ban query.
+  - Chart studies refuse the EOD functions with the reason and gate the family on `screener_fno`.
 - No migration: everything reads existing tables.
 
 ## U9 TX1 (built): screen taxonomy (method x setup) and the gallery rail and chips

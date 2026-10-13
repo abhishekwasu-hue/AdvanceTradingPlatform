@@ -130,6 +130,11 @@ def check(exprs: Sequence[str], tf: str) -> List[Dict[str, Any]]:
         problems = [p.as_dict() for p in sc.validated.problems]
         problems += [{"message": f"{m}() needs data a chart study does not load (sector / index / F&O lists or the option chain)", "pos": None}
                      for m in missing_data(ast)]
+        from app.screener import fno as fno_gate
+        # S5-C review: the EOD F&O functions read the shared F&O figures, which a chart study does not load - refused with
+        # the reason (never drawn as an error on every bar)
+        problems += [{"message": f"{m}() reads the end-of-day F&O figures, which a chart study does not load yet", "pos": None}
+                     for m in fno_gate.eod_calls(ast)]
         row.update(ok=not problems, problems=problems, kind=sc.kind, unit=sc.unit, ast=ast, text=nodes.to_text(ast),
                    lookback=max([int(v) for v in sc.validated.lookback.values()] or [0]),
                    lookback_by_tf={k: int(v) for k, v in sc.validated.lookback.items()})
@@ -181,14 +186,15 @@ def admit(studies: Sequence[Dict[str, Any]], bars: int) -> List[Dict[str, Any]]:
 
 async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The screener's function flags, per study (as `screener.routes._gate` does for a screen): a study using a U6
-    breakout function while `screener_breakouts` is off, or a market-zone function while `market_zones` is off, is
-    refused with the flag's reason. The others still draw."""
+    breakout function while `screener_breakouts` is off, a market-zone function while `market_zones` is off, or an S5-C
+    F&O function while `screener_fno` is off, is refused with the flag's reason. The others still draw."""
+    from app.screener import fno as fno_gate
     from app.screener import zones as zone_gate
     from app.screener.breakouts import gate as breakout_gate
     out: List[Dict[str, Any]] = []
     for st in studies:
         if st["ok"] and st["ast"] is not None:
-            for g in (breakout_gate, zone_gate):
+            for g in (breakout_gate, zone_gate, fno_gate):
                 blocked = await g.blocked_calls(session, tenant_id, st["ast"])
                 if blocked:
                     st = _refuse(st, g.refusal(blocked))

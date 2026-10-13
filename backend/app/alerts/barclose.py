@@ -331,8 +331,9 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             cache.reused_results += 1
         else:
             if fno_gate.eod_calls(ast):
-                # S5-C: the shared EOD F&O figures as of each bar's close (one read per symbol; this rule's problem on error)
-                await fno_gate.attach_fno(session, current, now, rule.base_tf)
+                # S5-C: the shared EOD F&O figures as of each bar's close (one batched read for the rule's symbols, as far back
+                # as its calls read; this rule's problem on error)
+                await fno_gate.attach_fno(session, current, now, rule.base_tf, ast, params)
             if zone_calls:
                 # Z7a-3: the tenant's zone snapshots as of each bar's close (a bar never sees a zone computed after it
                 # closed) - one batched read for the rule's symbols over the zone calls' own window, only when the cycle

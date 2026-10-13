@@ -11,14 +11,15 @@ import { ApiError } from "../../api/errors";
 import { Badge, Button, Input, Select } from "../../components/primitives";
 import { useThenT, type ThenT } from "./i18n";
 import {
-  bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isOwnerConflict, levelsVars, needsTakeOver, outcomeOf, visibleModes, withOverride,
+  ARM_CONFIRM, bodyOf, chipKey, codeLabel, CONFIRM_TFS, GATE_FIELDS, gateErrors, isOwnerConflict, levelsVars, needsTakeOver, outcomeOf,
+  placesAutoPaper, visibleModes, withOverride,
   type ConfirmTf, type ThenBody, type ThenIntent, type ThenMode, type ThenTemplate,
 } from "./model";
 
 export function ThenChip({ template }: { template: ThenTemplate | null }) {
   const t = useThenT();
   const key = chipKey(template);
-  const tone = key === "chip.off" ? "neutral" : key === "chip.paused" ? "warn" : "info";
+  const tone = key === "chip.off" ? "neutral" : key === "chip.paused" || key === "chip.AUTO_PAPER_ARMED" ? "warn" : "info";
   return <Badge tone={tone}>{t(key)}</Badge>;
 }
 
@@ -95,9 +96,37 @@ function IntentsTable({ intents, t }: { intents: ThenIntent[] | null; t: ThenT }
   );
 }
 
+/** N1 X2: the template's Auto PAPER state and the owner's Arm / Disarm (typed confirmation). */
+export function AutoPaperBox({ template, busy, onArm, onDisarm }: {
+  template: ThenTemplate; busy: boolean; onArm?: (confirm: string) => void; onDisarm?: () => void;
+}) {
+  const t = useThenT();
+  const [confirm, setConfirm] = useState("");
+  const auto = template.auto_paper;
+  if (!auto) return null;
+  const places = placesAutoPaper(template);
+  return (
+    <div className="space-y-1 rounded border border-border px-2 py-1 text-xs" data-testid="auto-paper" data-armed={auto.armed ? "yes" : "no"}>
+      <div className="font-medium text-fg">{t("auto.title")}</div>
+      <div className={places ? "text-warn" : "text-fg-muted"}>{places ? t("auto.armed") : t("auto.proposal", { why: auto.why })}</div>
+      <div className="text-fg-muted font-tabular">{t("auto.today", { today: auto.today, max: auto.max_per_day })}</div>
+      {auto.armed ? (
+        onDisarm && <Button size="sm" variant="ghost" onClick={onDisarm} disabled={busy}>{t("auto.disarm")}</Button>
+      ) : auto.available && onArm && (
+        <div className="flex flex-wrap items-end gap-2">
+          <Input label={t("auto.confirmLabel")} value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+          <Button size="sm" onClick={() => onArm(confirm)} disabled={busy || confirm.trim() !== ARM_CONFIRM}>{t("auto.arm")}</Button>
+        </div>
+      )}
+      <p className="text-[11px] text-fg-muted">{t("auto.note")}</p>
+    </div>
+  );
+}
+
 export interface DrawerViewProps {
   template: ThenTemplate | null; intents: ThenIntent[] | null; body: ThenBody; onBody: (b: ThenBody) => void;
   errors: string[]; notice: string; busy: boolean; onSave: () => void; onRemove: () => void;
+  onArm?: (confirm: string) => void; onDisarm?: () => void;
   /** Review of X1b: the take-over confirmation is showing (Save was pressed on another member's template). */
   confirming?: boolean; onConfirmTakeOver?: () => void; onCancelTakeOver?: () => void;
   /** Re-check of X1b: the remove confirmation is showing (Remove was pressed on another member's template). */
@@ -105,7 +134,7 @@ export interface DrawerViewProps {
 }
 
 /** The drawer's content (presentational: the container below loads and saves). */
-export function ThenDrawerView({ template, intents, body, onBody, errors, notice, busy, onSave, onRemove, confirming = false,
+export function ThenDrawerView({ template, intents, body, onBody, errors, notice, busy, onSave, onRemove, onArm, onDisarm, confirming = false,
   onConfirmTakeOver, onCancelTakeOver, confirmingRemove = false, onConfirmRemove, onCancelRemove }: DrawerViewProps) {
   const t = useThenT();
   const defaults = template?.gate_defaults ?? {};
@@ -166,6 +195,7 @@ export function ThenDrawerView({ template, intents, body, onBody, errors, notice
           {template?.configured && <Button size="sm" variant="ghost" onClick={onRemove} disabled={busy}>{t("drawer.remove")}</Button>}
         </div>
       )}
+      {template?.configured && template.mode === "AUTO_PAPER" && <AutoPaperBox template={template} busy={busy} onArm={onArm} onDisarm={onDisarm} />}
       {template?.configured && <StatusTable template={template} t={t} />}
       {template?.configured && <IntentsTable intents={intents} t={t} />}
       <p className="text-xs text-fg-muted">{t("drawer.footer")}</p>
@@ -241,6 +271,22 @@ export function RuleThen({ ruleId, initial }: { ruleId: number; initial?: ThenTe
       setNotice(t("drawer.removed"));
     } catch (e) { setErrors(errorLines(e)); } finally { setBusy(false); }
   }
+  async function arm(confirm: string) {
+    setBusy(true);
+    try {
+      const tpl = await api.armRuleThen(ruleId, confirm);
+      setTemplate(tpl);
+      setNotice(t("auto.armed_ok"));
+    } catch (e) { setErrors(errorLines(e)); } finally { setBusy(false); }
+  }
+  async function disarm() {
+    setBusy(true);
+    try {
+      const tpl = await api.disarmRuleThen(ruleId);
+      setTemplate(tpl);
+      setNotice(t("auto.disarmed_ok"));
+    } catch (e) { setErrors(errorLines(e)); } finally { setBusy(false); }
+  }
   return (
     <div>
       <div className="flex items-center gap-2">
@@ -248,8 +294,8 @@ export function RuleThen({ ruleId, initial }: { ruleId: number; initial?: ThenTe
         <Button size="sm" variant="ghost" aria-expanded={open} onClick={() => setOpen((o) => !o)}>{open ? t("hide") : t("open")}</Button>
       </div>
       {open && <ThenDrawerView template={template} intents={intents} body={body} onBody={setBody} errors={errors} notice={notice}
-        busy={busy} onSave={() => save(false)} onRemove={() => remove(false)} confirming={confirming} onConfirmTakeOver={() => save(true)}
-        onCancelTakeOver={() => setConfirming(false)}
+        busy={busy} onSave={() => save(false)} onRemove={() => remove(false)} onArm={arm} onDisarm={disarm} confirming={confirming}
+        onConfirmTakeOver={() => save(true)} onCancelTakeOver={() => setConfirming(false)}
         confirmingRemove={confirmingRemove} onConfirmRemove={() => remove(true)} onCancelRemove={() => setConfirmingRemove(false)} />}
     </div>
   );

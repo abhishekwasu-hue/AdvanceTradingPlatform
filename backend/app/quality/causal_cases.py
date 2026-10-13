@@ -72,7 +72,8 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "Min": ["Min(low, 20)"],
     "Greatest": ["Greatest(open, close)"],
     "Least": ["Least(open, close, low)"],
-    "Count": ["Count(10, close > open)"],
+    # U9 TX2: the watch-then-trigger transition (`library.transition_ast`) - the ready condition on the bar before
+    "Count": ["Count(10, close > open)", "Count(1, close > EMA(close, 20))[1]"],
     "CountStreak": ["CountStreak(close > open)"],
     "CrossAbove": ["CrossAbove(close, SMA(close, 10))"],
     "CrossBelow": ["CrossBelow(close, EMA(close, 10))"],

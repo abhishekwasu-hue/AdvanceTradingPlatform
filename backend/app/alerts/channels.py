@@ -4,7 +4,7 @@ import json
 import re
 from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
-from pydantic import BaseModel, EmailStr, Field, HttpUrl, TypeAdapter, ValidationError, field_validator
+from pydantic import BaseModel, EmailStr, Field, HttpUrl, TypeAdapter, ValidationError, field_validator, model_validator
 
 from app.core.egress import EgressBlocked, check_url_literal
 from app.core.enums import AlertChannelType, NotificationSeverity
@@ -141,6 +141,16 @@ class PushConfig(BaseModel):
         return sorted(set(value))
 
 
+def e164_numbers(value: List[str]) -> List[str]:
+    clean = []
+    for number in value:
+        digits = number.strip().replace(" ", "").replace("-", "")
+        if not digits.lstrip("+").isdigit() or len(digits.lstrip("+")) < 8:
+            raise ValueError(f"'{number}' is not a phone number (use E.164, e.g. +919812345678)")
+        clean.append(digits)
+    return clean
+
+
 # RFC 9110 field-name token; a value holds printable ASCII, spaces and tabs only - never CR / LF / NUL (header injection)
 # and never a non-ASCII character (httpx cannot encode it, which would stop the send for the remaining recipients).
 _HEADER_NAME = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]{1,100}$")
@@ -215,6 +225,12 @@ class SmsConfig(BaseModel):
     body_template: str = Field(min_length=2, max_length=2000)
     to_numbers: List[str] = Field(min_length=1, max_length=10)
     max_length: int = Field(default=300, ge=60, le=1000)
+    # S10 (flag alerts_whatsapp_dlt): India's DLT registration (TRAI TCCCPR 2018) - the principal entity id, the
+    # registered content template id and the sender header, filled into `{dlt_entity_id}` / `{dlt_template_id}` /
+    # `{sender_id}` in the body template. Optional; a template that uses one must set it.
+    dlt_entity_id: Optional[str] = Field(default=None, max_length=40, pattern=r"^[0-9A-Za-z]+$")
+    dlt_template_id: Optional[str] = Field(default=None, max_length=40, pattern=r"^[0-9A-Za-z]+$")
+    sender_id: Optional[str] = Field(default=None, max_length=11, pattern=r"^[A-Za-z0-9]+$")
 
     @field_validator("url")
     @classmethod
@@ -235,6 +251,16 @@ class SmsConfig(BaseModel):
     def _headers(cls, value: Dict[str, str]) -> Dict[str, str]:
         return valid_headers(value)
 
+    @model_validator(mode="after")
+    def _dlt_fields_set(self) -> "SmsConfig":
+        for field in DLT_FIELDS:
+            if "{" + field + "}" in self.body_template and not getattr(self, field):
+                raise ValueError(f"body_template uses {{{field}}} but {field} is not set")
+        return self
+
+    def uses_dlt(self) -> bool:
+        return any(getattr(self, f) for f in DLT_FIELDS)
+
     @field_validator("content_type")
     @classmethod
     def _content_type(cls, value: str) -> str:
@@ -243,13 +269,7 @@ class SmsConfig(BaseModel):
     @field_validator("to_numbers")
     @classmethod
     def _numbers(cls, value: List[str]) -> List[str]:
-        clean = []
-        for number in value:
-            digits = number.strip().replace(" ", "").replace("-", "")
-            if not digits.lstrip("+").isdigit() or len(digits.lstrip("+")) < 8:
-                raise ValueError(f"'{number}' is not a phone number (use E.164, e.g. +919812345678)")
-            clean.append(digits)
-        return clean
+        return e164_numbers(value)
 
     @field_validator("body_template")
     @classmethod
@@ -259,10 +279,73 @@ class SmsConfig(BaseModel):
         return value
 
 
-ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig, PushConfig, SmsConfig]
+class WhatsAppConfig(BaseModel):
+    """S10 seam (flag `alerts_whatsapp_dlt`): a WhatsApp Business gateway (Meta Cloud API, Gupshup, Twilio, ...) through a
+    request template like SMS - no vendor SDK. WhatsApp allows a business-initiated message only as a PRE-APPROVED
+    template to a number that OPTED IN: `template_name` (and `language`) name it, `{template}` / `{language}` fill it in,
+    `{title}` / `{text}` are its parameters, and `opt_in_confirmed` must be true (the organisation confirms it holds the
+    recipients' opt-in). Plan-gated to paid plans (each message costs money)."""
+
+    url: HttpUrl
+    headers: Dict[str, str] = Field(default_factory=dict)
+    content_type: str = Field(default="application/json", max_length=80)
+    body_template: str = Field(min_length=2, max_length=3000)
+    template_name: str = Field(min_length=1, max_length=512, pattern=r"^[a-z0-9_]+$")
+    language: str = Field(default="en", pattern=r"^[a-z]{2}(_[A-Z]{2})?$")
+    to_numbers: List[str] = Field(min_length=1, max_length=10)
+    opt_in_confirmed: bool                              # required: the organisation confirms it holds every recipient's opt-in
+    max_length: int = Field(default=300, ge=60, le=1000)
+
+    @field_validator("url")
+    @classmethod
+    def _https_only(cls, value: HttpUrl) -> HttpUrl:
+        try:
+            check_url_literal(str(value))
+        except EgressBlocked as exc:
+            raise ValueError(f"WhatsApp gateway URL refused: {exc}") from exc
+        return value
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def _plain_url(cls, value: Any) -> Any:
+        return plain_gateway_url(value)
+
+    @field_validator("content_type")
+    @classmethod
+    def _content_type(cls, value: str) -> str:
+        return valid_content_type(value)
+
+    @field_validator("to_numbers")
+    @classmethod
+    def _numbers(cls, value: List[str]) -> List[str]:
+        return e164_numbers(value)
+
+    @field_validator("headers")
+    @classmethod
+    def _headers(cls, value: Dict[str, str]) -> Dict[str, str]:
+        return valid_headers(value)
+
+    @field_validator("body_template")
+    @classmethod
+    def _template(cls, value: str) -> str:
+        if "{template}" not in value:
+            raise ValueError("body_template must contain {template}: WhatsApp sends business messages as approved templates only")
+        return value
+
+    @field_validator("opt_in_confirmed")
+    @classmethod
+    def _opt_in(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("confirm that every recipient opted in to WhatsApp messages from your organisation (opt_in_confirmed)")
+        return value
+
+
+DLT_FIELDS: Tuple[str, ...] = ("dlt_entity_id", "dlt_template_id", "sender_id")
+ChannelConfig = Union[TelegramConfig, EmailConfig, WebhookConfig, PushConfig, SmsConfig, WhatsAppConfig]
 
 SECRET_FIELDS = {AlertChannelType.TELEGRAM.value: ("bot_token", "inbound_secret"), AlertChannelType.EMAIL.value: ("password",),
-                 AlertChannelType.WEBHOOK.value: ("secret",), AlertChannelType.SMS.value: ("headers",)}
+                 AlertChannelType.WEBHOOK.value: ("secret",), AlertChannelType.SMS.value: ("headers",),
+                 AlertChannelType.WHATSAPP.value: ("headers",)}
 
 
 def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
@@ -276,6 +359,8 @@ def parse_config(channel_type: str, raw: Dict[str, Any]) -> ChannelConfig:
         return PushConfig.model_validate(raw)
     if channel_type == AlertChannelType.SMS.value:
         return SmsConfig.model_validate(raw)
+    if channel_type == AlertChannelType.WHATSAPP.value:
+        return WhatsAppConfig.model_validate(raw)
     raise ValueError(f"Unknown alert channel type '{channel_type}'")
 
 
@@ -358,7 +443,13 @@ def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:
     if record.channel_type == AlertChannelType.SMS.value:
         return {"url": raw.get("url"), "method": raw.get("method", "POST"), "content_type": raw.get("content_type"),
                 "body_template": raw.get("body_template"), "to_numbers": raw.get("to_numbers", []),
-                "headers_set": sorted((raw.get("headers") or {}).keys()), "max_length": raw.get("max_length", 300)}
+                "headers_set": sorted((raw.get("headers") or {}).keys()), "max_length": raw.get("max_length", 300),
+                **{f: raw.get(f) for f in DLT_FIELDS if raw.get(f)}}
+    if record.channel_type == AlertChannelType.WHATSAPP.value:
+        return {"url": raw.get("url"), "content_type": raw.get("content_type"), "body_template": raw.get("body_template"),
+                "template_name": raw.get("template_name"), "language": raw.get("language", "en"), "to_numbers": raw.get("to_numbers", []),
+                "opt_in_confirmed": bool(raw.get("opt_in_confirmed")), "headers_set": sorted((raw.get("headers") or {}).keys()),
+                "max_length": raw.get("max_length", 300)}
     return {
         "smtp_host": raw.get("smtp_host"), "smtp_port": raw.get("smtp_port"), "username": raw.get("username"),
         "use_tls": raw.get("use_tls", True), "from_address": raw.get("from_address"), "to_addresses": raw.get("to_addresses", []),

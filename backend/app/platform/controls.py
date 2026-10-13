@@ -183,6 +183,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # functions are hidden and refused, their templates and screens are left out of the catalog and the run, and alert
     # rules using them pause. Research only - matches, never orders.
     "screener_breakouts_bk3": "Breakout screens, set 2: VCP breakout and watchlist, Donchian, Bollinger / TTM squeeze, moving-average and RSI / ADX regime breakouts (needs screener_breakouts; research only, places no orders)",
+    # U6 BK4 (spec §8 BK4): trendline / channel (B5), flag / pennant / triangle (B6), gap (B8) and retest (B9) breakouts.
+    # Needs `screener_breakouts` too. OFF: their ScreenQL functions are hidden and refused, their templates and screens are
+    # left out of the catalog and the run, and alert rules using them pause. Research only - matches, never orders.
+    "screener_breakouts_bk4": "Breakout screens, set 3: trendline / channel, flag / pennant / triangle, gap-and-go and retest breakouts (needs screener_breakouts; research only, places no orders)",
     # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
     # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
     # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
@@ -200,6 +204,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    # U7 LG2: the second slice of Legends cards (trend, pullback and intraday methods; data/legends.json `slice: lg2`), on
+    # top of screener_legends. OFF: the LG2 cards are left out of /api/screener/legends and their screens out of the
+    # taxonomy. Educational only - never a recommendation, never an endorsement; places no orders.
+    "screener_legends_lg2": "Legends LG2: more cards on publicly described trading methods, each with an editable screen (educational only, places no orders)",
     "scan_then": "Scan Then (N1 U4 X1): after a scan alert matches, the level gate watches the symbol at its market zones and a confirmed setup is sent as a notification or a PAPER entry proposal (never an order; needs execution_core)",
     # CH5 (docs/design/CHARTING.md): the multi-chart workspace - 1/2/4/6/8 charts, symbol / interval / crosshair link
     # groups, saved layouts per user, keyboard shortcuts, chart types. OFF: /api/charts/layouts answers 503 and the
@@ -292,9 +300,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools",
-                               "context_panel",
-                               "positions_board", "builder_adjustments", "builder_compare", "trade_workspace", "education_pages", "journal_lessons"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "context_panel", "positions_board", "builder_adjustments", "builder_compare", "trade_workspace", "education_pages", "journal_lessons"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

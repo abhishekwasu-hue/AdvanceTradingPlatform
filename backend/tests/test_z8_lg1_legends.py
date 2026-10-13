@@ -50,7 +50,7 @@ def legends_on():
 def test_the_library_passes_every_lint_rule():
     assert lg.lint() == []
     lib = lg.load()
-    assert lib.ids() == LG1_CARDS
+    assert [c.id for c in lib.of(("lg1",))] == LG1_CARDS                               # LG2 cards: tests/test_n3_lg2_legends.py
     for card in lib.cards:
         assert card.name.startswith(f"{card.short}-style ")
         assert len(lg.LINES) + 1 <= lg.MAX_CARD_LINES                                   # who, style, looks for, timeframe, source
@@ -74,13 +74,14 @@ def test_lg1_2_the_bibliographic_check_against_public_catalogues():
     """LG1-2: each source checked against catalogue / ISBN records (the URLs in `evidence`); only Connors and Alvarez's
     first-edition year is unsettled (2008 or 2009), so that source and its one card are unverified, with the reason."""
     lib = lg.load()
-    status = {s.id: s.review for s in lib.sources.values()}
+    lg1_sources = {c for card in lib.of(("lg1",)) for c in card.cited()}
+    status = {s.id: s.review for s in lib.sources.values() if s.id in lg1_sources}
     assert status == {**{i: "verified" for i in status}, "connors_alvarez_2008": "unverified"}
     darvas = lib.sources["darvas_1960"]
     assert (darvas.publisher, darvas.year) == ("American Research Council", 1960)
     assert any("archive.org" in u for u in darvas.evidence)
     assert "2009" in lib.sources["connors_alvarez_2008"].review_note
-    cards = {c.id: (c.review, c.review_note) for c in lib.cards}
+    cards = {c.id: (c.review, c.review_note) for c in lib.of(("lg1",))}
     assert {i for i, (r, _) in cards.items() if r == "unverified"} == {"legends.connors_rsi2_pullback"}
     assert "connors_alvarez_2008" in cards["legends.connors_rsi2_pullback"][1]
     for card in lib.cards:                                     # verified = every source it cites is verified
@@ -311,7 +312,7 @@ def _run_card(card, frames: List[pd.DataFrame]):
 
 
 def test_every_card_has_a_fixture():
-    assert sorted(FIXTURES) == sorted(lg.load().ids())
+    assert sorted(FIXTURES) == sorted(c.id for c in lg.load().of(("lg1",)))
 
 
 @pytest.mark.parametrize("card_id", LG1_CARDS)
@@ -452,5 +453,5 @@ def test_the_frontend_taxonomy_sample_with_legends_on_is_the_server_payload():
     assert lg.SOURCE in hidden                                                           # off for a new organisation
     shown = [name for name in hidden if name != lg.SOURCE]
     sample = json.loads(TAXONOMY_SAMPLE.read_text(encoding="utf-8"))
-    assert sample == json.loads(json.dumps(tx.payload(tx.load(), hidden_sources=shown)))
+    assert sample == json.loads(json.dumps(tx.payload(tx.load(), hidden_sources=shown, hidden_ids=tx.default_hidden_ids())))
     assert [s["id"] for s in sample["screens"] if s["source"] == lg.SOURCE] == LG1_CARDS

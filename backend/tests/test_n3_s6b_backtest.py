@@ -238,3 +238,63 @@ def test_benchmarks_share_the_basis_and_a_missing_close_is_skipped(monkeypatch):
     assert res.benchmark_returns["nifty_50"][0] == pytest.approx(101 / 100 - 1)
     assert res.benchmark_missing == {"nifty_50": 1} and len(res.benchmark_returns["nifty_50"]) == len(res.days) - 1
     assert B.report(res, FREE)["benchmark_missing_sessions"] == {"nifty_50": 1}
+
+
+def test_a_kept_holding_is_not_cash_so_the_book_never_borrows(monkeypatch):
+    """Re-check of S6b (MED): the targets share the equity left after a holding that cannot trade - sized on the whole
+    equity, the buy of B would have spent the value still tied up in A and taken the cash far below 0."""
+    _no_charges(monkeypatch)
+    sess = _sessions(8)
+    a = _bars([100.0] * 8, [100.0] * 8, sess).drop(H.bar_index([sess[3]])[0])    # A does not trade on day 3
+    frames = {"A": a, "B": _bars([50.0] * 8, [50.0] * 8, sess)}
+    sig = pd.DataFrame(False, index=pd.Index([sess[0], sess[2]]), columns=["A", "B"])
+    sig.loc[sess[0], "A"] = True
+    sig.loc[sess[2], "B"] = True
+    res = B.simulate(sig, None, frames, sess, sess[-1], FREE)
+    qty_a = int(100_000 * (1 - B.CASH_BUFFER) // 100)
+    left = 100_000 - qty_a * 100
+    qty_b = int(left * (1 - B.CASH_BUFFER) // 50)
+    assert res.holdings[1] == 2 and res.cash[2] == pytest.approx(left - qty_b * 50) and min(res.cash) >= 0
+
+
+def test_cash_never_goes_below_zero_with_gaps_and_charges():
+    rng = np.random.default_rng(11)
+    sess = _sessions(80)
+    frames = {}
+    for i in range(8):
+        closes = 100 * np.cumprod(1 + rng.normal(0, 0.03, len(sess)))
+        opens = closes * (1 + rng.normal(0, 0.01, len(sess)))
+        f = _bars(opens, closes, sess)
+        frames[f"S{i}"] = f.drop(f.index[rng.choice(len(sess), 12, replace=False)])     # suspensions: no bar, no open
+    dates = sess[:-1:3]
+    sig = pd.DataFrame(rng.random((len(dates), 8)) > 0.4, index=pd.Index(dates), columns=list(frames))
+    res = B.simulate(sig, None, frames, sess, sess[-1], B.Settings(capital=100_000.0, top_n=3))
+    assert len(res.rebalances) == len(dates) and min(res.cash) >= 0
+
+
+def test_an_unadjusted_symbol_is_not_held_across_a_split(monkeypatch):
+    """Re-check of S6b (LOW): A's unadjusted bars halve at a 1:1 bonus on day 3; with the (symbol, session) pairs next to
+    it excluded, A is not bought for a period touching it (and leaves the equal-weight universe for that period)."""
+    _no_charges(monkeypatch)
+    sess = _sessions(6)
+    frames = {"A": _bars([100, 100, 100, 50, 50, 50], [100, 100, 100, 50, 50, 50], sess),
+              "B": _bars([20, 20, 20, 21, 21, 21], [20, 20, 20, 21, 21, 21], sess)}
+    sig = pd.DataFrame(True, index=pd.Index([sess[0]]), columns=["A", "B"])
+    naive = B.simulate(sig, None, frames, sess, sess[-1], FREE)
+    assert naive.equity[-1] < 80_000                                                  # the bonus read as a 50 % loss
+    res = B.simulate(sig, None, frames, sess, sess[-1], FREE, excluded={("A", sess[2]), ("A", sess[3])})
+    assert res.rebalances[0]["held"] == ["A", "B"] and res.holdings == [1]           # chosen, but only B is bought
+    assert res.equity[-1] > 100_000 and min(res.cash) >= 0
+    assert res.benchmark_returns["equal_weight_universe"][2] == pytest.approx(21 / 20 - 1)
+
+
+def test_the_benchmark_s_first_day_is_measured_from_its_open(monkeypatch):
+    _no_charges(monkeypatch)
+    sess = _sessions(4)
+    frames = {"A": _bars([100, 102, 104, 106], [101, 103, 105, 107], sess)}
+    sig = pd.DataFrame(True, index=pd.Index([sess[0]]), columns=["A"])
+    closes = pd.Series({sess[0]: 100.0, sess[1]: 101.0, sess[2]: 102.0, sess[3]: 103.0})
+    opens = pd.Series({sess[1]: 100.5})                                               # an overnight gap from 100
+    res = B.simulate(sig, None, frames, sess, sess[-1], FREE, benchmark_closes={"nifty_50": closes},
+                     benchmark_opens={"nifty_50": opens})
+    assert res.benchmark_returns["nifty_50"][:2] == pytest.approx([101 / 100.5 - 1, 102 / 101 - 1])

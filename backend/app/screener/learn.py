@@ -258,6 +258,9 @@ async def examples(session: AsyncSession, ast: Any, validated: Any, base_tf: str
         blocked[symbol] = [(pd.Timestamp(a.ex_date, tz="UTC").to_pydatetime(), pd.Timestamp(a.ex_date, tz="UTC").to_pydatetime())
                            for a in actions]
     # Review of TX4 (MED): CPU-bound - off the event loop, newest candidates confirmed only until 3 are found, time-capped.
+    # The reads are done: end the read transaction first, so no pooled connection sits idle in a transaction for up to
+    # TIME_LIMIT_SECONDS (TX4 re-check; nothing here writes).
+    await session.rollback()
     chosen, more, seen = await asyncio.to_thread(choose, ast, frames_by, base_tf, blocked)
     problems += more
     out = await asyncio.to_thread(_packs, ast, validated, chosen, frames_by, base_tf, name, problems)

@@ -280,8 +280,12 @@ def test_examples_run_off_the_event_loop_within_a_time_limit(lake, monkeypatch):
     threads = []
     real = ln.choose
 
+    open_tx = []
+    holder = {}
+
     def spy(*args, **kwargs):
         threads.append(threading.current_thread() is threading.main_thread())
+        open_tx.append(holder["session"].in_transaction())
         return real(*args, **kwargs)
     monkeypatch.setattr(ln, "choose", spy)
 
@@ -289,9 +293,11 @@ def test_examples_run_off_the_event_loop_within_a_time_limit(lake, monkeypatch):
         from app.screener import compile_screen
         ast, validated = compile_screen("CrossAbove(close, SMA(close, 20))", base_tf="1d")
         async with _session_factory() as session:
+            holder["session"] = session
             return await ln.examples(session, ast, validated, "1d", ["TXFOURT"], "Cross", now=datetime(2026, 10, 12, tzinfo=timezone.utc))
     out = _run(go())
     assert threads == [False] and out["examples"]
+    assert open_tx == [False]                       # TX4 re-check: no transaction held while the thread works
     capped, problems, _ = real(parse("CrossAbove(close, SMA(close, 20))"), {"A": {"1d": _daily()}}, "1d", {}, time_limit=0.0)
     assert capped == [] and any("stopped after" in p or "time limit" in p for p in problems)
 

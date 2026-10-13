@@ -171,7 +171,9 @@ def test_each_declaration_is_what_the_builder_produces():
         checked += 1
         ok = {
             "series": d is not None and d["kind"] in ("overlay", "pane"),
-            "box": d is None or d["kind"] == "box",                                  # a base only where the engine found one
+            # a base only where the engine found one; with a level but no base (BK3's Bollinger / Keltner levels exist on
+            # every bar) the engine's level line instead
+            "box": d is None or d["kind"] == "box" or (d["kind"] == "overlay" and bool(d.get("levels"))),
             "bars": (d is not None and d["kind"] == "bars") or (name in ev.BREAKOUT_ARGS and d is None and bool(row.get("note"))),
             "overlay": d is None or d["kind"] == "overlay",
             "levels": d is not None and "chain" in d,

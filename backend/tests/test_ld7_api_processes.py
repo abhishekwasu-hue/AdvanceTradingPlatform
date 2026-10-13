@@ -119,8 +119,10 @@ def test_bcrypt_limit_is_shared_between_api_processes(monkeypatch):
     monkeypatch.setattr(config, "API_WORKERS", 2)
     assert security._bcrypt_concurrency() == 2
     monkeypatch.setattr(config, "API_WORKERS", 3)
-    assert security._bcrypt_concurrency() == 1
+    assert security._bcrypt_concurrency() == 2                 # rounded up (the CI runner: 4 CPUs, 3 processes)
     monkeypatch.setattr(security, "_cpu_count", lambda: 2)
+    monkeypatch.setattr(config, "API_WORKERS", 2)
+    assert security._bcrypt_concurrency() == 1                 # the KVM 2: one each
     monkeypatch.setattr(config, "API_WORKERS", 4)
     assert security._bcrypt_concurrency() == 1                 # never below one
 

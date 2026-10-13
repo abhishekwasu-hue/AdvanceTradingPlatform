@@ -50,9 +50,12 @@ def _cpu_count() -> int:
 
 
 def _bcrypt_concurrency() -> int:
-    """The CPUs this process may use, shared among the API processes of the host (LD-7: with API_WORKERS processes, each
-    takes its share, so the host as a whole still runs about one bcrypt check per CPU at a time; never below one)."""
-    return max(1, _cpu_count() // max(1, config.API_WORKERS))
+    """The CPUs this process may use, shared among the API processes of the host, rounded up (LD-7: with API_WORKERS
+    processes, each takes its share, so the host runs about one bcrypt check per CPU at a time - one more where the
+    CPUs do not divide evenly, which its lower priority (BCRYPT_NICE) keeps out of the other requests' way; never
+    below one). 4 CPUs, 3 processes: 2 each; 2 CPUs, 2 processes: 1 each."""
+    workers = max(1, config.API_WORKERS)
+    return max(1, -(-_cpu_count() // workers))
 
 
 BCRYPT_CONCURRENCY = _bcrypt_concurrency()

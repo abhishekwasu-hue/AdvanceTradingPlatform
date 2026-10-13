@@ -420,8 +420,22 @@ _FORECAST_WORDS = (
     "जाएगा", "जाएगी", "जायेगा", "बढ़ेगा", "बढ़ेगी", "बढेगा", "गिरेगा", "गिरेगी", "पहुंचेगा", "पहुँचेगा", "तेजी आ",
     "jayega", "jaayega", "jaega", "ja sakta", "ja sakti", "tezi aa", "aa sakti", "aa sakta",
     # round 7: probability / expectation wording next to a number (MR / HI / Hinglish)
-    "संभावना", "संभावनाएं", "शक्यता", "अपेक्षा", "अपेक्षित", "उम्मीद", "अंदाज", "अंदाजा", "अंदाज़ा", "chance", "chances", "ummeed", "umeed",
+    "संभावना", "संभावनाएं", "शक्यता", "अपेक्षा", "उम्मीद", "अंदाज", "अंदाजा", "अंदाज़ा", "chance", "chances", "ummeed", "umeed",
     "sambhavna", "sambhavana", "andaza", "andaaza",
+    # round 8: probability / chance wording (EN / HI / MR / Hinglish) and watch / anchor / approach words next to a level
+    "probability", "probabilities", "probable", "probably", "possibility", "possibilities", "odds", "in reach", "within reach",
+    "on track", "drift to", "drift toward", "drift towards", "drifts", "drifting", "nearing", "keep an eye", "eye", "monitor", "monitoring", "offers support",
+    "offer support", "provides support", "lends support", "to watch", "worth watching", "pakka", "shayad", "shaayad", "ummid", "umeed",
+    "ummeedein", "anuman", "anumaan", "sambhav", "sambhavtah", "shakyata", "aasha", "asha", "राहील", "राहतील", "कडे कल", "वाटचाल",
+)
+# Patterns among the forecast words (round 8): stems so that inflections are caught ("उम्मीदें", "शक्यतेने", "संभाव्य"),
+# "watch" / "anchors" next to a level (never "Watch list: 5 symbols", "the anchor for these numbers"), and "अपेक्षित" only as
+# a predicate or before a level ("22800 अपेक्षित आहे", "अपेक्षित पातळी 22800" - never "अपेक्षित माहिती: 5 सत्रे").
+_FORECAST_PATTERNS = (
+    r"watch(?:es|ing)?(?!\s*-?\s*list)", r"anchors|anchoring", r"bias(?:\s+is)?\s+(?:to|toward|towards)",
+    r"शायद", r"संभवतः", r"संभव[\u0900-\u097f]*", r"संभाव[\u0900-\u097f]*", r"शक्य[\u0900-\u097f]*", r"उम्मीद[\u0900-\u097f]*",
+    r"अनुमान[\u0900-\u097f]*", r"आशा[\u0900-\u097f]*", r"अंदाज[\u0900-\u097f]*", r"अपेक्षा[\u0900-\u097f]*", r"अपेक्षे[\u0900-\u097f]*",
+    r"अपेक्षित(?=[\s,]*(?:आहे|आहेत|है|हैं|था|थी|थे|असेल|होगा|होगी|पातळी|स्तर|लेवल|भाव|किंमत|कीमत|दर|टार्गेट|लक्ष्य|[।.!?]|$))",
 )
 # C - anywhere: value judgements, spelled-out amounts, Hinglish calls
 _ANYWHERE = (
@@ -450,6 +464,7 @@ _MOVEMENT = re.compile(
     r"\b(?:heads?|heading|headed)\s+(?:to|for|toward|towards|into|up|down|higher|lower|back up)\b|"
     r"(?<!\bhas )(?<!\bhad )(?<!\bhave )\b(?:go|goes|going|gone)\s+(?:to|toward|towards|for|higher|lower|up|down|past|beyond|above|below|"
     r"through)\b|"
+    r"\b(?:'d|would|should|could|might|may|will)\s+have\s+gone\s+(?:to|toward|towards|past|beyond|above|below|through)\b|"
     r"\bwhere\s+(?:it|price|prices|the price|the index|the stock|the market|nifty|this)\s+(?:heads|goes|is going|is headed|is heading|"
     r"ends up|settles|lands|gets to)\b|"
     r"\b(?:will|to|could|may|might|can|would|should|set to|likely to)\s+(?:break|breach|clear|crack|take out)\b|"
@@ -468,8 +483,12 @@ _MOVEMENT = re.compile(
     r"(?<!expiry is )(?<!expiry )\bsoon\b|"
     # round 7: only next to a level - "approaches the high 22800", "22800 is the anchor", "Watch the high 22800" - never
     # "this approach reads 20 sessions", "the 20-session window is the anchor for these numbers", "Watch list: 5 symbols"
-    r"\bapproach(?:es|ing)?\s+(?:(?:the|a|an|max|pain|high|low|level|of|its|call|put|oi|strike|close|range|mark|spot)\s+){0,3}[₹\d]|"
-    r"\d[\d,.]*\s*%?\s+(?:is|acts as|remains|becomes|stays)\s+(?:the|an?)\s+anchor\b|\banchor(?:s|ing)?\s+(?:at|near|around|to)\s+[₹\d]|"
+    r"\bapproach(?:es|ing)?\s+(?:(?:the|a|an|max|pain|high|low|level|of|its|call|put|oi|strike|close|range|mark|spot|to|toward|towards|"
+    r"near)\s+){0,3}[₹\d]|"
+    r"(?<![\d,.])\d[\d,.]*+\s*%?\s+(?:is|acts as|remains|becomes|stays)\s+(?:the|an?)\s+anchor\b|\banchor(?:s|ing)?\s+(?:at|near|around|to)\s+[₹\d]|"
+    # round 8: "Spot settling near max pain 22800" (never "PCR settles near 0.92", "Settled at 22780", "settlement was at")
+    r"(?<!\bpcr )(?<!\bratio )(?<!\biv )(?<!\bvix )(?<!\badx )(?<!\batr )\bsettl(?:e|es|ing)\s+(?:at|near|around|close to|toward|towards)\s+"
+    r"(?:[^\s\d]+\s+){0,3}[₹\d]|"
     r"^\s*watch\b(?!\s*-?\s*list)|"
     r"\b(?:means|implies|signals|suggests)\s+(?:a|an)\s+(?:[\w%.,+-]+\s+){0,3}?(?:move|swing|rally|drop|fall|rise|gain|decline)\b|"
     r"(?:तक|पर्यंत)(?:\s+[ऀ-ॿ]+){0,2}?\s+(?:जाता|जाती|जाते|जातो|जातात)(?![ऀ-ॿ])",
@@ -483,21 +502,24 @@ _FUTURE = re.compile(r"\b(?:will|could|may|might|likely|expect\w*|set to|can|goi
                      r"jayega|jaayega|jaega|sakta|sakti|जाएगा|जाईल|सकता|सकती|शकतो|शकते", re.I)
 
 
-def _alt_words(words: Tuple[str, ...]) -> str:
-    return "(?:" + "|".join(re.escape(w) for w in sorted(set(words), key=len, reverse=True)) + ")"
+def _alt_words(words: Tuple[str, ...], patterns: Tuple[str, ...] = ()) -> str:
+    return "(?:" + "|".join([*patterns, *(re.escape(w) for w in sorted(set(words), key=len, reverse=True))]) + ")"
 
 
-_NUM = r"(?<![\w.,])[-+]?₹?(?<![\d,.])\d[\d,]*(?:\.\d+)?\s*%?"
-_GAP = r"[^!?\n;।]{0,40}?"                    # same clause: no sentence end in between (a decimal point is allowed)
+_NUM = r"(?<![\w.,])[-+]?₹?(?<![\d,.])\d[\d,]*+(?:\.\d++)?\s*%?"   # possessive: a long digit run is read once
+# same clause: no sentence end in between - a full stop ends it unless it touches a digit (a decimal point, "22800.")
+# (the branches are disjoint, so the bounded gap never backtracks exponentially over a run of "1.1.1.")
+_GAP = r"(?:[^!?\n;।.]|\.(?=\d)|(?<=\d)\.(?!\d)){0,40}?"
 
 
 def _near(words: str) -> "re.Pattern[str]":
-    return re.compile(rf"(?<![{_DEVA}-])(?P<a>{words})(?![{_DEVA}-]){_GAP}{_NUM}|{_NUM}{_GAP}(?<![{_DEVA}-])(?P<b>{words})(?![{_DEVA}-])",
-                      re.IGNORECASE)
+    # every word starts with a letter: the (?=[^\W\d_]) guard skips the long alternation at digits, spaces and marks
+    return re.compile(rf"(?<![{_DEVA}-])(?=[^\W\d_])(?P<a>{words})(?![{_DEVA}-]){_GAP}{_NUM}|"
+                      rf"{_NUM}{_GAP}(?<![{_DEVA}-])(?=[^\W\d_])(?P<b>{words})(?![{_DEVA}-])", re.IGNORECASE)
 
 
 _ACTION_NEAR_NUMBER = _near(_alt_words(_ACTION_WORDS))
-_FORECAST_NEAR_NUMBER = _near(_alt_words(_FORECAST_WORDS))
+_FORECAST_NEAR_NUMBER = _near(_alt_words(_FORECAST_WORDS, _FORECAST_PATTERNS))
 _ANYWHERE_RE = re.compile(rf"(?<![{_DEVA}-]){_alt_words(_ANYWHERE)}(?![{_DEVA}-])", re.IGNORECASE)
 _ADJACENT = re.compile(rf"(?:another|further|additional|extra)\s+{_NUM}|{_NUM}\s*(?:more|further|higher|lower|extra)\b|"
                        rf"\b(?:higher|lower|up|down)\s+by\s+{_NUM}|{_NUM}\s+next\b|\bnext\s+(?:level|target|stop|leg|move|zone)\b",
@@ -512,13 +534,26 @@ _MODAL_ADVICE = re.compile(
 _IMPERATIVE_DEVA = re.compile(rf"(?<![{_DEVA}])(?:खरीदो|खरीदें|खरीद लो|खरीद लें|बेचो|बेचें|बेच दो|बेच दें|खरेदी करा|विक्री करा|विकून टाका|घेऊन टाका)(?![{_DEVA}])")
 
 
+MAX_CHECK_CHARS = 20000            # an AI text longer than this is not checked, it is refused (round 8: a defensive bound)
+_CLAUSE_REACH = 400                # a clause is read within this many characters of its match (linear on long texts)
+
+
+def _clause_near(text: str, start: int, end: int) -> str:
+    """The clause around text[start:end] (call_detect._clause), read in a bounded window so each match costs O(1)."""
+    from app.ai.call_detect import _clause
+    lo = max(0, start - _CLAUSE_REACH)
+    return _clause(text[lo:min(len(text), end + _CLAUSE_REACH)], start - lo, end - lo)
+
+
 def advice_problems(text: str) -> List[str]:
     """Why `text` reads as a trade call, a forecast or a value judgement (empty = it does not). Blocked by the multi-view
     checks: a trade action next to a number; a forecast / possibility word next to a number or a percentage unless its
     clause only describes the past; "another 3%", "higher by 3%", "23000 next"; value words ("cheap", "risk reward"),
     spelled-out amounts ("twenty-three thousand") and Hinglish calls ("le lo") anywhere; telling traders what to do; a
     Marathi / Hindi imperative."""
-    from app.ai.call_detect import _clause, normalise
+    from app.ai.call_detect import normalise
+    if len(text or "") > MAX_CHECK_CHARS:
+        return [f"longer than {MAX_CHECK_CHARS} characters (not checked, not shown)"]
     text = normalise(text or "")                       # markdown, zero-width characters and look-alikes undone first
     found: List[str] = []
     for m in _ACTION_NEAR_NUMBER.finditer(text):
@@ -527,7 +562,7 @@ def advice_problems(text: str) -> List[str]:
         number = re.search(_NUM, m.group(0))
         num_at = m.start() + (number.start() if number else 0)
         governed = _PAST_BEFORE_NUMBER.search(text[max(0, num_at - 40):num_at])
-        clause = _clause(text, m.start(), m.end())
+        clause = _clause_near(text, m.start(), m.end())
         if governed and not _FUTURE.search(clause):
             continue                                    # "the close rose 3.6%": a past verb governs this very number
         found.append(f"'{(m.group('a') or m.group('b')).lower()}' next to a number (a forecast)")

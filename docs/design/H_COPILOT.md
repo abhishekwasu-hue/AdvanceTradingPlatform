@@ -523,5 +523,28 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
       - "pin bar".
     - **Decision:** "Put OI at 22500 is the floor of the OI distribution" stays blocked. "The floor" of a level reads as
       a support call, and a description can say "the lowest strike with put OI" instead.
+  - **Eighth review: the narrowing reopened forecasts; probability wording; linear scans.**
+    - Blocked next to a number, in the same clause:
+      - watch / watching / to watch / worth watching ("Max pain 22800 is the level to watch"), keep an eye, monitor,
+        nearing, on track, bias is to, offers support;
+      - anchors / anchoring ("Max pain 22800 anchors expiry");
+      - probability, probable, probably, possibility, odds.
+      - Hindi / Marathi stems, so inflections are caught: शायद, संभवतः, संभाव- / संभव-, शक्य-, उम्मीद-, अनुमान-, आशा-,
+        राहील, कडे कल, वाटचाल.
+      - Hinglish: shayad, ummid, anuman, sambhav, pakka.
+    - Blocked in a sentence with a number: settle / settles / settling at / near / around a level within three words
+      ("Spot settling near max pain 22800"); "an approach to / toward 22800"; "would / 'd have gone to 22800".
+    - These still pass: "Watch list: 5 symbols", "this approach reads 20 sessions", "the anchor for these numbers",
+      "has / had gone up", "pin bar(s)", "PCR settles near 0.92", "Settled at 22780 last expiry".
+    - "The 23000 strike is worth watching" now blocks. Round 7 let it pass; it is a judgement about a level.
+    - A full stop ends the clause unless it touches a digit: "Chances: n/a. Call OI 23000." passes.
+    - "अपेक्षित" blocks only as a predicate or before a level: "22800 अपेक्षित आहे" and "अपेक्षित पातळी 22800" are
+      blocked; "अपेक्षित माहिती: 5 सत्रे" passes.
+    - The scans are linear:
+      - number runs are matched possessively and start only at a number's first digit;
+      - the clause gap's branches are disjoint;
+      - each forecast match reads its clause in a bounded window;
+      - an AI text over `MAX_CHECK_CHARS` (20,000) is refused without being scanned.
+      Before the fix, `"1" * 38000` took about 40 s and `"संभावना 1 "` repeated took about 10 s; each is now well under 1 s.
 - **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
   `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

@@ -637,7 +637,7 @@ R7_BLOCK = [
 R7_PASS = [
     "This approach reads 20 sessions of data.", "The approach uses the last 20 sessions.", "PCR settles near 0.92 over 5 sessions.",
     "The 20-session window is the anchor for these numbers.", "Watch list: 5 symbols.",
-    "The 23000 strike is worth watching less than the range.", "Price has gone up 3% in 5 sessions.",
+    "Price has gone up 3% in 5 sessions.",
     "A pin bar formed at 22000 in the window.",
 ]
 
@@ -661,3 +661,63 @@ def test_round7_descriptive_prose_passes_the_advice_check(text):
                                   "Price has gone up 3% and is going to 22800."])
 def test_round7_the_narrowed_words_still_block_next_to_a_level(text):
     assert mv.advice_problems(text), text
+
+
+# --- round 8: watch / anchor / settle / approach next to a level, probability wording, linear scans --------------------
+R8_WATCH_ANCHOR = [
+    "Max pain 22800 is the level to watch.", "Max pain 22800 is worth watching.", "Watching max pain 22800 closely.",
+    "Max pain 22800 anchors expiry.", "Spot settling near max pain 22800.", "An approach to max pain 22800 is underway.",
+    # watch in the same clause as a number (round 7 read it as prose; round 8: a judgement about a level)
+    "The 23000 strike is worth watching less than the range.",
+    "Price settling around max pain 22800.", "Keep an eye on 22800.", "Monitor 22800 closely.", "Price nearing 22800.",
+    "22500 offers support.", "Bias is to 22800.", "On track for 22800.", "It'd have gone to 22800 by now.",
+]
+R8_PROBABILITY = [
+    "The probability of max pain 22800 is high", "possibility of 22800", "The odds of 22800 are high", "Odds favour max pain 22800",
+    "शायद 22800 तक।", "22800 का अनुमान है।", "22800 की आशा है।", "संभवतः 22800।", "22800 होने की उम्मीदें हैं।",
+    "22800 गाठणे शक्य आहे.", "22800 ची शक्यतेने वाटचाल.", "संभाव्य पातळी 22800 आहे.",
+    "shayad 22800", "22800 ki ummid", "22800 tak jaane ka anuman",
+    "22800 अपेक्षित आहे.", "अपेक्षित पातळी 22800 आहे.", "Max pain 22800 is probably where it ends.",
+]
+R8_PASS = [
+    "Watch list: 5 symbols.", "Watchlist has 5 symbols.", "This approach reads 20 sessions.",
+    "The 20-session window is the anchor for these numbers.", "NIFTY has gone up 2.1% over 5 sessions.",
+    "It had gone below 22500 on Monday.", "A pin bar formed at 22800.", "Pin bars at 22500 and 22800.",
+    "Expiry settlement was at 22780 last month.", "Settled at 22780 last expiry.", "PCR settles near 0.92 over 5 sessions.",
+    "Price approached 22800 twice last week.",
+    # LOW-2: a full stop ends the clause ("n/a." is not next to 23000); the adjective "अपेक्षित" before a non-level noun
+    "Chances: n/a. Call OI 23000.", "अपेक्षित माहिती: 5 सत्रे.",
+]
+
+
+@pytest.mark.parametrize("text", R8_WATCH_ANCHOR + R8_PROBABILITY)
+def test_round8_watch_anchor_settle_and_probability_wording_is_blocked(text):
+    assert mv.advice_problems(text), text
+    allowed, facts, bindings = _r5()
+    for lang in ("en", "mr", "hi"):
+        shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", R8_PASS)
+def test_round8_descriptive_prose_passes_the_advice_check(text):
+    assert mv.advice_problems(text) == [], text
+
+
+@pytest.mark.parametrize("unit", ["1", "1.", "1,", "1 ", "1% ", "1 is ", "22800 is the ", "संभावना 1 ", "शक्यतेने 1 ", "watching 1 ",
+                                  "settle at max 1 ", "approach of the 1", "1. ", "Max pain 22800; call OI 23000. "])
+def test_round8_advice_problems_is_linear_on_long_adversarial_text(unit, monkeypatch):
+    import time
+    monkeypatch.setattr(mv, "MAX_CHECK_CHARS", 10 ** 6)                        # time the scans themselves, not the cap
+    text = (unit * (38000 // len(unit) + 1))[:38000]
+    t0 = time.perf_counter()
+    mv.advice_problems(text)
+    assert time.perf_counter() - t0 < 1.5, unit                                 # was ~40 s ("1" * 38000) and ~10 s ("संभावना 1 ")
+
+
+def test_round8_an_over_long_text_is_refused_not_scanned():
+    import time
+    t0 = time.perf_counter()
+    assert mv.advice_problems("1" * (mv.MAX_CHECK_CHARS + 1))
+    assert time.perf_counter() - t0 < 0.1
+    assert mv.advice_problems("Max pain 22800. " * 10) == []

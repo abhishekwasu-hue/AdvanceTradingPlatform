@@ -1,6 +1,6 @@
 # Part C2 - Pluggable execution models for backtests: design note
 
-Spec: MASTER SPEC v1 §2 (C2). Status: **PR 1 done** (protocols, defaults, golden test; fill + slippage wired). It is stacked on the realism PR (#83: C1 HTF closed bars, C3 prefix
+Spec: MASTER SPEC v1 §2 (C2). Status: **PR 1 done** (protocols, defaults, golden test; fill + slippage wired); **PR 2 built (N7 C2b)**: `next_open`, `spread_half`, `volume_share`, `fixed_ms`, behind the `backtest_models` flag. It is stacked on the realism PR (#83: C1 HTF closed bars, C3 prefix
 cache, C4 reproducibility fingerprint). The models below are added in small PRs. The default model of each kind
 reproduces today's numbers exactly, so no existing backtest result changes until someone picks a different model.
 
@@ -63,9 +63,27 @@ Rules that apply across all six:
 - Fingerprint: changing any model or parameter changes `config_hash`; the same models and seed give the same
   `result_hash`.
 
+## PR 2 (N7 C2b, built)
+- `next_open` fill: an entry fills at the next bar's OPEN (the only number of that bar it reads); that bar's range then
+  counts for exits (a gap through the stop exits at the open). `expected_price` keeps the signal's price.
+- `fixed_ms` latency: the order arrives `ms` after the signal bar closed and fills at the open of the bar trading then
+  (or the next bar after a gap); no bar left -> no entry. With touch fill and zero latency nothing changes.
+- `spread_half(spread_pct)`: half a configured spread against the trade (bars carry no spread, C2-3).
+- `volume_share(base_pct, impact_pct, max_pct)`: base + impact x (qty / signal-bar volume x 100), capped; no volume ->
+  the cap. The signal bar's volume, never the fill bar's (no look-ahead).
+- API: `execution_models` naming any of the four needs the operator flag `backtest_models` (off; 403 with the reason);
+  a bad parameter is a 422 before the run; walk-forward now applies chosen models to every window. The defaults are
+  untouched (the PR 1 golden hashes still hold). Tests: tests/test_n7_c2b_models.py (truncation at any cut, the fill
+  bar's range changes nothing, crafted gaps and latencies).
+
 ## Open questions
 - C2-1: which slippage model should the UI pre-select once alternatives exist? Provisional: the default stays
   `fixed_pct`, and the user has to choose another model explicitly. No silent change.
 - C2-2: what default margin percentage per instrument kind for `span_like`? Provisional: config values from the
   broker's published SPAN + exposure for the index's near month, refreshed by hand. They are not fetched live until
   part B has the data.
+- C2-3: `spread_half` takes the spread as a setting (default 0.05 % of price) because backtest bars carry no spread.
+  Provisional until recorded spreads (tick writer, B2) reach the backtest data.
+- C2-4: `fixed_ms` fills at the open of the bar trading when the order arrives - inside that bar the true price is
+  unknown without ticks. Provisional: that bar's open (never a later number of the bar); a tick-level fill comes with
+  tick data.

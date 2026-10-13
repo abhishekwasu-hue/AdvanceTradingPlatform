@@ -42,7 +42,7 @@ ORDER_CALL_SITES: Dict[Tuple[str, str], Tuple[str, str]] = {
         (EXIT, "closes an open LIVE position (stop, target, square-off, emergency exit, approved exit)"),
     ("app.trading.position_monitor._apply_trade_exit_rules", "modify_order"):
         (PROTECTIVE, "moves the broker-side stop of an open LIVE position (trailing / break-even)"),
-    ("app.trading.stop_guard.verify_protective_stops", "place_stop_loss_order"):
+    ("app.trading.stop_guard._guard_one", "place_stop_loss_order"):   # (per position, from verify_protective_stops)
         (PROTECTIVE, "re-arms a missing broker-side stop of an open LIVE position"),
 }
 

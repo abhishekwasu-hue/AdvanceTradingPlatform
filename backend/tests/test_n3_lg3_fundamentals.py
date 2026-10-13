@@ -75,14 +75,15 @@ def test_versions_are_appended_only_on_change_and_never_reach_back():
             await session.flush()
             t1, t2 = datetime(2026, 6, 1, tzinfo=UTC), datetime(2026, 9, 1, tzinfo=UTC)
             q = _period("Q4FY26", date(2026, 3, 31), pub=date(2026, 5, 10), eps=12.0)
-            first = await pit.record_version(session, company.id, q, now=t1)
-            same = await pit.record_version(session, company.id, q, now=t1 + timedelta(days=1))
-            restated = await pit.record_version(session, company.id, _period("Q4FY26", date(2026, 3, 31), pub=date(2026, 5, 10), eps=9.0), now=t2)
+            first = await pit.record_version(session, company.id, q, tenant_id=None, now=t1)
+            same = await pit.record_version(session, company.id, q, tenant_id=None, now=t1 + timedelta(days=1))
+            restated = await pit.record_version(session, company.id, _period("Q4FY26", date(2026, 3, 31), pub=date(2026, 5, 10), eps=9.0),
+                                                tenant_id=None, now=t2)
             await session.commit()
             assert first is not None and same is None and restated is not None and restated.version == 2
             assert restated.known_from.replace(tzinfo=UTC) == t2                                    # not back to 11 May
-            before = await pit.load_versions(session, [sym.lower()], until=datetime(2026, 7, 1, tzinfo=UTC))
-            after = await pit.load_versions(session, [sym])
+            before = await pit.load_versions(session, [sym.lower()], until=datetime(2026, 7, 1, tzinfo=UTC), viewer=None)
+            after = await pit.load_versions(session, [sym], viewer=None)
             assert [v.version for v in before[sym]] == [1]
             assert [v.get("eps") for v in pit.as_of(after[sym], datetime(2026, 8, 1, tzinfo=UTC))] == [12.0]
             assert [v.get("eps") for v in pit.as_of(after[sym], datetime(2026, 9, 2, tzinfo=UTC))] == [9.0]
@@ -96,17 +97,20 @@ def test_versions_are_appended_only_on_change_and_never_reach_back():
 def test_the_import_path_records_versions():
     from app.fundamentals import ingest
     sym = f"LG3IMP{uuid.uuid4().hex[:6].upper()}"
+    org = _owner(f"lg3-imp-{uuid.uuid4().hex[:8]}@example.com")[1]["tenant_id"]
 
     async def go():
         async with _session_factory() as session:
             company = CompanyRecord(symbol=sym, name="Test", sector="Test", industry="Test")
             session.add(company)
             await session.flush()
-            await ingest.upsert_financial_periods(session, company, [_period("Q1", date(2026, 6, 30)), _period("Q2", date(2026, 9, 30))], None)
-            await ingest.upsert_financial_periods(session, company, [_period("Q1", date(2026, 6, 30), eps=11.0)], None)
+            await ingest.upsert_financial_periods(session, company, [_period("Q1", date(2026, 6, 30)), _period("Q2", date(2026, 9, 30))], None,
+                                                  tenant_id=org)
+            await ingest.upsert_financial_periods(session, company, [_period("Q1", date(2026, 6, 30), eps=11.0)], None, tenant_id=org)
             await session.commit()
             rows = (await session.scalars(select(FinancialPeriodVersionRecord).where(FinancialPeriodVersionRecord.company_id == company.id))).all()
             assert sorted((r.period_label, r.version) for r in rows) == [("Q1", 1), ("Q1", 2), ("Q2", 1)]
+            assert {r.tenant_id for r in rows} == {org}                                       # the organisation's own chain
             await session.execute(delete(FinancialPeriodVersionRecord).where(FinancialPeriodVersionRecord.company_id == company.id))
             await session.execute(delete(CompanyRecord).where(CompanyRecord.id == company.id))
             await session.commit()
@@ -193,7 +197,7 @@ def test_attach_loads_versions_known_by_now():
     async def go():
         async with _session_factory() as session:
             data = [SymbolData("NOSUCHCO", {})]
-            await F.attach(session, data)
+            await F.attach(session, data, tenant_id=None)
             return data[0].fundamentals
     assert _run(go()) == []
 
@@ -272,3 +276,137 @@ def test_lg3_cards_show_only_with_their_flag():
         assert ids[-4:] == LG3_CARDS
     finally:
         _set_flags(screener_v2=False, screener_legends=False, screener_legends_lg3=False)
+
+
+# --- scope: one organisation's figures never reach another's screen (app/fundamentals/visibility.py) ----------------
+def test_an_organisations_figures_never_reach_another_organisations_screen():
+    sym = f"LG3ORG{uuid.uuid4().hex[:6].upper()}"
+    (ha, me_a), (hb, me_b) = _owner(f"lg3-org-a-{uuid.uuid4().hex[:8]}@example.com"), _owner(f"lg3-org-b-{uuid.uuid4().hex[:8]}@example.com")
+    org_a, org_b = me_a["tenant_id"], me_b["tenant_id"]
+    t0 = datetime(2026, 1, 1, tzinfo=UTC)
+
+    async def shared():
+        async with _session_factory() as session:
+            company = CompanyRecord(symbol=sym, name="Shared", sector="Test", industry="Test")              # tenant_id NULL: shared
+            session.add(company)
+            await session.flush()
+            for label, end in (("Q1", date(2025, 6, 30)), ("Q2", date(2025, 9, 30))):
+                await pit.record_version(session, company.id, _period(label, end, eps=10.0), tenant_id=None, now=t0)
+            await session.commit()
+            return company.id
+    company_id = _run(shared())
+    period = {"period_type": "QUARTER", "period_label": "Q2", "period_end_date": "2025-09-30", "revenue": 1000.0, "ebitda": 200.0,
+              "pat": 100.0, "eps": 99.0}
+    # org A enters its own Q2 through the contributor route (a member contribution) - a chain of its own
+    r = client.post(f"/api/fundamentals/companies/{sym}/financials", headers=ha, json=period)
+    assert r.status_code == 201, r.text
+    assert client.post(f"/api/fundamentals/companies/{sym}/financials/import", headers=ha,
+                       json={"periods": [{**period, "period_label": "Q3", "period_end_date": "2025-12-31", "eps": 77.0}]}).status_code == 200
+    # org B enters nothing at first; then its own Q1
+    later = datetime.now(UTC) + timedelta(days=1)
+
+    async def chains():
+        async with _session_factory() as session:
+            rows = (await session.scalars(select(FinancialPeriodVersionRecord).where(FinancialPeriodVersionRecord.company_id == company_id))).all()
+            return sorted(((r.period_label, r.tenant_id, r.version) for r in rows), key=lambda t: (t[0], t[1] or 0))
+    assert _run(chains()) == [("Q1", None, 1), ("Q2", None, 1), ("Q2", org_a, 1), ("Q3", org_a, 1)]
+
+    def seen(org):
+        async def go():
+            async with _session_factory() as session:
+                data = [SymbolData(sym, {})]
+                await F.attach(session, data, later, tenant_id=org)
+                return {(v.period_label, v.get("eps"), v.own) for v in pit.as_of(data[0].fundamentals, later)}
+        return _run(go())
+    assert seen(org_b) == {("Q1", 10.0, False), ("Q2", 10.0, False)}                        # shared only - none of A's figures
+    assert seen(None) == {("Q1", 10.0, False), ("Q2", 10.0, False)}
+    assert seen(org_a) == {("Q1", 10.0, False), ("Q2", 99.0, True), ("Q3", 77.0, True)}      # A's own Q2 over the shared one
+    assert client.post(f"/api/fundamentals/companies/{sym}/financials", headers=hb, json={**period, "period_label": "Q1",
+                                                                                          "period_end_date": "2025-06-30", "eps": 5.0}).status_code == 201
+    assert seen(org_b) == {("Q1", 5.0, True), ("Q2", 10.0, False)}                          # B: shared + its own, still none of A's
+    # a screen on org B's data: EPS growth reads B's Q1 and the shared Q2, never A's 99 / 77
+    f = _bars("2026-01-05", 5)
+
+    async def b_series():
+        async with _session_factory() as session:
+            data = [SymbolData(sym, {"1d": f})]
+            await F.attach(session, data, later, tenant_id=org_b)
+            return [v.get("eps") for v in data[0].fundamentals]
+    assert 99.0 not in _run(b_series()) and 77.0 not in _run(b_series())
+
+    async def cleanup():
+        async with _session_factory() as session:
+            from app.db.models import FinancialPeriodRecord
+            await session.execute(delete(FinancialPeriodVersionRecord).where(FinancialPeriodVersionRecord.company_id == company_id))
+            await session.execute(delete(FinancialPeriodRecord).where(FinancialPeriodRecord.company_id == company_id))
+            await session.execute(delete(CompanyRecord).where(CompanyRecord.id == company_id))
+            await session.commit()
+    _run(cleanup())
+
+
+def test_the_own_chain_counts_only_from_when_it_was_known():
+    shared = _v("Q2", date(2025, 9, 30), datetime(2025, 11, 1, tzinfo=UTC), eps=10.0)
+    own = dataclasses_replace(_v("Q2", date(2025, 9, 30), datetime(2025, 12, 1, tzinfo=UTC), eps=99.0), own=True)
+    shared_v2 = _v("Q2", date(2025, 9, 30), datetime(2026, 1, 1, tzinfo=UTC), version=2, eps=11.0)
+    vs = [shared, own, shared_v2]
+    assert [v.get("eps") for v in pit.as_of(vs, datetime(2025, 11, 15, tzinfo=UTC))] == [10.0]        # before the own figure
+    assert [v.get("eps") for v in pit.as_of(vs, datetime(2026, 2, 1, tzinfo=UTC))] == [99.0]          # own wins over a later shared v2
+
+
+# --- per-share figures on the bars' split-adjusted basis ---------------------------------------------------------------
+class _Act:
+    def __init__(self, ex, old, new, action="SPLIT"):
+        self.ex_date, self.ratio_old, self.ratio_new, self.action = ex, old, new, action
+
+
+def test_a_split_after_the_period_end_rebases_eps_and_shares():
+    book = _year_of_quarters(EARLY)                                       # EPS 10/10/10/15 trailing, 100 shares, equity 5000
+    f = _bars("2026-06-01", 10, close=50.0)                              # bars after a 1:2 split, split-adjusted
+    split = [_Act(date(2026, 4, 15), 1, 2)]                              # ex-date after the last period end (31 Mar 2026)
+    raw = F.state(F.rebase(book, []))
+    reb = F.state(F.rebase(book, split))
+    assert reb["shares"] == pytest.approx(raw["shares"] * 2)                                          # 200 shares on the new basis
+    assert reb["graham_number"] == pytest.approx(raw["graham_number"] / 2)                            # EPS and BVPS both halve
+    assert reb["ncav"] == pytest.approx(raw["ncav"] / 2)
+    ey = evaluate(compile_screen("EarningsYield()", base_tf="1d")[0], SymbolData("X", {"1d": f}, fundamentals=F.rebase(book, split)), base_tf="1d")
+    ev = 50.0 * 200 + 1500 - 500                                          # the real market value: 50 x 200 shares (not 50 x 100)
+    assert ey.iloc[-1] == pytest.approx(800 / ev * 100)                                              # trailing EBIT 4 x 200
+    assert F.rebase(book, [_Act(date(2025, 1, 1), 1, 2)]) == book                                    # a split before every period: none
+    bonus = F.rebase(book, [_Act(date(2026, 4, 15), 1, 2, action="BONUS"), _Act(date(2026, 4, 20), 1, 1, action="DIVIDEND")])
+    assert F.state(bonus)["shares"] == pytest.approx(200.0)
+
+
+def test_staleness_is_judged_on_each_measures_own_periods():
+    fresh_q = [_v(f"Q{i}", end, K0, eps=10.0, revenue=1000.0, ebit=200.0) for i, end in enumerate(QUARTERS)]
+    old_balance = _v("FY23", date(2023, 3, 31), K0, kind="ANNUAL", shares_outstanding=100.0, shareholders_equity=5000.0, total_assets=9000.0,
+                     current_assets=6000.0, current_liabilities=1000.0)
+    st = F.state(fresh_q + [old_balance])
+    assert st["ends"]["eps_growth"] == QUARTERS[-1] and st["ends"]["ncav"] == date(2023, 3, 31)
+    f = _bars("2026-06-01", 5)
+    ncav = evaluate(compile_screen("NCAVPerShare()", base_tf="1d")[0], SymbolData("X", {"1d": f}, fundamentals=fresh_q + [old_balance]), base_tf="1d")
+    growth = evaluate(compile_screen("EPSGrowthYoY()", base_tf="1d")[0], SymbolData("X", {"1d": f}, fundamentals=fresh_q + [old_balance]), base_tf="1d")
+    assert ncav.isna().all() and growth.notna().all()                    # a three-year-old balance sheet is stale; the quarters are not
+
+
+def test_an_alert_rule_on_a_screen_edited_to_use_fundamentals_pauses_with_the_reason():
+    """A rule is refused at creation; a saved screen edited afterwards to use a fundamentals function pauses the rule
+    (stays active, the reason in last_problem) - it never fails on every symbol with "not loaded"."""
+    from app.alerts import barclose
+    from app.db.models import AlertRuleRecord
+    from tests.test_s4a_barclose import TUE, _rule, ist
+    _, me = _owner(f"lg3-rule-{uuid.uuid4().hex[:8]}@example.com")
+    rid = _rule(me["tenant_id"], condition="EarningsYield() > 5", tf="1d")
+    calls = []
+
+    async def fetch(*a, **k):
+        calls.append(a)
+        return {}
+
+    async def go():
+        async with _session_factory() as session:
+            rule = await session.get(AlertRuleRecord, rid)
+            state = await barclose.evaluate_rule(session, rule, ist(TUE + timedelta(days=1), 10, 0), fetch)
+            await session.commit()
+            return state, rule.last_problem, rule.status
+    state, problem, status = _run(go())
+    assert state == ("unsupported", 0) and "do not read fundamentals" in problem and status == "active" and calls == []

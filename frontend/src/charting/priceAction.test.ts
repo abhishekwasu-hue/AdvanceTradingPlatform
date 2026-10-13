@@ -6,7 +6,7 @@ import { labelShapes, layerShapes, segmentShapes, type Converters } from "./geom
 import { PriceActionPanel } from "./PriceActionLayer";
 import { ApiError } from "../api/client";
 import {
-  CONCEPTS, DEFAULT_TOGGLES, LayerLoader, PA_COLORS, barEndIso, layerTf, loadToggles, paApi, saveToggles, toLayerData, trendRows,
+  BUSY_RETRIES, BUSY_RETRY_MS, CONCEPTS, DEFAULT_TOGGLES, LayerLoader, PA_COLORS, barEndIso, layerTf, loadToggles, paApi, saveToggles, toLayerData, trendRows,
   type PaLayerResponse, type Toggles,
 } from "./priceAction";
 import { REPLAY_OFF, parseCandleTime, replayAt, startReplay, stepReplay, visibleCandles, windowStart } from "./replay";
@@ -194,6 +194,43 @@ describe("no stale layer in replay (CH3a review MED-2)", () => {
     pending[4].reject(new ApiError(503, "off"));
     await Promise.resolve(); await Promise.resolve();
     expect(last()).toEqual({ layer: null, failed: null, available: false });
+  });
+
+  it("a busy server (503 busy, retry) is asked again after a pause - a few times, never after a newer step - and is not 'flag off'", async () => {
+    vi.useFakeTimers();
+    try {
+      const pending: ReturnType<typeof deferred>[] = [];
+      const states: { layer: PaLayerResponse | null; failed: string | null; available: boolean | null }[] = [];
+      const last = () => states[states.length - 1];
+      const loader = new LayerLoader(() => { const d = deferred(); pending.push(d); return d.promise; }, (s) => states.push(s));
+      const busy = () => new ApiError(503, "busy", "busy, retry: the chart computations are all in use");
+      loader.load(q("2026-03-02T05:00:00Z"));
+      pending[0].reject(busy());
+      await vi.advanceTimersByTimeAsync(0);
+      expect(pending.length).toBe(1);
+      expect(last().available).not.toBe(false);                                // busy is not the flag being off
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_MS);
+      expect(pending.length).toBe(2);                                          // asked again after the pause
+      pending[1].resolve({ ...layer, as_of: "2026-03-02T05:00:00Z" });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(last().layer?.as_of).toBe("2026-03-02T05:00:00Z");
+      loader.load(q("2026-03-02T04:45:00Z"));                                  // retries run out: the failure is shown
+      for (let i = 0; i <= BUSY_RETRIES; i++) {
+        pending[pending.length - 1].reject(busy());
+        await vi.advanceTimersByTimeAsync(BUSY_RETRY_MS);
+      }
+      expect(pending.length).toBe(3 + BUSY_RETRIES);
+      expect(last()).toMatchObject({ layer: null, failed: "busy" });
+      loader.load(q("2026-03-02T04:30:00Z"));
+      pending[pending.length - 1].reject(busy());
+      await vi.advanceTimersByTimeAsync(0);
+      const asked = pending.length;
+      loader.load(q("2026-03-02T04:15:00Z"));                                  // a newer step: the older one is not retried
+      await vi.advanceTimersByTimeAsync(BUSY_RETRY_MS * 2);
+      expect(pending.length).toBe(asked + 1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a replay never sends a start at or after its as-of time, and candle times without an offset are IST", () => {

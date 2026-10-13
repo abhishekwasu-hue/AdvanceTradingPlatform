@@ -48,6 +48,7 @@ class Spec:
     needs: Tuple[str, ...] = ()       # U5 D2: data beyond bars - "reference" (sector, index, F&O lists) or "option_chain"
     degree_min_bars: Tuple[int, ...] = ()  # S5-A4: min_bars by the `degree` argument (swings need more history per degree)
     flag: Optional[str] = None             # U6 BK1: an operator flag that must be on for a screen to use it (API layer)
+    also_flags: Tuple[str, ...] = ()       # U6 BK3: further operator flags that must be on too (the family flag stays `flag`)
     timeframes: Tuple[str, ...] = ()       # U6 BK1: the only timeframes it runs on (empty = any)
     window_bars: Tuple[Tuple[str, int], ...] = ()   # U6 BK1: bars per window unit by timeframe (weeks -> 5 daily bars)
     window_sum: bool = False               # U6 BK1: the window arguments add up (ATR warm-up + percentile lookback)
@@ -85,6 +86,7 @@ _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
 _DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
 _SIDE = Arg("side", STR, choices=("up", "down"))
 BREAKOUT_FLAG = "screener_breakouts"
+BREAKOUT_BK3_FLAG = "screener_breakouts_bk3"        # U6 BK3: VCP + indicator breakouts, on top of `screener_breakouts`
 
 
 def _bk(name: str, arg: str, type_: str, required: bool = False, choices: Tuple[object, ...] = ()) -> Arg:
@@ -108,6 +110,15 @@ _SKIP = _bk("skip_first_min", "skip", NUM)
 _K = _bk("min_break_atr", "k", NUM)
 _X = Arg("x", NUM)
 _N = Arg("n", "window")
+# U6 BK3 history: the trend template reads a year of sessions (tt_year_bars 250) and the slow SMA's rise (200 + 21 bars);
+# the MA breakout reads the slope / consolidation window behind the average (10 + 1 bars); the regime breakout the RSI /
+# ADX warm-up (ADX settles after about 2 x 14 bars) behind its window.
+_BK3 = (BREAKOUT_BK3_FLAG,)
+_TT_ARG = _bk("tt_filter", "template", BOOL)
+_DRY_ARG = _bk("vcp_vol_dryup", "dryup", BOOL)
+VCP_MIN_BARS = 251
+MA_EXTRA_BARS = 11
+REGIME_EXTRA_BARS = 30
 # Z7a-3: market-zone functions (app/screener/zones.py) - the stored zone snapshots, behind the `market_zones` flag
 ZONES_FLAG = "market_zones"
 FUNDAMENTALS_FLAG = "screener_fundamentals"   # U7 LG3: point-in-time fundamentals functions (app/screener/fundamentals.py)
@@ -265,6 +276,37 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
              " sessions (prior sessions only; at least 5)"),
     Spec("SessionVWAP", "factor", NUM, "price", (), cost=1.5, timeframes=INTRADAY_SERIES_TFS, flag=BREAKOUT_FLAG,
          doc="VWAP from the session open on the exchange calendar (pre-open bars left out); equals VWAP on regular-session bars"),
+    # U6 BK3: B3 VCP and the indicator breakouts B10 / B11 / B12 / B15 (app/screener/breakouts/vcp.py, indicator_breaks.py) -
+    # closed bars, one signal per leg (VCPReady: a state); behind `screener_breakouts` AND `screener_breakouts_bk3`.
+    Spec("VCPBreakout", "filter", BOOL, None, (_SIDE, _bk("vcp_min_contractions", "contractions", NUM), _bk("vcp_ratio", "ratio", NUM),
+                                               _bk("vol_mult", "v", NUM), _K, _TT_ARG, _DRY_ARG), cost=4.0, min_bars=VCP_MIN_BARS, timeframes=("1d",),
+         flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B3 (Daily): the first close above the pivot (the last contraction's high) by k ATR on volume >= v x average, after at"
+             " least `contractions` successive contractions each shallower than ratio x the one before, volume drying up through the"
+             " base (dryup; indices without volume need FALSE and v 0) and the trend template holding (template)"),
+    Spec("VCPReady", "filter", BOOL, None, (_SIDE, _bk("vcp_min_contractions", "contractions", NUM), _bk("vcp_ratio", "ratio", NUM),
+                                            _bk("vcp_ready_pct", "pct", NUM), _TT_ARG, _DRY_ARG), cost=4.0, min_bars=VCP_MIN_BARS, timeframes=("1d",),
+         flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B3 Watchlist (Daily): true on every bar a VCP base is ready - the rules of VCPBreakout hold, the close is at most pct %"
+             " under the pivot and has not closed above it since the last contraction's low"),
+    Spec("DonchianBreakout", "filter", BOOL, None, (_SIDE, _bk("donchian_n", "n", "window"), _K), cost=3.0, min_bars=BREAKOUT_MIN_BARS,
+         flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B10: close beyond the highest high (up) / lowest low (down) of the previous n bars by k ATR (Donchian / Turtle 20 or 55)"),
+    Spec("SqueezeBreakout", "filter", BOOL, None, (_SIDE, _bk("squeeze_mode", "mode", STR), _bk("bb_n", "n", "window"),
+                                                   _bk("squeeze_lookback", "lookback", "window"), _bk("vol_mult", "v", NUM)),
+         cost=4.0, min_bars=BREAKOUT_MIN_BARS, window_sum=True, flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B11: mode bollinger - a close outside the n-bar Bollinger band on volume >= v x average within a few bars of the band"
+             " width's lowest of `lookback` bars; mode ttm - the release of the TTM squeeze (bands back outside the Keltner channel)"
+             " with momentum on the breakout side"),
+    Spec("MABreakout", "filter", BOOL, None, (_SIDE, _bk("ma_n", "n", "window"), _bk("ma_type", "type", STR), _K), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, extra_bars=MA_EXTRA_BARS, flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B12: a close above (up) / below (down) a flat or rising (falling) n-bar moving average by k ATR and beyond every close of"
+             " the consolidation around it (the 10 bars before, within 1 ATR of the line); once per leg"),
+    Spec("RegimeBreakout", "filter", BOOL, None, (_SIDE, _bk("rsi_band", "band", NUM), _bk("regime_n", "n", "window"),
+                                                  _bk("adx_low", "adx", NUM), _K), cost=3.0, min_bars=BREAKOUT_MIN_BARS,
+         extra_bars=REGIME_EXTRA_BARS, flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B15: RSI leaves the 50 +/- band it held for n bars, ADX rises from at or below adx with the DI of the side leading, and"
+             " the close clears the n-bar high (up) / low (down) by k ATR"),
     # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
     # U7 LG3: point-in-time fundamentals (flag screener_fundamentals, off by default)
     Spec("EPSGrowthYoY", "factor", NUM, "pct", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
@@ -291,6 +333,7 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)
 BREAKOUT_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == BREAKOUT_FLAG)
+BREAKOUT_BK3_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if BREAKOUT_BK3_FLAG in spec.also_flags)
 
 
 # Z10-a (U3 G2): functions answered for the LAST bar only - the structure / pattern / zone filters, the option chain,
@@ -318,5 +361,6 @@ def describe() -> Dict[str, Dict[str, object]]:
 
 
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
+           "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS",
            "ZONES_FLAG", "MAX_WINDOW",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

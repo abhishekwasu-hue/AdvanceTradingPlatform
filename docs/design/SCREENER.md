@@ -1066,6 +1066,90 @@ questions BK2-1..BK2-7 are in `docs/OPEN_QUESTIONS.md`.
 - **Z10-a harness.** `app/quality/causal_cases.py` covers the 15 breakout functions (BK1 and BK2), each with an
   `@` variant where the data allows. Z10-6 records BK2's VWAP answer (NaN without volume).
 
+## U6 BK3 (built): VCP and indicator breakouts (flag `screener_breakouts_bk3` on top of `screener_breakouts`, both off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §8 BK3 (B3 VCP + B10 / B11 / B12 / B15). Code:
+`app/screener/breakouts/vcp.py` and `indicator_breaks.py`, wired into `screens.py` like BK2's `intraday.py`. Research
+notes, sources and the parameter table: `docs/research/breakouts.md`. Open questions BK3-1..BK3-7 in
+`docs/OPEN_QUESTIONS.md`.
+- **Flag.** `screener_breakouts_bk3` (DEFAULT_OFF_FLAGS) is a second flag on the breakout family (`Spec.also_flags`):
+  a BK3 function needs both. While either is off, the registry endpoint hides the six functions, and a screen, saved
+  screen or run that uses one fails validation with the flags named. The breakout catalog leaves out the BK3
+  screens, templates and parameters, and `/breakouts/run` answers 503 for a BK3 screen or template. Alert rules are
+  refused at creation, and an existing rule pauses (stays active, `last_problem` says why) until the flag is back. The
+  taxonomy files the templates under a second source, `breakouts_bk3`, hidden unless both flags are on. There are no
+  new routes and no migration.
+- **Screens** (all closed bars; a value at bar j uses bars 0..j; down = the up rule on mirrored prices; one signal per
+  leg through BK1's `one_per_leg`, except the Watchlist):
+  - **B3 VCP** (Daily). Contractions are read from a causal zigzag whose swing size is `vcp_pivot_atr` x ATR; depths are
+    in %. Walking back from the last confirmed swing low, each earlier contraction must be deeper than the next one by
+    `vcp_ratio`, with no later high above an earlier one, inside `vcp_max_bars`. The run needs at least
+    `vcp_min_contractions` contractions. If the base's left side is deeper than `vcp_max_depth_pct`, the base is
+    rejected. Optional rules: volume dry-up (last contraction's mean volume below the first's) and Minervini's trend
+    template (close > SMA 50 > 150 > 200, the 200 rising for 21 bars, within 25 % of the year's high, 30 % above its
+    low). The breakout is the first close above the pivot (the last contraction's high) by `min_break_atr` ATR on
+    `vol_mult` volume, on swings confirmed by the bar before. **Watchlist** (`vcp_mode` = watchlist, `VCPReady`): every
+    bar where the base is ready - same rules, close at most `vcp_ready_pct` % under the pivot, no close above it since
+    the last low. It is a state, so there is no per-leg dedupe, and the run's status is `ready`. The RS rating is not
+    in the engine (BK3-1).
+  - **B10 Donchian.** Close beyond the previous `donchian_n` bars' high / low by `min_break_atr` ATR (the "ATR filter",
+    BK3-2). Templates for 20 and 55.
+  - **B11 squeeze.** `bollinger`: band width ((upper - lower) / middle, 20 / 2) at its lowest of `squeeze_lookback`
+    bars, then within `squeeze_within` bars a close outside the band on `vol_mult` volume. `ttm`: the release of the
+    TTM squeeze (Bollinger bands back outside the Keltner channel EMA 20 +/- 1.5 ATR 20), with the linear-regression
+    momentum on the breakout side.
+  - **B12 moving average.** A close above the key MA (`ma_n`, SMA / EMA) by `min_break_atr` ATR and above every close of
+    the `ma_consol_n` bars before. Those closes must have stayed within `ma_band_atr` ATRs of the line, and the line
+    must be flat or rising (down by at most `ma_flat_pct` % over `ma_slope_n` bars). A plain cross inside the chop is not
+    a break (BK3-4). Optional MA stack (`ma_stack`: fast > key > slow).
+  - **B15 RSI / ADX regime.** RSI held 50 +/- `rsi_band` for `regime_n` bars and leaves the band on this bar. ADX was at or
+    below `adx_low` in that window and rises on this bar, with the DI of the side leading. The close clears the window's
+    high by `min_break_atr` ATR.
+- **ScreenQL.** `VCPBreakout(side, contractions, ratio, v, k, template, dryup)`,
+  `VCPReady(side, contractions, ratio, pct, template, dryup)`, `DonchianBreakout(side, n, k)`,
+  `SqueezeBreakout(side, mode, n, lookback, v)`, `MABreakout(side, n, type, k)` and
+  `RegimeBreakout(side, band, n, adx, k)`. Defaults, ranges and choices come from the parameters (`registry._bk`). The
+  number settings are literal-only (Z10-a). History: the VCP needs a year (251 bars, `timeframes` 1d only), the squeeze
+  needs n + lookback (`window_sum`), the MA break needs n + 11 and the regime break n + 30 (`extra_bars`).
+- **Templates.** Eight: daily VCP breakout and watchlist, Donchian 20 / 55, the daily Bollinger squeeze, the 15m TTM squeeze,
+  the 50-day MA breakout and the RSI / ADX regime. Titles say "VCP-style" (LG1-5). Each template's ScreenQL text equals
+  the engine bar by bar, ScreenQL-AND-context against the engine-plus-overlay filter (tested). The VCP and regime
+  templates are proven on an injected 272-session daily history (the broker's daily fetch) with `check_history`, because
+  a random walk does not form those bases.
+- **Shared engine changes (performance, values unchanged and tested).**
+  - `Bars` computes the true range once with numpy: ATR, the Keltner channel and ADX read it, and the values are equal
+    to `app.indicators`.
+  - `Bars.pivots` runs the causal zigzag on the bars' own arrays instead of building a timestamped frame, so the pivots
+    equal `causal_swings.degree_pivots` (fractal mode keeps the old path).
+  - RSI and ADX for B15 are numpy versions of the platform's definitions (tested equal).
+- **Perf (Z10-d).** `tests/test_z10d_perf.py::test_bk3_breakout_screens_fit_the_bar_close_target` (perf job,
+  `ATP_PERF=1`) times each BK3 screen over the bar-close universe (200 symbols; 5m, the VCP on 300 daily bars) against
+  the bar-close target of 1 s x the CI factor. Locally (factor 1.29) the medians run from 0.60 s (Donchian) to 0.94 s
+  (VCP). Breakout functions run per symbol, not vectorised (as BK1 / BK2).
+- **Z10-a.** Each of the six functions has causal cases on 5m, with an `@1h` variant where the data allows, plus daily
+  cases. Every case produces values, and the VCP cases run with the template off so that the synthetic bars form
+  bases.
+- **Review fixes (BK3 review).**
+  - The VCP zigzag: when a swing is confirmed at bar t, it now tracks the new opposite extreme from the most extreme bar
+    after the pivot (up to t), as `causal_swings.zigzag_pivots` does. It used to start from bar t, which skipped a deeper
+    low or higher high in between, so contractions came out too shallow and the base low too high. It also starts from
+    the first bar with prices. An equal high or low moves the extreme to the later bar, and no reversal is read on a bar
+    that ties it, as in `zigzag_pivots`. Tests: a regression case, plus equality with `zigzag_pivots` on random series
+    and on tick-rounded (0.05) series with ties, in both orientations.
+  - `Bars.pivots` returns no swings on fewer than 3 bars, as `degree_pivots` does. The parity test now covers the
+    percentage swing mode as well.
+  - `/api/screener/breakouts/run`:
+    - It checks the BK3 flag before reading the request.
+    - A BK3 screen fetches its two longest look-backs end to end plus the ATR warm-up (486 daily bars for the VCP
+      defaults; a week counts as 5 sessions). Only the look-backs the chosen mode reads count: the trend template
+      only when `tt_filter` is on, Bollinger or TTM, and the MA stack only when it is on.
+    - A symbol with fewer bars than the screen's longest look-back is listed as "not enough history" instead of
+      running to a silent no-match.
+  - Evidence packs draw the BK3 breakouts from the engine (`evidence.BREAKOUT_ARGS`: the pivot, channel, band, line or
+    window high, with the same parity test). BK2's intraday screens read the session clock, so they stay in the strip.
+  - `barclose.evaluate_rule` defaults every flag argument to off. `run_due` passes each organisation's own flags.
+- **Not in BK3.** Frontend changes: the builder reads the catalog, so the new blocks and templates appear when the flag
+  is on.
+
 ## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
 Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
 - Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own
@@ -1187,7 +1271,7 @@ see later restatements and later reports, so it is never read by a screen. LG3 a
   - The run path loads them (`RUN_PROVIDES`, `fundamentals.attach`).
   - Z10-a causal cases: a synthetic report timeline built from the bars up to each report, with restatements.
 - **Cards (`slice: lg3`, flag `screener_legends_lg3`, off):**
-  - Graham-style net current asset bargain;
+  - Graham-style net current asset value screen;
   - Graham-style defensive value (Graham number);
   - Greenblatt-style earnings yield and return on capital rank;
   - O'Neil-style growth breakout.

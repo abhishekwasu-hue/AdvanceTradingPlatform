@@ -77,6 +77,17 @@ SHOULD_BLOCK = [
     "Buy the 20 EMA pullback in RELIANCE now.", "Buy a 20 EMA bounce on RELIANCE.", "Buy the 50 DMA retest in TCS.",
     "Sell the 200 SMA break in INFY.", "Add RELIANCE to the basket now", "Buy RELIANCE to the basket", "Buy TCS to your watchlist",
     "Sell INFY to the comparison panel",
+    # review round 6: exit / close / hold are trades even when a tab or view is named; close / open a position are trades
+    "Exit INFY from the positions tab.", "Exit INFY from the positions page.", "Exit INFY from the holdings page.",
+    "Exit INFY from the positions tab before the close.", "Exit INFY from the positions tab before results.",
+    "Close INFY from the positions tab.", "Close your INFY position from the positions tab.", "Close INFY on the orders page.",
+    "Hold RELIANCE for the long view.", "Hold TCS in your holdings view.", "Hold TCS in the portfolio view.",
+    "Exit INFY from the comparison view.", "Hold RELIANCE for the next session's analysis view.",
+    "Close the RELIANCE position.", "Close RELIANCE.", "Close INFY.", "Close out INFY now.", "Close all INFY positions.",
+    "Open a position in RELIANCE.", "Open a long in RELIANCE.", "Open RELIANCE long.", "Open a short position in TCS.",
+    "Open short NIFTY.", "Open the positions tab and close INFY.", "Exit the RELIANCE chart before the close.",
+    "Buy and hold RELIANCE now.", "You should buy and hold RELIANCE.", "Buy and sell RELIANCE intraday.", "Sell and short TCS.",
+    "Go long and buy RELIANCE.", "Close RELIANCE at 2450.",
 ]
 
 SHOULD_PASS = [
@@ -114,8 +125,14 @@ SHOULD_PASS = [
     # review round 4: app how-to wording
     "Add RELIANCE to the backtest.", "Add RELIANCE to your strategy.", "Add RELIANCE to the screener.", "Add RELIANCE to the template.",
     "Add RELIANCE to the comparison panel.", "Add a 20 EMA on the RELIANCE chart.", "Exit the RELIANCE page.",
-    "Exit INFY from the comparison view.", "Grab the RELIANCE chart from the Charts tab.",
-    "Hold RELIANCE for the next session's analysis view.",
+    "Grab the RELIANCE chart from the Charts tab.",
+    # review round 6: the benchmark's name, the candle's close / open, and the app's own open
+    "The strategy will buy and hold NIFTY in the backtest.",
+    "A buy and hold NIFTY portfolio lagged.", "Close above 2450 would confirm the breakout.", "Close at 2450 would be bullish.",
+    "Close below 2400 invalidates the setup.", "RELIANCE close was 2450.", "The close in RELIANCE was weak.",
+    "Open: 2440, High: 2460, Low: 2430, Close: 2450", "Open interest in NIFTY rose.", "Open positions in TCS rose.",
+    "Open RELIANCE in a new tab.", "Open the RELIANCE chart.", "Close the RELIANCE chart.", "Close the order ticket.",
+    "Close the chart and review INFY.", "Open the positions tab.",
 ]
 
 
@@ -133,6 +150,12 @@ def test_descriptive_analysis_passes(text):
     for lang in ("en", "mr", "hi"):
         s = output_filter.screen(text, lang)
         assert s.ok and s.text == text, (text, lang, s.blocked)
+
+
+def test_buy_and_hold_as_a_benchmark_is_not_blocked():
+    s = output_filter.screen("Buy and hold NIFTY returned 12%.", "en")
+    assert s.ok and not s.blocked                             # review round 6: framed (an imperative-shaped start), not blocked
+    assert output_filter.call_terms("Buy and hold NIFTY returned 12%.") == []
 
 
 def test_the_call_labels_name_what_was_found():

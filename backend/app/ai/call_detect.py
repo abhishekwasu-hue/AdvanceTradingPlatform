@@ -118,8 +118,10 @@ def lists(path: str) -> Lists:
     deva = _alt([v for v in verbs.get("mr", []) + verbs.get("hi", []) + verbs.get("romanised", []) if v not in light_words])
     light = _alt(sorted(light_words))
     # LOW10: [ \t]* after the anchor (a newline is an anchor of its own), so runs of newlines stay linear
-    # round 5: "Open the chart and buy RELIANCE" - " and " / " then " open a clause too (an object is still required)
-    start = r"(?:^|(?<=[\n.!?;:,(\u0964\u0965—–])|(?<=\s-)|(?<=->)|(?<=\sand)|(?<=\sthen))[ \t]*"
+    # round 5: "Open the chart and buy RELIANCE" - " and " / " then " open a clause too (an object is still required);
+    # round 6: not after "buy" - "buy and hold" / "buy and sell" are verbs of their own (an object is still required, so
+    # "Buy and hold NIFTY returned 12%" stays a benchmark's name)
+    start = r"(?:^|(?<=[\n.!?;:,(\u0964\u0965—–])|(?<=\s-)|(?<=->)|(?<=\sand)(?<!buy\sand)|(?<=\sthen))[ \t]*"
     prefix = rf"(?:(?:{_alt(calls.get('clause_prefixes', []))})\s+){{0,2}}"
     # #230 review round 4: a lookahead, so a first verb-shaped word ("Long story short, buy RELIANCE") never consumes the
     # real call after it - finditer then tries every later position too.
@@ -240,13 +242,14 @@ _RULE_CONDITION = re.compile(r"\bwhen\b[^\n]*?(?:[<>=]|\b(?:rsi|sma|ema|macd|adx
 _HOWTO_LABEL = re.compile(r"^\s*how[ -]?to\b", re.I)
 _NOUN_PHRASE = re.compile(r"^\s*(?:\S+\s+){0,1}?(?:was|were|is|are|has|have|had|remain|remained|stay|stayed|appear|appeared|"
                           r"get|got|shown|listed|rose|rises|fell|falls|jumped|dropped|climbed|surged|slipped|declined|gained|lost|"
-                          r"eased|rallied|spiked|doubled|halved|increased|decreased)\b", re.I)
+                          r"eased|rallied|spiked|doubled|halved|increased|decreased|returned|returns|outperformed|underperformed|beat|lagged|"
+                          r"delivered|earned|yielded)\b", re.I)
 _PRONOUN_OBJECT = re.compile(r"^\s*(?:(?:some|a|bit|little|few)\s+)*(?:more|it|them|this|that|those|these)?\s*(?:now|here|today)?\s*$", re.I)
 _PRONOUN_ALWAYS = re.compile(r"^\s*(?:it|them|this one|that one)\s*(?:now|here|today|too|again)?\s*$", re.I)
 _WATCHLIST_TAIL = re.compile(r"^\s*to\s+(?:your|the|a|my)?\s*(?:watch\s*list|watchlist|chart|list|screen|screener|alerts?|alert rule|"
                              r"backtest|strategy|template|comparison(?: panel| view)?|panel)\b", re.I)
 # App how-to wording: the instrument names a page / chart / view of the app, not a trade ("Exit the RELIANCE page",
-# "Grab the RELIANCE chart from the Charts tab", "Hold RELIANCE for the next session's analysis view").
+# "Grab the RELIANCE chart from the Charts tab", "Open RELIANCE in a new tab").
 _UI_TAIL = re.compile(r"^\s*(?:'s\s+)?(?:chart|page|tab|view|panel|card|screen)s?\b|"
                       r"^\s*(?:from|in|on|for)\s+(?:the|your|a|this)?\s*(?:[\w']+\s+){0,3}(?:view|page|tab|panel|screen)\b", re.I)
 # The how-to exemptions above apply only to app verbs, never to a trade verb or with anything about now (round 5).
@@ -256,8 +259,18 @@ def _acts_now(s: str) -> bool:
     return bool(_ACT_NOW.search(s))
 
 
-_HOWTO_NOW = re.compile(r"\b(?:now|today|tomorrow|tonight|asap|immediately|right away|this week)\b", re.I)
+_HOWTO_NOW = re.compile(r"\b(?:now|today|tomorrow|tonight|asap|immediately|right away|this (?:week|session|expiry)|intraday|eod|"
+                        r"end of (?:the )?day|(?:before|by|into|at|near) (?:the )?(?:close|open|bell|results|earnings|expiry|event|"
+                        r"announcement|eod|end of (?:the )?day|weekend))\b", re.I)
 _HOWTO_VERBS = frozenset({"add", "grab", "open", "view", "plot", "exit", "hold", "pin", "show", "load", "remove", "close"})
+# Round 6: exit / close / hold are trades on their own ("Close INFY from the positions tab" is a sell). They keep only the
+# "the RELIANCE page / chart" exemption, where the page itself is the object, never "from / in / on / for the ... tab".
+_TRADE_HOWTO_VERBS = frozenset({"exit", "close", "hold"})
+# A page of the book (positions, holdings, orders, portfolio) never makes a trade verb an app instruction.
+_BOOK_PAGE = re.compile(r"\b(?:positions?|holdings?|orders?|order book|portfolio|trades?|tradebook|trade book|ticket)\b", re.I)
+# "Open" is a trade only with a side or a position ("Open RELIANCE long", "Open a position in INFY"); "Open RELIANCE" alone
+# is the app (the multi-word "open a long in" / "open long" verbs catch the rest).
+_OPEN_TRADE = re.compile(r"^\s*(?:(?:an?|new|fresh|the)\s+)*(?:long|short|position|trade)s?\b", re.I)
 # "Add a 20 EMA on the RELIANCE chart": an indicator length, not a price level.
 _INDICATOR_LENGTH = re.compile(r"^\s*(?:an?\s+|the\s+)?\d+[\s-]*(?:period\s+|day\s+|bar\s+)?"
                                r"(?:EMA|SMA|DMA|WMA|MA|RSI|VWAP|ATR|ADX|MACD|bollinger|supertrend|CCI|OBV)\b", re.I)
@@ -425,20 +438,29 @@ def _object(rest: str, L: Lists, s: str, *, allow_level: bool, verb: str = "") -
         obj = _instrument_at_start(rest[legs.end():], L, allow_level=False)
         if obj:
             return obj
-    howto = verb.lower() in _HOWTO_VERBS and not _HOWTO_NOW.search(rest) and not _acts_now(s)
+    v = verb.lower()
+    howto = v in _HOWTO_VERBS and not _HOWTO_NOW.search(rest) and not _acts_now(s)
     if howto and _INDICATOR_LENGTH.match(rest):
         return None
+    if v.startswith(("close", "open")) and re.match(r"^[\s,:]*(?:at|above|below|near|over|under)?\s*[\d₹]", rest):
+        return None                                             # "Close above 2450", "SMA(close, 20)": the candle, not an order
     lead_the = re.match(r"^\s*the\s+", rest, re.I)
     obj = _instrument_at_start(rest, L, allow_level=allow_level)
     if obj is not None:
         last = obj.split()[-1]
         after = rest[rest.find(last) + len(last):] if last in rest else ""
-        if howto and _UI_TAIL.match(after) and (lead_the or re.match(r"^\s*(?:from|in|on|for)\b", after, re.I)
-                                      or re.match(r"^\s*(?:'s\s+)?(?:chart|page|tab|view|panel|card|screen)", after, re.I)):
+        if v == "open" and not (_OPEN_TRADE.match(after) or _OPEN_TRADE.match(rest)):
+            return None                                         # "Open RELIANCE", "Open INFY in a new tab": the app
+        page_object = re.match(r"^\s*(?:'s\s+)?(?:chart|page|tab|view|panel|card|screen)", after, re.I)
+        if v in _TRADE_HOWTO_VERBS:
+            ui = howto and bool(lead_the) and page_object is not None
+        else:
+            ui = howto and bool(_UI_TAIL.match(after)) and bool(lead_the or page_object or re.match(r"^\s*(?:from|in|on|for)\b", after, re.I))
+        if ui and not _BOOK_PAGE.search(after[:60]):
             return None                                         # app how-to wording about a page / chart / view
         if _NOUN_PHRASE.match(re.sub(r"^\s*(?:positions?|shares?|stocks?|calls?|puts?|orders?|signals?)\b", "", after, flags=re.I)):
             return None
-        if howto and _WATCHLIST_TAIL.match(after):
+        if howto and v not in _TRADE_HOWTO_VERBS and _WATCHLIST_TAIL.match(after):
             return None                                         # "Add RELIANCE to your watchlist": not a trade
         return obj
     if _PRONOUN_ALWAYS.match(rest) or (_PRONOUN_OBJECT.match(rest) and _has_instrument(s, L)):

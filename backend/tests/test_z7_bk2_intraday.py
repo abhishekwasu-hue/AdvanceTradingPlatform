@@ -394,7 +394,7 @@ def test_one_alert_per_leg_through_the_bar_close_engine():
             states = []
             for k in range(3, 16):                                   # 09:30 .. 10:30 closes on the test day
                 now = f.index[21 * SESSION_5M + k] + timedelta(minutes=5, seconds=30)
-                states.append(await barclose.evaluate_rule(session, rule, now.to_pydatetime(), fetch))
+                states.append(await barclose.evaluate_rule(session, rule, now.to_pydatetime(), fetch, breakouts_enabled=True))
                 await session.commit()
             events = list(await session.scalars(select(AlertEventRecord).where(AlertEventRecord.rule_id == rule.id)))
             rule.status = "paused"                                       # leave nothing active for other modules' run_due tests
@@ -834,7 +834,7 @@ def test_the_alert_engine_rechecks_the_clock_and_keeps_a_failing_screen_on_its_r
         async def go():
             async with _session_factory() as session:
                 rule = await session.get(AlertRuleRecord, rid)
-                out = await barclose.evaluate_rule(session, rule, now, fetch)
+                out = await barclose.evaluate_rule(session, rule, now, fetch, breakouts_enabled=True)
                 problem = rule.last_problem
                 rule.status = "paused"
                 await session.commit()

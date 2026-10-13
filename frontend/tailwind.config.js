@@ -28,6 +28,9 @@ export default {
   theme: {
     extend: {
       colors: { ...semantic, ...palette("bgc") },
+      // Filled brand surfaces read the fill tokens (WCAG AA under white text in both themes); text, borders and rings
+      // keep --brand. `bg-brand`, `hover:bg-brand-strong` and their alpha tints follow this.
+      backgroundColor: { brand: v("brand-fill"), "brand-strong": v("brand-fill-strong"), "brand-dim": v("brand-fill-strong") },
       textColor: { ...semantic, ...palette("tx") },
       borderColor: { ...semantic, ...palette("tx") },
       ringColor: { ...semantic, ...palette("tx") },

@@ -62,6 +62,12 @@ SHOULD_BLOCK = [
     "Invest in RELIANCE (now)", "Put money in RELIANCE", "that said buy RELIANCE", "Buying RELIANCE here makes sense",
     "RELIANCE: Buy rating", "RELIANCE मध्ये गुंतवणूक करा", "RELIANCE में निवेश करें।", "रिलायन्सला खरेदी करा",
     "RELIANCE will hit 3000 for sure as it did last week", "Hold RELIANCE", "Add RELIANCE", "Grab RELIANCE", "Dump TCS", "Buy it",
+    # review round 4: an earlier verb-shaped word must not hide the real call
+    "Long story short, buy RELIANCE.", "Short answer: buy RELIANCE.", "Hold on, sell TCS now.", "Add to that, sell TCS now.",
+    "Exit, then buy RELIANCE.", "Exit rules are listed, sell TCS now.", "Exit: SMA cross down, sell TCS now.",
+    "Short interest rose - buy RELIANCE now.", "Buy when ready, sell TCS.", "Status: BUY 10 RELIANCE filled - sell TCS now.",
+    "Status: BUY 10 RELIANCE filled - buy more RELIANCE.", "Order: SELL 5 TCS at 4000 filled; next buy INFY.",
+    "Rule: Buy RELIANCE when RSI < 30 - and buy TCS too.",
 ]
 
 SHOULD_PASS = [
@@ -96,6 +102,11 @@ SHOULD_PASS = [
     # third review of #230
     "Short interest in TCS rose.", "Rule: Buy NIFTY when the close crosses above the 20-day high.",
     "Hold on - the data is still loading.", "Add SMA(close, 20) and RELIANCE to the chart.",
+    # review round 4: app how-to wording
+    "Add RELIANCE to the backtest.", "Add RELIANCE to your strategy.", "Add RELIANCE to the screener.", "Add RELIANCE to the template.",
+    "Add RELIANCE to the comparison panel.", "Add a 20 EMA on the RELIANCE chart.", "Exit the RELIANCE page.",
+    "Exit INFY from the comparison view.", "Grab the RELIANCE chart from the Charts tab.",
+    "Hold RELIANCE for the next session's analysis view.",
 ]
 
 

@@ -37,6 +37,7 @@ Texts longer than `MAX_CHARS` are not read: they answer one label ("too long to 
 from __future__ import annotations
 
 import bisect
+import functools
 import json
 import re
 import unicodedata
@@ -119,7 +120,9 @@ def lists(path: str) -> Lists:
     # LOW10: [ \t]* after the anchor (a newline is an anchor of its own), so runs of newlines stay linear
     start = r"(?:^|(?<=[\n.!?;:,(\u0964\u0965—–])|(?<=\s-)|(?<=->))[ \t]*"
     prefix = rf"(?:(?:{_alt(calls.get('clause_prefixes', []))})\s+){{0,2}}"
-    rest = r"(?P<rest>[^\n.!?;\u0964]{0,120})"
+    # #230 review round 4: a lookahead, so a first verb-shaped word ("Long story short, buy RELIANCE") never consumes the
+    # real call after it - finditer then tries every later position too.
+    rest = r"(?=(?P<rest>[^\n.!?;\u0964]{0,120}))"
     sep = r"\s*(?:[:\-–—>=]+\s*)?"
     number_words = _alt(calls.get("number_words", []))
     number = rf"(?:{_NUMBER}|(?<![{_WORD}])(?:(?:{number_words})[\s-]*)+(?![{_WORD}]))"
@@ -133,7 +136,7 @@ def lists(path: str) -> Lists:
         modal=re.compile(rf"(?<![{_WORD}])(?:{_alt(calls.get('modal_subjects', []))})\s*(?:{_alt(calls.get('modal_verbs', []))})\s+"
                          rf"(?:(?:also|still|definitely|probably|personally|now|happily|just)\s+)?(?P<verb>{en})(?![{_WORD}-]){sep}{rest}", re.I),
         gerund=re.compile(rf"(?<![{_WORD}])(?:consider|considering|worth|try)\s+(?P<verb>{_alt(calls.get('gerunds', []))})(?![{_WORD}-]){sep}{rest}", re.I),
-        colon=re.compile(rf"(?P<obj>[^\n.!?;:\u0964]{{1,60}}?)\s*[:\-–—]\s*(?P<verb>{en})(?![{_WORD}-])(?P<after>[^\n.!?;\u0964]{{0,40}})", re.I),
+        colon=re.compile(rf"(?P<obj>[^\n.!?;:\u0964]{{1,60}}?)\s*[:\-–—]\s*(?P<verb>{en})(?![{_WORD}-])(?=(?P<after>[^\n.!?;\u0964]{{0,40}}))", re.I),
         deva=re.compile(rf"(?<![{_WORD}])(?P<verb>{deva})(?![{_WORD}])", re.I),
         deva_light=re.compile(rf"(?<![{_WORD}])(?P<verb>{light})(?![{_WORD}])", re.I),
         opinion=re.compile(rf"(?<![{_WORD}])(?:my|our|top|best)\s+(?:top\s+)?(?:{_alt(calls.get('opinion_nouns', []))})\s*(?:for\s+\w+\s+)?(?:is|are|=|:|-)\s*{rest}", re.I),
@@ -239,7 +242,15 @@ _NOUN_PHRASE = re.compile(r"^\s*(?:\S+\s+){0,1}?(?:was|were|is|are|has|have|had|
                           r"eased|rallied|spiked|doubled|halved|increased|decreased)\b", re.I)
 _PRONOUN_OBJECT = re.compile(r"^\s*(?:(?:some|a|bit|little|few)\s+)*(?:more|it|them|this|that|those|these)?\s*(?:now|here|today)?\s*$", re.I)
 _PRONOUN_ALWAYS = re.compile(r"^\s*(?:it|them|this one|that one)\s*(?:now|here|today|too|again)?\s*$", re.I)
-_WATCHLIST_TAIL = re.compile(r"^\s*to\s+(?:your|the|a|my)?\s*(?:watch\s*list|watchlist|chart|list|screen|alerts?|basket view)\b", re.I)
+_WATCHLIST_TAIL = re.compile(r"^\s*to\s+(?:your|the|a|my)?\s*(?:watch\s*list|watchlist|chart|list|screen|screener|alerts?|alert rule|"
+                             r"basket(?: view)?|backtest|strategy|template|comparison(?: panel| view)?|panel)\b", re.I)
+# App how-to wording: the instrument names a page / chart / view of the app, not a trade ("Exit the RELIANCE page",
+# "Grab the RELIANCE chart from the Charts tab", "Hold RELIANCE for the next session's analysis view").
+_UI_TAIL = re.compile(r"^\s*(?:'s\s+)?(?:chart|page|tab|view|panel|card|screen)s?\b|"
+                      r"^\s*(?:from|in|on|for)\s+(?:the|your|a|this)?\s*(?:[\w']+\s+){0,3}(?:view|page|tab|panel|chart|screen)\b", re.I)
+# "Add a 20 EMA on the RELIANCE chart": an indicator length, not a price level.
+_INDICATOR_LENGTH = re.compile(r"^\s*(?:an?\s+|the\s+)?\d+[\s-]*(?:period\s+|day\s+|bar\s+)?"
+                               r"(?:EMA|SMA|DMA|WMA|MA|RSI|VWAP|ATR|ADX|MACD|bollinger|supertrend|CCI|OBV)\b", re.I)
 _GERUND_SUBJECT = re.compile(r"(?:^|(?<=[\n.!?;:,]))[ \t]*(?P<verb>buying|selling|shorting|accumulating|adding|going long on|going short on|"
                              r"investing in)\s+(?P<rest>[^\n.!?;]{0,80}?)\s+(?:makes sense|is a good idea|is worth it|is worth a try|"
                              r"looks good|is wise|is sensible|is the move|is the play|could work|should work|is smart)\b", re.I)
@@ -258,11 +269,25 @@ def _paragraphs(text: str) -> List[str]:
     return [p for p in re.split(r"\n[ \t]*\n", text) if p.strip()]
 
 
+@functools.lru_cache(maxsize=256)
+def _clause_breaks(s: str) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
+    """The (start, end) offsets of every clause break in `s`, computed once per sentence (review LOW: scanning from the
+    sentence start for every match was quadratic on long inputs)."""
+    spans = [(m.start(), m.end()) for m in _CLAUSE.finditer(s)]
+    return tuple(a for a, _ in spans), tuple(b for _, b in spans)
+
+
 def _clause(s: str, start: int, end: int) -> str:
     """The clause of sentence `s` around s[start:end] (clause breaks: , ; dashes, "but")."""
-    lo = max((m.end() for m in _CLAUSE.finditer(s, 0, start)), default=0)
-    nxt = _CLAUSE.search(s, end)
-    return s[lo:nxt.start() if nxt else len(s)]
+    starts, ends = _clause_breaks(s)
+    # the last break that ends at or before `start` (its end bounds the clause on the left) ...
+    i = bisect.bisect_right(ends, start) - 1
+    while i >= 0 and starts[i] >= start:                       # a break must lie wholly before `start`, as finditer(s, 0, start)
+        i -= 1
+    lo = ends[i] if i >= 0 else 0
+    # ... and the first break starting at or after `end`
+    j = bisect.bisect_left(starts, end)
+    return s[lo:starts[j] if j < len(starts) else len(s)]
 
 
 def record_line(s: str, verb_start: Optional[int] = None) -> bool:
@@ -297,11 +322,27 @@ def _rule_line(s: str) -> bool:
     return bool(_RULE_CONDITION.search(s)) and not _NOW.search(s)
 
 
+@functools.lru_cache(maxsize=256)
+def _negations(s: str, pattern: Pattern[str]) -> Tuple["re.Match[str]", ...]:
+    """The negated sayings of sentence `s`, found once (they were re-scanned for every verb: quadratic on long input)."""
+    return tuple(pattern.finditer(s))
+
+
 def _negated(s: str, verb_start: int, L: Lists) -> bool:
     """A negated saying that governs the verb at `verb_start`: before it with no clause break in between, or ending in ':'
     DIRECTLY after the negated verb ("We never say: Sell RELIANCE", not "We never recommend stocks: buy RELIANCE"); a
     Marathi / Hindi one after it, led by असे / ऐसा ("RELIANCE खरेदी करा, असे आम्ही सांगत नाही")."""
-    for m in L.negated.finditer(s):
+    negs = _negations(s, L.negated)
+    if not negs:
+        return False
+    # Only a negation inside the verb's own clause (no , ; dash "but" break before the verb) can govern it - every other
+    # one has a break between and fails the test below anyway; skipping them keeps long inputs linear.
+    starts, ends = _clause_breaks(s)
+    i = bisect.bisect_right(ends, verb_start) - 1
+    lo = ends[i] if i >= 0 else 0
+    for m in negs:
+        if m.start() < lo and m.end() <= lo:
+            continue
         if m.start() < verb_start:
             between = s[m.end():verb_start]
             colon = re.match(r"^\s*:", between)
@@ -374,10 +415,16 @@ def _object(rest: str, L: Lists, s: str, *, allow_level: bool) -> Optional[str]:
         obj = _instrument_at_start(rest[legs.end():], L, allow_level=False)
         if obj:
             return obj
+    if _INDICATOR_LENGTH.match(rest):
+        return None
+    lead_the = re.match(r"^\s*the\s+", rest, re.I)
     obj = _instrument_at_start(rest, L, allow_level=allow_level)
     if obj is not None:
         last = obj.split()[-1]
         after = rest[rest.find(last) + len(last):] if last in rest else ""
+        if _UI_TAIL.match(after) and (lead_the or re.match(r"^\s*(?:from|in|on|for)\b", after, re.I)
+                                      or re.match(r"^\s*(?:'s\s+)?(?:chart|page|tab|view|panel|card|screen)", after, re.I)):
+            return None                                         # app how-to wording about a page / chart / view
         if _NOUN_PHRASE.match(re.sub(r"^\s*(?:positions?|shares?|stocks?|calls?|puts?|orders?|signals?)\b", "", after, flags=re.I)):
             return None
         if _WATCHLIST_TAIL.match(after):

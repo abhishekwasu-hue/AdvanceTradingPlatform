@@ -296,6 +296,12 @@ class TradingWorker:
                 await self.run_cycle()
             except Exception:  # noqa: BLE001 - the loop must survive anything
                 logger.exception("Trading worker cycle crashed")
+            try:
+                from app.ai import instrument_names
+                async with self.session_factory() as session:
+                    await instrument_names.refresh_if_stale(session)       # H-C1 c: new listings every six hours
+            except Exception:  # noqa: BLE001 - never affects trading
+                logger.warning("instrument names not refreshed", exc_info=True)
             elapsed = time.monotonic() - started
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=max(1.0, self.cycle_seconds - elapsed))

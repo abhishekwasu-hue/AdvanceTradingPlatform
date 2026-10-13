@@ -77,7 +77,7 @@ def _load(path: str) -> Terms:
     # A specific call: an action verb and, in the same clause and within a few words either side, a price, a strike or an
     # option leg ("buy 25000 CE", "25200 च्या वर खरेदी").
     verb = rf"(?<![{_WORD}])(?:{_alternation(verbs)})(?![{_WORD}-])"
-    level = rf"(?:\d[\d,]*(?:\.\d+)?|(?<![{_WORD}])(?:CE|PE|call|put|कॉल|पुट)(?![{_WORD}]))"
+    level = rf"(?:(?<![\d,.])\d[\d,]*(?:\.\d+)?|(?<![{_WORD}])(?:CE|PE|call|put|कॉल|पुट)(?![{_WORD}]))"
     action = rf"{verb}[^.!?\n।]{{0,40}}?{level}|{level}[^.!?\n।]{{0,40}}?{verb}"
     return Terms(blocked=re.compile(_bounded(blocked), re.IGNORECASE),
                  negated_before=re.compile(rf"(?:{_bounded(neg.get('before', []))})(?:\W+[{_WORD}]+){{0,2}}\W*$", re.IGNORECASE),
@@ -127,7 +127,8 @@ def is_specific_call(text: str) -> bool:
     L = call_detect.lists(os.environ.get("AI_ADVICE_TERMS_FILE") or str(DEFAULT_FILE))
     action = terms().action
     for sentence in call_detect.sentences(call_detect.normalise(text or "")):
-        if L.context.search(sentence) or L.condition.search(sentence) or L.negated.search(sentence) or L.past.search(sentence):
+        if (L.context.search(sentence) or L.condition.search(sentence) or L.negated.search(sentence) or L.past.search(sentence)
+                or call_detect.record_line(sentence)):
             continue
         if L.howto.search(sentence):
             continue

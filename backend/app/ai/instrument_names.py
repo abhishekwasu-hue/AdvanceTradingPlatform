@@ -5,8 +5,9 @@ Two sources, merged into one in-process index (lower-cased, whitespace-collapsed
 
 * `data/instrument_names.json` - a seed of well-known symbols, company names and their Marathi / Hindi spellings,
   always present (tests, a worker that has not loaded the master yet);
-* the instrument master (`securities`: every company name, with "Limited" / "Ltd" dropped), loaded by
-  `refresh(session)` at API start-up and in the trading worker; it never fails the caller.
+* the instrument master (`securities`: every company name, with "Limited" / "Ltd" dropped, and every symbol of five
+  letters or more), loaded by `refresh(session)` at API start-up and in the trading worker, and again every six hours
+  (`refresh_if_stale`: a background task in the API, the worker's cycle); it never fails the caller.
 
 `prefix_len(words)` / `suffix_len(words)` say how many leading / trailing words of a phrase name an instrument (0 = none).
 The filter is synchronous and reads only this in-memory index.
@@ -70,8 +71,15 @@ def add(names: Iterable[str]) -> int:
     return len(_NAMES) - before
 
 
+REFRESH_SECONDS = 6 * 3600
+_LAST_REFRESH = {"at": 0.0}
+
+
 async def refresh(session) -> int:  # type: ignore[no-untyped-def]
-    """Loads every active security's symbol and company name from the instrument master. Never raises."""
+    """Loads every listed security's company name, and its symbol when it has five letters or more (any case: "reliance",
+    "infosys"), from the instrument master. Never raises; a failed read is rolled back so the caller's session stays
+    usable."""
+    import time
     try:
         from sqlalchemy import select
 
@@ -79,8 +87,21 @@ async def refresh(session) -> int:  # type: ignore[no-untyped-def]
         rows = (await session.execute(select(SecurityRecord.symbol, SecurityRecord.name).where(SecurityRecord.status != "DELISTED"))).all()
     except Exception:  # noqa: BLE001 - the seed still applies
         log.warning("instrument names: master not loaded", exc_info=True)
+        try:
+            await session.rollback()
+        except Exception:  # noqa: BLE001 - nothing more to undo
+            pass
         return 0
-    return add([company for _symbol, company in rows])
+    _LAST_REFRESH["at"] = time.monotonic()
+    return add([name for symbol, company in rows for name in (company, symbol if len(symbol or "") >= 5 else "")])
+
+
+async def refresh_if_stale(session) -> int:  # type: ignore[no-untyped-def]
+    """`refresh` at most every REFRESH_SECONDS (new listings and renames reach the filter without a restart)."""
+    import time
+    if time.monotonic() - _LAST_REFRESH["at"] < REFRESH_SECONDS:
+        return 0
+    return await refresh(session)
 
 
 def known(name: str) -> bool:
@@ -109,4 +130,4 @@ def names() -> List[str]:
     return sorted(_NAMES)
 
 
-__all__ = ["refresh", "add", "known", "prefix_len", "suffix_len", "names", "norm_name", "norm_word"]
+__all__ = ["refresh", "refresh_if_stale", "add", "known", "prefix_len", "suffix_len", "names", "norm_name", "norm_word"]

@@ -1962,3 +1962,60 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
+
+## Fix: contributed reference data is the contributing organisation's own (security)
+
+- Branch `claude/fix-shared-fundamentals-writes` (from main). Found in the S8 review: shared tables writable by any
+  trading member of any organisation (`require_contributor`), unbounded dates, self-cited publication dates.
+- `tenant_id` (NULL = shared) on companies, financial_periods, shareholding_snapshots, corporate_actions,
+  qualitative_factors, earnings_calendar_events, sector_metrics, news_events; migration `d7f9a1c3e5b7` (ROLLBACK_SAFE
+  with reason; backfill by creator; `uq_company_period` widened with tenant_id; upgrade / check / downgrade run on
+  Postgres).
+- Every reader takes the viewer: fundamentals pages and analyses, the upcoming calendar, the fundamentals screener,
+  sector rotation and peers, the Factor Lab fill (`quant/fundamentals_bridge.py`), news events list / get / delete.
+  The financials import updates only the organisation's own periods. Provider refresh rows stay shared.
+- Shared company profiles: PUT only by SUPER_ADMIN; an organisation's own company becomes shared from the provider
+  refresh (hand fields cleared). Date checks on every contributed row (`visibility.check_dates`).
+- Tests: `tests/test_shared_fundamentals_scope.py` (cross-tenant poisoning attempt on every kind of row, dates, the
+  private company, the Factor Lab fill, manual news); fundamentals / news / quant tests read with the caller's token.
+  OPEN_QUESTIONS SF-1.
+## S10 (Phase 0 slice): ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
+
+- Branch `claude/n3-s10` (from main). Design: SCREENER.md "S10".
+- Backend: `app/screener/etf.py` + `GET /api/screener/etf` (member, classified); `WhatsAppConfig` + `AlertChannelType.WHATSAPP`
+  (template + opt-in, paid plans, the SMS sender); SMS DLT fields and placeholders; both behind `alerts_whatsapp_dlt`
+  at channel save. No migration (channel types and config are stored as text / encrypted JSON); no new ScreenQL function.
+- Frontend: "ETFs" dialog on the Screener page (`EtfPanel`); WhatsApp section and DLT fields in the alert channels card.
+- Tests: `tests/test_s10_etf_whatsapp.py`; vitest `src/screener/etf.test.tsx`. Open questions S10-1..S10-5.
+- Security review round: `app/alerts/s10_gate.py` is the one gate (flag + paid plan for WhatsApp) used on save, on
+  `POST /api/alert-channels/{type}/test` (403 / 402) and on every delivery in `dispatch_pending` - a flag turned off or a
+  plan downgrade after the channel was created SUPPRESSES the delivery with `reason_code=feature_off` and the reason in
+  `last_error`; nothing is sent. `WhatsAppConfig.opt_in_confirmed` is required (no default) and its headers are validated
+  like SMS. `GET /api/screener/etf`: per-user rate limit (30 / min) and a 120 s per-process cache by window.
+  Merges `claude/fix-alert-gateway-injection`.
+- Second review round: the gate now runs inside `dispatcher.send_via_channel` (`s10_gate.enforce`, raising `Refused`), so
+  the outbox, the Settings test button and `first_paper_day_check.py` are gated the same way, and the config decrypt it
+  needs sits inside the per-row try - one organisation's undecryptable channel becomes a retry on its own row, never an
+  exception that stops every organisation's deliveries (test: A's corrupt SMS + B's webhook SENT in one drain); the test
+  button answers ok=False for it. ETF screen: the closes are read once per 120 s per process (single flight per event
+  loop) and every request measures its own window on them. Merges PR #228's head.
+
+## Fix: SMS gateway template injection and header handling (S10 security review)
+
+- Branch `claude/fix-alert-gateway-injection` (from main).
+- `dispatcher.render_sms`: the content type is compared case-insensitively; JSON bodies get JSON-escaped values, every
+  other body (form, query, text) percent-encoded values - an alert title like `x&To=+1555...&Body=spam` stays one value.
+  The GET path decodes the query once with `parse_qsl` (duplicates kept, nothing silently overridden; httpx encodes).
+- `channels.merge_secrets`: the stored write-only SMS headers are kept only when the gateway URL keeps its scheme, host
+  and port; a moved gateway gets no stored header (the user types it again).
+- `SmsConfig.headers`: names must be HTTP tokens, values carry no CR / LF / control characters, at most 20 headers. (The
+  webhook channel has no free-form headers - its secret signs the body and is never sent.)
+- Tests: `tests/test_alert_gateway_injection.py`.
+- Review round (HIGH): the origin check now parses both URLs with the same WHATWG parser that validated them (pydantic;
+  `https://evil.example\@api.twilio.com/` is evil.example to pydantic / httpx but api.twilio.com to urllib), and a
+  backslash, space or control character in a gateway URL (SMS, webhook) is refused before parsing. Email: the stored
+  SMTP password is dropped when the host, port or user changes or TLS is turned off; `smtp_host` goes through the egress
+  policy on save (literal) and on send (resolved, in production / staging).
+- Review round (LOW): header values printable ASCII only; `Host` / `Content-Length` / `Transfer-Encoding` / hop-by-hop
+  headers refused; `content_type` validated; one recipient's failure (any exception) never stops the others; GET params
+  through `httpx.QueryParams`; Twilio preset writes `From=%2B...`; OPERATIONS 1.6e documents quoting and `%2B`.

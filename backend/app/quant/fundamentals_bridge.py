@@ -3,7 +3,7 @@
 `raw_factors` (factors.py) needs `pe, pb, roe_pct, debt_to_equity, earnings_growth_pct` per symbol
 to compute the value and quality factors. Until now the caller had to supply them by hand, so the
 Factor Lab page never had them. This module derives them from the stored `CompanyRecord` +
-`FinancialPeriodRecord` rows (shared reference data, no tenant scope) with the same arithmetic the
+`FinancialPeriodRecord` rows (shared reference data plus the caller organisation's own) with the same arithmetic the
 fundamentals engines use:
 
 * pe   = close / eps               (eps = latest.eps, else pat / shares)
@@ -95,18 +95,20 @@ def derive(symbol: str, latest: Optional[FinancialPeriod], prior: Optional[Finan
     return fill
 
 
-async def fundamentals_for(session: AsyncSession, symbols: Iterable[str], closes: Optional[Dict[str, float]] = None) -> Dict[str, FundamentalsFill]:
-    """Derive the factor-model fundamentals for each symbol that has a company profile. Symbols without one are omitted."""
+async def fundamentals_for(session: AsyncSession, symbols: Iterable[str], closes: Optional[Dict[str, float]] = None, *,
+                           viewer: Optional[int]) -> Dict[str, FundamentalsFill]:
+    """Derive the factor-model fundamentals for each symbol that has a company profile the viewer may see (shared rows
+    plus its own organisation's; app/fundamentals/visibility.py). Symbols without one are omitted."""
     closes = closes or {}
     out: Dict[str, FundamentalsFill] = {}
     for raw in symbols:
         symbol = raw.upper().strip()
         if symbol in out:
             continue
-        company = await db.get_company_by_symbol(session, symbol)
+        company = await db.get_company_by_symbol(session, symbol, viewer=viewer)
         if company is None:
             continue
-        periods = [db.financial_period_to_model(r) for r in await db.list_financial_periods(session, company.id)]
+        periods = [db.financial_period_to_model(r) for r in await db.list_financial_periods(session, company.id, viewer=viewer)]
         latest, prior = _latest_two(periods)
         out[symbol] = derive(symbol, latest, prior, close=closes.get(symbol), shares_outstanding=None, market_cap=company.market_cap)
     return out

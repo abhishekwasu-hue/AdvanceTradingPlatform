@@ -70,7 +70,7 @@ class Resolved:
 
 
 # The breakout template sources: BK1/BK2's and BK3's (registered separately so each keeps its own flag).
-BREAKOUT_SOURCES = frozenset({"breakouts", "breakouts_bk3"})
+BREAKOUT_SOURCES = frozenset({"breakouts", "breakouts_bk3", "breakouts_bk4"})
 
 
 def _breakout_text(screen_id: str, direction: Optional[str] = None) -> Tuple[Optional[str], str, Optional[str]]:

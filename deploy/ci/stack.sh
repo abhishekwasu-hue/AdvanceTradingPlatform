@@ -151,6 +151,7 @@ cmd_load() {
   local per=$(( (users + shards - 1) / shards )) i offset n pids=()
   step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s"
   sample_stats "$STATE/$name/docker-stats.csv" & local sampler=$!
+  sample_db "$STATE/$name/db-connections.csv" & local db_sampler=$!
   for i in $(seq 0 $((shards - 1))); do
     offset=$((i * per)); n=$(( users - offset < per ? users - offset : per ))
     [ "$n" -gt 0 ] || break
@@ -161,8 +162,12 @@ cmd_load() {
   done
   local failed=0 pid
   for pid in "${pids[@]}"; do wait "$pid" || failed=$((failed + 1)); done
-  kill "$sampler" 2>/dev/null || true
+  kill "$sampler" "$db_sampler" 2>/dev/null || true
   echo "    shards done ($failed reported an SLO miss or failed; the merged verdict below is the one that counts)"
+  # LD-7: the database connections by state (pg_stat_activity, every 5 s) - peak and mean while the load ran
+  awk -F, 'NR > 1 { if (!($1 in seen)) { seen[$1] = 1; samples++ } sum[$2] += $3; if ($3 > peak[$2]) peak[$2] = $3 }
+           END { for (s in sum) printf "    db connections %-28s peak %3d  mean %5.1f\n", s, peak[s], sum[s] / samples }' \
+    "$STATE/$name/db-connections.csv" 2>/dev/null | sort || true
   local files=() f
   for f in "$STATE/$name"/shard-*.json; do [ -e "$f" ] && files+=("/state/$name/$(basename "$f")"); done
   [ "${#files[@]}" -gt 0 ] || die "no shard wrote its samples - see $STATE/$name/shard-*.log"
@@ -184,6 +189,19 @@ sample_stats() {
     docker stats --no-stream --format '{{.Name}},{{.CPUPerc}},{{.MemUsage}}' 2>/dev/null \
       | grep "^${PROJECT}-" | sed "s/^/$(date -u +%H:%M:%S),/" >> "$out" || true
     sleep 10
+  done
+}
+
+# The stack's database connections by state every 5 s (LD-7: is anything waiting on the pool, or holding a connection
+# idle in a transaction?).
+sample_db() {
+  local out="$1"
+  echo "time,state,count" > "$out"
+  while :; do
+    # shellcheck disable=SC2016  # expanded by the shell inside the postgres container, on purpose
+    dc exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -AtF, -c "select coalesce(state, '"'"'-'"'"'), count(*) from pg_stat_activity where datname = current_database() and pid <> pg_backend_pid() group by 1"' 2>/dev/null \
+      | sed "s/^/$(date -u +%H:%M:%S),/" >> "$out" || true
+    sleep 5
   done
 }
 

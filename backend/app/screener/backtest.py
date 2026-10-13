@@ -75,6 +75,7 @@ class Result:
     rebalances: List[Dict[str, Any]] = field(default_factory=list)
     benchmark_missing: Dict[str, int] = field(default_factory=dict)     # sessions a benchmark had no close (skipped)
     cash: List[float] = field(default_factory=list)                    # the cash at each close (never below 0)
+    stuck_near_split: int = 0       # kept holdings (no open to sell at) over a period touching a split on unadjusted bars
 
 
 def rank_table(rank_ast: Any, frames: Dict[str, pd.DataFrame], dates: Sequence[date], params: Optional[Dict[str, Any]] = None,
@@ -180,27 +181,69 @@ def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str,
                 new_qty[j] = qty[j]                           # review of S6b (LOW): no open today - kept, never sold at a stale close
             # re-check of S6b (MED): a kept holding is not cash - the targets share what is left after it
             investable = equity_before - float(sum(qty[j] * px[j] for j in stuck if np.isfinite(px[j])))
-            # re-check of S6b (LOW): an unadjusted symbol is not held over a period touching a split or bonus
+            # re-check of S6b (LOW): an unadjusted symbol is not held over a period touching a split or bonus.
+            # DELIBERATE DATA-QUALITY LOOK-AHEAD: this reads the ex-dates up to the next rebalance, i.e. it knows at the
+            # decision that a split is coming. It exists only because those bars are unadjusted (the split would read as
+            # a loss or a gain); the symbol leaves both the book and the equal-weight benchmark for that period, so the
+            # comparison stays like for like. ISIN-adjusted symbols (the normal case) never take this path.
             nxt = next((f for f in fills if f > k), last + 1)
             near_split: Set[int] = set().union(*(blocked.get(m, set()) for m in range(k, nxt))) if blocked else set()
+            # a holding that cannot trade at this open is kept, and may still ride a split on unadjusted bars: counted
+            result.stuck_near_split += sum(1 for j in stuck if j in near_split)
             for s, w in target.items():
                 j = col[s]
                 if not np.isfinite(opens[k, j]) or opens[k, j] <= 0 or j in stuck or j in near_split:
                     continue                                  # does not trade at this open, or spans a split: not bought
                 # a cash buffer (CASH_BUFFER) for the charges, so the book is never financed by negative cash
                 new_qty[j] = math.floor(w * max(investable, 0.0) * (1 - CASH_BUFFER) / (opens[k, j] * (1 + slip)))
-            for jj in np.nonzero((new_qty != qty))[0]:
+            # re-check of S6b (MED): sells first, then the buys from the cash those sells actually left (after their
+            # slippage and charges) - scaled down until they fit, so cash never goes below 0
+            buys: Dict[int, float] = {}
+            for jj in np.nonzero(new_qty != qty)[0]:
                 j = int(jj)
-                delta = new_qty[j] - qty[j]
                 base = float(px[j]) if np.isfinite(px[j]) else 0.0
                 if base <= 0:
+                    new_qty[j] = qty[j]                       # no price to trade at: left as it is
                     continue
-                side = "buy" if delta > 0 else "sell"
-                price = base * (1 + slip) if side == "buy" else base * (1 - slip)
-                cost = leg_cost(day, side, price, abs(float(delta)), SEGMENT, settings.brokerage)["total"]
-                cash -= float(delta) * price + cost
+                delta = float(new_qty[j] - qty[j])
+                if delta > 0:
+                    buys[j] = delta
+                    continue
+                price = base * (1 - slip)
+                cost = leg_cost(day, "sell", price, -delta, SEGMENT, settings.brokerage)["total"]
+                if cost >= -delta * price:                    # the charges would exceed what the sale brings in: kept
+                    new_qty[j] = qty[j]
+                    continue
+                cash += -delta * price - cost
                 result.costs += cost
-                traded_value += abs(float(delta)) * price
+                traded_value += -delta * price
+
+            def buy_costs(order: Dict[int, float]) -> Dict[int, Tuple[float, float]]:
+                out_: Dict[int, Tuple[float, float]] = {}
+                for j_, n in order.items():
+                    price_ = float(px[j_]) * (1 + slip)
+                    out_[j_] = (n * price_, leg_cost(day, "buy", price_, n, SEGMENT, settings.brokerage)["total"])
+                return out_
+
+            for _ in range(40):
+                priced = buy_costs(buys)
+                order = {j_: n for j_, n in buys.items() if priced[j_][1] < priced[j_][0]}   # charges above the order's value: skipped
+                if order != buys:
+                    buys = order
+                    continue
+                spend = sum(v + c for v, c in priced.values())
+                if spend <= cash or not buys:
+                    break
+                scale = max(cash, 0.0) / spend * 0.999
+                buys = {j_: float(math.floor(n * scale)) for j_, n in buys.items() if math.floor(n * scale) > 0}
+            else:
+                buys = {}                                     # never reached in practice; nothing is bought on credit
+            for jj in np.nonzero(new_qty > qty)[0]:
+                new_qty[int(jj)] = qty[int(jj)] + buys.get(int(jj), 0.0)
+            for j, (value, cost) in buy_costs(buys).items():
+                cash -= value + cost
+                result.costs += cost
+                traded_value += value
             qty = new_qty
             result.turnover.append(traded_value / max(equity_before, 1e-9) / 2.0)
             result.holdings.append(int((qty > 0).sum()))
@@ -268,6 +311,7 @@ def report(result: Result, settings: Settings) -> Dict[str, Any]:
     return {"strategy": own, "benchmarks": benches, "excess_total_return": excess,
             "final_equity": round(result.equity[-1], 2) if result.equity else settings.capital, "capital": settings.capital,
             "costs": round(result.costs, 2), "rebalances": len(result.rebalances), "benchmark_missing_sessions": dict(result.benchmark_missing),
+            "stuck_near_split": result.stuck_near_split,
             "turnover_per_rebalance": round(float(np.mean(result.turnover)), 4) if result.turnover else None,
             "avg_holdings": round(float(np.mean(result.holdings)), 2) if result.holdings else 0.0,
             "settings": {"top_n": settings.top_n, "weighting": settings.weighting, "descending": settings.descending,

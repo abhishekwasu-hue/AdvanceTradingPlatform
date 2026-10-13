@@ -457,6 +457,9 @@ async def backtest(body: BacktestBody, user: User = Depends(require_trader), ses
         notes.append("NIFTY 50 closes are not in the lake for this window: the equal-weight universe is the only benchmark.")
     if excluded:
         notes.append(f"{len({s for s, _ in excluded})} symbol(s) on unadjusted bars are not held over a period touching a split or bonus.")
+    if result.stuck_near_split:
+        notes.append(f"{result.stuck_near_split} time(s) a holding with no open to sell at was kept over a split or bonus on unadjusted "
+                     "bars: its marks there may show the split as a move.")
     for name, n in result.benchmark_missing.items():
         notes.append(f"{name}: {n} session(s) without a close were skipped (not counted as 0 %).")
     label = (f"index:{body.universe.index}" if body.universe.index else f"list:{len(frames)}")[:40]

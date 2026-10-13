@@ -74,7 +74,7 @@ jobs:
   backend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 55          # the full suite reached ~30 min on 2026-10-12 and runs were cancelled at the old 30-min cap
     services:
       postgres:
         image: postgres:16-alpine
@@ -124,7 +124,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          python -m pytest -q -rf -m "not lookahead" 2>&1 | tee pytest-output.txt || status=$?
+          python -m pytest -q -rf --durations=25 -m "not lookahead" 2>&1 | tee pytest-output.txt || status=$?
           grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=pytest::/' || true
           exit $status
 
@@ -215,6 +215,11 @@ jobs:
         env:
           ATP_PERF: "1"
         run: python -m pytest tests/test_z10d_perf.py -q -rA -s -p no:cacheprovider
+
+      - name: N4 CH6 chart studies (50,000 bars x 6 ScreenQL studies + JSON < 1 s; x CI factor)
+        env:
+          ATP_PERF: "1"
+        run: python -m pytest tests/test_ch6_chart_studies.py -k perf_job -q -rA -s -p no:cacheprovider
 
       - name: Load test, 20 session-shaped users against the in-process test app (scripts/loadtest.py; SLO per scenario)
         run: python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 1 --slo-factor auto --annotate

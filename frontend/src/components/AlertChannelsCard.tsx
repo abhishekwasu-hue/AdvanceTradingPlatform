@@ -114,8 +114,8 @@ export default function AlertChannelsCard() {
     msg91: { url: "https://control.msg91.com/api/v5/flow/", headers: "authkey: <your MSG91 auth key>", content_type: "application/json",
       body_template: '{"template_id":"<DLT approved template id>","recipients":[{"mobiles":"{to}","message":"{text}"}]}', hint: "MSG91 Flow API; a DLT-approved template is required in India." },
     twilio: { url: "https://api.twilio.com/2010-04-01/Accounts/<ACCOUNT_SID>/Messages.json", headers: "Authorization: Basic <base64(ACCOUNT_SID:AUTH_TOKEN)>",
-      content_type: "application/x-www-form-urlencoded", body_template: "From=<+1...>&To={to}&Body={text}", hint: "Twilio Messages API (form-encoded)." },
-    custom: { url: "", headers: "", body_template: "", content_type: "application/json", hint: "Any HTTPS gateway: placeholders {to} {text} {title} {severity}." },
+      content_type: "application/x-www-form-urlencoded", body_template: "From=%2B<1...>&To={to}&Body={text}", hint: "Twilio Messages API (form-encoded: write a literal + as %2B)." },
+    custom: { url: "", headers: "", body_template: "", content_type: "application/json", hint: "Any HTTPS gateway: placeholders {to} {text} {title} {severity}; in JSON put each inside quotes." },
   };
 
   function applyPreset(name: string) {

@@ -178,6 +178,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # overlay and the style / timeframe selector in the screener. OFF: the breakout functions are hidden and refused.
     # Research only - matches, never orders.
     "screener_breakouts": "Breakout screens: range, swing, NR7, 52-week, ATR and volume breakouts with a quality grade (research only, places no orders)",
+    # U6 BK3 (spec §8 BK3): the VCP breakout + Watchlist (B3) and the indicator breakouts - Donchian (B10), Bollinger / TTM
+    # squeeze (B11), moving average (B12), RSI / ADX regime (B15). Needs `screener_breakouts` too. OFF: their ScreenQL
+    # functions are hidden and refused, their templates and screens are left out of the catalog and the run, and alert
+    # rules using them pause. Research only - matches, never orders.
+    "screener_breakouts_bk3": "Breakout screens, set 2: VCP breakout and watchlist, Donchian, Bollinger / TTM squeeze, moving-average and RSI / ADX regime breakouts (needs screener_breakouts; research only, places no orders)",
     # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
     # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
     # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
@@ -195,6 +200,7 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    "scan_then": "Scan Then (N1 U4 X1): after a scan alert matches, the level gate watches the symbol at its market zones and a confirmed setup is sent as a notification or a PAPER entry proposal (never an order; needs execution_core)",
     # CH5 (docs/design/CHARTING.md): the multi-chart workspace - 1/2/4/6/8 charts, symbol / interval / crosshair link
     # groups, saved layouts per user, keyboard shortcuts, chart types. OFF: /api/charts/layouts answers 503 and the
     # workspace is not offered. Charts only; nothing places an order.
@@ -238,7 +244,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace",
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3",
                                "decision_tools"})
 
 

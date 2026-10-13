@@ -180,11 +180,13 @@ async def test_alert_channel(
         message=f"If you can read this, {kind.lower()} alerts for your account are working. Sent by {user.email}.",
         created_at=datetime.now(timezone.utc),
     )
-    from app.alerts.channels import decrypt_config
-    await _s10_gate(session, user, kind, decrypt_config(record))      # S10: the flag and the plan, as at save time
+    from app.alerts import s10_gate
     try:
-        await send_via_channel(record, probe)
-    except Exception as exc:  # noqa: BLE001 - the whole point is to surface the error
+        await send_via_channel(record, probe, session=session)          # S10: the flag and the plan are checked in there
+    except s10_gate.Refused as refused:
+        raise HTTPException(status_code=refused.status_code, detail=refused.reason,
+                            headers={"X-Feature-Disabled": s10_gate.FLAG} if refused.status_code == 403 else None) from refused
+    except Exception as exc:  # noqa: BLE001 - the whole point is to surface the error (an undecryptable channel included)
         record.last_error = str(exc)[:500]
         await session.commit()
         return TestSendResponse(ok=False, detail=str(exc)[:500])

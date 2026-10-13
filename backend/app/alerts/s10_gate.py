@@ -35,4 +35,27 @@ async def blocked(session: AsyncSession, tenant_id: int, kind: str, config: Any)
     return None
 
 
-__all__ = ["FLAG", "REASON_CODE", "gated", "blocked"]
+class Refused(RuntimeError):
+    """A send the gate refuses: the dispatcher records the delivery as SUPPRESSED with the reason (never retried), the
+    Settings test button answers with the status (403 flag off / 402 unpaid plan)."""
+
+    def __init__(self, status_code: int, reason: str) -> None:
+        super().__init__(reason)
+        self.status_code = status_code
+        self.reason = reason
+
+
+async def enforce(session: Optional[AsyncSession], tenant_id: int, kind: str, config: Any) -> None:
+    """Raises Refused when this channel may not send now. Called by `dispatcher.send_via_channel` itself, so every path
+    that sends (the outbox, the Settings test button, scripts/first_paper_day_check.py) is gated the same way. A gated
+    channel with no database session to check the flag is refused (fail closed)."""
+    if not gated(kind, config):
+        return
+    if session is None:
+        raise Refused(403, "WhatsApp / SMS DLT sends need the organisation's flag and plan checked; no database session was given")
+    refused = await blocked(session, tenant_id, kind, config)
+    if refused is not None:
+        raise Refused(*refused)
+
+
+__all__ = ["FLAG", "REASON_CODE", "gated", "blocked", "Refused", "enforce"]

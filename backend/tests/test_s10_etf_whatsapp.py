@@ -142,18 +142,34 @@ def test_the_etf_route_is_flagged_and_member_readable(seeded):
         body = client.get("/api/screener/etf?q=TXSTEN&sessions=20", headers=headers).json()
         assert [r["symbol"] for r in body["rows"]] == ["TXSTENETF"] and body["note"] == etf.NOTE
         assert client.get("/api/screener/etf?sort=best", headers=headers).status_code == 422
-        computed = []
-        real = etf.etf_rows
+        loads = []
+        real = etf.load
 
-        async def counting(session, sessions=20, now=None):
-            computed.append(sessions)
-            return await real(session, sessions=sessions, now=now)
+        async def counting(session, now=None):
+            loads.append(1)
+            await asyncio.sleep(0.05)                          # a slow load: the concurrent requests wait for it
+            return await real(session, now=now)
         etf_routes._CACHE.clear()
         import unittest.mock as um
-        with um.patch.object(etf, "etf_rows", counting):
-            client.get("/api/screener/etf?sessions=7", headers=headers)
-            client.get("/api/screener/etf?sessions=7&q=x", headers=headers)
-        assert computed == [7]                                                            # served from the short cache
+        with um.patch.object(etf, "load", counting):
+            seven = client.get("/api/screener/etf?sessions=7", headers=headers).json()
+            twenty = client.get("/api/screener/etf?sessions=20&q=TXSTEN", headers=headers).json()
+        assert loads == [1]                                                               # one lake read, every window
+        assert seven["sessions"] == 7 and twenty["rows"][0]["change_pct"] == body["rows"][0]["change_pct"]
+
+        async def concurrent():
+            from app.screener.etf_routes import _history
+            etf_routes._CACHE.clear()
+            loads.clear()
+
+            async def one():
+                async with _session_factory() as session:
+                    return await _history(session)
+            with um.patch.object(etf, "load", counting):
+                got = await asyncio.gather(*(one() for _ in range(5)))
+            return got
+        got = _run(concurrent())
+        assert loads == [1] and all(g is got[0] for g in got)                             # single flight
         assert any(d.dependency is etf_routes.etf_rate_limit for d in etf_routes.router.routes[0].dependencies)   # the per-user limit
     finally:
         _set_flags(screener_v2=False, **{etf.FLAG: False})
@@ -303,3 +319,52 @@ def test_a_plan_downgrade_or_the_flag_turned_off_stops_delivery_with_a_reason():
         assert client.post("/api/alert-channels/whatsapp/test", headers=paid).status_code == 402
     finally:
         _set_flags(alerts_whatsapp_dlt=False)
+
+
+def test_one_undecryptable_channel_never_starves_another_organisation_s_deliveries():
+    """S10 review MED: the S10 gate (and the config decrypt it needs) runs inside the per-row try - a corrupt SMS channel
+    of organisation A becomes a retry on A's row; organisation B's webhook delivery in the same drain is still SENT, and
+    A's Settings test button answers ok=False instead of a 500."""
+    a, me_a = _user("s10-corrupt-a@example.com", plan="pro")
+    b, me_b = _user("s10-corrupt-b@example.com", plan="pro")
+    assert _put(a, "sms", {"url": "https://control.msg91.com/api/v5/flow/", "headers": {"authkey": "K"}, "content_type": "application/json",
+                           "body_template": '{"to":"{to}","text":"{text}"}', "to_numbers": ["+919812345678"]}).status_code == 200
+    assert _put(b, "webhook", {"url": "https://hooks.example.com/s10", "secret": "s" * 32}).status_code == 200
+
+    async def corrupt_and_raise():
+        from sqlalchemy import select
+
+        from app.db.models import AlertChannelRecord
+        async with _session_factory() as session:
+            row = await session.scalar(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == me_a["tenant_id"],
+                                                                        AlertChannelRecord.channel_type == "SMS"))
+            row.encrypted_config = "not-a-ciphertext"
+            await session.commit()
+            for me in (me_a, me_b):
+                await notify(session, me["tenant_id"], NotificationType.SYSTEM_FAILURE, title="T", message="m",
+                             severity=NotificationSeverity.CRITICAL)
+    _run(corrupt_and_raise())
+    seen: List[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    async def drain_everyone():
+        async with _session_factory() as session:            # platform-wide, as the worker drains it
+            return await dispatcher.dispatch_pending(session, client=httpx.AsyncClient(transport=httpx.MockTransport(handler)), limit=500)
+    _run(drain_everyone())                                   # never raises
+
+    async def rows(tenant_id):
+        from sqlalchemy import select
+
+        from app.db.models import AlertDeliveryRecord
+        async with _session_factory() as session:
+            return [(d.status, d.attempts, d.last_error) for d in await session.scalars(
+                select(AlertDeliveryRecord).where(AlertDeliveryRecord.tenant_id == tenant_id))]
+    assert [r[0] for r in _run(rows(me_b["tenant_id"]))] == ["SENT"]
+    assert any("hooks.example.com" in str(r.url) for r in seen)
+    [(status, attempts, error)] = _run(rows(me_a["tenant_id"]))
+    assert status == "PENDING" and attempts == 1 and error                      # a retry with the reason, not a crash
+    test = client.post("/api/alert-channels/sms/test", headers=a)
+    assert test.status_code == 200 and test.json()["ok"] is False

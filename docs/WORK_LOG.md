@@ -1876,6 +1876,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `last_error`; nothing is sent. `WhatsAppConfig.opt_in_confirmed` is required (no default) and its headers are validated
   like SMS. `GET /api/screener/etf`: per-user rate limit (30 / min) and a 120 s per-process cache by window.
   Merges `claude/fix-alert-gateway-injection`.
+- Second review round: the gate now runs inside `dispatcher.send_via_channel` (`s10_gate.enforce`, raising `Refused`), so
+  the outbox, the Settings test button and `first_paper_day_check.py` are gated the same way, and the config decrypt it
+  needs sits inside the per-row try - one organisation's undecryptable channel becomes a retry on its own row, never an
+  exception that stops every organisation's deliveries (test: A's corrupt SMS + B's webhook SENT in one drain); the test
+  button answers ok=False for it. ETF screen: the closes are read once per 120 s per process (single flight per event
+  loop) and every request measures its own window on them. Merges PR #228's head.
 
 ## Fix: SMS gateway template injection and header handling (S10 security review)
 

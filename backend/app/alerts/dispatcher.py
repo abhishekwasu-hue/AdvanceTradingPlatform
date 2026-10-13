@@ -399,6 +399,7 @@ async def send_via_channel(
     A PUSH channel whose devices have gone gets its config rewritten in place (caller commits).
     `idempotency_key` (Z10-b) goes to receivers that can dedupe a repeated send: webhook / SMS headers, email Message-ID."""
     config = decrypt_config(channel)
+    await s10_gate.enforce(session, channel.tenant_id, channel.channel_type, config)   # S10: WhatsApp / SMS DLT, every path
     plain, html_body = render_text(notification)
     mail_headers = {"Message-ID": _message_id(idempotency_key)} if idempotency_key else None
     if channel.channel_type == AlertChannelType.TELEGRAM.value:
@@ -650,16 +651,6 @@ async def dispatch_pending(
             await session.commit()
             failed += 1
             continue
-        refused = await s10_gate.blocked(session, channel.tenant_id, channel.channel_type, decrypt_config(channel)) \
-            if channel.channel_type in (AlertChannelType.WHATSAPP.value, AlertChannelType.SMS.value) else None
-        if refused is not None:
-            # S10: the flag was turned off or the plan no longer pays for WhatsApp - nothing is sent, the reason is kept
-            channel.last_error = refused[1][:500]
-            if await _finish(session, delivery, claim, status=AlertDeliveryStatus.SUPPRESSED.value, reason_code=s10_gate.REASON_CODE,
-                             last_error=refused[1][:500]):
-                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=AlertDeliveryStatus.SUPPRESSED.value).inc()
-            await session.commit()
-            continue
         if notification.event_type in staleness.SUPPRESSIBLE and delivery.digest_bucket is None \
                 and await staleness.guard_on(session, delivery.tenant_id, guard):
             why = await _stale_alert(session, notification, now, holidays)
@@ -681,7 +672,15 @@ async def dispatch_pending(
                 await asyncio.wait_for(_send_one(session, channel, notification, delivery, client, delivery.idem_key), timeout=budget)
             else:
                 await _send_one(session, channel, notification, delivery, client, None)
-        except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row
+        except s10_gate.Refused as refused:
+            # S10 (checked in send_via_channel, inside this try): the flag was turned off or the plan no longer pays for
+            # WhatsApp - nothing is sent and the reason is kept; not retried.
+            channel.last_error = refused.reason[:500]
+            if await _finish(session, delivery, claim, status=AlertDeliveryStatus.SUPPRESSED.value, reason_code=s10_gate.REASON_CODE,
+                             last_error=refused.reason[:500]):
+                ALERT_DELIVERIES.labels(channel=channel.channel_type, status=AlertDeliveryStatus.SUPPRESSED.value).inc()
+        except Exception as exc:  # noqa: BLE001 - every failure mode becomes a retry or a FAILED row (an undecryptable
+            # channel included: one organisation's broken channel never stops another's deliveries)
             error = (str(exc) or type(exc).__name__)[:500]
             channel.last_error = error
             outcome: Dict[str, Any] = {"attempts": attempts, "last_error": error}

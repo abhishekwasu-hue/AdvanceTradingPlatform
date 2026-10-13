@@ -113,7 +113,20 @@ def measure(row: EtfRow, etf: pd.DataFrame, index: Optional[pd.DataFrame], sessi
     return row
 
 
-async def etf_rows(session: AsyncSession, *, sessions: int = DEFAULT_SESSIONS, now: Optional[datetime] = None) -> List[EtfRow]:
+@dataclass
+class EtfHistory:
+    """One ETF's daily closes and its tracked index's (as known at the load time): loaded once, measured per request."""
+    symbol: str
+    name: str
+    underlying: Optional[str]
+    etf: pd.DataFrame
+    index_key: Optional[str]
+    index: Optional[pd.DataFrame]
+
+
+async def load(session: AsyncSession, *, now: Optional[datetime] = None) -> List[EtfHistory]:
+    """Every listed ETF's daily closes and its index's, from the shared history as known at `now` (the expensive part:
+    one lake read per ETF and per index). Shared reference data - the same for every organisation."""
     from app.market_lake.adjust import candles
     now = now or datetime.now(timezone.utc)
     from app.market_data.calendar import IST
@@ -125,21 +138,30 @@ async def etf_rows(session: AsyncSession, *, sessions: int = DEFAULT_SESSIONS, n
         .order_by(SecurityRecord.symbol).limit(MAX_ETFS)))
     start = now - timedelta(days=HISTORY_DAYS)
     index_cache: Dict[str, pd.DataFrame] = {}
-    out: List[EtfRow] = []
+    out: List[EtfHistory] = []
     for sec in etfs:
-        row = EtfRow(sec.symbol, sec.name, sec.underlying)
-        etf = _closes(await candles(session, f"NSE:{sec.symbol}", DAILY, start, now, symbol=sec.symbol, exchange="NSE", adjusted=True,
-                                    as_of=now))
+        frame = _closes(await candles(session, f"NSE:{sec.symbol}", DAILY, start, now, symbol=sec.symbol, exchange="NSE", adjusted=True,
+                                      as_of=now))
+        index_key: Optional[str] = None
         index: Optional[pd.DataFrame] = None
         for key in index_keys(sec.underlying):
             if key not in index_cache:
                 index_cache[key] = _closes(await candles(session, key, DAILY, start, now, symbol=key, exchange="NSE", kind="INDEX",
                                                          adjusted=False, as_of=now))
             if not index_cache[key].empty:
-                row.index_key, index = key, index_cache[key]
+                index_key, index = key, index_cache[key]
                 break
-        out.append(measure(row, etf, index, sessions))
+        out.append(EtfHistory(sec.symbol, sec.name, sec.underlying, frame, index_key, index))
     return out
+
+
+def rows_from(history: List[EtfHistory], sessions: int) -> List[EtfRow]:
+    """The rows for a window of `sessions` (pure and cheap: the loaded closes, measured)."""
+    return [measure(EtfRow(h.symbol, h.name, h.underlying, index_key=h.index_key), h.etf, h.index, sessions) for h in history]
+
+
+async def etf_rows(session: AsyncSession, *, sessions: int = DEFAULT_SESSIONS, now: Optional[datetime] = None) -> List[EtfRow]:
+    return rows_from(await load(session, now=now), sessions)
 
 
 def screen(rows: List[EtfRow], *, min_traded_value: float = 0.0, query: str = "", max_abs_tracking: Optional[float] = None,

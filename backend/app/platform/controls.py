@@ -190,6 +190,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
     # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
     # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
+    # U8 EV3 (docs/design/EVIDENCE_CHARTS.md): on top of `evidence_charts` - option-chain conditions draw the chain's OI
+    # walls / max pain, every pack carries the multi-timeframe trend strip, and a pack can be replayed bar by bar from the
+    # shared lake. OFF: packs as before, the replay route answers 404. Informational only.
+    "evidence_context": "Evidence context: option-chain OI walls on evidence charts, the W / D / 1H trend strip and bar-by-bar replay (informational, places no orders)",
     "evidence_charts": "Evidence charts: each screen match drawn with only the screen's own conditions, a verify strip with the engine's numbers, and the image on Telegram (informational, places no orders)",
     # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
@@ -275,7 +279,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

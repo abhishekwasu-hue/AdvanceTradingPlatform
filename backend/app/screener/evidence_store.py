@@ -39,6 +39,15 @@ MAX_PER_TENANT_DAY = 500           # evidence rows an organisation stores per IS
 IMAGES_PER_ALERT = 3
 
 
+CONTEXT_FLAG = "evidence_context"     # U8 EV3: option-chain drawables, the multi-timeframe strip, replay
+
+
+async def context_enabled(session: AsyncSession, tenant_id: Optional[int]) -> bool:
+    """EV3 for this organisation (off by default): packs built with the chain drawables and the trend strip."""
+    from app.platform.controls import flag_enabled
+    return bool(await flag_enabled(session, CONTEXT_FLAG, tenant_id))
+
+
 async def enabled(session: AsyncSession, tenant_id: Optional[int]) -> bool:
     from app.platform.controls import flag_enabled
     return await flag_enabled(session, FLAG, tenant_id)
@@ -92,8 +101,9 @@ async def store_for_run(session: AsyncSession, *, tenant_id: int, user_id: Optio
         if not chosen or limit <= 0:
             return {}
         # the cross-sectional ranks need the whole universe; the packs are built for the matched symbols only
+        context = await context_enabled(session, tenant_id)
         packs = await asyncio.to_thread(_build_for, ast, validated, universe, chosen, base_tf, params, exchange, data_source, run_id,
-                                        screen_name, limit)
+                                        screen_name, limit, context)
         rows = [_record(p, tenant_id=tenant_id, user_id=user_id, run_id=run_id, per_user=per_user) for p in packs.values()]
         async with session.begin_nested():               # a failed insert rolls back the packs only, never the run
             for row in rows:
@@ -106,7 +116,8 @@ async def store_for_run(session: AsyncSession, *, tenant_id: int, user_id: Optio
 
 
 def _build_for(ast: Any, validated: Any, universe: List[Any], chosen: List[Any], base_tf: str, params: Dict[str, Any], exchange: str,
-               data_source: Optional[str], run_id: Optional[int], screen_name: Optional[str], limit: int) -> Dict[str, Dict[str, Any]]:
+               data_source: Optional[str], run_id: Optional[int], screen_name: Optional[str], limit: int,
+               context: bool = False) -> Dict[str, Dict[str, Any]]:
     from app.screener.runtime import _cross_sectional
     constants = _cross_sectional(ast, universe, base_tf, params) if getattr(validated, "cross_sectional", False) else {}
     out: Dict[str, Dict[str, Any]] = {}
@@ -114,7 +125,7 @@ def _build_for(ast: Any, validated: Any, universe: List[Any], chosen: List[Any],
         try:
             out[data.symbol] = ev.build_pack(ast, validated, data, base_tf=base_tf, params=params, debug=True,
                                              constants=constants.get(data.symbol), exchange=exchange, data_source=data_source,
-                                             run_id=run_id, screen_name=screen_name)
+                                             run_id=run_id, screen_name=screen_name, context=context)
         except Exception as exc:  # noqa: BLE001
             logger.warning("Evidence pack not built for %s: %s", data.symbol, exc.__class__.__name__)
     return out
@@ -139,8 +150,9 @@ async def store_for_events(session: AsyncSession, rule: Any, events: List[Tuple[
         name = None
         if getattr(rule, "name", None):
             name = str(rule.name)
+        context = await context_enabled(session, rule.tenant_id)
         packs = await asyncio.to_thread(_build_for, ast, validated, universe, chosen, rule.base_tf, params, rule.exchange or "NSE",
-                                        data_source, None, name, limit)
+                                        data_source, None, name, limit, context)
         rows = []
         for event, data in events:
             pack = packs.get(data.symbol)

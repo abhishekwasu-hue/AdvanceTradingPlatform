@@ -179,6 +179,10 @@ async def _send(session: AsyncSession, rule: AlertRuleRecord, events: List[Alert
                           .values(priority=rule.priority, group_id=group_id, digest_bucket=bucket).execution_options(synchronize_session=False))
     from app.alerts.links import add_linked_delivery                    # S3b-2: the rule creator's own linked Telegram chat
     await add_linked_delivery(session, rule.tenant_id, note.id, rule.created_by, priority=rule.priority, group_id=group_id, digest_bucket=bucket)
+    # BYOK-V3: queue the rule creator's Vision audit of this alert (flag vision_byok, their own key, comment only). A DB
+    # row in a savepoint that never raises - the alert and its deliveries never depend on it.
+    from app.ai import vision_audit
+    await vision_audit.enqueue_for_scan_alert(session, rule, note, events, now=now)
     for e in events:
         e.status, e.reason_code, e.group_id, e.notification_id, e.sent_at = "sent", None, group_id, note.id, now
     return note

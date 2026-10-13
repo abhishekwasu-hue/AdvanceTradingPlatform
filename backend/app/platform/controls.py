@@ -274,7 +274,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
     # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information
     # only: nothing sizes, places or closes an order.
-    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, and a what-if for your own open positions (price, IV, days forward; information only)",
+    # N2-4: also the exposure view (own positions by underlying and sector, beta, correlated pairs, from the daily lake)
+    # and the expected-move cone on the chart.
+    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, what-if for your own open positions, exposure and correlation view, expected-move cone on the chart (information only)",
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",

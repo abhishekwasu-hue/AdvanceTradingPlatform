@@ -12,6 +12,7 @@ import { ReplayBar } from "../charting/ReplayBar";
 import { TradesLayer } from "../charting/TradesLayer";
 import { layerTf } from "../charting/priceAction";
 import { REPLAY_OFF, parseCandleTime, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
+import ExpectedMoveLayer from "../progression/ExpectedMoveLayer";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -54,6 +55,12 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const lastClose = shown.length ? shown[shown.length - 1].close : null;
   const candleTimes = useMemo(() => shown.map((c) => Math.floor(parseCandleTime(c.timestamp) / 1000)), [shown]);
   const candleCloses = useMemo(() => shown.map((c) => c.close), [shown]);
+  // N2-4: the expected-move cone (flag decision_tools; the toggle shows only when the organisation has it)
+  const [decisionTools, setDecisionTools] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    api.myFeatures().then((f) => setDecisionTools(Boolean(f.decision_tools))).catch(() => setDecisionTools(false));
+  }, [user]);
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
@@ -91,6 +98,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
                                           candleTimes={candleTimes} closes={candleCloses} /></div>
       {/* Z7a-3: stored market zones (flag market_zones; nothing shows while it is off) - in replay, as of the replay bar */}
       <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} at={at} /></div>
+      <div className="mt-2"><ExpectedMoveLayer engine={engine} instrument={`${exchange}:${symbol}`} enabled={decisionTools} /></div>
     </div>
   );
 }

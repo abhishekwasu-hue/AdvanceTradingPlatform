@@ -204,26 +204,65 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    "scan_then": "Scan Then (N1 U4 X1): after a scan alert matches, the level gate watches the symbol at its market zones and a confirmed setup is sent as a notification or a PAPER entry proposal (never an order; needs execution_core)",
+    # CH5 (docs/design/CHARTING.md): the multi-chart workspace - 1/2/4/6/8 charts, symbol / interval / crosshair link
+    # groups, saved layouts per user, keyboard shortcuts, chart types. OFF: /api/charts/layouts answers 503 and the
+    # workspace is not offered. Charts only; nothing places an order.
+    "chart_workspace": "Multi-chart workspace: 1/2/4/6/8 linked charts, saved layouts, shortcuts and chart types (places no orders)",
     "execution_core": "Execution core (N1 E1): entry intents from scans are queued and routed by one policy to a notification or a PAPER entry proposal (never a broker order)",
     # N2-1 (P1 spec 1.4 / 1.5, docs/design/N2_P1FGH.md): the progression ladder's discipline-score criterion (from the Z6
     # journal, when `discipline_engine` is on too) and the user's own figures on the ladder card - expectancy, profit
     # factor, payoff ratio, a Kelly reference and a risk-of-ruin bound from their own closed PAPER trades. OFF: the ladder
     # answers exactly as before. Information only: never used for sizing, never a recommendation.
     "ladder_evidence": "Ladder evidence: the discipline-score criterion and your own figures (expectancy, profit factor, Kelly reference, risk-of-ruin bound) on the PAPER ladder card (information only)",
+    # N2-2 (P1 spec 1.4, docs/design/N2_P1FGH.md): experience levels from the user's own PAPER record (Beginner /
+    # Intermediate / Advanced) gate new futures entries (Intermediate) and naked short options (Advanced), single-leg and
+    # structures; an explicit opt-out with a reason lifts one gate for that IST day, logged and counted. Exits are never
+    # gated. OFF: nothing is gated and /api/paper/experience answers 404.
+    "experience_levels": "Experience levels: futures and naked short option entries open with your PAPER record; a logged, counted opt-out lifts a gate for the day (exits never gated)",
     # N4 CH3 (docs/design/CHARTING.md): the price-action chart layer - causal swings, legs, real breaks, swing levels and
     # the Dow trend per degree from the shared lake bars as of a time, with toggles, a debug mode and bar replay that
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart
     # shows no layer. Reference only - places no orders.
+    # N3 S6a: screen history - who passed a daily screen on a past date (point in time: bars closed by then, index
+    # membership as of then, delisted names included) and screen fitness (forward returns of its matches against the
+    # universe, deflated through the research trial ledger). Shared end-of-day lake bars only. OFF: the routes answer 503.
+    "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",
+    # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices
+    # in one), beta to NIFTY 50 from the lake's Daily closes, and the one-sided direction warning. OFF:
+    # GET /api/portfolio/risk answers 503. Read-only: it refuses nothing and places no orders.
+    "portfolio_risk": "Portfolio risk view of the user's own PAPER book: exposure, open risk by sector bucket, beta to NIFTY 50, one-sided warning (read-only)",
+    # N1 F2: the user's own portfolio caps (max exposure in one sector bucket, max open risk at the stops in one
+    # bucket, max open positions; each 0 = no limit, set in the PAPER risk settings) refuse new PAPER entries before a
+    # proposal and at Approve. Acts only while portfolio_risk is on too. Exits are never refused (ADR-0004).
+    "portfolio_risk_caps": "Portfolio caps on new PAPER entries: sector exposure, open risk per bucket, open positions (entries only; exits never refused)",
+    # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
+    # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
+    # answers 503 and the chart shows no study panel. Reference only - places no orders.
+    "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # N2-3 (P1 spec 1.5, docs/design/N2_P1FGH.md): decision tools - the risk-of-ruin / Kelly calculator on typed inputs
+    # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
+    # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information
+    # only: nothing sizes, places or closes an order.
+    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, and a what-if for your own open positions (price, IV, days forward; information only)",
+    # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
+    # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
+    "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
+    # S10 (SCREENER_SPEC §5 S10, Phase 0 slice): the ETF screen (J) - NSE ETFs from the shared end-of-day history with
+    # traded value and the tracking difference against the index each tracks. OFF: GET /api/screener/etf answers 503 and
+    # the Screener page shows no ETF button. Information only, no recommendation, places no orders.
+    "screener_etf": "ETF screen: NSE ETFs with traded value and tracking difference against their index, from the shared end-of-day history (information only)",
+    # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
+    # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
+    "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "screener_breakouts_bk3", "screener_breakouts_bk4",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_breakouts_bk4"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

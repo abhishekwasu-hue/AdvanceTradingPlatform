@@ -10,7 +10,8 @@ never does - tests that exercise them turn the flag on and serve the responses t
 
 Feature flags and platform-wide (tenant_id NULL) market events live in the one in-memory database every
 test module shares. A module that switches `news_feed` on, or seeds a global RBI event dated today, must
-not decide what the next module sees: both are reset after every module.
+not decide what the next module sees: both are reset after every module. So are positions a module left open - the
+worker's exits sweep covers every open position, with or without a deployment.
 """
 import os
 
@@ -32,9 +33,11 @@ def _platform_state_reset_per_module():
     yield
     import asyncio
 
-    from sqlalchemy import delete
+    from datetime import datetime, timezone
 
-    from app.db.models import MarketEventRecord
+    from sqlalchemy import delete, update
+
+    from app.db.models import MarketEventRecord, TradeRecord
     from app.journal import capture
     from app.platform import controls
     from tests.test_auth_api import _session_factory
@@ -43,6 +46,11 @@ def _platform_state_reset_per_module():
         async with _session_factory() as session:
             await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": {}}, None)
             await session.execute(delete(MarketEventRecord).where(MarketEventRecord.tenant_id.is_(None)))
+            # The worker sweeps every open position, deployment or not (ADR-0004): a position a module left open would be
+            # priced and closed by the next module's worker cycles. Each module starts with none open.
+            await session.execute(update(TradeRecord).where(TradeRecord.exit_time.is_(None))
+                                  .values(exit_time=datetime.now(timezone.utc), exit_price=TradeRecord.entry_price, pnl=0.0,
+                                          exit_reason="test isolation: left open by an earlier module"))
             await session.commit()
     try:
         asyncio.run(reset())
@@ -51,4 +59,26 @@ def _platform_state_reset_per_module():
     capture.reset_flag_cache()   # Z6: the journal hooks cache the flags they just saw reset
     from app.platform import phase0_lock
     phase0_lock.reset_cache()    # Z10-c: the broker chokepoint reads the lock state the last flag read left
+
+
+@pytest.fixture
+def no_open_positions_from_earlier_tests():
+    """For modules whose worker tests count what one cycle closed: the exits sweep covers every open position, deployment
+    or not (ADR-0004), so positions an earlier test of the same module left open are closed before this test starts."""
+    import asyncio
+    from datetime import datetime, timezone
+
+    from sqlalchemy import update
+
+    from app.db.models import TradeRecord
+    from tests.test_auth_api import _session_factory
+
+    async def close_leftovers():
+        async with _session_factory() as session:
+            await session.execute(update(TradeRecord).where(TradeRecord.exit_time.is_(None))
+                                  .values(exit_time=datetime.now(timezone.utc), exit_price=TradeRecord.entry_price, pnl=0.0,
+                                          exit_reason="test isolation: left open by an earlier test"))
+            await session.commit()
+    asyncio.run(close_leftovers())
+    yield
 

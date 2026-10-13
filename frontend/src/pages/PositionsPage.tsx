@@ -1,13 +1,18 @@
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ContractNoteCard from "../components/ContractNoteCard";
 import PaperAccountCard from "../components/PaperAccountCard";
+import DecisionToolsCard from "../progression/DecisionToolsCard";
+import ExperienceCard from "../progression/ExperienceCard";
 import PaperTicketCard from "../components/PaperTicketCard";
 import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
 import { PageHeader } from "../components/primitives";
+
+// N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
+const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
 
 export default function PositionsPage() {
   const { user, loading: authLoading } = useAuth();
@@ -22,6 +27,7 @@ export default function PositionsPage() {
   const [greeksBusy, setGreeksBusy] = useState(false);
   // Z3: "Exit now" exists only with approval-only entries or the PAPER account on (otherwise exits run automatically).
   const [exitNowOn, setExitNowOn] = useState(false);
+  const [portfolioRiskOn, setPortfolioRiskOn] = useState(false);
 
   async function loadGreeks() {
     setGreeksBusy(true); setGreeksError(null);
@@ -48,7 +54,10 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!user) return;
     refresh();
-    api.myFeatures().then((f) => setExitNowOn(Boolean(f.approval_only_entries || f.paper_account))).catch(() => setExitNowOn(false));
+    api.myFeatures().then((f) => {
+      setExitNowOn(Boolean(f.approval_only_entries || f.paper_account));
+      setPortfolioRiskOn(Boolean(f.portfolio_risk));
+    }).catch(() => { setExitNowOn(false); setPortfolioRiskOn(false); });
   }, [user]);
 
   async function handleMarkPrice(tradeId: number) {
@@ -111,6 +120,9 @@ export default function PositionsPage() {
       {loading && <div className="text-sm text-fg-muted">Loading…</div>}
 
       <PaperAccountCard canTrade={user.role !== "VIEWER"} />
+      <ExperienceCard canTrade={user.role !== "VIEWER"} />
+      {portfolioRiskOn && <Suspense fallback={null}><PortfolioRiskCard /></Suspense>}
+      <DecisionToolsCard />
       <PaperTicketCard canTrade={user.role !== "VIEWER"} onPlaced={refresh} />
 
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">

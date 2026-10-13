@@ -8,7 +8,8 @@ Classes (the sweep checks each against the route's dependencies and with real re
 - "admin"          SUPER_ADMIN only (a tenant OWNER gets 403);
 - "owner"          the organisation's OWNER (team:manage); a plain member and a VIEWER get 403;
 - "trader"         a write that needs a trading role and scope; a VIEWER and a member denied every scope get 403;
-- "member"         a read by any logged-in member of the organisation;
+- "member"         a read by any logged-in member of the organisation; "member: <why>" names a read that returns only the
+                   caller's own rows (never another member's, BT1b);
 - "self: <why>"    a write any member may make, because it touches only the caller's own data or computes and stores
                    nothing (a VIEWER may do it).
 Every route except "public" refuses an anonymous request, and none lets another organisation read or change this
@@ -25,9 +26,11 @@ P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
 P_BROKER_CATALOGUE = "public: the broker catalogue"
 P_PARSE_ONLY = "public: parses the strategy text in the request; stores nothing"
-P_FUNDAMENTALS = "public: shared market reference data and computations over it (no organisation data)"
+P_FUNDAMENTALS = ("public: shared market reference data and computations over it; a logged-in caller also reads its own organisation's "
+                  "contributed rows, never another organisation's (app/fundamentals/visibility.py)")
 P_INSTRUMENTS = "public: the instrument catalogue"
-P_NEWS_EVENTS = "public: shared cited news events (reference data)"
+P_NEWS_EVENTS = ("public: the shared news feed; a logged-in caller also reads its own organisation's manual entries, never "
+                 "another organisation's (app/fundamentals/visibility.py)")
 P_API_DOCS = "public: public API documentation"
 P_API_SCOPES = "public: public API scope catalogue"
 P_PWA = "public: PWA install/update counters only (rate limited)"
@@ -41,6 +44,8 @@ P_UNSUBSCRIBE = "public: signed one-click unsubscribe link"
 P_REGIMES = "public: the market regime catalogue"
 P_LEGAL = "public: the Privacy notice, Terms of use and Risk disclosure - the sign-up form links them before an account exists"
 P_STATUS_PAGE = "public: the public status page (component states and the incident banner only; rate limited)"
+M_OWN_TAX = ("member: the caller's own closed trades only (tenant and user) - a member never sees another member's trades and "
+             "the organisation owner sees only their own (BT1b; tests/test_tax_report_own.py)")
 S_OWN_LEGAL = "self: records the caller's own acceptance of the legal documents' current versions"
 S_SUPPORT = "self: the support bot answers how-to questions from the docs; no tools, reads no positions or orders (rate limited)"
 S_OWN_ACCOUNT = "self: the caller's own account, sessions and two-factor settings"
@@ -52,6 +57,7 @@ S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
 S_COPILOT = "self: a Copilot read or research run for the caller: read-only tools, no order, no other member's data changes"
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
+S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
@@ -61,6 +67,7 @@ S_OWN_VERDICTS = "self: the caller's own verdicts on feed items"
 S_PREVIEW = "self: previews the contract a deployment would trade; stores nothing"
 S_OWN_MARKET_DATA = ("self: reads candles / option chains through a broker session - the organisation's (its budget) or, with the "
                      "bring-your-own-broker tier on, the caller's own; nothing is stored; rate limited per user")
+S_OWN_WHATIF = "self: models the caller's OWN open positions at the spot and IVs in the request; stores nothing, changes no order"
 S_COMPUTE = "self: computes over the request body or the organisation's data and returns it; stores nothing"
 S_OWN_EVIDENCE_TELEGRAM = ("self: sends the caller's OWN evidence image (a pack whose user is the caller) to the caller's own linked "
                            "private Telegram chat; stores nothing, never another member's pack or chat (rate limited)")
@@ -200,6 +207,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/alerts/rules"): "trader",
     ("GET", "/api/alerts/rules/{rule_id}/events"): "member",
     ("POST", "/api/alerts/rules/{rule_id}/{action}"): "trader",
+    ("GET", "/api/alerts/rules/{rule_id}/then"): "member",
+    ("PUT", "/api/alerts/rules/{rule_id}/then"): "trader",
+    ("DELETE", "/api/alerts/rules/{rule_id}/then"): "trader",
+    ("GET", "/api/alerts/rules/{rule_id}/then/intents"): "member",
+    ("GET", "/api/alerts/then"): "member",                   # review of X1b: every Then of the rules the caller sees, one read
     ("DELETE", "/api/alerts/telegram/link"): S_OWN_TELEGRAM,
     ("GET", "/api/alerts/telegram/link"): "member",
     ("POST", "/api/alerts/telegram/link-code"): S_OWN_TELEGRAM,
@@ -273,7 +285,12 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("PUT", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("POST", "/api/charts/drawings/{drawing_id}/lock"): S_OWN_DRAWINGS,
+    ("GET", "/api/charts/layouts"): "member",                   # CH5: the caller's own saved workspace layouts
+    ("POST", "/api/charts/layouts"): S_OWN_LAYOUTS,
+    ("PUT", "/api/charts/layouts/{layout_id}"): S_OWN_LAYOUTS,
+    ("DELETE", "/api/charts/layouts/{layout_id}"): S_OWN_LAYOUTS,
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
+    ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
     ("GET", "/api/compliance/golive"): "admin",
     ("PUT", "/api/compliance/golive/evidence"): "admin",
@@ -290,6 +307,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/custom-strategies/{strategy_id}"): "trader",
     ("GET", "/api/custom-strategies/{strategy_id}/versions"): "member",
     ("POST", "/api/custom-strategies/{strategy_id}/versions/{version_number}/rollback"): "trader",
+    ("GET", "/api/decision/positions"): "member",
+    ("POST", "/api/decision/ruin"): S_COMPUTE,
+    ("POST", "/api/decision/what-if"): S_OWN_WHATIF,
     ("GET", "/api/deployments"): "member",
     ("POST", "/api/deployments"): "trader",
     ("POST", "/api/deployments/preview-contract"): S_PREVIEW,
@@ -438,6 +458,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/orders"): "member",
     ("GET", "/api/orders/{order_id}/events"): "member",
     ("GET", "/api/paper/account"): "member",
+    ("GET", "/api/paper/experience"): "member",
+    ("POST", "/api/paper/experience/opt-out"): "trader",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",
     ("POST", "/api/paper/pause"): "trader",
@@ -448,6 +470,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/ticket"): "trader",
     ("POST", "/api/paper/ticket/preview"): "trader",
     ("GET", "/api/portfolio/exposure"): "member",
+    ("GET", "/api/portfolio/risk"): "member",               # N1 F1: the caller's own PAPER book only
     ("GET", "/api/positions"): "member",
     ("GET", "/api/positions/greeks"): "member",
     ("POST", "/api/positions/{trade_id}/exit-now"): "trader",
@@ -500,6 +523,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/legends/{card_id}"): "member",
     ("GET", "/api/screener/registry"): "member",
     ("POST", "/api/screener/run"): "trader",
+    ("POST", "/api/screener/history/asof"): "trader",        # N3 S6a: shared lake bars; the caller's own screens only
+    ("POST", "/api/screener/history/fitness"): "trader",     # N3 S6a: writes one trial to the caller's organisation's ledger
     ("GET", "/api/screener/runs/{run_id}"): "member",
     ("GET", "/api/screener/screens"): "member",
     ("POST", "/api/screener/screens"): "trader",
@@ -507,6 +532,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/screens/{screen_id}/archive"): "trader",
     ("GET", "/api/screener/taxonomy"): "member",
     ("POST", "/api/screener/validate"): S_COMPUTE,
+    ("GET", "/api/screener/etf"): "member",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
@@ -526,9 +552,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/system/ready"): P_HEALTH,
     ("GET", "/api/system/status"): P_HEALTH,
     ("GET", "/api/system/worker-status"): "member",
-    ("GET", "/api/tax/report"): "member",
-    ("GET", "/api/tax/report.csv"): "member",
-    ("GET", "/api/tax/years"): "member",
+    ("GET", "/api/tax/report"): M_OWN_TAX,
+    ("GET", "/api/tax/report.csv"): M_OWN_TAX,
+    ("GET", "/api/tax/years"): M_OWN_TAX,
     ("GET", "/api/team/invites"): "owner",
     ("POST", "/api/team/invites"): "owner",
     ("DELETE", "/api/team/invites/{invite_id}"): "owner",

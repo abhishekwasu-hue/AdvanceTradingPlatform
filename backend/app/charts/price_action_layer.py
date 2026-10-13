@@ -33,8 +33,9 @@ import hashlib
 import json
 import time
 from collections import OrderedDict
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Literal, Optional, Sequence, Tuple
+from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -73,6 +74,7 @@ MAX_BREAK_PIVOTS = 40                 # the newest confirmed pivots per degree w
 MAX_LEVELS_PER_SIDE = 3               # unbroken swing levels drawn above and below the last close (debug: all)
 CONCEPTS = ("swings", "legs", "structure", "liquidity", "trendlines", "breaks", "levels", "trend")
 FETCH_PARTITION = 5000
+FRAME_COLS = ["timestamp", "bar_end", "open", "high", "low", "close", "volume"]
 # Provenance (BT1b, data terms): only sources licensed for every organisation are read, in this preference order -
 # NSE bhavcopy (HB1), a market-data vendor, the operator's history import into the shared lake (HB0). Never
 # `stream:<broker>` / `broker:<name>` rows: those were recorded through one organisation's own broker session.
@@ -85,7 +87,9 @@ CACHE_SIZE = 128
 CACHE_MAX_BYTES = 32 * 1024 * 1024    # the layer cache holds at most this much JSON (debug answers are never cached)
 MTF_CACHE_SECONDS = 600.0             # a top-down row is keyed by its own data (see `_mtf_key`), so it can live longer
 MTF_CACHE_SIZE = 512
-BUILD_CONCURRENCY = 2                 # layer / top-down computations at once per process (the rest wait their turn)
+BUILD_CONCURRENCY = 2                 # layer / top-down / study computations at once per process (the rest wait their turn)
+SLOT_WAIT_SECONDS = 2.0               # the longest a request waits for its build slot, then 503 "busy, retry"
+BUSY_RETRY_AFTER = 2                  # seconds, the Retry-After of that 503
 rate_limited = user_rate_limit("chart_price_action", limit=60, window_seconds=60)    # replay Play asks once a second
 
 
@@ -317,17 +321,18 @@ def _to_frame(rows: List[RowTuple], tf: str, key: str, end: datetime, rebuild: b
     else:
         df = job.raw_frame(rows, tf, sess)
     if not len(df):
-        return pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"])
+        return pd.DataFrame(columns=FRAME_COLS)
     df = df.rename(columns={"close_at": "bar_end"})
     df = df[pd.to_datetime(df["bar_end"], utc=True) <= pd.Timestamp(end)]       # closed by `end`, whatever the source
-    return df[["timestamp", "bar_end", "open", "high", "low", "close"]].reset_index(drop=True)
+    return df[["timestamp", "bar_end", "open", "high", "low", "close", "volume"]].reset_index(drop=True)
 
 
-async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime) -> Tuple[pd.DataFrame, Optional[str]]:
+async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, end: datetime,
+                     max_bars: Optional[int] = None) -> Tuple[pd.DataFrame, Optional[str]]:
     """The lake's own `tf` bars, else `tf` rebuilt from its 1-minute bars (intraday) or, weekly, from its daily bars.
-    (frame, source label)."""
+    (frame, source label). `max_bars` (CH6 studies): the row cap's bar count, MAX_BARS by default."""
     for label in LAKE_LABELS[tf]:
-        rows = await _fetch(session, key, label, start, end, MAX_BARS * ROWS_PER_BAR)
+        rows = await _fetch(session, key, label, start, end, (max_bars or MAX_BARS) * ROWS_PER_BAR)
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, False), f"lake:{label}"
     if tf == "1w":
@@ -336,10 +341,10 @@ async def load_frame(session: AsyncSession, key: str, tf: str, start: datetime, 
     if tf in INTRADAY_MINUTES and tf != "1m":
         if end - start > timedelta(days=REBUILD_MAX_DAYS) and await _has_rows(session, key, "1m", start, end):
             raise WindowTooLarge(f"{tf} is rebuilt from 1-minute bars for at most {REBUILD_MAX_DAYS} days; choose a later `start`")
-        rows = await _fetch(session, key, "1m", start, end, MAX_BARS * INTRADAY_MINUTES[tf] * ROWS_PER_BAR)
+        rows = await _fetch(session, key, "1m", start, end, (max_bars or MAX_BARS) * INTRADAY_MINUTES[tf] * ROWS_PER_BAR)
         if rows:
             return await asyncio.to_thread(_to_frame, rows, tf, key, end, True), "lake:1m"
-    return pd.DataFrame(columns=["timestamp", "bar_end", "open", "high", "low", "close"]), None
+    return pd.DataFrame(columns=FRAME_COLS), None
 
 
 def build(frame: pd.DataFrame, tf: str, degree: int, debug: bool, mtf: Optional[Sequence[Dict[str, Any]]] = None) -> Dict[str, Any]:
@@ -348,6 +353,10 @@ def build(frame: pd.DataFrame, tf: str, degree: int, debug: bool, mtf: Optional[
     content["mtf"] = list(mtf or [])
     content["fingerprint"] = fingerprint(content)
     return content
+
+
+def _build_with_mtf(frame: pd.DataFrame, tf: str, degree: int, debug: bool, items: Optional[Sequence[MtfItem]]) -> Dict[str, Any]:
+    return build(frame, tf, degree, debug, mtf_build(items) if items is not None else None)
 
 
 def _anchor(t: datetime, days: int) -> datetime:
@@ -382,6 +391,7 @@ async def _mtf_key(session: AsyncSession, key: str, tf: str, start: datetime, en
 
 _MTF_CACHE: "OrderedDict[tuple, Tuple[float, Dict[str, Any]]]" = OrderedDict()
 _SLOTS: Dict[int, asyncio.Semaphore] = {}
+_USER_LOCKS: Dict[int, Dict[Any, Tuple[asyncio.Lock, int]]] = {}
 
 
 def _slots() -> asyncio.Semaphore:
@@ -392,23 +402,90 @@ def _slots() -> asyncio.Semaphore:
     return _SLOTS[loop_id]
 
 
-async def _in_slot(fn: Any, *args: Any) -> Any:
-    async with _slots():
-        return await asyncio.to_thread(fn, *args)
+def _busy(why: str) -> HTTPException:
+    return HTTPException(status_code=503, detail=f"busy, retry: {why}", headers={"Retry-After": str(BUSY_RETRY_AFTER)})
 
 
-async def mtf_rows(session: AsyncSession, key: str, when: datetime, daily: Optional[Tuple[datetime, pd.DataFrame, Optional[str]]] = None) -> List[Dict[str, Any]]:
-    """The top-down rows (W / D / 1H / 15m) as of `when`, each from its own bars - cached per (instrument, timeframe,
-    window start, last closed bar and its probe), so a replay step recomputes only the rows whose bars changed.
-    `daily`: (start, frame, source) of daily bars this request already read (tf=1d), reused for D and W."""
-    out: List[Dict[str, Any]] = []
+@asynccontextmanager
+async def build_slot(session: Optional[AsyncSession], owner: Any) -> AsyncIterator[None]:
+    """A build slot for one computation (the layer, the top-down rows, chart studies), taken AFTER the request has read
+    its bars (CH6a re-review MED):
+    * the request's DB session is closed first, so its pooled connection is back in the pool while it waits and builds;
+    * one build in flight per user (`owner`): a user's next request waits for the previous one;
+    * at most BUILD_CONCURRENCY builds per process;
+    * the whole wait is bounded by SLOT_WAIT_SECONDS; past it the request is answered 503 "busy, retry" with Retry-After.
+    Nothing read from the session may be used lazily after this (its objects are detached, already loaded)."""
+    if owner is None:
+        raise ValueError("build_slot needs the owner (the user id): a shared 'None' lock would serialise every caller")
+    if session is not None:
+        await session.close()
+    loop_id = id(asyncio.get_running_loop())
+    locks = _USER_LOCKS.setdefault(loop_id, {})
+    lock, users = locks.get(owner, (asyncio.Lock(), 0))
+    locks[owner] = (lock, users + 1)
+    deadline = time.monotonic() + SLOT_WAIT_SECONDS
+    try:
+        try:
+            await asyncio.wait_for(lock.acquire(), timeout=SLOT_WAIT_SECONDS)
+        except asyncio.TimeoutError:
+            raise _busy("your previous chart computation is still running") from None
+        try:
+            sem = _slots()
+            try:
+                await asyncio.wait_for(sem.acquire(), timeout=max(0.01, deadline - time.monotonic()))
+            except asyncio.TimeoutError:
+                raise _busy("the chart computations are all in use") from None
+            try:
+                yield
+            finally:
+                sem.release()
+        finally:
+            lock.release()
+    finally:
+        lock_now, n = locks[owner]
+        if n <= 1:
+            del locks[owner]
+        else:
+            locks[owner] = (lock_now, n - 1)
+
+
+async def _in_slot(session: Optional[AsyncSession], owner: Any, fn: Any, *args: Any) -> Any:
+    """`fn(*args)` in a worker thread inside `build_slot` (the session is released first).
+    A worker thread cannot be stopped: when the request is cancelled (the client went away) the slot and the user's
+    lock stay held until the thread has finished, then the cancellation goes on (CH6a re-review LOW-1) - so the
+    number of builds actually running never exceeds BUILD_CONCURRENCY, nor one per user."""
+    async with build_slot(session, owner):
+        work = asyncio.ensure_future(asyncio.to_thread(fn, *args))
+        try:
+            return await asyncio.shield(work)
+        except asyncio.CancelledError:
+            while not work.done():
+                try:
+                    await asyncio.shield(work)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:  # noqa: BLE001 - the build's own failure no longer matters to a cancelled request
+                    break
+            raise
+
+
+MtfItem = Tuple[str, tuple, Optional[Dict[str, Any]], Optional[pd.DataFrame], Optional[str]]
+
+
+async def mtf_frames(session: AsyncSession, key: str, when: datetime,
+                     daily: Optional[Tuple[datetime, pd.DataFrame, Optional[str]]] = None) -> List[MtfItem]:
+    """The DB half of the top-down rows (W / D / 1H / 15m) as of `when`: per timeframe its cache key, and either the
+    row already known (a cache hit, or a refusal row) or the bars to build it from. No computation here, so the
+    connection is released before the build (`mtf_build`). `daily`: (start, frame, source) of daily bars this request
+    already read (tf=1d), reused for D and W."""
+    out: List[MtfItem] = []
     for t in PC.MTF_TFS:
         start = _anchor(when, MTF_DAYS[t])
         ck = await _mtf_key(session, key, t, start, when)
         hit = _MTF_CACHE.get(ck)
         if hit is not None and hit[0] >= time.monotonic():
             _MTF_CACHE.move_to_end(ck)
-            out.append(hit[1])
+            out.append((t, ck, hit[1], None, None))
             continue
         try:
             if ck[3] in ("1d", "day") and daily is not None and daily[0] <= start:
@@ -419,18 +496,43 @@ async def mtf_rows(session: AsyncSession, key: str, when: datetime, daily: Optio
             else:
                 f, src = await load_frame(session, key, t, start, when)
         except WindowTooLarge:
-            out.append(PC.mtf_row(None, t, "refused: window too large"))       # the row says so; the layer still answers
+            out.append((t, (), PC.mtf_row(None, t, "refused: window too large"), None, None))   # the row says so; the layer still answers
             continue
         if len(f) > MAX_BARS:
-            out.append(PC.mtf_row(None, t, f"refused: more than {MAX_BARS} bars"))   # refused, never cut
+            out.append((t, (), PC.mtf_row(None, t, f"refused: more than {MAX_BARS} bars"), None, None))   # refused, never cut
             continue
-        row = await _in_slot(PC.mtf_row, f if len(f) else None, t, src)
-        _MTF_CACHE[ck] = (time.monotonic() + MTF_CACHE_SECONDS, row)
-        _MTF_CACHE.move_to_end(ck)
-        while len(_MTF_CACHE) > MTF_CACHE_SIZE:
-            _MTF_CACHE.popitem(last=False)
-        out.append(row)
+        out.append((t, ck, None, f, src))
     return out
+
+
+def mtf_build(items: Sequence[MtfItem]) -> List[Dict[str, Any]]:
+    """The computing half (run in a build slot, pure): each missing row from its bars."""
+    return [row if row is not None else PC.mtf_row(f if f is not None and len(f) else None, t, src) for t, _ck, row, f, src in items]
+
+
+def mtf_remember(items: Sequence[MtfItem], rows: Sequence[Dict[str, Any]]) -> None:
+    """Keep the rows just built in the top-down cache (on the event loop, never from a worker thread) - keyed per
+    (instrument, timeframe, window start, last closed bar and its probe), so a replay step recomputes only the rows
+    whose bars changed."""
+    for (_t, ck, known, _f, _s), row in zip(items, rows):
+        if known is None and ck:
+            _MTF_CACHE[ck] = (time.monotonic() + MTF_CACHE_SECONDS, row)
+            _MTF_CACHE.move_to_end(ck)
+    while len(_MTF_CACHE) > MTF_CACHE_SIZE:
+        _MTF_CACHE.popitem(last=False)
+
+
+async def mtf_rows(session: AsyncSession, key: str, when: datetime, daily: Optional[Tuple[datetime, pd.DataFrame, Optional[str]]] = None,
+                   *, owner: Any) -> List[Dict[str, Any]]:
+    """Both halves: the bars read, the session released, the rows built in a slot (a caller that builds more in the
+    same request uses `mtf_frames` + `mtf_build` inside its own one slot). `owner` (the user id) is required: the
+    slot's per-user lock is keyed by it (re-review LOW-2)."""
+    items = await mtf_frames(session, key, when, daily)
+    if all(row is not None for _t, _ck, row, _f, _s in items):
+        return [row for _t, _ck, row, _f, _s in items if row is not None]
+    rows = await _in_slot(session, owner, mtf_build, items)
+    mtf_remember(items, rows)
+    return rows
 
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -485,6 +587,7 @@ async def price_action_layer(instrument: str = Query(..., min_length=1, max_leng
                              degree: int = Query(default=DEFAULT_DEGREE, ge=0, le=3), debug: bool = False, mtf: bool = True,
                              user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await require_flag(session, FLAG, user.tenant_id)
+    owner = user.id                                   # read now: the session is closed before the build
     from app.price_action.zones.store import normalise_key
     now = datetime.now(timezone.utc)
     at_utc, start_utc = _aware(at, "at"), _aware(start, "start")
@@ -520,12 +623,15 @@ async def price_action_layer(instrument: str = Query(..., min_length=1, max_leng
             raise HTTPException(status_code=422, detail=str(exc)) from None
         if len(frame) > MAX_BARS:
             raise HTTPException(status_code=422, detail=f"the window holds {len(frame)} bars, more than {MAX_BARS}; choose a later `start`")
-        panel = await mtf_rows(session, key, when, daily) if mtf else None
-        content = await _in_slot(build, frame, tf, degree, debug, panel)
+        items = await mtf_frames(session, key, when, daily) if mtf else None
+        # every bar is read: the session goes back to the pool before the wait for a build slot (CH6a re-review MED)
+        content = await _in_slot(session, owner, _build_with_mtf, frame, tf, degree, debug, items)
+        if items is not None:
+            mtf_remember(items, content["mtf"])
         hit = {"source": source, **content, "reason": None if len(frame) else NO_BARS}
         if not debug:
             _remember(cache_key, hit, len(canonical(hit)))
     return {**head, "instrument": key, **hit}
 
 
-__all__ = ["router", "FLAG", "compute_layer", "build", "load_frame", "mtf_rows", "canonical", "fingerprint"]
+__all__ = ["router", "FLAG", "compute_layer", "build", "build_slot", "load_frame", "mtf_rows", "mtf_frames", "mtf_build", "mtf_remember", "canonical", "fingerprint"]

@@ -83,6 +83,13 @@ def rate_limit(name: str, limit: int, window_seconds: float) -> Callable[[Reques
     return _check
 
 
+async def charge_user(name: str, user_id: int, limit: int, window_seconds: float, units: int) -> None:
+    """Counts `units` calls of a per-user limiter at once (a request that does the work of several calls - U9 TX2
+    review: a confluence of six screens is six screener runs); 429 when they do not fit in the window."""
+    if not await allow(name, f"u{user_id}", limit, window_seconds, max(1, int(units))):
+        raise _too_many()
+
+
 def user_rate_limit(name: str, limit: int, window_seconds: float) -> Callable[..., Awaitable[None]]:
     """Per logged-in user; the dependency resolves the user itself so it composes with any route."""
     from app.auth.dependencies import get_current_user

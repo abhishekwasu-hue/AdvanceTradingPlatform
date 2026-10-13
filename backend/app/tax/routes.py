@@ -1,5 +1,8 @@
 """Phase P2: `GET /api/tax/years`, `GET /api/tax/report?fy=2026-27&mode=LIVE|PAPER|ALL`, `GET /api/tax/report.csv`.
 
+Every route reads only the caller's own trades (fix, BT1b): a member never sees another member's trades, and the
+organisation owner sees their own.
+
 Both report routes take an optional `turnover_method` (ABS_PNL | ABS_PNL_PLUS_PREMIUM); omitted = the configured
 `TAX_FNO_TURNOVER_METHOD`. The report names the method it used."""
 from datetime import datetime
@@ -33,13 +36,13 @@ async def _build(session: AsyncSession, user: User, fy: Optional[str], mode: str
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     selected = _mode(mode)
-    trades = await tax.closed_trades(session, user.tenant_id, fy, mode=selected)
+    trades = await tax.closed_trades(session, user.tenant_id, user.id, fy, mode=selected)
     return tax.build_report(trades, fy, mode=selected, method=method)
 
 
 @router.get("/years")
 async def years(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    return {"years": await tax.available_years(session, user.tenant_id), "current": tax.financial_year(datetime.now(IST).date())}
+    return {"years": await tax.available_years(session, user.tenant_id, user.id), "current": tax.financial_year(datetime.now(IST).date())}
 
 
 @router.get("/report")

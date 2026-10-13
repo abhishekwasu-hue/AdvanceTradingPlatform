@@ -215,6 +215,14 @@ function safeStorage(): Storage | null {
   try { return typeof window !== "undefined" ? window.localStorage : null; } catch { return null; }
 }
 
+/** CH6a re-review: the server's build slots are full ("busy, retry", 503 with Retry-After) - not the flag being off
+ * (503 with the feature header). The loaders try again after BUSY_RETRY_MS, a few times, while the question still stands. */
+export const BUSY_RETRY_MS = 2000;
+export const BUSY_RETRIES = 3;
+export function isBusy(e: unknown): boolean {
+  return e instanceof ApiError && e.status === 503 && e.detail.startsWith("busy, retry");
+}
+
 export interface PaQuery { instrument: string; tf: LayerTf; at: string | null; start: string | null; debug: boolean }
 /** What the chart shows: the layer (null while a request is out or after a failure - never an older answer), a failure
  * message, and whether the layer exists for this organisation (false: flag off, 503; null: not known yet). */
@@ -235,14 +243,17 @@ export class LayerLoader {
     const my = ++this.seq;
     this.emit({ layer: null, failed: null, available: q ? this.available : false });
     if (!q) return () => {};
-    this.fetchLayer(q).then(
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const attempt = (left: number) => this.fetchLayer(q).then(
       (r) => { if (my === this.seq) { this.available = true; this.emit({ layer: r, failed: null, available: true }); } },
       (e: unknown) => {
         if (my !== this.seq) return;
-        if (e instanceof ApiError && e.status === 503) { this.available = false; this.emit({ layer: null, failed: null, available: false }); return; }
+        if (isBusy(e) && left > 0) { timer = setTimeout(() => { if (my === this.seq) attempt(left - 1); }, BUSY_RETRY_MS); return; }
+        if (e instanceof ApiError && e.status === 503 && !isBusy(e)) { this.available = false; this.emit({ layer: null, failed: null, available: false }); return; }
         this.emit({ layer: null, failed: e instanceof Error ? e.message : "Price action could not be loaded.", available: this.available });
       },
     );
-    return () => { if (my === this.seq) this.seq++; };
+    attempt(BUSY_RETRIES);
+    return () => { if (timer) clearTimeout(timer); if (my === this.seq) this.seq++; };
   }
 }

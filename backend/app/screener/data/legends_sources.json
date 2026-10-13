@@ -84,7 +84,7 @@
    "authors": ["Laurence A. Connors", "Linda Bradford Raschke"],
    "year": 1995,
    "publisher": "M. Gordon Publishing Group",
-   "covers": "Short-term setups, including the ADX pullback to the 20-period exponential moving average (14-period ADX above 30 marking a strong trend, entry trigger above the high of the pullback bar).",
+   "covers": "Short-term setups, including the ADX pullback to the 20-period exponential moving average (14-period ADX above 30 marking a strong trend, entry trigger above the high of the pullback bar) and the false 20-day breakout reversal (a new 20-day low while the previous 20-day low is at least four sessions old, with an entry order just above that earlier low).",
    "review": "verified",
    "review_note": "WorldCat OCLC 36390149: M. Gordon Pub. Group, Malibu, Calif., 1995 (ISBN 0965046109). Open Library shows a 1996 date for the same ISBN; the catalogue's 1995 copyright date is kept.",
    "evidence": [
@@ -135,6 +135,51 @@
    "evidence": [
     "https://openlibrary.org/books/OL382546M/Long-term_secrets_to_short-term_trading",
     "https://catalogimages.wiley.com/images/db/pdf/0471297224.pdf"
+   ]
+  },
+  {
+   "id": "livermore_1940",
+   "kind": "book",
+   "title": "How to Trade in Stocks: The Livermore Formula for Combining Time Element and Price",
+   "authors": ["Jesse L. Livermore"],
+   "year": 1940,
+   "publisher": "Duell, Sloan and Pearce",
+   "covers": "Pivotal points: price levels whose decisive break, with an increase in volume, marks the start of a move; acting only once the market confirms; never averaging a losing position.",
+   "review": "unverified",
+   "review_note": "Title, author, 1940 and Duell, Sloan and Pearce (New York) agree across rare-book dealer listings and the VIAF name authority entry (Library of Congress / NACO), but no library catalogue record of the 1940 edition could be opened from here; to check against WorldCat or the Library of Congress catalogue.",
+   "evidence": [
+    "https://viaf.org/viaf/5718155/",
+    "https://www.baumanrarebooks.com/rare-books/livermore-jesse-l-/how-to-trade-in-stocks/78471.aspx"
+   ]
+  },
+  {
+   "id": "pruden_2007",
+   "kind": "book",
+   "title": "The Three Skills of Top Trading: Behavioral Systems Building, Pattern Recognition, and Mental State Management",
+   "authors": ["Hank Pruden"],
+   "year": 2007,
+   "publisher": "John Wiley & Sons",
+   "covers": "The Wyckoff method of technical analysis (chapters 5 to 7): trading ranges read as accumulation or distribution from price and volume, and the tests of supply, such as the spring below a range's support, before a markup.",
+   "review": "verified",
+   "review_note": "Wiley's product page (April 2007, ISBN 9780470050637, Wiley Trading series) and the MTSU library catalogue (Hoboken, N.J.: John Wiley & Sons, c2007; LC call number HG4529 .P78 2007). The table of contents names the Wyckoff chapters; the spring passage is for the legal review against a copy.",
+   "evidence": [
+    "https://gov.wiley.com/WileyCDA/WileyTitle/productCd-0470050632.html",
+    "https://find.mtsu.edu/vufind/Record/in00006115176"
+   ]
+  },
+  {
+   "id": "robbins_2014",
+   "kind": "book",
+   "title": "Money: Master the Game: 7 Simple Steps to Financial Freedom",
+   "authors": ["Tony Robbins"],
+   "year": 2014,
+   "publisher": "Simon & Schuster",
+   "covers": "Interviews with investors and traders; in his interview Paul Tudor Jones describes the 200-day moving average of closing prices as the measure he applies to everything he looks at, and getting out of what falls below it.",
+   "review": "verified",
+   "review_note": "Library catalogue records (Morris Area Library; Flint Memorial Library with OCLC 889642537): New York, Simon & Schuster, 2014, first Simon & Schuster hardcover edition, ISBN 9781476757803.",
+   "evidence": [
+    "https://morris.aspendiscovery.org/Record/906471",
+    "https://link.flintmemoriallibrary.org/resource/xPR93bEjO6s"
    ]
   }
  ]

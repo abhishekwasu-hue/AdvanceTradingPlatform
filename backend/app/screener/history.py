@@ -100,12 +100,9 @@ def scale_of(adj_close: float, raw_close: float, adj_volume: float, raw_volume: 
     # re-check of S6a (LOW): the adjusted volume is stored rounded to whole shares, so its ratio is noisy for a factor
     # like 3:2 (1.50075 for 1.5). A split or bonus moves the volume by the price's own factor: within 1 % of it (or of
     # 1, for a price-only adjustment) the volume scale is taken from the price; anything else is kept, rounded.
-    if p != 1.0 and abs(v / p - 1.0) < 0.01:
-        v = p
-    elif abs(v - 1.0) < 0.01:
-        v = 1.0
-    else:
-        v = float(f"{v:.6g}")
+    # whichever of the two the ratio is closer to: a sub-1 % dividend (p 0.995, volume unchanged) keeps the volume at 1
+    near = min((1.0, p), key=lambda f: abs(v / f - 1.0))
+    v = near if abs(v / near - 1.0) < 0.01 else float(f"{v:.6g}")
     return (p, v)
 
 

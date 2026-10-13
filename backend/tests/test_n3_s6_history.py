@@ -441,6 +441,8 @@ def test_scales_are_rounded_so_a_split_is_one_evaluation_per_side():
     # a 3:2 bonus: the adjusted volume is whole shares, so raw / adjusted is noisy - the price's factor is used
     assert {H.scale_of(100.0 * k, 150.0 * k, round(1333.3 * k * 1.5), 1333 * k) for k in range(1, 50)} == {(0.666667, 0.666667)}
     assert H.scale_of(98.0, 100.0, 1000.0, 1000.0) == (0.98, 1.0)                  # a price-only (dividend) adjustment
+    assert H.scale_of(99.5, 100.0, 1000.0, 1000.0) == (0.995, 1.0)                # a sub-1 % dividend: volume stays at 1
+    assert H.scale_of(99.5, 100.0, 1000.0, 995.0) == (0.995, 0.995)              # a share action of that size moves both
     frames, days = _universe(n=50, bars=200, seed=3)
     dates = days[80:200]
     split = days[140]

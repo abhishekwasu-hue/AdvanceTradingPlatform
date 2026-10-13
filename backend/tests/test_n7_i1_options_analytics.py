@@ -242,3 +242,85 @@ def test_rows_from_before_the_column_count_from_their_capture_only_when_the_reco
     assert client.get(_url(name, AT), headers=headers).json()["expiries"][0]["atm_iv"] == pytest.approx(0.14)   # the recorder's only
     _flag("byob_data_tier", tenant)
     assert client.get(_url(name, AT), headers=headers).json()["spot"] is None                                  # the upload never
+
+
+# --- review fixes: the event loop, the IV unit, whole-window cuts, the concurrency cap, coverage ------------------------------
+
+def test_reading_and_computing_never_hold_the_event_loop(monkeypatch):
+    """Quotes come in partitions with an await between them, and the analytics run in a worker thread: a ticker task keeps
+    running throughout."""
+    import threading
+    import time
+    name = f"OF{uuid.uuid4().hex[:6].upper()}"
+    for i in range(5):
+        _seed(name, _chain(AT - timedelta(days=i)))
+    monkeypatch.setattr(OR, "PARTITION", 20)
+    seen = {}
+
+    def slow(rows, at, lookback_days):
+        seen["thread"] = threading.get_ident()
+        time.sleep(0.3)                                                          # a long computation
+        return {"rows": len(rows)}
+    monkeypatch.setattr(OR.A, "analytics", slow)
+
+    async def go():
+        ticks = []
+        stop = asyncio.Event()
+
+        async def ticker():
+            while not stop.is_set():
+                ticks.append(time.monotonic())
+                await asyncio.sleep(0)                                           # one tick per turn of the loop
+        task = asyncio.create_task(ticker())
+        await asyncio.sleep(0)
+        async with _session_factory() as session:
+            before = len(ticks)
+            rows, _ = await OR._rows(session, name, AT, 365, 1, False)
+            during_read = len(ticks) - before
+        before = len(ticks)
+        out = await OR._compute(rows, AT, 365)
+        during_compute = len(ticks) - before
+        stop.set()
+        await task
+        return rows, out, during_read, during_compute, threading.get_ident()
+    rows, out, during_read, during_compute, loop_thread = asyncio.run(go())
+    assert len(rows) == 5 * len(STRIKES) * 4 and out == {"rows": len(rows)}
+    assert during_read >= 11                                                     # 220 rows in partitions of 20: the ticker ran between them
+    assert during_compute >= 10 and seen["thread"] != loop_thread               # 0.3 s in a worker thread: the loop kept ticking
+
+
+def test_a_cut_drops_a_whole_session_never_part_of_one(monkeypatch):
+    rate_limit.reset("options_analytics")
+    name = f"OG{uuid.uuid4().hex[:6].upper()}"
+    headers, _ = _member("n7i1-c")
+    far = FAR + timedelta(days=60)
+    for i in range(7, -1, -1):
+        d = AT - timedelta(days=i)                                               # two captures inside each session's last 30 minutes
+        _seed(name, _chain(d - timedelta(minutes=10), iv=lambda e, k, r: 30.0, expiries=(far,)) + _chain(d, iv=lambda e, k, r: 15.0, expiries=(far,)))
+    per_capture = len(STRIKES) * 2
+    monkeypatch.setattr(OR, "MAX_ROWS", per_capture * 2 * 5 + per_capture)     # five sessions, then the sixth's last capture only
+    body = client.get(_url(name, AT), headers=headers).json()
+    assert len(body["iv_history"]) == 5 and "whole sessions" in body["limits"][0]
+    assert all(h["atm_iv"] == pytest.approx(0.15) for h in body["iv_history"])
+
+
+def test_the_iv_unit_is_declared_not_guessed(monkeypatch):
+    low = A.analytics(_chain(AT, iv=lambda e, k, r: 2.5), AT)                   # 2.5 % is 0.025, not 2.5
+    assert low["expiries"][0]["atm_iv"] == pytest.approx(0.025)
+    assert OR.iv_percent(14.2, "worker") == 14.2 and OR.iv_percent(14.2, "upload:7") == 14.2
+    monkeypatch.setitem(OR.IV_UNIT, "upload", "fraction")                       # a source declared as a fraction is scaled
+    assert OR.iv_percent(0.142, "upload:7") == pytest.approx(14.2) and OR.iv_percent(None, "upload:7") is None
+
+
+def test_the_concurrency_cap_and_the_coverage_note(monkeypatch):
+    rate_limit.reset("options_analytics")
+    name = f"OH{uuid.uuid4().hex[:6].upper()}"
+    headers, _ = _member("n7i1-q")
+    _seed(name, _chain(AT))
+    body = client.get(_url(name, AT), headers=headers).json()
+    assert body["expiries"][0]["strikes"] == {"count": len(STRIKES), "low": STRIKES[0], "high": STRIKES[-1]}
+    assert "not the whole chain" in body["coverage"]
+    monkeypatch.setattr(OR, "_busy", OR.MAX_CONCURRENT)
+    busy = client.get(_url(name, AT), headers=headers)
+    assert busy.status_code == 429 and busy.headers.get("Retry-After")
+    rate_limit.reset("options_analytics")

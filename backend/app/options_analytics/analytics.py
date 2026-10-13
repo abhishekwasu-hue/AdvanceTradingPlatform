@@ -1,12 +1,15 @@
 """N7 I (first slice): options analytics from recorded option-chain quotes, point in time - pure functions.
 
-Input: `OptionChainSnapshotRow`s (the chain recorder's captures and an organisation's own uploads). Everything is computed
+Input: rows shaped like `OptionChainSnapshotRow` (`Row` below; the chain recorder's captures and an organisation's own
+uploads) with `iv` in PERCENT (14.2) - the stored unit, declared per source in `routes.IV_UNIT`; nothing here guesses. Everything is computed
 AS OF an instant `at`: only rows captured at or before `at` are read, so a value at `at` never changes when later
 captures arrive (tested). For each contract the latest quote within `max_age` of `at` counts.
 
 * the ATM strike: nearest to the underlying's price on the quotes (`underlying_ltp`, else put-call parity at the strike
   where |CE - PE| is smallest);
 * ATM IV per expiry (mean of the ATM call's and put's IV; percent in, fraction out), the term structure (DTE, ATM IV);
+* the strikes each expiry's figures rest on (count, lowest, highest): PCR and max pain cover the strikes quoted, not
+  necessarily the whole chain (the recorder keeps a window around the money);
 * skew of an expiry: IV by strike (calls above, puts below the money) and a 5 %-moneyness risk reversal (put IV - call IV);
 * expected move to an expiry from the ATM straddle (CE + PE premium; and as a % of spot);
 * PCR (put / call open interest) and max pain (the strike where option writers pay least at expiry) per expiry;
@@ -20,9 +23,8 @@ from __future__ import annotations
 from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, NamedTuple, Optional, Protocol, Sequence, Tuple
 
-from app.backtest.options import OptionChainSnapshotRow
 from app.market_data.calendar import IST
 
 MAX_AGE = timedelta(minutes=30)
@@ -35,14 +37,45 @@ def _utc(ts: datetime) -> datetime:
     return ts if ts.tzinfo else ts.replace(tzinfo=timezone.utc)
 
 
+class RowLike(Protocol):
+    """A quoted option at one moment (`OptionChainSnapshotRow` or `Row`); `iv` in percent."""
+    @property
+    def timestamp(self) -> datetime: ...
+    @property
+    def expiry(self) -> date: ...
+    @property
+    def strike(self) -> float: ...
+    @property
+    def right(self) -> str: ...
+    @property
+    def ltp(self) -> float: ...
+    @property
+    def iv(self) -> Optional[float]: ...
+    @property
+    def oi(self) -> Optional[float]: ...
+    @property
+    def underlying_ltp(self) -> Optional[float]: ...
+
+
+class Row(NamedTuple):
+    """The route's light row (a tuple, not an ORM object or a validated model)."""
+    timestamp: datetime
+    expiry: date
+    strike: float
+    right: str
+    ltp: float
+    iv: Optional[float]
+    oi: Optional[float]
+    underlying_ltp: Optional[float]
+
+
 def _iv(value: Optional[float]) -> Optional[float]:
-    """Percent (14.2) or fraction (0.142) in -> fraction out; None / non-positive -> None."""
+    """Percent (14.2) in -> fraction (0.142) out; None / non-positive -> None. The unit is declared, never guessed (a 2.5 %
+    IV is 0.025)."""
     if value is None:
         return None
     v = float(value)
-    if v <= 0:
-        return None
-    return v / 100.0 if v > 3.0 else v
+    return v / 100.0 if v > 0 else None
 
 
 @dataclass(frozen=True)
@@ -57,7 +90,7 @@ class Quote:
     at: datetime
 
 
-def snapshot(rows: Iterable[OptionChainSnapshotRow], at: datetime, max_age: timedelta = MAX_AGE) -> Dict[Tuple[date, float, str], Quote]:
+def snapshot(rows: Iterable[RowLike], at: datetime, max_age: timedelta = MAX_AGE) -> Dict[Tuple[date, float, str], Quote]:
     """The latest quote of each contract captured in [at - max_age, at] - never a row after `at`."""
     at = _utc(at)
     out: Dict[Tuple[date, float, str], Quote] = {}
@@ -173,7 +206,7 @@ def front_atm_iv(snap: Dict[Tuple[date, float, str], Quote], day: date) -> Optio
     return None
 
 
-def iv_history(rows: Sequence[OptionChainSnapshotRow], at: datetime, lookback_days: int = LOOKBACK_DAYS) -> List[Dict[str, Any]]:
+def iv_history(rows: Sequence[RowLike], at: datetime, lookback_days: int = LOOKBACK_DAYS) -> List[Dict[str, Any]]:
     """The front ATM IV at each IST session's last capture in [at - lookback, at] (the session of `at` up to `at`).
     One sort, then each session's snapshot reads only the rows within MAX_AGE of its last capture."""
     at = _utc(at)
@@ -204,7 +237,7 @@ def iv_rank(history: List[Dict[str, Any]]) -> Dict[str, Any]:
             "sessions": len(values), "low": lo, "high": hi, "current": now, "note": None}
 
 
-def analytics(rows: Sequence[OptionChainSnapshotRow], at: datetime, *, lookback_days: int = LOOKBACK_DAYS) -> Dict[str, Any]:
+def analytics(rows: Sequence[RowLike], at: datetime, *, lookback_days: int = LOOKBACK_DAYS) -> Dict[str, Any]:
     """Everything above for one underlying as of `at` (rows after `at` are never read)."""
     at = _utc(at)
     usable = [r for r in rows if _utc(r.timestamp) <= at]
@@ -220,7 +253,9 @@ def analytics(rows: Sequence[OptionChainSnapshotRow], at: datetime, *, lookback_
     per_expiry = []
     for e in expiries(snap, today):
         sub = by_expiry[e]
-        per_expiry.append({"expiry": e.isoformat(), "dte": (e - today).days, "atm_strike": atm_strike(sub, e, spot), "atm_iv": atm_iv(sub, e, spot),
+        quoted = sorted({k for _, k, _ in sub})
+        per_expiry.append({"expiry": e.isoformat(), "dte": (e - today).days, "strikes": {"count": len(quoted), "low": quoted[0], "high": quoted[-1]},
+                           "atm_strike": atm_strike(sub, e, spot), "atm_iv": atm_iv(sub, e, spot),
                            "expected_move": expected_move(sub, e, spot), "pcr": pcr(sub, e), "max_pain": max_pain(sub, e),
                            "skew": skew(sub, e, spot)})
     history = iv_history(usable, at, lookback_days)

@@ -41,6 +41,7 @@ from app.db.models import TradePlanRecord, TradeRecord, User
 FLAG = "positions_board"
 NEAR_R = 0.25
 EXITS_NOTE = "Exits are never locked: stops, targets, time exits and Exit now always work."
+EXITS_NOTE_AUTOMATIC = "Exits are never locked: stops, targets and time exits always run."     # no Exit now for this user
 
 
 def _utc(dt: Optional[datetime]) -> Optional[datetime]:
@@ -111,19 +112,11 @@ def row(trade: TradeRecord, plan: Optional[TradePlanRecord], *, now: datetime, e
 
 
 async def may_use_exit_now(session: AsyncSession, user: User) -> bool:
-    """Review: whether this user passes Exit now's own gate (`require_trader`: a trading role, the `trading:write` scope
-    and an active organisation). A user who does not is shown "automatic", not a button that would answer 403."""
-    from app.auth.dependencies import TRADING_ROLES
-    from app.auth.scopes import has_scope
-    from app.core.enums import UserRole
-    from app.plans.limits import tenant_is_active
-    if user.role == UserRole.SUPER_ADMIN.value:
-        return True
-    if user.role not in {r.value for r in TRADING_ROLES} or not has_scope(user, "trading:write"):
-        return False
-    from app.db.models import Tenant
-    tenant = await session.get(Tenant, user.tenant_id)
-    return tenant is not None and tenant_is_active(tenant)
+    """Review: whether this user passes Exit now's own gate - `require_trader`'s check itself (`may_trade`: a trading role,
+    the `trading:write` scope and an active organisation). A user who does not is shown "automatic", not a button that
+    would answer 403."""
+    from app.auth.dependencies import may_trade
+    return await may_trade(session, user)
 
 
 async def board(session: AsyncSession, user: User, now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -168,7 +161,7 @@ async def board(session: AsyncSession, user: User, now: Optional[datetime] = Non
                    "near_stop": sum(1 for r in rows if r["stop_status"] in ("near", "through")),
                    "unmarked": sum(1 for r in rows if r["price_basis"] == "entry")},
         "lockout": None if locked is None else {"reason": locked.get("reason"), "until": locked.get("until")},
-        "exits": EXITS_NOTE, "near_r": NEAR_R, "as_of": now.isoformat(),
+        "exits": EXITS_NOTE if one_click else EXITS_NOTE_AUTOMATIC, "near_r": NEAR_R, "as_of": now.isoformat(),
         "note": "P&L at the position monitor's last marks (entry where there is none), before charges. Greeks: the Positions "
                 "page's Greeks table.",
     }

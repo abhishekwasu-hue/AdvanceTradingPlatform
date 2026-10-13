@@ -5,9 +5,10 @@ implementations. `ModelSet()` (every default) reproduces the engine's results be
 tests/golden/c2_default_models.json). A non-default set is recorded in the reproducibility fingerprint (C4), so a run
 using other models can never be mistaken for a default one. Costs are not a model: `india_costs` prices every fill.
 PR 1 wired fill (exits) and slippage into the single-leg engine. PR 2 (N7 C2b) adds the `next_open` fill, the
-`spread_half` and `volume_share` slippage and the `fixed_ms` latency; a non-default choice of those needs the operator
-flag `backtest_models` at the API (the library takes them as asked). Margin, pricing and settlement keep their
-defaults until C2 PRs 3-4.
+`spread_half` and `volume_share` slippage and the `fixed_ms` latency; PR 3 (N7 C2c) the `span_like` margin with its
+margin call and `black76` pricing of strikes missing from a recorded chain, and the option engine takes a ModelSet. A
+non-default choice of those needs the operator flag `backtest_models` at the API (the library takes them as asked).
+Settlement keeps its default until C2 PR 4.
 
 No look-ahead: an entry deferred by the fill or the latency fills at the OPEN of a later bar - the only number of that
 bar it reads - and `volume_share` sizes its impact on the signal bar's volume (the last closed bar), never the fill
@@ -145,11 +146,68 @@ class FixedMsLatency:
         return timedelta(milliseconds=float(self.ms))
 
 
+class MarginModel(Protocol):
+    name: str
+
+    def required(self, kind: str, notional: float, *, max_loss: Optional[float] = None) -> float: ...
+
+    def call(self, equity_mtm: float, required: float) -> bool: ...
+
+
+@dataclass(frozen=True)
+class NoMargin:
+    """Today: no margin check and no margin call."""
+    name: str = "none"
+
+    def required(self, kind: str, notional: float, *, max_loss: Optional[float] = None) -> float:
+        return 0.0
+
+    def call(self, equity_mtm: float, required: float) -> bool:
+        return False
+
+
+@dataclass(frozen=True)
+class SpanLikeMargin:
+    """N7 C2c: a SPAN + exposure stand-in - a percentage of the position's notional per instrument kind (settings, never
+    tuned on results; OPEN_QUESTIONS C2-2). A written option structure with a defined maximum loss needs that loss (a
+    hedged spread's margin), an undefined one the short legs' underlying notional x `option_short_pct`; bought options
+    are paid for in full (no extra margin). An entry the equity cannot margin is refused; while a position is open, an
+    equity marked at the bar's close below `maintenance_pct` % of the requirement at that close is a margin call (the
+    position closes at that close)."""
+    equity_pct: float = 20.0          # cash equity, intraday
+    futures_pct: float = 12.0         # index / stock / commodity futures
+    crypto_pct: float = 100.0         # spot crypto: no leverage
+    option_short_pct: float = 15.0    # written options without a defined maximum loss: % of the short legs' underlying notional
+    maintenance_pct: float = 100.0
+    name: str = "span_like"
+
+    def __post_init__(self) -> None:
+        for k in ("equity_pct", "futures_pct", "crypto_pct", "option_short_pct", "maintenance_pct"):
+            _positive(k, getattr(self, k), zero_ok=False)
+
+    def required(self, kind: str, notional: float, *, max_loss: Optional[float] = None) -> float:
+        notional = abs(float(notional))
+        if kind == "OPTION_DEFINED":
+            return abs(float(max_loss or 0.0))
+        if kind == "OPTION_LONG":
+            return 0.0
+        pct = {"EQUITY": self.equity_pct, "FUTURES": self.futures_pct, "COMMODITY": self.futures_pct, "CRYPTO": self.crypto_pct,
+               "OPTION_SHORT": self.option_short_pct}.get(kind, self.equity_pct)
+        return notional * pct / 100.0
+
+    def call(self, equity_mtm: float, required: float) -> bool:
+        return required > 0 and equity_mtm < required * self.maintenance_pct / 100.0
+
+
 SLIPPAGE: Dict[str, Callable[..., Any]] = {"fixed_pct": FixedPctSlippage, "spread_half": SpreadHalfSlippage, "volume_share": VolumeShareSlippage}
 FILL: Dict[str, Callable[..., Any]] = {"touch": TouchFill, "next_open": NextOpenFill}
 LATENCY: Dict[str, Callable[..., Any]] = {"zero": ZeroLatency, "fixed_ms": FixedMsLatency}
+MARGIN: Dict[str, Callable[..., Any]] = {"none": NoMargin, "span_like": SpanLikeMargin}
+# N7 C2c: option pricing - `black76` prices a strike missing from a recorded chain (app/backtest/options.Black76Pricer)
+PRICING: Dict[str, Callable[..., Any]] = {"recorded_only": dict, "black76": dict}
 # N7 C2b: the models added after PR 1 - a request naming one needs the `backtest_models` flag at the API.
-FLAGGED = {"fill": {"next_open"}, "slippage": {"spread_half", "volume_share"}, "latency": {"fixed_ms"}}
+FLAGGED = {"fill": {"next_open"}, "slippage": {"spread_half", "volume_share"}, "latency": {"fixed_ms"}, "margin": {"span_like"},
+           "pricing": {"black76"}}
 FLAG = "backtest_models"
 # Kinds whose alternatives land in later C2 PRs: only the default exists, so a request for anything else fails loudly.
 DEFAULTS = {"fill": "touch", "slippage": "fixed_pct", "latency": "zero", "margin": "none", "pricing": "recorded_only",
@@ -171,7 +229,7 @@ class ModelSet:
     params: Dict[str, Dict[str, Any]] = field(default_factory=dict)   # per kind, e.g. {"slippage": {"pct": 0.05}}
 
     def __post_init__(self) -> None:
-        known = {"fill": FILL, "slippage": SLIPPAGE, "latency": LATENCY}
+        known = {"fill": FILL, "slippage": SLIPPAGE, "latency": LATENCY, "margin": MARGIN, "pricing": PRICING}
         for kind, default in DEFAULTS.items():
             chosen = getattr(self, kind)
             if kind in known and chosen not in known[kind]:
@@ -200,10 +258,23 @@ class ModelSet:
     def latency_model(self) -> LatencyModel:
         return LATENCY[self.latency](**self.params.get("latency", {}))
 
+    def margin_model(self) -> MarginModel:
+        return MARGIN[self.margin](**self.params.get("margin", {}))
+
+    def pricing_params(self) -> Dict[str, Any]:
+        """The `black76` settings (max_age_minutes: how old a quoted strike's IV may be to price a missing strike)."""
+        allowed = {"max_age_minutes"}
+        extra = set(self.params.get("pricing", {})) - allowed
+        if extra:
+            raise ModelError(f"unknown pricing parameters: {sorted(extra)}")
+        return dict(self.params.get("pricing", {}))
+
     def flagged(self) -> Dict[str, str]:
         """The chosen models that need the `backtest_models` flag (kind -> name)."""
         return {kind: getattr(self, kind) for kind, names in FLAGGED.items() if getattr(self, kind) in names}
 
     def built(self, default_pct: float = 0.02) -> Tuple[Any, Any, Any]:
         """(fill, slippage, latency) instances - building them checks their parameters (ModelError / TypeError)."""
+        self.margin_model()
+        self.pricing_params()
         return self.fill_model(), self.slippage_model(default_pct), self.latency_model()

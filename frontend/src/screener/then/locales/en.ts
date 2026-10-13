@@ -34,6 +34,8 @@ export const SCAN_THEN_EN = {
     setByOther: "Set by: another member",
     takeOverWarn: "Saving makes you the owner of this Then; setups will go to you, not to the member who set it.",
     takeOverConfirm: "Save and take over",
+    removeWarn: "Another member set this Then. Removing it stops the setups it sends them for this rule.",
+    removeConfirm: "Remove their Then",
     cancel: "Cancel",
     readOnly: "Only the rule's creator or the organisation owner can change this Then.",
     footer: "Setups are information for your own decision. They are not recommendations, and nothing is placed without your approval.",

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Any, Dict, Mapping, Optional
 
 from app.db.models import ExecutionIntentRecord, ScanThenTemplateRecord
@@ -48,6 +49,8 @@ def check_gate(over: Optional[Mapping[str, Any]]) -> Dict[str, Any]:
         lo, hi = bound
         if isinstance(value, bool) or not isinstance(value, (int, float)):
             raise TemplateError(f"{key} must be a number")
+        if not math.isfinite(value):                                       # JSON Infinity / NaN: a 422, never an int() crash
+            raise TemplateError(f"{key} must be a finite number")
         if isinstance(GATE_DEFAULTS[key], int) and float(value) != int(value):
             raise TemplateError(f"{key} must be a whole number")          # review of X1b: never truncated silently
         cast = type(GATE_DEFAULTS[key])(value)

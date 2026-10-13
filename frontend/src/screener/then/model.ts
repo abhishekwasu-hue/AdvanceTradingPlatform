@@ -2,6 +2,7 @@
  * The server stays the authority (backend app/screener/then/templates.py); the bounds here mirror its GATE_BOUNDS. Nothing
  * here places an order: a Then template only decides how a confirmed setup reaches the person (a notification or a PAPER
  * proposal they approve). AUTO_LIVE is never offered. */
+import { ApiError } from "../../api/errors";
 import type { ThenT } from "./i18n";
 
 export const THEN_MODES = ["NOTIFY", "ONE_CLICK", "AUTO_PAPER"] as const;
@@ -54,6 +55,12 @@ export interface ThenBody { mode: ThenMode; confirm_tf: ConfirmTf; enabled: bool
 /** Review of X1b: saving would move another member's template (and its setups) to the caller - confirm first. */
 export function needsTakeOver(t: ThenTemplate | null): boolean {
   return Boolean(t?.configured) && t?.set_by_you === false;
+}
+
+/** Re-check of X1b: a plain Save refused with 409 means another member saved this Then since the drawer loaded - the
+ * drawer reloads it and asks before taking it over (a take-over save that fails is shown as is). */
+export function isOwnerConflict(e: unknown, takeOver: boolean): boolean {
+  return !takeOver && e instanceof ApiError && e.status === 409;
 }
 
 export function isThenTemplate(x: unknown): x is ThenTemplate {

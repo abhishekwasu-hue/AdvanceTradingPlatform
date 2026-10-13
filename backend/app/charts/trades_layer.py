@@ -10,8 +10,15 @@ GET /api/charts/layers/trades?instrument=NSE:RELIANCE&at=<ISO time>&start=<ISO t
   * As of `at` (timezone-aware; default now; a future time reads as now): a trade entered after `at` is not shown, and an
     exit after `at` is not shown either - the trade is open as of then, without its P&L. So replay never shows a trade
     or an exit before it happened.
+  * The stop: the position monitor moves `stop_loss` as a stop trails, so the row's stop is today's, not the one in
+    force at `at`. Replaying the past (`at` before now, or a trade that exits after `at`) therefore draws the trade's
+    `initial_stop_loss` (its `stop_loss` when no initial stop was recorded), labelled "initial stop"; only the live view
+    (`at` = now) draws the current stop. The stop history is not recorded, so the trail itself is not replayed.
   * The window: trades active in (`start`, `at`] - entered by `at` and not exited before `start` (default `start`: 30
-    days before `at`; at most MAX_DAYS before it). At most MAX_TRADES, the most recent entries first.
+    days before `at`; at most MAX_DAYS before it). At most MAX_TRADES, the most recent entries first; the exchange
+    filter (an underlying on another exchange is another chart) is in the query, before the cap.
+  * An index chart (`NSE:NIFTY 50`) also shows the derived trades whose underlying the F&O master names `NIFTY`
+    (app.instruments.master aliases), and the other way round.
 Behind the `chart_trades_layer` flag (off by default -> 503). Read-only: nothing here places, changes or proposes an
 order, and the chart draws no control that could.
 """
@@ -27,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.db.models import TradeRecord, User
 from app.db.session import get_session
+from app.instruments.master import INDEX_SYMBOLS, underlying_of
 from app.platform.controls import require_flag
 
 router = APIRouter(prefix="/api/charts/layers", tags=["charts"])
@@ -73,11 +81,28 @@ def _epoch(t: datetime) -> int:
     return int(t.timestamp())
 
 
-def trade_item(r: TradeRecord, *, on_price_axis: bool, at: datetime) -> Dict[str, Any]:
-    """One trade as the chart draws it, as of `at` (an exit after `at` is not known yet)."""
+STOP = "stop"
+INITIAL_STOP = "initial stop"
+
+
+def underlying_names(symbol: str) -> List[str]:
+    """The names a derived trade's `underlying_symbol` may carry for this chart: `NIFTY 50` <-> `NIFTY` (the F&O master's
+    name for the index); an equity is just itself."""
+    fo = underlying_of(symbol)
+    return sorted({symbol, fo, INDEX_SYMBOLS.get(fo, fo)})
+
+
+def trade_item(r: TradeRecord, *, on_price_axis: bool, at: datetime, live: bool = False) -> Dict[str, Any]:
+    """One trade as the chart draws it, as of `at` (an exit after `at` is not known yet).
+
+    `live`: `at` is now. Only then is the row's `stop_loss` (moved by the position monitor as the stop trails) the stop in
+    force; as of a past `at` - or for a trade whose exit is after `at` - it may be a later, trailed stop (look-ahead), so
+    the trade's initial stop is drawn instead."""
     entry_t = _utc(r.entry_time)
     exit_t = _utc(r.exit_time)
     exited = exit_t is not None and exit_t <= at and r.exit_price is not None
+    current = live and not (exit_t is not None and exit_t > at)
+    stop = r.stop_loss if current or r.initial_stop_loss is None else r.initial_stop_loss
     long = str(r.direction).upper() in ("LONG", "BUY")
     kind = (r.instrument_kind or "UNDERLYING").upper()
     contract = None if kind == "UNDERLYING" else {"symbol": r.symbol, "kind": kind, "expiry": r.expiry.isoformat() if r.expiry else None,
@@ -93,31 +118,34 @@ def trade_item(r: TradeRecord, *, on_price_axis: bool, at: datetime) -> Dict[str
         "exit": {"time": _epoch(exit_t), "price": _num(r.exit_price), "reason": r.exit_reason} if exited and exit_t else None,
         "open": not exited,
         # the trade's own levels are on its own price axis: drawn only on its own chart
-        "stop_loss": _num(r.stop_loss) if on_price_axis and not exited else None,
+        "stop_loss": _num(stop) if on_price_axis and not exited else None,
+        "stop_label": (STOP if current else INITIAL_STOP) if on_price_axis and not exited else None,
         "target": _num(r.target1) if on_price_axis and not exited else None,
         "pnl": _num(r.pnl) if exited else None,
         "label": label,
     }
 
 
-async def own_trades(session: AsyncSession, user: User, instrument: str, start: datetime, at: datetime) -> List[Dict[str, Any]]:
+async def own_trades(session: AsyncSession, user: User, instrument: str, start: datetime, at: datetime, *,
+                     live: bool = False) -> List[Dict[str, Any]]:
     """The caller's own PAPER trades on `instrument` active in (start, at], most recent entries first (MAX_TRADES)."""
     exchange, symbol = split_instrument(instrument)
     key = f"{exchange}:{symbol}" if exchange else None
     names = [symbol] + ([key] if key else [])
-    q = (select(TradeRecord)
-         .where(TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.mode == MODE,
-                TradeRecord.entry_time <= at,
-                or_(TradeRecord.exit_time.is_(None), TradeRecord.exit_time >= start),
-                or_(func.upper(TradeRecord.symbol).in_(names), func.upper(TradeRecord.underlying_symbol).in_(names),
-                    *([func.upper(TradeRecord.instrument_key) == key] if key else [])))
-         .order_by(TradeRecord.entry_time.desc(), TradeRecord.id.desc()).limit(MAX_TRADES))
+    underlyings = underlying_names(symbol) + ([key] if key else [])
+    filters = [TradeRecord.tenant_id == user.tenant_id, TradeRecord.user_id == user.id, TradeRecord.mode == MODE,
+               TradeRecord.entry_time <= at,
+               or_(TradeRecord.exit_time.is_(None), TradeRecord.exit_time >= start),
+               or_(func.upper(TradeRecord.symbol).in_(names), func.upper(TradeRecord.underlying_symbol).in_(underlyings),
+                   *([func.upper(TradeRecord.instrument_key) == key] if key else []))]
+    if exchange:                                          # RELIANCE on BSE is not the NSE:RELIANCE chart - before the cap
+        filters.append(or_(TradeRecord.exchange.is_(None), func.upper(TradeRecord.exchange) == exchange,
+                           func.upper(TradeRecord.instrument_kind) != "UNDERLYING"))
+    q = select(TradeRecord).where(*filters).order_by(TradeRecord.entry_time.desc(), TradeRecord.id.desc()).limit(MAX_TRADES)
     out: List[Dict[str, Any]] = []
     for r in (await session.scalars(q)).all():
-        if exchange and r.exchange and r.exchange.upper() != exchange and (r.instrument_kind or "UNDERLYING").upper() == "UNDERLYING":
-            continue                                          # RELIANCE on BSE is not the NSE:RELIANCE chart
         same = _bare(r.symbol) == symbol or (key is not None and (r.instrument_key or "").upper() == key)
-        out.append(trade_item(r, on_price_axis=same, at=at))
+        out.append(trade_item(r, on_price_axis=same, at=at, live=live))
     return out
 
 
@@ -128,15 +156,16 @@ async def trades_layer(instrument: str = Query(..., min_length=1, max_length=100
     await require_flag(session, FLAG, user.tenant_id)
     now = datetime.now(timezone.utc)
     at_utc, start_utc = _aware(at, "at"), _aware(start, "start")
-    when = now if at_utc is None or at_utc > now else at_utc
+    live = at_utc is None or at_utc >= now                       # a future time reads as now
+    when = now if live or at_utc is None else at_utc
     begin = start_utc if start_utc is not None else when - timedelta(days=DEFAULT_DAYS)
     if begin >= when:
         raise HTTPException(status_code=422, detail="`start` must be before `at`")
     begin = max(begin, when - timedelta(days=MAX_DAYS))           # a long daily chart: its last MAX_DAYS days
-    trades = await own_trades(session, user, instrument, begin, when)
+    trades = await own_trades(session, user, instrument, begin, when, live=live)
     exchange, symbol = split_instrument(instrument)
     return {"schema": SCHEMA, "instrument": f"{exchange}:{symbol}" if exchange else symbol, "at": when.isoformat(), "start": begin.isoformat(),
             "mode": MODE, "trades": trades, "open": sum(1 for t in trades if t["open"]), "capped": len(trades) >= MAX_TRADES, "note": NOTE}
 
 
-__all__ = ["router", "FLAG", "own_trades", "trade_item", "split_instrument"]
+__all__ = ["router", "FLAG", "own_trades", "trade_item", "split_instrument", "underlying_names"]

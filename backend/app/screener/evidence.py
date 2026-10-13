@@ -97,6 +97,29 @@ CROSS_CALLS = ("CrossAbove", "CrossBelow")
 # candles a named pattern reads (this bar and up to two before it, app/price_action/candlestick_patterns.py)
 PATTERN_BARS: Dict[str, int] = {"bullish_engulfing": 2, "bearish_engulfing": 2, "inside_bar": 2, "bullish_outside_bar": 2,
                                 "bearish_outside_bar": 2, "morning_star": 3, "evening_star": 3}
+# U8 EV3 (flag `evidence_context`): the option-chain functions draw the chain's OI walls / max pain on the price pane
+CHAIN_CALLS = ("PCR", "ChainBias", "MaxPainDistancePct")
+CONTEXT_TFS = ("1h", "1d", "1w")      # the multi-timeframe strip: these (above the screen's own) plus the screen's timeframes
+CONTEXT_DEGREE = 1                    # the strip's trend tag: the engine's DowTrend at this swing degree
+
+# U8 EV4: how every ScreenQL registry entry shows in a pack - the declaration the coverage lint holds every entry to
+# (tests/test_u8_ev3_ev4.py: a new registry entry fails the lint until it is declared here, and each declaration is
+# checked against what build_pack really produces).
+#   series  - a number: drawn through the comparison it is in (an overlay on the price pane, or a lower pane)
+#   box     - a breakout base (EV2)          band  - a market zone (Z7a-3 selector)      bars - pattern candles
+#   overlay - the function's own level / crossing on the price pane                     levels - option-chain OI walls (EV3)
+#   strip   - a category or a filter without geometry: in the verify strip only, with the reason
+DRAWN_AS: Dict[str, str] = {
+    **{name: "box" for name in BREAKOUT_ARGS if name not in ("SwingBreakType", "RangeExpansion")},
+    "RangeExpansion": "bars",                                  # B13 marks the expansion bar (no base to box)
+    "Greatest": "series", "Least": "series",                   # drawn as their arguments' lines
+    "SwingBreakType": "strip",
+    **{name: "band" for name in ZONE_CALLS},
+    **{name: "overlay" for name in CROSS_CALLS},
+    "RealBreak": "overlay", "ReversalAt": "overlay",
+    "Pattern": "bars", "PatternBullish": "bars", "PatternBearish": "bars",
+    **{name: "levels" for name in CHAIN_CALLS},
+}
 
 
 # ------------------------------------------------------------------------------------------------------- formatting
@@ -333,6 +356,7 @@ def _breakout(ctx: _Ctx, call: n.Call, row: Dict[str, Any]) -> Optional[Dict[str
                      f"volume {terms[3]['value_text']} average")
     row["engine_signal"] = bool(out["signal"].iloc[k])
     if level is None:
+        row["note"] = f"the breakout engine found no {words} on this bar: nothing to draw (its numbers are in the strip)"
         return None
     base_len, hi, lo = out["base_len"].iloc[k], out["base_high"].iloc[k], out["base_low"].iloc[k]
     label = f"{words} {value_text(level, 'price')}"
@@ -434,6 +458,79 @@ def _drawable(ctx: _Ctx, node: Any, row: Dict[str, Any]) -> Optional[Dict[str, A
     return _overlay(ctx, ops, unit, n.to_text(node))
 
 
+def _chain_call(node: Any) -> Optional[n.Call]:
+    for sub in n.walk(node):
+        if isinstance(sub, n.Call) and sub.name in CHAIN_CALLS:
+            return sub
+    return None
+
+
+def _chain(ctx: _Ctx, call: n.Call, row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """EV3: an option-chain condition (PCR, ChainBias, MaxPainDistancePct) - the chain the engine read, analysed by the
+    same `analyze_option_chain` the runtime calls: the call / put OI walls (the strikes with the most open interest) or
+    max pain as levels on the price pane, and those numbers in the strip."""
+    chain = ctx.ev.data.option_chain
+    if chain is None:
+        row["note"] = "no option chain for this bar (a chain is a snapshot of its own time): shown in the strip, not drawn"
+        return None
+    from app.option_chain.analysis import analyze_option_chain
+    a = analyze_option_chain(chain)
+    ce = a.call_resistance_strikes[0] if a.call_resistance_strikes else None
+    pe = a.put_support_strikes[0] if a.put_support_strikes else None
+    facts = [("call OI wall", ce, "price"), ("put OI wall", pe, "price"), ("max pain", a.max_pain, "price"), ("PCR", a.pcr, "ratio"),
+             ("underlying", a.underlying_ltp, "price")]
+    row["terms"] = list(row["terms"]) + [{"text": label, "value": _num(v), "value_text": value_text(_num(v), unit), "unit": unit, "literal": False}
+                                         for label, v, unit in facts if v is not None]
+    row["note"] = f"option chain {chain.underlying} {chain.expiry}: " + " · ".join(
+        f"{label} {value_text(_num(v), unit)}" for label, v, unit in facts if v is not None)
+    wanted = [("max pain", a.max_pain), ("underlying", a.underlying_ltp)] if call.name == "MaxPainDistancePct" else [("call OI wall", ce), ("put OI wall", pe)]
+    levels = [{"value": _num(v), "label": label, "value_text": value_text(_num(v), "price")} for label, v in wanted if v is not None][:MAX_LEVELS]
+    if not levels:
+        return None
+    return {"kind": "overlay", "pane": "price", "unit": "price", "label": f"{call.name}: option chain {chain.expiry}", "series": [],
+            "levels": levels, "chain": {"underlying": chain.underlying, "expiry": chain.expiry}}
+
+
+def _context(ctx: _Ctx, ast: Any, validated: Any, order: List[str], rows: Dict[str, Dict[str, Any]], t_close: Any) -> List[Dict[str, Any]]:
+    """EV3: the multi-timeframe strip - the engine's own DowTrend tag on each timeframe at or above the screen's (the
+    screen's own timeframes plus 1H / D / W), as of the matched bar's close (the runtime's close-time alignment: a
+    higher timeframe's bar counts only once it closed), and which conditions read that timeframe. The degree is the
+    screen's own DowTrend degree when it reads one, else CONTEXT_DEGREE."""
+    from app.screener.parser import parse
+    base_m = n.TF_MINUTES[ctx.base_tf]
+    degree = CONTEXT_DEGREE
+    for node in n.walk(ast):                              # the screen's own DowTrend degree, when it reads one
+        if isinstance(node, n.Call) and node.name == "DowTrend" and node.args and isinstance(node.args[0], n.Num):
+            degree = int(node.args[0].value)
+            break
+    tfs = sorted({tf for tf in set(getattr(validated, "timeframes", set()) or set()) | set(CONTEXT_TFS)
+                  if tf in n.TF_MINUTES and n.TF_MINUTES[tf] >= base_m}, key=lambda tf: n.TF_MINUTES[tf])
+    out: List[Dict[str, Any]] = []
+    for tf in tfs:
+        text = f"DowTrend({degree})" + ("" if tf == ctx.base_tf else f"@{tf}")
+        tag: Optional[str] = None
+        note: Optional[str] = None
+        try:
+            raw = _last(ctx.ev.ev(parse(text), ctx.base_tf))
+            tag = None if raw is None or (isinstance(raw, float) and np.isnan(raw)) else str(raw)
+        except ScreenRuntimeError as exc:
+            note = str(exc)[:120]
+        as_of = None
+        try:
+            frame = ctx.ev.frame(tf)
+            closes = bar_close(pd.DatetimeIndex(frame.index), tf)
+            done = closes[closes <= t_close]
+            as_of = _iso(done[-1]) if len(done) else None
+        except (ScreenRuntimeError, ValueError, KeyError):
+            pass
+        if tag is None and note is None:
+            note = "not enough bars on this timeframe"
+        used_by = [rid for rid in order if (f"@{tf}" in rows[rid]["text"]) or (tf == ctx.base_tf and "@" not in rows[rid]["text"])]
+        out.append({"tf": tf, "tag": tag, "expr": text, "bar_close": as_of, "used_by": used_by, "note": note,
+                    "text": f"{tf} {tag.lower() if tag else 'n/a'}"})
+    return out
+
+
 def _zone_bands(ctx: _Ctx, rows: Dict[str, Dict[str, Any]], drawables: List[Dict[str, Any]]) -> None:
     """Z7a-3 band selector over the zones the screen's zone conditions read (never any other zone), at most six."""
     from app.price_action.zones.chart import select_bands
@@ -500,8 +597,10 @@ def _trim(data: SymbolData, base_tf: str, as_of: Optional[datetime]) -> SymbolDa
             frames[tf] = df[closes <= pd.Timestamp(at)]
         else:
             frames[tf] = closed_only(df, tf, at)
-    # every other field (zones, the BK2 session exchange, reference data) carried over as is - only the frames are cut
-    return dataclasses.replace(data, frames=frames, indices=set(data.indices))
+    # every other field (zones, the BK2 session exchange, reference data) carried over as is - only the frames are cut;
+    # EV3: an option chain is a snapshot of the newest bar's time, so a pack as of an earlier bar never reads it
+    cut = any(df is not None and frames.get(tf) is not None and len(frames[tf]) < len(df) for tf, df in data.frames.items())
+    return dataclasses.replace(data, frames=frames, indices=set(data.indices), option_chain=None if cut else data.option_chain)
 
 
 def ast_sha256(ast: Any) -> str:
@@ -511,9 +610,10 @@ def ast_sha256(ast: Any) -> str:
 def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, params: Optional[Dict[str, Any]] = None,
                as_of: Optional[datetime] = None, window: int = DEFAULT_WINDOW, debug: bool = False,
                constants: Optional[Dict[int, float]] = None, exchange: str = "NSE", data_source: Optional[str] = None,
-               run_id: Optional[int] = None, screen_name: Optional[str] = None) -> Dict[str, Any]:
+               run_id: Optional[int] = None, screen_name: Optional[str] = None, context: bool = False) -> Dict[str, Any]:
     """The evidence pack of one symbol (module docstring). Raises ScreenRuntimeError when the screen cannot run or the
-    symbol has no closed bar up to `as_of`."""
+    symbol has no closed bar up to `as_of`. `context` (EV3, flag `evidence_context`): the option-chain drawables and the
+    multi-timeframe strip."""
     if not getattr(validated, "ok", False):
         raise ScreenRuntimeError("the screen did not pass validation")
     params = dict(params or {})
@@ -566,7 +666,8 @@ def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, para
                    "verify": _verify_text(cond, terms), "drawable": None, "is_call": call is not None and not _operands(cond)}
             if isinstance(cond, n.Not):
                 row["negated"] = True
-            d = _drawable(ctx, cond, row)
+            chain_call = _chain_call(cond) if context else None
+            d = _chain(ctx, chain_call, row) if chain_call is not None else _drawable(ctx, cond, row)
             if d is not None and (passed or debug):
                 d = {"id": f"d{len(drawables) + 1}", "row": rid, **d, "failed": not passed}
                 drawables.append(d)
@@ -598,10 +699,13 @@ def build_pack(ast: Any, validated: Any, data: SymbolData, *, base_tf: str, para
                     "debug": debug},
         "disclaimer": DISCLAIMER,
     }
+    if context:
+        pack["context"] = _context(ctx, ast, validated, order, rows, t_close)
     pack["caption"] = caption_lines(pack)
     if len(json.dumps(pack, separators=(",", ":"))) > MAX_PACK_BYTES and w > 30:
         return build_pack(ast, validated, data, base_tf=base_tf, params=params, as_of=as_of, window=max(30, w // 2), debug=debug,
-                          constants=constants, exchange=exchange, data_source=data_source, run_id=run_id, screen_name=screen_name)
+                          constants=constants, exchange=exchange, data_source=data_source, run_id=run_id, screen_name=screen_name,
+                          context=context)
     return pack
 
 
@@ -631,6 +735,8 @@ def caption_lines(pack: Dict[str, Any]) -> List[str]:
         lines.append(f"{mark} {row['verify']}")
     if pack["summary"]["not_shown"]:
         lines.append(f"+{pack['summary']['not_shown']} more conditions")
+    if pack.get("context"):
+        lines.append("Trend: " + " · ".join(c["text"] for c in pack["context"]))
     lines.append(DISCLAIMER)
     return lines
 
@@ -649,4 +755,20 @@ def caption_text(pack: Dict[str, Any], limit: int = CAPTION_MAX) -> str:
 
 
 __all__ = ["SCHEMA", "DISCLAIMER", "build_pack", "blocks_of", "conditions_of", "caption_lines", "caption_text", "value_text", "ast_sha256", "bar_time_text",
-           "BREAKOUT_ARGS", "MAX_ROWS", "MAX_ZONE_BANDS", "DEFAULT_WINDOW", "MAX_WINDOW"]
+           "BREAKOUT_ARGS", "MAX_ROWS", "MAX_ZONE_BANDS", "DEFAULT_WINDOW", "MAX_WINDOW", "DRAWN_AS", "CHAIN_CALLS", "CONTEXT_TFS", "drawn_as"]
+
+
+def drawn_as(name: str) -> Optional[str]:
+    """EV4: how a registry entry shows in a pack (DRAWN_AS, else by its type: a number is a `series`, a category or a
+    true/false filter without geometry is `strip`). None only for a name the registry does not have."""
+    from app.screener.registry import BOOL, CAT, FUNCTIONS, NUM, STR
+    if name in DRAWN_AS:
+        return DRAWN_AS[name]
+    spec = FUNCTIONS.get(name)
+    if spec is None:
+        return None
+    if spec.returns == NUM and spec.timeframed:
+        return "series"
+    if spec.returns in (BOOL, CAT, STR) or spec.returns == NUM:
+        return "strip"
+    return None

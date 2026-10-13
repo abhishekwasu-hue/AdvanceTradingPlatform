@@ -371,7 +371,7 @@ def test_watch_trigger_lists_ready_and_triggered(tx2_on, fake_bars):
 
 # --- review of TX2: the shared /run bucket and one evaluation of `ready` -----------------------------------------------------
 
-@pytest.mark.parametrize("list_id", [w.id for w in lib.WATCH_LISTS] + ["own"])
+@pytest.mark.parametrize("list_id", [w.id for w in lib.WATCH_LISTS] + ["own", "rank"])
 def test_watch_eval_equals_running_the_ready_and_transition_screens(list_id):
     """The watch-trigger answer, with `ready` evaluated once, equals run_screen on `ready` and on the transition screen -
     on every prefix of several seeds' bars (so both outcomes, and the short-history reasons, occur)."""
@@ -379,7 +379,9 @@ def test_watch_eval_equals_running_the_ready_and_transition_screens(list_id):
     from app.screener import library_routes as lr
     from app.screener.runtime import run_screen
     w = lib.WATCH_BY_ID.get(list_id)
-    ready_text, trigger_text, tf, params = (w.ready, w.trigger, w.base_tf, w.params) if w else ("close > EMA(close, 20)", "close > high[1]", "5m", {})
+    own = {"own": ("close > EMA(close, 20)", "close > high[1]", "5m", {}),
+           "rank": ("close > EMA(close, 20)", "Rank(PctChange(close, 5)) <= 2", "5m", {})}      # a trigger ranked across the list
+    ready_text, trigger_text, tf, params = (w.ready, w.trigger, w.base_tf, w.params) if w else own[list_id]
     ready = lib.inline_params(parse(ready_text), params)
     trigger = lib.inline_params(parse(trigger_text), params)
     transition = lib.transition_ast(ready, trigger)
@@ -387,17 +389,18 @@ def test_watch_eval_equals_running_the_ready_and_transition_screens(list_id):
     _, transition_v = compile_screen(n.to_json(transition), base_tf=tf)
     assert ready_v.ok and transition_v.ok
     seen = {"ready": set(), "hit": set()}
-    for seed in (1, 2, 3):
-        frame = synthetic_bars(400 if tf == "1d" else 600, tf=tf, seed=seed)
-        for cut in range(5, len(frame), 7):
-            universe = [SymbolData("S", {tf: frame.iloc[:cut]}), SymbolData("E", {tf: frame.iloc[:0]})]
-            ready_got, hits = lr.watch_eval(ready, trigger, ready_v, transition_v, universe, tf)
-            want_ready = {m.symbol: (m.matched, m.reason) for m in run_screen(ready, ready_v, universe, base_tf=tf)}
-            want_hit = {m.symbol: (m.matched, m.reason) for m in run_screen(transition, transition_v, universe, base_tf=tf)}
-            assert ready_got == want_ready and hits == want_hit, (list_id, seed, cut)
-            seen["ready"].add(ready_got["S"][0])
-            seen["hit"].add(hits["S"][0])
+    frames = {f"S{seed}": synthetic_bars(400 if tf == "1d" else 600, tf=tf, seed=seed) for seed in (1, 2, 3, 4)}
+    for cut in range(5, 400 if tf == "1d" else 600, 7):
+        universe = [SymbolData(sym, {tf: f.iloc[:cut]}) for sym, f in frames.items()] + [SymbolData("E", {tf: frames["S1"].iloc[:0]})]
+        ready_got, hits = lr.watch_eval(ready, trigger, ready_v, transition_v, universe, tf, transition)
+        want_ready = {m.symbol: (m.matched, m.reason) for m in run_screen(ready, ready_v, universe, base_tf=tf)}
+        want_hit = {m.symbol: (m.matched, m.reason) for m in run_screen(transition, transition_v, universe, base_tf=tf)}
+        assert ready_got == want_ready and hits == want_hit, (list_id, cut)
+        seen["ready"] |= {v[0] for k, v in ready_got.items() if k != "E"}
+        seen["hit"] |= {v[0] for k, v in hits.items() if k != "E"}
     assert seen["ready"] == {True, False}, list_id
+    if list_id == "rank":
+        assert transition_v.cross_sectional and seen["hit"] == {True, False}            # the ranked trigger really fires
 
 
 def test_confluence_and_watch_trigger_are_charged_on_the_run_bucket(tx2_on, fake_bars):
@@ -420,3 +423,16 @@ def test_confluence_and_watch_trigger_are_charged_on_the_run_bucket(tx2_on, fake
         assert codes[:30] == [200] * 30 and codes[30] == 429
     finally:
         rate_limit.reset("screener_run")
+
+
+def test_a_failing_trigger_keeps_the_ready_answer():
+    """Review of TX2 re-check: when only the trigger cannot be evaluated, the ready list still has the symbol."""
+    from app.screener import compile_screen
+    from app.screener import library_routes as lr
+    ready, trigger = parse("close > 0"), parse('NearZone("demand")')                  # zones not loaded: the trigger fails
+    transition = lib.transition_ast(ready, trigger)
+    _, ready_v = compile_screen(n.to_json(ready), base_tf="5m")
+    _, transition_v = compile_screen(n.to_json(transition), base_tf="5m")
+    universe = [SymbolData("S", {"5m": synthetic_bars(200, tf="5m", seed=1)})]
+    ready_got, hits = lr.watch_eval(ready, trigger, ready_v, transition_v, universe, "5m", transition)
+    assert ready_got["S"] == (True, None) and hits["S"][0] is False and "zones" in hits["S"][1]

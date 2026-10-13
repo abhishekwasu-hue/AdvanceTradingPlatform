@@ -402,8 +402,15 @@ The first CH4 slice that the data ATP has supports (dependency check below; OPEN
     at its times only (`on_price_axis: false`). Its premium never goes on the underlying's axis.
   - As of `at`: no trade entered after it, no exit after it (the trade is open then, without P&L), so replay shows
     nothing before it happened.
-  - The window is the trades active in (`start`, `at`], at most 200. Read-only: it writes nothing and offers no
-    action.
+  - The stop, as of `at`: the position monitor overwrites `stop_loss` as a stop trails, so the row holds the latest
+    stop, not the one in force at `at`. Replaying the past (`at` before now, or a trade exiting after `at`) draws the
+    trade's `initial_stop_loss` (its `stop_loss` when none was recorded), labelled "Initial stop"; only the live chart
+    draws the current stop. The stop history is not recorded, so the trail itself is not replayed.
+  - The window is the trades active in (`start`, `at`], at most 200. The exchange filter (an underlying on another
+    exchange is another chart) runs in the query, before the cap, so the cap and `capped` count only drawn trades.
+    Read-only: it writes nothing and offers no action.
+  - An index chart (`NSE:NIFTY 50`) matches derived trades whose underlying is the F&O master's name (`NIFTY`), via
+    `app/instruments/master.py` aliases.
 - **Frontend.** `charting/tradesLayer.ts` (API, bar snapping, `toTradesLayer`, a loader that clears on every new
   question) and `TradesLayer.tsx`, a read-only panel ("My trades": count, open count, show / hide). They are mounted on
   the full-window chart, following replay.
@@ -415,6 +422,8 @@ The first CH4 slice that the data ATP has supports (dependency check below; OPEN
   - own trades only (a teammate's and another organisation's are never drawn, a LIVE row never);
   - instrument, exchange and contract matching;
   - as-of (no trade and no exit before it happened) and the window;
+  - a stop trailed after `at` (the replay draws the initial stop; the live chart the current one);
+  - the exchange filter before the cap, and an index chart showing `NIFTY` option trades;
   - flag off / per organisation;
   - writes nothing.
 
@@ -446,14 +455,21 @@ CH4-1's data-ready slice.
 - **Backend** (`app/charts/contracts.py`; tenancy "member", platform reference data):
   - **`GET /api/charts/contracts/series?leg=[qty*]KEY&...&at=&start=&iv=`**
     - Daily F&O bars from the shared lake (HB1 `nse_bhav:fo` keys; shared-licensed sources only, the preferred
-      source then the highest version per day, corrections point-in-time), as of `at`. Expired contracts included.
+      source then the highest version per IST trade date - max(-rank, version), whatever END time each source
+      stamps - corrections point-in-time), as of `at`. Expired contracts included. Rate limited: 60 calls a minute
+      per user.
     - One leg: its OHLC, volume and OI.
     - Up to 4 legs: the spread close = sum of close x qty on the days every leg traded (no invented OHLC), with each
       leg's OI.
     - `iv=true`: a COMPUTED daily IV per option leg (Black-76 from the close and the same-expiry future's close,
-      `RISK_FREE_RATE`), labelled in `iv_note`; null where unsolvable or with no future that day.
+      `RISK_FREE_RATE`), labelled in `iv_note`. The solve uses Black-76's own bounds (call e^(-rT)max(F-K,0) .. e^(-rT)F,
+      put e^(-rT)max(K-F,0) .. e^(-rT)K), so a deep in-the-money put priced under K-F still solves. Null where
+      unsolvable, on expiry day (no life left at the close) or with no future that day.
   - **`GET /api/charts/contracts/search?underlying=&kind=&expiry=&near=`** lists the instrument master's contracts
-    with their lake keys, one row per contract across brokers, nearest expiry then nearest strike first.
+    with their lake keys. NFO contracts only (the lake's keys are NSE F&O's; a BFO or MCX contract never becomes an
+    NFO key). One row per (expiry, kind, strike) across brokers, ordered and capped in the query: nearest expiry, then
+    nearest strike to `near` (or by strike). With `near`, strikes within +-25% of it (futures always); `total` counts
+    the distinct contracts.
 - **Frontend:**
   - `charting/contracts.ts`: API, keys (the bhavcopy's strike text), URLs, candles, chain links.
   - `pages/ContractChartWindow.tsx`: `/?contract=<leg>&contract=<leg>`, its own tab. The ProChart daily candles (a
@@ -466,8 +482,10 @@ CH4-1's data-ready slice.
   - one leg's OHLC / OI from shared sources only (no `stream:` row);
   - a correction counts only once ingested by `at`;
   - spread = sum of legs on common days;
-  - computed IV = the Greeks library's Black-76 solve;
-  - search de-duplication and order;
+  - computed IV = the Greeks library's solve; a deep ITM put under K-F solves (Black-76 bounds); none on expiry day;
+  - the daily winner per IST trade date (source rank, then version - not the latest END);
+  - search de-duplication, order and cap in the query, the strike window, `total`, no BFO / MCX contract;
+  - the per-user rate limit on `/series`;
   - refusals and the flag.
 
   Frontend `contracts.test.tsx` covers keys, URLs, chain links (not for a sample chain), candles, the IV label and

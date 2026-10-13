@@ -61,13 +61,47 @@ def _value(ast, frame, tf):
     return out if isinstance(out, pd.Series) else pd.Series([out] * len(frame), index=frame.index)
 
 
+SEEDS = (3, 17, 24)                                  # 17 and 24 open with a swing that differs on reflected bars (warm-up)
+
+
+def _ticks(frame):
+    """Prices as whole ticks (0.05 -> 1): reflecting through a whole-tick level is then exact, so an equal high or low
+    stays equal on the reflected bars (floats can break such a tie differently)."""
+    out = frame.copy()
+    for col in ("open", "high", "low", "close"):
+        out[col] = np.round(frame[col] / 0.05)
+    return out
+
+
+def _warmup(frame, reflected):
+    """mr.SWING_WARMUP: the swing functions are exact from the third confirmed swing (degrees 0 and 1) on both the bars
+    and the reflected bars - before it the zigzag's opening swing can differ."""
+    from app.price_action import causal_swings as cs
+    from app.price_action import pa_settings
+    out = 0
+    for f in (frame, reflected):
+        raw = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+        raw["timestamp"] = raw["bar_end"] = f.index
+        for degree in (0, 1):
+            pivots = cs.degree_pivots(raw, degree, pa_settings.settings())
+            out = max(out, pivots[mr.SWING_WARMUP - 1].confirmed_idx if len(pivots) >= mr.SWING_WARMUP else len(f))
+    return out
+
+
 def _same_on_reflection(text, tf="5m", bars=600):
-    """mirror(e) on the bars, mapped back by its class, equals e on the reflected bars - bar by bar."""
-    frame = synthetic_bars(bars, tf=tf, seed=3)
+    """mirror(e) on the bars, mapped back by its class, equals e on the reflected bars - bar by bar, on whole-tick prices,
+    for several seeds, from the swing warm-up on (review of TX2)."""
+    for seed in SEEDS:
+        _same_on_reflection_seed(text, tf, bars, seed)
+
+
+def _same_on_reflection_seed(text, tf, bars, seed):
+    frame = _ticks(synthetic_bars(bars, tf=tf, seed=seed))
     level = float(frame["high"].max() + frame["low"].min())
+    reflected = mr.reflect_bars(frame, level)
     ast = parse(text)
     cls, expr = mr.rewrite(ast)
-    mine, theirs = _value(expr, frame, tf), _value(ast, mr.reflect_bars(frame, level), tf)
+    mine, theirs = _value(expr, frame, tf), _value(ast, reflected, tf)
     if cls == mr.REFL:
         mine = level - mine
     elif cls == mr.NEG:
@@ -77,14 +111,17 @@ def _same_on_reflection(text, tf="5m", bars=600):
     elif cls.startswith("cat:"):
         table = mr.CATEGORIES[cls[4:]]
         mine = mine.map(lambda v: table.get(v, v) if isinstance(v, str) else v)
+    skip = _warmup(frame, reflected)
+    assert skip < bars - 100, f"seed {seed}: the warm-up leaves too few bars"
+    mine, theirs = mine.iloc[skip:], theirs.iloc[skip:]
     if mine.dtype == object or theirs.dtype == object or mine.dtype == bool:
-        diff = [i for i, (a, b) in enumerate(zip(mine, theirs)) if not ((pd.isna(a) and pd.isna(b)) or a == b)]
-        assert not diff, f"{text}: differs at bars {diff[:5]}"
+        diff = [skip + i for i, (a, b) in enumerate(zip(mine, theirs)) if not ((pd.isna(a) and pd.isna(b)) or a == b)]
+        assert not diff, f"{text} (seed {seed}): differs at bars {diff[:5]}"
     else:
         a, b = mine.to_numpy(float), theirs.to_numpy(float)
-        assert (np.isnan(a) == np.isnan(b)).all(), f"{text}: missing values differ"
+        assert (np.isnan(a) == np.isnan(b)).all(), f"{text} (seed {seed}): missing values differ"
         both = ~np.isnan(a) & np.isfinite(a)
-        assert both.sum() > 0 and np.allclose(a[both], b[both], atol=1e-9), f"{text}: values differ"
+        assert both.sum() > 0 and np.allclose(a[both], b[both], atol=1e-9), f"{text} (seed {seed}): values differ"
     return cls, n.to_text(expr)
 
 
@@ -330,3 +367,56 @@ def test_watch_trigger_lists_ready_and_triggered(tx2_on, fake_bars):
     assert client.post("/api/screener/library/watch-trigger", json={"list_id": "nope", "symbols": ["UP"]}, headers=headers).status_code == 404
     bad = client.post("/api/screener/library/watch-trigger", json={"ready": "close >", "trigger": "close > 1", "symbols": ["UP"]}, headers=headers)
     assert bad.status_code == 422
+
+
+# --- review of TX2: the shared /run bucket and one evaluation of `ready` -----------------------------------------------------
+
+@pytest.mark.parametrize("list_id", [w.id for w in lib.WATCH_LISTS] + ["own"])
+def test_watch_eval_equals_running_the_ready_and_transition_screens(list_id):
+    """The watch-trigger answer, with `ready` evaluated once, equals run_screen on `ready` and on the transition screen -
+    on every prefix of several seeds' bars (so both outcomes, and the short-history reasons, occur)."""
+    from app.screener import compile_screen
+    from app.screener import library_routes as lr
+    from app.screener.runtime import run_screen
+    w = lib.WATCH_BY_ID.get(list_id)
+    ready_text, trigger_text, tf, params = (w.ready, w.trigger, w.base_tf, w.params) if w else ("close > EMA(close, 20)", "close > high[1]", "5m", {})
+    ready = lib.inline_params(parse(ready_text), params)
+    trigger = lib.inline_params(parse(trigger_text), params)
+    transition = lib.transition_ast(ready, trigger)
+    _, ready_v = compile_screen(n.to_json(ready), base_tf=tf)
+    _, transition_v = compile_screen(n.to_json(transition), base_tf=tf)
+    assert ready_v.ok and transition_v.ok
+    seen = {"ready": set(), "hit": set()}
+    for seed in (1, 2, 3):
+        frame = synthetic_bars(400 if tf == "1d" else 600, tf=tf, seed=seed)
+        for cut in range(5, len(frame), 7):
+            universe = [SymbolData("S", {tf: frame.iloc[:cut]}), SymbolData("E", {tf: frame.iloc[:0]})]
+            ready_got, hits = lr.watch_eval(ready, trigger, ready_v, transition_v, universe, tf)
+            want_ready = {m.symbol: (m.matched, m.reason) for m in run_screen(ready, ready_v, universe, base_tf=tf)}
+            want_hit = {m.symbol: (m.matched, m.reason) for m in run_screen(transition, transition_v, universe, base_tf=tf)}
+            assert ready_got == want_ready and hits == want_hit, (list_id, seed, cut)
+            seen["ready"].add(ready_got["S"][0])
+            seen["hit"].add(hits["S"][0])
+    assert seen["ready"] == {True, False}, list_id
+
+
+def test_confluence_and_watch_trigger_are_charged_on_the_run_bucket(tx2_on, fake_bars):
+    """Review of TX2 (MED): a confluence of k screens over f fetches costs k + f - 1 `/run` calls and a watch-trigger 2,
+    on the same per-user bucket as `/run` (60 a minute)."""
+    from app.core import rate_limit
+    from app.screener import library_routes as lr
+    assert lr.confluence_units(6, 6) == 11 and lr.confluence_units(2, 1) == 2 and lr.WATCH_UNITS == 2
+    headers, _ = _owner("tx2-charge@example.com")
+    rate_limit.reset("screener_run")
+    try:
+        body = {"screens": ["starter.momentum", "starter.daily_trend", "starter.daily_trend.short"], "symbols": ["UP"]}
+        codes = [client.post("/api/screener/library/confluence", json=body, headers=headers).status_code for _ in range(21)]
+        assert codes[:20] == [200] * 20 and codes[20] == 429                     # 20 x 3 units = the 60 a minute of /run
+        run = client.post("/api/screener/run", json={"source": "close > 1", "symbols": ["UP"]}, headers=headers)
+        assert run.status_code == 429                                            # the same bucket
+        rate_limit.reset("screener_run")
+        watch = {"ready": "close > SMA(close, 5)", "trigger": "close > high[1]", "symbols": ["UP"]}
+        codes = [client.post("/api/screener/library/watch-trigger", json=watch, headers=headers).status_code for _ in range(31)]
+        assert codes[:30] == [200] * 30 and codes[30] == 429
+    finally:
+        rate_limit.reset("screener_run")

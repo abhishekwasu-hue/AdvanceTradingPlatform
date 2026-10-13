@@ -102,12 +102,12 @@ def test_the_eod_templates_are_the_daily_and_weekly_ones():
 NOW = datetime(2026, 10, 9, 16, 0, tzinfo=timezone.utc)          # 21:30 IST
 
 
-async def _write_daily(key, frame, lag=timedelta(hours=4)):
+async def _write_daily(key, frame, lag=timedelta(hours=4), source="vendor:test", version=1):
     from app.db.models import MdCandleRecord
     async with _session_factory() as session:
         for ts, row in frame.iterrows():
             end = ts.normalize() + pd.Timedelta(hours=10)               # the lake labels a daily bar by its END (15:30 IST)
-            session.add(MdCandleRecord(instrument_key=key, timeframe="1d", ts=end.to_pydatetime(), source="test", version=1, open=row.open,
+            session.add(MdCandleRecord(instrument_key=key, timeframe="1d", ts=end.to_pydatetime(), source=source, version=version, open=row.open,
                                        high=row.high, low=row.low, close=row.close, volume=int(row.volume), ingested_at=(end + lag).to_pydatetime()))
         await session.commit()
 
@@ -118,7 +118,7 @@ async def _clear():
     from app.db.models import BreakoutFitnessRunRecord, MdCandleRecord
     async with _session_factory() as session:
         await session.execute(delete(BreakoutFitnessRunRecord))
-        await session.execute(delete(MdCandleRecord).where(MdCandleRecord.source == "test"))
+        await session.execute(delete(MdCandleRecord).where(MdCandleRecord.source.in_(["vendor:test", "stream:kite", "broker:kite"])))
         await session.commit()
 
 
@@ -235,7 +235,7 @@ def test_the_pass_never_reads_tenant_or_user_bars():
     src = inspect.getsource(fitness_job)
     code = src.split('"""', 2)[2]                                          # the code, not the module notes
     assert "md_tenant_candles" not in code and "MdTenantCandle" not in code and "tenant_store" not in code
-    assert "fetch_frames" not in code and "build_adapter" not in code and "MdCandleRecord" not in code   # reads via the zones job's shared-lake reader
+    assert "fetch_frames" not in code and "build_adapter" not in code and "MdCandleRecord" not in code   # reads via the chart layer's shared-lake reader
     assert np.isfinite(1.0)
 
 
@@ -244,3 +244,61 @@ def test_a_breakout_screen_fixture_has_fitness_rows():
     run = run_breakout("B1", {"1d": f}, "1d", within=None)
     rows = fit.outcomes(run, f)
     assert rows and rows[0]["forward_pct"][20] > 0 and rows[0]["failed"] is False
+
+
+def test_a_broker_or_stream_row_never_reaches_the_fitness(lake):
+    """BK5 review (MED): daily rows an organisation's broker session or stream wrote (`broker:` / `stream:`, even at a
+    higher version) never reach the shared fitness - only the shared-licensed sources are read."""
+    async def frames():
+        async with _session_factory() as session:
+            return await fitness_job.load_daily(session, "NSE:FITA", NOW)
+    before = _run(frames())
+    before_run = _run(fitness_job.run_nightly(_session_factory, now=NOW))
+
+    async def stats():
+        async with _session_factory() as session:
+            return await fitness_job.latest(session)
+    clean = _run(stats())
+    end = pd.Timestamp("2026-10-08", tz="UTC")
+    odd = generate(320, 5.0, 99, daily=True, end=end.to_pydatetime())                   # a different series, version 9
+    _run(_write_daily("NSE:FITA", odd, source="stream:kite", version=9))
+    _run(_write_daily("NSE:FITA", odd, source="broker:kite", version=9))
+    after = _run(frames())
+    pd.testing.assert_frame_equal(before, after)
+    from sqlalchemy import delete
+
+    from app.db.models import BreakoutFitnessRunRecord
+
+    async def wipe():
+        async with _session_factory() as session:
+            await session.execute(delete(BreakoutFitnessRunRecord))
+            await session.commit()
+    _run(wipe())
+    again = _run(fitness_job.run_nightly(_session_factory, now=NOW))
+    assert before_run["complete"] and again["complete"]
+    assert [r["stats"] for r in _run(stats())] == [r["stats"] for r in clean]
+
+
+def test_latest_reads_each_template_s_newest_day_only(lake):
+    """BK5 review (LOW): `latest` asks for each template's newest stored day (a grouped max), not every day."""
+    _run(fitness_job.run_nightly(_session_factory, now=NOW - timedelta(days=1)))
+    _run(fitness_job.run_nightly(_session_factory, now=NOW))
+    from sqlalchemy import event
+
+    from tests.test_auth_api import _engine
+    rows_seen = []
+
+    def capture(conn, cursor, statement, parameters, context, executemany):
+        if "breakout_fitness_runs" in statement:
+            rows_seen.append(statement)
+
+    async def go():
+        async with _session_factory() as session:
+            return await fitness_job.latest(session)
+    event.listen(_engine.sync_engine, "before_cursor_execute", capture)
+    try:
+        got = _run(go())
+    finally:
+        event.remove(_engine.sync_engine, "before_cursor_execute", capture)
+    assert [r["as_of"] for r in got] == ["2026-10-09", "2026-10-09"] and len(got) == 2
+    assert rows_seen and "max(" in rows_seen[0].lower() and "group by" in rows_seen[0].lower()

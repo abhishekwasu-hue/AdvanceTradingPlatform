@@ -1260,6 +1260,17 @@ questions BK5-1..BK5-5.
 | B17 | First-hour / previous-day / first-candle / pre-market level break | `DayLevelBreak` | 1m / 3m / 5m / 15m | screener_breakouts | intraday_15m_first_hour, intraday_5m_prev_day |
 | B18 | New high / low of day | `DayExtremeBreak` | 1m / 3m / 5m / 15m | screener_breakouts | intraday_5m_day_extreme |
 
+- **Review fixes (BK5 review).**
+  - The nightly pass reads daily bars only from the lake's shared-licensed sources (`price_action_layer._fetch`:
+    NSE bhavcopy, vendor, the operator's history). Per bar the preferred source wins, then its highest version. A
+    `broker:` or `stream:` row one organisation's session wrote never reaches the fitness, at any version (tested).
+  - `latest` reads each template's newest stored day only (a grouped max of `as_of`), never every day.
+  - Migration `d4f6a8c0e2b5` now revises `d7f9a1c3e5b7`, main's head, so there is one head. It is still
+    ROLLBACK_SAFE.
+  - The worker's `_last_breakout_fitness_day` is typed, so `trading_worker.py` has no new mypy error.
+  - BK4: `lines.Lines` computes the anchor-pair grid in chunks (`PAIR_CELLS`), with results equal to the one grid
+    and memory bounded by the chunk.
+
 ## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
 Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
 - Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own

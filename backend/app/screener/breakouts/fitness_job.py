@@ -55,13 +55,24 @@ def params_hash(template: Any) -> str:
 
 async def load_daily(session: AsyncSession, key: str, now: datetime, days: Optional[int] = None) -> pd.DataFrame:
     """The instrument's shared daily bars that ENDED and were ingested by `now`, start-labelled (index: the session
-    open, UTC), columns open / high / low / close / volume - the frames the breakout engine reads."""
+    open, UTC), columns open / high / low / close / volume - the frames the breakout engine reads.
+
+    Shared-licensed sources only (BK5 review, MED): the chart layer's read (`price_action_layer._fetch`: NSE bhavcopy,
+    vendor, the operator's history - never a `broker:` / `stream:` row one organisation's session wrote), the preferred
+    source then its highest version winning per bar. A window holding more raw rows than the read allows gives no bars
+    (logged), never a partial history."""
+    from app.charts import price_action_layer as PAL
     from app.price_action.zones import job as zones_job
     sess = zones_job.exchange_session(key)
-    start = now - timedelta(days=days or config.BREAKOUT_FITNESS_HISTORY_DAYS)
+    span = days or config.BREAKOUT_FITNESS_HISTORY_DAYS
+    start = now - timedelta(days=span)
     rows: List[Any] = []
     for label in zones_job.LAKE_LABELS["1d"]:
-        rows = await zones_job._fetch(session, key, label, start, now)
+        try:
+            rows = await PAL._fetch(session, key, label, start, now, (span + 10) * PAL.ROWS_PER_BAR)
+        except PAL.WindowTooLarge as exc:
+            logger.warning("Breakout fitness: %s %s not read (%s)", key, label, exc)
+            rows = []
         if rows:
             break
 
@@ -173,12 +184,19 @@ def nightly_due(now: datetime, last_day: Optional[date]) -> Optional[date]:
 
 async def latest(session: AsyncSession, template_ids: Optional[List[str]] = None, label: Optional[str] = None) -> List[Dict[str, Any]]:
     """The newest stored fitness per template (of the universe), as dicts."""
+    from sqlalchemy import and_, func
     label = label or config.BREAKOUT_FITNESS_UNIVERSE
-    q = select(BreakoutFitnessRunRecord).where(BreakoutFitnessRunRecord.universe == label)
+    # BK5 review (LOW): only each template's newest row is read (a grouped max of `as_of` joined back), never every day
+    newest_q = select(BreakoutFitnessRunRecord.template_id, func.max(BreakoutFitnessRunRecord.as_of).label("as_of")).where(
+        BreakoutFitnessRunRecord.universe == label)
     if template_ids is not None:
-        q = q.where(BreakoutFitnessRunRecord.template_id.in_(template_ids))
+        newest_q = newest_q.where(BreakoutFitnessRunRecord.template_id.in_(template_ids))
+    sub = newest_q.group_by(BreakoutFitnessRunRecord.template_id).subquery()
+    q = select(BreakoutFitnessRunRecord).join(sub, and_(BreakoutFitnessRunRecord.template_id == sub.c.template_id,
+                                                        BreakoutFitnessRunRecord.as_of == sub.c.as_of)).where(
+        BreakoutFitnessRunRecord.universe == label)
     newest: Dict[str, BreakoutFitnessRunRecord] = {}
-    for row in await session.scalars(q.order_by(BreakoutFitnessRunRecord.as_of)):
+    for row in await session.scalars(q.order_by(BreakoutFitnessRunRecord.id)):
         newest[row.template_id] = row
     return [{"template_id": r.template_id, "universe": r.universe, "as_of": r.as_of.isoformat(), "signal_tf": r.signal_tf,
              "symbols": r.symbols, "signals": r.signals, "params_hash": r.params_hash, "stats": json.loads(r.stats or "{}")}

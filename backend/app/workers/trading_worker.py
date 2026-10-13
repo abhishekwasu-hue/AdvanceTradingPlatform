@@ -238,7 +238,7 @@ class TradingWorker:
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
         self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
         self._market_zones_task: Optional["asyncio.Task[None]"] = None
-        self._last_breakout_fitness_day = None  # U6 BK5: the IST date the nightly breakout-fitness pass last COMPLETED
+        self._last_breakout_fitness_day: Optional[date] = None  # U6 BK5: the IST date the nightly breakout-fitness pass last COMPLETED
         self._breakout_fitness_task: Optional["asyncio.Task[None]"] = None
         # HB2: the IST date the owner's intraday-history pass last COMPLETED, its task, and when an unfinished pass may
         # be started again (monotonic seconds).

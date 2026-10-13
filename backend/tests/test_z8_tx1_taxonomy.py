@@ -134,7 +134,7 @@ def test_every_registered_backend_template_source_is_fully_filed():
 
 def test_the_guard_catches_an_unfiled_template_an_orphan_and_an_unregistered_source():
     base = _data()
-    base["screens"] = [s for s in base["screens"] if s["source"] not in ("breakouts", "legends")]   # the filed U6 / U7 templates aside
+    base["screens"] = [s for s in base["screens"] if s["source"] not in ("breakouts", "breakouts_bk3", "legends")]   # the filed U6 / U7 templates aside
     tax, _ = tx.parse(base)
     fake = {"breakouts": tx.Source("breakouts", lambda: ["breakouts.daily_52w_high"], "screener_breakouts")}
     problems = tx.coverage_problems(tax, fake)
@@ -166,7 +166,7 @@ def test_the_matrix_has_every_cell_and_counts_the_filed_screens():
     assert sum(sum(r.values()) for r in m.values()) == len(tax.screens)
     assert m["indicator"]["momentum"] == 1 and m["indicator"]["reversal"] == 1 and m["indicator"]["pullback"] == 1
     assert m["fundamental"]["breakout"] == 0                                               # an empty cell stays, as 0
-    assert m["price_action"]["breakout"] == 10 and m["indicator"]["breakout"] == 1 and m["volume_flow"]["breakout"] == 1   # U6 BK1 / BK2
+    assert m["price_action"]["breakout"] == 12 and m["indicator"]["breakout"] == 7 and m["volume_flow"]["breakout"] == 1   # U6 BK1 / BK2 / BK3
 
 
 def test_the_frontend_sample_is_the_server_payload():

@@ -26,7 +26,7 @@ Standing rules for every slice:
 |---|---|---|---|---|---|
 | **N2-1** | §1.4, §1.5 | **Ladder evidence** (this PR, `claude/n2-p1f`): adds the discipline-score criterion from the Z6 journal, plus the user's own figures (expectancy, profit factor, payoff ratio, Kelly reference, risk-of-ruin bound) on the ladder card. | `ladder_evidence` | none / none (`GET /api/paper/ladder` gains keys while on) | ~1.2k |
 | **N2-2** | §1.4 | **Experience levels** (`claude/n2-2`): Beginner / Intermediate / Advanced, derived from the user's own PAPER record. They gate futures (Intermediate) and naked short options (Advanced), single-leg and structures, in the order pipeline. An explicit opt-out for the IST day, with a reason, is logged (audit) and counted. Exits are never gated. | `experience_levels` | table `experience_opt_outs` (`ROLLBACK_SAFE = True`) / `GET /api/paper/experience`, `POST /api/paper/experience/opt-out` (tenancy table) | ~1.3k |
-| N2-3 | §1.5 | **Decision tools I**: risk-of-ruin and Kelly calculators with editable inputs, prefilled from N2-1's figures, and a what-if for any open position (price / IV / days-forward, with T+0 lines) that reuses `options_builder.model` (BS, PoP, expected move). | `decision_tools` | none / `POST /api/decision/what-if`, `POST /api/decision/ruin` | ~1.8k |
+| **N2-3** | §1.5 | **Decision tools I** (`claude/n2-3`): a risk-of-ruin and Kelly calculator with editable inputs, prefilled from N2-1's figures, and a what-if for the user's own open positions grouped by underlying (price / IV / days forward; now, scenario and expiry curves) on the builder's model. | `decision_tools` | none / `POST /api/decision/ruin`, `GET /api/decision/positions`, `POST /api/decision/what-if` (tenancy table) | ~1.6k |
 | N2-4 | §1.5 | **Decision tools II**: a correlation and exposure view across open positions (by underlying, sector, beta to NIFTY from lake EOD bars), plus a probability cone and expected-move overlay on the main chart (a CHARTING layer, the builder's cone maths). | `decision_tools` | none / `GET /api/decision/exposure` | ~1.6k |
 | N2-5 | §1.5 | **Market context panel**: one tile each for regime (Dow on W / D, `ai.regime`), breadth (advance / decline from the lake EOD), India VIX and IV rank (the vix_gate reading, chain IV history), FII / DII flows (NSE provider, daily cache), global cues (`ai/global_cues`) and events today / this week (`news_events`). Each tile shows its source, as-of time and stale state, and says NA on its own failure. | `context_panel` | none / `GET /api/context/panel` | ~2.0k |
 | N2-6 | §2.4 | **Positions v2**: live P&L in ₹ and R, Greeks per position and for the portfolio, SL / target status, time in trade, plan vs current (a drifted stop is highlighted) and an exit ladder. Exits stay available during a lockout (a test covers this). | `positions_v2` | none / none | ~1.8k |
@@ -142,6 +142,38 @@ places nothing, so neither needs a gate yet. N2-7 / N2-9 reuse `structure_gates`
 - the opt-out form, for traders on a shut gate only;
 - the counts and recent opt-outs.
 
+## N2-3 Decision tools I
+
+**Flag** `decision_tools` (off by default). While it is off, every `/api/decision/*` route answers 404 (tested).
+
+**Calculator** (`app/decision_tools/calculators.py`, `POST /api/decision/ruin`). Inputs are win rate p, payoff ratio b,
+risk per trade r (% of capital) and the ruin level D (% of capital). Each trade is +b·r with chance p, or −r.
+
+- Expectancy per trade is p·b − q, in R.
+- The Kelly reference is p − q / b.
+- Growth per trade at r, compounding, is p·ln(1 + b·r) + q·ln(1 − r).
+- Risk of ruin is Lundberg's e^(−R·D), with p·e^(−R·b·r) + q·e^(R·r) = 1. It is certain with a non-positive expectancy.
+  It equals (q/p)^(D/r) for b = 1 (tested).
+- A row is given per risk level (0.5 / 1 / 2 / 5 % plus the input), so the effect of the risk per trade can be read off.
+- The solver is shared with N2-1 as `own_stats.weighted_adjustment_coefficient`.
+- The page prefills p and b from the ladder's `evidence` when it is there.
+
+**What-if** (`app/decision_tools/whatif.py`):
+
+- `GET /api/decision/positions` lists the caller's own open trades grouped by underlying (cash, futures and options
+  together).
+- `POST /api/decision/what-if` models one group:
+  - inputs: the spot, an IV (or one per trade), days forward, an IV shift and the price range;
+  - curves: now (T+0), the scenario and the nearest expiry's close (later legs by Black-Scholes), from
+    `options_builder.model.pnl_on`;
+  - also the P&L at the spot and the scenario's net Greeks.
+- Strikes and rights come from the instrument master. A weekly compact symbol runs the day into the strike, so it is
+  never parsed. An unreadable leg is listed as left out.
+- Spot and IV are typed. Nothing is quoted, so the BT1b entitlement guard is not involved (OPEN_QUESTIONS N2-11).
+
+**UI**: a "Decision tools" card on the Positions page (`src/progression/DecisionToolsCard.tsx`) holds the calculator
+table and the what-if SVG chart (now, scenario, expiry), with a story.
+
 ## Open questions
 
-These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-10), each with a provisional default.
+These are in `docs/OPEN_QUESTIONS.md` (N2-1..N2-13), each with a provisional default.

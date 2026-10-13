@@ -119,6 +119,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # BYOK-V1 (docs/BYOK.md): each user's own AI provider key for Vision chart review. OFF: the endpoints answer 404 and
     # the Settings section says it is not enabled. Vision only comments; it never places, blocks or changes an order.
     "vision_byok": "Vision with your own AI key: users store their own provider API key (encrypted), test it and set spend caps",
+    # BYOK-V3 (docs/BYOK.md): the same Vision audit (each user's own key, comment only) for the screen alerts of rules the
+    # user created and a daily after-close review of the user's own symbols. Needs `vision_byok` too. OFF: no scan-alert or
+    # daily-review row is queued and no call is made; V2 proposal audits are unchanged.
+    "vision_byok_v3": "Vision V3: your own AI key also reviews your scan alerts and a daily after-close chart review (comment only, never an order)",
     # PW5 (beta spec 4a): a proposal links to a pre-filled order in the user's own broker app where the broker offers
     # such a link (docs/BROKER_DATA_TERMS.md). The user confirms there; ATP sends nothing to the broker API.
     "broker_app_links": "\"Trade in your broker app\" links on proposals (pre-filled basket in the user's own broker app; ATP places no order)",
@@ -183,9 +187,17 @@ FEATURE_FLAGS: Dict[str, str] = {
     # functions are hidden and refused, their templates and screens are left out of the catalog and the run, and alert
     # rules using them pause. Research only - matches, never orders.
     "screener_breakouts_bk3": "Breakout screens, set 2: VCP breakout and watchlist, Donchian, Bollinger / TTM squeeze, moving-average and RSI / ADX regime breakouts (needs screener_breakouts; research only, places no orders)",
+    # U6 BK4 (spec §8 BK4): trendline / channel (B5), flag / pennant / triangle (B6), gap (B8) and retest (B9) breakouts.
+    # Needs `screener_breakouts` too. OFF: their ScreenQL functions are hidden and refused, their templates and screens are
+    # left out of the catalog and the run, and alert rules using them pause. Research only - matches, never orders.
+    "screener_breakouts_bk4": "Breakout screens, set 3: trendline / channel, flag / pennant / triangle, gap-and-go and retest breakouts (needs screener_breakouts; research only, places no orders)",
     # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
     # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
     # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
+    # U8 EV3 (docs/design/EVIDENCE_CHARTS.md): on top of `evidence_charts` - option-chain conditions draw the chain's OI
+    # walls / max pain, every pack carries the multi-timeframe trend strip, and a pack can be replayed bar by bar from the
+    # shared lake. OFF: packs as before, the replay route answers 404. Informational only.
+    "evidence_context": "Evidence context: option-chain OI walls on evidence charts, the W / D / 1H trend strip and bar-by-bar replay (informational, places no orders)",
     "evidence_charts": "Evidence charts: each screen match drawn with only the screen's own conditions, a verify strip with the engine's numbers, and the image on Telegram (informational, places no orders)",
     # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
@@ -200,6 +212,14 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    # N1 X2: Auto PAPER from scans. OFF (the default, and while the owner has not decided N1-3): an AUTO_PAPER template
+    # stays a proposal. ON: a template its owner armed places one PAPER order per confirmed setup (approval-only mode
+    # off, within the scan limits, re-quoted) - PAPER only, never a broker order. Only the platform operator sets it.
+    "scan_auto_paper": "Auto PAPER from armed scan templates (N1 X2): a confirmed setup is placed as a PAPER order without a proposal (approval-only mode off; PAPER only, never a broker order)",
+    # U7 LG2: the second slice of Legends cards (trend, pullback and intraday methods; data/legends.json `slice: lg2`), on
+    # top of screener_legends. OFF: the LG2 cards are left out of /api/screener/legends and their screens out of the
+    # taxonomy. Educational only - never a recommendation, never an endorsement; places no orders.
+    "screener_legends_lg2": "Legends LG2: more cards on publicly described trading methods, each with an editable screen (educational only, places no orders)",
     "scan_then": "Scan Then (N1 U4 X1): after a scan alert matches, the level gate watches the symbol at its market zones and a confirmed setup is sent as a notification or a PAPER entry proposal (never an order; needs execution_core)",
     # CH5 (docs/design/CHARTING.md): the multi-chart workspace - 1/2/4/6/8 charts, symbol / interval / crosshair link
     # groups, saved layouts per user, keyboard shortcuts, chart types. OFF: /api/charts/layouts answers 503 and the
@@ -259,6 +279,16 @@ FEATURE_FLAGS: Dict[str, str] = {
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
     "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # U9 TX2 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md §4): the screen library's confluence view (symbols ranked by
+    # how many methods flag them), generated short mirrors of the long pre-built screens and watch-then-trigger lists,
+    # on top of `screener_v2` and `screener_gallery`. OFF: /api/screener/library/* answer 503 and the Screener page shows
+    # none of it. Research only - closed bars, no recommendation, places no orders.
+    "screener_tx2": "Screen library tools: confluence view, short mirror screens and watch-then-trigger lists on the Screener page (research only)",
+    # N2-3 (P1 spec 1.5, docs/design/N2_P1FGH.md): decision tools - the risk-of-ruin / Kelly calculator on typed inputs
+    # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
+    # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information
+    # only: nothing sizes, places or closes an order.
+    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, and a what-if for your own open positions (price, IV, days forward; information only)",
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
@@ -276,9 +306,11 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
-                               "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace",
-                               "scan_then", "screener_breakouts_bk3", "screener_history", "screener_backtest", "screener_rankings", "screener_ownership",
-                               "screener_venues", "screener_copilot", "screener_etf", "alerts_whatsapp_dlt", "backtest_models"})
+                               "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels",
+                               "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_history", "screener_backtest",
+                               "screener_rankings", "screener_ownership", "screener_venues", "screener_copilot", "screener_etf",
+                               "alerts_whatsapp_dlt", "backtest_models", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4",
+                               "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

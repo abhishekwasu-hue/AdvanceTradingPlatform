@@ -361,7 +361,7 @@ def test_the_run_limit_is_shared_by_the_page_and_the_agent(monkeypatch):
     t = _org("limit")
     _broker(monkeypatch)
     rate_limit.reset("screener_run")
-    monkeypatch.setattr(routes, "RUN_LIMIT", (3, 60.0))
+    monkeypatch.setattr(routes, "RUN_LIMIT", 3)
     body = {"source": "close > SMA(close, 20)", "symbols": ["UP"]}
     assert client.post("/api/screener/run", headers=t["headers"], json=body).status_code == 200
     assert client.post("/api/screener/run", headers=t["headers"], json=body).status_code == 200

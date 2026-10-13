@@ -419,7 +419,7 @@ def read_problem(read: "ScanRead", payload: dict) -> Optional[str]:
         ok, bad = grounding.check_numbers(text or "", allowed)
         if not ok:
             return f"numbers not in the scan: {', '.join(bad[:5])}"
-        blocked = output_filter.blocked_terms(text or "")
+        blocked = output_filter.findings(text or "")
         if blocked:
             return f"advice/guarantee words: {', '.join(blocked[:5])}"
     return None

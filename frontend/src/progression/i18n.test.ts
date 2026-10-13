@@ -38,7 +38,8 @@ describe("progression i18n (N2)", () => {
     const missing: string[] = [];
     for (const [rel, text] of files) {
       for (const m of text.matchAll(/\bt\(\s*"([a-zA-Z][\w.-]*)"/g)) {
-        if (typeof lookup(m[1]) !== "string") missing.push(`${rel}: ${m[1]}`);
+        const v = lookup(m[1]) ?? lookup(`${m[1]}_other`) ?? lookup(`${m[1]}_one`);   // i18next plural keys
+        if (typeof v !== "string") missing.push(`${rel}: ${m[1]}`);
       }
       for (const m of text.matchAll(/\bt\(\s*`([a-zA-Z][\w.-]*)\.\$\{/g)) {
         const group = lookup(m[1]);

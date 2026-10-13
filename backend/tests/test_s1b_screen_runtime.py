@@ -226,6 +226,17 @@ def test_vcp_and_indicator_breakout_series_u6_bk3():
     assert bool(_ev('DonchianBreakout("up", 20, 0)', jump).iloc[-1]) and not _ev('DonchianBreakout("up", 20, 0)', jump).iloc[:-1].any()
 
 
+def test_trendline_pattern_gap_and_retest_series_u6_bk4():
+    # deeper checks (fixtures per screen, the trendline port parity, no look-ahead, parity with the engine) are in
+    # tests/test_z7_bk4_breakouts.py
+    closes = [100 + 3 * np.sin(i / 6) + i * 0.05 for i in range(300)]
+    data = _sym(closes)
+    for text in ('TrendlineBreakout("up")', 'TrendlineBreakout("down", "channel", 2, 0)', 'PatternBreakout("up", "triangle", 0)',
+                 'PatternBreakout("down", "flag", 0, 0)', 'GapBreakout("up", "prev_day", 15)', 'RetestEntry("up", "range", 10, FALSE)'):
+        assert _ev(text, data).dtype == bool, text
+    assert set(_ev('GapType("up", "prev_day", 15)', data).unique()) <= {"GAP_AND_GO", "GAP_HOLD", "GAP_FILL", ""}
+
+
 def test_market_zone_functions_z7a3():
     # deeper checks (as-of per bar, no look-ahead, text vs engine, tenant scope) are in tests/test_zones_chart_screenql.py
     from datetime import datetime, timezone

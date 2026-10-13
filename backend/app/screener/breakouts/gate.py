@@ -6,19 +6,22 @@ screen or an alert rule that uses one is refused with the reason. Nothing in the
 
 U6 BK3: the VCP and indicator breakouts (VCPBreakout, VCPReady, DonchianBreakout, SqueezeBreakout, MABreakout,
 RegimeBreakout) are in the same family (bar close only, the same pause / refusal paths) and need a second flag on top,
-`screener_breakouts_bk3` (registry Spec.also_flags; off by default).
+`screener_breakouts_bk3` (registry Spec.also_flags; off by default). U6 BK4's TrendlineBreakout, PatternBreakout,
+GapBreakout, GapType and RetestEntry likewise need `screener_breakouts_bk4`.
 """
 from __future__ import annotations
 
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.screener import nodes
-from app.screener.registry import BREAKOUT_BK3_FLAG, BREAKOUT_FLAG, FUNCTIONS
+from app.screener.registry import BREAKOUT_BK3_FLAG, BREAKOUT_BK4_FLAG, BREAKOUT_FLAG, FUNCTIONS
 
 FLAG = BREAKOUT_FLAG
 BK3_FLAG = BREAKOUT_BK3_FLAG
+BK4_FLAG = BREAKOUT_BK4_FLAG
+EXTRA_FLAGS = (BK3_FLAG, BK4_FLAG)                   # the set flags layered on the family flag (Spec.also_flags)
 
 
 def flagged_calls(ast: Any) -> List[str]:
@@ -34,7 +37,7 @@ def flagged_calls(ast: Any) -> List[str]:
 
 
 # U6 BK2: functions that read the exchange session (open, VWAP from the open, time-of-day slots)
-SESSION_FUNCTIONS = ("ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP")
+SESSION_FUNCTIONS = ("ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP", "GapBreakout", "GapType")
 
 
 def session_calls(ast: Any) -> List[str]:
@@ -67,8 +70,17 @@ def required_flags(names: List[str]) -> List[str]:
 
 
 def extra_flag_calls(ast: Any) -> List[str]:
-    """U6 BK3: breakout functions in a screen that need a flag beyond the family's (each once, in order)."""
+    """U6 BK3 / BK4: breakout functions in a screen that need a flag beyond the family's (each once, in order)."""
     return [n for n in flagged_calls(ast) if FUNCTIONS[n].also_flags]
+
+
+def extra_flags_needed(ast: Any) -> Dict[str, List[str]]:
+    """{extra flag: the functions in the screen that need it} (U6 BK3 / BK4)."""
+    out: Dict[str, List[str]] = {}
+    for name in extra_flag_calls(ast):
+        for f in FUNCTIONS[name].also_flags:
+            out.setdefault(f, []).append(name)
+    return out
 
 
 def refusal(names: List[str]) -> str:
@@ -103,5 +115,5 @@ async def blocked_calls(session: AsyncSession, tenant_id: Any, ast: Any) -> List
     return [n for n in extra if set(FUNCTIONS[n].also_flags) & off]
 
 
-__all__ = ["FLAG", "BK3_FLAG", "SESSION_FUNCTIONS", "flagged_calls", "extra_flag_calls", "session_calls", "alert_clock_refusal", "required_flags",
+__all__ = ["FLAG", "BK3_FLAG", "BK4_FLAG", "EXTRA_FLAGS", "SESSION_FUNCTIONS", "flagged_calls", "extra_flag_calls", "extra_flags_needed", "session_calls", "alert_clock_refusal", "required_flags",
            "refusal", "enabled", "bk3_enabled", "blocked_calls"]

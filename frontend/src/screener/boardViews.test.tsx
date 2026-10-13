@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import { gridSymbols, heatmapLayout, sparkPath, squarify, tileFill, GRID_MAX, type ContextRow } from "./boardViews";
+import { gridSymbols, heatmapLayout, heatmapResults, nextTab, sparkPath, squarify, tileFill, BOARD_VIEWS, CONTEXT_MAX, GRID_MAX, type ContextRow } from "./boardViews";
 import { ChartGridView, HeatmapView } from "./ResultViews";
 
 const ctx = (symbol: string, sector: string, cap: number | null, change: number | null): ContextRow => ({
@@ -54,5 +54,27 @@ describe("result board views (U5 D3a)", () => {
     expect(sparkPath([{ c: 1 }], 10, 10)).toBeNull();
     expect(sparkPath([{ c: 1 }, { c: 3 }], 10, 10)).toBe("M0.0 10.0L10.0 0.0");
     expect(heat + grid).not.toMatch(/\b(buy|sell|order)\b/i);
+  });
+
+  it("lays out only the symbols with context (no fake Unclassified tiles past the context cap) and says so", () => {
+    const many = Array.from({ length: 520 }, (_, i) => ({ symbol: `S${i}`, matched: i % 7 === 0, reason: null }));
+    const some = many.slice(0, CONTEXT_MAX).map((r, i) => ctx(r.symbol, i % 2 ? "Energy" : "IT", 100 + i, 0.5));
+    expect(heatmapResults(many, some)).toHaveLength(CONTEXT_MAX);
+    const groups = heatmapLayout(many, some, { x: 0, y: 0, w: 400, h: 300 });
+    expect(groups.map((g) => g.sector).sort()).toEqual(["Energy", "IT"]);                 // no "Unclassified" group invented
+    expect(groups.reduce((a, g) => a + g.tiles.length, 0)).toBe(CONTEXT_MAX);
+    const heat = renderToStaticMarkup(<HeatmapView results={many} context={some} />);
+    expect(heat).toContain(`First ${CONTEXT_MAX} of 520 shown`);
+    expect(renderToStaticMarkup(<HeatmapView results={results} context={context} />)).not.toContain("shown ·");
+  });
+
+  it("moves the roving tab stop with the arrow, Home and End keys", () => {
+    const ids = BOARD_VIEWS.map((v) => v.id);
+    expect(nextTab(ids, "table", "ArrowRight")).toBe(ids[1]);
+    expect(nextTab(ids, "table", "ArrowLeft")).toBe(ids[ids.length - 1]);
+    expect(nextTab(ids, ids[ids.length - 1], "ArrowRight")).toBe("table");
+    expect(nextTab(ids, "heatmap", "Home")).toBe("table");
+    expect(nextTab(ids, "table", "End")).toBe(ids[ids.length - 1]);
+    expect(nextTab(ids, "table", "Enter")).toBeNull();
   });
 });

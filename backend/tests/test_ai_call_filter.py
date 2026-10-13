@@ -88,6 +88,8 @@ SHOULD_BLOCK = [
     "Open short NIFTY.", "Open the positions tab and close INFY.", "Exit the RELIANCE chart before the close.",
     "Buy and hold RELIANCE now.", "You should buy and hold RELIANCE.", "Buy and sell RELIANCE intraday.", "Sell and short TCS.",
     "Go long and buy RELIANCE.", "Close RELIANCE at 2450.",
+    "TCS: close", "INFY: close now.", "RELIANCE: hold", "Close RELIANCE above 2500.", "Close TCS at market.",
+    "Hold RELIANCE into results.",
 ]
 
 SHOULD_PASS = [
@@ -133,6 +135,10 @@ SHOULD_PASS = [
     "Open: 2440, High: 2460, Low: 2430, Close: 2450", "Open interest in NIFTY rose.", "Open positions in TCS rose.",
     "Open RELIANCE in a new tab.", "Open the RELIANCE chart.", "Close the RELIANCE chart.", "Close the order ticket.",
     "Close the chart and review INFY.", "Open the positions tab.",
+    # review round 7: close / open / hold as a bar's price fields, in the "TICKER: verb" form too
+    "TCS: close 4050, RSI 62.", "NIFTY: open 25000, close 25100.", "TCS - close 4050.", "RELIANCE: close above SMA 20.",
+    "INFY: close below 1500 on volume.", "RELIANCE: close 2480, open 2455.", "HDFCBANK: hold above 1650 kept the trend.",
+    "Close price: INFY 1500.", "NIFTY: hold of 25000 matters.",
 ]
 
 

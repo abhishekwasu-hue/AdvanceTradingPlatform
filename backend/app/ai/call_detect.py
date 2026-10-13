@@ -270,6 +270,10 @@ _TRADE_HOWTO_VERBS = frozenset({"exit", "close", "hold"})
 _BOOK_PAGE = re.compile(r"\b(?:positions?|holdings?|orders?|order book|portfolio|trades?|tradebook|trade book|ticket)\b", re.I)
 # "Open" is a trade only with a side or a position ("Open RELIANCE long", "Open a position in INFY"); "Open RELIANCE" alone
 # is the app (the multi-word "open a long in" / "open long" verbs catch the rest).
+# Round 7: close / open / hold followed by a level, a number or "price / of" are the bar's fields ("TCS: close 4050",
+# "Close price: INFY 1500", "hold above 1650 kept the trend"), in the imperative and the "TICKER: verb" forms alike.
+_FIELD_VERBS = frozenset({"close", "open", "hold"})
+_PRICE_FIELD = re.compile(r"^[\s,:\-–—]*(?:(?:at|above|below|near|over|under|of)\b|[\d₹]|(?:price|prices|level|levels)\b)", re.I)
 _OPEN_TRADE = re.compile(r"^\s*(?:(?:an?|new|fresh|the)\s+)*(?:long|short|position|trade)s?\b", re.I)
 # "Add a 20 EMA on the RELIANCE chart": an indicator length, not a price level.
 _INDICATOR_LENGTH = re.compile(r"^\s*(?:an?\s+|the\s+)?\d+[\s-]*(?:period\s+|day\s+|bar\s+)?"
@@ -426,6 +430,8 @@ def _object(rest: str, L: Lists, s: str, *, allow_level: bool, verb: str = "") -
     """What an imperative / modal verb is aimed at (None = not a call): an instrument, a share word or a price level after
     the fillers; "a signal / setup / rating on RELIANCE"; a pronoun ("buy more") when the sentence names an instrument.
     A noun phrase ("Sell HDFCBANK was the most common signal") is not a call."""
+    if verb.lower() in _FIELD_VERBS and _PRICE_FIELD.match(rest):
+        return None                                             # "Close above 2450", "SMA(close, 20)": the candle, not an order
     if L.descriptive.match(rest):
         tail = L.descriptive.sub("", rest, count=1)
         tail = re.sub(r"^\s*(?:on|in|for|of)\s+", "", tail, flags=re.I)
@@ -442,8 +448,6 @@ def _object(rest: str, L: Lists, s: str, *, allow_level: bool, verb: str = "") -
     howto = v in _HOWTO_VERBS and not _HOWTO_NOW.search(rest) and not _acts_now(s)
     if howto and _INDICATOR_LENGTH.match(rest):
         return None
-    if v.startswith(("close", "open")) and re.match(r"^[\s,:]*(?:at|above|below|near|over|under)?\s*[\d₹]", rest):
-        return None                                             # "Close above 2450", "SMA(close, 20)": the candle, not an order
     lead_the = re.match(r"^\s*the\s+", rest, re.I)
     obj = _instrument_at_start(rest, L, allow_level=allow_level)
     if obj is not None:
@@ -508,6 +512,8 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
         rated = re.match(r"^\s*(?:rating|call)\b", m.group("after"), re.I)
         if (L.descriptive.match(m.group("after")) and not rated) or _negated(s, m.start("verb"), L) or record_line(s, m.start("verb")):
             continue
+        if m.group("verb").lower() in _FIELD_VERBS and _PRICE_FIELD.match(m.group("after")):
+            continue                                              # "TCS: close 4050, RSI 62" - a price field, not a call
         obj = _instrument_at_end(m.group("obj"), L, gap=0)
         if obj and obj.lower() not in L.share_words:
             add(f"{obj}:", m.group("verb"))

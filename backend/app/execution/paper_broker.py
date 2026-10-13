@@ -32,10 +32,11 @@ class PaperBroker:
         self.gst_pct = gst_pct
         self.slippage_pct = slippage_pct
         self.slippage_model = slippage_model    # realism C2: a backtest SlippageModel; None keeps the fixed percentage
+        self.fill_context: dict = {}            # N7 C2b: what a slippage model may read about the next fill (qty, signal-bar volume)
 
     def _slip(self, price: float, direction: SignalDirection) -> float:
         if self.slippage_model is not None:
-            return self.slippage_model.apply(price, direction)
+            return self.slippage_model.apply(price, direction, **self.fill_context)
         slip = price * self.slippage_pct / 100
         return price + slip if direction == SignalDirection.LONG else price - slip
 

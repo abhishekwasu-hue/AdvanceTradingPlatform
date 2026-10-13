@@ -90,6 +90,15 @@ def last_bar_only_calls(ast: Any) -> List[str]:
     return out
 
 
+def scale_of(adj_close: float, raw_close: float, adj_volume: float, raw_volume: float) -> Scale:
+    """The as-of scale of one bar from its adjusted and raw values, rounded to 6 significant digits (review of S6a
+    re-check: per-bar float noise would otherwise make every date its own scale and its own evaluation)."""
+    p = float(adj_close) / float(raw_close) if raw_close else 1.0
+    v = float(raw_volume) / float(adj_volume) if adj_volume else 1.0
+    p, v = float(f"{p:.6g}"), float(f"{v:.6g}")
+    return (1.0 if abs(p - 1.0) < 1e-6 else p, 1.0 if abs(v - 1.0) < 1e-6 else v)
+
+
 def rescaled(frame: pd.DataFrame, scale: Optional[Scale]) -> pd.DataFrame:
     """Adjusted bars -> the bars as known on a date (prices / divisor, volume x multiplier); identity for no scale."""
     if frame is None or frame.empty or scale is None or scale == (1.0, 1.0):

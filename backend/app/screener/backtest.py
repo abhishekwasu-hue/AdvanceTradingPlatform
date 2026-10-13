@@ -33,7 +33,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 from datetime import date
-from typing import Any, Dict, List, Optional, Sequence, Set
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 import numpy as np
 import pandas as pd
@@ -74,6 +74,7 @@ class Result:
     holdings: List[int] = field(default_factory=list)
     rebalances: List[Dict[str, Any]] = field(default_factory=list)
     benchmark_missing: Dict[str, int] = field(default_factory=dict)     # sessions a benchmark had no close (skipped)
+    cash: List[float] = field(default_factory=list)                    # the cash at each close (never below 0)
 
 
 def rank_table(rank_ast: Any, frames: Dict[str, pd.DataFrame], dates: Sequence[date], params: Optional[Dict[str, Any]] = None,
@@ -125,8 +126,12 @@ def _grids(frames: Dict[str, pd.DataFrame], calendar: Sequence[date]):
 
 def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str, pd.DataFrame], calendar: Sequence[date],
              end: date, settings: Settings, eligible: Optional[Dict[date, Set[str]]] = None,
-             benchmark_closes: Optional[Dict[str, pd.Series]] = None) -> Result:
-    """The rolling backtest (pure). `sig`: the matches at the rebalance dates; `ranks`: the rank values there (or None)."""
+             benchmark_closes: Optional[Dict[str, pd.Series]] = None, excluded: Optional[Set[Tuple[str, date]]] = None,
+             benchmark_opens: Optional[Dict[str, pd.Series]] = None) -> Result:
+    """The rolling backtest (pure). `sig`: the matches at the rebalance dates; `ranks`: the rank values there (or None).
+    `excluded`: the (symbol, session) pairs of unadjusted bars next to a split or bonus (history_routes.load) - such a
+    symbol is not held over a period that touches one (its marks would show the split as a loss). `benchmark_opens`:
+    the benchmarks' opens, so the first day is measured from the open as the book is (else from the last close)."""
     from app.execution.india_costs import leg_cost
     calendar = sorted(calendar)
     pos = {d: i for i, d in enumerate(calendar)}
@@ -154,6 +159,11 @@ def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str,
             if value is not None and np.isfinite(value):
                 bench_prev[name] = float(value)
     ew_index = np.zeros(0, dtype=int)
+    fills = sorted(rebalance_at)
+    blocked: Dict[int, Set[int]] = {}                      # session row -> the columns excluded there
+    for s_, d_ in excluded or ():
+        if s_ in col and d_ in pos:
+            blocked.setdefault(pos[d_], set()).add(col[s_])
     for k in range(first, last + 1):
         day = calendar[k]
         if k in rebalance_at:
@@ -168,12 +178,17 @@ def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str,
             stuck = [j for j in range(len(cols)) if qty[j] > 0 and (not np.isfinite(opens[k, j]) or opens[k, j] <= 0)]
             for j in stuck:
                 new_qty[j] = qty[j]                           # review of S6b (LOW): no open today - kept, never sold at a stale close
+            # re-check of S6b (MED): a kept holding is not cash - the targets share what is left after it
+            investable = equity_before - float(sum(qty[j] * px[j] for j in stuck if np.isfinite(px[j])))
+            # re-check of S6b (LOW): an unadjusted symbol is not held over a period touching a split or bonus
+            nxt = next((f for f in fills if f > k), last + 1)
+            near_split: Set[int] = set().union(*(blocked.get(m, set()) for m in range(k, nxt))) if blocked else set()
             for s, w in target.items():
                 j = col[s]
-                if not np.isfinite(opens[k, j]) or opens[k, j] <= 0 or j in stuck:
-                    continue                                  # does not trade at this open: not bought
+                if not np.isfinite(opens[k, j]) or opens[k, j] <= 0 or j in stuck or j in near_split:
+                    continue                                  # does not trade at this open, or spans a split: not bought
                 # a cash buffer (CASH_BUFFER) for the charges, so the book is never financed by negative cash
-                new_qty[j] = math.floor(w * equity_before * (1 - CASH_BUFFER) / (opens[k, j] * (1 + slip)))
+                new_qty[j] = math.floor(w * max(investable, 0.0) * (1 - CASH_BUFFER) / (opens[k, j] * (1 + slip)))
             for jj in np.nonzero((new_qty != qty))[0]:
                 j = int(jj)
                 delta = new_qty[j] - qty[j]
@@ -192,9 +207,11 @@ def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str,
             result.rebalances.append({"decided": str(d), "filled": str(day), "matches": len(passers), "held": sorted(target)})
             elig = eligible.get(d) if eligible is not None else None
             ew_index = np.array([col[s] for s in cols if elig is None or s in elig], dtype=int)
+            ew_index = np.array([j for j in ew_index if int(j) not in near_split], dtype=int)
         equity = cash + float(np.nansum(qty * np.nan_to_num(marks[k])))
         result.days.append(day)
         result.equity.append(equity)
+        result.cash.append(cash)
         if prev_equity is not None:
             result.returns.append(equity / prev_equity - 1.0)
             # the equal-weight universe on the strategy's basis: day 1 from the open (the book is bought there), later
@@ -210,6 +227,10 @@ def simulate(sig: pd.DataFrame, ranks: Optional[pd.DataFrame], frames: Dict[str,
             for name, series in (benchmark_closes or {}).items():
                 value = series.get(day)
                 before = bench_prev.get(name)
+                if k == first:                                 # re-check of S6b (LOW): day 1 from its open, as the book
+                    opened = (benchmark_opens or {}).get(name, pd.Series(dtype=float)).get(day)
+                    if opened is not None and np.isfinite(opened) and opened > 0:
+                        before = float(opened)
                 if value is not None and before and np.isfinite(value):
                     result.benchmark_returns.setdefault(name, []).append(float(value) / before - 1.0)
                 else:                                          # review of S6b (LOW): a missing close is skipped and counted, never 0 %

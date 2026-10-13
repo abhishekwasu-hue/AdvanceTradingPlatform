@@ -5,6 +5,12 @@
   and answers with one JSON object `{text, explanation, assumptions}`. Our validator and flag gates check the text;
   with problems the model gets one repair turn with them; still invalid -> the problems are returned, nothing guessed.
 * Nothing runs and nothing is stored: the answer is a draft the trader reads, edits and runs from the Screener.
+* English only (owner directive, 13 Oct): the box asks for English and ScreenQL; a draft with any character outside
+  ASCII is refused (ScreenQL is ASCII), and an explanation or assumption that is not plain English text is withheld.
+* Problems with an invalid draft (MED-1, ADR-0006; S9 round-cap redesign): each is shown from a fixed template keyed
+  by the problem's `kind` (app/screener/validator.py Problem), filled only with what the registry itself knows - a
+  function or field that exists, one of its arguments, its allowed values or range, a timeframe - and the `pos`. No
+  quoted text, no unknown name, no number from the draft. An unknown kind is "the draft could not be used".
 * The explanation passes the H-C1 c output filter (no advice or guarantee words; a specific call is framed).
 * No provider configured (the rule-based one): a plain refusal saying so - the builder and the query editor still work.
 """
@@ -12,7 +18,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Sequence, Set
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence
 
 from app.ai.prompt_versions import version_of
 
@@ -33,13 +39,15 @@ Rules:
    out and say so in "assumptions".
 2. Choose sensible defaults for anything the trader did not say (windows, thresholds) and list them in "assumptions".
 3. A screen finds symbols that pass filters. Never recommend buying or selling, never promise returns.
-4. Answer with one JSON object and nothing else:
+4. Quoted strings are only for a function's fixed choices (e.g. Pattern("hammer")); never put other text in quotes.
+5. Answer with one JSON object and nothing else:
    {"text": "<the ScreenQL screen>", "explanation": "<one or two plain sentences: what it looks for>",
     "assumptions": ["<each default you chose or thing you left out>"]}
-Answer in {lang}."""
+Write everything in English with plain ASCII characters only, whatever language the request is in."""
 
 PROMPT_VERSION = version_of("screener_nl", SYSTEM)
 DISCLAIMER = "A draft screen from your words: check it, edit it, then run it. Matches are filters passed, not recommendations."
+UNUSABLE = "the draft could not be used"
 
 
 def registry_text(hidden_flags: Sequence[str] = ()) -> str:
@@ -55,8 +63,9 @@ def registry_text(hidden_flags: Sequence[str] = ()) -> str:
     return "\n".join(lines[:MAX_REGISTRY_ENTRIES])
 
 
-def system_prompt(lang: str, hidden_flags: Sequence[str] = ()) -> str:
-    return SYSTEM.replace("{registry}", registry_text(hidden_flags)).replace("{lang}", "Marathi" if lang == "mr" else "English")
+def system_prompt(hidden_flags: Sequence[str] = ()) -> str:
+    """The prompt for this organisation's registry. English only: there is no language choice."""
+    return SYSTEM.replace("{registry}", registry_text(hidden_flags))
 
 
 def parse(raw: str) -> Dict[str, Any]:
@@ -73,50 +82,172 @@ def parse(raw: str) -> Dict[str, Any]:
             "assumptions": [str(a).strip()[:200] for a in assumptions if str(a).strip()][:10] if isinstance(assumptions, list) else []}
 
 
-_IDENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+def non_ascii_at(text: str) -> Optional[int]:
+    """The position of the first character outside ASCII, or None. ScreenQL is ASCII, so such a draft is refused."""
+    return next((i for i, ch in enumerate(text) if ord(ch) > 127), None)
 
 
-def _vocabulary() -> Set[str]:
-    """The words a problem may show as they are: the registry's own names, argument names and fixed choices, and the
-    ScreenQL keywords - never the model's."""
-    from app.screener.parser import KEYWORDS
-    from app.screener.registry import FIELDS, FUNCTIONS
-    words: Set[str] = {k.lower() for k in KEYWORDS} | {"all", "any"}
-    for spec in (*FIELDS.values(), *FUNCTIONS.values()):
-        words.add(spec.name.lower())
-        words.update(str(v).lower() for v in getattr(spec, "values", ()) or ())
-        for arg in spec.args:
-            words.add(arg.name.lower())
-            words.update(str(c).lower() for c in arg.choices or ())
-    return words
+# --- problems: fixed templates, registry names only --------------------------------------------------------------------------------
+
+Render = Callable[[Mapping[str, str]], Optional[str]]
 
 
-def withheld(message: str, draft: str) -> str:
-    """Review of S9 (MED-1, ADR-0006): a problem with a drafted screen, with every word of the model's withheld. The
-    validator quotes what it rejects ("unknown field 'X'", "holder 'X' is not one of ..."), names $parameters, and a
-    parse error can show a token - each comes from the model's draft. Quoted text is replaced unless it is punctuation
-    or the registry's own word; $names are replaced; and, as a net, any other word that is in the draft and not the
-    registry's or ScreenQL's own. The output filter is not relied on: it passes neutral-looking words."""
-    vocab = _vocabulary()
-
-    def quoted(m: "re.Match[str]") -> str:
-        inner = m.group(0)[1:-1]
-        if not re.search(r"[A-Za-z0-9]", inner) or inner.lower() in vocab:
-            return m.group(0)
-        before = message[:m.start()].rstrip().lower()
-        return "(name withheld)" if before.endswith(("unknown field", "unknown function", "unknown parameter")) else "(value withheld)"
-    out = _QUOTED.sub(quoted, message)
-    out = re.sub(r"\$[A-Za-z_][A-Za-z0-9_]*", "$(name withheld)", out)
-    model_words = {w.lower() for w in _IDENT.findall(draft or "")} - vocab
-    return _IDENT.sub(lambda m: "(withheld)" if m.group(0).lower() in model_words else m.group(0), out)
+def _function(names: Mapping[str, str], key: str = "function") -> Any:
+    from app.screener.registry import FUNCTIONS
+    return FUNCTIONS.get(names.get(key, ""))
 
 
-def screened(text: str, lang: str) -> Optional[str]:
-    """The H-C1 c output filter on the model's words: None when they may not be shown."""
+def _arg(spec: Any, names: Mapping[str, str]) -> Any:
+    wanted = names.get("arg")
+    return next((a for a in (*spec.args, *spec.kwargs) if a.name == wanted), None) if spec is not None else None
+
+
+def _timeframe(names: Mapping[str, str], key: str) -> Optional[str]:
+    from app.screener import nodes
+    tf = names.get(key)
+    return tf if tf in nodes.TF_MINUTES else None
+
+
+def _choice_list(values: Sequence[Any]) -> str:
+    return ", ".join(json.dumps(v) if isinstance(v, str) else str(v) for v in values if v != "")
+
+
+def _with_function(fn: Callable[[Any], Optional[str]]) -> Render:
+    def render(names: Mapping[str, str]) -> Optional[str]:
+        spec = _function(names)
+        return fn(spec) if spec is not None else None
+    return render
+
+
+def _with_arg(fn: Callable[[Any, Any], Optional[str]]) -> Render:
+    def render(names: Mapping[str, str]) -> Optional[str]:
+        spec = _function(names)
+        arg = _arg(spec, names)
+        return fn(spec, arg) if arg is not None else None
+    return render
+
+
+def _fixed(text: str) -> Render:
+    return lambda names: text
+
+
+def _arity(spec: Any) -> str:
+    if spec.varargs:
+        return f"{spec.name} takes at least 2 arguments"
+    needed = sum(1 for a in spec.args if a.required)
+    want = f"{needed}" if needed == len(spec.args) else f"{needed} to {len(spec.args)}"
+    return f"{spec.name} takes {want} argument(s): {', '.join(a.name for a in spec.args) or 'none'}"
+
+
+def _finer(names: Mapping[str, str]) -> Optional[str]:
+    tf, base = _timeframe(names, "tf"), _timeframe(names, "base_tf")
+    return f"@{tf} is finer than the timeframe of the screen (@{base})" if tf and base else None
+
+
+def _last_bar(names: Mapping[str, str]) -> Optional[str]:
+    inner, outer = _function(names), _function(names, "outer")
+    if inner is None or outer is None:
+        return None
+    return f"{inner.name} is known for the last bar only, so {outer.name} cannot read its earlier values; use it outside {outer.name}"
+
+
+def _field_called(names: Mapping[str, str]) -> Optional[str]:
+    from app.screener.registry import FIELDS
+    spec = FIELDS.get(names.get("field", ""))
+    return f"{spec.name} is a field and takes no parentheses" if spec is not None else None
+
+
+def _tf_multiple(names: Mapping[str, str]) -> Optional[str]:
+    spec, tf = _function(names), _timeframe(names, "tf")
+    arg = _arg(spec, names)
+    return f"{spec.name}: {arg.name} must be a whole number of @{tf} bars" if arg is not None and tf else None
+
+
+def _flag_off(names: Mapping[str, str]) -> Optional[str]:
+    from app.screener.registry import FUNCTIONS
+    known = [f for f in (names.get("functions") or "").split(",") if f in FUNCTIONS]
+    return f"{', '.join(f + '()' for f in known)}: not enabled for this organisation" if known else None
+
+
+def _templates() -> Dict[str, Render]:
+    from app.screener import nodes
+    from app.screener.registry import MAX_WINDOW
+    from app.screener.validator import MAX_OFFSET, NOT_A_CONDITION
+    return {
+        "syntax": _fixed("syntax error: the draft is not valid ScreenQL"),
+        "non_ascii": _fixed("the draft has characters outside ScreenQL (ScreenQL is plain ASCII text)"),
+        "free_text": _fixed("quoted text is allowed only for the fixed choices of a function (for example Pattern(\"hammer\"))"),
+        "unknown_field": _fixed("unknown field"),
+        "unknown_function": _fixed("unknown function"),
+        "function_without_parens": _with_function(lambda s: f"{s.name} is a function and needs parentheses"),
+        "field_called": _field_called,
+        "unknown_timeframe": _fixed(f"unknown timeframe; use one of {', '.join('@' + t for t in nodes.TIMEFRAMES)}"),
+        "timeframe_finer": _finer,
+        "look_ahead": _fixed("a negative offset reads a future bar (look-ahead)"),
+        "offset_range": _fixed(f"an offset is more than {MAX_OFFSET} bars back"),
+        "parameter": _fixed("a drafted screen takes no $parameters"),
+        "window_not_literal": _with_function(lambda s: f"{s.name}: the window must be a whole number of bars"),
+        "window_range": _with_function(lambda s: f"number out of range for {s.name}: the window must be a whole number from 1 to {MAX_WINDOW}"),
+        "choice": _with_arg(lambda s, a: f"value not allowed for {s.name}: {a.name} must be one of {_choice_list(a.choices)}"
+                            if a.choices else None),
+        "out_of_range": _with_arg(lambda s, a: f"number out of range for {s.name}: {a.name} must be between {a.bounds[0]:g} and {a.bounds[1]:g}"
+                                  if a.bounds else None),
+        "literal_only": _with_arg(lambda s, a: f"{s.name}: {a.name} must be a number (one value for the whole series), not an expression"),
+        "last_bar_only": _last_bar,
+        "not_finite": _fixed("numbers must be finite"),
+        "number_expected": _fixed("a number is needed here"),
+        "condition_expected": _fixed("a condition (true/false) is needed here"),
+        "unit_mismatch": _fixed("the values compared or combined here have different units"),
+        "in_list": _fixed("IN takes a list of one or more literal values"),
+        "compare_types": _fixed("these values cannot be compared with each other"),
+        "domain": _with_function(lambda s: f"value not allowed for {s.name}: it is one of {_choice_list(s.values)}" if s.values else None),
+        "no_offset_tf": _with_function(lambda s: f"{s.name} takes no [offset] or @timeframe"),
+        "arity": _with_function(_arity),
+        "unknown_argument": _with_function(lambda s: f"{s.name} has no such named argument"
+                                           + (f"; its named arguments: {', '.join(a.name for a in s.kwargs)}" if s.kwargs else "")),
+        "timeframe_unsupported": _with_function(lambda s: f"{s.name} runs on {' / '.join('@' + t for t in s.timeframes)} bars only"
+                                                if s.timeframes else None),
+        "argument_type": _with_arg(lambda s, a: f"{s.name}: argument {a.name} must be {'a whole number of bars' if a.type == 'window' else a.type}"),
+        "price_argument": _with_arg(lambda s, a: f"{s.name}: {a.name} must be a price"),
+        "tf_multiple": _tf_multiple,
+        "not_condition": _fixed(NOT_A_CONDITION),
+        "cost": _fixed("the screen is over the cost cap of this organisation; use fewer functions or shorter windows"),
+        "flag_off": _flag_off,
+        "ranking_system": _fixed("RankScore names a ranking system this organisation cannot use"),
+        "venue": _fixed("the screen reads data this venue does not carry"),
+    }
+
+
+def shown_problem(problem: Any) -> Dict[str, Any]:
+    """A problem with a model's draft, as the box shows it: {kind, message, pos}. The message is the kind's fixed template
+    filled from the registry (Problem.names only selects registry entries; a name the registry does not know, or a kind
+    without a template, gives "the draft could not be used"). The validator's own `message` is never read: it can quote
+    the draft."""
+    kind = str(getattr(problem, "kind", "") or "")
+    names: Mapping[str, str] = getattr(problem, "names", None) or {}
+    template = _templates().get(kind)
+    message = template(names) if template is not None else None
+    if not message:
+        kind, message = "unusable", UNUSABLE
+    pos = getattr(problem, "pos", None)
+    return {"kind": kind, "message": message, "pos": pos if isinstance(pos, int) and not isinstance(pos, bool) else None}
+
+
+# Typographic punctuation a model writes in English, folded to ASCII before the English-only check.
+_TYPOGRAPHIC = str.maketrans({"‘": "'", "’": "'", "“": '"', "”": '"', "–": "-", "—": "-",
+                              "…": "...", " ": " "})
+
+
+def screened(text: str) -> Optional[str]:
+    """The model's own words (explanation, assumptions): English only - anything outside ASCII, after folding typographic
+    punctuation, is withheld - then the H-C1 c output filter. None when they may not be shown."""
     from app.ai import output_filter
-    ok, shown, _ = output_filter.check(text, lang, where="screener_nl")
+    text = (text or "").translate(_TYPOGRAPHIC)
+    if non_ascii_at(text) is not None:
+        return None
+    ok, shown, _ = output_filter.check(text, "en", where="screener_nl")
     return shown if ok else None
 
 
-__all__ = ["FLAG", "SYSTEM", "PROMPT_VERSION", "DISCLAIMER", "registry_text", "system_prompt", "parse", "withheld", "screened"]
+__all__ = ["FLAG", "SYSTEM", "PROMPT_VERSION", "DISCLAIMER", "UNUSABLE", "registry_text", "system_prompt", "parse", "non_ascii_at",
+           "shown_problem", "screened"]

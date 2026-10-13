@@ -295,20 +295,7 @@ def test_an_invalid_draft_never_returns_the_models_text(monkeypatch):
         assert out["ok"] is False and out["text"] is None and out["ast"] is None and out["stages"] == [] and out["problems"], out
         assert advice not in r.text and "guaranteed" not in r.text.lower(), (i, r.text)
         assert len(fake.calls) == 2                                                    # the repair turn was taken
-    # re-review (MED-1): the validator quotes what it rejects - every word of the model's is withheld, `pos` kept
-    for draft, shown in (("close > 1 AND guaranteed_20pct_buy_RELIANCE > 1", "unknown field (name withheld)"),
-                         ("BuyRelianceNowGuaranteed(5)", "unknown function (name withheld)"),
-                         ("RELIANCE_target_3000", "unknown field (name withheld)"),
-                         ('Holding("buy RELIANCE") > 1', "Holding: holder (value withheld) is not one of")):
-        t = _org(f"nlword{uuid.uuid4().hex[:4]}", extra=("screener_ownership",))
-        _provider(monkeypatch, _LLM([{"text": draft, "explanation": "", "assumptions": []}] * 2))
-        r = client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "momentum stocks please"})
-        out = r.json()
-        assert r.status_code == 200 and out["ok"] is False and out["text"] is None, r.text
-        assert any(p["message"].startswith(shown) for p in out["problems"]), out["problems"]
-        assert all(p["pos"] is not None for p in out["problems"] if p["message"].startswith(shown))
-        low = r.text.lower()
-        assert not any(w in low for w in ("reliance", "guaranteed", "buy", "target")), (draft, r.text)
+    # S9 round cap (MED-1): the ASCII probes of the earlier rounds - see test_nl_problems_carry_no_draft_text for all of them
     repaired = _LLM([{"text": 'close > 1 AND "x" == "x"', "explanation": "", "assumptions": []},
                      {"text": 'Holding("promoter") > 50', "explanation": "Promoter holding over half.", "assumptions": []}])
     t = _org("nlrepair", extra=("screener_ownership",))
@@ -331,7 +318,8 @@ def test_the_registry_text_lists_every_entry_but_flagged_off_ones():
     full = nl.registry_text()
     assert "- close: num (price)" in full and "RankScore(system)" in full and "Holding(holder='promoter')" in full
     assert "Holding(" not in nl.registry_text(["screener_ownership"])
-    assert "{registry}" not in nl.system_prompt("en") and "Answer in English" in nl.system_prompt("en")
+    prompt = nl.system_prompt()
+    assert "{registry}" not in prompt and "in English with plain ASCII characters only" in prompt and "Marathi" not in prompt
     with pytest.raises(ValueError):
         nl.parse("no json here")
     assert nl.parse('```json\n{"text": " close > 1 ", "assumptions": "x"}\n```') == {"text": "close > 1", "explanation": "", "assumptions": []}
@@ -577,3 +565,113 @@ def test_literals_that_name_something_real_are_not_free_text(monkeypatch):
                                   "assumptions": []}]))
     out = client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "top momentum names"}).json()
     assert out["ok"] and out["text"] == 'RankScore("platform:Momentum") > 80', out
+
+
+# --- S9 round cap (13 Oct): problems are templated kinds with no draft text; English only, ASCII drafts ----------------------------
+
+# (draft, the kind shown, fragments of the draft that must not appear anywhere in the response)
+_PROBES = (
+    ('Holding("रिलायन्स आत्ताच खरेदी करा, २०% नफा निश्चित") > 1', "non_ascii", ("रिलायन्स", "खरेदी", "२०", "नफा", "निश्चित")),
+    ('Holding("ＢＵＹ ＲＥＬＩＡＮＣＥ ＮＯＷ ＧＵＡＲＡＮＴＥＥＤ") > 1', "non_ascii", ("ＢＵＹ", "ＲＥＬＩＡＮＣＥ", "ＧＵＡＲＡＮＴＥＥＤ")),
+    ('RankScore("КУПИТЬ СЕЙЧАС") > 80', "non_ascii", ("КУПИТЬ", "СЕЙЧАС")),
+    ("close > 1 AND र > 2", "non_ascii", ("र",)),
+    ("close > 1 ; BUY_RELIANCE_NOW > 2", "syntax", (";", "BUY_RELIANCE_NOW", "unexpected character")),
+    ("close > 1 AND volume > 1 # guaranteed", "syntax", ("#", "guaranteed", "unexpected character")),
+    ("RSI(3000) > 50", "window_range", ("3000",)),
+    ("SMA(close, 9876543210) > 1", "window_range", ("9876543210", "9876")),
+    ("close > 1 AND guaranteed_20pct_buy_RELIANCE > 1", "unknown_field", ("guaranteed", "20pct", "buy", "RELIANCE")),
+    ("BuyRelianceNowGuaranteed(5) > 1", "unknown_function", ("BuyRelianceNowGuaranteed", "Reliance", "Guaranteed")),
+    ("RELIANCE_target_3000 > 1", "unknown_field", ("RELIANCE", "target", "3000")),
+    ('Holding("buy RELIANCE") > 1', "choice", ("buy RELIANCE", "RELIANCE")),
+)
+
+
+def test_nl_problems_carry_no_draft_text(monkeypatch):
+    """MED-1 (ADR-0006), S9 round cap: every problem with an invalid draft is a fixed template for its kind, filled with
+    registry names only - no quoted text, no unknown name, no number from the draft, in any script; `pos` kept."""
+    for draft, kind, leaks in _PROBES:
+        t = _org(f"probe{uuid.uuid4().hex[:4]}", extra=("screener_ownership", "screener_rankings"))
+        fake = _LLM([{"text": draft, "explanation": "", "assumptions": []}] * 2)
+        _provider(monkeypatch, fake)
+        r = client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "momentum stocks please"})
+        assert r.status_code == 200, r.text
+        out = r.json()
+        assert out["ok"] is False and out["text"] is None and out["ast"] is None and out["stages"] == [] and out["problems"], out
+        body = r.text.lower()
+        for leak in leaks:
+            assert leak.lower() not in body, (draft, leak, r.text)
+        assert all(p["message"].isascii() and "'" not in p["message"] for p in out["problems"]), (draft, out["problems"])
+        mine = [p for p in out["problems"] if p["kind"] == kind]
+        assert mine and all(isinstance(p["pos"], int) for p in mine), (draft, out["problems"])
+        assert len(fake.calls) == 2                                                  # the repair turn was still taken
+    # the shown words for the registry-backed kinds
+    t = _org("probewords", extra=("screener_ownership",))
+    _provider(monkeypatch, _LLM([{"text": 'Holding("buy RELIANCE") > 1 AND RSI(3000) > 50', "explanation": "", "assumptions": []}] * 2))
+    shown = {p["kind"]: p["message"] for p in client.post("/api/screener/copilot/nl", headers=t["headers"],
+                                                          json={"text": "promoter-held momentum"}).json()["problems"]}
+    assert shown["choice"].startswith("value not allowed for Holding: holder must be one of ") and '"promoter"' in shown["choice"]
+    assert shown["window_range"] == "number out of range for RSI: the window must be a whole number from 1 to 500"
+
+
+def test_a_problem_shows_only_registry_names_or_nothing():
+    """nl.shown_problem never reads the validator's message; a kind it has no template for, or a name the registry does
+    not know, is "the draft could not be used"."""
+    from app.screener.validator import Problem
+    leak = "buy RELIANCE now"
+    cases = (
+        (Problem(f"unknown group {leak!r}", 3), "unusable"),                                       # no kind
+        (Problem(leak, 3, kind="made_up_kind"), "unusable"),
+        (Problem(leak, 3, kind="choice", names={"function": leak, "arg": "holder"}), "unusable"),  # not a registry function
+        (Problem(leak, 3, kind="choice", names={"function": "Holding", "arg": leak}), "unusable"),  # not one of its arguments
+        (Problem(leak, 3, kind="flag_off", names={"functions": leak}), "unusable"),
+        (Problem(leak, 3, kind="timeframe_finer", names={"tf": leak, "base_tf": "1d"}), "unusable"),
+        (Problem(leak, 3, kind="unknown_field"), "unknown_field"),
+        (Problem(leak, 3, kind="out_of_range", names={"function": "RSI", "arg": "window"}), "unusable"),   # no bounds: nothing to say
+    )
+    for problem, kind in cases:
+        shown = nl.shown_problem(problem)
+        assert shown["kind"] == kind and leak.lower() not in shown["message"].lower() and shown["pos"] == 3, shown
+    assert nl.shown_problem(Problem("x", 3, kind="made_up"))["message"] == nl.UNUSABLE
+
+
+def test_every_problem_kind_the_validator_emits_has_a_template():
+    """A kind added to the validator or the gates without a template would show as "the draft could not be used" -
+    fail closed, but caught here."""
+    import ast as pyast
+    import pathlib
+
+    from app.screener import nl as nl_mod
+    root = pathlib.Path(__file__).resolve().parents[1] / "app" / "screener"
+    kinds = set()
+    for name in ("validator.py", "__init__.py", "routes.py"):
+        for node in pyast.walk(pyast.parse((root / name).read_text(encoding="utf-8"))):
+            if not isinstance(node, pyast.Call):
+                continue
+            callee = getattr(node.func, "attr", getattr(node.func, "id", ""))
+            for kw in node.keywords:
+                if kw.arg == "kind" and isinstance(kw.value, pyast.Constant):
+                    kinds.add(kw.value.value)
+            if callee == "err" and len(node.args) >= 3 and isinstance(node.args[2], pyast.Constant):
+                kinds.add(node.args[2].value)
+    assert len(kinds) > 30, kinds
+    assert kinds <= set(nl_mod._templates()), kinds - set(nl_mod._templates())
+
+
+def test_the_box_is_english_only(monkeypatch):
+    """Owner directive (13 Oct): no language choice - an old client's `language: mr` is answered in English; the prompt
+    asks for English and ASCII; non-ASCII words of the model's are withheld."""
+    t = _org("english")
+    fake = _LLM([{"text": "close > SMA(close, 50)", "explanation": "मजबूत कल असलेले शेअर्स",
+                  "assumptions": ["50-day average — the trend", "सरासरी ५०"]}])
+    _provider(monkeypatch, fake)
+    r = client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "मजबूत कल असलेले शेअर्स", "language": "mr"})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["ok"] and out["text"] == "close > SMA(close, 50)"
+    assert out["explanation"] is None and out["explanation_withheld"] is True
+    assert out["assumptions"] == ["50-day average - the trend"]
+    system = fake.calls[0][0]
+    assert "Marathi" not in system and "in English with plain ASCII characters only" in system
+    for lang in ("hi", "xx", "en"):                                       # any value is accepted and ignored
+        _provider(monkeypatch, _LLM([{"text": "close > 1", "explanation": "Closes above 1.", "assumptions": []}]))
+        assert client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "anything above one", "language": lang}).status_code == 200

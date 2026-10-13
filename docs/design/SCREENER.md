@@ -1588,9 +1588,12 @@ while it is off for the organisation the tool is neither offered to the model no
   filter; one repair turn with the validator's problems; nothing run or stored (S9-4, S9-5). A draft with quoted text
   other than a function's fixed choices, or a name that resolves (a ranking system the organisation can use, a sector /
   industry on record or a sectoral index's name, a catalogue index, an AMFI bucket), is refused like any problem; an
-  invalid draft returns its problems only, with every word of the model's withheld (`nl.withheld`: quoted text,
-  $names and any other draft word that is not the registry's own; `pos` kept) - never the model's text (ADR-0006). The page box waits for
-  the builder to load text (TX1-7).
+  invalid draft returns its problems only - never the model's text (ADR-0006). Since the S9 round-cap redesign each
+  problem is a fixed English template keyed by its `kind` (validator `Problem.kind` + registry-only `names`; rendered by
+  `nl.shown_problem`): no quoted text, no unknown name, no number from the draft; `pos` kept; an unknown kind is "the
+  draft could not be used". English only: no `language` choice, and a draft with any non-ASCII character is refused
+  (ScreenQL is ASCII); an explanation or assumption with non-ASCII text is withheld. The page box waits for the builder
+  to load text (TX1-7).
 - `/run`'s universe loading is now `routes.load_universe`, shared by the run route and the tools. No migration.
 - Review of S9: `run_screen` (live) stores its run in a session of its own, shielded from the tool timeout; a symbol's
   reason (possibly the broker's error text), and a failed tool's error, go to the proposal guard as third-party text;

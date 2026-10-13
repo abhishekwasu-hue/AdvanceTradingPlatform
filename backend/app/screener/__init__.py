@@ -17,9 +17,9 @@ def compile_screen(source: Union[str, Dict[str, Any]], *, base_tf: str = "1d", p
     try:
         ast = parse(source) if isinstance(source, str) else nodes.from_json(source)
     except ScreenQLSyntaxError as exc:
-        return None, Validated(False, [Problem(exc.message, exc.pos)])
+        return None, Validated(False, [Problem(exc.message, exc.pos, kind="syntax")])
     except ValueError as exc:
-        return None, Validated(False, [Problem(str(exc))])
+        return None, Validated(False, [Problem(str(exc), kind="syntax")])
     kwargs: Dict[str, Any] = {"base_tf": base_tf, "params": params}
     if cost_cap is not None:
         kwargs["cost_cap"] = cost_cap

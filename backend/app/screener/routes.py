@@ -42,7 +42,7 @@ from app.ai.compliance_terms import ai_acknowledged as _ai_acknowledged
 from app.ai.rate_limit import ai_rate_limit as _ai_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
-from app.screener.validator import Problem
+from app.screener.validator import Problem, Validated
 from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
 
 logger = logging.getLogger(__name__)
@@ -227,28 +227,28 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
-            validated.problems.append(Problem(gate.refusal(blocked)))
+            validated.problems.append(Problem(gate.refusal(blocked), kind="flag_off", names={"functions": ",".join(blocked)}))
     if exchange and ast is not None and await venue_gate.enabled(session, user.tenant_id):
         missing = venue_gate.unavailable(ast, exchange)          # N3 S8c: what this venue's data does not carry
         if missing:
             validated.ok = False
-            validated.problems.extend(Problem(m) for m in missing)
+            validated.problems.extend(Problem(m, kind="venue") for m in missing)
     if ranking_gate.uses_rankscore(ast):
         if not await ranking_gate.enabled(session, user.tenant_id):
             validated.ok = False
-            validated.problems.append(Problem(ranking_gate.refusal()))
+            validated.problems.append(Problem(ranking_gate.refusal(), kind="flag_off", names={"functions": "RankScore"}))
             return
         found, problems = await ranking_gate.resolve(session, user.tenant_id, ranking_gate.names_in(ast, params))
         if problems:
             validated.ok = False
-            validated.problems.extend(Problem(p) for p in problems)
+            validated.problems.extend(Problem(p, kind="ranking_system") for p in problems)
         if exchange and await venue_gate.enabled(session, user.tenant_id):
             # re-check of S8: a named system's factors read this venue's data too - the same venue check as the screen's
             for name, system in found.items():
                 for leaf in system.leaves():
                     for m in venue_gate.unavailable(leaf.ast, exchange):
                         validated.ok = False
-                        validated.problems.append(Problem(f'RankScore("{name}"), factor "{leaf.name}" - {m}'))
+                        validated.problems.append(Problem(f'RankScore("{name}"), factor "{leaf.name}" - {m}', kind="venue"))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -565,7 +565,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
 class NLBody(BaseModel):
     text: str = Field(min_length=5, max_length=1000, description="The screen in plain language")
     base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
-    language: str = Field(default="en", pattern=r"^(en|mr)$")
+    # English only (owner directive, 13 Oct): the former `language` field is gone; a client that still sends it is
+    # answered in English (an unknown body field is ignored, as before)
 
 
 @router.post("/copilot/nl")
@@ -592,10 +593,10 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
         raise HTTPException(status_code=409, detail="No AI provider is set up for this organisation (Settings > AI); write the screen in the "
                                                     "builder or the query editor instead" + (f" ({provider.reason})" if provider.reason else ""))
     stamp(provider, nl.PROMPT_VERSION)
-    system = nl.system_prompt(body.language, sorted(await _flags_off(session, user)))
+    system = nl.system_prompt(sorted(await _flags_off(session, user)))
     prompt = f"REQUEST:\n{body.text.strip()}"
     draft: Optional[Dict[str, Any]] = None
-    problems: List[Dict[str, Any]] = []
+    problems: List[Problem] = []
     ast: Any = None
     validated: Any = None
     for attempt in range(2):                                  # one repair turn with the validator's problems
@@ -604,27 +605,34 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
         except (ProviderError, ValueError, json.JSONDecodeError) as exc:
             await ai_settings.mark_used(session, user.tenant_id, error=str(exc)[:200])
             raise HTTPException(status_code=502, detail="The AI did not answer usably; write the screen in the builder") from exc
-        ast, validated = _compiled(draft["text"], body.base_tf, {})
-        await _gate(session, user, ast, validated, {})
-        problems = [p.as_dict() for p in validated.problems]
+        at = nl.non_ascii_at(draft["text"])
+        if at is not None:
+            # S9 round cap (English only): ScreenQL is ASCII - a draft with any other character is refused unread
+            ast, validated = None, Validated(False, [Problem("the screen has characters outside ASCII; ScreenQL is plain ASCII text",
+                                                             at, kind="non_ascii")])
+        else:
+            ast, validated = _compiled(draft["text"], body.base_tf, {})
+            await _gate(session, user, ast, validated, {})
+        problems = list(validated.problems)
         if ast is not None and await free_text_in(session, user.tenant_id, ast):
             # review of S9 (MED, ADR-0006): a string literal other than a function's fixed choices is the model's free
             # text; it would reach the page inside the canonical screen. Refused (not echoed) and repaired like any problem.
-            problems.append({"message": "a drafted screen may use quoted text only for a function's fixed choices "
-                                        "(\"promoter\", \"results\"...) - other quoted text is not allowed", "pos": None})
+            problems.append(Problem("a drafted screen may use quoted text only for a function's fixed choices "
+                                    "(\"promoter\", \"results\"...) - other quoted text is not allowed", kind="free_text"))
         if validated.ok and not problems:
             break
+        # the repair turn goes back to the model only, so it carries the validator's own messages (they quote its draft)
         prompt = (f"REQUEST:\n{body.text.strip()}\n\nYour screen {draft['text']!r} has problems: "
-                  + "; ".join(p["message"] for p in problems)[:800] + "\nAnswer again with a corrected screen, same JSON shape.")
+                  + "; ".join(p.message for p in problems)[:800] + "\nAnswer again with a corrected screen, same JSON shape.")
     await ai_settings.mark_used(session, user.tenant_id)
     if draft is None or validated is None:
         raise HTTPException(status_code=502, detail="The AI did not answer; write the screen in the builder")
     ok = bool(validated.ok) and not problems
-    if not ok:
-        # review of S9 (MED, ADR-0006): an invalid draft returns its problems only - never the model's text or the
-        # canonical text of it - and every word of the model's in a problem is withheld (nl.withheld; `pos` kept)
-        problems = [{**p, "message": nl.withheld(str(p.get("message") or ""), draft["text"])} for p in problems]
-    explanation = nl.screened(draft["explanation"], body.language)
+    # review of S9 (MED-1, ADR-0006; round-cap redesign): an invalid draft returns its problems only - never the model's
+    # text or the canonical text of it - and each problem is a fixed template for its kind with registry names only
+    # (nl.shown_problem): no quoted text, no unknown name, no number from the draft; `pos` kept
+    shown = [nl.shown_problem(p) for p in problems] if not ok else []
+    explanation = nl.screened(draft["explanation"])
     await write_audit_log(session, user.tenant_id, user.id, "screener_nl_drafted",
                           f"{getattr(provider, 'name', 'ai')}: {'valid' if ok else 'invalid'} screen from {len(body.text)} chars")
     await meter(session, user.tenant_id, "ai_screener_nl", 1, source="api", metadata={"provider": getattr(provider, "name", "ai")}, commit=False)
@@ -634,9 +642,9 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
         items = list(ast.items) if isinstance(ast, nodes.Logic) and ast.op == "ALL" else [ast]
         stages = [nodes.to_text(i) for i in items]
     return {"ok": ok, "text": nodes.to_text(ast) if ok else None, "stages": stages,
-            "ast": nodes.to_json(ast) if ok else None, "problems": problems, "base_tf": body.base_tf,
+            "ast": nodes.to_json(ast) if ok else None, "problems": shown, "base_tf": body.base_tf,
             "explanation": explanation, "explanation_withheld": explanation is None and bool(draft["explanation"]),
-            "assumptions": [a for a in (nl.screened(x, body.language) for x in draft["assumptions"]) if a],
+            "assumptions": [a for a in (nl.screened(x) for x in draft["assumptions"]) if a],
             "provider": getattr(provider, "name", None), "model": getattr(provider, "model", None), "prompt_version": nl.PROMPT_VERSION,
             "disclaimer": nl.DISCLAIMER}
 

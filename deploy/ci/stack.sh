@@ -152,18 +152,24 @@ cmd_load() {
   step "load: $users users in $shards shards of up to $per (one client IP each), ramp ${ramp}s, then ${seconds}s, think ${think}s"
   sample_stats "$STATE/$name/docker-stats.csv" & local sampler=$!
   sample_db "$STATE/$name/db-connections.csv" & local db_sampler=$!
+  # LD-7: one schedule for all shards - every ramp starts at the same instant (time for the containers to come up first)
+  # and shard i takes the i/shards-th part of each start slot, so the logins arrive evenly over the ramp instead of one
+  # per shard at the same moment every ramp/per seconds.
+  local start_at=$(( $(date +%s) + 20 + shards ))
   for i in $(seq 0 $((shards - 1))); do
     offset=$((i * per)); n=$(( users - offset < per ? users - offset : per ))
     [ "$n" -gt 0 ] || break
     dc --profile tools run --rm -T ci-runner /ci-scripts/loadtest.py --base "https://$(env_value DOMAIN)" --cacert /state/caddy-root.crt \
       --accounts /state/load_accounts.csv --account-offset "$offset" --users "$n" --seconds "$seconds" --ramp "$ramp" \
-      --think "$think" --seed "$((54 + i))" --raw-out "/state/$name/shard-$i.json" > "$STATE/$name/shard-$i.log" 2>&1 &
+      --think "$think" --seed "$((54 + i))" --shard "$i" --shards "$shards" --start-at "$start_at" \
+      --raw-out "/state/$name/shard-$i.json" > "$STATE/$name/shard-$i.log" 2>&1 &
     pids+=("$!")
   done
   local failed=0 pid
   for pid in "${pids[@]}"; do wait "$pid" || failed=$((failed + 1)); done
   kill "$sampler" "$db_sampler" 2>/dev/null || true
   echo "    shards done ($failed reported an SLO miss or failed; the merged verdict below is the one that counts)"
+  grep -h "after --start-at" "$STATE/$name"/shard-*.log 2>/dev/null | sed 's/^/    /' || true
   # LD-7: the database connections by state (pg_stat_activity, every 5 s) - peak and mean while the load ran
   awk -F, 'NR > 1 { if (!($1 in seen)) { seen[$1] = 1; samples++ } sum[$2] += $3; if ($3 > peak[$2]) peak[$2] = $3 }
            END { for (s in sum) printf "    db connections %-28s peak %3d  mean %5.1f\n", s, peak[s], sum[s] / samples }' \

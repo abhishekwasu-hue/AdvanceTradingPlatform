@@ -33,6 +33,8 @@ Results go into docs/PERFORMANCE.md.
 Sharded (Lane D, deploy/ci/stack.sh load): many processes, each on its own client IP, each driving a slice of the users
 with its own accounts (`--accounts FILE --account-offset K`, one account per user, so every user logs in), each writing
 its raw samples (`--raw-out FILE`); then `--merge FILE...` judges them together and writes `--json-out` / `--markdown`.
+`--shard K --shards N --start-at T` puts the shards on one schedule: all ramps start at Unix time T and shard K's users
+take the K/N-th part of each start slot, so the logins of all shards together arrive evenly over the ramp.
 The per-IP login limit is never bypassed: more client IPs carry the login wave, as real users' do. `--cacert` verifies
 an HTTPS edge with its own CA (the CI stack's Caddy).
 """
@@ -259,6 +261,16 @@ def print_report(r: Dict[str, Any], annotate: bool = False) -> None:
               f"SLO {'PASS' if r['slo_pass'] else 'FAIL'}; " + "; ".join(lines))
 
 
+def start_offsets(users: int, ramp: float, shard: int = 0, shards: int = 1) -> List[float]:
+    """When each of this process's users starts, in seconds after the ramp begins. One process: evenly over the ramp.
+    Sharded (LD-7): shard k of n takes its users' slots shifted by k/n of a slot, so the shards together start a user
+    every ramp / (users x n) seconds - the logins arrive evenly over the ramp, as the profile says, and never as a burst
+    of one login per shard at the same instant (25 shards started in step sent 25 logins at once every 7.5 s)."""
+    shards = max(1, shards)
+    shard = min(max(0, shard), shards - 1)
+    return [ramp * (i + shard / shards) / max(1, users) for i in range(users)]
+
+
 async def run(args: argparse.Namespace) -> Dict[str, Any]:
     transport: Optional[httpx.AsyncBaseTransport] = None
     base = args.base
@@ -290,10 +302,19 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
         await harness.prepare([a.email for a in accounts if a.email])
     stats = Stats()
     started = time.monotonic()
+    start_at = getattr(args, "start_at", None)
+    if start_at is not None:
+        # LD-7: every shard's ramp starts at the same wall-clock instant (the containers share the host clock); a shard
+        # whose container came up late keeps the shared schedule rather than shifting its own.
+        started += start_at - time.time()
+        if started < time.monotonic() - 1.0:
+            print(f"loadtest: started {time.monotonic() - started:.1f} s after --start-at", file=sys.stderr)
     stats.ramp_end = started + args.ramp
     deadline = started + args.ramp + args.seconds
-    await asyncio.gather(*(_session(i, make_client, accounts[i % len(accounts)], i < len(accounts), stats, args.ramp * i / max(1, args.users), deadline,
-                                    args.think, args.seed) for i in range(args.users)))
+    offsets = start_offsets(args.users, args.ramp, getattr(args, "shard", 0), getattr(args, "shards", 1))
+    await asyncio.gather(*(_session(i, make_client, accounts[i % len(accounts)], i < len(accounts), stats,
+                                    max(0.0, started + offsets[i] - time.monotonic()), deadline, args.think, args.seed)
+                           for i in range(args.users)))
     elapsed = time.monotonic() - started
     if getattr(args, "raw_out", None):
         Path(args.raw_out).write_text(json.dumps({"users": args.users, "seconds": round(elapsed, 2), "base": base, **stats.raw()}))
@@ -378,6 +399,9 @@ def main() -> int:
     parser.add_argument("--cacert", default=None, help="CA file that verifies an HTTPS --base (the CI stack's Caddy)")
     parser.add_argument("--account-offset", type=int, default=0, help="start at this line of --accounts (a shard's slice)")
     parser.add_argument("--raw-out", default=None, help="also write the raw samples here, for --merge")
+    parser.add_argument("--shard", type=int, default=0, help="this process's index among --shards (interleaves the start times)")
+    parser.add_argument("--shards", type=int, default=1, help="how many processes share the ramp")
+    parser.add_argument("--start-at", type=float, default=None, help="Unix time at which the ramp starts (the same for every shard)")
     parser.add_argument("--merge", nargs="+", default=None, help="judge these --raw-out files together instead of running")
     parser.add_argument("--json-out", default=None, help="write the report as JSON here")
     parser.add_argument("--markdown", default=None, help="write the report as a Markdown table here")

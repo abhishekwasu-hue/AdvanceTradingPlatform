@@ -206,6 +206,19 @@ def test_after_ramp_split_is_a_diagnostic_beside_the_verdict(tmp_path):
     assert "**SLO FAIL**" in md and "After the login ramp only (diagnostic" in md
 
 
+def test_shards_interleave_their_start_times_over_the_ramp():
+    """LD-7: 25 shards of 20 users on a 150 s ramp start one user every 0.3 s between them - not 25 at once every 7.5 s
+    (each shard's own schedule alone repeats at the same instants). The same 500 logins over the same 150 s."""
+    shards, per, ramp = 25, 20, 150.0
+    starts = sorted(t for k in range(shards) for t in loadtest.start_offsets(per, ramp, k, shards))
+    assert len(starts) == 500 and starts[0] == 0.0 and starts[-1] < ramp
+    gaps = [b - a for a, b in zip(starts, starts[1:])]
+    assert min(gaps) == pytest.approx(0.3) and max(gaps) == pytest.approx(0.3)
+    assert loadtest.start_offsets(4, 8.0) == [0.0, 2.0, 4.0, 6.0]                      # one process: as before
+    stack = (CI / "stack.sh").read_text()
+    assert '--shard "$i" --shards "$shards" --start-at "$start_at"' in stack
+
+
 @pytest.mark.parametrize("minutes", [1, 5, None])
 def test_fake_broker_bars_per_minute_cache_changes_nothing(minutes):
     """LD-7: the fake's bars are computed once per minute (it shares the runner's CPUs with the stack under test); a

@@ -89,6 +89,9 @@ def _rules(now: datetime, policy: RetentionPolicy):
         ("ai_candidates_open", AiCandidateRecord, (AiCandidateRecord.status == "OPEN") & (AiCandidateRecord.expires_at < _cutoff(now, policy.ai_candidates_days))),
         # U8 EV1/EV2: evidence packs (market bars and the screen's numbers, not personal data) age out
         ("screen_evidence", ScreenEvidenceRecord, ScreenEvidenceRecord.created_at < _cutoff(now, policy.screen_evidence_days)),
+        # BYOK-V3 review LOW-1: skipped Vision rows (no call was made) - only those; audited reports are not touched here
+        ("vision_reports_skipped", VisionReportRecord,
+         (VisionReportRecord.status == "skipped") & (VisionReportRecord.created_at < _cutoff(now, policy.vision_skipped_days))),
     ]
 
 

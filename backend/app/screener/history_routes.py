@@ -343,3 +343,145 @@ async def fitness(body: FitnessBody, user: User = Depends(require_trader), sessi
             "notes": notes, "data": "Shared end-of-day bars (NSE bhavcopies), adjusted by ISIN; the screen sees bars closed by each date; "
                                      "forward returns use the closes after it.",
             "disclaimer": H.DISCLAIMER}
+
+
+# --- N3 S6b: the rolling screen backtest ------------------------------------------------------------------------------------
+
+class BacktestBody(FitnessBody):
+    top_n: Optional[int] = Field(default=None, ge=1, le=50, description="hold the best N matches (by rank_by); all matches when unset")
+    rank_by: Optional[str] = Field(default=None, max_length=500, description="a ScreenQL factor read at each rebalance date, e.g. PctChange(close, 20)")
+    descending: bool = True
+    weighting: str = Field(default="equal", pattern=r"^(equal|rank)$")
+    capital: float = Field(default=1_000_000.0, ge=10_000.0, le=1_000_000_000.0)
+    slippage_pct: float = Field(default=0.02, ge=0.0, le=2.0)
+    brokerage_per_order: float = Field(default=20.0, ge=0.0, le=1000.0)
+
+    @model_validator(mode="after")
+    def ranked_when_capped(self) -> "BacktestBody":
+        if self.top_n is not None and not self.rank_by:
+            raise ValueError("top_n needs rank_by (the order the matches are taken in)")
+        return self
+
+
+async def _index_bars(session: AsyncSession, key: str, start: date, end: date) -> Optional[Tuple[pd.Series, pd.Series]]:
+    """(opens, closes) of an index by session date, or None when the lake has none in the window."""
+    from app.market_lake.asof import candles_as_of
+    from app.market_lake.bhavcopy_backfill import SOURCE, TIMEFRAME, bar_end
+    rows = await candles_as_of(session, key, TIMEFRAME, bar_end(start) - timedelta(hours=1), bar_end(end), sources=[SOURCE["index"]])
+    if not rows:
+        return None
+    days = [(r.ts if r.ts.tzinfo else r.ts.replace(tzinfo=timezone.utc)).astimezone(H.IST).date() for r in rows]
+    return (pd.Series({d: float(r.open) for d, r in zip(days, rows) if r.open is not None}, dtype=float),
+            pd.Series({d: float(r.close) for d, r in zip(days, rows)}, dtype=float))
+
+
+async def _backtest_trials(session: AsyncSession, tenant_id: int, since: datetime) -> List[float]:
+    from app.backtest.validation import sharpe
+    rows = await session.scalars(select(ResearchTrialRecord).where(
+        ResearchTrialRecord.tenant_id == tenant_id, ResearchTrialRecord.status == "ok", ResearchTrialRecord.created_at >= since,
+        ResearchTrialRecord.dsl_json.like('%"kind": "screen_backtest"%')))
+    return [sharpe(json.loads(r.returns_json or "[]")) for r in rows]
+
+
+async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_validated: Any, params: Dict[str, Any]) -> None:
+    """Review of S6b (MED): rank_by passes the gates a screen passes - the flagged families (breakouts, zones...), the
+    data the history run does not load, the last-bar-only functions (no series to read back) - and must be a number."""
+    from app.screener import fno as fno_gate
+    from app.screener import zones as zone_gate
+    from app.screener.registry import NUM
+    from app.screener.validator import NOT_A_CONDITION, _Checker
+    probe = type("V", (), {"ok": True, "problems": []})()
+    await _gate(session, user, rank_ast, probe)
+    problems = [p.message for p in probe.problems if p.message != NOT_A_CONDITION]
+    if problems:
+        raise HTTPException(status_code=422, detail="rank_by: " + "; ".join(problems))
+    # S5-C x S6b (merge): like the screen itself (above), rank_by reads no F&O figures in a history run
+    extra = missing_data(rank_ast) + zone_gate.flagged_calls(rank_ast) + fno_gate.flagged_calls(rank_ast) + H.last_bar_only_calls(rank_ast)
+    if extra:
+        raise HTTPException(status_code=422, detail=f"rank_by: {', '.join(sorted(set(n + '()' for n in extra)))} cannot be read at each date "
+                                                    "of a history run (data it does not load, or answered for the last bar only)")
+    kind, _ = _Checker(H.BASE_TF, dict(params)).check(rank_ast)
+    if kind != NUM:
+        raise HTTPException(status_code=422, detail="rank_by must be a number (not a condition or a category)")
+
+
+@router.post("/backtest", dependencies=[Depends(run_rate_limit)])
+async def backtest(body: BacktestBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """The rolling screen backtest over [start, end] (spec §2.7), costs and slippage included, against the equal-weight
+    universe and NIFTY 50; deflated for the screen backtests this organisation ran. A simulation - it places nothing."""
+    from app.ai.research import record_trial
+    from app.backtest.validation import deflated_sharpe, sharpe
+    from app.platform.controls import require_flag as need
+    from app.screener import backtest as B
+    await _flags(session, user)
+    await need(session, B.FLAG, user.tenant_id)
+    ast, validated, params = await _screen(session, user, body)
+    rank_ast = None
+    rank_validated = None
+    rank_lookback = 0
+    if body.rank_by:
+        from app.screener.validator import NOT_A_CONDITION
+        rank_ast, rank_validated = _compiled(body.rank_by, H.BASE_TF, params)
+        # A rank is a number, not a condition: that one problem is expected; anything else refuses it.
+        others = [p for p in rank_validated.problems if p.message != NOT_A_CONDITION]
+        if rank_ast is None or others or rank_validated.cross_sectional or any(tf != H.BASE_TF for tf in (rank_validated.lookback or {})):
+            raise HTTPException(status_code=422, detail="rank_by must be a daily factor of one symbol's bars (no Rank / PercentileRank)")
+        await _rank_gates(session, user, rank_ast, rank_validated, params)
+        rank_lookback = int((rank_validated.lookback or {}).get(H.BASE_TF, 1) or 1)
+    lookback = max(int((validated.lookback or {}).get(H.BASE_TF, 1) or 1), rank_lookback)
+    first, last = H.window_days(body.start, body.end, lookback, 1)
+    last = min(last, body.end + timedelta(days=7))                          # one session after the last rebalance is enough
+    sealed = _holdout(first, last)
+    if sealed:
+        raise HTTPException(status_code=422, detail=f"the backtest window {sealed}")
+    weekdays = [body.start + timedelta(days=i) for i in range((body.end - body.start).days + 1)]
+    scales: Dict[str, Dict[date, H.Scale]] = {}
+    excluded: Set[Tuple[str, date]] = set()
+    frames, eligible, notes = await load(session, body.universe, first, last, dates_hint=[d for d in weekdays if d.weekday() < 5],
+                                         scales_out=scales, excluded_out=excluded, windows=(lookback, 1))
+    calendar = calendar_of(frames)
+    dates = H.rebalance_dates(calendar, body.start, body.end, H.EVERY[body.every])
+    if not dates:
+        raise HTTPException(status_code=422, detail="no trading sessions with data in the window")
+    if len(dates) > H.MAX_DATES:
+        raise HTTPException(status_code=422, detail=f"at most {H.MAX_DATES} rebalance dates - use a longer step or a shorter window")
+    try:
+        sig = await asyncio.to_thread(H.signals, ast, validated, frames, dates, params, eligible, scales, excluded)
+        ranks = await asyncio.to_thread(B.rank_table, rank_ast, frames, dates, params, rank_validated, scales) if rank_ast is not None else None
+    except H.HistoryError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    nifty_bars = await _index_bars(session, "NSE_INDEX:NIFTY50", first, body.end)
+    nifty = nifty_bars[1] if nifty_bars is not None else None
+    settings = B.Settings(top_n=body.top_n, weighting=body.weighting, descending=body.descending, capital=body.capital,
+                          slippage_pct=body.slippage_pct, brokerage=body.brokerage_per_order)
+    result = await asyncio.to_thread(B.simulate, sig, ranks, frames, calendar, body.end, settings, eligible,
+                                     {"nifty_50": nifty} if nifty is not None else None, excluded,
+                                     {"nifty_50": nifty_bars[0]} if nifty_bars is not None else None)
+    out = B.report(result, settings)
+    if nifty is None:
+        notes.append("NIFTY 50 closes are not in the lake for this window: the equal-weight universe is the only benchmark.")
+    if excluded:
+        notes.append(f"{len({s for s, _ in excluded})} symbol(s) on unadjusted bars are not held over a period touching a split or bonus.")
+    if result.stuck_near_split:
+        notes.append(f"{result.stuck_near_split} time(s) a holding with no open to sell at was kept over a split or bonus on unadjusted "
+                     "bars: its marks there may show the split as a move.")
+    for name, n in result.benchmark_missing.items():
+        notes.append(f"{name}: {n} session(s) without a close were skipped (not counted as 0 %).")
+    label = (f"index:{body.universe.index}" if body.universe.index else f"list:{len(frames)}")[:40]
+    dsl = {"kind": "screen_backtest", "text": nodes.to_text(ast), "rank_by": body.rank_by, "params": params, "universe": label,
+           "start": str(body.start), "end": str(body.end), "every": body.every, "settings": out["settings"]}
+    since = datetime.now(timezone.utc) - timedelta(days=LEDGER_DAYS)
+    earlier = await _backtest_trials(session, user.tenant_id, since)
+    deflation: Dict[str, Any] = {"n_trials": len(earlier) + 1, "dsr": None}
+    if len(result.returns) >= 2:
+        await record_trial(session, tenant_id=user.tenant_id, user_id=user.id, study_id=str(uuid.uuid4()), dsl=dsl, symbol=label,
+                           exchange="NSE", timeframe=H.BASE_TF, status="ok", data_from=H.utc_close(result.days[0]),
+                           data_to=H.utc_close(result.days[-1]), metrics=out["strategy"], returns=result.returns)
+        await session.commit()
+        deflation = deflated_sharpe(result.returns, earlier + [sharpe(result.returns)])
+    return {**out, "text": nodes.to_text(ast), "rank_by": body.rank_by, "universe": label, "start": str(body.start), "end": str(body.end),
+            "every": body.every, "symbols": len(frames), "equity": [{"day": str(d), "equity": round(e, 2)} for d, e in zip(result.days, result.equity)],
+            "rebalance_log": result.rebalances[-20:],
+            "deflation": {**deflation, "note": f"Deflated for {deflation.get('n_trials', 1)} screen backtests by this organisation in the "
+                                                 f"last {LEDGER_DAYS} days (the search is part of the result)."},
+            "notes": notes, "data": "Shared end-of-day bars (NSE bhavcopies), adjusted by ISIN.", "disclaimer": B.DISCLAIMER}

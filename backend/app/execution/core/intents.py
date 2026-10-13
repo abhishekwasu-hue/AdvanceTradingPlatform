@@ -19,7 +19,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Dict, FrozenSet, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
@@ -76,6 +76,64 @@ async def existing_proposal(session: AsyncSession, tenant_id: int, intent_id: in
     """The proposal an earlier (interrupted) attempt of this intent already raised, if any."""
     return await session.scalar(select(AiActionRecord).where(AiActionRecord.tenant_id == tenant_id,
                                                              AiActionRecord.idempotency_key == proposal_key(intent_id)))
+
+
+def order_key(intent_id: int) -> str:
+    """N1 X2: the PAPER order an Auto PAPER intent places carries this idempotency key."""
+    return f"intent:{intent_id}"
+
+
+IN_FLIGHT_ORDER = frozenset({"CREATED", "VALIDATING", "RISK_CHECK", "SUBMITTED", "PENDING", "PARTIAL_FILL"})
+PLACED_ORDER = frozenset({"FILLED", "POSITION_OPEN"})
+
+
+async def existing_order(session: AsyncSession, tenant_id: int, intent_id: int, user_id: Optional[int] = None) -> Optional[Any]:
+    """The PAPER order an earlier (interrupted) attempt of this intent already placed, if any (N1 X2). Review of X2 (L1):
+    only the intent owner's own PAPER order with that key - another member's order under the same key text is not it."""
+    from app.db.models import OrderRecord
+    if user_id is None:
+        user_id = await session.scalar(select(ExecutionIntentRecord.user_id).where(ExecutionIntentRecord.id == intent_id))
+    if user_id is None:
+        return None
+    return await session.scalar(select(OrderRecord).where(OrderRecord.tenant_id == tenant_id, OrderRecord.user_id == user_id,
+                                                          OrderRecord.mode == "PAPER", OrderRecord.idempotency_key == order_key(intent_id)))
+
+
+async def relink_placed(session: AsyncSession, intent_id: int, *, route: str, reason: str, now: datetime) -> bool:
+    """Review of the X2 delta (L1): an EXPIRED / FAILED row whose own attempt did place its PAPER order -> DONE. A
+    conditional update on that status (False when the row is anything else); the caller commits."""
+    result = await session.execute(update(ExecutionIntentRecord)
+                                   .where(ExecutionIntentRecord.id == intent_id, ExecutionIntentRecord.status.in_((EXPIRED, FAILED)))
+                                   .values(status=DONE, route=route, reason=(reason or "")[:300], finished_at=_utc(now))
+                                   .execution_options(synchronize_session=False))
+    return bool(_count(result))
+
+
+def order_outcome(order: Any, now: datetime) -> Optional[Dict[str, Any]]:
+    """The values that finish an intent from its PAPER order (review of X2, L3): DONE when it filled, REFUSED (route
+    PAPER) when it was rejected or failed, None while it is still in flight (its own attempt finishes the row)."""
+    status = str(getattr(order, "status", "") or "")
+    if status in IN_FLIGHT_ORDER:
+        return None
+    if status in PLACED_ORDER or getattr(order, "trade_id", None) is not None:
+        return {"status": DONE, "route": policy.ROUTE_PAPER, "finished_at": now,
+                "reason": f"Auto PAPER: PAPER order #{order.id} was placed before an interruption"}
+    return {"status": REFUSED, "route": policy.ROUTE_PAPER, "finished_at": now,
+            "reason": f"Auto PAPER: PAPER order #{order.id} was not placed ({status.lower() or 'not filled'})"}
+
+
+async def earlier_outcome(session: AsyncSession, tenant_id: int, intent_id: int, now: datetime) -> Optional[Dict[str, Any]]:
+    """What an interrupted earlier attempt already did - a PAPER order (route PAPER) or a proposal (route PROPOSE) - as
+    the values that finish the row, or None. An order wins: it is the entry itself (an order still in flight: None)."""
+    order = await existing_order(session, tenant_id, intent_id)
+    if order is not None:
+        out = order_outcome(order, now)
+        return None if out is None else {**out, "order": order}
+    action = await existing_proposal(session, tenant_id, intent_id)
+    if action is not None:
+        return {"status": DONE, "route": policy.ROUTE_PROPOSE, "ai_action_id": action.id, "finished_at": now,
+                "reason": f"Proposal #{action.id} was raised before an interruption"}
+    return None
 
 
 def _utc(value: Optional[datetime]) -> datetime:
@@ -155,13 +213,15 @@ async def expire_overdue(session: AsyncSession, scope: Scope, now: datetime) -> 
                                                .where(ExecutionIntentRecord.status == QUEUED, ExecutionIntentRecord.expires_at <= now,
                                                       ExecutionIntentRecord.attempts > 0), scope))).all()
     for intent_id, tenant_id in retried:
-        action = await existing_proposal(session, tenant_id, intent_id)
-        if action is not None:
-            await session.execute(update(ExecutionIntentRecord)
-                                  .where(ExecutionIntentRecord.id == intent_id, ExecutionIntentRecord.status == QUEUED)
-                                  .values(status=DONE, route=policy.ROUTE_PROPOSE, ai_action_id=action.id, finished_at=now,
-                                          reason=f"Proposal #{action.id} was raised before an interruption")
-                                  .execution_options(synchronize_session=False))
+        earlier = await earlier_outcome(session, tenant_id, intent_id, now)    # N1 X2 review M1: an order is linked too
+        if earlier is not None:
+            order = earlier.pop("order", None)
+            result = await session.execute(update(ExecutionIntentRecord)
+                                           .where(ExecutionIntentRecord.id == intent_id, ExecutionIntentRecord.status == QUEUED)
+                                           .values(**earlier).execution_options(synchronize_session=False))
+            if order is not None and earlier["status"] == DONE and _count(result):
+                from app.execution.core import announce
+                await announce.placed_once(session, intent_id, order)
     query = update(ExecutionIntentRecord).where(ExecutionIntentRecord.status == QUEUED, ExecutionIntentRecord.expires_at <= now)
     if scope is not None:
         query = query.where(ExecutionIntentRecord.tenant_id.in_(sorted(scope)))
@@ -183,11 +243,12 @@ async def requeue_stale(session: AsyncSession, scope: Scope, now: datetime, limi
     requeued = failed = 0
     for intent_id, tenant_id, attempts, claimed_at in rows:
         values: Dict[str, object]
+        linked_order: Any = None
         if int(attempts or 0) >= app_config.EXECUTION_CORE_MAX_ATTEMPTS:
-            action = await existing_proposal(session, tenant_id, intent_id)
-            if action is not None:              # review L1: its proposal exists - link it, do not call it failed
-                values = {"status": DONE, "route": policy.ROUTE_PROPOSE, "ai_action_id": action.id, "finished_at": now,
-                          "reason": f"Proposal #{action.id} was raised before an interruption"}
+            earlier = await earlier_outcome(session, tenant_id, intent_id, now)
+            linked_order = earlier.pop("order", None) if earlier is not None else None
+            if earlier is not None:             # review L1 (and X2 M1): its proposal or order exists - link it, not failed
+                values = dict(earlier)
             else:
                 values = {"status": FAILED, "finished_at": now, "reason": f"Interrupted {int(attempts)} times - nothing more is tried"}
         else:
@@ -197,6 +258,9 @@ async def requeue_stale(session: AsyncSession, scope: Scope, now: datetime, limi
                                               ExecutionIntentRecord.claimed_at == claimed_at)
                                        .values(**values).execution_options(synchronize_session=False))
         if _count(result):
+            if values["status"] == DONE and linked_order is not None:
+                from app.execution.core import announce
+                await announce.placed_once(session, intent_id, linked_order)
             if values["status"] == FAILED:
                 failed += 1
             elif values["status"] == QUEUED:

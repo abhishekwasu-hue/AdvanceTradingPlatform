@@ -1,6 +1,6 @@
 # Part C2 - Pluggable execution models for backtests: design note
 
-Spec: MASTER SPEC v1 §2 (C2). Status: **PR 1 done** (protocols, defaults, golden test; fill + slippage wired); **PR 2 built (N7 C2b)**: `next_open`, `spread_half`, `volume_share`, `fixed_ms`, behind the `backtest_models` flag. It is stacked on the realism PR (#83: C1 HTF closed bars, C3 prefix
+Spec: MASTER SPEC v1 §2 (C2). Status: **PR 1 done** (protocols, defaults, golden test; fill + slippage wired); **PR 2 built (N7 C2b)**: `next_open`, `spread_half`, `volume_share`, `fixed_ms`; **PR 3 built (N7 C2c)**: `span_like` margin with a margin call, `black76` for missing strikes, the option engine takes a ModelSet - all behind the `backtest_models` flag. It is stacked on the realism PR (#83: C1 HTF closed bars, C3 prefix
 cache, C4 reproducibility fingerprint). The models below are added in small PRs. The default model of each kind
 reproduces today's numbers exactly, so no existing backtest result changes until someone picks a different model.
 
@@ -76,12 +76,36 @@ Rules that apply across all six:
   untouched (the PR 1 golden hashes still hold). Tests: tests/test_n7_c2b_models.py (truncation at any cut, the fill
   bar's range changes nothing, crafted gaps and latencies).
 
+## PR 3 (N7 C2c, built)
+- `span_like` margin (both engines): a percentage of notional per kind - cash equity 20 %, futures / commodities 12 %,
+  spot crypto 100 %; a written option without a defined maximum loss 15 % of its short legs' underlying notional; a
+  structure with a defined maximum loss needs that loss; bought options are paid for (no extra margin). An entry the
+  realised equity cannot margin is refused and counted; while a position is open, the equity marked at a bar's CLOSE
+  below `maintenance_pct` (100) % of the requirement at that close is a margin call - the position closes at that close
+  ("Margin call"). Settings, never tuned on results (C2-2).
+- `black76` pricing (option engine with a recorded or uploaded chain): a strike missing from the chain is priced by
+  Black-76 on the forward S x e^(rT) at the IV of the nearest quoted strike of the same expiry and right known by then
+  (a row at or before the bar, within the snapshot age), else the run's volatility model. Every model price is
+  counted and flagged (`options.model_prices`, `model_priced_contracts`, per leg `model_priced`). On a synthetic run it
+  is refused (there is no chain to complete).
+- The option engine takes a ModelSet: slippage (fixed_pct / spread_half), margin, pricing. Fill / latency models and
+  volume_share have nothing to act on there and are refused (422), never ignored. `BacktestResult.execution` carries
+  what non-default models did (margin refusals / calls, model prices); it is None on a default run and then left out of
+  the result hash.
+- Defaults byte-identical: the PR 1 golden hashes and the option engine's hashes recorded before this change
+  (tests/test_n7_c2c_models.py). No look-ahead: a margin call reads the bar's close only; a run cut anywhere agrees with
+  the full run; an IV row from after the bar is never used.
+
 ## Open questions
 - C2-1: which slippage model should the UI pre-select once alternatives exist? Provisional: the default stays
   `fixed_pct`, and the user has to choose another model explicitly. No silent change.
 - C2-2: what default margin percentage per instrument kind for `span_like`? Provisional: config values from the
   broker's published SPAN + exposure for the index's near month, refreshed by hand. They are not fetched live until
   part B has the data.
+- C2-6: the margin bucket of a single-leg symbol: its contract spec's asset class (COMMODITY / CRYPTO), a symbol with
+  "FUT" in it -> futures, otherwise cash equity. Provisional until the instrument master's kind reaches the backtest.
+- C2-7: `black76` volatility: the nearest quoted strike's IV (a smile is not interpolated). Provisional; a fitted smile
+  per expiry later.
 - C2-3: `spread_half` takes the spread as a setting (default 0.05 % of price) because backtest bars carry no spread.
   Provisional until recorded spreads (tick writer, B2) reach the backtest data.
 - C2-4: `fixed_ms` fills at the open of the bar trading when the order arrives - inside that bar the true price is

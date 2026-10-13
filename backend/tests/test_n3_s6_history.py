@@ -384,8 +384,8 @@ def test_a_last_bar_only_screen_runs_date_by_date_and_the_fast_path_refuses_a_sc
     sig = H.signals(ast, validated, frames, dates)
     for d in dates:
         assert sorted(sig.columns[sig.loc[d].to_numpy()]) == H.passers_on(ast, validated, frames, d)["matched"]
-    with pytest.raises(H.HistoryError, match="per-bar series"):
-        H._series_at(True, frames["S00"], dates, 1)
+    with pytest.raises(H.HistoryError, match="last bar only"):
+        H.series_at_dates(ast, validated, frames, dates)                 # never read back in time
     with pytest.raises(H.HistoryError, match="last bar only"):
         H.signals(ast, validated, frames, days[:H.MAX_CROSS_SECTIONAL_DATES + 1])
 

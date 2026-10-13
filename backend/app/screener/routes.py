@@ -47,7 +47,15 @@ FLAG = "screener_v2"
 GALLERY_FLAG = "screener_gallery"   # U9 TX1: the taxonomy API and the gallery on the Screener page
 LEGENDS_FLAG = lg.FLAG             # U7 LG1: the Legends cards (their screens are hidden from the taxonomy while off)
 # U5 D2 review: live previews make /run chattier; a per-user window keeps them (and Runs) to a sane rate.
-run_rate_limit = user_rate_limit("screener_run", limit=60, window_seconds=60)
+RUN_BUCKET, RUN_LIMIT, RUN_WINDOW = "screener_run", 60, 60
+run_rate_limit = user_rate_limit(RUN_BUCKET, limit=RUN_LIMIT, window_seconds=RUN_WINDOW)
+
+
+async def charge_runs(user: User, units: int) -> None:
+    """A request that runs several screens (the library's confluence, watch-trigger, digest preview) is charged as that
+    many `/run` calls on the same per-user bucket, so it cannot do more work than `/run` allows."""
+    from app.core.rate_limit import charge_user
+    await charge_user(RUN_BUCKET, user.id, RUN_LIMIT, RUN_WINDOW, units)
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
 RUN_PROVIDES: frozenset = frozenset({"zones"})

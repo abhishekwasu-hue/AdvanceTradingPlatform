@@ -1,7 +1,8 @@
 # BYOK - Vision with your own AI key
 
-Status: **BYOK-V1** (settings, key test, caps) and **BYOK-V2** (Vision audit on proposals, report in-app and on
-Telegram). Behind the operator flag `vision_byok`, **off by default**. V3 adds scan-alert and daily-review audits.
+Status: **BYOK-V1** (settings, key test, caps), **BYOK-V2** (Vision audit on proposals, report in-app and on
+Telegram) and **BYOK-V3** (the same audit for scan alerts and a daily after-close review). Behind the operator flag
+`vision_byok`, **off by default**; V3 also needs `vision_byok_v3`, **off by default**.
 
 ## Principle
 
@@ -195,7 +196,7 @@ order" and JSON with `status` / `decision` fields, and checks that `ai_actions`,
 
 | Table | Row | Contents |
 |---|---|---|
-| `vision_reports` | one per (user, proposal) | `tenant_id`, `user_id`, `ai_action_id`, `status` (pending / running / ok / skipped / failed), `provider`, `model`, `reason` (sanitised, max 200 characters, never the key), `report_text` (at most 12 lines), `image_sha256`, `cost_usd`, `telegram_status`, `telegram_error`, `created_at`, `started_at`, `finished_at` |
+| `vision_reports` | one per (user, subject); SKIPPED rows are deleted by retention after 90 days (`RETENTION_VISION_SKIPPED_DAYS`), audited ones stay | `tenant_id`, `user_id`, `ai_action_id`, `status` (pending / running / ok / skipped / failed), `provider`, `model`, `reason` (sanitised, max 200 characters, never the key), `report_text` (at most 12 lines), `image_sha256`, `cost_usd`, `telegram_status`, `telegram_error`, `created_at`, `started_at`, `finished_at` |
 
 **The chart image is not stored** - only its SHA-256, which identifies exactly what was sent (the renderer is
 deterministic). The platform has no journal setting that keeps chart images yet; when one exists, keeping the image
@@ -224,6 +225,71 @@ Both answer 404 while `vision_byok` is off, like every BYOK route.
 image block; Chat Completions `image_url` data URL at low detail; Gemini `inlineData`). Without it every request is
 byte-for-byte what it was. `build_byok_provider` returns a `VisionProvider`.
 
+## BYOK-V3 - scan alerts and the daily review
+
+Flag **`vision_byok_v3`** (off by default, in `DEFAULT_OFF_FLAGS`) on top of `vision_byok`: with either off nothing is
+queued and nothing is called (proposal audits follow V2 as before). The user opts in per subject in the Settings card
+("Every scan alert", "Daily review" - the V1 audit scope, greyed out while V3 is off for the organisation).
+
+### Whose key, whose content
+
+The one-key-one-user rule of V2 holds for both subjects:
+
+- **Scan alert**: queued for the **rule's creator** (`alert_rules.created_by`, active, same organisation) - the user the
+  SCREEN_ALERT notification is addressed to - and audited only with that user's key; the report is shown only to that
+  user. A teammate's key is never used, even when the teammate has one.
+- **Daily review**: one row per symbol of the user's **own** list - the deployments they created (not stopped), then
+  their own instrument alert rules (active), newest first, at most `BYOK_DAILY_REVIEW_MAX_SYMBOLS` (3; at most 10).
+  Never another member's symbols.
+
+### Flow
+
+1. **Scan alert, queue.** The alert engine's `_send` writes the notification and its deliveries exactly as before, then
+   calls `vision_audit.enqueue_for_scan_alert` - a savepoint that never raises, no network. One `vision_reports` row:
+   `subject_kind = scan_alert`, `subject_key = scan:<notification id>`, the notification and rule ids, the first
+   matched symbol (A-Z), the rule's exchange and timeframe. At most `BYOK_SCAN_AUDITS_PER_HOUR` (6) audits per user per
+   rolling hour: beyond it the row is written already **skipped** ("scan audit limit (6 per hour)"), with no call, so a
+   noisy screen cannot burn the user's cap and the user sees why there is no report.
+2. **Daily review, queue.** Every 15 minutes the worker calls `vision_audit.enqueue_daily_reviews`: from
+   `BYOK_DAILY_REVIEW_AT` (16:00 IST) on NSE trading days (the holiday calendar; weekends and holidays have none), one
+   row per symbol with `subject_key = daily:<date>:<EXCHANGE>:<SYMBOL>` and `subject_date`, on
+   `BYOK_DAILY_REVIEW_TIMEFRAME` (`1d`). The key is unique per user, so a day is queued once (and a second replica's
+   insert loses quietly).
+3. **Audit.** The same drain, claim, chart, gate (`byok_allowed` with the estimate), call, parse and report as V2 - the
+   chart of the row's own symbol from the platform's lake (daily bars only with `byob_data_tier` on, BT1b), the
+   window's HIGH / LOW, no position lines. The context sent is the symbol, exchange, timeframe and the kind of review
+   ("a screen alert the trader set up matched this symbol" / "the trader's own after-close daily review") - no rule
+   text, no account data, no prices. Skipped without a call when V3 was turned off, the rule is gone or no longer the
+   user's, a scan alert is older than 2 hours, or a daily review older than 12 hours.
+4. **Delivery.** In-app: the Notifications feed shows the user's report under that scan-alert notification; the
+   "Vision daily review" tab lists the daily reviews, newest day first. Telegram (the user's own linked chat only, as
+   in V2): "Scan alert - SYMBOL 15m (rule #id)" or "Daily review - SYMBOL 1d (date)" with the report.
+
+Vision still never approves, places, blocks or changes anything (ADR-0006): `tests/test_byok_v3.py` runs a scan-alert
+audit against a provider that answers "APPROVE THIS. place order now" with `status` / `decision` fields and checks that
+`orders`, `trades`, `strategy_deployments`, `alert_rules` and `ai_actions` are unchanged.
+
+### What is stored (V3)
+
+`vision_reports` gains `subject_kind` (proposal / scan_alert / daily_review, default proposal), `subject_key` (unique
+per user; NULL on V2 rows, which stay unique on (user, proposal)), `notification_id`, `alert_rule_id`, `symbol`,
+`exchange`, `timeframe` and `subject_date`; `ai_action_id` becomes nullable. Migration `c9e1f3a5b7d2` (on
+`a7d3e9c1b5f2`) is `ROLLBACK_SAFE = True` with a reason: the one new constraint only binds rows the new release writes
+(the previous release never sets `subject_key`, and NULLs never collide). The downgrade deletes the scan-alert and
+daily-review rows (they do not fit V2's NOT NULL `ai_action_id`). Images are still never stored.
+
+### API (V3)
+
+`GET /api/ai/byok/reports` takes `kind` (`proposal`, `scan_alert`, `daily_review`) and `notification_id`; each report
+carries `kind`, `notification_id`, `alert_rule_id`, `symbol`, `exchange`, `timeframe` and `subject_date`. No new route.
+`GET /api/ai/byok/status` carries `scope`: `v3_enabled`, `scan_audits_per_hour`, `daily_review_at` (IST),
+`daily_review_max_symbols`, `daily_review_timeframe`.
+
+### Privacy (V3)
+
+The chart and the minimal context above go only to the provider the user chose, under the user's own key, and only for
+the user's own alert rules and own symbols. The Settings privacy note says so.
+
 ## Next
 
-- **BYOK-V3** - the same audit for every scan alert and a daily review, per the user's audit scope.
+- Per-user choice of the daily-review symbols (a watchlist) and review time - open questions BYOK3-2 and BYOK3-3.

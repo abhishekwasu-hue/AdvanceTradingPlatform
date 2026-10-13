@@ -229,6 +229,8 @@ class TradingWorker:
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
         self._digest_task: Optional["asyncio.Task[None]"] = None
+        # BYOK-V3: when the daily-review queue was last checked (every 15 minutes; the queue itself is once per user per day).
+        self._last_vision_daily_check: Optional[datetime] = None
         self._then_warm_task: Optional["asyncio.Task[None]"] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
@@ -280,12 +282,12 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._intraday_task is not None and not self._intraday_task.done():
+            self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
         if self._then_warm_task is not None and not self._then_warm_task.done():
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
             self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
-        if self._intraday_task is not None and not self._intraday_task.done():
-            self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -495,6 +497,19 @@ class TradingWorker:
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
                 try:
+                    # BYOK-V3: after the close, queue each opted-in user's daily review (rows only; idempotent per user per day).
+                    if self._last_vision_daily_check is None or now - self._last_vision_daily_check >= timedelta(minutes=15):
+                        self._last_vision_daily_check = now
+                        from app.ai import vision_audit
+                        # Review LOW-4: its own session - it commits, and must neither commit nor roll back the cycle's.
+                        async with self.session_factory() as vision_session:
+                            try:
+                                await vision_audit.enqueue_daily_reviews(vision_session, now)
+                            except Exception:
+                                await vision_session.rollback()
+                                raise
+                    # On the cycle's session: in a savepoint, so a failed read never leaves that session's transaction
+                    # aborted for the steps after it (ADR-0004).
                     async with guarded(session):
                         if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1)) is not None:
                             self._spawn_vision_drain()

@@ -6,13 +6,14 @@ import { useBrokerChart } from "../components/chartHistory";
 import ProChart from "../components/ProChart";
 import { ACTIVE_LTP_MS, INACTIVE_LTP_MS, LtpHub, type LtpUpdate } from "../charting/ltpHub";
 import type { ChartEngine } from "../charting/engine";
+import { CHART_TYPE_LABELS } from "../charting/chartTypes";
 import type { IndicatorId } from "../utils/indicators";
 import { CrosshairLink } from "../charting/crosshairLink";
 import { SHORTCUTS, nextChartType, shortcutFor, type WorkspaceAction } from "../charting/shortcuts";
 import {
-  GRIDS, GROUPS, GROUP_COLORS, LayoutConflict, TIMEFRAMES, defaultLayout, gridShape, layoutProblem, layoutsApi, linkedPeers, moveActive,
+  CHART_TYPES, GRIDS, GROUPS, GROUP_COLORS, LayoutConflict, TIMEFRAMES, defaultLayout, gridShape, layoutProblem, layoutsApi, linkedPeers, moveActive,
   nextGroup, setActive, setChartType, setGrid, setGroup, setGroupSync, setSymbol, setTimeframe, stepTimeframe, syncOf,
-  type CellV1, type Group, type LayoutV1, type StoredLayout, type Timeframe,
+  type CellV1, type ChartType, type Group, type LayoutV1, type StoredLayout, type Timeframe,
 } from "../charting/workspace";
 
 const DRAFT_KEY = "atp_workspace_draft";
@@ -241,6 +242,7 @@ function Workspace({ params }: { params: URLSearchParams }) {
                          onFocus={() => apply((x) => setActive(x, i))}
                          onSymbol={(s) => apply((x) => setSymbol(x, i, s))}
                          onTimeframe={(tf) => apply((x) => setTimeframe(x, i, tf))}
+                         onChartType={(t) => apply((x) => setChartType(x, i, t))}
                          onGroup={(g) => apply((x) => setGroup(x, i, g))}
                          onMaximize={() => { apply((x) => setActive(x, i)); setMaximized((m) => !m); }} />
         )))}
@@ -253,9 +255,10 @@ interface CellProps {
   index: number; cell: CellV1; active: boolean; compact: boolean; height: number; maximized: boolean; link: CrosshairLink; ltpHub: LtpHub;
   symbolBox: (el: HTMLInputElement | null) => void;
   onFocus: () => void; onSymbol: (symbol: string) => void; onTimeframe: (tf: Timeframe) => void; onGroup: (g: Group | null) => void; onMaximize: () => void;
+  onChartType: (t: ChartType) => void;
 }
 
-function WorkspaceCell({ index, cell: c, active, compact, height, maximized, link, ltpHub, symbolBox, onFocus, onSymbol, onTimeframe, onGroup, onMaximize }: CellProps) {
+function WorkspaceCell({ index, cell: c, active, compact, height, maximized, link, ltpHub, symbolBox, onFocus, onSymbol, onTimeframe, onGroup, onMaximize, onChartType }: CellProps) {
   const chart = useBrokerChart({ enabled: true, symbol: c.symbol, timeframe: c.timeframe, exchange: c.exchange });
   const live = useSharedLtp(ltpHub, c.timeframe !== "day", c.symbol, c.exchange, active ? ACTIVE_LTP_MS : INACTIVE_LTP_MS);
   const [draft, setDraft] = useState(c.symbol);
@@ -276,13 +279,17 @@ function WorkspaceCell({ index, cell: c, active, compact, height, maximized, lin
                  aria-label={`Symbol of chart ${index + 1}`} className="w-28 rounded border border-border bg-surface px-1 py-0.5 font-semibold text-fg" />
         </form>
         <span className="text-fg-muted">{c.exchange}</span>
+        <select value={c.chart_type} onChange={(e) => onChartType(e.target.value as ChartType)} aria-label={`Chart type of chart ${index + 1}`}
+                title="Chart type (Alt+T)" className="rounded border border-border bg-surface px-1 py-0.5 text-fg">
+          {CHART_TYPES.map((t) => <option key={t} value={t}>{CHART_TYPE_LABELS[t]}</option>)}
+        </select>
         {chart.error && <span className="truncate text-down" title={chart.error}>{chart.error}</span>}
         <button onClick={onMaximize} title={maximized ? "Back to the grid (Alt+Enter)" : "Full size (Alt+Enter)"} aria-label={maximized ? "Back to the grid" : "Full size"}
                 className="ml-auto rounded p-0.5 text-fg-muted hover:text-fg">{maximized ? <Minimize2 size={11} /> : <Maximize2 size={11} />}</button>
       </div>
       <ProChart candles={chart.candles} symbol={c.symbol} timeframe={c.timeframe} timeframes={[...TIMEFRAMES]} onTimeframeChange={(tf) => onTimeframe(tf as Timeframe)}
                 live={c.timeframe === "day" ? null : live.ltp} liveError={live.error} exchange={c.exchange} height={height} compact={compact}
-                defaultIndicators={compact ? NO_INDICATORS : FULL_INDICATORS} drawingTools={active}
+                defaultIndicators={compact ? NO_INDICATORS : FULL_INDICATORS} drawingTools={active} chartType={c.chart_type} venueAxis
                 onLoadOlder={chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} onEngine={onEngine} />
     </section>
   );

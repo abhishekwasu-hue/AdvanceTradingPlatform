@@ -2,7 +2,7 @@
 daily bars (flag screener_breakouts_fitness, off by default). Reference data: no tenant column.
 
 Revision ID: d4f6a8c0e2b5
-Revises: d7f9a1c3e5b7 (contributed reference rows tenant scope, main's head; re-chained from f3b5d7a9c1e2)
+Revises: e2a4c6b8d0f1 (company symbol per scope, #247 - main's head; re-chained from d7f9a1c3e5b7, earlier f3b5d7a9c1e2)
 Create Date: 2026-10-12 23:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd4f6a8c0e2b5'
-down_revision: Union[str, Sequence[str], None] = 'd7f9a1c3e5b7'
+down_revision: Union[str, Sequence[str], None] = 'e2a4c6b8d0f1'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - one new table that no earlier release reads or writes, so the previous release runs unchanged

@@ -59,8 +59,9 @@ REASON_MONTHLY_CAP = "monthly cap reached"
 VISION_OFF_NO_KEY = "Vision off - add your API key in Settings"
 SUBSCRIPTION_NOTE = ("Subscription sign-in (for example Claude Pro or Max) is not supported - API keys only. Create an API key in the "
                      "provider's developer console; the provider bills you directly for what you use.")
-PRIVACY_NOTE = ("When Vision reviews a chart, the chart image and the minimal context needed (symbol, timeframe, the proposal being "
-                "reviewed) are sent only to the provider you chose, under your own key. Your key is never used for anyone else.")
+PRIVACY_NOTE = ("When Vision reviews a chart, the chart image and the minimal context needed (symbol, timeframe, whether it is a "
+                "proposal, a scan alert or your daily review) are sent only to the provider you chose, under your own key. Your key "
+                "is never used for anyone else. Chart images are not kept; you can delete any report.")
 SESSION_TOKEN_MESSAGE = ("This looks like a sign-in session, cookie or OAuth token, not an API key. Subscription sign-in is not "
                          "supported - create an API key in the provider's developer console and paste that.")
 
@@ -452,6 +453,7 @@ def _iso(value: Optional[datetime]) -> Optional[str]:
 
 async def status(session: AsyncSession, user: User, *, now: Optional[datetime] = None) -> Dict[str, Any]:
     """Everything the Settings card needs - the caller's rows only; never a key, only its hint."""
+    from app.platform.controls import flag_enabled
     keys = {k.provider: k for k in await list_keys(session, user)}
     prefs = await get_prefs(session, user)
     since_month, since_day = month_start(now), day_start(now)
@@ -498,4 +500,9 @@ async def status(session: AsyncSession, user: User, *, now: Optional[datetime] =
         "channels": {"telegram": prefs.channel_telegram if prefs is not None else False,
                      "in_app": prefs.channel_in_app if prefs is not None else True},
         "notes": {"subscription": SUBSCRIPTION_NOTE, "privacy": PRIVACY_NOTE},
+        # BYOK-V3: what the scan-alert and daily-review scopes do, so the Settings card can say it.
+        "scope": {"v3_enabled": await flag_enabled(session, "vision_byok_v3", user.tenant_id),
+                  "scan_audits_per_hour": int(config.BYOK_SCAN_AUDITS_PER_HOUR), "daily_review_at": config.BYOK_DAILY_REVIEW_AT,
+                  "daily_review_timezone": "Asia/Kolkata", "daily_review_max_symbols": int(config.BYOK_DAILY_REVIEW_MAX_SYMBOLS),
+                  "daily_review_timeframe": config.BYOK_DAILY_REVIEW_TIMEFRAME},
     }

@@ -1,17 +1,24 @@
 """H-C1 c: the server-side advice and guarantee filter on every LLM text the platform shows.
 
-Two kinds of finding:
+Three kinds of finding:
 
-* **blocked** - guarantee words ("guaranteed", "sure-shot", खात्रीशीर, हमखास, ...) and advice phrasing ("I recommend",
-  "you should buy", ...). The caller treats a blocked reply like a failed grounding check: one retry that names the
-  words, then the rule-based text. The LLM's words are never shown.
-* **framed** - a specific buy/sell call next to a price, strike or option leg. The text is kept, with an educational
-  framing line in the answer's language appended.
+* **blocked words** - guarantee words ("guaranteed", "sure-shot", खात्रीशीर, हमखास, ...) and advice phrasing ("I
+  recommend", "you should buy", ...), read on the normalised text (full-width letters, zero-width characters and
+  look-alikes undone). The caller treats a blocked reply like a failed grounding check: one retry that names the words,
+  then the rule-based text. The LLM's words are never shown.
+* **blocked calls** - a trade call aimed at an instrument or a price level, in any supported language
+  (`app/ai/call_detect.py`, which lists what is and is not a call): "Sell RELIANCE", "- Buy: RELIANCE", "Buy 25000 CE
+  above 120", "रिलायन्स खरेदी करा", "TCS बेचें।", "I'd buy RELIANCE", "RELIANCE is a buy", an entry / stop / target set
+  across lines, a level with certainty.
+* **framed** - a specific call that is not imperative and names no instrument ("One could buy the 25000 CE above 120",
+  "25200 च्या वर खरेदी चा विचार होऊ शकतो"): the text is kept, with an educational framing line in the answer's
+  language appended (the spec allows framing here).
 
 The word lists are data (`app/ai/data/advice_terms.json`, or the file named by `AI_ADVICE_TERMS_FILE`), checked in
-both languages whatever the answer language. A term right after a negation ("not a recommendation", "never
+every language whatever the answer language. A term right after a negation ("not a recommendation", "never
 guaranteed") or right before a Marathi one ("शिफारस नाही") is allowed. Every finding is counted in
-`atp_ai_output_filtered_total{kind}` and returned to the caller to show in the response.
+`atp_ai_output_filtered_total{kind}` and returned to the caller to show in the response. `blocked_terms` gives the words
+only (the support bot's input guard); `findings` gives words and calls (every AI output check).
 """
 import json
 import logging
@@ -25,7 +32,9 @@ from typing import List, Optional, Pattern, Tuple
 log = logging.getLogger(__name__)
 
 DEFAULT_FILE = Path(__file__).resolve().parent / "data" / "advice_terms.json"
-_WORD = r"\wऀ-ॿ"            # Devanagari vowel signs are not \w: count the whole block as word characters
+# Devanagari vowel signs are not \w: count the block as word characters - except the dandas (U+0964 / U+0965), which end a
+# sentence ("RELIANCE खरीदें।" must still end the verb; review of #230, HIGH1).
+_WORD = "\\w\u0900-\u0963\u0966-\u097f"
 
 
 @dataclass(frozen=True)
@@ -68,7 +77,7 @@ def _load(path: str) -> Terms:
     # A specific call: an action verb and, in the same clause and within a few words either side, a price, a strike or an
     # option leg ("buy 25000 CE", "25200 च्या वर खरेदी").
     verb = rf"(?<![{_WORD}])(?:{_alternation(verbs)})(?![{_WORD}-])"
-    level = rf"(?:\d[\d,]*(?:\.\d+)?|(?<![{_WORD}])(?:CE|PE|call|put|कॉल|पुट)(?![{_WORD}]))"
+    level = rf"(?:(?<![\d,.])\d[\d,]*(?:\.\d+)?|(?<![{_WORD}])(?:CE|PE|call|put|कॉल|पुट)(?![{_WORD}]))"
     action = rf"{verb}[^.!?\n।]{{0,40}}?{level}|{level}[^.!?\n।]{{0,40}}?{verb}"
     return Terms(blocked=re.compile(_bounded(blocked), re.IGNORECASE),
                  negated_before=re.compile(rf"(?:{_bounded(neg.get('before', []))})(?:\W+[{_WORD}]+){{0,2}}\W*$", re.IGNORECASE),
@@ -76,16 +85,27 @@ def _load(path: str) -> Terms:
                  action=re.compile(action, re.IGNORECASE), framing=data["framing"])
 
 
+def call_terms(text: str) -> List[str]:
+    """Trade calls aimed at an instrument (app/ai/call_detect.py), as short labels in order of appearance."""
+    from app.ai import call_detect
+    return call_detect.detect(text or "", os.environ.get("AI_ADVICE_TERMS_FILE") or str(DEFAULT_FILE))
+
+
 def terms() -> Terms:
     return _load(os.environ.get("AI_ADVICE_TERMS_FILE") or str(DEFAULT_FILE))
 
 
 def blocked_terms(text: str) -> List[str]:
-    """The guarantee/advice terms in `text` that are not negated, lower-cased, in order of appearance."""
+    """The guarantee / advice words in `text` that are not negated, lower-cased, in order of appearance (read on the
+    normalised text: full-width letters, zero-width characters and look-alikes undone). Words only: the support bot's
+    input guard uses this (a how-to question naming a stop or a sell button is not a call); every AI output check uses
+    `findings`, which adds the trade calls."""
+    from app.ai.call_detect import normalise
     t = terms()
+    body = normalise(text or "")
     found: List[str] = []
-    for m in t.blocked.finditer(text or ""):
-        before, after = text[max(0, m.start() - 30):m.start()], text[m.end():m.end() + 20]
+    for m in t.blocked.finditer(body):
+        before, after = body[max(0, m.start() - 30):m.start()], body[m.end():m.end() + 20]
         if t.negated_before.search(before) or t.negated_after.search(after):
             continue
         word = m.group(0).lower()
@@ -94,8 +114,27 @@ def blocked_terms(text: str) -> List[str]:
     return found
 
 
+def findings(text: str) -> List[str]:
+    """Everything that blocks an AI text: the guarantee / advice words and the trade calls aimed at an instrument."""
+    found = blocked_terms(text)
+    return found + [c for c in call_terms(text) if c not in found]
+
+
 def is_specific_call(text: str) -> bool:
-    return bool(terms().action.search(text or ""))
+    """A specific (framed) call: an action verb next to a price, strike or option leg in one sentence - not in status,
+    log, backtest, rule ("when <condition>"), how-to or negated text (review of #230, MED6)."""
+    from app.ai import call_detect
+    L = call_detect.lists(os.environ.get("AI_ADVICE_TERMS_FILE") or str(DEFAULT_FILE))
+    action = terms().action
+    for sentence in call_detect.sentences(call_detect.normalise(text or "")):
+        if (L.context.search(sentence) or L.condition.search(sentence) or L.negated.search(sentence) or L.past.search(sentence)
+                or call_detect.record_line(sentence)):
+            continue
+        if L.howto.search(sentence):
+            continue
+        if action.search(sentence):
+            return True
+    return False
 
 
 def framing(lang: str) -> str:
@@ -107,7 +146,7 @@ def screen(text: str, lang: str = "en", *, where: str = "ai") -> Screened:
     """Blocked terms (the caller must not show the text) or the text, framed when it makes a specific call."""
     from app.observability.metrics import AI_OUTPUT_FILTERED
     out = Screened(text=text or "")
-    out.blocked = blocked_terms(out.text)
+    out.blocked = findings(out.text)
     if out.blocked:
         AI_OUTPUT_FILTERED.labels(kind="blocked", where=where).inc()
         log.info("AI output filter: %s reply blocked for %s", where, ", ".join(out.blocked[:5]))
@@ -134,4 +173,4 @@ def check(text: str, lang: str = "en", *, where: str = "ai") -> Tuple[bool, Opti
     return True, s.text, "framed" if s.framed else "ok"
 
 
-__all__ = ["screen", "check", "blocked_terms", "is_specific_call", "framing", "retry_hint", "Screened"]
+__all__ = ["screen", "check", "blocked_terms", "findings", "call_terms", "is_specific_call", "framing", "retry_hint", "Screened"]

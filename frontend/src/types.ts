@@ -1617,6 +1617,9 @@ export interface ByokStatus {
   audit: ByokAuditScope;
   channels: ByokChannels;
   notes: { subscription: string; privacy: string };
+  /** BYOK-V3: whether scan-alert and daily-review audits are on for the organisation (flag vision_byok_v3), and their limits. */
+  scope?: { v3_enabled: boolean; scan_audits_per_hour: number; daily_review_at: string; daily_review_timezone: string;
+            daily_review_max_symbols: number; daily_review_timeframe: string };
 }
 
 export interface ByokTestResponse {
@@ -1638,9 +1641,19 @@ export interface ByokPrefsInput {
 
 export type VisionReportStatus = "pending" | "running" | "ok" | "skipped" | "failed";
 
+export type VisionSubjectKind = "proposal" | "scan_alert" | "daily_review";
+
 export interface VisionReport {
   id: number;
-  ai_action_id: number;
+  ai_action_id: number | null;
+  /** BYOK-V3: what was reviewed - a proposal (V2), a scan-alert notification, or one symbol of the daily review. */
+  kind?: VisionSubjectKind;
+  notification_id?: number | null;
+  alert_rule_id?: number | null;
+  symbol?: string | null;
+  exchange?: string | null;
+  timeframe?: string | null;
+  subject_date?: string | null;
   status: VisionReportStatus;
   provider: ByokProviderName | null;
   model: string | null;
@@ -2448,6 +2461,29 @@ export interface WhatIfResult {
   greeks: { delta: number; gamma: number; theta: number; vega: number; rho: number };
   spot: number; days_forward: number; iv_shift: number; max_days_forward: number; expiry: string | null;
   scenario_at: string; as_of: string; legs: WhatIfLeg[]; note: string;
+}
+
+/** N2-4 (flag `decision_tools`): the caller's own open positions by underlying and sector, beta and correlated pairs. */
+export interface ExposureUnderlying {
+  underlying: string; legs: number; modes: string[]; notional: number; net_quantity: number; option_premium: number;
+  risk_at_stop: number; legs_without_stop: string[]; sector: string; beta: number | null; return_days: number;
+}
+export interface ExposurePair { a: string; b: string; r: number | null; days: number }
+export interface ExposureView {
+  underlyings: ExposureUnderlying[];
+  sectors: { sector: string; underlyings: number; notional: number; option_premium: number; risk_at_stop: number }[];
+  pairs: ExposurePair[]; move_together: ExposurePair[]; move_together_threshold: number; min_points: number; lookback_days: number;
+  totals: { underlyings: number; legs: number; risk_at_stop: number; notional: number };
+  market: string; market_days: number; note: string;
+  /** review: beta and pairs only for the `max_computed` largest risks; the rest are listed here */
+  not_computed?: string[]; max_computed?: number;
+}
+
+export interface ConeRow { sessions: number; move_1sd: number; low_1sd: number; high_1sd: number; low_2sd: number; high_2sd: number }
+/** N2-4: the expected-move cone for an instrument (historical volatility or a typed IV). */
+export interface ExpectedMove {
+  instrument: string; close: number; close_date: string; sigma: number; method: string; window: number; horizon: number;
+  cone: ConeRow[]; selected: ConeRow; note: string;
 }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */

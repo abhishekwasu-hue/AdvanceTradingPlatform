@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -11,7 +12,7 @@ from fastapi.responses import JSONResponse
 from fastapi import Request, Depends, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -118,6 +119,7 @@ from app.screener.routes import router as screener_router
 from app.screener.history_routes import router as screener_history_router
 from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.screener.evidence_routes import router as screener_evidence_router
+from app.screener.library_routes import router as screener_library_router
 from app.screener.etf_routes import router as screener_etf_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.screener.then.routes import router as scan_then_router
@@ -128,6 +130,8 @@ from app.charts.drawings import router as chart_drawings_router
 from app.charts.layouts import router as chart_layouts_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.charts.price_action_layer import router as chart_price_action_layer_router
+from app.charts.trades_layer import router as chart_trades_layer_router
+from app.charts.contracts import router as chart_contracts_router
 from app.charts.studies import router as chart_studies_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
 from app.journal.routes import router as journal_router
@@ -145,13 +149,31 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with _startup_session_factory() as session:
         await promote_configured_super_admins(session)
         await warm_tenant_keys(session)  # Phase N1: tenant data keys into the process key ring
+        from app.ai import instrument_names
+        await instrument_names.refresh(session)    # H-C1 c: instrument names for the AI output filter (never raises)
         # Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0): seed live_trading OFF / phase0_paper_only ON where unset, then
         # log why LIVE entry paths are (not) started. Never stops the API from coming up.
         try:
             await deployment_phase_startup(session, "api")
         except Exception:  # noqa: BLE001 - never stops the API from coming up (Phase 0 defaults still apply)
             logging.getLogger(__name__).exception("Phase 0 start-up check failed")
-    yield
+    names_task = asyncio.create_task(_refresh_instrument_names())
+    try:
+        yield
+    finally:
+        names_task.cancel()
+
+
+async def _refresh_instrument_names() -> None:
+    """H-C1 c: the AI output filter's instrument names, refreshed every six hours (new listings, renames)."""
+    from app.ai import instrument_names
+    while True:
+        await asyncio.sleep(instrument_names.REFRESH_SECONDS)
+        try:
+            async with _startup_session_factory() as session:
+                await instrument_names.refresh(session)
+        except Exception:  # noqa: BLE001 - the filter keeps the names it has
+            logging.getLogger(__name__).warning("instrument names not refreshed", exc_info=True)
 
 
 app = FastAPI(
@@ -253,6 +275,7 @@ app.include_router(screener_router)
 app.include_router(screener_history_router)  # N3 S6a: who passed on a date, screen fitness (flag screener_history, off)
 app.include_router(screener_breakouts_router)
 app.include_router(screener_evidence_router)  # U8 EV1/EV2: evidence charts (flag evidence_charts, off)
+app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
 app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
 app.include_router(alert_rules_router)
 app.include_router(scan_then_router)
@@ -263,6 +286,8 @@ app.include_router(chart_drawings_router)
 app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace layouts per user (flag chart_workspace)
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
+app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
+app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
 app.include_router(chart_studies_router)  # N4 CH6: ScreenQL studies on charts from the screener runtime (flag chart_studies, off)
 app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
@@ -285,6 +310,14 @@ class SignalRequest(BaseModel):
 class PaperExecuteRequest(SignalRequest):
     risk_config: Optional[RiskConfig] = None
     idempotency_key: Optional[str] = None
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def not_reserved(cls, value: Optional[str]) -> Optional[str]:
+        """N1 X2 (review L1): `intent:` keys belong to the execution core's Auto PAPER orders - a caller may not claim one."""
+        if value is not None and value.strip().lower().startswith("intent:"):
+            raise ValueError("idempotency keys starting with 'intent:' are reserved")
+        return value
 
 
 class EnrichSignalRequest(SignalRequest):

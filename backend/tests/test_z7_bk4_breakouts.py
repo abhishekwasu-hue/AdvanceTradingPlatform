@@ -368,3 +368,47 @@ def test_the_array_median_range_and_swing_threshold_are_the_platforms(daily):
     s = pa_settings.settings()
     for degree in range(4):
         np.testing.assert_array_equal(b.swing_threshold(degree, s), cs.threshold(frame, degree, s))
+
+
+def _stairs(n=2000):
+    """A stair-step series: a swing high and low every few bars, so nearly every anchor pair is a line candidate."""
+    i = np.arange(n)
+    c = 100 + 0.02 * i + 1.5 * np.sin(i / 2.0)
+    idx = pd.bdate_range("2019-01-01", periods=n, tz="UTC")
+    return pd.DataFrame({"open": c, "high": c + 0.5, "low": c - 0.5, "close": c, "volume": 1000.0}, index=idx)
+
+
+@pytest.mark.parametrize("edges", [False, True])
+def test_the_line_grid_in_chunks_equals_the_one_grid_and_bounds_memory(edges, monkeypatch):
+    """BK4 review (LOW): the anchor pairs x (tl_max_bars + 1) grid is computed in row chunks - the same lines, breaks and
+    channel edges as one grid, and the peak memory bounded by the chunk (it reached 8 GB on 2000 stair-step bars)."""
+    import tracemalloc
+    p = bp.settings(tl_max_bars=500)
+    for frame in (generate(320, 100.0, 7, daily=True).reset_index(drop=True), _stairs(600)):
+        b = Bars(frame, p)
+        rr = L.ref_ranges(b.h, b.l)
+        pairs = 0
+        for kind in ("resistance", "support"):
+            monkeypatch.setattr(L, "PAIR_CELLS", 10 ** 12)
+            whole = L.Lines(b, b.side(1), p, kind, rr, edges)
+            monkeypatch.setattr(L, "PAIR_CELLS", 777)
+            chunked = L.Lines(b, b.side(1), p, kind, rr, edges)
+            for name in ("A", "B", "M", "C0", "BRK", "EDGE", "EDGE_BRK"):
+                np.testing.assert_array_equal(getattr(whole, name), getattr(chunked, name), err_msg=f"{kind} {name}")
+            pairs += len(whole.A)
+        assert pairs > 10
+    b = Bars(_stairs(2000), p)
+    rr = L.ref_ranges(b.h, b.l)
+
+    def peak(cells):
+        monkeypatch.setattr(L, "PAIR_CELLS", cells)
+        tracemalloc.start()
+        try:
+            lines = L.Lines(b, b.side(1), p, "support", rr, edges)
+            return lines, tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+    lines, whole_peak = peak(10 ** 12)
+    _, chunk_peak = peak(100_000)
+    assert len(lines.A) * (p["tl_max_bars"] + 1) > 20 * 100_000                       # the one grid: many chunks' worth
+    assert chunk_peak * 5 < whole_peak, (chunk_peak, whole_peak)                      # bounded by the chunk, not the pairs

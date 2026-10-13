@@ -23,17 +23,31 @@ proposal or a deployment):
 No key, flag off, a cap reached or a provider error: the proposal and its normal notification are unchanged; the report
 reads "Vision off - add your API key in Settings" or "Vision skipped: <reason>" (sanitised: never the key), and the
 chart still goes to Telegram. The chart image is never stored - only its SHA-256.
+
+BYOK-V3 (flag `vision_byok_v3`, on top of `vision_byok`): the same audit for two more subjects, each under the one
+user's own key and shown to that user only.
+- `scan_alert`: `enqueue_for_scan_alert` (called by the alert engine right after a screen alert's notification is
+  written, in a savepoint that never raises) queues one row for the RULE'S CREATOR - the user the notification is
+  addressed to - with the first matched symbol, the rule's exchange and timeframe. At most BYOK_SCAN_AUDITS_PER_HOUR per
+  user per rolling hour (beyond it the row is written as skipped, no call), so a noisy screen cannot burn the cap.
+- `daily_review`: `enqueue_daily_reviews` (the worker, every 15 minutes) queues, once per user and IST day from
+  BYOK_DAILY_REVIEW_AT on NSE trading days, one row per symbol of the user's OWN deployments and instrument alert rules
+  (at most BYOK_DAILY_REVIEW_MAX_SYMBOLS), on BYOK_DAILY_REVIEW_TIMEFRAME.
+`subject_key` (unique per user) makes every subject audited at most once. The context sent is the symbol, exchange,
+timeframe and the kind of review - no rule text, no account data, no prices.
 """
 import hashlib
 import json
 import logging
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 import httpx
-from sqlalchemy import delete, select, update
+from sqlalchemy import delete, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import byok, chart_png, pricing
@@ -41,7 +55,8 @@ from app.ai import providers as ai_providers
 from app.ai.metering import log_call
 from app.ai.providers import Completion, ProviderError
 from app.audit.log import write_audit_log
-from app.db.models import (AiActionRecord, AlertChannelRecord, StrategyDeploymentRecord, TradeRecord, User, UserVisionPrefsRecord,
+from app.core import config
+from app.db.models import (AiActionRecord, AlertChannelRecord, AlertRuleRecord, StrategyDeploymentRecord, TradeRecord, User, UserVisionPrefsRecord,
                            VisionReportRecord)
 
 logger = logging.getLogger(__name__)
@@ -62,6 +77,12 @@ TELEGRAM_API = "https://api.telegram.org"
 TELEGRAM_TIMEOUT = 15.0
 
 STATUS_PENDING, STATUS_RUNNING, STATUS_OK, STATUS_SKIPPED, STATUS_FAILED = "pending", "running", "ok", "skipped", "failed"
+# BYOK-V3 subjects
+FLAG_V3 = "vision_byok_v3"
+KIND_PROPOSAL, KIND_SCAN, KIND_DAILY = "proposal", "scan_alert", "daily_review"
+KINDS = (KIND_PROPOSAL, KIND_SCAN, KIND_DAILY)
+DAILY_STALE_AFTER = timedelta(hours=12)   # a daily review not audited within this is dropped (the next day queues anew)
+IST = ZoneInfo("Asia/Kolkata")
 FINAL = (STATUS_OK, STATUS_SKIPPED, STATUS_FAILED)
 
 HEADINGS: Tuple[Tuple[str, str], ...] = (("zones", "Zones"), ("structure", "Structure"), ("pullback_trigger", "Pullback & trigger"),
@@ -71,6 +92,10 @@ EMOJI_SET = frozenset(EMOJI.values())
 COMMENT_ONLY = "Comment only - Vision never approves, rejects or changes anything."
 VISION_OFF_SWITCH = "Vision off - turn it on in Settings"
 VISION_OFF_SCOPE = "Vision off for proposals - turn it on in Settings"
+VISION_OFF_SCOPE_KIND = {KIND_SCAN: "Vision off for scan alerts - turn it on in Settings",
+                         KIND_DAILY: "Vision daily review off - turn it on in Settings"}
+V3_NOT_ENABLED = "Vision for scan alerts and the daily review is not enabled for your organisation"
+SCAN_LIMIT_REASON = "scan audit limit"      # the skipped row's reason prefix (one such row per user per rolling hour)
 NOT_CREATOR = "Vision reviews proposals on deployments you created"
 PENDING_LINE = "Vision report pending"
 WITHHELD = "(comment withheld)"
@@ -219,6 +244,7 @@ class Context:
     stop: Optional[float] = None
     target: Optional[float] = None
     bars: List[chart_png.Bar] = field(default_factory=list)
+    subject: str = KIND_PROPOSAL                  # BYOK-V3: proposal | scan_alert | daily_review
 
     @property
     def high(self) -> Optional[float]:
@@ -241,8 +267,11 @@ class Context:
 
     def user_text(self) -> str:
         """The minimal context sent with the image: no account data, no reason text, no prices."""
+        why = {KIND_SCAN: "A screen alert the trader set up matched this symbol on the last bar.",
+               KIND_DAILY: "This is the trader's own after-close daily review of the symbol."}.get(
+            self.subject, f"The platform's monitoring agent proposes: {self.action.replace('_', ' ').lower()} (rule {self.rule}).")
         lines = [f"Symbol {self.symbol} ({self.exchange}), timeframe {self.timeframe}, the last {len(self.bars)} bars.",
-                 f"The platform's monitoring agent proposes: {self.action.replace('_', ' ').lower()} (rule {self.rule}).",
+                 why,
                  f"Open position direction: {self.direction.lower() if self.direction else 'none'}.",
                  "Lines on the chart: ENTRY, SL and TGT are the open position's levels (when there is one); HIGH and LOW are the window's range.",
                  "Comment on the chart only. Answer with the JSON object."]
@@ -354,13 +383,148 @@ async def enqueue_for_proposal(session: AsyncSession, action: AiActionRecord, *,
             if existing is not None:
                 return existing
             row = VisionReportRecord(tenant_id=action.tenant_id, user_id=owner.id, ai_action_id=action.id, status=STATUS_PENDING,
-                                     created_at=now or _utcnow())
+                                     subject_kind=KIND_PROPOSAL, subject_key=f"proposal:{action.id}", created_at=now or _utcnow())
             session.add(row)
             await session.flush()
             return row
     except Exception as exc:  # noqa: BLE001 - Vision is advisory; the proposal never depends on it
         logger.warning("Vision audit not queued for proposal %s: %s", getattr(action, "id", "?"), exc.__class__.__name__)
         return None
+
+
+# --- BYOK-V3: scan alerts and the daily review (queueing; no network) ----------------------------------------------------
+
+def _wants(prefs: Optional[UserVisionPrefsRecord], kind: str) -> bool:
+    scope = {KIND_PROPOSAL: "audit_proposals", KIND_SCAN: "audit_scan_alerts", KIND_DAILY: "audit_daily_review"}[kind]
+    return prefs is not None and bool(prefs.enabled) and bool(getattr(prefs, scope)) and bool(prefs.channel_in_app or prefs.channel_telegram)
+
+
+async def v3_enabled(session: AsyncSession, tenant_id: int) -> bool:
+    """V3 needs both operator flags: `vision_byok` (the BYOK feature) and `vision_byok_v3` (these two subjects)."""
+    from app.platform.controls import flag_enabled
+    return await flag_enabled(session, byok.FLAG, tenant_id) and await flag_enabled(session, FLAG_V3, tenant_id)
+
+
+async def _active_member(session: AsyncSession, user_id: Optional[int], tenant_id: int) -> Optional[User]:
+    if user_id is None:
+        return None
+    user = await session.get(User, user_id)
+    return user if user is not None and user.tenant_id == tenant_id and user.is_active else None
+
+
+async def enqueue_for_scan_alert(session: AsyncSession, rule: AlertRuleRecord, note: Any, events: List[Any], *,
+                                 now: Optional[datetime] = None) -> Optional[VisionReportRecord]:
+    """One row for the RULE'S CREATOR (the user the screen alert is addressed to), with that user's scope switched on.
+    Inside a savepoint that never raises: the alert and its deliveries never depend on Vision. Beyond
+    BYOK_SCAN_AUDITS_PER_HOUR the row is written as skipped (no call), so the user sees why there is no report."""
+    now = (now or _utcnow()).astimezone(timezone.utc)
+    try:
+        async with session.begin_nested():
+            if not events or getattr(note, "id", None) is None or not await v3_enabled(session, rule.tenant_id):
+                return None
+            owner = await _active_member(session, rule.created_by, rule.tenant_id)
+            if owner is None or not _wants(await byok.get_prefs(session, owner), KIND_SCAN):
+                return None
+            key = f"scan:{note.id}"
+            existing = await session.scalar(select(VisionReportRecord).where(VisionReportRecord.user_id == owner.id,
+                                                                            VisionReportRecord.subject_key == key))
+            if existing is not None:
+                return existing
+            symbol = sorted({str(e.symbol).upper() for e in events})[0]
+            row = VisionReportRecord(tenant_id=rule.tenant_id, user_id=owner.id, subject_kind=KIND_SCAN, subject_key=key, notification_id=note.id,
+                                     alert_rule_id=rule.id, symbol=symbol[:50], exchange=(rule.exchange or "NSE")[:10],
+                                     timeframe=(rule.base_tf or "1d")[:10], status=STATUS_PENDING, created_at=now)
+            recent = await session.scalar(select(func.count()).select_from(VisionReportRecord).where(
+                VisionReportRecord.user_id == owner.id, VisionReportRecord.subject_kind == KIND_SCAN,
+                VisionReportRecord.created_at > now - timedelta(hours=1), VisionReportRecord.status != STATUS_SKIPPED))
+            if int(recent or 0) >= config.BYOK_SCAN_AUDITS_PER_HOUR:
+                # Review LOW-1: one "limit reached" row per user per rolling hour tells the user why; the next matches of
+                # a noisy screen within that hour write nothing (skipped rows also age out: retention, 90 days).
+                told = await session.scalar(select(VisionReportRecord.id).where(
+                    VisionReportRecord.user_id == owner.id, VisionReportRecord.subject_kind == KIND_SCAN,
+                    VisionReportRecord.status == STATUS_SKIPPED, VisionReportRecord.reason.like(f"{SCAN_LIMIT_REASON}%"),
+                    VisionReportRecord.created_at > now - timedelta(hours=1)).limit(1))
+                if told is not None:
+                    return None
+                _finish(row, STATUS_SKIPPED, reason=f"{SCAN_LIMIT_REASON} ({config.BYOK_SCAN_AUDITS_PER_HOUR} per hour)")
+                row.finished_at = now
+            session.add(row)
+            await session.flush()
+            return row
+    except Exception as exc:  # noqa: BLE001 - Vision is advisory; the alert never depends on it
+        logger.warning("Vision audit not queued for scan alert of rule %s: %s", getattr(rule, "id", "?"), exc.__class__.__name__)
+        return None
+
+
+def _review_time() -> time:
+    try:
+        hh, mm = (int(x) for x in config.BYOK_DAILY_REVIEW_AT.split(":", 1))
+        return time(hh, mm)
+    except (ValueError, TypeError):
+        return time(16, 0)
+
+
+async def daily_review_day(session: AsyncSession, now: datetime) -> Optional[date]:
+    """The IST trading day whose review is due at `now` (from BYOK_DAILY_REVIEW_AT, NSE trading days only), or None."""
+    from app.market_data.calendar import is_trading_day, load_holidays
+    local = now.astimezone(IST)
+    if local.time() < _review_time():
+        return None
+    day = local.date()
+    return day if is_trading_day(day, await load_holidays(session, "NSE", day.year)) else None
+
+
+async def daily_symbols(session: AsyncSession, user: User) -> List[Tuple[str, str]]:
+    """The user's OWN symbols: deployments they created (not stopped), then their own instrument alert rules (active),
+    newest first, at most BYOK_DAILY_REVIEW_MAX_SYMBOLS. Never another member's."""
+    out: List[Tuple[str, str]] = []
+    deps = await session.execute(select(StrategyDeploymentRecord.exchange, StrategyDeploymentRecord.symbol).where(
+        StrategyDeploymentRecord.tenant_id == user.tenant_id, StrategyDeploymentRecord.created_by == user.id,
+        StrategyDeploymentRecord.status != "STOPPED").order_by(StrategyDeploymentRecord.id.desc()))
+    rules = await session.execute(select(AlertRuleRecord.exchange, AlertRuleRecord.symbol).where(
+        AlertRuleRecord.tenant_id == user.tenant_id, AlertRuleRecord.created_by == user.id, AlertRuleRecord.kind == "instrument",
+        AlertRuleRecord.status == "active", AlertRuleRecord.symbol.is_not(None)).order_by(AlertRuleRecord.id.desc()))
+    for exchange, symbol in [*deps, *rules]:
+        pair = ((exchange or "NSE").upper(), str(symbol or "").upper())
+        if pair[1] and pair not in out:
+            out.append(pair)
+        if len(out) >= config.BYOK_DAILY_REVIEW_MAX_SYMBOLS:
+            break
+    return out
+
+
+async def enqueue_daily_reviews(session: AsyncSession, now: Optional[datetime] = None) -> int:
+    """After BYOK_DAILY_REVIEW_AT on an NSE trading day: one pending row per symbol of each opted-in user's own list
+    (idempotent: `daily:<date>:<EXCHANGE>:<SYMBOL>` is unique per user). Rows only, no network. Returns how many it added."""
+    now = (now or _utcnow()).astimezone(timezone.utc)
+    day = await daily_review_day(session, now)
+    if day is None:
+        return 0
+    added = 0
+    prefs_rows = list(await session.scalars(select(UserVisionPrefsRecord).where(UserVisionPrefsRecord.enabled.is_(True),
+                                                                                 UserVisionPrefsRecord.audit_daily_review.is_(True))))
+    for prefs in prefs_rows:
+        if not _wants(prefs, KIND_DAILY) or not await v3_enabled(session, prefs.tenant_id):
+            continue
+        user = await _active_member(session, prefs.user_id, prefs.tenant_id)
+        if user is None:
+            continue
+        for exchange, symbol in await daily_symbols(session, user):
+            key = f"daily:{day.isoformat()}:{exchange}:{symbol}"[:80]
+            if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.user_id == user.id,
+                                                                       VisionReportRecord.subject_key == key)) is not None:
+                continue
+            try:
+                async with session.begin_nested():
+                    session.add(VisionReportRecord(tenant_id=user.tenant_id, user_id=user.id, subject_kind=KIND_DAILY, subject_key=key,
+                                                   symbol=symbol[:50], exchange=exchange[:10], timeframe=config.BYOK_DAILY_REVIEW_TIMEFRAME[:10],
+                                                   subject_date=day, status=STATUS_PENDING, created_at=now))
+                    await session.flush()
+                added += 1
+            except IntegrityError:                         # another replica queued it first
+                continue
+    await session.commit()
+    return added
 
 
 # --- the audit (worker, background) ------------------------------------------------------------------------------------
@@ -390,6 +554,14 @@ async def send_photo(bot_token: str, chat_id: str, png: bytes, caption: str, cli
     finally:
         if own:
             await client.aclose()
+
+
+def subject_caption(row: VisionReportRecord, report_text: str) -> str:
+    """BYOK-V3: the Telegram caption of a scan-alert or daily-review report."""
+    where = f"{row.symbol} {row.timeframe}"
+    title = (f"Scan alert - {where} (rule #{row.alert_rule_id})" if row.subject_kind == KIND_SCAN
+             else f"Daily review - {where} ({row.subject_date.isoformat() if row.subject_date else ''})")
+    return f"{title}\n{report_text}"[:CAPTION_MAX]
 
 
 def caption_for(action: AiActionRecord, ctx: Optional[Context], report_text: str) -> str:
@@ -477,8 +649,11 @@ def _finish(row: VisionReportRecord, status: str, *, reason: Optional[str] = Non
 
 async def _audit(session: AsyncSession, row: VisionReportRecord, *, client: Optional[Any], telegram: Optional[httpx.AsyncClient],
                  loader: Optional[CandleLoader], now: datetime) -> None:
+    if row.subject_kind in (KIND_SCAN, KIND_DAILY):
+        await _audit_subject(session, row, client=client, telegram=telegram, loader=loader, now=now)
+        return
     owner = await session.get(User, row.user_id)
-    action = await session.get(AiActionRecord, row.ai_action_id)
+    action = await session.get(AiActionRecord, row.ai_action_id) if row.ai_action_id is not None else None
     if owner is None or action is None or owner.tenant_id != row.tenant_id or action.tenant_id != row.tenant_id:
         _finish(row, STATUS_SKIPPED, reason="proposal not available")
         return
@@ -520,6 +695,66 @@ async def _audit(session: AsyncSession, row: VisionReportRecord, *, client: Opti
     if reason == byok.REASON_VISION_OFF:
         return                                                    # the feature is off for this user: nothing is sent
     await _deliver_telegram(session, row, owner, prefs, png, caption_for(action, ctx, row.report_text or ""), telegram)
+
+
+async def _audit_subject(session: AsyncSession, row: VisionReportRecord, *, client: Optional[Any], telegram: Optional[httpx.AsyncClient],
+                         loader: Optional[CandleLoader], now: datetime) -> None:
+    """BYOK-V3: a scan alert or a daily review - the same gate, call, report and delivery as a proposal, on the row's
+    own symbol, under the row owner's own key."""
+    owner = await _active_member(session, row.user_id, row.tenant_id)
+    if owner is None or not row.symbol:
+        _finish(row, STATUS_SKIPPED, reason="subject not available")
+        return
+    if not await v3_enabled(session, row.tenant_id):
+        _finish(row, STATUS_SKIPPED, reason=byok.REASON_VISION_OFF)
+        return
+    if row.subject_kind == KIND_SCAN:
+        rule = await session.get(AlertRuleRecord, row.alert_rule_id) if row.alert_rule_id is not None else None
+        if rule is None or rule.tenant_id != row.tenant_id or rule.created_by != owner.id:
+            _finish(row, STATUS_SKIPPED, reason="alert rule not available")
+            return
+        if now - _utc(row.created_at) > STALE_AFTER:
+            _finish(row, STATUS_SKIPPED, reason="alert too old")
+            return
+    elif now - _utc(row.created_at) > DAILY_STALE_AFTER:
+        _finish(row, STATUS_SKIPPED, reason="review too old")
+        return
+    prefs = await byok.get_prefs(session, owner)
+    keys = await byok.list_keys(session, owner)
+    provider = byok.active_provider(prefs, keys)
+    model = byok.effective_model(next((k for k in keys if k.provider == provider), None), provider) if provider else ""
+    row.provider, row.model = provider, (model or None)
+    exchange, timeframe = row.exchange or "NSE", row.timeframe or "1d"
+    if loader is None:
+        from app.market_data import live_access
+        bars = await lake_bars(session, exchange, row.symbol, timeframe, now, daily_only=await live_access.byob_on(session, row.tenant_id))
+    else:
+        bars = await loader(session, exchange, row.symbol, timeframe, now)
+    ctx = Context(symbol=row.symbol, exchange=exchange, timeframe=timeframe, action=row.subject_kind, rule="-",
+                  bars=list(bars)[-chart_png.MAX_BARS:], subject=row.subject_kind)
+    png: Optional[bytes] = None
+    if ctx.bars:
+        png = chart_png.render(chart_png.ChartSpec(ctx.bars, ctx.levels()))
+        row.image_sha256 = hashlib.sha256(png).hexdigest()
+    estimate = (pricing.cost_usd(provider, model, input_tokens=EST_INPUT_TOKENS, output_tokens=EST_OUTPUT_TOKENS).amount if provider else 0.0)
+    allowed, reason = await byok.byok_allowed(session, owner.id, provider, now=now, estimate_usd=estimate)
+    if not allowed:
+        _finish(row, STATUS_SKIPPED, reason=reason)
+    elif png is None or provider is None:
+        _finish(row, STATUS_SKIPPED, reason="no chart data")
+    else:
+        text, error, cost = await _call_provider(session, row, owner, provider, model, ctx, png, client=client, now=now)
+        row.cost_usd = float(cost or 0.0)
+        parsed = parse_answer(text) if error is None else None
+        if error is not None:
+            _finish(row, STATUS_FAILED, reason=error)
+        elif parsed is None:
+            _finish(row, STATUS_FAILED, reason="the provider's answer could not be read")
+        else:
+            _finish(row, STATUS_OK, report=format_report(parsed, ctx, provider, model))
+    if reason == byok.REASON_VISION_OFF:
+        return
+    await _deliver_telegram(session, row, owner, prefs, png, subject_caption(row, row.report_text or ""), telegram)
 
 
 async def process(session: AsyncSession, report_id: int, *, client: Optional[Any] = None, telegram: Optional[httpx.AsyncClient] = None,
@@ -581,20 +816,26 @@ def as_dict(row: VisionReportRecord) -> Dict[str, Any]:
         line = None
     else:
         line = (text or skip_line(row.reason or "")).split("\n")[0]
-    return {"id": row.id, "ai_action_id": row.ai_action_id, "status": row.status, "provider": row.provider, "model": row.model,
+    return {"id": row.id, "ai_action_id": row.ai_action_id, "kind": row.subject_kind or KIND_PROPOSAL, "notification_id": row.notification_id,
+            "alert_rule_id": row.alert_rule_id, "symbol": row.symbol, "exchange": row.exchange, "timeframe": row.timeframe,
+            "subject_date": row.subject_date.isoformat() if row.subject_date else None, "status": row.status, "provider": row.provider, "model": row.model,
             "reason": row.reason, "report": text, "lines": text.split("\n") if text else [], "line": line,
             "image_sha256": row.image_sha256, "image_stored": False, "cost_usd": round(float(row.cost_usd or 0.0), 8),
             "telegram_status": row.telegram_status, "created_at": iso(row.created_at), "finished_at": iso(row.finished_at)}
 
 
-async def vision_line(session: AsyncSession, user: User, action: Optional[AiActionRecord]) -> str:
-    """What the proposal card says when this user has no report for it."""
+async def vision_line(session: AsyncSession, user: User, action: Optional[AiActionRecord], kind: Optional[str] = None) -> str:
+    """What the card says when this user has no report for it (a proposal, or BYOK-V3 a scan alert / the daily review)."""
     keys = await byok.list_keys(session, user)
     prefs = await byok.get_prefs(session, user)
+    if kind in (KIND_SCAN, KIND_DAILY) and not await v3_enabled(session, user.tenant_id):
+        return V3_NOT_ENABLED
     if not keys:
         return byok.VISION_OFF_NO_KEY
     if prefs is None or not prefs.enabled:
         return VISION_OFF_SWITCH
+    if kind in (KIND_SCAN, KIND_DAILY):
+        return PENDING_LINE if _wants(prefs, kind) else VISION_OFF_SCOPE_KIND[kind]
     if not prefs.audit_proposals:
         return VISION_OFF_SCOPE
     if action is not None:
@@ -604,9 +845,16 @@ async def vision_line(session: AsyncSession, user: User, action: Optional[AiActi
     return PENDING_LINE
 
 
-async def reports_for(session: AsyncSession, user: User, action_id: Optional[int] = None, *, limit: int = 50) -> Dict[str, Any]:
-    """The caller's OWN reports (user id AND tenant id), for one proposal or the latest ones."""
+async def reports_for(session: AsyncSession, user: User, action_id: Optional[int] = None, *, kind: Optional[str] = None,
+                      notification_id: Optional[int] = None, limit: int = 50) -> Dict[str, Any]:
+    """The caller's OWN reports (user id AND tenant id): for one proposal, one scan-alert notification, one kind
+    (BYOK-V3) or the latest ones."""
     query = select(VisionReportRecord).where(VisionReportRecord.user_id == user.id, VisionReportRecord.tenant_id == user.tenant_id)
+    if notification_id is not None:
+        query = query.where(VisionReportRecord.notification_id == notification_id)
+        kind = kind or KIND_SCAN
+    if kind is not None:
+        query = query.where(VisionReportRecord.subject_kind == kind)
     action: Optional[AiActionRecord] = None
     if action_id is not None:
         query = query.where(VisionReportRecord.ai_action_id == action_id)
@@ -614,7 +862,7 @@ async def reports_for(session: AsyncSession, user: User, action_id: Optional[int
         action = found if found is not None and found.tenant_id == user.tenant_id else None
     rows = list(await session.scalars(query.order_by(VisionReportRecord.id.desc()).limit(limit)))
     prefs = await byok.get_prefs(session, user)
-    return {"reports": [as_dict(r) for r in rows], "vision_line": await vision_line(session, user, action),
+    return {"reports": [as_dict(r) for r in rows], "vision_line": await vision_line(session, user, action, kind),
             "in_app": bool(prefs.channel_in_app) if prefs is not None else True}
 
 

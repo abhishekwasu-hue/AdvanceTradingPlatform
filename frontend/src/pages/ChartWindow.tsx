@@ -5,11 +5,13 @@ import ProChart, { useLiveLtp } from "../components/ProChart";
 import { SymbolTierBadge } from "../components/DataTierBadge";
 import type { ChartEngine } from "../charting/engine";
 import { MarketZonesLayer } from "../charting/MarketZonesLayer";
+import { api } from "../api/client";
 import { PriceActionLayer } from "../charting/PriceActionLayer";
+import { StudiesPanel } from "../charting/StudiesPanel";
 import { ReplayBar } from "../charting/ReplayBar";
 import { TradesLayer } from "../charting/TradesLayer";
 import { layerTf } from "../charting/priceAction";
-import { REPLAY_OFF, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
+import { REPLAY_OFF, parseCandleTime, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -34,6 +36,14 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   const live = useLiveLtp(!!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
+  // CH5: "Open in workspace" only while the multi-chart workspace is on for this organisation.
+  const [workspaceOn, setWorkspaceOn] = useState(false);
+  useEffect(() => {
+    if (!user) return;
+    let live = true;
+    api.myFeatures().then((f) => { if (live) setWorkspaceOn(f.chart_workspace === true); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [user]);
   // N4 CH3: bar replay - the chart shows the candles up to the replay bar, the layers are read as of that bar's end
   const [replay, setReplay] = useState<ReplayState>(REPLAY_OFF);
   const [paAvailable, setPaAvailable] = useState(false);
@@ -42,6 +52,8 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const at = replayAt(chart.candles, replay, layerTf(timeframe));
   const onWindow = useCallback((start: string) => setReplay((r) => (r.active && !r.start ? { ...r, start } : r)), []);
   const lastClose = shown.length ? shown[shown.length - 1].close : null;
+  const candleTimes = useMemo(() => shown.map((c) => Math.floor(parseCandleTime(c.timestamp) / 1000)), [shown]);
+  const candleCloses = useMemo(() => shown.map((c) => c.close), [shown]);
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
@@ -55,6 +67,10 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
         <SymbolTierBadge symbol={symbol} exchange={exchange} live={live.ltp?.data_tier} />
         {broker && <span>candles via {broker}</span>}
         <span>refreshes every minute · live price every 5 s · scroll left for older history</span>
+        {workspaceOn && (
+          <a href={`${window.location.pathname}?${new URLSearchParams({ workspace: "1", chart: symbol, tf: timeframe, exchange }).toString()}`}
+             className="rounded border border-border px-1.5 py-0.5 font-semibold text-fg hover:bg-surface-2">Open in workspace</a>
+        )}
         {error && <span className="text-down">{error}</span>}
       </div>
       <ProChart candles={shown} symbol={symbol} timeframe={timeframe} timeframes={TIMEFRAMES} onTimeframeChange={setTimeframe}
@@ -69,6 +85,10 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
       {/* N4 CH4a: the user's own PAPER trades (flag chart_trades_layer; nothing shows while it is off) - as of the replay bar */}
       <div className="mt-2"><TradesLayer engine={engine} instrument={`${exchange}:${symbol}`} candles={shown} at={at}
                                           refreshKey={replay.active ? null : chart.candles[chart.candles.length - 1]?.timestamp ?? null} /></div>
+      {/* N4 CH6: ScreenQL studies from the server's screener runtime (flag chart_studies; nothing shows while it is off) */}
+      <div className="mt-2"><StudiesPanel engine={engine} instrument={`${exchange}:${symbol}`} timeframe={timeframe} at={at} start={windowStart(at, replay.start)}
+                                          refreshKey={replay.active ? null : chart.candles[chart.candles.length - 1]?.timestamp ?? null}
+                                          candleTimes={candleTimes} closes={candleCloses} /></div>
       {/* Z7a-3: stored market zones (flag market_zones; nothing shows while it is off) - in replay, as of the replay bar */}
       <div className="mt-2"><MarketZonesLayer engine={engine} instrument={`${exchange}:${symbol}`} price={lastClose} at={at} /></div>
     </div>

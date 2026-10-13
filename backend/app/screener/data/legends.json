@@ -1,6 +1,6 @@
 {
- "_comment": "U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the first eight Legends cards - each a short card about a publicly described trading method and a working ScreenQL screen modelled on it. A reviewed data file: change it by PR. app/screener/legends.py lints it on load: every card line cites a source in legends_sources.json, at most 5 lines, no advice / performance / endorsement wording, no first person or quotation, no trademarked method name in a title, English only, and the screen compiles with its parameters inside their documented ranges. Each card id is a screen filed in taxonomy.json (method Legends) - the taxonomy CI guard fails when it is not. The disclaimer is fixed in code (spec wording), never per card. Each card carries a review status (LG1-2): 'verified' when every source it cites is verified against public catalogue records (legends_sources.json 'evidence'), else 'unverified' with a 'review_note' saying why; the API exposes it. The owner's legal review of the card texts is separate.",
- "version": "lg1/1",
+ "_comment": "U7 LG1 + LG2 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards (LG1: the first eight; LG2, marked 'slice': 'lg2', behind the flag screener_legends_lg2 on top of screener_legends) - each a short card about a publicly described trading method and a working ScreenQL screen modelled on it. A reviewed data file: change it by PR. app/screener/legends.py lints it on load: every card line cites a source in legends_sources.json, at most 5 lines, no advice / performance / endorsement wording, no first person or quotation, no trademarked method name in a title, English only, and the screen compiles with its parameters inside their documented ranges. Each card id is a screen filed in taxonomy.json (method Legends) - the taxonomy CI guard fails when it is not. The disclaimer is fixed in code (spec wording), never per card. Each card carries a review status (LG1-2): 'verified' when every source it cites is verified against public catalogue records (legends_sources.json 'evidence'), else 'unverified' with a 'review_note' saying why; the API exposes it. The owner's legal review of the card texts is separate.",
+ "version": "lg2/1",
  "cards": [
   {
    "id": "legends.minervini_trend_template",
@@ -158,6 +158,111 @@
     "base_tf": "1d",
     "params": [
      {"name": "k", "default": 0.5, "min": 0.1, "max": 2.0, "doc": "Fraction of the previous day's range added to the open."}
+    ]
+   }
+  },
+  {
+   "id": "legends.livermore_pivotal_breakout",
+   "slice": "lg2",
+   "legend": "Jesse Livermore",
+   "short": "Livermore",
+   "name": "Livermore-style pivotal-point breakout",
+   "review": "unverified",
+   "review_note": "Cites livermore_1940, whose first-edition details are not yet matched to a library catalogue record.",
+   "who": {"text": "US stock and commodity speculator of the early 20th century who set out his method in the 1940 book How to Trade in Stocks.", "cite": ["livermore_1940"]},
+   "style": {"text": "Waiting for confirmation: acting only when price moves decisively through a pivotal point, with volume rising, and never adding to a losing position.", "cite": ["livermore_1940"]},
+   "looks_for": {"text": "A close above the top of a long sideways base to a new 52-week high, on volume well above its recent average.", "cite": ["livermore_1940"]},
+   "timeframe": {"text": "Daily bars; moves followed over weeks to months.", "cite": ["livermore_1940"]},
+   "approximation": "The pivotal point here is the high of the previous 60 bars and the base is at most 25% deep; a 52-week high stands in for a new high; the book's time element and its records are not part of it.",
+   "screen": {
+    "source": "close > Max(high, $base_bars)[1] AND Min(low, $base_bars)[1] >= $base_floor * Max(high, $base_bars)[1] AND close > Max(high, 250)[1] AND volume >= $vol_mult * SMA(volume, 50)[1]",
+    "base_tf": "1d",
+    "params": [
+     {"name": "base_bars", "default": 60, "min": 20, "max": 200, "doc": "Bars that make up the base before today; its high is the pivotal point."},
+     {"name": "base_floor", "default": 0.75, "min": 0.5, "max": 0.95, "doc": "Base low at least this fraction of the base high (0.75 = at most 25% deep)."},
+     {"name": "vol_mult", "default": 1.5, "min": 1.0, "max": 5.0, "doc": "Volume at least this multiple of its 50-bar average."}
+    ]
+   }
+  },
+  {
+   "id": "legends.wyckoff_range_spring",
+   "slice": "lg2",
+   "legend": "Richard D. Wyckoff",
+   "short": "Wyckoff",
+   "name": "Wyckoff-style trading-range spring",
+   "review": "verified",
+   "who": {"text": "Early 20th-century US market author and educator whose method of reading trading ranges is set out in a 2007 book on trading skills.", "cite": ["pruden_2007"]},
+   "style": {"text": "Reading a sideways range as accumulation or distribution from price and volume, before the trend that follows it.", "cite": ["pruden_2007"]},
+   "looks_for": {"text": "Within a sideways range, a dip below the range's low that closes back inside the range (a spring), a test of whether supply is exhausted.", "cite": ["pruden_2007"]},
+   "timeframe": {"text": "Daily bars; the range forms over weeks before the move out of it.", "cite": ["pruden_2007"]},
+   "approximation": "The range here is the previous 40 bars, at most 20% deep; a spring is a low under the range's low with a close back above it; the volume reading and the later test of the spring are not part of it.",
+   "screen": {
+    "source": "Min(low, $range_bars)[1] >= $range_floor * Max(high, $range_bars)[1] AND low < Min(low, $range_bars)[1] AND close > Min(low, $range_bars)[1]",
+    "base_tf": "1d",
+    "params": [
+     {"name": "range_bars", "default": 40, "min": 10, "max": 120, "doc": "Bars that make up the trading range before today."},
+     {"name": "range_floor", "default": 0.8, "min": 0.5, "max": 0.97, "doc": "Range low at least this fraction of the range high (0.8 = at most 20% deep)."}
+    ]
+   }
+  },
+  {
+   "id": "legends.raschke_false_breakdown",
+   "slice": "lg2",
+   "legend": "Linda Bradford Raschke and Laurence Connors",
+   "short": "Raschke",
+   "name": "Raschke-style false 20-day breakdown reversal",
+   "review": "verified",
+   "who": {"text": "Futures trader; co-author with Laurence Connors of the 1995 book Street Smarts.", "cite": ["raschke_connors_1995"]},
+   "style": {"text": "Short-term reversals: fading a new 20-day extreme that fails, when the previous extreme is some days old.", "cite": ["raschke_connors_1995"]},
+   "looks_for": {"text": "A new 20-day low while the previous 20-day low is at least four sessions old, with price back above that earlier low the same day.", "cite": ["raschke_connors_1995"]},
+   "timeframe": {"text": "Daily bars; a short-term setup lasting a few days.", "cite": ["raschke_connors_1995"]},
+   "approximation": "Long side only here; the book's entry order just above the earlier low is read as the day's high reaching above it; the variant a day later and the short-side mirror are not included.",
+   "screen": {
+    "source": "low < Min(low, $channel_days)[1] AND Min(low, $recent_bars)[1] > Min(low, $channel_days)[1] AND high > Min(low, $channel_days)[1]",
+    "base_tf": "1d",
+    "params": [
+     {"name": "channel_days", "default": 20, "min": 10, "max": 60, "doc": "Days of the low that today breaks (20 in the book)."},
+     {"name": "recent_bars", "default": 3, "min": 1, "max": 10, "doc": "The earlier low is older than this many bars (3 = at least four sessions before today)."}
+    ]
+   }
+  },
+  {
+   "id": "legends.crabel_opening_range_breakout",
+   "slice": "lg2",
+   "legend": "Toby Crabel",
+   "short": "Crabel",
+   "name": "Crabel-style opening-range breakout",
+   "review": "verified",
+   "who": {"text": "Trader and author of a 1990 statistical study of short-term price patterns and the opening-range breakout.", "cite": ["crabel_1990"]},
+   "style": {"text": "Short-term patterns studied statistically, such as range contraction and breakouts from the opening range.", "cite": ["crabel_1990"]},
+   "looks_for": {"text": "An intraday close crossing above the high of the session's opening range, the range of its first 30 minutes.", "cite": ["crabel_1990"]},
+   "timeframe": {"text": "Intraday 5-minute bars; the move is studied within the same session.", "cite": ["crabel_1990"]},
+   "approximation": "The level here is the high of the first 30 minutes; the book's own breakout levels, measured from the open, and the downside break are not part of it.",
+   "screen": {
+    "source": "close > ORHigh($or_minutes) AND close[1] <= ORHigh($or_minutes)[1]",
+    "base_tf": "5m",
+    "params": [
+     {"name": "or_minutes", "default": 30, "min": 5, "max": 120, "doc": "Minutes from the session open that make up the opening range."}
+    ]
+   }
+  },
+  {
+   "id": "legends.tudor_jones_200_day_regime",
+   "slice": "lg2",
+   "legend": "Paul Tudor Jones",
+   "short": "Tudor Jones",
+   "name": "Tudor Jones-style 200-day regime filter",
+   "review": "verified",
+   "who": {"text": "US macro trader and fund manager, interviewed about his risk rules in a 2014 book on investing.", "cite": ["robbins_2014"]},
+   "style": {"text": "Defence first: every market is judged against its 200-day moving average of closing prices, and what falls below it is left.", "cite": ["robbins_2014"]},
+   "looks_for": {"text": "A close above its 200-day simple moving average: the symbols in the long-side regime, as a context filter for other screens.", "cite": ["robbins_2014"]},
+   "timeframe": {"text": "Daily bars; a regime that changes slowly.", "cite": ["robbins_2014"]},
+   "approximation": "Only the regime is screened; the interview describes the average as a rule for when to be out of a market, not an entry signal, and gives no further rules.",
+   "screen": {
+    "source": "close > SMA(close, $ma_days)",
+    "base_tf": "1d",
+    "params": [
+     {"name": "ma_days", "default": 200, "min": 50, "max": 300, "doc": "Days in the simple moving average of closing prices (200 in the interview)."}
     ]
    }
   }

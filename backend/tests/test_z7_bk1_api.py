@@ -309,7 +309,7 @@ def test_alert_rules_fetch_the_trend_history_they_read():
     async def fetch(session, tenant_id, symbols, exchange, base_tf, lookback):
         seen.append(dict(lookback))
         return [SymbolData(s, {base_tf: _bars(ist(TUE, 9, 15), [100.0, 101.0])}) for s in symbols], {}, "test"
-    _evaluate(rid, ist(TUE, 9, 27), fetch)
+    _evaluate(rid, ist(TUE, 9, 27), fetch, breakouts_enabled=True)
     assert seen and seen[0]["1h"] == 100                                                         # sized for the trend, not 1 bar
 
 

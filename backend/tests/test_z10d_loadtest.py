@@ -150,19 +150,31 @@ def test_the_paper_account_proposal_counts_in_one_query_match_the_four_counts():
     assert got == want == {"approved_by_you": 3, "rejected_by_you": 1, "pending": 2, "expired_unanswered": 1}
 
 
-def test_bcrypt_runs_under_its_own_limiter_sized_to_the_cpus(monkeypatch):
-    import anyio.to_thread
+def test_bcrypt_runs_on_its_own_threads_sized_to_the_cpus():
+    """bcrypt's own pool (never the shared thread pools), BCRYPT_CONCURRENCY threads per process, at a lower CPU
+    priority (LD-7: BCRYPT_NICE) - the same check, ordered after interactive requests when the CPUs are busy."""
+    import os
+    import threading
     seen = []
-    real = anyio.to_thread.run_sync
+    real = security.verify_password
 
-    async def spy(fn, *args, limiter=None, **kwargs):
-        seen.append(limiter)
-        return await real(fn, *args, limiter=limiter, **kwargs)
-    monkeypatch.setattr(anyio.to_thread, "run_sync", spy)
+    def spy(password, hashed):
+        seen.append((threading.current_thread().name, os.getpriority(os.PRIO_PROCESS, threading.get_native_id())
+                     if hasattr(os, "getpriority") else None))
+        return real(password, hashed)
 
     async def go():
         hashed = await security.hash_password_async("pw")
         return await security.verify_password_async("pw", hashed)
-    assert asyncio.run(go()) is True
-    assert len(seen) == 2 and seen[0] is seen[1] and seen[0] is not None
-    assert seen[0].total_tokens == security.BCRYPT_CONCURRENCY >= 1
+    original = security.verify_password
+    security.verify_password = spy
+    try:
+        assert asyncio.run(go()) is True
+    finally:
+        security.verify_password = original
+    executor = security._bcrypt_executor()
+    assert executor._max_workers == security.BCRYPT_CONCURRENCY >= 1
+    name, nice = seen[0]
+    assert name.startswith("bcrypt")
+    if nice is not None and security.BCRYPT_NICE:
+        assert nice >= security.BCRYPT_NICE

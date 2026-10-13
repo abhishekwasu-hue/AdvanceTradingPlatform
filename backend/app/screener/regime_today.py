@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import pandas as pd
 from sqlalchemy import func, select
@@ -140,16 +140,14 @@ def vol_axis(vix: pd.Series) -> Axis:
     return Axis(None, [why + " (normal: nothing greyed on volatility)"], numbers)
 
 
-async def _breadth(session: AsyncSession, now: datetime) -> Optional[Tuple[int, int]]:
-    """Advancers and decliners of NSE cash stocks: the last closed session against the one before (shared history)."""
+async def _breadth(session: AsyncSession, now: datetime, sessions: Sequence[datetime]) -> Optional[Tuple[int, int]]:
+    """Advancers and decliners of NSE cash stocks on the index's own last closed session against the one before it
+    (`sessions`: the index frame's last two bar stamps - review of TX3: never another day than the trend's)."""
+    if len(sessions) < 2:
+        return None
+    prev, last = sessions[-2], sessions[-1]
     visible = [MdCandleRecord.instrument_key.like("NSE:%"), MdCandleRecord.timeframe == DAILY, MdCandleRecord.ts <= now,
                MdCandleRecord.ingested_at <= now]
-    last = await session.scalar(select(func.max(MdCandleRecord.ts)).where(*visible))
-    if last is None:
-        return None
-    prev = await session.scalar(select(func.max(MdCandleRecord.ts)).where(*visible, MdCandleRecord.ts < last))
-    if prev is None:
-        return None
     closes: Dict[Tuple[str, datetime], Tuple[int, float]] = {}
     for r in await session.scalars(select(MdCandleRecord).where(*visible, MdCandleRecord.ts.in_([last, prev]))):
         key = (r.instrument_key, r.ts)
@@ -169,14 +167,46 @@ async def today(session: AsyncSession, now: Optional[datetime] = None) -> Today:
     """The regime as of `now` from closed sessions only."""
     now = now or datetime.now(timezone.utc)
     start = now - timedelta(days=HISTORY_DAYS)
-    index = _frame(await candles_as_of(session, index_key(INDEX_NAME), DAILY, start, now, as_of=now))
+    index_rows = list(await candles_as_of(session, index_key(INDEX_NAME), DAILY, start, now, as_of=now))
+    index = _frame(index_rows)
     vix = _frame(await candles_as_of(session, index_key(VIX_NAME), DAILY, start, now, as_of=now))
     dow, why = trend_of(index)
-    trend = trend_axis(dow, why, await _breadth(session, now))
+    stamps = sorted({r.ts for r in index_rows})[-2:]            # the stored stamps (compared as stored)
+    trend = trend_axis(dow, why, await _breadth(session, now, stamps))
     volatility = vol_axis(vix["close"] if not vix.empty else pd.Series(dtype=float))
     last = index.index[-1] if not index.empty else None
     from app.market_data.calendar import IST
     return Today(now.isoformat(), last.tz_convert(IST).date().isoformat() if last is not None else None, trend, volatility)
+
+
+# Review of TX3: the reading changes only when a session closes (or a correction is ingested), so it is computed once
+# per (last index / VIX / cash bar, last ingestion) and kept briefly - shared data, the same answer for every caller.
+CACHE_SECONDS = 600
+_cache: Dict[str, Any] = {"key": None, "until": None, "today": None}
+
+
+async def _reading_key(session: AsyncSession, now: datetime) -> Tuple[Any, ...]:
+    keys = [index_key(INDEX_NAME), index_key(VIX_NAME)]
+    seen = await session.execute(select(func.max(MdCandleRecord.ts), func.max(MdCandleRecord.ingested_at)).where(
+        MdCandleRecord.instrument_key.in_(keys), MdCandleRecord.timeframe == DAILY, MdCandleRecord.ts <= now,
+        MdCandleRecord.ingested_at <= now))
+    return tuple(seen.one())
+
+
+async def today_cached(session: AsyncSession, now: Optional[datetime] = None) -> Today:
+    """`today()`, recomputed only when the last closed index / VIX bar or its ingestion changes (or after CACHE_SECONDS,
+    so a late correction of the breadth's cash bars is picked up). `as_of` is the request's time."""
+    now = now or datetime.now(timezone.utc)
+    key = await _reading_key(session, now)
+    hit = _cache["today"] is not None and _cache["key"] == key and _cache["until"] is not None and now < _cache["until"]
+    if not hit:
+        _cache.update(key=key, until=now + timedelta(seconds=CACHE_SECONDS), today=await today(session, now))
+    cached: Today = _cache["today"]
+    return Today(now.isoformat(), cached.session, cached.trend, cached.volatility)
+
+
+def clear_cache() -> None:
+    _cache.update(key=None, until=None, today=None)
 
 
 def fit(screen: tx.Screen, today_: Today, taxonomy: tx.Taxonomy) -> Dict[str, Any]:
@@ -205,4 +235,4 @@ def fits(taxonomy: tx.Taxonomy, today_: Today, hidden_sources: Iterable[str] = (
     return {s.id: fit(s, today_, taxonomy) for s in tx.visible(taxonomy, hidden_sources)}
 
 
-__all__ = ["Axis", "Today", "today", "fit", "fits", "trend_of", "trend_axis", "vol_axis", "index_key", "NOTE", "DAILY"]
+__all__ = ["Axis", "Today", "today", "today_cached", "clear_cache", "CACHE_SECONDS", "fit", "fits", "trend_of", "trend_axis", "vol_axis", "index_key", "NOTE", "DAILY"]

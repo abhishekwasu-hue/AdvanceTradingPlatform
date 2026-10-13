@@ -14,7 +14,7 @@ U9 TX3 (flag `screener_tx3`, with `screener_v2` and `screener_gallery`; not `scr
 * `PUT  /api/screener/library/digest`          - the caller's own settings (trader: the digest runs screens through
   their broker session, like `/run`).
 * `POST /api/screener/library/digest/preview`  - build the digest now for the given pins and symbols, without sending
-  or storing it (trader, rate limited).
+  or storing it (no evidence pack is kept) (trader; charged on the shared `/run` bucket as the screens it runs).
 
 All four need `screener_v2`, `screener_gallery` and `screener_tx2` (off by default: 503 while off). The runs read closed
 bars only, through the caller's own session when the BT1b data tier is on, store nothing, and never place an order.
@@ -83,10 +83,13 @@ async def _flags3(session: AsyncSession, user: User) -> None:
         await require_flag(session, name, user.tenant_id)
 
 
-@router.get("/regime")
+regime_rate_limit = user_rate_limit("screener_regime", limit=30, window_seconds=60)
+
+
+@router.get("/regime", dependencies=[Depends(regime_rate_limit)])
 async def regime(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags3(session, user)
-    today = await rt.today(session)
+    today = await rt.today_cached(session)                 # review of TX3: one reading per closed session (shared data)
     return {**today.as_dict(), "fits": rt.fits(tx.load(), today, await _hidden(session, user))}
 
 
@@ -116,11 +119,14 @@ async def save_digest(body: dg.DigestSettings, user: User = Depends(require_trad
 
 @router.post("/digest/preview", dependencies=[Depends(library_rate_limit)])
 async def preview_digest(body: dg.DigestSettings, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """The digest built now for these pins and symbols - not sent and not stored (no evidence pack is kept: review of
+    TX3). Charged on the shared `/run` bucket as the screens it runs (like a confluence)."""
     await _flags3(session, user)
     if not body.pinned or not body.symbols:
         raise HTTPException(status_code=422, detail="pin at least one screen and add symbols")
-    built = await dg.build(session, user, body.pinned, body.symbols, body.exchange)
-    await session.commit()                                                 # evidence packs of the first matches, if any
+    pins = await dg.compiled_pins(session, user, body.pinned)
+    await charge_runs(user, dg.run_units(len(pins[0]), len({s.base_tf for s, _, _ in pins[0]})))
+    built = await dg.build(session, user, body.pinned, body.symbols, body.exchange, store_evidence=False, compiled=pins)
     return {**built, "messages": dg.messages(built), "preview": True}
 
 

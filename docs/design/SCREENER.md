@@ -990,6 +990,17 @@ Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` §3 and §4 "TX3". Code: 
   `POST /digest/preview` (trader, rate limited; builds now, sends nothing).
 - **Wording.** "First matches in your list order", never "top picks"; the digest and regime notes say it is not
   advice; `digest.lint()` and the fits' reasons pass `taxonomy.advice_words`.
+- **Review fixes (TX3 review).**
+  - The digest worker needs every flag the routes need (`digest.NEEDS_FLAGS`: `screener_v2`, `screener_gallery`,
+    `screener_tx3`). Turning the screener or the gallery off stops it too.
+  - Its pass loads only the enabled rows not yet built today (filtered in SQL).
+  - Digest symbols must have the symbol shape (`^[A-Z0-9&._:-]{1,40}$`).
+  - `/digest/preview` stores nothing: no evidence pack is kept. It is charged on the shared `/run` bucket as the
+    screens it runs.
+  - The breadth is read on the index frame's own last two sessions, never a later cash session.
+  - `/regime` is computed once per closed session (`regime_today.today_cached`). The key is the last index or VIX bar
+    and its ingestion, with a 10-minute limit so a late correction is picked up. The route is rate limited to 30 a
+    minute per user.
 - **Not in TX3:** greying by the symbol's own regime (today is the index's), a digest channel other than the user's own
   chat (email), and TX4 (learn mode, provenance and forking).
 

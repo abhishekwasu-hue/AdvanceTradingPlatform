@@ -351,3 +351,108 @@ def test_a_digest_is_not_built_while_the_flag_is_off(fake_bars):
             return await session.scalar(select(ScreenDigestRecord).where(ScreenDigestRecord.user_id == user_id))
     got = _run(row())
     assert got.last_status == "Not built: the digest is turned off for this organisation." and got.last_digest_json is None
+
+
+# --- review of TX3 --------------------------------------------------------------------------------------------------------
+
+@pytest.mark.parametrize("off", ["screener_v2", "screener_gallery", dg.FLAG])
+def test_the_worker_honours_every_flag_the_routes_need(off, fake_bars):
+    """MED: turning the screener (screener_v2) or the gallery off - the kill switches - stops the digest worker too."""
+    _set_flags(**{f: True for f in FLAGS})
+    email = f"tx3-kill-{off}@example.com"
+    headers, _ = _owner(email)
+    client.put("/api/screener/library/digest", json={"enabled": True, "send_time": "16:00", "pinned": ["starter.momentum"],
+                                                     "symbols": ["UP"]}, headers=headers)
+    _set_flags(**{off: False})
+    try:
+        assert _run(dg.run_due(_session_factory, datetime(2026, 10, 14, 11, 0, tzinfo=timezone.utc))) == 0
+
+        async def row():
+            async with _session_factory() as session:
+                from sqlalchemy import select
+                from app.db.models import User
+                user_id = (await session.scalar(select(User).where(User.email == email))).id
+                return await session.scalar(select(ScreenDigestRecord).where(ScreenDigestRecord.user_id == user_id))
+        got = _run(row())
+        assert got.last_status == "Not built: the digest is turned off for this organisation." and got.last_digest_json is None
+    finally:
+        _set_flags(**{f: False for f in FLAGS})
+
+
+def test_digest_symbols_are_plain_and_short():
+    for bad in (["A" * 41], ["TCS;DROP"], ["  ", "<b>"]):
+        with pytest.raises(ValueError):
+            dg.DigestSettings(symbols=bad)
+    assert dg.DigestSettings(symbols=["m&m", "bajaj-auto", "NSE:TCS"]).symbols == ["M&M", "BAJAJ-AUTO", "NSE:TCS"]
+
+
+def test_breadth_is_read_on_the_index_s_own_last_session(lake):
+    """LOW: cash rows of a later session than the index's last (ingested first) are not used for the breadth."""
+    days = _sessions(320)
+    _seed(rt.index_key("NIFTY 50"), _rising(), days)
+    _seed(rt.index_key("INDIA VIX"), np.linspace(12, 20, 320), days)
+    _seed("NSE:AAA", [100, 101], days[-2:])
+    _seed("NSE:BBB", [100, 102], days[-2:])
+    _seed("NSE:CCC", [100, 99], days[-2:])
+    _seed("NSE:AAA", [10], [date(2019, 12, 31)], ingested=bar_end(date(2019, 12, 31)) + timedelta(hours=1))   # index not in yet
+    _seed("NSE:BBB", [10], [date(2019, 12, 31)], ingested=bar_end(date(2019, 12, 31)) + timedelta(hours=1))
+    got = _today(datetime(2020, 1, 1, 3, 0, tzinfo=timezone.utc))
+    assert got.session == "2019-12-30" and (got.trend.numbers["advancers"], got.trend.numbers["decliners"]) == (2, 1)
+
+
+def test_the_regime_is_computed_once_per_closed_session(lake, monkeypatch):
+    """LOW: the reading is cached per (last index / VIX bar, its ingestion) and refreshed when one closes or is corrected."""
+    days = _sessions(320)
+    _seed(rt.index_key("NIFTY 50"), _rising(), days)
+    _seed(rt.index_key("INDIA VIX"), np.linspace(12, 20, 320), days)
+    rt.clear_cache()
+    calls = []
+    real = rt.today
+
+    async def counting(session, now=None):
+        calls.append(now)
+        return await real(session, now)
+    monkeypatch.setattr(rt, "today", counting)
+
+    def cached(now):
+        async def go():
+            async with _session_factory() as session:
+                return await rt.today_cached(session, now)
+        return _run(go())
+    first = cached(NOW)
+    again = cached(NOW + timedelta(minutes=1))
+    assert len(calls) == 1 and again.as_of == (NOW + timedelta(minutes=1)).isoformat() and again.trend == first.trend
+    _seed(rt.index_key("NIFTY 50"), [20000.0], [date(2019, 12, 31)])                       # the next session closes
+    later = cached(datetime(2020, 1, 1, 3, 0, tzinfo=timezone.utc))
+    assert len(calls) == 2 and later.session == "2019-12-31"
+    cached(datetime(2020, 1, 1, 3, 0, tzinfo=timezone.utc) + timedelta(seconds=rt.CACHE_SECONDS + 1))
+    assert len(calls) == 3                                                                  # the time limit (late corrections)
+    rt.clear_cache()
+
+
+def test_the_preview_stores_nothing_and_is_charged_on_the_run_bucket(tx3_on, fake_bars):
+    """LOW: no evidence pack is kept for a preview; MED (TX2 review): it costs the screens it runs on the /run bucket."""
+    from sqlalchemy import func, select
+
+    from app.core import rate_limit
+    from app.db.models import ScreenEvidenceRecord
+    _set_flags(evidence_charts=True)
+    headers, _ = _owner("tx3-preview-store@example.com")
+
+    async def packs():
+        async with _session_factory() as session:
+            return await session.scalar(select(func.count()).select_from(ScreenEvidenceRecord))
+    rate_limit.reset("screener_run")
+    try:
+        before = _run(packs())
+        body = {"pinned": ["starter.momentum", "starter.daily_trend"], "symbols": ["UP", "DOWN"]}
+        r = client.post("/api/screener/library/digest/preview", json=body, headers=headers)
+        assert r.status_code == 200, r.text
+        assert r.json()["methods"][0]["screens"][0]["evidence_id"] is None and _run(packs()) == before
+        assert dg.run_units(2, 1) == 2
+        codes = [client.post("/api/screener/run", json={"source": "close > 1", "symbols": ["UP"]}, headers=headers).status_code
+                 for _ in range(59)]
+        assert codes[:58] == [200] * 58 and codes[58] == 429                         # 2 units of the 60 went to the preview
+    finally:
+        rate_limit.reset("screener_run")
+        _set_flags(evidence_charts=False)

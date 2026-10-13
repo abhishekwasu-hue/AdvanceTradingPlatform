@@ -50,7 +50,7 @@ def test_import_endpoint_upserts_and_duplicate_form_post_is_409():
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["created"] == 2 and body["updated"] == 1 and len(body["errors"]) == 2 and body["total_rows"] == 5
-    periods = {p["period_label"]: p for p in client.get("/api/fundamentals/companies/INGEST/financials").json()}
+    periods = {p["period_label"]: p for p in client.get("/api/fundamentals/companies/INGEST/financials", headers=headers).json()}
     assert set(periods) == {"FY23", "FY24", "Q1FY25"}
     assert periods["FY24"]["revenue"] == 1200.0 and periods["FY24"]["shareholders_equity"] == 500.0   # form value 1000 -> corrected by the import
 
@@ -58,10 +58,10 @@ def test_import_endpoint_upserts_and_duplicate_form_post_is_409():
     again = client.post("/api/fundamentals/companies/INGEST/financials/import", headers=headers,
                         json={"periods": [_sample_period("FY24", pat=123.0)]}).json()
     assert again["created"] == 0 and again["updated"] == 1
-    assert {p["period_label"]: p for p in client.get("/api/fundamentals/companies/INGEST/financials").json()}["FY24"]["pat"] == 123.0
+    assert {p["period_label"]: p for p in client.get("/api/fundamentals/companies/INGEST/financials", headers=headers).json()}["FY24"]["pat"] == 123.0
 
     # The analysis endpoints and the Factor Lab bridge read the imported periods straight away.
-    growth = client.get("/api/fundamentals/companies/INGEST/analysis/growth").json()
+    growth = client.get("/api/fundamentals/companies/INGEST/analysis/growth", headers=headers).json()
     assert growth["latest_period"] == "FY24"
 
 
@@ -93,7 +93,7 @@ def test_refresh_endpoints_pull_profile_shareholding_and_announcements(monkeypat
     headers = {"Authorization": f"Bearer {token}"}
     ingest.set_provider_factory("nse", _mock_nse())
     try:
-        assert client.get("/api/fundamentals/providers").json()["providers"] == ["nse"]
+        assert client.get("/api/fundamentals/providers", headers=headers).json()["providers"] == ["nse"]
         assert client.post("/api/fundamentals/companies/REFR/refresh", headers=headers, json={}).status_code == 404
         assert client.post("/api/fundamentals/companies", headers=headers, json={**_sample_profile("REFR"), "website": "https://refr.example", "market_cap": None}).status_code == 201
         assert client.post("/api/fundamentals/companies/REFR/refresh", headers=headers, json={"provider": "nope"}).status_code == 400
@@ -103,26 +103,28 @@ def test_refresh_endpoints_pull_profile_shareholding_and_announcements(monkeypat
         body = res.json()
         assert body["provider"] == "nse" and body["errors"] == [] and body["shareholding_added"] is True and body["announcements_added"] == 2
         assert {"name", "isin", "market_cap", "promoter_holding_pct"} <= set(body["profile_changed"])
-        company = client.get("/api/fundamentals/companies/REFR").json()
-        assert company["name"] == "Refreshed Co Ltd" and company["website"] == "https://refr.example"     # hand-entered field survives
+        company = client.get("/api/fundamentals/companies/REFR", headers=headers).json()
+        # the organisation's own profile became the shared one from the provider: its hand-entered fields were cleared
+        # (they were never shown to other organisations, and must not be now)
+        assert company["name"] == "Refreshed Co Ltd" and company["website"] is None
         assert company["promoter_holding_pct"] == 51.2 and company["market_cap"] == 5000.0 and company["source"]["source"].startswith("NSE India")
-        assert len(client.get("/api/fundamentals/companies/REFR/shareholding").json()) == 1
-        assert len(client.get("/api/fundamentals/companies/REFR/corporate-actions").json()) == 2
+        assert len(client.get("/api/fundamentals/companies/REFR/shareholding", headers=headers).json()) == 1
+        assert len(client.get("/api/fundamentals/companies/REFR/corporate-actions", headers=headers).json()) == 2
 
         # Idempotent: the same snapshot and announcements are not stored twice.
         again = client.post("/api/fundamentals/companies/REFR/refresh", headers=headers, json={}).json()
         assert again["shareholding_added"] is False and again["announcements_added"] == 0 and again["profile_changed"] == []
-        assert len(client.get("/api/fundamentals/companies/REFR/corporate-actions").json()) == 2
+        assert len(client.get("/api/fundamentals/companies/REFR/corporate-actions", headers=headers).json()) == 2
 
         # Bulk: creates the missing company from the provider, refreshes the known one, keeps going past a failure.
         ingest.set_provider_factory("nse", _mock_nse(profile_status=403))
         blocked = client.post("/api/fundamentals/refresh", headers=headers, json={"symbols": ["NEWCO"]}).json()
         assert blocked["created"] == 0 and blocked["failed"] == 1 and blocked["results"][0]["errors"][0].startswith("profile:")
-        assert client.get("/api/fundamentals/companies/NEWCO").status_code == 404
+        assert client.get("/api/fundamentals/companies/NEWCO", headers=headers).status_code == 404
         ingest.set_provider_factory("nse", _mock_nse())
         bulk = client.post("/api/fundamentals/refresh", headers=headers, json={"symbols": ["newco", "REFR", "NEWCO"]}).json()
         assert bulk["created"] == 1 and bulk["failed"] == 0 and [r["symbol"] for r in bulk["results"]] == ["NEWCO", "REFR"]
-        newco = client.get("/api/fundamentals/companies/NEWCO").json()
+        newco = client.get("/api/fundamentals/companies/NEWCO", headers=headers).json()
         assert newco["name"] == "Refreshed Co Ltd" and newco["sector"] == "Financial Services" and newco["promoter_holding_pct"] == 51.2
 
         # A provider that fails everything is a 502 on the single-company route.

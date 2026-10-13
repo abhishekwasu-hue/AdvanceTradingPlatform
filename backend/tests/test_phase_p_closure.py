@@ -22,6 +22,8 @@ from tests.test_admin_api import _admin
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_trading_worker import _FakeBroker, _deploy, _get, _tenant
 
+pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
+
 
 def _run(coro):
     return asyncio.run(coro)

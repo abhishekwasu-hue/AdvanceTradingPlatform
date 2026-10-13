@@ -123,6 +123,9 @@ async def execute_structure(
     ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp)   # D7: F&O ban on the underlying
     if ban:
         refusals.append(ban)
+    # N2-2 (flag experience_levels): an unhedged short side or a futures leg needs the level, or the day's opt-out.
+    from app.paper import experience
+    refusals.extend(await experience.entry_refusals(session, user, experience.structure_gates(structure.legs)))
     if refusals:
         await _reject_all(session, orders, refusals)
         await notify(session, user.tenant_id, NotificationType.REJECTION, title=f"Structure rejected: {structure.underlying_symbol}",

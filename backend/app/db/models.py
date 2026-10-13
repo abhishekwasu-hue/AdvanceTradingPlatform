@@ -2125,13 +2125,19 @@ class BacktestSweepRecord(Base):
     `research_trials` (kind `sweep_backtest`, study_id = sweep_id) once it is finalised."""
 
     __tablename__ = "backtest_sweeps"
+    # One active sweep per organisation, enforced by the database too (two concurrent requests cannot both queue one).
+    __table_args__ = (
+        Index("uq_backtest_sweeps_one_active", "tenant_id", unique=True,
+              postgresql_where=text("status IN ('queued', 'running', 'finalizing')"),
+              sqlite_where=text("status IN ('queued', 'running', 'finalizing')")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     sweep_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     spec_json: Mapped[str] = mapped_column(Text, nullable=False)
-    status: Mapped[str] = mapped_column(String(12), nullable=False, default="queued", index=True)   # queued / running / finalizing / done / failed
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="queued", index=True)   # queued / running / finalizing / done / failed / cancelled
     total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     error: Mapped[str | None] = mapped_column(String(300), nullable=True)
     result_json: Mapped[str | None] = mapped_column(Text, nullable=True)

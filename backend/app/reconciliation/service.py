@@ -143,6 +143,7 @@ async def run_reconciliation(
     settle several accounts together (`reconcile_accounts`).
     """
     label = broker_name if account is None else f"{broker_name}/{account.account_label}"
+    read_at = datetime.now(timezone.utc)          # the positions below are no older than this
     try:
         broker_positions = await adapter.get_positions()
     except Exception as exc:
@@ -183,6 +184,7 @@ async def run_reconciliation(
         f"{label} ({source}): {report.mismatched_count} mismatch(es) across {len(report.items)} symbol(s)",
     )
     tenant.last_reconciled_at = datetime.now(timezone.utc)
+    await _note_still_open(adapter, report, trades, read_at)
     RECONCILIATIONS.labels(source=source, outcome="clean" if report.mismatched_count == 0 else "mismatch").inc()
 
     if not settle:
@@ -190,6 +192,36 @@ async def run_reconciliation(
         return report
     await _settle(session, tenant, label, _mismatch_lines(report), user_id=user_id, source=source)
     return report
+
+
+# Order statuses that are over (filled, or dead) - anything else is still working at the broker.
+_OVER = {"COMPLETE", "COMPLETED", "FILLED", "TRADED", "EXECUTED", "REJECTED", "CANCELLED", "CANCELED", "CANCELLED AMO", "EXPIRED",
+         "LAPSED"}
+
+
+async def _note_still_open(adapter: BrokerInterface, report: ReconciliationReport, trades: Sequence[TradeRecord],
+                           read_at: datetime) -> None:
+    """Re-exit guard (per symbol, whatever the tenant-wide result): a LIVE position with a recorded exit whose symbol
+    MATCHED - the broker still holds it - and has no order working on it in the book is stamped `reconciled_open_at`. That
+    is the only proof that an exit order missing from the book is over (position_monitor.absent_exit_dead_reason). An
+    order still working on the symbol (an exit sent without a clear answer, a circuit-locked exit) or an unreadable book
+    proves nothing (a protective stop standing on it does not count)."""
+    pending = [t for t in trades if t.exit_order_id]
+    if not pending:
+        return
+    matched = {i.symbol for i in report.items if i.status == ReconciliationStatus.MATCHED}
+    if not any(t.symbol in matched for t in pending):
+        return
+    try:
+        book = await adapter.get_order_book()
+    except Exception as exc:  # noqa: BLE001 - no stamp: an unreadable book cannot rule out a working exit
+        logger.warning("Reconciliation: order book unavailable, no position marked still open: %s", exc)
+        return
+    # A protective stop standing on the symbol is expected (another position's, or a re-armed one) and is not an exit.
+    working = {o.symbol for o in book if (o.status or "").upper() not in _OVER and not (o.order_type or "").upper().startswith("SL")}
+    for trade in pending:
+        if trade.symbol in matched and trade.symbol not in working:
+            trade.reconciled_open_at = read_at
 
 
 def _mismatch_lines(report: ReconciliationReport) -> List[str]:

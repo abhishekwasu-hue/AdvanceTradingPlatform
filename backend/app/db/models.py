@@ -311,6 +311,13 @@ class TradeRecord(Base):
     # is treated as dead once it was sent on an earlier trading day, or a clean reconciliation since shows the position
     # still open. While the exit is being placed `exit_order_id` holds the pending marker (position_monitor.EXIT_PENDING).
     exit_sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Re-exit guard: when a reconciliation last found this position's symbol still open at the broker (quantities matched)
+    # with no order working on it - the proof that an exit order missing from the book is over (set only while an exit
+    # is recorded). And what earlier exits of this position already filled before the recorded one (quantity, average
+    # price), so the booking blends every part.
+    reconciled_open_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    exit_filled_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_filled_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Where `charges` came from: ESTIMATED (the platform's NSE cost model at close time) or
     # CONTRACT_NOTE (the broker's actual charges, applied from an uploaded contract note).
     charges_source: Mapped[str] = mapped_column(String(20), nullable=False, default="ESTIMATED")

@@ -22,7 +22,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Awaitable, Callable, List, Optional, Tuple
 
 from sqlalchemy import select, update
@@ -66,6 +66,8 @@ EXIT_PENDING = "pending-exit"
 # A claim younger than this is another exit being placed right now (wait for it); an older one never recorded a broker
 # order (a crash, or a send that errored without a clear answer) and is handled like an exit missing from the book.
 CLAIM_INFLIGHT_SECONDS = 120
+# An order placed this long before the exit's claim can still be its exit (broker and platform clocks differ).
+ADOPT_CLOCK_SKEW_SECONDS = 5
 # Checks in a row that find an earlier exit still working (or its book unreadable) before a CRITICAL alert, and the
 # alert's cooldown.
 EXIT_WAIT_ALERT_CHECKS = 5
@@ -228,12 +230,19 @@ async def broker_for_trade(session: AsyncSession, trade: TradeRecord) -> Optiona
     return adapter
 
 
-async def _read_order(broker: BrokerInterface, order_id: str) -> Tuple[bool, Optional[BrokerOrderStatus]]:
-    """(the book could be read, the order in it or None). MED-3: "the book is unreadable" is not "the order is gone"."""
+async def _read_book(broker: BrokerInterface) -> Optional[List[BrokerOrderStatus]]:
+    """The broker's order book, or None when it cannot be read. MED-3: "the book is unreadable" is not "the order is gone"."""
     try:
-        book = await broker.get_order_book()
+        return list(await broker.get_order_book())
     except Exception as exc:  # noqa: BLE001 - informational, callers decide the fallback
-        logger.warning("Order book unavailable while resolving %s: %s", order_id, exc)
+        logger.warning("Order book unavailable: %s", exc)
+        return None
+
+
+async def _read_order(broker: BrokerInterface, order_id: str) -> Tuple[bool, Optional[BrokerOrderStatus]]:
+    """(the book could be read, the order in it or None)."""
+    book = await _read_book(broker)
+    if book is None:
         return False, None
     return True, next((o for o in book if o.order_id == order_id), None)
 
@@ -244,14 +253,18 @@ async def _find_order(broker: BrokerInterface, order_id: str) -> Optional[Broker
     return (await _read_order(broker, order_id))[1]
 
 
-async def _fill_price(broker: BrokerInterface, order_id: str, fallback: float) -> float:
+async def _exit_fill(broker: BrokerInterface, order_id: str, fallback: float) -> Tuple[float, Optional[BrokerOrderStatus]]:
+    """The exit's fill price (else `fallback`) and the order as last read - polled until it shows a fill or has ended."""
+    order: Optional[BrokerOrderStatus] = None
     for attempt in range(FILL_POLL_ATTEMPTS):
         order = await _find_order(broker, order_id)
         if order is not None and order.average_price and order.filled_quantity > 0:
-            return float(order.average_price)
+            return float(order.average_price), order
+        if order is not None and _stop_is_dead(order.status):
+            return fallback, order
         if attempt < FILL_POLL_ATTEMPTS - 1:
             await asyncio.sleep(FILL_POLL_DELAY_SECONDS)
-    return fallback
+    return fallback, order
 
 
 def _stop_already_filled(trade: TradeRecord, sl_order: BrokerOrderStatus, reason: str, outcome: CloseOutcome) -> float:
@@ -307,30 +320,51 @@ def claim_in_flight(trade, now: Optional[datetime] = None) -> bool:
     return is_pending_exit(trade.exit_order_id) and sent is not None and (now - sent).total_seconds() < CLAIM_INFLIGHT_SECONDS
 
 
-def absent_exit_dead_reason(trade, tenant: Optional[Tenant], now: Optional[datetime] = None) -> Optional[str]:
-    """HIGH-1: why an exit of `trade` that the broker's book does not list (or a claim that never recorded a broker order)
-    is over, so a fresh exit may go out - or None: wait, reconciliation decides. Never while the tenant is
-    broker-uncertain: a position already flat at the broker must not get a second exit (it would open one the other way).
+def absent_exit_dead_reason(trade) -> Optional[str]:
+    """Why an exit of `trade` that the broker's book does not list (or a claim that never recorded a broker order) is
+    over, so a fresh exit may go out - or None: wait (the organisation is flagged so reconciliation runs every cycle).
 
-    - sent on an earlier trading day (IST): a day order does not carry over - absent from today's book, it is gone;
-    - a clean reconciliation ran after it was sent: the books agree, so the position is still open at the broker."""
+    Only one proof counts: a reconciliation that read the broker's positions after the exit was sent found this symbol
+    still open with matching quantities and no order working on it (`reconciled_open_at`, stamped per position by
+    reconciliation). "Sent on an earlier day" is not proof - a day order that FILLED yesterday is just as absent from
+    today's book, and a second exit on that flat position would open one the other way. The tenant-wide flag does not
+    decide either: a mismatch on another symbol says nothing about this one."""
     sent = _utc(getattr(trade, "exit_sent_at", None))
-    if sent is None or tenant is None or tenant.broker_uncertain_since is not None:
+    seen = _utc(getattr(trade, "reconciled_open_at", None))
+    if sent is None or seen is None or seen <= sent:
         return None
-    from app.market_data.calendar import to_ist
-    now = now or datetime.now(timezone.utc)
-    if to_ist(sent).date() < to_ist(now).date():
-        return f"sent {to_ist(sent).date().isoformat()}, an earlier trading day - a day order does not carry over"
-    reconciled = _utc(tenant.last_reconciled_at)
-    if reconciled is not None and reconciled > sent:
-        return f"a clean reconciliation at {reconciled.isoformat(timespec='seconds')} shows the position still open"
+    return (f"a reconciliation at {seen.isoformat(timespec='seconds')} found {trade.symbol} still open at the broker with no "
+            "order working on it")
+
+
+def adoptable_exit(trade, orders: List[BrokerOrderStatus], exclude: frozenset = frozenset()) -> Optional[BrokerOrderStatus]:
+    """P2: an order in the book that may be this position's exit although its id was never recorded (a send that errored
+    without a clear answer, but reached the broker): a MARKET order on the same symbol and exit side, no larger than the
+    position, working or (part) filled, not placed before the exit was claimed, and not an id another position records.
+    Adopting it instead of sending again is what keeps a second exit off a position that is already being closed."""
+    side = OrderSide.SELL if trade.direction == "LONG" else OrderSide.BUY
+    sent = _utc(getattr(trade, "exit_sent_at", None))
+    own = {trade.broker_order_id, trade.sl_order_id, trade.exit_order_id}
+    for order in orders:
+        if order.order_id in exclude or order.order_id in own:
+            continue
+        if order.symbol != trade.symbol or order.transaction_type != side or (order.order_type or "").upper() != "MARKET":
+            continue
+        if _stop_is_dead(order.status) and float(order.filled_quantity or 0) <= 0:
+            continue
+        if float(order.quantity or 0) > float(trade.quantity) + 1e-9:
+            continue
+        placed = _utc(order.placed_at)
+        if placed is not None and sent is not None and placed < sent - timedelta(seconds=ADOPT_CLOCK_SKEW_SECONDS):
+            continue
+        return order
     return None
 
 
 class _ExitLedger:
     """MED-2: close_position's record of one LIVE exit - the claim before anything is sent (a conditional UPDATE, committed
     first: a second closer of the same position finds it taken and sends nothing), the broker's id committed the moment the
-    broker takes the order (before any fill polling), and the claim's release when nothing went out."""
+    broker takes the order (before any audit row or fill polling), and the claim's release when nothing went out."""
 
     def __init__(self, session: AsyncSession, trade: TradeRecord, tenant: Optional[Tenant], broker_name: str,
                  user_id: Optional[int], reason: str, now: datetime):
@@ -341,8 +375,25 @@ class _ExitLedger:
         self.claimed = False
         self.keep_claim = False
 
-    def dead_reason(self) -> Optional[str]:
-        return absent_exit_dead_reason(self.trade, self.tenant, self.now)
+    async def ids_elsewhere(self) -> frozenset:
+        """Order ids other positions of the organisation record on this symbol (never adopted as this one's exit)."""
+        trade = self.trade
+        rows = await self.session.execute(select(TradeRecord.broker_order_id, TradeRecord.sl_order_id, TradeRecord.exit_order_id)
+                                          .where(TradeRecord.tenant_id == trade.tenant_id, TradeRecord.symbol == trade.symbol,
+                                                 TradeRecord.id != trade.id))
+        return frozenset(i for row in rows.all() for i in row if i)
+
+    async def adopt(self, order_id: str, earlier_id: str) -> None:
+        """P2: an order found in the book is this position's exit - recorded (kept on the audit trail) instead of sending again."""
+        from app.audit.log import write_audit_log
+        trade = self.trade
+        trade.exit_order_id = order_id
+        await self.session.commit()
+        self.previous_id = order_id
+        await write_audit_log(self.session, trade.tenant_id, self.user_id, "exit_order_adopted",
+                              f"trade {trade.id} {trade.symbol}: order {order_id} in the broker's book taken as its exit "
+                              f"(recorded: {earlier_id}) - no second exit")
+        await self.session.commit()
 
     async def cleared(self, earlier_id: str, why: str) -> None:
         """HIGH-1: the earlier exit is over without trace - its id leaves the position (kept on the audit trail)."""
@@ -368,10 +419,17 @@ class _ExitLedger:
         self.claimed = True
         return True
 
-    async def sent(self, order_id: str, outcome: CloseOutcome) -> None:
-        """The broker took the exit: its id and the audit rows are committed now, before the fill is polled - a crash or
-        error from here on can never lose the record that the order went out."""
+    async def sent(self, order_id: str, outcome: CloseOutcome, prior_fills: List[Tuple[float, float]]) -> None:
+        """The broker took the exit. P3: its id (and what earlier exits filled) is committed first, in its own commit -
+        the claim can never be released from here on - then the audit rows. A failing audit write leaves the id recorded."""
         trade = self.trade
+        self.keep_claim = True
+        trade.exit_order_id = order_id
+        filled_before = sum(q for q, _ in prior_fills)
+        trade.exit_filled_quantity = filled_before or None
+        trade.exit_filled_price = (sum(q * p for q, p in prior_fills) / filled_before) if filled_before else None
+        await self.session.commit()
+        self.claimed = False
         await audit_order(self.session, trade.tenant_id, self.user_id, leg="EXIT", broker_name=self.broker_name, symbol=trade.symbol,
                           tag=outcome.exit_tag, broker_order_id=order_id, ref=f"trade {trade.id}: {self.reason}")
         if outcome.previous_exit_order_id:
@@ -380,9 +438,7 @@ class _ExitLedger:
             await write_audit_log(self.session, trade.tenant_id, self.user_id, "exit_order_replaced",
                                   f"trade {trade.id} {trade.symbol}: earlier exit {outcome.previous_exit_order_id} "
                                   f"({outcome.previous_exit_status}) replaced by {order_id}")
-        trade.exit_order_id = order_id
         await self.session.commit()
-        self.claimed = False
 
     async def release(self) -> None:
         """Nothing went out (the broker clearly refused, or no order was needed): the claim is undone."""
@@ -407,17 +463,38 @@ class _Earlier:
     prior_fills: List[Tuple[float, float]] = field(default_factory=list)   # (quantity, price) already filled before it
 
 
+def _filled_before(trade: TradeRecord, order: BrokerOrderStatus, book: List[BrokerOrderStatus]) -> List[Tuple[float, float]]:
+    """What filled before `order` (the position's recorded exit) went out: it was sized for what was left then. Earlier
+    exits' fills are recorded on the trade (`exit_filled_quantity` / `_price`); the rest of that gap is a stop-limit's
+    part fill before the first exit, at the stop's own average price."""
+    whole = float(trade.quantity)
+    ordered = min(float(order.quantity or 0) or whole, whole)
+    gap = whole - ordered
+    prior: List[Tuple[float, float]] = []
+    if gap <= 0:
+        return prior
+    known = min(float(trade.exit_filled_quantity or 0), gap)
+    if known > 0:
+        prior.append((known, float(trade.exit_filled_price) if trade.exit_filled_price else float(trade.stop_loss)))
+    if gap - known > 0:
+        stop = next((o for o in book if o.order_id == trade.sl_order_id), None) if trade.sl_order_id else None
+        prior.append((gap - known, float(stop.average_price) if stop is not None and stop.average_price else float(trade.stop_loss)))
+    return prior
+
+
 async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: BrokerInterface, reference_price: float,
                               outcome: CloseOutcome, ledger: Optional[_ExitLedger], resume_only: bool) -> _Earlier:
     """Re-exit guard: this position already claimed or sent an exit (the booking did not happen). A second exit on top of
     a live or filled one would open a position the other way - so the earlier one decides:
 
-    - filled: booked at its fill, nothing new (flagged when its stop filled too - a rare double fill);
+    - filled: booked at its fill (blended with what filled before it), nothing new (flagged when its stop filled too);
     - still working, a claim being placed right now, or the book unreadable this cycle (MED-3): wait;
-    - ended (rejected / cancelled ...) after a part fill (HIGH-2): an exit for exactly the rest, both fills blended;
+    - ended (rejected / cancelled ...) after a part fill (HIGH-2): an exit for exactly the rest, every fill blended;
     - ended with nothing filled: a new exit;
-    - not in the book, or a claim that never recorded an order (HIGH-1): a new exit once it is over
-      (`absent_exit_dead_reason`), else the tenant is flagged broker-uncertain so reconciliation runs.
+    - not in the book, or a claim that never recorded an order: first an order in the book that may be it is adopted
+      (P2, `adoptable_exit`); else a new exit once a reconciliation since it was sent shows the position still open
+      (`absent_exit_dead_reason`); until then the tenant is flagged so reconciliation runs, and the wait is counted
+      towards the "exit not completed" alert.
 
     `resume_only` (the monitor finishing an exit whose rule no longer fires): book a fill or send a part fill's rest, but
     never a whole new exit."""
@@ -426,21 +503,30 @@ async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: Broke
         outcome.exit_waiting = True
         outcome.warnings.append("Another exit of this position is being placed right now - no second exit")
         return _Earlier(False)
-    earlier: Optional[BrokerOrderStatus] = None
-    if not pending:
-        readable, earlier = await _read_order(broker, earlier_id)
-        if not readable:
-            outcome.exit_waiting = True
-            outcome.warnings.append(f"The broker's order book could not be read - earlier exit order {earlier_id} is unknown; "
-                                    "waiting this cycle (no second exit)")
-            return _Earlier(False)
+    book = await _read_book(broker)
+    if book is None:
+        outcome.exit_waiting = True
+        outcome.warnings.append(f"The broker's order book could not be read - earlier exit order {earlier_id} is unknown; "
+                                "waiting this cycle (no second exit)")
+        return _Earlier(False)
+    earlier = None if pending else next((o for o in book if o.order_id == earlier_id), None)
+    if earlier is None:
+        exclude = await ledger.ids_elsewhere() if ledger is not None else frozenset()
+        adopted = adoptable_exit(trade, book, exclude)
+        if adopted is not None:
+            outcome.warnings.append(f"Order {adopted.order_id} in the broker's book is this position's exit ({adopted.status}) - "
+                                    "adopted, no second exit")
+            if ledger is not None:
+                await ledger.adopt(adopted.order_id, earlier_id)
+            earlier_id, earlier = adopted.order_id, adopted
     if earlier is None:
         what = ("its exit claim never recorded a broker order" if pending
                 else f"its earlier exit order {earlier_id} is not in the broker's book")
-        dead = ledger.dead_reason() if ledger is not None else None
+        dead = absent_exit_dead_reason(trade)
         if dead is None:
-            outcome.broker_uncertain = (f"trade {trade.id}: {what} - no second exit until a clean reconciliation shows the "
-                                        "position still open")
+            outcome.exit_waiting = True
+            outcome.broker_uncertain = (f"trade {trade.id}: {what} - no second exit until a reconciliation shows {trade.symbol} "
+                                        "still open at the broker")
             outcome.warnings.append(outcome.broker_uncertain)
             return _Earlier(False)
         if resume_only:
@@ -453,36 +539,29 @@ async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: Broke
         outcome.warnings.append(f"Earlier exit {earlier_id} is over ({dead}); a new exit was sent")
         return _Earlier(True)
 
+    whole = float(trade.quantity)
+    prior = _filled_before(trade, earlier, book)
+    ordered = whole - sum(q for q, _ in prior)
     status = (earlier.status or "").upper()
     if status in _FILLED_STATUSES:
         outcome.broker_exit_order_id = earlier_id
         outcome.warnings.append(f"Earlier exit order {earlier_id} had filled; booked at its fill")
         if trade.sl_order_id:
             # LOW: the stop may have filled too (it raced the exit) - that is an opposite position: reconciliation decides.
-            ok, stop = await _read_order(broker, trade.sl_order_id)
-            if ok and stop is not None and (stop.status or "").upper() in _FILLED_STATUSES and float(stop.filled_quantity or 0) > 0:
+            stop = next((o for o in book if o.order_id == trade.sl_order_id), None)
+            if stop is not None and (stop.status or "").upper() in _FILLED_STATUSES and float(stop.filled_quantity or 0) > 0:
                 outcome.broker_uncertain = (f"trade {trade.id}: exit {earlier_id} and stop {trade.sl_order_id} both filled - "
                                             "the account may hold a position the other way")
                 outcome.warnings.append(outcome.broker_uncertain)
-        return _Earlier(False, price=float(earlier.average_price) if earlier.average_price else reference_price)
+        fill = float(earlier.average_price) if earlier.average_price else reference_price
+        return _Earlier(False, price=(sum(q * p for q, p in prior) + ordered * fill) / whole)
     if not _stop_is_dead(status):
         outcome.exit_waiting = True
         outcome.warnings.append(f"Earlier exit order {earlier_id} is still working ({earlier.status}) - waiting for it")
         return _Earlier(False)
 
-    # Terminal: rejected / cancelled / lapsed. What it did not fill is what is left to exit. It was sized for what was
-    # left when it went out (a stop-limit may have part-filled before it), so the rest is its own unfilled quantity.
-    whole = float(trade.quantity)
-    ordered = min(float(earlier.quantity or 0) or whole, whole)
+    # Terminal: rejected / cancelled / lapsed. What it did not fill is what is left to exit.
     filled = min(float(earlier.filled_quantity or 0), ordered)
-    prior: List[Tuple[float, float]] = []
-    if ordered < whole:
-        stop_price = float(trade.stop_loss)
-        if trade.sl_order_id:
-            stop = await _find_order(broker, trade.sl_order_id)
-            if stop is not None and stop.average_price:
-                stop_price = float(stop.average_price)
-        prior.append((whole - ordered, stop_price))
     if filled > 0:
         prior.append((filled, float(earlier.average_price) if earlier.average_price else reference_price))
     remainder = ordered - filled
@@ -501,7 +580,7 @@ async def _judge_earlier_exit(trade: TradeRecord, earlier_id: str, broker: Broke
                                 f"{ordered:g}; an exit for the remaining {remainder:g} was sent")
     else:
         outcome.warnings.append(f"Earlier exit order {earlier_id} ended {earlier.status}; a new exit was sent")
-    return _Earlier(True, remainder=remainder if (prior or remainder < whole) else None, prior_fills=prior)
+    return _Earlier(True, remainder=remainder if prior else None, prior_fills=prior)
 
 
 async def _square_off_live(
@@ -613,8 +692,17 @@ async def _square_off_live(
             return None
         outcome.broker_exit_order_id = response.order_id
         if ledger is not None:
-            await ledger.sent(response.order_id, outcome)
-        price = await _fill_price(broker, response.order_id, fallback=reference_price)
+            ledger.keep_claim = True          # P3: the broker took it - nothing from here on may release the claim
+            await ledger.sent(response.order_id, outcome, earlier.prior_fills)
+        price, final = await _exit_fill(broker, response.order_id, fallback=reference_price)
+        if final is not None and _stop_is_dead(final.status) and float(final.filled_quantity or 0) < float(exit_quantity) - 1e-9:
+            # The broker took the exit and then ended it (an RMS reject, a cancel) with some or none of it filled: the
+            # position is not flat - never booked as closed. Its id is recorded; the next check sends the rest of a part
+            # fill (the monitor), or a new exit when the exit rule fires again (the stop guard re-arms the stop meanwhile).
+            outcome.warnings.append(f"Exit order {response.order_id} ended {final.status} after filling "
+                                    f"{float(final.filled_quantity or 0):g} of {float(exit_quantity):g} - not booked")
+            logger.error("Exit order %s for trade %s ended %s part-filled - left open", response.order_id, trade.id, final.status)
+            return None
         if cancelled_stop and _partial_aware() and sl_order_id:
             # The exit is already out; now read where the cancelled stop finally settled.
             settled = await _settled_stop(broker, sl_order_id)

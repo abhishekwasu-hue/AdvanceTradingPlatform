@@ -217,34 +217,78 @@ def test_the_stop_guard_does_not_rearm_while_an_exit_is_pending_and_does_once_it
 
 # --- HIGH-1: an exit order gone from the book is not a block forever ---------------------------------------------------
 
-def test_a_swing_exit_cancelled_at_the_close_is_replaced_the_next_trading_day():
+def _open_at_broker(quantity=1, symbol="RXG"):
+    return [BrokerPosition(symbol=symbol, exchange="NFO", quantity=quantity, average_price=100.0)]
+
+
+def test_a_swing_exit_cancelled_at_the_close_is_replaced_the_next_trading_day_after_reconciliation():
     """A SWING / NRML exit sent yesterday, not booked, cancelled by the exchange at the close: today's book does not list
-    it. When the stop fires a fresh exit goes out (the old id is cleared on the audit trail) - no flag, no block."""
+    it. "Sent yesterday" alone proves nothing (a filled day order is just as absent): the tenant is flagged, reconciliation
+    finds the position still open with nothing working on it, and the next check sends a fresh exit (the old id is
+    cleared on the audit trail)."""
     t = _tenant(f"rxg-swing-{uuid.uuid4().hex[:6]}@example.com")
     yesterday = datetime.now(timezone.utc) - timedelta(days=1)
     trade_id = _live_trade(t, exit_sent_at=yesterday, sl_order_id="SL-OLD")
-    broker = _Book()                                                         # nothing of yesterday's is in today's book
+    broker = _Book(positions=_open_at_broker())                              # nothing of yesterday's is in today's book
+    first = _close(trade_id, broker, t["user_id"])
+    assert not first.closed and broker.placed == [] and first.exit_waiting
+    assert broker_uncertain_reason(_get(Tenant, t["tenant_id"])) is not None
+    assert _reconcile(t, broker).mismatched_count == 0
     outcome = _close(trade_id, broker, t["user_id"])
     assert outcome.closed and [o.order_type for o in broker.placed] == ["MARKET"]
-    assert broker_uncertain_reason(_get(Tenant, t["tenant_id"])) is None
     row = _get(TradeRecord, trade_id)
     assert row.exit_order_id == "NEW-1" and row.exit_price == 97.0
     cleared = _audit(t["tenant_id"], "exit_order_cleared")
-    assert len(cleared) == 1 and "OLD-1" in cleared[0] and "earlier trading day" in cleared[0]
+    assert len(cleared) == 1 and "OLD-1" in cleared[0] and "still open at the broker" in cleared[0]
     replaced = _audit(t["tenant_id"], "exit_order_replaced")
     assert len(replaced) == 1 and "OLD-1" in replaced[0] and "NEW-1" in replaced[0]
+
+
+def test_a_day_exit_that_filled_yesterday_never_gets_a_second_exit_or_a_stop():
+    """Review P1: the exit filled near the close, the booking failed after its id was recorded; this morning it is absent
+    from the book and the account is flat. No fresh exit (it would open a naked short the other way), no stop."""
+    t = _tenant(f"rxg-filled-yday-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, exit_sent_at=datetime.now(timezone.utc) - timedelta(days=1), sl_order_id="SL-GONE")
+    broker = _Book(positions=[])                                             # flat at the broker
+    assert not _close(trade_id, broker, t["user_id"]).closed
+    assert _guard(t, broker).get("exit_pending") == 1
+    assert _reconcile(t, broker).mismatched_count == 1                       # the reconciliation does not prove it open
+    for _ in range(3):
+        assert not _close(trade_id, broker, t["user_id"]).closed
+    assert _guard(t, broker).get("exit_pending") == 1
+    assert broker.placed == [] and _get(TradeRecord, trade_id).exit_time is None
+    assert broker_uncertain_reason(_get(Tenant, t["tenant_id"])) is not None
 
 
 def test_the_stop_guard_rearms_a_stop_once_a_vanished_exit_is_known_to_be_over():
     t = _tenant(f"rxg-swing-guard-{uuid.uuid4().hex[:6]}@example.com")
     trade_id = _live_trade(t, exit_sent_at=datetime.now(timezone.utc) - timedelta(days=1), sl_order_id="SL-GONE")
-    broker = _Book()
+    broker = _Book(positions=_open_at_broker())
+    counts = _guard(t, broker)
+    assert counts["rearmed"] == 0 and counts.get("exit_pending") == 1 and broker.placed == []
+    _reconcile(t, broker)
     counts = _guard(t, broker)
     assert counts["rearmed"] == 1 and counts.get("exit_pending", 0) == 0
     assert _get(TradeRecord, trade_id).sl_order_id == "NEW-1"
 
 
-def test_a_vanished_exit_flags_then_a_clean_reconciliation_lets_a_fresh_exit_out():
+def test_a_mismatch_on_another_symbol_does_not_park_this_exit_and_the_wait_is_alerted():
+    """Review item 4: the tenant stays broker-uncertain for an unrelated symbol. This position's own reconciliation
+    result decides; while it waits the "exit not completed" alert counts the checks."""
+    t = _tenant(f"rxg-other-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, exit_sent_at=T0)
+    broker = _Book(positions=_open_at_broker() + _open_at_broker(5, symbol="STRAY"))   # STRAY: a mismatch, for good
+    for i in range(pm.EXIT_WAIT_ALERT_CHECKS):
+        outcome = _close(trade_id, broker, t["user_id"], now=T0 + timedelta(minutes=5 + i))
+        assert not outcome.closed and outcome.exit_waiting
+    assert any("Exit not completed" in n.title for n in _notifications(t["tenant_id"], trade_id))
+    assert _reconcile(t, broker).mismatched_count == 1
+    assert broker_uncertain_reason(_get(Tenant, t["tenant_id"])) is not None   # still flagged for STRAY
+    outcome = _close(trade_id, broker, t["user_id"], now=T0 + timedelta(minutes=20))
+    assert outcome.closed and [o.order_type for o in broker.placed] == ["MARKET"]
+
+
+def test_a_vanished_exit_flags_then_a_reconciliation_lets_a_fresh_exit_out():
     """The loop the review found: flag -> reconciliation clean (clears the flag) -> flag again, forever. Now the clean
     reconciliation after the exit was sent is the proof the position is still open: the next check sends a fresh exit."""
     t = _tenant(f"rxg-recon-{uuid.uuid4().hex[:6]}@example.com")
@@ -258,7 +302,7 @@ def test_a_vanished_exit_flags_then_a_clean_reconciliation_lets_a_fresh_exit_out
     second = _close(trade_id, broker, t["user_id"], now=T0 + timedelta(minutes=10))
     assert second.closed and [o.order_type for o in broker.placed] == ["MARKET"]
     assert broker_uncertain_reason(_get(Tenant, t["tenant_id"])) is None
-    assert any("clean reconciliation" in d for d in _audit(t["tenant_id"], "exit_order_cleared"))
+    assert any("still open at the broker" in d for d in _audit(t["tenant_id"], "exit_order_cleared"))
 
 
 def test_a_vanished_exit_is_never_replaced_while_reconciliation_disagrees():
@@ -287,6 +331,40 @@ def test_an_earlier_exit_cancelled_after_a_part_fill_sends_exactly_the_rest_and_
     replaced = _audit(t["tenant_id"], "exit_order_replaced")
     assert len(replaced) == 1 and "after filling 1" in replaced[0]
     assert broker_uncertain_reason(_get(Tenant, t["tenant_id"])) is None
+    assert row.exit_filled_quantity == 1 and row.exit_filled_price == 96.0     # what filled before the recorded exit
+
+
+class _PartFills(_Book):
+    """Each MARKET exit fills `fills` units at the LTP and is then cancelled (an illiquid strike), one by one."""
+
+    def __init__(self, fills, **kw):
+        super().__init__(**kw)
+        self.fills = list(fills)
+
+    async def place_order(self, order):
+        self.placed.append(order)
+        oid = f"NEW-{len(self.placed)}"
+        filled = self.fills.pop(0) if self.fills else order.quantity
+        self.orders[oid] = BrokerOrderStatus(order_id=oid, symbol=order.symbol, transaction_type=order.transaction_type,
+                                             quantity=order.quantity, filled_quantity=filled, order_type=order.order_type,
+                                             status="COMPLETE" if filled >= order.quantity else "CANCELLED",
+                                             average_price=self.ltp if filled else None)
+        return BrokerOrderResponse(order_id=oid, status="OPEN")
+
+
+def test_a_third_attempt_blends_every_earlier_fill_at_its_own_price():
+    """Review item 6: 4 to exit; the first exit fills 1 @96 and dies, the second (3) fills 1 @95 and dies, the third (2)
+    fills @94. The booking is (96 + 95 + 2 x 94) / 4 - not the second attempt's gap at the stop price."""
+    t = _tenant(f"rxg-third-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, quantity=4)
+    broker = _PartFills(fills=[1], ltp=95.0)
+    broker.orders["OLD-1"] = _old("CANCELLED", filled=1, price=96.0, quantity=4)
+    assert not _close(trade_id, broker, t["user_id"]).closed                  # NEW-1: 3 sent, 1 filled @95, cancelled
+    assert [float(o.quantity) for o in broker.placed] == [3.0]
+    broker.ltp = 94.0
+    outcome = _close(trade_id, broker, t["user_id"])                          # NEW-2: the last 2
+    assert outcome.closed and [float(o.quantity) for o in broker.placed] == [3.0, 2.0]
+    assert _get(TradeRecord, trade_id).exit_price == pytest.approx((96.0 + 95.0 + 2 * 94.0) / 4)
 
 
 def test_the_monitor_finishes_a_part_filled_exit_even_when_its_rule_no_longer_fires():
@@ -401,12 +479,78 @@ def test_the_broker_id_is_committed_before_the_fill_is_polled(monkeypatch):
 
     async def crash(*args, **kwargs):
         raise RuntimeError("worker died while polling the fill")
-    monkeypatch.setattr(pm, "_fill_price", crash)
+    monkeypatch.setattr(pm, "_exit_fill", crash)
     with pytest.raises(RuntimeError):
         _close(trade_id, _Book(), t["user_id"])
     row = _get(TradeRecord, trade_id)
     assert row.exit_order_id == "NEW-1" and row.exit_sent_at is not None and row.exit_time is None
     assert any("NEW-1" in d for d in _audit(t["tenant_id"], "algo_order"))
+
+
+def test_an_unclear_send_that_reached_the_broker_is_adopted_never_sent_twice():
+    """Review P2: the send times out but the order reached the broker and stays OPEN (circuit lock). Reconciliation
+    compares positions only - with that order working it proves nothing - and once the claim is stale the order in
+    the book is adopted as the exit: one order, ever."""
+    t = _tenant(f"rxg-unclear-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, exit_order_id=None)
+
+    class _Lost(_Book):
+        async def place_order(self, order):
+            self.placed.append(order)
+            self.orders["LOST-1"] = BrokerOrderStatus(order_id="LOST-1", symbol=order.symbol, transaction_type=order.transaction_type,
+                                                      quantity=order.quantity, order_type="MARKET", status="OPEN")
+            raise TimeoutError("read timed out")
+    broker = _Lost(positions=_open_at_broker())
+    first = _close(trade_id, broker, t["user_id"])
+    assert not first.closed and _get(TradeRecord, trade_id).exit_order_id == pm.EXIT_PENDING
+    _reconcile(t, broker)                                                     # position still open, but LOST-1 is working
+    assert _get(TradeRecord, trade_id).reconciled_open_at is None
+    later = datetime.now(timezone.utc) + timedelta(seconds=pm.CLAIM_INFLIGHT_SECONDS + 60)
+    second = _close(trade_id, broker, t["user_id"], now=later)
+    assert not second.closed and second.exit_waiting and len(broker.placed) == 1
+    assert _get(TradeRecord, trade_id).exit_order_id == "LOST-1"
+    assert any("LOST-1" in d for d in _audit(t["tenant_id"], "exit_order_adopted"))
+    broker.orders["LOST-1"] = broker.orders["LOST-1"].model_copy(update={"status": "COMPLETE", "filled_quantity": 1,
+                                                                         "average_price": 96.5})
+    third = _close(trade_id, broker, t["user_id"], now=later)
+    assert third.closed and len(broker.placed) == 1 and _get(TradeRecord, trade_id).exit_price == 96.5
+
+
+def test_the_stop_guard_does_not_rearm_next_to_an_adoptable_exit():
+    t = _tenant(f"rxg-unclear-guard-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, exit_order_id=pm.EXIT_PENDING, exit_sent_at=datetime.now(timezone.utc) - timedelta(minutes=10),
+                           sl_order_id="SL-GONE")
+    broker = _Book(positions=_open_at_broker())
+    broker.orders["LOST-1"] = BrokerOrderStatus(order_id="LOST-1", symbol="RXG", transaction_type=OrderSide.SELL, quantity=1,
+                                                order_type="MARKET", status="OPEN")
+
+    async def stamp():                                                        # even with a (stale) proof on record
+        async with _session_factory() as session:
+            row = await session.get(TradeRecord, trade_id)
+            row.reconciled_open_at = datetime.now(timezone.utc)
+            await session.commit()
+    _run(stamp())
+    counts = _guard(t, broker)
+    assert counts.get("exit_pending") == 1 and broker.placed == []
+
+
+def test_a_failing_audit_write_after_the_send_never_releases_the_claim(monkeypatch):
+    """Review P3: the broker took the exit, then writing its audit row raised. The id is already committed: the claim is
+    not released and the next pass books that order instead of sending a second one."""
+    t = _tenant(f"rxg-audit-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, exit_order_id=None)
+    broker = _Book()
+
+    async def broken(*args, **kwargs):
+        raise RuntimeError("audit chain unavailable")
+    monkeypatch.setattr(pm, "audit_order", broken)
+    with pytest.raises(RuntimeError):
+        _close(trade_id, broker, t["user_id"])
+    assert _get(TradeRecord, trade_id).exit_order_id == "NEW-1"
+    monkeypatch.undo()
+    monkeypatch.setattr(pm, "FILL_POLL_DELAY_SECONDS", 0)
+    outcome = _close(trade_id, broker, t["user_id"])
+    assert outcome.closed and len(broker.placed) == 1
 
 
 @pytest.mark.parametrize("error, clear", [(BrokerOrderRejected("RMS: margin"), True),
@@ -597,3 +741,18 @@ def test_the_emergency_exit_still_closes_a_paper_structure_as_before():
     body = client.post("/api/kill-switch/emergency-exit", headers=t["headers"],
                        json={"reason": "test", "prices": {"RXPWING": 4.0}}).json()
     assert len(body["closed_trade_ids"]) == 1 and body["skipped_symbols"] == ["RXPSHORT"]
+
+
+def test_an_exit_the_broker_took_and_then_rejected_is_never_booked_as_closed():
+    """Found while reproducing item 6: an exit accepted and then rejected by the broker's RMS (nothing filled) was booked
+    closed at the reference price while the position stayed open. It stays open, its id recorded, and a new exit goes
+    out when the stop fires again."""
+    t = _tenant(f"rxg-async-rej-{uuid.uuid4().hex[:6]}@example.com")
+    trade_id = _live_trade(t, exit_order_id=None)
+    broker = _PartFills(fills=[0])
+    outcome = _close(trade_id, broker, t["user_id"])
+    row = _get(TradeRecord, trade_id)
+    assert not outcome.closed and row.exit_time is None and row.exit_order_id == "NEW-1"
+    assert any("not booked" in w for w in outcome.warnings)
+    again = _close(trade_id, broker, t["user_id"])                           # the stop fires again: a new full exit
+    assert again.closed and [float(o.quantity) for o in broker.placed] == [1.0, 1.0]

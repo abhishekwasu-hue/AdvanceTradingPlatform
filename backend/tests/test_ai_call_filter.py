@@ -46,6 +46,22 @@ SHOULD_BLOCK = [
     "Buy setup RELIANCE", "Sell rating on TCS", "RELIANCE ला खरेदी करा", "TCS को खरीदें", "Buy\nRELIANCE", "Buy two lots of NIFTY",
     "Buy ten shares of RELIANCE", "You bought RELIANCE, buy more.", "Buy => RELIANCE", "TCS घ्यायला हवा", "TCS खरेदी करायला हरकत नाही",
     "RELIANCE में खरीदारी करें",
+    # third review of #230: records only on record labels and their first clause; rules need a market condition;
+    # negation scope; more objects and verbs
+    "Summary: momentum was strong, buy RELIANCE.", "Analysis: RELIANCE was strong; buy RELIANCE above 2500.",
+    "View: trend was up - buy RELIANCE, SL 2450, target 2600.", "Takeaway: buyers were active, so buy RELIANCE.",
+    "Bottom line: sell TCS, it was weak.", "Status: order placed; buy RELIANCE now.", "Order filled: sell TCS now too.",
+    "PAPER order placed: buy RELIANCE again tomorrow.", "Note: 10 shares pending - buy RELIANCE.",
+    "Journal: you bought RELIANCE; buy more RELIANCE.", "Status: was flat - now sell INFY above 1500, SL 1480, target 1550.",
+    "Entry 2500, SL 2450, target 2600 - it was a good level.", "RELIANCE was weak earlier, but entry 2500, SL 2450, target 2600 now.",
+    "Per your template: entry 2500, SL 2450, target 2600 on RELIANCE - take it.",
+    "In the backtest it worked: entry 2500, SL 2450, target 2600 on RELIANCE today.",
+    "Rule: Buy RELIANCE when the market opens.", "Rule: Buy RELIANCE today when it opens.", "Strategy: buy RELIANCE when you see this message.",
+    "Template: sell TCS when you can.", "We never say this - but buy RELIANCE.", "We never recommend stocks: buy RELIANCE.",
+    "Never say never: sell TCS.", "We never say buy RELIANCE, we say BUY RELIANCE NOW.", "हे सांगत नाही पण TCS विका.",
+    "Invest in RELIANCE (now)", "Put money in RELIANCE", "that said buy RELIANCE", "Buying RELIANCE here makes sense",
+    "RELIANCE: Buy rating", "RELIANCE मध्ये गुंतवणूक करा", "RELIANCE में निवेश करें।", "रिलायन्सला खरेदी करा",
+    "RELIANCE will hit 3000 for sure as it did last week", "Hold RELIANCE", "Add RELIANCE", "Grab RELIANCE", "Dump TCS", "Buy it",
 ]
 
 SHOULD_PASS = [
@@ -77,6 +93,9 @@ SHOULD_PASS = [
     "Exit INFY positions are shown in the journal.", "NIFTY rose to 25000 surely because the banks rallied.",
     "RELIANCE खरेदी करा असे संकेत आम्ही देत नाही.",
     "Buy-side breakout on RELIANCE: entry 2500, stop 2450, target 2600 per the template.",
+    # third review of #230
+    "Short interest in TCS rose.", "Rule: Buy NIFTY when the close crosses above the 20-day high.",
+    "Hold on - the data is still loading.", "Add SMA(close, 20) and RELIANCE to the chart.",
 ]
 
 
@@ -172,6 +191,9 @@ def test_refresh_loads_long_symbols_and_rolls_back_a_failed_read():
         assert output_filter.screen("abb is short for an abbreviation", "en").ok
         broken = _Broken()
         assert asyncio.run(instrument_names.refresh(broken)) == 0 and _Broken.rolled_back
+        import time
+        assert time.monotonic() - instrument_names._LAST_REFRESH["at"] > instrument_names.REFRESH_SECONDS - instrument_names.RETRY_SECONDS - 5
+        assert "campus" not in instrument_names.names() and instrument_names.add(["CAMPUS", "SAFARI"]) == 0
     finally:
         for name in ("kaynes", "kaynes technology india", "abb india"):
             instrument_names._NAMES.discard(name)

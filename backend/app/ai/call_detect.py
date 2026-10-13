@@ -211,21 +211,42 @@ def _instrument_at_start(rest: str, L: Lists, *, allow_level: bool) -> Optional[
 
 _SENTENCE = re.compile(r"(?<!\d)[.!?](?!\d)|[\n\u0964\u0965]")
 # Clause breaks inside a sentence: the scope of a "when", a negation or a past marker (review of #230: never the sentence).
-_CLAUSE = re.compile(r"[,;—–]|\s-\s|\sbut\s|\sand then\s", re.I)
+_CLAUSE = re.compile(r"[,;—–]|\s-\s|\sbut\s|\sand then\s|\s(?:पण|लेकिन|पर|मात्र|परंतु|किंतु|परन्तु)\s", re.I)
+_CLAUSE_OR_COLON = re.compile(_CLAUSE.pattern + r"|:", re.I)
+# Words that make a line a call now, not a record or a rule ("buy RELIANCE again tomorrow", "when the market opens").
+_NOW = re.compile(r"\b(?:now|today|tomorrow|tonight|again|next|asap|immediately|right away|this week|opens?|open|you|your)\b", re.I)
 # A record line: a status / log line with a past or passive status word, a quantity field or an approval state - only a
 # line that opens with a label ("Status:", "PAPER order placed:", "Proposal:") and reads like a record is not a call.
 _LABEL = re.compile(r"^\s*(?P<label>[^\W\d][\w &'/-]{0,40}?)\s*(?:#?\s*\d+\s*)?:")
 _RECORD = re.compile(r"\b(?:placed|filled|executed|drafted|bought|sold|closed|exited|cancelled|canceled|rejected|pending|awaiting|"
-                     r"needs your approval|was|were|squeezed|triggered)\b|\b\d+\s*(?:shares?|qty|lots?|units?)\b|\bqty\s*[:=]?\s*\d+|"
-                     r"\bx\s*\d+\b", re.I)
+                     r"needs your approval|squeezed|triggered)\b|\b\d+\s*(?:shares?|qty|lots?|units?)\b|\bqty\s*[:=]?\s*\d+|"
+                     r"\bx\s*\d+\b|\b(?:BUY|SELL)\s+\d+\s+[A-Z][A-Z0-9&-]+\s+@?\s*(?:at\s+)?₹?\d")
+# A continuation of a record line: a quantity or an approval state after the order ("..., 10 shares, awaiting your approval").
+_RECORD_FIELD = re.compile(r"^\s*(?:\d+\s*(?:shares?|qty|lots?|units?)|qty\s*[:=]?\s*\d+|x\s*\d+|awaiting (?:your )?approval|"
+                           r"needs your approval|pending|filled|placed|paper)\b[^\n]{0,30}$", re.I)
+# Record lines open with one of these labels (review of #230, round 3: a fixed set, never "Summary:" / "Takeaway:").
+_RECORD_LABELS = {"status", "order", "your order", "order status", "paper order", "paper order placed", "order placed",
+                  "order filled", "proposal", "drafted", "log", "trade log", "signal log", "journal", "fill", "filled", "executed", "side"}
 _FIELD_LABELS = {"side"}                                          # a field of an order record: the line is the record itself
+_LOG_LABELS = {"backtest", "backtest trade", "back-test", "trade log", "log", "journal", "history", "trade", "simulated trade"}
 _RULE_LABELS = {"rule", "rules", "entry rule", "exit rule", "strategy", "template", "condition", "setup rule"}
+# A rule's condition: an indicator or a price comparison ("when RSI < 30", "when the close crosses above the 20-day high").
+_RULE_CONDITION = re.compile(r"\bwhen\b[^\n]*?(?:[<>=]|\b(?:rsi|sma|ema|macd|adx|atr|vwap|close|price|crosses?|above|below|breaks?|"
+                             r"high|low|volume|moving average|supertrend|bollinger)\b)", re.I)
 _HOWTO_LABEL = re.compile(r"^\s*how[ -]?to\b", re.I)
 _NOUN_PHRASE = re.compile(r"^\s*(?:\S+\s+){0,1}?(?:was|were|is|are|has|have|had|remain|remained|stay|stayed|appear|appeared|"
-                          r"get|got|shown|listed)\b", re.I)
+                          r"get|got|shown|listed|rose|rises|fell|falls|jumped|dropped|climbed|surged|slipped|declined|gained|lost|"
+                          r"eased|rallied|spiked|doubled|halved|increased|decreased)\b", re.I)
 _PRONOUN_OBJECT = re.compile(r"^\s*(?:(?:some|a|bit|little|few)\s+)*(?:more|it|them|this|that|those|these)?\s*(?:now|here|today)?\s*$", re.I)
+_PRONOUN_ALWAYS = re.compile(r"^\s*(?:it|them|this one|that one)\s*(?:now|here|today|too|again)?\s*$", re.I)
+_WATCHLIST_TAIL = re.compile(r"^\s*to\s+(?:your|the|a|my)?\s*(?:watch\s*list|watchlist|chart|list|screen|alerts?|basket view)\b", re.I)
+_GERUND_SUBJECT = re.compile(r"(?:^|(?<=[\n.!?;:,]))[ \t]*(?P<verb>buying|selling|shorting|accumulating|adding|going long on|going short on|"
+                             r"investing in)\s+(?P<rest>[^\n.!?;]{0,80}?)\s+(?:makes sense|is a good idea|is worth it|is worth a try|"
+                             r"looks good|is wise|is sensible|is the move|is the play|could work|should work|is smart)\b", re.I)
+_ACT_NOW = re.compile(r"\b(?:take it|take this|take the trade|act now|go for it|grab it|enter now|jump in)\b", re.I)
 _DEVA_SAYING_LEAD = re.compile(r"(?:असे|अस|ऐसा|ऐसी|ऐसे|यह|ये)\s+(?:\S+\s+){0,3}$")
 _OBJECT_MARKERS = ("ला", "ना", "को", "में", "मध्ये")
+_ATTACHED_MARKERS = ("मध्ये", "ला", "ना")                       # "रिलायन्सला खरेदी करा": the marker written on the name
 _GENITIVES = ("चा", "ची", "चे", "च्या", "का", "की", "के")
 
 
@@ -244,29 +265,55 @@ def _clause(s: str, start: int, end: int) -> str:
     return s[lo:nxt.start() if nxt else len(s)]
 
 
-def record_line(s: str) -> bool:
+def record_line(s: str, verb_start: Optional[int] = None) -> bool:
+    """A record line (an order status, a proposal, a log line): it opens with a record label, and the first clause after
+    the label - the one holding the verb at `verb_start` - reads like a record (a status word, a quantity, an order
+    field), optionally followed by record fields only ("..., 10 shares, awaiting your approval"). Never a call made now
+    ("again tomorrow"), never an imperative opening a later clause."""
     label = _LABEL.match(s)
-    if label is None:
+    if label is None or label.group("label").strip().lower() not in _RECORD_LABELS:
         return False
-    return label.group("label").strip().lower() in _FIELD_LABELS or bool(_RECORD.search(s))
+    body_start = label.end()
+    first_break = _CLAUSE.search(s, body_start)
+    first_end = first_break.start() if first_break else len(s)
+    if verb_start is not None and verb_start >= first_end:
+        return False                                            # an imperative opening a later clause is never a record
+    first = s[body_start:first_end]
+    if _NOW.search(first):
+        return False
+    if label.group("label").strip().lower() in _FIELD_LABELS:
+        return True
+    if _RECORD.search(first):
+        return True
+    rest = [c for c in _CLAUSE.split(s[first_end:]) if c and c.strip()]
+    return bool(rest) and all(_RECORD_FIELD.match(c) for c in rest)
 
 
 def _rule_line(s: str) -> bool:
+    """A rule's own text: a rule label and a "when" with an indicator / price condition, nothing about now or you."""
     label = _LABEL.match(s)
-    return label is not None and label.group("label").strip().lower() in _RULE_LABELS
+    if label is None or label.group("label").strip().lower() not in _RULE_LABELS:
+        return False
+    return bool(_RULE_CONDITION.search(s)) and not _NOW.search(s)
 
 
-def _negated(s: str, start: int, L: Lists) -> bool:
-    """A negated saying that governs the call at `start`: before it in the same clause, or ending in ':' right before it
-    ("We never say: Sell RELIANCE"); a Marathi / Hindi one after it, led by असे / ऐसा ("RELIANCE खरेदी करा, असे आम्ही सांगत
-    नाही")."""
+def _negated(s: str, verb_start: int, L: Lists) -> bool:
+    """A negated saying that governs the verb at `verb_start`: before it with no clause break in between, or ending in ':'
+    DIRECTLY after the negated verb ("We never say: Sell RELIANCE", not "We never recommend stocks: buy RELIANCE"); a
+    Marathi / Hindi one after it, led by असे / ऐसा ("RELIANCE खरेदी करा, असे आम्ही सांगत नाही")."""
     for m in L.negated.finditer(s):
-        if m.start() < start:
-            between = s[m.end():start]
-            if not _CLAUSE.search(between) or re.match(r"^\s*(?:\w+\s+){0,2}?:", between):
+        if m.start() < verb_start:
+            between = s[m.end():verb_start]
+            colon = re.match(r"^\s*:", between)
+            if colon:
+                if not _CLAUSE_OR_COLON.search(between[colon.end():]):
+                    return True
+            elif not _CLAUSE_OR_COLON.search(between):
                 return True
         elif re.search(r"[\u0900-\u097f]", m.group(0)) and _DEVA_SAYING_LEAD.search(s[max(0, m.start() - 60):m.start()]):
-            return True
+            between = s[verb_start:m.start()]
+            if not re.search(r"\s(?:पण|लेकिन|पर|मात्र|परंतु|किंतु)\s", between):
+                return True
     return False
 
 
@@ -293,6 +340,9 @@ def _instrument_at_end(before: str, L: Lists, *, gap: int) -> Optional[str]:
         last = head[-1]
         if _is_ticker(last, L):
             return last
+        for marker in _ATTACHED_MARKERS:
+            if last.endswith(marker) and len(last) > len(marker) + 1 and instrument_names.suffix_len([*head[:-1], last[:-len(marker)]]):
+                return last[:-len(marker)]
         n = instrument_names.suffix_len(head)
         if n:
             return " ".join(head[-n:])
@@ -330,17 +380,17 @@ def _object(rest: str, L: Lists, s: str, *, allow_level: bool) -> Optional[str]:
         after = rest[rest.find(last) + len(last):] if last in rest else ""
         if _NOUN_PHRASE.match(re.sub(r"^\s*(?:positions?|shares?|stocks?|calls?|puts?|orders?|signals?)\b", "", after, flags=re.I)):
             return None
+        if _WATCHLIST_TAIL.match(after):
+            return None                                         # "Add RELIANCE to your watchlist": not a trade
         return obj
-    if _PRONOUN_OBJECT.match(rest) and _has_instrument(s, L):
+    if _PRONOUN_ALWAYS.match(rest) or (_PRONOUN_OBJECT.match(rest) and _has_instrument(s, L)):
         return "it"
     return None
 
 
 def _sentence_calls(s: str, L: Lists) -> List[str]:
     found: List[str] = []
-    record, rule = record_line(s), _rule_line(s)
-    if record:
-        return found
+    rule = _rule_line(s)
 
     def add(label: str, what: str) -> None:
         item = f"call: {label} {what}".strip().lower()[:60]
@@ -348,10 +398,11 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
             found.append(item)
 
     def exempt(m: "re.Match[str]", *, howto_ok: bool = False) -> bool:
-        clause = _clause(s, m.start(), m.end())
-        if _negated(s, m.start(), L):
+        verb_start = m.start("verb")
+        clause = _clause(s, verb_start, m.end())
+        if _negated(s, verb_start, L) or record_line(s, verb_start):
             return True
-        if rule and L.condition.search(clause):                  # "Rule: Buy NIFTY when RSI < 30" - a rule subject
+        if rule and L.condition.search(clause):                  # "Rule: Buy NIFTY when RSI < 30" - a rule's own text
             return True
         if howto_ok and _HOWTO_LABEL.match(s) and L.howto.search(s):
             return True
@@ -369,14 +420,19 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
             obj = _object(m.group("rest"), L, s, allow_level=False)
             if obj:
                 add(m.group("verb"), obj)
+    for m in _GERUND_SUBJECT.finditer(s):
+        obj = _instrument_at_start(m.group("rest"), L, allow_level=False)
+        if obj and not _negated(s, m.start("verb"), L):
+            add(m.group("verb"), obj)
     for m in L.colon.finditer(s):
-        if L.descriptive.match(m.group("after")) or _negated(s, m.start("verb"), L):
+        rated = re.match(r"^\s*(?:rating|call)\b", m.group("after"), re.I)
+        if (L.descriptive.match(m.group("after")) and not rated) or _negated(s, m.start("verb"), L) or record_line(s, m.start("verb")):
             continue
         obj = _instrument_at_end(m.group("obj"), L, gap=0)
         if obj and obj.lower() not in L.share_words:
             add(f"{obj}:", m.group("verb"))
     for m in L.deva.finditer(s):
-        if _negated(s, m.start(), L):
+        if _negated(s, m.start(), L) or record_line(s, m.start()):
             continue
         verb = m.group("verb")
         obj = _instrument_at_end(s[max(0, m.start() - 80):m.start()], L, gap=2) or _instrument_at_start(s[m.end():m.end() + 80], L, allow_level=False)
@@ -398,7 +454,9 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
             add(obj, "rated a buy / sell")
     for pattern in L.certainty:
         for hit in pattern.finditer(s):
-            if L.past.search(_clause(s, hit.start(), hit.end())) or _negated(s, hit.start(), L):
+            clause = re.sub(r"\b(?:as|like)\s+(?:it|they|he|she)\s+(?:did|had|was|were)\b.*$", "", _clause(s, hit.start(), hit.end()), flags=re.I)
+            future = re.search(r"\b(?:will|shall|going to|gonna)\b", clause, re.I)
+            if (L.past.search(clause) and not future) or _negated(s, hit.start(), L):
                 continue                                          # past tense in ITS clause only ("as it did last week" is not)
             add("level with certainty", hit.group(0).strip()[:30])
             break
@@ -410,22 +468,31 @@ _TEMPLATE_CONTEXT = re.compile(r"\b(?:per|in|from)\s+(?:the|your|this)\s+(?:temp
 
 
 def _paragraph_levels(p: str, L: Lists) -> bool:
-    """A stop and a target with price levels, plus an entry level or an instrument, in one paragraph. Not a call when the
-    sentence holding the stop or the target is a record, past / backtest text, a template's levels or negated."""
+    """A stop and a target with price levels, plus an entry level or an instrument, in one paragraph. Not a call when every
+    stop / target sits in a past clause ("The trade was closed at the target 2600 after the stop 2450 moved up"), or in a
+    sentence that is a log / backtest record or a template's levels with nothing about now ("Backtest trade 3: entry
+    2480, stop 2430, target 2580"; "... per the template") - clause by clause, never the whole sentence or paragraph."""
     stops, targets = list(L.stop.finditer(p)), list(L.target.finditer(p))
     if not stops or not targets:
         return False
     bounds = [0] + [m.end() for m in _SENTENCE.finditer(p)] + [len(p) + 1]        # sentence starts, computed once
-    seen: set = set()
+    exempt_all = True
     for m in stops + targets:
         k = bisect.bisect_right(bounds, m.start()) - 1
-        if k in seen:
-            continue
-        seen.add(k)
         sentence = p[bounds[k]:bounds[k + 1]]
-        if (L.past.search(sentence) or record_line(sentence) or _TEMPLATE_CONTEXT.search(sentence)
-                or _negated(sentence, len(sentence), L)):
-            return False
+        rel = m.start() - bounds[k]
+        clause = _clause(sentence, rel, rel + (m.end() - m.start()))
+        label = _LABEL.match(sentence)
+        logged = label is not None and label.group("label").strip().lower() in _LOG_LABELS
+        quiet = not _NOW.search(sentence) and not _ACT_NOW.search(sentence)
+        if (L.past.search(clause) and not re.search(r"\b(?:will|now|today)\b", clause, re.I)) or _negated(sentence, rel, L):
+            continue
+        if quiet and (logged or _TEMPLATE_CONTEXT.search(sentence) or record_line(sentence)):
+            continue
+        exempt_all = False
+        break
+    if exempt_all:
+        return False
     if L.entry.search(p):
         return True
     return _has_instrument(p, L)

@@ -227,6 +227,14 @@ def test_beta_and_pairs_are_capped_to_the_largest_risks(monkeypatch):
         exposure.assemble(rows, {}, {n: base for n in rows}, base, days=90)
 
 
+def test_an_options_only_underlying_ranks_by_its_premium_not_last():
+    """N2 review LOW: no stop and no notional (options only) - its premium still counts, a short premium included."""
+    rows = {"FUTX": {"underlying": "FUTX", "risk_at_stop": 0.0, "notional": 1000.0, "option_premium": 0.0},
+            "OPTS": {"underlying": "OPTS", "risk_at_stop": 0.0, "notional": 0.0, "option_premium": -5000.0},
+            "AAA": {"underlying": "AAA", "risk_at_stop": 0.0, "notional": 0.0, "option_premium": 0.0}}
+    assert exposure.computed_names(rows, limit=2) == ["OPTS", "FUTX"]
+
+
 def test_exposure_route_reads_the_lake_only_for_the_capped_names(monkeypatch):
     t = _tenant(_email("cap"))
     _flag(t["tenant_id"])

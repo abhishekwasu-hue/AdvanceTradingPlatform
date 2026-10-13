@@ -6,6 +6,13 @@ on:
   pull_request:
     branches: ["main"]
   workflow_dispatch:   # the 'NSE expiry data' workflow starts CI on its data branch (its own pushes start none)
+    inputs:
+      update_snapshots:
+        # U5 D5: remake the Screener result-view baselines (e2e/screenerViews.e2e.ts) on this runner and upload them as
+        # the `screener-view-snapshots` artifact; only the frontend job runs. Check the images, then commit them.
+        description: "Remake the Screener result-view screenshots (frontend job only) and upload them as an artifact"
+        type: boolean
+        default: false
 
 # One CI run per commit: a push to an in-repo branch already runs every job on that sha, so the
 # pull_request event only has to cover forks (its jobs are skipped otherwise). A newer push to the
@@ -21,7 +28,7 @@ jobs:
   # (medium severity and confidence or worse, app/ only) and a gitleaks secret scan of the commits in the push
   # (.gitleaks.toml). Network: pip and the pinned gitleaks release; runs alongside the test job, not after it.
   lint:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) && !inputs.update_snapshots
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -72,7 +79,7 @@ jobs:
           GITLEAKS_ENABLE_COMMENTS: "false"    # the job has no write permission; the failing step is the signal
 
   backend:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) && !inputs.update_snapshots
     runs-on: ubuntu-latest
     timeout-minutes: 55          # the full suite reached ~30 min on 2026-10-12 and runs were cancelled at the old 30-min cap
     services:
@@ -162,7 +169,7 @@ jobs:
 
   # Z10-a (U3 G2): the no-look-ahead harness over every shipped bar function, in parallel with the main backend run.
   backend-lookahead:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) && !inputs.update_snapshots
     runs-on: ubuntu-latest
     timeout-minutes: 30
     defaults:
@@ -193,7 +200,7 @@ jobs:
   # session-shaped load test with 20 users against the in-process test app (a temporary SQLite file, never a deployed host).
   # Numbers are written as check-run notices. Runs alongside the other jobs (about 1.5 minutes, most of it pip and the load test).
   perf:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
+    if: (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository) && !inputs.update_snapshots
     runs-on: ubuntu-latest
     timeout-minutes: 15
     defaults:
@@ -226,7 +233,9 @@ jobs:
 
   frontend:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest): the visual-regression baselines are rendered on this image, and a runner-image move
+    # changes font rasterisation. Remake them with a workflow_dispatch run (update_snapshots) after changing it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     defaults:
       run:
@@ -255,10 +264,34 @@ jobs:
       - name: JS budgets (initial 300 KB; Copilot route 120 KB; Copilot 3D chunk 180 KB - gzip)
         run: npm run check:bundle
 
+      - name: Remake the Screener result-view baselines (workflow_dispatch with update_snapshots only)
+        if: github.event_name == 'workflow_dispatch' && inputs.update_snapshots
+        run: |
+          npx playwright install --with-deps chromium
+          npx playwright test e2e/screenerViews.e2e.ts --project=desktop --grep visual --update-snapshots=all
+
+      - name: Upload the remade baselines
+        if: github.event_name == 'workflow_dispatch' && inputs.update_snapshots
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: screener-view-snapshots
+          path: frontend/e2e/__screenshots__/screener-*.png
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Browser tests (Playwright, Copilot - mocked API, desktop + mobile)
         run: |
           npx playwright install --with-deps chromium
           npm run test:e2e
+
+      - name: Upload the Playwright results on failure (actual / expected / diff screenshots, traces)
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: playwright-results
+          path: frontend/test-results/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Generated palette is up to date (scripts/gen-palette.mjs)
         run: npm run gen:palette && git diff --exit-code -- src/styles/palette.css

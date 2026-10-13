@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { createRequire } from "node:module";
 import { readFileSync } from "node:fs";
 import { mockApi } from "./mockApi";
@@ -6,13 +6,16 @@ import { mockApi } from "./mockApi";
 /**
  * U5 D5: the Screener page's quality bar on the result views (U5 D3a / D3b), against the production build with every
  * /api call answered here (no backend):
- *  - keyboard only: a starter, the symbols, Run, then every result view through the tablist;
+ *  - keyboard only: Tab / Shift+Tab to a starter, the symbols and Run, then every result view through the tablist's
+ *    arrow keys (roving tab stop) - no programmatic focus, no clicks;
  *  - accessibility: axe-core (the engine Lighthouse's accessibility audit runs) finds no serious or critical issue in
  *    the results column with each view shown (the spec's "Lighthouse accessibility >= 95" - OPEN_QUESTIONS D5-1, D5-2);
- *  - reduce motion: with the trader's setting or the system's, the result board does not animate;
- *  - visual regression: the results column in each view, dark / light / colour-blind, compared with the committed
- *    images (DejaVu Sans, frozen clock). After an intended change: `npx playwright test e2e/screenerViews.e2e.ts
- *    --project=desktop --update-snapshots`, check the images, commit.
+ *  - reduce motion: with the trader's setting, and with the system's prefers-reduced-motion (emulated), the result
+ *    board does not animate;
+ *  - visual regression: the heatmap and RRG panels, dark / light / colour-blind, compared with the committed images
+ *    (DejaVu Sans, frozen clock, the mobile suite's 2 % tolerance). The baselines are made ON CI (the frontend job's
+ *    pinned ubuntu-24.04 runner; a local machine renders text differently): run the CI workflow by hand with
+ *    `update_snapshots: true` on the branch, download its `screener-view-snapshots` artifact, check the images, commit.
  */
 const require_ = createRequire(import.meta.url);
 const AXE = readFileSync(require_.resolve("axe-core/axe.min.js"), "utf8");
@@ -78,17 +81,33 @@ async function screener(page: Page, appearance: Record<string, unknown> = { them
   await expect(page.getByText("Start with a template or add your first condition.")).toBeVisible();
 }
 
+const isFocused = (loc: Locator) => loc.evaluate((el) => el === document.activeElement);
+
+/** Press Tab (or Shift+Tab) until `target` has the focus - the keyboard path a trader takes, bounded. */
+async function tabTo(page: Page, target: Locator, { back = false, max = 200 } = {}) {
+  for (let i = 0; i < max; i++) {
+    if (await isFocused(target)) return;
+    await page.keyboard.press(back ? "Shift+Tab" : "Tab");
+  }
+  throw new Error(`could not reach ${target} with ${back ? "Shift+Tab" : "Tab"} in ${max} presses`);
+}
+
 async function runByKeyboard(page: Page) {
-  const starter = page.getByRole("button", { name: "Momentum", exact: true });
-  await starter.focus();
+  await tabTo(page, page.getByRole("button", { name: "Momentum", exact: true }));
   await page.keyboard.press("Enter");
-  await page.locator("#screener-symbols").focus();
+  await tabTo(page, page.locator("#screener-symbols"));
   await page.keyboard.type(SYMBOLS.join(" "));
   await expect(page.getByTestId("run-scan")).toBeEnabled();
   await expect(page.getByText(/^Matched \d+ of/).first()).toBeVisible();          // the live preview has answered
-  await page.getByTestId("run-scan").focus();
+  await tabTo(page, page.getByTestId("run-scan"), { back: true });                // Run sits in the header, above the symbols
   await page.keyboard.press("Enter");
   await expect(page.getByRole("tablist", { name: "Result view" })).toBeVisible();
+}
+
+/** Show a view with the mouse (the axe / visual checks; the keyboard path has its own test). */
+async function show(page: Page, name: string) {
+  await page.getByRole("tablist", { name: "Result view" }).getByRole("tab", { name }).click();
+  return page.getByRole("tabpanel", { name });
 }
 
 async function axeProblems(page: Page): Promise<string[]> {
@@ -111,34 +130,72 @@ test("keyboard only: a scan, then every result view through the tablist", async 
   await screener(page);
   await runByKeyboard(page);
   const tabs = page.getByRole("tablist", { name: "Result view" });
-  for (const name of VIEWS) {
-    const tab = tabs.getByRole("tab", { name });
-    await tab.focus();
-    await page.keyboard.press("Enter");
-    await expect(tab).toHaveAttribute("aria-selected", "true");
+  const tab = (name: string) => tabs.getByRole("tab", { name });
+  await tabTo(page, tab("Table"));                                                 // one tab stop: the selected view
+  await expect(tab("Table")).toHaveAttribute("aria-selected", "true");
+  for (const [i, name] of VIEWS.entries()) {
+    if (i > 0) await page.keyboard.press("ArrowRight");
+    expect(await isFocused(tab(name)), name).toBe(true);
+    await expect(tab(name)).toHaveAttribute("aria-selected", "true");
+    await expect(tab(name)).toHaveAttribute("tabindex", "0");
+    await expect(page.getByRole("tabpanel", { name })).toBeVisible();              // aria-controls / aria-labelledby pair
+    const others = VIEWS.filter((v) => v !== name);
+    for (const o of others) await expect(tab(o)).toHaveAttribute("tabindex", "-1");
+    if (name === "Heatmap") await expect(page.getByTestId("heatmap-view").getByRole("img", { name: /^ALPHA: matched/ })).toBeVisible();
+    if (name === "Chart grid") await expect(page.getByTestId("chart-grid").locator("li")).toHaveCount(RESULTS.filter((r) => r.matched).length);
+    if (name === "RRG") {
+      await expect(page.getByTestId("rrg-view").getByRole("img", { name: /Relative rotation against Nifty 50: ALPHA Leading, BRAVO Weakening, CHARLIE Lagging, DELTA Improving/ })).toBeVisible();
+    }
   }
-  await tabs.getByRole("tab", { name: "Heatmap" }).click();
-  await expect(page.getByTestId("heatmap-view").getByRole("img", { name: /^ALPHA: matched/ })).toBeVisible();
-  await tabs.getByRole("tab", { name: "Chart grid" }).click();
-  await expect(page.getByTestId("chart-grid").locator("li")).toHaveCount(RESULTS.filter((r) => r.matched).length);
-  await tabs.getByRole("tab", { name: "RRG" }).click();
-  await expect(page.getByTestId("rrg-view").getByRole("img", { name: /Relative rotation against Nifty 50: ALPHA Leading, BRAVO Weakening, CHARLIE Lagging, DELTA Improving/ })).toBeVisible();
+  await page.keyboard.press("ArrowRight");                                         // wraps to the first view
+  await expect(tab("Table")).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("End");
+  await expect(tab("RRG")).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Home");
+  await expect(tab("Table")).toHaveAttribute("aria-selected", "true");
+  expect(await isFocused(tab("Table"))).toBe(true);
+});
+
+test("a failed context call says so with a Retry (no endless Loading)", async ({ page }) => {
+  await screener(page);
+  let calls = 0;
+  await page.route(/\/board\/context$/, (route) => (++calls === 2
+    ? route.fulfill({ status: 500, json: { detail: "lake unavailable" } }) : route.fulfill({ json: CONTEXT })));
+  await runByKeyboard(page);
+  await show(page, "Heatmap");
+  await expect(page.getByTestId("heatmap-view")).toBeVisible();
+  await page.getByTestId("run-scan").click();                                      // a new run: its context call fails
+  const panel = page.getByRole("tabpanel", { name: "Heatmap" });
+  await expect(panel.getByRole("alert")).toContainText("could not be loaded");
+  await expect(panel.getByText("Loading…")).toHaveCount(0);
+  await panel.getByRole("button", { name: "Retry" }).click();
+  await expect(page.getByTestId("heatmap-view")).toBeVisible();
 });
 
 test("accessibility: no serious or critical axe issue with each view shown", async ({ page }) => {
   await screener(page);
   await runByKeyboard(page);
   for (const name of VIEWS) {
-    await page.getByRole("tablist", { name: "Result view" }).getByRole("tab", { name }).click();
+    await expect(await show(page, name)).toBeVisible();
     expect(await axeProblems(page), name).toEqual([]);
   }
 });
 
-test("reduce motion: the result board does not animate", async ({ page }) => {
+const boardAnimation = (page: Page) => page.locator(".board-settle").first().evaluate((el) => getComputedStyle(el).animationName);
+
+test("reduce motion (the trader's setting): the result board does not animate", async ({ page }) => {
   await screener(page, { theme: "dark", reduceMotion: true });
   await runByKeyboard(page);
-  const anim = await page.locator(".board-settle").first().evaluate((el) => getComputedStyle(el).animationName);
-  expect(anim).toBe("none");
+  expect(await boardAnimation(page)).toBe("none");
+});
+
+test("reduce motion (the system's prefers-reduced-motion): the result board does not animate", async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await screener(page, { theme: "dark" });                                         // the trader's own setting is off
+  await runByKeyboard(page);
+  expect(await boardAnimation(page)).toBe("none");
+  await page.emulateMedia({ reducedMotion: "no-preference" });                     // the control: it animates otherwise
+  expect(await boardAnimation(page)).toBe("board-settle");
 });
 
 for (const appearance of [{ theme: "dark" }, { theme: "light" }, { theme: "dark", colorBlind: true }]) {
@@ -147,10 +204,10 @@ for (const appearance of [{ theme: "dark" }, { theme: "light" }, { theme: "dark"
     await screener(page, { ...appearance, reduceMotion: true });
     await runByKeyboard(page);
     for (const name of ["Heatmap", "RRG"] as const) {
-      await page.getByRole("tablist", { name: "Result view" }).getByRole("tab", { name }).click();
-      const section = page.getByRole("region", { name });
-      await expect(section).toBeVisible();
-      await expect(section).toHaveScreenshot(`screener-${name.toLowerCase()}-${tag}.png`, { maxDiffPixelRatio: 0.002 });
+      const panel = await show(page, name);
+      await expect(panel).toBeVisible();
+      // the mobile suite's tolerance (PW2): baselines are made on the CI runner, this absorbs anti-aliasing only
+      await expect(panel).toHaveScreenshot(`screener-${name.toLowerCase()}-${tag}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02 });
     }
   });
 }

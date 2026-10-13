@@ -1342,17 +1342,27 @@ marketplace, no store apps).
 ## U5 D5 (built, partial): the quality bar on the result views
 
 - **`frontend/e2e/screenerViews.e2e.ts`** (desktop project, production build, every `/api` call mocked):
-  - **Keyboard only:** a starter, the symbols and Run, then every view (Table, Heatmap, Chart grid, RRG) through the
-    tablist.
+  - **Keyboard only:** Tab / Shift+Tab to a starter, the symbols and Run (no programmatic focus, no clicks), then every
+    view (Table, Heatmap, Chart grid, RRG) through the tablist's arrow keys, Home and End (one roving tab stop, each
+    tab `aria-controls` its tabpanel).
+  - **Context failure:** a failed context call (not 404) shows an alert with Retry, never an endless "Loading…".
   - **Accessibility:** axe-core, the engine Lighthouse's accessibility audit runs, finds no serious or critical WCAG
     2.1 A/AA issue in the results column with each view shown.
-  - **Reduce motion:** the board does not animate with the trader's setting.
-  - **Visual regression:** the heatmap and RRG views in dark, light and colour-blind, committed in
-    `e2e/__screenshots__/` (DejaVu Sans, frozen clock).
+  - **Reduce motion:** the board does not animate with the trader's setting, nor with the system's
+    `prefers-reduced-motion` (emulated; it animates without it).
+  - **Visual regression:** the heatmap and RRG panels in dark, light and colour-blind, committed in
+    `e2e/__screenshots__/` (DejaVu Sans, frozen clock, 2 % tolerance as in the mobile suite). The baselines are made
+    on CI: the frontend job runs on a pinned `ubuntu-24.04` image, and a hand-started CI run with
+    `update_snapshots: true` runs only that job, remakes them (`--update-snapshots=all`) and uploads the
+    `screener-view-snapshots` artifact to check and commit. A failing run uploads `playwright-results` (actual /
+    expected / diff).
 - **`perf50.test.tsx`:** the spec's 50-stage canvas. The per-edit model work (text, spans, trail, problems, a move)
   and a full canvas render stay inside loose bounds, to catch a quadratic path.
 - **Not in D5 here:** a Lighthouse run itself (D5-1); the page-wide primary-button contrast found by axe (D5-2); the
   mobile layout keeps its own PW2 suite (`mobile.e2e.ts`).
+- **Review of D5 (fixed):** HIGH - the baselines were made on a developer machine and failed on CI (352-403 px on the
+  heatmap): runner pinned, tolerance 0.02, the six images remade on CI. LOW - the keyboard test drives Tab and the arrow
+  keys; a system reduced-motion test.
 - **D4 (Then drawer, mode chip, arm banner, alert composer, delivery log)** is left to lane A. Its U4 X1/X1b branches
   build the scan "Then" panel (`frontend/src/screener/then/`) on the execution core, so a second Then drawer here would
   collide.

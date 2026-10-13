@@ -1852,6 +1852,17 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   tenancy table.
 - Frontend: "Experience level" card on Positions (progression i18n), with a story.
 - Tests: backend `tests/test_n2_experience_levels.py` (11); vitest `src/progression` (16). Open questions N2-6..N2-9.
+### 2026-10-12 IST - N2-3 decision tools I (`claude/n2-3`, stacked on `claude/n2-2`)
+- Flag `decision_tools` (off).
+- Risk-of-ruin and Kelly calculator: `POST /api/decision/ruin`, Lundberg bound, gambler's-ruin parity, growth per trade,
+  one row per risk level. The page prefills it from N2-1's figures.
+- What-if for the caller's own open positions by underlying: `GET /api/decision/positions` and
+  `POST /api/decision/what-if`, with now, scenario and expiry curves on the builder's model. Strikes come from the
+  instrument master.
+- Routes classified in the tenancy table (member / S_COMPUTE / S_OWN_WHATIF).
+- Frontend: "Decision tools" card on Positions (progression i18n), SVG chart, story.
+- Tests: `tests/test_n2_decision_tools.py` (10); vitest `src/progression/decision.test.tsx` (6). Open questions
+  N2-11..N2-13.
 
 ## Fix: the trading worker acts per deployment as its creator (TX-3)
 
@@ -1887,6 +1898,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
 
+## Fix: contributed reference data is the contributing organisation's own (security)
+
+- Branch `claude/fix-shared-fundamentals-writes` (from main). Found in the S8 review: shared tables writable by any
+  trading member of any organisation (`require_contributor`), unbounded dates, self-cited publication dates.
+- `tenant_id` (NULL = shared) on companies, financial_periods, shareholding_snapshots, corporate_actions,
+  qualitative_factors, earnings_calendar_events, sector_metrics, news_events; migration `d7f9a1c3e5b7` (ROLLBACK_SAFE
+  with reason; backfill by creator; `uq_company_period` widened with tenant_id; upgrade / check / downgrade run on
+  Postgres).
+- Every reader takes the viewer: fundamentals pages and analyses, the upcoming calendar, the fundamentals screener,
+  sector rotation and peers, the Factor Lab fill (`quant/fundamentals_bridge.py`), news events list / get / delete.
+  The financials import updates only the organisation's own periods. Provider refresh rows stay shared.
+- Shared company profiles: PUT only by SUPER_ADMIN; an organisation's own company becomes shared from the provider
+  refresh (hand fields cleared). Date checks on every contributed row (`visibility.check_dates`).
+- Tests: `tests/test_shared_fundamentals_scope.py` (cross-tenant poisoning attempt on every kind of row, dates, the
+  private company, the Factor Lab fill, manual news); fundamentals / news / quant tests read with the caller's token.
+  OPEN_QUESTIONS SF-1.
 ## S10 (Phase 0 slice): ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
 
 - Branch `claude/n3-s10` (from main). Design: SCREENER.md "S10".

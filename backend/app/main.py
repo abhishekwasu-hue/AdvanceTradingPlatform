@@ -78,6 +78,7 @@ from app.support_resistance.engine import SupportResistanceEngine
 from app.support_resistance.models import SRZone
 from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
+from app.decision_tools.routes import router as decision_tools_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
@@ -114,6 +115,7 @@ from app.tax.routes import router as tax_router
 from app.fx.routes import admin_router as fx_admin_router, router as fx_router
 from app.incidents.routes import router as incidents_router
 from app.screener.routes import router as screener_router
+from app.screener.history_routes import router as screener_history_router
 from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.screener.evidence_routes import router as screener_evidence_router
 from app.screener.etf_routes import router as screener_etf_router
@@ -248,6 +250,7 @@ app.include_router(fx_router)
 app.include_router(fx_admin_router)
 app.include_router(incidents_router)
 app.include_router(screener_router)
+app.include_router(screener_history_router)  # N3 S6a: who passed on a date, screen fitness (flag screener_history, off)
 app.include_router(screener_breakouts_router)
 app.include_router(screener_evidence_router)  # U8 EV1/EV2: evidence charts (flag evidence_charts, off)
 app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
@@ -266,6 +269,7 @@ app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, coho
 app.include_router(pwa_router)             # PW6: PWA install/update events (counters only)
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
+app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)

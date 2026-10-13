@@ -35,7 +35,7 @@ def news_event_to_response(record: NewsEventRecord) -> NewsEventResponse:
     )
 
 
-def news_event_from_model(event: NewsEvent, created_by: Optional[int]) -> NewsEventRecord:
+def news_event_from_model(event: NewsEvent, created_by: Optional[int], *, tenant_id: Optional[int]) -> NewsEventRecord:
     return NewsEventRecord(
         category=event.category.value,
         headline=event.headline,
@@ -44,7 +44,7 @@ def news_event_from_model(event: NewsEvent, created_by: Optional[int]) -> NewsEv
         affected_symbols_json=json.dumps([s.upper() for s in event.affected_symbols]),
         sentiment=event.sentiment.value,
         source_json=event.source.model_dump_json(),
-        created_by=created_by,
+        created_by=created_by, tenant_id=tenant_id,       # a person's entry: that organisation's own (visibility.py)
         origin="MANUAL", verified=True, source_url=event.source.source_url,
     )
 
@@ -55,8 +55,12 @@ async def list_news_event_records(
     symbol: Optional[str] = None,
     since: Optional[date] = None,
     origin: Optional[str] = None,
+    *,
+    viewer: Optional[int],
 ) -> List[NewsEventRecord]:
-    stmt = select(NewsEventRecord).order_by(NewsEventRecord.event_date.desc(), NewsEventRecord.id.desc())
+    """The feed rows and shared entries, plus the viewer organisation's own manual entries (app/fundamentals/visibility.py)."""
+    from app.fundamentals.visibility import visible
+    stmt = select(NewsEventRecord).where(visible(NewsEventRecord, viewer)).order_by(NewsEventRecord.event_date.desc(), NewsEventRecord.id.desc())
     if category is not None:
         stmt = stmt.where(NewsEventRecord.category == category.value)
     if origin:

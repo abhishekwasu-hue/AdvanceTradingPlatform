@@ -224,6 +224,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # the Dow trend per degree from the shared lake bars as of a time, with toggles, a debug mode and bar replay that
     # recomputes the layer as of each replayed bar. OFF: GET /api/charts/layers/price-action answers 503 and the chart
     # shows no layer. Reference only - places no orders.
+    # N3 S6a: screen history - who passed a daily screen on a past date (point in time: bars closed by then, index
+    # membership as of then, delisted names included) and screen fitness (forward returns of its matches against the
+    # universe, deflated through the research trial ledger). Shared end-of-day lake bars only. OFF: the routes answer 503.
+    "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",
     # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices
     # in one), beta to NIFTY 50 from the lake's Daily closes, and the one-sided direction warning. OFF:
     # GET /api/portfolio/risk answers 503. Read-only: it refuses nothing and places no orders.
@@ -237,6 +241,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
     "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # N2-3 (P1 spec 1.5, docs/design/N2_P1FGH.md): decision tools - the risk-of-ruin / Kelly calculator on typed inputs
+    # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
+    # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information
+    # only: nothing sizes, places or closes an order.
+    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, and a what-if for your own open positions (price, IV, days forward; information only)",
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
@@ -253,7 +262,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "scan_auto_paper"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "scan_auto_paper"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

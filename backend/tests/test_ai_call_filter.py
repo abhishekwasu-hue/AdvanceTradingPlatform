@@ -90,6 +90,11 @@ SHOULD_BLOCK = [
     "Go long and buy RELIANCE.", "Close RELIANCE at 2450.",
     "TCS: close", "INFY: close now.", "RELIANCE: hold", "Close RELIANCE above 2500.", "Close TCS at market.",
     "Hold RELIANCE into results.",
+    # review round 8: a quantity, "at market" or an order word keeps close / open / hold an order
+    "TCS: close at market", "RELIANCE: open at market", "INFY: close 50% now", "INFY: close 100 shares", "TCS: hold 100 shares",
+    "NIFTY: open at 25000 with a long", "INFY: hold above 1500 or exit", "RELIANCE - hold above 2500 for 2600",
+    "Close of the RELIANCE position now.", "Close 50% of INFY.", "Close 2 lots of NIFTY.", "Open 2 lots of NIFTY long.",
+    "Close half of RELIANCE.", "Close at 2450 RELIANCE.", "Sell 50% of INFY.", "Sell half of RELIANCE.",
 ]
 
 SHOULD_PASS = [
@@ -139,6 +144,10 @@ SHOULD_PASS = [
     "TCS: close 4050, RSI 62.", "NIFTY: open 25000, close 25100.", "TCS - close 4050.", "RELIANCE: close above SMA 20.",
     "INFY: close below 1500 on volume.", "RELIANCE: close 2480, open 2455.", "HDFCBANK: hold above 1650 kept the trend.",
     "Close price: INFY 1500.", "NIFTY: hold of 25000 matters.",
+    # review round 8: recaps with a copula or comparative after the field
+    "TCS: close was flat.", "TCS: close unchanged at 4050.", "NIFTY: close higher by 0.4%.", "TCS: open flat, close higher.",
+    "HDFCBANK: open gap-up, close near the high.", "TCS: Close/Open ratio 1.01.", "INFY: open and close within 0.2%.",
+    "RELIANCE: close at a 52-week high.",
 ]
 
 

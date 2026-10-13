@@ -190,6 +190,9 @@ def _instrument_at_start(rest: str, L: Lists, *, allow_level: bool) -> Optional[
         if re.fullmatch(r"\d+", w) and nxt in _QTY_UNITS:           # "10 shares of": a quantity, not a level
             i += 1
             continue
+        if (re.fullmatch(r"\d+(?:\.\d+)?%", w) or w in _PART_WORDS) and nxt == "of":   # "50% of", "half of": a quantity
+            i += 1
+            continue
         if w not in L.fillers:
             break
         if w in L.share_words and nxt not in ("of", "in"):
@@ -272,8 +275,37 @@ _BOOK_PAGE = re.compile(r"\b(?:positions?|holdings?|orders?|order book|portfolio
 # is the app (the multi-word "open a long in" / "open long" verbs catch the rest).
 # Round 7: close / open / hold followed by a level, a number or "price / of" are the bar's fields ("TCS: close 4050",
 # "Close price: INFY 1500", "hold above 1650 kept the trend"), in the imperative and the "TICKER: verb" forms alike.
+_PART_WORDS = frozenset({"half", "quarter", "part", "rest", "remainder", "third"})
 _FIELD_VERBS = frozenset({"close", "open", "hold"})
-_PRICE_FIELD = re.compile(r"^[\s,:\-–—]*(?:(?:at|above|below|near|over|under|of)\b|[\d₹]|(?:price|prices|level|levels)\b)", re.I)
+# Round 8: a preposition counts only before a price or a named level, "of" only before a number, and a number only when it is
+# not a quantity ("close 50% / 2 lots / 100 shares" is an order); a copula or comparative after the verb is a recap
+# ("TCS: close was flat", "open gap-up, close higher", "Close/Open ratio").
+_PRICE_FIELD = re.compile(
+    r"^[\s,:\-–—]*(?:"
+    r"(?:at|above|below|near|over|under|around)\s+(?:(?:a|an|the)\s+)?(?:₹|\d|(?:\d+[\s-]*(?:day|week|month|period|session)s?\s+)?"
+    r"(?:sma|ema|dma|wma|vwap|high|low|52[\s-]*week|average|moving average|band|level|support|resistance|range)\b)"
+    r"|of\s+₹?\d"
+    r"|₹?\d[\d,]*(?:\.\d+)?(?!\s*(?:%|percent\b|shares?\b|lots?\b|qty\b|units?\b|of\b|[\d,.]))"
+    r"|(?:price|prices|level|levels|was|is|were|unchanged|flat|higher|lower|gap|gapped|and|ratio)\b"
+    r"|/)", re.I)
+# ...but never with an order word in the clause ("TCS: close at market", "hold above 1500 or exit", "hold above 2500 for 2600").
+_FIELD_ORDER = re.compile(r"\b(?:now|today|position|long|short|exit|target|market|cmp|best|limit|book|sl|stop)\b|\bfor\s+₹?\d", re.I)
+
+
+def _price_field(verb: str, text: str, L: "Lists") -> bool:
+    """Whether close / open / hold + `text` reads as the bar's price field ("close 4050", "close above 2450", "close was
+    flat"), not an order: never with an order word in the clause, and never when a ticker follows the price
+    ("Close at 2450 RELIANCE")."""
+    if verb.lower() not in _FIELD_VERBS:
+        return False
+    m = _PRICE_FIELD.match(text)
+    if m is None or _FIELD_ORDER.search(text):
+        return False
+    after = re.match(r"[\w,.₹-]*\s*([^\s,;:]+)?", text[m.end():])
+    nxt = after.group(1) if after else None
+    return not (nxt is not None and _is_ticker(nxt, L))
+
+
 _OPEN_TRADE = re.compile(r"^\s*(?:(?:an?|new|fresh|the)\s+)*(?:long|short|position|trade)s?\b", re.I)
 # "Add a 20 EMA on the RELIANCE chart": an indicator length, not a price level.
 _INDICATOR_LENGTH = re.compile(r"^\s*(?:an?\s+|the\s+)?\d+[\s-]*(?:period\s+|day\s+|bar\s+)?"
@@ -430,7 +462,7 @@ def _object(rest: str, L: Lists, s: str, *, allow_level: bool, verb: str = "") -
     """What an imperative / modal verb is aimed at (None = not a call): an instrument, a share word or a price level after
     the fillers; "a signal / setup / rating on RELIANCE"; a pronoun ("buy more") when the sentence names an instrument.
     A noun phrase ("Sell HDFCBANK was the most common signal") is not a call."""
-    if verb.lower() in _FIELD_VERBS and _PRICE_FIELD.match(rest):
+    if _price_field(verb, rest, L):
         return None                                             # "Close above 2450", "SMA(close, 20)": the candle, not an order
     if L.descriptive.match(rest):
         tail = L.descriptive.sub("", rest, count=1)
@@ -512,7 +544,7 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
         rated = re.match(r"^\s*(?:rating|call)\b", m.group("after"), re.I)
         if (L.descriptive.match(m.group("after")) and not rated) or _negated(s, m.start("verb"), L) or record_line(s, m.start("verb")):
             continue
-        if m.group("verb").lower() in _FIELD_VERBS and _PRICE_FIELD.match(m.group("after")):
+        if _price_field(m.group("verb"), m.group("after"), L):
             continue                                              # "TCS: close 4050, RSI 62" - a price field, not a call
         obj = _instrument_at_end(m.group("obj"), L, gap=0)
         if obj and obj.lower() not in L.share_words:

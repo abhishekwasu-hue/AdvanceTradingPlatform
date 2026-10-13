@@ -261,6 +261,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
     "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # U2 remaining blocks (SCREENER_SPEC §3 builder; Phase 0: the blocks the shipped screens use): the formula block
+    # (ScreenQL text with offsets and arithmetic, edited in place) and "Open" for Legends and breakout screens in the
+    # builder through POST /api/screener/stages. OFF: /stages answers 503, the builder offers no formula block and
+    # those screens' Open stays disabled. Research only - places no orders.
+    "screener_builder_u2": "Screener builder: formula blocks and opening Legends / breakout screens in the builder (research only)",
     # N4 CH4a: the trades layer - the caller's own PAPER trades (entries, exits, open stop / target) on the chart of
     # their instrument, as of a time (replay never shows a trade or an exit before it happened). OFF: GET
     # /api/charts/layers/trades answers 503 and the chart shows no trades. Read-only - places no orders.
@@ -301,7 +306,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "chart_contracts", "chart_futures_basis"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "chart_contracts", "chart_futures_basis", "screener_builder_u2"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

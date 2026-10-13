@@ -843,6 +843,29 @@ with the indicator block, and the result table.
   group, a filter and a category; a preview before Run with the "live" mark; why chips after Run; no previews with
   live counts off; no page errors. Screenshots in `docs/screenshots/screener-u5d2/`.
 
+## U2 remaining blocks (built): the formula block and opening shipped screens in the builder (flag `screener_builder_u2`, off)
+
+Source: SCREENER_SPEC §3 (builder; U2 taken as that section, SC-16) and ATP_PHASE0_FREEZE (Phase 0: only the U2 blocks
+the shipped screens use). The gap: the funnel's block forms hold no offsets (`[1]`) and no arithmetic, so the Legends and
+breakout screens could not open in the builder (TX1-7, LG1-7).
+
+- **Formula block** (`model.ts` `FormulaStage`, `StageRow`): a condition in ScreenQL text, edited in place, checked by
+  `/validate` with the rest of the screen (a problem lands on the block by its span). A top-level AND / OR inside it is
+  bracketed so it stays ONE funnel stage (`needsBrackets`, string- and bracket-aware). Empty = a problem on the block.
+  Offered in "Add a condition" only with the flag on; groups keep the other forms.
+- **Open a shipped screen** (`POST /api/screener/stages`, `app/screener/stages.py`; S_COMPUTE like `/validate`): a
+  Legends card or breakout template (its family's flag must be on; a Legends card of a slice the organisation does not
+  see - LG2 with `screener_legends_lg2` off - or a screen behind its own flag answers 404, as `GET /legends/{id}` does) or any source -> validated and gated like
+  `/validate`, parameters inlined, split into the top-level conjuncts the run path counts as stages, each with its
+  canonical text, its bracketed form and its AST. `importStages.ts` maps a conjunct to an indicator, filter, category or
+  rank block only when that block writes back exactly the server's text; everything else is a formula block. Tested:
+  every Legends card and breakout template splits and joins back to the same screen.
+- **Contract.** `builderTexts.json` has formula cases (both sides test them); the page enables Open for Legends and
+  breakout cards with the flag on.
+- **No new ScreenQL function**, no migration, no order path.
+- **Not in this step (Phase 0 freeze):** the Fundamental / Ownership / Events / F&O tabs (their data is not on the run
+  path yet), a visual editor for arithmetic and offsets, the QueryDrawer.
+
 ## Z7a-3 (built): market-zone functions `NearZone`, `ZoneRole`, `ZoneState`, `ZoneStrength`
 
 - Data: the stored market-zone snapshots (Z7a-2, `app/price_action/zones`), not the screen's bars. Each bar reads the

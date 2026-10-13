@@ -69,7 +69,10 @@ export const RANK_OPS = ["<=", ">="] as const;
 export interface RankStage { id: string; kind: "rank"; fn: (typeof RANK_FNS)[number]; of: SeriesRef; op: (typeof RANK_OPS)[number]; value: number; enabled: boolean }
 /** A group drawn as a bracket: ANY of its blocks, or NOT (all of) them. */
 export interface GroupStage { id: string; kind: "group"; op: "ANY" | "NOT"; children: Stage[]; enabled: boolean }
-export type Stage = IndicatorStage | FilterStage | CategoryStage | RankStage | GroupStage;
+/** U2 (flag `screener_builder_u2`): a condition in ScreenQL text - offsets, arithmetic, anything the other forms cannot
+ * hold (`high - low < Min(high - low, 6)[1]`). Checked by the server like the rest of the screen. */
+export interface FormulaStage { id: string; kind: "formula"; text: string; enabled: boolean }
+export type Stage = IndicatorStage | FilterStage | CategoryStage | RankStage | GroupStage | FormulaStage;
 export type StageKind = Stage["kind"];
 
 /** A survivor count from `POST /api/screener/run` (`funnel`); `passes` is each symbol's own result per stage. */
@@ -171,6 +174,7 @@ export function newBlock(reg: Registry, kind: StageKind, fn?: string): Stage {
     return { id, kind, call: seriesRef(reg, name), values: reg[name]?.values.filter(Boolean).slice(0, 1) ?? [], negate: false, enabled: true };
   }
   if (kind === "rank") return { id, kind, fn: "Rank", of: seriesRef(reg, fn ?? "RSI"), op: "<=", value: 10, enabled: true };
+  if (kind === "formula") return { id, kind, text: "", enabled: true };
   return { id, kind, op: "ANY", children: [newStage(reg), newStage(reg, "close", { kind: "series", ref: seriesRef(reg, "EMA") })], enabled: true };
 }
 
@@ -209,8 +213,39 @@ function live(stages: Stage[]): Stage[] {
   return stages.filter(isLive);
 }
 
+/** Does a condition need brackets to stay ONE stage inside the screen's top-level AND (an AND / OR at its own top level,
+ * outside brackets and strings)? */
+export function needsBrackets(text: string): boolean {
+  let depth = 0;
+  let inString = false;
+  for (let i = 0; i < text.length; i += 1) {
+    const ch = text[i];
+    if (inString) {
+      if (ch === "\\") i += 1;
+      else if (ch === '"') inString = false;
+      continue;
+    }
+    if (ch === '"') inString = true;
+    else if (ch === "(") depth += 1;
+    else if (ch === ")") depth -= 1;
+    else if (depth === 0 && /\s/.test(ch)) {
+      const word = /^\s+(AND|OR)\s/i.exec(text.slice(i));
+      if (word) return true;
+    }
+  }
+  return false;
+}
+
+/** A formula block's text as it sits in the screen: trimmed, bracketed when it holds a top-level AND / OR. */
+export function formulaText(text: string): string {
+  const t = text.trim();
+  return needsBrackets(t) ? `(${t})` : t;
+}
+
 export function stageText(reg: Registry, s: Stage): string {
   switch (s.kind) {
+    case "formula":
+      return formulaText(s.text);
     case "indicator": {
       const l = seriesText(reg, s.left);
       const r = operandText(reg, s.right);
@@ -279,6 +314,8 @@ function seriesWords(reg: Registry, s: SeriesRef): string {
 /** The plain-English line on a stage: "RSI(14) on 15m above 60", "Trend(3) is UPTREND", "any of: ...". */
 export function stageSummary(reg: Registry, s: Stage): string {
   switch (s.kind) {
+    case "formula":
+      return s.text.trim() ? `formula: ${s.text.trim()}` : "formula (empty)";
     case "indicator": {
       const right = s.right.kind === "value" ? num(s.right.value) : seriesWords(reg, s.right.ref);
       return `${seriesWords(reg, s.left)} ${OP_WORDS[s.op]} ${right}`;
@@ -355,6 +392,7 @@ export function blockProblems(reg: Registry, stages: Stage[]): Record<string, st
       if (s.kind === "category") problem = s.values.length ? blankText(s.call) : `Pick at least one value for ${s.call.fn}.`;
       else if (s.kind === "filter") problem = blankText(s.call);
       else if (s.kind === "group") walk(s.children);
+      else if (s.kind === "formula" && !s.text.trim()) problem = "Type the condition in ScreenQL (for example: high - low < Min(high - low, 6)[1]).";
       if (problem) out[s.id] = problem;
     }
   };

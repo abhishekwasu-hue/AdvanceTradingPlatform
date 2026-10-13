@@ -93,27 +93,37 @@ def test_contributed_dates_are_checked():
     assert client.post(f"{base}/calendar", headers=a, json={"event_type": "RESULTS", "event_date": "2099-01-01"}).status_code == 201
 
 
-def test_an_organisation_s_own_company_is_private_until_the_provider_makes_it_shared():
+def test_an_organisation_s_own_company_is_private_and_another_s_refresh_never_touches_it():
+    """Security LOW follow-up: the bulk refresh reads and writes only the shared profile or the caller's own - another
+    organisation's private profile stays its own (it is neither promoted nor revealed); its owner folds it into the
+    shared one by refreshing it itself."""
     a, b = _org("scope-co-a@example.com"), _org("scope-co-b@example.com")
     assert client.post("/api/fundamentals/companies", headers=a, json={**_sample_profile("REFR2"), "website": "https://fake.example",
                                                                        "business_description": "made up"}).status_code == 201
     assert client.get("/api/fundamentals/companies/REFR2", headers=a).status_code == 200
     assert client.put("/api/fundamentals/companies/REFR2", headers=a, json={**_sample_profile("REFR2"), "name": "Mine"}).status_code == 200
+    assert client.post("/api/fundamentals/companies/REFR2/financials", headers=a, json=_sample_period("FY24", pat=3.0)).status_code == 201
     assert client.get("/api/fundamentals/companies/REFR2", headers=b).status_code == 404
     assert client.get("/api/fundamentals/companies/REFR2").status_code == 404
     assert not any(c["symbol"] == "REFR2" for c in client.get("/api/fundamentals/companies", headers=b).json())
-    taken = client.post("/api/fundamentals/companies", headers=b, json=_sample_profile("REFR2"))
-    assert taken.status_code == 409 and "refresh it from the provider" in taken.text
     ingest.set_provider_factory("nse", _mock_nse())
     try:
         res = client.post("/api/fundamentals/refresh", headers=b, json={"symbols": ["REFR2"]})
-        assert res.status_code == 200, res.text
+        assert res.status_code == 200 and res.json()["created"] == 1, res.text            # a NEW shared profile, not A's
+        mine = client.get("/api/fundamentals/companies/REFR2", headers=a).json()
+        assert mine["name"] == "Mine"                                                      # A's own, untouched
+        shared = client.get("/api/fundamentals/companies/REFR2", headers=b).json()
+        assert shared["name"] == "Refreshed Co Ltd" and shared["website"] is None and shared["business_description"] is None
+        assert client.get("/api/fundamentals/companies/REFR2").json()["name"] == "Refreshed Co Ltd"
+        assert client.get("/api/fundamentals/companies/REFR2/financials", headers=b).json() == []
+        # A refreshes its own: folded into the shared profile - A's own rows stay A's (and private), its profile goes
+        assert client.post("/api/fundamentals/companies/REFR2/refresh", headers=a, json={}).status_code == 200
     finally:
         ingest.set_provider_factory("nse", None)
         ingest.set_provider_factory("nse", ingest._nse_factory)
-    shared = client.get("/api/fundamentals/companies/REFR2", headers=b).json()
-    assert shared["name"] == "Refreshed Co Ltd" and shared["website"] is None and shared["business_description"] is None
-    # the provider's shareholding is shared reference data: both organisations (and anonymous readers) see it
+    assert client.get("/api/fundamentals/companies/REFR2", headers=a).json()["name"] == "Refreshed Co Ltd"
+    assert [p["pat"] for p in client.get("/api/fundamentals/companies/REFR2/financials", headers=a).json()] == [3.0]
+    assert client.get("/api/fundamentals/companies/REFR2/financials", headers=b).json() == []
     for who in (a, b, {}):
         assert len(client.get("/api/fundamentals/companies/REFR2/shareholding", headers=who).json()) == 1
     # and now nobody but the provider (or an administrator) edits the shared profile
@@ -122,10 +132,10 @@ def test_an_organisation_s_own_company_is_private_until_the_provider_makes_it_sh
     async def rows():
         async with _session_factory() as session:
             from sqlalchemy import select
-            company = await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == "REFR2"))
-            snaps = list(await session.scalars(select(ShareholdingSnapshotRecord).where(ShareholdingSnapshotRecord.company_id == company.id)))
-            return company.tenant_id, [s.tenant_id for s in snaps]
-    assert asyncio.run(rows()) == (None, [None])
+            companies = list(await session.scalars(select(CompanyRecord).where(CompanyRecord.symbol == "REFR2")))
+            snaps = list(await session.scalars(select(ShareholdingSnapshotRecord).where(ShareholdingSnapshotRecord.company_id == companies[0].id)))
+            return [c.tenant_id for c in companies], [s.tenant_id for s in snaps]
+    assert asyncio.run(rows()) == ([None], [None])
 
 
 def test_the_factor_lab_fill_reads_only_shared_and_own_financials():

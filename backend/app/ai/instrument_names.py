@@ -1,16 +1,17 @@
 """H-C1 c (review of #230, HIGH4): the instrument names the AI output filter recognises as the object of a trade call,
-in any case - "buy reliance", "Buy Reliance Industries", "रिलायन्स खरेदी करा", "रिलायंस खरीदें".
+in any case - "buy reliance", "Buy Reliance Industries".
 
-Two sources, merged into one in-process index (lower-cased, whitespace-collapsed, nukta dropped):
+Two sources, merged into one in-process index (lower-cased, whitespace-collapsed):
 
-* `data/instrument_names.json` - a seed of well-known symbols, company names and their Marathi / Hindi spellings,
-  always present (tests, a worker that has not loaded the master yet);
+* `data/instrument_names.json` - a seed of well-known symbols and company names, always present (tests, a worker that
+  has not loaded the master yet);
 * the instrument master (`securities`: every company name, with "Limited" / "Ltd" dropped, and every symbol of five
   letters or more), loaded by `refresh(session)` at API start-up and in the trading worker, and again every six hours
   (`refresh_if_stale`: a background task in the API, the worker's cycle); it never fails the caller.
 
 `prefix_len(words)` / `suffix_len(words)` say how many leading / trailing words of a phrase name an instrument (0 = none).
-The filter is synchronous and reads only this in-memory index.
+The filter is synchronous and reads only this in-memory index. ATP is English only: text with Devanagari is withheld
+before the filter reads it (`call_detect.SCRIPT_LABEL`).
 """
 from __future__ import annotations
 
@@ -26,11 +27,11 @@ log = logging.getLogger(__name__)
 SEED_FILE = Path(__file__).resolve().parent / "data" / "instrument_names.json"
 MAX_WORDS = 5
 _SUFFIXES = re.compile(r"\s+(?:limited|ltd\.?|ltd|inc\.?|corporation|corp\.?)$", re.IGNORECASE)
-_EDGE = "\"'“”‘’«».,!?;:()[]{}।॥"
+_EDGE = "\"'“”‘’«».,!?;:()[]{}"
 
 
 def norm_word(word: str) -> str:
-    w = unicodedata.normalize("NFKC", word).replace("़", "").strip(_EDGE).lower()
+    w = unicodedata.normalize("NFKC", word).strip(_EDGE).lower()
     return w
 
 

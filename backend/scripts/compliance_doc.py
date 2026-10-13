@@ -26,7 +26,8 @@ def render() -> str:
     for x in r.rules.values():
         code = "<br>".join(f"`{c}`" for c in x.code) or "-"
         tests = "<br>".join(f"`{t.split('::')[-1]}`" for t in x.tests) or "-"
-        lines.append(f"| `{x.id}` | {x.title} | {x.source} | {x.status} | {code} | {tests} | {f'`{x.flag}`' if x.flag else '-'} |")
+        flags = "<br>".join(f"`{f}`" for f in x.flags) or "-"
+        lines.append(f"| `{x.id}` | {x.title} | {x.source} | {x.status} | {code} | {tests} | {flags} |")
     lines += ["", "Parameters (current values in the JSON):", ""]
     for x in r.rules.values():
         if x.params:

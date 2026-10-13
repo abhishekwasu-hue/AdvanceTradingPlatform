@@ -5,7 +5,7 @@ Existing rows: the recorder's (written live, as captured) get their capture time
 real upload time was not kept - the conservative choice: they count only from now on for any time asked).
 
 Revision ID: d7e9f1a3b5c7
-Revises: c6d8e0f2a4b6
+Revises: c6e1f3a5b7d9
 Create Date: 2026-10-13 14:00:00
 """
 from typing import Sequence, Union
@@ -14,7 +14,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'd7e9f1a3b5c7'
-down_revision: Union[str, Sequence[str], None] = 'c6d8e0f2a4b6'
+down_revision: Union[str, Sequence[str], None] = 'c6e1f3a5b7d9'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 ROLLBACK_SAFE = True     # Z11: additive - one nullable column the previous release neither reads nor writes (code-only rollback ok)

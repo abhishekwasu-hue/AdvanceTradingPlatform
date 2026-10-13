@@ -165,7 +165,8 @@ async def execute_signal_for_user(
         fo_notes: list = []
         if contract is not None:
             # D7: a derivative on an underlying in the exchange's F&O ban period is not a new trade the market allows.
-            ban, ban_note = await fo_limits.entry_refusal(session, underlying_signal.symbol, underlying_signal.timestamp)
+            ban, ban_note = await fo_limits.entry_refusal(session, underlying_signal.symbol, underlying_signal.timestamp,
+                                                          as_of=underlying_signal.timestamp)
             if ban:
                 kill_switch_reasons.append(ban)
             elif ban_note:
@@ -280,7 +281,7 @@ async def execute_signal_for_user(
             if not d7_refusals:
                 cap, cap_ref, cap_note = await fo_limits.client_limit_cap(
                     session, tenant_id=user.tenant_id, user_id=user.id, underlying=underlying_signal.symbol, mode=mode,
-                    lot=int(contract.lot_size or 1), when=underlying_signal.timestamp)
+                    lot=int(contract.lot_size or 1), when=underlying_signal.timestamp, as_of=underlying_signal.timestamp)
                 if cap_ref:
                     d7_refusals.append(cap_ref)
                 else:
@@ -328,7 +329,8 @@ async def execute_signal_for_user(
         if is_write and execution_mode == ExecutionMode.LIVE:
             # Writing needs the broker's margin number; an unknown requirement is a refusal.
             try:
-                cap_lots, note = await written_lot_cap(broker, contract)
+                cap_lots, note = await written_lot_cap(broker, contract, expiry_margin_at=await fo_limits.expiry_margin_at(
+                    session, user.tenant_id, underlying_signal.timestamp))
             except ContractExecutionError as exc:
                 reason = str(exc)
                 order.reasons_json = json.dumps([reason])

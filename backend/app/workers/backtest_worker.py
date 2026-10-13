@@ -28,6 +28,8 @@ async def run_forever(factory: async_sessionmaker[AsyncSession], stop: asyncio.E
     from app.backtest import sweeps
     while not stop.is_set():
         try:
+            async with factory() as session:              # dead workers' tasks, unfinalised and expired sweeps
+                await sweeps.recover(session)
             ran = await sweeps.drain(factory, name, limit=20)
         except Exception:  # noqa: BLE001 - a database blip never ends the worker
             logger.exception("Backtest worker step failed")

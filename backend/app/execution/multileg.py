@@ -120,7 +120,7 @@ async def execute_structure(
                                             approval_action_id=None)
     if gate:
         refusals.insert(0, gate)
-    ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp)   # D7: F&O ban on the underlying
+    ban, _ = await fo_limits.entry_refusal(session, signal.symbol, signal.timestamp, as_of=signal.timestamp)   # D7: F&O ban
     if ban:
         refusals.append(ban)
     if refusals:
@@ -198,7 +198,8 @@ async def execute_structure(
         lots = min(lots, rules.max_lots)
     if execution_mode == ExecutionMode.LIVE:
         try:
-            cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None)
+            cap, note = await _live_lot_cap(broker, structure, debit_per_unit=-metrics.net_credit if metrics.debit else None,
+                                            expiry_margin_at=await fo_limits.expiry_margin_at(session, user.tenant_id, signal.timestamp))
         except ContractExecutionError as exc:
             reasons = notes + [str(exc)]
             await _reject_all(session, orders, reasons)
@@ -217,7 +218,7 @@ async def execute_structure(
             unit = lot * sum(leg.ratio for leg in structure.legs)
             cap_units, cap_ref, cap_note = await fo_limits.client_limit_cap(
                 session, tenant_id=user.tenant_id, user_id=user.id, underlying=structure.underlying_symbol, mode=mode, lot=unit,
-                when=signal.timestamp)
+                when=signal.timestamp, as_of=signal.timestamp)
             if cap_ref:
                 d7.append(cap_ref)
             elif cap_units is not None:
@@ -356,9 +357,12 @@ def _economics_note(metrics: StructureMetrics, lot: int) -> str:
             f"breakeven {be}; exit at value <= {metrics.target_value:g} or >= {metrics.stop_value:g}")
 
 
-async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None) -> Tuple[int, str]:
+async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *, debit_per_unit: Optional[float] = None,
+                        expiry_margin_at: Optional[datetime] = None) -> Tuple[int, str]:
     """Lots the account's margin allows: the broker's requirement for one lot of every short
     leg (no spread benefit assumed - conservative) against MARGIN_SAFETY of available margin.
+    `expiry_margin_at`: the signal's time with D7's `fo_position_limits` on - a short leg on its
+    own expiry day then carries the expiry-day multiplier; None (flag off): none.
     A structure with no short leg (Phase R long straddle/strangle) blocks exactly its debit, so
     that is the per-lot number (Phase Q's premium rule)."""
     if not structure.short_legs:
@@ -382,7 +386,7 @@ async def _live_lot_cap(broker: BrokerInterface, structure: ResolvedStructure, *
         if margin is None or margin <= 0:
             raise ContractExecutionError(f"{broker.name} did not report a margin requirement for {leg.contract.tradingsymbol} - refused")
         # D7: a short leg on its own expiry day carries the rule set's expiry-day margin multiplier (1 = none)
-        per_lot += float(margin) * fo_limits.expiry_day_factor(getattr(leg.contract, "expiry", None), datetime.now(timezone.utc))
+        per_lot += float(margin) * fo_limits.expiry_day_factor(getattr(leg.contract, "expiry", None), expiry_margin_at)
     margins = await broker.get_margins()
     available = float(margins.available_margin or margins.available_cash or 0.0)
     lots = int((available * MARGIN_SAFETY) // per_lot) if per_lot > 0 else 0

@@ -19,6 +19,7 @@ exit on them (F4); the contract's price levels are what the broker-side SL-M and
 """
 import logging
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Optional, Tuple
 
 from app.brokers.base import BrokerInterface
@@ -125,10 +126,12 @@ def build_order_plan(signal: Signal, contract: ResolvedContract, rules: Contract
     return OrderPlan(order_signal, spec, max_quantity, meta, notes)
 
 
-async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract) -> Tuple[int, str]:
+async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract, *,
+                          expiry_margin_at: Optional[datetime] = None) -> Tuple[int, str]:
     """LIVE only: how many lots of this written option the account can carry - the broker's
     margin requirement for one lot against `MARGIN_SAFETY` of available margin. Unknown margin
-    is a refusal, not a guess."""
+    is a refusal, not a guess. `expiry_margin_at`: the signal's time when D7's `fo_position_limits`
+    is on (`fo_limits.expiry_margin_at`) - the expiry-day multiplier applies then; None: none."""
     probe = BrokerOrderRequest(
         symbol=contract.instrument_key if _is_upstox(broker) and "|" in (contract.instrument_key or "") else contract.tradingsymbol,
         exchange=contract.exchange, transaction_type=OrderSide.SELL, quantity=contract.lot_size, order_type="MARKET", product="MIS",
@@ -136,10 +139,8 @@ async def written_lot_cap(broker: BrokerInterface, contract: ResolvedContract) -
     per_lot = await broker.get_order_margin(probe)
     if per_lot is None or per_lot <= 0:
         raise ContractExecutionError(f"{broker.name} did not report a margin requirement for writing {contract.tradingsymbol} - refused")
-    from datetime import datetime, timezone
-
     from app.compliance import fo_limits
-    factor = fo_limits.expiry_day_factor(getattr(contract, "expiry", None), datetime.now(timezone.utc))   # D7: expiry-day margin
+    factor = fo_limits.expiry_day_factor(getattr(contract, "expiry", None), expiry_margin_at)   # D7: expiry-day margin
     per_lot = float(per_lot) * factor
     margins = await broker.get_margins()
     available = float(margins.available_margin or margins.available_cash or 0.0)

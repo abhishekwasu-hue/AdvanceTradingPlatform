@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import hashlib
 import json
@@ -30,7 +31,7 @@ from app.core.models import (
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
-from app.backtest.sweep_routes import router as backtest_sweep_router
+from app.backtest.sweep_routes import inline_on as backtest_sweep_inline_on, router as backtest_sweep_router
 from app.options_analytics.routes import router as options_analytics_router
 from app.backtest import ledger as backtest_ledger
 from app.backtest.ledger import LakeWindow
@@ -150,7 +151,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await deployment_phase_startup(session, "api")
         except Exception:  # noqa: BLE001 - never stops the API from coming up (Phase 0 defaults still apply)
             logging.getLogger(__name__).exception("Phase 0 start-up check failed")
+    resume = None
+    if backtest_sweep_inline_on():
+        # N7 C6: the sweeps a stopped API process left queued are run again here (nothing else would without a worker).
+        resume = asyncio.create_task(_resume_backtest_sweeps())
     yield
+    if resume is not None and not resume.done():
+        resume.cancel()
+
+
+async def _resume_backtest_sweeps() -> None:
+    from app.backtest import sweeps as backtest_sweeps
+    try:
+        await backtest_sweeps.resume_inline(_startup_session_factory)
+    except Exception:  # noqa: BLE001 - never stops the API; the next POST /api/backtest/sweeps settles them too
+        logging.getLogger(__name__).exception("Resuming backtest sweeps failed")
 
 
 app = FastAPI(

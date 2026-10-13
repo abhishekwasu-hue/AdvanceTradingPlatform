@@ -142,7 +142,9 @@ def test_an_inline_sweep_runs_every_combination_and_deflates_the_best():
 def test_the_caps_the_holdout_and_one_sweep_at_a_time(monkeypatch):
     headers, tenant, user = _org("caps")
     big = client.post("/api/backtest/sweeps", headers=headers, json=_spec(param_grid={"lookback": list(range(5, 61)), "adx_min": [20]}))
-    assert big.status_code == 422 and "combinations" in big.text
+    assert big.status_code == 422                                                   # one list longer than 50 values
+    wide = client.post("/api/backtest/sweeps", headers=headers, json=_spec(param_grid={"lookback": list(range(5, 31)), "adx_min": [20, 25]}))
+    assert wide.status_code == 422 and "52 combinations" in wide.text
     many = client.post("/api/backtest/sweeps", headers=headers,
                        json=_spec(symbols=[f"S{i}" for i in range(20)], param_grid={"lookback": list(range(5, 16)), "adx_min": [20]}))
     assert many.status_code == 422 and "at most 200" in many.text
@@ -253,3 +255,194 @@ def test_the_plan_is_combination_major_and_capped():
     with pytest.raises(SW.SweepError):
         SW.plan(SW.SweepSpec(**_spec(lake={"start": "2014-01-01", "end": "2024-01-01"}, symbols=[f"S{i}" for i in range(20)],
                                      param_grid={"lookback": list(range(5, 15))})))
+
+
+# --- review fixes: grid size, stuck sweeps, claims ------------------------------------------------------------------------------
+
+def test_an_8_by_10_grid_is_refused_from_its_list_lengths_fast():
+    import time
+
+    from pydantic import ValidationError
+    headers, _, _ = _org("grid")
+    grid = {f"p{k}": list(range(10)) for k in range(8)}                              # 10**8 combinations: never built
+    t0 = time.monotonic()
+    r = client.post("/api/backtest/sweeps", headers=headers, json=_spec(param_grid=grid))
+    assert r.status_code == 422 and "100000000 combinations" in r.text
+    assert time.monotonic() - t0 < 2.0
+    for bad in ({f"p{k}": [1] for k in range(SW.MAX_GRID_KEYS + 1)},                 # too many parameters
+                {"p": list(range(SW.MAX_COMBOS + 1))},                               # one list too long
+                {"p": ["x" * (SW.MAX_GRID_VALUE_CHARS + 1)]},                        # a value too large
+                {"p": [[1, 2]]}, {"p": [{"a": 1}]}):                                 # values are scalars
+        with pytest.raises(ValidationError):
+            SW.SweepSpec(**_spec(param_grid=bad))
+    with pytest.raises(ValidationError):                                             # backtest_sweep_tasks.symbol is String(40)
+        SW.SweepSpec(**_spec(symbols=["S" * 41]))
+    assert client.post("/api/backtest/sweeps", headers=headers, json=_spec(symbols=["S" * 41])).status_code == 422
+
+
+def test_a_requeue_that_fails_the_last_task_finalises_its_sweep(monkeypatch):
+    _, tenant, user = _org("lastfail")
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "0")
+    sid = _enqueue(tenant, user, symbols=SYMS[:1], param_grid={"ema_fast": [10, 20]})
+    _step("w", sid)                                                                  # task 0 done
+    now = datetime.now(timezone.utc)
+
+    async def die_on_the_last():
+        async with _session_factory() as session:
+            last = await SW.claim(session, "dead", now, sid)
+            await session.execute(update(BacktestSweepTaskRecord).where(BacktestSweepTaskRecord.id == last.id)
+                                  .values(attempts=SW.MAX_ATTEMPTS, heartbeat_at=now - timedelta(hours=1)))
+            await session.commit()
+            return await SW.requeue_stale(session, now, in_thread=False)
+    assert _run(die_on_the_last()) == [sid]
+    row = _sweep(sid)
+    assert row.status == "done" and json.loads(row.result_json)["tasks_failed"] == 1
+
+
+def test_after_an_api_restart_the_next_post_settles_and_runs_the_active_sweep(monkeypatch):
+    headers, tenant, user = _org("restart")
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "0")                                 # queued; the process "stops" before running it
+    first = client.post("/api/backtest/sweeps", headers=headers, json=_spec(symbols=SYMS[:1])).json()["sweep_id"]
+    now = datetime.now(timezone.utc)
+
+    async def a_dead_worker_holds_one():
+        async with _session_factory() as session:
+            task = await SW.claim(session, "api-inline:gone", now - timedelta(seconds=SW.STALE_SECONDS + 60), first)
+            return task.id
+    dead = _run(a_dead_worker_holds_one())
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "1")                                 # the restarted API runs sweeps inline
+    busy = client.post("/api/backtest/sweeps", headers=headers, json=_spec())
+    assert busy.status_code == 409 and busy.json()["active_sweep_id"] == first       # answered, then the sweep was run here
+    got = client.get(f"/api/backtest/sweeps/{first}", headers=headers).json()
+    assert got["status"] == "done" and got["tasks"] == {"done": 4}, got
+
+    async def attempts():
+        async with _session_factory() as session:
+            return (await session.get(BacktestSweepTaskRecord, dead)).attempts
+    assert _run(attempts()) == 2                                                     # the dead worker's task ran again
+    assert client.post("/api/backtest/sweeps", headers=headers, json=_spec(symbols=SYMS[:1])).status_code == 202
+
+
+def test_the_startup_hook_runs_what_a_stopped_api_left_queued(monkeypatch):
+    _, tenant, user = _org("startup")
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "0")
+    sid = _enqueue(tenant, user, symbols=SYMS[:1], param_grid={"ema_fast": [10, 20]})
+    assert _run(SW.resume_inline(_session_factory)) >= 2
+    assert _sweep(sid).status == "done"
+
+
+def test_a_sweep_stuck_finalising_or_too_old_expires(monkeypatch):
+    headers, tenant, user = _org("expire")
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "0")
+    sid = _enqueue(tenant, user)
+
+    async def crashed_while_finalising():
+        async with _session_factory() as session:
+            await session.execute(update(BacktestSweepRecord).where(BacktestSweepRecord.sweep_id == sid).values(
+                status="finalizing", created_at=datetime.now(timezone.utc) - timedelta(hours=SW.EXPIRE_HOURS, minutes=1)))
+            await session.commit()
+    _run(crashed_while_finalising())
+    r = client.post("/api/backtest/sweeps", headers=headers, json=_spec())
+    assert r.status_code == 202, r.text
+    old = _sweep(sid)
+    assert old.status == "failed" and "expired" in old.error
+
+    async def statuses():
+        async with _session_factory() as session:
+            return {t.status for t in await session.scalars(select(BacktestSweepTaskRecord).where(BacktestSweepTaskRecord.sweep_id == sid))}
+    assert _run(statuses()) == {"failed"}
+
+
+def test_the_owner_cancels_an_active_sweep(monkeypatch):
+    headers, tenant, user = _org("cancel")
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "0")
+    sid = client.post("/api/backtest/sweeps", headers=headers, json=_spec()).json()["sweep_id"]
+    other, _, _ = _org("cancel-peer")
+    assert client.post(f"/api/backtest/sweeps/{sid}/cancel", headers=other).status_code == 404     # another organisation's
+    now = datetime.now(timezone.utc)
+
+    async def mid_task():
+        async with _session_factory() as session:
+            t = await SW.claim(session, "w", now, sid)
+            return t.id, t.attempts
+    task_id, attempts = _run(mid_task())
+    r = client.post(f"/api/backtest/sweeps/{sid}/cancel", headers=headers)
+    assert r.status_code == 200 and r.json()["status"] == "cancelled" and r.json()["tasks"] == {"cancelled": 8}
+
+    async def late_write():                                                         # the worker mid-task cannot write any more
+        async with _session_factory() as session:
+            res = await session.execute(update(BacktestSweepTaskRecord).where(*SW._owns(task_id, "w", attempts)).values(status="done"))
+            await session.commit()
+            return res.rowcount, await SW.finalize_if_complete(session, sid, now, in_thread=False)
+    assert _run(late_write()) == (0, False)
+    assert client.post(f"/api/backtest/sweeps/{sid}/cancel", headers=headers).status_code == 409   # already ended
+    assert _step("w2", sid) is None                                                  # nothing left to run
+    assert client.post("/api/backtest/sweeps", headers=headers, json=_spec()).status_code == 202
+
+
+def test_a_write_needs_the_same_claim_and_inline_names_are_per_drain(monkeypatch):
+    _, tenant, user = _org("reclaim")
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "0")
+    sid = _enqueue(tenant, user)
+    now = datetime.now(timezone.utc)
+
+    async def go():
+        async with _session_factory() as session:
+            first = await SW.claim(session, "a", now - timedelta(seconds=SW.STALE_SECONDS + 5), sid)
+            await SW.requeue_stale(session, now, in_thread=False)
+            again = await SW.claim(session, "a", now, sid)                           # the same worker name claims it again
+            assert again.id == first.id and again.attempts == 2
+            stale = await session.execute(update(BacktestSweepTaskRecord).where(*SW._owns(first.id, "a", 1)).values(status="done"))
+            await session.commit()
+            return stale.rowcount, (await session.get(BacktestSweepTaskRecord, first.id)).status
+    assert _run(go()) == (0, "running")                                              # the first attempt's late write is refused
+    assert SW.inline_worker_name() != SW.inline_worker_name()
+
+
+def test_the_database_allows_one_active_sweep_per_organisation(monkeypatch):
+    from sqlalchemy.exc import IntegrityError
+    _, tenant, user = _org("race")
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "0")
+    _enqueue(tenant, user)
+
+    async def no_check(session, tenant_id):                                          # the other request checked before this one wrote
+        return None
+    monkeypatch.setattr(SW, "active_sweep", no_check)
+    with pytest.raises(SW.SweepBusy):
+        _enqueue(tenant, user)
+
+    async def raw():
+        async with _session_factory() as session:
+            session.add(BacktestSweepRecord(sweep_id=str(uuid.uuid4()), tenant_id=tenant, user_id=user, spec_json="{}", status="running",
+                                            total=0, created_at=datetime.now(timezone.utc)))
+            await session.commit()
+    with pytest.raises(IntegrityError):
+        _run(raw())
+
+
+def test_a_long_backtest_keeps_beating(monkeypatch):
+    import time
+    _, tenant, user = _org("beat")
+    monkeypatch.setenv("BACKTEST_SWEEP_INLINE", "0")
+    monkeypatch.setattr(SW, "HEARTBEAT_SECONDS", 0.05)
+    sid = _enqueue(tenant, user, symbols=SYMS[:1], param_grid={})
+    window, calls, real = [], [], SW._task_backtest
+
+    def slow(*args):
+        window.append(time.monotonic())
+        time.sleep(0.4)
+        window.append(time.monotonic())
+        return real(*args)
+    monkeypatch.setattr(SW, "_task_backtest", slow)
+
+    def clock():
+        calls.append(time.monotonic())
+        return datetime.now(timezone.utc)
+
+    async def go():
+        async with _session_factory() as session:
+            return await SW.run_one(session, "slow", sweep_id=sid, clock=clock, in_thread=True)
+    assert _run(go()) == sid
+    beats = [t for t in calls if window[0] < t < window[1]]
+    assert len(beats) >= 2                                                           # beats while the backtest ran
+    assert _sweep(sid).status == "done"

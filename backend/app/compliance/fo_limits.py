@@ -5,6 +5,11 @@ only position-reducing trades in its derivatives. With FO_BAN_CHECK_ENABLED on, 
 multi-leg structure) on such an underlying is refused - PAPER too, so paper results do not include trades the market
 would not have allowed. Exits are never refused (ADR-0004). No lake row for the day (an index has no MWPL; or the data
 is not loaded yet) means no refusal - the reason is returned as a note instead, never silently.
+
+No look-ahead: a decision at `when` reads the latest lake row of a session BEFORE `when`'s IST date (the exchange
+publishes a day's OI / MWPL after its close; the limits for day D come from D-1's EOD data) that was ingested at or before
+`as_of` - the decision time unless the caller passes another (`asof.position_limit_before`; writer contract on
+`MdPositionLimitRecord`).
 """
 from datetime import datetime
 from typing import Any, Optional, Tuple
@@ -14,18 +19,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.compliance import rules
 from app.core import config
 from app.market_data.calendar import IST
-from app.market_lake.asof import position_limit_as_of
+from app.market_lake.asof import position_limit_before
 
 RULE = "IN-SEBI.risk.futeq_mwpl"
+MAX_LIMITS_AGE_DAYS = 7          # a previous-session row older than this (a week of holidays at most) is "no data"
+
+
+async def _limits_row(session: AsyncSession, underlying: str, when: datetime, as_of: Optional[datetime]) -> Tuple[Any, Any]:
+    """(the decision's IST date, the MWPL / OI row it may rely on - None when the lake has none)."""
+    day = when.astimezone(IST).date()
+    row = await position_limit_before(session, (underlying or "").upper(), day, as_of=when if as_of is None else as_of,
+                                      max_age_days=MAX_LIMITS_AGE_DAYS)
+    return day, row
 
 
 async def ban_status(session: AsyncSession, underlying: str, when: datetime, *,
                      as_of: Optional[datetime] = None) -> Tuple[Optional[str], Optional[str]]:
-    """(refusal, note) for a new F&O entry on `underlying` at `when`. Either or both may be None."""
-    day = when.astimezone(IST).date()
-    row = await position_limit_as_of(session, (underlying or "").upper(), day, as_of=as_of)
+    """(refusal, note) for a new F&O entry on `underlying` at `when` (the previous session's EOD row, known at `as_of`,
+    default `when`). Either or both may be None."""
+    day, row = await _limits_row(session, underlying, when, as_of)
     if row is None:
-        return None, f"No MWPL / OI data for {underlying} on {day.isoformat()} - F&O ban not checked"
+        return None, f"No MWPL / OI data for {underlying} from the sessions before {day.isoformat()} - F&O ban not checked"
     threshold = float(rules.load().param(RULE, "ban_threshold_pct", 0) or 0)
     used = 100.0 * float(row.open_interest) / float(row.mwpl) if row.mwpl else 0.0
     if threshold > 0 and used >= threshold:
@@ -74,13 +88,14 @@ async def open_derivative_quantity(session: AsyncSession, *, tenant_id: int, use
 async def client_limit_cap(session: AsyncSession, *, tenant_id: int, user_id: int, underlying: str, mode: str, lot: int, when: datetime,
                            as_of: Optional[datetime] = None) -> Tuple[Optional[float], Optional[str], Optional[str]]:
     """(max new quantity, refusal, note) under the client-level limit for `underlying` on the trade day: the higher of
-    `client_limit_mwpl_pct` % of MWPL (1 % of free float = 5 % of MWPL, which is 20 % of free float) and
-    `client_limit_oi_pct` % of the open interest (NSE's stock F&O client limit), less the caller's open quantity there.
+    `client_limit_mwpl_pct` % of MWPL and `client_limit_oi_pct` % of the open interest (NSE's stock F&O client limit;
+    5 % of MWPL equals 1 % of free float only under the older MWPL formula of 20 % of free float - OPEN_QUESTIONS D7-1),
+    less the caller's open quantity there - from the previous session's EOD row known at `as_of` (default `when`).
     Rounded down to whole lots; under one lot is a refusal. No lake row -> no cap, a note (never silent)."""
-    day = when.astimezone(IST).date()
-    row = await position_limit_as_of(session, (underlying or "").upper(), day, as_of=as_of)
+    day, row = await _limits_row(session, underlying, when, as_of)
     if row is None:
-        return None, None, f"No MWPL / OI data for {underlying} on {day.isoformat()} - client position limit not checked"
+        return None, None, (f"No MWPL / OI data for {underlying} from the sessions before {day.isoformat()} - client position "
+                            "limit not checked")
     limit = max(float(row.mwpl or 0) * _param("client_limit_mwpl_pct", 5.0) / 100.0,
                 float(row.open_interest or 0) * _param("client_limit_oi_pct", 5.0) / 100.0)
     held = await open_derivative_quantity(session, tenant_id=tenant_id, user_id=user_id, underlying=underlying, mode=mode)
@@ -120,9 +135,16 @@ def lot_refusal(contract: Any) -> Tuple[Optional[str], Optional[str]]:
     return None, None
 
 
-def expiry_day_factor(expiry: Optional[Any], when: datetime) -> float:
+def expiry_day_factor(expiry: Optional[Any], when: Optional[datetime]) -> float:
     """The margin multiplier for a SHORT option on its own expiry day (`expiry_day_margin_multiplier`, rule-set data;
-    1 elsewhere) - SEBI's additional exposure margin on expiring short options."""
-    if expiry is None or when.astimezone(IST).date() != expiry:
+    1 elsewhere) - SEBI's additional exposure margin on expiring short options. `when` is the decision (signal) time;
+    None - the organisation's `fo_position_limits` flag is off - is 1 (callers pass `expiry_margin_at`)."""
+    if expiry is None or when is None or when.astimezone(IST).date() != expiry:
         return 1.0
     return max(_param("expiry_day_margin_multiplier", 1.0), 1.0)
+
+
+async def expiry_margin_at(session: AsyncSession, tenant_id: Optional[int], when: datetime) -> Optional[datetime]:
+    """The time the expiry-day margin is judged at for this organisation: the signal's time with `fo_position_limits` on,
+    None (no multiplier) with it off."""
+    return when if await limits_on(session, tenant_id) else None

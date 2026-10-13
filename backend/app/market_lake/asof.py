@@ -5,7 +5,7 @@ A row is visible `as_of` T when it was ingested at or before T. Where a source c
 `as_of` after it was ingested, and a backtest replayed with the same `as_of` sees the same data (realism C4).
 `as_of=None` means "everything known now". Times are UTC; candle `ts` is the bar END.
 """
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional, Sequence, Tuple
 
 from sqlalchemy import select
@@ -62,3 +62,15 @@ async def position_limit_as_of(session: AsyncSession, underlying: str, day: date
     if source:
         query = query.where(MdPositionLimitRecord.source == source)
     return await session.scalar(query.order_by(MdPositionLimitRecord.version.desc()).limit(1))
+
+
+async def position_limit_before(session: AsyncSession, underlying: str, day: date, *, as_of: Optional[datetime],
+                                max_age_days: int = 7) -> Optional[MdPositionLimitRecord]:
+    """The MWPL / open-interest row a trade on `day` may rely on: the latest `trade_date` BEFORE `day` (the exchange
+    publishes a day's OI and MWPL after its close; the limits that apply on `day` come from the previous session's EOD
+    data), at most `max_age_days` old, ingested at or before `as_of` (the decision time - never a row the decision could
+    not have seen). Highest visible version of that date. None: no such row."""
+    query = select(MdPositionLimitRecord).where(
+        MdPositionLimitRecord.underlying == underlying, MdPositionLimitRecord.trade_date < day,
+        MdPositionLimitRecord.trade_date >= day - timedelta(days=max_age_days), *_visible(MdPositionLimitRecord, as_of))
+    return await session.scalar(query.order_by(MdPositionLimitRecord.trade_date.desc(), MdPositionLimitRecord.version.desc()).limit(1))

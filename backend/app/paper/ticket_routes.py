@@ -60,6 +60,9 @@ class RiskSettingsBody(BaseModel):
     daily_loss_pct: Optional[float] = None
     max_trades_per_day: Optional[int] = None
     min_rr: Optional[float] = None
+    max_sector_pct: Optional[float] = None          # N1 F2 portfolio caps (0 = no limit)
+    max_correlated_risk_pct: Optional[float] = None
+    max_open_positions: Optional[int] = None
 
 
 @router.get("/risk")

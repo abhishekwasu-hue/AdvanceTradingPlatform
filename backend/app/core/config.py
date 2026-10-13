@@ -605,6 +605,13 @@ PAPER_LADDER_DISCIPLINE_WEEKS = _bounded_int("PAPER_LADDER_DISCIPLINE_WEEKS", 4,
 PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS = _bounded_int("PAPER_LADDER_DISCIPLINE_LOOKBACK_WEEKS", 12, 1, 52)
 PAPER_EVIDENCE_MIN_TRADES = _bounded_int("PAPER_EVIDENCE_MIN_TRADES", 20, 2, 10_000)
 PAPER_EVIDENCE_RUIN_PCT = _bounded_float("PAPER_EVIDENCE_RUIN_PCT", 50.0, 1.0, 100.0)
+# N2-2 (P1 §1.4, flag `experience_levels`): experience levels from the user's own PAPER record gate complexity. Beginner
+# until the PAPER ladder's count criteria are met (sessions, closed trades, drawdown above); Intermediate opens futures;
+# Advanced (EXPERIENCE_ADVANCED_MIN_TRADES closed trades over EXPERIENCE_ADVANCED_MIN_SESSIONS sessions, drawdown within
+# the ladder's limit) opens naked short options. A logged opt-out with a reason lifts one gate for one IST day.
+EXPERIENCE_ADVANCED_MIN_TRADES = _bounded_int("EXPERIENCE_ADVANCED_MIN_TRADES", 100, 1, 100_000)
+EXPERIENCE_ADVANCED_MIN_SESSIONS = _bounded_int("EXPERIENCE_ADVANCED_MIN_SESSIONS", 60, 1, 10_000)
+EXPERIENCE_OPT_OUT_MIN_REASON_CHARS = _bounded_int("EXPERIENCE_OPT_OUT_MIN_REASON_CHARS", 15, 1, 300)
 
 # Z3 (review V2): "Exit now" without a live quote may book at the monitor's last price for the position only when that
 # price is at most this many minutes old and from today's session (IST); otherwise it refuses (the stop and target keep

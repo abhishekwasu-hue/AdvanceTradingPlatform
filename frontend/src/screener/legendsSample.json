@@ -1,5 +1,5 @@
 {
- "version": "lg1/1",
+ "version": "lg2/1",
  "header": "Inspired by publicly described methods. Not affiliated with, endorsed by, or representing the people named. Educational tool, not investment advice.",
  "note": "Each card describes a published method and an approximation of it as a screen. It is not a ranking of the method, the screen or any symbol.",
  "cards": [
@@ -458,7 +458,7 @@
      ],
      "year": 1995,
      "publisher": "M. Gordon Publishing Group",
-     "covers": "Short-term setups, including the ADX pullback to the 20-period exponential moving average (14-period ADX above 30 marking a strong trend, entry trigger above the high of the pullback bar).",
+     "covers": "Short-term setups, including the ADX pullback to the 20-period exponential moving average (14-period ADX above 30 marking a strong trend, entry trigger above the high of the pullback bar) and the false 20-day breakout reversal (a new 20-day low while the previous 20-day low is at least four sessions old, with an entry order just above that earlier low).",
      "review": "verified",
      "review_note": "WorldCat OCLC 36390149: M. Gordon Pub. Group, Malibu, Calif., 1995 (ISBN 0965046109). Open Library shows a 1996 date for the same ISBN; the catalogue's 1995 copyright date is kept.",
      "evidence": [

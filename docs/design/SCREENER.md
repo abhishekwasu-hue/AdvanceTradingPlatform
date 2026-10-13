@@ -911,6 +911,54 @@ Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` (U9 §1, §2, §4 "TX1");
   gallery render (rail, chips, cards, empty cell, matrix, disabled Open, no advice wording, no Devanagari), a Playwright
   spec (flag off: no button; rail -> chip -> empty cell -> card -> Open loads the starter), Storybook stories.
 
+## U9 TX2 (built): confluence view, mirror screens, watch-then-trigger lists (flag `screener_tx2`, off)
+
+Source: `docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md` §3 and §4 "TX2". Code: `app/screener/mirror.py`,
+`app/screener/library.py`, `app/screener/library_routes.py`; frontend `src/screener/library.ts`, `LibraryTools.tsx`.
+Flag `screener_tx2` (default OFF) on top of `screener_v2` and `screener_gallery`; off = 503 and the page unchanged.
+
+- **Pre-built screens as text.** `library.resolve` turns a filed screen into ScreenQL: the U5 starters (`STARTERS`; the
+  same text is in `frontend/src/screener/starters.json` and a vitest checks it against what each starter's build
+  prints), the Legends cards (source + default parameters) and the breakout templates (`templates.screenql`).
+- **Mirror screens.** Defined, not guessed: `mirror(S)` holds on a symbol's bars exactly when `S` holds on the bars
+  reflected through a price level C (p -> C - p: highs and lows swap, volume unchanged). The AST is rewritten with a
+  class per sub-expression (same value / C minus / minus / 100 minus) - e.g. `RSI(14) <= 30` -> `RSI(14) >= 70`,
+  `high > Max(high, 20)[1]` -> `low < Min(low, 20)[1]`, side arguments swap. Every rule is checked bar by bar on
+  synthetic bars against the original on reflected bars (`tests/test_tx2_library.py`), and so is every generated
+  pre-built mirror. No mirror, with the reason: a price against a fixed number, a ratio or multiple of a price
+  (Minervini, Darvas), PctChange of a price, Supertrend, option-chain / zone functions, and the functions found NOT
+  exact on reflected bars - `DowTrend` and `SwingBreakType` (an equal swing high or low reads as lower on both sides,
+  so ties do not mirror), `ATRPercentile` (ATR / close depends on the price level), the outside-bar patterns and
+  hammer / shooting star. A screen that reads both sides alike (Crabel NR7) is its own mirror. The breakout
+  templates' mirror is the template's own down side (the engine defines it). Mirrors are `<id>.short`, generated per
+  request, never filed in taxonomy.json; a card shows "Mirror (down side): <text>" or the reason.
+  - One warm-up (review of TX2): the swing functions (SwingHigh / SwingLow / SwingDirection / SwingZone* and screens
+    built on swings) are exact from the third confirmed swing on (`mirror.SWING_WARMUP`). Before that, the zigzag's
+    opening swing can differ on reflected bars: it tests a high before a low, so when both could confirm on the same
+    early bar the two sides open differently. On the test bars that was bars 13-32 in 6 of 40 seeds.
+  - The exactness test uses prices on whole ticks (so an equal high or low stays equal after the reflection) and
+    three seeds, and skips that warm-up.
+- **Confluence.** `POST /api/screener/library/confluence` runs 2-6 screens (library ids, their mirrors, or
+  `saved:<id>` of the organisation) over up to 50 symbols - one fetch per timeframe, closed bars, the BT1b own-session
+  path - and ranks symbols by the number of different methods (taxonomy axis 1) that flag them, then screens, then
+  symbol. Each row lists the screens that flagged it with their text (the evidence). Stores nothing. A count of
+  agreement: never a score or a recommendation.
+  - Rate limit (review of TX2): a confluence is charged as k + f - 1 `/run` calls (k screens, f fetches) on the same
+    per-user bucket as `/run` (60 a minute), before any bar is fetched. A watch-trigger is charged as 2.
+- **Watch-then-trigger lists.** A list is a ready and a trigger condition (three pre-built lists in
+  `library.WATCH_LISTS`, or the user's own). On the last closed bar: triggered = the trigger holds and ready held on
+  the bar before - the transition screen `Count(1, ready)[1] >= 1 AND trigger`; ready = ready now and not triggered.
+  The transition is an ordinary screen: "Save the trigger screen" saves it, and the existing screen alert rules give
+  the alert on the transition (no second alert engine). Z10-a case: `Count(1, close > EMA(close, 20))[1]`.
+  - The route evaluates `ready` and `trigger` once each (`library_routes.watch_eval`). Triggered is read from the
+    ready series' bar before the last and the trigger's last bar. A test checks this against running the ready and
+    transition screens, on every prefix of three seeds' bars.
+- **No new ScreenQL function.** TX2 adds no registry entry; the transition uses `Count` with an offset.
+- **Routes** (`tests/tenancy_route_table.py`): `GET /library/mirrors`, `GET /library/watch-lists` (member);
+  `POST /library/confluence`, `POST /library/watch-trigger` (trader, rate limited 20 / min, like `/run`).
+- **Not in TX2:** evidence charts per confluence row (U8 packs are stored for `/run` only), a compare view, filing user
+  screens on both axes (TX1-4), regime greying and the digest (TX3), learn mode and forking (TX4).
+
 ## U6 BK1 (built): breakout screens, quality overlay, style / timeframe selector (flag `screener_breakouts`, off)
 Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md`. Code: `app/screener/breakouts/`. Research notes and every
 parameter's default: `docs/research/breakouts.md`. Open questions BK1-1..BK1-10 are in `docs/OPEN_QUESTIONS.md`.
@@ -1150,6 +1198,68 @@ notes, sources and the parameter table: `docs/research/breakouts.md`. Open quest
 - **Not in BK3.** Frontend changes: the builder reads the catalog, so the new blocks and templates appear when the flag
   is on.
 
+## U6 BK4 (built): trendline, pattern, gap and retest breakouts (flag `screener_breakouts_bk4` on top of `screener_breakouts`, both off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §8 BK4 (B5 / B6 / B8 / B9). Code: `app/screener/breakouts/lines.py`,
+`gaps.py`, `retest.py`, wired into `screens.py` like BK2 / BK3. Research notes and the parameter table:
+`docs/research/breakouts.md`. Open questions BK4-1..BK4-7 in `docs/OPEN_QUESTIONS.md`.
+- **Flag.** `screener_breakouts_bk4` (DEFAULT_OFF_FLAGS) works like BK3's (`Spec.also_flags`). The five functions are
+  hidden and refused unless both flags are on. The catalog leaves out the BK4 screens, templates and parameters, and
+  `/breakouts/run` answers 503. Alert rules are refused at creation and pause while the flag is off. The bar-close engine
+  now reads every set flag generically (`gate.extra_flags_needed`, `evaluate_rule(breakout_extra_flags=...)`). The
+  taxonomy source is `breakouts_bk4`. There are no new routes and no migration.
+- **Screens** (closed bars; a value at bar j uses bars 0..j; down = mirrored prices):
+  - **B5 trendline / channel.** The trendline rule is the CH3b port of Trade's (`app/price_action/trendlines.py`), applied
+    as of every bar on the bars before it. On every prefix it gives the same line as `find_trendline` (tested on two
+    seeds, both kinds). Each anchor pair's first close beyond is computed once, vectorised, and the finder runs only on
+    bars where some line is closed beyond by the buffer, so the result is the same as running it on every bar. Added:
+    the age filter `tl_max_bars`. `line`: the first close beyond a falling resistance (up) / rising support (down) by
+    `min_break_atr` ATR. `channel`: beyond the far edge (`channel_of`'s parallel); `measured_move` = the edge plus the
+    width. One per leg.
+  - **B6.** `flag` / `pennant`: a pole (at least `pole_min_atr` ATR within `pole_max_bars`), then `flag_min_bars` to
+    `flag_max_bars` bars under the pole top that give back at most `flag_max_retrace`; the pennant's must also contract.
+    The break is a close above them by k ATR on `vol_mult` volume; measured move = level + pole. `triangle`: the current
+    resistance and support lines converge, and the close goes above the resistance; measured move = the height at the
+    start. ATP had no chart-pattern detector (Trade's "patterns2" is the Elliott rule set, ported as `daily_trend`), so
+    these are built from the bars. Flat-sided triangles are not detected (BK4-2). One per leg.
+  - **B8 gap.** The level is the previous regular session's high / low (`prev_day`) or the last `gap_base_n` sessions'
+    (`base`). The open must be beyond it (optionally by `gap_min_atr` daily ATRs). Every close of the first
+    `gap_hold_min` minutes must hold beyond it; on Daily bars, the day's close. Classes: `GAP_AND_GO` / `GAP_HOLD`
+    (signalled) and `GAP_FILL` (classified, not signalled). One signal per session. Intraday sessions come from the
+    exchange calendar (as BK2). The breakout run fetches the sessions the level and the daily ATR need.
+  - **B9 retest.** After a range / swing / Donchian / trendline breakout (`retest_of`, that screen's own parameters and
+    leg rule), price must leave the level, then come back within `retest_max_bars` and close at or beyond it. By default
+    the return is a logical reversal at the level - the composite rule `ReversalAt` uses, run on the candidate bars only
+    (tested equal), and its candles never include the breakout bar. `retest_reversal` false: a touch is enough. A close
+    back inside first means the breakout failed. One per breakout.
+- **ScreenQL.** `TrendlineBreakout(side, mode, touches, k)`, `PatternBreakout(side, pattern, v, k)`,
+  `GapBreakout(side, level, hold)`, the classifier `GapType(side, level, hold)` (GAP_AND_GO / GAP_HOLD / GAP_FILL / "")
+  and `RetestEntry(side, of, bars, reversal)`. History: lines 125 bars (age 120 plus the swing window), retest 250 (the D1
+  swings of a swing break), gaps two whole sessions on intraday bars. Gaps run on 1m-15m and Daily only; `hold` must be
+  a whole number of bars. Gap functions are session functions for the alert clock (NSE only, as BK2-5).
+- **Result rows** add `measured_move` (B5 channel, B6), reported as a price, never as advice. The taxonomy lint refuses
+  "target" wording.
+- **Templates.** Eight: daily trendline, 1H channel, daily flag (up), daily triangle, 5m gap beyond the previous day, daily
+  gap above a 20-day base (up), daily and 1H range retests. Each template's ScreenQL text equals the engine bar by bar.
+  The daily flag and range-retest templates are proven on an injected daily history within the broker's 272-session
+  fetch.
+- **Perf (Z10-d).** The perf-job test (`test_bk3_breakout_screens_fit_the_bar_close_target`) now times the BK4 screens
+  too (200 symbols, 1 s x CI factor). Several changes speed it up. Each keeps values equal (tested) and most help every
+  breakout screen:
+  - the line finder is evaluated over all anchor pairs at once, only on bars where a pair that is itself a valid line is
+    closed beyond by the buffer;
+  - the reference range, the median range and the swing threshold are computed on arrays (equal to
+    `trendlines.ref_range`, `breaks.median_range` and `causal_swings.threshold`);
+  - the leg rule's zigzag and loop run on Python floats (equal to `causal_swings.zigzag_pivots`);
+  - relative volume is computed lazily;
+  - the runtime builds only the signal / event columns;
+  - the retest's reversal setup is built lazily, once per frame, and each watch stops at its first retest.
+
+  The daily trendline retest went from 1.3-1.6 s to 0.87-0.95 s (58-59 % of budget). Every BK3 / BK4 case now has a
+  median at or below 62 % of budget in two full runs.
+- **Z10-a.** Each of the five functions has causal cases on 5m (`@1h` / `@15m` variants) plus daily cases. All are
+  non-vacuous; the gap cases use the down side because the synthetic 5m sessions gap mostly down, and the synthetic
+  daily bars never gap, so the daily gap behaviour is covered by fixtures.
+
 ## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
 Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
 - Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own
@@ -1212,6 +1322,40 @@ Z1-Z7 are done (the branch is ready; the PR waits). Flag `screener_legends` (def
   (P1 §1.6), the Turtles "Then" template (ATR sizing, 2N stop), short mirrors (TX2), the remaining catalogue (LG2,
   LG3), search by style chips beyond the taxonomy's setup chips.
 
+## U7 LG2: five more Legends cards (flag `screener_legends_lg2`)
+
+The spec's "LG2 remaining trend / pullback / options" (U7 §6), limited to cards whose rules a published work states
+and that run on bars alone (OPEN_QUESTIONS LG2-1 lists what is left out and why).
+
+- **The five cards.** They are in `legends.json` with `"slice": "lg2"`, and the same lint as LG1 applies to the whole
+  library.
+  - Livermore-style pivotal-point breakout (*How to Trade in Stocks*, 1940; `unverified`: no catalogue record found).
+  - Wyckoff-style trading-range spring (Pruden, *The Three Skills of Top Trading*, 2007).
+  - Raschke-style false 20-day breakdown reversal (the second *Street Smarts* card; the branded name stays out of the
+    title).
+  - Crabel-style opening-range breakout (5-minute bars, `ORHigh`).
+  - Tudor Jones-style 200-day regime filter (the interview in Robbins, *Money: Master the Game*, 2014).
+  - The screens use only plain registry functions: no breakout or zone family and no new function, so there is no
+    new Z10-a causal case.
+- **The flag.** `screener_legends_lg2` is default OFF, on top of `screener_legends`.
+  - API: `GET /api/screener/legends` adds the LG2 cards only while it is on (`legends.payload(..., slices=)`), and
+    `/legends/{id}` answers 404 for an LG2 card while it is off.
+  - Taxonomy: a per-screen flag (`taxonomy.register_screen_flags`; route `hidden_ids`) hides the LG2 screens and their
+    counts. The cards keep the `legends.` ids and source, so the gallery's card rule is unchanged.
+  - No new route.
+- **Sources.** `legends_sources.json` adds `livermore_1940`, `pruden_2007` and `robbins_2014`, each with its public
+  record URLs and a review note (LG2-3). The `covers` of `raschke_connors_1995` now also names the false-breakout
+  reversal.
+- **Tests.** `tests/test_n3_lg2_legends.py` covers:
+  - the slice, lint and links;
+  - the review status of the new sources;
+  - no new or flagged function;
+  - a positive and a negative bar fixture per card through `run_screen`;
+  - the flag: off hides the cards and taxonomy entries, on shows them, LG2 alone shows nothing;
+  - per-screen hiding in the taxonomy.
+
+  The LG1 tests read the LG1 slice. The frontend samples are regenerated (the LG1 view; LG2 stays hidden in them).
+
 ## N3 S6a (built): screen history - who passed on a date, and screen fitness (flag `screener_history`, off)
 
 Spec §2.6 and §2.7, the first of S6's two PRs. S6b is the rolling screen backtest: rebalance, top-N by rank,
@@ -1269,6 +1413,54 @@ weighting, the part C cost and slippage models, and the benchmark comparison.
 - LOW: a symbol reused by another company gets its ISIN in the label; picks with no bar at d + h are counted
   (`no_bar_at_horizon`); unadjusted bars across a split leave those dates out; the deflation family is keyed by step and
   horizon; a forward window into the holdout is refused (tested).
+
+## N3 S6b (built): the rolling screen backtest (flag `screener_backtest`, off; needs `screener_history`)
+
+Spec §2.7, the second of S6's two PRs. `POST /api/screener/history/backtest` takes S6a's body plus `top_n` (1-50,
+which needs `rank_by`), `rank_by` (a daily ScreenQL factor of one symbol's bars, e.g. `PctChange(close, 20)`; no Rank
+/ PercentileRank), `descending`, `weighting` (equal / rank), `capital`, `slippage_pct` (default 0.02, the paper
+broker's and C2's default) and `brokerage_per_order` (default 20). It is a trader route in the tenancy table.
+
+- **No look-ahead.**
+  - Matches and rank values come from S6a's causal series read at each rebalance date: bars closed by then, and a
+    symbol counts only if it traded that day.
+  - The portfolio is decided at that date's close and filled at the **next session's open**.
+  - The equity is marked at each close.
+  - Tests: rewriting every bar after a day leaves the equity and the rebalance log up to that day unchanged. The rank
+    value equals the expression on the cut bars.
+- **Fills and costs (part C).**
+  - The fixed-% slippage model against the trade (C2 default).
+  - India's dated equity-delivery charges on every order (`india_costs.leg_cost`: STT, exchange, SEBI, stamp, GST,
+    brokerage).
+  - Whole shares, with 0.5 % of the equity kept back for charges.
+  - A holding that stops trading is marked at its last close and sold at it at the next rebalance.
+- **Choice.**
+  - The matches ranked by `rank_by`: NaN last, ties by symbol.
+  - The top N, or every match when there is no `top_n`.
+  - Equal weights, or rank weights N, N-1, ..., 1.
+- **Benchmarks.**
+  - The equal-weight eligible universe, as of the last rebalance, no costs.
+  - NIFTY 50 closes from the lake (`NSE_INDEX:NIFTY50`) when they are there; otherwise the answer says so.
+- **Report.**
+  - Total return, CAGR, annualised volatility and Sharpe, and maximum drawdown, for the strategy and each benchmark,
+    plus the excess.
+  - Costs paid, turnover per rebalance, average holdings.
+  - The equity curve, and the last 20 rebalances (decided, filled, matches, held).
+- **Ledger.** Each run is one `research_trials` row (`kind: screen_backtest`, daily returns). Its Sharpe is deflated
+  against the organisation's screen backtests of the last 30 days.
+- **Perf (Z10-d).** `screen_backtest`: the 50-factor screen over 300 symbols, top 20 by `PctChange(close, 20)`, rank
+  weights, weekly over a year. The target is 3 s, times the CI factor; locally it took 1.8 s. The rank values use the
+  Z10-d panel where it covers the expression.
+- **No migration**, and no new ScreenQL function, so no new Z10-a causal cases. It is a simulation: nothing is
+  placed. The disclaimer is in every answer.
+
+### Review of S6b (fixed)
+- HIGH (inherited): matches and rank_by values read at each date come from the fixed series path (last-bar-only refused,
+  prices as known at each date).
+- MED: rank_by passes the screen's gates (flagged families, data the run does not load, last-bar-only) and must be a
+  number; day 1 counts from the capital, benchmarks on the same basis (S6-12).
+- LOW: no stale-close sells (S6-13); the equal-weight universe keeps delisted names at their last price; a missing
+  NIFTY close is skipped and counted.
 
 ## S10 (Phase 0 slice, built): the ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
 

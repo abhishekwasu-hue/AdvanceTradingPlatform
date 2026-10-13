@@ -1875,6 +1875,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: "Decision tools" card on Positions (progression i18n), SVG chart, story.
 - Tests: `tests/test_n2_decision_tools.py` (10); vitest `src/progression/decision.test.tsx` (6). Open questions
   N2-11..N2-13.
+### 2026-10-12 IST - N2-4 decision tools II (`claude/n2-4`, stacked on `claude/n2-3`)
+- Flag `decision_tools` (off).
+- Exposure view of the caller's own open positions (`GET /api/decision/exposure`): by underlying and sector, risk at
+  stops, beta to the NIFTY 50, and pairs moving together, from the shared daily lake (split-adjusted by ISIN when
+  known).
+- Expected-move cone (`GET /api/decision/expected-move`), from HV20 or a typed IV; an "Expected move" toggle on the
+  chart window draws ±1 / ±2 sd bands.
+- Routes are classified in the tenancy table (member).
+- Tests: `tests/test_n2_exposure_cone.py` (6, seeded lake bars with built-in beta 1 / 2 and r = 1); vitest
+  `src/progression/exposure.test.tsx` (4). Open questions N2-14..N2-16.
 
 ## Fix: the trading worker acts per deployment as its creator (TX-3)
 

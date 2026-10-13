@@ -53,7 +53,8 @@ logger = logging.getLogger(__name__)
 FLAG = "screener_v2"
 INTRABAR_FLAG = "screener_intrabar"
 BREAKOUT_FLAG = "screener_breakouts"                 # U6 BK1: rules using breakout functions pause (stay active) while it is off
-BREAKOUT_BK3_FLAG = "screener_breakouts_bk3"         # U6 BK3: rules using the VCP / indicator breakouts also pause while it is off
+# U6 BK3 / BK4: rules using the VCP / indicator (bk3) or trendline / pattern / gap / retest (bk4) breakouts also pause while off
+BREAKOUT_EXTRA_FLAGS = ("screener_breakouts_bk3", "screener_breakouts_bk4")
 ZONES_FLAG = "market_zones"                    # Z7a-3: rules using market-zone functions pause (stay active) while it is off
 EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
 RETRY_SECONDS = 60
@@ -263,7 +264,8 @@ def _fresh_only(current: List[SymbolData], tf: str, now: datetime, holidays: Ite
 async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datetime, fetch: Fetch,
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
                         breakouts_enabled: bool = False, zones_enabled: bool = False, per_user: bool = False,
-                        vectorized: bool = False, evidence_enabled: bool = False, breakouts_bk3_enabled: bool = False) -> Tuple[str, int]:
+                        vectorized: bool = False, evidence_enabled: bool = False,
+                        breakout_extra_flags: Optional[Dict[str, bool]] = None) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
     (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time. Every flag
     argument defaults to OFF (BK3 review L7): `run_due` passes each organisation's own flags; a direct caller opts in."""
@@ -291,7 +293,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
     cache = cache if cache is not None else CycleCache()
     try:
         ast, validated, symbols, params = await _rule_source(session, rule)
-        from app.screener.breakouts.gate import alert_clock_refusal, extra_flag_calls, flagged_calls
+        from app.screener.breakouts.gate import alert_clock_refusal, extra_flags_needed, flagged_calls
         from app.screener.breakouts.gate import refusal as breakout_refusal
         blocked = flagged_calls(ast)
         if blocked and (not breakouts_enabled or intrabar):
@@ -299,11 +301,11 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             rule.last_problem = (f"{', '.join(n + '()' for n in blocked)}: the breakout screens are off for this organisation (flag {BREAKOUT_FLAG})"
                                  if not breakouts_enabled else "breakout rules fire on bar close only, not intrabar")
             return "unsupported", 0
-        bk3_calls = extra_flag_calls(ast)
-        if bk3_calls and not breakouts_bk3_enabled:
-            # U6 BK3: VCP / indicator breakouts also need `screener_breakouts_bk3`; the rule pauses the same way
-            rule.last_problem = breakout_refusal(bk3_calls)
-            return "unsupported", 0
+        for extra_flag, names in extra_flags_needed(ast).items():
+            if not (breakout_extra_flags or {}).get(extra_flag, False):
+                # U6 BK3 / BK4: the set flags on top of the family flag; the rule pauses the same way (unknown = off)
+                rule.last_problem = breakout_refusal(names)
+                return "unsupported", 0
         from app.screener import zones as zone_gate
         zone_calls = zone_gate.flagged_calls(ast)
         if zone_calls and (not zones_enabled or intrabar):
@@ -384,7 +386,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     enabled: Dict[int, bool] = {}
     intrabar_on: Dict[int, bool] = {}
     breakouts_on: Dict[int, bool] = {}
-    bk3_on: Dict[int, bool] = {}
+    extra_on: Dict[int, Dict[str, bool]] = {}
     zones_on: Dict[int, bool] = {}
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     vectorized_on: Dict[int, bool] = {}
@@ -405,8 +407,8 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             intrabar_on[rule.tenant_id] = await flag_enabled(session, INTRABAR_FLAG, rule.tenant_id)
         if rule.tenant_id not in breakouts_on:
             breakouts_on[rule.tenant_id] = await flag_enabled(session, BREAKOUT_FLAG, rule.tenant_id)
-        if rule.tenant_id not in bk3_on:
-            bk3_on[rule.tenant_id] = await flag_enabled(session, BREAKOUT_BK3_FLAG, rule.tenant_id)
+        if rule.tenant_id not in extra_on:
+            extra_on[rule.tenant_id] = {f: await flag_enabled(session, f, rule.tenant_id) for f in BREAKOUT_EXTRA_FLAGS}
         if rule.tenant_id not in zones_on:
             zones_on[rule.tenant_id] = await flag_enabled(session, ZONES_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
@@ -418,7 +420,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
                                            breakouts_enabled=breakouts_on[rule.tenant_id], zones_enabled=zones_on[rule.tenant_id],
-                                           breakouts_bk3_enabled=bk3_on[rule.tenant_id],
+                                           breakout_extra_flags=extra_on[rule.tenant_id],
                                            per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
                                            evidence_enabled=evidence_on[rule.tenant_id])
         out.evaluated += state == "done"

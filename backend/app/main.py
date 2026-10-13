@@ -1,6 +1,7 @@
 import copy
 import hashlib
 import json
+import asyncio
 import logging
 import uuid
 from contextlib import asynccontextmanager
@@ -148,13 +149,31 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     async with _startup_session_factory() as session:
         await promote_configured_super_admins(session)
         await warm_tenant_keys(session)  # Phase N1: tenant data keys into the process key ring
+        from app.ai import instrument_names
+        await instrument_names.refresh(session)    # H-C1 c: instrument names for the AI output filter (never raises)
         # Phase 0 deployment (ATP_DEPLOYMENT_PHASE=phase0): seed live_trading OFF / phase0_paper_only ON where unset, then
         # log why LIVE entry paths are (not) started. Never stops the API from coming up.
         try:
             await deployment_phase_startup(session, "api")
         except Exception:  # noqa: BLE001 - never stops the API from coming up (Phase 0 defaults still apply)
             logging.getLogger(__name__).exception("Phase 0 start-up check failed")
-    yield
+    names_task = asyncio.create_task(_refresh_instrument_names())
+    try:
+        yield
+    finally:
+        names_task.cancel()
+
+
+async def _refresh_instrument_names() -> None:
+    """H-C1 c: the AI output filter's instrument names, refreshed every six hours (new listings, renames)."""
+    from app.ai import instrument_names
+    while True:
+        await asyncio.sleep(instrument_names.REFRESH_SECONDS)
+        try:
+            async with _startup_session_factory() as session:
+                await instrument_names.refresh(session)
+        except Exception:  # noqa: BLE001 - the filter keeps the names it has
+            logging.getLogger(__name__).warning("instrument names not refreshed", exc_info=True)
 
 
 app = FastAPI(

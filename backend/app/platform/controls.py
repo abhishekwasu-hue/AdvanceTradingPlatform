@@ -246,6 +246,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N3 S6b: the rolling screen backtest - rebalance weekly / 4-weekly / monthly, top N by a rank expression, equal or rank
     # weights, next-open fills with the part C slippage and India's delivery charges, against the equal-weight universe and
     # NIFTY 50; deflated through the research trial ledger. Needs screener_history. OFF: 503. A simulation only.
+    # N3 S7a: ranking systems - weighted factor trees (weights, higher / lower is better, sector-neutral percentiles) that
+    # rank a universe 0-100 with every component shown; a column, a sort key (the S6b backtest's rank_system) and a filter
+    # (ScreenQL RankScore("name") > 80). Platform systems with documented formulas. OFF: the routes answer 503 and a screen
+    # using RankScore is refused with the reason. Information only - places nothing.
+    "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",
     # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices
@@ -301,7 +306,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "chart_contracts", "chart_futures_basis"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "chart_contracts", "chart_futures_basis", "screener_rankings"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

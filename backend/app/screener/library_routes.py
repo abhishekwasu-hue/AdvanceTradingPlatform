@@ -90,6 +90,12 @@ async def _compile(session: AsyncSession, user: User, label: str, ast: Any, base
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": f"{label} did not pass validation",
                                                      "problems": [p.as_dict() for p in validated.problems]})
+    from app.screener import ranking as ranking_gate
+    if ranking_gate.uses_rankscore(ast):
+        # N3 S7a: missing_data counts RankScore's systems as loaded (by /run); the library's runs do not load them, so
+        # every symbol would rank NaN - refused with the reason, as screen history refuses it
+        raise HTTPException(status_code=422, detail=f"{label}: RankScore() is not run in confluence or watch lists yet - "
+                                                    "run the screen from the Screener")
     missing = missing_data(ast)
     if missing:
         raise HTTPException(status_code=422, detail=f"{label}: {', '.join(m + '()' for m in missing)} need data a run does not load yet")

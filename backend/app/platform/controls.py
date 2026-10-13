@@ -119,6 +119,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # BYOK-V1 (docs/BYOK.md): each user's own AI provider key for Vision chart review. OFF: the endpoints answer 404 and
     # the Settings section says it is not enabled. Vision only comments; it never places, blocks or changes an order.
     "vision_byok": "Vision with your own AI key: users store their own provider API key (encrypted), test it and set spend caps",
+    # BYOK-V3 (docs/BYOK.md): the same Vision audit (each user's own key, comment only) for the screen alerts of rules the
+    # user created and a daily after-close review of the user's own symbols. Needs `vision_byok` too. OFF: no scan-alert or
+    # daily-review row is queued and no call is made; V2 proposal audits are unchanged.
+    "vision_byok_v3": "Vision V3: your own AI key also reviews your scan alerts and a daily after-close chart review (comment only, never an order)",
     # PW5 (beta spec 4a): a proposal links to a pre-filled order in the user's own broker app where the broker offers
     # such a link (docs/BROKER_DATA_TERMS.md). The user confirms there; ATP sends nothing to the broker API.
     "broker_app_links": "\"Trade in your broker app\" links on proposals (pre-filled basket in the user's own broker app; ATP places no order)",
@@ -283,7 +287,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

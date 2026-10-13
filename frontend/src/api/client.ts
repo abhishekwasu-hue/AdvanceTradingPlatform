@@ -131,7 +131,7 @@ import type {
   ByokProviderName,
   ByokStatus,
   ByokTestResponse,
-  VisionReportsResponse,
+  VisionReportsResponse, VisionSubjectKind,
   VerificationSendResult,
   TaxReport,
   FxRate,
@@ -800,6 +800,13 @@ export const api = {
   byokSavePrefs: (body: ByokPrefsInput) => request<ByokStatus>("/ai/byok/prefs", { method: "PUT", body: JSON.stringify(body) }),
   // BYOK-V2: the caller's own Vision reports on proposals (404 while vision_byok is off).
   byokReports: (actionId?: number) => request<VisionReportsResponse>(`/ai/byok/reports${actionId ? `?action_id=${actionId}` : ""}`),
+  /** BYOK-V3: the caller's own reports of one kind (scan_alert / daily_review) or for one scan-alert notification. */
+  byokReportsBy: (q: { kind?: VisionSubjectKind; notificationId?: number }) => {
+    const params = new URLSearchParams();
+    if (q.kind) params.set("kind", q.kind);
+    if (q.notificationId) params.set("notification_id", String(q.notificationId));
+    return request<VisionReportsResponse>(`/ai/byok/reports?${params.toString()}`);
+  },
   byokDeleteReport: (id: number) => request<{ deleted: number }>(`/ai/byok/reports/${id}`, { method: "DELETE" }),
   aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
     request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }), signal }),

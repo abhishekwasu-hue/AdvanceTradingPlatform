@@ -21,8 +21,8 @@ Rollback caveats:
   with the symbols to resolve first (fold or delete the private profiles) - it never deletes data itself.
 
 Revision ID: e2a4c6b8d0f1
-Revises: d7f9a1c3e5b7 (contributed reference rows tenant scope, #234). LG3's c4e8a2d6f0b1 also revises d7f9a1c3e5b7:
-whichever of the two merges second re-chains its down_revision onto the other, so there is one head.
+Revises: c9e1f3a5b7d2 (BYOK-V3 vision subjects, #217; re-chained from d7f9a1c3e5b7, #234, when #217 merged first).
+LG3's c4e8a2d6f0b1 and BK5's d4f6a8c0e2b5 re-chain onto this one when they merge, so there is one head.
 Create Date: 2026-10-13 16:00:00
 """
 from typing import Sequence, Union
@@ -31,7 +31,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'e2a4c6b8d0f1'
-down_revision: Union[str, Sequence[str], None] = 'd7f9a1c3e5b7'
+down_revision: Union[str, Sequence[str], None] = 'c9e1f3a5b7d2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: the unique keys are WIDENED for companies (global -> per scope) and the new shared-period key only restates what

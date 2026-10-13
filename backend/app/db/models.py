@@ -2119,6 +2119,49 @@ class ResearchStudyRecord(Base):
     finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 
 
+class BacktestSweepRecord(Base):
+    """N7 C6: one distributed backtest sweep (a parameter grid x symbols on the server's lake bars) - queued by the API,
+    split into `backtest_sweep_tasks` that any number of workers claim. Its combinations are trials in
+    `research_trials` (kind `sweep_backtest`, study_id = sweep_id) once it is finalised."""
+
+    __tablename__ = "backtest_sweeps"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sweep_id: Mapped[str] = mapped_column(String(36), nullable=False, unique=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    spec_json: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="queued", index=True)   # queued / running / finalizing / done / failed
+    total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=lambda: datetime.now(timezone.utc))
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+
+
+class BacktestSweepTaskRecord(Base):
+    """N7 C6: one (combination, symbol) backtest of a sweep. queued -> running (claimed by one worker, heartbeat) ->
+    done | failed; a running task whose worker stopped is queued again (up to MAX_ATTEMPTS) - a task is pure, so a
+    retry gives the same result."""
+
+    __tablename__ = "backtest_sweep_tasks"
+    __table_args__ = (UniqueConstraint("sweep_id", "idx", name="uq_backtest_sweep_tasks_idx"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    sweep_id: Mapped[str] = mapped_column(ForeignKey("backtest_sweeps.sweep_id", ondelete="CASCADE"), nullable=False, index=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    idx: Mapped[int] = mapped_column(Integer, nullable=False)
+    combo: Mapped[int] = mapped_column(Integer, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(12), nullable=False, default="queued", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    worker: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    result_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error: Mapped[str | None] = mapped_column(String(300), nullable=True)
+
+
 class ResearchTrialRecord(Base):
     """H-C3 (ADR-0019/0020): one trial of a strategy research study - the DSL tried, the in-sample window, its metrics and
     its daily returns. Append-only and never deleted: the study report deflates the chosen result by EVERY trial tried,

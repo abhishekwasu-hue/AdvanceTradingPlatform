@@ -30,6 +30,7 @@ from app.core.models import (
 from app.auth.dependencies import get_current_user, get_current_user_optional
 from app.auth.routes import router as auth_router
 from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, OptionBacktestBody, record_run, router as backtest_router
+from app.backtest.sweep_routes import router as backtest_sweep_router
 from app.backtest import ledger as backtest_ledger
 from app.backtest.ledger import LakeWindow
 from app.brokers.models import OptionChain
@@ -204,6 +205,7 @@ app.include_router(kill_switch_router)
 app.include_router(reconciliation_router)
 app.include_router(accounts_router)
 app.include_router(backtest_router)
+app.include_router(backtest_sweep_router)
 app.include_router(notifications_router)
 app.include_router(webhooks_router)
 app.include_router(news_events_router)

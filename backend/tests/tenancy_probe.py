@@ -36,7 +36,7 @@ PATH_VALUES: Dict[str, str] = {
     "channel_type": "telegram", "strategy_id": "ema_rsi_scalper_1m", "sector": "Energy", "token": "z10c-not-a-token",
     "webhook_token": "z10c-not-a-token", "action": "pause", "kind": "ema", "timeframe": "1day", "key": "z10c",
     "version_number": "1", "exchange": "NSE", "flag": "phase0_paper_only", "instrument_key": "NSE_EQ|RELIANCE",
-    "day": "2026-09-25", "week": "2026-W39", "study_id": "z10c-study", "dataset": "trades", "concept_id": "z10c-concept", "source_id": "z10c-source", "slug": "privacy",
+    "day": "2026-09-25", "week": "2026-W39", "study_id": "z10c-study", "sweep_id": "z10c-sweep", "dataset": "trades", "concept_id": "z10c-concept", "source_id": "z10c-source", "slug": "privacy",
     "card_id": "legends.minervini_trend_template",
 }
 

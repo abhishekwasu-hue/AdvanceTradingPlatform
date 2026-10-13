@@ -221,6 +221,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # each run a ledger trial deflated for the organisation's recent portfolio runs; lake windows behind the holdout.
     # OFF: POST /api/backtest/portfolio answers 503. A simulation only.
     "backtest_portfolio": "Portfolio backtest: one strategy over several symbols on one shared book, recorded in the trial ledger and deflated (a simulation)",
+    # N7 C6: distributed backtest sweeps - a parameter grid x symbols on the lake's bars, split into tasks that any number
+    # of workers claim from two Postgres tables (in-process fallback in the API while BACKTEST_SWEEP_INLINE is on); every
+    # combination a ledger trial, the best deflated. OFF: /api/backtest/sweeps answers 503. A simulation only.
+    "backtest_distributed": "Distributed backtest sweeps: a parameter grid over symbols, run by parallel workers, every combination a ledger trial (a simulation)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
@@ -229,7 +233,7 @@ DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbou
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
                                "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core",
                                "chart_price_action", "chart_studies", "backtest_models",
-                               "backtest_ledger", "backtest_portfolio"})
+                               "backtest_ledger", "backtest_portfolio", "backtest_distributed"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

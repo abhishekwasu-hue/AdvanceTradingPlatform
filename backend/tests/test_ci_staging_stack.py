@@ -204,3 +204,14 @@ def test_after_ramp_split_is_a_diagnostic_beside_the_verdict(tmp_path):
     assert merged["scenarios"]["dashboard /api/auth/me"]["n"] == 6 and not merged["slo_pass"]   # the ramp's 3 s still counts
     md = loadtest.markdown(merged, "test host")
     assert "**SLO FAIL**" in md and "After the login ramp only (diagnostic" in md
+
+
+@pytest.mark.parametrize("minutes", [1, 5, None])
+def test_fake_broker_bars_per_minute_cache_changes_nothing(minutes):
+    """LD-7: the fake's bars are computed once per minute (it shares the runner's CPUs with the stack under test); a
+    bar starts on a minute, so the answer is the same as computing it for the exact instant."""
+    for until in (datetime(2026, 10, 9, 11, 7, 42, tzinfo=IST), datetime(2026, 10, 9, 15, 29, 59, 999999, tzinfo=IST),
+                  datetime(2026, 10, 9, 9, 15, tzinfo=IST), datetime(2026, 10, 10, 12, 0, 30, tzinfo=IST)):
+        cached = fake.bars("RELIANCE", minutes, date(2026, 10, 5), date(2026, 10, 10), until)
+        exact = list(fake._bars_per_minute.__wrapped__("RELIANCE", minutes, date(2026, 10, 5), date(2026, 10, 10), until))
+        assert cached == exact and cached

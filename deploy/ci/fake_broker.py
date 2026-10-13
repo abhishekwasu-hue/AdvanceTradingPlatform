@@ -29,6 +29,7 @@ Standard library only, plus `cryptography` for the throwaway CA (present in the 
 from __future__ import annotations
 
 import csv
+import functools
 import gzip
 import io
 import json
@@ -129,7 +130,17 @@ def data_until(broker: str) -> datetime:
 
 def bars(symbol: str, minutes: Optional[int], start_day: date, end_day: date, until: datetime) -> List[Tuple[datetime, float, float, float, float, float]]:
     """(start, open, high, low, close, volume) bars of `minutes` (None = daily) for session days in [start_day, end_day],
-    only bars that have started by `until` (the bar still forming is included, as a broker sends it)."""
+    only bars that have started by `until` (the bar still forming is included, as a broker sends it).
+
+    The answer depends on `until` only to the minute (every bar starts on a minute), so it is computed once per minute
+    and request shape: a 500-user load test asks for the same few symbols' bars thousands of times, and this fake shares
+    the runner's CPUs with the stack it stands in for - a real broker costs the host nothing."""
+    return list(_bars_per_minute(symbol, minutes, start_day, end_day, until.replace(second=0, microsecond=0)))
+
+
+@functools.lru_cache(maxsize=4096)
+def _bars_per_minute(symbol: str, minutes: Optional[int], start_day: date, end_day: date,
+                     until: datetime) -> Tuple[Tuple[datetime, float, float, float, float, float], ...]:
     out = []
     day = start_day
     while day <= end_day:
@@ -155,7 +166,7 @@ def bars(symbol: str, minutes: Optional[int], start_day: date, end_day: date, un
                     out.append((bucket, o, max(samples + [c]), min(samples + [c]), c, 1000.0 + (first % 97) * 10))
                     bucket = end
         day += timedelta(days=1)
-    return out
+    return tuple(out)
 
 
 def quote_price(symbol: str, broker: str) -> Tuple[float, datetime]:

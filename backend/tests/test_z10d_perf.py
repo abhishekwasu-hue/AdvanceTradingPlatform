@@ -151,3 +151,24 @@ def test_bar_close_scan_meets_the_target(factor):
             return await session.scalar(select(func.count()).select_from(AlertEventRecord).where(AlertEventRecord.rule_id.in_(rule_ids)))
     assert _run(events()) > 0                                                 # the scan matched and recorded something
     assert statistics.median(runs) <= budget
+
+
+BK3_SCREENS = [('DonchianBreakout("up")', "5m"), ('SqueezeBreakout("up")', "5m"), ('SqueezeBreakout("down", "ttm")', "5m"),
+               ('MABreakout("up")', "5m"), ('RegimeBreakout("up")', "5m"), ('VCPBreakout("up")', "1d"), ('VCPReady("up")', "1d")]
+
+
+@pytest.mark.parametrize("text,tf", BK3_SCREENS)
+def test_bk3_breakout_screens_fit_the_bar_close_target(factor, text, tf):
+    """U6 BK3: one VCP / indicator breakout screen over the bar-close universe (about 200 symbols; the VCP on daily bars,
+    300 sessions) within the bar-close target. Breakout functions run per symbol (not vectorised, as BK1 / BK2), so this
+    times the per-symbol runtime itself - the larger part of a bar-close cycle."""
+    from app.screener import compile_screen
+    from app.screener.runtime import run_screen
+    data = (bench.barclose_universe(BARCLOSE_SYMBOLS) if tf == "5m"
+            else bench.with_tf(bench.universe(BARCLOSE_SYMBOLS, bench.daily_index()), "1d"))
+    ast, validated = compile_screen(text, base_tf=tf, cost_cap=1e9)
+    assert validated.ok, validated.problems
+    result = bench.median_time(lambda: run_screen(ast, validated, data, base_tf=tf), REPEAT)
+    budget = bench.TARGETS["barclose_scan"] * factor * BARCLOSE_SYMBOLS / bench.BARCLOSE_SYMBOLS
+    _say(f"bk3 {text} ({BARCLOSE_SYMBOLS} symbols, {tf})", result["median"], budget, result["runs"], factor)
+    assert result["median"] <= budget

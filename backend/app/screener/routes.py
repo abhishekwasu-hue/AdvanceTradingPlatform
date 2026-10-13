@@ -112,13 +112,14 @@ async def registry(user: User = Depends(get_current_user), session: AsyncSession
     entries = describe()
     off = await _flags_off(session, user)
     if off:                                       # Z7a-3 (the U6 BK1 pattern): a flagged family stays hidden while its flag is off
-        entries = {k: v for k, v in entries.items() if not (k in FUNCTIONS and FUNCTIONS[k].flag in off)}
+        entries = {k: v for k, v in entries.items()           # U6 BK3: a second flag (Spec.also_flags) hides it too
+                   if not (k in FUNCTIONS and ({FUNCTIONS[k].flag, *FUNCTIONS[k].also_flags} & off))}
     return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
 
 
 async def _flags_off(session: AsyncSession, user: User) -> set:
     """The registry's function flags that are off for the user's organisation."""
-    flags = {spec.flag for spec in FUNCTIONS.values() if spec.flag}
+    flags = {f for spec in FUNCTIONS.values() for f in (spec.flag, *spec.also_flags) if f}
     return {f for f in flags if not await flag_enabled(session, f, user.tenant_id)}
 
 
@@ -135,7 +136,8 @@ async def taxonomy(method: Optional[str] = None, setup: Optional[str] = None, us
         raise HTTPException(status_code=422, detail=f"unknown method {method!r}; one of {', '.join(m.id for m in tax.methods)}")
     if setup is not None and setup not in {s.id for s in tax.setups}:
         raise HTTPException(status_code=422, detail=f"unknown setup {setup!r}; one of {', '.join(s.id for s in tax.setups)}")
-    hidden = [name for name, src in tx.sources().items() if src.flag and not await flag_enabled(session, src.flag, user.tenant_id)]
+    hidden = [name for name, src in tx.sources().items()
+              if any([not await flag_enabled(session, f, user.tenant_id) for f in (src.flag, *src.also) if f])]
     return tx.payload(tax, hidden_sources=hidden, method=method, setup=setup)
 
 
@@ -172,7 +174,7 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
 
 async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
-    screens (`screener_breakouts`) and the Z7a-3 market-zone functions (`market_zones`)."""
+    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`) and the Z7a-3 market-zone functions (`market_zones`)."""
     for gate in (breakout_gate, zone_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:

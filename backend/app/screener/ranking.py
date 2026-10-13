@@ -213,8 +213,12 @@ def leaf_flags(system: System) -> List[str]:
     for leaf in system.leaves():
         for node in n.walk(leaf.ast):
             spec = FUNCTIONS.get(node.name) if isinstance(node, n.Call) else None
-            if spec is not None and spec.flag and spec.flag not in out:
-                out.append(spec.flag)
+            if spec is None:
+                continue
+            # re-check of S7a (LOW): a function's further flags too (Spec.also_flags, BK3), not only its own
+            for flag in (spec.flag, *getattr(spec, "also_flags", ())):
+                if flag and flag not in out:
+                    out.append(flag)
     return out
 
 
@@ -488,34 +492,28 @@ def within(systems: Dict[str, System], fn: Any, *args: Any, **kwargs: Any) -> An
 
 
 async def sector_ranges(session: Any, symbols: Sequence[str], start: Any, end: Any) -> Dict[str, List[Tuple[Any, Optional[Any], Optional[str]]]]:
-    """Each symbol's NSE sector ranges overlapping [start, end] (U1-b classifications, by the ISIN the symbol had at `end`;
-    a symbol label that is itself an ISIN is used as is). Read once; `sector_on` answers each date - the sector AS OF
-    that date, never a later reclassification."""
+    """Each symbol's NSE sector ranges overlapping [start, end] (U1-b classifications). The ISIN is the one the symbol
+    traded under on each date (every symbol_history range in the window: A -> B -> A or A -> B -> C included - re-check
+    of S7a); a label that is itself an ISIN, or "SYM (ISIN)" (a reused symbol, S6a), is used as is. Read once;
+    `sector_on` answers each date - the sector AS OF that date, never a later reclassification."""
     from sqlalchemy import and_, or_, select
 
-    from app.db.models import ClassificationRecord
+    from app.db.models import ClassificationRecord, SymbolHistoryRecord
     from app.universe.asof import isin_for
     import re
-    from datetime import timedelta
     periods: Dict[str, List[Tuple[str, Any, Any]]] = {}       # symbol -> (isin, from, to exclusive): the ISIN it had then
     for sym in symbols:
-        tagged = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)$", sym)          # a label "SYM (ISIN)" (a reused symbol, S6a)
+        tagged = re.search(r"\(([A-Z]{2}[A-Z0-9]{10})\)$", sym)
         if tagged or (len(sym) == 12 and sym[:2].isalpha() and await isin_for(session, sym, end) is None):
             periods[sym] = [(tagged.group(1) if tagged else sym, start, None)]
             continue
-        first, last = await isin_for(session, sym, start), await isin_for(session, sym, end)
-        if first == last or first is None or last is None:
-            if last or first:
-                periods[sym] = [(last or first, start, None)]       # type: ignore[list-item]
-            continue
-        lo, hi = start, end                                       # review of S7a (LOW): the ISIN changed - find when
-        while (hi - lo).days > 1:
-            mid = lo + timedelta(days=(hi - lo).days // 2)
-            if await isin_for(session, sym, mid) == first:
-                lo = mid
-            else:
-                hi = mid
-        periods[sym] = [(first, start, hi), (last, hi, None)]
+        runs = await session.execute(select(SymbolHistoryRecord.isin, SymbolHistoryRecord.valid_from, SymbolHistoryRecord.valid_to).where(
+            SymbolHistoryRecord.symbol == sym.strip().upper(),
+            or_(SymbolHistoryRecord.valid_from.is_(None), SymbolHistoryRecord.valid_from <= end),
+            or_(SymbolHistoryRecord.valid_to.is_(None), SymbolHistoryRecord.valid_to > start)))
+        found = sorted(((isin, start if vf is None else max(vf, start), vt) for isin, vf, vt in runs), key=lambda x: x[1])
+        if found:
+            periods[sym] = found
     isins = {sym: [p[0] for p in ps] for sym, ps in periods.items()}
     out: Dict[str, List[Tuple[Any, Optional[Any], Optional[str]]]] = {s: [] for s in symbols}
     if not isins:

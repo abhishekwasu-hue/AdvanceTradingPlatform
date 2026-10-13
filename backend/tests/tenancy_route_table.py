@@ -55,6 +55,7 @@ S_OWN_INTERVIEW = "self: the caller's own strategy interview; nothing deploys"
 S_COPILOT = "self: a Copilot read or research run for the caller: read-only tools, no order, no other member's data changes"
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
+S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
@@ -203,6 +204,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/alerts/rules"): "trader",
     ("GET", "/api/alerts/rules/{rule_id}/events"): "member",
     ("POST", "/api/alerts/rules/{rule_id}/{action}"): "trader",
+    ("GET", "/api/alerts/rules/{rule_id}/then"): "member",
+    ("PUT", "/api/alerts/rules/{rule_id}/then"): "trader",
+    ("DELETE", "/api/alerts/rules/{rule_id}/then"): "trader",
     ("DELETE", "/api/alerts/telegram/link"): S_OWN_TELEGRAM,
     ("GET", "/api/alerts/telegram/link"): "member",
     ("POST", "/api/alerts/telegram/link-code"): S_OWN_TELEGRAM,
@@ -276,6 +280,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("PUT", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("POST", "/api/charts/drawings/{drawing_id}/lock"): S_OWN_DRAWINGS,
+    ("GET", "/api/charts/layouts"): "member",                   # CH5: the caller's own saved workspace layouts
+    ("POST", "/api/charts/layouts"): S_OWN_LAYOUTS,
+    ("PUT", "/api/charts/layouts/{layout_id}"): S_OWN_LAYOUTS,
+    ("DELETE", "/api/charts/layouts/{layout_id}"): S_OWN_LAYOUTS,
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
@@ -442,6 +450,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/orders"): "member",
     ("GET", "/api/orders/{order_id}/events"): "member",
     ("GET", "/api/paper/account"): "member",
+    ("GET", "/api/paper/experience"): "member",
+    ("POST", "/api/paper/experience/opt-out"): "trader",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",
     ("POST", "/api/paper/pause"): "trader",
@@ -452,6 +462,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/paper/ticket"): "trader",
     ("POST", "/api/paper/ticket/preview"): "trader",
     ("GET", "/api/portfolio/exposure"): "member",
+    ("GET", "/api/portfolio/risk"): "member",               # N1 F1: the caller's own PAPER book only
     ("GET", "/api/positions"): "member",
     ("GET", "/api/positions/greeks"): "member",
     ("POST", "/api/positions/{trade_id}/exit-now"): "trader",

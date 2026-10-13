@@ -307,6 +307,10 @@ class TradeRecord(Base):
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
     # matched to both sides of the trade.
     exit_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Re-exit guard (ADR-0004): when this position's exit was claimed / sent - an exit order missing from the broker's book
+    # is treated as dead once it was sent on an earlier trading day, or a clean reconciliation since shows the position
+    # still open. While the exit is being placed `exit_order_id` holds the pending marker (position_monitor.EXIT_PENDING).
+    exit_sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     # Where `charges` came from: ESTIMATED (the platform's NSE cost model at close time) or
     # CONTRACT_NOTE (the broker's actual charges, applied from an uploaded contract note).
     charges_source: Mapped[str] = mapped_column(String(20), nullable=False, default="ESTIMATED")

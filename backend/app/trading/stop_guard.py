@@ -31,7 +31,8 @@ from app.notifications.service import notify
 from app.reconciliation.service import broker_uncertain_reason
 from app.core import config
 from app.trading import stop_state
-from app.trading.position_monitor import _find_order, close_position, venue_for
+from app.trading.position_monitor import (_find_order, absent_exit_dead_reason, claim_in_flight, close_position, is_pending_exit,
+                                          venue_for)
 
 logger = logging.getLogger(__name__)
 
@@ -195,6 +196,20 @@ async def verify_protective_stops(
 _DEAD_EXIT = frozenset({"REJECTED", "CANCELLED", "CANCELED", "CANCELLED AMO", "EXPIRED", "LAPSED"})
 
 
+def _exit_died_unfilled(trade: TradeRecord, tenant: Tenant, book: Dict) -> bool:
+    """Re-exit guard: True when the exit this position sent is over with nothing filled - rejected / cancelled, or (HIGH-1)
+    gone from the book / a claim that never recorded an order, once `absent_exit_dead_reason` says it is over. The
+    position is then open without a stop and one is re-armed. Still working, filled, part-filled (the monitor sends the
+    rest), being placed right now, or gone but not yet known to be over (reconciliation decides): pending."""
+    exit_id = trade.exit_order_id
+    if is_pending_exit(exit_id):
+        return not claim_in_flight(trade) and absent_exit_dead_reason(trade, tenant) is not None
+    exit_order = book.get(exit_id)
+    if exit_order is None:
+        return absent_exit_dead_reason(trade, tenant) is not None
+    return (exit_order.status or "").upper() in _DEAD_EXIT and float(exit_order.filled_quantity or 0) <= 0
+
+
 async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterface, trade: TradeRecord, book: Dict, counts: Dict[str, int], *,
                      user_id: Optional[int], source: str, product: str) -> None:
     """One position of `verify_protective_stops`: re-arm its stop when the book has none standing."""
@@ -211,9 +226,7 @@ async def _guard_one(session: AsyncSession, tenant: Tenant, broker: BrokerInterf
     if getattr(trade, "exit_order_id", None):
         # Re-exit guard: an exit already went out for this position (its booking is pending). A new stop on a position
         # that is closing - or already flat - could open one the other way. Re-arm only when that exit died unfilled.
-        exit_order = book.get(trade.exit_order_id)
-        exit_status = (exit_order.status or "").upper() if exit_order is not None else ""
-        if exit_order is None or exit_status not in _DEAD_EXIT or float(exit_order.filled_quantity or 0) > 0:
+        if not _exit_died_unfilled(trade, tenant, book):
             counts.setdefault("exit_pending", 0)
             counts["exit_pending"] += 1
             return

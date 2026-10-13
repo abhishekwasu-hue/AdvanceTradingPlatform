@@ -258,9 +258,11 @@ async def refresh_many(
     provider = _provider_or_400(body.provider)
     results = []
     for raw in dict.fromkeys(s.upper().strip() for s in body.symbols if s.strip()):
-        # the shared profile, else this organisation's own (folded into / promoted to the shared one by the provider), else
-        # none (created as shared) - another organisation's private profile is never read or changed (security LOW #234)
-        company = await db.find_shared_company(session, raw) or await db.find_own_company(session, raw, user.tenant_id)
+        # this organisation's own profile first (as the single refresh picks it): folded into the shared one when that
+        # exists, else promoted to it by the provider; else the shared profile; else none (created as shared) - another
+        # organisation's private profile is never read or changed (security LOW #234)
+        own = await db.find_own_company(session, raw, user.tenant_id) if user.tenant_id is not None else None
+        company = own or await db.find_shared_company(session, raw)
         _, summary = await ingest.refresh_from_provider(session, company, raw, provider, user.id, profile=body.profile, shareholding=body.shareholding,
                                                         announcements=body.announcements, announcement_limit=body.announcement_limit, create_missing=body.create_missing,
                                                         tenant_id=user.tenant_id)

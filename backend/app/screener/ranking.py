@@ -24,10 +24,11 @@ it after loading them, so the runtime stays free of the database.
 """
 from __future__ import annotations
 
+import contextlib
 import contextvars
 import json
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -482,13 +483,22 @@ async def resolve(session: Any, tenant_id: int, names: Sequence[str]) -> Tuple[D
     return systems, problems
 
 
-def within(systems: Dict[str, System], fn: Any, *args: Any, **kwargs: Any) -> Any:
-    """Calls fn with `ACTIVE` set to these systems (for a worker thread: asyncio.to_thread(within, systems, run_screen, ...))."""
+@contextlib.contextmanager
+def active(systems: Dict[str, System]) -> Iterator[None]:
+    """`ACTIVE` set to these systems for the block. asyncio.to_thread copies the caller's context into the worker
+    thread, so `with active(systems): await asyncio.to_thread(run_screen, ...)` evaluates there with these systems
+    while the worker still runs run_screen itself (the F2 off-the-event-loop check names the function it runs)."""
     token = ACTIVE.set(systems)
     try:
-        return fn(*args, **kwargs)
+        yield
     finally:
         ACTIVE.reset(token)
+
+
+def within(systems: Dict[str, System], fn: Any, *args: Any, **kwargs: Any) -> Any:
+    """Calls fn with `ACTIVE` set to these systems (synchronous callers; an async route uses `active`)."""
+    with active(systems):
+        return fn(*args, **kwargs)
 
 
 async def sectors_by_date(session: Any, symbols: Sequence[str], dates: Sequence[Any]) -> Dict[Any, Dict[str, Optional[str]]]:

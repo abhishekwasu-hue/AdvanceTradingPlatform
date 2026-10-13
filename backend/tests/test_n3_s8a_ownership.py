@@ -260,6 +260,20 @@ def test_history_and_alerts_refuse_ownership_functions():
         _ownership_check(ast)
 
 
+def test_a_backtest_rank_by_refuses_ownership_functions():
+    """Review of S8 (LOW): rank_by passed missing_data (ownership counts as loaded by /run) and ranked every symbol NaN;
+    history does not load ownership, so rank_by is refused with the reason, as the screen itself is."""
+    from app.screener import backtest as B
+    t = _org("rankby")
+    _flag(H.FLAG, t["tenant_id"])
+    _flag(B.FLAG, t["tenant_id"])
+    body = {"source": "close > 1", "start": "2025-06-02", "end": "2025-06-30", "universe": {"symbols": ["X"]}, "top_n": 1}
+    for rank_by in ('Holding("promoter")', 'DaysToEvent("results")'):
+        r = client.post("/api/screener/history/backtest", headers=t["headers"], json={**body, "rank_by": rank_by})
+        assert r.status_code == 422, (rank_by, r.text)
+        assert "rank_by" in r.text and "do not read ownership or events" in r.text, (rank_by, r.text)
+
+
 # --- review of S8 ----------------------------------------------------------------------------------------------------------------
 
 def test_a_correction_never_reaches_back_and_a_backfill_is_as_published():

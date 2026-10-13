@@ -559,5 +559,24 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
     - Monitor / eye block only as a verb before a level ("Monitor 22800", "Eye 22800"). These pass: "the risk monitor
       shows 3 alerts", "Monitoring window: 20 sessions", "the eye of the range is 22750", "on track record grounds",
       "Asha Industries 3%".
+  - **Tenth review: the dandas, time references, progressive motion.**
+    - **HIGH fixed:** the dandas "।" and "॥" are no longer word characters. The Devanagari class of every word boundary
+      (`_DEVA`, `_MORPH_NEAR_NUMBER`, `_IMPERATIVE_DEVA`, the stems, `_MOVEMENT`) is `\u0900-\u0963\u0966-\u097f`, as
+      `call_detect._WORD`. "मैक्स पेन 22800 पर खरीदें।" and "Max pain 22800 is the target।" are blocked. "॥" also ends a
+      sentence and a clause.
+    - Blocked next to a number unless a past verb governs it, as a future time reference: next week / session / expiry,
+      the week ahead, at expiry, on expiry day, this expiry (never "for this expiry"), tomorrow; अगले, अगले हफ्ते, आने वाले
+      दिनों में, निकट भविष्य में; पुढील, पुढील आठवड्यात, येत्या, आगामी.
+    - Blocked in a sentence with a number, as progressive motion: on / en route, on course, on its way, making its way;
+      होने वाला है; जात / सरकत आहे; कडे जात.
+    - More words next to a number: ought to, in the cards, a good bet, tipped to, odds-on, primed for, gearing up for,
+      angling for, due for, due to + a verb, "is due", beckons, looms, in sight, forecast, projected / projection, my view,
+      tends to, gonna, to stay / remain / finish, signals / hints at a bounce, bullish / bearish for, guarding,
+      protecting, holding the line, mujhe lagta; एंट्री; सस्ता / महंगा / स्वस्त / महाग anywhere.
+    - Lakh / crore is an OI quantity when it follows a figure in a sentence with OI or contracts ("कॉल OI 23000 वर
+      सर्वाधिक, 1.4 कोटी"). Anywhere else it is still a spelled-out amount.
+    - "On track:" is a label.
+    - `_MORPH_NEAR_NUMBER`'s -गा / -गी / -गे branch starts only at a word start. It was quadratic: 5.1 s on 38,000
+      characters.
 - **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
   `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

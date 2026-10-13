@@ -770,3 +770,72 @@ def test_round9_nouns_and_descriptions_pass_the_advice_check(text):
 def test_round9_a_past_recap_with_a_modal_elsewhere_is_still_read_as_future():
     # should / would are future in _FUTURE, so a past verb before the number does not excuse them
     assert mv.advice_problems("The close rose 3.6% and should hold.")
+
+
+# --- round 10: dandas are sentence ends, not letters; time references; progressive motion; more synonyms ---------------
+_ACTION_DEVA = ("लक्ष्य", "टार्गेट", "स्टॉप", "स्टॉपलॉस", "एन्ट्री", "एंट्री", "प्रवेश", "खरेदी", "विक्री", "विका", "घ्या", "टारगेट",
+                "खरीदो", "खरीदें", "खरीद", "बेचो", "बेचें", "बेच")
+_FORECAST_DEVA = ("जाईल", "वाढेल", "घसरेल", "पोहोचेल", "जाएगा", "जाएगी", "बढ़ेगा", "गिरेगा", "पहुंचेगा", "संभावना", "शक्यता", "अपेक्षा",
+                  "उम्मीद", "अंदाज", "शायद", "संभवतः", "अनुमान", "आशा", "संभाव्य", "राहील", "होईल", "येईल", "देईल", "के आसार", "लगता है",
+                  "असे वाटते", "चिन्हे", "वाटचाल", "अपेक्षित")
+R10_DANDA = [f"मैक्स पेन 22800 {w}{d}" for w in _ACTION_DEVA + _FORECAST_DEVA for d in ("।", "॥")] + [
+    "मैक्स पेन 22800 पर खरीदें।", "मैक्स पेन 22800 पर खरीदो।", "मैक्स पेन 22800 के ऊपर बेचें।", "मैक्स पेन 22800 पर स्टॉपलॉस।",
+    "मैक्स पेन 22800 टार्गेट।", "मैक्स पेन 22800 लक्ष्य।", "मैक्स पेन 22800 पर एंट्री लें।", "मैक्स पेन 22800 के आसार।",
+    "मैक्स पेन 22800 लगता है।", "मॅक्स पेन 22800 असे वाटते।", "मैक्स पेन 22800 पर खरीदें॥", "Max pain 22800 is the target।",
+    "Max pain 22800 is the target॥", "मैक्स पेन 22800 सस्ता है।",
+]
+R10_BLOCK = [
+    "NIFTY ought to be near max pain 22800 at expiry.", "Max pain 22800 is in the cards for Thursday.", "Expiry near max pain 22800 is a good bet.",
+    "Spot is tipped to finish at max pain 22800.", "Odds-on finish at max pain 22800.", "Spot is on course for max pain 22800.",
+    "Spot is en route to max pain 22800.", "Spot is primed for max pain 22800.", "Spot is gearing up for the 23000 call strike.",
+    "Max pain 22800 beckons.", "Spot is angling for max pain 22800.", "Max pain 22800 is in sight.", "Max pain 22800 looms.",
+    "Spot is due for max pain 22800.", "Spot is primed to test the 23000 call strike.", "A test of the 23000 call strike is due.",
+    "Spot is on its way to max pain 22800.", "Spot is making its way to max pain 22800.", "Max pain 22800 is the forecast.",
+    "My view: max pain 22800 at expiry.", "Our projection is max pain 22800.", "Max pain 22800 is projected.",
+    "Spot tends to close near max pain 22800 at expiry.", "Historically the close lands near max pain 22800 on expiry day.",
+    "The close is gonna hit max pain 22800.", "The close to stay within the range 22000 - 22800.", "PCR of 1.3 signals a bounce.",
+    "PCR 1.3 hints at a bounce.", "PCR 1.3 is bullish for the week ahead.", "ATR 1.1% is due to drop.",
+    "Call writers are guarding the 23000 call strike.", "Put writers are protecting 22000 put strike.", "Call writers are holding the line at 23000.",
+    "मैक्स पेन 22800 पर एक्सपायरी होने के आसार।", "मैक्स पेन 22800 पर बंद होने वाला है।", "मैक्स पेन 22800 निकट भविष्य में।",
+    "आने वाले दिनों में मैक्स पेन 22800।", "अगले हफ्ते मैक्स पेन 22800।", "भाव मॅक्स पेन 22800 कडे जात आहे.", "पुढील आठवड्यात मॅक्स पेन 22800.",
+    "भाव मॅक्स पेन 22800 कडे सरकत आहे.", "mujhe lagta max pain 22800", "next week max pain 22800",
+    "Spot is forecast at 22800.", "Spot shall reach 22800.", "Spot is gonna be 22800.", "Spot to stay between 22500 and 23000.",
+    "Sellers are holding the line at 23000.", "Max pain 22800 at this expiry.", "spot 22800 ki taraf badh raha", "23000 aane wala hai",
+]
+R10_PASS = [
+    "On track: 3 of 5 sessions closed above 22500.", "कॉल OI 23000 वर सर्वाधिक, 1.4 कोटी.", "Call OI 1.4 crore at 23000.",
+    "Option open interest is centred near max pain 22800 for this expiry.", "Call OI at 23000 rose 12% due to fresh writing.",
+    "Should the data be stale, the view says so; the last update was 15:30.", "Would-be buyers are not counted; OI is 1.4 cr.",
+    "Defence stocks rose 2.1%.", "Favourite sector by OI change: banks, 3.2%.", "Look-back: 20 sessions.", "Gravity Industries fell 1.4%.",
+    "मागील सत्रात स्पॉट 22650 वर बंद झाला.", "वरील आकडे 20 सत्रांचे आहेत.", "खालील तक्त्यात 5 स्ट्राइक आहेत.", "मैक्स पेन 22800 है, पुट OI 22500 पर।",
+    "max pain 22800 hai, spot 22650 pe band hua", "pichhle hafte PCR 0.85 tha", "Expiry is on 30 Oct; 5 sessions remain.",
+    "Monitor shows: 3 alerts.", "The eye-catching number: PCR 1.35.", "Max pain 22800 ॥",
+]
+
+
+@pytest.mark.parametrize("text", R10_DANDA + R10_BLOCK)
+def test_round10_dandas_time_references_progressives_and_synonyms_are_blocked(text):
+    assert mv.advice_problems(text), text
+    allowed, facts, bindings = _r5()
+    for lang in ("en", "mr", "hi"):
+        shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", R10_PASS)
+def test_round10_labels_oi_quantities_and_descriptions_pass_the_advice_check(text):
+    assert mv.advice_problems(text) == [], text
+
+
+def test_round10_a_spelled_out_amount_outside_oi_is_still_blocked():
+    assert mv.advice_problems("Spot could add 1.4 crore of value at 23000.")
+    assert mv.advice_problems("22800 पर 2 लाख कमाई।")
+
+
+@pytest.mark.parametrize("text", ["क" * 19998 + " 1", "क" * 37995 + "ईल 1", "1 " + "क" * 37998, "राहील 1 " * 4750, "मोबाईल 1 " * 4200])
+def test_round10_long_devanagari_runs_are_linear(text, monkeypatch):
+    import time
+    monkeypatch.setattr(mv, "MAX_CHECK_CHARS", 10 ** 6)
+    t0 = time.perf_counter()
+    mv.advice_problems(text)
+    assert time.perf_counter() - t0 < 1.5                                       # the -गा branch was 5.1 s at 38k characters

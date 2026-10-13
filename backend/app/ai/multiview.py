@@ -399,14 +399,14 @@ def _facts_json(view: View) -> str:
 # next to a number in the same clause ("entering long above 22800", "rally toward 23000", "लक्ष्य 23000", "23000 तक
 # जाएगा"), when it tells a group of traders what to do ("shorts should cover"), or when it uses an imperative trade verb
 # in Marathi / Hindi. Past-tense descriptions ("rose 1.2%", "fell to 22000") stay allowed: they describe the data.
-_DEVA = "\\w\u0900-\u097F"
+_DEVA = "\\w\u0900-\u0963\u0966-\u097f"   # Devanagari letters, signs and digits - never the dandas (round 10)
 # A - trade actions next to a number: always a call ("entering long above 22800", "लक्ष्य 23000", "Buy 23000 CE").
 _ACTION_WORDS = (
     "enter", "enters", "entering", "entry", "entries", "long", "longs", "short", "shorts", "go long", "go short", "target", "targets",
     "stop", "stops", "stop loss", "stop-loss", "stoploss", "sl", "exit", "exits", "exiting", "book profit", "book profits",
     "booking profits", "profit booking", "accumulate", "accumulating", "buy", "buying", "sell", "selling", "cover", "covering",
     "add", "adding", "trim", "average down", "average out",
-    "लक्ष्य", "टार्गेट", "स्टॉप", "स्टॉपलॉस", "स्टॉप लॉस", "एन्ट्री", "प्रवेश", "खरेदी", "विक्री", "विका", "घ्या",
+    "लक्ष्य", "टार्गेट", "स्टॉप", "स्टॉपलॉस", "स्टॉप लॉस", "एन्ट्री", "एंट्री", "प्रवेश", "खरेदी", "विक्री", "विका", "घ्या",
     "टारगेट", "खरीदो", "खरीदें", "खरीद", "बेचो", "बेचें", "बेच",
 )
 # B - forecasts, possibilities and value judgements next to a number or a percentage (second review of H-C4): blocked unless
@@ -432,6 +432,17 @@ _FORECAST_WORDS = (
     "favoured", "favored", "favour", "favor", "favours", "favors", "defend", "defends", "defending", "defended by", "gravity", "the bet",
     "आसार", "के आसार", "लगता है", "लगती है", "लगते हैं", "असे वाटते", "वाटते", "चिन्हे", "lagta hai", "lagti hai", "aasar", "asaar",
     "ke aasar",
+    # round 10: more forecast synonyms, and a future time reference next to a number (a past verb governing the number
+    # still excuses it: "closed at 22650 last week" is not "22800 next week")
+    "ought to", "in the cards", "good bet", "a good bet", "tipped to", "tipped for", "odds-on", "primed for", "primed to",
+    "gearing up for", "gearing up", "angling for", "due for", "beckons", "beckon", "looms", "looming", "in sight", "forecast",
+    "forecasts", "forecasted", "projected", "projection", "projections", "my view", "our view", "tends to", "tend to", "gonna",
+    "to stay", "to remain", "to finish", "bounce", "bounces", "rebound", "rebounds", "hints at", "bullish for", "bearish for",
+    "guarding", "guards", "protecting", "protects", "holding the line", "hold the line", "mujhe lagta", "lagta", "lagti",
+    "next week", "next session", "next sessions", "next expiry", "week ahead", "weeks ahead", "days ahead", "sessions ahead",
+    "coming week", "coming days", "coming sessions", "at expiry", "on expiry day", "on expiry", "tomorrow",
+    "अगले", "अगले हफ्ते", "अगले सप्ताह", "आने वाले दिनों में", "आने वाले", "निकट भविष्य में", "निकट भविष्य", "भविष्य में",
+    "पुढील", "पुढील आठवड्यात", "येत्या", "आगामी", "aane wale", "agle hafte",
 )
 # Patterns among the forecast words (round 8): stems so that inflections are caught ("उम्मीदें", "शक्यतेने", "संभाव्य"),
 # "watch" / "anchors" next to a level (never "Watch list: 5 symbols", "the anchor for these numbers"), and "अपेक्षित" only as
@@ -441,18 +452,22 @@ _FORECAST_PATTERNS = (
     # round 9: monitor / eye only as a verb before a level ("Monitor 22800", "Eye 22800" - never "the risk monitor shows 3
     # alerts", "Monitoring window: 20 sessions", "the eye of the range is 22750"); never "on track record"
     r"(?:monitor(?:s|ing)?|eye(?:s|ing)?)(?=\s+(?:(?:on|the|a|an|max|pain|level|its|call|put|oi|strike|close|high|low|spot|closely)\s+){0,3}[₹\d])",
-    r"on\s+track(?!\s+record)",
+    r"on\s+track(?!\s+record)(?!\s*:)",                  # "On track: 3 of 5 sessions" is a label (round 10)
+    # round 10: "due to" a verb or "is due" at a clause end (never "rose 12% due to fresh writing"); "this expiry" as a
+    # time (never "max pain 22800 for this expiry", a description of the chain)
+    r"due\s+to\s+(?:drop|fall|rise|rally|test|hit|reach|bounce|break|close|end|finish|settle|move|climb|decline|stay|remain|be|cool|ease|spike)",
+    r"is\s+due(?=\s*(?:[.;,!?]|$))", r"(?<!\bfor )(?<!\bof )this\s+expiry", r"signals\s+an?\s+(?:bounce|rebound|rally|fall|drop|move|turn)",
     # should / would (round 9) - never the rules' own "a close outside 22000 - 22800 would change the reading"
     r"(?:should|would)(?!\s+change\s+(?:the|this|that)\b)",
-    r"शायद", r"संभवतः", r"संभव[\u0900-\u097f]*", r"संभाव[\u0900-\u097f]*", r"शक्य[\u0900-\u097f]*", r"उम्मीद[\u0900-\u097f]*",
-    r"अनुमान[\u0900-\u097f]*", r"आशा[\u0900-\u097f]*", r"अंदाज[\u0900-\u097f]*", r"अपेक्षा[\u0900-\u097f]*", r"अपेक्षे[\u0900-\u097f]*",
-    r"अपेक्षित(?=[\s,]*(?:आहे|आहेत|है|हैं|था|थी|थे|असेल|होगा|होगी|पातळी|स्तर|लेवल|भाव|किंमत|कीमत|दर|टार्गेट|लक्ष्य|[।.!?]|$))",
+    r"शायद", r"संभवतः", r"संभव[\u0900-\u0963\u0966-\u097f]*", r"संभाव[\u0900-\u0963\u0966-\u097f]*", r"शक्य[\u0900-\u0963\u0966-\u097f]*", r"उम्मीद[\u0900-\u0963\u0966-\u097f]*",
+    r"अनुमान[\u0900-\u0963\u0966-\u097f]*", r"आशा[\u0900-\u0963\u0966-\u097f]*", r"अंदाज[\u0900-\u0963\u0966-\u097f]*", r"अपेक्षा[\u0900-\u0963\u0966-\u097f]*", r"अपेक्षे[\u0900-\u0963\u0966-\u097f]*",
+    r"अपेक्षित(?=[\s,]*(?:आहे|आहेत|है|हैं|था|थी|थे|असेल|होगा|होगी|पातळी|स्तर|लेवल|भाव|किंमत|कीमत|दर|टार्गेट|लक्ष्य|[।॥.!?]|$))",
 )
 # C - anywhere: value judgements, spelled-out amounts, Hinglish calls
 _ANYWHERE = (
     "cheap", "cheaper", "expensive", "attractive", "undervalued", "overvalued", "bargain", "opportunity", "risk reward",
     "risk-reward", "risk/reward", "reward to risk", "reward-to-risk", "good entry", "good level", "good zone", "good risk",
-    "thousand", "hundred", "lakh", "lakhs", "crore", "crores", "हजार", "लाख", "कोटी", "करोड़", "करोड",
+    "thousand", "hundred", "हजार", "सस्ता", "सस्ती", "सस्ते", "महंगा", "महंगी", "महंगे", "स्वस्त", "महाग",
     "le lo", "lelo", "bech do", "kharid lo", "khareed lo", "lena sahi", "sahi rahega", "abhi le",
     "worth a look", "worth a try", "worth buying", "worth selling", "worth a punt", "safer side", "safe bet",
     "safer bet", "better bet",
@@ -460,13 +475,13 @@ _ANYWHERE = (
 # Future / progressive morphology next to a number (review of H-C4, round 3): Hindi -गा / -गी / -गे, होगा, रहा है, की ओर;
 # Marathi -ेल / -तील, असेल, शकतो / शकते; Hinglish -ega / -egi / -enge, wala hai, raha hai, ki taraf / ki or.
 _MORPH_NEAR_NUMBER = re.compile(
-    r"[\u0900-\u097f]+(?:गा|गी|गे)(?![\u0900-\u097f])|होगा|होगी|होंगे|रहा है|रही है|रहे हैं|की ओर|"
-    r"(?<![\u0900-\u097f])(?!तेल)[\u0900-\u097f]{2,}(?:ेल|तील)(?![\u0900-\u097f])|असेल|शकतो|शकते|शकेल|शकतात|"
+    r"(?<![\u0900-\u0963\u0966-\u097f])[\u0900-\u0963\u0966-\u097f]+(?:गा|गी|गे)(?![\u0900-\u0963\u0966-\u097f])|होगा|होगी|होंगे|रहा है|रही है|रहे हैं|की ओर|"
+    r"(?<![\u0900-\u0963\u0966-\u097f])(?!तेल)[\u0900-\u0963\u0966-\u097f]{2,}(?:ेल|तील)(?![\u0900-\u0963\u0966-\u097f])|असेल|शकतो|शकते|शकेल|शकतात|"
     # round 9: Marathi -ईल futures (होईल, येईल, देईल, जाईल; never a noun - मोबाईल, फाईल) and the -ील futures of a verb
     # stem (राहील, करील, पाहील) - never the -ील of a postposition or adjective (मागील, वरील, मधील, खालील) or a noun (शील, वकील)
-    r"(?<![\u0900-\u097f])(?!(?:मोबाईल|फाईल|प्रोफाईल|स्टाईल|टाईल|माईल|व्हाईल)(?![\u0900-\u097f]))[\u0900-\u097f]+ईल(?![\u0900-\u097f])|"
-    r"(?<![\u0900-\u097f])(?:राह|पाह|लिह|वाह|सह|कर|धर|ठर|सांग|बस|उतर|चढ|पोहोच)ील(?![\u0900-\u097f])|"
-    r"(?<![\u0900-\u097f])सक(?:ता|ती|ते)(?![\u0900-\u097f])|(?<![\u0900-\u097f])हो(?:गा|गी|गे|ंगे|ंगी)(?![\u0900-\u097f])|"
+    r"(?<![\u0900-\u0963\u0966-\u097f])(?!(?:मोबाईल|फाईल|प्रोफाईल|स्टाईल|टाईल|माईल|व्हाईल)(?![\u0900-\u0963\u0966-\u097f]))[\u0900-\u0963\u0966-\u097f]+ईल(?![\u0900-\u0963\u0966-\u097f])|"
+    r"(?<![\u0900-\u0963\u0966-\u097f])(?:राह|पाह|लिह|वाह|सह|कर|धर|ठर|सांग|बस|उतर|चढ|पोहोच)ील(?![\u0900-\u0963\u0966-\u097f])|"
+    r"(?<![\u0900-\u0963\u0966-\u097f])सक(?:ता|ती|ते)(?![\u0900-\u0963\u0966-\u097f])|(?<![\u0900-\u0963\u0966-\u097f])हो(?:गा|गी|गे|ंगे|ंगी)(?![\u0900-\u0963\u0966-\u097f])|"
     r"\b(?:sakta|sakti|sakte|hoga|hogi|honge|hogaa|ho sakta|ho sakti)\b|"
     r"\b(?!(?:vega|omega|mega|bodega)\b)[a-z]+(?:ega|egi|enge)\b|\bwal[ae] hain?\b|\bwali hai\b|\bra(?:ha|hi|he) hai\b|\bki (?:taraf|or)\b",
     re.I)
@@ -496,6 +511,11 @@ _MOVEMENT = re.compile(
     rf"(?:into|by|before)\s+{_WEEKDAY}|"
     r"ja+t[aie] ha[ií]n?|ja+te hain|jata|jati)\b|"
     r"(?<!expiry is )(?<!expiry )\bsoon\b|"
+    # round 10: progressive motion - "is on its way to", "en route to", "on course for", "making its way to", "होने वाला है",
+    # "कडे जात आहे", "सरकत आहे"
+    r"\b(?:on|en)\s+(?:route|course)\b|\bon\s+(?:its|their|the)\s+way\b|\bmaking\s+(?:its|their|a)\s+way\b|"
+    r"(?<![ऀ-ॣ०-ॿ])वाल(?:ा|ी|े)\s+(?:है|हैं)(?![ऀ-ॣ०-ॿ])|(?<![ऀ-ॣ०-ॿ])(?:जात|सरकत|चालला|चालली|निघाला)\s+आहे(?![ऀ-ॣ०-ॿ])|"
+    r"(?<![ऀ-ॣ०-ॿ])कडे\s+(?:जात|सरकत|वाटचाल)(?![ऀ-ॣ०-ॿ])|"
     # round 7: only next to a level - "approaches the high 22800", "22800 is the anchor", "Watch the high 22800" - never
     # "this approach reads 20 sessions", "the 20-session window is the anchor for these numbers", "Watch list: 5 symbols"
     r"\bapproach(?:es|ing)?\s+(?:(?:the|a|an|max|pain|high|low|level|of|its|call|put|oi|strike|close|range|mark|spot|to|toward|towards|"
@@ -506,7 +526,7 @@ _MOVEMENT = re.compile(
     r"(?:[^\s\d]+\s+){0,3}[₹\d]|"
     r"^\s*watch\b(?!\s*-?\s*list)|"
     r"\b(?:means|implies|signals|suggests)\s+(?:a|an)\s+(?:[\w%.,+-]+\s+){0,3}?(?:move|swing|rally|drop|fall|rise|gain|decline)\b|"
-    r"(?:तक|पर्यंत)(?:\s+[ऀ-ॿ]+){0,2}?\s+(?:जाता|जाती|जाते|जातो|जातात)(?![ऀ-ॿ])",
+    r"(?:तक|पर्यंत)(?:\s+[ऀ-ॣ०-ॿ]+){0,2}?\s+(?:जाता|जाती|जाते|जातो|जातात)(?![ऀ-ॣ०-ॿ])",
     re.I)
 _HINGLISH_FUTURE = re.compile(r"\b(?!(?:vega|omega|mega|bodega)\b)[a-z]+(?:ega|egi|enge)\b|\bwal[ae] hain?\b|\bwali hai\b", re.I)
 _PAST_BEFORE_NUMBER = re.compile(r"\b(?:rose|fell|closed|ended|moved|gained|lost|dropped|climbed|rallied|traded|touched|slipped|surged|"
@@ -524,7 +544,7 @@ def _alt_words(words: Tuple[str, ...], patterns: Tuple[str, ...] = ()) -> str:
 _NUM = r"(?<![\w.,])[-+]?₹?(?<![\d,.])\d[\d,]*+(?:\.\d++)?\s*%?"   # possessive: a long digit run is read once
 # same clause: no sentence end in between - a full stop ends it unless it touches a digit (a decimal point, "22800.")
 # (the branches are disjoint, so the bounded gap never backtracks exponentially over a run of "1.1.1.")
-_GAP = r"(?:[^!?\n;।.]|\.(?=\d)|(?<=\d)\.(?!\d)){0,40}?"
+_GAP = r"(?:[^!?\n;।॥.]|\.(?=\d)|(?<=\d)\.(?!\d)){0,40}?"
 
 
 def _near(words: str) -> "re.Pattern[str]":
@@ -536,6 +556,13 @@ def _near(words: str) -> "re.Pattern[str]":
 _ACTION_NEAR_NUMBER = _near(_alt_words(_ACTION_WORDS))
 _FORECAST_NEAR_NUMBER = _near(_alt_words(_FORECAST_WORDS, _FORECAST_PATTERNS))
 _ANYWHERE_RE = re.compile(rf"(?<![{_DEVA}-]){_alt_words(_ANYWHERE)}(?![{_DEVA}-])", re.IGNORECASE)
+# Lakh / crore (round 10): a spelled-out amount unless it is an OI quantity - right after a figure, with OI or contracts in
+# the same sentence ("कॉल OI 23000 वर सर्वाधिक, 1.4 कोटी", "OI 1.4 crore")
+_AMOUNT_WORDS = ("lakh", "lakhs", "crore", "crores", "लाख", "कोटी", "करोड़", "करोड")
+_AMOUNT_RE = re.compile(rf"(?<![{_DEVA}-]){_alt_words(_AMOUNT_WORDS)}(?![{_DEVA}-])", re.IGNORECASE)
+_AFTER_FIGURE = re.compile(r"\d\s*$")
+_OI_WORDS = re.compile(r"\b(?:oi|open interest|contracts)\b|ओआय|ओआई|कॉन्ट्रॅक्ट|कॉन्ट्रैक्ट", re.IGNORECASE)
+_SENTENCE_END = re.compile(r"[!?\n\u0964\u0965]|(?<!\d)\.(?!\d)")
 _ADJACENT = re.compile(rf"(?:another|further|additional|extra)\s+{_NUM}|{_NUM}\s*(?:more|further|higher|lower|extra)\b|"
                        rf"\b(?:higher|lower|up|down)\s+by\s+{_NUM}|{_NUM}\s+next\b|\bnext\s+(?:level|target|stop|leg|move|zone)\b",
                        re.IGNORECASE)
@@ -581,7 +608,7 @@ def advice_problems(text: str) -> List[str]:
         if governed and not _FUTURE.search(clause):
             continue                                    # "the close rose 3.6%": a past verb governs this very number
         found.append(f"'{(m.group('a') or m.group('b')).lower()}' next to a number (a forecast)")
-    for sentence in re.split(r"[!?\n\u0964]|(?<!\d)\.(?!\d)", text):
+    for sentence in re.split(r"[!?\n\u0964\u0965]|(?<!\d)\.(?!\d)", text):
         if not re.search(r"\d", sentence):
             continue
         morph = _MORPH_NEAR_NUMBER.search(sentence)
@@ -596,6 +623,13 @@ def advice_problems(text: str) -> List[str]:
         found.append(f"'{m.group(0).strip().lower()[:20]}' (a move ahead)")
     for m in _ANYWHERE_RE.finditer(text):
         found.append(f"'{m.group(0).lower()}' (a judgement or a spelled-out amount)")
+    for m in _AMOUNT_RE.finditer(text):
+        lo = max([0] + [x.end() for x in _SENTENCE_END.finditer(text, max(0, m.start() - 300), m.start())])
+        nxt = _SENTENCE_END.search(text, m.end(), m.end() + 300)
+        sentence = text[lo:nxt.start() if nxt else min(len(text), m.end() + 300)]
+        if _AFTER_FIGURE.search(text, max(0, m.start() - 12), m.start()) and _OI_WORDS.search(sentence):
+            continue                                    # an OI quantity: "call OI 1.4 crore"
+        found.append(f"'{m.group(0).lower()}' (a spelled-out amount)")
     if _MODAL_ADVICE.search(text):
         found.append("tells traders what to do")
     if _IMPERATIVE_DEVA.search(text):

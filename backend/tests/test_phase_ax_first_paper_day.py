@@ -72,7 +72,7 @@ def test_first_day_check_flags_the_blockers_then_passes_with_a_fake_broker():
     inner = _KiteLike()
     sent = []
 
-    async def sender(channel, probe):
+    async def sender(channel, probe, **_):
         sent.append((channel.channel_type, probe.title))
 
     report = _run(go(adapter_factory=lambda record: wrap_contract_symbols(inner), send_test_alert=True, sender=sender))

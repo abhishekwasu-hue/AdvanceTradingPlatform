@@ -622,3 +622,42 @@ def test_round6_unbound_numbers_is_linear():
     assert mv.unbound_numbers(big, bindings) == []
     t2 = time.perf_counter()
     assert (t2 - t1) < max(0.05, (t1 - t0)) * 40                                 # 16x the text: far from 256x the time
+
+
+# --- round 7: MR / HI probability wording, pinning, and descriptive prose ----------------------------------------------
+R7_BLOCK = [
+    "मैक्स पेन 22800 तक आने की संभावना है।", "मॅक्स पेन 22800 पर्यंत येण्याची शक्यता आहे.", "Max pain 22800 tak aane ke chances hain.",
+    "मैक्स पेन 22800 पर आने की उम्मीद है।", "मॅक्स पेन 22800 च्या आसपास राहण्याची अपेक्षा आहे.", "भाव 22800 तक जाने का अंदाज है।",
+    "Max pain 22800 tak aane ki sambhavna hai.", "Max pain 22800 tak ummeed hai.",
+    "Max pain 22800 pins price.", "Max pain 22800 is the pinning level.", "Put OI at 22500 is the support to lean on.",
+    "Call OI at 23000 is the resistance to lean on.",
+    # the floor reading is kept blocked (round 7, documented): "the floor" of a level reads as support
+    "Put OI at 22500 is the floor of the OI distribution",
+]
+R7_PASS = [
+    "This approach reads 20 sessions of data.", "The approach uses the last 20 sessions.", "PCR settles near 0.92 over 5 sessions.",
+    "The 20-session window is the anchor for these numbers.", "Watch list: 5 symbols.",
+    "The 23000 strike is worth watching less than the range.", "Price has gone up 3% in 5 sessions.",
+    "A pin bar formed at 22000 in the window.",
+]
+
+
+@pytest.mark.parametrize("text", R7_BLOCK)
+def test_round7_probability_and_pinning_wording_is_blocked(text):
+    assert mv.advice_problems(text), text
+    allowed, facts, bindings = _r5()
+    for lang in ("en", "mr", "hi"):
+        shown, why = mv.check_text(text, allowed, facts, lang, None, bindings)
+        assert shown is None and why, (text, lang, shown)
+
+
+@pytest.mark.parametrize("text", R7_PASS)
+def test_round7_descriptive_prose_passes_the_advice_check(text):
+    assert mv.advice_problems(text) == [], text
+
+
+@pytest.mark.parametrize("text", ["The index approaches the high 22800.", "The index should approach max pain 22800.",
+                                  "Max pain 22800 is the anchor.", "Watch the high 22800.", "Price will settle at max pain 22800.",
+                                  "Price has gone up 3% and is going to 22800."])
+def test_round7_the_narrowed_words_still_block_next_to_a_level(text):
+    assert mv.advice_problems(text), text

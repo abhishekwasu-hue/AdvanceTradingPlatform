@@ -503,5 +503,25 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
 
       "break", "strike", "session" and a hyphenated word after a number ("20-session") are labels.
     - `unbound_numbers` is linear: the clause stops are found once, and each number reads a bounded slice.
+  - **Seventh review: probability wording and narrower synonyms.**
+    - Blocked next to a number: probability and expectation words.
+      - Hindi / Marathi: संभावना, शक्यता, अपेक्षा, उम्मीद, अंदाज.
+      - Hinglish: chances, ummeed, sambhavna.
+    - Blocked in a sentence with a number: pin / pins / pinning and "support / resistance to lean on".
+    - These now block only next to a level:
+      - "approach" ("approaches the high 22800", "should approach");
+      - "anchor" ("22800 is the anchor");
+      - "settle" ("settles there", "will settle");
+      - "watch" (an imperative at the start of a sentence, or "watch for").
+    - These pass:
+      - "this approach reads 20 sessions";
+      - "PCR settles near 0.92";
+      - "the 20-session window is the anchor for these numbers";
+      - "Watch list: 5 symbols";
+      - "worth watching";
+      - "has / had gone up 3%";
+      - "pin bar".
+    - **Decision:** "Put OI at 22500 is the floor of the OI distribution" stays blocked. "The floor" of a level reads as
+      a support call, and a description can say "the lowest strike with put OI" instead.
 - **Tests.** `tests/test_hc4_multiview.py` (36, including every string from the review as a regression case); vitest
   `copilot/tabs/analyze/multiview.test.ts` (5). Open questions HC4-1..HC4-4.

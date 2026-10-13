@@ -419,6 +419,9 @@ _FORECAST_WORDS = (
     "जाईल", "वाढेल", "घसरेल", "पोहोचेल", "जा सकता", "जा सकती", "जाऊ शकतो", "जाऊ शकते", "पर्यंत जाईल",
     "जाएगा", "जाएगी", "जायेगा", "बढ़ेगा", "बढ़ेगी", "बढेगा", "गिरेगा", "गिरेगी", "पहुंचेगा", "पहुँचेगा", "तेजी आ",
     "jayega", "jaayega", "jaega", "ja sakta", "ja sakti", "tezi aa", "aa sakti", "aa sakta",
+    # round 7: probability / expectation wording next to a number (MR / HI / Hinglish)
+    "संभावना", "संभावनाएं", "शक्यता", "अपेक्षा", "अपेक्षित", "उम्मीद", "अंदाज", "अंदाजा", "अंदाज़ा", "chance", "chances", "ummeed", "umeed",
+    "sambhavna", "sambhavana", "andaza", "andaaza",
 )
 # C - anywhere: value judgements, spelled-out amounts, Hinglish calls
 _ANYWHERE = (
@@ -426,7 +429,7 @@ _ANYWHERE = (
     "risk-reward", "risk/reward", "reward to risk", "reward-to-risk", "good entry", "good level", "good zone", "good risk",
     "thousand", "hundred", "lakh", "lakhs", "crore", "crores", "हजार", "लाख", "कोटी", "करोड़", "करोड",
     "le lo", "lelo", "bech do", "kharid lo", "khareed lo", "lena sahi", "sahi rahega", "abhi le",
-    "worth a look", "worth a try", "worth buying", "worth selling", "worth watching", "worth a punt", "safer side", "safe bet",
+    "worth a look", "worth a try", "worth buying", "worth selling", "worth a punt", "safer side", "safe bet",
     "safer bet", "better bet",
 )
 # Future / progressive morphology next to a number (review of H-C4, round 3): Hindi -गा / -गी / -गे, होगा, रहा है, की ओर;
@@ -445,7 +448,8 @@ _MOVEMENT = re.compile(
     # forward-looking forms only (round 6): "heads to", "goes to", "will break" - never "goes back", "pulled back", "did not
     # break", "no break of", "extends from X to Y", "continues to be / hold", "in view:", "expiry is soon"
     r"\b(?:heads?|heading|headed)\s+(?:to|for|toward|towards|into|up|down|higher|lower|back up)\b|"
-    r"\b(?:go|goes|going|gone)\s+(?:to|toward|towards|for|higher|lower|up|down|past|beyond|above|below|through)\b|"
+    r"(?<!\bhas )(?<!\bhad )(?<!\bhave )\b(?:go|goes|going|gone)\s+(?:to|toward|towards|for|higher|lower|up|down|past|beyond|above|below|"
+    r"through)\b|"
     r"\bwhere\s+(?:it|price|prices|the price|the index|the stock|the market|nifty|this)\s+(?:heads|goes|is going|is headed|is heading|"
     r"ends up|settles|lands|gets to)\b|"
     r"\b(?:will|to|could|may|might|can|would|should|set to|likely to)\s+(?:break|breach|clear|crack|take out)\b|"
@@ -454,12 +458,19 @@ _MOVEMENT = re.compile(
     r"takes out|taking out|comes? into view|coming into view|extends|extend|extending)\b(?!\s+(?:from|between|over|across)\b)|"
     r"\b(?:continue|continues|continuing)\b(?!\s+to\s+(?:be|hold|sit|stand|show|read|lead|carry|rank)\b)|\bcontinuation\b|"
     r"\b(?:floor|ceiling|cushion|caps? it|capping|resistance overhead|overhead resistance|play(?:s|ing)? the range|range[- ]play\w*|"
-    r"range[- ]trad\w*|from here|from current levels|from these levels|shortly|into expiry|ends? up|ending up|settles?|"
-    r"settling|anchor|anchors|anchoring|attract|attracts|attracting|achievable|reachable|eyes on|eyes|eyeing|watch|watching|"
-    r"path of least resistance|gravity point|aims?\s+(?:for|at)|aiming|approach|approaches|approaching|room up to|"
+    r"range[- ]trad\w*|from here|from current levels|from these levels|shortly|into expiry|ends? up|ending up|settles? there|"
+    r"(?:will|to|could|may|might|should|likely to)\s+settle|attract|attracts|attracting|achievable|reachable|eyes on|eyes|eyeing|"
+    r"watch(?:ing)? for|keep watching|path of least resistance|gravity point|aims?\s+(?:for|at)|aiming|room up to|"
+    r"pin(?![- ]bars?\b)|pins|pinning|(?:support|resistance|floor|level|base)\s+to lean on|lean on|"
+    r"(?:should|will|could|may|might|can|to|likely to)\s+approach|"
     rf"(?:into|by|before)\s+{_WEEKDAY}|"
     r"ja+t[aie] ha[ií]n?|ja+te hain|jata|jati)\b|"
     r"(?<!expiry is )(?<!expiry )\bsoon\b|"
+    # round 7: only next to a level - "approaches the high 22800", "22800 is the anchor", "Watch the high 22800" - never
+    # "this approach reads 20 sessions", "the 20-session window is the anchor for these numbers", "Watch list: 5 symbols"
+    r"\bapproach(?:es|ing)?\s+(?:(?:the|a|an|max|pain|high|low|level|of|its|call|put|oi|strike|close|range|mark|spot)\s+){0,3}[₹\d]|"
+    r"\d[\d,.]*\s*%?\s+(?:is|acts as|remains|becomes|stays)\s+(?:the|an?)\s+anchor\b|\banchor(?:s|ing)?\s+(?:at|near|around|to)\s+[₹\d]|"
+    r"^\s*watch\b(?!\s*-?\s*list)|"
     r"\b(?:means|implies|signals|suggests)\s+(?:a|an)\s+(?:[\w%.,+-]+\s+){0,3}?(?:move|swing|rally|drop|fall|rise|gain|decline)\b|"
     r"(?:तक|पर्यंत)(?:\s+[ऀ-ॿ]+){0,2}?\s+(?:जाता|जाती|जाते|जातो|जातात)(?![ऀ-ॿ])",
     re.I)

@@ -291,13 +291,16 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
+    # U5 D3a: the result board's heatmap (by sector, sized by market cap) and chart-grid views, with POST
+    # /api/screener/board/context (company reference data + shared daily closes). OFF: the table view only (404).
+    "screener_board_views": "Screener result views: heatmap by sector and a chart grid of the matched symbols (research only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
 DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
                                "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
                                "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
                                "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "chart_contracts"})
+                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "chart_contracts", "screener_board_views"})
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

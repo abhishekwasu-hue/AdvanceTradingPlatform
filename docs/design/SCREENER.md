@@ -1484,6 +1484,36 @@ marketplace, no store apps).
   plans only (402 on Free). With the flag off a WhatsApp channel or DLT fields are refused (403).
 - **Mobile push** stays the PWA's Web Push (installed on a phone it is a mobile push); native FCM / APNs come with the
   store apps (frozen). **Marketplace** is frozen (K).
+## U5 D3a (built): result board views - heatmap and chart grid (flag `screener_board_views`)
+
+- **`POST /api/screener/board/context`** (`app/screener/board.py`; tenancy "self", it stores nothing) gives, for up to 500
+  symbols in one call (one batched read each for companies, bars and splits):
+  - sector, industry and market cap from the company reference data (`companies`): the shared rows and the caller's
+    organisation's own contributed rows only (`app/fundamentals/visibility.visible`, #234). A symbol without a visible
+    row is "Unclassified", never a guessed sector;
+  - the last 30 daily closes from the shared lake (shared-licensed sources; one bar per IST trading date: the preferred
+    source, then its highest version; corrections only once ingested), adjusted for the splits and bonuses known now
+    (`app/market_lake/adjust.share_factor`), and the last day's change.
+
+  With the flag off it answers 404 and the page shows the table alone.
+- **`ResultViews`** wraps the D1 board with a Table / Heatmap / Chart grid tablist:
+  - **Heatmap:** a squarified treemap (Bruls et al.) of the scanned symbols by sector, sized by market cap. A symbol
+    with none counts at the median and the caption says so. Tiles are coloured by the day's change on the up / down
+    tokens (colour-blind safe), matched symbols are ringed in `--signal`, and each tile names its symbol, result and
+    change.
+  - **Chart grid:** the matched symbols (up to 12), each with its evidence chart (the scan's own conditions, U8)
+    when the run stored one, else the shared daily closes.
+- **Tests:** `tests/test_u5_d3_board.py` (reference data, shared closes only - no `stream:` row, no correction
+  before its ingestion - the flag and limits); `boardViews.test.tsx` (treemap areas and bounds, sector sizing and
+  the median fill, colours, accessible labels, grid limits).
+- **Review of D3a (fixed):** HIGH - the company read is filtered by `visible` (another organisation's contributed sector /
+  market cap never shows; two-org test). MED - the context covers 500 symbols per call and the heatmap lays out only
+  symbols with context, captioned "first N of M shown" (no fake "Unclassified" tiles). LOW - split / bonus adjusted
+  closes and change; the per-day winner by (IST date, source rank, version); a failed context call (not 404) says so
+  with a Retry instead of "Loading…" forever; the tablist has a roving tab stop (arrows / Home / End) and
+  `aria-controls` to its tabpanel.
+- **Next (D3b):** RRG (relative rotation against a benchmark from the shared lake) and the template sheet with live
+  thumbnails; the F&O dashboard waits for chain data on the run path (EV-11 / CH4-1).
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

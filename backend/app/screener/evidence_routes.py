@@ -102,7 +102,9 @@ async def replay_evidence(evidence_id: int, at: datetime, debug: bool = False, u
     the shared lake's bars that ended by `at` (the CH3 loader: shared-licensed sources only, corrections point-in-time) -
     so the user can step back and see when each condition became true. Nothing after `at` is read; nothing is stored.
     Refused (422) where a replay could not be the screen's own computation: a cross-sectional screen (its ranks need
-    the whole universe), market-zone functions (the zone timeline is not attached here), a weekly / monthly screen, or
+    the whole universe), market-zone functions (the zone timeline is not attached here), the U7 LG3 fundamentals
+    functions (nor are the point-in-time figures), N3 S8a's ownership and event functions (nor are the patterns and
+    events), a weekly / monthly screen, or
     a time outside the stored pack's window. Option-chain conditions show in the strip only (a chain is a snapshot of
     its own time)."""
     row = await _row(session, user, evidence_id)
@@ -130,6 +132,15 @@ async def replay_evidence(evidence_id: int, at: datetime, debug: bool = False, u
         raise _refuse("a cross-sectional screen ranks a whole universe - its replay would not be the run's computation")
     if any(isinstance(node, nodes.Call) and node.name in ZONE_CALLS for node in nodes.walk(ast)):
         raise _refuse("market-zone conditions are not replayed yet (the zone timeline is not attached to a replay)")
+    from app.screener import fundamentals as fundamentals_gate
+    if fundamentals_gate.flagged_calls(ast):
+        # U7 LG3: the point-in-time fundamentals are not attached to a replay either - refused, never replayed as NaN
+        raise _refuse("fundamentals conditions are not replayed yet (the point-in-time figures are not attached to a replay)")
+    from app.screener import ownership as ownership_gate
+    if ownership_gate.flagged_calls(ast):
+        # N3 S8a: nor are the shareholding patterns and events - refused with the reason, never replayed as NaN
+        raise _refuse("ownership and event conditions are not replayed yet (the shareholding patterns and events are not "
+                      "attached to a replay)")
     from app.charts import price_action_layer as PAL
     from app.price_action.zones.store import normalise_key
     try:

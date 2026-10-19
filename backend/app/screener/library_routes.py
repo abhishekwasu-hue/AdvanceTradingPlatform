@@ -28,6 +28,7 @@ from app.db.models import User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
+from app.screener import fundamentals as fundamentals_gate
 from app.screener import library as lib
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
@@ -116,6 +117,10 @@ async def _resolve(session: AsyncSession, user: User, ref: str, taxonomy: tx.Tax
         row = await _owned(session, user, screen_id)          # the organisation's own saved screens only (404 otherwise)
         params = json.loads(row.params_json or "{}")
         return lib.Resolved(ref, row.name, "my_screens", "", "", "saved", row.source_text, row.base_tf, params)
+    base = ref[:-len(lib.MIRROR_SUFFIX)] if ref.endswith(lib.MIRROR_SUFFIX) else ref
+    own_flag = tx.screen_flags().get(base)               # U7 LG2 / LG3: a single screen behind a flag of its own (as /run)
+    if own_flag is not None and not await flag_enabled(session, own_flag, user.tenant_id):
+        raise HTTPException(status_code=422, detail=f"{ref}: no such screen in the library (or its feature is off)")
     resolved, why = lib.resolve_ref(ref, taxonomy, hidden)
     if resolved is None:
         raise HTTPException(status_code=422, detail=why)
@@ -135,10 +140,20 @@ def _merge(into: Dict[str, int], more: Dict[str, int]) -> None:
         into[tf] = max(into.get(tf, 0), bars)
 
 
+async def _attach_fundamentals(session: AsyncSession, user: User, ast: Any, universe: List[SymbolData]) -> None:
+    """U7 LG3: a screen reading fundamentals gets them as `/run` loads them - the organisation's visible versions known
+    by now, each bar then reading only those known by its close (point in time). Loaded once per universe (the
+    confluence's screens on one timeframe share it). `_compile` has already refused them while `screener_fundamentals`
+    is off (`_gate`), as `/run` does."""
+    if fundamentals_gate.flagged_calls(ast) and any(getattr(d, "fundamentals", None) is None for d in universe):
+        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
+
+
 async def _run(session: AsyncSession, user: User, ast: Any, validated: Any, universe: List[SymbolData], base_tf: str,
                exchange: str) -> Dict[str, Tuple[bool, Optional[str]]]:
     if zone_gate.flagged_calls(ast):
         await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(timezone.utc), ast, base_tf, {})
+    await _attach_fundamentals(session, user, ast, universe)
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
     matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params={}, vectorized=vectorized)
     return {m.symbol: (m.matched, m.reason) for m in matches}
@@ -279,6 +294,7 @@ async def watch_trigger(body: WatchBody, user: User = Depends(require_trader), s
     universe, problems, source = await _universe(session, user, symbols, body.exchange, base_tf, lookback)
     if zone_gate.flagged_calls(transition):
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), transition, base_tf, {})
+    await _attach_fundamentals(session, user, transition, universe)        # the transition holds the ready and trigger nodes
     ready_got, hits = await asyncio.to_thread(watch_eval, ready, trigger, ready_v, transition_v, universe, base_tf, transition)
     ready_hits = {**{s: (False, why) for s, why in problems.items()}, **ready_got}
     return {**lib.watch_split(ready_hits, hits, symbols), "name": name, "base_tf": base_tf, "ready_text": nodes.to_text(ready),

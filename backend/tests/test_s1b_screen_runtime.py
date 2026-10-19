@@ -253,6 +253,27 @@ def test_market_zone_functions_z7a3():
     assert _ev("ZoneStrength()", d).iloc[2] == 60.0 and np.isnan(_ev('ZoneStrength("any", 0.5, "levels")', d).iloc[2])
 
 
+def test_fundamentals_functions_u7_lg3():
+    # deeper checks (the store's known_from rules, restatements, no look-ahead, the cards) are in tests/test_n3_lg3_fundamentals.py
+    from datetime import date, datetime, timezone
+    from app.fundamentals.pit import Version
+    d = _sym([100.0, 100.2, 100.4, 100.6])                                   # the third bar closes at 04:00
+    seen = datetime(2026, 3, 2, 4, 0, tzinfo=timezone.utc)
+    ends = [date(2024, 12, 31), date(2025, 3, 31), date(2025, 6, 30), date(2025, 9, 30)]
+    d.fundamentals = [Version("QUARTER", f"Q{i}", e, 1, {"eps": 10.0, "revenue": 1000.0, "ebit": 200.0}, seen) for i, e in enumerate(ends)]
+    d.fundamentals.append(Version("QUARTER", "Q4", date(2025, 12, 31), 1,
+                                  {"eps": 12.0, "revenue": 1100.0, "ebit": 220.0, "shares_outstanding": 10.0, "shareholders_equity": 400.0,
+                                   "total_assets": 900.0, "current_assets": 600.0, "current_liabilities": 100.0, "cash_and_equivalents": 50.0,
+                                   "total_debt": 100.0}, seen))
+    assert _ev("EPSGrowthYoY()", d).iloc[:2].isna().all()                    # not before the bar that closes at 04:00
+    assert _ev("EPSGrowthYoY()", d).iloc[2:].tolist() == [20.0, 20.0] and np.isnan(_ev("SalesGrowthYoY()", d).iloc[0])
+    assert _ev("SalesGrowthYoY()", d).iloc[-1] == pytest.approx(10.0)
+    assert _ev("ReturnOnCapital()", d).iloc[-1] == pytest.approx(820 / (900 - 100 - 50) * 100)
+    assert _ev("EarningsYield()", d).iloc[-1] == pytest.approx(820 / (100.6 * 10 + 100 - 50) * 100)
+    assert _ev("GrahamNumber()", d).iloc[-1] == pytest.approx((22.5 * 42 * 40) ** 0.5)
+    assert _ev("NCAVPerShare()", d).iloc[-1] == pytest.approx((600 - (900 - 400)) / 10)
+
+
 def test_amw3_functions_amw_port():
     # deeper checks (hand-built bars, parity, the flag gate, the vectorised path) are in tests/test_amw3_screenql_functions.py
     d = _sym([1.0, 2.0, 3.0, 4.0])

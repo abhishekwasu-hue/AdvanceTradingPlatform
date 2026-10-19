@@ -12,7 +12,8 @@ Standing rules for every slice:
 
 - Information only, never advice. The AI places no order (ADR-0006), and exits are never blocked (ADR-0004).
 - PAPER only in Phase 0. No slice adds a broker order path.
-- One default-off flag per slice, listed in `DEFAULT_OFF_FLAGS`. With the flag off, nothing changes (each slice tests
+- One default-off flag per slice, registered in `FEATURE_FLAGS` (off by default automatically; `DEFAULT_OFF_FLAGS` is
+  computed). With the flag off, nothing changes (each slice tests
   this).
 - Every number is the user's own (user scope, as Z3-b and Z6). Nothing is ranked against other users.
 - UI strings are English and go through an i18n instance (react-i18next, the Copilot's pattern). The Devanagari check,

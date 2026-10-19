@@ -31,6 +31,11 @@ x-faketime: &faketime
   LD_PRELOAD: ${ATP_CI_LD_PRELOAD:-}
   FAKETIME: ${ATP_CI_FAKETIME:-}
   FAKETIME_DONT_FAKE_MONOTONIC: "1"
+  # LD-7: with the monotonic clock left real, libfaketime's "forced monotonic fix" (switched on by its glibc-version
+  # guess on glibc >= 2.30) turns the deadline of every timed wait on a monotonic condition variable into a wrong one -
+  # CPython's GIL waits on one, so threads contending for the GIL spin: 3 threads took 9.5 s of CPU for 0.8 s of work,
+  # and a 500-user run on the shifted clock collapsed (local, 19 Oct). Off, the waits are real waits.
+  FAKETIME_FORCE_MONOTONIC_FIX: "0"
   FAKETIME_DONT_RESET: "1"
   SSL_CERT_FILE: /ci-tls/ca.pem
 

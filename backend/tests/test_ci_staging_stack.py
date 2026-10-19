@@ -154,6 +154,17 @@ def test_clock_settings_and_the_seeded_holidays():
     assert clock.settings(now, now)["ATP_CI_LD_PRELOAD"] == ""
 
 
+def test_the_shifted_clock_keeps_real_waits_for_threads():
+    """LD-7: with the monotonic clock real, libfaketime's forced monotonic fix (its default on glibc >= 2.30) mis-times
+    every monotonic condition-variable wait - the GIL's - and a load run on the shifted clock measures spinning threads.
+    The API and the worker (the two services that get the preload) run with it off."""
+    overlay = yaml.safe_load((CI / "compose.ci.yml").read_text().replace("!override", "").replace("!reset", ""))
+    for service in ("backend", "worker"):
+        env = overlay["services"][service]["environment"]
+        assert env["LD_PRELOAD"] == "${ATP_CI_LD_PRELOAD:-}" and env["FAKETIME_DONT_FAKE_MONOTONIC"] == "1", service
+        assert env["FAKETIME_FORCE_MONOTONIC_FIX"] == "0", service
+
+
 def test_load_test_shards_merge_into_one_verdict(tmp_path):
     paths = []
     for i, (latency, outcome) in enumerate(((20.0, "ok"), (40.0, "ok"))):

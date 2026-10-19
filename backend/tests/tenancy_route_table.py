@@ -58,6 +58,7 @@ S_COPILOT = "self: a Copilot read or research run for the caller: read-only tool
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
+S_OWN_WATCHLISTS = "self: the caller's own watchlists (tenant and user); another member's or organisation's list is a 404"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
@@ -143,6 +144,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/actions/{action_id}/reject"): "trader",
     ("POST", "/api/ai/actions/{action_id}/snooze"): "trader",
     ("POST", "/api/ai/agent/ask"): S_COPILOT,
+    ("POST", "/api/ai/analyze"): S_COPILOT,
     ("POST", "/api/ai/ask"): S_COPILOT,
     ("GET", "/api/ai/brief"): "member",
     ("PUT", "/api/ai/byok/key"): S_OWN_AI_KEY,
@@ -294,6 +296,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    ("POST", "/api/screener/board/context"): S_COMPUTE,          # U5 D3a: reference data + shared closes for the caller's symbols; stores nothing
+    ("GET", "/api/charts/layers/trades"): "member",             # N4 CH4a: the caller's OWN PAPER trades only (user + organisation)
+    ("GET", "/api/charts/contracts/basis"): "member",       # N4 CH4c: shared lake reference data (futures + spot closes)
+    ("GET", "/api/charts/contracts/search"): "member",          # N4 CH4b: the instrument master (platform reference data)
+    ("GET", "/api/charts/contracts/series"): "member",          # N4 CH4b: shared-lake daily F&O bars (shared-licensed sources only)
     ("GET", "/api/compliance/golive"): "admin",
     ("PUT", "/api/compliance/golive/evidence"): "admin",
     ("GET", "/api/compliance/static-ips"): "member",
@@ -301,6 +308,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/contract-notes"): "member",
     ("POST", "/api/contract-notes"): "trader",
     ("GET", "/api/contract-notes/{note_id}"): "member",
+    ("GET", "/api/context/panel"): "member",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,
@@ -309,6 +317,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/custom-strategies/{strategy_id}"): "trader",
     ("GET", "/api/custom-strategies/{strategy_id}/versions"): "member",
     ("POST", "/api/custom-strategies/{strategy_id}/versions/{version_number}/rollback"): "trader",
+    ("GET", "/api/decision/expected-move"): "member",
+    ("GET", "/api/decision/exposure"): "member",
     ("GET", "/api/decision/positions"): "member",
     ("POST", "/api/decision/ruin"): S_COMPUTE,
     ("POST", "/api/decision/what-if"): S_OWN_WHATIF,
@@ -516,6 +526,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/scanner/ai/read"): "trader",
     ("POST", "/api/scanner/run"): S_COMPUTE,
     ("GET", "/api/screener/breakouts/catalog"): "member",
+    ("GET", "/api/screener/breakouts/fitness"): "member",
     ("POST", "/api/screener/breakouts/run"): "trader",
     ("GET", "/api/screener/evidence/runs/{run_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}"): "member",
@@ -547,6 +558,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/screens/{screen_id}/archive"): "trader",
     ("GET", "/api/screener/taxonomy"): "member",
     ("POST", "/api/screener/validate"): S_COMPUTE,
+    ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/status"): P_STATUS_PAGE,
@@ -594,6 +606,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/telegram/webhook/{webhook_token}"): P_TELEGRAM_WEBHOOK,
     ("GET", "/api/trades"): "member",
     ("PATCH", "/api/trades/{trade_id}/journal"): "trader",
+    # AMW-2 (flag watchlists): the caller's own named watchlists (tenant and user)
+    ("GET", "/api/watchlists"): "member: the caller's own watchlists only (tenant and user, BT1b)",
+    ("POST", "/api/watchlists"): S_OWN_WATCHLISTS,
+    ("PUT", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
+    ("DELETE", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
     ("GET", "/api/webhooks/tradingview/token"): "member",
     ("POST", "/api/webhooks/tradingview/token/rotate"): "owner",
     ("POST", "/api/webhooks/tradingview/{webhook_token}"): P_TV_WEBHOOK,

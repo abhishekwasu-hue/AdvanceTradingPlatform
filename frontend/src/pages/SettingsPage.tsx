@@ -116,13 +116,13 @@ export default function SettingsPage() {
     }
   }
 
-  async function handleAuthenticate(name: string) {
+  async function handleAuthenticate(name: string, label = "primary") {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      await api.authenticateBroker(name);
-      setMessage(`Authenticated with ${name}.`);
+      await api.authenticateBroker(name, label);
+      setMessage(`Authenticated with ${name} (${label}).`);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -186,7 +186,7 @@ export default function SettingsPage() {
                   <span className="text-fg-muted text-xs">updated {new Date(s.updated_at).toLocaleString()}</span>
                 </div>
                 <div className="flex gap-3">
-                  <button onClick={() => handleAuthenticate(s.broker_name)} disabled={busy} className="text-xs text-brand hover:underline disabled:opacity-50">
+                  <button onClick={() => handleAuthenticate(s.broker_name, s.account_label ?? "primary")} disabled={busy} className="text-xs text-brand hover:underline disabled:opacity-50">
                     Authenticate
                   </button>
                   <button onClick={() => handleDelete(s.broker_name, s.account_label ?? "primary")} className="text-xs text-down hover:underline">

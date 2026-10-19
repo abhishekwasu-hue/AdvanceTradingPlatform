@@ -3,7 +3,8 @@
 Two kinds of numbers live here:
 - the screener's **G4** targets (ATP_SCREENER_SPEC §1.5), measured in the CI `perf` job on every push;
 - the **API under load**: a session-shaped load test, run by CI with 20 users against the in-process test app, and
-  by the owner with 500 users against staging.
+  with 500 users on the CI staging stack on every push to main (`docs/reports/load_test_500.md`), and once by the owner
+  on the Hostinger host (`deploy/ci/loadtest_500.sh`).
 
 Nothing here is ever run against the production VPS. `scripts/loadtest.py` refuses any host that is not localhost or
 a staging host.
@@ -135,7 +136,8 @@ The command is `python scripts/loadtest.py --in-process --users 20 --seconds 20 
 runner does not fail the job on noise; the server-error limit is never scaled. The job fails when the SLO is missed.
 
 Run of 2026-10-11 (GitHub-hosted runner): 20 users (5 accounts) for 30 s, 3,198 requests, 102 requests/s, 0 server
-errors, **SLO PASS**.
+errors, **SLO PASS** for this 20-user in-process smoke run only. The Phase 0 criterion (500 users on the KVM 2 shape,
+below) does **not** pass: run 14 (19 Oct) login p95 13.4 s, chart 2.2 s, screener 1.04 s (`docs/reports/load_test_500.md`).
 
 | Scenario | n | p50 ms | p95 ms |
 |---|---|---|---|
@@ -158,31 +160,118 @@ errors, **SLO PASS**.
 CI uses the 1 s think time so that the job measures service time, not a saturated queue. That is also closer to how
 people poll.
 
-### The owner: 500 users against staging
+### 500 users on the CI staging stack (Lane D) and on the Hostinger host
 
-```
-cd backend
-# accounts.csv: about 8 staging accounts, one "email,password" per line. The first user of each account logs in, and
-# the login limit is 10 a minute per IP.
-python scripts/loadtest.py --base https://<staging host> --users 500 --seconds 600 --ramp 120 --think 2 \
-    --accounts accounts.csv --json > loadtest-500.json
-```
+The Phase 0 exit criterion "load test passed" is measured on a real stack, not the in-process app: the production
+compose files plus `deploy/ci/compose.ci.yml` (Caddy over HTTPS, the API, the worker, Postgres, Redis and a fake
+Upstox / Dhan broker), built from the commit. Results and analysis: `docs/reports/load_test_500.md`.
 
-- **Hosts.** The script accepts localhost, or a host with a DNS label that is exactly `staging`
-  (`staging.example.org`, `api.staging.example.org`; not `api-staging.example.org` or `notstaging.example.com`). A
-  staging host with another name must be listed in `LOADTEST_ALLOWED_HOSTS=<host>`. Never list the production VPS.
-- **SLO.** Keep the plain limits against staging (no `--slo-factor`).
-- **Run length.** Keep `--ramp` + `--seconds` under 14 minutes. Access tokens live 15 minutes, and later requests
-  would answer 401.
-- **Flags and data.** Turn `screener_v2` on for the staging tenants first, or the screener scenario is reported as
-  "disabled". The same goes for a broker session for the chart and screener scenarios: without one they are
-  reported as "unavailable".
-- **What to watch.**
-  - p95 per scenario and the server-error rate;
-  - the API's CPU and the Postgres connections in use (`pg_stat_activity`);
-  - whether the worker's cycle time (`atp_worker_cycle_duration_seconds`) moves. The API and the worker are separate
-    processes, so it should not.
-- **Results.** Paste the table here with the date.
+- **Where.** CI job `load-500` in `.github/workflows/staging-stack.yml` (every push to main, and on demand with
+  `users` / `seconds` / `think` inputs). On the Hostinger host, one command as `atp` (runbook section 12a):
+  `/opt/atp/deploy/ci/loadtest_500.sh` - its own compose project `atp-ci` beside production, loopback ports only,
+  removed at the end.
+- **Users.** 500 synthetic users, each in its own organisation with a fake Dhan session (Tier A), written straight into
+  the stack's throwaway database (`deploy/ci/seed_users.py`). Every user logs in (500 logins over a 150 s ramp).
+- **The login wave and the rate limit.** Nothing is bypassed. The generator runs as 25 shards, each its own container
+  and so its own client IP on the stack network, through Caddy, which passes that IP on; each IP logs in at most
+  8 times a minute against the limit of 10. `backend/scripts/loadtest.py --account-offset / --raw-out / --merge`.
+- **One schedule for all shards (LD-7).** Every shard's ramp starts at the same wall-clock instant (`--start-at`) and
+  shard i of n takes the i/n-th part of each start slot (`--shard / --shards`), so the 25 shards between them start a
+  user every 0.3 s. Before, each shard started its 20 users on its own clock: 25 logins arrived together every 7.5 s.
+- **Profiles.**
+  - Primary: a page load every 30 s on average (the Dashboard page's own refresh), for 5 minutes after the ramp, in
+    the KVM 2 shape (below). It decides the job.
+  - Login burst and busy (a page load every 10 s, 3 minutes): the same shape, for comparison.
+  - The KVM 2 as a CPU quota (runs 8-10's shape): only the API limited, `docker update --cpus 2`, everything else
+    unpinned; and the whole runner (3 API processes, no limit). For comparison.
+- **The KVM 2 shape (LD-7, `stack.sh pin kvm2`).** The owner's box runs the API (2 processes), the worker,
+  Postgres, Redis, Caddy and the frontend on the same 2 vCPUs, so the CI pins all of them to two CPUs on two physical
+  cores (on the SMT runner CPUs 0 and 1 can be one core's two threads; the job prints the topology) and the 25 load
+  clients (`loadtest.py --pin-cpus`) and the fake broker to the other CPUs. A CPU quota instead (`--cpus 2`) is
+  not the same machine: the API's threads spread over all 4 CPUs, spend the quota early in each 100 ms period and
+  stall for the rest of it, while Postgres and the worker run on the other CPUs for free.
+- **Clock (LD-7).** The job runs inside an NSE session (`ATP_CI_CLOCK=auto`: the real clock between 09:30 and 14:00
+  IST on a trading day, else shifted by libfaketime). While the market is open the worker keeps every user's broker
+  session (`byob_data_tier`, on in the CI posture) and the bars include the day so far; runs 1-9 ran outside a
+  session and measured a lighter load.
+- **Diagnostics.**
+  - Every report also lists the requests started after the login ramp on their own. This table is diagnostic only;
+    the verdict covers every request.
+  - Database connections by state (`pg_stat_activity`) every 5 s: peak and mean per state.
+  - What the API measured itself over the run (`deploy/ci/metrics_summary.py`, two scrapes of `/metrics`): the
+    server-side time per route and its share of all request time, the waits for a pooled connection
+    (`atp_db_pool_wait_seconds`) and for a bcrypt thread (`atp_bcrypt_queue_wait_seconds`), and the bcrypt checks' own
+    time (`atp_bcrypt_seconds`).
+  - The statements by total time (`pg_stat_statements`, preloaded by the CI overlay's Postgres only).
+  - On request (workflow input `profile`), the CI job samples the API processes with py-spy for 60 s inside the ramp
+    and 60 s after it, and prints a summary (`deploy/ci/profile_api.sh`). Off by default: it costs the runner CPU.
+- **Clock.** The real clock: the load needs no market session, and libfaketime (used by the acceptance flow) costs the
+  API about half its throughput in a local comparison.
+
+The manual form against any staging host still works (`--base https://<staging host> --accounts accounts.csv`); keep
+`--ramp` + `--seconds` under 14 minutes (access tokens live 15).
+
+### API processes (LD-7)
+
+The API runs `API_WORKERS` uvicorn processes (`backend/scripts/serve_api.sh`, the image's command):
+
+| Where | Default | Why |
+|---|---|---|
+| `docker-compose.yml` (dev, plain compose) | 1 | as before |
+| `docker-compose.hostinger.yml` | 2 | one per vCPU on the KVM 2 |
+| `deploy/ci/compose.ci.yml` | 3 | 4-vCPU runner, shared with the load generator, the fake broker and Postgres |
+| `deploy/ci/loadtest_500.sh` (owner, on the host) | 2 | the API as production runs it there |
+
+One process is one event loop, so it uses about one core however many the host has.
+
+What each process keeps for itself, checked for N processes:
+- **Shared already (Postgres / Redis):** the rate limits, the worker replica lock, the Phase 0 lock (re-read on use),
+  sessions and token revocation, the market-data caches, and the start-up flag seed (a second process's insert race is
+  handled).
+- **Per process, safe as a copy:**
+  - the tenant key ring: a key never changes once created, and a master-key rotation re-wraps it without changing it;
+  - the journal flag cache (10 s TTL);
+  - the status-page cache (15 s);
+  - the chart layer caches (keyed by their data);
+  - the public `/api/system/status` (5 s, dropped by an admin change in the process that made it).
+- **Shared out:** bcrypt's thread limit is the CPU count divided by `API_WORKERS` (at least 1), so a login wave still
+  runs about one check per CPU on the host.
+- **Merged:** with more than one process, `PROMETHEUS_MULTIPROC_DIR` is set and emptied at start-up. `/metrics`
+  (whichever process answers) sums the counters and histograms, and gives each gauge its most recently set value.
+- **Pools:** each process has its own database pool (`DB_POOL_SIZE` + `DB_MAX_OVERFLOW`: 5 + 10 by default, 10 + 5
+  on Hostinger). On Hostinger that is API 2 x 15 + trading worker 15 + research worker 15 = 60, under Postgres'
+  `max_connections` of 75 (12 left for backups, restores and psql beside the 3 reserved). The 10 are kept warm: with
+  5 + 5 the overflow connections were closed at every check-in and opened again, and a request waited for a new
+  connection (14.5% of the 500-user test's request time on the KVM 2 shape, `atp_db_pool_wait_seconds`).
+  `pool_pre_ping` stays: a connection left dead by a database restart is replaced, not answered with a 500.
+
+**No pool connection is held across a slow step.** `app.db.session.release_connection` ends a read-only transaction
+before bcrypt (login, sign-up, invite, password reset/change, MFA disable), before a chart's broker calls, and before a
+screener run's broker calls and its evaluation. Before this, a login held its connection through the bcrypt queue,
+and a chart held its connection through the broker. A local 500-user run ended with all 15 connections "idle in
+transaction" and 1,411 pool time-outs.
+
+**The event loop does no pandas work for a chart or a screen.** The chart's resampling and serialising, and the
+screener's per-symbol frames, run on worker threads. The request-body cap is a pure ASGI middleware, not
+`BaseHTTPMiddleware`.
+
+**The route scan is skipped for paths already resolved** (`app/core/route_cache.py`). FastAPI asks each of the 98
+top-level routes in turn whether it matches, and an included router answers by scanning its own routes: 1.5-3.5 ms per
+request for routes near the end of the list, 12.7% of the API's CPU after the ramp on the KVM 2 shape. The cache keeps,
+per (method, root path, path) without path parameters, the index of the top-level entry FastAPI's own loop picked, and
+next time asks that entry first and handles it the way the loop does. No full match, a 404, a 405, a path with
+parameters or a changed route list go through FastAPI's loop unchanged. It is only installed when the installed
+FastAPI's loop is the one it mirrors (checked at start-up), and `tests/test_ld7_route_cache.py` resolves every served
+path both ways.
+
+**Broker connections are reused** (`app/brokers/shared_http.py`). An adapter is built per request; each built its own
+HTTP client, so every chart and screener run paid a new TLS context and handshake, and the client was never closed.
+Adapters built without a client now share one per broker host and event loop. It carries no credential (they go per
+request) and keeps no cookie at all, so nothing of one user's session reaches another's request. Dhan uses it so far.
+
+**Dhan's scrip master is read once per process**, not per request: the symbol map (`_resolve`'s three fields per
+symbol) is built from one download and kept for 6 hours. Every chart and screener run used to download and parse the
+whole public master (tens of MB on the real host; small on the CI fake, so the test did not show it).
 
 ### Bottlenecks found and fixed
 

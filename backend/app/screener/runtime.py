@@ -124,13 +124,37 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = Fal
     return out
 
 
+# LD-7: one screen run's evaluated nodes, per symbol (keyed by its SymbolData object: id(data) -> (id(node), timeframe) ->
+# value). The funnel (`stage_survivors`) evaluates the screen's top-level items again on the same symbols; with the memo
+# of the full evaluation they are read back, not computed again. Valid for one run only: the same screen objects, bars,
+# parameters and base timeframe - and never for a cross-sectional screen (its constants depend on the universe given).
+ScreenMemo = Dict[int, Dict[Tuple[int, str], Any]]
+_LEAVES = (n.Num, n.Str, n.Bool, n.Param)
+_MISSING = object()
+
+
 class _Eval:
-    def __init__(self, data: SymbolData, base_tf: str, params: Dict[str, Any], constants: Dict[int, float]) -> None:
+    memo: Optional[Dict[Tuple[int, str], Any]] = None          # a subclass that sets up its own state (panel.py) has none
+
+    def __init__(self, data: SymbolData, base_tf: str, params: Dict[str, Any], constants: Dict[int, float],
+                 memo: Optional[Dict[Tuple[int, str], Any]] = None) -> None:
         self.data, self.base_tf, self.params, self.constants = data, base_tf, params, constants
         if base_tf not in data.frames or data.frames[base_tf].empty:
             raise ScreenRuntimeError(f"{data.symbol}: no {base_tf} bars")
         self.frames: Dict[str, pd.DataFrame] = dict(data.frames)
         self._session_bars: Dict[Tuple[Any, ...], Any] = {}      # U6 BK2: one session map / VWAP / time-of-day series per frame
+        # LD-7: this symbol's evaluated nodes, (id(node), timeframe) -> value, shared by the evaluations of one screen run
+        # (`ScreenMemo`): the funnel's stages are the screen's own top-level items, already evaluated by the full screen.
+        self.memo = memo
+
+    def ev(self, node: Any, tf: str) -> Any:
+        if self.memo is None or isinstance(node, _LEAVES):
+            return self._ev(node, tf)
+        key = (id(node), tf)
+        value = self.memo.get(key, _MISSING)
+        if value is _MISSING:
+            value = self.memo[key] = self._ev(node, tf)
+        return value
 
     def session_bars(self, tf: str, sessions: int = 20, min_sessions: int = 5, mode: str = "bar") -> Any:
         """U6 BK2: the breakout Bars of a timeframe on the symbol's exchange clock, cached for the screen run, so a screen
@@ -176,7 +200,7 @@ class _Eval:
             out = avail.reindex(avail.index.union(dst_close)).ffill().reindex(dst_close)
         return pd.Series(out.to_numpy(), index=self.frame(dst_tf).index)
 
-    def ev(self, node: Any, tf: str) -> Any:  # noqa: C901 - one switch over the node kinds
+    def _ev(self, node: Any, tf: str) -> Any:  # noqa: C901 - one switch over the node kinds
         if isinstance(node, n.Num):
             return node.value
         if isinstance(node, (n.Str, n.Bool)):
@@ -276,11 +300,16 @@ class _Eval:
             "ORLow": lambda: _operand(f, "OR_LOW", win(0)),
             "Trend": lambda: _structure(f, win(0, 3))[0],
             "StructureEvent": lambda: _structure(f, win(0, 3))[1],
-            "PatternBullish": lambda: _pattern(f, "BULLISH"),
-            "PatternBearish": lambda: _pattern(f, "BEARISH"),
+            "PatternBullish": lambda: _pattern(f, "BULLISH", _text(0, "any")),
+            "PatternBearish": lambda: _pattern(f, "BEARISH", _text(0, "any")),
             "NearSupport": lambda: _near_zone(f, "NEAR_SUPPORT", num(0, 0.5), win(1, 3)),
             "NearResistance": lambda: _near_zone(f, "NEAR_RESISTANCE", num(0, 0.5), win(1, 3)),
-            "Pattern": lambda: _pattern_series(f, str(self.ev(args[0], tf))),
+            "Pattern": lambda: _pattern_series(f, str(self.ev(args[0], tf)), _text(1, "any")),
+            # AMW-3 (flag screenql_amw_functions): the AMW screener's predicates as causal series
+            "StDev": lambda: self.series(args[0], tf).rolling(win(1)).std(ddof=0),
+            "RsiDivergence": lambda: _rsi_divergence(f, _text(0, "bullish"), win(1, 15), int(num(2, 0))),
+            "SwingLabel": lambda: _swing_label(f, _text(0, "high"), int(num(1, 0))),
+            "TimeOfDay": lambda: pd.Series(time_of_day(f.index, _text(0, ""), _text(1, "")), index=f.index),
             "SwingHigh": lambda: _swings(f, int(num(0, 0)))[0],
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
@@ -395,19 +424,117 @@ def _structure(f: pd.DataFrame, window: int) -> Tuple[str, str]:
     return result.trend.value, (f"{latest.event}_{latest.direction}".upper() if latest else "")
 
 
-def _pattern(f: pd.DataFrame, direction: str) -> bool:
-    from app.price_action.candlestick_patterns import detect_patterns_at
-    return any(m.direction == direction for m in detect_patterns_at(f, len(f) - 1))
+def _pattern(f: pd.DataFrame, direction: str, confirm: str = "any") -> bool:
+    """A pattern of the direction on the last bar (confirm any), or - AMW-3 - a pattern of that direction on the bar
+    before whose next-bar status (`candlestick_patterns.confirmation_masks`) the last bar gave is `confirm`."""
+    from app.price_action.candlestick_patterns import CONFIRM_STATES, detect_patterns_at
+    if confirm not in CONFIRM_STATES:
+        raise ScreenRuntimeError(f"unknown confirmation status {confirm!r}")
+    if confirm == "any":
+        return any(m.direction == direction for m in detect_patterns_at(f, len(f) - 1))
+    if len(f) < 2 or not any(m.direction == direction for m in detect_patterns_at(f, len(f) - 2)):
+        return False
+    return _status(f["high"].iloc[-2], f["low"].iloc[-2], f["close"].iloc[-1], direction) == confirm
 
 
-def _pattern_series(f: pd.DataFrame, name: str) -> pd.Series:
+def _status(high: float, low: float, close: float, direction: str) -> str:
+    """The next-bar status of a pattern bar (high, low) given the next close (the rule of confirmation_masks)."""
+    good, bad = (close > high, close < low) if direction == "BULLISH" else (close < low, close > high)
+    return "confirmed" if good else "failed" if bad else "unconfirmed"
+
+
+def _pattern_series(f: pd.DataFrame, name: str, confirm: str = "any") -> pd.Series:
     """S5-A: True on each bar where the named pattern shows (`candlestick_patterns.pattern_masks`, vectorised: a whole
-    frame costs about as much as one bar did). The first two bars are False."""
-    from app.price_action.candlestick_patterns import pattern_masks
-    masks = pattern_masks(f)
+    frame costs about as much as one bar did). The first two bars are False. AMW-3: the v2 candles
+    (`pattern_masks_v2`), and with `confirm` the status the bar gave the pattern on the bar before (`confirmation_masks`)."""
+    from app.price_action.candlestick_patterns import (CONFIRM_STATES, PATTERN_DIRECTION, V2_PATTERN_NAMES, confirmation_masks, pattern_masks,
+                                                       pattern_masks_v2)
+    if confirm not in CONFIRM_STATES:
+        raise ScreenRuntimeError(f"unknown confirmation status {confirm!r}")
+    masks = pattern_masks_v2(f) if name in V2_PATTERN_NAMES else pattern_masks(f)
     if name not in masks:
         raise ScreenRuntimeError(f"unknown pattern {name!r}")
-    return pd.Series(masks[name], index=f.index)
+    if confirm == "any":
+        return pd.Series(masks[name], index=f.index)
+    return pd.Series(confirmation_masks(f, masks[name], PATTERN_DIRECTION[name])[confirm], index=f.index)
+
+
+def _swing_pivots(f: pd.DataFrame, degree: int) -> List[Any]:
+    """The causal swing engine's confirmed pivots of a degree (default settings), in confirmation order."""
+    from app.price_action import causal_swings as cs
+    from app.price_action import pa_settings
+    s = pa_settings.settings()
+    if not 0 <= degree < len(s["swing_atr_mult"]):
+        raise ScreenRuntimeError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    frame["timestamp"] = frame["bar_end"] = f.index
+    return [p for p in cs.degree_pivots(frame, degree, s) if p.confirmed_idx is not None]
+
+
+def _swing_label(f: pd.DataFrame, kind: str, degree: int) -> pd.Series:
+    """AMW-3: on every bar, the label of the last swing high (HH / LH) or low (HL / LL) CONFIRMED by that bar against the
+    one of the same kind before it - the Dow trend's labels (an equal price reads lower). Missing (None) until two swings
+    of the kind are confirmed. A pivot counts from its confirmation bar, never from its extreme (no look-ahead)."""
+    if kind not in ("high", "low"):
+        raise ScreenRuntimeError(f"unknown swing kind {kind!r}")
+    k = "H" if kind == "high" else "L"
+    out = np.full(len(f), None, dtype=object)
+    prev: Optional[float] = None
+    for p in _swing_pivots(f, degree):
+        if p.kind != k:
+            continue
+        if prev is not None:
+            higher = p.price > prev
+            out[int(p.confirmed_idx)] = ("HH" if higher else "LH") if k == "H" else ("HL" if higher else "LL")
+        prev = p.price
+    return pd.Series(out, index=f.index, dtype=object).ffill()
+
+
+def _rsi_divergence(f: pd.DataFrame, side: str, lookback: int, degree: int) -> pd.Series:
+    """AMW-3: a regular RSI(14) divergence on every bar, from the swings CONFIRMED by that bar. Bullish: the last swing low
+    is lower than the one before and RSI(14) at it is higher; bearish: a higher swing high with a lower RSI. RSI is read
+    at each swing's extreme bar (known by the confirmation bar). True while the latest swing's extreme is at most
+    `lookback` bars before the bar; false before two swings of the kind or where RSI has no value yet."""
+    if side not in ("bullish", "bearish"):
+        raise ScreenRuntimeError(f"unknown divergence side {side!r}")
+    k = "L" if side == "bullish" else "H"
+    rsi = _rsi(f["close"].astype(float), 14).to_numpy(float)
+    n_ = len(f)
+    div = np.zeros(n_, dtype=bool)                      # the divergence state from each confirmation on
+    last_bar = np.full(n_, -1, dtype=np.int64)          # the latest swing's extreme bar, known at each bar
+    prev: Optional[Any] = None
+    for p in _swing_pivots(f, degree):
+        if p.kind != k:
+            continue
+        c, b = int(p.confirmed_idx), int(p.bar_idx)
+        state = False
+        if prev is not None:
+            r0, r1 = rsi[int(prev.bar_idx)], rsi[b]
+            if np.isfinite(r0) and np.isfinite(r1):
+                state = bool(p.price < prev.price and r1 > r0) if k == "L" else bool(p.price > prev.price and r1 < r0)
+        div[c:], last_bar[c:] = state, b
+        prev = p
+    age = np.arange(n_) - last_bar
+    return pd.Series(div & (last_bar >= 0) & (age <= lookback), index=f.index)
+
+
+def time_of_day(index: pd.DatetimeIndex, start: str, end: str) -> np.ndarray:
+    """AMW-3 TimeOfDay: each bar's START time (exchange time, IST; a naive index is read as UTC) between start and end
+    (HH:MM, both included). start after end wraps past midnight."""
+    def minutes(text: str) -> int:
+        try:
+            hh, mm = text.split(":")
+            value = int(hh) * 60 + int(mm)
+        except ValueError as exc:
+            raise ScreenRuntimeError(f"TimeOfDay needs HH:MM, got {text!r}") from exc
+        if not (len(hh) == 2 and len(mm) == 2 and 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59):
+            raise ScreenRuntimeError(f"TimeOfDay needs HH:MM, got {text!r}")
+        return value
+    lo, hi = minutes(start), minutes(end)
+    idx = pd.DatetimeIndex(index)
+    local = (idx.tz_localize("UTC") if idx.tz is None else idx).tz_convert(EXCHANGE_TZ)
+    m = np.asarray(local.hour * 60 + local.minute)
+    return (m >= lo) & (m <= hi) if lo <= hi else (m >= lo) | (m <= hi)
 
 
 def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Series]:
@@ -736,7 +863,8 @@ def _zscore(x: pd.Series, n_: int) -> pd.Series:
 
 
 def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str,
-                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None, vectorized: bool = False) -> Dict[str, Any]:
+                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None, vectorized: bool = False,
+                    memo: Optional[ScreenMemo] = None) -> Dict[str, Any]:
     """U5: the screen as a funnel. A top-level ALL is a list of stages (anything else is one stage).
 
     Each stage is evaluated ONCE over the whole universe (so cross-sectional functions - Rank, PercentileRank - see the
@@ -746,16 +874,20 @@ def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], 
     (`with_data`) instead of being "removed" by the first stage.
 
     U5 D2: `passes` gives, per evaluated symbol, whether it passed each stage on its own (not only while it was still
-    in) - the "why it matched / where it fell out" chips on a result row."""
+    in) - the "why it matched / where it fell out" chips on a result row.
+
+    LD-7: `memo` - the one the full screen ran with (`run_screen(..., memo=)`): each stage is one of the screen's top-level
+    items, so its values per symbol are read back instead of computed again (the same values; see `ScreenMemo`)."""
     full = {m.symbol: m for m in (matches if matches is not None else run_screen(ast, validated, universe, base_tf=base_tf, params=params,
-                                                                                vectorized=vectorized))}
+                                                                                vectorized=vectorized, memo=memo))}
     usable = [d for d in universe if full[d.symbol].reason is None]
     items = list(ast.items) if isinstance(ast, n.Logic) and ast.op == "ALL" else [ast]
     alive = [d.symbol for d in usable]
     stages: List[Dict[str, Any]] = []
     passes: Dict[str, List[bool]] = {d.symbol: [] for d in usable}
     for item in items:
-        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params, vectorized=vectorized) if m.matched}
+        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params, vectorized=vectorized, memo=memo)
+                  if m.matched}
         removed = [s for s in alive if s not in passed]
         alive = [s for s in alive if s in passed]
         stages.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
@@ -815,11 +947,12 @@ def _rank_score(node: Any, universe: List[SymbolData], base_tf: str, params: Dic
 
 
 def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str, params: Optional[Dict[str, Any]] = None,
-               check_history: bool = True, vectorized: bool = False) -> List[Match]:
+               check_history: bool = True, vectorized: bool = False, memo: Optional[ScreenMemo] = None) -> List[Match]:
     """Every symbol: does the screen hold on its last closed bar? Runs only a validated screen. With `check_history` a symbol
     shorter than the validator's lookback is reported as such; without it, it is simply evaluated (NaN never matches).
     Z10-d: `vectorized` evaluates the symbols that share a bar index together (app/screener/panel.py) when every part of
-    the screen has a vectorised form; the matches are the same, only the time changes."""
+    the screen has a vectorised form; the matches are the same, only the time changes.
+    LD-7: `memo` (see `ScreenMemo`) keeps each symbol's evaluated nodes for the next evaluation in the same run."""
     if not validated.ok:
         raise ScreenRuntimeError("the screen did not pass validation")
     params = dict(params or {})
@@ -829,12 +962,14 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
             return panel.run_panel(ast, validated, universe, base_tf=base_tf, params=params, check_history=check_history,
                                    per_symbol=lambda rest: run_screen(ast, validated, rest, base_tf=base_tf, params=params, check_history=check_history))
     constants = _cross_sectional(ast, universe, base_tf, params) if validated.cross_sectional else {d.symbol: {} for d in universe}
+    if validated.cross_sectional:
+        memo = None                        # Rank / PercentileRank depend on the universe, which differs between the calls
     out: List[Match] = []
     for d in universe:
         if d.frames.get(base_tf) is None or d.frames[base_tf].empty:
             out.append(Match(d.symbol, False, f"no {base_tf} bars"))
             continue
-        ev = _Eval(d, base_tf, params, constants[d.symbol])
+        ev = _Eval(d, base_tf, params, constants[d.symbol], memo=memo.setdefault(id(d), {}) if memo is not None else None)
         # S5-A review: a higher timeframe built from the base bars is checked too (a 1d swing on a 5m screen needs 100
         # daily bars; a few days of 5m bars would otherwise give NaN with no reason)
         short = [tf for tf, bars in validated.lookback.items()

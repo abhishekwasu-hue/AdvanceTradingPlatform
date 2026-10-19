@@ -1,5 +1,6 @@
 import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
+  MultiViewAnalysis,
   StrategistResult,
   StrategistRequestParsed,
   MarketStudy,
@@ -44,6 +45,9 @@ import type {
   PaperLadder,
   ExperienceStatus,
   RuinCalc,
+  ExposureView,
+  ContextPanel,
+  ExpectedMove,
   WhatIfResult,
   WhatIfSubject,
   PaperRiskStatus,
@@ -523,6 +527,12 @@ export const api = {
   decisionPositions: () => request<{ subjects: WhatIfSubject[] }>("/decision/positions"),
   decisionWhatIf: (body: { underlying: string; spot: number; iv?: number; days_forward: number; iv_shift: number; range_pct: number }) =>
     request<WhatIfResult>("/decision/what-if", { method: "POST", body: JSON.stringify(body) }),
+  /** N2-4: exposure / correlation of the caller's own positions, and the expected-move cone for the chart. */
+  decisionExposure: (days = 90) => request<ExposureView>(`/decision/exposure?days=${days}`),
+  /** N2-5: the market context panel (404 while `context_panel` is off). */
+  contextPanel: () => request<ContextPanel>("/context/panel"),
+  decisionExpectedMove: (instrument: string, horizon: number, iv?: number) =>
+    request<ExpectedMove>(`/decision/expected-move?instrument=${encodeURIComponent(instrument)}&horizon=${horizon}${iv != null ? `&iv=${iv}` : ""}`),
 
   /** Z5 / P1-d: risk by default and the plan-before-trade PAPER ticket (404 while the `risk_by_default` flag is off). */
   paperRisk: () => request<PaperRiskStatus>("/paper/risk"),
@@ -590,8 +600,8 @@ export const api = {
   deleteBrokerCredentials: (name: string, accountLabel = "primary") =>
     request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "DELETE" }),
 
-  authenticateBroker: (name: string) =>
-    request<Record<string, unknown>>(`/broker/${name}/authenticate`, { method: "POST" }),
+  authenticateBroker: (name: string, accountLabel = "primary") =>
+    request<Record<string, unknown>>(`/broker/${name}/authenticate?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST" }),
   // Phase AJ: read-only probes of a stored broker session (never places an order).
   brokerSmokeTest: (name: string, accountLabel = "primary") =>
     request<SmokeReport>(`/broker/${name}/smoke-test?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST" }),
@@ -687,7 +697,8 @@ export const api = {
 
   brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
 
-  upstoxOAuthStart: () => request<{ authorization_url: string }>("/broker/upstox/oauth/start"),
+  upstoxOAuthStart: (accountLabel = "primary") =>
+    request<{ authorization_url: string }>(`/broker/upstox/oauth/start?account_label=${encodeURIComponent(accountLabel)}`),
   // Paste-the-code daily login (Fyers, Kite): open the broker's page, then exchange the pasted code.
   brokerLoginUrl: (name: string, accountLabel = "primary") =>
     request<BrokerLoginUrl>(`/broker/${name}/login-url?account_label=${encodeURIComponent(accountLabel)}`),
@@ -872,6 +883,8 @@ export const api = {
     request<GuideAnswer>("/ai/ask", { method: "POST", body: JSON.stringify({ question, language: language ?? null }) }),
   aiConcepts: (language: "en" | "mr") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),
   aiConcept: (id: string, language: "en" | "mr") => request<GuideConcept>(`/ai/concepts/${encodeURIComponent(id)}?language=${language}`),
+  aiAnalyze: (symbol: string, exchange = "NSE", language?: "en" | "mr", signal?: AbortSignal) =>
+    request<MultiViewAnalysis>("/ai/analyze", { method: "POST", body: JSON.stringify({ symbol, exchange, ...(language ? { language } : {}) }), signal }),
   aiResearchList: () => request<{ studies: ResearchStudy[] }>("/ai/research"),
   aiResearchCreate: (body: { idea: string; symbol: string; timeframe: string; max_drafts: number }) =>
     request<ResearchStudy>("/ai/research", { method: "POST", body: JSON.stringify(body) }),

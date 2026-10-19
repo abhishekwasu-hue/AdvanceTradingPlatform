@@ -11,6 +11,7 @@ import OiAlertsCard from "../components/OiAlertsCard";
 import OiSettingsCard from "../components/OiSettingsCard";
 import StrikeOiChart from "../components/StrikeOiChart";
 import { getToken } from "../api/client";
+import { chainLinks, contractsAvailable } from "../charting/contracts";
 
 const BIAS_COLOR: Record<string, string> = {
   BULLISH: "text-up",
@@ -31,6 +32,8 @@ export default function OptionChainPage() {
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   // OI Banner (O3): the collector's view of the underlying last analysed (stored 5-minute snapshots, not this fetch).
   const [oiUnderlying, setOiUnderlying] = useState(underlying.trim().toUpperCase());
+  // N4 CH4b: chain -> chart links (flag chart_contracts; a live chain only - a sample chain's contracts are not real)
+  const [linkChain, setLinkChain] = useState<{ underlying: string; expiry: string } | null>(null);
 
   async function analyze() {
     setOiUnderlying(underlying.trim().toUpperCase());
@@ -43,6 +46,8 @@ export default function OptionChainPage() {
       if (!chain) throw new Error(`No option chain for ${underlying}`);
       const result = await api.analyzeOptionChain(chain);
       setAnalysis(result);
+      const live = source.mode !== "sample" && (await contractsAvailable(chain.underlying));
+      setLinkChain(live ? { underlying: chain.underlying, expiry: chain.expiry } : null);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -158,17 +163,22 @@ export default function OptionChainPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {analysis.strikes.map((s) => (
+                  {analysis.strikes.map((s) => {
+                    const links = chainLinks(linkChain, s.strike);
+                    return (
                     <tr key={s.strike} className={`border-t border-border ${s.strike === analysis.atm_strike ? "bg-surface-2/60" : ""}`}>
                       <td className="py-1 pr-3">{s.call_oi ?? "-"}</td>
                       <td className="py-1 pr-3">{s.call_activity}</td>
-                      <td className="py-1 pr-3">{s.call_moneyness}</td>
+                      <td className="py-1 pr-3">{s.call_moneyness}
+                        {links && <a href={links.ce} target="_blank" rel="noopener" className="ml-1 text-brand underline" aria-label={`Chart of the ${s.strike} call`}>chart</a>}</td>
                       <td className="py-1 pr-3 text-center font-semibold">{s.strike}</td>
-                      <td className="py-1 pr-3">{s.put_moneyness}</td>
+                      <td className="py-1 pr-3">{s.put_moneyness}
+                        {links && <a href={links.pe} target="_blank" rel="noopener" className="ml-1 text-brand underline" aria-label={`Chart of the ${s.strike} put`}>chart</a>}</td>
                       <td className="py-1 pr-3">{s.put_activity}</td>
                       <td className="py-1 pr-3">{s.put_oi ?? "-"}</td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

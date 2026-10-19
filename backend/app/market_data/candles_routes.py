@@ -23,9 +23,10 @@ session's namespace only (never shared across users); each response carries a `d
 timestamp, staleness). Anything else is Tier C (EOD): a 409 with the reason and an `X-Data-Tier: C` header.
 `GET /api/market-data/data-tier` is the badge API for a symbol or a market-wide page.
 """
+import asyncio
 import logging
 from datetime import date, datetime, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -35,10 +36,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.core.rate_limit import user_rate_limit
 from app.billing.service import meter
+from app.brokers.base import BrokerInterface
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
-from app.db.session import get_session
+from app.db.session import get_session, release_connection
 from app.market_data import api_budget, entitlement
 from app.market_data.calendar import load_holidays
 from app.market_data.data_terms import terms_for
@@ -125,10 +127,21 @@ async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[s
     return usable[0]
 
 
+def _shaped(bars: List[OHLCVBar], timeframe: str) -> tuple:
+    """(bars at `timeframe`, their JSON form). Pandas resampling and serialising a few thousand bars: run on a worker
+    thread (LD-7), so a chart does not hold the event loop that every other request of the process waits on."""
+    if bars and timeframe not in ("1min", "day"):
+        bars = _frame_to_bars(build_frames(bars, "1min", [timeframe])[timeframe])
+    return bars, [b.model_dump(mode="json") for b in bars]
+
+
 def _frame_to_bars(df) -> List[OHLCVBar]:
     df = df.dropna(subset=["open", "close"])
-    return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close),
-                     volume=float(r.volume) if "volume" in df and r.volume == r.volume else 0.0) for ts, r in df.iterrows()]
+    # LD-7: plain column iteration instead of iterrows (a Series per row); the same bars.
+    volumes = df["volume"] if "volume" in df else [None] * len(df)
+    return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(o), high=float(h), low=float(lo), close=float(c),
+                     volume=float(v) if v is not None and v == v else 0.0)
+            for ts, o, h, lo, c, v in zip(df.index, df["open"], df["high"], df["low"], df["close"], volumes)]
 
 
 @router.get("/sources")
@@ -181,9 +194,15 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         warnings.append(f"lookback clamped to {cap} days for {body.timeframe} bars")
         lookback = cap
     base_interval = "day" if daily else "1min"
-    service = MarketDataService(build_adapter(record), lookback_days=lookback, cache_namespace=namespace)
+    # Every broker call of this request takes a token from the credential's API budget (api_budget, shared with /ltp by
+    # every API worker); a cached answer costs none. A symbol that gets no token says so; the others still load.
+    budgeted = api_budget.BudgetedAdapter(build_adapter(record), record.id, record.broker_name)
+    service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=lookback, cache_namespace=namespace)
     now = datetime.now(timezone.utc)
     eod_date, holidays = await _eod_context(session, ents)
+    # LD-7: the broker calls below can take seconds; no pool connection is held meanwhile (reads only so far - the meter
+    # write after the loop opens a new transaction).
+    await release_connection(session)
 
     out: Dict[str, dict] = {}
     fetched = 0
@@ -203,9 +222,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                 bars = await service.get_history(symbol, exchange, base_interval, body.before)
             else:
                 bars = await service.get_candles(symbol, exchange, base_interval)
-            if bars and body.timeframe not in ("1min", "day"):
-                bars = _frame_to_bars(build_frames(bars, "1min", [body.timeframe])[body.timeframe])
-            out[symbol] = {"bars": [b.model_dump(mode="json") for b in bars], "count": len(bars),
+            bars, shaped = await asyncio.to_thread(_shaped, bars, body.timeframe)
+            out[symbol] = {"bars": shaped, "count": len(bars),
                            "first": bars[0].timestamp.isoformat() if bars else None, "last": bars[-1].timestamp.isoformat() if bars else None, "error": None}
             if bars:
                 last_ts = bars[-1].timestamp
@@ -213,13 +231,20 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             fetched += 1
             if not bars:
                 warnings.append(f"{symbol}: the broker returned no candles")
+        except api_budget.BudgetUsed:
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": "budget used", "budget_used": True}
+            continue
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
             logger.info("Candle fetch failed for %s:%s via %s: %s", exchange, symbol, record.broker_name, exc)
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300]}
     if fetched:
         await meter(session, user.tenant_id, "market_data_candles", quantity=fetched, source="api",
                     metadata={"broker": record.broker_name, "timeframe": body.timeframe, "exchange": exchange}, commit=True)
-    if not fetched:
+    budget_used = sorted(s for s, v in out.items() if v.get("budget_used"))
+    if budget_used:
+        warnings.append(f"budget used: {len(budget_used)} symbol(s) not loaded this time to keep the broker's rate limit for the "
+                        f"trading worker ({', '.join(budget_used[:10])}{' ...' if len(budget_used) > 10 else ''}) - they load on the next refresh")
+    if not fetched and not budget_used:
         warnings.append("every symbol failed - check the symbols are the broker's trading symbols and the session token is valid")
     result = {"source": {"broker": record.broker_name, "account_label": record.account_label}, "exchange": exchange, "timeframe": body.timeframe,
               "base_interval": base_interval, "lookback_days": lookback, "before": body.before.isoformat() if body.before else None, "fetched_at": datetime.now(timezone.utc).isoformat(),
@@ -268,13 +293,42 @@ async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: st
     if tick is not None:
         return {**base, "ltp": float(tick.ltp), "timestamp": tick.best_ts.isoformat(), "age_seconds": round(tick.age_seconds(now), 1),
                 "stale": False, "stale_reason": None, "source": "tick", "bid": None, "ask": None, "volume": None}
+    # CH5-a review (ADR-0004): one broker call per credential and symbol every few seconds, whoever asks - the result is
+    # shared through the cache, and one request at a time makes the call while the others wait for it.
+    shared = await api_budget.cached_quote(record.id, exchange, symbol)
+    if shared is not None:
+        return _refreshed(shared, now)
+    holder = await api_budget.claim_fetch(record.id, exchange, symbol)
+    if holder is None:
+        shared = await api_budget.wait_for_quote(record.id, exchange, symbol)
+        if shared is not None:
+            return _refreshed(shared, now)
+    try:
+        body = await _broker_ltp(record, base, symbol, exchange, now)
+        await api_budget.store_quote(record.id, exchange, symbol, body)
+        return body
+    finally:
+        if holder is not None:
+            await api_budget.release_fetch(record.id, exchange, symbol, holder)
+
+
+def _refreshed(body: dict, now: datetime) -> dict:
+    """A shared quote, its age and staleness measured again now (the price itself is the broker's, a few seconds old)."""
+    out = {**body, "shared": True}
+    if body.get("timestamp"):
+        ts = datetime.fromisoformat(body["timestamp"])
+        reason = quote_is_stale(ts, now)
+        out.update(age_seconds=round((now - ts).total_seconds(), 1), stale=reason is not None, stale_reason=reason)
+    return out
+
+
+async def _broker_ltp(record: BrokerCredentialRecord, base: dict, symbol: str, exchange: str, now: datetime) -> dict:
     adapter = build_adapter(record)
-    # CH5-a review: every broker call draws a token from this session's API budget first; none within a moment -> 429,
-    # never a queue that grows while the worker's exits need the same API key.
-    budget = api_budget.budget_for(record.tenant_id, record.broker_name, record.account_label)
 
     async def token() -> None:
-        if not await api_budget.take(budget):
+        # Every broker call draws from this credential's API budget, shared by every API process (api_budget); none
+        # within a moment -> 429, never a queue that grows while the worker's exits need the same API key.
+        if not await api_budget.take(record.id, record.broker_name):
             raise HTTPException(status_code=429, detail="The broker's rate budget for this session is in use - the price refreshes shortly",
                                 headers={"Retry-After": "5"})
     try:

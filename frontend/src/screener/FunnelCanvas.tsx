@@ -42,6 +42,8 @@ export interface FunnelCanvasProps {
   runKey?: number;                   // bumps on every run: replays the fill
   onChange: (stages: Stage[]) => void;
   onShowRemoved?: (stageId: string) => void;
+  /** U2 (flag `screener_builder_u2`): offer the formula block. */
+  formula?: boolean;
 }
 
 export function FunnelCanvas(props: FunnelCanvasProps) {
@@ -79,7 +81,7 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
               <Button key={t.name} size="sm" onClick={() => onChange(t.build(registry))} title={t.summary}>{t.name}</Button>
             ))}
             <Button size="sm" variant="primary" onClick={() => onChange([newBlock(registry, kind)])}><Plus size={14} /> Add a condition</Button>
-            <KindPicker value={kind} onChange={setKind} />
+            <KindPicker value={kind} onChange={setKind} formula={!!props.formula} />
           </div>
         </div>
       </section>
@@ -122,7 +124,7 @@ export function FunnelCanvas(props: FunnelCanvasProps) {
       <div className="mt-3 flex items-center justify-between gap-3 pl-6">
         <span className="inline-flex items-center gap-1">
           <Button size="sm" onClick={() => onChange([...stages, newBlock(registry, kind)])}><Plus size={14} /> Add a condition</Button>
-          <KindPicker value={kind} onChange={setKind} />
+          <KindPicker value={kind} onChange={setKind} formula={!!props.formula} />
         </span>
         <MatchedFoot matched={props.matched} of={total} kills={rows.some((r) => r.kills)} live={!!props.live} />
       </div>
@@ -160,6 +162,7 @@ function MatchedFoot({ matched, of, kills, live }: { matched: number | null; of:
 
 const KINDS: StageKind[] = ["indicator", "filter", "category", "rank", "group"];
 
-function KindPicker({ value, onChange }: { value: StageKind; onChange: (k: StageKind) => void }) {
-  return <SelectInline label="Kind of condition to add" mono={false} value={value} options={KINDS} format={(k) => KIND_LABEL[k as StageKind]} onChange={(k) => onChange(k as StageKind)} />;
+function KindPicker({ value, onChange, formula }: { value: StageKind; onChange: (k: StageKind) => void; formula: boolean }) {
+  const kinds: StageKind[] = formula ? [...KINDS, "formula"] : KINDS;
+  return <SelectInline label="Kind of condition to add" mono={false} value={value} options={kinds} format={(k) => KIND_LABEL[k as StageKind]} onChange={(k) => onChange(k as StageKind)} />;
 }

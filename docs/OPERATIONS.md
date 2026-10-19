@@ -84,7 +84,7 @@ instead of pushing the host into swap. All values are `.env` overrides (`MEM_*`,
 
 | Container | Limit | Sized for |
 |---|---|---|
-| postgres | 2 GB | `shared_buffers` 512 MB, `effective_cache_size` 1.5 GB, `work_mem` 8 MB (x `max_connections` 60 worst case 480 MB, real use far lower), `maintenance_work_mem` 128 MB, WAL archiving on |
+| postgres | 2 GB | `shared_buffers` 512 MB, `effective_cache_size` 1.5 GB, `work_mem` 8 MB (x `max_connections` 75 worst case 600 MB, real use far lower; about 10 MB per connection), `maintenance_work_mem` 128 MB, WAL archiving on |
 | backend (API) | 1.5 GB | one uvicorn process (2 vCPU: the event loop + the threadpool for backtests); a 2-year 1-min backtest peaks near 600 MB |
 | worker | 1.5 GB | one replica (the Redis lock forbids two); per-cycle candles + indicator caches per deployment |
 | redis | 512 MB | `maxmemory` 384 MB, `volatile-lru`: at the cap only keys with a TTL are evicted - caches, quote ticks, rate windows, and also the worker lock (see below) (H-1) |

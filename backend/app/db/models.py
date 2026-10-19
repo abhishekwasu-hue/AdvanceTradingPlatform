@@ -307,6 +307,17 @@ class TradeRecord(Base):
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
     # matched to both sides of the trade.
     exit_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Re-exit guard (ADR-0004): when this position's exit was claimed / sent - an exit order missing from the broker's book
+    # is treated as dead once it was sent on an earlier trading day, or a clean reconciliation since shows the position
+    # still open. While the exit is being placed `exit_order_id` holds the pending marker (position_monitor.EXIT_PENDING).
+    exit_sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Re-exit guard: when a reconciliation last found this position's symbol still open at the broker (quantities matched)
+    # with no order working on it - the proof that an exit order missing from the book is over (set only while an exit
+    # is recorded). And what earlier exits of this position already filled before the recorded one (quantity, average
+    # price), so the booking blends every part.
+    reconciled_open_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    exit_filled_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_filled_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Where `charges` came from: ESTIMATED (the platform's NSE cost model at close time) or
     # CONTRACT_NOTE (the broker's actual charges, applied from an uploaded contract note).
     charges_source: Mapped[str] = mapped_column(String(20), nullable=False, default="ESTIMATED")
@@ -1230,6 +1241,8 @@ class AiActionRecord(Base):
               postgresql_where=text("status IN ('PROPOSED', 'APPROVED')"), sqlite_where=text("status IN ('PROPOSED', 'APPROVED')")),
         # Z3 / BT2: one ENTRY proposal per signal (a redelivered webhook or a second worker pass is refused by the database).
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_ai_actions_tenant_idempotency_key"),
+        # LD-7: the dashboard's proposal list (tenant, status, newest first by id).
+        Index("ix_ai_actions_tenant_status_id", "tenant_id", "status", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1508,6 +1521,8 @@ class NotificationRecord(Base):
     """
 
     __tablename__ = "notifications"
+    # LD-7: the feed every page polls - one tenant's rows, newest first.
+    __table_args__ = (Index("ix_notifications_tenant_created", "tenant_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -1595,12 +1610,19 @@ class CompanyRecord(Base):
     """
 
     __tablename__ = "companies"
+    # A symbol is unique per scope (security LOW follow-up of #234): one shared profile (a partial unique index) and at most
+    # one per organisation - an organisation's private profile never blocks or shadows the shared one for the others.
+    __table_args__ = (
+        UniqueConstraint("symbol", "tenant_id", name="uq_companies_symbol_tenant"),
+        Index("uq_companies_symbol_shared", "symbol", unique=True, postgresql_where=text("tenant_id IS NULL"),
+              sqlite_where=text("tenant_id IS NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
     # that organisation and visible to it only (app/fundamentals/visibility.py).
     tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
-    symbol: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     bse_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     isin: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -1636,7 +1658,10 @@ class FinancialPeriodRecord(Base):
     """
 
     __tablename__ = "financial_periods"
-    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", name="uq_company_period_tenant"),)
+    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", name="uq_company_period_tenant"),
+                      # NULLs differ in a unique key: the shared periods get their own partial unique index
+                      Index("uq_company_period_shared", "company_id", "period_type", "period_label", unique=True,
+                            postgresql_where=text("tenant_id IS NULL"), sqlite_where=text("tenant_id IS NULL")))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
@@ -2641,6 +2666,27 @@ class MarketZoneRunRecord(Base):
     source_ingested_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)    # newest ingest it read
 
 
+class BreakoutFitnessRunRecord(Base):
+    """U6 BK5: one template's screen fitness as of a date - forward returns and failed-break rates of its historical
+    signals on the SHARED lake's daily bars (md_candles; never a tenant's or a user's own data), aggregated over the
+    configured universe. Reference data like the market zones: no tenant column, the same rows for every organisation.
+    Append-only per (template, universe, as_of); the latest as_of is the one shown."""
+
+    __tablename__ = "breakout_fitness_runs"
+    __table_args__ = (UniqueConstraint("template_id", "universe", "as_of", name="uq_breakout_fitness_run"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    universe: Mapped[str] = mapped_column(String(32), nullable=False)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)                                   # the IST date of the run
+    signal_tf: Mapped[str] = mapped_column(String(8), nullable=False)
+    params_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbols: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    signals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stats: Mapped[str] = mapped_column(Text, nullable=False, default="{}")                       # JSON (fitness.aggregate)
+    computed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
 class MarketZoneRecord(Base):
     """Z7a-2: one zone of a stored snapshot - its bounds, role by price, ATP lifecycle state (fresh / tested / flipped /
     invalidated) and counters, and the tracker the next run continues from (JSON)."""
@@ -3165,6 +3211,23 @@ class ChartLayoutRecord(Base):
     name: Mapped[str] = mapped_column(String(60), nullable=False)
     layout_json: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class WatchlistRecord(Base):
+    """AMW-2: one named watchlist of one user - an ordered list of symbols the Screener and the Scanner can load as
+    their universe. Per user and tenant (BT1b), unique by name per user. A list of names only: it places nothing.
+    Behind the `watchlists` flag (off by default)."""
+
+    __tablename__ = "watchlists"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "name", name="uq_watchlists_tenant_user_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    symbols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 

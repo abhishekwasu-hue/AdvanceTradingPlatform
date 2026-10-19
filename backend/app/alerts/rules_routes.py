@@ -108,6 +108,21 @@ async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str)
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+async def _amw_check(session: AsyncSession, user: User, ast: Any, fire_on: str, params: Optional[Dict[str, Any]] = None) -> None:
+    """AMW-3: a rule (instrument condition or saved screen) using an AMW-3 function, a v2 candle or a confirmation status
+    needs `screenql_amw_functions` on; a confirmation status, RsiDivergence and SwingLabel fire on bar close only."""
+    from app.screener import amw_functions as amw_gate
+    from app.screener import nodes
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    blocked = await amw_gate.blocked_calls(session, user.tenant_id, tree, params or {})
+    why = amw_gate.refusal(blocked) if blocked else None
+    if why is None and fire_on == "intrabar":
+        closed_only = amw_gate.intrabar_calls(tree, params or {})
+        why = amw_gate.intrabar_refusal(closed_only) if closed_only else None
+    if why:
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 def _ownership_check(ast: Any) -> None:
     """N3 S8a (provisional S8-4): the alert loop does not load ownership or events - a rule using them is refused."""
     from app.screener import nodes
@@ -142,11 +157,14 @@ def _ranking_check(ast: Any) -> None:
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
-async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_on: str, exchange: Optional[str]) -> None:
+async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_on: str, exchange: Optional[str],
+                             params: Optional[Dict[str, Any]] = None) -> None:
     """Every check a screen rule's screen must pass (raises the 422 of the first refusal). Used when a rule is saved and
-    - N3 S7a review (LOW) - when the screen a rule runs is changed, so an edit cannot slip a refused function past it."""
+    - N3 S7a review (LOW) - when the screen a rule runs is changed, so an edit cannot slip a refused function past it.
+    `params` (the screen's own) resolves a `$parameter` pattern name for the AMW-3 check."""
     await _breakout_check(session, user, ast, fire_on, exchange)
     await _zone_check(session, user, ast, fire_on)
+    await _amw_check(session, user, ast, fire_on, params)
     _ranking_check(ast)
     _ownership_check(ast)
     await _venue_check(session, user, ast, exchange)
@@ -163,19 +181,24 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
         if not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
-        await screen_rule_checks(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange)
+        await screen_rule_checks(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange,
+                                 json.loads(screen.params_json or "{}"))
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
         raise HTTPException(status_code=422, detail="an instrument rule needs a symbol and a condition")
     from app.screener import compile_screen, nodes
     ast, validated = compile_screen(body.condition, base_tf=body.base_tf)
+    from app.screener import amw_functions as amw_gate
+    if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
+        amw_gate.flag_off_validation(ast, validated)                  # AMW-3 review: main's messages while the flag is off
     if not validated.ok or ast is None:
         raise HTTPException(status_code=422, detail={"message": "the condition did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     if validated.cross_sectional:
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
     await _breakout_check(session, user, ast, body.fire_on, body.exchange)
     await _zone_check(session, user, ast, body.fire_on)
+    await _amw_check(session, user, ast, body.fire_on)
     _ownership_check(ast)
     await _venue_check(session, user, ast, body.exchange)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,

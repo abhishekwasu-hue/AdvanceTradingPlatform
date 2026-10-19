@@ -1443,6 +1443,8 @@ export interface PlanCatalogueEntry {
   price_yearly: number;
   currency: string;
   trial_days: number;
+  /** AMW-1: listed once `plan_limits_v2` is on for every organisation. */
+  limits_v2?: Record<string, number>;
   [limit: string]: unknown;
 }
 
@@ -1484,6 +1486,10 @@ export interface BillingOverview {
   limits: Record<string, unknown>;
   metered_30d: Record<string, number>;
   usage: Record<string, unknown>;
+  /** AMW-1 (flag `plan_limits_v2`): the plan's limits for the AMW port's features; absent while the flag is off. */
+  limits_v2?: Record<string, number>;
+  /** The caller's own usage of each counted v2 limit; null where the feature that owns it is not built yet. */
+  usage_v2?: Record<string, number | null>;
 }
 
 export interface ApiKey {
@@ -2359,6 +2365,45 @@ export interface ResearchStudyDetail extends Partial<ResearchStudy> {
   trials: ResearchTrial[];
 }
 
+/** H-C4: "analyze <symbol>" - four views from the platform's read tools and a summary of the situation (never advice). */
+export type MultiViewId = "technical" | "options" | "news" | "macro";
+export interface MultiView {
+  id: MultiViewId;
+  label: string;
+  ok: boolean;
+  facts: Record<string, unknown>;
+  as_of: string | null;
+  sources: string[];
+  untrusted: boolean;
+  error: string | null;
+  report: string;
+  report_source: "rules";              // H-C4 round cap: rules-only wording
+}
+export interface MultiViewSummary {
+  situation: string;
+  leans_up: string[];
+  leans_down: string[];
+  risks: string[];
+  possibilities: string[];
+  claims: { statement: string; source: string }[];
+  source: "rules";
+}
+export interface MultiViewUsage { calls: number; tokens_input: number; tokens_output: number; cost_inr: number }
+export interface MultiViewAnalysis {
+  symbol: string;
+  exchange: string;
+  as_of: string | null;
+  views: MultiView[];
+  summary: MultiViewSummary;
+  note: string;
+  run_id: number;
+  llm_calls: number;
+  prompt_version: string;
+  /** H-C4 review: the analysis stopped early (time budget or a gone client); the views not read are marked. */
+  limits_note?: string;
+  usage?: { cheap: MultiViewUsage | null; strong: MultiViewUsage | null };
+}
+
 /** Part D4: a static egress IP registered with a broker (SEBI retail-algo framework). */
 export interface StaticIp {
   broker_name: string;
@@ -2462,6 +2507,38 @@ export interface WhatIfResult {
   spot: number; days_forward: number; iv_shift: number; max_days_forward: number; expiry: string | null;
   scenario_at: string; as_of: string; legs: WhatIfLeg[]; note: string;
 }
+
+/** N2-4 (flag `decision_tools`): the caller's own open positions by underlying and sector, beta and correlated pairs. */
+export interface ExposureUnderlying {
+  underlying: string; legs: number; modes: string[]; notional: number; net_quantity: number; option_premium: number;
+  risk_at_stop: number; legs_without_stop: string[]; sector: string; beta: number | null; return_days: number;
+}
+export interface ExposurePair { a: string; b: string; r: number | null; days: number }
+export interface ExposureView {
+  underlyings: ExposureUnderlying[];
+  sectors: { sector: string; underlyings: number; notional: number; option_premium: number; risk_at_stop: number }[];
+  pairs: ExposurePair[]; move_together: ExposurePair[]; move_together_threshold: number; min_points: number; lookback_days: number;
+  totals: { underlyings: number; legs: number; risk_at_stop: number; notional: number };
+  market: string; market_days: number; note: string;
+  /** review: beta and pairs only for the `max_computed` largest risks; the rest are listed here */
+  not_computed?: string[]; max_computed?: number;
+}
+
+export interface ConeRow { sessions: number; move_1sd: number; low_1sd: number; high_1sd: number; low_2sd: number; high_2sd: number }
+/** N2-4: the expected-move cone for an instrument (historical volatility or a typed IV). */
+export interface ExpectedMove {
+  instrument: string; close: number; close_date: string; sigma: number; method: string; window: number; horizon: number;
+  cone: ConeRow[]; selected: ConeRow; note: string;
+}
+
+/** N2-5 (flag `context_panel`): one tile of the market context panel. Fields beyond the common ones depend on the tile. */
+export interface ContextTile {
+  status: "ok" | "stale" | "na"; source: string; as_of: string | null; reason?: string;
+  [extra: string]: unknown;
+}
+export interface DowRead { trend: "UPTREND" | "DOWNTREND" | "RANGE"; swings: { kind: "HIGH" | "LOW"; label: string | null; price: number; date: string }[] }
+export interface ContextEvent { date: string; start_time: string | null; end_time: string | null; kind: string; scope: string; action: string; description: string; today: boolean; own: boolean }
+export interface ContextPanel { tiles: Record<string, ContextTile>; order: string[]; as_of: string; note: string }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
 export interface PaperLadder {

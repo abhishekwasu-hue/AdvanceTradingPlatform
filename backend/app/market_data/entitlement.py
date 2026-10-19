@@ -207,9 +207,9 @@ async def resolve_many(session: AsyncSession, user: User, symbols: Sequence[Tupl
     ref = SessionRef.of(record)
     terms = terms_for(record.broker_name)
     cap = session_cap(record.broker_name)
-    for symbol, exchange in symbols:
-        key = (symbol.strip().upper(), exchange.strip().upper())
-        inside, plan = await registry.admit(ref.namespace, key[0], key[1], priority, cap, now, register=register)
+    keys = [(symbol.strip().upper(), exchange.strip().upper()) for symbol, exchange in symbols]
+    # LD-7: the session's symbol set read and written once for all the symbols, not once per symbol (the same answers)
+    for key, (inside, plan) in zip(keys, await registry.admit_many(ref.namespace, keys, priority, cap, now, register=register)):
         common: Dict[str, Any] = {"symbol": key[0], "exchange": key[1], "segment": _segment(key[1], segment), "cap": cap,
                                   "broker_cap": terms.symbol_cap, "poll_seconds": plan.poll_seconds, "degraded": plan.degraded}
         if inside:

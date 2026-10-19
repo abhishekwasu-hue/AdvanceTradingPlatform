@@ -549,6 +549,6 @@ def test_the_ranking_systems_migration_keeps_one_head():
     script = ScriptDirectory.from_config(cfg)
     heads = script.get_heads()
     assert len(heads) == 1
-    assert "c3d5e7f9a1b2" in {r.revision for r in script.walk_revisions(heads[0])}
+    assert "c3d5e7f9a1b2" in {r.revision for r in script.walk_revisions(head=heads[0])}   # head=: the first argument is the base
     text = (root / "alembic/versions/c3d5e7f9a1b2_add_ranking_systems.py").read_text()
     assert "ROLLBACK_SAFE = True" in text

@@ -12,6 +12,7 @@ Only the base interval (normally 1 minute) is ever fetched; every timeframe a st
 match the broker's own charts. That keeps the broker calls to two per symbol per cycle at most
 (history + today's intraday) whatever the strategy's timeframe mix.
 """
+import asyncio
 import json
 import logging
 from datetime import date, datetime, time as dtime, timedelta, timezone
@@ -165,13 +166,21 @@ class MarketDataService:
         now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
         history_to = now_ist - timedelta(days=1)
         history_from = now_ist - timedelta(days=self._lookback(interval))
-        history = await self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to)
         if interval == "day":
+            history = await self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to)
             # Phase AS: completed daily bars only - today's bar is still forming, and a swing
             # strategy decides on closed bars (entries go in the next session).
             logger.debug("Fetched %d daily candles for %s:%s", len(history), exchange, symbol)
             return merge_bars(history)
-        intraday = await self.broker.get_intraday_candles(symbol, exchange, interval)
+        # LD-7: the two calls side by side, not one after the other (a chart waited for two broker round trips in a row).
+        got_history, got_intraday = await asyncio.gather(
+            self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to),
+            self.broker.get_intraday_candles(symbol, exchange, interval), return_exceptions=True)
+        if isinstance(got_history, BaseException):
+            raise got_history                     # as before: the history call's error first
+        if isinstance(got_intraday, BaseException):
+            raise got_intraday
+        history, intraday = got_history, got_intraday
         merged = merge_bars(history, intraday)
         logger.debug("Fetched %d candles for %s:%s (%d history, %d intraday)", len(merged), exchange, symbol, len(history), len(intraday))
         return merged

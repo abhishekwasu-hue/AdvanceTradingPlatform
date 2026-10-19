@@ -1,7 +1,7 @@
 """N3 S7a: ranking_systems - saved weighted factor trees that rank a universe 0-100 (flag screener_rankings, off).
 
 Revision ID: c3d5e7f9a1b2
-Revises: c9e1f3a5b7d2 (N5 BYOK-V3 vision subjects, main's head after #217)
+Revises: f3b5d7e9a1c2 (AMW-2 watchlists, #267 - main's head; re-chained from e2a4c6e8f0b3, earlier e2a4c6b8d0f1, c9e1f3a5b7d2)
 Create Date: 2026-10-12 21:00:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c3d5e7f9a1b2'
-down_revision: Union[str, Sequence[str], None] = 'c9e1f3a5b7d2'
+down_revision: Union[str, Sequence[str], None] = 'f3b5d7e9a1c2'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - one new table that no earlier release reads or writes, so the previous release runs unchanged

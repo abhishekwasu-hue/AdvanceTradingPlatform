@@ -378,6 +378,11 @@ same way on main (045da0c, run 39257366188) and passes alone: not from this bran
   instrument may need it) now use a second shared client (`shared_http.shared_client(pool="orders")`); quotes, bars and
   option chains stay on the data pool. Tested with 150 data calls holding the data pool: an order and a cancel answer.
 - **N8: `BCRYPT_NICE` that is not a whole number** falls back to 5 with a warning instead of stopping the API at import.
+- **Follow-ups (re-check at bdabb70):** a failed master download (503, timeout) is not tried again for 60 s - misses
+  fail at once meanwhile, a symbol the map has still resolves, and a lookup that has a map never waits behind a build
+  in progress; an order (`place_order`, an exit among them) skips the remembered misses and gets its rebuild (still at
+  most one a minute); expired remembered misses are pruned on every write; the master's CSV is parsed on a worker
+  thread.
 
 None of these changes the load test's verdict: the SLO still fails (run 14: login p95 13.4 s, chart 2.2 s, screener
 1.04 s).

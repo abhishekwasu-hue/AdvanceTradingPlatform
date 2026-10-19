@@ -80,8 +80,17 @@ _NO_ROW: dict = {}
 MISS_REFRESH_SECONDS = 60
 MISS_REMEMBER_SECONDS = 10 * 60
 _SHARED_MISSES: Dict[Tuple[str, str], float] = {}
+# LD-7 review follow-up: when a rebuild's download fails (a 503, a timeout), the next attempt waits MISS_REFRESH_SECONDS;
+# meanwhile a miss fails at once and a lookup that finds its symbol uses the map it has (never a queue of 15 s timeouts
+# behind the build lock).
+_SHARED_FAILED: Dict[str, float] = {}
 # Order and account calls go through their own connection pool (LD-7 review N2, app/brokers/shared_http.py).
 _ORDER_PATHS = ("/orders", "/trades", "/positions", "/holdings", "/fundlimit", "/profile")
+
+
+def _parse_master(text: str) -> List[dict]:
+    """The scrip master's CSV rows (run on a worker thread: the real file is tens of MB)."""
+    return list(csv.DictReader(io.StringIO(text)))
 
 
 def _parse_time(raw) -> Optional[datetime]:
@@ -160,32 +169,56 @@ class DhanBroker(BrokerInterface):
         response = await self._order_client.get(SCRIP_MASTER_URL)
         if response.status_code >= 400:
             raise BrokerAPIError("Failed to fetch the Dhan scrip master", response.status_code, response.text)
-        rows = list(csv.DictReader(io.StringIO(response.text)))
+        # LD-7 review follow-up: tens of MB of CSV parsed on a worker thread, not on the event loop
+        rows = await asyncio.to_thread(_parse_master, response.text)
         self._master = (time.monotonic(), rows)
         return rows
 
-    async def _shared_symbols(self, max_age: float = MASTER_CACHE_TTL_SECONDS) -> Dict[Tuple[str, str], Tuple[str, str, str, dict]]:
+    async def _shared_symbols(self, max_age: float = MASTER_CACHE_TTL_SECONDS, *, wait: bool = False) -> Dict[Tuple[str, str], Tuple[str, str, str, dict]]:
         """The process's symbol map (LD-7, `_SHARED_SYMBOLS`): built once from one download of the master - every
         exchange, exactly as `get_instruments` maps it - and rebuilt when older than `max_age` (MASTER_CACHE_TTL_SECONDS;
-        a miss asks for MISS_REFRESH_SECONDS, `_resolve`). One build at a time per event loop; the others wait for it."""
+        a miss asks for MISS_REFRESH_SECONDS, `_resolve`). One build at a time per event loop. A lookup that has a map
+        does not wait for a build in progress (`wait=False`) - only a miss does, as the build may bring its symbol.
+        After a failed download no new attempt is made for MISS_REFRESH_SECONDS: the map there is serves (a miss then
+        fails at once), or, with no map at all, the lookup fails at once."""
         entry = _SHARED_SYMBOLS.get("map")
         if entry and (time.monotonic() - entry[0]) < max_age:
             return entry[1]
+        failed = _SHARED_FAILED.get("at")
+        if failed is not None and (time.monotonic() - failed) < MISS_REFRESH_SECONDS:
+            if entry:
+                return entry[1]
+            raise BrokerAPIError("The Dhan scrip master could not be downloaded; retrying within a minute")
         loop = asyncio.get_running_loop()
         lock = _SHARED_LOCKS.get(loop)
         if lock is None:
             lock = _SHARED_LOCKS[loop] = asyncio.Lock()
+        if entry and lock.locked() and not wait:
+            return entry[1]                           # a build is under way: the map there is, no queue behind it
         async with lock:
             entry = _SHARED_SYMBOLS.get("map")
             if entry and (time.monotonic() - entry[0]) < max_age:
                 return entry[1]
+            failed = _SHARED_FAILED.get("at")
+            if failed is not None and (time.monotonic() - failed) < MISS_REFRESH_SECONDS:   # failed while this one waited
+                if entry:
+                    return entry[1]
+                raise BrokerAPIError("The Dhan scrip master could not be downloaded; retrying within a minute")
             self._master = None                       # this adapter's copy of the master may be the old one: download
             self._instruments_cache.clear()
-            await self._scrip_master()
+            try:
+                await self._scrip_master()
+            except (BrokerAPIError, httpx.HTTPError) as exc:
+                _SHARED_FAILED["at"] = time.monotonic()
+                logger.warning("Dhan scrip master download failed (%s); next attempt in %d s", exc, MISS_REFRESH_SECONDS)
+                if entry:
+                    return entry[1]
+                raise BrokerAPIError(f"The Dhan scrip master could not be downloaded: {exc}") from exc
+            _SHARED_FAILED.pop("at", None)
             for exchange in SEGMENTS:
                 await self.get_instruments(exchange)
             table = {key: (hit[0], hit[1], hit[2], _NO_ROW) for key, hit in self._symbol_map.items()}
-            _SHARED_SYMBOLS["map"] = (time.monotonic(), table)
+            _SHARED_SYMBOLS["map"] = (time.monotonic(), table)     # one assignment: readers see the old map or the new
             # this adapter's own copies (the rows, the instrument lists) go with it at the end of the request
             return table
 
@@ -236,8 +269,9 @@ class DhanBroker(BrokerInterface):
         self._instruments_cache[exchange] = (time.monotonic(), out)
         return out
 
-    async def _resolve(self, symbol: str, exchange: str = "NSE") -> Tuple[str, str, str]:
-        """Platform symbol -> (exchangeSegment, securityId, instrument kind)."""
+    async def _resolve(self, symbol: str, exchange: str = "NSE", *, for_order: bool = False) -> Tuple[str, str, str]:
+        """Platform symbol -> (exchangeSegment, securityId, instrument kind). `for_order`: an order (an exit among them)
+        always gets a rebuild on a miss - the symbols remembered as missing are not skipped for it (ADR-0004)."""
         exchange = (exchange or "NSE").upper()
         if ":" in symbol:
             exchange, symbol = symbol.split(":", 1)
@@ -249,7 +283,7 @@ class DhanBroker(BrokerInterface):
         if self._shared and (exchange, key) not in self._symbol_map:
             hit = (await self._shared_symbols()).get((exchange, key))
             if hit is None:
-                hit = await self._resolve_missing(exchange, key)
+                hit = await self._resolve_missing(exchange, key, for_order=for_order)
         else:
             if (exchange, key) not in self._symbol_map:
                 await self.get_instruments(exchange)
@@ -258,21 +292,24 @@ class DhanBroker(BrokerInterface):
             raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found in the Dhan scrip master")
         return hit[0], hit[1], hit[2]
 
-    async def _resolve_missing(self, exchange: str, key: str) -> Optional[Tuple[str, str, str, dict]]:
+    async def _resolve_missing(self, exchange: str, key: str, *, for_order: bool = False) -> Optional[Tuple[str, str, str, dict]]:
         """LD-7 review B1: a symbol the shared map does not have - listed after the map was built (an intraday strike)
         - gets one rebuild of the map, unless the map is younger than MISS_REFRESH_SECONDS or this symbol was looked for
         and not found within MISS_REMEMBER_SECONDS."""
         missed = _SHARED_MISSES.get((exchange, key))
-        if missed is not None and (time.monotonic() - missed) < MISS_REMEMBER_SECONDS:
+        if not for_order and missed is not None and (time.monotonic() - missed) < MISS_REMEMBER_SECONDS:
             return None
         before = _SHARED_SYMBOLS.get("map")
-        hit = (await self._shared_symbols(max_age=MISS_REFRESH_SECONDS)).get((exchange, key))
+        hit = (await self._shared_symbols(max_age=MISS_REFRESH_SECONDS, wait=True)).get((exchange, key))
         if hit is None:
             after = _SHARED_SYMBOLS.get("map")
             if after is not None and (before is None or after[0] != before[0]):
                 # a map built after this miss does not have it either: not looked for again for a while (a map that was
                 # only young is not proof - the next miss after MISS_REFRESH_SECONDS rebuilds it)
-                _SHARED_MISSES[(exchange, key)] = time.monotonic()
+                now = time.monotonic()
+                for stale in [k for k, at in _SHARED_MISSES.items() if now - at >= MISS_REMEMBER_SECONDS]:
+                    del _SHARED_MISSES[stale]                               # expired entries go on every write
+                _SHARED_MISSES[(exchange, key)] = now
         else:
             _SHARED_MISSES.pop((exchange, key), None)
         return hit
@@ -417,7 +454,7 @@ class DhanBroker(BrokerInterface):
 
     # --- orders ----------------------------------------------------------------------------------
     async def place_order(self, order: BrokerOrderRequest) -> BrokerOrderResponse:
-        segment, security_id, _kind = await self._resolve(order.symbol, order.exchange)
+        segment, security_id, _kind = await self._resolve(order.symbol, order.exchange, for_order=True)
         order_type = ORDER_TYPE_MAP.get(order.order_type.upper())
         if order_type is None:
             raise BrokerAPIError(f"Unsupported order type {order.order_type} for Dhan")

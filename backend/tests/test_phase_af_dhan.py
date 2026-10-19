@@ -180,6 +180,7 @@ def _shared_state_reset():
     from app.brokers import dhan
     dhan._SHARED_SYMBOLS.clear()
     dhan._SHARED_MISSES.clear()
+    dhan._SHARED_FAILED.clear()
 
 
 def test_adapters_without_a_client_share_one_connection_and_one_scrip_master():
@@ -356,4 +357,104 @@ def test_an_order_does_not_wait_behind_a_saturated_data_pool():
         assert [r.url.path for r in server.requests if r.method in ("POST", "DELETE")] == ["/v2/orders", "/v2/orders/112409290001"]
         assert any(str(r.url) == SCRIP_MASTER_URL for r in server.requests)
     run(go())
+    _shared_state_reset()
+
+
+class _FailingMasterServer(_ListingServer):
+    """The master download fails (a 503) once `failing` is set; counts the attempts."""
+
+    def __init__(self):
+        super().__init__()
+        self.failing = False
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if str(request.url) == SCRIP_MASTER_URL and self.failing:
+            self.downloads += 1
+            return httpx.Response(503, text="unavailable")
+        return super().__call__(request)
+
+
+def _shared_adapter(creds, server):
+    adapter = DhanBroker(creds)
+    _mock(adapter._client, server)
+    _mock(adapter._order_client, server)
+    return adapter
+
+
+def test_a_failing_master_download_is_tried_at_most_once_a_minute():
+    """Follow-up 1: with the master failing, misses do not each download again behind the build lock - one attempt,
+    the misses fail at once, and a symbol the map has still resolves."""
+    import time as _time
+    _shared_state_reset()
+    server = _FailingMasterServer()
+    creds = BrokerCredentials(access_token="tok-1", client_id="1000001")
+
+    async def go():
+        await _shared_adapter(creds, server)._resolve("RELIANCE")                    # the map, built
+        assert server.downloads == 1
+        server.failing = True
+        _age_shared_map(120)
+        started = _time.monotonic()
+        for i in range(5):
+            with pytest.raises(BrokerAPIError):
+                await DhanBroker(creds)._resolve(f"NEWSTRIKE{i}", "NFO")
+        assert server.downloads == 2                                                  # one attempt, not five
+        assert _time.monotonic() - started < 1.0
+        assert await DhanBroker(creds)._resolve("RELIANCE") == ("NSE_EQ", "2885", "EQUITY")   # the map it has
+        assert server.downloads == 2
+    run(go())
+    _shared_state_reset()
+
+    async def no_map_at_all():
+        server.failing, server.downloads = True, 0
+        for _ in range(5):
+            with pytest.raises(BrokerAPIError, match="could not be downloaded"):
+                await _shared_adapter(creds, server)._resolve("RELIANCE")
+        assert server.downloads == 1
+    run(no_map_at_all())
+    _shared_state_reset()
+
+
+def test_an_order_is_not_refused_by_the_remembered_misses():
+    """Follow-up 2: a symbol remembered as missing (a data lookup found it in no map) is still looked for when an order
+    - an exit - needs it: one rebuild, which now has it."""
+    _shared_state_reset()
+    server = _ListingServer()
+    creds = BrokerCredentials(access_token="tok-1", client_id="1000001")
+
+    async def go():
+        await _shared_adapter(creds, server)._resolve("RELIANCE")
+        _age_shared_map(120)
+        with pytest.raises(BrokerAPIError):
+            await DhanBroker(creds)._resolve("NIFTY-Oct2026-26500-CE", "NFO")      # not listed yet: remembered
+        assert server.downloads == 2
+        server.master = MASTER + "\n" + NEW_STRIKE                                   # listed now
+        _age_shared_map(120)
+        with pytest.raises(BrokerAPIError):
+            await DhanBroker(creds)._resolve("NIFTY-Oct2026-26500-CE", "NFO")      # a data lookup: skipped for now
+        assert server.downloads == 2
+        response = await DhanBroker(creds).place_order(BrokerOrderRequest(symbol="NIFTY-Oct2026-26500-CE", exchange="NFO",
+                                                                          transaction_type=OrderSide.SELL, quantity=75))
+        assert response.order_id == "112409290001" and server.downloads == 3
+        assert server.last["place"]["securityId"] == "43999"
+    run(go())
+    _shared_state_reset()
+
+
+def test_expired_misses_are_pruned_when_a_miss_is_written():
+    import time as _time
+    from app.brokers import dhan
+    _shared_state_reset()
+    server = _ListingServer()
+    creds = BrokerCredentials(access_token="tok-1", client_id="1000001")
+    dhan._SHARED_MISSES[("NSE", "OLD1")] = _time.monotonic() - dhan.MISS_REMEMBER_SECONDS - 1
+    dhan._SHARED_MISSES[("NSE", "OLD2")] = _time.monotonic() - dhan.MISS_REMEMBER_SECONDS - 60
+
+    async def go():
+        await _shared_adapter(creds, server)._resolve("RELIANCE")
+        _age_shared_map(120)
+        with pytest.raises(BrokerAPIError):
+            await DhanBroker(creds)._resolve("NOSUCH")
+    run(go())
+    assert set(dhan._SHARED_MISSES) == {("NSE", "NOSUCH")}
     _shared_state_reset()

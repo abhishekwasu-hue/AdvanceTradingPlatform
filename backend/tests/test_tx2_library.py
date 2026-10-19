@@ -346,7 +346,7 @@ def test_mirrors_leave_out_cards_whose_own_flag_is_off(tx2_on):
 
 def test_mirrors_leave_out_a_family_whose_further_flag_is_off(tx2_on):
     """U6 BK3 / BK4 families need `screener_breakouts` and a flag of their own (`also`): with only the first on, their
-    mirrors are not listed and cannot be resolved - as the taxonomy hides the family itself."""
+    mirrors are not listed (the same `_hidden` list feeds `_resolve`) - as the taxonomy hides the family itself."""
     headers, _ = _owner("tx2-mirror-also@example.com")
     _set_flags(screener_breakouts=True, screener_breakouts_bk3=False, screener_breakouts_bk4=False)
     try:

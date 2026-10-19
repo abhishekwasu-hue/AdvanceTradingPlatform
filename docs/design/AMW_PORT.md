@@ -247,9 +247,9 @@ The Partial and Missing rows that are not skipped map to the 25 slices in sectio
 | C-3 | AI strategy drafting writes Python / Pine code | ADR-0006 (AI acts only on approval), ADR-0005 (one DSL), untrusted code | Not ported for code modes. The Copilot keeps drafting the DSL; a later slice may let it draft ScreenQL or Pine subset, which the host compiles and validates. Drafts are never published, scanned or run automatically. |
 | C-4 | Own users, roles (admin/analyst/viewer), bearer tokens, `AMW_AUTH_MODE=local` (no login), SQLite store, `create_all` + `ALTER TABLE` migrations | Row-level multi-tenancy (ADR-0001), scopes (ADR-0009), tenancy route table, single alembic head, `ROLLBACK_SAFE` | Nothing of AMW's auth or storage is ported. Every new table carries `tenant_id` and `user_id`; reads of personal rows filter on both (BT1b). Every route uses ATP's dependencies (`get_current_user`, `require_trader`, `require_scope`) and is classified in `tests/tenancy_route_table.py`. Migrations are alembic revisions on the current head with `ROLLBACK_SAFE` declared. |
 | C-5 | Yahoo Finance as the default data source; a `pickle` disk cache; a FALLBACK large-cap list when NSE blocks downloads | `docs/DATA_SOURCES.md`: Yahoo is background-only and never a signal input; data comes from the lake or the user's own broker session | All ported features read the shared lake (`md_candles`, bhavcopy EOD) or the user's own session through BT1b. No Yahoo, no pickle, no fallback universe (an unknown universe is refused). |
-| C-6 | Strategy Lab runs untrusted code inside the app and API containers, which need root, `CAP_SYS_ADMIN` and `apparmor:unconfined`; Windows runs code with no OS sandbox when `AMW_ALLOW_UNSANDBOXED=1` | ADR-0005 (no arbitrary code), least privilege (backend runs as `appuser`), shared 8 GB host with live trading processes | A new ADR (ADR-0027) amends ADR-0005. Code runs only in a separate runner container with no network and no secrets, inside per-run isolation (section 3). The backend and worker never gain privileges. There is no unsandboxed mode on any platform. Every code mode sits behind its own flag that cannot be turned on before the security review gate. |
+| C-6 | Strategy Lab runs untrusted code inside the app and API containers, which need root, `CAP_SYS_ADMIN` and `apparmor:unconfined`; Windows runs code with no OS sandbox when `AMW_ALLOW_UNSANDBOXED=1` | ADR-0005 (no arbitrary code), least privilege (backend runs as `appuser`), shared 8 GB host with live trading processes | A new ADR (ADR-0027) amends ADR-0005. Code runs only in a per-family runner container under gVisor, with no network, no secrets and no database access, inside a per-run jail; a separate `lab-gateway` without platform keys handles every runner frame (section 3, ADR-0027). The backend and worker never gain privileges. There is no unsandboxed mode on any platform. Every code mode sits behind its own flag that cannot be turned on before the security review gate. |
 | C-7 | A Lab strategy's output becomes a signal that drives alerts and reports | ADR-0006, PAPER only, LIVE off | Code-mode results are research output: shown, backtested, reported. They never create entry intents (`execution_core`), Scan Then actions, auto-PAPER entries or proposals; a test enforces it. Host-evaluated versions compile to ScreenQL and may become screens and alert rules like any screen. |
-| C-8 | Long-running scans, Lab runs and the scheduler run in the API or Streamlit process | ADR-0004 (exits never blocked), ADR-0010 (one worker loop) | Lab runs are queued and drained by the research worker (a separate process). Schedules run in the trading worker's existing tick but only enqueue work. Nothing new runs inside the trading cycle's critical path. |
+| C-8 | Long-running scans, Lab runs and the scheduler run in the API or Streamlit process | ADR-0004 (exits never blocked), ADR-0010 (one worker loop) | Lab runs are queued; the research worker (a separate process) builds their inputs and the `lab-gateway` drives the runners. Schedules run in the trading worker's existing tick but only enqueue work. Nothing new runs inside the trading cycle's critical path. |
 | C-9 | All eight Lab modes "released" by default; operators may restrict them | Every new feature is behind a flag, off by default | Flags `strategy_lab`, `strategy_lab_host`, `strategy_lab_python`, `strategy_lab_sql_lua`, `strategy_lab_js`, `strategy_lab_r`, all in `DEFAULT_OFF_FLAGS` (section 3.5). |
 | C-10 | BYOK "session only" mode keeps a key in backend memory | BYOK keys are per user, stored via Settings, encrypted | Not ported. Keys are stored encrypted (envelope encryption) or not at all. |
 | C-11 | Live Data page has its own FYERS connection form (App ID, secret) and a "paste the redirected URL" fallback | Broker keys only through Settings | The FYERS credential stays in Settings -> Broker accounts. The feed controls (start, stop, symbols) refer to that credential and never accept a key. |
@@ -269,38 +269,57 @@ The Partial and Missing rows that are not skipped map to the 25 slices in sectio
 ## 3. Strategy Lab port design
 
 The owner wants the Strategy Lab included and done properly. The design keeps one idea from AMW - one contract for
-every authoring mode - and changes two things: the IR is ATP's ScreenQL AST, and untrusted code runs in a separate,
-locked-down runner instead of the application containers.
+every authoring mode - and changes two things: the IR is ATP's ScreenQL AST, and untrusted code runs in separate,
+locked-down runners under gVisor instead of the application containers.
+
+**Authoritative documents.** The code-mode design (runners, gateway, jail, budgets, flags and gate G-LAB) is decided in
+**ADR-0027** (`docs/adr/0027-strategy-lab-isolated-runner.md`, amends ADR-0005) and the **threat model**
+(`docs/design/STRATEGY_LAB_THREAT_MODEL.md`), both from AMW-18 (PR #264, after its security review). This section
+summarises them for the port plan. Where this section and those two documents differ, ADR-0027 and the threat model
+win. Open questions LAB-1..LAB-8 in `docs/OPEN_QUESTIONS.md` carry their provisional decisions.
 
 ### 3.1 Shape
 
 ```
  author -> draft (lab_strategies) -> validate -> publish -> immutable version (lab_versions, sha256)
-                                                              |
-        host builds every context (closed bars, indicators, structure, HTF, params) from the lake or the
-        user's own broker session (BT1b); the timestamp of a result is always the host's
-                                                              |
-   visual -----------------> ScreenQL AST + envelope --> ScreenQL runtime (host, no user code)
-   pine subset -> translate -^
-   python / sql / lua / js / ts / r --> lab_runs queue --> research worker (dispatcher)
-                                         --> UDS --> lab-runner container (no network, no secrets)
-                                         --> per-run jail --> JSON result --> host contract check
-                                                              |
-             Lab scan results | Lab backtest (ATP engine via a BaseStrategy adapter) | reports
-             never: entry intents, Scan Then, auto PAPER, proposals (code modes)
+
+ host modes:   visual ----------------> ScreenQL AST + lab-envelope/1 --> ScreenQL runtime (host, no user code)
+               pine subset -> translate -^
+
+ code modes:   API -> lab_runs (queue)
+               research worker (holds the platform keys; BT1b contexts, closed bars only)
+                 claims a run, builds contexts -> lab_run_inputs (bounded); never talks to a runner,
+                 never parses runner output
+               lab-gateway (no JWT key, no encryption key; DB role limited to lab_* tables)
+                 takes the global lease, reads lab_run_inputs, listens on the UDS, sends the request,
+                 parses and validates frames, writes lab_run_results, charges slot seconds
+               lab-runner-<family> under gVisor (no network, no secrets, no DB, read-only, one uid)
+                 connects to the gateway's socket; one fresh jail + fresh process per run
+
+ results:      Lab scan results | Lab backtest (ATP engine via a BaseStrategy adapter) | reports
+               code modes never: entry intents, Scan Then, auto PAPER, proposals, alert rules, Copilot
 ```
 
 ### 3.2 Storage (migration in AMW-19)
 
-One alembic revision on `main`'s head, `ROLLBACK_SAFE = True` (three new tables, nothing existing changed), with
-`ROLLBACK_SAFE_REASON` covering the trigger SQL (it touches only the new `lab_versions` table).
+One alembic revision on `main`'s head, `ROLLBACK_SAFE = True` (five new tables and one new database role, nothing
+existing changed), with `ROLLBACK_SAFE_REASON` covering the trigger SQL (it touches only the new `lab_versions` table)
+and the role / grant SQL (it creates the role and grants it only the new `lab_*` tables).
 
 | Table | Columns | Rules |
 |---|---|---|
-| `lab_strategies` (drafts) | `id`, `tenant_id`, `user_id`, `name`, `description`, `mode` (`visual`, `pine`, `python`, `sql`, `lua`, `javascript`, `typescript`, `r`), `draft_source` (<= 100,000 characters), `draft_envelope_json`, `draft_spec_json` (params with bounds, timeframes, history, limits), `archived`, `created_at`, `updated_at`; unique (`tenant_id`, `user_id`, `name`) | Personal rows: every read filters on `tenant_id` and `user_id`. Archived, never hard-deleted while a run points at it. Plan limit `lab_strategies` (AMW-1). |
+| `lab_strategies` (drafts) | `id`, `tenant_id`, `user_id`, `name`, `description`, `mode` (`visual`, `pine`, `python`, `sql`, `lua`, `javascript`, `typescript`, `r`), `draft_source` (<= 100,000 characters), `draft_envelope_json`, `draft_spec_json` (params with bounds, timeframes, history), `archived`, `created_at`, `updated_at`; unique (`tenant_id`, `user_id`, `name`) | Personal rows: every read filters on `tenant_id` and `user_id`. Archived, never hard-deleted while a run points at it. Plan limit `lab_strategies` (AMW-1). The spec carries no resource limits: limits come from the plan and the runner configuration (threat model O-3). |
 | `lab_versions` (immutable) | `id`, `tenant_id`, `user_id`, `strategy_id`, `version`, `mode`, `source`, `compiled_json` (host modes: canonical ScreenQL text and AST per side), `envelope_json`, `spec_json`, `source_sha256`, `compiled_sha256`, `runtime_pin` (for example `python-3.13/worker-1` or `node-22.x/ts-x.y.z`), `image_digest`, `note`, `created_at`; unique (`strategy_id`, `version`) | No UPDATE path in code. On PostgreSQL a `BEFORE UPDATE` trigger refuses any change. DELETE is not blocked by the trigger, so tenant cascade and DPDP erasure (`erase_user`) still work. |
-| `lab_runs` (queue + audit) | `id`, `tenant_id`, `user_id`, `strategy_id`, `version` (null = draft try-out), `kind` (`validate`, `try`, `scan`, `backtest`), `status` (`queued`, `running`, `completed`, `partial`, `failed`, `cancelled`, `interrupted`), `mode`, `runtime`, `config_json` (universe, timeframe, params, data source, as-of), `stats_json`, `error` (sanitised, <= 2,000 characters), `logs` (<= 16 KB), `cpu_ms`, `wall_ms`, `heartbeat_at`, `created_at`, `started_at`, `finished_at` | Same queue and heartbeat rules as `research_jobs` (stale -> `interrupted`). Index (`status`, `created_at`). |
-| `lab_run_results` | `id`, `run_id`, `tenant_id`, `user_id`, `symbol`, `signal_bar`, `qualified`, `bias`, `rules_json` (name, passed true/false/null, detail), `entry`, `stop`, `target`, `error` | Bounded per run (plan `max_screen_symbols`). |
+| `lab_runs` (queue + audit) | `id`, `tenant_id`, `user_id`, `strategy_id`, `version` (null = draft try-out), `kind` (`validate`, `try`, `scan`, `backtest`), `family`, `status` (`queued`, `building`, `ready`, `running`, `completed`, `partial`, `failed`, `cancelled`, `interrupted`), `mode`, `runtime`, `config_json` (universe, timeframe, params, data source, as-of), `seed`, `image_digest`, `stats_json`, `error` (sanitised, <= 2,000 characters, closed-set reason + escaped stderr tail), `logs` (<= 16 KB), `slot_seconds`, `wall_ms`, `heartbeat_at`, `created_at`, `started_at`, `finished_at` | Claimed like `research_jobs` (conditional UPDATE, heartbeat, stale -> `interrupted`). Queued-run caps per user, per tenant and globally; round-robin claiming across users. Index (`status`, `created_at`). |
+| `lab_run_inputs` (new, LAB-5) | `id`, `run_id`, `tenant_id`, `user_id`, `seq` (call number), `source` and `source_sha256` (the version's or draft's source, on the run's first row), `symbols_json`, `contexts_json` (bounded: contexts per call and bytes per row capped), `nonce`, `seed`, `clock`, `created_at`; unique (`run_id`, `seq`) | Written only by the research worker, read only by the gateway, so the gateway needs no read on `lab_strategies` or `lab_versions`. Contexts hold closed bars cut at the decision bar from the requester's entitled data; never a key, token or account field (G-15). Deleted when the run ends. |
+| `lab_run_results` | `id`, `run_id`, `tenant_id`, `user_id`, `symbol`, `signal_bar`, `qualified`, `bias`, `rules_json` (name, passed true/false/null, detail), `entry`, `stop`, `target`, `error` | Written only by the gateway after contract validation; bounded per run (plan `max_screen_symbols`). |
+| platform controls (existing table) | `lab_security_review` (per family), `lab_deploy_record`, `lab_sandbox` (self-test), `lab_lease` (or a dedicated lease row) | No new table. The deploy record is written by `deploy/atp.sh`, never by a runner. |
+
+**Database role `atp_lab_gateway`** (created by the same migration, with grants only):
+- `SELECT` on `lab_runs` and `lab_run_inputs`; `INSERT` on `lab_run_results`; `UPDATE` of the status,
+  timing, charge, error and log columns of `lab_runs`; `DELETE` on `lab_run_inputs`; the lease row.
+- Nothing on any non-`lab_*` table (G-5b tests that a query on another table is denied). Its password comes from the
+  gateway's own secret, not from `DATABASE_URL`.
 
 Drafts are never used by scans or backtests. A "try" run on a draft is allowed on at most 5 symbols. Publishing
 freezes source, envelope, spec and compiled form and records the hashes; a scan or backtest always names a version.
@@ -420,129 +439,167 @@ fails, code runs only if `AMW_ALLOW_UNSANDBOXED=1`, with no OS boundary at all.
     `f <- system; f("...")`. They are defence in depth only, not a boundary.
 12. The work directory is 1777 and `RLIMIT_FSIZE=0` does not stop creating directories or inodes.
 
-**ATP design.** Three layers, each one sufficient on its own for the next to be defence in depth.
+The threat model (section 6) maps each gap to the ATP control that closes it and to its G-LAB evidence item.
 
-*Layer 1 - a separate runner container (`lab-runner`, compose profile `lab`, off unless started).*
-- `network_mode: none`. The only channel is a Unix domain socket on a volume shared with the dispatcher.
-- No database credentials, no `.env`, no tenant keys; the environment holds only the socket path.
-- `read_only: true` root filesystem; a small tmpfs for `/tmp`; non-root user; `cap_drop: [ALL]`;
-  `security_opt: no-new-privileges`; `pids_limit`; `mem_limit` (`MEM_LAB`); `cpus` limit.
-- Runtime: gVisor (`runtime: runsc`) for this container when it can be installed on the host (AMW-Q3). Without gVisor,
-  a custom seccomp profile for this container only that allows the namespace calls the per-run jail needs - never
-  `CAP_SYS_ADMIN`, never `privileged`, and never any change to the backend, worker or frontend containers.
-- One image per mode family, so a family that stays off costs nothing at run time and the backend image does not grow
-  (section 3.7).
+**ATP design (ADR-0027 decisions 2-7).** Three layers. gVisor and the jail are the boundary; the language guards are
+defence in depth only.
 
-*Layer 2 - a jail per execution, inside the runner (nsjail or bubblewrap, pinned).*
-- New user, PID, mount, network, IPC and UTS namespaces; a fresh `/proc` for the PID namespace; the run is PID 1's
-  child and dies with it.
-- A distinct unprivileged uid per concurrent slot, so two runs never share a uid.
-- Root filesystem = read-only bind mounts of exactly the runtime it needs (interpreter, its standard library, the
-  worker script, the SDK) plus a private tmpfs work directory (a few MB). No host root filesystem, no `/etc` beyond the
-  minimum, `/dev` limited to `null`, `zero`, `urandom`.
-- seccomp-bpf allow-list: no `socket` (other than none), no `ptrace`, `mount`, `unshare`, `setns`, `keyctl`, `bpf`,
-  `perf_event_open`, `userfaultfd`, `kexec*`, module or clock-setting calls.
-- cgroup v2 per run: `memory.max`, `memory.swap.max = 0`, `pids.max` (for example 32), `cpu.max`. On timeout or
-  cancel the runner writes `cgroup.kill`, which ends every process of the run, including escaped children.
-- rlimits as a second net: CPU seconds, NOFILE 64, CORE 0, FSIZE small.
-- Empty environment; deterministic locale; no clock or randomness promises beyond what the worker provides.
-- stdout is read in a streaming loop with a hard byte cap; on overflow the run is killed and marked "output limit
-  exceeded". Nothing is buffered beyond the cap.
+*Layer 1 - one runner container per enabled family, under gVisor.*
+- `lab-runner-py` (Python, SQL, Lua), `lab-runner-node` (JavaScript, TypeScript) and `lab-runner-r`, each under its
+  own compose profile and started only when its family flag is to be on. When no family flag is on, no runner and no
+  gateway run. On the 8 GB host only one family runner is up at a time (LAB-6).
+- **gVisor (`runtime: runsc`) is required** on the shared trading host; without it code modes are "unavailable". A
+  plain runc runner is allowed only as an **owner-signed exception**, with a custom AppArmor profile, cgroup
+  delegation and a stated sysctl posture, all bound into the approval (Ubuntu 24.04 blocks the unprivileged user
+  namespaces, the mounts and the cgroup writes the jail needs under Docker's defaults). The other way is a separate
+  host with no secrets and no trading process, which needs its own review.
+- `network_mode: none`; no secrets (no `.env`, no database credentials, no tenant, broker or BYOK keys); no database
+  access; read-only root and a small `/tmp` tmpfs; one non-root uid, `cap_drop: [ALL]`, `no-new-privileges`, no
+  setuid binaries; `pids_limit`, `mem_limit`, `cpus`, low `cpu_shares`, high `oom_score_adj`, the `x-logging` caps.
+  Never `privileged` or `CAP_SYS_ADMIN` on any container; the backend, worker and frontend gain nothing.
+- **Recycled** (stopped and started fresh) after 50 runs and after any abnormal end (timeout, kill, OOM, output cap,
+  contract failure). No interpreter or worker is pooled across runs (LAB-8, RR-9).
+
+*Layer 2 - a fresh jail and a fresh process per run, inside the runner (nsjail or bubblewrap, pinned).*
+- New user, PID (fresh `/proc`), mount, network, IPC and UTS namespaces.
+- **One uid** (LAB-7). The jail runs as the runner's single non-root uid, mapped to an unprivileged id inside its user
+  namespace; per-slot uids would need `CAP_SETUID` / `CAP_SETGID` or a setuid `newuidmap`, which the runner does not
+  keep. The supervisor is kept apart by the PID namespace (invisible, cannot be signalled), the mount namespace (its
+  files and socket are absent), the read-only root-owned code, and seccomp (no `ptrace`, no `process_vm_*`). A
+  namespace escape lands on the supervisor's uid with no second uid barrier: residual risk **RR-8**, accepted because
+  only one run executes at a time and the container is recycled.
+- Root built only from read-only binds of the runtime it needs plus a private tmpfs work directory (mode 0700, size
+  and `nr_inodes` limits).
+- Per-run cgroup v2 (`memory.max`, `memory.swap.max = 0`, `pids.max`, `cpu.max`) with `cgroup.kill`. AMW-21 must
+  first prove nested cgroups work inside runsc; if not, the death of the PID namespace's init kills the tree, and at
+  concurrency 1 the container's own limits are the per-run limits.
+- seccomp-bpf that **denies by default**; the tested must-deny set is in threat model G-4.
+- Wall-clock and CPU limits; the whole process tree ends at the deadline.
+- stdout and stderr read as a stream with a hard byte cap; on overflow the run is killed and nothing beyond the cap is
+  buffered. The result travels as one framed message, separate from the log stream (threat model O-1).
+- Determinism: a host-derived seed for every RNG, a fixed `PYTHONHASHSEED`, a host-set clock, coarse timers, no
+  `SharedArrayBuffer` or worker threads; the seed and image digest are recorded on the run.
+- No caches outside the run's tmpfs (`NODE_COMPILE_CACHE`, Python byte code, R lazy-load and byte-compile caches,
+  TypeScript output).
 
 *Layer 3 - language guards (defence in depth, ported from AMW and tightened).*
 - Python: restricted builtins, import allow-list (`math`, `statistics`), audit hook, no dunder access, `atp.*`
   helpers.
-- SQL: the statement is checked (sqlglot allow-list) inside the runner; SQLite runs in memory with an authorizer that
-  allows only the approved views, a progress-handler step limit and a row cap; `load_extension` disabled.
-- Lua: lupa with `os`, `io`, `package`, `require`, `debug`, `load*`, `dofile`, `string.dump`, `raw*`, metatable access
-  removed; memory and instruction limits.
+- SQL: sqlglot allow-list inside the runner; SQLite in memory with an authorizer allowing only the approved views, a
+  progress-handler step limit and a row cap; `load_extension` disabled.
+- Lua: lupa with `os`, `io`, `package`, `require`, `debug`, `load*`, `dofile`, `string.dump`, `raw*` and metatable
+  access removed; memory and instruction limits.
 - JavaScript / TypeScript: a `vm` context from a null-prototype object, `codeGeneration: {strings: false, wasm: false}`,
-  `Math.random` and `Date` disabled, data entering as a string parsed inside the context, `node --permission` with no
-  file, child-process, worker or WASI grants; TypeScript type-checked against the SDK and transpiled first.
-- R: an environment whose parent is a curated function list (not `baseenv()`), contexts passed as JSON parsed inside
-  R, the allow-list of `stats` / `utils` functions; the regex checks stay only as early, friendly errors.
+  `node --permission` with no grants; TypeScript type-checked against the SDK and transpiled in a jailed, charged run.
+- R: an environment whose parent is a curated function list (not `baseenv()`); contexts as JSON parsed inside R,
+  never generated R source (threat model O-2).
+- The red-team suite runs every language case with the guard disabled as well as enabled (G-6e).
 
-*Dispatcher (host side, `backend/app/lab/dispatch.py`), run by the research worker.*
-- Claims `lab_runs` rows like `research_jobs` (conditional UPDATE, heartbeat, stale -> `interrupted`).
-- Builds contexts on the host: closed bars only, indicators from `backend/app/indicators`, structure from
-  `backend/app/price_action`, higher timeframes per `backend/app/backtest/windows.py`; data from the lake or the user's
-  own session (BT1b). No account data, no other user's data.
-- Sends one batch per call (bounded contexts per batch), receives JSON, validates it with the contract (schema, finite
-  numbers, stop on the correct side of the close, host-set timestamps), stores results.
-- Global and per-user concurrency and a per-user daily CPU-seconds budget are enforced in the database (or Redis), not
-  in process memory.
+*Host side: the research worker and the Lab gateway (ADR-0027 decision 4, LAB-5).*
+- The **research worker** holds `DATABASE_URL`, `JWT_SECRET_KEY` and `SECRETS_ENCRYPTION_KEY` and is the only place a
+  broker token is decrypted for BT1b contexts. It claims `lab_runs` (round-robin across users, alternating with AI
+  research studies: up to five Lab builds after each study), re-reads the version by id, re-checks owner, flags,
+  approval and budget, builds contexts (closed bars only; indicators from `backend/app/indicators`, structure from
+  `backend/app/price_action`, higher timeframes per `backend/app/backtest/windows.py`) and writes them to
+  `lab_run_inputs`. **It never talks to a runner and never parses runner output.**
+- The **`lab-gateway`** container (`backend/app/lab/gateway.py`, its own entry point and image stage) handles every
+  runner frame. It holds no JWT key, no encryption key and no broker token; it is on the internal network only, to
+  reach Postgres, with the `atp_lab_gateway` role (section 3.2). It:
+  - takes the single **global lease** (one database lease across all runners: global concurrency 1);
+  - listens on the Unix socket in a directory it owns; each runner mounts that directory read-only and connects; the
+    gateway checks `SO_PEERCRED`, refuses symlinks, and only the gateway issues requests - an unsolicited runner frame
+    closes the connection and fails the run (no confused deputy);
+  - sends source, contexts, limits, seed, clock and a nonce; reads length-prefixed frames with a size cap before
+    parsing; parses strictly (no duplicate keys, bounded nesting and strings, integers over 4,300 digits refused, no
+    unknown fields); validates the contract (schema, finite numbers, stop on the correct side of the close, results
+    matched to the nonce and to the exact symbols sent; the host sets every timestamp and identity);
+  - writes `lab_run_results`, escapes user text before any operator log, and charges the budget.
 
-*Self-test.* The runner runs a probe suite at start, every hour and after any image change, and the dispatcher stores
-the latest result (platform control `lab_sandbox`). The probe checks: no network (TCP, UDP, DNS, netlink), uid, empty
-environment, no read of `/etc/shadow`, `/proc/1/environ`, application source or another run's work directory, no
-write outside the work directory, fork bomb contained by `pids.max`, memory bomb contained, CPU spin and sleep ended at
-the timeout, an escaped child killed by `cgroup.kill`, output flood capped, two concurrent runs invisible to each
-other. A failed or stale self-test turns every code mode "unavailable" on the next request (fail closed) and raises
-one operator notification. `GET /api/lab/capabilities` reports the detected matrix (mode, runtime version, available,
-reason); `GET /api/admin/lab/sandbox` shows the full self-test (admin).
+*Fair use in slot seconds (ADR-0027 decision 7, LAB-1).* A slot second is one second during which a run holds the
+single global slot. Each call (validate and TypeScript compile included) is charged the larger of the gateway's own
+measured wall time and the runner's report, with a 1-second minimum. Daily budgets per user and per tenant come from
+the plan (`lab_cpu_seconds_per_day`, AMW-1, counted as slot seconds): Free 0 / 0 (host modes only), Pro 900 / 3,600,
+Business 3,600 / 14,400. Queued runs are capped at 3 per user, 10 per tenant and 100 globally. Per-call limits (15 s
+wall, 10 s CPU, 256 MB, 32 pids; R 30 s, 20 s, 768 MB) are in threat model section 7.
 
-### 3.5 Flags
+*Self-test.* The gateway requests the probe suite at runner start, every hour and after each deploy-record change, and
+accepts a result only when it ran in the image digest of the trusted deploy record. A runner's own report is a
+liveness signal, never the trust anchor (RR-3). A stale or failed result turns every code mode "unavailable" on the
+next request (fail closed) with one operator notification. `GET /api/lab/capabilities` reports the matrix (mode,
+runtime version, available, reason); `GET /api/admin/lab/sandbox` shows the self-test, deploy record and approvals
+(admin).
 
-All are added to `FEATURE_FLAGS` and `DEFAULT_OFF_FLAGS`.
+### 3.5 Flags and the approval binding (ADR-0027 decisions 8-9)
+
+All flags are registered constants in `FEATURE_FLAGS` and `DEFAULT_OFF_FLAGS` (this matters because `flag_enabled`
+treats an unknown name as on; a registry test checks it).
 
 | Flag | Covers | Turn-on precondition (enforced in `set_flag`) |
 |---|---|---|
 | `strategy_lab` | The page, drafts, versions, runs list, templates, capabilities | none beyond the usual |
 | `strategy_lab_host` | Visual and Pine-subset modes (host-evaluated, no runner) | `strategy_lab` on |
-| `strategy_lab_python` | Python | `strategy_lab` on; latest runner self-test verified and fresh; a recorded security-review approval for the `python` family |
-| `strategy_lab_sql_lua` | SQL and Lua (run in the Python runtime image) | as above, family `sql_lua` |
-| `strategy_lab_js` | JavaScript and TypeScript | as above, family `node` |
-| `strategy_lab_r` | R | as above, family `r` |
+| `strategy_lab_python` | Python | see below, family `python` |
+| `strategy_lab_sql_lua` | SQL and Lua (run in the Python runtime image) | see below, family `sql_lua` |
+| `strategy_lab_js` | JavaScript and TypeScript | see below, family `node` |
+| `strategy_lab_r` | R | see below, family `r` |
 
-The approval record (platform control `lab_security_review`: family, reviewer, date, commit, image digest) is written
-by a SUPER_ADMIN with MFA and audit-logged; it is invalidated automatically when the runner image digest, seccomp
-profile or worker script changes. The refusal works like the `legal_pages` placeholder guard. Turning any family flag
-off stops new runs and cancels queued ones of that family at once.
+**At the switch.** `set_flag` refuses to turn a code-family flag on - globally **or** for any tenant subset - unless
+`strategy_lab` is on, the self-test is verified and fresh, and a valid approval exists for that family. There is no
+override argument (LAB-3). Each refusal is audit-logged. Turning a family flag off stops new runs and cancels queued
+runs of that family at once.
 
-### 3.6 Security review checklist (gate G-LAB, before any code-mode flag can be turned on)
+**The approval** (platform control `lab_security_review`) is written per family by a SUPER_ADMIN with MFA and
+audit-logged. It binds:
+- the family and the commit;
+- the runner image digest;
+- the runtime kind and the runsc version;
+- the jail configuration hash and the worker script hash;
+- the fixed module set hash;
+- the hash of the runner's compose service block;
+- the AppArmor profile hash (runc exception only).
 
-1. ADR-0027 (Strategy Lab: host-evaluated modes and sandboxed code modes) accepted; it amends ADR-0005's "no sandbox
-   is needed" consequence. Threat model reviewed: assets (host, secrets, other tenants' data and code, trading
-   availability), attackers (any signed-up user), entry points (source, params, outputs).
-2. Runner container: no network, no secrets in environment or filesystem, read-only root, non-root, `cap_drop: ALL`,
-   `no-new-privileges`, limits set; no change to backend, worker or frontend privileges (checked from the compose
-   files in CI).
-3. Per-run jail: namespaces, distinct uid per slot, minimal bind mounts, fresh `/proc`, seccomp allow-list,
-   cgroup v2 limits and `cgroup.kill`, streaming output cap - each verified by an automated test.
-4. Red-team suite passes in CI against the real runner images and once on the production host:
-   - network: TCP, UDP, DNS, abstract Unix sockets, netlink;
-   - reads: `/etc/shadow`, `/proc/1/environ`, application source, the socket directory, another run's work directory and
-     `/proc/<pid>/cwd`;
-   - writes outside the work directory; inode exhaustion;
-   - resources: fork bomb, memory bomb, CPU spin, long sleep, escaped child via `setsid` and double fork, output flood,
-     one very long line;
-   - cross-run: signal or trace another run;
-   - per language: Python object-graph escapes (`__subclasses__`, frames, `gc`), JavaScript constructor chains, `Proxy`,
-     WebAssembly, `import()`; R aliasing (`f <- system`), backtick calls, `.Internal`, environment walking; Lua
-     `string.dump`, `load`, metatables; SQL `ATTACH`, `load_extension`, `PRAGMA`, recursive-CTE blow-ups.
-5. Self-test runs at start, hourly and after image changes; fail-closed behaviour tested; operator alert tested.
-6. Quotas tested: per-user and global concurrency, daily CPU seconds, source size, contexts per batch, symbols per scan,
-   plan limits; a burst of runs does not move the API's p95 or the trading worker's cycle time beyond the agreed
-   budget (load test on the 8 GB profile).
-7. Data minimisation: contexts carry only the requester's entitled closed bars; logs are capped, owner-only and
-   sanitised; no key or token can reach a context (test).
-8. Result use: a test proves code-mode results never reach `execution_core`, Scan Then, auto PAPER, proposals or
-   alerts.
-9. Audit: every validate, try, publish, scan and backtest writes an audit row with the source SHA-256 and the image
-   digest.
-10. Supply chain: runner base images pinned by digest; Node, TypeScript, R, lupa and sqlglot pinned to releases at
-    least two weeks old; image scan gate green; SBOM stored.
-11. Resource budget measured: peak RSS per family and image sizes recorded in `docs/BENCHMARKS.md`; `MEM_LAB` set.
-12. Kill path rehearsed: family flag off, `docker compose --profile lab stop`; trading, exits and alerts unaffected.
-13. User-facing text reviewed: what isolation means, the limits, that results are research only, the terms for
-    uploaded code.
-14. An independent reviewer (not the author) and the owner sign off; the approval record is written per family. Any
-    later change to the runner, seccomp profile, base image or worker scripts needs a re-review.
+It **expires after 90 days**. **Two-person rule:** the principal who wrote the approval cannot be the one who turns the
+flag on.
+
+**The trusted record.** The live values the approval is compared with come from a **deploy record** written by
+`deploy/atp.sh` with `docker inspect` and `runsc --version`. A runner never self-reports anything the gate trusts. Any
+change to the image, runsc version, jail configuration, worker script, module set or compose block voids the approval
+automatically, because the deploy record no longer matches.
+
+**Before every run.** The research worker at claim time, and the gateway before each call, refuse the run (fail closed,
+closed-set reason) when the approval is missing, mismatched or expired, the self-test is stale, the deploy record is
+missing, or `strategy_lab` is off. This also covers a flag turned on through a hand-edited control row (RR-6).
+
+### 3.6 Gate G-LAB (before any code-mode flag can be turned on)
+
+The gate is the checklist in **threat model section 9, items G-1 to G-19**. That list is authoritative; this plan does
+not repeat it. In outline:
+- records and design: ADR-0027 accepted by the owner; every STRIDE row has a control and evidence, or an accepted
+  residual risk (G-1);
+- containers, isolation and the gateway: compose configuration checked in CI, gVisor with the nested-cgroup spike
+  report, the default-deny seccomp and its must-deny set, the jail configuration, the gateway's privileges and the
+  socket roles (G-2 to G-5b);
+- escape tests in CI and on the host: network, file reads and writes, `/proc` and other runs, per-language cases with
+  the guard on and off, timers and determinism, fork / memory / timeout / output / crafted-JSON / inode attacks
+  (G-6a to G-7f);
+- isolation between tenants, users and runs, and no state surviving between runs (G-8, G-8b);
+- quotas, fairness in slot seconds, the memory budget and the load test (API p95 +10 % at most, trading worker cycle
+  +5 % at most, LAB-4) (G-9, G-10);
+- supply chain: digests, hashed lockfiles, SBOM, scans, the fixed module set (G-11);
+- gate mechanics: the switch, the run-time re-check, the self-test anchored on the deploy record, audit and replay,
+  data minimisation, results that never trade or spread (G-12 to G-16);
+- operations and sign-off: kill path and OOM drill, user-facing text, independent and owner sign-off, the approval
+  record and a different principal turning the flag on (G-17 to G-19).
+
+Python is reviewed first (AMW-22). Each later family repeats G-2 to G-5, G-6e, G-6f, G-7, G-8b, G-10, G-11 and G-19
+with its own runner and runtime before its flag. Renewal after 90 days repeats G-3, G-6, G-7, G-11 and G-19.
 
 ### 3.7 Docker images and the 8 GB host
 
-The backend image does not change: no Node, TypeScript, R, lupa or sqlglot in it. Each family gets its own runner
-image, built from `lab_runner/` (Dockerfiles per family), pulled only when its compose profile runs.
+The backend image does not change: no Node, TypeScript, R, lupa or sqlglot in it. Each family has its own runner image,
+built from `lab_runner/` from hashed lockfiles (pip `--require-hashes`, `npm ci` with integrity, pinned Debian or r2u
+packages), with an SBOM, a vulnerability scan and a secret scan; nothing is installed at run time. The gateway runs from
+the backend image with its own entry point and environment.
 
 | Image | Contents | Approximate size (to be measured in AMW-21) |
 |---|---|---|
@@ -553,15 +610,26 @@ image, built from `lab_runner/` (Dockerfiles per family), pulled only when its c
 
 Disk: under 1 GB in total, small against the 100 GB NVMe.
 
-Memory is the constraint. Today's limits sum to about 6.6 GB, leaving about 1.4 GB for the OS, Docker and page cache
-(`docs/OPERATIONS.md` 1.2b).
-- Lab dispatching adds no process: the research worker drains `lab_runs` as well as studies (AMW-Q7).
-- One runner container with `MEM_LAB=512m` and concurrency 1 covers the Python, SQL, Lua and Node families; headroom
-  drops to about 0.9 GB.
-- R needs about 512-768 MB per run (AMW gives it the strategy limit + 768 MB). It is the last family, and on the 8 GB
-  host it either runs alone in the runner with concurrency 1 and `MEM_LAB=768m` (headroom about 0.6 GB, below the
-  comfortable margin) or waits for a larger host (AMW-Q6).
-- Node's heap is bounded by `--max-old-space-size` and, in ATP, also by the per-run cgroup `memory.max`.
+**Memory breaks the 7 GB rule (LAB-6).** `docs/OPERATIONS.md` 1.2b keeps the sum of container limits under about
+7 GB; today's sum (about 6.6 GB) leaves out the research worker.
+
+| Step | Adds | Sum |
+|---|---|---|
+| Today's containers | - | about 6.6 GB |
+| + `research-worker` (`MEM_RESEARCH`, new) | 512 MB | about 7.1 GB |
+| + `lab-gateway` (`MEM_LAB_GATEWAY`) | 128 MB | about 7.2 GB |
+| + one Python or Node runner (`MEM_LAB`) | 384 MB | about 7.6 GB |
+| or + the R runner instead (`MEM_LAB_R`) | 896 MB | about 8.1 GB |
+
+Code modes therefore stay unavailable on this host until the owner approves a rebalance of existing `MEM_*` limits on
+peaks measured in G-10 (with only one family runner up at a time), or a larger host. **R comes last** and needs a
+larger host unless measurement proves otherwise (AMW-Q6).
+
+**CPU and OOM order.** No vCPU is reserved for the trading worker. Caps bound Lab and research together at 1.25 vCPU
+(runner 0.5, gateway 0.25, research worker 0.5), leaving at least 0.75 vCPU for the API, the trading worker and
+Postgres; low `cpu_shares` give those the larger share under contention. `oom_score_adj` is high for the runners
+(1000), the gateway (800) and the research worker (500), and low for the trading worker (-500) and Postgres (-800), so a
+host OOM kill takes Lab work first and the exits (ADR-0004) survive (G-17).
 
 ---
 
@@ -581,8 +649,8 @@ AMW-15, AMW-17, AMW-19.
 
 **AMW-1 - Plan limits v2** (S)
 - Scope: new `Plan` fields: `max_watchlists`, `max_screen_symbols`, `reports_per_day`, `report_retention_days`,
-  `report_storage_mb`, `report_schedules`, `min_schedule_interval_min`, `lab_strategies`, `lab_cpu_seconds_per_day`.
-  Checks in `limits.py`; 403 with the existing upgrade hint. Files: `backend/app/plans/{registry,limits}.py`.
+  `report_storage_mb`, `report_schedules`, `min_schedule_interval_min`, `lab_strategies`, `lab_cpu_seconds_per_day`
+  (counted as slot seconds, per user and per tenant; LAB-1). Checks in `limits.py`; 403 with the existing upgrade hint. Files: `backend/app/plans/{registry,limits}.py`.
 - Flag: `plan_limits_v2` (enforcement of the new fields; the fields are read by each later slice).
 - Migration: no (plans live in code). Routes: none new (`GET /api/billing/usage` gains the counts).
 - Frontend: `BillingCard` shows the new limits.
@@ -777,83 +845,122 @@ AMW-15, AMW-17, AMW-19.
 
 ### 4.2 Strategy Lab group
 
+ADR-0027 and `docs/design/STRATEGY_LAB_THREAT_MODEL.md` are authoritative for these slices (section 3).
+
 **AMW-18 - ADR-0027 and threat model** (S)
-- Scope: docs only: ADR-0027, the section 3 design as `docs/design/STRATEGY_LAB.md`, the gate G-LAB checklist.
+- Scope: docs only: ADR-0027 (amends ADR-0005, extends ADR-0006), `docs/design/STRATEGY_LAB_THREAT_MODEL.md` (STRIDE,
+  the twelve AMW gaps, resource model, residual risks RR-1..RR-11, gate G-LAB items G-1..G-19), LAB-1..LAB-8 in
+  `docs/OPEN_QUESTIONS.md`. PR #264.
 - Flag: none. Migration: no. Routes: none. Frontend: none. Tests: `test_adr_index.py` updated.
-- Depends on: owner approval of this plan.
+- Depends on: owner approval of this plan; ADR-0027 accepted by the owner (G-1).
 
 **AMW-19 - Lab core** (L)
 - Scope: `backend/app/lab/{contract,context,service,routes}.py`: tables and rules of section 3.2, the result
-  contract, the host context builder, draft / publish / archive, the runs list, templates catalogue, the research
-  worker draining `lab_runs` (no evaluator yet).
-- Flag: `strategy_lab`. Migration: yes (section 3.2).
+  contract, the host context builder, draft / publish / archive, the runs list, templates catalogue; the research
+  worker claims `lab_runs` (round-robin across users, alternating with research studies) and writes
+  `lab_run_inputs`, but no evaluator or runner yet. Queued-run caps (3 / 10 / 100) and the slot-second budget
+  bookkeeping (AMW-1's `lab_cpu_seconds_per_day`).
+- Flag: `strategy_lab`.
+- Migration: yes - `lab_strategies`, `lab_versions` (with the `BEFORE UPDATE` trigger), `lab_runs`,
+  `lab_run_inputs`, `lab_run_results`, and the `atp_lab_gateway` database role with grants on the `lab_*` tables only
+  (section 3.2); `ROLLBACK_SAFE = True` with a `ROLLBACK_SAFE_REASON` for the trigger and role SQL. The role's
+  password is supplied by the operator; `scripts/db_roles.sql` / `scripts/init_db_roles.py` learn the role.
 - Routes: `GET/POST /api/lab/strategies`, `GET/PUT /api/lab/strategies/{id}`, `POST /api/lab/strategies/{id}/archive`,
   `POST /api/lab/strategies/{id}/publish` (trader, scope `strategies:write`), `GET /api/lab/strategies/{id}/versions`,
   `GET /api/lab/runs`, `GET /api/lab/runs/{id}` (member: own), `GET /api/lab/templates` (member).
 - Frontend: new page "Strategy Lab" (`/strategy-lab`, Trade group); the Copilot tab label changes (AMW-Q2).
 - Tests to adapt: `test_lab_release.py` (workflow, versions immutable, drafts never execute), `test_lab.py` (contract
-  and schema cases).
+  and schema cases); new: role grants (a query on a non-`lab_*` table is denied), tenancy (G-8), queue caps and
+  round-robin (G-9), the research worker has no code path that reads a runner frame.
 - Depends on: AMW-18, AMW-1.
 
 **AMW-20 - Host modes: visual and Pine subset compiled to ScreenQL** (L)
 - Scope: the envelope, `backend/app/lab/pine.py` translator, visual mode on the Screener builder, evaluation by the
   ScreenQL runtime, `LabStrategy(BaseStrategy)` adapter for backtests, Lab scans (published versions, plan symbol
-  cap), Pine (6) and visual (8) templates. A host-mode version can be saved as a screen.
+  cap), Pine (6) and visual (8) templates. A host-mode version can be saved as a screen. Host modes never reach the
+  gateway or a runner, so this slice does not wait for gVisor or G-LAB.
 - Flag: `strategy_lab_host`. Migration: no.
 - Routes: `POST /api/lab/validate` (self, stores nothing), `POST /api/lab/strategies/{id}/try` (self, <= 5 symbols),
   `POST /api/lab/strategies/{id}/scans`, `POST /api/lab/strategies/{id}/backtests` (self, queued).
 - Frontend: Strategy Lab editor (mode picker, Pine text area with diagnostics, visual builder, envelope panel,
   results, backtest view reusing `BacktestPage` components).
 - Tests to adapt: `test_lab.py` (Pine and visual cases, cross-mode consistency, look-ahead prevention), new translator
-  round-trip and diagnostics tests.
+  round-trip, size and nesting limits, and diagnostics tests.
 - Depends on: AMW-19, AMW-3.
 
-**AMW-21 - Sandbox runner, self-test and capabilities (no user code)** (L)
-- Scope: `lab_runner/` (Dockerfiles per family, jail configs, seccomp policy, the runner's UDS server, worker scripts),
-  `backend/app/lab/dispatch.py`, compose profile `lab`, the probe suite and self-test storage, the capability matrix.
-  Only the built-in probe executes.
-- Flag: none user-facing (the runner is off unless the profile runs; capabilities show "unavailable").
-- Migration: no (self-test results in a platform control).
+**AMW-21 - Lab gateway, family runners, self-test and capabilities (no user code)** (L)
+- Scope:
+  - `lab-gateway`: `backend/app/lab/gateway.py` and its entry point, compose service (no JWT or encryption key,
+    internal network only, `atp_lab_gateway` role, `MEM_LAB_GATEWAY`, `cpus` 0.25, `oom_score_adj` 800); the global
+    lease; the socket directory it owns; `SO_PEERCRED` and symlink checks; request-only protocol with nonce;
+    length-prefixed frames, size cap, strict parser (fuzzed, at least 1 million cases), contract validation; slot-second
+    charging; escaping of user text in operator logs; recycle after 50 runs and after any abnormal end.
+  - Runners: `lab_runner/` with one Dockerfile and compose profile per family (`lab-runner-py`, `lab-runner-node`,
+    `lab-runner-r`; `runtime: runsc`, `network_mode: none`, read-only, one non-root uid, `cap_drop: [ALL]`,
+    `no-new-privileges`, limits, `oom_score_adj` 1000), the supervisor, jail configuration, default-deny seccomp
+    policy, the probe suite; hashed lockfiles, SBOM and scans.
+  - The **nested-cgroup spike** inside runsc (G-3): whether `memory.max`, `pids.max`, `cpu.max` and `cgroup.kill`
+    work; if not, the PID-namespace and container-limit fallbacks.
+  - `deploy/atp.sh` writes the **deploy record** (`docker inspect`, `runsc --version`, config and compose hashes);
+    `MEM_RESEARCH`, `cpus`, `cpu_shares` and `oom_score_adj` on the research worker; low `oom_score_adj` on the trading
+    worker and Postgres.
+  - The `set_flag` gate and the run-time re-check (section 3.5), including the two-person rule, the 90-day expiry,
+    tenant-subset refusal and the registry test; the capability matrix.
+  - Only the built-in probe executes.
+- Flag: none user-facing (no runner or gateway runs unless a profile is started; capabilities show "unavailable").
+- Migration: no (self-test, deploy record, approvals and lease in platform controls; the tables come from AMW-19).
 - Routes: `GET /api/lab/capabilities` (member), `GET /api/admin/lab/sandbox` (admin), `POST /api/admin/lab/sandbox/selftest`
-  (admin).
-- Frontend: capability table on the Strategy Lab page; Admin card "Lab sandbox".
-- Tests to adapt: `test_lab.py` (sandbox security cases, re-written for the new runner and extended per 3.6 item 4).
-- Depends on: AMW-19, AMW-Q3.
+  (admin), `PUT /api/admin/lab/security-review/{family}` (admin, MFA; writes the approval).
+- Frontend: capability table on the Strategy Lab page; Admin card "Lab sandbox" (self-test, deploy record, approvals
+  with expiry).
+- Tests to adapt: `test_lab.py` (sandbox security cases, re-written for the gateway and runners and extended to the
+  G-LAB escape suite, G-6a to G-7f); new: G-2 compose checks, G-5b gateway privileges and socket roles, G-12 / G-12b
+  gate tests, G-13 fail-closed self-test.
+- Depends on: AMW-19; gVisor installed on the host (or an owner-signed runc exception, AMW-Q3); LAB-6 answered before
+  any runner runs on the 8 GB host.
 
-**Gate G-LAB - security review.** The checklist in section 3.6 is completed, the independent and owner sign-offs are
-recorded, and the approval record exists per family. No code-mode flag can be turned on before this; `set_flag`
-enforces it. Each later family (AMW-23..25) repeats items 3, 4 (its language), 10, 11 and 14 before its own flag.
+**Gate G-LAB - security review.** Threat model section 9, items G-1 to G-19, all with evidence; an independent
+reviewer and the owner sign off; the `lab_security_review` approval is written per family by a SUPER_ADMIN with MFA,
+bound to the deploy record, valid for 90 days, and a different principal turns the flag on. `set_flag` and the
+run-time re-check enforce it. Each later family (AMW-23..25) repeats G-2 to G-5, G-6e, G-6f, G-7, G-8b, G-10, G-11 and
+G-19 before its own flag.
 
 **AMW-22 - Python mode and the shared code-mode path** (M)
-- Scope: Python worker in `atp-lab-py` (`atp.*` helpers, restricted builtins, import allow-list, audit hook); the
-  code-mode try, scan and backtest path (batched contexts per bar, one runner call per batch chunk); templates (6).
+- Scope: Python worker in `atp-lab-py` (`atp.*` helpers, restricted builtins, import allow-list, audit hook, fixed
+  `PYTHONHASHSEED`, no byte code outside the tmpfs); the code-mode try, scan and backtest path (contexts per bar
+  written to `lab_run_inputs` by the research worker, at most 50 contexts per call, one gateway call per chunk, results
+  through the gateway); results kept out of every order, alert and Copilot path (G-16); templates (6).
 - Flag: `strategy_lab_python`. Migration: no. Routes: none new (the AMW-20 routes accept the mode).
-- Frontend: Python editor (plain text area with line numbers, AMW-Q11), quick reference.
-- Tests to adapt: `test_lab.py` (Python cases, escape attempts, cancellation, timeouts).
-- Depends on: AMW-21, G-LAB.
+- Frontend: Python editor (plain text area with line numbers, AMW-Q11), quick reference, budget and limits shown.
+- Tests to adapt: `test_lab.py` (Python cases, escape attempts with the guard on and off, cancellation, timeouts);
+  G-6e, G-6f and G-8b for Python.
+- Depends on: AMW-21, G-LAB (family `python`), LAB-6.
 
 **AMW-23 - SQL and Lua modes** (M)
 - Scope: SQL (sqlglot check and SQLite authorizer inside the runner, views `bars` and `latest`, `:name` parameters,
   per-symbol evaluation) and Lua (lupa, limits) in `atp-lab-py`; templates.
 - Flag: `strategy_lab_sql_lua`. Migration: no. Routes: none new.
 - Frontend: editors and references for both.
-- Tests to adapt: `test_lab.py` (SQL and Lua cases).
-- Depends on: AMW-22, family review.
+- Tests to adapt: `test_lab.py` (SQL and Lua cases); G-6e for SQL and Lua.
+- Depends on: AMW-22, family review (`sql_lua`).
 
 **AMW-24 - JavaScript and TypeScript modes** (M)
-- Scope: `atp-lab-node` image; `vm` realm worker; TypeScript type check against the SDK; frontend copy of the SDK with
-  the hash test; templates.
+- Scope: `atp-lab-node` image and `lab-runner-node` profile; `vm` realm worker with coarse timers and no
+  `SharedArrayBuffer` or worker threads; TypeScript type check as a jailed, charged run; no `NODE_COMPILE_CACHE`;
+  frontend copy of the SDK with the hash test; templates.
 - Flag: `strategy_lab_js`. Migration: no. Routes: none new.
 - Frontend: editors; TypeScript errors with line numbers.
-- Tests to adapt: `test_lab.py` (JS / TS cases), `test_lab_release.py` (runtime detection).
-- Depends on: AMW-22, family review.
+- Tests to adapt: `test_lab.py` (JS / TS cases), `test_lab_release.py` (runtime detection); G-6e, G-6f, G-7 and G-8b
+  for Node.
+- Depends on: AMW-22, family review (`node`).
 
 **AMW-25 - R mode** (M)
-- Scope: `atp-lab-r` image; R worker with a curated environment and JSON contexts; templates (2); concurrency 1.
+- Scope: `atp-lab-r` image and `lab-runner-r` profile; R worker with a curated environment and JSON contexts; R limits
+  (30 s wall, 20 s CPU, 768 MB, at most 10 contexts per call); templates (2).
 - Flag: `strategy_lab_r`. Migration: no. Routes: none new.
 - Frontend: editor and reference.
-- Tests to adapt: `test_lab.py` (R cases, incl. the aliasing bypass).
-- Depends on: AMW-22, family review, AMW-Q6.
+- Tests to adapt: `test_lab.py` (R cases, incl. the aliasing bypass); G-6e, G-7 and G-8b for R.
+- Depends on: AMW-22, family review (`r`), a larger host or a measured rebalance (LAB-6, AMW-Q6).
 
 ### 4.3 Summary
 
@@ -876,15 +983,15 @@ enforces it. Each later family (AMW-23..25) repeats items 3, 4 (its language), 1
 | AMW-15 | Report schedules + lifecycle notifications | `report_schedules` | yes | M | AMW-14, AMW-10 |
 | AMW-16 | Data health + market overview cards | `data_health` | no | S | - |
 | AMW-17 | FYERS live 1-minute feed | `fyers_minute_feed` | yes | L | consent, BT1, HB2 |
-| AMW-18 | ADR-0027 + threat model | - | no | S | owner approval |
-| AMW-19 | Lab core | `strategy_lab` | yes | L | AMW-18, AMW-1 |
+| AMW-18 | ADR-0027 + threat model (PR #264) | - | no | S | owner approval |
+| AMW-19 | Lab core (+ `lab_run_inputs`, gateway DB role) | `strategy_lab` | yes | L | AMW-18, AMW-1 |
 | AMW-20 | Host modes (visual, Pine subset) | `strategy_lab_host` | no | L | AMW-19, AMW-3 |
-| AMW-21 | Sandbox runner + self-test | - | no | L | AMW-19 |
+| AMW-21 | Lab gateway + family runners (gVisor) + self-test + gate | - | no | L | AMW-19, gVisor, LAB-6 |
 | G-LAB | Security review gate | - | - | - | AMW-21 |
-| AMW-22 | Python mode + code path | `strategy_lab_python` | no | M | G-LAB |
+| AMW-22 | Python mode + code path | `strategy_lab_python` | no | M | G-LAB, LAB-6 |
 | AMW-23 | SQL + Lua | `strategy_lab_sql_lua` | no | M | AMW-22 + review |
 | AMW-24 | JavaScript + TypeScript | `strategy_lab_js` | no | M | AMW-22 + review |
-| AMW-25 | R | `strategy_lab_r` | no | M | AMW-22 + review, AMW-Q6 |
+| AMW-25 | R | `strategy_lab_r` | no | M | AMW-22 + review, larger host or LAB-6 / AMW-Q6 |
 
 AMW tests not ported: `test_ui.py` (Streamlit smoke; replaced by vitest and Playwright), `test_failover.py` (no
 vendor failover in ATP), `test_data.py` and `test_instruments.py` (ATP's lake and instrument tests are stronger).
@@ -932,11 +1039,11 @@ covers both paths. Every new English string goes through the existing English-on
 |---|---|---|---|
 | AMW-Q1 | The AMW archive has no licence file. May code be copied verbatim? | No: re-implement from behaviour; port tests as specifications; record provenance per slice. | all |
 | AMW-Q2 | "Strategy Lab" is already the label of a Copilot tab. | The new page is "Strategy Lab" (`/strategy-lab`); the Copilot tab becomes "AI Drafts" (URL `/copilot/strategy-lab` kept), with an "Open in Strategy Lab" link. | AMW-19 |
-| AMW-Q3 | Sandbox runtime on Hostinger KVM 2: gVisor, or nsjail with a custom seccomp profile? | gVisor (`runsc`) for the runner container if it installs and passes the probe suite on the host; otherwise nsjail with a runner-only seccomp profile. Never `CAP_SYS_ADMIN` or `privileged` on any container. | AMW-21 |
+| AMW-Q3 | Sandbox runtime on Hostinger KVM 2. | **Decided in ADR-0027:** gVisor (`runsc`) is required for every runner on the shared host; without it code modes are "unavailable". A runc runner is allowed only as an owner-signed exception (custom AppArmor profile, cgroup delegation, sysctl posture, bound into the approval), or the runners move to a separate host with no secrets. Never `CAP_SYS_ADMIN` or `privileged` on any container. | AMW-21 |
 | AMW-Q4 | PDF needs a dependency (reportlab or similar). | Ship JSON, CSV, PNG and a standard-library XLSX first; add PDF after the owner accepts the dependency. | AMW-14 |
 | AMW-Q5 | Fyers data terms are "pending" (written consent). | Build behind `fyers_minute_feed`; `set_flag` refuses ON until the terms file says `allowed`. | AMW-17 |
-| AMW-Q6 | R on the 8 GB host (about 768 MB per run). | R is the last family; concurrency 1; enabled only after measuring, or on a larger host. | AMW-25 |
-| AMW-Q7 | Which process dispatches Lab runs? | The research worker drains `lab_runs` and research studies (one job at a time); no new process, so no new memory line. | AMW-19, AMW-21 |
+| AMW-Q6 | R on the 8 GB host (`MEM_LAB_R` about 896 MB; the sum reaches about 8.1 GB). | R is the last family and needs a larger host unless a measured rebalance proves otherwise (LAB-6). | AMW-25 |
+| AMW-Q7 | Which process dispatches Lab runs? | **Superseded by LAB-5 / ADR-0027 decision 4:** the research worker claims runs and writes `lab_run_inputs`; a separate `lab-gateway` (no keys, `lab_*` role) handles the socket and every runner frame. Memory lines `MEM_RESEARCH` and `MEM_LAB_GATEWAY` are added (LAB-6). | AMW-19, AMW-21 |
 | AMW-Q8 | Forward tests: costs or not? | Report gross R and net R (C2 default model) side by side; both labelled simulations. | AMW-10 |
 | AMW-Q9 | May code-mode results drive alerts? | No, research only, until a separate review. Host-mode versions may become screens and alert rules. | AMW-22..25 |
 | AMW-Q10 | Which producers write signal records? | `/signal/enrich`, screen alert matches and Lab scans of published versions. | AMW-9 |

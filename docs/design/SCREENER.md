@@ -484,7 +484,7 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
 
 | Entry | Kind | What it is |
 |---|---|---|
-| `Pattern(name)` | filter | The named candlestick pattern on this bar. It reads this bar and at most the two before it. There are 14 names, from the detectors in `candlestick_patterns.py`, with the direction split where a detector has two: `doji`, `hammer`, `shooting_star`, `bullish_engulfing`, `bearish_engulfing`, `morning_star`, `evening_star`, `bullish_pin_bar`, `bearish_pin_bar`, `inside_bar`, `bullish_outside_bar`, `bearish_outside_bar`, `bullish_rejection`, `bearish_rejection`. |
+| `Pattern(name, confirm="any")` | filter | The named candlestick pattern on this bar. It reads this bar and at most the two before it. There are 14 names, from the detectors in `candlestick_patterns.py`, with the direction split where a detector has two: `doji`, `hammer`, `shooting_star`, `bullish_engulfing`, `bearish_engulfing`, `morning_star`, `evening_star`, `bullish_pin_bar`, `bearish_pin_bar`, `inside_bar`, `bullish_outside_bar`, `bearish_outside_bar`, `bullish_rejection`, `bearish_rejection`. AMW-3 (flag `screenql_amw_functions`) adds four v2 names and the `confirm` argument: see the AMW-3 section. |
 | `SwingHigh(degree)` / `SwingLow(degree)` | factor, price | The last **confirmed** swing high / low from the causal swing engine (`causal_swings.py`: ZigZag on ATR by default; degree 0 to 3 = the smallest to the largest threshold). |
 | `SwingDirection(degree)` | classifier | `UP` after a confirmed swing low, `DOWN` after a confirmed swing high, empty before the first. |
 | `MedianRange(n)` | factor, price | The median (high − low) of the n bars **before** this one: the market's own noise, as used by the break and reversal logic. |
@@ -1548,6 +1548,50 @@ marketplace, no store apps).
   plans only (402 on Free). With the flag off a WhatsApp channel or DLT fields are refused (403).
 - **Mobile push** stays the PWA's Web Push (installed on a phone it is a mobile push); native FCM / APNs come with the
   store apps (frozen). **Marketplace** is frozen (K).
+
+## AMW-3 (built): ScreenQL functions for the AMW screener's predicates (flag `screenql_amw_functions`, off)
+
+Source: `docs/design/AMW_PORT.md` section 4 (AMW-3) and the Strategy Lab predicate map (section 3.3). Re-implemented from
+the AMW screener's described behaviour; its tests are behaviour specifications, re-written on ATP bars
+(`backend/tests/test_amw3_screenql_functions.py`). No AMW code was run or copied.
+
+| Entry | Kind | What it is |
+|---|---|---|
+| `StDev(x, n)` | factor, unit of x | Population standard deviation of x over n bars (divides by n, like Pine's `ta.stdev`; `ZScore` keeps the sample one). Reads a history, so a last-bar-only function inside it is refused. |
+| `RsiDivergence(side, lookback=15, degree=0)` | filter | Regular RSI(14) divergence between the last two **confirmed** swing lows (`bullish`: a lower low with a higher RSI) or highs (`bearish`: a higher high with a lower RSI), from the causal swing engine at `degree`. RSI is read at each swing's extreme bar. True from the second swing's confirmation bar while that swing's extreme is at most `lookback` bars back. |
+| `SwingLabel(kind, degree=0)` | classifier | `HH` / `LH` (kind `high`) or `HL` / `LL` (kind `low`): the last confirmed swing of that kind against the one before it. An equal price reads lower, as in `DowTrend` (tested to agree with it). Missing before the second swing of the kind. |
+| `TimeOfDay(start, end)` | filter | The bar's **start** time in exchange time (IST; a naive index is read as UTC) is between `start` and `end`, both `HH:MM` and both included. `start` after `end` wraps past midnight. Intraday timeframes only (1m to 1h). |
+| `Pattern(name, confirm)` v2 names | filter | `bullish_strong_body` / `bearish_strong_body`: body >= 70 % of the range and range >= 1 x ATR(14). `bullish_gap_reversal` / `bearish_gap_reversal`: opened beyond the previous close by >= 0.5 x ATR(14) and closed back across it (a gap down closing above, a gap up closing below). ATR(14) is `app/indicators/volatility.atr` on the bars so far; false on the first 13 bars. |
+| `confirm` on `Pattern`, `PatternBullish`, `PatternBearish` | argument | `any` (the default, the pattern on this bar - the behaviour before AMW-3), or the status this bar gave the pattern on the bar **before**: `confirmed` (bullish: close above the pattern bar's high; bearish: below its low), `failed` (beyond the other side), `unconfirmed` (inside its range, ends included). `doji` and `inside_bar` have no direction, so a status other than `any` is refused. |
+
+- **No look-ahead.** Every entry has Z10-a cases (`app/quality/causal_cases.py`: SCREENQL_SERIES / SCREENQL_LAST_BAR /
+  SCREENQL_DAILY, the v2 masks, the confirmation masks and the v2 detectors as events). A swing counts from the bar that
+  confirmed it; a confirmation status is known on the bar after the pattern, never on the pattern bar.
+- **Validation.** `TimeOfDay` arguments must be `HH:MM` (a literal or a parameter; `Arg.pattern`). History:
+  `Spec.choice_extra_bars` adds bars by an argument's value (a v2 candle 15 bars in all, a status one more), the swing
+  functions use the swing degree's history (`degree_min_bars`).
+- **Kept apart.** The v2 detectors are not in `DETECTORS`: `PatternBullish` / `PatternBearish`, the scanner and signal
+  scoring keep their pattern set. `pattern_masks_v2` and `confirmation_masks` are new; `pattern_masks` is unchanged.
+- **Vectorised path (Z10-d).** `StDev` (a ddof-0 variant of the rolling-std kernel, equal to pandas bit for bit) and
+  `TimeOfDay` run in `panel.py`; the swing and candle functions run per symbol.
+- **Evidence and mirror.** `DRAWN_AS`: `StDev` series; `RsiDivergence`, `SwingLabel`, `TimeOfDay` strip. A status draws
+  the pattern bars and the confirming bar. The mirror swaps the v2 candles and keeps `confirm`; `RsiDivergence`,
+  `SwingLabel`, `TimeOfDay` and `StDev` have no mirror rule yet.
+- **Flag `screenql_amw_functions` (off), the U6 BK1 / Z7a-3 pattern.** Off: the registry endpoint hides the four
+  functions, the v2 names and the `confirm` argument (`amw_functions.hide` gives the description exactly as before
+  AMW-3, which is what `builderTexts.json` holds); a screen, a saved screen, a run, a history run, a chart study or an
+  alert rule using any of them is refused with the reason (a `$parameter` pattern name is resolved from the screen's
+  parameters); an active alert rule pauses with the reason and resumes when the flag is back. `confirm "any"` is never
+  gated. While off, a Pattern* mistake is validated against the registry as it was before AMW-3
+  (`amw_functions.FLAG_OFF_FUNCTIONS`), so its message is main's and names no hidden value or argument. Research only:
+  matches, never orders.
+- **Bar close only.** A confirmation status, `RsiDivergence` and `SwingLabel` can flip on a forming bar, so an intrabar
+  alert rule using one is refused at save and skipped with the reason by the engine (`amw_functions.intrabar_calls`).
+  The v2 candles, `StDev` and `TimeOfDay` read a forming bar like the indicators do.
+- Open question AMW3-5: the v2 candles use ATR(14) including their own bar, as AMW does.
+- Open question AMW3-1 (`docs/OPEN_QUESTIONS.md`): `RsiDivergence` measures `lookback` from the swing's extreme bar, as
+  AMW does, but ATP's ATR swings confirm later than AMW's 3-bar fractals, so a short `lookback` can miss a divergence
+  that is only confirmed later.
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

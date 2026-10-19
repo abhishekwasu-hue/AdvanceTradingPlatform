@@ -136,7 +136,9 @@ CASES_5M = [
     "RSI(14) <= 30", "RSI(14) BETWEEN 30 AND 50", "close BETWEEN SMA(close, 10) AND EMA(close, 20)", "ZScore(close, 20) > 1",
     'SwingDirection(0) == "UP"', 'SwingDirection(0) IN ("UP")', "NOT close > open",
     'Pattern("bullish_engulfing")', 'Pattern("morning_star")', 'Pattern("inside_bar")', 'Pattern("doji")', 'Pattern("bullish_pin_bar")',
-    'Pattern("bullish_rejection")', 'SwingZoneStrength("low", 0)', 'SwingZoneDistance("low", 0)', 'ReversalAt(SwingLow(0), "bullish")',
+    'Pattern("bullish_rejection")', 'Pattern("bullish_strong_body")', 'Pattern("bullish_gap_reversal")',              # AMW-3 v2
+    'Pattern("bullish_engulfing", "confirmed")', 'Pattern("bullish_pin_bar", "failed")', 'Pattern("bearish_rejection", "unconfirmed")',   # AMW-3 status
+    'SwingZoneStrength("low", 0)', 'SwingZoneDistance("low", 0)', 'ReversalAt(SwingLow(0), "bullish")',
     'RealBreak(SwingHigh(0), "above", 20)', 'RangeBreakout("up", 20, 0, 0)', 'RangeBreakout("down", 10, 0.1, 0, "auto")',
     'SwingBreakout("up", 0, 0)', 'NRBreakout("up", "nr7", 0, 0)', 'NRBreakout("down", "inside", 0, 0)', 'RangeExpansion("up", 1.5, 0)',
     'VolumeBreakout("up", 1.5)', 'ORBreakout("up", 15, 0, FALSE, 15, 0)', 'DayLevelBreak("up", "prev_day", 0, FALSE, 15, 0)',

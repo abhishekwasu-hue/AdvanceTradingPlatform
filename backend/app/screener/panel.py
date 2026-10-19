@@ -28,14 +28,14 @@ import numpy as np
 import pandas as pd
 
 from app.screener import nodes as n
-from app.screener.runtime import Match, ScreenRuntimeError, SymbolData, _as_bool, _cross, _Eval, bool_frame
+from app.screener.runtime import Match, ScreenRuntimeError, SymbolData, _as_bool, _cross, _Eval, bool_frame, time_of_day
 from app.screener.validator import Validated
 
 logger = logging.getLogger(__name__)
 
 FLAG = "screener_vectorized"      # operator flag (off by default): the routes and the bar-close engine opt in with it
 FUNCTIONS = frozenset({"SMA", "EMA", "RSI", "ATR", "ADX", "PlusDI", "MinusDI", "Max", "Min", "Greatest", "Least", "Count", "CountStreak",
-                       "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag"})
+                       "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev", "TimeOfDay"})
 MIN_GROUP = 2                     # a symbol alone in its index group gains nothing from stacking: per-symbol path
 _COLUMNS = ("open", "high", "low", "close", "volume", "oi")
 
@@ -222,15 +222,16 @@ def _rolling_mean_gaps(x: np.ndarray, win: int) -> np.ndarray:
     return out
 
 
-def _rolling_std(x: np.ndarray, win: int) -> np.ndarray:
-    """`rolling(win).std()` (ddof 1): pandas' compensated Welford update, then the square root."""
+def _rolling_std(x: np.ndarray, win: int, ddof: int = 1) -> np.ndarray:
+    """`rolling(win).std(ddof=ddof)` (ZScore: ddof 1; AMW-3 StDev: ddof 0): pandas' compensated Welford update, then the
+    square root."""
     if _pandas_is_cheaper(x):
-        return pd.DataFrame(x).rolling(win).std().to_numpy()
+        return pd.DataFrame(x).rolling(win).std(ddof=ddof).to_numpy()
     k = _leading_gap(x)
     if k is None:
-        return _rolling_std_gaps(x, win)
+        return _rolling_std_gaps(x, win, ddof)
     if k:
-        return _padded(x, k, lambda part: _rolling_std(part, win))
+        return _padded(x, k, lambda part: _rolling_std(part, win, ddof))
     rows, cols = x.shape
     out = np.full((rows, cols), np.nan)
     mean, ssq, comp_add, comp_rem = np.zeros(cols), np.zeros(cols), np.zeros(cols), np.zeros(cols)
@@ -260,15 +261,17 @@ def _rolling_std(x: np.ndarray, win: int) -> np.ndarray:
             comp_add = t + mean - y
             mean = mean + t / nobs
             ssq = ssq + (v - prev_mean) * (v - mean)
-            if i >= win - 1:
-                if win > 1:
-                    var = ssq / (win - 1)
+            if i >= win - 1 and win > ddof:
+                if win == 1:                                   # one value (ddof 0): no spread
+                    out[i] = 0.0
+                else:
+                    var = ssq / (win - ddof)
                     var[(same >= win) | (var < 0)] = 0.0
                     out[i] = np.sqrt(var)
     return out
 
 
-def _rolling_std_gaps(x: np.ndarray, win: int) -> np.ndarray:
+def _rolling_std_gaps(x: np.ndarray, win: int, ddof: int = 1) -> np.ndarray:
     """`_rolling_std` with missing values (skipped and counted out, as pandas does)."""
     rows, cols = x.shape
     out = np.full((rows, cols), np.nan)
@@ -303,9 +306,9 @@ def _rolling_std_gaps(x: np.ndarray, win: int) -> np.ndarray:
             mean = np.where(ok, new_mean, mean)
             ssq = np.where(ok, new_ssq, ssq)
             if i >= win - 1:
-                var = ssq / (nobs - 1)
+                var = ssq / (nobs - ddof)
                 var = np.where((nobs == 1) | (same >= nobs), 0.0, np.where(var < 0, 0.0, var))
-                out[i] = np.where((nobs >= win) & (nobs > 1), np.sqrt(var), np.nan)
+                out[i] = np.where((nobs >= win) & (nobs > ddof), np.sqrt(var), np.nan)
     return out
 
 
@@ -470,6 +473,10 @@ class _PanelEval(_Eval):
             "PctChange": lambda: self.series(args[0], tf).pct_change(win(1), fill_method=None) * 100.0,
             "ZScore": zscore,
             "Lag": lambda: self.series(args[0], tf).shift(win(1)),
+            # AMW-3: the population standard deviation (ddof 0) and the session-time window (one row per bar, all symbols)
+            "StDev": lambda: self.wrap(_rolling_std(self.values(args[0], tf), win(1), ddof=0)),
+            "TimeOfDay": lambda: self.wrap(np.repeat(time_of_day(f.index, str(self.ev(args[0], tf)), str(self.ev(args[1], tf)))[:, None],
+                                                     len(self.columns), axis=1)),
         }
         if name not in impl:
             raise ScreenRuntimeError(f"{name} has no vectorised form")

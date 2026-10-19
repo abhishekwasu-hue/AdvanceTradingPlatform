@@ -327,17 +327,18 @@ async def smoke_test_broker(
 
 @router.post("/{name}/authenticate", response_model=BrokerProfile, dependencies=[Depends(require_scope("brokers:write"))])
 async def authenticate_broker(
-    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
 ) -> BrokerProfile:
-    """Loads this tenant's stored (encrypted) credentials for `name`, decrypts them in memory,
-    and performs a real login against that broker. Success marks the stored token VALID until the
-    broker's next daily expiry (and persists a newly exchanged access token, if the login
+    """Loads this tenant's stored (encrypted) credentials for `name` / `account_label` (default "primary"),
+    decrypts them in memory, and performs a real login against that broker. Success marks the stored token
+    VALID until the broker's next daily expiry (and persists a newly exchanged access token, if the login
     produced one); a token-related failure marks it EXPIRED so LIVE deployments stop entering.
     """
     _ensure_known_broker(name)
-    record = await get_credential_record(session, user.tenant_id, name)
+    label = _clean_label(account_label)
+    record = await get_credential_record(session, user.tenant_id, name, label)
     if record is None:
-        raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}'")
+        raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}' ({label})")
     await _ensure_holder(session, record, user)
     expected_user, expected_payload = record.user_id, record.encrypted_payload
 
@@ -350,7 +351,7 @@ async def authenticate_broker(
         # Broker-side errors (BrokerError) and raw network failures (DNS, timeout, TLS, ...)
         # both mean the same thing to the caller: authentication did not succeed. Either way
         # this must come back as a clean error, never an unhandled 500, and always be audited.
-        await write_audit_log(session, user.tenant_id, user.id, "broker_authentication_failed", f"{name}: {exc}")
+        await write_audit_log(session, user.tenant_id, user.id, "broker_authentication_failed", f"{name}/{label}: {exc}")
         # A heuristic, not a certainty: real broker APIs (Kite, Upstox) return distinguishable
         # error text for an expired/invalid token vs. other failures, but there's no structured
         # error code to key off across three different broker error formats.
@@ -361,7 +362,7 @@ async def authenticate_broker(
         await notify(
             session, user.tenant_id,
             NotificationType.TOKEN_EXPIRED if is_token_issue else NotificationType.BROKER_DISCONNECT,
-            title=f"{name} authentication failed", message=str(exc),
+            title=f"{name} ({label}) authentication failed", message=str(exc),
             severity=NotificationSeverity.CRITICAL, user_id=user.id,
         )
         raise HTTPException(status_code=502, detail=f"Broker authentication failed: {exc}") from exc
@@ -374,7 +375,7 @@ async def authenticate_broker(
     if not await _write_if_unchanged(session, record, expected_user, expected_payload):
         await session.rollback()
         raise HTTPException(status_code=409, detail=CHANGED_HANDS)
-    await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", name)
+    await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", f"{name}/{label}")
     await session.commit()
     return profile
 
@@ -518,24 +519,27 @@ class OAuthStartResponse(BaseModel):
 @router.get("/upstox/oauth/start", response_model=OAuthStartResponse)
 async def upstox_oauth_start(
     request: Request, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
-    session_id: Optional[int] = Depends(current_session_id),
+    session_id: Optional[int] = Depends(current_session_id), account_label: str = "primary",
 ) -> OAuthStartResponse:
+    """Starts the Upstox login for one stored account (`account_label`, default "primary"). The label rides
+    in the signed state, so the callback updates the same account's row and no other."""
     await ensure_live_step_up(session, user, session_id, "Logging in to the broker")
-    record = await get_credential_record(session, user.tenant_id, "upstox")
+    label = _clean_label(account_label)
+    record = await get_credential_record(session, user.tenant_id, "upstox", label)
     if record is None:
-        raise HTTPException(status_code=404, detail="Store your Upstox API key/secret in Settings first")
+        raise HTTPException(status_code=404, detail=f"Store your Upstox API key/secret in Settings first ({label})")
     await _ensure_holder(session, record, user)
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:
         raise HTTPException(status_code=400, detail="Upstox credentials need both api_key and api_secret for OAuth")
-    redirect_uri = credentials.redirect_uri or _callback_url(request, "upstox")
+    redirect_uri = credentials.redirect_uri or str(request.base_url).rstrip("/") + UPSTOX_CALLBACK_PATH
     if credentials.redirect_uri is None:
         # Remember the redirect URI we are about to use so the token exchange sends the same one.
         credentials.redirect_uri = redirect_uri
         record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
 
-    state = create_oauth_state(user.tenant_id, user.id, "upstox")
-    await write_audit_log(session, user.tenant_id, user.id, "broker_oauth_started", "upstox")
+    state = create_oauth_state(user.tenant_id, user.id, "upstox", account_label=label)
+    await write_audit_log(session, user.tenant_id, user.id, "broker_oauth_started", f"upstox/{label}")
     await session.commit()
     return OAuthStartResponse(authorization_url=build_upstox_authorization_url(credentials.api_key, redirect_uri, state))
 
@@ -567,13 +571,18 @@ async def upstox_oauth_callback(
         return _frontend_redirect(broker="upstox", error="invalid_state")
 
     tenant_id, user_id = int(claims["tenant_id"]), int(claims["user_id"])
-    record = await get_credential_record(session, tenant_id, "upstox")
+    try:
+        # A state signed before labels were carried means the primary account, as it did then.
+        label = _clean_label(claims.get("account_label"))
+    except HTTPException:
+        return _frontend_redirect(broker="upstox", error="invalid_state")
+    record = await get_credential_record(session, tenant_id, "upstox", label)
     if record is None:
         return _frontend_redirect(broker="upstox", error="credentials_missing")
     if record.user_id != user_id and await _byob(session, tenant_id):
         # BT1b (flag on): the state names someone other than the connection's holder - the token would be theirs while
         # the row is someone else's.
-        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", "upstox: not the connection's holder")
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"upstox/{label}: not the connection's holder")
         await session.commit()
         return _frontend_redirect(broker="upstox", error="not_holder")
     expected_user, expected_payload = record.user_id, record.encrypted_payload
@@ -586,7 +595,7 @@ async def upstox_oauth_callback(
     try:
         await adapter.authenticate()
     except Exception as exc:  # noqa: BLE001 - must always end in a redirect
-        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"upstox: {exc}")
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"upstox/{label}: {exc}")
         await session.commit()
         await notify(
             session, tenant_id, NotificationType.BROKER_DISCONNECT, title="Upstox login failed",
@@ -601,9 +610,9 @@ async def upstox_oauth_callback(
     if not await _write_if_unchanged(session, record, expected_user, expected_payload):
         # BT1b (both flag states): the row was stored over during the code exchange - the fresh token is not written.
         await session.rollback()
-        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", "upstox: the connection changed during the login")
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"upstox/{label}: the connection changed during the login")
         await session.commit()
         return _frontend_redirect(broker="upstox", error="changed_during_login")
-    await write_audit_log(session, tenant_id, user_id, "broker_authenticated", "upstox (oauth)")
+    await write_audit_log(session, tenant_id, user_id, "broker_authenticated", f"upstox/{label} (oauth)")
     await session.commit()
     return _frontend_redirect(broker="upstox", connected="1")

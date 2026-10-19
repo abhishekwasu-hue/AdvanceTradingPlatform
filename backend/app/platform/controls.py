@@ -169,6 +169,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z10-d (G4, docs/PERFORMANCE.md): screener runs and bar-close alert rules evaluate the symbols that share a bar index
     # together (app/screener/panel.py) - the same matches, computed once over the universe. OFF: per symbol, as before.
     "screener_vectorized": "Vectorised screens: screener runs and bar-close alerts evaluate the whole universe at once (same matches, less time)",
+    # AMW-3 (docs/design/AMW_PORT.md): the ScreenQL functions ported from the AMW screener's predicates - StDev,
+    # RsiDivergence, SwingLabel, TimeOfDay, the v2 candles (strong body, gap reversal) in Pattern and the next-bar
+    # confirmation status on Pattern / PatternBullish / PatternBearish. OFF: hidden from the registry, refused in screens,
+    # studies and alert rules (an active rule pauses with the reason). A confirmation status, RsiDivergence and
+    # SwingLabel fire on bar close only (intrabar rules refused); places no orders.
+    "screenql_amw_functions": "AMW screener functions in ScreenQL: StDev, RSI divergence, swing labels, time of day, strong-body and gap-reversal candles, next-bar candle confirmation (research only, places no orders)",
     # Z10-b (G5, docs/design/Z10_LAUNCH_HARDENING.md): stale data -> zero alerts. The bar-close engine, the rule flush and
     # the dispatcher hold back a screen / instrument alert whose bars are no longer current. Trade, exit, risk and
     # system notifications are never held back. OFF: unchanged.

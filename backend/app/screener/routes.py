@@ -29,6 +29,7 @@ from app.core.models import bars_to_dataframe
 from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
+from app.screener import amw_functions as amw_gate
 from app.screener import compile_screen, nodes
 from app.screener import legends as lg
 from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
@@ -124,6 +125,8 @@ async def registry(user: User = Depends(get_current_user), session: AsyncSession
     if off:                                       # Z7a-3 (the U6 BK1 pattern): a flagged family stays hidden while its flag is off
         entries = {k: v for k, v in entries.items()           # U6 BK3: a second flag (Spec.also_flags) hides it too
                    if not (k in FUNCTIONS and ({FUNCTIONS[k].flag, *FUNCTIONS[k].also_flags} & off))}
+        if amw_gate.FLAG in off:                  # AMW-3: the v2 candles and Pattern's `confirm` argument hide too
+            entries = amw_gate.hide(entries)
     return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
 
 
@@ -237,13 +240,22 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
 
 async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
-    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`) and
-    N3 S7a's RankScore (`screener_rankings`; a system it names must be a platform one or this organisation's own)."""
+    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`),
+    the AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves a
+    `$parameter` pattern name) and N3 S7a's RankScore (`screener_rankings`; a system it names must be a platform one or
+    this organisation's own). With the AMW-3 flag off, Pattern* mistakes get main's messages
+    (`amw_gate.flag_off_validation`). Every gate runs; RankScore's check is last so its early return skips none."""
+    if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
+        amw_gate.flag_off_validation(ast, validated, params or {})
     for gate in (breakout_gate, zone_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
             validated.problems.append(Problem(gate.refusal(blocked)))
+    amw_blocked = await amw_gate.blocked_calls(session, user.tenant_id, ast, params or {})
+    if amw_blocked:
+        validated.ok = False
+        validated.problems.append(Problem(amw_gate.refusal(amw_blocked)))
     if ranking_gate.uses_rankscore(ast):
         if not await ranking_gate.enabled(session, user.tenant_id):
             validated.ok = False
@@ -304,15 +316,16 @@ async def update_screen(screen_id: int, body: ScreenBody, user: User = Depends(r
 
 async def _rules_still_valid(session: AsyncSession, user: User, row: ScreenRecord) -> None:
     """N3 S7a review (LOW): the alert rules running this screen are checked against the edited screen - an edit that a
-    rule could not run (RankScore, a zone function on an intrabar rule...) is refused with the rule named."""
+    rule could not run (RankScore, a zone function or an AMW-3 bar-close-only function on an intrabar rule...) is refused
+    with the rule named."""
     from app.alerts.rules_routes import screen_rule_checks
     from app.db.models import AlertRuleRecord
     rules = [(r.id, r.fire_on, r.exchange) for r in await session.scalars(
         select(AlertRuleRecord).where(AlertRuleRecord.tenant_id == row.tenant_id, AlertRuleRecord.screen_id == row.id))]
-    ast = json.loads(row.ast_json)
+    ast, params = json.loads(row.ast_json), json.loads(row.params_json or "{}")
     for rule_id, fire_on, exchange in rules:
         try:
-            await screen_rule_checks(session, user, ast, fire_on, exchange)
+            await screen_rule_checks(session, user, ast, fire_on, exchange, params)
         except HTTPException as exc:
             await session.rollback()
             detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail

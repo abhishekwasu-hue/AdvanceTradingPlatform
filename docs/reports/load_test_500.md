@@ -1,11 +1,14 @@
 # 500-user load test (Phase 0 exit criterion "load test passed")
 
-**Verdict: SLO FAIL on the KVM 2 shape (run 12, CI, 13 Oct; run 13 below when it reports).** Run 12 is the first run
+**Verdict: SLO FAIL on the KVM 2 shape (runs 12 and 13, CI).** Run 12 (13 Oct) is the first run
 on the deciding shape as intended - the API, worker, Postgres, Redis and Caddy on 2 CPUs of 2 physical cores, inside an
 NSE session (the real clock, 12:12 IST), 500 sessions, all logged in, 0 server errors. p95 per key route: dashboard
 reads 67-250 ms, proposals / positions / PAPER account 106-181 ms (inside 0.5 s); chart 593 ms and screener 846 ms
 (over 0.5 s, inside their documented 1.0 s and 2.0 s); login 11.4 s (over both its 0.5 s and its documented 1.0 s: the
-owner's decision, OPEN_QUESTIONS LD-9). Below: "Run 12", then "After run 12 (19 Oct)" for what changed since and why.
+owner's decision, OPEN_QUESTIONS LD-9). Run 13 (19 Oct, after main's merge and the changes below, on the shifted clock)
+was worse on every profile: chart 2.0 s (since #249 a cold chart waits for a second broker token, LD-10), screener
+1.08 s, dashboard 97-411 ms, login 28.2 s with 24 time-outs; a local A/B of the same changes put the reads at 73-206 ms
+and the screener at 0.73 s. Below: "Run 12", then "After run 12 (19 Oct)".
 
 Before run 12: run 10 (13 Oct, the first run inside a session) failed on every route on the quota shape; run 11 placed
 the server on CPUs 0-1, most likely one physical core's two threads, and failed harder; runs 1-9 ran outside a session
@@ -275,8 +278,30 @@ Two causes, both found by measuring:
    the commit (N1: lock wait 83 ms mean on the still-spinning clock). Same rows, same transaction, bcrypt unchanged.
 
 A run after the faketime fix (B2) had another agent's test suite on the server CPUs (264 s of foreign CPU on CPUs 0-1
-in a 344 s run, against 15-28 s before) and is not usable either. The local numbers of 19 Oct are therefore not in the
-tables; the CI run below is the measurement.
+in a 344 s run, against 15-28 s before) and is not usable.
+
+**A/B after the faketime fix** (local, the shifted clock with `FAKETIME_FORCE_MONOTONIC_FIX=0`, back to back, 150 s
+after the ramp; foreign CPU on the server cores 102 s and 132 s of about 345 s, so read the difference, not the level).
+p50 / p95 ms:
+
+| Run | Code | Dashboard p95 (5 reads) | Proposals / positions / paper p95 | Chart | Screener | Login (timed out) | Pool checkout wait mean | Audit lock wait mean | req/s |
+|---|---|---|---|---|---|---|---|---|---|
+| B3 | f2c7f05 (merge, before the changes) | 488 / 1,508 / 1,538 / 1,635 / 1,680 | 1,254 / 949 / 1,249 | 1,284 / 3,661 | 411 / 3,589 | 729 / 30,004 (32) | 116 ms | 2.4 ms | 74.3 |
+| N3 | 6b90273 (the changes) | 73 / 149 / 153 / 170 / 206 | 187 / 98 / 152 | 1,164 / 1,606 | 224 / 727 | 9,832 / 30,004 (28) | 0.9 ms | not in the top statements | 74.1 |
+
+With the changes the reads stay inside 0.5 s and the screener's p95 falls from 3.6 s to 0.73 s; login waits for bcrypt
+instead (bcrypt thread wait 11.4 s mean against 5.4 s: the reads go first, as designed in 4f3250a), and the same number of
+logins time out - the capacity question of LD-9. The chart's p50 is over 1 s in both: see "The chart's budget floor".
+
+### The chart's budget floor (#249)
+
+Since #249 (merged from main) every broker call of `/api/market-data/candles` takes a token from the credential's API
+budget (`app/market_data/api_budget.py`): for Dhan and Zerodha the API's share is 1 call a second per credential
+(`api_limits("dhan")`: per_second 1). A chart makes 2 calls (the history and today's bars, side by side since 887c744),
+so the second waits for the next second: a cold chart cannot answer in under about 1 s. Every load-test user is a Dhan
+session and every chart is cold for its user (BT1b: per-user caches), so chart p50 went from 0.1-0.16 s (L1-L7, run 12)
+to 1.1-1.3 s (B3, N3, run 13), on every shape. The budget protects the broker allowance the worker's exits need
+(ADR-0004); this branch does not change it. OPEN_QUESTIONS LD-10 puts the options to the owner.
 
 ### Changes after run 12
 
@@ -298,8 +323,32 @@ bars are cached under their own session, BT1b, and each run picks 5 of 10 symbol
 
 ### Run 13 (this branch after the merge and the changes above)
 
-Runs on the push of this commit (the workflow runs every push of this branch, which changes the stack); its numbers
-follow in the next commit.
+[39270301515](https://github.com/abhishekwasu-hue/AdvanceTradingPlatform/actions/runs/39270301515), job `load-500`,
+6b90273, 14:35-15:19 UTC, triggered by the push (no manual dispatch). The first load run on the shifted clock (real
+20:07 IST, outside the session; the stack at 10:00 IST) - with a82c49e's faketime setting, which was verified against
+libfaketime's source build here; the Debian package in the CI image could not be checked from the agents' network.
+p50 / p95 / p99 ms, from the job's annotations:
+
+| Profile | Shape | Chart | Screener | Login | Dashboard p95 (5 reads) | Proposals / positions / paper p95 | req/s | Server errors |
+|---|---|---|---|---|---|---|---|---|
+| **Primary (decides)** | pinned: API, worker, Postgres, Redis, Caddy on 2 CPUs of 2 cores | 1,136 / 2,031 / 3,224 | 190 / 1,078 / 2,082 | 1,855 / 28,238 / 30,011 | 97 / 321 / 356 / 360 / 411 | 297 / 187 / 342 | 85.1 | 0.06% (24 logins timed out) |
+| Login burst | same | 1,224 / 2,775 / 4,181 | 253 / 1,594 / 2,298 | 4,851 / 30,023 / 30,058 | 253 / 1,018 / 1,009 / 1,031 / 1,068 | 573 / 345 / 617 | 65.5 | 0.16% (26 without a login) |
+| Busy (think 10 s) | same | 1,914 / 5,633 / 8,407 | 993 / 3,602 / 5,041 | 30,005 / 30,018 / 30,055 | 1,177 / 3,145 / 2,901 / 2,957 / 3,160 | 2,390 / 2,246 / 2,389 | 113.7 | 0.64% (250 without a login) |
+| KVM 2 as a quota | 2 processes, `--cpus 2`, rest unpinned | 1,142 / 2,447 / 3,927 | 178 / 1,611 / 2,954 | 702 / 6,417 / 7,885 | 169 / 653 / 693 / 749 / 878 | 463 / 244 / 367 | 89.0 | 0.00% |
+| Whole runner | 3 processes, no cap | 1,108 / 1,873 / 2,837 | 162 / 969 / 2,136 | 340 / 3,306 / 5,534 | 115 / 285 / 341 / 362 / 391 | 275 / 159 / 249 | 89.5 | 0.00% |
+
+Run 13 is worse than run 12 on every profile, the uncapped runner included, and the local A/B above points the other
+way, so the difference is not the changes alone. What is known: the chart's floor is #249's budget (p50 0.1 -> 1.1 s on
+every shape, above). What is not separated: the rest of main's merge (B3 is the merged code and collapsed locally), the
+shifted clock (first load run on it; the CI image's libfaketime not verified), and the runner (hosted runners vary by up
+to about 2x, "Results"). A run on the real clock inside 09:30-14:00 IST on the same commit separates the clock; it was
+not started here (at most one run per lane turn, and the next session opens after the 20 Oct holiday).
+
+CI on 6b90273 ([39270302008](https://github.com/abhishekwasu-hue/AdvanceTradingPlatform/actions/runs/39270302008)):
+lint, frontend, perf and look-ahead passed; the backend job failed on two of this branch's new tests (shared state in
+the full suite: one session key used by two registries, and a whole-chain audit check on a chain other tests break on
+purpose - both fixed in the next commit) and on `test_contract_notes.py` (2 tests), which fails the same way on main
+(045da0c, run 39257366188) and passes alone: not from this branch.
 
 
 ## The generator change (d9a8f89) - what it changed and how much of the gain it is
@@ -387,9 +436,13 @@ Also tried, and not kept: a per-process limit of 2 CPU-bound threads (run 6: no 
   or most users resuming a session instead of a password login - refresh tokens already do that), a KVM 4, or the
   login p95 left out of the 0.5 s bar (its documented SLO is 1.0 s). OPEN_QUESTIONS LD-9.
 - **The worker inside a session**: done in 2d30252 (one positions select per cycle for every session).
-- **Chart and screener p95 on the KVM 2** (run 12: 593 ms and 846 ms): inside their documented 1.0 s and 2.0 s, over
+- **Chart p95 on the KVM 2**: run 12 593 ms; since #249, at least about 1 s for every cold chart on a Dhan or Zerodha
+  session (the budget floor above; run 13 2.0 s). The owner's call, LD-10.
+- **Screener p95 on the KVM 2** (run 12 846 ms, run 13 1,078 ms; local N3 727 ms): inside its documented 2.0 s, over
   the owner's 0.5 s. The next levers, measured but not taken: the vectorised screen path (a flag, the owner's call) and
   moving the broker client's bar parsing and the candle-cache serialising off the event loop.
+- **Run 13's regression against run 12**: a run on the real clock inside a session on the same commit would separate
+  the shifted clock from main's merge and the runner.
 - **The Hostinger run** (below) decides the 500-user stage.
 
 

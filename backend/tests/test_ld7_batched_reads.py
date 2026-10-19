@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from sqlalchemy import event, select
 
-from app.audit.log import verify_audit_chain
+from app.audit.log import GENESIS_HASH, _compute_hash
 from app.db.models import AuditLogRecord, TradeRecord, UserSessionRecord
 from app.market_data.fanin import Priority, SessionRef, SessionSymbols, UserSessionFanIn
 from app.platform import controls
@@ -100,9 +100,11 @@ def test_admit_many_answers_as_admit_one_symbol_at_a_time():
     async def go():
         for trial in range(60):
             one, many = SessionSymbols(), SessionSymbols()
-            ns = f"u{trial}.c1"
+            # each registry its own session key: with a shared cache backend (the suite's) one key would be both
+            tag = uuid.uuid4().hex[:8]
+            ns_one, ns_many = f"ld7-one-{tag}.c1", f"ld7-many-{tag}.c1"
             # the same history in both registries: positions, charts, an old scan
-            for reg in (one, many):
+            for reg, ns in ((one, ns_one), (many, ns_many)):
                 await reg.replace(ns, Priority.POSITION, [("POS", "NSE")], now - timedelta(seconds=30))
                 await reg.admit(ns, "CH0", "NSE", Priority.CHART, 10, now - timedelta(seconds=20))
                 await reg.admit(ns, "OLD", "NSE", Priority.SCREENER, 10, now - timedelta(seconds=10))
@@ -110,9 +112,9 @@ def test_admit_many_answers_as_admit_one_symbol_at_a_time():
                        for _ in range(rng.randint(0, 6))]
             priority = rng.choice([Priority.CHART, Priority.SCREENER, Priority.WATCHLIST])
             cap, register = rng.randint(1, 6), rng.random() < 0.7
-            expected = [await one.admit(ns, s, e, priority, cap, now, register=register) for s, e in symbols]
-            assert await many.admit_many(ns, symbols, priority, cap, now, register=register) == expected
-            assert await many.load(ns) == await one.load(ns)
+            expected = [await one.admit(ns_one, s, e, priority, cap, now, register=register) for s, e in symbols]
+            assert await many.admit_many(ns_many, symbols, priority, cap, now, register=register) == expected
+            assert await many.load(ns_many) == await one.load(ns_one)
 
     run(go())
 
@@ -213,6 +215,12 @@ def test_a_login_appends_its_audit_row_after_the_session_row(monkeypatch):
 
     async def check():
         async with _session_factory() as session:
-            assert await session.scalar(select(AuditLogRecord).where(AuditLogRecord.event == "user_login").order_by(AuditLogRecord.id.desc()))
-            assert (await verify_audit_chain(session))[0]
+            # this login's row chains off the row before it (other tests in the suite break the shared chain on purpose,
+            # so the check is this row's own link and hash, not the whole table)
+            row = await session.scalar(select(AuditLogRecord).where(AuditLogRecord.event == "user_login", AuditLogRecord.detail == "password")
+                                       .order_by(AuditLogRecord.id.desc()))
+            assert row is not None
+            before = await session.scalar(select(AuditLogRecord).where(AuditLogRecord.id < row.id).order_by(AuditLogRecord.id.desc()))
+            assert row.prev_hash == (before.hash if before is not None else GENESIS_HASH)
+            assert row.hash == _compute_hash(row.prev_hash, row.tenant_id, row.user_id, row.event, row.detail, row.created_at)
     run(check())

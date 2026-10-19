@@ -129,6 +129,7 @@ MA_EXTRA_BARS = 11
 REGIME_EXTRA_BARS = 30
 # Z7a-3: market-zone functions (app/screener/zones.py) - the stored zone snapshots, behind the `market_zones` flag
 ZONES_FLAG = "market_zones"
+RANKINGS_FLAG = "screener_rankings"   # N3 S7a: RankScore (app/screener/ranking.py)
 _ZROLE = Arg("role", STR, "any", False, choices=("any", "demand", "supply"))
 _ZTOL = Arg("tolerance_pct", NUM, 0.5, False)
 _ZFAMILY = Arg("family", STR, "all", False, choices=("all", "zones", "levels"))
@@ -157,6 +158,10 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("Rank", "factor", NUM, "count", (_X,), cost=3.0, cross_sectional=True, timeframed=False, doc="rank of x across the universe (1 = highest)"),
     Spec("PercentileRank", "factor", NUM, "pct", (_X,), (Arg("by", CAT, None, False),), cost=3.0, cross_sectional=True, timeframed=False,
          doc="percentile of x across the universe, optionally within each group of a classifier"),
+    # N3 S7a (spec §2.5): a saved or platform ranking system's 0-100 rank of each symbol across the universe (100 = best)
+    Spec("RankScore", "factor", NUM, "pct", (Arg("system", STR),), cost=3.0, cross_sectional=True, timeframed=False, timeframes=("1d",),
+         needs=("rankings",), flag=RANKINGS_FLAG,
+         doc="0-100 rank of the symbol by a ranking system (a saved one by name, or \"platform:Momentum\" etc.), across the universe"),
     # S1c: the Strategy Builder / scanner indicators (same implementation as app/strategy_engine/declarative.py)
     Spec("PlusDI", "factor", NUM, "index", (Arg("n", "window", 14, False),), doc="+DI"),
     Spec("MinusDI", "factor", NUM, "index", (Arg("n", "window", 14, False),), doc="-DI"),

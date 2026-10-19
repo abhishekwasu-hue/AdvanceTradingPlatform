@@ -142,12 +142,14 @@ def test_last_bar_only_functions_cannot_be_read_back_in_time():
              "PatternBearish": "PatternBearish()", "NearSupport": "NearSupport(0.5)", "NearResistance": "NearResistance(0.5)",
              "Rank": "Rank(close) <= 5", "PercentileRank": "PercentileRank(close) > 50", "PCR": "PCR() > 1", "ChainBias": 'ChainBias() == "BULLISH"',
              "MaxPainDistancePct": "MaxPainDistancePct() < 2", "Sector": 'Sector() == "IT"', "Industry": 'Industry() == "x"',
-             "McapBucket": 'McapBucket() == "large"', "IndexMember": 'IndexMember("NIFTY 50")', "IsFnO": "IsFnO()"}
+             "McapBucket": 'McapBucket() == "large"', "IndexMember": 'IndexMember("NIFTY 50")', "IsFnO": "IsFnO()",
+             "RankScore": 'RankScore("platform:Momentum") > 50'}
     assert set(inner) == set(LAST_BAR_ONLY)
     for name, cond in inner.items():
-        ok = compile_screen(cond, base_tf="5m")[1]
+        tf = "1d" if name == "RankScore" else "5m"                           # N3 S7a: RankScore runs on daily bars only
+        ok = compile_screen(cond, base_tf=tf)[1]
         assert ok.ok, (cond, ok.problems)                                    # on its own: fine (the last bar)
-        _, v = compile_screen(f"Count(5, {cond}) >= 2", base_tf="5m")
+        _, v = compile_screen(f"Count(5, {cond}) >= 2", base_tf=tf)
         assert not v.ok and any("last bar only" in p.message for p in v.problems), cond
     for fn in sorted(READS_HISTORY):
         text = {"Count": "Count(3, PCR() > 1) > 1", "CountStreak": "CountStreak(PCR() > 1) > 1", "CrossAbove": "CrossAbove(PCR(), 1)",

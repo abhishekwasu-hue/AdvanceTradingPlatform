@@ -108,6 +108,25 @@ async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str)
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+def _ranking_check(ast: Any) -> None:
+    """N3 S7a (provisional S7-6): the alert loop does not load ranking systems, so a screen rule using RankScore is
+    refused (it would never fire) - run it from the Screener instead."""
+    from app.screener import nodes
+    from app.screener import ranking as ranking_gate
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    if ranking_gate.uses_rankscore(tree):
+        why = "RankScore(): alerts do not run ranking systems yet - run the screen from the Screener"
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
+async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_on: str, exchange: Optional[str]) -> None:
+    """Every check a screen rule's screen must pass (raises the 422 of the first refusal). Used when a rule is saved and
+    - N3 S7a review (LOW) - when the screen a rule runs is changed, so an edit cannot slip a refused function past it."""
+    await _breakout_check(session, user, ast, fire_on, exchange)
+    await _zone_check(session, user, ast, fire_on)
+    _ranking_check(ast)
+
+
 async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[str, Any]:
     if body.kind == "screen":
         if body.screen_id is None:
@@ -119,8 +138,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
         if not symbols or any(not SYMBOL.fullmatch(s) for s in symbols):
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
-        await _breakout_check(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange)
-        await _zone_check(session, user, json.loads(screen.ast_json), body.fire_on)
+        await screen_rule_checks(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange)
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:

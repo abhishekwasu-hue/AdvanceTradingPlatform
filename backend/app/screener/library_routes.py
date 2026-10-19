@@ -68,10 +68,20 @@ async def _hidden(session: AsyncSession, user: User) -> List[str]:
     return [name for name, src in tx.sources().items() if src.flag and not await flag_enabled(session, src.flag, user.tenant_id)]
 
 
+async def _hidden_screens(session: AsyncSession, user: User) -> List[str]:
+    """Single screens behind a flag of their own (U7 LG2 / LG3 cards) whose flag is off, as the taxonomy route hides them."""
+    on: Dict[str, bool] = {}
+    for flag in set(tx.screen_flags().values()):
+        on[flag] = await flag_enabled(session, flag, user.tenant_id)
+    return [ident for ident, flag in tx.screen_flags().items() if not on[flag]]
+
+
 @router.get("/mirrors")
 async def mirrors(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     await _flags(session, user)
-    return {"mirrors": lib.mirrors(tx.load(), await _hidden(session, user)), "note": lib.MIRROR_NOTE}
+    hidden_ids = set(await _hidden_screens(session, user))
+    listed = [m for m in lib.mirrors(tx.load(), await _hidden(session, user)) if m["mirror_of"] not in hidden_ids]
+    return {"mirrors": listed, "note": lib.MIRROR_NOTE}
 
 
 @router.get("/watch-lists")

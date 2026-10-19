@@ -324,6 +324,26 @@ def test_mirrors_and_watch_lists_endpoints(tx2_on):
     assert {w["id"] for w in lists} == set(lib.WATCH_BY_ID) and all("Count(1, " in w["transition"] for w in lists)
 
 
+def test_mirrors_leave_out_cards_whose_own_flag_is_off(tx2_on):
+    """A legend card behind a flag of its own (U7 LG2 / LG3) and its mirror are listed only while that flag is on - as the
+    taxonomy hides the card itself; running such a mirror is refused anyway (confluence)."""
+    headers, _ = _owner("tx2-mirror-flags@example.com")
+    own = tx.screen_flags()
+    assert own, "the legend slices register their cards' own flags"
+    _set_flags(screener_legends=True, **{flag: False for flag in set(own.values())})
+    try:
+        listed = {m["mirror_of"] for m in client.get("/api/screener/library/mirrors", headers=headers).json()["mirrors"]}
+        assert not listed & set(own)                                            # no card whose own flag is off
+        assert any(i.startswith("legends.") for i in listed)                    # LG1 cards (no own flag) stay listed
+        flag = sorted(set(own.values()))[0]
+        _set_flags(**{flag: True})
+        listed = {m["mirror_of"] for m in client.get("/api/screener/library/mirrors", headers=headers).json()["mirrors"]}
+        long_cards = {s.id for s in tx.load().screens if own.get(s.id) == flag and s.tags.get("direction") == "long"}
+        assert long_cards and long_cards <= listed                               # that slice's long cards are back
+    finally:
+        _set_flags(screener_legends=False, **{flag: False for flag in set(own.values())})
+
+
 def test_confluence_ranks_symbols_by_methods_with_each_screens_result(tx2_on, fake_bars):
     headers, _ = _owner("tx2-confluence@example.com")
     saved = client.post("/api/screener/screens", json={"name": "New 10-day high", "source": "close > Max(high, 10)[1]"}, headers=headers).json()

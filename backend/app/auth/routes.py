@@ -253,8 +253,14 @@ async def _complete_login(session: AsyncSession, user: User, http_request: Reque
     alert, login event, audit, session."""
     new_device = await is_new_device(session, user, http_request)
     await record_login_event(session, email=user.email, user=user, success=True, reason=method, request=http_request)
-    await write_audit_log(session, user.tenant_id, user.id, "user_login", method)
     issued = await start_session(session, user, http_request, mfa_verified=method.startswith("mfa"))
+    # LD-7: the audit row last, right before the commit. Its append takes the audit chain's lock (one for the whole table,
+    # held until the transaction ends), so every login of every process queues on it; with the session row and the token
+    # written first, the lock covers only the audit read, its insert and the commit. Under a login wave on 2 CPUs the
+    # longer window made the logins queue on the lock while holding their pool connections, and the other routes then
+    # waited for a connection (local runs B0 / B1 / L3: the lock wait 150-280 ms mean against about 1 ms). Same rows,
+    # same transaction.
+    await write_audit_log(session, user.tenant_id, user.id, "user_login", method)
     await session.commit()
     if new_device:
         ip = http_request.client.host if http_request.client else "unknown"

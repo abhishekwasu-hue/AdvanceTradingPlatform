@@ -38,7 +38,7 @@ from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
-from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
+from app.screener.runtime import Match, ScreenMemo, SymbolData, closed_only, resample, run_screen, stage_survivors
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/screener", tags=["screener"])
@@ -406,6 +406,17 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
             data.frames["1d"] = df
 
 
+def screen_and_funnel(ast: Any, validated: Any, universe: List[SymbolData], *, base_tf: str, params: Dict[str, Any],
+                      vectorized: bool) -> Tuple[List[Match], Dict[str, Any]]:
+    """The screen's matches and its funnel (`stage_survivors`) on one worker thread. LD-7: one hop off the event loop, not
+    two, and one evaluation memo for both (`runtime.ScreenMemo`): the funnel's stages are the screen's own top-level
+    items, so they are read back from the full evaluation instead of computed a second time."""
+    memo: ScreenMemo = {}
+    matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized, memo=memo)
+    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches, vectorized=vectorized, memo=memo)
+    return matches, stages
+
+
 def missing_data(ast: Any) -> List[str]:
     """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES)."""
     out: List[str] = []
@@ -442,17 +453,18 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                 "yet (sector / index / F&O lists or the option chain); a run uses bars only",
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+    # Z10-d: same matches, less time. LD-7: read before the fetch, while this request still holds its connection (read
+    # after it, the flag took a second pool checkout and a query per run).
+    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
     tier: Dict[str, Any] = {}
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
                                                                user_id=user.id, tier_out=tier, release=True)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
-    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
-    matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
-    stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
-                                     vectorized=vectorized)
+    matches, stages = await asyncio.to_thread(screen_and_funnel, ast, validated, universe, base_tf=base_tf, params=params,
+                                              vectorized=vectorized)
     results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),

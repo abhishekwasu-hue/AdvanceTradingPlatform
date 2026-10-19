@@ -34,7 +34,7 @@ def test_the_lg2_slice_is_in_the_library_and_passes_lint():
     assert lg.lint() == [] and lg.link_problems() == []
     lib = lg.load()
     assert [c.id for c in lib.of(("lg2",))] == LG2_CARDS
-    assert all(c.slice == "lg1" for c in lib.cards if c.id not in LG2_CARDS)
+    assert all(c.slice in ("lg1", "lg3") for c in lib.cards if c.id not in LG2_CARDS)          # LG3: tests/test_n3_lg3_fundamentals.py
     for card in lib.of(("lg2",)):
         assert card.name.startswith(f"{card.short}-style ") and not lg._TRADEMARK.findall(card.name), card.name
     assert "Turtle Soup" in lg.TRADEMARK_TERMS                                            # the Raschke title stays descriptive

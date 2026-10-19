@@ -61,6 +61,7 @@ class SymbolData:
     exchange: Optional[str] = None                         # U6 BK2: the session clock of the intraday breakout functions (None = NSE)
     zones: Optional[Any] = None                            # Z7a-3: app.price_action.zones.read.ZoneTimeline for the zone functions
     ownership: Optional[Any] = None                        # N3 S8a: app.screener.ownership.Ownership (point in time)
+    fundamentals: Optional[Any] = None                     # U7 LG3: app.fundamentals.pit versions (point in time) for the fundamentals functions
 
 
 @dataclass
@@ -386,6 +387,13 @@ class _Eval:
             "Holding": lambda: _ownership(self.data, f, tf, "holding", _text(0, "promoter")),
             "HoldingChange": lambda: _ownership(self.data, f, tf, "holding", _text(0, "promoter"), int(num(1, 1))),
             "DaysToEvent": lambda: _ownership(self.data, f, tf, "event", _text(0, "any")),
+            # U7 LG3: point-in-time fundamentals - the versions known by each bar's close (app/screener/fundamentals.py)
+            "EPSGrowthYoY": lambda: _fundamental(self.data, f, tf, "eps_growth"),
+            "SalesGrowthYoY": lambda: _fundamental(self.data, f, tf, "sales_growth"),
+            "EarningsYield": lambda: _fundamental(self.data, f, tf, "earnings_yield"),
+            "ReturnOnCapital": lambda: _fundamental(self.data, f, tf, "roc"),
+            "GrahamNumber": lambda: _fundamental(self.data, f, tf, "graham_number"),
+            "NCAVPerShare": lambda: _fundamental(self.data, f, tf, "ncav"),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -771,6 +779,11 @@ def _ownership(data: SymbolData, f: pd.DataFrame, tf: str, what: str, arg: str, 
     if what == "event":
         return ownership.days_to_event_series(data, f, tf, arg)
     return ownership.holding_series(data, f, tf, arg, quarters)
+
+
+def _fundamental(data: SymbolData, f: pd.DataFrame, tf: str, measure: str) -> pd.Series:
+    from app.screener.fundamentals import series
+    return series(data, f, tf, measure)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

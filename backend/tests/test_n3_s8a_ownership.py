@@ -383,3 +383,28 @@ def test_another_organisation_s_contributed_rows_are_never_read_nor_change_known
     as_b = client.post("/api/screener/run", headers=b["headers"], json=body)
     assert as_a.status_code == 200 and as_b.status_code == 200, (as_a.text, as_b.text)
     assert as_a.json()["matched"] == [own_sym] and as_b.json()["matched"] == []
+
+
+def test_an_alert_rule_on_a_screen_edited_to_use_ownership_pauses_with_the_reason():
+    """A rule is refused at creation; a saved screen edited afterwards to use an ownership or event function pauses the
+    rule in the bar-close engine (stays active, the reason in last_problem) - it never fails on every symbol with "not
+    loaded" (as LG3 pauses fundamentals)."""
+    from app.alerts import barclose
+    from app.db.models import AlertRuleRecord
+    from tests.test_s4a_barclose import TUE, _rule, ist
+    t = _tenant(_email("rule"), with_credentials=False)
+    rid = _rule(t["tenant_id"], condition='Holding("promoter") > 50', tf="1d")
+    calls = []
+
+    async def fetch(*a, **k):
+        calls.append(a)
+        return {}
+
+    async def go():
+        async with _session_factory() as session:
+            rule = await session.get(AlertRuleRecord, rid)
+            state = await barclose.evaluate_rule(session, rule, ist(TUE + timedelta(days=1), 10, 0), fetch)
+            await session.commit()
+            return state, rule.last_problem, rule.status
+    state, problem, status = _run(go())
+    assert state == ("unsupported", 0) and "do not read ownership or events" in problem and status == "active" and calls == []

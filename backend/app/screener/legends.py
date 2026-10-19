@@ -39,7 +39,8 @@ FLAG = "screener_legends"
 # (default lg1). Every card is filed under the one `legends` source; the taxonomy hides the LG2 screens while their
 # flag is off (`register_screen_flags`), and the API leaves the LG2 cards out.
 FLAG_LG2 = "screener_legends_lg2"
-SLICES: Dict[str, Optional[str]] = {"lg1": None, "lg2": FLAG_LG2}        # slice -> the flag it needs beyond FLAG
+FLAG_LG3 = "screener_legends_lg3"      # U7 LG3: value / growth cards on point-in-time fundamentals (screener_fundamentals to run)
+SLICES: Dict[str, Optional[str]] = {"lg1": None, "lg2": FLAG_LG2, "lg3": FLAG_LG3}   # slice -> the flag it needs beyond FLAG
 LINES: Tuple[str, ...] = ("who", "style", "looks_for", "timeframe")   # plus the source line: five lines in all
 MAX_CARD_LINES = 5
 MAX_LINE_CHARS = tx.MAX_DEFINITION_CHARS
@@ -58,7 +59,7 @@ NOTE = ("Each card describes a published method and an approximation of it as a 
 
 # Spec §1: descriptive titles, never a registered or branded method name (checked case-insensitively in titles).
 TRADEMARK_TERMS: Tuple[str, ...] = ("CAN SLIM", "CANSLIM", "SEPA", "VCP", "Holy Grail", "Turtle Soup", "ConnorsRSI",
-                                    "Connors RSI", "Superperformance", "Super Performance")
+                                    "Connors RSI", "Superperformance", "Super Performance", "Magic Formula")
 # No performance promise: a card describes what a method looks for, never how it did or will do.
 PERFORMANCE_TERMS: Tuple[str, ...] = ("profit", "profits", "profitable", "profitability", "return", "returns", "outperform",
                                       "outperforms", "outperformed", "outperformance", "beat the market", "beats the market",
@@ -88,6 +89,10 @@ def _bounded(words: Sequence[str]) -> re.Pattern[str]:
 
 
 _PERFORMANCE = _bounded(PERFORMANCE_TERMS)
+# U7 LG3: names of accounting ratios, not performance claims - removed before the performance check ("return on capital"
+# is a balance-sheet measure; "returns" on its own stays refused).
+RATIO_NAMES: Tuple[str, ...] = ("return on capital employed", "return on capital", "return on equity", "return on assets")
+_RATIO_NAMES = _bounded(RATIO_NAMES)
 _ENDORSEMENT = _bounded(ENDORSEMENT_TERMS)
 _TRADEMARK = _bounded(TRADEMARK_TERMS)
 
@@ -197,7 +202,7 @@ def wording_problems(where: str, text: str) -> List[str]:
     advice = tx.advice_words(text)
     if advice:
         out.append(f"{where}: advice wording is not allowed ({', '.join(advice)})")
-    perf = list(dict.fromkeys(m.lower() for m in _PERFORMANCE.findall(text or "")))
+    perf = list(dict.fromkeys(m.lower() for m in _PERFORMANCE.findall(_RATIO_NAMES.sub(" ", text or ""))))
     if perf:
         out.append(f"{where}: performance wording is not allowed ({', '.join(perf)})")
     endorse = list(dict.fromkeys(m.lower() for m in _ENDORSEMENT.findall(text or "")))
@@ -501,7 +506,7 @@ tx.register_source(SOURCE, _ids, flag=FLAG)
 tx.register_screen_flags(SOURCE, _screen_flags)
 
 
-__all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "FLAG_LG2", "SLICES", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
+__all__ = ["DATA_FILE", "DISCLAIMER", "FLAG", "FLAG_LG2", "FLAG_LG3", "SLICES", "HEADER", "LINES", "MAX_CARD_LINES", "NOTE", "REVIEW_STATUSES", "SOURCES_FILE", "Card", "Library",
            "LegendsError", "Line", "Param", "Source", "card_payload", "english_problems", "link_problems", "lint", "load", "parse",
            "payload", "people_named", "wording_problems"]
 

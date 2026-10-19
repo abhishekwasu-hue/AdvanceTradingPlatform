@@ -142,6 +142,9 @@ MA_EXTRA_BARS = 11
 REGIME_EXTRA_BARS = 30
 # Z7a-3: market-zone functions (app/screener/zones.py) - the stored zone snapshots, behind the `market_zones` flag
 ZONES_FLAG = "market_zones"
+FUNDAMENTALS_FLAG = "screener_fundamentals"   # U7 LG3: point-in-time fundamentals functions (app/screener/fundamentals.py)
+_FDOC = (" - point in time: the reported figures known by the bar's close (published, never a later restatement);"
+         " NaN when missing or older than a year and a quarter")
 RANKINGS_FLAG = "screener_rankings"   # N3 S7a: RankScore (app/screener/ranking.py)
 OWNERSHIP_FLAG = "screener_ownership"  # N3 S8a: ownership and event functions (app/screener/ownership.py)
 _ODOC = (" - point in time: the rows known by the bar's close (from the day after their cited publication, else from when"
@@ -379,6 +382,19 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          doc="B9: after a range / swing / Donchian / trendline breakout, price left the level and came back within `bars` bars to"
              " hold it - a logical reversal at the level (reversal) or a touch - closing at or beyond it; once per breakout"),
     # Z7a-3: market zones (demand / supply, order blocks, S/R, gaps with their lifecycle) - research only, places no orders
+    # U7 LG3: point-in-time fundamentals (flag screener_fundamentals, off by default)
+    Spec("EPSGrowthYoY", "factor", NUM, "pct", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
+         doc="latest quarter's EPS vs the same quarter a year before, %" + _FDOC),
+    Spec("SalesGrowthYoY", "factor", NUM, "pct", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
+         doc="latest quarter's revenue vs the same quarter a year before, %" + _FDOC),
+    Spec("EarningsYield", "factor", NUM, "pct", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
+         doc="trailing EBIT / enterprise value (close x shares + debt - cash), %" + _FDOC),
+    Spec("ReturnOnCapital", "factor", NUM, "pct", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
+         doc="trailing EBIT / (total assets - current liabilities - cash), %" + _FDOC),
+    Spec("GrahamNumber", "factor", NUM, "price", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
+         doc="sqrt(22.5 x trailing EPS x book value per share)" + _FDOC),
+    Spec("NCAVPerShare", "factor", NUM, "price", (), cost=2.0, min_bars=1, needs=("fundamentals",), flag=FUNDAMENTALS_FLAG,
+         doc="net current asset value per share: (current assets - total liabilities) / shares" + _FDOC),
     Spec("NearZone", "filter", BOOL, None, (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
          doc="true when there is a zone of that role" + _ZDOC),
     Spec("ZoneRole", "classifier", CAT, None, (_ZTOL, _ZFAMILY), cost=3.0, min_bars=1, values=("DEMAND", "SUPPLY"), needs=("zones",),

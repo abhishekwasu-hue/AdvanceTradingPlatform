@@ -1706,6 +1706,40 @@ class FinancialPeriodRecord(Base):
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow)
 
 
+class FinancialPeriodVersionRecord(Base):
+    """U7 LG3 (point in time): every version of a period's reported figures, append-only - the store a screen reads
+    fundamentals from as of a time. `financial_periods` keeps only the latest figures (updated in place), so it cannot
+    say what was known on a past day; this table can.
+
+    `known_from` is when the figures became public, as `app.fundamentals.pit.known_from` sets it: a period's FIRST
+    version from the day after its cited publication date (09:15 IST the next day), else from when ATP ingested it; a
+    later version (a restatement or a correction) only from when ATP ingested it - so a restated figure never reaches
+    back to a day it was not known. Scoped like `financial_periods` (app/fundamentals/visibility.py): `tenant_id` NULL =
+    the shared chain (provider-ingested), set = the chain of the organisation that entered the figures, read by it only.
+    Each (period, tenant) has its own version chain; the shared chain's key is a partial unique index (NULLs differ)."""
+
+    __tablename__ = "financial_period_versions"
+    __table_args__ = (
+        UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", "version", name="uq_financial_period_version_tenant"),
+        Index("uq_financial_period_version_shared", "company_id", "period_type", "period_label", "version", unique=True,
+              postgresql_where=text("tenant_id IS NULL"), sqlite_where=text("tenant_id IS NULL")),
+        Index("ix_financial_period_versions_known", "company_id", "known_from"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
+    company_id: Mapped[int] = mapped_column(ForeignKey("companies.id", ondelete="CASCADE"), nullable=False)
+    period_type: Mapped[str] = mapped_column(String(10), nullable=False)
+    period_label: Mapped[str] = mapped_column(String(20), nullable=False)
+    period_end_date: Mapped[date] = mapped_column(Date, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    figures_json: Mapped[str] = mapped_column(Text, nullable=False)
+    publication_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    known_from: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False)
+    ingested_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    source_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class ShareholdingSnapshotRecord(Base):
     __tablename__ = "shareholding_snapshots"
 

@@ -109,6 +109,7 @@ def _runtime_frame(frame: pd.DataFrame) -> pd.DataFrame:
 def check(exprs: Sequence[str], tf: str, functions: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
     """Each expression parsed and checked as a study: [{expr, ok, problems, kind, unit, lookback, ast}]. `functions`: the
     registry view to check against (AMW-3 review: the flag-off view while `screenql_amw_functions` is off)."""
+    from app.screener import fundamentals as fundamentals_gate
     from app.screener import nodes
     from app.screener import ownership as ownership_gate
     from app.screener.parser import ScreenQLSyntaxError, parse
@@ -136,6 +137,9 @@ def check(exprs: Sequence[str], tf: str, functions: Optional[Dict[str, Any]] = N
         # reason whether `screener_ownership` is on or off (never drawn as NaN, never a runtime "not loaded" error)
         problems += [{"message": f"{m}() needs shareholding patterns and company events, which a chart study does not load yet",
                       "pos": None} for m in ownership_gate.flagged_calls(ast)]
+        # U7 LG3: /run loads the point-in-time fundamentals, a chart study does not - refused with the reason
+        problems += [{"message": f"{m}() needs company fundamentals, which a chart study does not load yet", "pos": None}
+                     for m in fundamentals_gate.flagged_calls(ast)]
         row.update(ok=not problems, problems=problems, kind=sc.kind, unit=sc.unit, ast=ast, text=nodes.to_text(ast),
                    lookback=max([int(v) for v in sc.validated.lookback.values()] or [0]),
                    lookback_by_tf={k: int(v) for k, v in sc.validated.lookback.items()})

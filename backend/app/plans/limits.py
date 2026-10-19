@@ -259,7 +259,12 @@ async def _plan_if_enforced(session: AsyncSession, tenant: Tenant, key: str, kin
 
 
 async def check_v2_count(session: AsyncSession, tenant: Tenant, key: str, current: int) -> None:
-    """Adding one more: refused when the user already has the plan's number."""
+    """Adding one more: refused when the user already has the plan's number.
+
+    Not race-safe by itself: `current` is a count the caller took, and two requests counting at the same time both pass.
+    The caller must serialise per user - e.g. `SELECT users.id ... FOR UPDATE` on the caller's row (held to the commit)
+    before counting, as AMW-2's watchlist create does - or re-count after the insert and undo the one over the limit.
+    The same holds for `check_v2_amount`."""
     found = await _plan_if_enforced(session, tenant, key, COUNT)
     if found is None:
         return

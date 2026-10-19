@@ -31,6 +31,7 @@ import httpx
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
                                 BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, OptionChainRow, Quote)
 from app.brokers.shared_http import shared_client
@@ -54,6 +55,8 @@ ORDER_TYPE_MAP = {"MARKET": "MARKET", "LIMIT": "LIMIT", "SL": "STOP_LOSS", "SL-M
 ORDER_TYPE_BACK = {v: k for k, v in ORDER_TYPE_MAP.items()}
 PRODUCT_MAP = {"MIS": "INTRADAY", "CNC": "CNC", "NRML": "MARGIN", "MTF": "MTF", "BO": "BO", "CO": "CO"}
 PRODUCT_BACK = {v: k for k, v in PRODUCT_MAP.items()}
+# An order's `exchangeSegment` -> platform venue (re-exit guard; indices never carry orders).
+_SEGMENT_VENUE = {"NSE_EQ": "NSE", "NSE_FNO": "NFO", "BSE_EQ": "BSE", "BSE_FNO": "BFO", "MCX_COMM": "MCX"}
 STATUS_MAP = {"TRADED": "COMPLETE", "CANCELLED": "CANCELLED", "REJECTED": "REJECTED", "EXPIRED": "EXPIRED", "PENDING": "OPEN", "TRANSIT": "OPEN", "PART_TRADED": "OPEN", "TRIGGERED": "OPEN"}
 INTERVAL_MAP = {"1min": "1", "5min": "5", "15min": "15", "25min": "25", "60min": "60"}
 INSTRUMENT_KIND = {"EQUITY": "EQUITY", "INDEX": "INDEX", "FUTIDX": "FUTIDX", "OPTIDX": "OPTIDX", "FUTSTK": "FUTSTK", "OPTSTK": "OPTSTK", "FUTCOM": "FUTCOM", "OPTFUT": "OPTFUT"}
@@ -416,7 +419,9 @@ class DhanBroker(BrokerInterface):
                                          quantity=float(o.get("quantity") or 0), filled_quantity=float(o.get("filledQty") or 0),
                                          order_type=ORDER_TYPE_BACK.get(str(o.get("orderType") or ""), str(o.get("orderType") or "")), status=STATUS_MAP.get(str(o.get("orderStatus") or "").upper(), "OPEN"),
                                          price=float(o.get("price") or 0) or None, average_price=float(o.get("averageTradedPrice") or 0) or None,
-                                         placed_at=_parse_time(o.get("createTime") or o.get("updateTime"))))
+                                         placed_at=parse_broker_timestamp(_parse_time(o.get("createTime") or o.get("updateTime"))),
+                                         tag=o.get("correlationId") or None, product=PRODUCT_BACK.get(str(o.get("productType") or "")) or None,
+                                         exchange=_SEGMENT_VENUE.get(str(o.get("exchangeSegment") or "").upper())))
         return out
 
     async def get_trade_book(self) -> List[BrokerTradeEntry]:

@@ -2,7 +2,7 @@
 and the proposal list (tenant, status, newest first by id).
 
 Revision ID: c5f7e9a1b3d4
-Revises: b4e6d8f0a2c3 (#221 ix_trades_open, itself on main's head f3b5d7a9c1e2)
+Revises: e2a4c6e8f0b3 (main's head after #256: trades.exit_sent_at)
 Create Date: 2026-10-12 21:30:00
 """
 from typing import Sequence, Union
@@ -10,7 +10,7 @@ from typing import Sequence, Union
 from alembic import op
 
 revision: str = 'c5f7e9a1b3d4'
-down_revision: Union[str, Sequence[str], None] = 'b4e6d8f0a2c3'
+down_revision: Union[str, Sequence[str], None] = 'e2a4c6e8f0b3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - two indexes no query requires; the previous release runs unchanged on this schema (a code-only

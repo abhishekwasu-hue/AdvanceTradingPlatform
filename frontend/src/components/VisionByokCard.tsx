@@ -169,12 +169,24 @@ export default function VisionByokCard() {
           <div>
             <div className="text-fg-muted mb-1">Which charts to audit</div>
             <div className="flex flex-wrap gap-3">
-              {AUDIT_LABELS.map(({ key, label }) => (
-                <label key={key} className="flex items-center gap-1 text-fg">
-                  <input type="checkbox" checked={status.audit[key]} disabled={busy} onChange={(e) => savePrefs({ audit: { [key]: e.target.checked } })} /> {label}
-                </label>
-              ))}
+              {AUDIT_LABELS.map(({ key, label }) => {
+                const v3 = key !== "proposals";
+                const off = v3 && status.scope != null && !status.scope.v3_enabled;
+                return (
+                  <label key={key} className={`flex items-center gap-1 ${off ? "text-fg-muted" : "text-fg"}`}
+                         title={off ? "Not enabled for your organisation yet" : undefined}>
+                    <input type="checkbox" checked={status.audit[key]} disabled={busy || off} onChange={(e) => savePrefs({ audit: { [key]: e.target.checked } })} /> {label}
+                  </label>
+                );
+              })}
             </div>
+            {status.scope && (
+              <p className="mt-1 text-[11px] text-fg-muted">
+                {status.scope.v3_enabled
+                  ? `Scan alerts: alerts of rules you created, at most ${status.scope.scan_audits_per_hour} per hour. Daily review: after ${status.scope.daily_review_at} IST on trading days, up to ${status.scope.daily_review_max_symbols} of your own symbols (your deployments, then your symbol alerts), ${status.scope.daily_review_timeframe} chart.`
+                  : "Scan-alert and daily-review audits are not enabled for your organisation yet."}
+              </p>
+            )}
           </div>
           <div>
             <div className="text-fg-muted mb-1">Where reports go</div>

@@ -15,6 +15,10 @@ import { legacyCopilotPath } from "./copilot/tabs";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
+const ContractChartWindow = lazy(() => import("./pages/ContractChartWindow"));
+const FuturesBasisWindow = lazy(() => import("./pages/FuturesBasisWindow"));
+// CH5: the multi-chart workspace (flag `chart_workspace`), its own tab and chunk like the single chart.
+const ChartWorkspace = lazy(() => import("./pages/ChartWorkspace"));
 // Z10-e (G7): the public status page - no login, no shell, its own small chunk.
 const StatusPage = lazy(() => import("./pages/StatusPage"));
 // PW6: loaded on first open. The top bar sits outside every error boundary, so a chunk that fails to load (offline)
@@ -259,12 +263,25 @@ export default function App() {
     );
   }
   // `?chart=SYMBOL` is a chart opened in its own browser tab (a chart's "New tab" button): just the chart, no shell.
+  // `?workspace=1` (CH5) is the multi-chart workspace, also on its own.
   const params = new URLSearchParams(window.location.search);
   return (
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          {params.has("chart") ? (
+          {params.has("basis") ? (
+            <ErrorBoundary title="The futures basis chart">
+              <Suspense fallback={null}><FuturesBasisWindow params={params} /></Suspense>
+            </ErrorBoundary>
+          ) : params.has("contract") ? (
+            <ErrorBoundary title="The contract chart">
+              <Suspense fallback={null}><ContractChartWindow params={params} /></Suspense>
+            </ErrorBoundary>
+          ) : params.has("workspace") ? (
+            <ErrorBoundary title="The chart workspace">
+              <Suspense fallback={null}><ChartWorkspace params={params} /></Suspense>
+            </ErrorBoundary>
+          ) : params.has("chart") ? (
             <ErrorBoundary title="The chart">
               <Suspense fallback={null}><ChartWindow params={params} /></Suspense>
             </ErrorBoundary>

@@ -183,7 +183,9 @@ def test_settings_defaults_bounds_and_ceilings():
     assert body["settings"] == by_default.RiskSettings.defaults().as_dict()
     assert body["settings"] == {"risk_per_trade_pct": app_config.RISK_DEFAULT_RISK_PER_TRADE_PCT, "risk_per_trade_amount": app_config.RISK_DEFAULT_RISK_PER_TRADE_AMOUNT,
                                 "daily_loss_pct": app_config.RISK_DEFAULT_DAILY_LOSS_PCT, "max_trades_per_day": app_config.RISK_DEFAULT_MAX_TRADES_PER_DAY,
-                                "min_rr": app_config.RISK_DEFAULT_MIN_RR}
+                                "min_rr": app_config.RISK_DEFAULT_MIN_RR,
+                                # N1 F2: the portfolio caps, 0 = no limit by default
+                                "max_sector_pct": 0.0, "max_correlated_risk_pct": 0.0, "max_open_positions": 0}
     assert body["capital_basis"] == app_config.PAPER_STARTING_CAPITAL and body["lockout"] is None
     assert "never locked" in body["exits"]
     assert client.put("/api/paper/risk", headers=t["headers"], json={"risk_per_trade_pct": 3.0}).status_code == 422     # above the 2% ceiling

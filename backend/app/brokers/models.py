@@ -125,7 +125,15 @@ class BrokerOrderStatus(BaseModel):
     status: str
     price: Optional[float] = None
     average_price: Optional[float] = None
+    # When the broker took the order: an aware UTC datetime (adapters normalise it with `parse_broker_timestamp`, where a
+    # naive broker time is IST); None when the broker does not say.
     placed_at: Optional[datetime] = None
+    # Re-exit guard: the order's tag / remarks as the broker echoes it, and its product (platform name: MIS / NRML / CNC)
+    # and exchange (platform venue: NSE / NFO / BSE / BFO / MCX) - None when the broker does not say. Used to tell an exit
+    # this platform placed from a manual order on the same symbol.
+    tag: Optional[str] = None
+    product: Optional[str] = None
+    exchange: Optional[str] = None
 
 
 class BrokerTradeEntry(BaseModel):

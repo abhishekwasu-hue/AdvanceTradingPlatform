@@ -4,11 +4,12 @@ routes.py so the analysis engines (which only ever see the Pydantic models) neve
 SQLAlchemy.
 """
 import json
-from typing import List, Optional
+from typing import Any, List, Optional, Tuple
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db import models as _models
 from app.db.models import (
     CompanyRecord,
     CorporateActionRecord,
@@ -18,6 +19,7 @@ from app.db.models import (
     SectorMetricRecord,
     ShareholdingSnapshotRecord,
 )
+from app.fundamentals.visibility import visible
 from app.fundamentals.models import (
     Bias,
     CompanyProfile,
@@ -98,7 +100,7 @@ def financial_period_to_model(record: FinancialPeriodRecord) -> FinancialPeriod:
     )
 
 
-def financial_period_from_model(company_id: int, period: FinancialPeriod, created_by: Optional[int]) -> FinancialPeriodRecord:
+def financial_period_from_model(company_id: int, period: FinancialPeriod, created_by: Optional[int], *, tenant_id: Optional[int]) -> FinancialPeriodRecord:
     return FinancialPeriodRecord(
         company_id=company_id, period_type=period.period_type.value, period_label=period.period_label,
         period_end_date=period.period_end_date, revenue=period.revenue, cogs=period.cogs,
@@ -112,7 +114,7 @@ def financial_period_from_model(company_id: int, period: FinancialPeriod, create
         inventory=period.inventory, payables=period.payables,
         contingent_liabilities=period.contingent_liabilities, shareholders_equity=period.shareholders_equity,
         total_assets=period.total_assets, source_json=_source_to_json(period.source),
-        created_by=created_by,
+        created_by=created_by, tenant_id=tenant_id,
     )
 
 
@@ -124,11 +126,11 @@ def shareholding_to_model(record: ShareholdingSnapshotRecord) -> ShareholdingSna
     )
 
 
-def shareholding_from_model(company_id: int, snapshot: ShareholdingSnapshot, created_by: Optional[int]) -> ShareholdingSnapshotRecord:
+def shareholding_from_model(company_id: int, snapshot: ShareholdingSnapshot, created_by: Optional[int], *, tenant_id: Optional[int]) -> ShareholdingSnapshotRecord:
     return ShareholdingSnapshotRecord(
         company_id=company_id, as_of_date=snapshot.as_of_date, promoter_pct=snapshot.promoter_pct,
         promoter_pledge_pct=snapshot.promoter_pledge_pct, fii_pct=snapshot.fii_pct, dii_pct=snapshot.dii_pct,
-        public_pct=snapshot.public_pct, source_json=_source_to_json(snapshot.source), created_by=created_by,
+        public_pct=snapshot.public_pct, source_json=_source_to_json(snapshot.source), created_by=created_by, tenant_id=tenant_id,
     )
 
 
@@ -143,14 +145,14 @@ def corporate_action_to_model(record: CorporateActionRecord) -> CorporateAction:
     )
 
 
-def corporate_action_from_model(company_id: int, action: CorporateAction, created_by: Optional[int]) -> CorporateActionRecord:
+def corporate_action_from_model(company_id: int, action: CorporateAction, created_by: Optional[int], *, tenant_id: Optional[int]) -> CorporateActionRecord:
     return CorporateActionRecord(
         company_id=company_id, action_type=action.action_type, announced_date=action.announced_date,
         headline=action.headline, description=action.description,
         expected_revenue_impact=action.expected_revenue_impact.value if action.expected_revenue_impact else None,
         expected_margin_impact=action.expected_margin_impact.value if action.expected_margin_impact else None,
         expected_eps_impact=action.expected_eps_impact.value if action.expected_eps_impact else None,
-        source_json=_source_to_json(action.source), created_by=created_by,
+        source_json=_source_to_json(action.source), created_by=created_by, tenant_id=tenant_id,
     )
 
 
@@ -161,41 +163,112 @@ def qualitative_factor_to_model(record: QualitativeFactorRecord) -> QualitativeF
     )
 
 
-def qualitative_factor_from_model(company_id: int, factor: QualitativeFactor, created_by: Optional[int]) -> QualitativeFactorRecord:
+def qualitative_factor_from_model(company_id: int, factor: QualitativeFactor, created_by: Optional[int], *, tenant_id: Optional[int]) -> QualitativeFactorRecord:
     return QualitativeFactorRecord(
         company_id=company_id, category=factor.category, label=factor.label, score=factor.score,
-        note=factor.note, source_json=_source_to_json(factor.source), created_by=created_by,
+        note=factor.note, source_json=_source_to_json(factor.source), created_by=created_by, tenant_id=tenant_id,
     )
 
 
-async def get_company_by_symbol(session: AsyncSession, symbol: str) -> Optional[CompanyRecord]:
-    return await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper()))
+async def get_company_by_symbol(session: AsyncSession, symbol: str, *, viewer: Optional[int]) -> Optional[CompanyRecord]:
+    """The company the viewer may see: its own organisation's profile for the symbol when it entered one, else the shared
+    one (app/fundamentals/visibility.py). Another organisation's private profile is never returned and never hides the
+    shared one (a symbol is unique per scope, not globally)."""
+    rows = list(await session.scalars(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper(), visible(CompanyRecord, viewer))
+                                      .order_by(CompanyRecord.id)))
+    own = [r for r in rows if viewer is not None and r.tenant_id == viewer]
+    shared = [r for r in rows if r.tenant_id is None]
+    return own[0] if own else (shared[0] if shared else None)
 
 
-async def list_financial_periods(session: AsyncSession, company_id: int) -> List[FinancialPeriodRecord]:
+async def find_shared_company(session: AsyncSession, symbol: str) -> Optional[CompanyRecord]:
+    """The shared (provider / platform) profile of a symbol - at most one (a partial unique index)."""
+    return await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper(), CompanyRecord.tenant_id.is_(None)))
+
+
+async def find_own_company(session: AsyncSession, symbol: str, tenant_id: int) -> Optional[CompanyRecord]:
+    """The organisation's own profile of a symbol - at most one per organisation."""
+    return await session.scalar(select(CompanyRecord).where(CompanyRecord.symbol == symbol.upper(), CompanyRecord.tenant_id == tenant_id))
+
+
+async def list_visible_companies(session: AsyncSession, *, viewer: Optional[int], sector: Optional[str] = None) -> List[CompanyRecord]:
+    """One profile per symbol, as `get_company_by_symbol` picks it (the viewer's own over the shared one)."""
+    q = select(CompanyRecord).where(visible(CompanyRecord, viewer))
+    if sector is not None:
+        q = q.where(CompanyRecord.sector.ilike(sector))
+    best: dict = {}
+    for r in await session.scalars(q.order_by(CompanyRecord.symbol, CompanyRecord.id)):
+        cur = best.get(r.symbol)
+        if cur is None or (r.tenant_id is not None and cur.tenant_id is None):
+            best[r.symbol] = r
+    return [best[k] for k in sorted(best)]
+
+
+# The period-version chain (LG3, `financial_period_versions`) where this build has it: its rows hang off a company too.
+_PERIOD_VERSIONS: Optional[Any] = getattr(_models, "FinancialPeriodVersionRecord", None)
+
+# Every table whose rows hang off a company (company_id): folding a private profile into the shared one moves them -
+# then the private profile is deleted, and anything left on it would go with it (ON DELETE CASCADE). The fold test
+# (tests/test_shared_fundamentals_lows.py) fails when a table with a foreign key to `companies` is missing here.
+COMPANY_CHILDREN: Tuple[Any, ...] = (FinancialPeriodRecord, ShareholdingSnapshotRecord, CorporateActionRecord, QualitativeFactorRecord,
+                                     EarningsCalendarEventRecord, SectorMetricRecord) + ((_PERIOD_VERSIONS,) if _PERIOD_VERSIONS is not None else ())
+
+# The children keyed by period (company, period_type, period_label, tenant[, version]): moving one onto a company that
+# already has the organisation's own row for that period would break the key.
+PERIOD_KEYED: Tuple[Any, ...] = (FinancialPeriodRecord,) + ((_PERIOD_VERSIONS,) if _PERIOD_VERSIONS is not None else ())
+
+
+async def fold_conflicts(session: AsyncSession, from_company_id: int, to_company_id: int, *, tenant_id: int) -> List[str]:
+    """The organisation's own periods (or period versions) present on both companies (moving would break the period
+    key): labels."""
+    out: List[str] = []
+    for model in PERIOD_KEYED:
+        mine = await session.scalars(select(model).where(model.company_id == from_company_id, model.tenant_id == tenant_id))
+        there = {(r.period_type, r.period_label) for r in await session.scalars(
+            select(model).where(model.company_id == to_company_id, model.tenant_id == tenant_id))}
+        for r in mine:
+            label = f"{r.period_type} {r.period_label}"
+            if (r.period_type, r.period_label) in there and label not in out:
+                out.append(label)
+    return out
+
+
+async def move_children(session: AsyncSession, from_company_id: int, to_company_id: int, *, tenant_id: int) -> int:
+    """Re-point the `tenant_id` organisation's own rows from one company to another (their scope is unchanged). Does
+    not commit. Returns how many rows moved."""
+    from sqlalchemy import update
+    moved = 0
+    for model in COMPANY_CHILDREN:
+        res = await session.execute(update(model).where(model.company_id == from_company_id, model.tenant_id == tenant_id)
+                                    .values(company_id=to_company_id).execution_options(synchronize_session=False))
+        moved += int(getattr(res, "rowcount", 0) or 0)
+    return moved
+
+
+async def list_financial_periods(session: AsyncSession, company_id: int, *, viewer: Optional[int]) -> List[FinancialPeriodRecord]:
     rows = await session.scalars(
-        select(FinancialPeriodRecord).where(FinancialPeriodRecord.company_id == company_id).order_by(FinancialPeriodRecord.period_end_date)
+        select(FinancialPeriodRecord).where(FinancialPeriodRecord.company_id == company_id, visible(FinancialPeriodRecord, viewer)).order_by(FinancialPeriodRecord.period_end_date)
     )
     return list(rows)
 
 
-async def list_shareholding_history(session: AsyncSession, company_id: int) -> List[ShareholdingSnapshotRecord]:
+async def list_shareholding_history(session: AsyncSession, company_id: int, *, viewer: Optional[int]) -> List[ShareholdingSnapshotRecord]:
     rows = await session.scalars(
-        select(ShareholdingSnapshotRecord).where(ShareholdingSnapshotRecord.company_id == company_id).order_by(ShareholdingSnapshotRecord.as_of_date)
+        select(ShareholdingSnapshotRecord).where(ShareholdingSnapshotRecord.company_id == company_id, visible(ShareholdingSnapshotRecord, viewer)).order_by(ShareholdingSnapshotRecord.as_of_date)
     )
     return list(rows)
 
 
-async def list_corporate_actions(session: AsyncSession, company_id: int) -> List[CorporateActionRecord]:
+async def list_corporate_actions(session: AsyncSession, company_id: int, *, viewer: Optional[int]) -> List[CorporateActionRecord]:
     rows = await session.scalars(
-        select(CorporateActionRecord).where(CorporateActionRecord.company_id == company_id).order_by(CorporateActionRecord.announced_date.desc())
+        select(CorporateActionRecord).where(CorporateActionRecord.company_id == company_id, visible(CorporateActionRecord, viewer)).order_by(CorporateActionRecord.announced_date.desc())
     )
     return list(rows)
 
 
-async def list_qualitative_factors(session: AsyncSession, company_id: int) -> List[QualitativeFactorRecord]:
+async def list_qualitative_factors(session: AsyncSession, company_id: int, *, viewer: Optional[int]) -> List[QualitativeFactorRecord]:
     rows = await session.scalars(
-        select(QualitativeFactorRecord).where(QualitativeFactorRecord.company_id == company_id)
+        select(QualitativeFactorRecord).where(QualitativeFactorRecord.company_id == company_id, visible(QualitativeFactorRecord, viewer))
     )
     return list(rows)
 
@@ -207,16 +280,16 @@ def calendar_event_to_model(record: EarningsCalendarEventRecord) -> EarningsCale
     )
 
 
-def calendar_event_from_model(company_id: int, event: EarningsCalendarEvent, created_by: Optional[int]) -> EarningsCalendarEventRecord:
+def calendar_event_from_model(company_id: int, event: EarningsCalendarEvent, created_by: Optional[int], *, tenant_id: Optional[int]) -> EarningsCalendarEventRecord:
     return EarningsCalendarEventRecord(
         company_id=company_id, event_type=event.event_type, event_date=event.event_date,
-        description=event.description, source_json=_source_to_json(event.source), created_by=created_by,
+        description=event.description, source_json=_source_to_json(event.source), created_by=created_by, tenant_id=tenant_id,
     )
 
 
-async def list_calendar_events(session: AsyncSession, company_id: int) -> List[EarningsCalendarEventRecord]:
+async def list_calendar_events(session: AsyncSession, company_id: int, *, viewer: Optional[int]) -> List[EarningsCalendarEventRecord]:
     rows = await session.scalars(
-        select(EarningsCalendarEventRecord).where(EarningsCalendarEventRecord.company_id == company_id).order_by(EarningsCalendarEventRecord.event_date)
+        select(EarningsCalendarEventRecord).where(EarningsCalendarEventRecord.company_id == company_id, visible(EarningsCalendarEventRecord, viewer)).order_by(EarningsCalendarEventRecord.event_date)
     )
     return list(rows)
 
@@ -228,15 +301,15 @@ def sector_metric_to_model(record: SectorMetricRecord) -> SectorMetric:
     )
 
 
-def sector_metric_from_model(company_id: int, metric: SectorMetric, created_by: Optional[int]) -> SectorMetricRecord:
+def sector_metric_from_model(company_id: int, metric: SectorMetric, created_by: Optional[int], *, tenant_id: Optional[int]) -> SectorMetricRecord:
     return SectorMetricRecord(
         company_id=company_id, period_label=metric.period_label, metric_code=metric.metric_code.upper(),
-        value=metric.value, source_json=_source_to_json(metric.source), created_by=created_by,
+        value=metric.value, source_json=_source_to_json(metric.source), created_by=created_by, tenant_id=tenant_id,
     )
 
 
-async def list_sector_metrics(session: AsyncSession, company_id: int) -> List[SectorMetricRecord]:
+async def list_sector_metrics(session: AsyncSession, company_id: int, *, viewer: Optional[int]) -> List[SectorMetricRecord]:
     rows = await session.scalars(
-        select(SectorMetricRecord).where(SectorMetricRecord.company_id == company_id).order_by(SectorMetricRecord.period_label)
+        select(SectorMetricRecord).where(SectorMetricRecord.company_id == company_id, visible(SectorMetricRecord, viewer)).order_by(SectorMetricRecord.period_label)
     )
     return list(rows)

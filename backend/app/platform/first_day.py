@@ -209,7 +209,7 @@ async def run(
                                        title="First PAPER day check", message=f"Test message from first_paper_day_check.py for {tenant.name}. If you can read this, {channel.channel_type.lower()} alerts work.",
                                        created_at=now)
             try:
-                await sender(channel, probe)
+                await sender(channel, probe, session=session)          # S10: gated sends need the session to check the flag
                 report.checks.append(Check(f"alert_test.{channel.channel_type}", f"Alert channel test message - {channel.channel_type}", "ok", "sent", section="probe"))
             except Exception as exc:  # noqa: BLE001 - surfacing the error is the point
                 report.checks.append(Check(f"alert_test.{channel.channel_type}", f"Alert channel test message - {channel.channel_type}", "fail", str(exc)[:300],

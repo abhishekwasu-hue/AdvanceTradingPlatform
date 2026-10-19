@@ -17,7 +17,7 @@ The liquidity floor is a hard filter: a signal below it is left out (counted in 
 
 The STATUS reads the bars after the signal (as of the run's last bar): failed (a close back inside the fail level within
 failed_break_bars), accepted (acceptance_closes consecutive closes beyond the level, or a retest that held), pending
-(too few bars yet) or unconfirmed. A wick beyond the level with the close back inside is never a signal (screens.py).
+(too few bars yet) or unconfirmed. U6 BK3: a B3 Watchlist row (a base ready under its pivot, not a break) is "ready". A wick beyond the level with the close back inside is never a signal (screens.py).
 PAPER / research only: nothing here places, changes or blocks an order.
 """
 from __future__ import annotations
@@ -31,7 +31,7 @@ import pandas as pd
 from app.screener.breakouts import params as bp
 from app.screener.breakouts import session as ses
 from app.screener.breakouts import style
-from app.screener.breakouts.screens import INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS, Bars, evaluate_screen
+from app.screener.breakouts.screens import INTRADAY_SCREENS, SCREEN_TIMEFRAMES, SCREENS, Bars, evaluate_screen, is_state
 
 DISCLAIMER = "Breakout matches are symbols whose bars passed the screen's rules; they are not recommendations."
 
@@ -252,7 +252,10 @@ def run_breakout(screen: str, frames: Dict[str, pd.DataFrame], signal_tf: str, *
             row = df.iloc[j]
             tr = {tf: trends[tf].iloc[j] for tf in context}
             g = grade_signal(b, int(j), side, row, tr, p)
-            status, retest, decided = _status(b, int(j), sign, float(row["level"]), float(row["fail_level"]), p)
+            if is_state(screen, p):                     # U6 BK3 B3 Watchlist: a base ready below its pivot, nothing broken yet
+                status, retest, decided = "ready", None, None
+            else:
+                status, retest, decided = _status(b, int(j), sign, float(row["level"]), float(row["fail_level"]), p)
             a = b.atr_prev[j]
             close = float(b.c[j])
             base_high, base_low = row["base_high"], row["base_low"]
@@ -266,6 +269,7 @@ def run_breakout(screen: str, frames: Dict[str, pd.DataFrame], signal_tf: str, *
                                     if np.isfinite(base_high) and np.isfinite(base_low) and base_low != 0 else None),
                 "event": row["event"], "days_since": None if not np.isfinite(row["days_since"]) else int(row["days_since"]),
                 "through": bool(row["through"]) if screen == "B14" else None,
+                "measured_move": round(float(row["measured_move"]), 6) if np.isfinite(row["measured_move"]) else None,   # U6 BK4
                 "htf": tr, "htf_pass": htf_pass(list(tr.values()), side, p["htf_filter"]),
                 "grade": g["grade"], "points": g["points"], "why": g["why"], "checks": g["checks"], "stop_ref": g["stop_ref"],
                 "status": status, "retest": retest, "decided_bar": decided,

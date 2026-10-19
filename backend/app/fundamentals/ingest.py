@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -167,13 +168,16 @@ class UpsertSummary:
         return {"created": self.created, "updated": self.updated, "labels": self.labels}
 
 
-async def upsert_financial_periods(session: AsyncSession, company: CompanyRecord, periods: List[FinancialPeriod], user_id: Optional[int]) -> UpsertSummary:
-    """Create or update each period on (period_type, period_label). Does not commit."""
-    existing = {(r.period_type, r.period_label): r for r in await db.list_financial_periods(session, company.id)}
+async def upsert_financial_periods(session: AsyncSession, company: CompanyRecord, periods: List[FinancialPeriod], user_id: Optional[int],
+                                   *, tenant_id: int) -> UpsertSummary:
+    """Create or update each period on (period_type, period_label) - this organisation's own rows only (a shared row or
+    another organisation's is never overwritten; app/fundamentals/visibility.py). Does not commit."""
+    own = [r for r in await db.list_financial_periods(session, company.id, viewer=tenant_id) if r.tenant_id == tenant_id]
+    existing = {(r.period_type, r.period_label): r for r in own}
     summary = UpsertSummary()
     for period in periods:
         key = (period.period_type.value, period.period_label)
-        fresh = db.financial_period_from_model(company.id, period, user_id)
+        fresh = db.financial_period_from_model(company.id, period, user_id, tenant_id=tenant_id)
         record = existing.get(key)
         if record is None:
             session.add(fresh)
@@ -181,7 +185,7 @@ async def upsert_financial_periods(session: AsyncSession, company: CompanyRecord
             summary.created += 1
         else:
             for column in FinancialPeriodRecord.__table__.columns.keys():
-                if column in ("id", "company_id", "created_by", "created_at"):
+                if column in ("id", "company_id", "created_by", "created_at", "tenant_id"):
                     continue
                 setattr(record, column, getattr(fresh, column))
             summary.updated += 1
@@ -230,6 +234,36 @@ PROFILE_REFRESH_FIELDS = ("name", "isin", "sector", "industry", "sub_industry", 
                           "bse_code", "promoter_holding_pct", "fii_holding_pct", "dii_holding_pct", "public_holding_pct", "promoter_pledge_pct")
 
 
+# The profile fields the provider does not give: an organisation's own entries, cleared when its company becomes shared.
+HAND_FIELDS = ("headquarters", "website", "business_description", "domestic_revenue_pct", "international_revenue_pct", "sub_industry",
+               "market_cap", "cap_category", "fii_holding_pct", "dii_holding_pct", "public_holding_pct", "promoter_pledge_pct",
+               "promoter_holding_pct", "face_value", "listing_date", "bse_code", "isin")
+
+
+def promote_to_shared(record: CompanyRecord, fetched: CompanyProfile) -> None:
+    """An organisation's own company profile becomes the shared one, from the provider's profile only."""
+    for name in HAND_FIELDS:
+        setattr(record, name, None)
+    record.business_segments_json = "[]"
+    record.cyclical = None
+    record.source_json = None
+    record.name = fetched.name or record.symbol
+    record.sector = fetched.sector or "Unknown"
+    record.industry = fetched.industry or "Unknown"
+    merge_profile(record, fetched)
+    record.tenant_id = None
+    record.created_by = None          # the provider's content now, nobody's: who asked for it is in the audit log
+
+
+def replace_profile(record: CompanyRecord, fetched: CompanyProfile) -> None:
+    """Every profile field becomes the provider's (empty where it gives none) - unlike `merge_profile`, nothing entered
+    by hand survives. For a shared profile whose content cannot be trusted (`repair_shared --refetch`)."""
+    db.apply_company_fields(record, fetched)
+    record.name = fetched.name or record.symbol
+    record.sector = fetched.sector or "Unknown"
+    record.industry = fetched.industry or "Unknown"
+
+
 def merge_profile(record: CompanyRecord, fetched: CompanyProfile) -> List[str]:
     """Copy the provider's non-empty fields onto the record; hand-entered fields it lacks survive. Returns the changed columns."""
     changed: List[str] = []
@@ -262,13 +296,59 @@ class RefreshSummary:
                 "shareholding_added": self.shareholding_added, "announcements_added": self.announcements_added, "errors": self.errors}
 
 
+SHARED_PROFILE_EVENT = "fundamentals.shared_profile_from_provider"
+
+
+async def _audit_shared_profile(session: AsyncSession, tenant_id: Optional[int], user_id: Optional[int], company: CompanyRecord, how: str,
+                                *, private_author: Optional[int] = None) -> None:
+    """Who made a shared profile from the provider (the row itself records no author - its content is the provider's)."""
+    from app.audit.log import write_audit_log
+    detail: Dict[str, object] = {"company_id": company.id, "symbol": company.symbol, "how": how, "requested_by": user_id}
+    if private_author is not None:
+        detail["private_profile_author"] = private_author
+    await write_audit_log(session, tenant_id, user_id, SHARED_PROFILE_EVENT, json.dumps(detail, sort_keys=True))
+
+
 async def refresh_from_provider(session: AsyncSession, company: Optional[CompanyRecord], symbol: str, provider: FundamentalDataProvider, user_id: Optional[int], *,
                                 profile: bool = True, shareholding: bool = True, announcements: bool = True, announcement_limit: int = 20,
-                                create_missing: bool = False) -> Tuple[Optional[CompanyRecord], RefreshSummary]:
+                                create_missing: bool = False, tenant_id: Optional[int]) -> Tuple[Optional[CompanyRecord], RefreshSummary]:
     """Pull what the provider offers and store what is new. Does not commit. Each part fails on its own; the
-    others still land, and the summary names what failed."""
+    others still land, and the summary names what failed. `company` is the shared profile or the caller organisation's
+    (`tenant_id`) own - never another organisation's (refused here too)."""
     symbol = symbol.upper().strip()
     summary = RefreshSummary(symbol=symbol, provider=getattr(provider, "name", "provider"))
+    if company is not None and company.tenant_id is not None and company.tenant_id != tenant_id:
+        summary.errors.append("profile: not this organisation's company profile")              # never another organisation's
+        return None, summary
+    if company is not None and company.tenant_id is not None:
+        shared = await db.find_shared_company(session, symbol)
+        if shared is not None:
+            # The organisation's own profile of a symbol that now has a shared one: its own rows move onto the shared
+            # profile (still its own, still private) and its private profile is removed - its own action, its own rows.
+            clash = await db.fold_conflicts(session, company.id, shared.id, tenant_id=company.tenant_id)
+            if clash:
+                summary.errors.append(f"profile: this organisation already has these periods on the shared profile: {', '.join(clash[:5])}")
+                return company, summary
+            await db.move_children(session, company.id, shared.id, tenant_id=company.tenant_id)
+            await session.delete(company)
+            await session.flush()
+            company = shared
+            summary.profile_changed = ["folded into shared"]
+    if company is not None and company.tenant_id is not None:
+        # The organisation's own profile and no shared one yet: the provider's profile replaces it and it becomes shared
+        # reference data (its hand-entered fields are cleared - they were that organisation's, never shown to others).
+        # Without the provider's profile nothing is written to a company that is not shared.
+        try:
+            fetched = await provider.get_company_profile(symbol)
+        except FundamentalDataProviderError as exc:
+            summary.errors.append(f"profile: {exc} (an organisation's own company profile becomes shared only from the provider)")
+            return company, summary
+        before = {name: getattr(company, name) for name in PROFILE_REFRESH_FIELDS}
+        member = company.created_by
+        promote_to_shared(company, fetched)
+        summary.profile_changed = [name for name in PROFILE_REFRESH_FIELDS if getattr(company, name) != before[name]] + ["shared"]
+        await _audit_shared_profile(session, tenant_id, user_id, company, "promoted", private_author=member)
+        profile = False
     if company is None:
         if not create_missing:
             summary.errors.append("no company profile stored; create one or pass create_missing")
@@ -278,25 +358,28 @@ async def refresh_from_provider(session: AsyncSession, company: Optional[Company
         except FundamentalDataProviderError as exc:
             summary.errors.append(f"profile: {exc}")
             return None, summary
-        company = CompanyRecord(symbol=symbol, created_by=user_id, name=fetched.name or symbol, sector=fetched.sector or "Unknown", industry=fetched.industry or "Unknown")
+        # created_by stays empty: the content is the provider's, not the caller's (a member-authored shared profile is
+        # what `repair_shared` treats as suspect) - who asked for it is in the audit log
+        company = CompanyRecord(symbol=symbol, created_by=None, name=fetched.name or symbol, sector=fetched.sector or "Unknown", industry=fetched.industry or "Unknown")
         db.apply_company_fields(company, fetched)
         session.add(company)
         await session.flush()
+        await _audit_shared_profile(session, tenant_id, user_id, company, "created")
         summary.created_company = True
         summary.profile_changed = ["created"]
         profile = False
     if profile:
         try:
             fetched = await provider.get_company_profile(symbol)
-            summary.profile_changed = merge_profile(company, fetched)
+            summary.profile_changed += merge_profile(company, fetched)          # after a fold: "folded into shared" stays first
         except FundamentalDataProviderError as exc:
             summary.errors.append(f"profile: {exc}")
     if shareholding:
         try:
             snapshot = await provider.get_shareholding_pattern(symbol)
-            known_dates = {r.as_of_date for r in await db.list_shareholding_history(session, company.id)}
+            known_dates = {r.as_of_date for r in await db.list_shareholding_history(session, company.id, viewer=None)}   # shared rows
             if snapshot.as_of_date not in known_dates and snapshot.promoter_pct > 0:
-                session.add(db.shareholding_from_model(company.id, snapshot, user_id))
+                session.add(db.shareholding_from_model(company.id, snapshot, user_id, tenant_id=None))   # provider data: shared
                 summary.shareholding_added = True
                 if company.promoter_holding_pct != snapshot.promoter_pct:
                     company.promoter_holding_pct = snapshot.promoter_pct
@@ -306,12 +389,12 @@ async def refresh_from_provider(session: AsyncSession, company: Optional[Company
     if announcements:
         try:
             actions = await provider.get_corporate_announcements(symbol, limit=announcement_limit)
-            known = {(r.announced_date, r.headline) for r in await db.list_corporate_actions(session, company.id)}
+            known = {(r.announced_date, r.headline) for r in await db.list_corporate_actions(session, company.id, viewer=None)}   # shared
             for action in actions:
                 key = (action.announced_date, action.headline)
                 if key in known:
                     continue
-                session.add(db.corporate_action_from_model(company.id, action, user_id))
+                session.add(db.corporate_action_from_model(company.id, action, user_id, tenant_id=None))       # provider data: shared
                 known.add(key)
                 summary.announcements_added += 1
         except FundamentalDataProviderError as exc:

@@ -1225,7 +1225,7 @@ export const BASE_TIMEFRAMES = ["1min", "3min", "5min", "15min", "30min", "60min
 
 // --- Out-of-app alert delivery (Telegram / email) ---
 
-export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS";
+export type AlertChannelType = "TELEGRAM" | "EMAIL" | "WEBHOOK" | "PUSH" | "SMS" | "WHATSAPP";
 
 export interface AlertChannel {
   channel_type: AlertChannelType;
@@ -1617,6 +1617,9 @@ export interface ByokStatus {
   audit: ByokAuditScope;
   channels: ByokChannels;
   notes: { subscription: string; privacy: string };
+  /** BYOK-V3: whether scan-alert and daily-review audits are on for the organisation (flag vision_byok_v3), and their limits. */
+  scope?: { v3_enabled: boolean; scan_audits_per_hour: number; daily_review_at: string; daily_review_timezone: string;
+            daily_review_max_symbols: number; daily_review_timeframe: string };
 }
 
 export interface ByokTestResponse {
@@ -1638,9 +1641,19 @@ export interface ByokPrefsInput {
 
 export type VisionReportStatus = "pending" | "running" | "ok" | "skipped" | "failed";
 
+export type VisionSubjectKind = "proposal" | "scan_alert" | "daily_review";
+
 export interface VisionReport {
   id: number;
-  ai_action_id: number;
+  ai_action_id: number | null;
+  /** BYOK-V3: what was reviewed - a proposal (V2), a scan-alert notification, or one symbol of the daily review. */
+  kind?: VisionSubjectKind;
+  notification_id?: number | null;
+  alert_rule_id?: number | null;
+  symbol?: string | null;
+  exchange?: string | null;
+  timeframe?: string | null;
+  subject_date?: string | null;
   status: VisionReportStatus;
   provider: ByokProviderName | null;
   model: string | null;
@@ -1829,6 +1842,10 @@ export interface AiAction {
   risk_check?: ProposalRiskCheck | null;
   /** Z5 (flag risk_by_default): each short strike's breach chance, when the proposal carries option legs. */
   strike_breach?: StrikeBreachBlock | null;
+  /** N1 F3 (flag portfolio_risk): the owner's own PAPER book after this entry, taken at its most (server text). */
+  portfolio_impact?: { line: string; bucket: string; bucket_gross_pct: number | null; bucket_risk_pct: number | null;
+    total_risk_pct: number | null; positions: number; entry_risk: number;
+    limits: { max_sector_pct: number; max_correlated_risk_pct: number; max_open_positions: number } } | null;
 }
 
 export interface BrokerTicket {
@@ -2342,6 +2359,45 @@ export interface ResearchStudyDetail extends Partial<ResearchStudy> {
   trials: ResearchTrial[];
 }
 
+/** H-C4: "analyze <symbol>" - four views from the platform's read tools and a summary of the situation (never advice). */
+export type MultiViewId = "technical" | "options" | "news" | "macro";
+export interface MultiView {
+  id: MultiViewId;
+  label: string;
+  ok: boolean;
+  facts: Record<string, unknown>;
+  as_of: string | null;
+  sources: string[];
+  untrusted: boolean;
+  error: string | null;
+  report: string;
+  report_source: "rules";              // H-C4 round cap: rules-only wording
+}
+export interface MultiViewSummary {
+  situation: string;
+  leans_up: string[];
+  leans_down: string[];
+  risks: string[];
+  possibilities: string[];
+  claims: { statement: string; source: string }[];
+  source: "rules";
+}
+export interface MultiViewUsage { calls: number; tokens_input: number; tokens_output: number; cost_inr: number }
+export interface MultiViewAnalysis {
+  symbol: string;
+  exchange: string;
+  as_of: string | null;
+  views: MultiView[];
+  summary: MultiViewSummary;
+  note: string;
+  run_id: number;
+  llm_calls: number;
+  prompt_version: string;
+  /** H-C4 review: the analysis stopped early (time budget or a gone client); the views not read are marked. */
+  limits_note?: string;
+  usage?: { cheap: MultiViewUsage | null; strong: MultiViewUsage | null };
+}
+
 /** Part D4: a static egress IP registered with a broker (SEBI retail-algo framework). */
 export interface StaticIp {
   broker_name: string;
@@ -2403,6 +2459,70 @@ export interface LadderEvidence {
   expectancy?: number | null; profit_factor?: number | null;
   kelly?: { fraction: number | null; status: "ok" | "negative" | "no_losses" | "no_wins"; formula: string; note: string };
   ruin?: { probability: number | null; status: "ok" | "certain" | "no_losses"; ruin_pct: number; distance: number | null; method: string; note: string };
+}
+
+/** N2-2 (flag `experience_levels`): the caller's experience level from their own PAPER record, the gates and opt-outs. */
+export type ExperienceLevelKey = "BEGINNER" | "INTERMEDIATE" | "ADVANCED";
+export interface ExperienceStatus {
+  level: ExperienceLevelKey; level_label: string;
+  levels: { key: ExperienceLevelKey; label: string; reached: boolean; opens: string[]; criteria: LadderCriterion[] }[];
+  record: { closed_trades: number; sessions: number; max_drawdown_pct: number };
+  gates: { key: string; label: string; opens_at: ExperienceLevelKey; opens_at_label: string; allowed_by_level: boolean; opted_out_today: boolean; allowed: boolean }[];
+  opt_outs: { today: number; last_7_days: number; total: number; recent: { gate: string; gate_label: string; level: string; reason: string; day: string }[] };
+  min_reason_chars: number; day: string; exits: string; as_of: string;
+  created?: boolean;
+}
+
+/** N2-3 (flag `decision_tools`): the risk-of-ruin / Kelly calculator's answer. */
+export interface RuinCalc {
+  inputs: { win_rate: number; payoff_ratio: number; risk_pct: number; ruin_pct: number };
+  expectancy_r: number;
+  kelly: { fraction: number; status: "ok" | "negative"; formula: string };
+  rows: { risk_pct: number; ruin_probability: number; ruin_status: "ok" | "certain"; losses_to_ruin: number; growth_per_trade_pct: number | null; chosen: boolean }[];
+  method: string; note: string;
+}
+
+export interface WhatIfLeg {
+  trade_id: number; symbol: string; direction: "BUY" | "SELL"; option_type: "CE" | "PE" | "FUT"; strike: number;
+  expiry?: string; lots: number; premium: number; iv?: number | null;
+}
+
+/** N2-3: the caller's own open positions grouped by underlying. */
+export interface WhatIfSubject {
+  underlying: string; legs: WhatIfLeg[]; skipped: { trade_id: number; symbol: string; reason: string }[];
+  modes: string[]; has_options: boolean; expiries: string[];
+}
+
+export interface WhatIfResult {
+  underlying: string; skipped: WhatIfSubject["skipped"];
+  prices: number[]; curves: { now: number[]; scenario: number[]; expiry?: number[] };
+  at_spot: { now: number; scenario: number; expiry?: number };
+  greeks: { delta: number; gamma: number; theta: number; vega: number; rho: number };
+  spot: number; days_forward: number; iv_shift: number; max_days_forward: number; expiry: string | null;
+  scenario_at: string; as_of: string; legs: WhatIfLeg[]; note: string;
+}
+
+/** N2-4 (flag `decision_tools`): the caller's own open positions by underlying and sector, beta and correlated pairs. */
+export interface ExposureUnderlying {
+  underlying: string; legs: number; modes: string[]; notional: number; net_quantity: number; option_premium: number;
+  risk_at_stop: number; legs_without_stop: string[]; sector: string; beta: number | null; return_days: number;
+}
+export interface ExposurePair { a: string; b: string; r: number | null; days: number }
+export interface ExposureView {
+  underlyings: ExposureUnderlying[];
+  sectors: { sector: string; underlyings: number; notional: number; option_premium: number; risk_at_stop: number }[];
+  pairs: ExposurePair[]; move_together: ExposurePair[]; move_together_threshold: number; min_points: number; lookback_days: number;
+  totals: { underlyings: number; legs: number; risk_at_stop: number; notional: number };
+  market: string; market_days: number; note: string;
+  /** review: beta and pairs only for the `max_computed` largest risks; the rest are listed here */
+  not_computed?: string[]; max_computed?: number;
+}
+
+export interface ConeRow { sessions: number; move_1sd: number; low_1sd: number; high_1sd: number; low_2sd: number; high_2sd: number }
+/** N2-4: the expected-move cone for an instrument (historical volatility or a typed IV). */
+export interface ExpectedMove {
+  instrument: string; close: number; close_date: string; sigma: number; method: string; window: number; horizon: number;
+  cone: ConeRow[]; selected: ConeRow; note: string;
 }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */

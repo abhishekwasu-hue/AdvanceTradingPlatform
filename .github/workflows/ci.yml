@@ -216,6 +216,11 @@ jobs:
           ATP_PERF: "1"
         run: python -m pytest tests/test_z10d_perf.py -q -rA -s -p no:cacheprovider
 
+      - name: N4 CH6 chart studies (50,000 bars x 6 ScreenQL studies + JSON < 1 s; x CI factor)
+        env:
+          ATP_PERF: "1"
+        run: python -m pytest tests/test_ch6_chart_studies.py -k perf_job -q -rA -s -p no:cacheprovider
+
       - name: Load test, 20 session-shaped users against the in-process test app (scripts/loadtest.py; SLO per scenario)
         run: python scripts/loadtest.py --in-process --users 20 --seconds 20 --ramp 10 --think 1 --slo-factor auto --annotate
 

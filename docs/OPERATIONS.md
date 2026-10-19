@@ -387,7 +387,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
 - **SMS**: a tenant pastes its own gateway credentials (MSG91 auth key, Twilio basic auth) into a
   request template; the platform holds no SMS account. In India a DLT-registered template id is
   required; the MSG91 preset shows where it goes. Gateway errors appear as the channel's
-  `last_error` with the HTTP status.
+  `last_error` with the HTTP status. Template rules: in a JSON body every placeholder must sit
+  inside quotes (`"text":"{text}"`) - values are JSON-escaped, not quoted; in a form body or a GET
+  query the template is URL-encoded text, so a literal `+` (e.g. a `From=` number) must be written
+  `%2B` (a bare `+` arrives as a space), while the placeholder values are encoded by the platform.
+  Changing the gateway URL to another scheme / host / port drops the stored headers (type them
+  again); changing the SMTP host, port, user or turning TLS off drops the stored SMTP password.
+  Header names `Host`, `Content-Length`, `Transfer-Encoding`, `Connection` and the like are refused.
 - **Performance probe**: `python scripts/loadtest.py --base https://<api> --users 20 --seconds 30`
   after every release that touches the request path; paste the table into docs/PERFORMANCE.md.
 

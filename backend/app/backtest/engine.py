@@ -5,7 +5,7 @@ import pandas as pd
 from app.core.enums import SignalDirection
 from app.core.models import BacktestResult, RiskConfig, Trade
 from app.core.resampling import resample_ohlc
-from app.backtest.windows import WindowCursor, decision_time
+from app.backtest.windows import WindowCursor, bar_length, decision_time
 from app.indicators.prefix_cache import register_frames, with_prefix_cache
 from app.execution.paper_broker import PaperBroker
 from app.instruments.registry import get_contract_spec
@@ -54,6 +54,16 @@ def run_backtest(
     if not models.is_default:
         broker.slippage_model = models.slippage_model(broker.slippage_pct)
     fill = models.fill_model()
+    delay = models.latency_model().delay()
+    deferred = fill.defers_entry or delay > pd.Timedelta(0)     # N7 C2b: the entry fills at a later bar's open
+    bar_len = bar_length(primary_tf)
+    starts = pd.DatetimeIndex(primary_df.index)
+    pending: Optional[tuple] = None          # (signal, quantity, fill bar index) of an entry waiting for its bar
+    margin = models.margin_model()            # N7 C2c: span_like - refuse what equity cannot margin; margin call at a close
+    margin_on = margin.name != "none"
+    margin_kind = _margin_kind(get_contract_spec(symbol), symbol)
+    margin_refused = 0
+    margin_calls = 0
     risk_manager = RiskManager(risk_config)
     state = TradingDayState()
     contract_spec = get_contract_spec(symbol)
@@ -78,6 +88,21 @@ def run_backtest(
             state.trades_today = 0
             state.daily_pnl = 0.0
 
+        if pending is not None and pending[2] == i:
+            # N7 C2b: the deferred entry fills at this bar's OPEN (the only number of this bar it reads); this bar's
+            # range after the open then counts for its exits, as on any later bar.
+            signal, quantity, _ = pending
+            pending = None
+            if margin_on and margin.required(margin_kind, float(bar["open"]) * quantity) > equity:
+                margin_refused += 1                     # the equity cannot margin it at the fill price: no entry
+            else:
+                open_trade = broker.open_trade(signal.model_copy(update={"entry": float(bar["open"])}), quantity, current_time)
+                open_trade.expected_price = signal.entry
+                initial_stop = open_trade.stop_loss
+                best_price = None
+                state.trades_today += 1
+                state.open_positions += 1
+
         if open_trade is not None:
             direction = "LONG" if open_trade.direction == SignalDirection.LONG else "SHORT"
             outcome = None
@@ -99,6 +124,14 @@ def run_backtest(
                 best_price = update.best_price
                 if update.stop_changed:
                     open_trade.stop_loss = update.stop_loss
+            if outcome is None and margin_on:
+                # N7 C2c: the equity marked at this bar's close against the requirement at that close
+                close_px = float(bar["close"])
+                sign = 1 if open_trade.direction == SignalDirection.LONG else -1
+                marked = equity + sign * (close_px - open_trade.entry_price) * open_trade.quantity
+                if margin.call(marked, margin.required(margin_kind, close_px * open_trade.quantity)):
+                    outcome = ("Margin call", close_px)
+                    margin_calls += 1
 
             if outcome is not None:
                 reason, exit_price = outcome
@@ -111,12 +144,26 @@ def run_backtest(
                 state.consecutive_losses = 0 if closed.pnl > 0 else state.consecutive_losses + 1
                 open_trade = None
 
-        if open_trade is None:
+        if open_trade is None and pending is None:
             window = cursor.at(decision_time(current_time, primary_tf))   # only bars that had closed (no forming HTF bar)
             signal = strategy.analyze(window, symbol)
             if signal.is_tradeable:
                 decision = risk_manager.validate_and_size(signal, state, contract_spec=contract_spec)
-                if decision.approved:
+                if decision.approved and deferred:
+                    # the order reaches the market `delay` after this bar closed: the bar trading then (or the next one
+                    # after a gap) fills it at its open; none left -> no entry
+                    arrives = decision_time(current_time, primary_tf) + delay
+                    j = int((starts + bar_len).searchsorted(arrives, side="right"))
+                    if j <= i:
+                        j = i + 1
+                    broker.fill_context = {"qty": decision.quantity, "volume": float(bar["volume"]) if "volume" in bar else None}
+                    if j < len(primary_df):
+                        pending = (signal, decision.quantity, j)
+                elif decision.approved and margin_on and margin.required(margin_kind, float(signal.entry or bar["close"]) * decision.quantity) > equity:
+                    margin_refused += 1
+                elif decision.approved:
+                    if not models.is_default:
+                        broker.fill_context = {"qty": decision.quantity, "volume": float(bar["volume"]) if "volume" in bar else None}
                     open_trade = broker.open_trade(signal, decision.quantity, current_time)
                     open_trade.expected_price = signal.entry
                     initial_stop = open_trade.stop_loss
@@ -163,4 +210,15 @@ def run_backtest(
         equity_curve=equity_curve,
         analytics=build_analytics(trades, equity_curve, risk_config.capital),
         exit_rules=rules.to_json() if rules is not None else None,
+        execution=None if models.is_default else {"models": models.describe(), "margin_refused": margin_refused, "margin_calls": margin_calls,
+                                                  "margin_kind": margin_kind if margin_on else None},
     )
+
+
+def _margin_kind(spec, symbol: str) -> str:
+    """The span_like bucket of the traded instrument: its contract spec's asset class, a futures symbol ("...FUT"), else
+    cash equity (OPEN_QUESTIONS C2-6)."""
+    asset = getattr(getattr(spec, "asset_class", None), "value", None)
+    if str(asset) in ("COMMODITY", "CRYPTO"):
+        return str(asset)
+    return "FUTURES" if "FUT" in (symbol or "").upper() else "EQUITY"

@@ -16,6 +16,21 @@ from app.risk_engine.routes import get_tenant_risk_config
 router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
 
 
+@router.get("/risk")
+async def risk(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    """N1 F1 (flag `portfolio_risk`): the caller's own PAPER book as a risk view - exposure, open risk at the stops by
+    bucket, beta to NIFTY 50, direction. Read-only; another member's book is never included."""
+    from app.platform.controls import require_flag
+    from app.portfolio import risk_data
+    await require_flag(session, risk_data.FLAG, user.tenant_id)
+    out = await risk_data.risk_view(session, user)
+    from app.portfolio import caps                             # N1 F3: the user's own limits on new entries (F2), when on
+    limits = await caps.limits_of(session, user) if await caps.enabled(session, user.tenant_id) else None
+    out["limits"] = ({"max_sector_pct": limits.max_sector_pct, "max_correlated_risk_pct": limits.max_correlated_risk_pct,
+                      "max_open_positions": limits.max_open_positions} if limits is not None else None)
+    return out
+
+
 @router.get("/exposure")
 async def exposure(live_prices: bool = Query(default=True), user: User = Depends(get_current_user),
                    session: AsyncSession = Depends(get_session)) -> dict:

@@ -36,6 +36,7 @@ import httpx
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
                                 BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, OptionChainRow, Quote)
 from app.core.enums import OrderSide
@@ -441,7 +442,10 @@ class AngelOneBroker(BrokerInterface):
             out.append(BrokerOrderStatus(order_id=str(o.get("orderid")), symbol=self._platform_symbol({"symbol": o.get("tradingsymbol"), "exch_seg": o.get("exchange")}),
                                          transaction_type=OrderSide(str(o.get("transactiontype", "BUY")).upper()), quantity=float(o.get("quantity") or 0),
                                          filled_quantity=float(o.get("filledshares") or 0), order_type=str(o.get("ordertype") or ""), status=self._status(str(o.get("status") or o.get("orderstatus") or "")),
-                                         price=float(o.get("price") or 0) or None, average_price=float(o.get("averageprice") or 0) or None, placed_at=_parse_time(o.get("updatetime"))))
+                                         price=float(o.get("price") or 0) or None, average_price=float(o.get("averageprice") or 0) or None,
+                                         placed_at=parse_broker_timestamp(_parse_time(o.get("updatetime"))), tag=o.get("ordertag") or None,
+                                         product=PRODUCT_BACK.get(str(o.get("producttype") or "")) or None,
+                                         exchange=str(o.get("exchange") or "").upper() or None))
         return out
 
     async def get_trade_book(self) -> List[BrokerTradeEntry]:

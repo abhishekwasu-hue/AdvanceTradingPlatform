@@ -1,0 +1,21 @@
+[project]
+name = "amw-ai-stock-screener"
+version = "2.9.0"
+requires-python = ">=3.11,<3.13"
+
+[tool.ruff]
+line-length = 170
+target-version = "py311"
+extend-exclude = [".cache", ".sandbox", "src/lab/workers"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+ignore = ["B904", "B017", "E701", "E702", "E731", "B008", "B905", "E741"]
+
+[tool.ruff.lint.per-file-ignores]
+"pages/*" = ["E501"]
+"src/analysis/patterns.py" = ["E501"]
+"src/api/main.py" = ["E501"]
+"tests/*" = ["E501"]
+"src/services/analyst.py" = ["E501"]
+"src/strategies/intraday.py" = ["E501"]

@@ -266,6 +266,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # builder through POST /api/screener/stages. OFF: /stages answers 503, the builder offers no formula block and
     # those screens' Open stays disabled. Research only - places no orders.
     "screener_builder_u2": "Screener builder: formula blocks and opening Legends / breakout screens in the builder (research only)",
+    # H-C4 (Copilot spec C4): "analyze <symbol>" - technical, options, news and macro views from the read tools and the
+    # rules' summary (readings that lean up / down, risks, possibilities). Rules-only wording: no model is called and no
+    # AI text is shown (docs/OPEN_QUESTIONS.md HC4-5); no order, no proposal (ADR-0006). OFF: POST /api/ai/analyze is 503.
+    "ai_multiview": "Copilot multi-view analysis: technical, options, news and macro views of a symbol with a rules-generated summary (no advice, no orders)",
     # N4 CH4a: the trades layer - the caller's own PAPER trades (entries, exits, open stop / target) on the chart of
     # their instrument, as of a time (replay never shows a trade or an exit before it happened). OFF: GET
     # /api/charts/layers/trades answers 503 and the chart shows no trades. Read-only - places no orders.
@@ -300,13 +304,25 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
+    # New flags: add ONE entry, in its alphabetical position (not at the end), so parallel branches do not conflict on
+    # the same line. A registered flag is OFF by default automatically (DEFAULT_OFF_FLAGS below is computed).
 }
-# Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_backtest", "screener_tx2", "evidence_context", "scan_auto_paper", "vision_byok_v3", "chart_trades_layer", "chart_contracts", "chart_futures_basis", "screener_builder_u2"})
+# Flags that start ON (kill-flag semantics: a feature is on until the operator turns it off). This list is CLOSED: it
+# holds exactly the flags that were ON by default before DEFAULT_OFF_FLAGS was computed. Do not add to it - never turn a
+# flag on; tests/test_flags_default_off_computed.py pins both sets.
+DEFAULT_ON_FLAGS: frozenset[str] = frozenset({
+    "ai_copilot",          # Phase N kill switch for AI strategy drafts; the AI never places orders (ADR-0006)
+    "backtest_optimizer",  # Phase N kill switch for optimisation grid runs; a simulation, places no orders
+    "live_trading",        # Phase N kill switch for new LIVE deployments only; LIVE itself is gated by the trading:live
+                           # scope, the plan, step-up and the phase0_paper_only lock (Phase 0 mode seeds this OFF)
+    "marketplace",         # Phase N kill switch for marketplace listings and subscriptions
+    "options_builder",     # P1-c1 research-only payoff tool, places no orders; saving is options_builder_saved (OFF)
+    "public_api",          # Phase N kill switch for public API keys and /api/public/v1
+    "self_signup",         # Phase N kill switch for public registration (OFF = invite-only); beta_cohort_gate is separate
+})
+# Phase BB/BE: every other registered flag starts OFF until the operator turns it on. Computed, so a new flag is OFF by
+# default as soon as it is registered in FEATURE_FLAGS - there is no second list to edit.
+DEFAULT_OFF_FLAGS: frozenset[str] = frozenset(FEATURE_FLAGS) - DEFAULT_ON_FLAGS
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

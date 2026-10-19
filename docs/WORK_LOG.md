@@ -1930,6 +1930,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `importStages.ts` (block form only on an exact text round trip, else formula), Open for Legends / breakout cards.
 - Tests: `tests/test_u2_stages.py`; vitest `importStages.test.ts` and the contract cases. Open questions U2-1..U2-3.
 
+## N5 H-C4: multi-view analysis (flag `ai_multiview`, off)
+
+- Branch `claude/n5-hc4` (from main). Design: `docs/design/H_COPILOT.md` "H-C4".
+- Backend: `app/ai/multiview.py` (four views by the platform's read tools, each audited; cheap tier words the views,
+  strong tier the summary, every text number- / direction- / advice-checked with one rewrite then the rules; at most 6
+  model calls and 60 s; the model gets no tool) and `POST /api/ai/analyze` (flags `ai_copilot` + `ai_multiview`, 8 AI
+  rate units, tenancy table S_COPILOT). Flag in DEFAULT_OFF_FLAGS. No migration.
+- Frontend: `MultiViewPanel` on Copilot > Ask (`copilot/tabs/analyze/`), English strings, compliance lint clean.
+- Tests: `tests/test_hc4_multiview.py`; vitest `multiview.test.ts`. Open questions HC4-1..HC4-4.
 ## Fix: contributed reference data is the contributing organisation's own (security)
 
 - Branch `claude/fix-shared-fundamentals-writes` (from main). Found in the S8 review: shared tables writable by any

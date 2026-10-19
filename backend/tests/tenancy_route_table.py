@@ -143,6 +143,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/actions/{action_id}/reject"): "trader",
     ("POST", "/api/ai/actions/{action_id}/snooze"): "trader",
     ("POST", "/api/ai/agent/ask"): S_COPILOT,
+    ("POST", "/api/ai/analyze"): S_COPILOT,
     ("POST", "/api/ai/ask"): S_COPILOT,
     ("GET", "/api/ai/brief"): "member",
     ("PUT", "/api/ai/byok/key"): S_OWN_AI_KEY,

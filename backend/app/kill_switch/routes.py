@@ -17,7 +17,7 @@ from app.kill_switch import checks
 from app.notifications.service import notify
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.db.models import BrokerCredentialRecord
-from app.trading.position_monitor import broker_for_trade, close_position
+from app.trading.position_monitor import broker_for_trade, close_group, close_position
 
 logger = logging.getLogger(__name__)
 
@@ -246,20 +246,40 @@ async def emergency_exit(
     open_trades.sort(key=lambda t: (0 if (t.direction == "SHORT" or getattr(t, "leg_role", None) == "SHORT") else 1, t.id))
     closed_ids: List[int] = []
     skipped_symbols: List[str] = []
+    by_id = {t.id: t for t in open_trades}
+    groups: Dict[str, List[TradeRecord]] = {}
     for trade in open_trades:
-        price = request.prices.get(trade.symbol)
-        if price is None:
-            skipped_symbols.append(trade.symbol)
-            continue
-        # LIVE positions are squared off at the broker inside close_position; one that can't be
-        # (no usable broker session, exit order rejected) is left open and reported, never marked
-        # closed on paper while it may still exist at the exchange.
-        broker = await broker_for_trade(session, trade)
-        outcome = await close_position(session, trade, price, "Emergency Exit", broker=broker, user_id=user.id)
-        if outcome.closed:
-            closed_ids.append(trade.id)
+        if trade.leg_group_id:
+            groups.setdefault(trade.leg_group_id, []).append(trade)
+    done_groups: set[str] = set()
+    for trade in open_trades:
+        if trade.leg_group_id:
+            # MED-1 (naked-short guard): a structure closes through close_group when its first leg comes up - shorts
+            # first, and its wings are held while a LIVE short has not closed (a short whose price was not supplied
+            # holds them too).
+            if trade.leg_group_id in done_groups:
+                continue
+            done_groups.add(trade.leg_group_id)
+            legs = groups[trade.leg_group_id]
+            prices = {leg.id: request.prices[leg.symbol] for leg in legs if request.prices.get(leg.symbol) is not None}
+            outcomes = await close_group(session, legs, prices, "Emergency Exit", broker=None, user_id=user.id)
         else:
-            skipped_symbols.append(f"{trade.symbol} ({'; '.join(outcome.warnings) or 'not closed'})")
+            price = request.prices.get(trade.symbol)
+            if price is None:
+                skipped_symbols.append(trade.symbol)
+                continue
+            # LIVE positions are squared off at the broker inside close_position; one that can't be
+            # (no usable broker session, exit order rejected) is left open and reported, never marked
+            # closed on paper while it may still exist at the exchange.
+            broker = await broker_for_trade(session, trade)
+            outcomes = [await close_position(session, trade, price, "Emergency Exit", broker=broker, user_id=user.id)]
+        for outcome in outcomes:
+            if outcome.closed:
+                closed_ids.append(outcome.trade_id)
+            elif request.prices.get(by_id[outcome.trade_id].symbol) is None:
+                skipped_symbols.append(by_id[outcome.trade_id].symbol)
+            else:
+                skipped_symbols.append(f"{by_id[outcome.trade_id].symbol} ({'; '.join(outcome.warnings) or 'not closed'})")
 
     await write_audit_log(
         session, user.tenant_id, user.id, "emergency_exit_triggered",

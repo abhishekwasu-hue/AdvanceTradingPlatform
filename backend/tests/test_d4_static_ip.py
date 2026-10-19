@@ -5,16 +5,19 @@
 - two organisations on one IP get a warning; the server's egress IP not among the registered ones is warned;
 - with STATIC_IP_REQUIRED_FOR_LIVE on, the worker refuses LIVE entries when SERVER_EGRESS_IP is not registered for the
   deployment's broker (PAPER and exits untouched); off (the default) nothing changes;
-- the LIVE readiness checklist carries the item.
+- the LIVE readiness checklist carries the item;
+- only a broker the registry knows can be registered (`angel_one`, not `angelone`); rows saved under the old `angelone`
+  spelling count as `angel_one` and are renamed on the next save.
 """
 import asyncio
+from datetime import datetime, timezone
 
 import pytest
 from sqlalchemy import select
 
 from app.compliance import static_ip
 from app.core import config
-from app.db.models import EgressIpChangeRecord, StrategyDeploymentRecord
+from app.db.models import EgressIpChangeRecord, EgressIpRecord, StrategyDeploymentRecord
 from tests.test_auth_api import _session_factory, client
 from tests.test_phase_k_commercial import _owner
 from tests.test_trading_worker import OPEN_NOW, _FakeBroker, _deploy, _force_signal, _signal, _tenant, _worker
@@ -115,3 +118,57 @@ def test_readiness_lists_the_static_ip_item_for_live(monkeypatch):
     items = {i["key"]: i for i in client.get("/api/readiness?target=live", headers=headers).json()["items"]}
     assert items["static_ip"]["status"] == "todo" and items["static_ip"]["scope"] == "LIVE"
     assert "Settings > Static IP" in items["static_ip"]["fix"]
+
+
+def test_only_registry_broker_names_are_accepted(monkeypatch):
+    monkeypatch.setattr(static_ip, "normalise_ip", lambda v: v.strip())
+    headers, _ = _owner("d4-names@example.com")
+    for bad in ("angelone", "kite", "nosuch"):
+        res = client.put("/api/compliance/static-ips", headers=headers, json={"broker_name": bad, "ip": PUBLIC})
+        assert res.status_code == 400, res.text
+        assert f"Unknown broker '{bad}'" in res.json()["detail"] and "angel_one" in res.json()["detail"]
+    ok = client.put("/api/compliance/static-ips", headers=headers, json={"broker_name": " Angel_One ", "ip": PUBLIC})
+    assert ok.status_code == 200 and ok.json()["broker_name"] == "angel_one"
+    assert [r["broker_name"] for r in client.get("/api/compliance/static-ips", headers=headers).json()["ips"]] == ["angel_one"]
+
+
+def test_a_row_saved_as_angelone_counts_as_angel_one_and_is_renamed_on_the_next_save(monkeypatch):
+    monkeypatch.setattr(static_ip, "normalise_ip", lambda v: v.strip())
+    headers, me = _owner("d4-legacy@example.com")
+    tenant_id = me["tenant_id"]
+
+    async def seed():
+        async with _session_factory() as session:
+            session.add(EgressIpRecord(tenant_id=tenant_id, broker_name="angelone", role="PRIMARY", ip=PUBLIC))
+            session.add(EgressIpChangeRecord(tenant_id=tenant_id, broker_name="angelone", role="PRIMARY", old_ip=OTHER_PUBLIC,
+                                             new_ip=PUBLIC, changed_at=datetime.now(timezone.utc)))
+            await session.commit()
+    _run(seed())
+
+    async def problem():
+        async with _session_factory() as session:
+            return await static_ip.live_entry_problem(session, tenant_id, "angel_one")
+    monkeypatch.setattr(config, "STATIC_IP_REQUIRED_FOR_LIVE", True)
+    monkeypatch.setattr(config, "SERVER_EGRESS_IP", PUBLIC)
+    assert _run(problem()) is None                                              # the LIVE gate matches the old spelling
+
+    async def readiness_gap():
+        from app.platform.readiness import _static_ip_gap
+        async with _session_factory() as session:
+            return await _static_ip_gap(session, tenant_id, "angel_one", PUBLIC)
+    assert _run(readiness_gap()) is None                                        # and so does the readiness checklist
+    assert [r["broker_name"] for r in client.get("/api/compliance/static-ips", headers=headers).json()["ips"]] == ["angel_one"]
+
+    # The change made under the old spelling still counts towards the weekly limit.
+    res = client.put("/api/compliance/static-ips", headers=headers, json={"broker_name": "angel_one", "ip": OTHER_PUBLIC})
+    assert res.status_code == 409 and "last 7 days" in res.json()["detail"]
+    # Saving the same IP under the registry name renames the old row in place (no second row).
+    res = client.put("/api/compliance/static-ips", headers=headers, json={"broker_name": "angel_one", "ip": PUBLIC})
+    assert res.status_code == 200 and res.json()["broker_name"] == "angel_one"
+
+    async def stored():
+        async with _session_factory() as session:
+            return [(r.broker_name, r.role, r.ip) for r in await session.scalars(
+                select(EgressIpRecord).where(EgressIpRecord.tenant_id == tenant_id))]
+    assert _run(stored()) == [("angel_one", "PRIMARY", PUBLIC)]
+    assert _run(problem()) is None

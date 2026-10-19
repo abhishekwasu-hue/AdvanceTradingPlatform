@@ -1,0 +1,173 @@
+# CI staging stack (Lane D, Phase 0 exit criteria): the production compose files plus this overlay, layered last:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
+#                  -f deploy/compose.release.yml -f deploy/ci/compose.ci.yml -p atp-ci ...
+#
+# deploy/ci/stack.sh runs it (with a throwaway env file it generates - never the server's .env). deploy/atp.sh never
+# reads this file. What it changes for the CI stack, and nothing else:
+#   * a fake broker (deploy/ci/fake_broker.py) answers for api.upstox.com, assets.upstox.com, api.dhan.co and
+#     images.dhan.co inside this stack only: `extra_hosts` points the names at it, and the app trusts only its throwaway
+#     CA (SSL_CERT_FILE) - so no request can reach a real broker, and every broker call is recorded;
+#   * the API and the worker run on an image with libfaketime added (deploy/ci/app.Dockerfile). stack.sh shifts their
+#     clock into an NSE session (ATP_CI_FAKETIME) when the run is outside one, so the acceptance flow behaves the same at
+#     any hour; empty = the real clock;
+#   * no published port except the API and the HTTPS edge on 127.0.0.1 (other ports: ATP_CI_API_PORT / _HTTPS_PORT), and
+#     the backup and off-site services are not started - so it can run beside a production project on one host;
+#   * a `ci-runner` tool container (profile `tools`) for the acceptance flow, the seeding and the load-test shards. Each
+#     shard is its own container with its own address on this network: the login wave comes from many client IPs
+#     through Caddy, so the per-IP login limit applies exactly as in production (no limiter is bypassed).
+# Rate limits, feature-flag defaults and every production setting are unchanged; the acceptance flow sets the flags it
+# needs in this stack's own throwaway database, through the admin API.
+
+x-broker-hosts: &broker_hosts
+  - "api.upstox.com:${ATP_CI_FAKE_BROKER_IP:-172.31.250.250}"
+  - "assets.upstox.com:${ATP_CI_FAKE_BROKER_IP:-172.31.250.250}"
+  - "api.dhan.co:${ATP_CI_FAKE_BROKER_IP:-172.31.250.250}"
+  - "images.dhan.co:${ATP_CI_FAKE_BROKER_IP:-172.31.250.250}"
+
+x-faketime: &faketime
+  # libfaketime: a fixed offset for every process of the container (empty LD_PRELOAD = the real clock). Monotonic time
+  # stays real, so asyncio / uvloop timers and timeouts are unaffected.
+  LD_PRELOAD: ${ATP_CI_LD_PRELOAD:-}
+  FAKETIME: ${ATP_CI_FAKETIME:-}
+  FAKETIME_DONT_FAKE_MONOTONIC: "1"
+  # LD-7: with the monotonic clock left real, libfaketime's "forced monotonic fix" (switched on by its glibc-version
+  # guess on glibc >= 2.30) turns the deadline of every timed wait on a monotonic condition variable into a wrong one -
+  # CPython's GIL waits on one, so threads contending for the GIL spin: 3 threads took 9.5 s of CPU for 0.8 s of work,
+  # and a 500-user run on the shifted clock collapsed (local, 19 Oct). Off, the waits are real waits.
+  FAKETIME_FORCE_MONOTONIC_FIX: "0"
+  FAKETIME_DONT_RESET: "1"
+  SSL_CERT_FILE: /ci-tls/ca.pem
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: ${ATP_CI_SUBNET:-172.31.250.0/24}
+
+volumes:
+  ci_tls:
+
+services:
+  postgres:
+    ports: !override []
+    # docker-compose.hostinger.yml's command, unchanged, plus pg_stat_statements (LD-7 diagnostics: the load test's
+    # statements by total time, deploy/ci/stack.sh load). CI only; a Compose override replaces the whole command.
+    command: ["postgres",
+              "-c", "wal_level=replica", "-c", "archive_mode=on", "-c", "archive_timeout=300",
+              "-c", "archive_command=test ! -f /wal_archive/%f && cp %p /wal_archive/%f",
+              "-c", "shared_buffers=${PG_SHARED_BUFFERS:-512MB}",
+              "-c", "effective_cache_size=${PG_EFFECTIVE_CACHE_SIZE:-1536MB}",
+              "-c", "work_mem=${PG_WORK_MEM:-8MB}",
+              "-c", "maintenance_work_mem=${PG_MAINTENANCE_WORK_MEM:-128MB}",
+              "-c", "max_connections=${PG_MAX_CONNECTIONS:-75}",
+              "-c", "random_page_cost=1.1",
+              "-c", "effective_io_concurrency=200",
+              "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=top"]
+
+  redis:
+    ports: !override []
+
+  backend:
+    image: atp-ci-app:${ATP_RELEASE:-latest}
+    build:
+      context: ./deploy/ci
+      dockerfile: app.Dockerfile
+      args:
+        BASE_IMAGE: atp-backend:${ATP_RELEASE:-latest}
+    pull_policy: never
+    # The image's own CMD (scripts/serve_api.sh). LD-7: API_WORKERS processes, as on the Hostinger KVM 2 (2, one per
+    # vCPU) unless the env file says otherwise (`stack.sh api-workers N [--cpus C]`); the load-500 job also caps them at
+    # the KVM 2's 2 CPUs for the run that decides it.
+    command: ["sh", "scripts/serve_api.sh"]
+    environment:
+      <<: *faketime
+      GLOBAL_CUES_ENABLED: "false"
+      API_WORKERS: ${API_WORKERS:-2}
+    extra_hosts: *broker_hosts
+    volumes:
+      - ci_tls:/ci-tls:ro
+    depends_on:
+      fake-broker:
+        condition: service_healthy
+    ports: !override
+      - "127.0.0.1:${ATP_CI_API_PORT:-28000}:8000"
+
+  worker:
+    image: atp-ci-app:${ATP_RELEASE:-latest}
+    build: !reset null
+    pull_policy: never
+    environment:
+      <<: *faketime
+      GLOBAL_CUES_ENABLED: "false"
+      WORKER_CYCLE_SECONDS: ${WORKER_CYCLE_SECONDS:-10}
+    extra_hosts: *broker_hosts
+    volumes:
+      - ci_tls:/ci-tls:ro
+
+  caddy:
+    networks:
+      default:
+        aliases:
+          - ${DOMAIN:-atp.staging.internal}
+    ports: !override
+      - "127.0.0.1:${ATP_CI_HTTPS_PORT:-28443}:443"
+
+  backup:
+    profiles: ["ci-disabled"]
+
+  offsite:
+    profiles: ["ci-disabled"]
+
+  fake-broker:
+    image: atp-backend:${ATP_RELEASE:-latest}       # the release's backend image (python + cryptography); built here
+    build:
+      context: ./backend
+    pull_policy: never
+    user: "0:0"                     # writes the throwaway CA into its volume and listens on 443
+    entrypoint: ["python", "/ci/fake_broker.py"]
+    environment:
+      FAKE_OFFSET_SECONDS: ${ATP_CI_OFFSET_SECONDS:-0}
+      FAKE_TLS_DIR: /tls
+    volumes:
+      - ./deploy/ci:/ci:ro
+      - ci_tls:/tls
+    networks:
+      default:
+        ipv4_address: ${ATP_CI_FAKE_BROKER_IP:-172.31.250.250}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os, urllib.request; assert os.path.exists('/tls/ca.pem'); urllib.request.urlopen('http://127.0.0.1:8099/__fake/health', timeout=3)"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    restart: unless-stopped
+
+  ci-runner:
+    # The real clock (it verifies Caddy's certificate, issued now); the acceptance flow adds ATP_CI_OFFSET_SECONDS where
+    # it must agree with the API's shifted clock (authenticator codes).
+    image: atp-backend:${ATP_RELEASE:-latest}
+    pull_policy: never
+    profiles: ["tools"]
+    user: "${ATP_CI_UID:-1000}:${ATP_CI_GID:-1000}"
+    entrypoint: ["python"]
+    working_dir: /app
+    environment:
+      ENVIRONMENT: production
+      SSL_CERT_FILE: /ci-tls/ca.pem
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-atp_user}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-advance_trading_platform}
+      REDIS_URL: redis://redis:6379/0
+      SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
+      SECRETS_WRITE_FORMAT: ${SECRETS_WRITE_FORMAT:-fernet}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-}
+      ATP_CI_BASE_URL: https://${DOMAIN:-atp.staging.internal}
+      ATP_CI_CADDY_CA: /state/caddy-root.crt          # copied out of the caddy container by stack.sh
+      ATP_CI_FAKE_CONTROL: http://fake-broker:8099
+      ATP_CI_OFFSET_SECONDS: ${ATP_CI_OFFSET_SECONDS:-0}
+      ATP_CI_ADMIN_EMAIL: ${ATP_CI_ADMIN_EMAIL:-}
+      PYTHONPATH: /app
+    extra_hosts: *broker_hosts
+    volumes:
+      - ./deploy/ci:/ci:ro
+      - ./backend/scripts:/ci-scripts:ro      # the checkout's load test (the commit the images were built from)
+      - ci_tls:/ci-tls:ro
+      - ${ATP_CI_STATE:-./.ci-state}:/state

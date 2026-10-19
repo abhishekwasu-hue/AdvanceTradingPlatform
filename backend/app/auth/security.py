@@ -7,8 +7,9 @@ iss/aud) are accepted while `JWT_ACCEPT_LEGACY` is on - they expire within minut
 """
 import asyncio
 import hashlib
+import logging
 import os
-import weakref
+import time
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -43,41 +44,112 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(raw, hashed.encode())
 
 
+CGROUP_CPU_MAX = "/sys/fs/cgroup/cpu.max"
+
+
+def _cgroup_cpu_quota(path: str = CGROUP_CPU_MAX) -> Optional[int]:
+    """The CPUs a container's CPU quota allows (cgroup v2 `cpu.max`: "<quota> <period>", rounded up), or None when there
+    is no quota (`max`) or no such file (not Linux, cgroup v1)."""
+    try:
+        with open(path, encoding="ascii") as handle:
+            quota, period = handle.read().split()[:2]
+        if quota == "max":
+            return None
+        return max(1, -(-int(quota) // int(period)))
+    except (OSError, ValueError):
+        return None
+
+
 def _cpu_count() -> int:
     try:
-        return max(1, len(os.sched_getaffinity(0)))           # the CPUs this process may use (a container's share)
+        cpus = max(1, len(os.sched_getaffinity(0)))           # the CPUs this process may run on
     except (AttributeError, OSError):
-        return max(1, os.cpu_count() or 1)
+        cpus = max(1, os.cpu_count() or 1)
+    quota = _cgroup_cpu_quota()                               # LD-7: and a container's CPU quota (`docker --cpus`)
+    return min(cpus, quota) if quota else cpus
 
 
-BCRYPT_CONCURRENCY = _cpu_count()
-_bcrypt_limiters: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]" = weakref.WeakKeyDictionary()
+def _bcrypt_concurrency() -> int:
+    """The CPUs this process may use, shared among the API processes of the host, rounded up (LD-7: with API_WORKERS
+    processes, each takes its share, so the host runs about one bcrypt check per CPU at a time - one more where the
+    CPUs do not divide evenly, which its lower priority (BCRYPT_NICE) keeps out of the other requests' way; never
+    below one). 4 CPUs, 3 processes: 2 each; 2 CPUs, 2 processes: 1 each."""
+    workers = max(1, config.API_WORKERS)
+    return max(1, -(-_cpu_count() // workers))
 
 
-def _bcrypt_limiter() -> Any:
-    """bcrypt's own thread limit, one per event loop, sized to the CPU count: more checks at once than CPUs only make
-    every one of them slower, and they must not take the shared thread pool (40 threads) that sync routes and file I/O
-    use - a login wave would otherwise queue every sync endpoint behind it."""
-    import anyio
-    loop = asyncio.get_running_loop()
-    limiter = _bcrypt_limiters.get(loop)
-    if limiter is None:
-        limiter = _bcrypt_limiters[loop] = anyio.CapacityLimiter(BCRYPT_CONCURRENCY)
-    return limiter
+BCRYPT_CONCURRENCY = _bcrypt_concurrency()
+# LD-7: bcrypt's threads run at a lower CPU priority (nice +BCRYPT_NICE, Linux; 0 = as before). A login wave is up to a
+# core of bcrypt on a small host; at equal priority it takes CPU from every other request (the 500-user test's dashboard
+# p95 was over its limit only during the login ramp). Lower priority only orders the work: each check is the same cost
+# and runs whenever a CPU is free.
+BCRYPT_NICE_DEFAULT = 5
+
+
+def _bcrypt_nice(raw: Optional[str]) -> int:
+    """BCRYPT_NICE from the environment, 0-19. LD-7 review N8: a value that is not a whole number falls back to the
+    default with a warning instead of stopping the API at import."""
+    if raw is None:
+        return BCRYPT_NICE_DEFAULT
+    if not raw.strip():
+        return 0
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        logging.getLogger(__name__).warning("BCRYPT_NICE=%r is not a whole number - using %d", raw, BCRYPT_NICE_DEFAULT)
+        return BCRYPT_NICE_DEFAULT
+    return max(0, min(19, value))
+
+
+BCRYPT_NICE = _bcrypt_nice(os.environ.get("BCRYPT_NICE"))
+_bcrypt_executors: Dict[int, Any] = {}
+
+
+def _lower_this_thread() -> None:
+    if not BCRYPT_NICE or not hasattr(os, "setpriority"):
+        return
+    try:
+        import threading
+        os.setpriority(os.PRIO_PROCESS, threading.get_native_id(), BCRYPT_NICE)   # this thread only (Linux)
+    except (OSError, AttributeError):
+        pass                                                                       # not permitted / not Linux: as before
+
+
+def _bcrypt_executor() -> Any:
+    """bcrypt's own threads, BCRYPT_CONCURRENCY of them, one pool per process: more checks at once than CPUs only make
+    every one of them slower, and they must not take the shared thread pools that sync routes, file I/O and chart work
+    use - a login wave would otherwise queue all of that behind it."""
+    pid = os.getpid()
+    executor = _bcrypt_executors.get(pid)
+    if executor is None:
+        from concurrent.futures import ThreadPoolExecutor
+        executor = _bcrypt_executors[pid] = ThreadPoolExecutor(max_workers=BCRYPT_CONCURRENCY, thread_name_prefix="bcrypt",
+                                                               initializer=_lower_this_thread)
+    return executor
+
+
+def _timed(queued_at: float, fn: Any, *args: Any) -> Any:
+    """Runs `fn` on a bcrypt thread, recording how long it waited for the thread and how long it ran (LD-7)."""
+    started = time.perf_counter()
+    try:
+        return fn(*args)
+    finally:
+        from app.observability.metrics import BCRYPT_QUEUE_WAIT, BCRYPT_SECONDS
+        BCRYPT_QUEUE_WAIT.observe(started - queued_at)
+        BCRYPT_SECONDS.observe(time.perf_counter() - started)
 
 
 async def verify_password_async(password: str, hashed: str) -> bool:
-    """`verify_password` on a worker thread. bcrypt is slow on purpose (a quarter of a second or more per check); run
-    inline in an async route it holds the event loop, so every other request of that API process waits behind each
-    login (Z10-d load test: dashboard p99 about 2 s while users logged in). bcrypt releases the GIL while it works."""
-    import anyio.to_thread
-    return await anyio.to_thread.run_sync(verify_password, password, hashed, limiter=_bcrypt_limiter())
+    """`verify_password` on one of bcrypt's own threads. bcrypt is slow on purpose (a quarter of a second or more per
+    check); run inline in an async route it holds the event loop, so every other request of that API process waits
+    behind each login (Z10-d load test: dashboard p99 about 2 s while users logged in). bcrypt releases the GIL while it
+    works."""
+    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor(), _timed, time.perf_counter(), verify_password, password, hashed)
 
 
 async def hash_password_async(password: str) -> str:
-    """`hash_password` on a worker thread (same reason and the same limiter as `verify_password_async`)."""
-    import anyio.to_thread
-    return await anyio.to_thread.run_sync(hash_password, password, limiter=_bcrypt_limiter())
+    """`hash_password` on bcrypt's own threads (same reason and the same pool as `verify_password_async`)."""
+    return await asyncio.get_running_loop().run_in_executor(_bcrypt_executor(), _timed, time.perf_counter(), hash_password, password)
 
 
 def create_access_token(user_id: int, email: Optional[str] = None, session_id: Optional[int] = None) -> str:

@@ -1,6 +1,7 @@
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel, Field
 
@@ -16,11 +17,40 @@ class OHLCVBar(BaseModel):
     volume: float = 0.0
 
 
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+_MICROSECOND = timedelta(microseconds=1)
+
+
+def _timestamp_index(stamps: List[datetime]) -> pd.DatetimeIndex:
+    """`pd.to_datetime(stamps)` as an index, faster for the usual case - every bar in the one timezone object: exact
+    integer microseconds since the epoch, then the same timezone. pandas converts aware datetimes one Python object at a
+    time, which was most of a chart's frame building. Anything else (naive, mixed or several zones) goes the old way,
+    and so does a result whose type would differ from it."""
+    tz = stamps[0].tzinfo
+    if tz is not None and all(s.tzinfo is tz for s in stamps):
+        expected = pd.to_datetime(pd.Series(stamps[:1])).dtype
+        micros = np.fromiter(((s - _EPOCH) // _MICROSECOND for s in stamps), dtype=np.int64, count=len(stamps))
+        unit = getattr(expected, "unit", "ns")
+        fast = pd.DatetimeIndex(micros.astype("datetime64[us]").astype(f"datetime64[{unit}]")).tz_localize("UTC").tz_convert(tz)
+        if fast.dtype == expected:
+            return fast
+    return pd.DatetimeIndex(pd.to_datetime(pd.Series(stamps)))
+
+
 def bars_to_dataframe(bars: List[OHLCVBar]) -> pd.DataFrame:
-    df = pd.DataFrame([b.model_dump() for b in bars])
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df = df.set_index("timestamp").sort_index()
-    return df[["open", "high", "low", "close", "volume"]]
+    if not bars:
+        df = pd.DataFrame([b.model_dump() for b in bars])        # as before: no columns (callers check for bars first)
+        df["timestamp"] = pd.to_datetime(df["timestamp"])
+        df = df.set_index("timestamp").sort_index()
+        return df[["open", "high", "low", "close", "volume"]]
+    # LD-7: built column by column from the attributes, with a fast exact timestamp index - the same frame as
+    # `pd.DataFrame([b.model_dump() ...])` + `pd.to_datetime` (tests/test_ld7_api_processes.py), in a fraction of the time
+    # on a chart's few thousand bars.
+    df = pd.DataFrame({"open": [b.open for b in bars], "high": [b.high for b in bars], "low": [b.low for b in bars],
+                       "close": [b.close for b in bars], "volume": [b.volume for b in bars]},
+                      index=_timestamp_index([b.timestamp for b in bars]))
+    df.index.name = "timestamp"
+    return df.sort_index()[["open", "high", "low", "close", "volume"]]
 
 
 class Signal(BaseModel):

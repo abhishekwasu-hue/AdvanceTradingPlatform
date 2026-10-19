@@ -123,13 +123,37 @@ def resample(base: pd.DataFrame, base_tf: str, tf: str, keep_forming: bool = Fal
     return out
 
 
+# LD-7: one screen run's evaluated nodes, per symbol (keyed by its SymbolData object: id(data) -> (id(node), timeframe) ->
+# value). The funnel (`stage_survivors`) evaluates the screen's top-level items again on the same symbols; with the memo
+# of the full evaluation they are read back, not computed again. Valid for one run only: the same screen objects, bars,
+# parameters and base timeframe - and never for a cross-sectional screen (its constants depend on the universe given).
+ScreenMemo = Dict[int, Dict[Tuple[int, str], Any]]
+_LEAVES = (n.Num, n.Str, n.Bool, n.Param)
+_MISSING = object()
+
+
 class _Eval:
-    def __init__(self, data: SymbolData, base_tf: str, params: Dict[str, Any], constants: Dict[int, float]) -> None:
+    memo: Optional[Dict[Tuple[int, str], Any]] = None          # a subclass that sets up its own state (panel.py) has none
+
+    def __init__(self, data: SymbolData, base_tf: str, params: Dict[str, Any], constants: Dict[int, float],
+                 memo: Optional[Dict[Tuple[int, str], Any]] = None) -> None:
         self.data, self.base_tf, self.params, self.constants = data, base_tf, params, constants
         if base_tf not in data.frames or data.frames[base_tf].empty:
             raise ScreenRuntimeError(f"{data.symbol}: no {base_tf} bars")
         self.frames: Dict[str, pd.DataFrame] = dict(data.frames)
         self._session_bars: Dict[Tuple[Any, ...], Any] = {}      # U6 BK2: one session map / VWAP / time-of-day series per frame
+        # LD-7: this symbol's evaluated nodes, (id(node), timeframe) -> value, shared by the evaluations of one screen run
+        # (`ScreenMemo`): the funnel's stages are the screen's own top-level items, already evaluated by the full screen.
+        self.memo = memo
+
+    def ev(self, node: Any, tf: str) -> Any:
+        if self.memo is None or isinstance(node, _LEAVES):
+            return self._ev(node, tf)
+        key = (id(node), tf)
+        value = self.memo.get(key, _MISSING)
+        if value is _MISSING:
+            value = self.memo[key] = self._ev(node, tf)
+        return value
 
     def session_bars(self, tf: str, sessions: int = 20, min_sessions: int = 5, mode: str = "bar") -> Any:
         """U6 BK2: the breakout Bars of a timeframe on the symbol's exchange clock, cached for the screen run, so a screen
@@ -175,7 +199,7 @@ class _Eval:
             out = avail.reindex(avail.index.union(dst_close)).ffill().reindex(dst_close)
         return pd.Series(out.to_numpy(), index=self.frame(dst_tf).index)
 
-    def ev(self, node: Any, tf: str) -> Any:  # noqa: C901 - one switch over the node kinds
+    def _ev(self, node: Any, tf: str) -> Any:  # noqa: C901 - one switch over the node kinds
         if isinstance(node, n.Num):
             return node.value
         if isinstance(node, (n.Str, n.Bool)):
@@ -827,7 +851,8 @@ def _zscore(x: pd.Series, n_: int) -> pd.Series:
 
 
 def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str,
-                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None, vectorized: bool = False) -> Dict[str, Any]:
+                    params: Optional[Dict[str, Any]] = None, matches: Optional[List[Match]] = None, vectorized: bool = False,
+                    memo: Optional[ScreenMemo] = None) -> Dict[str, Any]:
     """U5: the screen as a funnel. A top-level ALL is a list of stages (anything else is one stage).
 
     Each stage is evaluated ONCE over the whole universe (so cross-sectional functions - Rank, PercentileRank - see the
@@ -837,16 +862,20 @@ def stage_survivors(ast: Any, validated: Validated, universe: List[SymbolData], 
     (`with_data`) instead of being "removed" by the first stage.
 
     U5 D2: `passes` gives, per evaluated symbol, whether it passed each stage on its own (not only while it was still
-    in) - the "why it matched / where it fell out" chips on a result row."""
+    in) - the "why it matched / where it fell out" chips on a result row.
+
+    LD-7: `memo` - the one the full screen ran with (`run_screen(..., memo=)`): each stage is one of the screen's top-level
+    items, so its values per symbol are read back instead of computed again (the same values; see `ScreenMemo`)."""
     full = {m.symbol: m for m in (matches if matches is not None else run_screen(ast, validated, universe, base_tf=base_tf, params=params,
-                                                                                vectorized=vectorized))}
+                                                                                vectorized=vectorized, memo=memo))}
     usable = [d for d in universe if full[d.symbol].reason is None]
     items = list(ast.items) if isinstance(ast, n.Logic) and ast.op == "ALL" else [ast]
     alive = [d.symbol for d in usable]
     stages: List[Dict[str, Any]] = []
     passes: Dict[str, List[bool]] = {d.symbol: [] for d in usable}
     for item in items:
-        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params, vectorized=vectorized) if m.matched}
+        passed = {m.symbol for m in run_screen(item, validated, usable, base_tf=base_tf, params=params, vectorized=vectorized, memo=memo)
+                  if m.matched}
         removed = [s for s in alive if s not in passed]
         alive = [s for s in alive if s in passed]
         stages.append({"text": n.to_text(item), "survivors": len(alive), "removed": removed})
@@ -906,11 +935,12 @@ def _rank_score(node: Any, universe: List[SymbolData], base_tf: str, params: Dic
 
 
 def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str, params: Optional[Dict[str, Any]] = None,
-               check_history: bool = True, vectorized: bool = False) -> List[Match]:
+               check_history: bool = True, vectorized: bool = False, memo: Optional[ScreenMemo] = None) -> List[Match]:
     """Every symbol: does the screen hold on its last closed bar? Runs only a validated screen. With `check_history` a symbol
     shorter than the validator's lookback is reported as such; without it, it is simply evaluated (NaN never matches).
     Z10-d: `vectorized` evaluates the symbols that share a bar index together (app/screener/panel.py) when every part of
-    the screen has a vectorised form; the matches are the same, only the time changes."""
+    the screen has a vectorised form; the matches are the same, only the time changes.
+    LD-7: `memo` (see `ScreenMemo`) keeps each symbol's evaluated nodes for the next evaluation in the same run."""
     if not validated.ok:
         raise ScreenRuntimeError("the screen did not pass validation")
     params = dict(params or {})
@@ -920,12 +950,14 @@ def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, ba
             return panel.run_panel(ast, validated, universe, base_tf=base_tf, params=params, check_history=check_history,
                                    per_symbol=lambda rest: run_screen(ast, validated, rest, base_tf=base_tf, params=params, check_history=check_history))
     constants = _cross_sectional(ast, universe, base_tf, params) if validated.cross_sectional else {d.symbol: {} for d in universe}
+    if validated.cross_sectional:
+        memo = None                        # Rank / PercentileRank depend on the universe, which differs between the calls
     out: List[Match] = []
     for d in universe:
         if d.frames.get(base_tf) is None or d.frames[base_tf].empty:
             out.append(Match(d.symbol, False, f"no {base_tf} bars"))
             continue
-        ev = _Eval(d, base_tf, params, constants[d.symbol])
+        ev = _Eval(d, base_tf, params, constants[d.symbol], memo=memo.setdefault(id(d), {}) if memo is not None else None)
         # S5-A review: a higher timeframe built from the base bars is checked too (a 1d swing on a 5m screen needs 100
         # daily bars; a few days of 5m bars would otherwise give NaN with no reason)
         short = [tf for tf, bars in validated.lookback.items()

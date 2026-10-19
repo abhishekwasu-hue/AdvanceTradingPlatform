@@ -1241,6 +1241,8 @@ class AiActionRecord(Base):
               postgresql_where=text("status IN ('PROPOSED', 'APPROVED')"), sqlite_where=text("status IN ('PROPOSED', 'APPROVED')")),
         # Z3 / BT2: one ENTRY proposal per signal (a redelivered webhook or a second worker pass is refused by the database).
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_ai_actions_tenant_idempotency_key"),
+        # LD-7: the dashboard's proposal list (tenant, status, newest first by id).
+        Index("ix_ai_actions_tenant_status_id", "tenant_id", "status", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1519,6 +1521,8 @@ class NotificationRecord(Base):
     """
 
     __tablename__ = "notifications"
+    # LD-7: the feed every page polls - one tenant's rows, newest first.
+    __table_args__ = (Index("ix_notifications_tenant_created", "tenant_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)

@@ -27,7 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_trader
 from app.core.models import bars_to_dataframe
 from app.db.models import ScreenRecord, ScreenRunRecord, User
-from app.db.session import get_session
+from app.db.session import get_session, release_connection
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import amw_functions as amw_gate
 from app.screener import compile_screen, nodes
@@ -40,7 +40,7 @@ from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
-from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
+from app.screener.runtime import Match, ScreenMemo, SymbolData, closed_only, resample, run_screen, stage_survivors
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/screener", tags=["screener"])
@@ -67,6 +67,15 @@ DISCLAIMER = "Matches are symbols that passed the screen's filters on the data s
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
 HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
 MAX_INTRADAY_FETCH_DAYS = 60
+FETCH_CONCURRENCY = 3     # LD-7: one screen run's broker fetches in flight at once (capped by the broker's burst)
+
+
+def fetch_concurrency(broker_name: str) -> int:
+    """How many of one screen run's symbol fetches may be in flight at once: the broker's burst allowance in the worker's
+    rate budget (app/brokers/rate_budget.py - about a third of the published limit; 3 for a broker it does not list,
+    Dhan among them), never more than FETCH_CONCURRENCY."""
+    from app.brokers.rate_budget import limits_for
+    return max(1, min(FETCH_CONCURRENCY, limits_for(broker_name).burst))
 _FETCH = {"1m": "1min", "3m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "day", "1M": "day"}
 _FETCH_TF = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", "day": "1d"}
 
@@ -309,7 +318,8 @@ def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
 
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
-                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
+                       release: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
@@ -317,7 +327,9 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     BT1b (flag `byob_data_tier`): the bars come only through the session of the user the run / alert rule belongs to
     (`user_id`), at a broker whose data terms are confirmed, for the symbols inside that session's budget (the rest are
     reported as EOD-only problems), cached under that session's namespace. No such session -> 409 (Tier C).
-    `tier_out` receives the data-tier badge of what was read."""
+    `tier_out` receives the data-tier badge of what was read.
+    `release` (LD-7, a request whose session has only read so far): the pool connection goes back before the broker
+    calls; the worker's callers keep their transaction."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
@@ -344,28 +356,35 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     else:
         record = await _pick_record(session, tenant_id, None, "primary")
         service = MarketDataService(build_adapter(record), lookback_days=days)
+    if release:
+        await release_connection(session)
     universe: List[SymbolData] = []
     newest: List[datetime] = []
-    for symbol in symbols:
-        try:
-            bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
-                          else service.get_candles(symbol, exchange, interval))
-        except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
-            problems[symbol] = f"{type(exc).__name__}: {str(exc)[:120]}"
+    # LD-7: the symbols are fetched a few at a time instead of one after another (a cold five-symbol run waited for five
+    # broker round trips in a row). At most the broker's burst allowance at once (`fetch_concurrency`); the results keep
+    # the symbols' order.
+    gate = asyncio.Semaphore(fetch_concurrency(record.broker_name))
+
+    async def fetch_one(symbol: str) -> Tuple[Any, str]:
+        async with gate:
+            try:
+                return await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
+                              else service.get_candles(symbol, exchange, interval)), ""
+            except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
+                return None, f"{type(exc).__name__}: {str(exc)[:120]}"
+
+    got = await asyncio.gather(*(fetch_one(symbol) for symbol in symbols))
+
+    def frames_of_all() -> List[Tuple[Any, Dict[str, Any], str]]:
+        return [(None, {}, failed) if failed else _symbol_frames(bars, interval, base_tf, include_forming, now) for bars, failed in got]
+
+    # LD-7: the pandas work runs on a worker thread, so a screen does not hold the event loop - one thread for the run's
+    # symbols in turn, not one each (more CPU-bound threads only take the GIL from the event loop more often).
+    fetched = await asyncio.to_thread(frames_of_all)
+    for symbol, (df, frames, problem) in zip(symbols, fetched):
+        if problem:
+            problems[symbol] = problem
             continue
-        df = bars_to_dataframe(bars) if bars else pd.DataFrame()
-        if df.empty:
-            problems[symbol] = "no bars from the broker"
-            continue
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC")
-        fetched_tf = _FETCH_TF[interval]
-        if not include_forming:
-            df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
-        if df.empty:
-            problems[symbol] = "no closed bars from the broker"
-            continue
-        frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
         newest.append(df.index[-1].to_pydatetime())
     if attach_daily and universe:
@@ -377,6 +396,21 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
                                           now=now or datetime.now(timezone.utc))
     return universe, problems, f"broker:{record.broker_name}"
+
+
+def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool, now: Optional[datetime]) -> Tuple[Any, Dict[str, Any], str]:
+    """(closed bars as a frame, {base_tf: frame}, problem) for one symbol's fetched bars - `fetch_frames`' pandas step."""
+    df = bars_to_dataframe(bars) if bars else pd.DataFrame()
+    if df.empty:
+        return df, {}, "no bars from the broker"
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    fetched_tf = _FETCH_TF[interval]
+    if not include_forming:
+        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
+    if df.empty:
+        return df, {}, "no closed bars from the broker"
+    return df, {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}, ""
 
 
 async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str, now: Optional[datetime]) -> None:
@@ -413,6 +447,17 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
         df = closed_only(df, "1d", now or datetime.now(timezone.utc))
         if not df.empty:
             data.frames["1d"] = df
+
+
+def screen_and_funnel(ast: Any, validated: Any, universe: List[SymbolData], *, base_tf: str, params: Dict[str, Any],
+                      vectorized: bool) -> Tuple[List[Match], Dict[str, Any]]:
+    """The screen's matches and its funnel (`stage_survivors`) on one worker thread. LD-7: one hop off the event loop, not
+    two, and one evaluation memo for both (`runtime.ScreenMemo`): the funnel's stages are the screen's own top-level
+    items, so they are read back from the full evaluation instead of computed a second time."""
+    memo: ScreenMemo = {}
+    matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized, memo=memo)
+    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches, vectorized=vectorized, memo=memo)
+    return matches, stages
 
 
 async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: Dict[str, Any], universe: List[SymbolData]
@@ -467,19 +512,21 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                 "yet (sector / index / F&O lists or the option chain); a run uses bars only",
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+    # Z10-d: same matches, less time. LD-7: read before the fetch, while this request still holds its connection (read
+    # after it, the flag took a second pool checkout and a query per run).
+    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
     tier: Dict[str, Any] = {}
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
-                                                               user_id=user.id, tier_out=tier)
+                                                               user_id=user.id, tier_out=tier, release=True)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
-    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
+    await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     # (RankScore's systems ride the context asyncio.to_thread copies into the worker - N3 S7a)
     with ranking_gate.active(systems):
-        matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
-        stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
-                                         vectorized=vectorized)
+        matches, stages = await asyncio.to_thread(screen_and_funnel, ast, validated, universe, base_tf=base_tf, params=params,
+                                                  vectorized=vectorized)
     results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),

@@ -75,7 +75,7 @@ ENDORSEMENT_TERMS: Tuple[str, ...] = ("endorse", "endorsed", "endorses", "endors
 # A card speaks about a method in the third person; it never speaks as the person (impersonation).
 _FIRST_PERSON = re.compile(r"(?<![\w'])(?:I|I'm|I've|I'd|I'll|me|my|mine|myself|we|We|our|Our|ours|us)(?![\w'])")
 _QUOTE = re.compile(r"[\"“”«»]")
-_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+_DEVANAGARI = re.compile(r"[\u0900-\u097F]")
 _CARD_ID = re.compile(r"^legends\.[a-z][a-z0-9_]*$")
 # A capitalised run of two or more words ("Richard Dennis", "Linda Bradford Raschke") reads as a person's name.
 _NAME = re.compile(r"(?<![\w-])[A-Z][a-z]+(?:\s+(?:[A-Z]\.\s*)?[A-Z][a-z]+)+(?![\w-])")

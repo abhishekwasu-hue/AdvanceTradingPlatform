@@ -1,6 +1,6 @@
 /**
  * N1 F3: the portfolio risk card strings (namespace `portfolioRisk`, locale `en`). English only
- * (scripts/check-devanagari.mjs). Numbers of the person's own PAPER book and their own limits - never advice: no
+ * (scripts/check_english_only.py). Numbers of the person's own PAPER book and their own limits - never advice: no
  * "should", "buy", "sell", "reduce" or "recommend" (portfolioRisk.test.tsx checks every string).
  */
 export const PORTFOLIO_RISK_EN = {

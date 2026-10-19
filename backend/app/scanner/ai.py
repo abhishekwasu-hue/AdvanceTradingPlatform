@@ -106,7 +106,7 @@ def plan_system_prompt(language: str = "en") -> str:
         '  "indicator_conditions": [ {"left": OPERAND, "operator": OP, "right": OPERAND} ],\n'
         '  "structure_filters": [ {"filter_type": STRUCTURE, "tolerance_pct": number} ],\n'
         '  "option_filters": [ {"filter_type": OPTION, "operator": "GT|LT|GTE|LTE", "value": number, "tolerance_pct": number} ],\n'
-        '  "explanation": one or two sentences in the trader\'s language (' + language + ") saying what the plan screens for,\n"
+        '  "explanation": one or two sentences in English (whatever language the request is written in) saying what the plan screens for,\n'
         '  "warnings": [anything in the request the scanner cannot express]\n'
         "}\n"
         'OPERAND is {"type": "indicator", "indicator": NAME, "period": int} or {"type": "value", "value": number}; '
@@ -127,7 +127,7 @@ def read_system_prompt(language: str = "en", scores: bool = False) -> str:
             "do not call anything a trade idea or an opportunity, and do not tell the trader to buy, sell or hold.\n\n"
             "Answer with ONE JSON object only:\n"
             "{\n"
-            '  "summary": two or three sentences in the trader\'s language (' + language + ") describing the set as a whole,\n"
+            '  "summary": two or three sentences in English (whatever language the request is written in) describing the set as a whole,\n'
             '  "ranked": [ {"symbol": str, "thesis": which filters it cleared and whether the regime agrees with or contradicts those labels, '
             '"risks": what would change the read, "next_step": what the trader could verify (backtest, paper-trade)} ] in the order given,\n'
             '  "warnings": [caveats: thin evidence, conflicting labels, unknown regime]\n'
@@ -139,7 +139,7 @@ def read_system_prompt(language: str = "en", scores: bool = False) -> str:
         "behind it). You have no other data: do not invent prices, volumes, news or targets, and do not tell the trader to buy or sell.\n\n"
         "Rank the symbols by how well the evidence supports a trade idea. Answer with ONE JSON object only:\n"
         "{\n"
-        '  "summary": two or three sentences in the trader\'s language (' + language + ") about the set as a whole,\n"
+        '  "summary": two or three sentences in English (whatever language the request is written in) about the set as a whole,\n'
         '  "ranked": [ {"symbol": str, "score": 0-100, "thesis": why it ranks here from the labels and regime, '
         '"risks": what would invalidate the read, "next_step": what to verify before acting} ],\n'
         '  "warnings": [caveats: thin evidence, conflicting labels, unknown regime]\n'

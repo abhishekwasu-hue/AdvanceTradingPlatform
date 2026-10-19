@@ -1,5 +1,8 @@
-"""Phase AV: the Copilot home - the trade coach, the daily briefing and the ask-anything router."""
+"""Phase AV: the Copilot home - the trade coach, the daily briefing and the ask-anything router. English only (the owner's
+ruling): the Copilot answers in English even when the trader writes in another language; only the strategy interview is
+trilingual. Non-English messages here are written with \\u escapes (no Devanagari in the source - scripts/check_english_only.py)."""
 import asyncio
+import re
 from datetime import datetime, timedelta, timezone
 
 from app.ai import briefing, coach, copilot
@@ -8,6 +11,11 @@ from app.db.models import MarketSnapshotRecord, StrategyDeploymentRecord, TradeR
 from tests.test_auth_api import _register, _session_factory, client
 
 UTC = timezone.utc
+DEVANAGARI = re.compile("[\u0900-\u097F]")
+# "How are my trades?", "Tell me an intraday strategy", "What should I do today?" - in Marathi.
+MR_MY_TRADES = "\u092e\u093e\u091d\u0947 trades \u0915\u0938\u0947 \u0906\u0939\u0947\u0924?"
+MR_STRATEGY = "\u092e\u0932\u093e intraday strategy \u0938\u093e\u0902\u0917\u093e"
+MR_TODAY = "\u0906\u091c \u0915\u093e\u092f \u0915\u0930\u0942?"
 DAY = datetime(2026, 9, 21, 4, 0, tzinfo=UTC)   # Monday 09:30 IST
 
 
@@ -21,11 +29,11 @@ def test_coach_finds_the_beginner_mistakes():
     risk = RiskConfig(capital=100_000, max_daily_loss_pct=1.0, max_trades_per_day=3, max_consecutive_losses=3)
     trades = [_t(1, 0, -100), _t(2, 12, -250, hold=60), _t(3, 80, -100), _t(4, 95, -120), _t(5, 120, -900)]   # a revenge-filled losing day
     trades += [_t(10 + d, 30, 180, day=d, strategy="orb_15m_5m") for d in range(1, 7)]                       # calm winning days
-    r = coach.review(trades, "mr", risk, days=30, mode="ALL")
+    r = coach.review(trades, "mr", risk, days=30, mode="ALL")         # an older "mr" caller still gets English
     ids = {f["id"] for f in r["flags"]}
     assert {"revenge", "overtrading", "loss_limit", "stop_discipline", "sample"} <= ids
     revenge = next(f for f in r["flags"] if f["id"] == "revenge")
-    assert revenge["evidence"] == [2, 3, 4, 5] and "तोट्यानंतर" in revenge["text"]
+    assert revenge["evidence"] == [2, 3, 4, 5] and "minutes of a loss" in revenge["text"] and not DEVANAGARI.search(revenge["text"])
     assert r["stats"]["trades"] == 11 and r["stats"]["longest_losing_streak"] == 5 and r["stats"]["worst_day"] == -1470.0
     assert r["by_strategy"][0]["key"] == "orb_15m_5m" and r["grade"] in ("C", "D") and len(r["focus"]) == 3
     assert r["flags"][0]["severity"] == "high" and r["equity"][-1] == r["stats"]["net_pnl"]
@@ -50,8 +58,9 @@ def test_day_type_and_game_plan():
     dt = briefing.day_type(MEMORY)
     assert dt["kind"] == "RANGE" and dt["vix"] == 13.0
     plan = briefing.game_plan("mr", dt, MEMORY, "new", [{"action": "BLOCK", "description": "RBI policy"}])
-    assert "Sideways" in plan["headline"] and "reversion" in plan["fit_families"] and "trend" in plan["avoid_families"]
-    assert any("RBI policy" in line and "बंद" in line for line in plan["lines"]) and any("Default risk settings (अजून ठरवलेल्या नाहीत)" in line for line in plan["lines"])
+    assert "sideways" in plan["headline"] and "reversion" in plan["fit_families"] and "trend" in plan["avoid_families"]
+    assert any("RBI policy" in line and "blocked" in line for line in plan["lines"]) and any("Default risk settings (not set yet)" in line for line in plan["lines"])
+    assert not DEVANAGARI.search(plan["headline"] + " ".join(plan["lines"]))
     fear = dict(MEMORY, cues=[{"symbol": "INDIA VIX", "last_price": 24.0}])
     assert briefing.day_type(fear)["kind"] == "VOLATILE"
     assert briefing.day_type({"symbols": [], "cues": []})["kind"] == "UNKNOWN"
@@ -89,9 +98,10 @@ def test_brief_endpoint_explains_the_day_and_the_deployments():
     r = client.get("/api/ai/brief?language=mr", headers=headers)
     assert r.status_code == 200, r.text
     b = r.json()
-    assert b["day_type"]["kind"] == "RANGE" and "Sideways" in b["plan"]["headline"]
+    assert b["day_type"]["kind"] == "RANGE" and "sideways" in b["plan"]["headline"]
     dep = b["deployments"][0]
-    assert dep["family"] == "trend" and dep["regime"] == "RANGING" and any("trade न होणे हाच योग्य" in w for w in dep["why"])
+    assert dep["family"] == "trend" and dep["regime"] == "RANGING" and any("no trade is the correct result" in w for w in dep["why"])
+    assert b["language"] == "en" and not DEVANAGARI.search(str(b))
     checks = {c["id"]: c for c in b["checklist"]}
     assert checks["broker"]["ok"] is False and checks["risk"]["ok"] is False
     paper = b["you"]["PAPER"]
@@ -110,17 +120,18 @@ def test_coach_endpoint_and_copilot_routing(monkeypatch):
     assert client.get("/api/ai/coach?mode=BAD", headers=headers).status_code == 422
 
     ask = lambda m: client.post("/api/ai/copilot", headers=headers, json={"message": m}).json()
-    assert "closed trades" in ask("माझे trades कसे आहेत?")["answer"]          # P0.9: English unless the user chose Marathi
-    client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"})
-    coached = ask("माझे trades कसे आहेत?")
-    assert coached["intent"] == "coach" and coached["action"]["tab"] == "coach" and "बंद trades" in coached["answer"] and coached["source"] == "rules"
-    interviewed = ask("मला intraday strategy सांगा")
+    coached = ask("How am I doing? Review my trades")
+    assert coached["intent"] == "coach" and coached["action"]["tab"] == "coach" and "closed trades" in coached["answer"] and coached["source"] == "rules"
+    client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"})      # an older client: still English
+    marathi = ask(MR_MY_TRADES)
+    assert marathi["language"] == "en" and not DEVANAGARI.search(marathi["answer"]) and marathi["action"]["label"]
+    interviewed = ask("Build me an intraday strategy")
     assert interviewed["intent"] == "interview" and interviewed["prefill"]["style"] == "intraday" and interviewed["action"]["tab"] == "strategy"
-    why = ask("trade का होत नाही?")
-    assert why["intent"] == "deployments" and "deployment चालू नाही" in why["answer"]
-    guide = ask("RSI म्हणजे काय?")
+    assert ask(MR_STRATEGY)["language"] == "en"
+    why = ask("why no trade?")
+    assert why["intent"] == "deployments" and not DEVANAGARI.search(why["answer"])
+    guide = ask("What is RSI?")
     assert guide["intent"] == "guide" and guide["concepts"][0]["id"] == "rsi"
-    client.put("/api/ai/preferences", headers=headers, json={"ai_language": "en"})
     today = ask("What should I do today?")
     assert today["intent"] == "brief" and today["language"] == "en" and today["brief"]["day_type"]["kind"] == "UNKNOWN"
 
@@ -130,20 +141,64 @@ def test_coach_endpoint_and_copilot_routing(monkeypatch):
 
         async def complete(self, system, user, *, max_tokens=2000):
             Provider.seen = system
-            return "आज बाजार sideways आहे."
+            return "\u0906\u091c \u092c\u093e\u091c\u093e\u0930 sideways."      # a Devanagari reply
 
     async def provider_for(session, tenant, **_kw):
         return Provider()
     from app.ai import routes as ai_routes
     monkeypatch.setattr(ai_routes.ai_settings, "provider_for", provider_for)
-    client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"})      # the AI writes in the chosen language
-    narrated = ask("आज काय करू?")
-    # #230 cleanup: ATP is English only - the AI's Devanagari reply is withheld and the rule text is shown
-    assert narrated["source"] == "rules" and "Marathi" in Provider.seen and "=== FACTS ===" in Provider.seen
+    narrated = ask(MR_TODAY)
+    # English only: the instructions say English whatever the message's language, and the AI's Devanagari reply is
+    # withheld by the English filter - the rule text is shown.
+    assert narrated["source"] == "rules" and narrated["language"] == "en" and "=== FACTS ===" in Provider.seen
+    assert "Answer in English only" in Provider.seen and "Marathi" not in Provider.seen
+    assert "not in plain English" in narrated["note"] and not DEVANAGARI.search(narrated["answer"])
 
 
 def test_intents():
-    cases = {"strategy सांगा": "interview", "review my trades": "coach", "माझ्या चुका सांगा": "coach", "why no trade?": "deployments",
-             "आजचा plan काय?": "brief", "theta म्हणजे काय": "guide", "आज NIFTY चा कल काय?": "guide"}
+    cases = {"which strategy fits me": "interview", "review my trades": "coach", "what are my mistakes": "coach", "why no trade?": "deployments",
+             "what is today's plan?": "brief", "what is theta": "guide", "what is NIFTY doing today?": "guide",
+             MR_MY_TRADES: "guide"}           # no Marathi keywords any more: a Marathi message goes to the guide, answered in English
     for message, expected in cases.items():
         assert copilot.intent(message) == expected, message
+
+
+class _SpyProvider:
+    name = "anthropic"
+
+    def __init__(self, reply):
+        self.reply, self.systems, self.users = reply, [], []
+
+    async def complete(self, system, user, *, max_tokens=2000):
+        self.systems.append(system)
+        self.users.append(user)
+        return self.reply
+
+
+def test_non_english_message_gets_english_instructions_and_the_english_filter(monkeypatch):
+    """The owner's ruling: outside the strategy interview the Copilot answers in English even when the trader writes in
+    another language - the instruction names English, and the reply passes the English filter (`output_filter.check` with
+    "en"): a reply in another script is withheld, an English one with advice words is blocked."""
+    from app.ai import output_filter
+    seen_langs = []
+    real_check = output_filter.check
+
+    def spy(text, lang="en", **kw):
+        seen_langs.append(lang)
+        return real_check(text, lang, **kw)
+    monkeypatch.setattr(output_filter, "check", spy)
+    facts = ["NIFTY 50 regime RANGING.", "Default risk settings (not set yet)."]
+    for message in (MR_TODAY, "\u0906\u091c \u0915\u094d\u092f\u093e \u0915\u0930\u0942\u0901?"):   # Marathi, Hindi
+        english = _SpyProvider("NIFTY 50 regime is RANGING; your risk settings are still the defaults.")
+        text, why = asyncio.run(copilot.narrate(english, "mr", "brief", message, facts))
+        assert text and why == "ok" and not DEVANAGARI.search(text)
+        assert "Answer in English only" in english.systems[0] and "also\nwhen the question is written in another language" in english.systems[0]
+        assert "Marathi" not in english.systems[0] and "Hindi" not in english.systems[0]
+        assert message in english.users[0]                       # the trader's words are passed as the question, unchanged
+        devanagari = _SpyProvider("NIFTY 50 \u0930\u0947\u0902\u091c \u092e\u0947\u0902 \u0939\u0948.")
+        text, why = asyncio.run(copilot.narrate(devanagari, "mr", "brief", message, facts))
+        assert text is None and why == output_filter.NOT_ENGLISH_REASON
+        advice = _SpyProvider("NIFTY 50 is RANGING - I recommend you buy now, guaranteed.")
+        text, why = asyncio.run(copilot.narrate(advice, "mr", "brief", message, facts))
+        assert text is None and ("advice" in why or "words" in why)
+    assert seen_langs and set(seen_langs) == {"en"}

@@ -6,7 +6,8 @@ Two rules, applied after the model answers and before a human sees the text:
   numbers come from *numeric* fields only (`numbers_in_values`) or from our own rule-generated sentences
   (`numbers_in_text`); digits inside untrusted strings such as news headlines are never evidence. Comparison keeps
   the sign (a -1.2% day may not become +1.2%), and the model's shorthand is normalised first: `25k`, `1.2 lakh`,
-  `1.2 लाख`, `2 cr`, `25,200.00`, `73%`.
+  `2 cr`, `25,200.00`, `73%`. The checks are English only (ATP answers in English; text in another script is withheld by
+  `output_filter`).
 * **ticker-check** - a symbol the model names must appear in the facts or the question (`tickers_in`); indicator and
   platform acronyms are not symbols.
 
@@ -19,11 +20,11 @@ import re
 from typing import Iterable, List, Set, Tuple
 
 _NUMBER = re.compile(
-    r"(?<!\d)(?<!\d\.)(?<!\d,)[-+]?\d[\d,]*(?:\.\d+)?\s*(%|(?:k|K|lakh|lakhs|lac|L|cr|crore|crores|हजार|लाख|कोटी)(?![A-Za-z]))?"
+    r"(?<!\d)(?<!\d\.)(?<!\d,)[-+]?\d[\d,]*(?:\.\d+)?\s*(%|(?:k|K|lakh|lakhs|lac|L|cr|crore|crores)(?![A-Za-z]))?"
 )
 # Minus signs the model may write for a negative figure (U+2212 minus, U+2013 en dash, U+2010/U+2011 hyphens).
 _MINUS = re.compile("[\u2212\u2013\u2010\u2011]")
-_MULTIPLIERS = {"k": 1e3, "K": 1e3, "हजार": 1e3, "lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "L": 1e5, "लाख": 1e5, "cr": 1e7, "crore": 1e7, "crores": 1e7, "कोटी": 1e7}
+_MULTIPLIERS = {"k": 1e3, "K": 1e3, "lakh": 1e5, "lakhs": 1e5, "lac": 1e5, "L": 1e5, "cr": 1e7, "crore": 1e7, "crores": 1e7}
 
 # Upper-case tokens that are vocabulary, not tradable symbols.
 ACRONYMS = frozenset({
@@ -69,7 +70,7 @@ def numbers_in_values(obj) -> Set[str]:
 
 
 def numbers_in_text(text: str) -> List[Tuple[str, float]]:
-    """(raw, value) for every number in `text`, shorthand expanded (`25k` -> 25000, `1.2 लाख` -> 120000); the sign kept."""
+    """(raw, value) for every number in `text`, shorthand expanded (`25k` -> 25000, `1.2 lakh` -> 120000); the sign kept."""
     out: List[Tuple[str, float]] = []
     for m in _NUMBER.finditer(_MINUS.sub("-", text or "")):
         raw = m.group(0).strip()
@@ -135,17 +136,14 @@ def check_tickers(text: str, allowed_text: str) -> Tuple[bool, List[str]]:
 # H-C1 d: direction claims. A word that asserts a direction counts; the same word naming a scenario or a pattern
 # ("bull case", "bearish divergence") is vocabulary, and a negated one ("not bullish") is no claim.
 _DIRECTION_WORDS = {
-    "BULL": ("bullish", "uptrend", "up-trend", "upside bias", "positive bias", "trending up", "trending_up",
-             "तेजी", "तेजीचा", "तेजीत", "वाढीचा कल"),
-    "BEAR": ("bearish", "downtrend", "down-trend", "downside bias", "negative bias", "trending down", "trending_down",
-             "मंदी", "मंदीचा", "मंदीत", "घसरणीचा कल"),
+    "BULL": ("bullish", "uptrend", "up-trend", "upside bias", "positive bias", "trending up", "trending_up"),
+    "BEAR": ("bearish", "downtrend", "down-trend", "downside bias", "negative bias", "trending down", "trending_down"),
 }
-_DIR_WORD = "\\w\u0900-\u097F"
+_DIR_WORD = "\\w"
 _DIRECTION_RE = {d: re.compile(rf"(?<![{_DIR_WORD}])(?:{'|'.join(re.escape(w) for w in sorted(ws, key=len, reverse=True))})(?![{_DIR_WORD}])", re.IGNORECASE)
                  for d, ws in _DIRECTION_WORDS.items()}
 _VOCAB_AFTER = re.compile(r"^\s*(?:case|scenario|scenarios|divergence|engulfing|pattern|candle|harami|flag|pennant|trap|setup|side|leg|view)\b", re.IGNORECASE)
 _NEGATED_BEFORE = re.compile(r"(?:\bnot|\bno|\bnever|n't|\bnor)\s+(?:\w+\s+){0,2}$", re.IGNORECASE)
-_NEGATED_AFTER_MR = re.compile(r"^\s*(?:\S+\s+)?(?:नाही|नव्हे)")
 
 
 def directions_in(text: str) -> Set[str]:
@@ -155,7 +153,7 @@ def directions_in(text: str) -> Set[str]:
     for direction, pattern in _DIRECTION_RE.items():
         for m in pattern.finditer(text):
             after, before = text[m.end():m.end() + 20], text[max(0, m.start() - 25):m.start()]
-            if _VOCAB_AFTER.match(after) or _NEGATED_BEFORE.search(before) or _NEGATED_AFTER_MR.match(after):
+            if _VOCAB_AFTER.match(after) or _NEGATED_BEFORE.search(before):
                 continue
             found.add(direction)
             break

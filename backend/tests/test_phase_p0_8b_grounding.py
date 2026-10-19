@@ -1,7 +1,7 @@
 """P0.8-B (ATP_AI_COPILOT_FIX_PROMPT): every LLM narration is grounded before a human sees it.
 
 B1 the thesis: headlines travel in an untrusted block and their digits are not evidence; allowed numbers come from
-numeric fields only, compared with their sign; the model's shorthand (25k, 1.2 लाख) is normalised. B2 the Copilot
+numeric fields only, compared with their sign; the model's shorthand (25k, 1.2 lakh) is normalised (English only). B2 the Copilot
 answer and the knowledge guide reject numbers and symbols that are not in the facts and fall back to the rule text.
 B3 injection, sign flip, headline digit, Copilot hallucination, cross-tenant approve.
 """
@@ -56,7 +56,7 @@ def test_numbers_come_from_numeric_fields_only_keep_their_sign_and_expand_shorth
     assert "25200" in allowed and "-1.2" in allowed and "73" in allowed
     assert "99999" not in allowed and "55" not in allowed and "1" not in allowed           # strings and booleans are not evidence
     assert "1.2" not in allowed                                                            # the sign is part of the number
-    assert [v for _r, v in g.numbers_in_text("25k, 1.2 लाख, 2 cr, 1.5 lakh, -1.2%, 25,200.00, 73%")] == [25000.0, 120000.0, 20000000.0, 150000.0, -1.2, 25200.0, 73.0]
+    assert [v for _r, v in g.numbers_in_text("25k, 1.2 lakh, 2 cr, 1.5 lakh, -1.2%, 25,200.00, 73%")] == [25000.0, 120000.0, 20000000.0, 150000.0, -1.2, 25200.0, 73.0]
     ok, bad = g.check_numbers("holds 25.2k with -1.2% on the day", allowed)
     assert ok and bad == []
     ok, bad = g.check_numbers("up 1.2% to 26k", allowed)
@@ -131,11 +131,11 @@ def test_copilot_answer_is_grounded_on_facts_or_falls_back():
 def test_knowledge_guide_rejects_numbers_and_symbols_outside_memory_and_notes():
     memory = {"symbols": [{"symbol": "NIFTY BANK", "bias": "BULLISH", "regime": "RANGING", "higher_regime": "TRENDING_UP", "structure": "UPTREND",
                            "change_pct": 0.4, "last_price": 54210.0}], "cues": [{"symbol": "INDIA VIX", "last_price": 13.2, "change_pct": -1.0}], "history": {}, "updated_at": None}
-    good = _run(k.ai_answer(_Provider(["RSI reads momentum between 0 and 100; NIFTY BANK is at 54210 today."]), "RSI म्हणजे काय?", "en", memory, None))
+    good = _run(k.ai_answer(_Provider(["RSI reads momentum between 0 and 100; NIFTY BANK is at 54210 today."]), "what is RSI?", "en", memory, None))
     assert good["source"] == "ai"
-    bad = _run(k.ai_answer(_Provider(["RSI says RELIANCE will hit 3200 tomorrow."]), "RSI म्हणजे काय?", "en", memory, None))
+    bad = _run(k.ai_answer(_Provider(["RSI says RELIANCE will hit 3200 tomorrow."]), "what is RSI?", "en", memory, None))
     assert bad["source"] == "library" and "grounding check" in bad["note"] and "3200" in bad["note"]
-    flip = _run(k.ai_answer(_Provider(["INDIA VIX rose 1.0% today."]), "VIX म्हणजे काय?", "en", memory, None))
+    flip = _run(k.ai_answer(_Provider(["INDIA VIX rose 1.0% today."]), "what is VIX?", "en", memory, None))
     assert flip["source"] == "library"                                                      # -1.0 in memory, +1.0 in the answer
 
 

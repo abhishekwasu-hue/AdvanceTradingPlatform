@@ -123,8 +123,8 @@ automatically, and both services come up healthy. See "Docker Deployment" in
 
 For the Windows PC that hosts the PAPER week, add the local overlay so the database, Redis, API and UI
 listen on `127.0.0.1` only and restart with Docker Desktop:
-`docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` (Marathi runbook with the
-daily Fyers login: [`docs/LOCAL_PC_MR.md`](docs/LOCAL_PC_MR.md)).
+`docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` (runbook with the
+daily Fyers login: [`docs/LOCAL_PC.md`](docs/LOCAL_PC.md)).
 
 On Windows, `.gitattributes` keeps the `.sh` scripts LF so the `backup` service's `sh` can run
 them. A checkout made before that file existed still has CRLF copies (the `backup` container
@@ -285,21 +285,21 @@ checklist) is the "Today's market" tab of the AI Copilot. API: `GET /api/ai/brie
 The market memory now also reads the world: S&P 500 and Nasdaq futures and indices, Nikkei, Hang Seng, Brent crude,
 gold, the dollar index, USD/INR and the US 10-year yield - from **free public data** (Yahoo Finance, with Stooq as a
 fallback; no key, delayed about 15 minutes). The worker reads them from 08:00 IST (before the open, without a broker
-session) and every 15 minutes while NSE is open. The **जागतिक संकेत** section of the market-memory card shows each move
+session) and every 15 minutes while NSE is open. The **Global cues** section of the market-memory card shows each move
 coloured by what it usually means for India (crude or the dollar rising is red), an overall mood (positive / mixed /
 negative) and plain-language notes ("US futures down: NIFTY often opens lower - let the first 15 minutes settle"). Plans
-put the global mood first in their Market background, and the guide answers "crude वाढले तर काय?" from it. GIFT Nifty has
+put the global mood first in their Market background, and the guide answers "what if crude rises?" from it. GIFT Nifty has
 no free reliable source, so the US futures stand in for the overnight mood. The data is background only - never an input
 to a signal, an order or a risk check - and the free endpoints are unofficial; a commercial deployment should switch to a
 licensed feed. `GLOBAL_CUES_ENABLED=false` turns it off.
 
 ## Ask the guide (Phase AT)
 
-The AI Copilot page has a **मार्गदर्शक विचारा / Ask the guide** chat. Ask about any trading concept in Marathi or English -
-"RSI म्हणजे काय?", "Stop-loss कुठे ठेवावा?", "Theta म्हणजे काय?", "Position size किती घ्यावा?" - and the answer comes from a
-bilingual library of 33 concepts (trend, structure, support / resistance, every indicator the strategies use, stops, sizing,
+The AI Copilot page has an **Ask the guide** chat. Ask about any trading concept - "What is RSI?", "Where should a
+stop-loss go?", "What is theta?", "How big a position?" - and the answer comes, in English (ATP is English only), from a
+library of 33 concepts (trend, structure, support / resistance, every indicator the strategies use, stops, sizing,
 R:R and expectancy, drawdown, discipline, options and Greeks, IV, VIX, intraday vs swing, gap risk, paper trading,
-backtesting, OI / PCR), each explaining how this platform applies it. "आज NIFTY BANK चा कल काय?" is answered from the market
+backtesting, OI / PCR), each explaining how this platform applies it. "What is NIFTY BANK doing today?" is answered from the market
 memory. With an AI provider set in Settings, the AI answers instead, grounded on the same notes, the market memory and your
 profile; the library is the fallback. Education only - never a buy/sell call on a security. API: `POST /api/ai/ask`,
 `GET /api/ai/concepts`, `GET /api/ai/concepts/{id}`.
@@ -311,7 +311,7 @@ above the 20-day high with ADX and volume) - trade closed daily candles and are 
 (`holding: "SWING"`, `timeframe: "day"`) buys delivery (CNC) for shares and NRML for futures / bought options, uses the
 same product for its exit and broker-side stop, and is never squared off at the close. Cash shares cannot be held short
 overnight, so swing shorts need futures or options; written options and multi-leg structures stay intraday. The Strategy
-interview now offers "Swing - days to weeks" (and "मला swing हवे" as feedback): daily candles, a quarter less risk per
+interview now offers "Swing - days to weeks" (and "I want swing" as feedback): daily candles, a quarter less risk per
 trade for gap risk, monthly expiries for options, no 15:10 exit. The Deployments page switches to swing automatically for
 a daily strategy.
 
@@ -320,7 +320,7 @@ a daily strategy.
 The Copilot now knows the market before you ask, the way a shopkeeper knows his stock. While NSE is open the worker
 reads, every 15 minutes and through your own broker session, each watched symbol (NIFTY 50, NIFTY BANK, the symbols in
 your trader profile and active deployments): trend, regime, structure, support / resistance and bias - plus the market
-cues India VIX (the fear gauge) and the index day changes. The AI Copilot page shows it as **Market चा साठा** (with each
+cues India VIX (the fear gauge) and the index day changes. The AI Copilot page shows it as **Market memory** (with each
 symbol's bias over the last sessions and a "read now" button), and every plan gets a **Market background** section: what
 VIX says, the last session, the bias trail ("three sessions running" / "changing every session"), and a warning for
 beginners when VIX is 20 or higher. API: `GET /api/ai/market-memory`, `POST /api/ai/market-memory/refresh`.
@@ -338,8 +338,8 @@ questions ("Forget me" deletes it). API: `POST /api/ai/interview/refine`, `POST 
 
 ## Strategy interview (Phase AP)
 
-A beginner who types "give me a strategy" / "ट्रेडिंग स्ट्रॅटेजी सांगा" in the AI Copilot is not handed a list: the
-Copilot first asks about them, in Marathi or English, one question at a time with a line on why it matters (experience,
+A beginner who types "give me a strategy" (in English, Marathi or Hindi) in the AI Copilot is not handed a list: the
+Copilot first asks about them in the strategy interview - the one trilingual screen (English, with a muted Marathi line) - one question at a time with a line on why it matters (experience,
 capital, loss per trade and per day, trading style, instrument and symbol, options buy/sell, time, goal, market view;
 what the message already said is not asked again). It then reads the market on sample or broker candles - today's move
 and VWAP, the higher-timeframe trend, the regime, market structure, nearest support / resistance, volatility - and builds

@@ -88,7 +88,7 @@ describe("LegendCard (U7 LG1)", () => {
     for (const c of lib.cards) {
       const words = text(renderToStaticMarkup(<LegendCard card={c} />)).toLowerCase();
       for (const w of ADVICE) expect(words).not.toContain(w);
-      expect(/[ऀ-ॿ]/.test(words)).toBe(false);
+      expect(/[\u0900-\u097f]/.test(words)).toBe(false);
     }
   });
 });

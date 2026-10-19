@@ -45,7 +45,6 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import briefing, market_memory, monitor, sentiment
-from app.ai.interview import tr
 from app.alerts.channels import TelegramConfig, decrypt_config, decrypt_raw, encrypt_config, parse_config
 from app.alerts.links import START_CODE, consume_start
 from app.cache.client import cache_incr_window
@@ -385,23 +384,21 @@ async def decide_from_callback(session: AsyncSession, tenant: Tenant, cfg: Teleg
 
 # --- commands --------------------------------------------------------------------------------------------
 def help_text(lang: str) -> str:
-    return tr(lang,
-              "Commands: /brief · /positions · /risk · /news · /levels NIFTY · /thesis NIFTY · /why <trade id> · /exit <trade id> [confirm] · /status · /pause · /resume · /paper · /help. "
+    return ("Commands: /brief · /positions · /risk · /news · /levels NIFTY · /thesis NIFTY · /why <trade id> · /exit <trade id> [confirm] · /status · /pause · /resume · /paper · /help. "
               "Anything else is a question to the Copilot. Nothing here places an order; /exit closes one of your PAPER positions (after confirm). "
-              "Buttons on proposals decide PAPER entries and exits and reduce/pause.",
-              "Commands: /brief · /positions · /risk · /news · /levels NIFTY · /thesis NIFTY · /why <trade id> · /exit <trade id> [confirm] · /status · /pause · /resume · /paper · /help. बाकी काहीही = Copilot ला प्रश्न. "
-              "इथून कोणतीही order लागत नाही; /exit (confirm नंतर) तुमची PAPER position बंद करते. Proposal वरची buttons PAPER entries, exits आणि reduce/pause ठरवतात.")
+              "Buttons on proposals decide PAPER entries and exits and reduce/pause.")
 
 
 def _lang(text: str) -> str:
-    return "mr" if re.search(r"[ऀ-ॿ]", text or "") else "en"
+    """ATP is English only: every reply is English, whatever script the message is written in."""
+    return "en"
 
 
 async def _positions_text(session: AsyncSession, tenant_id: int, lang: str) -> str:
     rows = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == tenant_id, TradeRecord.exit_time.is_(None)).order_by(TradeRecord.entry_time.desc()).limit(15)))
     if not rows:
-        return tr(lang, "No open positions.", "कोणतीही open position नाही.")
-    lines = [tr(lang, f"Open positions ({len(rows)}):", f"Open positions ({len(rows)}):")]
+        return "No open positions."
+    lines = [f"Open positions ({len(rows)}):"]
     for t in rows:
         lines.append(f"#{t.id} {t.mode} {t.direction} {t.symbol} x{t.quantity:g} @ {t.entry_price:,.2f} SL {t.stop_loss:,.2f}"
                      + (f" T1 {t.target1:,.2f}" if t.target1 else ""))
@@ -411,12 +408,12 @@ async def _positions_text(session: AsyncSession, tenant_id: int, lang: str) -> s
 async def _why_text(session: AsyncSession, tenant_id: int, trade_id: int, lang: str) -> str:
     t = await session.get(TradeRecord, trade_id)
     if t is None or t.tenant_id != tenant_id:
-        return tr(lang, "No such trade.", "असा trade नाही.")
+        return "No such trade."
     parts = [f"#{t.id} {t.mode} {t.direction} {t.symbol} ({t.strategy_id}) entered {t.entry_time:%d %b %H:%M} at {t.entry_price:,.2f}, SL {t.stop_loss:,.2f}"]
     if t.exit_time:
         parts.append(f"exited {t.exit_time:%d %b %H:%M} at {t.exit_price:,.2f} ({t.exit_reason or ''}), P&L {t.pnl:+,.2f}" if t.exit_price is not None else "exited")
     else:
-        parts.append(tr(lang, "still open; the worker watches the stop and targets.", "अजून open; worker stop आणि targets पाहतो आहे."))
+        parts.append("still open; the worker watches the stop and targets.")
     return "\n".join(parts)
 
 
@@ -572,13 +569,12 @@ async def _manual_paper(session: AsyncSession, tenant: Tenant, user: User, text:
 async def _risk_text(session: AsyncSession, user: User, lang: str) -> str:
     cfg = await get_tenant_risk_config(user.tenant_id, session) or RiskConfig()
     day = await briefing.your_day(session, user, cfg, datetime.now(timezone.utc))
-    out = [tr(lang, f"Risk: capital {cfg.capital:,.0f}, {cfg.risk_per_trade_pct}% per trade, daily loss cap {cfg.max_daily_loss_pct}%.",
-              f"Risk: भांडवल {cfg.capital:,.0f}, प्रति trade {cfg.risk_per_trade_pct}%, दैनिक तोटा मर्यादा {cfg.max_daily_loss_pct}%.")]
+    out = [f"Risk: capital {cfg.capital:,.0f}, {cfg.risk_per_trade_pct}% per trade, daily loss cap {cfg.max_daily_loss_pct}%."]
     for mode in ("PAPER", "LIVE"):
         d = day.get(mode) or {}
         if d.get("active") or d.get("trades_today"):
-            out.append(f"{mode}: {tr(lang, 'realised today', 'आजचा P&L')} {d.get('realised_pnl', 0):+,.0f}, {tr(lang, 'loss budget left', 'उरलेले तोटा-बजेट')} {d.get('loss_left', 0):,.0f}, "
-                       f"{tr(lang, 'open', 'open')} {d.get('open_positions', 0)}")
+            out.append(f"{mode}: realised today {d.get('realised_pnl', 0):+,.0f}, loss budget left {d.get('loss_left', 0):,.0f}, "
+                       f"open {d.get('open_positions', 0)}")
     out += await _portfolio_lines(session, user, lang)
     return "\n".join(out)
 
@@ -594,18 +590,18 @@ async def _portfolio_lines(session: AsyncSession, user: User, lang: str) -> List
             view = await risk_data.risk_view(session, user)
             limits = await caps.limits_of(session, user) if await caps.enabled(session, user.tenant_id) else None
     except Exception:  # noqa: BLE001 - the rest of /risk still answers
-        return [tr(lang, "Portfolio risk could not be read just now.", "Portfolio risk आत्ता वाचता आली नाही.")]
+        return ["Portfolio risk could not be read just now."]
     return risk_text.telegram_lines(view, lang, limits)
 
 
 async def _news_text(session: AsyncSession, tenant_id: int, lang: str) -> str:
     from app.news_feed import service as news_feed
     if not await news_feed.enabled(session, tenant_id):
-        return tr(lang, "The news feed is off for this platform.", "News feed या platform वर बंद आहे.")
+        return "The news feed is off for this platform."
     items = await news_feed.items(session, tenant_id, hours=24, min_severity=3)
     if not items:
-        return tr(lang, "No notable feed items in the last 24 hours (unverified feed).", "गेल्या 24 तासांत लक्षणीय बातमी नाही (unverified feed).")
-    lines = [tr(lang, "Feed (unverified, severity >= 3):", "Feed (unverified, तीव्रता >= 3):")]
+        return "No notable feed items in the last 24 hours (unverified feed)."
+    lines = ["Feed (unverified, severity >= 3):"]
     for it in items[:8]:
         c = it["classification"]
         lines.append(f"[{c.get('severity')}] {it['headline'][:120]} - {it['source']}")
@@ -616,7 +612,7 @@ async def _levels_text(session: AsyncSession, tenant_id: int, symbol: str, lang:
     memory = await market_memory.latest(session, tenant_id, symbol=symbol or None)
     snap = next((s for s in memory.get("symbols", []) if not symbol or s["symbol"] == symbol.upper()), None)
     if snap is None:
-        return tr(lang, f"No market read for {symbol or 'the watchlist'} yet.", f"{symbol or 'watchlist'} साठी अजून market read नाही.")
+        return f"No market read for {symbol or 'the watchlist'} yet."
     payload = snap.get("payload") or {}
     levels = payload.get("levels") or {}
     parts = [f"{snap['symbol']} {snap.get('last_price')} ({(snap.get('change_pct') or 0):+.2f}%) bias {snap.get('bias')} regime {snap.get('regime')} structure {snap.get('structure')}"]
@@ -635,8 +631,8 @@ async def _thesis_text(session: AsyncSession, tenant_id: int, symbol: str, lang:
             return "\n".join(built["lines"])
     memory = await market_memory.latest(session, tenant_id)
     lines = await _levels_text(session, tenant_id, symbol, lang), *sentiment.view(lang, memory.get("sentiment"))[:2]
-    trailer = (tr(lang, "(No market read of this symbol yet - add it to the watchlist.)", "(या symbol चा market read अजून नाही - watchlist मध्ये घाला.)") if flag_on
-               else tr(lang, "(Scenarios need the market thesis feature; ask the platform admin.)", "(Scenario साठी market thesis feature लागते; platform admin ला सांगा.)"))
+    trailer = ("(No market read of this symbol yet - add it to the watchlist.)" if flag_on
+               else "(Scenarios need the market thesis feature; ask the platform admin.)")
     return "\n".join(lines) + "\n" + trailer
 
 
@@ -651,13 +647,12 @@ async def answer_text(session: AsyncSession, tenant: Tenant, user: User, text: s
     from app.platform.controls import flag_enabled
     if cmd in ("/brief", "/risk") or not cmd.startswith("/"):
         if not await flag_enabled(session, "ai_copilot", tenant.id):          # the operator's AI kill flag binds Telegram too
-            return tr(lang, "The AI Copilot is switched off on this platform right now.", "AI Copilot या platform वर सध्या बंद आहे.")
+            return "The AI Copilot is switched off on this platform right now."
     if cmd in ("/brief", "/thesis") or not cmd.startswith("/"):
         # P0.8-D: the same first-use acknowledgement as the web app; approve/reject callbacks never depend on it.
         from app.ai import compliance_terms as terms
         if await terms.latest(session, terms.KIND_COPILOT, tenant_id=tenant.id, user_id=user.id) is None:
-            return tr(lang, "Open the AI Copilot in the web app once and accept its acknowledgement first (it is not an investment adviser).",
-                      "आधी web app मध्ये AI Copilot एकदा उघडा आणि त्याची सूचना स्वीकारा (तो गुंतवणूक सल्लागार नाही).")
+            return "Open the AI Copilot in the web app once and accept its acknowledgement first (it is not an investment adviser)."
     if cmd == "/brief":
         brief = await briefing.build(session, user, lang)
         return "\n".join(briefing.summary_lines(lang, brief))
@@ -675,7 +670,7 @@ async def answer_text(session: AsyncSession, tenant: Tenant, user: User, text: s
         try:
             return await _why_text(session, tenant.id, int(arg), lang)
         except ValueError:
-            return tr(lang, "Usage: /why <trade id>", "वापर: /why <trade id>")
+            return "Usage: /why <trade id>"
     if cmd == "/exit":
         return await _exit_text(session, tenant.id, user, arg)
     if cmd in ("/status", "/pause", "/resume", "/paper"):
@@ -760,7 +755,7 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
                 logger.warning("Telegram message from non-whitelisted chat %s ignored (tenant %s)", chat_id, tenant.id)
             return {"handled": "ignored", "reason": "chat not whitelisted"}
         if await rate_limited(tenant.id, chat_id):
-            await reply(cfg, chat_id, tr(_lang(text), "Slow down - 20 messages a minute.", "थोडे थांबा - मिनिटाला 20 messages."), client, parse_mode=None)
+            await reply(cfg, chat_id, "Slow down - 20 messages a minute.", client, parse_mode=None)
             return {"handled": "rate_limited"}
         user = await actor_for_sender(session, tenant.id, cfg, from_id, chat_id)
         if user is None:
@@ -768,14 +763,13 @@ async def handle_update(session: AsyncSession, tenant: Tenant, cfg: TelegramConf
             if audit_stranger(tenant.id, f"{chat_id}:{from_id}"):
                 await write_audit_log(session, tenant.id, None, "telegram_inbound_refused", f"Telegram user {from_id or '?'} in chat {chat_id} is not an authorised user: {text[:60]!r}")
                 await session.commit()
-            await reply(cfg, chat_id, tr(_lang(text), "You are not an authorised user of this bot - ask the owner to add your Telegram user id under Settings.",
-                                         "तुम्ही या bot चे अधिकृत वापरकर्ते नाही - owner ला Settings मध्ये तुमचा Telegram user id जोडायला सांगा."), client, parse_mode=None)
+            await reply(cfg, chat_id, "You are not an authorised user of this bot - ask the owner to add your Telegram user id under Settings.", client, parse_mode=None)
             return {"handled": "refused", "reason": "sender not an approver"}
         try:
             answer = await answer_text(session, tenant, user, text)
         except Exception as exc:  # noqa: BLE001 - the chat gets a plain error, the log the detail
             logger.exception("Telegram command failed")
-            answer = tr(_lang(text), f"Could not answer: {type(exc).__name__}", f"उत्तर देता आले नाही: {type(exc).__name__}")
+            answer = f"Could not answer: {type(exc).__name__}"
         await meter(session, tenant.id, METRIC, 1, source="telegram", metadata={"kind": "message", "command": text.split(" ")[0][:20] if text.startswith("/") else "text"})
         await session.commit()
         await reply(cfg, chat_id, answer, client, parse_mode=None)          # plain text: command output is never HTML

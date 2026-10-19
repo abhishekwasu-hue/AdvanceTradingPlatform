@@ -1,5 +1,4 @@
 import { Moon, Sun } from "lucide-react";
-import { useCopilotLanguage, type SecondaryLocale } from "../copilot/languagePrefs";
 import { useAppearance, type ThemeChoice } from "../theme";
 import { Button } from "./primitives";
 import { Card } from "./ui";
@@ -8,26 +7,8 @@ const THEMES: { value: ThemeChoice; label: string }[] = [
   { value: "dark", label: "Dark" }, { value: "light", label: "Light" }, { value: "system", label: "Follow the device" },
 ];
 
-const SECONDARY_OPTIONS: { value: SecondaryLocale; label: string }[] = [{ value: "mr", label: "Marathi" }, { value: "off", label: "None" }];
-
-/** The AI Copilot's languages: the interface (English; more locales later) and the interview's second line. */
-function CopilotLanguageRows() {
-  const [lang, save] = useCopilotLanguage();
-  return (
-    <div role="group" aria-labelledby="copilot-lang-label" className="border-t border-border pt-3">
-      <div id="copilot-lang-label" className="mb-1 text-xs font-medium text-fg-muted">AI Copilot languages</div>
-      <p className="mb-2 text-xs text-fg-muted">Interface: English. The strategy interview shows each question in English with a small second line in:</p>
-      <div className="flex flex-wrap gap-2">
-        {SECONDARY_OPTIONS.map((o) => (
-          <Button key={o.value} size="sm" variant={lang.secondary === o.value ? "primary" : "secondary"} aria-pressed={lang.secondary === o.value}
-            onClick={() => save({ ...lang, secondary: o.value })}>{o.label}</Button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-/** P1.2: theme and the colour-blind option, saved in this browser. Copilot redesign: reduce motion, interview language. */
+/** P1.2: theme and the colour-blind option, saved in this browser. Copilot redesign: reduce motion. ATP is English only:
+ * the strategy interview's second-language line is switched on the interview screen, not here. */
 export default function AppearanceCard() {
   const [a, save] = useAppearance();
   return (
@@ -62,7 +43,6 @@ export default function AppearanceCard() {
             <span className="mt-0.5 block text-xs text-fg-muted">Turns off animations, card tilt and the AI Copilot's 3D scene (a still image is shown). The device's own reduced-motion setting does the same.</span>
           </span>
         </label>
-        <CopilotLanguageRows />
       </div>
     </Card>
   );

@@ -107,7 +107,7 @@ def test_factors_agreement_scenarios_and_shadow_multiplier_are_deterministic_and
     assert scen["bull"]["trigger"] == 25200.0 and scen["bear"]["trigger"] == 24850.0 and scen["base"] == {**scen["base"], "low": 24850.0, "high": 25200.0}
     assert scen["bull"]["target"] == 25550.0 and scen["bear"]["target"] == 24500.0 and scen["bull"]["invalidation"] == 24850.0      # measured move = the zone span
     no_zones = th.scenarios(_snapshot(sup=None, res=None, atr_pct=1.0), "mr")
-    assert no_zones["bull"]["trigger"] == 25250.0 and no_zones["bear"]["trigger"] == 24750.0 and "तेजी" in no_zones["bull"]["text"]
+    assert no_zones["bull"]["trigger"] == 25250.0 and no_zones["bear"]["trigger"] == 24750.0 and no_zones["bull"]["text"] == th.scenarios(_snapshot(sup=None, res=None, atr_pct=1.0), "en")["bull"]["text"]   # English only
     inverted = th.scenarios(_snapshot(sup=(25300.0, 25350.0), res=(24900.0, 24950.0), atr_pct=1.0), "en")   # zones on the wrong side -> ATR stand-ins
     assert inverted["bear"]["trigger"] == 24750.0 < 25000.0 < inverted["bull"]["trigger"] == 25250.0 and inverted["base"]["low"] < inverted["base"]["high"]
     assert th.scenarios({"symbol": "X", "last_price": 100.0, "payload": {"support": {"source": "zone"}, "resistance": {}}}, "en")["bull"]["trigger"] == 100.6
@@ -209,8 +209,9 @@ def test_api_builds_stores_and_serves_the_thesis_behind_the_flag_and_scores_it_n
     assert again["id"] == first["id"]                                                                 # fresh enough: served from the store
 
     _seed(tenant_id, when=datetime.now(UTC))     # the API reads with the wall clock: a read as fresh as today's (not a date bomb)
-    out = client.get("/api/ai/thesis/NIFTY%2050?language=mr", headers=headers).json()               # another language -> a new build, in Marathi
-    assert out["direction"] == "BULLISH" and "तेजी" in out["lines"][0] and out["id"] != first["id"]
+    out = client.get("/api/ai/thesis/NIFTY%2050?language=mr&refresh=true", headers=headers).json()  # a new build; "mr" is ignored (English only)
+    assert out["direction"] == "BULLISH" and out["lines"][0].startswith("NIFTY 50 data read: bullish")
+    assert not any("\u0900" <= ch <= "\u097f" for ch in json.dumps(out, ensure_ascii=False))
 
     async def pin_day():          # the API used the wall clock; pin its record to the test's day so scoring is deterministic
         async with _session_factory() as session:

@@ -19,7 +19,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "US rate outlook; global cue for Indian markets.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "keyword": {
@@ -32,7 +31,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "US rate outlook; global cue for Indian markets.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "ai": null
@@ -60,7 +58,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "Monthly auto dispatch numbers; sector read only.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "keyword": {
@@ -73,7 +70,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "Monthly auto dispatch numbers; sector read only.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "ai": null
@@ -100,7 +96,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "Results date set; a scheduled event for RELIANCE.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "keyword": {
@@ -113,7 +108,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "Results date set; a scheduled event for RELIANCE.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "ai": null
@@ -138,7 +132,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "New rules for retail algo trading; read the circular for the dates.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "keyword": {
@@ -151,7 +144,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "New rules for retail algo trading; read the circular for the dates.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "ai": null
@@ -179,7 +171,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "Repo rate unchanged; banks and rate-sensitive stocks watch the stance.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "keyword": {
@@ -192,7 +183,6 @@
    "horizon": "days",
    "confidence": 0.6,
    "one_line_en": "Repo rate unchanged; banks and rate-sensitive stocks watch the stance.",
-   "one_line_mr": "",
    "method": "keyword"
   },
   "ai": null

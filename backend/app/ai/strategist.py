@@ -36,7 +36,6 @@ from typing import Callable, Dict, List, Optional, Tuple
 import pandas as pd
 
 from app.ai.wording import banned_terms
-from app.ai.interview import tr
 from app.core.models import RiskConfig
 from app.core.resampling import resample_ohlc
 from app.indicators.volatility import atr as atr_indicator
@@ -70,13 +69,11 @@ def cond(left: Operand, op: str, right: Operand) -> Condition:
 class Template:
     id: str
     en: str
-    mr: str
     family: str
     characters: Tuple[str, ...]
     grid: Dict[str, Tuple]
     build: Callable[[dict, str, str, str], Tuple[List[Condition], List[Condition]]]   # (params, base, htf, side) -> (long, short)
     why_en: str
-    why_mr: str
 
 
 def _sides(side: str, long_c: List[Condition], short_c: List[Condition]) -> Tuple[List[Condition], List[Condition]]:
@@ -129,30 +126,24 @@ def _reversion(p, base, htf, side):
 
 RR = ((1.5, 2.5), (2.0, 3.0))
 TEMPLATES: Tuple[Template, ...] = (
-    Template("trend_pullback", "Trend pullback", "Trend pullback", "trend", ("TREND",),
+    Template("trend_pullback", "Trend pullback", "trend", ("TREND",),
              {"fast": (9, 20), "slow": (21, 50), "rsi": (40, 45), "stop": (1.0, 1.5), "rr": RR}, _trend_pullback,
-             "Joins the trend after a pause: fast EMA above slow, price above the higher-timeframe EMA50 and VWAP, RSI turning back up.",
-             "थांब्यानंतर trend मध्ये सामील: fast EMA slow च्या वर, भाव मोठ्या timeframe च्या EMA50 आणि VWAP च्या वर, RSI पुन्हा वर वळतो."),
-    Template("orb_breakout", "Opening-range breakout", "Opening range breakout", "breakout", ("TREND", "VOLATILE", "RANGE"),
+             "Joins the trend after a pause: fast EMA above slow, price above the higher-timeframe EMA50 and VWAP, RSI turning back up."),
+    Template("orb_breakout", "Opening-range breakout", "breakout", ("TREND", "VOLATILE", "RANGE"),
              {"or_min": (15, 30), "adx": (15, 20), "stop": (1.0, 1.5), "rr": RR}, _orb,
-             "Trades the first close outside the opening range on the VWAP side, only with ADX showing direction.",
-             "Opening range बाहेरचा पहिला close, VWAP च्या बाजूने, आणि ADX दिशा दाखवत असेल तरच."),
-    Template("pd_breakout", "Previous-day level breakout", "आधीच्या दिवसाच्या high/low चा breakout", "breakout", ("TREND",),
+             "Trades the first close outside the opening range on the VWAP side, only with ADX showing direction."),
+    Template("pd_breakout", "Previous-day level breakout", "breakout", ("TREND",),
              {"htf_ema": (20, 50), "stop": (1.0, 1.5), "rr": RR}, _pd_breakout,
-             "A close through yesterday's high (or low) with the higher timeframe agreeing - where trapped traders fuel the move.",
-             "कालच्या high (किंवा low) च्या पलीकडचा close, मोठा timeframe सहमत असताना - अडकलेले traders move ला इंधन देतात."),
-    Template("vwap_reclaim", "VWAP reclaim", "VWAP reclaim", "momentum", ("TREND", "RANGE"),
+             "A close through yesterday's high (or low) with the higher timeframe agreeing - where trapped traders fuel the move."),
+    Template("vwap_reclaim", "VWAP reclaim", "momentum", ("TREND", "RANGE"),
              {"rsi": (50, 55), "stop": (1.0, 1.5), "rr": RR}, _vwap_reclaim,
-             "Price crosses back over VWAP in the direction of the higher-timeframe EMAs, with RSI confirming.",
-             "भाव मोठ्या timeframe च्या EMA च्या दिशेने पुन्हा VWAP ओलांडतो, RSI पुष्टी देतो."),
-    Template("supertrend_htf", "Supertrend with HTF filter", "Supertrend + मोठ्या timeframe चा filter", "trend", ("TREND",),
+             "Price crosses back over VWAP in the direction of the higher-timeframe EMAs, with RSI confirming."),
+    Template("supertrend_htf", "Supertrend with HTF filter", "trend", ("TREND",),
              {"st_mult": (2.0, 3.0), "stop": (1.0, 1.5), "rr": RR}, _supertrend,
-             "Supertrend flips in the direction of the higher-timeframe EMA50 - rides the trend legs.",
-             "मोठ्या timeframe च्या EMA50 च्या दिशेने Supertrend बदलतो - trend च्या लाटेवर स्वार."),
-    Template("range_reversion", "Range reversion", "Range reversion (सरासरीकडे परत)", "reversion", ("RANGE", "VOLATILE"),
+             "Supertrend flips in the direction of the higher-timeframe EMA50 - rides the trend legs."),
+    Template("range_reversion", "Range reversion", "reversion", ("RANGE", "VOLATILE"),
              {"bb_k": (2.0, 2.5), "rsi_lo": (30, 35), "stop": (1.0, 1.5), "rr": ((1.2, 2.0), (1.5, 2.5))}, _reversion,
-             "Fades stretched moves outside the Bollinger band with RSI extreme, only while ADX says there is no trend.",
-             "Bollinger band बाहेर ताणलेली move उलटवतो, RSI टोकाला, आणि ADX trend नाही सांगत असतानाच."),
+             "Fades stretched moves outside the Bollinger band with RSI extreme, only while ADX says there is no trend."),
 )
 BY_ID = {t.id: t for t in TEMPLATES}
 
@@ -303,83 +294,79 @@ def _verdict(lang: str, m_is: dict, m_oos: dict, real_data: bool = True) -> Tupl
     """P0.9: a judgement only with real broker candles and MIN_OOS_TRADES trades on the unseen sessions; otherwise the
     numbers are labelled for what they are (sample data, or too small a sample to judge)."""
     if not real_data:
-        return "sample", tr(lang, "Sample data - these figures are not real performance.", "Sample data - हे आकडे खरे निकाल नाहीत.")
+        return "sample", "Sample data - these figures are not real performance."
     if m_oos["trades"] < MIN_OOS_TRADES:
-        return "insufficient", tr(lang, f"Insufficient sample: {m_oos['trades']} trade(s) on the unseen sessions; at least {MIN_OOS_TRADES} are needed to judge.",
-                                  f"नमुना अपुरा: न पाहिलेल्या सत्रांत {m_oos['trades']} trade; ठरवायला किमान {MIN_OOS_TRADES} लागतात.")
+        return "insufficient", f"Insufficient sample: {m_oos['trades']} trade(s) on the unseen sessions; at least {MIN_OOS_TRADES} are needed to judge."
     if m_is["expectancy_r"] > 0 and m_oos["expectancy_r"] > 0:
-        return "robust", tr(lang, "Positive on the sessions used to tune it and on the later sessions it never saw.",
-                            "Tune केलेल्या सत्रांवर आणि कधीही न पाहिलेल्या नंतरच्या सत्रांवरही फायद्याची.")
+        return "robust", "Positive on the sessions used to tune it and on the later sessions it never saw."
     if m_is["expectancy_r"] > 0 >= m_oos["expectancy_r"]:
-        return "overfit", tr(lang, "Worked only on the tuning sessions, lost on the later ones - likely over-fitted; paper only.",
-                             "फक्त tune केलेल्या सत्रांवर चालली, नंतरच्या सत्रांत तोटा - over-fit असण्याची शक्यता; फक्त PAPER.")
-    return "weak", tr(lang, "No edge on these candles.", "या candles वर फायदा दिसत नाही.")
+        return "overfit", "Worked only on the tuning sessions, lost on the later ones - likely over-fitted; paper only."
+    return "weak", "No edge on these candles."
 
 
 def _rule_text(lang: str, c: Condition) -> str:
     return c.label()
 
 
-# --- the strategist in the trader's language (Phase BF) -----------------------------------------------------------
-OPERAND_WORDS: Dict[str, Tuple[str, str]] = {
-    "CLOSE": ("close", "close भाव"), "OPEN": ("open", "open भाव"), "HIGH": ("high", "high"), "LOW": ("low", "low"),
-    "VWAP": ("VWAP", "VWAP"), "DAY_OPEN": ("today's open", "आजचा open"), "PDH": ("yesterday's high", "कालचा high"),
-    "PDL": ("yesterday's low", "कालचा low"), "PDC": ("yesterday's close", "कालचा close"), "VOLUME": ("volume", "volume"),
-    "VOLUME_SMA": ("average volume ({p})", "सरासरी volume ({p})"), "EMA": ("EMA({p})", "EMA({p})"), "SMA": ("SMA({p})", "SMA({p})"),
-    "RSI": ("RSI({p})", "RSI({p})"), "ADX": ("ADX({p})", "ADX({p})"), "PLUS_DI": ("+DI({p})", "+DI({p})"), "MINUS_DI": ("-DI({p})", "-DI({p})"),
-    "ATR": ("ATR({p})", "ATR({p})"), "SUPERTREND": ("Supertrend({p}, {m})", "Supertrend({p}, {m})"),
-    "OR_HIGH": ("opening-range high ({p} min)", "opening range high ({p} मिनिट)"), "OR_LOW": ("opening-range low ({p} min)", "opening range low ({p} मिनिट)"),
-    "BB_UPPER": ("upper Bollinger band ({p}, {m}σ)", "वरचा Bollinger band ({p}, {m}σ)"), "BB_MID": ("Bollinger middle band ({p})", "Bollinger मधला band ({p})"),
-    "BB_LOWER": ("lower Bollinger band ({p}, {m}σ)", "खालचा Bollinger band ({p}, {m}σ)"),
+# --- the strategist in words (Phase BF; English only) ---------------------------------------------------------------
+OPERAND_WORDS: Dict[str, str] = {
+    "CLOSE": "close", "OPEN": "open", "HIGH": "high", "LOW": "low",
+    "VWAP": "VWAP", "DAY_OPEN": "today's open", "PDH": "yesterday's high",
+    "PDL": "yesterday's low", "PDC": "yesterday's close", "VOLUME": "volume",
+    "VOLUME_SMA": "average volume ({p})", "EMA": "EMA({p})", "SMA": "SMA({p})",
+    "RSI": "RSI({p})", "ADX": "ADX({p})", "PLUS_DI": "+DI({p})", "MINUS_DI": "-DI({p})",
+    "ATR": "ATR({p})", "SUPERTREND": "Supertrend({p}, {m})",
+    "OR_HIGH": "opening-range high ({p} min)", "OR_LOW": "opening-range low ({p} min)",
+    "BB_UPPER": "upper Bollinger band ({p}, {m}σ)", "BB_MID": "Bollinger middle band ({p})",
+    "BB_LOWER": "lower Bollinger band ({p}, {m}σ)",
 }
-OPERATOR_WORDS: Dict[str, Tuple[str, str]] = {
-    "GT": ("{l} above {r}", "{l} {r} च्या वर"), "GTE": ("{l} at or above {r}", "{l} {r} च्या वर किंवा बरोबर"),
-    "LT": ("{l} below {r}", "{l} {r} च्या खाली"), "LTE": ("{l} at or below {r}", "{l} {r} च्या खाली किंवा बरोबर"),
-    "CROSSES_ABOVE": ("{l} crosses above {r}", "{l} {r} च्या वर ओलांडतो"), "CROSSES_BELOW": ("{l} crosses below {r}", "{l} {r} च्या खाली ओलांडतो"),
+OPERATOR_WORDS: Dict[str, str] = {
+    "GT": "{l} above {r}", "GTE": "{l} at or above {r}",
+    "LT": "{l} below {r}", "LTE": "{l} at or below {r}",
+    "CROSSES_ABOVE": "{l} crosses above {r}", "CROSSES_BELOW": "{l} crosses below {r}",
 }
-DIRECTION_WORDS = {"LONG": ("LONG only", "फक्त LONG"), "SHORT": ("SHORT only", "फक्त SHORT"), "BOTH": ("both sides", "दोन्ही बाजू")}
-TIMEFRAME_WORDS = {"1min": ("1-minute", "1 मिनिट"), "5min": ("5-minute", "5 मिनिट"), "15min": ("15-minute", "15 मिनिट"), "60min": ("hourly", "1 तास"), "day": ("daily", "दैनिक")}
+DIRECTION_WORDS = {"LONG": "LONG only", "SHORT": "SHORT only", "BOTH": "both sides"}
+TIMEFRAME_WORDS = {"1min": "1-minute", "5min": "5-minute", "15min": "15-minute", "60min": "hourly", "day": "daily"}
 
 
 def operand_words(lang: str, o: Operand) -> str:
-    """One operand in words: `EMA(50) on 15-minute`, `कालचा high`, `30`."""
+    """One operand in words: `EMA(50) on 15-minute`, `yesterday's high`, `30`."""
     if o.type == "value":
         return f"{o.value:g}"
-    en, mr = OPERAND_WORDS.get(o.indicator, (o.indicator, o.indicator))
-    text = tr(lang, en, mr).format(p=o.period, m=f"{o.multiplier:g}")
+    en = OPERAND_WORDS.get(o.indicator, o.indicator)
+    text = en.format(p=o.period, m=f"{o.multiplier:g}")
     if o.timeframe:
-        tf_en, tf_mr = TIMEFRAME_WORDS.get(o.timeframe, (o.timeframe, o.timeframe))
-        text = tr(lang, f"{text} on {tf_en} candles", f"{text} ({tf_mr} candles)")
+        tf_en = TIMEFRAME_WORDS.get(o.timeframe, o.timeframe)
+        text = f"{text} on {tf_en} candles"
     return text
 
 
 def rule_words(lang: str, c: Condition) -> str:
     """One condition in the trader's words, e.g. `close crosses above the opening-range high (15 min)`."""
-    en, mr = OPERATOR_WORDS[c.operator]
-    return tr(lang, en, mr).format(l=operand_words(lang, c.left), r=operand_words(lang, c.right))
+    en = OPERATOR_WORDS[c.operator]
+    return en.format(l=operand_words(lang, c.left), r=operand_words(lang, c.right))
 
 
 SYMBOL_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (   # longest / most specific first
-    (r"bank\s*nifty|banknifty|बँक\s*निफ्टी|बँकनिफ्टी|बैंक\s*निफ्टी|नि?फ़?्टी\s*बँक|nifty\s*bank", "NIFTY BANK"),
-    (r"fin\s*nifty|finnifty|फिन\s*निफ्टी|nifty\s*fin", "NIFTY FIN SERVICE"),
-    (r"midcap\s*nifty|midcpnifty|nifty\s*midcap|मिडकॅप", "NIFTY MID SELECT"),
-    (r"sensex|सेन्सेक्स", "SENSEX"),
-    (r"nifty\s*50|\bnifty\b|निफ्टी|नीफ्टी|निफ़्टी", "NIFTY 50"),
+    (r"bank\s*nifty|banknifty|nifty\s*bank", "NIFTY BANK"),
+    (r"fin\s*nifty|finnifty|nifty\s*fin", "NIFTY FIN SERVICE"),
+    (r"midcap\s*nifty|midcpnifty|nifty\s*midcap", "NIFTY MID SELECT"),
+    (r"sensex", "SENSEX"),
+    (r"nifty\s*50|\bnifty\b", "NIFTY 50"),
 ))
 STYLE_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (
-    (r"scalp|स्कॅल्प|स्काल्प|1\s*min|एक\s*मिनिट|1\s*मिनिट", "scalping"), (r"intraday|इंट्राडे|5\s*min|5\s*मिनिट|पाच\s*मिनिट", "intraday")))
+    (r"scalp|1\s*min", "scalping"), (r"intraday|5\s*min", "intraday")))
 DIRECTION_REQUEST_WORDS: Tuple[Tuple[re.Pattern, str], ...] = tuple((re.compile(p), n) for p, n in (
-    (r"both|दोन्ही|long\s*(and|&|\+)\s*short", "both"),
-    (r"only\s*long|long\s*only|फक्त\s*long|फक्त\s*खरेदी|buy\s*only|only\s*buy|तेजी|bullish|लाँग", "long"),
-    (r"only\s*short|short\s*only|फक्त\s*short|फक्त\s*विक्री|sell\s*only|only\s*sell|मंदी|bearish|शॉर्ट", "short"),
-    (r"\blong\b|खरेदी", "long"), (r"\bshort\b|विक्री", "short"),
+    (r"both|long\s*(and|&|\+)\s*short", "both"),
+    (r"only\s*long|long\s*only|buy\s*only|only\s*buy|bullish", "long"),
+    (r"only\s*short|short\s*only|sell\s*only|only\s*sell|bearish", "short"),
+    (r"\blong\b", "long"), (r"\bshort\b", "short"),
 ))
 # Upper-case words that are never a ticker (request grammar, platform words, indicator names).
 TICKER_STOP_WORDS = frozenset("""LONG SHORT BOTH ONLY BUY SELL AND THE FOR WITH ON IN AT TO OF USE MY PLEASE GIVE MAKE BUILD STUDY TODAY NOW SIDES SIDE
 INTRADAY SCALPING SCALP SCALPER SWING PAPER LIVE TRADE TRADES TRADING STRATEGY STOP TARGET DAY MIN MINS MINUTE MINUTES HOUR CANDLE CANDLES
 VWAP EMA SMA RSI ATR ADX BB NSE BSE MCX NFO FNO OPTION OPTIONS FUTURE FUTURES CE PE CALL PUT BULLISH BEARISH NEUTRAL AUTO MARKET BIAS LEVEL LEVELS""".split())
 _TICKER = re.compile(r"\b([A-Z][A-Z&-]{2,19})\b")
-_DEVANAGARI_DIGITS = str.maketrans("०१२३४५६७८९", "0123456789")
 
 
 def _is_grammar_word(word: str) -> bool:
@@ -388,18 +375,15 @@ def _is_grammar_word(word: str) -> bool:
 
 
 def parse_request(text: str, *, default_symbol: str = "NIFTY 50") -> dict:
-    """A plain-words request in Marathi or English - `बँक निफ्टी फक्त long scalping`, `RELIANCE intraday both
-    sides` - into the strategist's inputs. Returns what was matched so the UI can show it; anything not
-    said keeps the default (symbol as given, intraday, direction decided by the market). `language` is
-    "mr" only when the request carries Devanagari (`matched["language"]` says it was detected); a Latin-only
-    request leaves the caller's language alone."""
+    """A plain-words request - `banknifty long only scalping`, `RELIANCE intraday both sides` - into the strategist's
+    inputs. Returns what was matched so the UI can show it; anything not said keeps the default (symbol as given,
+    intraday, direction decided by the market). ATP is English only: the words are English, and `language` is always
+    "en" (a request in another script matches nothing and keeps the defaults)."""
     raw = (text or "").strip()
-    norm = raw.translate(_DEVANAGARI_DIGITS)
+    norm = raw
     low = norm.lower()
     matched: Dict[str, str] = {}
     lang = "en"
-    if re.search(r"[\u0900-\u097F]", raw):
-        lang, matched["language"] = "mr", "mr"
     symbol = default_symbol
     for pattern, name in SYMBOL_WORDS:
         if pattern.search(low):
@@ -424,9 +408,9 @@ def parse_request(text: str, *, default_symbol: str = "NIFTY 50") -> dict:
 
 
 def request_summary(lang: str, parsed: dict) -> str:
-    style_en, style_mr = ("scalping (1-minute, 5-minute filter)", "scalping (1 मिनिट, 5 मिनिट filter)") if parsed["style"] == "scalping" else ("intraday (5-minute, 15-minute filter)", "intraday (5 मिनिट, 15 मिनिट filter)")
-    direction = {"long": ("LONG only", "फक्त LONG"), "short": ("SHORT only", "फक्त SHORT"), "both": ("both sides", "दोन्ही बाजू"), "auto": ("both sides", "दोन्ही बाजू")}[parsed["direction"]]
-    return tr(lang, f"Understood: {parsed['symbol']}, {style_en}, {direction[0]}.", f"समजले: {parsed['symbol']}, {style_mr}, {direction[1]}.")
+    style = "scalping (1-minute, 5-minute filter)" if parsed["style"] == "scalping" else "intraday (5-minute, 15-minute filter)"
+    direction = {"long": "LONG only", "short": "SHORT only", "both": "both sides", "auto": "both sides"}[parsed["direction"]]
+    return f"Understood: {parsed['symbol']}, {style}, {direction}."
 
 
 def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str, real_data: bool = True) -> dict:
@@ -444,20 +428,17 @@ def plan_for(lang: str, r: dict, study: dict, risk: RiskConfig, symbol: str, rea
     verdict, verdict_text = _verdict(lang, r["in_sample"], r["out_of_sample"], real_data)
     side = "LONG" if cfg.long_conditions and not cfg.short_conditions else "SHORT" if cfg.short_conditions and not cfg.long_conditions else "BOTH"
     return {
-        "id": t.id, "name": tr(lang, t.en, t.mr), "family": t.family, "direction": side, "timeframe": cfg.timeframe,
-        "why": tr(lang, t.why_en, t.why_mr), "params": r["params"],
+        "id": t.id, "name": t.en, "family": t.family, "direction": side, "timeframe": cfg.timeframe,
+        "why": t.why_en, "params": r["params"],
         "rules": {"long": [c.label() for c in cfg.long_conditions], "short": [c.label() for c in cfg.short_conditions]},
         "rules_text": {"long": [rule_words(lang, c) for c in cfg.long_conditions], "short": [rule_words(lang, c) for c in cfg.short_conditions]},
-        "direction_text": tr(lang, *DIRECTION_WORDS[side]), "timeframe_text": tr(lang, *TIMEFRAME_WORDS.get(cfg.timeframe, (cfg.timeframe, cfg.timeframe))),
-        "exits": tr(lang, f"Stop {cfg.stop_loss_atr_mult:g} x ATR(14); targets {cfg.target_rr[0]:g}R / {cfg.target_rr[1]:g}R; flat by 15:15.",
-                    f"Stop {cfg.stop_loss_atr_mult:g} x ATR(14); target {cfg.target_rr[0]:g}R / {cfg.target_rr[1]:g}R; 15:15 पर्यंत सगळे बंद."),
+        "direction_text": DIRECTION_WORDS[side], "timeframe_text": TIMEFRAME_WORDS.get(cfg.timeframe, cfg.timeframe),
+        "exits": f"Stop {cfg.stop_loss_atr_mult:g} x ATR(14); targets {cfg.target_rr[0]:g}R / {cfg.target_rr[1]:g}R; flat by 15:15.",
         "triggers": triggers, "stop_points": stop_pts, "risk_amount": risk_amount, "quantity_hint": qty,
         "in_sample": r["in_sample"], "out_of_sample": r["out_of_sample"], "all": r["all"], "oos_sessions": r["oos_sessions"],
         "verdict": verdict, "verdict_text": verdict_text, "trades": r["trades"],
-        "summary": tr(lang, f"{tr(lang, t.en, t.mr)}: {DIRECTION_WORDS[side][0]} on {TIMEFRAME_WORDS.get(cfg.timeframe, (cfg.timeframe, cfg.timeframe))[0]} candles, "
-                            f"{len(cfg.long_conditions) + len(cfg.short_conditions)} rules, stop {cfg.stop_loss_atr_mult:g} x ATR. {verdict_text}",
-                    f"{tr(lang, t.en, t.mr)}: {TIMEFRAME_WORDS.get(cfg.timeframe, (cfg.timeframe, cfg.timeframe))[1]} candles वर {DIRECTION_WORDS[side][1]}, "
-                            f"{len(cfg.long_conditions) + len(cfg.short_conditions)} नियम, stop {cfg.stop_loss_atr_mult:g} x ATR. {verdict_text}"),
+        "summary": (f"{t.en}: {DIRECTION_WORDS[side]} on {TIMEFRAME_WORDS.get(cfg.timeframe, cfg.timeframe)} candles, "
+                            f"{len(cfg.long_conditions) + len(cfg.short_conditions)} rules, stop {cfg.stop_loss_atr_mult:g} x ATR. {verdict_text}"),
         "config": json.loads(cfg.model_dump_json()),
         "deployment": {"strategy_id": None, "symbol": symbol.upper(), "exchange": "NSE", "timeframe": cfg.timeframe, "mode": "PAPER",
                        "holding": "INTRADAY", "exit_rules": {"time_exit_at": "15:10", "break_even_at_r": 1.0}},
@@ -473,12 +454,12 @@ def _side_for(study: dict, direction: str) -> List[str]:
     return ["both"]
 
 
-def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "intraday", direction: str = "both",
+def build(df_1m: pd.DataFrame, study: dict, lang: str = "en", *, style: str = "intraday", direction: str = "both",
           risk: Optional[RiskConfig] = None, extra_configs: Optional[List[Tuple[str, CustomStrategyConfig]]] = None,
           real_data: bool = True) -> dict:
     """Shortlist, tune, validate and rank. `extra_configs` (name, config) - e.g. the AI's proposals -
     are validated the same way (no tuning: they are taken as written)."""
-    lang = "mr" if lang == "mr" else "en"
+    lang = "en"         # ATP is English only
     risk = risk or RiskConfig()
     base, htf = STYLES.get(style, STYLES["intraday"])
     df = df_1m if base == "1min" else resample_ohlc(df_1m, base)
@@ -494,9 +475,8 @@ def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "i
         cfg = cfg.model_copy(update={"timeframe": base})
         is_df, full_df, oos = split_sessions(df)
         everything = simulate(cfg, full_df, warmup=30)
-        ai_t = Template("ai_" + re.sub(r"\W+", "_", name.lower())[:30], name, name, "ai", (), {}, lambda *a: ([], []),
-                        "Proposed by your AI provider from today's study, then validated like every other candidate.",
-                        "आजच्या अभ्यासावरून तुमच्या AI ने सुचवलेली, आणि इतरांसारखीच तपासलेली.")
+        ai_t = Template("ai_" + re.sub(r"\W+", "_", name.lower())[:30], name, "ai", (), {}, lambda *a: ([], []),
+                        "Proposed by your AI provider from today's study, then validated like every other candidate.")
         results.append({"template": ai_t, "params": {}, "config": cfg, "in_sample": metrics(simulate(cfg, is_df, warmup=30)),
                         "out_of_sample": metrics([x for x in everything if x["date"] in set(oos)]), "all": metrics(everything),
                         "trades": everything[-60:], "oos_sessions": oos, "source": "ai"})
@@ -510,18 +490,13 @@ def build(df_1m: pd.DataFrame, study: dict, lang: str = "mr", *, style: str = "i
     traded = [r for r in results if r["all"]["trades"] > 0] or results
     plans = [plan_for(lang, r, study, risk, study["symbol"], real_data) for r in traded[:3]]
     tested = len(results)
-    notes = [tr(lang, f"{tested} candidate set(s) tuned on {len(set(pd.Series(_ist_index(df).date)))} sessions; "
-                      f"parameters chosen on the first {int(IS_FRACTION * 100)}% and judged on the rest.",
-                f"{tested} उमेदवार strategies {len(set(pd.Series(_ist_index(df).date)))} सत्रांवर tune केल्या; parameters पहिल्या "
-                f"{int(IS_FRACTION * 100)}% सत्रांवर निवडले आणि उरलेल्या सत्रांवर तपासले.")]
+    notes = [(f"{tested} candidate set(s) tuned on {len(set(pd.Series(_ist_index(df).date)))} sessions; "
+                      f"parameters chosen on the first {int(IS_FRACTION * 100)}% and judged on the rest.")]
     if plans and all(p["verdict"] in ("sample", "insufficient") for p in plans):
-        notes.append(tr(lang, "No judgement on these candles: " + ("sample data is not performance." if not real_data else
-                              f"fewer than {MIN_OOS_TRADES} trades on the unseen sessions.") + " The results are shown as data; what to do with them is your decision.",
-                        "या candles वर निर्णय नाही: " + ("sample data म्हणजे निकाल नव्हे." if not real_data else f"न पाहिलेल्या सत्रांत {MIN_OOS_TRADES} पेक्षा कमी trades.")
-                        + " निकाल data म्हणून दाखवले आहेत; त्यावर काय करायचे हा निर्णय तुमचा."))
+        notes.append(("No judgement on these candles: " + ("sample data is not performance." if not real_data else
+                              f"fewer than {MIN_OOS_TRADES} trades on the unseen sessions.") + " The results are shown as data; what to do with them is your decision."))
     elif plans and plans[0]["verdict"] != "robust":
-        notes.append(tr(lang, "No candidate held up on the unseen sessions - the results are shown as data; what to do with them is your decision.",
-                        "कोणतीच strategy नवीन सत्रांवर टिकली नाही - निकाल data म्हणून दाखवले आहेत; त्यावर काय करायचे हा निर्णय तुमचा."))
+        notes.append("No candidate held up on the unseen sessions - the results are shown as data; what to do with them is your decision.")
     return {"style": style, "base_timeframe": base, "higher_timeframe": htf, "sides": sides, "candidates": plans,
             "best": None, "notes": notes, "tested": tested}       # P0.8-D: no "best" badge - ranked by data, chosen by the trader
 

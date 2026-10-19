@@ -23,9 +23,7 @@ def _run(coro):
     ("The bull case needs 25200; the bear case is below 24850.", set()),
     ("A bearish divergence formed on RSI.", set()),
     ("It is not bullish today.", set()),
-    ("बाजार तेजीत आहे.", {"BULL"}),
-    ("बाजार तेजीत नाही.", set()),
-    ("मंदीचा कल दिसतो.", {"BEAR"}),
+    ("\u092c\u093e\u091c\u093e\u0930 \u0924\u0947\u091c\u0940\u0924.", set()),      # English only: no Marathi direction words any more
     ("Regime TRENDING_UP, bias BULLISH", {"BULL"}),
 ])
 def test_direction_claims_in_both_languages(text, found):

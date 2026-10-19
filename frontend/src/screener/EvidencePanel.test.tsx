@@ -65,9 +65,9 @@ describe("EvidenceView (U8 EV1)", () => {
   });
 
   it("keeps a Devanagari screen name exactly as the user typed it", () => {
-    const named = { ...pack, screen: { ...pack.screen, name: "मोमेंटम स्क्रीन" } };
+    const named = { ...pack, screen: { ...pack.screen, name: "\u092e\u094b\u092e\u0947\u0902\u091f\u092e \u0938\u094d\u0915\u094d\u0930\u0940\u0928" } };
     const html = renderToStaticMarkup(<EvidenceView pack={named} hiddenBlocks={none} showFailed={false} />);
-    expect(html).toContain("मोमेंटम स्क्रीन");
+    expect(html).toContain("\u092e\u094b\u092e\u0947\u0902\u091f\u092e \u0938\u094d\u0915\u094d\u0930\u0940\u0928");
   });
 });
 

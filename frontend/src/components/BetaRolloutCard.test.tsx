@@ -55,6 +55,6 @@ describe("BetaRolloutCard (Z10-e)", () => {
   });
 
   it("uses no Devanagari", () => {
-    expect(/[ऀ-ॿ]/.test(text(render(base)))).toBe(false);
+    expect(/[\u0900-\u097f]/.test(text(render(base)))).toBe(false);
   });
 });

@@ -16,7 +16,7 @@ import sample from "./thenSample.json";
 const template = sample.template as unknown as ThenTemplate;
 const intents = sample.intents as unknown as ThenIntent[];
 const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/\s+/g, " ");
-const DEVANAGARI = /[ऀ-ॿ]/;
+const DEVANAGARI = /[\u0900-\u097f]/;
 const SOURCES = import.meta.glob<string>(["./*.ts", "./*.tsx", "!./*.test.tsx"], { query: "?raw", import: "default", eager: true });
 
 function lookup(path: string): unknown {

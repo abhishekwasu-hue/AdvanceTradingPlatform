@@ -90,7 +90,7 @@ def test_lg1_2_the_bibliographic_check_against_public_catalogues():
 
 def test_the_files_are_english_only():
     for path in (lg.DATA_FILE, lg.SOURCES_FILE):
-        assert not any("ऀ" <= ch <= "ॿ" for ch in path.read_text(encoding="utf-8")), path.name
+        assert not any("\u0900" <= ch <= "\u097f" for ch in path.read_text(encoding="utf-8")), path.name
 
 
 def _first(data):
@@ -110,7 +110,7 @@ def _first(data):
     (lambda c, s: _first(c)["style"].update(text="I only trade leaders in an uptrend."), "first person is not allowed (I)"),
     (lambda c, s: _first(c)["style"].update(text="This is my checklist for leaders."), "first person is not allowed (my)"),
     (lambda c, s: _first(c)["style"].update(text='He called it "the template".'), "no quotation marks"),
-    (lambda c, s: _first(c)["style"].update(text="Trend following in शेअर markets."), "English only"),
+    (lambda c, s: _first(c)["style"].update(text="Trend following in \u0936\u0947\u0905\u0930 markets."), "English only"),
     (lambda c, s: _first(c).update(name="Minervini-style SEPA template"), "no trademarked or branded method name in a title (SEPA)"),
     (lambda c, s: c["cards"][4].update(name="Raschke-style Holy Grail"), "no trademarked or branded method name in a title (Holy Grail)"),
     (lambda c, s: _first(c).update(name="Trend template"), "name must read 'Minervini-style <screen>'"),
@@ -135,7 +135,7 @@ def _first(data):
     (lambda c, s: s["sources"][0].pop("year"), "needs a publication year"),
     (lambda c, s: s["sources"][0].update(authors=[]), "needs its authors"),
     (lambda c, s: s["sources"][0].update(covers=""), "say what it covers"),
-    (lambda c, s: s["sources"][0].update(title="शेअर बाजार"), "English only"),
+    (lambda c, s: s["sources"][0].update(title="\u0936\u0947\u0905\u0930 \u092c\u093e\u091c\u093e\u0930"), "English only"),
     (lambda c, s: s["sources"].append(dict(s["sources"][0], id="uncited_book")), "source 'uncited_book' is listed but no card cites it"),
     (lambda c, s: c.update(cards=[]), "cards: none defined"),
     (lambda c, s: s["sources"][0].update(review="pending"), "review must be one of verified, unverified ('pending' given)"),

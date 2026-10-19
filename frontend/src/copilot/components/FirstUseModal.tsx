@@ -49,13 +49,6 @@ export default function FirstUseModal({ children, placeholder }: { children: Rea
         <div className="space-y-3" data-testid="first-use-modal">
           <p className="rounded-lg border border-ai/30 bg-ai/5 p-3 font-semibold leading-relaxed text-fg">{t("firstUse.headline")}</p>
           <p className="leading-relaxed text-fg">{ack.text.en}</p>
-          {ack.text.mr && (
-            <details className="text-xs text-fg-muted">
-              <summary className="cursor-pointer text-brand hover:underline">{t("firstUse.readMr")}</summary>
-              {/* the server's own translation of the versioned text (data, not an interface string) */}
-              <p className="mt-1 leading-relaxed" lang="mr">{ack.text.mr}</p>
-            </details>
-          )}
           <label className="flex items-start gap-2 text-sm text-fg">
             <input type="checkbox" className="mt-0.5 h-4 w-4 accent-[rgb(var(--ai))]" checked={read} onChange={(e) => setRead(e.target.checked)} />
             <span>{t("firstUse.confirm")}</span>

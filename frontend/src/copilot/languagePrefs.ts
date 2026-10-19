@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 
 /**
- * The Copilot's language settings, stored per browser: the interface locale (English only for now) and the
- * interview's second-language line ("mr" or "off"; a Hindi bundle would add "hi"). Kept free of i18next so the
- * Settings page can show it without loading the Copilot's i18n chunk.
+ * The Copilot's language settings, stored per browser: the interface locale (English only - the owner's ruling) and the
+ * strategy interview's second-language line ("mr" or "off"; the Hindi bundle adds "hi" to SECONDARY_LOCALES and an
+ * INTERVIEW_HI object to i18n/interviewSecondary.ts). Only the interview screen reads or switches it.
  */
 export const UI_LOCALES = ["en"] as const;
 export type UiLocale = (typeof UI_LOCALES)[number];

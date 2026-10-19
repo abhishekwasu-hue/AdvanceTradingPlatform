@@ -85,7 +85,7 @@ describe("public status page (Z10-e G7)", () => {
   it("uses no advice wording and no Devanagari", () => {
     const words = text(render(ok)).toLowerCase();
     for (const w of [" buy ", " sell ", "recommend", " target", "guarantee", "profit"]) expect(words).not.toContain(w);
-    expect(/[ऀ-ॿ]/.test(words)).toBe(false);
+    expect(/[\u0900-\u097f]/.test(words)).toBe(false);
   });
 });
 

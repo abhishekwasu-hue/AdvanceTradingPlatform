@@ -37,6 +37,6 @@ describe("PlanLimitsV2 (AMW-1)", () => {
   });
 
   it("uses no Devanagari", () => {
-    expect(/[ऀ-ॿ]/.test(text(renderToStaticMarkup(<PlanLimitsV2 limits={FREE} />)))).toBe(false);
+    expect(/[\u0900-\u097f]/.test(text(renderToStaticMarkup(<PlanLimitsV2 limits={FREE} />)))).toBe(false);
   });
 });

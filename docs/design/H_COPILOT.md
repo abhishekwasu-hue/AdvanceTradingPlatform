@@ -55,7 +55,7 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   where Redis is reachable and falls back to an in-process window (the same pattern as Telegram inbound). Heavy jobs
   (strategist, market study) count as N units. Test: the limit is enforced, it resets, and the per-plan values apply.
 - **c. Output filter.** Status: **built** (copilot, guide, thesis; generator and scanner text with d). `app/ai/output_filter.py` checks every LLM text output on the server.
-  - The advice and guarantee word list is config (en + mr: recommend, guaranteed, sure-shot, खात्रीशीर, हमखास, …).
+  - The advice and guarantee word list is config (English only since Oct 2026 - the Marathi / Hindi lists were removed: recommend, guaranteed, sure-shot, …).
   - A hit gets a neutral rewrite, or falls back to the rule text, and is flagged in the audit.
   - A specific buy/sell/strike call gets educational framing plus a disclaimer.
   - Tests in both languages.

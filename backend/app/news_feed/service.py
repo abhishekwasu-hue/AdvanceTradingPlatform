@@ -187,11 +187,15 @@ async def ingest(session: AsyncSession, now: Optional[datetime] = None, *, clien
 
 async def alert_tenants(session: AsyncSession, row: NewsEventRecord, c: dict, tenants: List[int]) -> int:
     severity = NotificationSeverity.CRITICAL if int(c.get("severity", 1)) >= 5 else NotificationSeverity.WARNING
+    # The AI's one-liner goes through the English output filter (also at parse time; again here for stored rows); a
+    # withheld line leaves the alert with the headline only.
+    one_line = cl.screen_one_line(str(c.get("one_line_en") or "")) if c.get("method") == "ai" else str(c.get("one_line_en") or "")
+    lead = f"{one_line}\n" if one_line else ""
     sent = 0
     for tenant_id in tenants:
         await notify(session, tenant_id, NotificationType.NEWS_ALERT,
                      title=f"News (unverified feed, severity {c.get('severity')}): {row.headline[:120]}",
-                     message=f"{c.get('one_line_en', '')}\n{c.get('one_line_mr', '')}\nSource: {BY_ID.get(row.feed_id).name if row.feed_id in BY_ID else row.feed_id} - {row.source_url or ''}\n"
+                     message=f"{lead}Source: {BY_ID.get(row.feed_id).name if row.feed_id in BY_ID else row.feed_id} - {row.source_url or ''}\n"
                              "Unverified feed item: read the source before acting. No position was changed.",
                      severity=severity)
         sent += 1

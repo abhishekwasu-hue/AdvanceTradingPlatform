@@ -7,7 +7,7 @@ import { COPILOT_EN } from "./locales/en";
  * The Copilot's i18n: every key the code asks for exists in the English bundle, and Devanagari appears only in the
  * interview's second-language namespace (the allowlist) - never in an interface string.
  */
-const DEVANAGARI = /[ऀ-ॿ]/;
+const DEVANAGARI = /[\u0900-\u097f]/;
 
 // The Copilot's source text, read through Vite (no Node APIs: the test files are type-checked with the app).
 const RAW = {

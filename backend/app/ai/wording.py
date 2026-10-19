@@ -2,10 +2,9 @@
 
 The same list the frontend lints its own UI strings with (`frontend/src/copilot/compliance.test.ts`, BANNED) - words
 that make an explanation sound like advice or a promise: recommend, best, "for you", match %, guarantee, assured,
-risk-free, sure-shot, profit claims - plus the Marathi forms (खात्रीशीर, हमखास, गॅरंटी, निश्चित / नक्की नफा,
-शिफारस करतो). A model's disclaimer is not a claim: an English word negated in its own clause ("not a recommendation", "no
-guarantee", "no strategy is risk-free", "guarantees nothing") and a Marathi word followed by नाही within its clause
-pass - but never through "no doubt" / "without question" / "isn't it", which strengthen a claim. "Best bid / ask /
+risk-free, sure-shot, profit claims. ATP is English only: the list is English, and text in another script never reaches
+the trader (`output_filter` withholds it). A model's disclaimer is not a claim: a word negated in its own clause ("not a
+recommendation", "no guarantee", "no strategy is risk-free", "guarantees nothing") passes - but never through "no doubt" / "without question" / "isn't it", which strengthen a claim. "Best bid / ask /
 practice / effort" and "at best" are ordinary phrases.
 
 `banned_terms(text)` names what matched; callers retry the model once naming the words, else fall back to the
@@ -25,13 +24,6 @@ _EN: List[Tuple[str, Pattern[str]]] = [
     ("assured / risk-free / sure-shot", re.compile(r"\bassured\b|\brisk[- ]free\b|\bsure[- ]?shot\b", re.I)),
     ("profit claim", re.compile(r"\b(?:sure|certain|easy|guaranteed) (?:profit|returns?|gains?)\b|\bdouble your\b", re.I)),
 ]
-_MR: List[Tuple[str, Pattern[str]]] = [
-    ("खात्रीशीर", re.compile(r"खात्रीशीर")),
-    ("हमखास", re.compile(r"हमखास")),
-    ("गॅरंटी", re.compile(r"गॅरंटी|गॅरेंटी|ग्यारंटी")),
-    ("निश्चित / नक्की नफा", re.compile(r"(?:निश्चित|नक्की|पक्का)\s+(?:नफा|फायदा|परतावा)")),
-    ("शिफारस करतो", re.compile(r"शिफारस\s+(?:करतो|करते|करतात|करू|करेन|केली)")),
-]
 _CLAUSE = re.compile(r"[.!?;:,\n]")
 # A negation governs a term only inside its own clause, at most two words before it, and never through
 # "no doubt" / "without question" / "isn't it" (those make a claim stronger, not weaker).
@@ -39,7 +31,6 @@ _NEGATION_BEFORE = re.compile(
     r"(?:\bnot|\bno|\bnever|n't|\bnothing|\bwithout|\bnor|\bneither|\bcannot)\b"
     r"(?:\s+(?!doubt\b|question\b|it\b|that\b)[\w-]+){0,2}\s*$", re.I)
 _NEGATION_AFTER_EN = re.compile(r"^\w*\s+(?:nothing|no\b)", re.I)              # "guarantees nothing", "guarantee no ..."
-_NEGATION_AFTER = re.compile(r"^(?:\s*(?!शंका)\S+){0,3}?\s*(?:नाही|नसतो|नसते|नसतात|नव्हे)")
 # Ordinary phrases that use a banned word without claiming anything.
 _ALLOWED = re.compile(r"\bbest\s+(?:bid|ask|offer|practices?|efforts?)\b|\bat\s+best\b", re.I)
 
@@ -68,9 +59,6 @@ def banned_terms(text: str) -> List[str]:
                 continue
             found.append(name)
             break
-    for name, pattern in _MR:
-        if any(not _NEGATION_AFTER.search(_clause_after(text, m.end())) for m in pattern.finditer(text)):
-            found.append(name)
     return found
 
 

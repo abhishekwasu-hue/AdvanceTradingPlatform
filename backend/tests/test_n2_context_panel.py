@@ -138,7 +138,7 @@ def own_index_bars():
 
 def test_panel_tiles_from_the_lake_events_and_seams(own_index_bars):
     end = _today() - timedelta(days=1)
-    days = _sessions(300, end)
+    days = _sessions(300, end)                       # weekdays only: days[-1] is the newest bar (a Friday after a weekend)
     nifty = [20000 + 10 * i + 150 * math.sin(i / 3.0) for i in range(300)]
     _seed("NSE_INDEX:NIFTY50", nifty, days)
     vix = [12 + 3 * math.sin(i / 7.0) for i in range(300)]
@@ -168,11 +168,11 @@ def test_panel_tiles_from_the_lake_events_and_seams(own_index_bars):
     assert body["order"] == ["regime", "breadth", "vix", "fii_dii", "global", "events"]
 
     regime = tiles["regime"]
-    assert regime["status"] in ("ok", "stale") and regime["as_of"] == end.isoformat() and regime["daily"]["trend"] in ("UPTREND", "DOWNTREND", "RANGE")
+    assert regime["status"] in ("ok", "stale") and regime["as_of"] == days[-1].isoformat() and regime["daily"]["trend"] in ("UPTREND", "DOWNTREND", "RANGE")
     assert regime["weekly"]["trend"] in ("UPTREND", "DOWNTREND", "RANGE") and regime["close"] == round(nifty[-1], 2)
 
     breadth = tiles["breadth"]
-    assert breadth["as_of"] == end.isoformat() and breadth["advances"] >= 1 and breadth["declines"] >= 1 and breadth["unchanged"] >= 1
+    assert breadth["as_of"] == days[-1].isoformat() and breadth["advances"] >= 1 and breadth["declines"] >= 1 and breadth["unchanged"] >= 1
 
     v = tiles["vix"]
     window = vix[-service.VIX_RANK_SESSIONS:]

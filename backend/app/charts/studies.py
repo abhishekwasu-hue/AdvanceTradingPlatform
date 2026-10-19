@@ -110,6 +110,7 @@ def check(exprs: Sequence[str], tf: str, functions: Optional[Dict[str, Any]] = N
     """Each expression parsed and checked as a study: [{expr, ok, problems, kind, unit, lookback, ast}]. `functions`: the
     registry view to check against (AMW-3 review: the flag-off view while `screenql_amw_functions` is off)."""
     from app.screener import nodes
+    from app.screener import ownership as ownership_gate
     from app.screener.parser import ScreenQLSyntaxError, parse
     from app.screener.routes import missing_data
     from app.screener.validator import validate_study
@@ -131,6 +132,10 @@ def check(exprs: Sequence[str], tf: str, functions: Optional[Dict[str, Any]] = N
         problems = [p.as_dict() for p in sc.validated.problems]
         problems += [{"message": f"{m}() needs data a chart study does not load (sector / index / F&O lists or the option chain)", "pos": None}
                      for m in missing_data(ast)]
+        # N3 S8a: /run loads the shareholding patterns and events, a chart study does not - refused up front with the
+        # reason whether `screener_ownership` is on or off (never drawn as NaN, never a runtime "not loaded" error)
+        problems += [{"message": f"{m}() needs shareholding patterns and company events, which a chart study does not load yet",
+                      "pos": None} for m in ownership_gate.flagged_calls(ast)]
         row.update(ok=not problems, problems=problems, kind=sc.kind, unit=sc.unit, ast=ast, text=nodes.to_text(ast),
                    lookback=max([int(v) for v in sc.validated.lookback.values()] or [0]),
                    lookback_by_tf={k: int(v) for k, v in sc.validated.lookback.items()})

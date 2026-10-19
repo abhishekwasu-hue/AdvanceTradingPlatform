@@ -1,4 +1,4 @@
-from typing import Callable, Optional
+from typing import Callable, Optional, Tuple
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -86,21 +86,33 @@ def require_role(*allowed: UserRole, active_tenant: bool = False, scope: Optiona
     """
 
     async def _check(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> User:
-        if user.role != UserRole.SUPER_ADMIN.value and user.role not in {r.value for r in allowed}:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role for this action")
-        if scope is not None:
-            # Phase N2: a per-member scope denial (users.scope_overrides) bites even when the role allows.
-            from app.auth.scopes import has_scope, scope_denied
-            if not has_scope(user, scope):
-                raise scope_denied(user, scope)
-        if active_tenant and user.role != UserRole.SUPER_ADMIN.value:
-            # A suspended organisation keeps read access (its people can still see their positions
-            # and history) but every trading/configuration write is refused (app/plans/limits.py).
-            from app.plans.limits import ensure_tenant_active, load_tenant
-            ensure_tenant_active(await load_tenant(session, user.tenant_id))
+        await ensure_role(session, user, allowed, active_tenant=active_tenant, scope=scope)
         return user
 
     return _check
+
+
+async def ensure_role(session: AsyncSession, user: User, allowed: Tuple[UserRole, ...], *, active_tenant: bool = False,
+                      scope: Optional[str] = None) -> None:
+    """`require_role`'s checks for code that is not a route (N3 S9: the Copilot's screener tools act for the caller and
+    must pass the same gate the route would). Raises the same HTTPException."""
+    if user.role != UserRole.SUPER_ADMIN.value and user.role not in {r.value for r in allowed}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient role for this action")
+    if scope is not None:
+        # Phase N2: a per-member scope denial (users.scope_overrides) bites even when the role allows.
+        from app.auth.scopes import has_scope, scope_denied
+        if not has_scope(user, scope):
+            raise scope_denied(user, scope)
+    if active_tenant and user.role != UserRole.SUPER_ADMIN.value:
+        # A suspended organisation keeps read access (its people can still see their positions
+        # and history) but every trading/configuration write is refused (app/plans/limits.py).
+        from app.plans.limits import ensure_tenant_active, load_tenant
+        ensure_tenant_active(await load_tenant(session, user.tenant_id))
+
+
+async def ensure_trader(session: AsyncSession, user: User, scope: str = "trading:write") -> None:
+    """`require_trader` for non-route code."""
+    await ensure_role(session, user, TRADING_ROLES, active_tenant=True, scope=scope)
 
 
 # The two tenant-side gates every write endpoint uses. Reads stay on get_current_user, so a

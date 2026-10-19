@@ -24,8 +24,15 @@ ANY_UNIT = "any"                      # a literal or a parameter: takes the othe
 
 @dataclass
 class Problem:
+    """A refusal: the message (for the person who wrote the screen) and where. N3 S9 (round cap): also what went wrong
+    as a fixed `kind`, with `names` holding only what the registry itself knows (a function or field that exists, one of
+    its arguments, a timeframe) - never the screen's own words or numbers. The natural-language box shows a model's
+    draft problems from `kind` + `names` alone (app/screener/nl.py); `message` may quote the screen and is for the
+    screen's own author."""
     message: str
     pos: Optional[int] = None
+    kind: str = ""
+    names: Dict[str, str] = field(default_factory=dict)
 
     def as_dict(self) -> Dict[str, Any]:
         return {"message": self.message, "pos": self.pos}
@@ -65,17 +72,19 @@ class _Checker:
         self.out = Validated(True)
         self.last_bar_reported: Set[int] = set()
 
-    def err(self, message: str, node: Any) -> None:
+    def err(self, message: str, node: Any, kind: str = "", **names: str) -> None:
+        """`kind` and `names` (registry-only: see Problem) are what the natural-language box shows."""
         self.out.ok = False
-        self.out.problems.append(Problem(message, getattr(node, "pos", None)))
+        self.out.problems.append(Problem(message, getattr(node, "pos", None), kind, dict(names)))
 
     def _tf(self, node: Any) -> str:
         tf = node.tf or self.base_tf
         if tf not in n.TF_MINUTES:
-            self.err(f"unknown timeframe @{tf}", node)
+            self.err(f"unknown timeframe @{tf}", node, "unknown_timeframe")
             return self.base_tf
         if n.TF_MINUTES[tf] < n.TF_MINUTES[self.base_tf]:
-            self.err(f"@{tf} is finer than the screen's timeframe @{self.base_tf}; a {tf} value has no single value per {self.base_tf} bar", node)
+            self.err(f"@{tf} is finer than the screen's timeframe @{self.base_tf}; a {tf} value has no single value per {self.base_tf} bar", node,
+                     "timeframe_finer", tf=tf, base_tf=self.base_tf)
         return tf
 
     def _need(self, tf: str, bars: int) -> None:
@@ -85,10 +94,10 @@ class _Checker:
 
     def _offset(self, node: Any) -> int:
         if node.offset < 0:
-            self.err("a negative offset reads a future bar (look-ahead)", node)
+            self.err("a negative offset reads a future bar (look-ahead)", node, "look_ahead")
             return 0
         if node.offset > MAX_OFFSET:
-            self.err(f"offset {node.offset} is more than {MAX_OFFSET} bars back", node)
+            self.err(f"offset {node.offset} is more than {MAX_OFFSET} bars back", node, "offset_range")
         return node.offset
 
     def window(self, arg: Any, owner: Any) -> int:
@@ -99,13 +108,15 @@ class _Checker:
             self.out.params_used.add(arg.name)
             value = self.params.get(arg.name)
             if value is None:
-                self.err(f"parameter ${arg.name} has no value", arg)
+                self.err(f"parameter ${arg.name} has no value", arg, "parameter")
                 return 1
         else:
-            self.err(f"{owner.name}: the window must be a whole number of bars (a literal or a $parameter)", arg)
+            self.err(f"{owner.name}: the window must be a whole number of bars (a literal or a $parameter)", arg, "window_not_literal",
+                     function=owner.name)
             return 1
         if isinstance(value, bool) or not isinstance(value, (int, float)) or float(value) != int(value) or not 1 <= int(value) <= MAX_WINDOW:
-            self.err(f"{owner.name}: the window must be a whole number from 1 to {MAX_WINDOW}, got {value}", arg)
+            self.err(f"{owner.name}: the window must be a whole number from 1 to {MAX_WINDOW}, got {value}", arg, "window_range",
+                     function=owner.name)
             return 1
         return int(value)
 
@@ -116,12 +127,14 @@ class _Checker:
         elif isinstance(arg, n.Param):
             value = self.params.get(arg.name)
         else:
-            self.err(f"{owner.name}: argument {sig.name!r} must be one of {', '.join(map(str, sig.choices))}", arg)
+            self.err(f"{owner.name}: argument {sig.name!r} must be one of {', '.join(map(str, sig.choices))}", arg, "choice",
+                     function=owner.name, arg=sig.name)
             return
         if isinstance(value, float) and value.is_integer():
             value = int(value)
         if isinstance(value, bool) or value not in sig.choices:
-            self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg)
+            self.err(f"{owner.name}: {sig.name} {value!r} is not one of {', '.join(map(str, sig.choices))}", arg, "choice",
+                     function=owner.name, arg=sig.name)
 
     def bounded(self, arg: Any, sig: Any, owner: Any) -> None:
         """U6 BK1: a number argument with a range must be a literal (or a parameter) inside it."""
@@ -130,7 +143,8 @@ class _Checker:
             return                                                    # not a literal: the type checks report it
         lo, hi = sig.bounds
         if not lo <= float(value) <= hi:
-            self.err(f"{owner.name}: {sig.name} must be between {lo:g} and {hi:g}, got {value:g}", arg)
+            self.err(f"{owner.name}: {sig.name} must be between {lo:g} and {hi:g}, got {value:g}", arg, "out_of_range",
+                     function=owner.name, arg=sig.name)
 
     def _value(self, arg: Any) -> Any:
         """A literal's value, or a parameter's (None for anything else)."""
@@ -167,9 +181,11 @@ class _Checker:
         if isinstance(node, n.Param):
             value = self.params.get(node.name)
             if value is not None and (isinstance(value, bool) or not isinstance(value, (int, float))):
-                self.err(f"{owner.name}: {sig.name} must be a number, got ${node.name} = {value!r}", arg)
+                self.err(f"{owner.name}: {sig.name} must be a number, got ${node.name} = {value!r}", arg, "literal_only",
+                         function=owner.name, arg=sig.name)
             return
-        self.err(f"{owner.name}: {sig.name} must be a number or a $parameter (one value for the whole series), not an expression", arg)
+        self.err(f"{owner.name}: {sig.name} must be a number or a $parameter (one value for the whole series), not an expression", arg,
+                 "literal_only", function=owner.name, arg=sig.name)
 
     def history_of_last_bar(self, owner: n.Call) -> None:
         """Z10-a (U3 G2): a function answered for the last bar only cannot be read back in time - `Count(5,
@@ -181,7 +197,7 @@ class _Checker:
                     self.last_bar_reported.add(id(inner))
                     self.err(f"{inner.name} is known for the last bar only, so {owner.name} cannot read its earlier values; "
                              f"use it outside {owner.name}" + (' (Pattern("name") is the bar-by-bar form)' if inner.name.startswith("Pattern") else ""),
-                             inner)
+                             inner, "last_bar_only", function=inner.name, outer=owner.name)
 
     def degree_bars(self, node: Any, spec: Any, table: Optional[Tuple[int, ...]] = None) -> int:
         """The bars a swing degree needs: the literal (or parameter) degree, the default when it is left out, and the
@@ -222,7 +238,7 @@ class _Checker:
         tf = tf or self.base_tf
         if isinstance(node, n.Num):
             if not math.isfinite(node.value):
-                self.err("numbers must be finite", node)
+                self.err("numbers must be finite", node, "not_finite")
             return NUM, ANY_UNIT
         if isinstance(node, n.Str):
             return STR, None
@@ -231,7 +247,7 @@ class _Checker:
         if isinstance(node, n.Param):
             self.out.params_used.add(node.name)
             if node.name not in self.params:
-                self.err(f"parameter ${node.name} has no value", node)
+                self.err(f"parameter ${node.name} has no value", node, "parameter")
                 return NUM, ANY_UNIT
             v = self.params[node.name]
             if isinstance(v, bool):
@@ -243,7 +259,10 @@ class _Checker:
             spec = FIELDS.get(node.name)
             if spec is None:
                 hint = " (a function needs parentheses)" if node.name in self.functions else ""
-                self.err(f"unknown field {node.name!r}{hint}", node)
+                if hint:
+                    self.err(f"unknown field {node.name!r}{hint}", node, "function_without_parens", function=node.name)
+                else:
+                    self.err(f"unknown field {node.name!r}", node, "unknown_field")
                 return NUM, ANY_UNIT
             own_tf = self._tf(node) if node.tf else tf
             self._need(own_tf, self._offset(node) + 1)
@@ -254,16 +273,16 @@ class _Checker:
         if isinstance(node, n.Unary):
             t, u = self.check(node.operand, tf)
             if t != NUM:
-                self.err("minus needs a number", node)
+                self.err("minus needs a number", node, "number_expected")
             return NUM, u
         if isinstance(node, n.Binary):
             (lt, lu), (rt, ru) = self.check(node.left, tf), self.check(node.right, tf)
             if lt != NUM or rt != NUM:
-                self.err(f"'{node.op}' needs numbers on both sides", node)
+                self.err(f"'{node.op}' needs numbers on both sides", node, "number_expected")
                 return NUM, ANY_UNIT
             if node.op in "+-":
                 if lu != ru and ANY_UNIT not in (lu, ru) and self.strict_units:
-                    self.err(f"'{node.op}' mixes units {lu} and {ru}", node)
+                    self.err(f"'{node.op}' mixes units {lu} and {ru}", node, "unit_mismatch")
                 return NUM, ru if lu == ANY_UNIT else lu
             if lu == ANY_UNIT or ru == ANY_UNIT:
                 return NUM, ru if lu == ANY_UNIT else lu
@@ -279,15 +298,15 @@ class _Checker:
             for other in (lo, hi):
                 self.comparable(node, v, other, "BETWEEN")
             if v[0] != NUM:
-                self.err("BETWEEN needs numbers", node)
+                self.err("BETWEEN needs numbers", node, "number_expected")
             return BOOL, None
         if isinstance(node, n.In):
             v = self.check(node.value, tf)
             if not node.items:
-                self.err("IN needs at least one value", node)
+                self.err("IN needs at least one value", node, "in_list")
             for item in node.items:
                 if not isinstance(item, (n.Num, n.Str, n.Bool, n.Param)):
-                    self.err("IN takes literals only", item)
+                    self.err("IN takes literals only", item, "in_list")
                     continue
                 self.comparable(node, v, self.check(item, tf), "IN")
             self.domain(node.value, list(node.items))
@@ -296,14 +315,14 @@ class _Checker:
             if node.op not in ("ALL", "ANY"):
                 self.err(f"unknown group {node.op!r}", node)
             if len(node.items) < 1:
-                self.err(f"{node.op} needs at least one condition", node)
+                self.err(f"{node.op} needs at least one condition", node, "condition_expected")
             for item in node.items:
                 if self.check(item, tf)[0] != BOOL:
-                    self.err(f"{'AND' if node.op == 'ALL' else 'OR'} joins conditions (true/false), not values", item)
+                    self.err(f"{'AND' if node.op == 'ALL' else 'OR'} joins conditions (true/false), not values", item, "condition_expected")
             return BOOL, None
         if isinstance(node, n.Not):
             if self.check(node.item, tf)[0] != BOOL:
-                self.err("NOT needs a condition", node)
+                self.err("NOT needs a condition", node, "condition_expected")
             return BOOL, None
         self.err(f"not a ScreenQL node: {type(node).__name__}", node)
         return BOOL, None
@@ -317,29 +336,33 @@ class _Checker:
         for other in others:
             value = other.value if isinstance(other, n.Str) else self.params.get(other.name) if isinstance(other, n.Param) else None
             if isinstance(value, str) and value not in spec.values:
-                self.err(f"{spec.name} is one of {', '.join(v for v in spec.values if v)}; {value!r} never matches", other)
+                self.err(f"{spec.name} is one of {', '.join(v for v in spec.values if v)}; {value!r} never matches", other, "domain",
+                         function=spec.name)
 
     def comparable(self, node: Any, left: T, right: T, op: str) -> None:
         (lt, lu), (rt, ru) = left, right
         types = {lt, rt}
         if types <= {NUM}:
             if lu != ru and ANY_UNIT not in (lu, ru) and self.strict_units:
-                self.err(f"compares {lu} with {ru}", node)
+                self.err(f"compares {lu} with {ru}", node, "unit_mismatch")
             return
         if types <= {CAT, STR} and op in ("==", "!=", "IN"):
             return
         if types <= {BOOL} and op in ("==", "!=", "IN"):
             return
-        self.err(f"cannot compare {lt} with {rt} using {op}", node)
+        self.err(f"cannot compare {lt} with {rt} using {op}", node, "compare_types")
 
     def call(self, node: n.Call, tf: str) -> T:
         spec: Optional[Spec] = self.functions.get(node.name)
         if spec is None:
             hint = " (a field takes no parentheses)" if node.name in FIELDS else ""
-            self.err(f"unknown function {node.name!r}{hint}", node)
+            if hint:
+                self.err(f"unknown function {node.name!r}{hint}", node, "field_called", field=node.name)
+            else:
+                self.err(f"unknown function {node.name!r}", node, "unknown_function")
             return NUM, ANY_UNIT
         if (node.offset or node.tf) and not spec.timeframed:
-            self.err(f"{node.name} takes no [offset] or @timeframe", node)
+            self.err(f"{node.name} takes no [offset] or @timeframe", node, "no_offset_tf", function=spec.name)
         own_tf = self._tf(node) if node.tf else tf
         offset = self._offset(node)
         if spec.cross_sectional:
@@ -348,21 +371,22 @@ class _Checker:
         needed = [a for a in spec.args if a.required]
         if spec.varargs:
             if len(node.args) < 2:
-                self.err(f"{node.name} needs at least 2 arguments", node)
+                self.err(f"{node.name} needs at least 2 arguments", node, "arity", function=spec.name)
         elif not len(needed) <= len(node.args) <= len(spec.args):
             want = f"{len(needed)}" if len(needed) == len(spec.args) else f"{len(needed)}-{len(spec.args)}"
-            self.err(f"{node.name} takes {want} argument(s), got {len(node.args)}", node)
+            self.err(f"{node.name} takes {want} argument(s), got {len(node.args)}", node, "arity", function=spec.name)
         if spec.name in READS_HISTORY:
             self.history_of_last_bar(node)
         known_kw = {a.name: a for a in spec.kwargs}
         for key in node.kwargs:
             if key not in known_kw:
-                self.err(f"{node.name} has no argument {key!r}", node.kwargs[key])
+                self.err(f"{node.name} has no argument {key!r}", node.kwargs[key], "unknown_argument", function=spec.name)
         window = 0
         windows: List[int] = []
         units: List[Optional[str]] = []
         if spec.timeframes and own_tf not in spec.timeframes:
-            self.err(f"{node.name} runs on {' / '.join('@' + t for t in spec.timeframes)} bars only, not @{own_tf}", node)
+            self.err(f"{node.name} runs on {' / '.join('@' + t for t in spec.timeframes)} bars only, not @{own_tf}", node,
+                     "timeframe_unsupported", function=spec.name)
         sigs = [spec.args[0]] * len(node.args) if spec.varargs else list(spec.args[:len(node.args)])
         for arg_node, sig in zip(node.args, sigs):
             if sig.type == "window":
@@ -376,7 +400,8 @@ class _Checker:
             t, u = self.check(arg_node, own_tf)
             units.append(u)
             if sig.type != t and not (sig.type == STR and t == STR):
-                self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
+                self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node, "argument_type",
+                         function=spec.name, arg=sig.name)
             elif sig.choices:
                 self.choice(arg_node, sig, node)
             elif sig.pattern:
@@ -392,15 +417,17 @@ class _Checker:
                 continue
             t, _ = self.check(arg_node, own_tf)
             if t != kw_sig.type:
-                self.err(f"{node.name}: argument {key!r} must be a {kw_sig.type}", arg_node)
+                self.err(f"{node.name}: argument {key!r} must be a {kw_sig.type}", arg_node, "argument_type",
+                         function=spec.name, arg=kw_sig.name)
         for i in spec.price_args:
             if i < len(units) and units[i] not in ("price", ANY_UNIT) and self.strict_units:
-                self.err(f"{node.name}: {spec.args[i].name} must be a price, got {units[i] or 'no unit'}", node.args[i])
+                self.err(f"{node.name}: {spec.args[i].name} must be a price, got {units[i] or 'no unit'}", node.args[i],
+                         "price_argument", function=spec.name, arg=spec.args[i].name)
         if spec.varargs or spec.same_unit_args:
             positions = range(len(units)) if spec.varargs else spec.same_unit_args
             seen = {units[i] for i in positions if i < len(units) and units[i] not in (None, ANY_UNIT)}
             if len(seen) > 1 and self.strict_units:
-                self.err(f"{node.name} mixes units {', '.join(sorted(str(s) for s in seen))}", node)
+                self.err(f"{node.name} mixes units {', '.join(sorted(str(s) for s in seen))}", node, "unit_mismatch")
         for a in spec.args:
             if a.type == "window" and not a.required and len(node.args) <= spec.args.index(a):
                 windows.append(a.default if isinstance(a.default, int) else 1)
@@ -422,7 +449,8 @@ class _Checker:
                      else spec.args[pos].default if arg is None else None)
             step = n.TF_MINUTES.get(own_tf, 0)
             if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 < step < n.TF_MINUTES["1d"] and float(value) % step:
-                self.err(f"{node.name}: {name} {value:g} is not a whole number of @{own_tf} bars ({step} minutes each)", arg or node)
+                self.err(f"{node.name}: {name} {value:g} is not a whole number of @{own_tf} bars ({step} minutes each)", arg or node,
+                         "tf_multiple", function=spec.name, arg=name, tf=own_tf)
         sessions = self.sessions_needed(node, spec)
         if sessions and n.TF_MINUTES[own_tf] < n.TF_MINUTES["1d"]:    # whole sessions in this timeframe's bars
             min_bars = max(min_bars, sessions * math.ceil(n.TF_MINUTES["1d"] / n.TF_MINUTES[own_tf]))
@@ -447,18 +475,18 @@ def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] 
     """Every check, all problems at once (not only the first). `strict_units=False` is only for screens translated from
     the legacy scanner, whose filters never checked units (S1c parity); user-written screens are always strict."""
     if base_tf not in n.TF_MINUTES:
-        return Validated(False, [Problem(f"unknown screen timeframe {base_tf!r}")])
+        return Validated(False, [Problem(f"unknown screen timeframe {base_tf!r}", kind="unknown_timeframe")])
     checker = _Checker(base_tf, dict(params or {}), strict_units, functions)
     checker.out.base_tf, checker.out.cost_cap, checker.out.strict_units = base_tf, cost_cap, strict_units
     kind, _ = checker.check(ast)
     if kind != BOOL:
-        checker.err(NOT_A_CONDITION, ast)
+        checker.err(NOT_A_CONDITION, ast, "not_condition")
     unused = set((params or {}).keys()) - checker.out.params_used
     if unused:
-        checker.err(f"unknown parameter(s): {', '.join(sorted('$' + u for u in unused))}", None)
+        checker.err(f"unknown parameter(s): {', '.join(sorted('$' + u for u in unused))}", None, "parameter")
     if checker.out.cost > cost_cap:
         # U5 review: about the whole screen, not a place in it (pos None), so the builder does not pin it on stage 1
-        checker.err(f"screen cost {checker.out.cost:.1f} is over this organisation's cap {cost_cap:g}", None)
+        checker.err(f"screen cost {checker.out.cost:.1f} is over this organisation's cap {cost_cap:g}", None, "cost")
     if checker.out.problems:
         checker.out.ok = False
     return checker.out

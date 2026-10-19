@@ -40,9 +40,11 @@ from app.screener import venues as venue_gate
 from app.screener import fundamentals as fundamentals_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
+from app.ai.compliance_terms import ai_acknowledged as _ai_acknowledged
+from app.ai.rate_limit import ai_rate_limit as _ai_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
-from app.screener.validator import Problem
+from app.screener.validator import Problem, Validated
 from app.screener.runtime import Match, ScreenMemo, SymbolData, closed_only, resample, run_screen, stage_survivors
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,17 @@ async def charge_runs(user: User, units: int) -> None:
     many `/run` calls on the same per-user bucket, so it cannot do more work than `/run` allows."""
     from app.core.rate_limit import charge_user
     await charge_user(RUN_BUCKET, user.id, RUN_LIMIT, RUN_WINDOW, units)
+
+
+async def run_allowed(session: AsyncSession, user: User) -> None:
+    """N3 S9 (review MED-1): the gate a screener run passes when it is not a route call - the Copilot's run_screen and
+    explain_results act for the caller, so they need the caller's trading role and draw on the same per-user run limit
+    as the Screener page (`screener_run`). Raises the route's own 403 / 429."""
+    from app.auth.dependencies import ensure_trader
+    await ensure_trader(session, user)
+    await charge_runs(user, 1)
+
+
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
 # U7 LG3: and the point-in-time fundamentals. N3 S8a: and the ownership patterns and events known by each bar's close.
@@ -282,32 +295,35 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
-            validated.problems.append(Problem(gate.refusal(blocked)))
+            validated.problems.append(Problem(gate.refusal(blocked), kind="flag_off", names={"functions": ",".join(blocked)}))
     amw_blocked = await amw_gate.blocked_calls(session, user.tenant_id, ast, params or {})
     if amw_blocked:
         validated.ok = False
-        validated.problems.append(Problem(amw_gate.refusal(amw_blocked)))
+        # N3 S9 (round cap): registry names only for the NL box - "Name()" labels as their function name; a Pattern
+        # call's text is left out (the box then shows its fixed "could not be used" text)
+        validated.problems.append(Problem(amw_gate.refusal(amw_blocked), kind="flag_off",
+                                          names={"functions": ",".join(b[:-2] for b in amw_blocked if b.endswith("()"))}))
     if exchange and ast is not None and await venue_gate.enabled(session, user.tenant_id):
         missing = venue_gate.unavailable(ast, exchange)          # N3 S8c: what this venue's data does not carry
         if missing:
             validated.ok = False
-            validated.problems.extend(Problem(m) for m in missing)
+            validated.problems.extend(Problem(m, kind="venue") for m in missing)
     if ranking_gate.uses_rankscore(ast):
         if not await ranking_gate.enabled(session, user.tenant_id):
             validated.ok = False
-            validated.problems.append(Problem(ranking_gate.refusal()))
+            validated.problems.append(Problem(ranking_gate.refusal(), kind="flag_off", names={"functions": "RankScore"}))
             return
         found, problems = await ranking_gate.resolve(session, user.tenant_id, ranking_gate.names_in(ast, params))
         if problems:
             validated.ok = False
-            validated.problems.extend(Problem(p) for p in problems)
+            validated.problems.extend(Problem(p, kind="ranking_system") for p in problems)
         if exchange and await venue_gate.enabled(session, user.tenant_id):
             # re-check of S8: a named system's factors read this venue's data too - the same venue check as the screen's
             for name, system in found.items():
                 for leaf in system.leaves():
                     for m in venue_gate.unavailable(leaf.ast, exchange):
                         validated.ok = False
-                        validated.problems.append(Problem(f'RankScore("{name}"), factor "{leaf.name}" - {m}'))
+                        validated.problems.append(Problem(f'RankScore("{name}"), factor "{leaf.name}" - {m}', kind="venue"))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -538,6 +554,25 @@ def screen_and_funnel(ast: Any, validated: Any, universe: List[SymbolData], *, b
     return matches, stages
 
 
+async def load_universe(session: AsyncSession, user: User, ast: Any, validated: Any, params: Dict[str, Any], symbols: List[str],
+                        exchange: str, base_tf: str, tier: Optional[Dict[str, Any]] = None, *, release: bool = False
+                        ) -> Tuple[List[SymbolData], Dict[str, str], str, Dict[str, Any]]:
+    """A validated screen's universe on server bars with the data its functions read: (universe, per-symbol fetch
+    problems, data source, RankScore's systems). The run route and the N3 S9 Copilot tools share it. `release` (LD-7,
+    the run route only - its session has only read so far): fetch_frames gives the pool connection back before the
+    broker / lake reads; the Copilot tools keep the agent's shared session as it is."""
+    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, exchange, base_tf, validated.fetch_lookback,
+                                                               user_id=user.id, tier_out=tier, release=release)
+    if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
+        await zone_gate.attach_zones(session, user.tenant_id, exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+    if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
+        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
+    if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
+        await ownership_gate.attach(session, universe, exchange, datetime.now(timezone.utc), viewer=user.tenant_id)
+    systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
+    return universe, fetch_problems, data_source, systems
+
+
 async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: Dict[str, Any], universe: List[SymbolData]
                        ) -> Dict[str, Any]:
     """N3 S7a: the ranking systems a screen's RankScore names (validated by `_gate`), and - when one is sector-neutral -
@@ -594,15 +629,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     # after it, the flag took a second pool checkout and a query per run).
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
     tier: Dict[str, Any] = {}
-    universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
-                                                               user_id=user.id, tier_out=tier, release=True)
-    if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
-        await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
-    if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
-        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
-    if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
-        await ownership_gate.attach(session, universe, body.exchange, datetime.now(timezone.utc), viewer=user.tenant_id)
-    systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
+    universe, fetch_problems, data_source, systems = await load_universe(session, user, ast, validated, params, symbols, body.exchange,
+                                                                         base_tf, tier, release=True)
     await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
     # (RankScore's systems ride the context asyncio.to_thread copies into the worker - N3 S7a)
@@ -650,6 +678,93 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         run_row.result_json = json.dumps(results)
     await session.commit()
     return {"run_id": run_row.id, "preview": False, **payload}
+
+
+class NLBody(BaseModel):
+    text: str = Field(min_length=5, max_length=1000, description="The screen in plain language")
+    base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
+    # English only (owner directive, 13 Oct): the former `language` field is gone; a client that still sends it is
+    # answered in English (an unknown body field is ignored, as before)
+
+
+@router.post("/copilot/nl")
+async def natural_language(body: NLBody, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+                           _ack: None = Depends(_ai_acknowledged), _limit: None = Depends(_ai_rate_limit)) -> Dict[str, Any]:
+    """N3 S9: plain language -> a ScreenQL draft the trader checks, edits and runs (app/screener/nl.py). Nothing runs and
+    nothing is stored here; flags `screener_copilot` and `ai_copilot`."""
+    from app.ai import settings as ai_settings
+    from app.ai.prompt_versions import stamp
+    from app.ai.providers import ProviderError, RuleBasedProvider
+    from app.ai.tools.screener import free_text_in
+    from app.audit.log import write_audit_log
+    from app.billing.service import meter
+    from app.db.models import Tenant
+    from app.screener import nl
+    await _flag(session, user)
+    await require_flag(session, nl.FLAG, user.tenant_id)
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    tenant = await session.get(Tenant, user.tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Organisation not found")
+    provider = await ai_settings.provider_for(session, tenant, task="screener_nl", user_id=user.id)
+    if isinstance(provider, RuleBasedProvider):
+        raise HTTPException(status_code=409, detail="No AI provider is set up for this organisation (Settings > AI); write the screen in the "
+                                                    "builder or the query editor instead" + (f" ({provider.reason})" if provider.reason else ""))
+    stamp(provider, nl.PROMPT_VERSION)
+    system = nl.system_prompt(sorted(await _flags_off(session, user)))
+    prompt = f"REQUEST:\n{body.text.strip()}"
+    draft: Optional[Dict[str, Any]] = None
+    problems: List[Problem] = []
+    ast: Any = None
+    validated: Any = None
+    for attempt in range(2):                                  # one repair turn with the validator's problems
+        try:
+            draft = nl.parse(await provider.complete(system, prompt, max_tokens=1200))
+        except (ProviderError, ValueError, json.JSONDecodeError) as exc:
+            await ai_settings.mark_used(session, user.tenant_id, error=str(exc)[:200])
+            raise HTTPException(status_code=502, detail="The AI did not answer usably; write the screen in the builder") from exc
+        at = nl.non_ascii_at(draft["text"])
+        if at is not None:
+            # S9 round cap (English only): ScreenQL is ASCII - a draft with any other character is refused unread
+            ast, validated = None, Validated(False, [Problem("the screen has characters outside ASCII; ScreenQL is plain ASCII text",
+                                                             at, kind="non_ascii")])
+        else:
+            ast, validated = _compiled(draft["text"], body.base_tf, {})
+            await _gate(session, user, ast, validated, {})
+        problems = list(validated.problems)
+        if ast is not None and await free_text_in(session, user.tenant_id, ast):
+            # review of S9 (MED, ADR-0006): a string literal other than a function's fixed choices is the model's free
+            # text; it would reach the page inside the canonical screen. Refused (not echoed) and repaired like any problem.
+            problems.append(Problem("a drafted screen may use quoted text only for a function's fixed choices "
+                                    "(\"promoter\", \"results\"...) - other quoted text is not allowed", kind="free_text"))
+        if validated.ok and not problems:
+            break
+        # the repair turn goes back to the model only, so it carries the validator's own messages (they quote its draft)
+        prompt = (f"REQUEST:\n{body.text.strip()}\n\nYour screen {draft['text']!r} has problems: "
+                  + "; ".join(p.message for p in problems)[:800] + "\nAnswer again with a corrected screen, same JSON shape.")
+    await ai_settings.mark_used(session, user.tenant_id)
+    if draft is None or validated is None:
+        raise HTTPException(status_code=502, detail="The AI did not answer; write the screen in the builder")
+    ok = bool(validated.ok) and not problems
+    # review of S9 (MED-1, ADR-0006; round-cap redesign): an invalid draft returns its problems only - never the model's
+    # text or the canonical text of it - and each problem is a fixed template for its kind with registry names only
+    # (nl.shown_problem): no quoted text, no unknown name, no number from the draft; `pos` kept
+    shown = [nl.shown_problem(p) for p in problems] if not ok else []
+    explanation = nl.screened(draft["explanation"])
+    await write_audit_log(session, user.tenant_id, user.id, "screener_nl_drafted",
+                          f"{getattr(provider, 'name', 'ai')}: {'valid' if ok else 'invalid'} screen from {len(body.text)} chars")
+    await meter(session, user.tenant_id, "ai_screener_nl", 1, source="api", metadata={"provider": getattr(provider, "name", "ai")}, commit=False)
+    await session.commit()
+    stages = []
+    if ok:
+        items = list(ast.items) if isinstance(ast, nodes.Logic) and ast.op == "ALL" else [ast]
+        stages = [nodes.to_text(i) for i in items]
+    return {"ok": ok, "text": nodes.to_text(ast) if ok else None, "stages": stages,
+            "ast": nodes.to_json(ast) if ok else None, "problems": shown, "base_tf": body.base_tf,
+            "explanation": explanation, "explanation_withheld": explanation is None and bool(draft["explanation"]),
+            "assumptions": [a for a in (nl.screened(x) for x in draft["assumptions"]) if a],
+            "provider": getattr(provider, "name", None), "model": getattr(provider, "model", None), "prompt_version": nl.PROMPT_VERSION,
+            "disclaimer": nl.DISCLAIMER}
 
 
 @router.get("/runs/{run_id}")

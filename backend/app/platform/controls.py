@@ -286,6 +286,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N3 S8c: the per-venue field-availability matrix - a screen run on a venue whose data lacks a field (oi) or a data
     # family (reference lists, ownership, option chains) is refused with where it is available; GET /api/screener/venues
     # gives the matrix. OFF: runs behave as before and the route answers 503.
+    # N3 S9: the screener in the Copilot - the agent's build_screen / run_screen (as_of) / explain_results tools and the
+    # propose_alert proposal (an alert rule created only when the person who asked approves it), and the plain-language
+    # box (POST /api/screener/copilot/nl: a ScreenQL draft the trader checks and edits; needs ai_copilot). OFF: the tools
+    # are not offered and the route answers 503. Information only - nothing places an order.
+    "screener_copilot": "Screener in the Copilot: build, run, explain screens and propose alerts from the agent, plus the plain-language screen box",
     "screener_venues": "Screener venue matrix: refuse fields and functions a venue's data does not carry, and list what each venue supports",
     "screener_ownership": "Ownership and event screens: promoter / pledge / FII / DII stakes and their changes, days to results, board meetings and ex-dates (point in time; information only)",
     "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",

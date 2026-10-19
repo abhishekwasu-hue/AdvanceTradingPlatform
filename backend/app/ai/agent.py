@@ -31,7 +31,7 @@ from typing import Any, Dict, List, Optional
 from app.ai import grounding, output_filter
 from app.ai.prompt_versions import version_of
 from app.ai.providers import ProviderError
-from app.ai.tools import ToolContext, ToolResult, names, proposals, registry, run_tool, specs
+from app.ai.tools import ToolContext, ToolResult, available, names, proposals, registry, run_tool, specs
 from app.audit.log import write_audit_log
 from app.db.models import AgentRunRecord, AgentStepRecord
 
@@ -151,8 +151,8 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
     limits = limits or AgentLimits()
     started = time.monotonic()
     system = SYSTEM          # English only, whatever `lang` the caller passes
-    allowed_proposals = proposals.allowed_for(question)
-    tools = specs(names("read") + allowed_proposals)
+    allowed_proposals = await available(ctx, proposals.allowed_for(question))      # N3 S9: flagged tools only while on
+    tools = specs(await available(ctx, names("read")) + allowed_proposals)
     kinds = {n: t.kind for n, t in registry().items()}
     run = AgentRunRecord(tenant_id=ctx.tenant_id, user_id=ctx.user.id, question_sha256=_sha(question), prompt_version=PROMPT_VERSION,
                          model=str(getattr(provider, "model", "") or ""), limits_json=json.dumps(limits.__dict__), outcome="running",
@@ -224,6 +224,11 @@ async def run_agent(provider: Any, ctx: ToolContext, question: str, *, lang: str
                 by_call[call.id] = found
                 if res.untrusted:
                     untrusted_seen.append(proposals.untrusted_text(res.data))
+            untrusted_seen.extend(res.third_party)
+            if not res.ok and res.error and not res.error.startswith("guard: "):
+                # re-review (LOW-2): a failed tool's error can carry third-party text too (a broker's or a provider's
+                # message) - the guard's quote check reads it as untrusted
+                untrusted_seen.append(res.error)
             calls.append({"id": call.id, "name": call.name, "arguments": call.arguments, "ok": res.ok, "as_of": res.as_of, "duration_ms": res.duration_ms,
                           "error": res.error})
             ctx.session.add(AgentStepRecord(run_id=run.id, step=step, tool_name=call.name[:60], arguments_json=json.dumps(call.arguments, default=str)[:4000],

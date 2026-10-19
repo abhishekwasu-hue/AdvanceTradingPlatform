@@ -40,6 +40,9 @@ class ToolResult:
     source: str
     data_timestamps: Dict[str, Any] = field(default_factory=dict)
     untrusted: bool = False                 # third-party text inside: wrapped as data, never instructions
+    # third-party strings inside an otherwise first-party result (a broker's error text): the agent hands them to the
+    # proposal guard's quote check as untrusted text read in this request (review of N3 S9)
+    third_party: List[str] = field(default_factory=list)
     error: Optional[str] = None
     duration_ms: int = 0
 
@@ -69,6 +72,7 @@ class Tool:
     kind: Literal["read", "proposal"] = "read"
     cost_units: int = 1
     timeout_seconds: float = 10.0
+    flag: Optional[str] = None              # N3 S9: offered and run only while this operator flag is on for the organisation
 
     def schema(self) -> Dict[str, Any]:
         """The JSON schema the provider sees (additionalProperties false, so strict mode can be used)."""
@@ -92,7 +96,7 @@ def register(tool: Tool) -> Tool:
 
 
 def registry() -> Dict[str, Tool]:
-    from app.ai.tools import market, proposals, read  # noqa: F401 - registers the tools on first use
+    from app.ai.tools import market, proposals, read, screener  # noqa: F401 - registers the tools on first use
     return dict(_REGISTRY)
 
 
@@ -106,6 +110,21 @@ def names(kind: str) -> List[str]:
     return sorted(n for n, t in registry().items() if t.kind == kind)
 
 
+async def available(ctx: ToolContext, wanted: List[str]) -> List[str]:
+    """N3 S9: the tools among `wanted` whose flag (if any) is on for the request's organisation - the rest are not offered."""
+    from app.platform.controls import flag_enabled
+    tools = registry()
+    out: List[str] = []
+    on: Dict[str, bool] = {}
+    for name in wanted:
+        flag = tools[name].flag if name in tools else None
+        if flag is not None and flag not in on:
+            on[flag] = await flag_enabled(ctx.session, flag, ctx.tenant_id)
+        if flag is None or on[flag]:
+            out.append(name)
+    return out
+
+
 async def run_tool(name: str, arguments: Dict[str, Any], ctx: ToolContext, *, guard_cleared: bool = False) -> ToolResult:
     """Validates the model's arguments against the tool's input model, runs it under its timeout, never raises. A
     proposal tool runs only with `guard_cleared` - set by the agent loop after `proposals.guard` passed the call."""
@@ -115,6 +134,8 @@ async def run_tool(name: str, arguments: Dict[str, Any], ctx: ToolContext, *, gu
         return ToolResult(False, None, None, name, error=f"unknown tool {name!r}")
     if tool.kind == "proposal" and not guard_cleared:
         return ToolResult(False, None, None, name, error="a proposal tool runs only after the agent's guard has cleared the call")
+    if tool.flag is not None and not await available(ctx, [name]):
+        return ToolResult(False, None, None, name, error=f"{name} is not enabled for this organisation (flag {tool.flag})")
     try:
         args = tool.input_model.model_validate(arguments or {})
     except ValidationError as exc:
@@ -129,4 +150,4 @@ async def run_tool(name: str, arguments: Dict[str, Any], ctx: ToolContext, *, gu
     return result
 
 
-__all__ = ["Tool", "ToolContext", "ToolResult", "register", "registry", "specs", "names", "run_tool"]
+__all__ = ["Tool", "ToolContext", "ToolResult", "register", "registry", "specs", "names", "available", "run_tool"]

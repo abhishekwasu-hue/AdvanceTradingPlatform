@@ -38,6 +38,9 @@ INTENT_WORDS: Dict[str, Sequence[str]] = {
     "propose_pause_deployment": ("pause", "halt"),
     "propose_risk_reduction": ("reduce risk", "reduce my risk", "lower risk", "lower my risk", "cut risk", "cut my risk", "less risk",
                                "tighten risk"),
+    # N3 S9 (spec: create_alert): an alert rule the trader confirms under AI Copilot. English triggers only (owner's
+    # ruling: ATP is English only outside the strategy interview)
+    "propose_alert": ("alert me", "create an alert", "create alert", "set an alert", "set alert", "add an alert", "notify me"),
     "propose_strategy_review": ("review the strategy", "review my strategy", "review strategy", "strategy review", "review the deployment",
                                 "review deployment"),
 }

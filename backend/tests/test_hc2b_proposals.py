@@ -50,7 +50,8 @@ class _Spying(_Scripted):
 
 def test_registry_allow_list_and_the_loop_only_gate():
     reg = tools.registry()
-    assert set(tools.names("proposal")) == {"propose_pause_deployment", "propose_risk_reduction", "propose_strategy_review"}
+    # N3 S9 adds propose_alert (flag screener_copilot; offered only while it is on)
+    assert set(tools.names("proposal")) == {"propose_pause_deployment", "propose_risk_reduction", "propose_strategy_review", "propose_alert"}
     for name in tools.names("proposal"):
         schema = reg[name].schema()
         assert {"quote", "reason"} <= set(schema["required"]) and schema["additionalProperties"] is False

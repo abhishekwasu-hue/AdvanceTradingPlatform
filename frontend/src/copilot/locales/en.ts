@@ -421,7 +421,7 @@ export const COPILOT_EN = {
     emptyTitle: "Nothing waiting",
     emptyBody: "When the agent proposes an action it appears here and as a badge on this tab.",
     action: { PAUSE_DEPLOYMENT: "Pause the deployment", EXIT_POSITION: "Exit the position", REDUCE_RISK: "Reduce the risk", REVIEW_STRATEGY: "Review the strategy",
-              ENTRY: "Enter a PAPER position" },
+              ENTRY: "Enter a PAPER position", CREATE_ALERT: "Create the alert (notifies only)" },
     // Z3: a target reached on an approval-only position; the stop and time exits stay automatic.
     exitNow: "Exit now?",
     entryNote: "Approve places a PAPER order at the price at that moment. If the price has moved too far, nothing is placed and a fresh proposal at the new price follows.",

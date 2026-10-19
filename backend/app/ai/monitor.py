@@ -39,7 +39,8 @@ DAY_DRAWDOWN_PCT = 2.0
 ERROR_STREAK = 3       # below the worker's own auto-pause (5) so the human hears first
 STALE_POSITION_MINUTES = 120
 WIN_RATE_DRIFT = 0.25      # absolute drop vs the backtest's win rate, with >= 10 trades
-ACTIONS = ("PAUSE_DEPLOYMENT", "EXIT_POSITION", "REDUCE_RISK", "REVIEW_STRATEGY", "ENTRY")   # ENTRY: Z3 approval-only entries
+# ENTRY: Z3 approval-only entries; CREATE_ALERT: N3 S9 - an alert rule the Copilot proposed, created only on approval
+ACTIONS = ("PAUSE_DEPLOYMENT", "EXIT_POSITION", "REDUCE_RISK", "REVIEW_STRATEGY", "ENTRY", "CREATE_ALERT")
 OPEN_STATES = ("PROPOSED", "APPROVED")
 
 
@@ -51,6 +52,7 @@ class Proposal:
     rule: str
     reason: str
     evidence: Dict
+    owner_user_id: Optional[int] = None     # N3 S9: the person the proposal is for (only they or the OWNER decide it)
 
 
 def _utc(dt: datetime) -> datetime:
@@ -149,7 +151,8 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
             except Exception:  # noqa: BLE001 - phrasing is optional
                 pass
         row = AiActionRecord(tenant_id=tenant_id, deployment_id=p.deployment_id, trade_id=p.trade_id, action=p.action, rule=p.rule, reason=reason,
-                             evidence_json=json.dumps(p.evidence, default=str), status="PROPOSED", expires_at=now + timedelta(hours=TTL_HOURS))
+                             evidence_json=json.dumps(p.evidence, default=str), status="PROPOSED", expires_at=now + timedelta(hours=TTL_HOURS),
+                             owner_user_id=p.owner_user_id)
         try:
             # P0.8 / A5: the insert runs in a savepoint, so when the partial unique index on open proposals (tenant,
             # deployment, rule) catches a concurrent raise only this row is dropped - the proposals and notifications
@@ -162,7 +165,10 @@ async def raise_proposals(session: AsyncSession, tenant_id: int, proposals: List
         AI_PROPOSALS.labels(action=p.action).inc()
         await notify(session, tenant_id, NotificationType.AI_PROPOSAL, title=f"AI proposes {p.action.replace('_', ' ').lower()}",
                      message=f"{p.reason} Approve or reject it under AI Copilot - nothing happens until you do.",
-                     severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id, ai_action_id=row.id)
+                     severity=NotificationSeverity.WARNING, related_trade_id=p.trade_id, ai_action_id=row.id,
+                     # review of S9 (LOW): addressed to the person it is for (only they or the OWNER decide it, and the
+                     # AI_PROPOSAL kind stays in the organisation feed the OWNER reads); None = organisation-wide, as before
+                     user_id=p.owner_user_id)
         # BYOK-V2: queue the deployment creator's Vision audit (flag vision_byok; a DB row only, in a savepoint, never
         # raises). The audit itself runs later in the worker and only comments - it never touches this proposal.
         from app.ai import vision_audit
@@ -365,6 +371,8 @@ async def execute(session: AsyncSession, action: AiActionRecord, user: User, *, 
                     # open, the row says why, and the rule may propose again (FAILED is not an open state).
                     raise ValueError(f"Exit not completed: {outcome.exit_reason or '; '.join(outcome.warnings) or 'unknown'}")
                 action.result = f"Position #{trade.id} closed at {price}"
+        elif action.action == "CREATE_ALERT":
+            action.result = await _create_alert(session, action, user)
         elif action.action in ("REDUCE_RISK", "REVIEW_STRATEGY"):
             action.result = "Acknowledged - review the strategy/risk settings; no automatic change is made for this action type"
         else:
@@ -375,6 +383,41 @@ async def execute(session: AsyncSession, action: AiActionRecord, user: User, *, 
     await session.commit()
     await session.refresh(action)
     return action
+
+
+async def _create_alert(session: AsyncSession, action: AiActionRecord, user: User) -> str:
+    """N3 S9: an approved Copilot alert proposal -> the alert rule, for the person who asked (checked again now: flags,
+    validation). An alert rule notifies; it never places an order."""
+    from fastapi import HTTPException
+
+    from app.alerts.rules_routes import RuleBody, build_rule
+    from app.ai.tools.screener import FLAG as COPILOT_FLAG
+    from app.ai.tools.screener import final_name
+    from app.auth.dependencies import ensure_trader
+    from app.platform.controls import flag_enabled
+    owner = await session.get(User, action.owner_user_id) if action.owner_user_id else user
+    if owner is None or owner.tenant_id != action.tenant_id or not owner.is_active:
+        raise ValueError("The person who asked for this alert is no longer an active member")
+    if not await flag_enabled(session, COPILOT_FLAG, action.tenant_id):          # review LOW-2: checked again at approval
+        raise ValueError(f"Copilot alert proposals are no longer enabled for this organisation (flag {COPILOT_FLAG})")
+    try:                                                                          # review LOW-1: the owner may still write alerts
+        await ensure_trader(session, owner)
+        await ensure_trader(session, owner, scope="alerts:write")
+    except HTTPException as exc:
+        raise ValueError("The person who asked for this alert may not create alerts now") from exc
+    raw = (json.loads(action.evidence_json or "{}") or {}).get("rule") or {}
+    if isinstance(raw, dict) and raw.get("name"):                                 # review MED-2: filtered again, as stored
+        raw = {**raw, "name": final_name(str(raw["name"]))}
+    body = RuleBody.model_validate(raw)
+    try:
+        async with session.begin_nested():                 # a refusal leaves nothing behind in the action's commit
+            rule = await build_rule(session, owner, body)
+            await session.flush()
+    except HTTPException as exc:
+        detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail
+        raise ValueError(f"The alert could not be created: {detail}") from exc
+    await write_audit_log(session, action.tenant_id, user.id, "alert_rule_created", f"rule #{rule.id} from AI action #{action.id} (approved)")
+    return f"Alert rule #{rule.id} created ({rule.kind}, {rule.base_tf}); it notifies only"
 
 
 def as_dict(row: AiActionRecord) -> dict:

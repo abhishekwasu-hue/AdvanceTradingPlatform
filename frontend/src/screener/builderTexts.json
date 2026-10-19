@@ -979,6 +979,34 @@
     ]
    },
    "text": "NOT (close < EMA(close, 20) AND IsFnO())"
+  },
+  {
+   "stage": {
+    "kind": "formula",
+    "text": "high - low < Min(high - low, 6)[1]"
+   },
+   "text": "high - low < Min(high - low, 6)[1]"
+  },
+  {
+   "stage": {
+    "kind": "formula",
+    "text": "SMA(close, 200) > SMA(close, 200)[21]"
+   },
+   "text": "SMA(close, 200) > SMA(close, 200)[21]"
+  },
+  {
+   "stage": {
+    "kind": "formula",
+    "text": " close > 1 OR high > 2 "
+   },
+   "text": "(close > 1 OR high > 2)"
+  },
+  {
+   "stage": {
+    "kind": "formula",
+    "text": "Pattern(\"doji\") AND close > open"
+   },
+   "text": "(Pattern(\"doji\") AND close > open)"
   }
  ]
 }

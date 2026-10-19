@@ -113,6 +113,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S1d (ADR-0021): the ScreenQL screener API (validate, saved screens, runs on server data). OFF: the scanner is unchanged.
     "screener_v2": "Screener v2: ScreenQL validation, saved screens and runs on the organisation's broker data",
     "screener_intrabar": "Intrabar alerts: rules may fire on the bar still forming (at most once per bar); bar-close stays the default",
+    # U2 remaining blocks (SCREENER_SPEC §3 builder; Phase 0: the blocks the shipped screens use): the formula block
+    # (ScreenQL text with offsets and arithmetic, edited in place) and "Open" for Legends and breakout screens in the
+    # builder through POST /api/screener/stages. OFF: /stages answers 503, the builder offers no formula block and
+    # those screens' Open stays disabled. Research only - places no orders.
+    "screener_builder_u2": "Screener builder: formula blocks and opening Legends / breakout screens in the builder (research only)",
     # H-C2 (ADR-0019): the Copilot agent (typed read tools, bounded loop). OFF: the single-shot Copilot is unchanged.
     "ai_agent": "Copilot agent: the AI reads typed, read-only tools (market memory, news, positions, P&L, risk limits) before answering",
     # H-C3 (spec C3): the strategy research loop - AI drafts backtested on server bars, every trial in a ledger, a

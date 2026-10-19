@@ -24,7 +24,7 @@ from app.billing.webhooks import WebhookRejected, handle_razorpay
 from app.billing.service import provider as billing_provider
 from app.db.models import BillingTransactionRecord, Tenant, User
 from app.db.session import get_session
-from app.plans.limits import limits, usage as plan_usage
+from app.plans.limits import limits, limits_v2, load_tenant, usage as plan_usage, usage_v2, v2_enforced
 from app.plans.registry import PLANS, get_plan
 
 router = APIRouter(prefix="/api/billing", tags=["billing"])
@@ -51,17 +51,26 @@ def _tx(row: BillingTransactionRecord) -> dict:
 
 
 @router.get("/plans")
-async def plans() -> List[dict]:
-    return plans_catalogue()
+async def plans(session: AsyncSession = Depends(get_session)) -> List[dict]:
+    catalogue = plans_catalogue()
+    if await v2_enforced(session, None):        # AMW-1: the v2 limits are listed once the flag is on for everyone
+        for entry in catalogue:
+            entry["limits_v2"] = limits_v2(PLANS[entry["id"]])
+    return catalogue
 
 
 @router.get("")
 async def billing_overview(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    tenant = await session.get(Tenant, user.tenant_id)
+    tenant = await load_tenant(session, user.tenant_id)
     sub = await get_subscription(session, tenant.id)
-    return {"subscription": subscription_dict(sub, tenant), "limits": limits(get_plan(tenant.plan)),
-            "usage": await plan_usage(session, tenant.id), "metered_30d": await usage_summary(session, tenant.id, days=30),
-            "tenant_status": tenant.status, "status_reason": tenant.status_reason}
+    out = {"subscription": subscription_dict(sub, tenant), "limits": limits(get_plan(tenant.plan)),
+           "usage": await plan_usage(session, tenant.id), "metered_30d": await usage_summary(session, tenant.id, days=30),
+           "tenant_status": tenant.status, "status_reason": tenant.status_reason}
+    if await v2_enforced(session, tenant.id):
+        # AMW-1 (flag plan_limits_v2): the new limits and the caller's own usage of them (None: not counted yet)
+        out["limits_v2"] = limits_v2(get_plan(tenant.plan))
+        out["usage_v2"] = await usage_v2(session, tenant.id, user.id)
+    return out
 
 
 @router.post("/subscribe", dependencies=[Depends(require_scope("billing:manage"))])
@@ -99,7 +108,11 @@ async def transactions(limit: int = Query(default=100, ge=1, le=500), user: User
 @router.get("/usage")
 async def usage(days: int = Query(default=30, ge=1, le=365), user: User = Depends(get_current_user),
                 session: AsyncSession = Depends(get_session)) -> dict:
-    return {"days": days, "metrics": await usage_summary(session, user.tenant_id, days=days)}
+    out = {"days": days, "metrics": await usage_summary(session, user.tenant_id, days=days)}
+    if await v2_enforced(session, user.tenant_id):
+        # AMW-1 (flag plan_limits_v2): the plan counts - the organisation's B2 counts and the caller's own v2 counts
+        out["counts"] = {**await plan_usage(session, user.tenant_id), **await usage_v2(session, user.tenant_id, user.id)}
+    return out
 
 
 @admin_router.post("/{tenant_id}/payment")

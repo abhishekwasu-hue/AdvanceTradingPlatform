@@ -299,6 +299,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
+    # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
+    # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
+    # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.
+    "plan_limits_v2": "Plan limits v2: watchlists, symbols per screener run, reports, report schedules and Strategy Lab limits per plan",
     # New flags: add ONE entry, in its alphabetical position (not at the end), so parallel branches do not conflict on
     # the same line. A registered flag is OFF by default automatically (DEFAULT_OFF_FLAGS below is computed).
 }

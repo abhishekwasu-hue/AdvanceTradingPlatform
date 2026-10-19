@@ -65,7 +65,10 @@ async def _flags(session: AsyncSession, user: User) -> None:
 
 
 async def _hidden(session: AsyncSession, user: User) -> List[str]:
-    return [name for name, src in tx.sources().items() if src.flag and not await flag_enabled(session, src.flag, user.tenant_id)]
+    """Library families this organisation does not see: any of the family's flags (its own and `also`, U6 BK3 / BK4) is off,
+    as the taxonomy route hides them."""
+    return [name for name, src in tx.sources().items()
+            if any([not await flag_enabled(session, f, user.tenant_id) for f in (src.flag, *src.also) if f])]
 
 
 async def _hidden_screens(session: AsyncSession, user: User) -> List[str]:

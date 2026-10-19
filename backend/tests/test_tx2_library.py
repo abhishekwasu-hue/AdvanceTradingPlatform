@@ -344,6 +344,23 @@ def test_mirrors_leave_out_cards_whose_own_flag_is_off(tx2_on):
         _set_flags(screener_legends=False, **{flag: False for flag in set(own.values())})
 
 
+def test_mirrors_leave_out_a_family_whose_further_flag_is_off(tx2_on):
+    """U6 BK3 / BK4 families need `screener_breakouts` and a flag of their own (`also`): with only the first on, their
+    mirrors are not listed and cannot be resolved - as the taxonomy hides the family itself."""
+    headers, _ = _owner("tx2-mirror-also@example.com")
+    _set_flags(screener_breakouts=True, screener_breakouts_bk3=False, screener_breakouts_bk4=False)
+    try:
+        listed = {m["mirror_of"] for m in client.get("/api/screener/library/mirrors", headers=headers).json()["mirrors"]}
+        assert any(i.startswith("breakouts.") for i in listed)                  # the base family is listed
+        assert not any(i.startswith(("breakouts_bk3.", "breakouts_bk4.")) for i in listed)
+        _set_flags(screener_breakouts_bk3=True)
+        listed = {m["mirror_of"] for m in client.get("/api/screener/library/mirrors", headers=headers).json()["mirrors"]}
+        assert any(i.startswith("breakouts_bk3.") for i in listed)               # back once its own flag is on
+        assert not any(i.startswith("breakouts_bk4.") for i in listed)
+    finally:
+        _set_flags(screener_breakouts=False, screener_breakouts_bk3=False, screener_breakouts_bk4=False)
+
+
 def test_confluence_ranks_symbols_by_methods_with_each_screens_result(tx2_on, fake_bars):
     headers, _ = _owner("tx2-confluence@example.com")
     saved = client.post("/api/screener/screens", json={"name": "New 10-day high", "source": "close > Max(high, 10)[1]"}, headers=headers).json()

@@ -58,6 +58,7 @@ S_COPILOT = "self: a Copilot read or research run for the caller: read-only tool
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
+S_OWN_WATCHLISTS = "self: the caller's own watchlists (tenant and user); another member's or organisation's list is a 404"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
@@ -594,6 +595,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/telegram/webhook/{webhook_token}"): P_TELEGRAM_WEBHOOK,
     ("GET", "/api/trades"): "member",
     ("PATCH", "/api/trades/{trade_id}/journal"): "trader",
+    # AMW-2 (flag watchlists): the caller's own named watchlists (tenant and user)
+    ("GET", "/api/watchlists"): "member: the caller's own watchlists only (tenant and user, BT1b)",
+    ("POST", "/api/watchlists"): S_OWN_WATCHLISTS,
+    ("PUT", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
+    ("DELETE", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
     ("GET", "/api/webhooks/tradingview/token"): "member",
     ("POST", "/api/webhooks/tradingview/token/rotate"): "owner",
     ("POST", "/api/webhooks/tradingview/{webhook_token}"): P_TV_WEBHOOK,

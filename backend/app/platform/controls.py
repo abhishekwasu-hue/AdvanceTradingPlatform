@@ -282,6 +282,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # on top of `screener_v2` and `screener_gallery`. OFF: /api/screener/library/* answer 503 and the Screener page shows
     # none of it. Research only - closed bars, no recommendation, places no orders.
     "screener_tx2": "Screen library tools: confluence view, short mirror screens and watch-then-trigger lists on the Screener page (research only)",
+    # AMW-2 (docs/design/AMW_PORT.md §4.1): personal named watchlists - saved symbol lists the Screener ("My watchlists")
+    # and the Scanner ("Load watchlist") load as their universe. OFF: /api/watchlists/* answers 404 and neither page
+    # shows them. A list of names only: nothing scans, alerts or places an order.
+    "watchlists": "Watchlists: your own named symbol lists, loadable as the Screener and Scanner universe",
     # N2-3 (P1 spec 1.5, docs/design/N2_P1FGH.md): decision tools - the risk-of-ruin / Kelly calculator on typed inputs
     # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
     # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information

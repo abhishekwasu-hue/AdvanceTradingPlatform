@@ -2359,6 +2359,45 @@ export interface ResearchStudyDetail extends Partial<ResearchStudy> {
   trials: ResearchTrial[];
 }
 
+/** H-C4: "analyze <symbol>" - four views from the platform's read tools and a summary of the situation (never advice). */
+export type MultiViewId = "technical" | "options" | "news" | "macro";
+export interface MultiView {
+  id: MultiViewId;
+  label: string;
+  ok: boolean;
+  facts: Record<string, unknown>;
+  as_of: string | null;
+  sources: string[];
+  untrusted: boolean;
+  error: string | null;
+  report: string;
+  report_source: "rules";              // H-C4 round cap: rules-only wording
+}
+export interface MultiViewSummary {
+  situation: string;
+  leans_up: string[];
+  leans_down: string[];
+  risks: string[];
+  possibilities: string[];
+  claims: { statement: string; source: string }[];
+  source: "rules";
+}
+export interface MultiViewUsage { calls: number; tokens_input: number; tokens_output: number; cost_inr: number }
+export interface MultiViewAnalysis {
+  symbol: string;
+  exchange: string;
+  as_of: string | null;
+  views: MultiView[];
+  summary: MultiViewSummary;
+  note: string;
+  run_id: number;
+  llm_calls: number;
+  prompt_version: string;
+  /** H-C4 review: the analysis stopped early (time budget or a gone client); the views not read are marked. */
+  limits_note?: string;
+  usage?: { cheap: MultiViewUsage | null; strong: MultiViewUsage | null };
+}
+
 /** Part D4: a static egress IP registered with a broker (SEBI retail-algo framework). */
 export interface StaticIp {
   broker_name: string;

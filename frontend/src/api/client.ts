@@ -1,5 +1,6 @@
 import type { OiAlertLogResponse, OiBannerResponse, OiHistoryResponse, OiSettingsResponse, OiStrikesResponse } from "../oi/types";
 import type {
+  MultiViewAnalysis,
   StrategistResult,
   StrategistRequestParsed,
   MarketStudy,
@@ -881,6 +882,8 @@ export const api = {
     request<GuideAnswer>("/ai/ask", { method: "POST", body: JSON.stringify({ question, language: language ?? null }) }),
   aiConcepts: (language: "en" | "mr") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),
   aiConcept: (id: string, language: "en" | "mr") => request<GuideConcept>(`/ai/concepts/${encodeURIComponent(id)}?language=${language}`),
+  aiAnalyze: (symbol: string, exchange = "NSE", language?: "en" | "mr", signal?: AbortSignal) =>
+    request<MultiViewAnalysis>("/ai/analyze", { method: "POST", body: JSON.stringify({ symbol, exchange, ...(language ? { language } : {}) }), signal }),
   aiResearchList: () => request<{ studies: ResearchStudy[] }>("/ai/research"),
   aiResearchCreate: (body: { idea: string; symbol: string; timeframe: string; max_drafts: number }) =>
     request<ResearchStudy>("/ai/research", { method: "POST", body: JSON.stringify(body) }),

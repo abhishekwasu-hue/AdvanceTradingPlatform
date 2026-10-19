@@ -4,6 +4,7 @@ and a plan's monthly budget in rupees turns the tenant over to the rule-based pr
 first of the next month). `MeteredProvider` wraps the tenant's real provider so the eleven call sites need no change;
 recording failures are logged and never fail the AI call itself.
 """
+import asyncio
 import hashlib
 import json
 import logging
@@ -183,6 +184,14 @@ class MeteredProvider:
             result = await self.inner.complete_full(system, user, max_tokens=max_tokens)
         except ProviderError as exc:
             await self._record(exc.usage, system, user, None, f"error: {str(exc)[:280]}")
+            raise
+        except asyncio.CancelledError:
+            # H-C4 review: a call cut by a time budget or a gone client still leaves its llm_calls row (the provider may
+            # have billed it); the cancellation then goes on.
+            try:
+                await self._record(None, system, user, None, "cancelled")
+            except BaseException:  # noqa: BLE001 - the audit row must never swallow the cancellation
+                pass
             raise
         await self._record(result, system, user, result.text, "ok")
         return result

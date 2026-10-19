@@ -396,7 +396,7 @@ async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_val
     from app.screener.registry import NUM
     from app.screener.validator import NOT_A_CONDITION, _Checker
     probe = type("V", (), {"ok": True, "problems": []})()
-    await _gate(session, user, rank_ast, probe)
+    await _gate(session, user, rank_ast, probe, params)
     problems = [p.message for p in probe.problems if p.message != NOT_A_CONDITION]
     if problems:
         raise HTTPException(status_code=422, detail="rank_by: " + "; ".join(problems))

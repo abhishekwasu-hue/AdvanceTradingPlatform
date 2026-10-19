@@ -253,6 +253,19 @@ def test_market_zone_functions_z7a3():
     assert _ev("ZoneStrength()", d).iloc[2] == 60.0 and np.isnan(_ev('ZoneStrength("any", 0.5, "levels")', d).iloc[2])
 
 
+def test_amw3_functions_amw_port():
+    # deeper checks (hand-built bars, parity, the flag gate, the vectorised path) are in tests/test_amw3_screenql_functions.py
+    d = _sym([1.0, 2.0, 3.0, 4.0])
+    assert _ev("StDev(close, 4)", d).iloc[-1] == pytest.approx(np.std([1.0, 2.0, 3.0, 4.0]))            # population (ddof 0)
+    assert np.isnan(_ev("StDev(close, 4)", d).iloc[-2])
+    on = _ev('TimeOfDay("09:15", "09:20")', d)                                 # 5m bars from 03:45 UTC = 09:15 IST
+    assert on.tolist() == [True, True, False, False]
+    walk = _sym(list(100 + np.cumsum(np.random.default_rng(4).normal(0, 1, 300))))
+    labels = _ev('SwingLabel("high")', walk)
+    assert set(labels.dropna()) <= {"HH", "LH"} and labels.notna().any()
+    assert _ev('RsiDivergence("bullish", 60)', walk).dtype == bool
+
+
 def test_rankscore_n3_s7a():
     # deeper checks (scoring, no look-ahead against cut bars, the routes) are in tests/test_n3_s7a_rankings.py
     from app.screener import ranking as RK

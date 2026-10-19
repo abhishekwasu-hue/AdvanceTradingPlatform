@@ -1,7 +1,8 @@
 """Where plan limits and tenant status are enforced. Every check raises a 402 (plan) or 403
 (suspended) with a message that says which limit, what the plan allows, and what to do - the
 Team tab shows the same numbers as usage-vs-limit so nobody hits these blind."""
-from typing import Dict, Optional
+from dataclasses import dataclass
+from typing import Awaitable, Callable, Dict, Optional, Tuple
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
@@ -172,3 +173,161 @@ async def check_can_add_alert_channel(session: AsyncSession, tenant: Tenant) -> 
 
 def live_allowed(tenant: Optional[Tenant]) -> bool:
     return tenant is not None and tenant_is_active(tenant) and get_plan(tenant.plan).live_trading
+
+
+# --- AMW-1: plan limits v2 (flag `plan_limits_v2`, off by default) ---------------------------------------------------
+# The limits of the features the AMW port adds (docs/design/AMW_PORT.md §4.1). Each check is a no-op while the flag is
+# off for the tenant; when it is on, a request over the limit gets the same 402 and upgrade hint as the B2 limits above.
+# The slices that own the resources pass their own counts in (they own the tables), and register a usage counter so
+# `GET /api/billing` and `GET /api/billing/usage` can show usage against the limit.
+FLAG_V2 = "plan_limits_v2"
+
+COUNT = "count"            # a number of things the user has; adding one more must stay within the limit
+AMOUNT = "amount"          # a quantity used over a window (MB stored, CPU seconds today); used + adding within the limit
+MAX_REQUEST = "max"        # the size of one request (symbols in one scan)
+MIN_REQUEST = "min"        # a lower bound on one request (a schedule's interval)
+RETENTION = "retention"    # read by a retention job; nothing to refuse at request time
+
+
+@dataclass(frozen=True)
+class LimitV2:
+    key: str        # the name in `limits_v2` / `usage_v2`
+    field: str      # the Plan attribute
+    kind: str
+    label: str      # how a refusal names it ("allows 5 {label}")
+
+
+LIMITS_V2: Tuple[LimitV2, ...] = (
+    LimitV2("watchlists", "max_watchlists", COUNT, "watchlists"),
+    LimitV2("screen_symbols", "max_screen_symbols", MAX_REQUEST, "symbols in one screener run"),
+    LimitV2("reports_per_day", "reports_per_day", COUNT, "reports a day"),
+    LimitV2("report_retention_days", "report_retention_days", RETENTION, "days of report retention"),
+    LimitV2("report_storage_mb", "report_storage_mb", AMOUNT, "MB of stored reports"),
+    LimitV2("report_schedules", "report_schedules", COUNT, "report schedules"),
+    LimitV2("min_schedule_interval_min", "min_schedule_interval_min", MIN_REQUEST, "minutes between scheduled runs"),
+    LimitV2("lab_strategies", "lab_strategies", COUNT, "Strategy Lab strategies"),
+    LimitV2("lab_cpu_seconds_per_day", "lab_cpu_seconds_per_day", AMOUNT, "Strategy Lab CPU seconds a day"),
+)
+_BY_KEY: Dict[str, LimitV2] = {limit.key: limit for limit in LIMITS_V2}
+
+# (session, tenant_id, user_id) -> the caller's current usage of one limit. Registered by the slice that owns the rows.
+UsageCounter = Callable[[AsyncSession, int, int], Awaitable[float]]
+_USAGE_COUNTERS: Dict[str, UsageCounter] = {}
+
+
+def register_usage_counter(key: str, counter: UsageCounter) -> None:
+    """Called once by the slice that owns a limit's rows (watchlists, reports, Lab...), at import time."""
+    limit = _BY_KEY.get(key)
+    if limit is None or limit.kind not in (COUNT, AMOUNT):
+        raise ValueError(f"'{key}' is not a counted plan limit - counted: {sorted(k for k, v in _BY_KEY.items() if v.kind in (COUNT, AMOUNT))}")
+    _USAGE_COUNTERS[key] = counter
+
+
+def limits_v2(plan: Plan) -> Dict[str, int]:
+    return {limit.key: int(getattr(plan, limit.field)) for limit in LIMITS_V2}
+
+
+async def v2_enforced(session: AsyncSession, tenant_id: Optional[int]) -> bool:
+    from app.platform.controls import flag_enabled
+    return await flag_enabled(session, FLAG_V2, tenant_id)
+
+
+async def usage_v2(session: AsyncSession, tenant_id: int, user_id: int) -> Dict[str, Optional[float]]:
+    """The caller's usage of every counted limit; None where no slice counts it yet (the feature is not built)."""
+    out: Dict[str, Optional[float]] = {}
+    for limit in LIMITS_V2:
+        if limit.kind not in (COUNT, AMOUNT):
+            continue
+        counter = _USAGE_COUNTERS.get(limit.key)
+        out[limit.key] = None if counter is None else await counter(session, tenant_id, user_id)
+    return out
+
+
+def _fmt(value: float) -> str:
+    return f"{value:g}"
+
+
+async def _plan_if_enforced(session: AsyncSession, tenant: Tenant, key: str, kind: str) -> Optional[Tuple[Plan, int]]:
+    limit = _BY_KEY[key]
+    if limit.kind != kind:
+        raise ValueError(f"plan limit '{key}' is a {limit.kind} limit, not {kind}")
+    if not await v2_enforced(session, tenant.id):
+        return None
+    ensure_tenant_active(tenant)
+    plan = get_plan(tenant.plan)
+    return plan, int(getattr(plan, limit.field))
+
+
+async def check_v2_count(session: AsyncSession, tenant: Tenant, key: str, current: int) -> None:
+    """Adding one more: refused when the user already has the plan's number.
+
+    Not race-safe by itself: `current` is a count the caller took, and two requests counting at the same time both pass.
+    The caller must serialise per user - e.g. `SELECT users.id ... FOR UPDATE` on the caller's row (held to the commit)
+    before counting, as AMW-2's watchlist create does - or re-count after the insert and undo the one over the limit.
+    The same holds for `check_v2_amount`."""
+    found = await _plan_if_enforced(session, tenant, key, COUNT)
+    if found is None:
+        return
+    plan, allowed = found
+    if current >= allowed:
+        raise PlanLimitExceeded(f"The {plan.name} plan allows {allowed} {_BY_KEY[key].label}; you have {current}.{_upgrade_hint(plan)}")
+
+
+async def check_v2_amount(session: AsyncSession, tenant: Tenant, key: str, used: float, adding: float = 0.0) -> None:
+    """Using `adding` more on top of `used`: refused when the total would go over (or `used` already reached) the limit."""
+    found = await _plan_if_enforced(session, tenant, key, AMOUNT)
+    if found is None:
+        return
+    plan, allowed = found
+    if used >= allowed or used + adding > allowed:
+        raise PlanLimitExceeded(f"The {plan.name} plan allows {allowed} {_BY_KEY[key].label}; you have used {_fmt(used)}"
+                                f"{f' and this needs {_fmt(adding)} more' if adding else ''}.{_upgrade_hint(plan)}")
+
+
+async def check_screen_symbols(session: AsyncSession, tenant: Tenant, requested: int) -> None:
+    found = await _plan_if_enforced(session, tenant, "screen_symbols", MAX_REQUEST)
+    if found is None:
+        return
+    plan, allowed = found
+    if requested > allowed:
+        raise PlanLimitExceeded(f"The {plan.name} plan allows {allowed} symbols in one screener run; this run has {requested}. "
+                                f"Split the list.{_upgrade_hint(plan)}")
+
+
+async def check_schedule_interval(session: AsyncSession, tenant: Tenant, minutes: float) -> None:
+    found = await _plan_if_enforced(session, tenant, "min_schedule_interval_min", MIN_REQUEST)
+    if found is None:
+        return
+    plan, allowed = found
+    if minutes < allowed:
+        raise PlanLimitExceeded(f"The {plan.name} plan allows schedules every {allowed} minutes or longer; this one is every "
+                                f"{_fmt(minutes)}.{_upgrade_hint(plan)}")
+
+
+def report_retention_days(tenant: Optional[Tenant]) -> int:
+    """For the report retention job (AMW-14). Not a refusal, so not behind the flag: the job decides when it runs."""
+    return get_plan(tenant.plan if tenant is not None else "").report_retention_days
+
+
+async def check_can_add_watchlist(session: AsyncSession, tenant: Tenant, current: int) -> None:
+    await check_v2_count(session, tenant, "watchlists", current)
+
+
+async def check_can_add_report(session: AsyncSession, tenant: Tenant, reports_today: int) -> None:
+    await check_v2_count(session, tenant, "reports_per_day", reports_today)
+
+
+async def check_report_storage(session: AsyncSession, tenant: Tenant, used_mb: float, adding_mb: float) -> None:
+    await check_v2_amount(session, tenant, "report_storage_mb", used_mb, adding_mb)
+
+
+async def check_can_add_report_schedule(session: AsyncSession, tenant: Tenant, current: int) -> None:
+    await check_v2_count(session, tenant, "report_schedules", current)
+
+
+async def check_can_add_lab_strategy(session: AsyncSession, tenant: Tenant, current: int) -> None:
+    await check_v2_count(session, tenant, "lab_strategies", current)
+
+
+async def check_lab_cpu(session: AsyncSession, tenant: Tenant, used_seconds: float, adding_seconds: float = 0.0) -> None:
+    await check_v2_amount(session, tenant, "lab_cpu_seconds_per_day", used_seconds, adding_seconds)

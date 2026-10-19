@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
+import { PlanLimitsV2, planTileLine } from "./PlanLimitsV2";
 import type { BillingOverview, BillingTransaction, PlanCatalogueEntry } from "../types";
 
 const inr = (v: number, ccy = "INR") => (v === 0 ? "Free" : `${ccy === "INR" ? "₹" : ccy + " "}${v.toLocaleString("en-IN")}`);
@@ -70,6 +71,7 @@ export default function BillingCard() {
                 <li>{String(p.accounts ?? "-")} broker accounts · API {String(p.api_calls_per_day ?? 0) === "0" ? "no" : `${String(p.api_calls_per_day)}/day`}</li>
                 <li>{p.option_features ? "options + spreads" : "cash/futures only"} · {p.marketplace_access ? "marketplace" : "no marketplace"} · {p.ai_features ? "AI tools" : "no AI"}</li>
                 <li>support: {String(p.support_level)}{p.trial_days ? ` · ${p.trial_days}-day trial` : ""}</li>
+                {p.limits_v2 && <li>{planTileLine(p.limits_v2)}</li>}
               </ul>
               {isOwner && !current && p.price_monthly > 0 && (
                 <button disabled={busy} onClick={() => run(`Switched to ${p.name} (${cycle.toLowerCase()}). An invoice is raised when the trial ends.`, () => api.billingSubscribe(p.id, cycle))} className="mt-1 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 text-xs disabled:opacity-50">Choose {p.name}</button>
@@ -93,6 +95,8 @@ export default function BillingCard() {
           ? "Payments through Razorpay (UPI autopay, cards, netbanking) on Razorpay's own page; the plan activates when the charge is confirmed. Card details never touch this server."
           : "Payments: bank transfer / UPI to the operator; the plan activates once the payment is recorded. No card details are ever collected here."}</span>
       </div>
+
+      {overview?.limits_v2 && <PlanLimitsV2 limits={overview.limits_v2} usage={overview.usage_v2} />}
 
       {Object.keys(usage).length > 0 && (
         <div className="mt-3 text-xs">

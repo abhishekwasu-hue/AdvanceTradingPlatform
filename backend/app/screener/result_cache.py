@@ -68,8 +68,12 @@ def cache_key(namespace: Tuple[Any, ...], ast: Any, base_tf: str, params: Option
               as_of: Optional[Any] = None) -> str:
     if not namespace:
         raise ValueError("a result cache key needs a namespace (tenant, user for a per-user tier, data source)")
-    head = json.dumps({"ns": list(namespace), "ast": nodes.to_json(ast), "version": nodes.VERSION, "tf": base_tf, "params": params or {}},
-                      sort_keys=True, default=str)
+    from app.screener import ranking
+    # N3 S7a review (LOW): a RankScore's result depends on the system's tree too (the run's systems, `ranking.ACTIVE`)
+    active = ranking.ACTIVE.get()
+    trees = {name: (active[name].tree() if name in active else None) for name in ranking.names_in(ast, params)}
+    head = json.dumps({"ns": list(namespace), "ast": nodes.to_json(ast), "version": nodes.VERSION, "tf": base_tf, "params": params or {},
+                       **({"rankings": trees} if trees else {})}, sort_keys=True, default=str)
     body: Any = ([d.symbol for d in universe], _stamp(as_of)) if as_of is not None else [_fingerprint(d, base_tf) for d in universe]
     digest = hashlib.sha256(head.encode())
     digest.update(repr(body).encode())

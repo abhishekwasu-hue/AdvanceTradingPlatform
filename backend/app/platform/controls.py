@@ -100,6 +100,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
     "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
     "market_thesis": "Per-symbol market thesis with scenarios and a shadow-only size multiplier (never applied)",
+    # N2-5 (P1 spec 1.5, docs/design/N2_P1FGH.md): the market context panel - regime (Dow structure of the NIFTY 50 on
+    # daily and weekly bars), breadth, India VIX with its 1-year rank, FII / DII (seam, off until a source is set),
+    # global cues and this week's events, each tile with its source and as-of and NA on its own failure. Shared data
+    # only (plus the organisation's own events). OFF: /api/context/panel answers 404.
+    "context_panel": "Market context panel: regime, breadth, India VIX and its rank, FII / DII, global cues and this week's events (information only)",
     "options_builder": "Options Strategy Builder: payoff, T+0 model, PoP and strike suggestions (research only, places no orders)",
     "options_builder_saved": "Options Builder: save strategies and load them again, shared within the organisation (research data only)",
     # P0.8-D compliance switches, OFF until the operator has the SEBI RA/IA position cleared.
@@ -246,6 +251,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N3 S6b: the rolling screen backtest - rebalance weekly / 4-weekly / monthly, top N by a rank expression, equal or rank
     # weights, next-open fills with the part C slippage and India's delivery charges, against the equal-weight universe and
     # NIFTY 50; deflated through the research trial ledger. Needs screener_history. OFF: 503. A simulation only.
+    # N3 S7a: ranking systems - weighted factor trees (weights, higher / lower is better, sector-neutral percentiles) that
+    # rank a universe 0-100 with every component shown; a column, a sort key (the S6b backtest's rank_system) and a filter
+    # (ScreenQL RankScore("name") > 80). Platform systems with documented formulas. OFF: the routes answer 503 and a screen
+    # using RankScore is refused with the reason. Information only - places nothing.
+    "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",
     # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices
@@ -282,6 +292,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # on top of `screener_v2` and `screener_gallery`. OFF: /api/screener/library/* answer 503 and the Screener page shows
     # none of it. Research only - closed bars, no recommendation, places no orders.
     "screener_tx2": "Screen library tools: confluence view, short mirror screens and watch-then-trigger lists on the Screener page (research only)",
+    # AMW-2 (docs/design/AMW_PORT.md §4.1): personal named watchlists - saved symbol lists the Screener ("My watchlists")
+    # and the Scanner ("Load watchlist") load as their universe. OFF: /api/watchlists/* answers 404 and neither page
+    # shows them. A list of names only: nothing scans, alerts or places an order.
+    "watchlists": "Watchlists: your own named symbol lists, loadable as the Screener and Scanner universe",
     # N2-3 (P1 spec 1.5, docs/design/N2_P1FGH.md): decision tools - the risk-of-ruin / Kelly calculator on typed inputs
     # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
     # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information
@@ -289,11 +303,6 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N2-4: also the exposure view (own positions by underlying and sector, beta, correlated pairs, from the daily lake)
     # and the expected-move cone on the chart.
     "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, what-if for your own open positions, exposure and correlation view, expected-move cone on the chart (information only)",
-    # N2-5 (P1 spec 1.5, docs/design/N2_P1FGH.md): the market context panel - regime (Dow structure of the NIFTY 50 on
-    # daily and weekly bars), breadth, India VIX with its 1-year rank, FII / DII (seam, off until a source is set),
-    # global cues and this week's events, each tile with its source and as-of and NA on its own failure. Shared data
-    # only (plus the organisation's own events). OFF: /api/context/panel answers 404.
-    "context_panel": "Market context panel: regime, breadth, India VIX and its rank, FII / DII, global cues and this week's events (information only)",
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
@@ -304,6 +313,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
+    # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
+    # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
+    # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.
+    "plan_limits_v2": "Plan limits v2: watchlists, symbols per screener run, reports, report schedules and Strategy Lab limits per plan",
     # New flags: add ONE entry, in its alphabetical position (not at the end), so parallel branches do not conflict on
     # the same line. A registered flag is OFF by default automatically (DEFAULT_OFF_FLAGS below is computed).
 }

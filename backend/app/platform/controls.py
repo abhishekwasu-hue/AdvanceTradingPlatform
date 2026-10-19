@@ -218,6 +218,9 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    # U5 D3a: the result board's heatmap (by sector, sized by market cap) and chart-grid views, with POST
+    # /api/screener/board/context (company reference data + shared daily closes). OFF: the table view only (404).
+    "screener_board_views": "Screener result views: heatmap by sector and a chart grid of the matched symbols (research only, places no orders)",
     # N1 X2: Auto PAPER from scans. OFF (the default, and while the owner has not decided N1-3): an AUTO_PAPER template
     # stays a proposal. ON: a template its owner armed places one PAPER order per confirmed setup (approval-only mode
     # off, within the scan limits, re-quoted) - PAPER only, never a broker order. Only the platform operator sets it.

@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 /**
  * The interview's two-language line: the English text, and under it a small muted line in the second language
- * (default Marathi; off in Settings). `inline` puts the second line after the first, for chips.
+ * (default Marathi; switched on the interview screen). `inline` puts the second line after the first, for chips.
  */
 export function Secondary({ children, lang, inline = false }: { children?: string | null; lang?: string | null; inline?: boolean }) {
   if (!children || !lang) return null;

@@ -114,7 +114,9 @@ def _rows_sorted(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 TRADE_SUFFIX_TF = {"1M": "1m", "5M": "5m", "15M": "15m", "30M": "30m", "60M": "1h"}
-TRADE_TAGS = {"GAP↑": "GAP_UP", "GAP↓": "GAP_DOWN", "FLIP✓": "FLIP_RETESTED", "दोन्ही-बाजू": "BOTH_SIDES"}
+# The reference implementation (Trade) writes these reasons in Marathi; ATP is English only, so they are mapped to English.
+# The Marathi side is written with \u escapes (no Devanagari in ATP source - scripts/check_english_only.py).
+TRADE_TAGS = {"GAP↑": "GAP_UP", "GAP↓": "GAP_DOWN", "FLIP✓": "FLIP_RETESTED", "\u0926\u094b\u0928\u094d\u0939\u0940-\u092c\u093e\u091c\u0942": "BOTH_SIDES"}
 
 
 def _trade_row(r: Dict[str, Any], zone_tf: str, sr_tf: str, gap_tf: str) -> Dict[str, Any]:

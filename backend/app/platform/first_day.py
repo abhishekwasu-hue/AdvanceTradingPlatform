@@ -67,10 +67,9 @@ class FirstDayReport:
         return {"tenant_id": self.tenant_id, "tenant_name": self.tenant_name, "checked_at": self.checked_at, "ready": self.ready,
                 "counts": self.counts, "checks": [asdict(c) for c in self.checks], "read_only": True}
 
-    def render(self, lang: str = "mr") -> str:
-        mr = lang == "mr"
-        head = (f"पहिला PAPER दिवस - तपासणी · {self.tenant_name} (tenant {self.tenant_id}) · {self.checked_at}" if mr
-                else f"First PAPER day check · {self.tenant_name} (tenant {self.tenant_id}) · {self.checked_at}")
+    def render(self, lang: str = "en") -> str:
+        """The report as text. ATP is English only; `lang` is accepted for older callers and ignored."""
+        head = f"First PAPER day check · {self.tenant_name} (tenant {self.tenant_id}) · {self.checked_at}"
         lines = [head, "=" * len(head)]
         section = None
         for c in self.checks:
@@ -83,12 +82,8 @@ class FirstDayReport:
                 lines.append(f"     → {c.fix}")
         n = self.counts
         lines.append("")
-        if mr:
-            lines.append(f"निकाल: {n['ok']} ठीक · {n['warn']} इशारे · {n['fail']} अडथळे · {n['skip']} वगळले")
-            lines.append("✅ आज PAPER दिवस सुरू करू शकता. काहीही बदललेले नाही." if self.ready else "❌ आधी वरचे अडथळे दूर करा, मग पुन्हा चालवा. काहीही बदललेले नाही.")
-        else:
-            lines.append(f"Result: {n['ok']} ok · {n['warn']} warnings · {n['fail']} blockers · {n['skip']} skipped")
-            lines.append("✅ Ready for today's PAPER session. Nothing was changed." if self.ready else "❌ Clear the blockers above and run again. Nothing was changed.")
+        lines.append(f"Result: {n['ok']} ok · {n['warn']} warnings · {n['fail']} blockers · {n['skip']} skipped")
+        lines.append("✅ Ready for today's PAPER session. Nothing was changed." if self.ready else "❌ Clear the blockers above and run again. Nothing was changed.")
         return "\n".join(lines)
 
 

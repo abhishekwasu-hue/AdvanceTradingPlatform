@@ -297,7 +297,7 @@ def test_compute_dte():
 
 def test_no_marathi_and_no_instrument_constants_in_the_module():
     text = SRC.read_text(encoding="utf-8")
-    assert not re.search(r"[ऀ-ॿ]", text)
+    assert not re.search(r"[\u0900-\u097f]", text)
     for name in ("NIFTY", "BANKNIFTY", "SENSEX", "FINNIFTY"):
         assert name not in text
     assert not re.search(r"\b20\d\d-\d\d-\d\d\b", text)

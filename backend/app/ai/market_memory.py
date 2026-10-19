@@ -17,7 +17,7 @@ for each tenant that uses the Copilot, through the tenant's own broker session, 
 The memory makes the plan faster to trust and richer: it can say how the bias moved over the last
 days and what the fear gauge says, not only what the last few hours of candles show. Reads are
 `latest()` (newest snapshot per symbol, newest cues, one row per day of history) and
-`describe()` (sentences for a plan, in the trader's language).
+`describe()` (sentences for a plan, in English).
 """
 from __future__ import annotations
 
@@ -32,7 +32,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import global_cues
 from app.ai import interview as iv
-from app.ai.interview import tr
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.db.models import MarketSnapshotRecord, StrategyDeploymentRecord, TraderProfileRecord
 from app.instruments import master as instrument_master
@@ -226,12 +225,12 @@ async def latest(session: AsyncSession, tenant_id: int, *, now: Optional[datetim
 
 def vix_text(lang: str, vix: float) -> str:
     if vix < 12:
-        return tr(lang, f"India VIX {vix:.1f}: very calm - small moves, option premiums cheap", f"India VIX {vix:.1f}: खूप शांत - लहान हालचाली, option premium स्वस्त")
+        return f"India VIX {vix:.1f}: very calm - small moves, option premiums cheap"
     if vix < 16:
-        return tr(lang, f"India VIX {vix:.1f}: normal", f"India VIX {vix:.1f}: सामान्य")
+        return f"India VIX {vix:.1f}: normal"
     if vix < 20:
-        return tr(lang, f"India VIX {vix:.1f}: elevated - wider swings", f"India VIX {vix:.1f}: वाढलेला - मोठे चढ-उतार")
-    return tr(lang, f"India VIX {vix:.1f}: high fear - big gaps are more frequent at such readings", f"India VIX {vix:.1f}: जास्त भीती - अशा वेळी मोठे gap जास्त वेळा येतात")
+        return f"India VIX {vix:.1f}: elevated - wider swings"
+    return f"India VIX {vix:.1f}: high fear - big gaps are more frequent at such readings"
 
 
 def describe(lang: str, memory: dict, symbol: str, now: Optional[datetime] = None) -> List[str]:
@@ -242,18 +241,18 @@ def describe(lang: str, memory: dict, symbol: str, now: Optional[datetime] = Non
     cues = {c["symbol"]: c for c in memory.get("cues", [])}
     vix = cues.get("INDIA VIX")
     if vix and vix.get("last_price"):
-        lines.append(vix_text(lang, float(vix["last_price"])) + tr(lang, f" ({vix['change_pct']:+.1f}% on the day).", f" (दिवसात {vix['change_pct']:+.1f}%)."))
+        lines.append(vix_text(lang, float(vix["last_price"])) + f" ({vix['change_pct']:+.1f}% on the day).")
     moves = [f"{name} {c['change_pct']:+.2f}%" for name, c in cues.items() if name != "INDIA VIX" and c.get("change_pct") is not None]
     if moves:
-        lines.append(tr(lang, "Last session: ", "मागचे सत्र: ") + ", ".join(moves) + ".")
+        lines.append("Last session: " + ", ".join(moves) + ".")
     # P0.9: no bias trail and no "trade with it" / sizing advice here - this text reaches the interview plan, the
     # briefing and Telegram, which state data, not a market direction or what to do.
     if lines and memory.get("updated_at"):
         try:
             age = int((now - datetime.fromisoformat(memory["updated_at"])).total_seconds() // 60)
-            note = tr(lang, f"(Market memory updated {age} min ago from your broker", f"(Market चा साठा {age} मिनिटांपूर्वी तुमच्या broker कडून अद्ययावत")
+            note = f"(Market memory updated {age} min ago from your broker"
             if memory.get("globals"):
-                note += tr(lang, f"; global cues: {global_cues.SOURCE_NOTE_EN}", f"; जागतिक संकेत: {global_cues.SOURCE_NOTE_MR}")
+                note += f"; global cues: {global_cues.SOURCE_NOTE_EN}"
             lines.append(note + ".)")
         except (TypeError, ValueError):
             pass

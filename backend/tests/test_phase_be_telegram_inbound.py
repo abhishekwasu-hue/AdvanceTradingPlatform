@@ -121,8 +121,8 @@ def test_webhook_guards_token_secret_whitelist_and_answers_commands(monkeypatch)
     assert why["reply"].startswith("Usage")
     unknown = _post(t, _message("555", "/dance")).json()
     assert "Commands" in unknown["reply"]
-    free = _post(t, _message("555", "आज माझ्या deployments काय करत आहेत?")).json()
-    assert free["handled"] == "message" and free["reply"]
+    free = _post(t, _message("555", "\u0906\u091c \u092e\u093e\u091d\u094d\u092f\u093e deployments?")).json()   # Marathi: answered in English
+    assert free["handled"] == "message" and free["reply"] and not any("\u0900" <= ch <= "\u097f" for ch in free["reply"])
     usage = client.get("/api/billing/usage", headers=t["headers"]).json()
     assert usage["metrics"].get("telegram_inbound", 0) >= 6
     # Rate limit: the 21st message in a minute is refused with one short reply.

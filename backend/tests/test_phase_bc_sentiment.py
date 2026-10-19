@@ -117,8 +117,8 @@ def test_capture_reads_the_broker_and_memory_and_stores_a_snapshot_the_memory_re
         async with _session_factory() as session:
             return await mm.latest(session, tenant_id, now=NOW + timedelta(minutes=1), symbol="RELIANCE")
     assert _run(filtered())["sentiment"]["score"] == result["score"]                                           # a symbol view still carries the market read
-    lines = se.view("mr", latest["sentiment"])
-    assert lines[0].startswith("Market sentiment +") and "तेजीचा कल" in lines[0] and any("FII/DII" in line for line in lines) and any("News score" in line for line in lines)
+    lines = se.view("mr", latest["sentiment"])                        # English only: an older "mr" caller gets English
+    assert lines[0].startswith("Market sentiment +") and "risk-on" in lines[0] and any("FII/DII" in line for line in lines) and any("News score" in line for line in lines)
     assert "never a signal" in se.view("en", latest["sentiment"])[-1]
 
 
@@ -162,7 +162,7 @@ def test_market_memory_api_and_brief_carry_the_sentiment(monkeypatch):
             await session.commit()
     _run(seed())
     memory = client.get("/api/ai/market-memory?language=mr", headers=headers).json()
-    assert memory["sentiment"]["label"] == "RISK_OFF" and memory["sentiment_view"][0].startswith("Market sentiment -") and "सावधगिरीचा" in memory["sentiment_view"][0]
+    assert memory["sentiment"]["label"] == "RISK_OFF" and memory["sentiment_view"][0].startswith("Market sentiment -") and "risk-off" in memory["sentiment_view"][0]
     brief = client.get("/api/ai/brief?language=en", headers=headers).json()
     assert brief["sentiment"]["score"] == payload["score"] and brief["sentiment_view"][0].startswith("Market sentiment -") and "risk-off" in brief["sentiment_view"][0]
     other_headers, _, _ = _tenant("bc-api-other@example.com")

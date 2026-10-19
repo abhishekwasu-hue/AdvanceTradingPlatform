@@ -179,6 +179,6 @@ def test_interview_builds_a_swing_plan():
     DeploymentCreateRequest(**dep).normalised()
     sell = iv.contract_plan(iv.InterviewAnswers(style="swing", experience="experienced", vehicle="option_sell"), "BULLISH")[0]
     assert sell["option_position"] == "BUY" and sell["expiry_rule"] == "MONTHLY"
-    assert iv.prefill_from_prompt("मला swing trading strategy हवी")["style"] == "swing"
+    assert iv.prefill_from_prompt("\u092e\u0932\u093e swing trading strategy \u0939\u0935\u0940")["style"] == "swing"
     answers, _, changes = ad.apply_feedback(iv.InterviewAnswers(style="intraday"), ad.Preferences(), ["want_swing"])
     assert answers.style == "swing" and changes

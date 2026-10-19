@@ -178,7 +178,7 @@ def test_a_hidden_read_repeats_no_vix_or_global_figures_as_today():
 # --- 1 / 9 -------------------------------------------------------------------------------------------------------------
 def test_interview_intro_is_bilingual_and_coach_describes_patterns():
     s = iv.start("")
-    assert s["intro"] and s["intro_mr"] and "शिफारस" in s["intro_mr"]
+    assert s["intro"] and s["intro_mr"] and "\u0936\u093f\u092b\u093e\u0930\u0938" in s["intro_mr"]
     empty = coach.review([], "en", days=30, mode="PAPER") if hasattr(coach, "review") else None
     if empty is not None:
         assert "patterns in your own trades" in empty["focus"][0] and "what to fix" not in empty["focus"][0]

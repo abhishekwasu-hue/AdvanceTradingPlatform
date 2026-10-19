@@ -35,7 +35,7 @@ describe("portfolio risk i18n (namespace portfolioRisk)", () => {
 
   it("is English only and never advice", () => {
     const all = strings(PORTFOLIO_RISK_EN);
-    expect(all.filter((s) => /[ऀ-ॿ]/.test(s))).toEqual([]);
+    expect(all.filter((s) => /[\u0900-\u097f]/.test(s))).toEqual([]);
     expect(all.filter((s) => ADVICE.test(s.replace("Not a recommendation", "")))).toEqual([]);
   });
 });

@@ -58,6 +58,6 @@ describe("ScreenGallery (U9 TX1)", () => {
   it("uses no advice wording and no Devanagari", () => {
     const words = text(render()).toLowerCase();
     for (const w of [" buy ", " sell ", "recommend", " target", " best ", "guarantee"]) expect(words).not.toContain(w);
-    expect(/[ऀ-ॿ]/.test(words)).toBe(false);
+    expect(/[\u0900-\u097f]/.test(words)).toBe(false);
   });
 });

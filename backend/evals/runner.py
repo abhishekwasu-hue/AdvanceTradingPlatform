@@ -28,7 +28,7 @@ from typing import Any, Callable, Dict, List, Optional
 ROOT = Path(__file__).resolve().parent
 SETS = ROOT / "sets"
 BASELINES = ROOT / "baselines.json"
-DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+DEVANAGARI = re.compile(r"[\u0900-\u097F]")
 
 
 @dataclass
@@ -66,8 +66,8 @@ def run_qa(cases: List[Dict[str, Any]]) -> SetScore:
         parsed = agent.parse_answer(case["answer"] if isinstance(case["answer"], str) else json.dumps(case["answer"], ensure_ascii=False))
         problem, _ = agent._verify(parsed, allowed, by_call, from_question, case.get("lang", "en"))
         shown = problem is None
-        if shown and case.get("lang") == "mr" and not DEVANAGARI.search(parsed.text):
-            shown, problem = False, "a Marathi request answered without Devanagari"
+        if shown and DEVANAGARI.search(parsed.text):          # English only (the owner's ruling), whatever the request language
+            shown, problem = False, "an answer that is not in English"
         want = case["expect"] == "shown"
         detail = f"expected {case['expect']}, got {'shown' if shown else 'refused'}" + (f" ({problem})" if problem else "")
         if want and shown and case.get("contract"):

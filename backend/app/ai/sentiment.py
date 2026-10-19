@@ -27,7 +27,6 @@ from typing import Dict, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import global_cues
-from app.ai.interview import tr
 from app.db.models import MarketSnapshotRecord
 from app.instruments.master import underlying_of
 from app.news_feed.classify import HEAVYWEIGHTS
@@ -240,33 +239,27 @@ async def capture(session: AsyncSession, tenant_id: int, broker, memory: dict, *
 
 
 # --- words ----------------------------------------------------------------------------------------
-LABEL_WORDS = {"RISK_ON": ("risk-on", "तेजीचा कल (risk-on)"), "RISK_OFF": ("risk-off", "सावधगिरीचा कल (risk-off)"), "NEUTRAL": ("neutral", "तटस्थ"), "UNKNOWN": ("not read yet", "अजून वाचलेला नाही")}
-COMPONENT_WORDS = {"pcr": ("option chain PCR/OI", "option chain PCR/OI"), "vix": ("India VIX", "India VIX"), "breadth": ("heavyweight breadth", "मोठ्या शेअर्सची रुंदी"),
-                   "global": ("global cues", "जागतिक संकेत"), "fii_dii": ("FII/DII flows", "FII/DII प्रवाह")}
+LABEL_WORDS = {"RISK_ON": "risk-on", "RISK_OFF": "risk-off", "NEUTRAL": "neutral", "UNKNOWN": "not read yet"}
+COMPONENT_WORDS = {"pcr": "option chain PCR/OI", "vix": "India VIX", "breadth": "heavyweight breadth", "global": "global cues", "fii_dii": "FII/DII flows"}
 
 
 def view(lang: str, result: Optional[dict]) -> List[str]:
     """Plain sentences for the plan and the brief: the score, what drove it, what is missing."""
     if not result or result.get("label") in (None, "UNKNOWN"):
-        return [tr(lang, "Market sentiment: not read yet (needs a broker session for the option chain and quotes).",
-                   "Market sentiment: अजून वाचलेला नाही (option chain आणि quotes साठी broker session लागतो).")]
+        return ["Market sentiment: not read yet (needs a broker session for the option chain and quotes)."]
     label = LABEL_WORDS.get(result["label"], LABEL_WORDS["UNKNOWN"])
     parts = []
     for key, comp in result.get("components", {}).items():
         if comp.get("score") is None:
             continue
-        parts.append(f"{tr(lang, *COMPONENT_WORDS[key])} {comp['score']:+.0f}")
-    lines = [tr(lang, f"Market sentiment {result['score']:+.0f}: {label[0]}" + (f" ({', '.join(parts)})." if parts else "."),
-                f"Market sentiment {result['score']:+.0f}: {label[1]}" + (f" ({', '.join(parts)})." if parts else "."))]
-    missing = [tr(lang, *COMPONENT_WORDS[k]) for k in result.get("missing", []) if k in COMPONENT_WORDS]
+        parts.append(f"{COMPONENT_WORDS[key]} {comp['score']:+.0f}")
+    lines = [f"Market sentiment {result['score']:+.0f}: {label}" + (f" ({', '.join(parts)})." if parts else ".")]
+    missing = [COMPONENT_WORDS[k] for k in result.get("missing", []) if k in COMPONENT_WORDS]
     if missing:
-        lines.append(tr(lang, f"Not in the score (no data): {', '.join(missing)}; the weights were renormalised.",
-                        f"Score मध्ये नाही (डेटा नाही): {', '.join(missing)}; weights पुन्हा समायोजित केले."))
+        lines.append(f"Not in the score (no data): {', '.join(missing)}; the weights were renormalised.")
     news = result.get("news")
     if news:
         words = LABEL_WORDS.get(news["label"], LABEL_WORDS["NEUTRAL"])
-        lines.append(tr(lang, f"News score {news['score']:+.0f} ({news['items']} feed item(s), unverified): {words[0]} - reported separately, not mixed into the market score.",
-                        f"News score {news['score']:+.0f} ({news['items']} feed बातम्या, unverified): {words[1]} - वेगळा दाखवला, market score मध्ये मिसळलेला नाही."))
-    lines.append(tr(lang, "Sentiment is background for the plan, never a signal or an order on its own.",
-                    "Sentiment हे plan साठी पार्श्वभूमी आहे; स्वतःहून signal किंवा order कधीच नाही."))
+        lines.append(f"News score {news['score']:+.0f} ({news['items']} feed item(s), unverified): {words} - reported separately, not mixed into the market score.")
+    lines.append("Sentiment is background for the plan, never a signal or an order on its own.")
     return lines

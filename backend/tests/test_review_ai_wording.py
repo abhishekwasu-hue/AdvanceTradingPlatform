@@ -1,6 +1,7 @@
 """ATP review 11: the Copilot's banned words (the frontend's compliance lint) are checked on the server against what a
-model wrote - English and Marathi (खात्रीशीर, हमखास ...) - before any person reads it. A negated mention (a
-disclaimer) passes; a claim makes the model try once more, else the rule-based text answers."""
+model wrote - English only (the owner's ruling removed the Marathi forms; text in another script is withheld by
+`output_filter`) - before any person reads it. A negated mention (a disclaimer) passes; a claim makes the model try once
+more, else the rule-based text answers."""
 import asyncio
 import json
 
@@ -33,18 +34,13 @@ class _Provider:
     ("We recommend the ORB template.", ["recommend"]),
     ("A sure-shot, risk-free setup with easy profit.", ["assured / risk-free / sure-shot", "profit claim"]),
     ("Template B has a 92% match score.", ["match %"]),
-    ("ही strategy खात्रीशीर आहे.", ["खात्रीशीर"]),
-    ("हमखास नफा देणारा setup.", ["हमखास"]),
-    ("यातून नक्की नफा मिळेल.", ["निश्चित / नक्की नफा"]),
-    ("मी ही strategy शिफारस करतो.", ["शिफारस करतो"]),
     # self-review: a disclaimer or "no doubt" in another clause must not cancel the claim that follows
     ("Not financial advice. Guaranteed returns of 20% here.", ["guarantee", "profit claim"]),
     ("No doubt, guaranteed profit on this trade.", ["guarantee", "profit claim"]),
     ("Without doubt the best trade", ["best"]),
     ("Isn't it the best breakout?", ["best"]),
-    ("हमखास नफा, शंका नाही", ["हमखास"]),
 ])
-def test_claims_are_caught_in_english_and_marathi(text, expected):
+def test_claims_are_caught(text, expected):
     assert wording.banned_terms(text) == expected
 
 
@@ -52,8 +48,6 @@ def test_claims_are_caught_in_english_and_marathi(text, expected):
     "This is not a recommendation; no strategy is risk-free and there is no guarantee of profit.",
     "The platform does not recommend any strategy. Which one to run is for you to decide.",
     "Nothing here is guaranteed.",
-    "ही शिफारस नाही; भूतकाळातले निकाल भविष्याची खात्री देत नाहीत.",          # the Copilot's own Marathi disclaimer
-    "कोणताही setup खात्रीशीर नाही आणि हमखास नसतो.",
     # ordinary phrases, not claims
     "The best bid is 100 and the best ask 100.05.",
     "Best practice is to size positions small.",
@@ -72,15 +66,15 @@ def test_copilot_answer_with_a_banned_word_is_retried_then_falls_back():
     fixed = _Provider(["NIFTY 50 at 25200 is a guaranteed winner.", "NIFTY 50 is at 25200.0 and ranging; paper only."])
     text, why = _run(copilot.narrate(fixed, "en", "brief", "What now?", facts))
     assert why == "ok" and text.startswith("NIFTY 50 is at") and "advice or a promise" in fixed.calls[1]
-    stubborn = _Provider(["हमखास नफा: NIFTY 50 at 25200.", "NIFTY 50 at 25200 - खात्रीशीर."])
+    stubborn = _Provider(["Sure-shot: NIFTY 50 at 25200.", "NIFTY 50 at 25200 - guaranteed."])
     text, why = _run(copilot.narrate(stubborn, "mr", "brief", "What now?", facts))
-    assert text is None and "खात्रीशीर" in why                         # the caller keeps the rule text
+    assert text is None and "guarantee" in why                          # the caller keeps the rule text
 
 
 def test_knowledge_answer_with_a_banned_word_falls_back_to_the_library():
-    out = _run(k.ai_answer(_Provider(["RSI is the best indicator, guaranteed."]), "RSI म्हणजे काय?", "en", None, None))
+    out = _run(k.ai_answer(_Provider(["RSI is the best indicator, guaranteed."]), "what is RSI?", "en", None, None))
     assert out["source"] == "library" and "best" in out["note"] and "guarantee" in out["note"]
-    out = _run(k.ai_answer(_Provider(["RSI measures momentum between 0 and 100; it is not a recommendation."]), "RSI म्हणजे काय?", "en", None, None))
+    out = _run(k.ai_answer(_Provider(["RSI measures momentum between 0 and 100; it is not a recommendation."]), "what is RSI?", "en", None, None))
     assert out["source"] == "ai"
 
 

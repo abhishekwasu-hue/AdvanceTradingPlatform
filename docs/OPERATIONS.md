@@ -79,7 +79,7 @@ assumption.
 ### 1.2b Resource budget - 8 GB host (Hostinger KVM 2)
 
 The production host is 2 vCPU / 8 GB RAM / 100 GB NVMe (`docker-compose.hostinger.yml`, runbook
-`docs/DEPLOY_HOSTINGER_MR.md`). Every container has a memory limit so a runaway process is OOM-killed and restarted
+`docs/DEPLOY_HOSTINGER.md`). Every container has a memory limit so a runaway process is OOM-killed and restarted
 instead of pushing the host into swap. All values are `.env` overrides (`MEM_*`, `PG_*`, `REDIS_MAXMEMORY`).
 
 | Container | Limit | Sized for |
@@ -747,7 +747,7 @@ Never publish a listing without an attached backtest run; the API refuses the su
   (`POST /api/broker/{name}/login-code`) exchanges it and stores the day's token encrypted. Pasting a new code
   always drops yesterday's access token first - the auth-code adapters skip the exchange while a token is on
   file, which used to make every pasted code "fail" with the stale token. Fyers needs the app's Redirect URL
-  stored once as `redirect_uri`. Local PC runbook (Marathi): `docs/LOCAL_PC_MR.md`.
+  stored once as `redirect_uri`. Local PC runbook: `docs/LOCAL_PC.md`.
 
 ### 1.6ab-0 Hardened environments (P0.1)
 
@@ -900,7 +900,7 @@ Never publish a listing without an attached backtest run; the API refuses the su
 ### 1.6ab-8 What the AI may say (P0.8-B)
 
 - Every AI-written text (market thesis, Copilot answers on the web and in Telegram, the knowledge guide) is checked
-  before you see it: every number must be one of the platform's own figures (same sign; `25k` and `1.2 लाख` count as
+  before you see it: every number must be one of the platform's own figures (same sign; `25k` and `1.2 lakh` count as
   the full number) and every symbol must be one the facts or your question named. A text that fails gets one rewrite
   and then the rule-based text with a note such as "AI answer not used (numbers not in the facts: 26000)". Nothing
   else changes - the rule-based text was always there.
@@ -954,9 +954,10 @@ Never publish a listing without an attached backtest run; the API refuses the su
     keeps the text: removing it is your data-retention decision. Write the period you choose into your privacy notice.
 - **Output filter (H-C1 c)**: every Copilot, guide and thesis text is checked on the server before it is shown.
   - Guarantee and advice wording blocks the AI text: "guaranteed", "sure-shot", "risk-free", "I recommend", "you
-    should buy", खात्रीशीर, हमखास, "मी शिफारस करतो" and the like. The model gets one retry; after that the
+    should buy" and the like. The lists are English only (the owner's ruling: ATP answers in English, so the Marathi /
+    Hindi lists were removed; an AI text in another script is withheld outright). The model gets one retry; after that the
     rule-based answer is shown with a note.
-  - A text that names a specific buy/sell level is kept, with an educational line added in the answer's language.
+  - A text that names a specific buy/sell level is kept, with an educational line (English) added.
   - The word list is data, in `backend/app/ai/data/advice_terms.json`. To use your own list, point
     `AI_ADVICE_TERMS_FILE` at a copy.
   - Results are counted in `atp_ai_output_filtered_total{kind, where}`.
@@ -964,8 +965,10 @@ Never publish a listing without an attached backtest run; the API refuses the su
 
 ### 1.6ab-11 English dashboard and AI answer language (P0.9)
 
-- The dashboard is English only. Each user picks the language of the AI's written answers (English or Marathi) under
-  Settings > AI provider; it starts as English for everyone. Telegram answers in the language of the message.
+- The dashboard is English only, and so are the AI's written answers (the owner's ruling, Oct 2026: the per-user
+  answer-language choice and the Telegram reply in the message's language were removed - every AI answer is English,
+  whatever language the question is written in; only the strategy interview is trilingual). `users.ai_language` stays in
+  the schema and is ignored (always English).
 - Migration `a1c3e5f7b9d2` adds `users.ai_language` (constant default, no table rewrite). Run it outside 09:15-15:30 IST.
 - Sample-data figures are stamped and blurred on purpose; switch Data to broker candles to read real numbers.
 - Optional: the per-call cost estimates on the AI provider card use `AI_USD_INR_RATE` and `AI_MODEL_PRICES_JSON` (P0.8-C).
@@ -1006,7 +1009,9 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
 
 ### 1.6ab-12 Interview language, data age and the cheap AI tier (P0.10)
 
-- The strategy interview is the one bilingual screen (English line + muted Marathi line); everything else is English.
+- The strategy interview is the one bilingual screen (English line + muted Marathi line; the Hindi bundle's slot is
+  `INTERVIEW_HI`); everything else is English. The second line is switched on the interview screen itself (not in
+  Settings). CI: `scripts/check_english_only.py` fails on Devanagari anywhere else in the repository.
 - Today's market shows how old the market memory is; a stale read (older than 45 minutes while the market is open,
   20 hours while it is closed) or placeholder figures are stamped and their prices hidden. "Read now" (with a broker
   session) or the worker refreshes it.
@@ -1067,12 +1072,12 @@ against the Upstox sandbox before switching `LIVE_MARKET_PROTECTION` on for Upst
 
 ### 1.6ae First PAPER day: the check script, the EOD summary, the production overlay (Phase AX)
 
-- **`backend/scripts/first_paper_day_check.py`** (run inside the backend container, see `docs/GO_LIVE_MR.md` §3):
+- **`backend/scripts/first_paper_day_check.py`** (run inside the backend container, see `docs/GO_LIVE_RUNBOOK.md` §3):
   read-only. It prints the platform and organisation checklists narrowed to a PAPER day, today's NSE session, the
   read-only broker smoke test on every stored session with a VALID token, whether the active deployments are being
   evaluated (market open only) and, with `--send-test-alert`, one test message per alert channel. Exit 0 = no ❌,
   1 = a blocker, 2 = no organisation could be chosen (`--tenant <id|email>`). `--no-smoke` skips the broker probes,
-  `--json` prints the report, `--lang en` switches the summary lines. Nothing it does changes trading state.
+  `--json` prints the report; the report is English. Nothing it does changes trading state.
 - **EOD summary**: from 15:35 IST on weekdays the worker raises one `EOD_SUMMARY` notification per organisation with an
   active/paused deployment or a trade today: signals, entries, exits with reasons, net P&L of the day's exits,
   positions still open after the square-off, reconciliation state, worker errors. INFO on a clean day, WARNING when
@@ -1342,7 +1347,7 @@ claim extends to the data layer too.
 One page per alert. Each says what fired, what the platform already does on its own, what to check and what to do.
 Server commands come from the Z11 deploy runbook, [`docs/deploy/HOSTINGER_RUNBOOK.md`](deploy/HOSTINGER_RUNBOOK.md)
 (PR #186; its section 1 lists every `deploy/atp.sh` command). They are linked here, not repeated. Until #186 is
-merged, the older `deploy/hostinger/status.sh` and `rollback.sh` blocks still work (`docs/DEPLOY_HOSTINGER_MR.md`).
+merged, the older `deploy/hostinger/status.sh` and `rollback.sh` blocks still work (`docs/DEPLOY_HOSTINGER.md`).
 
 Phase 0 is PAPER only. Nothing below places, modifies or blocks an exit: exits are never gated (ADR-0004).
 
@@ -1582,8 +1587,9 @@ feedback form instead of guessing. With the organisation's own AI provider confi
 consent accepted, the user has accepted the AI Copilot acknowledgement, `ai_copilot` on) the provider may reword the
 matching help passage; the reworded text is shown only if it passes the advice / guarantee filter, the banned-word and
 the numbers checks, else the help text is shown. Review H1 hardening: the question is normalised first (NFKC, no
-zero-width characters, Cyrillic/Greek look-alikes mapped); advice is also recognised in Hindi, Hinglish and Marathi and
-in spaced-out words; order and account requests are checked clause by clause; a question with letters outside English
+zero-width characters, Cyrillic/Greek look-alikes mapped); advice is also recognised in Hinglish written in Latin script and
+in spaced-out words (a question in Devanagari is not read for advice: it never reaches the model and gets the help
+text or a hand-off, in English); order and account requests are checked clause by clause; a question with letters outside English
 never goes to the model; and a model text is rejected when it has letters outside English, a ticker or number that is
 not in the help passages (the question is not trusted), a trade verb the top passage does not use, a claimed action
 ("I closed", "has been placed"), or fewer than 80 % of its words from the passages. Personal data in the question is

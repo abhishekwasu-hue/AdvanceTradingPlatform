@@ -82,7 +82,7 @@ describe("LibraryTools (U9 TX2)", () => {
     expect(t).toContain(WATCH.transition_text.replace(/>/g, "&gt;"));
     expect(t).toContain("Save the trigger screen");
     expect(t).toContain("RSI oversold, then back above 30");
-    expect(html).not.toMatch(/[ऀ-ॿ]/);
+    expect(html).not.toMatch(/[\u0900-\u097f]/);
   });
 
   it("puts each long screen's mirror, or why it has none, on its gallery card", () => {

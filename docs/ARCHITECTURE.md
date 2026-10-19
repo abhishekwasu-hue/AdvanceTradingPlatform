@@ -3649,8 +3649,8 @@ in the request's language, else the user's setting (no script detection). UI rou
 returns no scenarios for a non-index symbol without `thesis_stock_targets`; `market_study.study(..., stock_detail=)` the
 same. `strategist._verdict(..., real_data)` adds `sample` and `insufficient` (`MIN_OOS_TRADES = 30`); `simulate` fills a
 gapped stop at the bar's open. `ai.settings.task_models()` (per provider, task, tier, model, est. INR per call from
-`pricing`). Frontend: `AiAcknowledgementGate` (English + "Read in Marathi"), `SampleStamp`, `i18n/interviewSecondary.ts`
-(the only Devanagari allowed, `scripts/check-devanagari.mjs` in CI), `utils/sampleData.ts` random walk.
+`pricing`). Frontend: `AiAcknowledgementGate` (English), `SampleStamp`, `i18n/interviewSecondary.ts`
+(the only Devanagari allowed in the frontend, `scripts/check_english_only.py` in CI), `utils/sampleData.ts` random walk.
 
 **P1.2 (design system).** `styles/tokens.css` (semantic RGB variables per theme / colour-blind mode),
 `styles/palette.css` (generated, themeable Tailwind hues), `tailwind.config.js` (all colours from variables),
@@ -3673,11 +3673,25 @@ holds pure order-path helpers; `LIVE_STRICT_WING_FILL` and `ORDER_MARKET_PROTECT
 holdout) feed the optimizer's `overfitting` block.
 
 **P0.10 (screenshot review fixes).** The strategy interview is the only bilingual screen (`INTERVIEW_MR` namespace,
-enforced by `scripts/check-devanagari.mjs`). `briefing.data_freshness` labels the market memory behind the briefing
+enforced by `scripts/check_english_only.py`). `briefing.data_freshness` labels the market memory behind the briefing
 (fresh / stale / placeholder / none) and the UI hides figures that are not a current read. Risk settings and the
 contract never depend on experience (`interview.DEFAULT_*`, `contract_plan(..., last_price)`); only facts change a
 choice. Sample candles follow NSE sessions (`utils/sampleData.ts`, ported in `tests/sample_market.py`). A third AI tier,
 `cheap`, runs classification and scanner reads.
+
+**English only (Oct 2026, the owner's ruling).** All UI, Copilot / AI replies, Telegram / email / push texts, reports and
+docs are English. The one exception is the Copilot strategy interview - trilingual (English + Marathi + Hindi) on its
+own screen: `app/ai/interview.py` and `app/ai/advisor.py` on the server, the `interview` namespace
+(`i18n/interviewSecondary.ts`: `INTERVIEW_MR`, and `INTERVIEW_HI` for the Hindi bundle) in the frontend, its second-line
+switch on the interview screen (`InterviewLanguageSwitch`; not in Settings). Outside the interview every AI route
+answers in English whatever the message's language or a `language` field says (`routes._ai_language`, the prompts say
+"English only"; `/api/ai/preferences` offers English only), and AI text passes the English filter
+(`output_filter`: English word lists, Indic or other scripts withheld; `grounding` on the supplied data). The Marathi /
+Hindi advice-filter lists, the Marathi "Read in Marathi" translations of the acknowledgement and of the data consent
+(the English legal text is unchanged; acceptances recorded with the bilingual hash still count -
+`compliance_terms.accepted_hashes`) and every Marathi text outside the interview were removed.
+`scripts/check_english_only.py` (CI, lint job; tested by `backend/tests/test_english_only_check.py`) fails on any
+Devanagari in the repository outside its explicit allow-list (the interview files and named interview test fixtures).
 
 **P0.8-D (compliance).** `ai/compliance_terms.py`: versioned Copilot terms and data-sharing consent texts (en/mr),
 `ai_acknowledgements` rows with the text hash, `require_ai_acknowledged` / `ai_acknowledged` dependencies (428) on the
@@ -3736,7 +3750,7 @@ the index's scrip code as its strike; positions and holdings carry `NFO`/`BFO` f
 from the segment code or the ticker shape) so the contract-symbol translator restores them to the platform
 spelling. The smoke test gained an optional `option_chain` step (skipped with `NotImplementedError`). No
 schema change. Tests: `tests/test_phase_bg_local_fyers.py` (both master layouts, the two-day login, the
-first-day check over a stored Fyers credential through `build_adapter`). Runbook: `docs/LOCAL_PC_MR.md`.
+first-day check over a stored Fyers credential through `build_adapter`). Runbook: `docs/LOCAL_PC.md`.
 
 ## Phase AK: completion - CoinDCX adapter, real defaults, go-live runbook
 
@@ -3855,7 +3869,7 @@ TradingView's licensed Advanced Charts, a separate decision. Tests: `tests/test_
 ## Phase AP: strategy interview
 
 `app/ai/interview.py` makes the AI Copilot ask before it answers. A request with no rule in it
-(no indicator or crossover - "give me a trading strategy", "ट्रेडिंग स्ट्रॅटेजी सांगा") starts an
+(no indicator or crossover - "give me a trading strategy", or the same in Marathi) starts an
 interview instead of a draft; a rule description still goes straight to the Phase L2 generator.
 
 * **`POST /api/ai/interview/start`** `{prompt}` - `needs_interview`, the language (Devanagari ->
@@ -4006,18 +4020,17 @@ Tests: `tests/test_phase_as_swing.py`.
 
 ## Phase AT: the guide
 
-`app/ai/knowledge.py` - the fourth part of the "experienced guide" Copilot: questions answered in the
-trader's language.
+`app/ai/knowledge.py` - the fourth part of the "experienced guide" Copilot: questions answered in
+English (English only since Oct 2026; the Marathi bodies and keywords were removed).
 
-* **Concept library** (`CONCEPTS`, 33 entries): id, English and Marathi title and body, keywords in
-  both scripts, related concepts. Each body is a short, correct explanation plus how this platform
+* **Concept library** (`CONCEPTS`, 33 entries): id, English title and body, English keywords, related concepts. Each body is a short, correct explanation plus how this platform
   applies it (sizing from the stop, the daily loss limit, the regime filter, ATR-floored stops, swing
   products, paper first...). Tests assert every entry is complete in both languages and that related
   ids exist.
-* **Retrieval** (`find_concepts`): keyword scoring over English tokens and Devanagari / multi-word
+* **Retrieval** (`find_concepts`): keyword scoring over English tokens and multi-word
   phrases (substring), top matches within 60% of the best score.
-* **Market questions** (`_market_answer`): a question with a market word (today / आज / सध्या / कल /
-  why no trade...) naming a watched symbol (or an alias: बँक निफ्टी, BANKNIFTY...) is answered from the
+* **Market questions** (`_market_answer`): a question with a market word (today / now / market / trend /
+  why no trade...) naming a watched symbol (or an alias: BANK NIFTY, BANKNIFTY...) is answered from the
   Phase AR memory: bias, regime, higher-timeframe regime, structure, the day's move, what the regime
   means for the strategies, and the memory's background lines.
 * **AI** (`ai_answer`): with an external provider configured (`ai_settings.provider_for` returns
@@ -4061,7 +4074,7 @@ Tests: `tests/test_phase_at_guide.py`.
   library gained a `global_cues` concept. API: `GET /api/ai/market-memory` adds `globals`,
   `global_view`, `global_source`, `global_gift_note`, `global_enabled`; `POST
   /api/ai/market-memory/refresh` reads the global cues even without a broker session (409 only when
-  neither is available). **UI**: the market-memory card's जागतिक संकेत section.
+  neither is available). **UI**: the market-memory card's Global cues section.
 
 Tests: `tests/test_phase_au_global_cues.py`.
 
@@ -4103,8 +4116,8 @@ Tests: `tests/test_chart_history.py`.
   strategy, streak over the guard, too small a sample, and a "good discipline" note. A score (100 minus
   severity points, minus 10 for negative expectancy) gives the grade; the first three high/medium tips are
   the focus list.
-* **Ask anything** (`app/ai/copilot.py`, `POST /api/ai/copilot`): `intent()` routes by keyword (Marathi
-  and English) to deployments, coach, brief, interview or guide (the default). The reply carries the
+* **Ask anything** (`app/ai/copilot.py`, `POST /api/ai/copilot`): `intent()` routes by English keyword
+  to deployments, coach, brief, interview or guide (the default). The reply carries the
   deterministic answer, the data behind it and an action (which tab to open; the interview opens directly
   with the message as its prefill). With an external AI provider, `narrate()` answers under
   `COPILOT_PROMPT` grounded on the same facts; any provider error keeps the rule-based answer.
@@ -4151,19 +4164,21 @@ Tests: `tests/test_phase_av_copilot_home.py`.
 
 Tests: `tests/test_phase_aw_strategist.py`.
 
-### Phase BF: the strategist in the trader's language
+### Phase BF: the strategist in words
+
+> **English only (Oct 2026, the owner's ruling).** The Marathi word tables and the Marathi request words were removed:
+> the strategist's words and summaries are English, and a request in another script matches only its Latin words.
+> The text below is the original design; read "Marathi" in it as removed.
 
 * **Rules in words** (`strategist.rule_words` / `operand_words`): every candidate carries `rules_text` next to the
-  technical `rules` - `close crosses above opening-range high (15 min)` / `close भाव opening range high (15 मिनिट)
-  च्या वर ओलांडतो`, `EMA(9) above EMA(50) on 15-minute` / `EMA(9) 15 मिनिट वरचा EMA(50) च्या वर` - plus
+  technical `rules` - `close crosses above opening-range high (15 min)`, `EMA(9) above EMA(50) on 15-minute` - plus
   `direction_text`, `timeframe_text` and a one-line `summary` (name, side, timeframe, rule count, stop, verdict)
-  in the reply language. The word tables (`OPERAND_WORDS`, `OPERATOR_WORDS`) cover every operand the strategy
+  in English. The word tables (`OPERAND_WORDS`, `OPERATOR_WORDS`) cover every operand the strategy
   language has; the technical label stays available (the UI shows it on hover / toggle).
-* **Requests in words** (`strategist.parse_request`): `बँक निफ्टी फक्त long scalping`, `RELIANCE intraday both
-  sides`, `निफ्टी मध्ये मंदीसाठी ५ मिनिट` → symbol (index aliases in both scripts, else an upper-case ticker),
-  style (scalp / 1 min → scalping, else intraday), direction (long / short / both; खरेदी-विक्री, तेजी-मंदी),
-  language (Devanagari → mr; a Latin-only request keeps the form's language, since tickers are Latin). Devanagari
-  digits are normalised; all-caps grammar words (INTRADAY, LONG, PAPER, indicator names...) are never a ticker.
+* **Requests in words** (`strategist.parse_request`): `banknifty long only scalping`, `RELIANCE intraday both
+  sides`, `nifty bearish 5 min` → symbol (index aliases, else an upper-case ticker),
+  style (scalp / 1 min → scalping, else intraday), direction (long / short / both; bullish / bearish),
+  language (always `en`). All-caps grammar words (INTRADAY, LONG, PAPER, indicator names...) are never a ticker.
   Whatever the request does not name keeps the form's value; `matched` says what was understood. Negations are
   not understood - the UI says so and shows the parsed fields to correct before anything runs; the build itself
   runs from the form, so a hand correction always wins. `POST /api/ai/strategist/parse` previews it;
@@ -4183,7 +4198,7 @@ Operator-facing closure for the first real session (real Upstox account, real da
   copy of the dumps and the WAL archive to an S3 bucket, Caddy as the only public edge, a separate broker app for the
   platform. `docker-compose.prod.yml` + `deploy/Caddyfile` + `scripts/backup/offsite_sync.sh`; `scripts/deploy.sh
   production` uses the overlay.
-* **Marathi runbook** `docs/GO_LIVE_MR.md`: the ordered operator sequence from the empty droplet to the five-day
+* **Go-live runbook** `docs/GO_LIVE_RUNBOOK.md` (written in Marathi first; English since Oct 2026): the ordered operator sequence from the empty droplet to the five-day
   PAPER acceptance, with the exact clicks/commands, expected output and the fix for each failure. Secrets live in the
   host's `.env` and in Settings only.
 * **First-day check** (`platform/first_day.py`, `scripts/first_paper_day_check.py`): reuses the Phase AB checklists,

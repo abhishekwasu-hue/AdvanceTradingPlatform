@@ -1,7 +1,7 @@
 """P0.9: English-only dashboard, the AI answer language setting, compliance round 2 and the data fixes.
 
-A  the dashboard is English (frontend check: frontend/scripts/check-devanagari.mjs); the AI's written answers follow the
-   user's `ai_language` (default English) whatever script the question uses.
+A  the dashboard is English (repo check: scripts/check_english_only.py); the AI's written answers are English too
+   (the owner's ruling, Oct 2026), whatever script the question uses or `ai_language` says.
 B  the interview states no market direction and pre-selects nothing; a single stock gets no price scenarios and no
    score; an index's score is labelled a model score, not a forecast; "held up on unseen data" needs real broker candles
    and 30+ unseen trades.
@@ -25,18 +25,17 @@ NOW = th.datetime(2026, 10, 8, 9, 0, tzinfo=th.timezone.utc)
 
 
 # --- A ------------------------------------------------------------------------------------------------------------------
-def test_ai_answer_language_is_a_user_setting_defaulting_to_english():
+def test_ai_answers_are_english_only():
+    """The owner's ruling: the AI answers in English - the language setting offers English only, and neither a stored
+    choice, a `language` on the request nor the script of the question changes that."""
     headers = {"Authorization": f"Bearer {_register('p09-lang@example.com')}"}
     prefs = client.get("/api/ai/preferences", headers=headers).json()
-    assert prefs["ai_language"] == "en" and {lang["code"] for lang in prefs["languages"]} == {"en", "mr"}
-    # A question in Marathi script is answered in English until the user chooses Marathi.
-    assert "loses value every day" in client.post("/api/ai/ask", headers=headers, json={"question": "theta म्हणजे काय?"}).json()["answer"]
-    assert client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"}).status_code == 200
-    assert "Option दररोज" in client.post("/api/ai/ask", headers=headers, json={"question": "what is theta"}).json()["answer"]
-    # An explicit language on the request still wins (the Telegram bot answers in the language of the message).
-    assert "loses value every day" in client.post("/api/ai/ask", headers=headers, json={"question": "what is theta", "language": "en"}).json()["answer"]
-    other = {"Authorization": f"Bearer {_register('p09-lang-other@example.com')}"}
-    assert client.get("/api/ai/preferences", headers=other).json()["ai_language"] == "en"         # per user, not per organisation
+    assert prefs["ai_language"] == "en" and [lang["code"] for lang in prefs["languages"]] == ["en"]
+    marathi_theta = "theta \u092e\u094d\u0939\u0923\u091c\u0947 \u0915\u093e\u092f?"           # "what is theta?" in Marathi
+    assert "loses value every day" in client.post("/api/ai/ask", headers=headers, json={"question": marathi_theta}).json()["answer"]
+    assert client.put("/api/ai/preferences", headers=headers, json={"ai_language": "mr"}).json()["ai_language"] == "en"
+    assert "loses value every day" in client.post("/api/ai/ask", headers=headers, json={"question": "what is theta"}).json()["answer"]
+    assert "loses value every day" in client.post("/api/ai/ask", headers=headers, json={"question": "what is theta", "language": "mr"}).json()["answer"]
 
 
 # --- B ------------------------------------------------------------------------------------------------------------------

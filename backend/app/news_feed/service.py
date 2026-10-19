@@ -191,7 +191,7 @@ async def alert_tenants(session: AsyncSession, row: NewsEventRecord, c: dict, te
     for tenant_id in tenants:
         await notify(session, tenant_id, NotificationType.NEWS_ALERT,
                      title=f"News (unverified feed, severity {c.get('severity')}): {row.headline[:120]}",
-                     message=f"{c.get('one_line_en', '')}\n{c.get('one_line_mr', '')}\nSource: {BY_ID.get(row.feed_id).name if row.feed_id in BY_ID else row.feed_id} - {row.source_url or ''}\n"
+                     message=f"{c.get('one_line_en', '')}\nSource: {BY_ID.get(row.feed_id).name if row.feed_id in BY_ID else row.feed_id} - {row.source_url or ''}\n"
                              "Unverified feed item: read the source before acting. No position was changed.",
                      severity=severity)
         sent += 1

@@ -33,13 +33,12 @@ _ADVICE = [re.compile(p, re.I) for p in (
     r"\b(?:going\s+to|gonna)\s+(?:go\s+up|go\s+down|rise|fall|rally|crash|move\s+up|move\s+down)\b",
     r"\b(?:outlook|forecast|prediction|predict|bullish|bearish)\b",
     r"\b(?:will|would)\s+(?:make|give|earn)\s+(?:me\s+)?(?:a\s+)?(?:profit|money|returns?)\b",
-    # Hinglish (Latin script) and Hindi
+    # Hinglish written in Latin script (an input check only: a question with letters outside English never reaches a
+    # model - support/bot.py - and the bot answers in English).
     r"\b(?:kaun|kon|kaunsa|konsa|kaunse|konse|kaun\s*sa|kon\s*sa|kaun\s*se|kon\s*se)\s+(?:share|stock|scrip|option|strike|coin)s?\b",
     r"\b(?:kharid\w*|khareed\w*|bechu|bechun|bechna|beche|bechein|becho|bech\s+du|bech\s+doon|le\s+lu|le\s+loon|lena\s+chahiye|"
     r"lu\s+kya|loon\s+kya|kya\s+lu|kya\s+loon|munafa|pakka\s+profit|paisa\s+double)\b",
     r"\b(?:tips?|target|call)\s+(?:do|dijiye|batao|bataiye|chahiye|bolo)\b",
-    r"कौन\s*सा\s+शेयर|कौन\s*से\s+शेयर|कौनसा|खरीद(?:ना|ें|ूं|ूँ|ू|े|ो|नी)|बेच(?:ना|ें|ूं|ूँ|ू|े|ो|नी)|शेयर\s+ल(?:े|ें|ूं|ूँ)|"
-    r"सलाह|टिप्स?|लक्ष्य|मुनाफ़?ा|फायदा\s+होगा",
     r"\b(?:which|what)\s+(?:stocks?|shares?|scrips?|options?|strikes?|coins?|crypto(?:s|currency)?|mutual\s+funds?|funds?|sectors?|"
     r"ipos?|futures?)\b.{0,40}\b(?:buy|sell|hold|invest|pick|trade|choose|short|go\s+up|rise|rally)\b",
     r"\b(?:stock|share|trading|intraday|option|options|f&o|crypto)\s+tips?\b",
@@ -59,7 +58,6 @@ _ADVICE = [re.compile(p, re.I) for p in (
     r"\b(?:go|goes|going|went|gone|be|bet|put\s+(?:it|everything|my\s+\w+))\s+all[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)",
     r"\ball[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)\s+(?:on|with|into)\b|^\s*all[\s-]+in\b(?!\s+(?:one|a|the|the\s+same)\b)\s*[?!.]*\s*$",
     r"\ball[\s-]+in\s+(?:the\s+)?(?:(?:stock\s+)?markets?|stocks?|shares?|equit(?:y|ies)|crypto|f\s*&\s*o|options?|futures?)\b",
-    r"शिफारस|कोणता\s+शेअर|कोणते\s+शेअर|घ्यावा\s+का|घेऊ\s+का|विकू\s+का|खरेदी\s+करू\s+का|टिप्स",
 )]
 # Only outside a how-to clause: "RELIANCE: buy or sell?" is advice, "how do I buy or sell in paper mode?" is not.
 _ADVICE_CLAUSE = [re.compile(p, re.I) for p in (

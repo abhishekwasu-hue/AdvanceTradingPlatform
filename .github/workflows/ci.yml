@@ -38,6 +38,12 @@ jobs:
           cache: "pip"
           cache-dependency-path: backend/requirements.txt
 
+      # The owner's ruling: ATP is English only - UI, AI replies, Telegram / email / push texts, reports, docs. Devanagari
+      # only in the strategy interview's explicit allow-list (scripts/check_english_only.py; its test:
+      # backend/tests/test_english_only_check.py). Whole repo: backend, frontend, templates, notification texts, docs.
+      - name: English only (Devanagari only in the interview allowlist) - whole repo
+        run: python scripts/check_english_only.py
+
       - name: Install linters (pinned) and the application's dependencies (mypy reads them)
         working-directory: backend
         run: |
@@ -243,8 +249,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: English-only UI (Devanagari only in the interview allowlist)
-        run: npm run check:devanagari
+      # The English-only check covers the whole repository now: the lint job's "English only" step.
 
       - name: Unit tests (Vitest)
         run: npm test

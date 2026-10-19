@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Prints the copy-paste blocks of docs/DEPLOY_HOSTINGER_MR.md: each script as ONE line,
+# Prints the copy-paste blocks of docs/DEPLOY_HOSTINGER.md: each script as ONE line,
 #   bash -c "$(echo <base64> | base64 -d)"
 # (base64 so no quoting can break in the paste) with the script's SHA-256, to compare with
 #   sha256sum deploy/hostinger/<script>.sh   on any checkout of the same commit.

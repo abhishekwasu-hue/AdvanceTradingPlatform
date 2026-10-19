@@ -8,10 +8,11 @@ import { COPILOT_EN } from "./locales/en";
  * The Copilot's text, through i18n keys (react-i18next; the app-wide move in P1.7 reuses these resources).
  *
  * - `copilot` namespace: every interface string of the Copilot page - English, the only interface locale for now.
- * - `interview` namespace: the strategy interview's muted second-language lines. The secondary language is a setting
- *   (default Marathi, or off); a Hindi bundle is one more entry in SECONDARY_BUNDLES.
+ * - `interview` namespace: the strategy interview's muted second-language lines. The secondary language is chosen on
+ *   the interview screen (default Marathi, or off); the Hindi bundle is one more entry in SECONDARY_BUNDLES
+ *   (INTERVIEW_HI in i18n/interviewSecondary.ts, already on the English-only check's allow-list).
  *
- * Devanagari may appear only in the `interview` namespace (scripts/check-devanagari.mjs and i18n.test.ts).
+ * Devanagari may appear only in the `interview` namespace (scripts/check_english_only.py and i18n.test.ts).
  * A separate i18next instance, so nothing outside the Copilot chunk pays for it.
  */
 export const SECONDARY_BUNDLES: Record<Exclude<SecondaryLocale, "off">, typeof INTERVIEW_MR> = { mr: INTERVIEW_MR };

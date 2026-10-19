@@ -11,7 +11,7 @@ no application code ships with it.
 | # | Decision | Effect on the spec |
 |---|----------|--------------------|
 | OD-1 | **Plan now, build after Phase 0.** Phase 0 is Z1-Z11 (`docs/specs/ATP_PHASE0_FREEZE.md`), and its order does not change. The journal milestones go into the N-list, next to N2 (P1-f/g/h), after Z11 merges. | Supersedes the spec's "Start now with Milestone 1" and "continue from the current milestone without waiting". Milestone 0 (this plan) is the only journal work before Z11. A Phase 0 bug, beta feedback or a security issue pre-empts journal work, as for every N item. |
-| OD-2 | **English only for now.** Build the i18n plumbing with English source strings only. Hindi and Marathi translation files come later, and only with the owner's approval. | When they are approved, the English-only CI check (`frontend` `npm run check:devanagari`) is changed to exempt exactly one folder, `frontend/src/journal/locales/`, and nothing else. Until then the UI, the AI review language, and the Telegram and email templates are English. |
+| OD-2 | **English only for now.** Build the i18n plumbing with English source strings only. Hindi and Marathi translation files come later, and only with the owner's approval. | When they are approved, the English-only CI check (`scripts/check_english_only.py`, also `npm run check:devanagari`) is changed to exempt exactly one folder, `frontend/src/journal/locales/`, and nothing else. Until then the UI, the AI review language, and the Telegram and email templates are English. |
 | OD-3 | **Follow ATP's real structure.** Z6 already builds `backend/app/journal` (PR #171 Z6-a, PR #172 Z6-b). The module is an **extension of that package**, not a parallel one. | The spec's `atp/journal/` becomes `backend/app/journal/` (backend) and `frontend/src/journal/` (frontend). Every spec table is mapped to an existing Z6 or ATP table or column, or to a new `journal_*` table whose name does not collide (section 3). |
 
 ## 1. What already exists (reuse, do not rebuild)
@@ -50,7 +50,7 @@ being fixed, so section 3 is re-checked against them when they merge (`J1-b` sta
 | File storage | **None for user files.** R2 is read-only (history import) and used for backups; contract notes store parsed rows, not files; Vision stores only image hashes | `backend/app/market_lake/object_store.py` | A new small write-capable blob-store seam (J3-a, JM-18). |
 | Analytics formulas | `trading/analytics.py` (summary, group stats), `ai/coach.py` (win rate, expectancy, profit factor, streaks, behaviour flags), Z6-b review totals | `backend/app/trading/analytics.py`, `backend/app/ai/coach.py`, `backend/app/journal/review.py` | One shared stats core, so profit factor and expectancy are not defined three times (J6-a). |
 | Plan-before-trade and risk caps (PAPER) | Z5 P1-d ticket, risk-by-default caps, daily loss lockout with exits allowed | PR #179 (open) | ATP's own PAPER guard. Journal guardrails never feed into it (decision C-7). |
-| i18n | `i18next` and `react-i18next` with one instance per namespace (`copilot/i18n.ts`, `locales/en.ts`); `check:devanagari` | `frontend/src/copilot/`, `frontend/scripts/check-devanagari.mjs` | A `journal` namespace with `en` only (OD-2). |
+| i18n | `i18next` and `react-i18next` with one instance per namespace (`copilot/i18n.ts`, `locales/en.ts`); `check:devanagari` | `frontend/src/copilot/`, `scripts/check_english_only.py` | A `journal` namespace with `en` only (OD-2). |
 
 ## 2. Conflicts with standing rules, and how each is resolved
 

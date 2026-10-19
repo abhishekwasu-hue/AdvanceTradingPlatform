@@ -1,8 +1,8 @@
 #!/usr/bin/env python
-"""Phase AX: the first-PAPER-day check (docs/GO_LIVE_MR.md step 4). Read-only.
+"""Phase AX: the first-PAPER-day check (docs/GO_LIVE_RUNBOOK.md step 4). Read-only.
 
     docker compose exec backend python scripts/first_paper_day_check.py [--tenant <id|email>]
-                                      [--no-smoke] [--send-test-alert] [--json] [--lang mr|en]
+                                      [--no-smoke] [--send-test-alert] [--json]
 
 Reads the platform and organisation go-live checklists, today's NSE session, runs the read-only
 broker smoke test on every stored session with a VALID token (never an order), checks that the
@@ -26,7 +26,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--no-smoke", action="store_true", help="skip the read-only broker probes")
     parser.add_argument("--send-test-alert", action="store_true", help="send one test message through each configured alert channel")
     parser.add_argument("--json", action="store_true", help="print the report as JSON")
-    parser.add_argument("--lang", choices=("mr", "en"), default="mr")
     return parser
 
 
@@ -41,7 +40,7 @@ async def main(argv=None) -> int:
             print("No organisation chosen: pass --tenant <id|email> (several organisations have active deployments, or none exists).", file=sys.stderr)
             return 2
         report = await first_day.run(session, tenant, user, smoke=not args.no_smoke, send_test_alert=args.send_test_alert)
-    print(json.dumps(report.as_dict(), ensure_ascii=False, indent=2) if args.json else report.render(args.lang))
+    print(json.dumps(report.as_dict(), ensure_ascii=False, indent=2) if args.json else report.render())
     return 0 if report.ready else 1
 
 

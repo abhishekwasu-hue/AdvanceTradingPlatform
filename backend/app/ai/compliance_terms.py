@@ -33,11 +33,6 @@ ACK_TEXT = {
            "Which strategy to run, with how much capital and whether to trade at all is your decision alone. Nothing it writes is a "
            "recommendation to buy, sell or hold any security, and past or simulated results do not predict future results. "
            "Paper trading first, then your own judgement."),
-    "mr": ("AI Copilot हा SEBI-नोंदणीकृत Investment Adviser किंवा Research Analyst नाही आणि गुंतवणुकीचा सल्ला देत नाही. "
-           "तो platform चे नियम, templates आणि data (backtest, market चे वाचन, risk settings) सोप्या शब्दांत स्पष्ट करतो. "
-           "कोणती strategy चालवायची, किती भांडवलाने, आणि trade करायचा की नाही - हा निर्णय फक्त तुमचा. तो जे लिहितो ती कोणताही "
-           "share घेण्याची, विकण्याची किंवा ठेवण्याची शिफारस नाही; भूतकाळातले किंवा simulated निकाल भविष्याची खात्री देत नाहीत. "
-           "आधी PAPER trading, मग तुमचा स्वतःचा निर्णय."),
 }
 DATA_CONSENT_TEXT = {
     "en": ("When an external AI provider (Anthropic or OpenAI) is configured, the platform sends it the text needed to answer: your "
@@ -46,18 +41,36 @@ DATA_CONSENT_TEXT = {
            "API keys, passwords or bank details. The provider processes this data on its own servers, which may be outside India, under "
            "its terms. Purpose: explaining rules and data to you. You can opt out at any time by switching to the rule-based provider "
            "or removing the provider; the platform then shares nothing externally."),
-    "mr": ("बाहेरचा AI provider (Anthropic किंवा OpenAI) लावला असेल तर उत्तरासाठी लागणारा मजकूर platform त्याला पाठवतो: तुमचे प्रश्न आणि "
-           "संदेश, interview ची उत्तरे (भांडवल, अनुभव, risk ची तयारी, उद्दिष्टे यासह), तुमच्या deployments आणि trades ची माहिती (symbol, "
-           "P&L, risk settings), market data आणि बातम्यांची शीर्षके. Broker credentials, API keys, passwords किंवा bank तपशील कधीच "
-           "पाठवले जात नाहीत. Provider हा data त्याच्या servers वर (भारताबाहेर असू शकतात) त्याच्या अटींनुसार process करतो. उद्देश: "
-           "नियम आणि data तुम्हाला स्पष्ट करणे. कधीही rule-based provider निवडून किंवा provider काढून तुम्ही opt out करू शकता; मग platform "
-           "बाहेर काहीही पाठवत नाही."),
+}
+
+
+# ATP is English only (the owner's ruling, Oct 2026): the Marathi translation of both texts was removed; the English
+# text - the legal text - was not changed. Acceptances recorded before hashed the English and the Marathi text together.
+# They still count for the version they accepted, but only while the English text is byte-for-byte the one they accepted
+# (its own sha256 is the first value): any edit of the English text asks everyone again, as before.
+_BILINGUAL_HASHES = {
+    (KIND_COPILOT, "2026-10-07"): ("99dd9edc651e64848d5a90566af6c3c4feacf5122b36b6be32e93a5a65f744e6",
+                                   "58025da752bb69b94cf5b412337a62c7458c423b31520c648a94ade7c76469bb"),
+    (KIND_DATA, "2026-10-07"): ("61a8f663e6fc0a0645cd802846fb2485db9f8eecb333dcdc2103b207789e685d",
+                                "410e16ed70e60fab430cad532c43e1f87085d4f0f7d9939092484fb27548afb8"),
 }
 
 
 def text_hash(kind: str, version: str) -> str:
+    """The sha256 of the text shown now (English only), stored with every new acceptance."""
     texts = ACK_TEXT if kind == KIND_COPILOT else DATA_CONSENT_TEXT
-    return hashlib.sha256(f"{kind}|{version}|{texts['en']}|{texts['mr']}".encode()).hexdigest()
+    return hashlib.sha256(f"{kind}|{version}|{texts['en']}".encode()).hexdigest()
+
+
+def accepted_hashes(kind: str, version: str) -> list:
+    """The stored hashes that count as accepting `version`: the current text's, plus the bilingual one recorded before the
+    Marathi translation was removed - only while the English text is unchanged."""
+    texts = ACK_TEXT if kind == KIND_COPILOT else DATA_CONSENT_TEXT
+    out = [text_hash(kind, version)]
+    legacy = _BILINGUAL_HASHES.get((kind, version))
+    if legacy and hashlib.sha256(texts["en"].encode()).hexdigest() == legacy[0]:
+        out.append(legacy[1])
+    return out
 
 
 def current_version(kind: str) -> str:
@@ -69,20 +82,21 @@ async def latest(session: AsyncSession, kind: str, *, tenant_id: int, user_id: O
                                                   AiAcknowledgementRecord.version == current_version(kind),
                                                   # the text itself, not only its version label: editing the text without
                                                   # bumping the version still asks everyone again.
-                                                  AiAcknowledgementRecord.text_sha256 == text_hash(kind, current_version(kind)))
+                                                  AiAcknowledgementRecord.text_sha256.in_(accepted_hashes(kind, current_version(kind))))
     if user_id is not None:
         query = query.where(AiAcknowledgementRecord.user_id == user_id)
     return await session.scalar(query.order_by(AiAcknowledgementRecord.accepted_at.desc(), AiAcknowledgementRecord.id.desc()).limit(1))
 
 
 async def accept(session: AsyncSession, user: User, kind: str, version: str, *, language: str = "en", request: Optional[Request] = None) -> AiAcknowledgementRecord:
-    """Records the acceptance of `version` (must be the current one) with an audit row; does not commit."""
+    """Records the acceptance of `version` (must be the current one) with an audit row; does not commit. The text is
+    English only, so the recorded language is "en" (`language` is accepted for older callers)."""
     if version != current_version(kind):
         raise ValueError(f"The current {kind} version is {current_version(kind)}; reload and read the current text")
     ip = request.client.host if request is not None and request.client else None
     agent = (request.headers.get("user-agent") or "")[:300] if request is not None else None
     row = AiAcknowledgementRecord(tenant_id=user.tenant_id, user_id=user.id, kind=kind, version=version, text_sha256=text_hash(kind, version),
-                                  language=language if language in ("en", "mr") else "en", ip=ip, user_agent=agent or None,
+                                  language="en", ip=ip, user_agent=agent or None,
                                   accepted_at=datetime.now(timezone.utc))
     session.add(row)
     await write_audit_log(session, user.tenant_id, user.id, f"ai_{kind}_accepted", f"version {version} sha256 {row.text_sha256[:16]} lang {row.language}")

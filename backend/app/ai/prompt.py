@@ -3,8 +3,8 @@
 The spec's prompt ("AMW Strategy Architect") is a versioned template whose `{{...}}` slots the
 platform fills on every request from the tenant's live state - capital, risk settings and
 ceilings, open risk and drawdown from the guardian, the last trades, upcoming market events,
-the market regime the page read, the user's language. The model answers in that language;
-the JSON stays in English.
+the market regime the page read. ATP is English only: the model answers in English whatever
+language the user writes in, and the JSON stays in English.
 
 The spec's STRATEGY_SCHEMA is wider than what the platform deploys, so it is **mapped**, not
 copied: the rule set is the platform's `CustomStrategyConfig` (what the Strategy Builder and the
@@ -31,10 +31,9 @@ from app.db.models import Tenant, TradeRecord, User
 from app.instruments.spreads import RATIO_SPREADS, UNDEFINED_RISK, is_debit
 from app.risk_engine import guardian
 
-PROMPT_VERSION = "guardian-v3.0"
+PROMPT_VERSION = "guardian-v3.1"           # v3.1: English-only replies (the owner's ruling)
 MIN_STOP_ATR_MULTIPLE = 1.0
 DEFAULT_INSTRUMENTS = "NSE equities; NIFTY, BANKNIFTY, FINNIFTY, SENSEX options and futures (index options share one correlated risk bucket)"
-LANGUAGE_NAMES = {"en": "English", "mr": "Marathi", "hi": "Hindi", "gu": "Gujarati", "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "bn": "Bengali"}
 
 
 class SuggestedExitRules(BaseModel):
@@ -211,7 +210,7 @@ async def build_runtime_context(session: AsyncSession, tenant: Tenant, user: Use
         open_risk=float(picked["open_risk_total"]), open_risk_pct=float(picked["open_risk_pct"]),
         current_drawdown_pct=float(picked["drawdown_pct"]), drawdown_mode=mode,
         recent_trade_summary=await recent_trade_summary(session, tenant.id),
-        event_calendar=events, market_regime=(regime or "UNKNOWN").upper(), user_language=(language or "en").lower()[:5],
+        event_calendar=events, market_regime=(regime or "UNKNOWN").upper(), user_language="en",       # English only; `language` is accepted for older clients
         max_risk_per_trade_pct=float(cfg.risk_per_trade_pct), ceiling_risk_per_trade_pct=float(ceilings.get("risk_per_trade_pct", 2.0)),
         max_portfolio_risk_pct=float(cfg.max_portfolio_risk_pct), daily_loss_limit_pct=float(cfg.max_daily_loss_pct),
         cooldown_minutes=int(cfg.stop_cooldown_minutes), dd_level_1_pct=float(cfg.dd_level_1_pct), dd_level_2_pct=float(cfg.dd_level_2_pct),
@@ -233,10 +232,6 @@ async def _events_until(session: AsyncSession, tenant_id: int, horizon) -> List[
     return out
 
 
-def language_name(code: str) -> str:
-    return LANGUAGE_NAMES.get((code or "en").lower()[:2], code or "English")
-
-
 def build_system_prompt(ctx: RuntimeContext) -> str:
     events = "\n".join(f"  - {e}" for e in ctx.event_calendar) or "  - none in the next 7 days"
     structures = ", ".join(s.value for s in OptionStrategy)
@@ -247,7 +242,7 @@ Your character is that of a disciplined professional trader, not a hype machine.
 by every great trader (Paul Tudor Jones, Druckenmiller, Minervini, Seykota, Livermore, Douglas, Steenbarger): methods
 differ, but ruthless risk management is universal. "Defense first, offense second." You never promise profits.
 
-Reply in the user's language: {language_name(ctx.user_language)} ({ctx.user_language}). Every JSON key and enum value stays in English.
+Reply in English only - also when the user writes in another language or script. Every JSON key and enum value stays in English.
 
 === RUNTIME CONTEXT (filled by the platform; do not ask the user for these) ===
 Account capital: {ctx.account_capital:,.0f} {ctx.currency}
@@ -293,7 +288,7 @@ If the user asks for something these rules forbid, refuse that part in one or tw
                 "target_credit_pct": number 5..95|null, "stop_credit_pct": number 10..500|null,
                 "exit_rules": {{"trailing_stop_pct": number|null, "break_even_at_r": number|null, "time_exit_minutes": int|null, "time_exit_at": "HH:MM"|null}},
                 "regime_filter": [regime names, empty = any], "next_step": "backtest"|"paper_trade"|"small_live"}},
- "explanation": str in the user's language - what it does (2-3 lines), the max loss per trade in {ctx.currency} and % of capital,
+ "explanation": str in English - what it does (2-3 lines), the max loss per trade in {ctx.currency} and % of capital,
                 the worst case (gap / 3-5 sigma day) and what the user must accept before going live,
  "warnings": [str] - what could make it fail (regimes, costs, slippage, over-fitting, weak evidence)}}
 Condition = {{"left": Operand, "operator": one of ["GT","LT","GTE","LTE","CROSSES_ABOVE","CROSSES_BELOW"], "right": Operand}}

@@ -8,7 +8,7 @@ news items about it, the global mood, the macro calendar), with:
   recorded and shown, and **never applied** - no execution, risk or guardian path imports this module, and
   there is no deployment setting that turns it on (tests/test_phase_bd_thesis.py checks both). Whether the
   overlay earns the right to act is decided by the scoring below, in the operator's time, not here;
-* an optional **narrative** in the trader's language from the organisation's own AI provider, accepted only
+* an optional **narrative** in English from the organisation's own AI provider, accepted only
   when every number in it appears in the thesis inputs (one retry, then the rule-based sentences); the
   rule-based sentences are always there;
 * **next-session scoring**: every stored thesis is scored against the symbol's next market read
@@ -28,7 +28,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai import global_cues, market_memory
-from app.ai.interview import tr
 from app.ai import grounding, output_filter, prompt_versions, wording
 from app.db.models import MarketEventRecord, MarketSnapshotRecord, ThesisRecord
 from app.instruments.master import underlying_of
@@ -52,7 +51,7 @@ def _sign(value: float) -> int:
 
 
 def _direction_word(lang: str, direction: str) -> str:
-    return {"BULLISH": tr(lang, "bullish", "तेजी"), "BEARISH": tr(lang, "bearish", "मंदी"), "NEUTRAL": tr(lang, "neutral", "तटस्थ")}[direction]
+    return {"BULLISH": "bullish", "BEARISH": "bearish", "NEUTRAL": "neutral"}[direction]
 
 
 # --- the factors -----------------------------------------------------------------------------------
@@ -150,28 +149,23 @@ def scenarios(snapshot: dict, lang: str, *, targets: bool = True) -> dict:
     bear_trigger = sup_low if sup else round(last - unit, 2)
     span = max(bull_trigger - bear_trigger, unit)
     bull_target, bear_target = round(bull_trigger + span, 2), round(bear_trigger - span, 2)
-    bull_name = tr(lang, "resistance", "resistance") if res else tr(lang, "one ATR above", "एक ATR वर")
-    bear_name = tr(lang, "support", "support") if sup else tr(lang, "one ATR below", "एक ATR खाली")
+    bull_name = "resistance" if res else "one ATR above"
+    bear_name = "support" if sup else "one ATR below"
     # P0.8-D: neutral wording - a reference level the data gives, never a promise of where the price goes. For a single
     # stock the next reference level and the confidence % are shown only when the operator's flag allows (`targets`).
     bull = {"trigger": round(bull_trigger, 2), "invalidation": round(bear_trigger, 2)}
     bear = {"trigger": round(bear_trigger, 2), "invalidation": round(bull_trigger, 2)}
     if targets:
         bull["target"], bear["target"] = bull_target, bear_target
-        bull["text"] = tr(lang, f"Bull case: a hold above {bull_name} {bull_trigger:,.2f} keeps the bullish read; the next reference level is {bull_target:,.2f}; below {bear_trigger:,.2f} this read is invalid.",
-                          f"तेजीची बाजू: {bull_name} {bull_trigger:,.2f} च्या वर टिकला तर तेजीचे वाचन कायम; पुढची संदर्भ पातळी {bull_target:,.2f}; {bear_trigger:,.2f} च्या खाली हे वाचन अवैध.")
-        bear["text"] = tr(lang, f"Bear case: a break below {bear_name} {bear_trigger:,.2f} keeps the bearish read; the next reference level is {bear_target:,.2f}; above {bull_trigger:,.2f} this read is invalid.",
-                          f"मंदीची बाजू: {bear_name} {bear_trigger:,.2f} च्या खाली गेला तर मंदीचे वाचन कायम; पुढची संदर्भ पातळी {bear_target:,.2f}; {bull_trigger:,.2f} च्या वर हे वाचन अवैध.")
+        bull["text"] = f"Bull case: a hold above {bull_name} {bull_trigger:,.2f} keeps the bullish read; the next reference level is {bull_target:,.2f}; below {bear_trigger:,.2f} this read is invalid."
+        bear["text"] = f"Bear case: a break below {bear_name} {bear_trigger:,.2f} keeps the bearish read; the next reference level is {bear_target:,.2f}; above {bull_trigger:,.2f} this read is invalid."
     else:
-        bull["text"] = tr(lang, f"Bull case: a hold above {bull_name} {bull_trigger:,.2f} keeps the bullish read; below {bear_trigger:,.2f} this read is invalid.",
-                          f"तेजीची बाजू: {bull_name} {bull_trigger:,.2f} च्या वर टिकला तर तेजीचे वाचन कायम; {bear_trigger:,.2f} च्या खाली हे वाचन अवैध.")
-        bear["text"] = tr(lang, f"Bear case: a break below {bear_name} {bear_trigger:,.2f} keeps the bearish read; above {bull_trigger:,.2f} this read is invalid.",
-                          f"मंदीची बाजू: {bear_name} {bear_trigger:,.2f} च्या खाली गेला तर मंदीचे वाचन कायम; {bull_trigger:,.2f} च्या वर हे वाचन अवैध.")
+        bull["text"] = f"Bull case: a hold above {bull_name} {bull_trigger:,.2f} keeps the bullish read; below {bear_trigger:,.2f} this read is invalid."
+        bear["text"] = f"Bear case: a break below {bear_name} {bear_trigger:,.2f} keeps the bearish read; above {bull_trigger:,.2f} this read is invalid."
     return {
         "bull": bull,
         "base": {"low": round(bear_trigger, 2), "high": round(bull_trigger, 2),
-                 "text": tr(lang, f"Base case: between {bear_trigger:,.2f} and {bull_trigger:,.2f} the data reads as a range.",
-                            f"मूळ बाजू: {bear_trigger:,.2f} ते {bull_trigger:,.2f} दरम्यान data range दाखवतो.")},
+                 "text": f"Base case: between {bear_trigger:,.2f} and {bull_trigger:,.2f} the data reads as a range."},
         "bear": bear,
     }
 
@@ -278,25 +272,21 @@ def view(lang: str, thesis: dict) -> List[str]:
     word = _direction_word(lang, thesis["direction"])
     conf = thesis.get("confidence")
     if conf is not None:
-        lines = [tr(lang, f"{thesis['symbol']} data read: {word} (model score {conf}/100 - factor agreement, not a forecast), {a['agreeing']} of {a['with_opinion']} factors agree.",
-                    f"{thesis['symbol']} data वाचन: {word} (model score {conf}/100 - घटकांची सहमती, अंदाज नाही), {a['with_opinion']} पैकी {a['agreeing']} घटक सहमत.")]
+        lines = [f"{thesis['symbol']} data read: {word} (model score {conf}/100 - factor agreement, not a forecast), {a['agreeing']} of {a['with_opinion']} factors agree."]
     else:
-        lines = [tr(lang, f"{thesis['symbol']} data read: {word}, {a['agreeing']} of {a['with_opinion']} factors agree. This describes the data; it is not a view on what to do.",
-                    f"{thesis['symbol']} data वाचन: {word}, {a['with_opinion']} पैकी {a['agreeing']} घटक सहमत. हे data चे वर्णन आहे; काय करावे याचे मत नाही.")]
-    names = {"structure": tr(lang, "structure", "structure"), "trend": tr(lang, "trend bias", "trend कल"), "higher_regime": tr(lang, "higher timeframe", "मोठा timeframe"),
-             "sentiment": tr(lang, "market sentiment", "market sentiment"), "news": tr(lang, "news", "बातम्या"), "global": tr(lang, "global cues", "जागतिक संकेत")}
+        lines = [f"{thesis['symbol']} data read: {word}, {a['agreeing']} of {a['with_opinion']} factors agree. This describes the data; it is not a view on what to do."]
+    names = {"structure": "structure", "trend": "trend bias", "higher_regime": "higher timeframe",
+             "sentiment": "market sentiment", "news": "news", "global": "global cues"}
     arrows = {1: "↑", -1: "↓", 0: "→"}
     lines.append(", ".join(f"{names[r['factor']]} {arrows[r['direction']] if r['available'] else '?'}" for r in a["matrix"]) + ".")
     for key in ("bull", "base", "bear"):
         if key in thesis["scenarios"]:
             lines.append(thesis["scenarios"][key]["text"])
     if not thesis["scenarios"]:
-        lines.append(tr(lang, "Price scenarios for a single stock are not shown (operator setting).", "एका शेअरसाठी किंमत scenarios दाखवले जात नाहीत (operator setting)."))
+        lines.append("Price scenarios for a single stock are not shown (operator setting).")
     sh = thesis["shadow"]
-    lines.append(tr(lang, f"Shadow overlay would size at {sh['size_multiplier']:.2f}x" + (f" ({'; '.join(sh['reasons'])})" if sh["reasons"] else "") + " - recorded, not applied.",
-                    f"Shadow overlay ने size {sh['size_multiplier']:.2f}x केला असता" + (f" ({'; '.join(sh['reasons'])})" if sh["reasons"] else "") + " - फक्त नोंद, लागू नाही."))
-    lines.append(tr(lang, "A thesis is a reading of the market, never a signal; the strategy's own rules decide every entry and exit.",
-                    "Thesis म्हणजे market चं वाचन, signal नाही; प्रत्येक entry आणि exit strategy चे नियमच ठरवतात."))
+    lines.append(f"Shadow overlay would size at {sh['size_multiplier']:.2f}x" + (f" ({'; '.join(sh['reasons'])})" if sh["reasons"] else "") + " - recorded, not applied.")
+    lines.append("A thesis is a reading of the market, never a signal; the strategy's own rules decide every entry and exit.")
     return lines
 
 
@@ -330,7 +320,7 @@ def thesis_facts(thesis: dict) -> dict:
 
 def numbers_check(text: str, thesis: dict) -> Tuple[bool, List[str]]:
     """True when every number in `text` is one of the thesis numbers (inputs, scenarios, confidence), sign included; the
-    model's shorthand (`25k`, `1.2 लाख`) is expanded before the comparison."""
+    model's shorthand (`25k`, `1.2 lakh`) is expanded before the comparison."""
     # The symbol is ours ("NIFTY 50" carries a 50), so its digits are allowed; headline digits are not (they are strings).
     allowed = numbers_in(thesis_facts(thesis)) | grounding.allowed_from_text(str(thesis.get("symbol") or ""))
     return grounding.check_numbers(text, allowed)
@@ -339,7 +329,7 @@ def numbers_check(text: str, thesis: dict) -> Tuple[bool, List[str]]:
 async def narrate(provider, thesis: dict, lang: str) -> Tuple[Optional[str], str]:
     """The provider's narrative when it passes the numbers check (one retry naming the offending
     numbers); otherwise None and the reason."""
-    language = tr(lang, "English", "Marathi (Devanagari script)")
+    language = "English"
     facts = re.sub(r"(?i)<\s*/*\s*untrusted_data", "[untrusted_data", json.dumps(thesis_facts(thesis), default=str, ensure_ascii=False))
     headlines = [f"[{(n.get('direction') or 'NEUTRAL')} severity {n.get('severity')}] {n.get('headline') or ''} - {n.get('source') or ''}"
                  for n in (thesis.get("inputs") or {}).get("news") or []]
@@ -413,12 +403,12 @@ async def latest_record(session: AsyncSession, tenant_id: int, symbol: str, lang
     return await session.scalar(query.order_by(ThesisRecord.created_at.desc(), ThesisRecord.id.desc()).limit(1))
 
 
-async def build(session: AsyncSession, tenant_id: int, symbol: str, *, lang: str = "mr", now: Optional[datetime] = None, memory: Optional[dict] = None,
+async def build(session: AsyncSession, tenant_id: int, symbol: str, *, lang: str = "en", now: Optional[datetime] = None, memory: Optional[dict] = None,
                 news_items: Optional[List[dict]] = None, provider=None, store: bool = True, commit: bool = True) -> Optional[dict]:
     """The thesis of `symbol` from the organisation's market memory; None when the memory has no read of
     the symbol yet. Stored as a ThesisRecord (one row per build) when `store`."""
     now = now or datetime.now(timezone.utc)
-    lang = "mr" if lang == "mr" else "en"
+    lang = "en"         # ATP is English only
     symbol = symbol.strip().upper()
     memory = memory if memory is not None else await market_memory.latest(session, tenant_id, now=now)
     snapshot = next((s for s in memory.get("symbols", []) if s["symbol"] == symbol), None)
@@ -449,11 +439,11 @@ async def build(session: AsyncSession, tenant_id: int, symbol: str, *, lang: str
     return thesis
 
 
-async def current(session: AsyncSession, tenant_id: int, symbol: str, *, lang: str = "mr", now: Optional[datetime] = None, refresh: bool = False,
+async def current(session: AsyncSession, tenant_id: int, symbol: str, *, lang: str = "en", now: Optional[datetime] = None, refresh: bool = False,
                   news_items: Optional[List[dict]] = None, provider=None) -> Optional[dict]:
     """Today's stored thesis when it is fresh (STALE_MINUTES) and in the asked language; otherwise a new build."""
     now = now or datetime.now(timezone.utc)
-    lang = "mr" if lang == "mr" else "en"
+    lang = "en"         # ATP is English only
     symbol = symbol.strip().upper()
     row = await latest_record(session, tenant_id, symbol, lang)
     if row is not None and not refresh and row.day == _ist_day(now) and now - _utc(row.created_at) < timedelta(minutes=STALE_MINUTES):

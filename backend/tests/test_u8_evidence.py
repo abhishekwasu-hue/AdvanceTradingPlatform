@@ -294,7 +294,7 @@ def test_the_image_draws_the_signal_blocks_first_and_one_lower_pane():
 
 def test_caption_fits_telegram_keeps_devanagari_and_never_advises():
     data = SymbolData("ABC", {"1d": _daily()})
-    name = "मोमेंटम स्क्रीन"
+    name = "\u092e\u094b\u092e\u0947\u0902\u091f\u092e \u0938\u094d\u0915\u094d\u0930\u0940\u0928"
     many = " AND ".join(f"close > SMA(close, {k})" for k in range(2, 40))
     _a, _v, pack = _pack(many, data, screen_name=name)
     text = ev.caption_text(pack)

@@ -336,8 +336,8 @@ def test_price_field_floods_stay_linear():
         assert time.monotonic() - started < 5, text[:30]            # review round 10: once per sentence, never per field
 
 
-DEVANAGARI = ["RELIANCE खरेदी करा", "TCS बेचें।", "बाजार 24850 च्या वर बंद झाला.", "RELIANCE का भाव 20 दिन के औसत से नीचे है।",
-              "NIFTY closed at 25100 (निफ्टी).", "TCS: close 4050 रहा, 1.2% ऊपर।", "Price closed above SMA 20. ठीक आहे"]
+DEVANAGARI = ["RELIANCE \u0916\u0930\u0947\u0926\u0940 \u0915\u0930\u093e", "TCS \u092c\u0947\u091a\u0947\u0902\u0964", "\u092c\u093e\u091c\u093e\u0930 24850 \u091a\u094d\u092f\u093e \u0935\u0930 \u092c\u0902\u0926 \u091d\u093e\u0932\u093e.", "RELIANCE \u0915\u093e \u092d\u093e\u0935 20 \u0926\u093f\u0928 \u0915\u0947 \u0914\u0938\u0924 \u0938\u0947 \u0928\u0940\u091a\u0947 \u0939\u0948\u0964",
+              "NIFTY closed at 25100 (\u0928\u093f\u092b\u094d\u091f\u0940).", "TCS: close 4050 \u0930\u0939\u093e, 1.2% \u090a\u092a\u0930\u0964", "Price closed above SMA 20. \u0920\u0940\u0915 \u0906\u0939\u0947"]
 
 
 @pytest.mark.parametrize("text", DEVANAGARI)

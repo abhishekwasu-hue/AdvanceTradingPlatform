@@ -1,5 +1,6 @@
-"""H-C1 c: the server-side advice/guarantee filter. ATP answers in English: AI text with Devanagari is withheld outright;
-the Marathi word lists remain only for the support bot's input guard (`blocked_terms` on a trader's question)."""
+"""H-C1 c: the server-side advice/guarantee filter. ATP answers in English: AI text with Devanagari is withheld outright,
+and the word lists are English only (the owner's ruling removed the Marathi / Hindi lists). Devanagari test text is
+written with \\u escapes (no Devanagari in the source - scripts/check_english_only.py)."""
 import asyncio
 import json
 
@@ -24,16 +25,25 @@ def test_guarantee_and_advice_words_are_blocked(text, word):
     assert not s.ok and s.blocked == [word]
 
 
-@pytest.mark.parametrize("text, words", [
-    ("ही strategy खात्रीशीर नफा देते.", ["खात्रीशीर"]),
-    ("हमखास नफा मिळेल.", ["हमखास"]),
-    ("मी शिफारस करतो की थांबा.", ["मी शिफारस करतो"]),
-    ("हा सल्ला नाही आणि शिफारस नाही.", []),
+@pytest.mark.parametrize("text", [
+    "\u0939\u0940 strategy \u0916\u093e\u0924\u094d\u0930\u0940\u0936\u0940\u0930.",      # Marathi: "this strategy is guaranteed"
+    "\u092a\u0915\u094d\u0915\u093e \u092e\u0941\u0928\u093e\u092b\u093e.",               # Hindi: "sure profit"
+    "\u0939\u093e \u0938\u0932\u094d\u0932\u093e \u0928\u093e\u0939\u0940.",              # Marathi: "this is not advice"
 ])
-def test_marathi_words_stay_for_the_input_guard_but_ai_output_in_devanagari_is_withheld(text, words):
-    assert output_filter.blocked_terms(text) == words                # the support bot's input guard (a question)
+def test_no_marathi_or_hindi_lists_and_ai_output_in_devanagari_is_withheld(text):
+    assert output_filter.blocked_terms(text) == []                   # no per-language word lists any more
     ok, shown, why = output_filter.check(text, "mr")                 # AI output: English only, fail closed
     assert not ok and shown is None and why == output_filter.NOT_ENGLISH_REASON
+
+
+def test_the_terms_file_is_english_only():
+    data = json.loads(output_filter.DEFAULT_FILE.read_text(encoding="utf-8"))
+    for kind in ("guarantee", "advice", "framing"):
+        assert set(data[kind]) == {"en"}, kind
+    assert set(data["calls"]["verbs"]) == {"en"} and set(data["calls"]["negated_sayings"]) == {"en"} and set(data["negations"]) == {"before"}
+    assert "light_verbs" not in data["calls"] and "pakka" not in json.dumps(data)
+    assert not any("\u0900" <= ch <= "\u097f" for ch in output_filter.DEFAULT_FILE.read_text(encoding="utf-8"))
+    assert output_filter.framing("mr") == output_filter.framing("en") == data["framing"]["en"]
 
 
 @pytest.mark.parametrize("text", [
@@ -55,7 +65,7 @@ def test_a_specific_call_is_kept_with_educational_framing():
     # (an imperative call aimed at an instrument - "Buy NIFTY 25000 CE above 120." - is now blocked, tests/test_ai_call_filter.py)
     en = output_filter.screen("One could buy the 25000 CE above 120.", "en")
     assert en.ok and en.framed and en.text.startswith("One could buy the 25000 CE") and "not investment advice" in en.text
-    assert not output_filter.screen("25200 च्या वर खरेदी चा विचार होऊ शकतो.", "mr").ok     # Devanagari: withheld
+    assert not output_filter.screen("25200 \u091a\u094d\u092f\u093e \u0935\u0930 \u0916\u0930\u0947\u0926\u0940.", "mr").ok     # Devanagari: withheld
     again = output_filter.screen(en.text, "en")                                   # framing is added once
     assert again.text.count("not investment advice") == 1
 
@@ -88,10 +98,10 @@ def test_copilot_retries_once_then_keeps_the_rule_text():
     retry = _Provider(["You should buy now near 25200.", "NIFTY 50 is at 25200 and the trend is up."])
     text, why = _run(copilot.narrate(retry, "en", "market", "how is nifty?", facts))
     assert text == "NIFTY 50 is at 25200 and the trend is up." and retry.calls == 2 and "not allowed" in retry.last_user
-    stubborn = _Provider(["25200 वर हमी आहे.", "Buy now at 25200."])
+    stubborn = _Provider(["25200 \u0935\u0930 \u0939\u092e\u0940.", "Buy now at 25200."])
     text, why = _run(copilot.narrate(stubborn, "mr", "market", "nifty?", facts))
     assert text is None and "advice/guarantee" in why and "English only" in stubborn.last_user
-    marathi = _Provider(["NIFTY 50 25200 वर आहे.", "NIFTY 50 25200 वर आहे."])
+    marathi = _Provider(["NIFTY 50 25200 \u0935\u0930 \u0906\u0939\u0947.", "NIFTY 50 25200 \u0935\u0930 \u0906\u0939\u0947."])
     text, why = _run(copilot.narrate(marathi, "mr", "market", "nifty?", facts))
     assert text is None and why == output_filter.NOT_ENGLISH_REASON
 

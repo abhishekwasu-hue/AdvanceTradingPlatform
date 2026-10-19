@@ -35,11 +35,11 @@ from app.db.models import StrategyDeploymentRecord
 
 # The words in the trader's own message that put a proposal tool on the request's allow-list (English and Marathi).
 INTENT_WORDS: Dict[str, Sequence[str]] = {
-    "propose_pause_deployment": ("pause", "halt", "थांबव", "बंद कर", "बंद करा"),
+    "propose_pause_deployment": ("pause", "halt"),
     "propose_risk_reduction": ("reduce risk", "reduce my risk", "lower risk", "lower my risk", "cut risk", "cut my risk", "less risk",
-                               "tighten risk", "risk कमी", "जोखीम कमी", "धोका कमी"),
+                               "tighten risk"),
     "propose_strategy_review": ("review the strategy", "review my strategy", "review strategy", "strategy review", "review the deployment",
-                                "review deployment", "strategy तपास", "पुनरावलोकन"),
+                                "review deployment"),
 }
 
 # Risk settings a proposal may only tighten: "lower" means a smaller value is safer, "higher" a larger one.

@@ -2,7 +2,7 @@
 
 Three kinds of finding:
 
-* **blocked words** - guarantee words ("guaranteed", "sure-shot", खात्रीशीर, हमखास, ...) and advice phrasing ("I
+* **blocked words** - guarantee words ("guaranteed", "sure-shot", "risk-free", ...) and advice phrasing ("I
   recommend", "you should buy", ...), read on the normalised text (full-width letters, zero-width characters and
   look-alikes undone). The caller treats a blocked reply like a failed grounding check: one retry that names the words,
   then the rule-based text. The LLM's words are never shown.
@@ -12,13 +12,13 @@ Three kinds of finding:
 * **not plain English** - ATP answers in English only: an AI text with a letter of another script (Devanagari,
   Cyrillic, Greek, CJK, ...), small caps or an accented letter, a combining mark or a hidden character is withheld, never
   read (`call_detect.not_plain_english`, `SCRIPT_LABEL`; fail closed, no per-language pattern lists). The Copilot strategy
-  interview's Marathi lines are fixed, stored translations (`app/ai/interview.py`), never AI text, and never pass here.
+  interview's second-language lines are fixed, stored translations (`app/ai/interview.py`), never AI text, and never pass
+  here.
 * **framed** - a specific call that is not imperative and names no instrument ("One could buy the 25000 CE above 120"):
   the text is kept, with an educational framing line appended (the spec allows framing here).
 
-The word lists are data (`app/ai/data/advice_terms.json`, or the file named by `AI_ADVICE_TERMS_FILE`), checked in
-every language whatever the answer language. A term right after a negation ("not a recommendation", "never
-guaranteed") or right before a Marathi one ("शिफारस नाही") is allowed. Every finding is counted in
+The word lists are data (`app/ai/data/advice_terms.json`, or the file named by `AI_ADVICE_TERMS_FILE`), English only.
+A term right after a negation ("not a recommendation", "never guaranteed") is allowed. Every finding is counted in
 `atp_ai_output_filtered_total{kind}` and returned to the caller to show in the response. `blocked_terms` gives the words
 only (the support bot's input guard); `findings` gives words and calls (every AI output check).
 """
@@ -34,17 +34,15 @@ from typing import List, Optional, Pattern, Tuple
 log = logging.getLogger(__name__)
 
 DEFAULT_FILE = Path(__file__).resolve().parent / "data" / "advice_terms.json"
-# The guarantee / advice word lists keep their Marathi / Hindi entries for the support bot's INPUT guard
-# (`blocked_terms`, a trader's question); AI output with Devanagari is withheld outright (`call_detect.SCRIPT_LABEL`).
-# Devanagari vowel signs are not \w: count the block as word characters, except the dandas.
-_WORD = "\\w\u0900-\u0963\u0966-\u097f"
+# English only (the owner's ruling): the lists hold no Marathi / Hindi entries; AI output in another script is withheld
+# outright (`call_detect.SCRIPT_LABEL`).
+_WORD = "\\w"
 
 
 @dataclass(frozen=True)
 class Terms:
     blocked: Pattern
     negated_before: Pattern
-    negated_after: Pattern
     action: Pattern
     framing: dict
 
@@ -74,7 +72,7 @@ def _bounded(words: List[str]) -> str:
 @lru_cache(maxsize=4)
 def _load(path: str) -> Terms:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    blocked = [w for kind in ("guarantee", "advice") for lang in ("en", "mr", "hi") for w in data.get(kind, {}).get(lang, [])]
+    blocked = [w for kind in ("guarantee", "advice") for w in data.get(kind, {}).get("en", [])]
     neg = data.get("negations", {})
     verbs = data["action_verbs"]["en"]
     # A specific call: an action verb and, in the same clause and within a few words either side, a price, a strike or an
@@ -84,7 +82,6 @@ def _load(path: str) -> Terms:
     action = rf"{verb}[^.!?\n]{{0,40}}?{level}|{level}[^.!?\n]{{0,40}}?{verb}"
     return Terms(blocked=re.compile(_bounded(blocked), re.IGNORECASE),
                  negated_before=re.compile(rf"(?:{_bounded(neg.get('before', []))})(?:\W+[{_WORD}]+){{0,2}}\W*$", re.IGNORECASE),
-                 negated_after=re.compile(rf"^\W*(?:[{_WORD}]+\W+)?(?:{_bounded(neg.get('after', []))})", re.IGNORECASE),
                  action=re.compile(action, re.IGNORECASE), framing=data["framing"])
 
 
@@ -108,8 +105,8 @@ def blocked_terms(text: str) -> List[str]:
     body = normalise(text or "")
     found: List[str] = []
     for m in t.blocked.finditer(body):
-        before, after = body[max(0, m.start() - 30):m.start()], body[m.end():m.end() + 20]
-        if t.negated_before.search(before) or t.negated_after.search(after):
+        before = body[max(0, m.start() - 30):m.start()]
+        if t.negated_before.search(before):
             continue
         word = m.group(0).lower()
         if word not in found:
@@ -140,9 +137,9 @@ def is_specific_call(text: str) -> bool:
     return False
 
 
-def framing(lang: str) -> str:
-    f = terms().framing
-    return f["mr"] if lang == "mr" else f["en"]
+def framing(lang: str = "en") -> str:
+    """The educational framing line - English (ATP is English only; `lang` is accepted for older callers)."""
+    return terms().framing["en"]
 
 
 def screen(text: str, lang: str = "en", *, where: str = "ai") -> Screened:

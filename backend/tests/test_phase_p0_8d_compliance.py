@@ -30,7 +30,7 @@ from tests.test_trading_worker import _upgrade_plan
 NOW = th.datetime(2026, 10, 7, 9, 0, tzinfo=th.timezone.utc)
 FORBIDDEN_EN = ("Recommended", "recommended", "matches you", "Three options", "Consider waiting", "stay profitable", "keep ", "untouched as reserve",
                 "Raise the allocation", "improve on it", "best match", "Closest to you")
-FORBIDDEN_MR = ("शिफारस:", "शिफारस केलेल्या", "सर्वोत्तम", "सर्वात जुळणारा", "तुमच्यासाठी तीन पर्याय", "थांबणे चांगले", "हात लावायचा नाही")   # "शिफारस नाही" (not a recommendation) is allowed
+FORBIDDEN_MR = ("\u0936\u093f\u092b\u093e\u0930\u0938:", "\u0936\u093f\u092b\u093e\u0930\u0938 \u0915\u0947\u0932\u0947\u0932\u094d\u092f\u093e", "\u0938\u0930\u094d\u0935\u094b\u0924\u094d\u0924\u092e", "\u0938\u0930\u094d\u0935\u093e\u0924 \u091c\u0941\u0933\u0923\u093e\u0930\u093e", "\u0924\u0941\u092e\u091a\u094d\u092f\u093e\u0938\u093e\u0920\u0940 \u0924\u0940\u0928 \u092a\u0930\u094d\u092f\u093e\u092f", "\u0925\u093e\u0902\u092c\u0923\u0947 \u091a\u093e\u0902\u0917\u0932\u0947", "\u0939\u093e\u0924 \u0932\u093e\u0935\u093e\u092f\u091a\u093e \u0928\u093e\u0939\u0940")   # the interview's Marathi lines (the one trilingual screen); "not a recommendation" is allowed
 
 
 def _run(coro):
@@ -61,11 +61,11 @@ def test_interview_describes_templates_the_trader_chooses_without_recommending()
         # The trading capital is the trader's own figure - no allocation by experience.
         assert plan["risk_config"]["capital"] == 300000
         strategy = next(s for s in plan["sections"] if s["id"] == "strategy")
-        assert ("This template:" in strategy["lines"][0] or "हे template:" in strategy["lines"][0])
+        assert ("This template:" in strategy["lines"][0] or "\u0939\u0947 template:" in strategy["lines"][0])
         capital = next(s for s in plan["sections"] if s["id"] == "capital")
-        assert any("your decision" in line or "निर्णय तुमचा" in line for line in capital["lines"])
+        assert any("your decision" in line or "\u0928\u093f\u0930\u094d\u0923\u092f \u0924\u0941\u092e\u091a\u093e" in line for line in capital["lines"])
         rr = next(s for s in plan["sections"] if s["id"] == "rr")
-        assert any("before costs" in line or "खर्चाआधीचा" in line for line in rr["lines"])
+        assert any("before costs" in line or "\u0916\u0930\u094d\u091a\u093e\u0906\u0927\u0940\u091a\u093e" in line for line in rr["lines"])
         assert "improve" not in plan["ai_prompt"] and "not a recommendation" in plan["ai_prompt"]
     # The profile remembers the choice without a score.
     assert client.post("/api/ai/interview/choose", headers=headers, json={"answers": {"language": "en"}, "option_id": "safe", "strategy_id": None}).status_code == 200
@@ -81,7 +81,7 @@ def test_strategist_has_no_best_badge_no_market_chosen_direction_and_no_priced_t
     assert all(c["triggers"] == [] for c in out["candidates"])
     assert not any("professional choice" in n or "wait" in n.lower() for n in out["notes"])
     assert strategist._side_for({"bias": "BULLISH", "confidence": 90}, "auto") == ["both"]
-    parsed = strategist.parse_request("काहीतरी वेगळं", default_symbol="HDFCBANK")
+    parsed = strategist.parse_request("something else", default_symbol="HDFCBANK")
     assert parsed["direction"] == "both"
     assert "coaching" not in copilot.COPILOT_PROMPT and "explains the platform's rules" in copilot.COPILOT_PROMPT and "never recommend a" in copilot.COPILOT_PROMPT
     assert "Consider waiting" not in open(interview.__file__, encoding="utf-8").read()
@@ -98,8 +98,8 @@ def test_thesis_of_a_stock_shows_no_targets_or_confidence_unless_the_flag_allows
     assert "not a view on what to do" in stock["lines"][0] and "%" not in stock["lines"][0]
     flagged = th.compose("RELIANCE", snapshot, memory, [], [], "en", NOW, stock_targets=True)
     assert flagged["confidence"] is not None and "target" in flagged["scenarios"]["bull"]
-    index = th.compose("NIFTY 50", snapshot, memory, [], [], "mr", NOW)
-    assert index["confidence"] is not None and "target" in index["scenarios"]["bear"] and "पुढची संदर्भ पातळी" in index["scenarios"]["bear"]["text"]
+    index = th.compose("NIFTY 50", snapshot, memory, [], [], "mr", NOW)        # English only: "mr" is ignored
+    assert index["confidence"] is not None and "target" in index["scenarios"]["bear"] and "the next reference level" in index["scenarios"]["bear"]["text"]
     assert "not investment advice" in th.NARRATIVE_PROMPT and "what to expect" in th.NARRATIVE_PROMPT
 
 
@@ -109,7 +109,7 @@ def test_first_use_acknowledgement_is_versioned_audited_and_gates_the_ai_routes(
     headers = {"Authorization": f"Bearer {token}"}
     me = client.get("/api/auth/me", headers=headers).json()
     status = client.get("/api/ai/acknowledgement", headers=headers).json()
-    assert status["accepted"] is False and status["version"] == terms.ACK_VERSION and "SEBI" in status["text"]["en"] and "SEBI" in status["text"]["mr"]
+    assert status["accepted"] is False and status["version"] == terms.ACK_VERSION and "SEBI" in status["text"]["en"] and set(status["text"]) == {"en"}   # English only
     refused = client.post("/api/ai/copilot", headers=headers, json={"message": "how is the market?", "language": "en"})
     assert refused.status_code == 428 and refused.json()["detail"]["code"] == "ai_acknowledgement_required"
     assert client.post("/api/ai/interview/start", headers=headers, json={"prompt": "strategy"}).status_code == 428
@@ -128,9 +128,36 @@ def test_first_use_acknowledgement_is_versioned_audited_and_gates_the_ai_routes(
             audit = await session.scalar(select(AuditLogRecord).where(AuditLogRecord.tenant_id == me["tenant_id"], AuditLogRecord.event == "ai_copilot_terms_accepted"))
             return ack, audit
     ack, audit = _run(rows())
-    assert ack.version == terms.ACK_VERSION and ack.language == "mr" and ack.text_sha256 == terms.text_hash(terms.KIND_COPILOT, terms.ACK_VERSION)
+    assert ack.version == terms.ACK_VERSION and ack.language == "en" and ack.text_sha256 == terms.text_hash(terms.KIND_COPILOT, terms.ACK_VERSION)   # "mr" asked: English recorded
     assert audit is not None and terms.ACK_VERSION in audit.detail
     assert "ai_acknowledgements" in NEVER_DELETED
+
+
+def test_acceptances_of_the_bilingual_text_still_count_while_the_english_text_is_unchanged(monkeypatch):
+    """English only (the owner's ruling): the Marathi translation of the acknowledgement and of the data consent was
+    removed and the English (legal) text kept word for word. An acceptance recorded before - its hash covered the English
+    and the Marathi text - still counts for the same version; a new acceptance records the English-only hash; any edit
+    of the English text asks everyone again."""
+    token = _register("p08d-ack-legacy@example.com", ai_terms=False)
+    headers = {"Authorization": f"Bearer {token}"}
+    me = client.get("/api/auth/me", headers=headers).json()
+    for kind, version in ((terms.KIND_COPILOT, terms.ACK_VERSION), (terms.KIND_DATA, terms.DATA_CONSENT_VERSION)):
+        hashes = terms.accepted_hashes(kind, version)
+        assert len(hashes) == 2 and hashes[0] == terms.text_hash(kind, version) and hashes[1] == terms._BILINGUAL_HASHES[(kind, version)][1]
+
+    async def add_legacy():
+        async with _session_factory() as session:
+            session.add(AiAcknowledgementRecord(tenant_id=me["tenant_id"], user_id=me["id"], kind=terms.KIND_COPILOT, version=terms.ACK_VERSION,
+                                                text_sha256=terms._BILINGUAL_HASHES[(terms.KIND_COPILOT, terms.ACK_VERSION)][1], language="mr",
+                                                accepted_at=th.datetime.now(th.timezone.utc)))
+            await session.commit()
+    _run(add_legacy())
+    assert client.get("/api/ai/acknowledgement", headers=headers).json()["accepted"] is True
+    assert client.post("/api/ai/copilot", headers=headers, json={"message": "how is the market?"}).status_code == 200
+    # An edited English text: the bilingual acceptance no longer counts.
+    monkeypatch.setitem(terms.ACK_TEXT, "en", terms.ACK_TEXT["en"] + " Edited.")
+    assert terms.accepted_hashes(terms.KIND_COPILOT, terms.ACK_VERSION) == [terms.text_hash(terms.KIND_COPILOT, terms.ACK_VERSION)]
+    assert client.get("/api/ai/acknowledgement", headers=headers).json()["accepted"] is False
 
 
 # --- D4 ----------------------------------------------------------------------------------------------------------------------

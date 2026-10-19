@@ -7,9 +7,8 @@ import { Card, CollapsibleCard } from "./ui";
 /**
  * Phase AT: ask the guide. Answers come from the concept library (and, for "what is X doing today",
  * from the market memory); with an AI provider set in Settings the AI answers, grounded on the same
- * notes. P0.9: the page is English; the answers are written in the user's AI language (Settings).
+ * notes. English only (the owner's ruling): the page and the answers are English.
  */
-type Lang = "en" | "mr";
 const SUGGESTIONS: string[] = [
   "What is RSI?", "Where should a stop-loss go?", "What is NIFTY 50 doing today?", "How is position size calculated?",
   "What is theta?", "What is India VIX?", "How do I avoid revenge trading?", "What is risk : reward?",
@@ -23,12 +22,10 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [browse, setBrowse] = useState(false);
   const [concepts, setConcepts] = useState<GuideConcept[]>([]);
-  const [lang, setLang] = useState<Lang>("en");
-  useEffect(() => { api.aiPreferences().then((p) => setLang(p.ai_language)).catch(() => undefined); }, []);
   const bottom = useRef<HTMLDivElement>(null);
 
   useEffect(() => { bottom.current?.scrollIntoView({ block: "nearest" }); }, [turns]);
-  useEffect(() => { if (browse && concepts.length === 0) api.aiConcepts(lang).then((r) => setConcepts(r.concepts)).catch(() => {}); }, [browse, lang, concepts.length]);
+  useEffect(() => { if (browse && concepts.length === 0) api.aiConcepts("en").then((r) => setConcepts(r.concepts)).catch(() => {}); }, [browse, concepts.length]);
 
   async function ask(q: string) {
     const text = q.trim();
@@ -46,7 +43,7 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
   async function openConcept(id: string) {
     setBusy(true);
     try {
-      const c = await api.aiConcept(id, lang);
+      const c = await api.aiConcept(id, "en");
       setTurns((t) => [...t, { q: c.title, a: { answer: c.body ?? "", source: "library", concepts: [c], related: (c.related ?? []).map((r) => ({ id: r, title: r })), used_market_memory: false } }]);
     } finally { setBusy(false); }
   }
@@ -55,7 +52,7 @@ export default function GuideChat({ plain = false }: { plain?: boolean }) {
     <>
       <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-fg-muted">
         <GraduationCap size={14} className="text-brand" />
-        <span>Ask about any trading concept, or "What is NIFTY doing today?". Answers come from the concept library and the market memory; with an AI key in Settings the AI answers, in your AI language ({lang === "mr" ? "Marathi" : "English"}, Settings).</span>
+        <span>Ask about any trading concept, or "What is NIFTY doing today?". Answers come from the concept library and the market memory; with an AI key in Settings the AI answers, in English.</span>
         <button onClick={() => setBrowse(!browse)} className="ml-auto rounded border border-border px-2 py-0.5 text-fg hover:bg-surface-2"><BookOpen size={11} className="mr-1 inline" />{browse ? "Close the library" : "All concepts"}</button>
       </div>
       {browse && (

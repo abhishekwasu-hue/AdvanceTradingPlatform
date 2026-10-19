@@ -59,13 +59,12 @@ def test_telegram_lines_state_numbers_and_limits_never_advice():
     assert "beta unknown for TCS" in lines[2]
     assert "All 3 directional positions are bullish" in lines[3]
     assert lines[4] == "Your limits on new entries: one bucket's exposure 30%, one bucket's open risk 2%, 5 open positions."
-    mr = T.telegram_lines(view, "mr", C.Limits(30.0, 2.0, 5))
-    assert len(mr) == 5 and any(re.search(r"[ऀ-ॿ]", line) for line in mr)
-    # The check itself catches advice in either language (review of #219: Marathi imperatives too).
-    for bad in ("You should cut this.", "हे शेअर्स विका.", "जोखीम कमी करा.", "आता खरेदी करा.", "तुम्ही थांबले पाहिजे."):
+    mr = T.telegram_lines(view, "mr", C.Limits(30.0, 2.0, 5))                              # English only: "mr" gets English
+    assert mr == lines and not any(re.search("[\u0900-\u097F]", line) for line in mr)
+    for bad in ("You should cut this.", "Buy more INFY.", "Reduce your TCS now."):
         assert T.has_advice(bad), bad
-    assert all(w for w in T.ADVICE_WORDS_MR) and not T.has_advice("Open risk at the stops: 2,000 (2% of capital).")
-    _no_advice(lines + mr)
+    assert not hasattr(T, "ADVICE_WORDS_MR") and not T.has_advice("Open risk at the stops: 2,000 (2% of capital).")
+    _no_advice(lines)
     assert T.telegram_lines(R.view([], {}, {}, 100_000.0)) == ["Portfolio (your PAPER book): no open positions."]
     assert len(T.telegram_lines(view, "en", None)) == 4                                     # caps off: no limits line
 

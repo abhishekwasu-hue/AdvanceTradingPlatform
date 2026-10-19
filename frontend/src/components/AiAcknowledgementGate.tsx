@@ -6,7 +6,7 @@ import { Card } from "./ui";
 /** P0.8-D: the first-use acknowledgement of the AI Copilot, shared by every page with AI-written content. Until this
  * user accepted the current version the children are not rendered; a 428 from any AI route re-reads the state, so a
  * version bump while a page is open brings the screen back.
- * P0.9: English. The Marathi translation the server keeps with the text is behind "Read in Marathi" (closed by default). */
+ * English only (the owner's ruling): the versioned text is the English legal text; there is no translation. */
 export default function AiAcknowledgementGate({ children }: { children: ReactNode }) {
   const [ack, setAck] = useState<AiAcknowledgement | null>(null);
   const [read, setRead] = useState(false);
@@ -28,10 +28,6 @@ export default function AiAcknowledgementGate({ children }: { children: ReactNod
   return (
     <Card title="Before you start - please read">
       <p className="text-sm text-slate-100 leading-relaxed">{ack.text.en}</p>
-      <details className="mt-2 text-xs text-muted">
-        <summary className="cursor-pointer text-sky-300 hover:underline">Read in Marathi</summary>
-        <p className="mt-1 leading-relaxed text-slate-300" lang="mr">{ack.text.mr}</p>
-      </details>
       <p className="mt-2 text-xs text-muted">Version {ack.version}</p>
       <label className="mt-3 flex items-start gap-2 text-sm text-slate-100">
         <input type="checkbox" checked={read} onChange={(e) => setRead(e.target.checked)} />

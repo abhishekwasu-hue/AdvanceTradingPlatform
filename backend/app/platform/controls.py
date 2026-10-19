@@ -261,6 +261,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
     "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # H-C4 (Copilot spec C4): "analyze <symbol>" - technical, options, news and macro views from the read tools and the
+    # rules' summary (readings that lean up / down, risks, possibilities). Rules-only wording: no model is called and no
+    # AI text is shown (docs/OPEN_QUESTIONS.md HC4-5); no order, no proposal (ADR-0006). OFF: POST /api/ai/analyze is 503.
+    "ai_multiview": "Copilot multi-view analysis: technical, options, news and macro views of a symbol with a rules-generated summary (no advice, no orders)",
     # N4 CH4a: the trades layer - the caller's own PAPER trades (entries, exits, open stop / target) on the chart of
     # their instrument, as of a time (replay never shows a trade or an exit before it happened). OFF: GET
     # /api/charts/layers/trades answers 503 and the chart shows no trades. Read-only - places no orders.
@@ -269,6 +273,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # bhavcopy rows, contract search from the instrument master, chain -> chart links, a COMPUTED daily IV (labelled).
     # OFF: /api/charts/contracts/* answer 503 and the option chain shows no chart links. Reference only - places no orders.
     "chart_contracts": "Contract charts: daily option / future and spread charts with OI from the shared history (reference only, places no orders)",
+    # N4 CH4c: on top of chart_contracts - an underlying's futures basis, annualised carry, calendar spread and rollover %
+    # per trade date from the shared daily history (shared-licensed sources only). OFF: the route answers 503 and the
+    # contract chart shows no link to it. Reference only, places no orders.
+    "chart_futures_basis": "Futures basis charts: basis, cost of carry, calendar spread and rollover from the shared history (reference only, places no orders)",
     # U9 TX2 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md §4): the screen library's confluence view (symbols ranked by
     # how many methods flag them), generated short mirrors of the long pre-built screens and watch-then-trigger lists,
     # on top of `screener_v2` and `screener_gallery`. OFF: /api/screener/library/* answer 503 and the Screener page shows

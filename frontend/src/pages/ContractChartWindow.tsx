@@ -8,6 +8,7 @@ import { ApiError } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import ProChart from "../components/ProChart";
 import { contractsApi, ivText, legName, toCandles, type ContractSeries, type SeriesLeg } from "../charting/contracts";
+import { basisAvailable, basisUrl } from "../charting/futuresBasis";
 
 /** One leg's OI as small bars (the last 60 days), with its last value - numbers from the series, never from pixels. */
 export function OiBars({ leg, days }: { leg: SeriesLeg; days: string[] }) {
@@ -26,9 +27,15 @@ export function OiBars({ leg, days }: { leg: SeriesLeg; days: string[] }) {
   );
 }
 
-export function ContractPanel({ series }: { series: ContractSeries }) {
+/** N4 CH4c: a single futures contract links to its underlying's basis / carry / rollover page (only when that is on). */
+export function basisLinkFor(series: ContractSeries): string | null {
+  return series.legs.length === 1 && series.legs[0].kind === "FUT" ? basisUrl(series.legs[0].underlying) : null;
+}
+
+export function ContractPanel({ series, basisLink = null }: { series: ContractSeries; basisLink?: string | null }) {
   return (
     <div className="mt-2 flex flex-col gap-2" data-testid="contract-panel">
+      {basisLink && <a className="text-xs text-brand underline" href={basisLink} target="_blank" rel="noreferrer" data-testid="basis-link">Basis, carry and rollover of this underlying</a>}
       {series.legs.map((leg) => <OiBars key={leg.key} leg={leg} days={series.days} />)}
       {series.iv_note && <p className="text-xs text-fg-muted" data-testid="iv-note">{series.iv_note}</p>}
       <p className="text-xs text-fg-muted">{series.legs.length > 1 ? "Spread close = the sum of each leg's close x quantity, on days every leg traded. " : ""}{series.note}</p>
@@ -53,6 +60,14 @@ export default function ContractChartWindow({ params }: { params: URLSearchParam
     return () => { live = false; };
   }, [user, legs]);
   const candles = useMemo(() => (series ? toCandles(series) : []), [series]);
+  const [basisLink, setBasisLink] = useState<string | null>(null);
+  useEffect(() => {
+    const link = series ? basisLinkFor(series) : null;
+    if (!link || !series) return;
+    let live = true;
+    basisAvailable(series.legs[0].underlying).then((on) => { if (live) setBasisLink(on ? link : null); }, () => undefined);
+    return () => { live = false; };
+  }, [series]);
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
@@ -65,7 +80,7 @@ export default function ContractChartWindow({ params }: { params: URLSearchParam
       {series && candles.length > 0 && (
         <>
           <ProChart candles={candles} symbol={title} timeframe="day" fullWindow drawingTools={false} defaultIndicators={series.ohlc ? ["volume"] : []} />
-          <ContractPanel series={series} />
+          <ContractPanel series={series} basisLink={basisLink} />
         </>
       )}
     </div>

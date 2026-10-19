@@ -1,13 +1,15 @@
 # 500-user load test (Phase 0 exit criterion "load test passed")
 
-**Verdict: SLO FAIL on the KVM 2 shape (run 10, CI, 13 Oct).** 500 sessions, all logged in, 0 server errors, but
-with the market open every route but the public status read was over 0.5 s at p95 (chart 2.19 s, screener 3.69 s,
-login 8.90 s). Run 10 was the first run inside an NSE session: runs 1-9 had all run outside one (below, "Run 10: the
-market was open"), so run 9's 0.52 s chart and 0.91 s screener were measured on a lighter load. A local cross-check on
-2 pinned cores (API, worker, Postgres and Redis sharing them, market open) put chart at 0.41 s, screener at 0.75 s and
-the dashboard reads at 0.13 s or less, login at 8.7 s. Run 11 (887c744) decided on the KVM 2 shape by CPU placement
-inside a session and failed harder (chart 1.43 s, screener 2.15 s, 86 logins timed out): its 2 CPUs were most likely
-one physical core's two threads. Run 12 places them on two cores (below, "Run 11" and "Run 12").
+**Verdict: SLO FAIL on the KVM 2 shape (run 12, CI, 13 Oct; run 13 below when it reports).** Run 12 is the first run
+on the deciding shape as intended - the API, worker, Postgres, Redis and Caddy on 2 CPUs of 2 physical cores, inside an
+NSE session (the real clock, 12:12 IST), 500 sessions, all logged in, 0 server errors. p95 per key route: dashboard
+reads 67-250 ms, proposals / positions / PAPER account 106-181 ms (inside 0.5 s); chart 593 ms and screener 846 ms
+(over 0.5 s, inside their documented 1.0 s and 2.0 s); login 11.4 s (over both its 0.5 s and its documented 1.0 s: the
+owner's decision, OPEN_QUESTIONS LD-9). Below: "Run 12", then "After run 12 (19 Oct)" for what changed since and why.
+
+Before run 12: run 10 (13 Oct, the first run inside a session) failed on every route on the quota shape; run 11 placed
+the server on CPUs 0-1, most likely one physical core's two threads, and failed harder; runs 1-9 ran outside a session
+on a lighter load.
 
 The bar (coordinator, 13 Oct) is the owner's production box, a Hostinger KVM 2 (2 vCPU, 8 GB): the run that decides the
 CI job runs as that box does. Runs 8-10 approximated it with a CPU quota on the API alone; from run 11 the API, worker,
@@ -216,8 +218,88 @@ and 0.57 s.
 
 ### Run 12 (the KVM 2 shape on two physical cores; the screen's pandas on one thread, 948e32d)
 
-Not finished when this was written (the job runs on the commit that adds this section); its numbers follow in the
-next commit.
+[38357848445](https://github.com/abhishekwasu-hue/AdvanceTradingPlatform/actions/runs/38357848445), job `load-500`,
+44cbad6, 06:39-07:24 UTC; primary on the real clock (12:12 IST, inside the session), `stack.sh pin kvm2`. p50 / p95 /
+p99 ms, from the job's annotations (the job log answers 403 and the artifact download is blocked from the agents'
+network, so the server-side tables of this run are not in this report):
+
+| Profile | Shape | Chart | Screener | Login | Dashboard p95 (5 reads) | Proposals / positions / paper p95 | req/s | Server errors |
+|---|---|---|---|---|---|---|---|---|
+| **Primary (decides)** | pinned: API, worker, Postgres, Redis, Caddy on 2 CPUs of 2 cores | 101 / 593 / 1,101 | 173 / 846 / 1,404 | 932 / 11,430 / 13,787 | 67 / 175 / 203 / 215 / 250 | 181 / 106 / 177 | 90.2 | 0.00% |
+| Login burst | same | 123 / 800 / 1,666 | 210 / 1,446 / 2,398 | 4,213 / 15,627 / 22,529 | 104 / 303 / 345 / 352 / 384 | 322 / 196 / 296 | 68.8 | 0.00% |
+| Busy (think 10 s) | same | 829 / 3,519 / 5,230 | 1,224 / 4,290 / 6,692 | 25,725 / 30,015 / 30,021 | 426 / 2,156 / 2,199 / 2,157 / 2,210 | 1,860 / 1,743 / 2,174 | 124.2 | 0.57% (243 without a login) |
+| KVM 2 as a quota | 2 processes, `--cpus 2`, rest unpinned | 104 / 694 / 1,153 | 165 / 1,043 / 1,700 | 434 / 5,213 / 5,870 | 77 / 202 / 241 / 255 / 283 | 217 / 133 / 202 | 90.5 | 0.00% |
+| Whole runner | 3 processes, no cap | 89 / 409 / 1,115 | 150 / 760 / 1,795 | 343 / 2,080 / 4,444 | 62 / 129 / 141 / 153 / 167 | 121 / 91 / 114 | 90.8 | 0.00% |
+
+Against run 11 (same profile, the server on one core's two threads): chart p95 1,429 -> 593 ms, screener 2,146 -> 846
+ms, dashboard 161-660 -> 67-250 ms, logins that timed out 86 -> 0 (p95 11.4 s). The two-core placement and 948e32d (a
+screen's pandas on one thread) are both in it. The CI lint job failed on 44cbad6 (shellcheck SC2295 in
+`stack.sh kvm2_cpus`, fixed in f4bf9ac); the backend tests passed.
+
+## After run 12 (19 Oct)
+
+### Merged main
+
+origin/main into this branch (f2c7f05): #249 shared LTP budget, #251 / #255 / #259 charts, #254 AI filter, #256 re-exit
+guard, #258 H-C4. Conflicts: the worker (main's side: its #221 changes are this branch's, plus per-tenant savepoints
+and `close_group`), the candles route's imports (both), ROADMAP_STATUS (main's page; the load-test row carries run 12).
+One alembic head: this branch's c5f7e9a1b3d4 (the dashboard indexes) now revises main's e2a4c6e8f0b3. This branch adds
+no flag, so `DEFAULT_OFF_FLAGS` is main's.
+
+### Local runs on 19 Oct, and why their numbers are not results
+
+The same local setup as L1-L7 (2 pinned real cores for the server side, CPUs 2-3 for the 25 clients and the fake
+broker), with one difference: the market was closed, so the API, the worker and the fake broker ran on a clock shifted
+to 11:00 IST with libfaketime, as the CI does outside a session. Every such run collapsed - before and after the merge
+and before and after the changes below (B0 f2c7f05, B1 f4bf9ac, N1 / N2 2d30252): 320-390 of 500 logins timed out at
+30 s and the dashboard reads took 5-8 s at p95, at 24-29 req/s against L5's 81.
+
+Two causes, both found by measuring:
+
+1. **libfaketime made the API's threads spin.** With the monotonic clock left real (`FAKETIME_DONT_FAKE_MONOTONIC=1`),
+   libfaketime's "forced monotonic fix", which it switches on by itself on glibc 2.30 and later, gives every timed
+   wait on a monotonic condition variable a wrong deadline; CPython's GIL waits on one. Three Python threads contending
+   for the GIL: 0.7 s of CPU without the preload, 9.5 s with it, 7.3 s with the fix forced on, 0.8 s with
+   `FAKETIME_FORCE_MONOTONIC_FIX=0`. In the API (an event loop, bcrypt threads and pandas threads per process) that was
+   about 44 ms of CPU per request against L5's about 10 ms (per-thread CPU over run N2: event loops 255 s, worker
+   threads 170 s, bcrypt 145 s for 9,600 requests). **The CI's shifted clock had the same setting**: a load run outside
+   09:30-14:00 IST would have measured it. Runs 10-12 ran on the real clock and are not affected. Fixed in a82c49e
+   (`deploy/ci/compose.ci.yml`, tested).
+2. **Logins queued on the audit chain's lock while holding pool connections.** A login appends a hash-chained audit row
+   under one advisory lock for the whole table, held until its transaction commits; the session row and the token were
+   written inside that window. Under CPU pressure each await in it stretched, the logins waited on the lock with their
+   connections checked out, and every other route waited for a connection (pool checkout 0.7-0.9 s mean against
+   0.3-0.6 ms; connections "idle in transaction" 15-17 mean against 3.5). The lock wait across all local runs is
+   bimodal - about 1 ms in the healthy runs (L1, L5, L6, L7), 150-280 ms mean in the collapsed ones - and L3 on 13 Oct,
+   which the earlier notes could not explain, is one of the collapsed. 2d30252 writes the audit row last, right before
+   the commit (N1: lock wait 83 ms mean on the still-spinning clock). Same rows, same transaction, bcrypt unchanged.
+
+A run after the faketime fix (B2) had another agent's test suite on the server CPUs (264 s of foreign CPU on CPUs 0-1
+in a 344 s run, against 15-28 s before) and is not usable either. The local numbers of 19 Oct are therefore not in the
+tables; the CI run below is the measurement.
+
+### Changes after run 12
+
+| Commit | Change | Measured |
+|---|---|---|
+| f4bf9ac | `stack.sh kvm2_cpus`: the core key quoted (shellcheck SC2295; the lint job on 44cbad6) | shellcheck clean |
+| 2d30252 | A screen run's funnel shares one memo of each symbol's evaluated nodes with the full evaluation (`runtime.ScreenMemo`; off for cross-sectional screens), on one worker-thread hop (`routes.screen_and_funnel`) | the load test's 5-symbol screen: 34 -> 17 ms of evaluation CPU; matches and funnel identical on 7 kinds of screen, both evaluation paths |
+| 2d30252 | The vectorised-flag read moved before the fetch | one pool checkout and one query fewer per screen run |
+| 2d30252 | `resolve_many` reads and writes the session's symbol set once (`SessionSymbols.admit_many`) | 10 -> 2 Redis round trips before a 5-symbol screen's fetch; the same answers as `admit` in turn (tested) |
+| 2d30252 | The worker's BYOB fan-in reads every session's open positions with one select per cycle, grouped by (organisation, user) | run 10's 27,000 `trades` reads were 500 selects a cycle (one per user); now 1 a cycle; each session still gets only its own user's rows (tested) |
+| 2d30252 | Login: the audit row last, right before the commit | the lock covers the audit read, its insert and the commit only |
+| a82c49e | The CI's shifted clock with `FAKETIME_FORCE_MONOTONIC_FIX=0` | 3 contending threads: 9.5 s -> 0.8 s of CPU |
+
+Profiled, not changed: on an idle core a cold 5-symbol screen costs about 7 ms of pandas framing, 17 ms of evaluation
+(was 34), 10 ms of the broker client's bar parsing and 7 ms of candle-cache serialising on the event loop; the
+vectorised evaluation (flag `screener_vectorized`, off) would take the evaluation to about 6 ms - the owner's call, not
+turned on here. A screen-result cache (`app/screener/result_cache.py`) would rarely hit in this profile (each user's
+bars are cached under their own session, BT1b, and each run picks 5 of 10 symbols at random) and is not wired in.
+
+### Run 13 (this branch after the merge and the changes above)
+
+Runs on the push of this commit (the workflow runs every push of this branch, which changes the stack); its numbers
+follow in the next commit.
 
 
 ## The generator change (d9a8f89) - what it changed and how much of the gain it is
@@ -304,9 +386,10 @@ Also tried, and not kept: a per-process limit of 2 CPU-bound threads (run 6: no 
   login queue grows through the ramp. Options for the owner: the documented 1.0 s at a lower login rate (a 300 s ramp,
   or most users resuming a session instead of a password login - refresh tokens already do that), a KVM 4, or the
   login p95 left out of the 0.5 s bar (its documented SLO is 1.0 s). OPEN_QUESTIONS LD-9.
-- **The worker inside a session** reads each user's open positions one query per user per cycle (500 a cycle in the
-  test, every 10 s in CI, every 60 s in production). One query for all of them is the next cut if the KVM 2 run
-  shows the worker.
+- **The worker inside a session**: done in 2d30252 (one positions select per cycle for every session).
+- **Chart and screener p95 on the KVM 2** (run 12: 593 ms and 846 ms): inside their documented 1.0 s and 2.0 s, over
+  the owner's 0.5 s. The next levers, measured but not taken: the vectorised screen path (a flag, the owner's call) and
+  moving the broker client's bar parsing and the candle-cache serialising off the event loop.
 - **The Hostinger run** (below) decides the 500-user stage.
 
 

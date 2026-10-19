@@ -104,8 +104,8 @@ def test_slow_routes_release_before_their_broker_calls():
     fetch = screener[screener.index("async def fetch_frames("):screener.index("async def _attach_daily(")]
     assert fetch.index("await release_connection(session)") < fetch.index("await asyncio.gather(")
     run = screener[screener.index("async def run("):]
-    assert "release=True" in run[:run.index("run_screen")]
-    assert run.index("await release_connection(session)") < run.index("asyncio.to_thread(run_screen")
+    assert "release=True" in run[:run.index("screen_and_funnel")]
+    assert run.index("await release_connection(session)") < run.index("asyncio.to_thread(screen_and_funnel")
 
 
 # --- several processes -------------------------------------------------------------------------------------------------

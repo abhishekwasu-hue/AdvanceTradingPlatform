@@ -181,6 +181,66 @@
     "https://morris.aspendiscovery.org/Record/906471",
     "https://link.flintmemoriallibrary.org/resource/xPR93bEjO6s"
    ]
+  },
+  {
+   "id": "graham_1949",
+   "kind": "book",
+   "title": "The Intelligent Investor: A Book of Practical Counsel",
+   "authors": ["Benjamin Graham"],
+   "year": 1949,
+   "publisher": "Harper & Brothers",
+   "covers": "Investment policy for the defensive and the enterprising investor: the margin of safety, limits on price to earnings (15) and price to book value (1.5) whose product is 22.5, and bargain issues bought below their net current asset value.",
+   "review": "unverified",
+   "review_note": "Harper & Brothers, New York, 1949 agrees across dealer listings and a library catalogue record of the 2005 HarperBusiness reissue (noting first publication by Harper in 1949), but no catalogue record of the 1949 edition itself could be opened from here.",
+   "evidence": [
+    "https://catalog.pelhamlibrary.org/Record/3679750",
+    "https://www.baumanrarebooks.com/rare-books/graham-benjamin/intelligent-investor/106053.aspx"
+   ]
+  },
+  {
+   "id": "graham_dodd_1934",
+   "kind": "book",
+   "title": "Security Analysis: Principles and Technique",
+   "authors": ["Benjamin Graham", "David L. Dodd"],
+   "year": 1934,
+   "publisher": "Whittlesey House, McGraw-Hill",
+   "covers": "Analysis of balance sheets and income accounts, including the net current asset value of a common stock (current assets less all liabilities ahead of it) and issues selling below it.",
+   "review": "unverified",
+   "review_note": "Whittlesey House / McGraw-Hill, New York and London, 1934 agrees across rare-book dealer listings (two bindings, no priority), but no library catalogue record of the first edition could be opened from here.",
+   "evidence": [
+    "https://www.baumanrarebooks.com/rare-books/benjamin-graham-david-l-dodd/security-analysis-principles-and-technique/90971.aspx",
+    "https://www.raptisrarebooks.com/product/security-analysis-ben-graham-dodd-first-edition/"
+   ]
+  },
+  {
+   "id": "greenblatt_2006",
+   "kind": "book",
+   "title": "The Little Book That Beats the Market",
+   "authors": ["Joel Greenblatt"],
+   "year": 2006,
+   "publisher": "John Wiley & Sons",
+   "covers": "Ranking companies on earnings yield (EBIT / enterprise value) and return on capital (EBIT / net working capital plus net fixed assets) and buying the best combined ranks, excluding financial and utility companies.",
+   "review": "verified",
+   "review_note": "Library catalogue records: Hoboken, N.J.: John Wiley & Sons, [2006], ISBN 0471733067, LCCN 2006295303 (Little Books, Big Profits series). Retail listings give a November 2005 release; the catalogue imprint year is kept.",
+   "evidence": [
+    "https://gvd.swanlibraries.net/Record/a2275741",
+    "https://opac.westchesterlibraries.org/Record/3207169"
+   ]
+  },
+  {
+   "id": "oneil_1988",
+   "kind": "book",
+   "title": "How to Make Money in Stocks: A Winning System in Good Times or Bad",
+   "authors": ["William J. O'Neil"],
+   "year": 1988,
+   "publisher": "McGraw-Hill",
+   "covers": "A growth-stock method: sharply higher current quarterly earnings and sales against the same quarter a year before, new price highs out of a sound base on volume well above average, relative strength and market direction.",
+   "review": "verified",
+   "review_note": "University library catalogue record: New York, McGraw-Hill, c1988 (call number HG4521 .O515); later revised editions by McGraw-Hill.",
+   "evidence": [
+    "https://cendekia.unisza.edu.my/neuseal/Record/0000002533",
+    "https://www.mheducation.com/highered/mhp/product/how-make-money-stocks.html"
+   ]
   }
  ]
 }

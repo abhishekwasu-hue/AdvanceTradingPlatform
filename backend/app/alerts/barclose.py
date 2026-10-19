@@ -314,6 +314,13 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             # Z7a-3: the rule stays active and resumes when the flag is back; zone rules fire on bar close only
             rule.last_problem = zone_gate.refusal(zone_calls) if not zones_enabled else zone_gate.intrabar_refusal(zone_calls)
             return "unsupported", 0
+        from app.screener import fundamentals as fundamentals_gate
+        fund_calls = fundamentals_gate.flagged_calls(ast)
+        if fund_calls:
+            # U7 LG3 (OPEN_QUESTIONS LG3-3): the bar-close engine does not read fundamentals - a saved screen edited to use
+            # them after the rule was made pauses with the reason (stays active) instead of failing on every symbol
+            rule.last_problem = fundamentals_gate.alert_refusal(fund_calls)
+            return "unsupported", 0
         from app.screener import amw_functions as amw_gate
         amw_calls = amw_gate.flagged_calls(ast, params)
         if amw_calls and not amw_enabled:

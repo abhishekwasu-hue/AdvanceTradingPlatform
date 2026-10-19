@@ -60,6 +60,7 @@ class SymbolData:
     option_chain: Optional[Any] = None                     # app.brokers.models.OptionChain for PCR / ChainBias / MaxPainDistancePct
     exchange: Optional[str] = None                         # U6 BK2: the session clock of the intraday breakout functions (None = NSE)
     zones: Optional[Any] = None                            # Z7a-3: app.price_action.zones.read.ZoneTimeline for the zone functions
+    fundamentals: Optional[Any] = None                     # U7 LG3: app.fundamentals.pit versions (point in time) for the fundamentals functions
 
 
 @dataclass
@@ -381,6 +382,13 @@ class _Eval:
             "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
             "ZoneState": lambda: _zone(self.data, f, tf, "state", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "ZoneStrength": lambda: _zone(self.data, f, tf, "strength", _text(0, "any"), num(1, 0.5), _text(2, "all")),
+            # U7 LG3: point-in-time fundamentals - the versions known by each bar's close (app/screener/fundamentals.py)
+            "EPSGrowthYoY": lambda: _fundamental(self.data, f, tf, "eps_growth"),
+            "SalesGrowthYoY": lambda: _fundamental(self.data, f, tf, "sales_growth"),
+            "EarningsYield": lambda: _fundamental(self.data, f, tf, "earnings_yield"),
+            "ReturnOnCapital": lambda: _fundamental(self.data, f, tf, "roc"),
+            "GrahamNumber": lambda: _fundamental(self.data, f, tf, "graham_number"),
+            "NCAVPerShare": lambda: _fundamental(self.data, f, tf, "ncav"),
             "PCR": lambda: _chain(self.data.option_chain, "pcr"),
             "ChainBias": lambda: _chain(self.data.option_chain, "bias"),
             "MaxPainDistancePct": lambda: _chain(self.data.option_chain, "max_pain_distance_pct"),
@@ -759,6 +767,11 @@ def _dow_trend(f: pd.DataFrame, degree: int) -> pd.Series:
 def _zone(data: SymbolData, f: pd.DataFrame, tf: str, what: str, role: str, tolerance_pct: float, family: str) -> pd.Series:
     from app.screener.zones import zone_series
     return zone_series(data, f, tf, what, role, tolerance_pct, family)
+
+
+def _fundamental(data: SymbolData, f: pd.DataFrame, tf: str, measure: str) -> pd.Series:
+    from app.screener.fundamentals import series
+    return series(data, f, tf, measure)
 
 
 def _median_range(f: pd.DataFrame, n_: int) -> pd.Series:

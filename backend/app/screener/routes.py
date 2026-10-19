@@ -35,6 +35,7 @@ from app.screener import legends as lg
 from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
+from app.screener import fundamentals as fundamentals_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
@@ -60,8 +61,9 @@ async def charge_runs(user: User, units: int) -> None:
     await charge_user(RUN_BUCKET, user.id, RUN_LIMIT, RUN_WINDOW, units)
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
-# N3 S7a: and the ranking systems a RankScore names (loaded by the route, with the sectors a sector-neutral one needs).
-RUN_PROVIDES: frozenset = frozenset({"zones", "rankings"})
+# U7 LG3: and the point-in-time fundamentals. N3 S7a: and the ranking systems a RankScore names (loaded by the route,
+# with the sectors a sector-neutral one needs).
+RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals", "rankings"})
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -168,8 +170,13 @@ async def taxonomy(method: Optional[str] = None, setup: Optional[str] = None, us
 
 
 async def _legend_slices(session: AsyncSession, user: User) -> List[str]:
-    """U7 LG2: the card slices this organisation sees - LG1 with `screener_legends`, LG2 also with `screener_legends_lg2`."""
-    return ["lg1"] + (["lg2"] if await flag_enabled(session, lg.FLAG_LG2, user.tenant_id) else [])
+    """U7 LG2 / LG3: the card slices this organisation sees - LG1 with `screener_legends`, each later slice also with its
+    own flag (`legends.SLICES`)."""
+    out = ["lg1"]
+    for part, flag in lg.SLICES.items():
+        if flag and await flag_enabled(session, flag, user.tenant_id):
+            out.append(part)
+    return out
 
 
 @router.get("/legends")
@@ -250,13 +257,14 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
 async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
     screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`),
-    the AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves a
-    `$parameter` pattern name) and N3 S7a's RankScore (`screener_rankings`; a system it names must be a platform one or
-    this organisation's own). With the AMW-3 flag off, Pattern* mistakes get main's messages
-    (`amw_gate.flag_off_validation`). Every gate runs; RankScore's check is last so its early return skips none."""
+    the U7 LG3 fundamentals functions (`screener_fundamentals`), the AMW-3 functions, v2 candles and confirmation
+    statuses (`screenql_amw_functions`; `params` resolves a `$parameter` pattern name) and N3 S7a's RankScore
+    (`screener_rankings`; a system it names must be a platform one or this organisation's own). With the AMW-3 flag off,
+    Pattern* mistakes get main's messages (`amw_gate.flag_off_validation`). Every gate runs; RankScore's check is last
+    so its early return skips none."""
     if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
         amw_gate.flag_off_validation(ast, validated, params or {})
-    for gate in (breakout_gate, zone_gate):
+    for gate in (breakout_gate, zone_gate, fundamentals_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
@@ -564,6 +572,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                user_id=user.id, tier_out=tier, release=True)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+    if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
+        await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests

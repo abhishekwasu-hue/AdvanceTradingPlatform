@@ -152,6 +152,13 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],
     "ZoneState": ['ZoneState("any", 1.0)', 'ZoneState("demand", 0.8, "levels")@1h'],
     "ZoneStrength": ['ZoneStrength("any", 1.0)', 'ZoneStrength("supply", 2.0)@1h'],
+    # U7 LG3: point-in-time fundamentals - the case builds a causal timeline of reports from the bars (_fundamentals_timeline)
+    "EPSGrowthYoY": ["EPSGrowthYoY()", "EPSGrowthYoY()@1h"],
+    "SalesGrowthYoY": ["SalesGrowthYoY()"],
+    "EarningsYield": ["EarningsYield()", "EarningsYield()[3]"],
+    "ReturnOnCapital": ["ReturnOnCapital()"],
+    "GrahamNumber": ["GrahamNumber()", "close > GrahamNumber()"],
+    "NCAVPerShare": ["NCAVPerShare()"],
 }
 SCREENQL_FIELDS: List[str] = ["close", "volume", "close@1h", "high@1d[1]", "low[2]"]
 # A daily screen: weekly and monthly bars built from the daily ones (W-MON / month-start buckets, close-time alignment).
@@ -190,7 +197,49 @@ def _screenql(text: str, base_tf: str = BASE_TF):
                 for node in nodes.walk(ast))
     if zones:
         return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}, zones=_zone_timeline(f, base_tf)), base_tf=base_tf)
+    if any(isinstance(node, nodes.Call) and "fundamentals" in getattr(FUNCTIONS.get(node.name), "needs", ()) for node in nodes.walk(ast)):
+        return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}, fundamentals=_fundamentals_timeline(f, base_tf)), base_tf=base_tf)
     return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}), base_tf=base_tf)
+
+
+FUND_REPORT_EVERY = 40            # bars between the synthetic quarterly reports
+
+
+def _fundamentals_timeline(f: pd.DataFrame, tf: str) -> List[Any]:
+    """U7 LG3: a stand-in for the point-in-time fundamentals store - a "quarter" ends every 40th bar and is reported at
+    the close of the 20th bar after it, its figures built ONLY from the bars up to the report (revenue from the volume,
+    earnings from the price change, a balance sheet from the closes). Every 3rd report also restates the previous
+    quarter (a later version, known from its own report bar, as the store's rule says). Like the store, each version is
+    known from its `known_from` on; the case proves the runtime never shows a bar a report from after its close."""
+    from datetime import timedelta
+
+    from app.fundamentals.pit import Version
+    from app.screener.runtime import bar_close
+    if not len(f):
+        return []
+    closes = pd.DatetimeIndex(bar_close(f.index, tf))
+    c, v = f["close"].astype(float).to_numpy(), f["volume"].astype(float).to_numpy()
+    start = pd.Timestamp(closes[0]).date()
+    out: List[Any] = []
+    for q, end_i in enumerate(range(FUND_REPORT_EVERY - 1, len(f), FUND_REPORT_EVERY)):
+        rep = end_i + FUND_REPORT_EVERY // 2
+        if rep >= len(f):
+            break
+        w = slice(max(0, end_i - FUND_REPORT_EVERY + 1), rep + 1)
+        rev = float(v[w].sum())
+        eps = float(c[rep] - c[w.start]) / 10.0 + 1.0
+        figs: Dict[str, Optional[float]] = {"revenue": rev, "eps": eps, "ebit": eps * 1000.0, "shares_outstanding": 1000.0, "shareholders_equity": float(c[w].mean()) * 600.0,
+                "total_assets": float(c[w].max()) * 1500.0, "current_assets": float(c[w].mean()) * 900.0, "current_liabilities": float(c[w].min()) * 300.0,
+                "cash_and_equivalents": 5000.0, "total_debt": 20000.0}
+        period_end = start + timedelta(days=91 * q)                               # quarters 91 days apart, whatever the bars' spacing
+        out.append(Version("QUARTERLY", f"Q{q}", period_end, 1, figs,
+                           pd.Timestamp(closes[rep]).to_pydatetime()))
+        if q % 3 == 2 and len(out) >= 2:
+            prev = out[-2]
+            out.append(Version(prev.period_type, prev.period_label, prev.period_end, prev.version + 1,
+                               {**prev.figures, "eps": (prev.figures["eps"] or 0.0) * 1.1, "revenue": (prev.figures["revenue"] or 0.0) * 0.95},
+                               pd.Timestamp(closes[rep]).to_pydatetime()))
+    return out
 
 
 ZONE_SNAPSHOT_EVERY = 25          # bars between the synthetic zone snapshots (plus each session's last bar)

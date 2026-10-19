@@ -307,7 +307,8 @@ class ZerodhaBroker(BrokerInterface):
                 status=o["status"],
                 price=o.get("price"),
                 average_price=o.get("average_price"),
-                placed_at=o.get("order_timestamp"),
+                placed_at=parse_broker_timestamp(o.get("order_timestamp")),   # Kite: naive IST wall time
+                tag=o.get("tag") or None, product=o.get("product") or None, exchange=o.get("exchange") or None,
             )
             for o in data
         ]

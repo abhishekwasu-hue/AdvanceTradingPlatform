@@ -43,6 +43,9 @@ INSTRUMENTS_URL_TEMPLATE = "https://assets.upstox.com/market-quote/instruments/e
 # re-parsing it on every historical-data/option-chain/place-order call would add seconds of
 # needless latency per request, so each adapter instance caches it per exchange for a while.
 _INSTRUMENT_CACHE_TTL_SECONDS = 6 * 3600
+# Upstox order-book product codes -> platform products. "D" (delivery) covers both CNC and NRML, so it is left as is (it
+# never matches a platform product - an untagged order is then not taken for this platform's exit).
+_UPSTOX_PRODUCT_BACK = {"I": "MIS"}
 
 
 logger = logging.getLogger(__name__)
@@ -403,7 +406,10 @@ class UpstoxBroker(BrokerInterface):
                 order_id=o["order_id"], symbol=o["trading_symbol"],
                 transaction_type=OrderSide(o["transaction_type"]), quantity=o["quantity"],
                 filled_quantity=o.get("filled_quantity", 0), order_type=o["order_type"], status=o["status"],
-                price=o.get("price"), average_price=o.get("average_price"), placed_at=o.get("order_timestamp"),
+                price=o.get("price"), average_price=o.get("average_price"),
+                placed_at=parse_broker_timestamp(o.get("order_timestamp")),   # Upstox: naive IST wall time
+                tag=o.get("tag") or None, product=_UPSTOX_PRODUCT_BACK.get(str(o.get("product") or ""), o.get("product") or None),
+                exchange=o.get("exchange") or None,
             )
             for o in data
         ]

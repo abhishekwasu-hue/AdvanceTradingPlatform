@@ -95,13 +95,15 @@ async def _screen(session: AsyncSession, user: User, body: Screen) -> Tuple[Any,
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation",
                                                      "problems": [p.as_dict() for p in validated.problems]})
+    from app.screener import fundamentals as fundamentals_gate
     from app.screener import ranking as ranking_gate
     from app.screener import zones as zone_gate
     if ranking_gate.uses_rankscore(ast):
         # N3 S7a (provisional S7-5): history runs RankScore as the backtest's sort key (rank_system), not inside a screen yet
         raise HTTPException(status_code=422, detail="screen history does not run RankScore() inside a screen yet: rank the backtest's "
                                                     "matches with rank_system instead")
-    extra = missing_data(ast) + [c for c in zone_gate.flagged_calls(ast)]
+    # U7 LG3: history does not load the point-in-time fundamentals either - refused with the reason, never run as NaN
+    extra = missing_data(ast) + [c for c in zone_gate.flagged_calls(ast)] + fundamentals_gate.flagged_calls(ast)
     if extra or any(tf != H.BASE_TF for tf in (validated.lookback or {})):
         raise HTTPException(status_code=422, detail="screen history runs daily screens on end-of-day bars only: "
                                                     + (", ".join(sorted(set(f"{m}()" for m in extra))) + " need data it does not load"
@@ -392,6 +394,7 @@ async def _backtest_trials(session: AsyncSession, tenant_id: int, since: datetim
 async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_validated: Any, params: Dict[str, Any]) -> None:
     """Review of S6b (MED): rank_by passes the gates a screen passes - the flagged families (breakouts, zones...), the
     data the history run does not load, the last-bar-only functions (no series to read back) - and must be a number."""
+    from app.screener import fundamentals as fundamentals_gate
     from app.screener import zones as zone_gate
     from app.screener.registry import NUM
     from app.screener.validator import NOT_A_CONDITION, _Checker
@@ -400,7 +403,8 @@ async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_val
     problems = [p.message for p in probe.problems if p.message != NOT_A_CONDITION]
     if problems:
         raise HTTPException(status_code=422, detail="rank_by: " + "; ".join(problems))
-    extra = missing_data(rank_ast) + zone_gate.flagged_calls(rank_ast) + H.last_bar_only_calls(rank_ast)
+    extra = (missing_data(rank_ast) + zone_gate.flagged_calls(rank_ast) + fundamentals_gate.flagged_calls(rank_ast)
+             + H.last_bar_only_calls(rank_ast))
     if extra:
         raise HTTPException(status_code=422, detail=f"rank_by: {', '.join(sorted(set(n + '()' for n in extra)))} cannot be read at each date "
                                                     "of a history run (data it does not load, or answered for the last bar only)")

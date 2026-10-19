@@ -13,6 +13,7 @@
 Synthetic figures only - no provider, no network. Nothing here places an order.
 """
 import asyncio
+import json
 import math
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -410,3 +411,133 @@ def test_an_alert_rule_on_a_screen_edited_to_use_fundamentals_pauses_with_the_re
             return state, rule.last_problem, rule.status
     state, problem, status = _run(go())
     assert state == ("unsupported", 0) and "do not read fundamentals" in problem and status == "active" and calls == []
+
+
+# --- every path that evaluates a screen: loads the fundamentals or refuses them ------------------------------------------
+LIB_FLAGS = ("screener_v2", "screener_gallery", "screener_tx2", "screener_legends", "screener_legends_lg3", "screener_fundamentals")
+LIB_CLOSES = {"NET": 60.0, "CHP": 300.0, "DER": 500.0, "LAT": 60.0, "NOF": 60.0}   # by the symbol's last three letters
+
+
+@pytest.fixture
+def lib_world(monkeypatch):
+    """Shared figures for four symbols (NOF has none): NCAV/share 100 and Graham number ~424 - known on 2026-01-15 for
+    NET / CHP / DER, and only on 2026-06-01 (after the last bar, 2026-04-30) for LAT. Bars through the fake broker."""
+    from app.brokers import token_lifecycle
+    from app.core.models import OHLCVBar
+    from app.market_data import candles_routes, service
+    from app.screener import library as lib
+    assert lib.FLAG == "screener_tx2"
+    stem = f"LGL{uuid.uuid4().hex[:4].upper()}"
+    symbols = [stem + k for k in LIB_CLOSES]
+
+    async def pick(session, tenant_id, broker, label):
+        import types
+        return types.SimpleNamespace(broker_name="fake")
+
+    async def candles(self, symbol, exchange="NSE", interval="1min", now=None):
+        c = LIB_CLOSES[symbol[-3:]]
+        idx = pd.date_range("2026-01-01", periods=120, freq="1D", tz="UTC")
+        return [OHLCVBar(timestamp=t.to_pydatetime(), open=c - 0.5, high=c + 1, low=c - 1, close=c, volume=1000.0) for t in idx]
+    monkeypatch.setattr(candles_routes, "_pick_record", pick)
+    monkeypatch.setattr(token_lifecycle, "build_adapter", lambda record: object())
+    monkeypatch.setattr(service.MarketDataService, "get_candles", candles)
+    early, late = datetime(2026, 1, 15, tzinfo=UTC), datetime(2026, 6, 1, tzinfo=UTC)
+
+    async def seed():
+        ids = []
+        async with _session_factory() as session:
+            for sym in symbols[:-1]:
+                company = CompanyRecord(symbol=sym, name=sym, sector="Test", industry="Test")             # shared
+                session.add(company)
+                await session.flush()
+                ids.append(company.id)
+                for i, end in enumerate(QUARTERS[:4]):
+                    last = i == 3
+                    figs = dict(shares_outstanding=100.0, shareholders_equity=20000.0, total_assets=40000.0, current_assets=30000.0) if last else {}
+                    await pit.record_version(session, company.id, _period(f"Q{i}", end, eps=10.0, **figs), tenant_id=None,
+                                             now=late if sym.endswith("LAT") else early)
+            await session.commit()
+        return ids
+    ids = _run(seed())
+    _set_flags(**{f: True for f in LIB_FLAGS})
+    from app.core import rate_limit
+    rate_limit.reset()
+    yield symbols
+    _set_flags(**{f: False for f in LIB_FLAGS})
+
+    async def cleanup():
+        async with _session_factory() as session:
+            await session.execute(delete(FinancialPeriodVersionRecord).where(FinancialPeriodVersionRecord.company_id.in_(ids)))
+            await session.execute(delete(CompanyRecord).where(CompanyRecord.id.in_(ids)))
+            await session.commit()
+    _run(cleanup())
+
+
+def _run_route(headers, source, params, symbols):
+    r = client.post("/api/screener/run", headers=headers, json={"source": source, "base_tf": "1d", "params": params, "symbols": symbols})
+    assert r.status_code == 200, r.text
+    return {row["symbol"]: row["matched"] for row in r.json()["results"]}
+
+
+def test_lg3_cards_in_the_library_match_what_run_matches(lib_world):
+    """The confluence view and the watch lists load the point-in-time fundamentals as /run does: the same matches for an
+    LG3 card, and never a figure known only after the bar (LAT)."""
+    symbols = lib_world
+    headers, _ = _owner(f"lg3-lib-{uuid.uuid4().hex[:8]}@example.com")
+    cards = ["legends.graham_number_value", "legends.graham_net_net"]
+    r = client.post("/api/screener/library/confluence", headers=headers, json={"screens": cards, "symbols": symbols})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert "not loaded" not in json.dumps(out["not_evaluated"])          # before the fix every symbol: "fundamentals were not loaded"
+    got = {(s["ref"], row["symbol"]) for row in out["rows"] for s in row["screens"]}
+    via_run = set()
+    for card_id in cards:
+        card = lg.load().card(card_id)
+        matched = _run_route(headers, card.source, card.defaults(), symbols)
+        via_run |= {(card_id, sym) for sym, ok in matched.items() if ok}
+    net, chp = symbols[0], symbols[1]
+    assert got == via_run == {("legends.graham_number_value", net), ("legends.graham_number_value", chp), ("legends.graham_net_net", net)}
+    # a watch list whose ready condition reads fundamentals: its ready answers are /run's
+    w = client.post("/api/screener/library/watch-trigger", headers=headers,
+                    json={"ready": "close < GrahamNumber()", "trigger": "close > 0", "symbols": symbols})
+    assert w.status_code == 200, w.text
+    ready_now = set(w.json()["ready"]) | set(w.json()["triggered"])
+    assert ready_now == {s for s, ok in _run_route(headers, "close < GrahamNumber()", {}, symbols).items() if ok} == {net, chp}
+
+
+def test_the_library_refuses_an_lg3_card_while_its_own_flag_is_off(lib_world):
+    symbols = lib_world
+    headers, _ = _owner(f"lg3-libflag-{uuid.uuid4().hex[:8]}@example.com")
+    _set_flags(screener_legends_lg3=False)
+    r = client.post("/api/screener/library/confluence", headers=headers,
+                    json={"screens": ["legends.graham_number_value", "starter.momentum"], "symbols": symbols})
+    assert r.status_code == 422 and "feature is off" in r.text, r.text
+    _set_flags(screener_legends_lg3=True, screener_fundamentals=False)
+    r = client.post("/api/screener/library/confluence", headers=headers,
+                    json={"screens": ["legends.graham_number_value", "starter.momentum"], "symbols": symbols})
+    assert r.status_code == 422 and "screener_fundamentals" in r.text, r.text
+
+
+def test_paths_that_do_not_load_fundamentals_refuse_them_with_the_reason():
+    from app.charts import studies
+    row = studies.check(["GrahamNumber()"], "1d")[0]
+    assert not row["ok"] and any("chart study does not load" in p["message"] for p in row["problems"])
+    assert studies.check(["SMA(close, 20)"], "1d")[0]["ok"]
+
+
+def test_screen_history_and_rank_by_refuse_fundamentals_they_do_not_load():
+    """Screen history (as-of runs, backtests) and a backtest's rank_by read end-of-day bars only - a fundamentals function
+    is refused with the reason (as the market-zone functions are), never run as NaN on every date."""
+    from tests.test_n1_e1_execution_core import _flag
+    from tests.test_n3_s6b_backtest import SCREEN, _org, _symbols
+    t = _org("lg3hist")
+    _flag("screener_fundamentals", t["tenant_id"])                   # the flag gate passes: the refusal is history's own
+    frames, days = _symbols(2)
+    base = {"start": str(days[110]), "end": str(days[150]), "universe": {"symbols": list(frames)}}
+    r = client.post("/api/screener/history/backtest", headers=t["headers"], json={**base, "source": "close < GrahamNumber()"})
+    assert r.status_code == 422 and "GrahamNumber() need data it does not load" in r.text, r.text
+    r = client.post("/api/screener/history/backtest", headers=t["headers"],
+                    json={**base, "source": SCREEN, "top_n": 1, "rank_by": "EarningsYield()"})
+    assert r.status_code == 422 and "rank_by: EarningsYield() cannot be read" in r.text, r.text
+    assert client.post("/api/screener/history/backtest", headers=t["headers"],
+                       json={**base, "source": SCREEN, "top_n": 1, "rank_by": "PctChange(close, 20)"}).status_code == 200

@@ -1461,6 +1461,14 @@ see later restatements and later reports, so it is never read by a screen. LG3 a
   - Trailing = four consecutive quarters, or else the last year. Missing, non-positive or stale data (over 456 days)
     gives NaN.
   - The run path loads them (`RUN_PROVIDES`, `fundamentals.attach`).
+  - Every other path that evaluates a screen loads them the same way or refuses them with the reason:
+    - the library's confluence view and watch lists (TX2) load them as `/run` does, so an LG3 card gives the same
+      matches there (tested); a single screen behind its own flag (an LG2 / LG3 card) is refused there while that
+      flag is off, as `/run` refuses it;
+    - screen history (as-of runs, fitness, backtests), a backtest's `rank_by`, the EV3 evidence replay and chart
+      studies do not load them: refused with the reason, as the market-zone functions are;
+    - ranking-system factors already refuse any function that needs data (`ranking._leaf_refusals`); alert rules
+      refuse them and the bar-close engine pauses a rule whose screen gained one (LG3-3).
   - Z10-a causal cases: a synthetic report timeline built from the bars up to each report, with restatements.
 - **Cards (`slice: lg3`, flag `screener_legends_lg3`, off):**
   - Graham-style net current asset value screen;

@@ -159,6 +159,23 @@ def test_bad_files_are_rejected_clearly():
     assert client.post("/api/contract-notes", headers=headers, files={"file": ("x.csv", b"foo,bar\n1,2\n", "text/csv")}).status_code == 400
     assert client.post("/api/contract-notes", headers=headers, files={"file": ("x.csv", b"   ", "text/csv")}).status_code == 400
     assert client.post("/api/contract-notes", headers=headers, files={"file": ("x.csv", b"\xff\xfe\x00bad", "text/csv")}).status_code == 400
+    # `apply` is parsed strictly: an unknown value is refused, never read as a dry run or as apply.
+    bad = client.post("/api/contract-notes", headers=headers, data={"apply": "maybe"},
+                      files={"file": ("x.csv", ZERODHA_STYLE.encode(), "text/csv")})
+    assert bad.status_code == 422
+
+
+def test_apply_defaults_to_true_and_accepts_false_spellings():
+    """FastAPI >= 0.148 reads a missing `bool` form field as False; the route must still apply by default."""
+    user = _user("cn-apply-default@example.com")
+    _closed_trade(user)
+    headers = _headers(user)
+    for value in ("0", "no", "off", "FALSE"):
+        dry = client.post("/api/contract-notes", headers=headers, data={"apply": value},
+                          files={"file": ("t.csv", ZERODHA_STYLE.encode(), "text/csv")})
+        assert dry.status_code == 200 and dry.json()["applied"] is False, value
+    applied = client.post("/api/contract-notes", headers=headers, files={"file": ("t.csv", ZERODHA_STYLE.encode(), "text/csv")})
+    assert applied.status_code == 200 and applied.json()["applied"] is True and applied.json()["note_id"]
 
 
 def test_contract_notes_are_tenant_scoped_and_trader_only():

@@ -451,3 +451,16 @@ def test_the_library_refuses_rankscore_it_does_not_load(tx2_on, fake_bars):
         assert r.status_code == 422 and "RankScore() is not run in confluence or watch lists" in r.text, r.text
     finally:
         _set_flags(screener_rankings=False)
+
+
+def test_the_library_refuses_ownership_it_does_not_load(tx2_on, fake_bars):
+    """Merge of main into S8: ownership / event functions are refused in confluence and watch lists with the reason
+    (the library runs load bars only), as screen history and alert rules refuse them."""
+    _set_flags(screener_ownership=True)
+    try:
+        headers, _ = _owner("tx2-ownership@example.com")
+        r = client.post("/api/screener/library/watch-trigger", json={"ready": 'Holding("promoter") > 50', "trigger": "close > high[1]",
+                                                                     "symbols": ["UP"]}, headers=headers)
+        assert r.status_code == 422 and "confluence and watch lists do not read ownership or events" in r.text, r.text
+    finally:
+        _set_flags(screener_ownership=False)

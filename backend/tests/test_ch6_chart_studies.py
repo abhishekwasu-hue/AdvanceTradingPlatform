@@ -377,6 +377,34 @@ def test_screener_function_flags_apply_per_study(headers):
         _flags(screener_breakouts=False)
 
 
+OWNERSHIP_STUDIES = ('Holding("promoter")', 'HoldingChange("fii", 2)', 'DaysToEvent("results")')
+
+
+def test_ownership_functions_are_refused_up_front_as_studies():
+    """N3 S8a: a chart study does not load shareholding patterns or events, so Holding / HoldingChange / DaysToEvent are
+    refused at check with the reason - never a runtime "not loaded" error, never NaN values."""
+    rows = S.check([*OWNERSHIP_STUDIES, "SMA(close, 20)", 'Holding("promoter") > 50'], "15m")
+    by = {r["expr"]: r for r in rows}
+    for expr, name in (*zip(OWNERSHIP_STUDIES, ("Holding", "HoldingChange", "DaysToEvent")), ('Holding("promoter") > 50', "Holding")):
+        messages = [p["message"] for p in by[expr]["problems"]]
+        assert not by[expr]["ok"] and f"{name}() needs shareholding patterns and company events" in " ".join(messages), messages
+    assert by["SMA(close, 20)"]["ok"]
+
+
+def test_ownership_studies_are_refused_through_the_api_with_the_flag_off_or_on(headers):
+    params = {"at": _iso(F["bar_end"].iloc[-1]), "start": _iso(F["bar_end"].iloc[300])}
+    try:
+        for on in (False, True):
+            _flags(screener_ownership=on)
+            body = _get(headers, [*OWNERSHIP_STUDIES, "SMA(close, 20)"], **params)
+            by = {st["expr"]: st for st in body["studies"]}
+            for expr in OWNERSHIP_STUDIES:
+                assert not by[expr]["ok"] and by[expr].get("values") is None, (on, by[expr])
+                assert "a chart study does not load yet" in " ".join(p["message"] for p in by[expr]["problems"])
+            assert by["SMA(close, 20)"]["ok"] and by["SMA(close, 20)"]["values"]
+    finally:
+        _flags(screener_ownership=False)
+
 KEY_1M = "NSE:CH6STUDYM"
 
 

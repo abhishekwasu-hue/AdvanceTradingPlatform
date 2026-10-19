@@ -133,6 +133,29 @@ async def _amw_check(session: AsyncSession, user: User, ast: Any, fire_on: str, 
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+def _ownership_check(ast: Any) -> None:
+    """N3 S8a (provisional S8-4): the alert loop does not load ownership or events - a rule using them is refused."""
+    from app.screener import nodes
+    from app.screener import ownership as ownership_gate
+    names = ownership_gate.flagged_calls(nodes.from_json(ast) if isinstance(ast, dict) else ast)
+    if names:
+        why = ownership_gate.elsewhere_refusal(names, "alert rules")
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
+async def _venue_check(session: AsyncSession, user: User, ast: Any, exchange: Optional[str]) -> None:
+    """N3 S8 review (LOW): with `screener_venues` on, a rule's screen or condition is checked against its exchange's
+    data (a field or function the venue lacks would never be true there)."""
+    from app.screener import nodes
+    from app.screener import venues as venue_gate
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    if exchange and await venue_gate.enabled(session, user.tenant_id):
+        missing = venue_gate.unavailable(tree, exchange)
+        if missing:
+            why = "; ".join(missing)
+            raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": m, "pos": None} for m in missing]})
+
+
 def _ranking_check(ast: Any) -> None:
     """N3 S7a (provisional S7-6): the alert loop does not load ranking systems, so a screen rule using RankScore is
     refused (it would never fire) - run it from the Screener instead."""
@@ -154,6 +177,8 @@ async def screen_rule_checks(session: AsyncSession, user: User, ast: Any, fire_o
     await _amw_check(session, user, ast, fire_on, params)
     await _fundamentals_check(ast)
     _ranking_check(ast)
+    _ownership_check(ast)
+    await _venue_check(session, user, ast, exchange)
 
 
 async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[str, Any]:
@@ -186,6 +211,8 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
     await _zone_check(session, user, ast, body.fire_on)
     await _fundamentals_check(ast)
     await _amw_check(session, user, ast, body.fire_on)
+    _ownership_check(ast)
+    await _venue_check(session, user, ast, body.exchange)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
             "universe_json": None, "exchange": body.exchange}
 

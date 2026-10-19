@@ -152,9 +152,12 @@ ZONE_OR_DATA = {"NearZone", "ZoneRole", "ZoneState", "ZoneStrength"}            
 def test_each_declaration_is_what_the_builder_produces():
     """For every registry function with a Z10-a expression on the base timeframe: build a pack of one condition on it
     (5m bars, a chain supplied) and check the drawing kind against the declaration."""
-    from app.quality.causal_cases import _fundamentals_timeline
-    # U7 LG3: the fundamentals functions draw from a point-in-time timeline (the Z10-a stand-in for the store)
-    data = SymbolData("BNTEST", {"5m": M5}, option_chain=_chain(24_000.0), fundamentals=_fundamentals_timeline(M5, "5m"))
+    from app.quality.causal_cases import _fundamentals_timeline, _ownership_timeline
+    # U7 LG3: the fundamentals functions draw from a point-in-time timeline (the Z10-a stand-in for the store). N3 S8a:
+    # so do the ownership and event functions - shareholding patterns and events each known only from the close of the
+    # bar that filed or announced them (the Z10-a stand-in for the shareholding / calendar store)
+    data = SymbolData("BNTEST", {"5m": M5}, option_chain=_chain(24_000.0), fundamentals=_fundamentals_timeline(M5, "5m"),
+                      ownership=_ownership_timeline(M5, "5m"))
     wrong = []
     checked = 0
     for name, exprs in SCREENQL_SERIES.items():
@@ -368,10 +371,12 @@ def test_replay_refusals_flag_and_tenancy(stored):
 def test_replay_refuses_what_would_not_be_the_screens_own_computation(stored):
     headers, me, _rid, _pack, frame, _ = stored
     for src, why in (("PercentileRank(close) > 50", "cross-sectional"), ('NearZone("demand", 0.5)', "market-zone"),
-                     ("close < GrahamNumber()", "fundamentals conditions are not replayed")):          # U7 LG3
+                     ("close < GrahamNumber()", "fundamentals conditions are not replayed"),           # U7 LG3
+                     ('Holding("promoter") > 50', "ownership and event conditions are not replayed")):  # N3 S8a
+        from app.screener.ownership import Ownership
         ast, validated = compile_screen(src, base_tf="1d")
-        pack = ev.build_pack(ast, validated, SymbolData("EVREPLAY", {"1d": frame}, exchange="NSE", fundamentals=[]), base_tf="1d", debug=True,
-                             exchange="NSE")
+        pack = ev.build_pack(ast, validated, SymbolData("EVREPLAY", {"1d": frame}, exchange="NSE", fundamentals=[], ownership=Ownership([], [])),
+                             base_tf="1d", debug=True, exchange="NSE")
 
         async def go():
             async with _session_factory() as session:

@@ -152,6 +152,10 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ZoneRole": ["ZoneRole(0.5)", "ZoneRole(1.0)@1h"],
     "ZoneState": ['ZoneState("any", 1.0)', 'ZoneState("demand", 0.8, "levels")@1h'],
     "ZoneStrength": ['ZoneStrength("any", 1.0)', 'ZoneStrength("supply", 2.0)@1h'],
+    # N3 S8a: ownership and events - the case builds a causal timeline of patterns and events from the bars (_ownership_timeline)
+    "Holding": ['Holding("promoter")', 'Holding("pledge")@1h', 'Holding("fii")[2]'],
+    "HoldingChange": ['HoldingChange("promoter", 1)', 'HoldingChange("dii", 2)@1h'],
+    "DaysToEvent": ['DaysToEvent("results")', 'DaysToEvent("any")@1h', 'DaysToEvent("ex_date") <= 5'],
     # U7 LG3: point-in-time fundamentals - the case builds a causal timeline of reports from the bars (_fundamentals_timeline)
     "EPSGrowthYoY": ["EPSGrowthYoY()", "EPSGrowthYoY()@1h"],
     "SalesGrowthYoY": ["SalesGrowthYoY()"],
@@ -197,9 +201,59 @@ def _screenql(text: str, base_tf: str = BASE_TF):
                 for node in nodes.walk(ast))
     if zones:
         return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}, zones=_zone_timeline(f, base_tf)), base_tf=base_tf)
-    if any(isinstance(node, nodes.Call) and "fundamentals" in getattr(FUNCTIONS.get(node.name), "needs", ()) for node in nodes.walk(ast)):
-        return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}, fundamentals=_fundamentals_timeline(f, base_tf)), base_tf=base_tf)
+    needs = {need for node in nodes.walk(ast) if isinstance(node, nodes.Call) for need in getattr(FUNCTIONS.get(node.name), "needs", ())}
+    if needs & {"ownership", "fundamentals"}:
+        # N3 S8a / U7 LG3: each data family the expression reads gets its causal timeline built from the bars
+        def run(f: pd.DataFrame) -> Any:
+            extra: Dict[str, Any] = {}
+            if "ownership" in needs:
+                extra["ownership"] = _ownership_timeline(f, base_tf)
+            if "fundamentals" in needs:
+                extra["fundamentals"] = _fundamentals_timeline(f, base_tf)
+            return evaluate(ast, SymbolData("S", {base_tf: f}, **extra), base_tf=base_tf)
+        return run
     return lambda f: evaluate(ast, SymbolData("S", {base_tf: f}), base_tf=base_tf)
+
+
+OWNERSHIP_EVERY = 30             # bars between the synthetic shareholding patterns
+EVENT_EVERY = 12                 # bars between the synthetic event announcements
+
+
+def _ownership_timeline(f: pd.DataFrame, tf: str) -> Any:
+    """N3 S8a: a stand-in for the shareholding patterns and the event calendar - a pattern is published at the close of
+    every 30th bar for the "quarter" that ended 21 days before, its stakes built ONLY from the bars up to it; every 3rd
+    one also corrects the pattern before (a second row for that quarter, known from its own close). An event of a
+    rotating kind is announced at the close of every 12th bar for a day 2-11 days ahead (from that bar's close price).
+    Like the store, each row is known from its `known_from` on; the case proves no bar sees a row from after its close."""
+    from datetime import timedelta
+
+    from app.screener.ownership import EVENT_KINDS, Event, Ownership, Pattern
+    from app.screener.runtime import bar_close
+    if not len(f):
+        return Ownership([], [])
+    closes = pd.DatetimeIndex(bar_close(f.index, tf))
+    c = f["close"].astype(float).to_numpy()
+    v = f["volume"].astype(float).to_numpy()
+    patterns: List[Any] = []
+    events: List[Any] = []
+    kinds = [k for k in EVENT_KINDS if k != "any"]
+    for i in range(len(f)):
+        at = pd.Timestamp(closes[i]).to_pydatetime()
+        day = pd.Timestamp(closes[i]).tz_convert("Asia/Kolkata").date()
+        if (i + 1) % OWNERSHIP_EVERY == 0:
+            w = slice(max(0, i - OWNERSHIP_EVERY + 1), i + 1)
+            promoter = 40.0 + float(c[w].mean()) % 20.0
+            stakes: Dict[str, Optional[float]] = {"promoter": promoter, "pledge": float(v[w].std() % 10.0), "fii": 15.0 + float(c[i]) % 10.0,
+                      "dii": 10.0 + float(v[i]) % 7.0, "public": max(0.0, 100.0 - promoter - 30.0)}
+            q_end = day - timedelta(days=21)
+            patterns.append(Pattern(q_end, at, stakes))
+            if len(patterns) % 3 == 0 and len(patterns) >= 2:
+                prev = patterns[-2]
+                patterns.append(Pattern(prev.quarter_end, at, {**prev.stakes, "promoter": (prev.stakes["promoter"] or 0.0) + 0.5}))
+        if (i + 1) % EVENT_EVERY == 0:
+            events.append(Event(kinds[(i // EVENT_EVERY) % len(kinds)], day + timedelta(days=2 + int(c[i]) % 10), at))
+    return Ownership(patterns, events)
+
 
 
 FUND_REPORT_EVERY = 40            # bars between the synthetic quarterly reports

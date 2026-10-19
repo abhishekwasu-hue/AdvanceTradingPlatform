@@ -146,6 +146,10 @@ FUNDAMENTALS_FLAG = "screener_fundamentals"   # U7 LG3: point-in-time fundamenta
 _FDOC = (" - point in time: the reported figures known by the bar's close (published, never a later restatement);"
          " NaN when missing or older than a year and a quarter")
 RANKINGS_FLAG = "screener_rankings"   # N3 S7a: RankScore (app/screener/ranking.py)
+OWNERSHIP_FLAG = "screener_ownership"  # N3 S8a: ownership and event functions (app/screener/ownership.py)
+_ODOC = (" - point in time: the rows known by the bar's close (from the day after their cited publication, else from when"
+         " they were stored); NaN when none is known")
+_HOLDER = Arg("holder", STR, "promoter", False, choices=("promoter", "pledge", "fii", "dii", "public"))
 _ZROLE = Arg("role", STR, "any", False, choices=("any", "demand", "supply"))
 _ZTOL = Arg("tolerance_pct", NUM, 0.5, False)
 _ZFAMILY = Arg("family", STR, "all", False, choices=("all", "zones", "levels"))
@@ -399,6 +403,17 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          needs=("zones",), flag=ZONES_FLAG, doc="FRESH / TESTED / FLIPPED: that zone's lifecycle state (missing when there is none)" + _ZDOC),
     Spec("ZoneStrength", "factor", NUM, "index", (_ZROLE, _ZTOL, _ZFAMILY), cost=3.0, min_bars=1, needs=("zones",), flag=ZONES_FLAG,
          doc="0-100 strength of that zone (family, timeframe, state, touches; NaN when there is none)" + _ZDOC),
+    # N3 S8a: ownership and events (category E; flag screener_ownership, off by default) - research only, places no orders
+    Spec("Holding", "factor", NUM, "pct", (_HOLDER,), cost=2.0, min_bars=1, needs=("ownership",), flag=OWNERSHIP_FLAG,
+         doc="the holder's stake in the latest shareholding pattern, % (pledge: % of promoter shares pledged; stale after 200 days)" + _ODOC),
+    Spec("HoldingChange", "factor", NUM, "pct", (_HOLDER, Arg("quarters", NUM, 1, False, literal_only=True, bounds=(1, 8))), cost=2.0,
+         min_bars=1, needs=("ownership",), flag=OWNERSHIP_FLAG,
+         doc="the holder's stake now minus `quarters` patterns before, percentage points" + _ODOC),
+    Spec("DaysToEvent", "factor", NUM, "count",
+         (Arg("kind", STR, choices=("results", "board_meeting", "agm", "buyback", "dividend", "ex_date", "any")),), cost=2.0, min_bars=1,
+         needs=("ownership",), flag=OWNERSHIP_FLAG,
+         doc="calendar days from the bar's date to the next known event of that kind (0 = that day); ex_date from the lake's"
+             " corporate actions" + _ODOC),
 )}
 
 ZONE_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == ZONES_FLAG)

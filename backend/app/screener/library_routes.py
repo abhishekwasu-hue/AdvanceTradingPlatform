@@ -84,14 +84,19 @@ def _symbols(raw: List[str]) -> List[str]:
     return list(dict.fromkeys(s.strip().upper() for s in raw if s.strip()))
 
 
-async def _compile(session: AsyncSession, user: User, label: str, ast: Any, base_tf: str) -> Any:
-    """A screen's AST (parameters already inlined) -> its validation, refused with the reason like `/run` refuses it."""
+async def _compile(session: AsyncSession, user: User, label: str, ast: Any, base_tf: str, exchange: Optional[str] = None) -> Any:
+    """A screen's AST (parameters already inlined) -> its validation, refused with the reason like `/run` refuses it
+    (N3 S8c: with the venue's field check, as `/run` has it)."""
     _, validated = compile_screen(nodes.to_json(ast), base_tf=base_tf, cost_cap=_cost_cap())
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, exchange=exchange)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": f"{label} did not pass validation",
                                                      "problems": [p.as_dict() for p in validated.problems]})
+    from app.screener import ownership as ownership_gate
     from app.screener import ranking as ranking_gate
+    owned = ownership_gate.flagged_calls(ast)
+    if owned:                 # N3 S8a: as RankScore below - missing_data counts ownership as loaded by /run, not here
+        raise HTTPException(status_code=422, detail=f"{label}: " + ownership_gate.elsewhere_refusal(owned, "confluence and watch lists"))
     if ranking_gate.uses_rankscore(ast):
         # N3 S7a: missing_data counts RankScore's systems as loaded (by /run); the library's runs do not load them, so
         # every symbol would rank NaN - refused with the reason, as screen history refuses it
@@ -173,7 +178,7 @@ async def confluence(body: ConfluenceBody, user: User = Depends(require_trader),
     compiled: List[Tuple[lib.Resolved, Any, Any]] = []
     for s in screens:
         ast = lib.inline_params(parse(s.text), s.params)
-        compiled.append((s, ast, await _compile(session, user, s.name, ast, s.base_tf)))
+        compiled.append((s, ast, await _compile(session, user, s.name, ast, s.base_tf, body.exchange)))
     symbols = _symbols(body.symbols)
     by_tf: Dict[str, Dict[str, int]] = {}
     for s, _, validated in compiled:
@@ -278,9 +283,9 @@ async def watch_trigger(body: WatchBody, user: User = Depends(require_trader), s
     ready = lib.inline_params(_parsed("ready", ready_text), params)
     trigger = lib.inline_params(_parsed("trigger", trigger_text), params)
     transition = lib.transition_ast(ready, trigger)
-    ready_v = await _compile(session, user, "the ready condition", ready, base_tf)
-    await _compile(session, user, "the trigger condition", trigger, base_tf)
-    transition_v = await _compile(session, user, "the transition", transition, base_tf)
+    ready_v = await _compile(session, user, "the ready condition", ready, base_tf, body.exchange)
+    await _compile(session, user, "the trigger condition", trigger, base_tf, body.exchange)
+    transition_v = await _compile(session, user, "the transition", transition, base_tf, body.exchange)
     lookback: Dict[str, int] = {}
     _merge(lookback, ready_v.fetch_lookback)
     _merge(lookback, transition_v.fetch_lookback)

@@ -280,6 +280,14 @@ FEATURE_FLAGS: Dict[str, str] = {
     # rank a universe 0-100 with every component shown; a column, a sort key (the S6b backtest's rank_system) and a filter
     # (ScreenQL RankScore("name") > 80). Platform systems with documented formulas. OFF: the routes answer 503 and a screen
     # using RankScore is refused with the reason. Information only - places nothing.
+    # N3 S8a: ownership and events in ScreenQL (category E) - Holding / HoldingChange from the shareholding patterns and
+    # DaysToEvent from the results / board-meeting / AGM / buyback / dividend calendar and the lake's ex-dates, each as
+    # known by the bar's close (point in time). OFF: a screen using them is refused with the reason. Information only.
+    # N3 S8c: the per-venue field-availability matrix - a screen run on a venue whose data lacks a field (oi) or a data
+    # family (reference lists, ownership, option chains) is refused with where it is available; GET /api/screener/venues
+    # gives the matrix. OFF: runs behave as before and the route answers 503.
+    "screener_venues": "Screener venue matrix: refuse fields and functions a venue's data does not carry, and list what each venue supports",
+    "screener_ownership": "Ownership and event screens: promoter / pledge / FII / DII stakes and their changes, days to results, board meetings and ex-dates (point in time; information only)",
     "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",

@@ -321,6 +321,13 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
             # them after the rule was made pauses with the reason (stays active) instead of failing on every symbol
             rule.last_problem = fundamentals_gate.alert_refusal(fund_calls)
             return "unsupported", 0
+        from app.screener import ownership as ownership_gate
+        owned = ownership_gate.flagged_calls(ast)
+        if owned:
+            # N3 S8a (OPEN_QUESTIONS S8-4): nor does it read ownership or events - a saved screen edited to use them after
+            # the rule was made pauses with the reason (stays active) instead of failing on every symbol with "not loaded"
+            rule.last_problem = ownership_gate.elsewhere_refusal(owned, "alert rules")
+            return "unsupported", 0
         from app.screener import amw_functions as amw_gate
         amw_calls = amw_gate.flagged_calls(ast, params)
         if amw_calls and not amw_enabled:

@@ -1643,6 +1643,52 @@ tree of weighted factors that ranks a universe 0-100, with every component shown
 - LOW: no '/' in node names; sector ranges follow the ISIN the symbol had in each period; factors longer than the
   fetch window are refused; editing a screen that an alert rule runs is checked against that rule; archiving frees the
   name; the result cache key carries the ranking trees.
+
+## N3 S8a (built): ownership and events, category E (flag `screener_ownership`, off; needs `screener_v2`)
+
+Spec §2.4 category E, the first S8 slice (H crypto and I global follow, S8-6). Three ScreenQL functions
+(`app/screener/ownership.py`, `needs: ownership`):
+- `Holding(holder)`: promoter / pledge / fii / dii / public stake in the latest shareholding pattern, %;
+- `HoldingChange(holder, quarters=1)`: that stake minus the one `quarters` (1-8) patterns before, percentage points;
+- `DaysToEvent(kind)`: calendar days to the next results / board_meeting / agm / buyback / dividend / ex_date / any event.
+
+Examples: promoter stake up `HoldingChange("promoter") > 0`; pledge down `HoldingChange("pledge") < 0`; FII / DII
+accumulation `HoldingChange("fii", 1) > 0.5`; results this week `DaysToEvent("results") <= 7`; upcoming ex-date
+`DaysToEvent("ex_date") <= 5`.
+
+- **Point in time.** Every row carries when it became known (`known_from`, S8-1): the day after its cited publication,
+  else when it was stored; a correction from its own time; lake ex-dates from their ingestion. A bar sees only the rows
+  known by its close, so a value never changes when later bars or rows are added. Tests: hand-built timelines,
+  corrections, staleness (S8-2), cut bars equal the full series, later rows change nothing; Z10-a causal cases with a
+  timeline built only from the bars up to each row.
+- **Data.** Shared reference data only: `shareholding_snapshots`, `earnings_calendar_events` (append-only) and
+  `md_corporate_actions`, read once per run for the universe (`ownership.load`). No organisation's own rows.
+- **Run path.** `/run` attaches the rows known now (`RUN_PROVIDES` gains `ownership`). Screen history and alert rules
+  refuse the functions with the reason (S8-4). Flag off: the registry hides them and a screen using one is refused.
+- **Not offered** (no data yet, S8-3): mutual funds separately, SAST / insider, bulk / block deals, index-inclusion
+  candidates. No migration, no new route. Information only: nothing is placed.
+
+## N3 S8c (built): one engine per venue, the field-availability matrix (flag `screener_venues`, off)
+
+Spec §2.4 category I. `app/screener/venues.py` lists each venue (NSE, BSE, NFO, BFO, MCX, CDS; crypto listed, not
+runnable) with its bar fields, the data families (`Spec.needs`) its data carries and its session clock (S8-7).
+- With the flag on, `/run` and `/validate` (given `exchange`) refuse a field or function the venue's data does not
+  carry, naming the venues that have it ("oi: NSE cash equities data has no oi (it is on NFO, BFO, MCX, CDS)").
+  Off, nothing changes.
+- `GET /api/screener/venues` (member, tenancy table) gives the matrix: per venue its fields, data families, the
+  registry functions it can run and those it cannot.
+- The same engine runs every venue; the venue's clock already drives the session functions (U6 BK2). Category H
+  (crypto derivatives screens) waits for a funding / OI / liquidation feed (S8-6).
+- No migration. Information only.
+
+### Review of S8 (fixed / noted)
+- MED-1: corrections are known from when they were stored, never earlier; deterministic order (stored time, id);
+  "as published" semantics documented and tested with a backfill (S8-8). HIGH-1 (cross-organisation rows) waits for the
+  main fix (S8-9).
+- LOW: ex-dates de-duplicated per (symbol, ex-date, action) from the first version; DaysToEvent vectorised (tested
+  against the bar-by-bar rule); the S8c venue check also covers alert rules (screen and instrument) and ranking
+  factors. As-of company / symbol mapping stays with S8-1.
+
 ## S10 (Phase 0 slice, built): the ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
 
 Source: SCREENER_SPEC §5 S10 ("J (ETF/MF), SMS/WhatsApp, mobile push, marketplace") within ATP_PHASE0_FREEZE (no

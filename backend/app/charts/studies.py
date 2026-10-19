@@ -111,6 +111,7 @@ def check(exprs: Sequence[str], tf: str, functions: Optional[Dict[str, Any]] = N
     registry view to check against (AMW-3 review: the flag-off view while `screenql_amw_functions` is off)."""
     from app.screener import fundamentals as fundamentals_gate
     from app.screener import nodes
+    from app.screener import ownership as ownership_gate
     from app.screener.parser import ScreenQLSyntaxError, parse
     from app.screener.routes import missing_data
     from app.screener.validator import validate_study
@@ -132,6 +133,10 @@ def check(exprs: Sequence[str], tf: str, functions: Optional[Dict[str, Any]] = N
         problems = [p.as_dict() for p in sc.validated.problems]
         problems += [{"message": f"{m}() needs data a chart study does not load (sector / index / F&O lists or the option chain)", "pos": None}
                      for m in missing_data(ast)]
+        # N3 S8a: /run loads the shareholding patterns and events, a chart study does not - refused up front with the
+        # reason whether `screener_ownership` is on or off (never drawn as NaN, never a runtime "not loaded" error)
+        problems += [{"message": f"{m}() needs shareholding patterns and company events, which a chart study does not load yet",
+                      "pos": None} for m in ownership_gate.flagged_calls(ast)]
         # U7 LG3: /run loads the point-in-time fundamentals, a chart study does not - refused with the reason
         problems += [{"message": f"{m}() needs company fundamentals, which a chart study does not load yet", "pos": None}
                      for m in fundamentals_gate.flagged_calls(ast)]

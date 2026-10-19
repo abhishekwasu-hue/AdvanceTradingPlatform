@@ -35,6 +35,8 @@ from app.screener import legends as lg
 from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
+from app.screener import ownership as ownership_gate
+from app.screener import venues as venue_gate
 from app.screener import fundamentals as fundamentals_gate
 from app.screener.breakouts import gate as breakout_gate
 from app.core.rate_limit import user_rate_limit
@@ -61,9 +63,9 @@ async def charge_runs(user: User, units: int) -> None:
     await charge_user(RUN_BUCKET, user.id, RUN_LIMIT, RUN_WINDOW, units)
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
-# U7 LG3: and the point-in-time fundamentals. N3 S7a: and the ranking systems a RankScore names (loaded by the route,
-# with the sectors a sector-neutral one needs).
-RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals", "rankings"})
+# U7 LG3: and the point-in-time fundamentals. N3 S8a: and the ownership patterns and events known by each bar's close.
+# N3 S7a: and the ranking systems a RankScore names (loaded by the route, with the sectors a sector-neutral one needs).
+RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals", "ownership", "rankings"})
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -91,6 +93,8 @@ class ValidateBody(BaseModel):
     source: Union[str, Dict[str, Any]] = Field(description="ScreenQL text or the builder's JSON tree")
     base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
     params: Dict[str, Union[float, int, str, bool]] = Field(default_factory=dict)
+    exchange: Optional[str] = Field(default=None, pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$",
+                                    description="N3 S8c: check the screen against this venue's data (flag screener_venues)")
 
 
 class ScreenBody(ValidateBody):
@@ -145,6 +149,14 @@ async def _flags_off(session: AsyncSession, user: User) -> set:
     """The registry's function flags that are off for the user's organisation."""
     flags = {f for spec in FUNCTIONS.values() for f in (spec.flag, *spec.also_flags) if f}
     return {f for f in flags if not await flag_enabled(session, f, user.tenant_id)}
+
+
+@router.get("/venues")
+async def venues(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """N3 S8c: the field-availability matrix - per venue its bar fields, data families and the functions it can run."""
+    await _flag(session, user)
+    await require_flag(session, venue_gate.FLAG, user.tenant_id)
+    return venue_gate.matrix()
 
 
 @router.get("/taxonomy")
@@ -250,21 +262,23 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""
     await _flag(session, user)
     ast, validated = _compiled(body.source, body.base_tf, body.params)
-    await _gate(session, user, ast, validated, body.params)
+    await _gate(session, user, ast, validated, body.params, getattr(body, "exchange", None))
     return _view(ast, validated)
 
 
-async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None) -> None:
+async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None,
+                exchange: Optional[str] = None) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
     screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`),
-    the U7 LG3 fundamentals functions (`screener_fundamentals`), the AMW-3 functions, v2 candles and confirmation
-    statuses (`screenql_amw_functions`; `params` resolves a `$parameter` pattern name) and N3 S7a's RankScore
+    the U7 LG3 fundamentals functions (`screener_fundamentals`), N3 S8a's ownership functions (`screener_ownership`), the
+    AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves a `$parameter`
+    pattern name), N3 S8c's venue matrix (`screener_venues`, with an exchange) and N3 S7a's RankScore
     (`screener_rankings`; a system it names must be a platform one or this organisation's own). With the AMW-3 flag off,
     Pattern* mistakes get main's messages (`amw_gate.flag_off_validation`). Every gate runs; RankScore's check is last
     so its early return skips none."""
     if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
         amw_gate.flag_off_validation(ast, validated, params or {})
-    for gate in (breakout_gate, zone_gate, fundamentals_gate):
+    for gate in (breakout_gate, zone_gate, fundamentals_gate, ownership_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
@@ -273,15 +287,27 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
     if amw_blocked:
         validated.ok = False
         validated.problems.append(Problem(amw_gate.refusal(amw_blocked)))
+    if exchange and ast is not None and await venue_gate.enabled(session, user.tenant_id):
+        missing = venue_gate.unavailable(ast, exchange)          # N3 S8c: what this venue's data does not carry
+        if missing:
+            validated.ok = False
+            validated.problems.extend(Problem(m) for m in missing)
     if ranking_gate.uses_rankscore(ast):
         if not await ranking_gate.enabled(session, user.tenant_id):
             validated.ok = False
             validated.problems.append(Problem(ranking_gate.refusal()))
             return
-        _, problems = await ranking_gate.resolve(session, user.tenant_id, ranking_gate.names_in(ast, params))
+        found, problems = await ranking_gate.resolve(session, user.tenant_id, ranking_gate.names_in(ast, params))
         if problems:
             validated.ok = False
             validated.problems.extend(Problem(p) for p in problems)
+        if exchange and await venue_gate.enabled(session, user.tenant_id):
+            # re-check of S8: a named system's factors read this venue's data too - the same venue check as the screen's
+            for name, system in found.items():
+                for leaf in system.leaves():
+                    for m in venue_gate.unavailable(leaf.ast, exchange):
+                        validated.ok = False
+                        validated.problems.append(Problem(f'RankScore("{name}"), factor "{leaf.name}" - {m}'))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -555,7 +581,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, base_tf, params)
-    await _gate(session, user, ast, validated, params)
+    await _gate(session, user, ast, validated, params, body.exchange)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     missing = missing_data(ast)
@@ -574,6 +600,8 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
         await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
+    if ownership_gate.flagged_calls(ast):         # N3 S8a: the shareholding patterns and events known by each bar's close
+        await ownership_gate.attach(session, universe, body.exchange, datetime.now(timezone.utc), viewer=user.tenant_id)
     systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests

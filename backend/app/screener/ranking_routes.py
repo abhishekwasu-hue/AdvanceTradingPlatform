@@ -190,6 +190,11 @@ async def run_system(body: RunBody, user: User = Depends(require_trader), sessio
     import asyncio
     await _flags(session, user)
     system = await _system(session, user, body)
+    from app.screener import venues as venue_gate
+    if await venue_gate.enabled(session, user.tenant_id):            # N3 S8 review (LOW): the factors against the venue's data
+        missing = [m for leaf in system.leaves() for m in venue_gate.unavailable(leaf.ast, body.exchange)]
+        if missing:
+            raise HTTPException(status_code=422, detail="; ".join(dict.fromkeys(missing)))
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
     tier: Dict[str, Any] = {}
     universe, problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, "1d", {"1d": system.lookback},

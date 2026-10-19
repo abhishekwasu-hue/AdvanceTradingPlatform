@@ -98,6 +98,10 @@ async def _screen(session: AsyncSession, user: User, body: Screen) -> Tuple[Any,
     from app.screener import fundamentals as fundamentals_gate
     from app.screener import ranking as ranking_gate
     from app.screener import zones as zone_gate
+    from app.screener import ownership as ownership_gate
+    owned = ownership_gate.flagged_calls(ast)
+    if owned:                                     # N3 S8a (provisional S8-4): history does not load ownership / events yet
+        raise HTTPException(status_code=422, detail=ownership_gate.elsewhere_refusal(owned, "screen history runs"))
     if ranking_gate.uses_rankscore(ast):
         # N3 S7a (provisional S7-5): history runs RankScore as the backtest's sort key (rank_system), not inside a screen yet
         raise HTTPException(status_code=422, detail="screen history does not run RankScore() inside a screen yet: rank the backtest's "
@@ -394,6 +398,7 @@ async def _backtest_trials(session: AsyncSession, tenant_id: int, since: datetim
 async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_validated: Any, params: Dict[str, Any]) -> None:
     """Review of S6b (MED): rank_by passes the gates a screen passes - the flagged families (breakouts, zones...), the
     data the history run does not load, the last-bar-only functions (no series to read back) - and must be a number."""
+    from app.screener import ownership as ownership_gate
     from app.screener import fundamentals as fundamentals_gate
     from app.screener import zones as zone_gate
     from app.screener.registry import NUM
@@ -403,6 +408,9 @@ async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_val
     problems = [p.message for p in probe.problems if p.message != NOT_A_CONDITION]
     if problems:
         raise HTTPException(status_code=422, detail="rank_by: " + "; ".join(problems))
+    owned = ownership_gate.flagged_calls(rank_ast)
+    if owned:       # review of S8 (LOW): missing_data counts ownership as loaded (by /run); history does not load it - as _screen
+        raise HTTPException(status_code=422, detail="rank_by: " + ownership_gate.elsewhere_refusal(owned, "screen history runs"))
     extra = (missing_data(rank_ast) + zone_gate.flagged_calls(rank_ast) + fundamentals_gate.flagged_calls(rank_ast)
              + H.last_bar_only_calls(rank_ast))
     if extra:

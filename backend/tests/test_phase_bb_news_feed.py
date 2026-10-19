@@ -353,3 +353,27 @@ def test_worker_fetches_on_cadence_only_when_the_flag_is_on(monkeypatch):
     third = _run(worker.run_cycle(now=closed + timedelta(minutes=16)))
     assert third.news_items == 0 and len(calls) == 2                                   # fetched again, all duplicates
     assert not first.errors and not third.errors
+
+
+def test_the_ai_one_liner_passes_the_english_output_filter_before_the_push(monkeypatch):
+    """Review of #273 (N2): the AI's one-line summary goes through the same English output filter as every AI text.
+    Withheld (advice, Hinglish advice, another script) -> "" at parse time, and the push carries the headline only."""
+    rows = [{"id": i, "type": "RATE_DECISION", "scope": ["INDEX"], "direction": "BULLISH", "severity": 4, "horizon": "DAYS", "confidence": 0.8,
+             "one_line_en": line} for i, line in enumerate(["RBI cut the repo rate by 25 bps.", "Banks will rally - buy now, guaranteed.",
+                                                            "RELIANCE abhi kharido, pakka profit hai.", "\u0926\u0930 \u0915\u092a\u093e\u0924"], 1)]
+    parsed = cl.parse_ai(json.dumps(rows), allowed_ids={1, 2, 3, 4})
+    assert parsed[1]["one_line_en"] == "RBI cut the repo rate by 25 bps."
+    assert parsed[2]["one_line_en"] == parsed[3]["one_line_en"] == parsed[4]["one_line_en"] == ""
+    sent = []
+
+    async def fake_notify(session, tenant_id, kind, *, title, message, severity):
+        sent.append((title, message))
+    monkeypatch.setattr(nf, "notify", fake_notify)
+    row = NewsEventRecord(category="OTHER", headline="RBI policy today", event_date=date(2026, 10, 8), affected_symbols_json="[]", sentiment="Neutral",
+                          source_json="{}", feed_id="rbi_press", source_url="https://www.rbi.org.in/pr/1")
+    stored = {"method": "ai", "severity": 4, "one_line_en": "Buy now, banks will rally. Guaranteed."}      # a row stored before the filter
+    assert _run(nf.alert_tenants(None, row, stored, [1])) == 1
+    title, message = sent[-1]
+    assert "RBI policy today" in title and message.startswith("Source: ") and "Guaranteed" not in message     # headline only
+    _run(nf.alert_tenants(None, row, {**stored, "one_line_en": "RBI cut the repo rate by 25 bps."}, [1]))
+    assert sent[-1][1].startswith("RBI cut the repo rate by 25 bps.\nSource: ")

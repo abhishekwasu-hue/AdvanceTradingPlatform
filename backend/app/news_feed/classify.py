@@ -100,6 +100,17 @@ SYSTEM_PROMPT = (
 )
 
 
+def screen_one_line(text: str) -> str:
+    """The AI's one-line summary through the same English output filter as every AI text (review of #273, N2): a line
+    that is not plain English, or carries advice / guarantee words or a trade call, is withheld - "" (the alert then
+    carries the headline only)."""
+    from app.ai import output_filter
+    if not (text or "").strip():
+        return ""
+    ok, shown, _why = output_filter.check(text, "en", where="news")
+    return shown if ok and shown else ""
+
+
 def ai_prompt(items: List[dict]) -> str:
     """`items`: [{id, title, published_at}] - every headline inside the untrusted block, escaped."""
     lines = []
@@ -149,7 +160,8 @@ def parse_ai(text: str, allowed_ids: Optional[set] = None) -> Dict[int, dict]:
             confidence = max(0.0, min(1.0, float(row.get("confidence", 0.5))))
         except (TypeError, ValueError):
             confidence = 0.5
+        one_line = screen_one_line(str(row.get("one_line_en", ""))[:160])
         out[item_id] = {"type": kind, "scope": scope, "direction": direction, "severity": _clamp_int(row.get("severity"), 1, 5, 1), "horizon": horizon,
-                        "confidence": round(confidence, 2), "one_line_en": str(row.get("one_line_en", ""))[:160],
+                        "confidence": round(confidence, 2), "one_line_en": one_line,
                         "method": "ai"}
     return out

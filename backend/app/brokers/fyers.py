@@ -34,6 +34,7 @@ import httpx
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
                                 BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, OptionChainRow, Quote)
 from app.core.enums import OrderSide
@@ -440,7 +441,10 @@ class FyersBroker(BrokerInterface):
                                          transaction_type=OrderSide.BUY if int(o.get("side") or 1) > 0 else OrderSide.SELL, quantity=float(o.get("qty") or 0),
                                          filled_quantity=float(o.get("filledQty") or 0), order_type=ORDER_TYPE_BACK.get(int(o.get("type") or 2), str(o.get("type"))),
                                          status=STATUS_MAP.get(int(o.get("status") or 6), "OPEN"), price=float(o.get("limitPrice") or 0) or None,
-                                         average_price=float(o.get("tradedPrice") or 0) or None, placed_at=_parse_time(o.get("orderDateTime"))))
+                                         average_price=float(o.get("tradedPrice") or 0) or None,
+                                         placed_at=parse_broker_timestamp(_parse_time(o.get("orderDateTime"))), tag=o.get("orderTag") or None,
+                                         product=PRODUCT_BACK.get(str(o.get("productType") or "")) or None,
+                                         exchange=_exchange_of(str(o.get("symbol") or ""), o.get("segment")) if o.get("symbol") else None))
         return out
 
     async def get_trade_book(self) -> List[BrokerTradeEntry]:

@@ -5,7 +5,7 @@
  * load renders nothing. A watchlist is a list of names: loading one runs nothing.
  */
 import { useEffect, useState } from "react";
-import { isWatchlists, loadNote, optionLabel, watchlistsApi, type Watchlist, type WatchlistClient } from "./watchlists";
+import { isWatchlists, loadNote, optionLabel, replaceWarning, shownList, watchlistsApi, type Watchlist, type WatchlistClient } from "./watchlists";
 
 interface Props {
   /** The page's current symbols (what "Save as new" and "Replace" store). */
@@ -16,16 +16,18 @@ interface Props {
   label?: string;
   /** Tests and server rendering: the lists to start from (no fetch then). */
   initial?: Watchlist[];
+  /** Tests: the selection to start from (e.g. a list that was just deleted). */
+  initialSelected?: number | "";
   client?: WatchlistClient;
 }
 
 const field = "rounded border border-border bg-surface-2 px-2 py-1 text-xs text-fg focus:outline-none focus:ring-2 focus:ring-brand";
 const button = "rounded border border-border px-2 py-1 text-xs text-fg hover:bg-surface-2 disabled:opacity-50";
 
-export function WatchlistPicker({ symbols, onLoad, max, label = "My watchlists", initial, client = watchlistsApi }: Props) {
+export function WatchlistPicker({ symbols, onLoad, max, label = "My watchlists", initial, initialSelected, client = watchlistsApi }: Props) {
   const [lists, setLists] = useState<Watchlist[] | null>(initial ?? null);
   const [failed, setFailed] = useState(false);
-  const [selected, setSelected] = useState<number | "">(initial?.[0]?.id ?? "");
+  const [selected, setSelected] = useState<number | "">(initialSelected ?? initial?.[0]?.id ?? "");
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +43,9 @@ export function WatchlistPicker({ symbols, onLoad, max, label = "My watchlists",
   }, [client, initial]);
 
   if (failed || lists === null) return null;
-  const chosen = lists.find((w) => w.id === selected);
+  // What the select shows and Load / Replace / Delete act on: the selected list, or the first one when the selection
+  // is gone (deleted, or not loaded yet) - so the select and the buttons never disagree.
+  const chosen = shownList(lists, selected);
 
   async function act(done: string, fn: () => Promise<unknown>) {
     setBusy(true); setError(null); setMessage(null);
@@ -62,7 +66,13 @@ export function WatchlistPicker({ symbols, onLoad, max, label = "My watchlists",
     setSelected(created.id);
     setName("");
   });
-  const replace = () => chosen && act(`Updated "${chosen.name}".`, () => client.update(chosen.id, chosen.name, symbols));
+  const replace = () => {
+    if (!chosen) return;
+    // A shorter list (e.g. the Screener's first 50 of a longer list) would drop symbols: ask first.
+    const warning = replaceWarning(chosen, symbols.length);
+    if (warning && !window.confirm(warning)) return;
+    void act(`Updated "${chosen.name}".`, () => client.update(chosen.id, chosen.name, symbols));
+  };
   const remove = () => {
     if (!chosen || !window.confirm(`Delete the watchlist "${chosen.name}"?`)) return;
     void act(`Deleted "${chosen.name}".`, async () => { await client.remove(chosen.id); setSelected(""); });
@@ -76,7 +86,7 @@ export function WatchlistPicker({ symbols, onLoad, max, label = "My watchlists",
         <p className="text-fg-muted">No watchlists yet. Type symbols, then save them as a list below.</p>
       ) : (
         <div className="flex gap-2">
-          <select id="watchlist-select" className={`${field} min-w-0 flex-1`} value={selected}
+          <select id="watchlist-select" className={`${field} min-w-0 flex-1`} value={chosen?.id ?? ""}
                   onChange={(e) => setSelected(e.target.value ? Number(e.target.value) : "")}>
             {lists.map((w) => <option key={w.id} value={w.id}>{optionLabel(w)}</option>)}
           </select>
@@ -98,7 +108,7 @@ export function WatchlistPicker({ symbols, onLoad, max, label = "My watchlists",
           </div>
           {chosen && (
             <div className="flex flex-wrap gap-2">
-              <button type="button" className={button} disabled={busy} onClick={() => void replace()}>
+              <button type="button" className={button} disabled={busy} onClick={replace}>
                 Replace &quot;{chosen.name}&quot; with these {symbols.length}
               </button>
               <button type="button" className={`${button} text-down`} disabled={busy} onClick={remove}>Delete &quot;{chosen.name}&quot;</button>

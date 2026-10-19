@@ -38,3 +38,14 @@ export const optionLabel = (w: Watchlist) => `${w.name} (${w.symbols.length})`;
 export function splitSymbols(text: string): string[] {
   return text.split(",").map((s) => s.trim().toUpperCase()).filter(Boolean);
 }
+
+/** The list the picker shows and acts on: the selected one, else the first (after a delete, or before any choice). */
+export function shownList(lists: Watchlist[], selected: number | ""): Watchlist | undefined {
+  return lists.find((w) => w.id === selected) ?? lists[0];
+}
+
+/** The question to ask before replacing a stored list with fewer symbols (null when nothing would be dropped). */
+export function replaceWarning(stored: Watchlist, newCount: number): string | null {
+  if (newCount >= stored.symbols.length) return null;
+  return `"${stored.name}" has ${stored.symbols.length} symbols; replacing it keeps only these ${newCount}. Replace anyway?`;
+}

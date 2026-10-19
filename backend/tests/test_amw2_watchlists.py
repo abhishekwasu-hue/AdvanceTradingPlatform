@@ -134,6 +134,12 @@ def test_names_are_unique_per_user():
     rename = client.put(f"{BASE}/{other['id']}", headers=who["headers"], json={"name": "Banks", "symbols": []})
     assert rename.status_code == 409 and "already have a watchlist named" in rename.json()["detail"]
     assert _row(first["id"])[2] == "Banks" and _row(other["id"])[2] == "Autos"
+    # names compare ignoring case, on create and on rename
+    assert _create(who, "banks").status_code == 409 and _create(who, " BANKS ").status_code == 409
+    assert client.put(f"{BASE}/{other['id']}", headers=who["headers"], json={"name": "bAnKs", "symbols": []}).status_code == 409
+    # a list may change the case of its own name
+    recased = client.put(f"{BASE}/{first['id']}", headers=who["headers"], json={"name": "BANKS", "symbols": ["SBIN"]})
+    assert recased.status_code == 200 and recased.json()["name"] == "BANKS"
     # another user may use the same name
     assert _create(_owner("dup2"), "Banks").status_code == 201
 
@@ -256,14 +262,18 @@ def test_plan_limit_applies_when_plan_limits_v2_is_on_and_the_plan_has_the_field
     assert [w["name"] for w in client.get(BASE, headers=who["headers"]).json()] == ["A"]
 
 
-def test_plan_limit_is_skipped_when_the_flag_is_off_or_the_field_is_missing(monkeypatch, plan_flag_cleared):
+def test_plan_limit_is_skipped_when_the_flag_is_off_and_fails_closed_without_the_field(monkeypatch, plan_flag_cleared):
     who = _owner("limit-off")
     monkeypatch.setitem(controls.FEATURE_FLAGS, service.PLAN_FLAG, "plan limits v2 (test)")
     monkeypatch.setattr(service, "get_plan", lambda _plan: SimpleNamespace(id="free", name="Free", max_watchlists=1))
     assert _create(who, "A").status_code == 201 and _create(who, "B").status_code == 201      # flag off for the tenant
     _set_flag(service.PLAN_FLAG, who["tenant_id"])
+    # A plan without the field gets the Free value (fail closed): with 2 lists, 3 more fit, the 6th is refused.
     monkeypatch.setattr(service, "get_plan", lambda _plan: SimpleNamespace(id="free", name="Free"))
-    assert _create(who, "C").status_code == 201                                               # no field on the plan
+    for name in ("C", "D", "E"):
+        assert _create(who, name).status_code == 201, name
+    refused = _create(who, "F")
+    assert refused.status_code == 402 and f"allows {service.FREE_MAX_WATCHLISTS} watchlists; you have 5" in refused.json()["detail"]
 
 
 def test_usage_counter_counts_the_callers_own_lists():

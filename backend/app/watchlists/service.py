@@ -25,6 +25,7 @@ FLAG = "watchlists"
 PLAN_FLAG = "plan_limits_v2"
 NAME_MAX = 60
 MAX_SYMBOLS = 500          # symbols in one list (the Screener runs the first 50 of it; the Scanner takes them all)
+FREE_MAX_WATCHLISTS = 5    # AMW-1's Free value: the limit when the plan has no `max_watchlists` (fail closed)
 MAX_PER_USER = 100         # a hard cap whatever the plan (Business's provisional max_watchlists), so storage stays bounded
 SYMBOL_RE = re.compile(r"^[A-Z0-9&._:-]{1,40}$")
 _SPLIT = re.compile(r"[\s,;]+")
@@ -93,6 +94,15 @@ async def get_own(session: AsyncSession, tenant_id: int, user_id: int, watchlist
     return await session.scalar(select(WatchlistRecord).where(WatchlistRecord.id == watchlist_id, *_own(tenant_id, user_id)))
 
 
+async def name_taken(session: AsyncSession, tenant_id: int, user_id: int, name: str, *, except_id: Optional[int] = None) -> bool:
+    """Names are unique per user ignoring case ("Banks" and "banks" are the same list name). The database constraint is
+    exact; this check runs under the per-user lock the routes take, so two racing saves are checked one after the other."""
+    query = select(WatchlistRecord.id).where(*_own(tenant_id, user_id), func.lower(WatchlistRecord.name) == name.lower())
+    if except_id is not None:
+        query = query.where(WatchlistRecord.id != except_id)
+    return (await session.scalar(query.limit(1))) is not None
+
+
 def new_row(tenant_id: int, user_id: int, name: str, symbols: List[str]) -> WatchlistRecord:
     now = datetime.now(timezone.utc)
     return WatchlistRecord(tenant_id=tenant_id, user_id=user_id, name=name, symbols_json=json.dumps(symbols),
@@ -106,9 +116,9 @@ def apply(row: WatchlistRecord, name: str, symbols: List[str]) -> None:
 
 
 async def check_plan_limit(session: AsyncSession, tenant_id: int, current: int) -> None:
-    """The plan's `max_watchlists` (AMW-1), enforced only while `plan_limits_v2` exists and is on and the plan has the
-    field. Without AMW-1 on main this does nothing: an unknown flag reads as ON in `flag_enabled`, so its existence is
-    checked first.
+    """The plan's `max_watchlists` (AMW-1), enforced only while `plan_limits_v2` exists and is on. Without AMW-1 on main
+    this does nothing: an unknown flag reads as ON in `flag_enabled`, so its existence is checked first. Fails closed: a
+    plan without the field (or with a non-integer value) gets the Free value, FREE_MAX_WATCHLISTS.
 
     TODO(AMW-1): once AMW-1 (`claude/amw-1-plan-limits`) is on main, replace the body with
     `await plan_limits.check_can_add_watchlist(session, await plan_limits.load_tenant(session, tenant_id), current)`.
@@ -116,11 +126,13 @@ async def check_plan_limit(session: AsyncSession, tenant_id: int, current: int) 
     from app.platform.controls import FEATURE_FLAGS, flag_enabled
     if PLAN_FLAG not in FEATURE_FLAGS:
         return
+    if not await flag_enabled(session, PLAN_FLAG, tenant_id):
+        return
     tenant = await plan_limits.load_tenant(session, tenant_id)
     plan = get_plan(tenant.plan)
     allowed = getattr(plan, "max_watchlists", None)
-    if not isinstance(allowed, int) or not await flag_enabled(session, PLAN_FLAG, tenant_id):
-        return
+    if not isinstance(allowed, int) or isinstance(allowed, bool):
+        allowed = FREE_MAX_WATCHLISTS
     plan_limits.ensure_tenant_active(tenant)
     if current >= allowed:
         hint = "" if plan.id == "business" else " Upgrade the plan to add more."

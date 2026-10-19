@@ -70,6 +70,8 @@ async def create_watchlist(body: WatchlistBody, user: User = Depends(get_current
     if current >= service.MAX_PER_USER:
         raise HTTPException(status_code=409, detail=f"at most {service.MAX_PER_USER} watchlists per user - delete one first")
     await service.check_plan_limit(session, tenant_id, current)
+    if await service.name_taken(session, tenant_id, user_id, body.name):
+        raise _duplicate(body.name)
     row = service.new_row(tenant_id, user_id, body.name, body.symbols)
     session.add(row)
     try:
@@ -87,6 +89,10 @@ async def update_watchlist(watchlist_id: int, body: WatchlistBody, user: User = 
     """Replaces the list's name and symbols."""
     await _enabled(session, user)
     row = await _mine(session, user, watchlist_id)
+    # The same per-user lock as a create, so the case-insensitive name check cannot race another save.
+    await session.execute(select(User.id).where(User.id == user.id).with_for_update())
+    if await service.name_taken(session, user.tenant_id, user.id, body.name, except_id=row.id):
+        raise _duplicate(body.name)
     service.apply(row, body.name, body.symbols)
     try:
         await session.commit()

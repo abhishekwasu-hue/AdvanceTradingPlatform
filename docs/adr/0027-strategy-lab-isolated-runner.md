@@ -58,14 +58,17 @@
      across runs.
    - **Recycling does not rely on the runner.** The threat recycling exists for is a compromised supervisor, which
      will not exit when asked. So:
-     - the gateway enforces it by **refusing service**. It keys each runner connection on a value the runner cannot
-       forge: the host-kernel `SO_PEERCRED` pid of the connecting runsc sandbox process, which changes on every
-       container start (or a start record written by the host, like the deploy record). After N runs, or after an
-       abnormal end, the gateway serves no further call from that sandbox, and the family's code modes are
-       "unavailable" until a new sandbox connects. A runner that refuses to exit causes a Lab outage, never
-       continued exposure;
-     - a trusted host-side actor restarts the container: `restart: unless-stopped` after the supervisor exits, plus a
-       host-side timer in the `deploy/atp.sh` agent that stops a runner the gateway has stopped serving;
+     - the gateway enforces it by **refusing service**, keyed on a **start record written by the host** (container id
+       and start time), like the deploy record, which the runner cannot forge. The gateway accepts exactly one runner
+       session per start record, used up on first connect. After N runs, or after an abnormal end, it serves no
+       further call on that session, and the family's code modes are "unavailable" until a fresh start record and a
+       new connection appear. A runner that refuses to exit causes a Lab outage, never continued exposure. (A
+       `SO_PEERCRED` pid is not usable as the key: the gateway's own PID namespace cannot see the runsc sandbox
+       process, so the kernel reports pid 0.)
+     - a trusted host-side actor restarts the container. The host agent in `deploy/atp.sh` first stops the old
+       container (`docker stop`, then `kill`), so the sandbox dies whether or not its supervisor cooperates, and only
+       then writes the new start record, so a dead sandbox cannot race the new one. `restart: unless-stopped` covers a
+       supervisor that exits on its own;
      - the gateway itself has **no Docker socket and no Docker API access**. The Docker socket in a container that
        parses hostile frames would mean root on the host.
 3. **Each run gets a fresh jail and a fresh process** inside the runner (nsjail or bubblewrap, pinned):

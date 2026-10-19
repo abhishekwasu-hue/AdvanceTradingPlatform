@@ -237,7 +237,7 @@ those the larger share whenever they compete. G-10 measures the trading worker's
 | Source | 100,000 characters | API and runner |
 | Contexts per call | 50 (R: 10) | research worker, gateway |
 | Try run | at most 5 symbols, drafts only | API |
-| Container recycle | after 50 runs, and after any abnormal end | gateway refuses further calls from that sandbox (keyed on the host-kernel `SO_PEERCRED` pid of the runsc sandbox); the host-side `deploy/atp.sh` agent and `restart: unless-stopped` restart it. The gateway has no Docker access. |
+| Container recycle | after 50 runs, and after any abnormal end | gateway refuses further calls on that runner session (one session per host-written start record, used up on first connect); the host-side `deploy/atp.sh` agent stops the old container, then writes the new start record. The gateway has no Docker access. |
 
 **Queue fairness.**
 - Queued runs are capped at 3 per user, 10 per tenant and 100 globally.
@@ -270,7 +270,7 @@ The single slot caps the host-wide total at 86,400 slot seconds a day, whatever 
 | RR-6 | An operator with database or host access bypasses `set_flag` by editing the control row | Operators are trusted (X-7) | The run-time re-check (G-12b) refuses without a valid approval bound to the deploy record. Audit logs. Two-person rule. |
 | RR-7 | Results are user-authored and can be misleading (look-ahead is impossible, but bad logic is not) | Research output by design | Labelled as user-supplied research; never trades; the disclaimer is shown |
 | RR-8 | One uid: a namespace escape lands on the supervisor's uid with no second uid barrier | Distinct uids need `CAP_SETUID`/`CAP_SETGID` or a setuid helper, which the runner does not keep | gVisor below; the supervisor's code is root-owned and read-only; concurrency 1; recycle. Accepted. |
-| RR-9 | A compromised runner sees later users' runs until it is recycled | Recycling every run would cost a container start per call | Recycle every 50 runs and after any abnormal end, enforced by the gateway refusing service to that sandbox and by a host-side restart, so a runner that will not exit cannot extend its window (G-8c); a fresh process per run; no pooled workers. Accepted at N = 50. |
+| RR-9 | A compromised runner sees later users' runs until it is recycled | Recycling every run would cost a container start per call | Recycle every 50 runs and after any abnormal end, enforced by the gateway refusing service on that runner session (keyed on a host-written start record) and by a host-side stop and restart, so a runner that will not exit cannot extend its window (G-8c); a fresh process per run; no pooled workers. Accepted at N = 50. |
 | RR-10 | The 8 GB host has no headroom for code modes without a rebalance | Host size | Section 7; LAB-6; R needs a larger host |
 | RR-11 | Abuse through many free or throwaway accounts | Open sign-up | Free plan has no code-mode budget; per-tenant budgets and queue caps; the flag can be scoped to tenants |
 
@@ -324,7 +324,7 @@ host profile (2 vCPU / 8 GB) and the output was attached.
 |---|---|---|---|
 | G-8 | Per-tenant and per-user isolation | Tests with two tenants and two users each | User B gets 404 on user A's strategies, versions, runs, results and logs, whether A is in the same tenant or another one. All Lab routes are classified in `tenancy_route_table.py`. A run's contexts hold only the requester's entitled data. A context cache built from a user's own session is never read for another user. Two users' contexts never share a call. Residue: run A writes to its work directory and run B, afterwards, finds nothing. No compile or byte-code cache is written outside the run's tmpfs: `NODE_COMPILE_CACHE` unset, no `__pycache__` or `PYTHONPYCACHEPREFIX` writes, no R lazy-load or byte-compile cache, no TypeScript output kept. One user's quota cannot be spent by a teammate. |
 | G-8b | No state survives between runs | Tests per language; the recycle counter | Run A changes interpreter state and run B checks it: Python module globals and `sys.modules`; Node globals, `require` cache and prototype pollution (`Object.prototype`, `Array.prototype`); the R global environment and options; Lua globals; SQLite temporary tables. Nothing is visible to run B. Each run is a new process (a different PID namespace and start time). The container is recycled after 50 runs and after any abnormal end. |
-| G-8c | Recycle cannot be refused by a runner | Tests with a runner supervisor patched to ignore the recycle request and stay connected | After 50 runs, and after an abnormal end, the gateway serves no further call from that sandbox (keyed on its host-kernel `SO_PEERCRED` pid, not on anything the runner reports); code modes for that family are "unavailable" until a new sandbox connects. The host-side agent stops and restarts the container. |
+| G-8c | Recycle cannot be refused by a runner | Tests with a runner supervisor patched to ignore the recycle request and stay connected | After 50 runs, and after an abnormal end, the gateway serves no further call on that session (keyed on the host start record, not on anything the runner reports); a second connection on a used start record is refused; code modes for that family are "unavailable" until a fresh start record and a new connection appear. The host-side agent stops the old container before writing the new record. |
 
 **Resources and the trading host**
 
@@ -400,8 +400,10 @@ settled in AMW-19 or AMW-21, before G-1, and the matching G-LAB row is tightened
    hold users' own broker-session bars (BT1b).
 6. **G-13 wording.** The self-test is a liveness signal only. The trust anchors are the deploy record and CI's probe
    run for the same digest; the gateway does not claim to verify the digest the runner ran in.
-7. **`SO_PEERCRED` under runsc.** The peer the gateway sees is the sandbox's host process, not the in-container uid.
-   G-5b defines the expected peer and tests it on the host. G-8c uses the same value.
+7. **`SO_PEERCRED` under runsc.** The peer the gateway sees is the sandbox's host process, not the in-container uid,
+   and its pid reads as 0 from the gateway's PID namespace. G-5b defines what `SO_PEERCRED` can still check (uid and
+   gid) and tests it on the host. Recycling does not use it: G-8c is keyed on the host start record (decision 2).
+   The gateway is never given `pid: host`.
 8. **G-4 and G-2 wording.** Deny `socket()` entirely in the jail; allow `socketpair(AF_UNIX)` only where a worker
    needs it. The socket directory is mounted into the gateway and the runners only, never into the backend or the
    research worker.

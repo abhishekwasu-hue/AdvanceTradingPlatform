@@ -34,7 +34,7 @@ In code, docs and PR titles the Copilot parts are called **H-C1 .. H-C12** (open
 - H-C5 (memory)
 - H-C6 (explain and coach)
 - H-C8 (UX)
-- H-C4 (multi-view analysis)
+- H-C4 (multi-view analysis) - built behind `ai_multiview` (off)
 - H-C7 (retrieval)
 - H-C11 (governance)
 - H-C12 (MCP)
@@ -400,3 +400,54 @@ before H-C2. ADR-0020 (AI evals and governance) comes before H-C10 and H-C11.
   - 59 frontend tests pass and `tsc` is clean.
 - **Headless check.** Against a mocked API: the list renders; "Open" shows the report (DSR 0.31, PBO "n/a" with its
   note); queueing sends one POST with the Lab's symbol; the worker hint shows for an old queued study; no page errors.
+
+## H-C4 (built, flag `ai_multiview` off): multi-view analysis - rules-only wording
+- **`POST /api/ai/analyze`**: `{symbol, exchange, language?}`, for an acknowledged AI user, behind the flags `ai_copilot`
+  and `ai_multiview` (503 while either is off); tenancy S_COPILOT; 8 AI rate units (OPEN_QUESTIONS HC4-1).
+  `language` is accepted and ignored: ATP is English only. Code: `app/ai/multiview.py`.
+- **Views by tools.**
+  - Technical: `get_market_regime` + `get_candles`, daily bars.
+  - Options: `get_option_chain` (PCR, max pain, ATM, the largest OI strikes).
+  - News: `get_news`, the symbol's headlines from the last 24 h. These are untrusted, shown as third-party data and never
+    worded.
+  - Macro: `get_market_snapshot`.
+
+  Each tool call is an `agent_steps` row of one `agent_runs` row (`limits_json.kind = "multiview"`, `max_llm_calls: 0`),
+  and each view keeps its `as_of` and its sources.
+- **Rules-only wording (round cap, 13 Oct - OPEN_QUESTIONS HC4-5).**
+  - The analysis shows only text the platform generates: each view's deterministic `lines` (`report` is their join,
+    `report_source: "rules"`) and `rules_summary`, which gives the situation, the readings that lean up and down, the
+    risks, the possibilities and the claims, with `source: "rules"`.
+  - No model is called and no AI-written text is ever shown: `llm_calls` is 0 and `usage` is empty.
+  - Background: the earlier design let the cheap and strong tiers word the views and the summary, behind a checker of
+    free text. It went through 12 trilingual rounds and then 2 rounds on an English two-layer design (strict word list,
+    fact-bound numbers, a closed vocabulary). Each review still found forecasts composed from allowed words, so the
+    free-text design was retired, together with its checker and tests.
+  - Follow-up: AI ordering. The model may only select and order sentence ids from the rules-generated set; the server
+    validates the ids and otherwise falls back to the rules' order; risk lines are never omissible.
+- **Untrusted strings stay out of the lines.**
+  - The user's symbol is never written into a line.
+  - Cue and sentiment strings from the market memory reach a line only through the closed sentiment vocabulary
+    (RISK_ON / RISK_OFF / NEUTRAL). A global market is named only if it is one of the memory's own markets
+    (`global_cues.MARKETS`).
+- **No action.** The analysis has no model and no tool that writes, so it can neither place an order nor file a proposal
+  (ADR-0006). The answer is "the situation and the possibilities", never advice.
+- **One `Budget`.**
+  - Its 60 s clock starts before the tool reads, and a read is skipped once the time is spent; the answer then carries
+    `limits_note`.
+  - A client that disconnects stops the analysis between reads (`Cancelled`, run outcome `cancelled`, HTTP 499).
+- **UI.** `MultiViewPanel` on Copilot > Ask. It shows:
+  - the symbol and exchange inputs, and progress with Cancel;
+  - the summary with a "From the rules" badge;
+  - the four view cards: report, facts used, headlines as plain text marked third-party, data time and sources;
+  - the disclaimer.
+
+  While the flag is off (503), the panel says the analysis is off.
+- **Tests.** `tests/test_hc4_multiview.py` checks that:
+  - the output equals the rules-generated lines exactly;
+  - no provider is asked for and no LLM call is recorded;
+  - an injected headline stays data;
+  - the retired free-text paths are gone;
+  - the flag, the budget and the gone-client stop work.
+
+  vitest: `copilot/tabs/analyze/multiview.test.ts`. Open questions: HC4-1 to HC4-5.

@@ -38,6 +38,7 @@ import httpx
 
 from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
                                 BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, Quote)
 from app.core.enums import OrderSide
@@ -314,7 +315,8 @@ class CoinDCXBroker(BrokerInterface):
                                  quantity=total, filled_quantity=max(0.0, total - remaining),
                                  order_type={"market_order": "MARKET", "limit_order": "LIMIT", "stop_limit": "SL"}.get(str(o.get("order_type") or ""), str(o.get("order_type") or "")),
                                  status=STATUS_MAP.get(str(o.get("status") or "").lower(), str(o.get("status") or "OPEN").upper()),
-                                 price=_f(o.get("price_per_unit")) or None, average_price=_f(o.get("avg_price")) or None, placed_at=_ms(o.get("created_at")))
+                                 price=_f(o.get("price_per_unit")) or None, average_price=_f(o.get("avg_price")) or None,
+                                 placed_at=parse_broker_timestamp(_ms(o.get("created_at"))), tag=o.get("client_order_id") or None)
 
     # P0.5 / T1: `active_orders` drops an order the moment it fills, so a fill confirmation that only reads it would
     # mistake a filled market order for a missing one. The ids this process placed are kept (most recent 50) and

@@ -128,7 +128,7 @@ _AI_RATE_LIMITS_DEFAULT = {"free": {"user": 60, "tenant": 120}, "pro": {"user": 
 _AI_RATE_WEIGHTS_DEFAULT = {"POST strategist/build": 20, "POST strategist/study": 10, "POST interview/plan": 10, "POST interview/refine": 10,
                             "POST drafts": 5, "POST drafts/{draft_id}/backtest": 5, "POST copilot": 3, "POST ask": 3,
                             "POST market-memory/refresh": 10, "POST plan": 3, "POST read": 3,
-                            "POST support/ask": 1}
+                            "POST support/ask": 1, "POST analyze": 8}
 
 
 def _json_table(name: str, default: dict) -> dict:

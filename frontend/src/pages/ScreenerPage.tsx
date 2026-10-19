@@ -24,6 +24,7 @@ import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
 import { isMirrors, isWatchLists, mirrorsByScreen, type MirrorsResponse, type WatchListsResponse } from "../screener/library";
 import { LibraryTools } from "../screener/LibraryTools";
+import { WatchlistPicker } from "../screener/WatchlistPicker";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 
@@ -74,6 +75,8 @@ export default function ScreenerPage(_props: PageProps) {
   // S10 J (flag `screener_etf`): the ETF screen in a dialog.
   const [etfOn, setEtfOn] = useState(false);
   const [etfOpen, setEtfOpen] = useState(false);
+  // AMW-2 (flag `watchlists`): "My watchlists" in the universe column.
+  const [watchlistsOn, setWatchlistsOn] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
@@ -81,7 +84,8 @@ export default function ScreenerPage(_props: PageProps) {
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
     screenerApi.libraryMirrors().then((m) => setMirrors(isMirrors(m) ? m : null)).catch(() => setMirrors(null));
     screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
-    api.myFeatures().then((f) => setEtfOn(Boolean(f.screener_etf))).catch(() => setEtfOn(false));
+    api.myFeatures().then((f) => { setEtfOn(Boolean(f.screener_etf)); setWatchlistsOn(Boolean(f.watchlists)); })
+      .catch(() => { setEtfOn(false); setWatchlistsOn(false); });
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
@@ -234,6 +238,7 @@ export default function ScreenerPage(_props: PageProps) {
                     placeholder="RELIANCE, TCS, INFY"
                     className="mt-1 w-full resize-y rounded-control border border-border bg-surface-inset px-2 py-1.5 font-mono text-t13 text-fg placeholder:text-fg-muted/60 focus:outline-none focus:ring-2 focus:ring-brand" />
           <p className="mt-1 text-t12 text-fg-muted"><span className="font-mono font-tabular text-fg">{symbols.length}</span> symbols</p>
+          {watchlistsOn && <WatchlistPicker symbols={symbols} max={50} onLoad={(list) => setSymbolsText(list.join(", "))} />}
           </div>
           <div>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-tf">Scan timeframe</label>

@@ -35,6 +35,20 @@ class Plan:
     # P0.8-C: monthly spend on external AI providers (INR) before the tenant falls back to the rule-based provider;
     # 0 = no cap. The operator sets `AI_BUDGET_INR_PRO` / `AI_BUDGET_INR_BUSINESS` to change the defaults.
     ai_monthly_budget_inr: float = 0.0
+    # AMW-1 (docs/design/AMW_PORT.md §4.1): limits for the features the AMW port adds. Enforced only while the
+    # `plan_limits_v2` flag is on (app/plans/limits.py); each later slice reads its own field. The defaults are the
+    # Free values, so a plan that forgets a field is restricted, never unlocked. Personal resources (watchlists,
+    # reports, report schedules, Lab strategies, Lab CPU) are counted per user, like every personal row (BT1b).
+    # Provisional values (open question AMW1-1 in docs/OPEN_QUESTIONS.md): AMW's free / pro / premium tiers mapped onto Free / Pro / Business.
+    max_watchlists: int = 5                # named watchlists per user (AMW-2)
+    max_screen_symbols: int = 50           # symbols in one screener run
+    reports_per_day: int = 10              # reports generated per user per day (AMW-14)
+    report_retention_days: int = 7         # stored reports are deleted after this many days (AMW-14)
+    report_storage_mb: int = 50            # stored report bytes per user (AMW-14)
+    report_schedules: int = 1              # report schedules per user (AMW-15)
+    min_schedule_interval_min: int = 60    # shortest interval a schedule may repeat at (AMW-15)
+    lab_strategies: int = 3                # Strategy Lab strategies per user (AMW-19)
+    lab_cpu_seconds_per_day: int = 300     # sandbox CPU seconds per user per day (AMW-21)
 
 
 def _budget(name: str, default: float) -> float:
@@ -50,6 +64,8 @@ PLANS: Dict[str, Plan] = {
         max_members=1, max_alert_channels=1,
         description="Paper trading only. Try strategies on live market data with one account.",
         max_backtests_per_month=50, max_accounts=1, max_brokers=1, support_level="community",
+        max_watchlists=5, max_screen_symbols=50, reports_per_day=10, report_retention_days=7, report_storage_mb=50,
+        report_schedules=1, min_schedule_interval_min=60, lab_strategies=3, lab_cpu_seconds_per_day=300,
     ),
     "pro": Plan(
         id="pro", name="Pro", max_active_deployments=10, live_trading=True, max_custom_strategies=25,
@@ -58,6 +74,8 @@ PLANS: Dict[str, Plan] = {
         price_monthly=2999.0, price_yearly=29990.0, max_live_strategies=5, max_backtests_per_month=500,
         max_api_calls_per_day=5000, max_accounts=3, max_brokers=2, option_features=True, ai_features=True,
         marketplace_access=True, support_level="email", trial_days=14, ai_monthly_budget_inr=_budget("AI_BUDGET_INR_PRO", 1500.0),
+        max_watchlists=25, max_screen_symbols=500, reports_per_day=200, report_retention_days=90, report_storage_mb=1000,
+        report_schedules=10, min_schedule_interval_min=15, lab_strategies=50, lab_cpu_seconds_per_day=3600,
     ),
     "business": Plan(
         id="business", name="Business", max_active_deployments=50, live_trading=True, max_custom_strategies=200,
@@ -66,6 +84,8 @@ PLANS: Dict[str, Plan] = {
         price_monthly=14999.0, price_yearly=149990.0, max_live_strategies=50, max_backtests_per_month=5000,
         max_api_calls_per_day=100000, max_accounts=20, max_brokers=5, option_features=True, ai_features=True,
         marketplace_access=True, support_level="priority", trial_days=14, ai_monthly_budget_inr=_budget("AI_BUDGET_INR_BUSINESS", 10000.0),
+        max_watchlists=100, max_screen_symbols=2500, reports_per_day=1000, report_retention_days=365, report_storage_mb=5000,
+        report_schedules=50, min_schedule_interval_min=5, lab_strategies=200, lab_cpu_seconds_per_day=18000,
     ),
 }
 

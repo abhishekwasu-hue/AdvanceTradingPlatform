@@ -1443,6 +1443,8 @@ export interface PlanCatalogueEntry {
   price_yearly: number;
   currency: string;
   trial_days: number;
+  /** AMW-1: listed once `plan_limits_v2` is on for every organisation. */
+  limits_v2?: Record<string, number>;
   [limit: string]: unknown;
 }
 
@@ -1484,6 +1486,10 @@ export interface BillingOverview {
   limits: Record<string, unknown>;
   metered_30d: Record<string, number>;
   usage: Record<string, unknown>;
+  /** AMW-1 (flag `plan_limits_v2`): the plan's limits for the AMW port's features; absent while the flag is off. */
+  limits_v2?: Record<string, number>;
+  /** The caller's own usage of each counted v2 limit; null where the feature that owns it is not built yet. */
+  usage_v2?: Record<string, number | null>;
 }
 
 export interface ApiKey {

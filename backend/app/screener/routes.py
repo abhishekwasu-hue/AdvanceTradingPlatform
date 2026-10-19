@@ -30,7 +30,8 @@ from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
 from app.screener import compile_screen, nodes
-from app.screener import legends as lg   # registers the `legends` template source (U7 LG1)
+from app.screener import legends as lg
+from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener.breakouts import gate as breakout_gate
@@ -58,7 +59,8 @@ async def charge_runs(user: User, units: int) -> None:
     await charge_user(RUN_BUCKET, user.id, RUN_LIMIT, RUN_WINDOW, units)
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
-RUN_PROVIDES: frozenset = frozenset({"zones"})
+# N3 S7a: and the ranking systems a RankScore names (loaded by the route, with the sectors a sector-neutral one needs).
+RUN_PROVIDES: frozenset = frozenset({"zones", "rankings"})
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
@@ -185,18 +187,28 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""
     await _flag(session, user)
     ast, validated = _compiled(body.source, body.base_tf, body.params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, body.params)
     return _view(ast, validated)
 
 
-async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
+async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
-    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`) and the Z7a-3 market-zone functions (`market_zones`)."""
+    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`) and
+    N3 S7a's RankScore (`screener_rankings`; a system it names must be a platform one or this organisation's own)."""
     for gate in (breakout_gate, zone_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
             validated.problems.append(Problem(gate.refusal(blocked)))
+    if ranking_gate.uses_rankscore(ast):
+        if not await ranking_gate.enabled(session, user.tenant_id):
+            validated.ok = False
+            validated.problems.append(Problem(ranking_gate.refusal()))
+            return
+        _, problems = await ranking_gate.resolve(session, user.tenant_id, ranking_gate.names_in(ast, params))
+        if problems:
+            validated.ok = False
+            validated.problems.extend(Problem(p) for p in problems)
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -218,7 +230,7 @@ async def list_screens(include_archived: bool = False, user: User = Depends(get_
 
 async def _apply(session: AsyncSession, user: User, row: ScreenRecord, body: ScreenBody) -> None:
     ast, validated = _compiled(body.source, body.base_tf, body.params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, body.params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     row.name, row.source_text, row.ast_json = body.name.strip(), nodes.to_text(ast), json.dumps(nodes.to_json(ast))
@@ -241,8 +253,26 @@ async def update_screen(screen_id: int, body: ScreenBody, user: User = Depends(r
     await _flag(session, user)
     row = await _owned(session, user, screen_id)
     await _apply(session, user, row, body)
+    await _rules_still_valid(session, user, row)
     await session.commit()
     return _screen_dict(row)
+
+
+async def _rules_still_valid(session: AsyncSession, user: User, row: ScreenRecord) -> None:
+    """N3 S7a review (LOW): the alert rules running this screen are checked against the edited screen - an edit that a
+    rule could not run (RankScore, a zone function on an intrabar rule...) is refused with the rule named."""
+    from app.alerts.rules_routes import screen_rule_checks
+    from app.db.models import AlertRuleRecord
+    rules = [(r.id, r.fire_on, r.exchange) for r in await session.scalars(
+        select(AlertRuleRecord).where(AlertRuleRecord.tenant_id == row.tenant_id, AlertRuleRecord.screen_id == row.id))]
+    ast = json.loads(row.ast_json)
+    for rule_id, fire_on, exchange in rules:
+        try:
+            await screen_rule_checks(session, user, ast, fire_on, exchange)
+        except HTTPException as exc:
+            await session.rollback()
+            detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail
+            raise HTTPException(status_code=422, detail=f"alert rule #{rule_id} runs this screen and could not after this change: {detail}") from exc
 
 
 @router.post("/screens/{screen_id}/archive")
@@ -372,6 +402,22 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
             data.frames["1d"] = df
 
 
+async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: Dict[str, Any], universe: List[SymbolData]
+                       ) -> Dict[str, Any]:
+    """N3 S7a: the ranking systems a screen's RankScore names (validated by `_gate`), and - when one is sector-neutral -
+    each symbol's NSE sector today on its SymbolData."""
+    if not ranking_gate.uses_rankscore(ast):
+        return {}
+    systems, _ = await ranking_gate.resolve(session, tenant_id, ranking_gate.names_in(ast, params))
+    if any(s.sector_neutral for s in systems.values()) and universe:
+        from app.market_data.calendar import IST
+        today = datetime.now(timezone.utc).astimezone(IST).date()
+        ranges = await ranking_gate.sector_ranges(session, [d.symbol for d in universe], today, today)
+        for d in universe:
+            d.sector = ranking_gate.sector_on(ranges.get(d.symbol, []), today)
+    return systems
+
+
 def missing_data(ast: Any) -> List[str]:
     """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES)."""
     out: List[str] = []
@@ -399,7 +445,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, base_tf, params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     missing = missing_data(ast)
@@ -413,11 +459,14 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                user_id=user.id, tier_out=tier)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
+    systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
     vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
-    matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
-    stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
-                                     vectorized=vectorized)
+    # (RankScore's systems ride the context asyncio.to_thread copies into the worker - N3 S7a)
+    with ranking_gate.active(systems):
+        matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
+        stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
+                                         vectorized=vectorized)
     results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
@@ -446,10 +495,14 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     if matched_symbols and await evidence_store.enabled(session, user.tenant_id):
         # U8 EV1: the matched symbols' evidence packs, from the same bars, parameters and ranks the screen just ran on
         await session.flush()
-        ids = await evidence_store.store_for_run(session, tenant_id=user.tenant_id, user_id=user.id, run_id=run_row.id, ast=ast,
-                                                 validated=validated, universe=universe, matched=matched_symbols, base_tf=base_tf,
-                                                 params=params, exchange=body.exchange, data_source=data_source,
-                                                 screen_name=screen_name, per_user=bool(tier))   # BT1b: read through the runner's own session
+        ranking_token = ranking_gate.ACTIVE.set(systems)          # N3 S7a: the packs read the same RankScore systems
+        try:
+            ids = await evidence_store.store_for_run(session, tenant_id=user.tenant_id, user_id=user.id, run_id=run_row.id, ast=ast,
+                                                     validated=validated, universe=universe, matched=matched_symbols, base_tf=base_tf,
+                                                     params=params, exchange=body.exchange, data_source=data_source,
+                                                     screen_name=screen_name, per_user=bool(tier))   # BT1b: the runner's own session
+        finally:
+            ranking_gate.ACTIVE.reset(ranking_token)
         for r in results:
             r["evidence_id"] = ids.get(str(r["symbol"]))
         run_row.result_json = json.dumps(results)

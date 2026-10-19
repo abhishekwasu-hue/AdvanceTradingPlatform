@@ -3171,6 +3171,23 @@ class ChartLayoutRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class WatchlistRecord(Base):
+    """AMW-2: one named watchlist of one user - an ordered list of symbols the Screener and the Scanner can load as
+    their universe. Per user and tenant (BT1b), unique by name per user. A list of names only: it places nothing.
+    Behind the `watchlists` flag (off by default)."""
+
+    __tablename__ = "watchlists"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "name", name="uq_watchlists_tenant_user_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    symbols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class OptionStrategyRecord(Base):
     """Z5 / P1-c (ADR-0025): a strategy saved from the Options Builder - the instrument inputs and the legs as the page
     held them (`strategy_json`), shared within the tenant. Research data only: it places nothing. Archived, never

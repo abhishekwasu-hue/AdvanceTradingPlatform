@@ -132,7 +132,7 @@ Evidence refers to the G-LAB checklist items in section 9.
 | I-5 | Information disclosure | Bulk export of licensed market data through results or logs | TB-7 | The result contract has no series field. Rule details are bounded; logs are capped (16 KB) and owner-only. Contexts carry only what the user may already chart. | G-15 |
 | I-6 | Information disclosure | Error text leaks host paths, versions or other users' data | TB-3 | Errors are sanitised (<= 2,000 characters) and built by the gateway from a closed set of reasons, plus the user's own escaped stderr tail | G-7e |
 | I-7 | Information disclosure | Timing or cache side channels between runs | TB-6 | gVisor; concurrency 1; coarse timers; no `SharedArrayBuffer` or worker threads; nothing secret is in the runner | G-6f, RR-2 |
-| I-8 | Information disclosure | A compromised runner (X-5) reads later users' sources and contexts | TB-3, TB-4 | A fresh jail and process per run; no pooled workers across users; the container is recycled every N runs and after any abnormal end | G-8b, RR-9 |
+| I-8 | Information disclosure | A compromised runner (X-5) reads later users' sources and contexts | TB-3, TB-4 | A fresh jail and process per run; no pooled workers across users; the container is recycled every N runs and after any abnormal end | G-8b, G-8c, RR-9 |
 | I-9 | Information disclosure | A cross-user compile or byte-code cache leaks code or data, or serves one user's artefact to another | TB-4 | `NODE_COMPILE_CACHE` off; Python byte code only in the run's tmpfs or not written at all; R lazy-load and byte-compile caches only in the tmpfs; TypeScript output only in the tmpfs | G-8 |
 | D-1 | Denial of service | Fork bomb | TB-4 | Per-run `pids.max` (for example 32), or the container's `pids_limit` at concurrency 1; the tree is ended by `cgroup.kill` or by the death of the PID namespace's init | G-7a |
 | D-2 | Denial of service | Memory bomb; Node heap growth | TB-4, TB-6 | Per-run `memory.max` and `memory.swap.max = 0`, or the container's `mem_limit` at concurrency 1; Node `--max-old-space-size` | G-7b |
@@ -237,7 +237,7 @@ those the larger share whenever they compete. G-10 measures the trading worker's
 | Source | 100,000 characters | API and runner |
 | Contexts per call | 50 (R: 10) | research worker, gateway |
 | Try run | at most 5 symbols, drafts only | API |
-| Container recycle | after 50 runs, and after any abnormal end | gateway |
+| Container recycle | after 50 runs, and after any abnormal end | gateway refuses further calls from that sandbox (keyed on the host-kernel `SO_PEERCRED` pid of the runsc sandbox); the host-side `deploy/atp.sh` agent and `restart: unless-stopped` restart it. The gateway has no Docker access. |
 
 **Queue fairness.**
 - Queued runs are capped at 3 per user, 10 per tenant and 100 globally.
@@ -270,7 +270,7 @@ The single slot caps the host-wide total at 86,400 slot seconds a day, whatever 
 | RR-6 | An operator with database or host access bypasses `set_flag` by editing the control row | Operators are trusted (X-7) | The run-time re-check (G-12b) refuses without a valid approval bound to the deploy record. Audit logs. Two-person rule. |
 | RR-7 | Results are user-authored and can be misleading (look-ahead is impossible, but bad logic is not) | Research output by design | Labelled as user-supplied research; never trades; the disclaimer is shown |
 | RR-8 | One uid: a namespace escape lands on the supervisor's uid with no second uid barrier | Distinct uids need `CAP_SETUID`/`CAP_SETGID` or a setuid helper, which the runner does not keep | gVisor below; the supervisor's code is root-owned and read-only; concurrency 1; recycle. Accepted. |
-| RR-9 | A compromised runner sees later users' runs until it is recycled | Recycling every run would cost a container start per call | Recycle every 50 runs and after any abnormal end; a fresh process per run; no pooled workers. Accepted at N = 50. |
+| RR-9 | A compromised runner sees later users' runs until it is recycled | Recycling every run would cost a container start per call | Recycle every 50 runs and after any abnormal end, enforced by the gateway refusing service to that sandbox and by a host-side restart, so a runner that will not exit cannot extend its window (G-8c); a fresh process per run; no pooled workers. Accepted at N = 50. |
 | RR-10 | The 8 GB host has no headroom for code modes without a rebalance | Host size | Section 7; LAB-6; R needs a larger host |
 | RR-11 | Abuse through many free or throwaway accounts | Open sign-up | Free plan has no code-mode budget; per-tenant budgets and queue caps; the flag can be scoped to tenants |
 
@@ -295,11 +295,11 @@ host profile (2 vCPU / 8 GB) and the output was attached.
 
 | # | Item | Evidence | Pass |
 |---|---|---|---|
-| G-2 | Container configuration | `docker-compose*.yml`, plus a CI test that parses them | **Runners:** `runtime: runsc`, `network_mode: none`, `read_only: true`, one non-root `user`, `cap_drop: [ALL]`, `no-new-privileges`, `pids_limit`, `mem_limit`, `cpus`, `cpu_shares`, `oom_score_adj`, `logging: *default-logging`; no `env_file`, and no environment entry except the socket path; the socket directory mounted read-only; no database or secrets volume. **Gateway:** no `JWT_SECRET_KEY` or `SECRETS_ENCRYPTION_KEY`; internal network only; limits and logging as above. **Research worker:** gains `MEM_RESEARCH`, `cpus`, `cpu_shares` and `oom_score_adj`. **Trading worker and Postgres:** low `oom_score_adj`. **Backend, worker, frontend:** no new capability, `privileged`, `security_opt` or device. No code path or switch runs user code outside a runner. **runc exception only:** the custom AppArmor profile, the cgroup delegation and the sysctl posture (`kernel.apparmor_restrict_unprivileged_userns`, `user.max_user_namespaces`), with the owner's signed exception. |
+| G-2 | Container configuration | `docker-compose*.yml`, plus a CI test that parses them | **Runners:** `runtime: runsc`, `network_mode: none`, `read_only: true`, one non-root `user`, `cap_drop: [ALL]`, `no-new-privileges`, `pids_limit`, `mem_limit`, `cpus`, `cpu_shares`, `oom_score_adj`, `logging: *default-logging`; no `env_file`, and no environment entry except the socket path; the socket directory mounted read-only; no database or secrets volume. **Gateway:** no `JWT_SECRET_KEY` or `SECRETS_ENCRYPTION_KEY`; no Docker socket mount and no Docker API access; internal network only; limits and logging as above. **Research worker:** gains `MEM_RESEARCH`, `cpus`, `cpu_shares` and `oom_score_adj`. **Trading worker and Postgres:** low `oom_score_adj`. **Backend, worker, frontend:** no new capability, `privileged`, `security_opt` or device. No code path or switch runs user code outside a runner. **runc exception only:** the custom AppArmor profile, the cgroup delegation and the sysctl posture (`kernel.apparmor_restrict_unprivileged_userns`, `user.max_user_namespaces`), with the owner's signed exception. |
 | G-3 | gVisor (required) | `runsc --version`; the Docker `daemon.json` runtime entry; the `runsc` flags (`--network=none`, and the host-UDS setting the connect-only socket needs); the probe suite output under `runsc` on the host; **the AMW-21 nested-cgroup spike report** | The runners run under runsc and the probe suite passes on the host. The spike states whether `memory.max`, `pids.max`, `cpu.max` and `cgroup.kill` work inside runsc. If they do not, G-7a to G-7c pass using the fallbacks (PID-namespace teardown; container limits at concurrency 1). |
 | G-4 | seccomp | The per-jail filter (a default-deny allow-list) and its hash; for a runc exception, the container profile and its diff against Docker's default, with every added call justified | The filter **denies by default**. A test calls each call in the tested **must-deny set** from inside the jail and expects `EPERM` or `ENOSYS`: `ptrace`, `process_vm_readv`, `process_vm_writev`, `mount`, `umount2`, `unshare`, `setns`, `pivot_root`, `keyctl`, `add_key`, `bpf`, `perf_event_open`, `userfaultfd`, `kexec_load`, `init_module`, `finit_module`, `clock_settime`, `settimeofday`, `io_uring_setup`, `socket` (every family except `AF_UNIX` socketpairs if a worker needs them). |
 | G-5 | Per-run jail configuration | The jail tool version (pinned), its configuration file and hash, and one dumped jail's `/proc/self/status`, `uid_map`, mount table and cgroup files (or the fallback) | New user, PID, mount, network, IPC and UTS namespaces. `CapEff` is 0. `uid_map` maps the single runner uid only. The mount table shows only read-only runtime binds and the tmpfs work directory. The supervisor's files and socket are absent. The limits match section 7. The supervisor's code is root-owned and read-only. |
-| G-5b | Gateway privileges and the socket | The gateway's environment dump; its database role grants; socket and directory permissions; tests | No JWT key, no encryption key, no broker token; any query on a non-`lab_*` table is denied. The gateway listens. A runner connects through a read-only mount. A wrong `SO_PEERCRED` uid is refused, and so is a symlinked socket path or directory. An unsolicited frame from a runner closes the connection and fails the run. The research worker has no code path that reads a runner frame. |
+| G-5b | Gateway privileges and the socket | The gateway's environment dump; its database role grants; socket and directory permissions; tests | No JWT key, no encryption key, no broker token; no Docker socket and no Docker API reachable; any query on a non-`lab_*` table is denied. The gateway listens. A runner connects through a read-only mount. A wrong `SO_PEERCRED` uid is refused, and so is a symlinked socket path or directory. An unsolicited frame from a runner closes the connection and fails the run. The research worker has no code path that reads a runner frame. |
 
 **Escape tests** (the red-team suite; CI and host; each case is one test with its expected outcome)
 
@@ -324,6 +324,7 @@ host profile (2 vCPU / 8 GB) and the output was attached.
 |---|---|---|---|
 | G-8 | Per-tenant and per-user isolation | Tests with two tenants and two users each | User B gets 404 on user A's strategies, versions, runs, results and logs, whether A is in the same tenant or another one. All Lab routes are classified in `tenancy_route_table.py`. A run's contexts hold only the requester's entitled data. A context cache built from a user's own session is never read for another user. Two users' contexts never share a call. Residue: run A writes to its work directory and run B, afterwards, finds nothing. No compile or byte-code cache is written outside the run's tmpfs: `NODE_COMPILE_CACHE` unset, no `__pycache__` or `PYTHONPYCACHEPREFIX` writes, no R lazy-load or byte-compile cache, no TypeScript output kept. One user's quota cannot be spent by a teammate. |
 | G-8b | No state survives between runs | Tests per language; the recycle counter | Run A changes interpreter state and run B checks it: Python module globals and `sys.modules`; Node globals, `require` cache and prototype pollution (`Object.prototype`, `Array.prototype`); the R global environment and options; Lua globals; SQLite temporary tables. Nothing is visible to run B. Each run is a new process (a different PID namespace and start time). The container is recycled after 50 runs and after any abnormal end. |
+| G-8c | Recycle cannot be refused by a runner | Tests with a runner supervisor patched to ignore the recycle request and stay connected | After 50 runs, and after an abnormal end, the gateway serves no further call from that sandbox (keyed on its host-kernel `SO_PEERCRED` pid, not on anything the runner reports); code modes for that family are "unavailable" until a new sandbox connects. The host-side agent stops and restarts the container. |
 
 **Resources and the trading host**
 
@@ -362,7 +363,7 @@ host profile (2 vCPU / 8 GB) and the output was attached.
 - Each later family (SQL and Lua, JavaScript and TypeScript, R) repeats these before its own flag:
   - G-2 to G-5 (its runner and jail);
   - G-6e (its language cases);
-  - G-6f, G-7 and G-8b (with its runtime);
+  - G-6f, G-7, G-8b and G-8c (with its runtime);
   - G-10 (its memory and CPU);
   - G-11 (its image);
   - G-19.
@@ -370,5 +371,39 @@ host profile (2 vCPU / 8 GB) and the output was attached.
 **Re-review and renewal.**
 - Any change to a runner image, the runsc version, the jail configuration, a worker script, the module set or the
   runner's compose service block voids that family's approval automatically, because the deploy record no longer
-  matches. G-2 to G-8b, G-11 and G-19 are then repeated for that family.
+  matches. G-2 to G-8c, G-11 and G-19 are then repeated for that family.
 - An approval also lapses after 90 days. Renewal repeats G-3, G-6, G-7, G-11 (a fresh scan) and G-19.
+
+## 10. Review follow-ups to settle before acceptance (G-1)
+
+The second security review of this design (PR #264) passed it as a proposed ADR and listed these items. Each is
+settled in AMW-19 or AMW-21, before G-1, and the matching G-LAB row is tightened then.
+
+1. **fd hygiene in the jail.** The jail inherits only stdin, stdout and stderr (`close_range` / `O_CLOEXEC`), and
+   never the supervisor's connected gateway socket. G-5 dumps `/proc/self/fd` from inside the jail. The supervisor
+   sets `PR_SET_DUMPABLE=0` and keeps no writable state reachable from the jail's mount namespace.
+2. **Namespaces under runsc as non-root.** The AMW-21 spike proves the jail tool can create user, PID, mount,
+   network, IPC and UTS namespaces under runsc with `cap_drop: ALL`, not only nested cgroups. If it cannot, code
+   modes do not ship, or the design goes back for review. "runsc plus a bare process" is never a silent fallback.
+3. **The gateway's database role.** The gate checks in G-12b read the flag row, `lab_security_review`, the deploy
+   record and plan or tenant data, none of which are `lab_*` tables. They are exposed to the gateway only through
+   read-only `lab_gate_*` views (or SECURITY DEFINER functions) that return just those keys. The design names where
+   the self-test record lives and who may write it.
+4. **Least privilege per table.** The gateway gets SELECT on `lab_runs` and `lab_run_inputs` (and `lab_versions` only
+   if the source is not copied into `lab_run_inputs`), INSERT on `lab_run_results`, and UPDATE on the status, charge,
+   log and error columns of `lab_runs`. No access to `lab_strategies`: the research worker copies a draft's source
+   into `lab_run_inputs` for "try" runs.
+5. **`lab_run_inputs` cannot cross users.** A composite foreign key from (`run_id`, `tenant_id`, `user_id`) to
+   `lab_runs`. Rows are per run, never deduplicated or reused across runs or users (lake contexts included). The
+   gateway selects inputs only for the run whose lease it holds and asserts the owner matches. Rows are deleted on
+   completion or after a short time-to-live, and are covered by `erase_user` and the tenant cascade, because they
+   hold users' own broker-session bars (BT1b).
+6. **G-13 wording.** The self-test is a liveness signal only. The trust anchors are the deploy record and CI's probe
+   run for the same digest; the gateway does not claim to verify the digest the runner ran in.
+7. **`SO_PEERCRED` under runsc.** The peer the gateway sees is the sandbox's host process, not the in-container uid.
+   G-5b defines the expected peer and tests it on the host. G-8c uses the same value.
+8. **G-4 and G-2 wording.** Deny `socket()` entirely in the jail; allow `socketpair(AF_UNIX)` only where a worker
+   needs it. The socket directory is mounted into the gateway and the runners only, never into the backend or the
+   research worker.
+9. **Two-person rule with one SUPER_ADMIN.** If the owner is the only SUPER_ADMIN, no code family can be turned on.
+   Recorded under LAB-3.

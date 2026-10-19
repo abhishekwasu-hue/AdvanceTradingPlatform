@@ -56,6 +56,18 @@
    - A runner container is **recycled** (stopped and started fresh) after every N runs, and after any run that ended
      abnormally (timeout, kill, OOM, output cap, contract failure). No interpreter or worker is pooled or reused
      across runs.
+   - **Recycling does not rely on the runner.** The threat recycling exists for is a compromised supervisor, which
+     will not exit when asked. So:
+     - the gateway enforces it by **refusing service**. It keys each runner connection on a value the runner cannot
+       forge: the host-kernel `SO_PEERCRED` pid of the connecting runsc sandbox process, which changes on every
+       container start (or a start record written by the host, like the deploy record). After N runs, or after an
+       abnormal end, the gateway serves no further call from that sandbox, and the family's code modes are
+       "unavailable" until a new sandbox connects. A runner that refuses to exit causes a Lab outage, never
+       continued exposure;
+     - a trusted host-side actor restarts the container: `restart: unless-stopped` after the supervisor exits, plus a
+       host-side timer in the `deploy/atp.sh` agent that stops a runner the gateway has stopped serving;
+     - the gateway itself has **no Docker socket and no Docker API access**. The Docker socket in a container that
+       parses hostile frames would mean root on the host.
 3. **Each run gets a fresh jail and a fresh process** inside the runner (nsjail or bubblewrap, pinned):
    - its own namespaces: user, PID (with a fresh `/proc`), mount, network, IPC and UTS;
    - **one uid.** The jail runs as the runner's single non-root uid, mapped to an unprivileged id inside its user

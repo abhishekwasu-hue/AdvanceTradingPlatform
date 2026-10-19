@@ -282,7 +282,8 @@ async def platform_checklist(session: AsyncSession) -> Checklist:
 
 async def _static_ip_gap(session, tenant_id: int, broker_name: str, server_ip):
     from app.compliance import static_ip
-    ips = {r.ip for r in await static_ip.registered(session, tenant_id) if r.broker_name == broker_name.lower()}
+    ips = {r.ip for r in await static_ip.registered(session, tenant_id)
+           if static_ip.canonical_broker(r.broker_name) == static_ip.canonical_broker(broker_name)}
     if not ips:
         return f"{broker_name}: no IP registered"
     if server_ip and server_ip not in ips:

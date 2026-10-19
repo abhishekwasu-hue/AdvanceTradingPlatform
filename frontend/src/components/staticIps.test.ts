@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { staticIpRows } from "./staticIps";
+import { STATIC_IP_BROKERS, staticIpRows } from "./staticIps";
 
 describe("staticIpRows", () => {
   it("groups PRIMARY and BACKUP per broker and checks the server IP", () => {
@@ -21,5 +21,11 @@ describe("staticIpRows", () => {
     const rows = staticIpRows({ server_egress_ip: null, required_for_live: false, max_changes_per_week: 1, warnings: [],
       ips: [{ broker_name: "upstox", role: "PRIMARY", ip: "198.51.100.2", registered_at: null, updated_at: null }] });
     expect(rows[0].serverIpRegistered).toBeNull();
+  });
+
+  it("offers brokers by their registry names (angel_one, not angelone)", () => {
+    expect(STATIC_IP_BROKERS).toContain("angel_one");
+    expect(STATIC_IP_BROKERS).not.toContain("angelone");
+    for (const b of STATIC_IP_BROKERS) expect(b).toMatch(/^[a-z0-9_]+$/);
   });
 });

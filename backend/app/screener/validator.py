@@ -10,11 +10,12 @@ bars only - the executor never reads a bar that has not closed, so `[0]@1d` insi
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.screener import nodes as n
-from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, LAST_BAR_ONLY, MAX_WINDOW, NUM, READS_HISTORY, STR, Spec
+from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, LAST_BAR_ONLY, MAX_WINDOW, NEUTRAL_PATTERNS, NUM, READS_HISTORY, STR, Spec
 
 MAX_OFFSET = 500
 DEFAULT_COST_CAP = 200.0
@@ -43,6 +44,10 @@ class Validated:
     cross_sectional: bool = False
     params_used: Set[str] = field(default_factory=set)
     closed_bars_only: bool = True
+    # AMW-3 review: how it was validated, so a flag gate can re-validate the same screen against another registry view
+    base_tf: Optional[str] = field(default=None, repr=False, compare=False)
+    cost_cap: float = field(default=DEFAULT_COST_CAP, repr=False, compare=False)
+    strict_units: bool = field(default=True, repr=False, compare=False)
 
     def as_dict(self) -> Dict[str, Any]:
         return {"ok": self.ok, "problems": [p.as_dict() for p in self.problems], "timeframes": sorted(self.timeframes, key=lambda tf: n.TF_MINUTES[tf]),
@@ -54,8 +59,9 @@ T = Tuple[str, Optional[str]]          # (type, unit)
 
 
 class _Checker:
-    def __init__(self, base_tf: str, params: Dict[str, Any], strict_units: bool = True) -> None:
+    def __init__(self, base_tf: str, params: Dict[str, Any], strict_units: bool = True, functions: Optional[Dict[str, Spec]] = None) -> None:
         self.base_tf, self.params, self.strict_units = base_tf, params, strict_units
+        self.functions: Dict[str, Spec] = functions if functions is not None else FUNCTIONS   # AMW-3: a flag-off view
         self.out = Validated(True)
         self.last_bar_reported: Set[int] = set()
 
@@ -125,6 +131,30 @@ class _Checker:
         lo, hi = sig.bounds
         if not lo <= float(value) <= hi:
             self.err(f"{owner.name}: {sig.name} must be between {lo:g} and {hi:g}, got {value:g}", arg)
+
+    def _value(self, arg: Any) -> Any:
+        """A literal's value, or a parameter's (None for anything else)."""
+        if isinstance(arg, (n.Num, n.Str, n.Bool)):
+            return arg.value
+        return self.params.get(arg.name) if isinstance(arg, n.Param) else None
+
+    def form(self, arg: Any, sig: Any, owner: Any) -> None:
+        """AMW-3: a text argument with a required form (TimeOfDay's HH:MM) must be a literal or a parameter that has it."""
+        value = self._value(arg)
+        if not isinstance(value, str) or re.fullmatch(sig.pattern, value) is None:
+            shown = repr(value) if value is not None else "an expression"
+            self.err(f"{owner.name}: {sig.name} must be a time as HH:MM (00:00 to 23:59), got {shown}", arg)
+
+    def arg_value(self, node: n.Call, spec: Spec, name: str) -> Any:
+        """The value an argument takes in this call: the literal / parameter given, or the default when it is left out."""
+        pos = next((i for i, a in enumerate(spec.args) if a.name == name), None)
+        if pos is None:
+            return None
+        return self._value(node.args[pos]) if pos < len(node.args) else spec.args[pos].default
+
+    def choice_bars(self, node: n.Call, spec: Spec) -> int:
+        """AMW-3: the bars an argument's value adds (Spec.choice_extra_bars)."""
+        return sum(bars for name, value, bars in spec.choice_extra_bars if self.arg_value(node, spec, name) == value)
 
     def literal(self, arg: Any, sig: Any, owner: Any) -> None:
         """Z10-a (U3 G2): a setting of the function (Supertrend / Bollinger `k`, the zone filters' `tolerance_pct`) is
@@ -212,7 +242,7 @@ class _Checker:
         if isinstance(node, n.Field):
             spec = FIELDS.get(node.name)
             if spec is None:
-                hint = " (a function needs parentheses)" if node.name in FUNCTIONS else ""
+                hint = " (a function needs parentheses)" if node.name in self.functions else ""
                 self.err(f"unknown field {node.name!r}{hint}", node)
                 return NUM, ANY_UNIT
             own_tf = self._tf(node) if node.tf else tf
@@ -281,7 +311,7 @@ class _Checker:
     def domain(self, cat: Any, others: List[Any]) -> None:
         """S5-A review: a classifier with a fixed set of values refuses a literal outside it (`SwingDirection() == "up"`
         would otherwise validate and never match)."""
-        spec = FUNCTIONS.get(cat.name) if isinstance(cat, n.Call) else None
+        spec = self.functions.get(cat.name) if isinstance(cat, n.Call) else None
         if spec is None or not spec.values:
             return
         for other in others:
@@ -303,7 +333,7 @@ class _Checker:
         self.err(f"cannot compare {lt} with {rt} using {op}", node)
 
     def call(self, node: n.Call, tf: str) -> T:
-        spec: Optional[Spec] = FUNCTIONS.get(node.name)
+        spec: Optional[Spec] = self.functions.get(node.name)
         if spec is None:
             hint = " (a field takes no parentheses)" if node.name in FIELDS else ""
             self.err(f"unknown function {node.name!r}{hint}", node)
@@ -349,6 +379,8 @@ class _Checker:
                 self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
             elif sig.choices:
                 self.choice(arg_node, sig, node)
+            elif sig.pattern:
+                self.form(arg_node, sig, node)
             elif sig.literal_only or sig.bounds:
                 if sig.literal_only:
                     self.literal(arg_node, sig, node)
@@ -376,7 +408,11 @@ class _Checker:
         if spec.window_sum:                                           # U6 BK1: e.g. ATR warm-up + percentile lookback
             window = sum(windows)
         window *= dict(spec.window_bars).get(own_tf, 1)               # U6 BK1: weeks -> daily bars
-        min_bars = spec.min_bars
+        min_bars = spec.min_bars + (self.choice_bars(node, spec) if spec.choice_extra_bars else 0)
+        if spec.name == "Pattern" and self.arg_value(node, spec, "name") in NEUTRAL_PATTERNS \
+                and self.arg_value(node, spec, "confirm") not in (None, "any"):
+            self.err(f"Pattern: {self.arg_value(node, spec, 'name')} has no direction, so it has no confirmation status (use confirm \"any\")",
+                     node)
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))
         for name in spec.tf_multiple_args:                            # U6 BK2: e.g. a 30-minute range on 15m bars, not on 45m ones
@@ -407,12 +443,13 @@ NOT_A_CONDITION = "a screen must be a condition (true/false), e.g. close > SMA(c
 
 
 def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP,
-             strict_units: bool = True) -> Validated:
+             strict_units: bool = True, functions: Optional[Dict[str, Spec]] = None) -> Validated:
     """Every check, all problems at once (not only the first). `strict_units=False` is only for screens translated from
     the legacy scanner, whose filters never checked units (S1c parity); user-written screens are always strict."""
     if base_tf not in n.TF_MINUTES:
         return Validated(False, [Problem(f"unknown screen timeframe {base_tf!r}")])
-    checker = _Checker(base_tf, dict(params or {}), strict_units)
+    checker = _Checker(base_tf, dict(params or {}), strict_units, functions)
+    checker.out.base_tf, checker.out.cost_cap, checker.out.strict_units = base_tf, cost_cap, strict_units
     kind, _ = checker.check(ast)
     if kind != BOOL:
         checker.err(NOT_A_CONDITION, ast)
@@ -427,6 +464,12 @@ def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] 
     return checker.out
 
 
+def kind_of(ast: Any, *, base_tf: str = "1d") -> str:
+    """N3 S7a: the type an expression yields (NUM / BOOL / CAT / STR) - a ranking factor must be a number."""
+    kind, _ = _Checker(base_tf, {}).check(ast)
+    return str(kind)
+
+
 @dataclass
 class StudyCheck:
     """N4 CH6: a ScreenQL expression as a chart study - its validation, its kind (num: a line; bool: true / false marks)
@@ -436,19 +479,20 @@ class StudyCheck:
     unit: Optional[str] = None
 
 
-def validate_study(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP) -> StudyCheck:
+def validate_study(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP,
+                   functions: Optional[Dict[str, Spec]] = None) -> StudyCheck:
     """The screen checks (types, units, timeframes, look-ahead, cost) for an expression drawn as a series: a number or a
     condition. Refused as studies: cross-sectional functions (they rank a universe, not one chart) and functions that
     only have a value on the last bar (fundamentals, sector / index membership: no series to draw)."""
     if base_tf not in n.TF_MINUTES:
         return StudyCheck(Validated(False, [Problem(f"unknown study timeframe {base_tf!r}")]))
-    checker = _Checker(base_tf, dict(params or {}), True)
+    checker = _Checker(base_tf, dict(params or {}), True, functions)
     kind, unit = checker.check(ast)
     if kind not in (NUM, BOOL):
         checker.err("a study must be a number (a line) or a condition (true / false marks), e.g. SMA(close, 20)", ast)
     for node in n.walk(ast):
         name = getattr(node, "name", "") if isinstance(node, n.Call) else ""
-        spec = FUNCTIONS.get(name) if name else None
+        spec = checker.functions.get(name) if name else None
         if spec is not None and spec.cross_sectional:
             checker.err(f"{name} ranks a universe of symbols - it has no series on one chart", node)
         elif spec is not None and name in LAST_BAR_ONLY:
@@ -463,4 +507,4 @@ def validate_study(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, 
     return StudyCheck(checker.out, kind, None if unit == ANY_UNIT else unit)
 
 
-__all__ = ["validate", "validate_study", "StudyCheck", "Validated", "Problem", "MAX_OFFSET", "DEFAULT_COST_CAP"]
+__all__ = ["validate", "validate_study", "kind_of", "StudyCheck", "Validated", "Problem", "MAX_OFFSET", "DEFAULT_COST_CAP"]

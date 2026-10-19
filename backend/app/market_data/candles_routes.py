@@ -23,6 +23,7 @@ session's namespace only (never shared across users); each response carries a `d
 timestamp, staleness). Anything else is Tier C (EOD): a 409 with the reason and an `X-Data-Tier: C` header.
 `GET /api/market-data/data-tier` is the badge API for a symbol or a market-wide page.
 """
+import asyncio
 import logging
 from datetime import date, datetime, timezone
 from typing import Dict, List, Optional, cast
@@ -39,7 +40,7 @@ from app.brokers.base import BrokerInterface
 from app.brokers.token_lifecycle import build_adapter, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
-from app.db.session import get_session
+from app.db.session import get_session, release_connection
 from app.market_data import api_budget, entitlement
 from app.market_data.calendar import load_holidays
 from app.market_data.data_terms import terms_for
@@ -126,10 +127,21 @@ async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[s
     return usable[0]
 
 
+def _shaped(bars: List[OHLCVBar], timeframe: str) -> tuple:
+    """(bars at `timeframe`, their JSON form). Pandas resampling and serialising a few thousand bars: run on a worker
+    thread (LD-7), so a chart does not hold the event loop that every other request of the process waits on."""
+    if bars and timeframe not in ("1min", "day"):
+        bars = _frame_to_bars(build_frames(bars, "1min", [timeframe])[timeframe])
+    return bars, [b.model_dump(mode="json") for b in bars]
+
+
 def _frame_to_bars(df) -> List[OHLCVBar]:
     df = df.dropna(subset=["open", "close"])
-    return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(r.open), high=float(r.high), low=float(r.low), close=float(r.close),
-                     volume=float(r.volume) if "volume" in df and r.volume == r.volume else 0.0) for ts, r in df.iterrows()]
+    # LD-7: plain column iteration instead of iterrows (a Series per row); the same bars.
+    volumes = df["volume"] if "volume" in df else [None] * len(df)
+    return [OHLCVBar(timestamp=ts.to_pydatetime(), open=float(o), high=float(h), low=float(lo), close=float(c),
+                     volume=float(v) if v is not None and v == v else 0.0)
+            for ts, o, h, lo, c, v in zip(df.index, df["open"], df["high"], df["low"], df["close"], volumes)]
 
 
 @router.get("/sources")
@@ -188,6 +200,9 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=lookback, cache_namespace=namespace)
     now = datetime.now(timezone.utc)
     eod_date, holidays = await _eod_context(session, ents)
+    # LD-7: the broker calls below can take seconds; no pool connection is held meanwhile (reads only so far - the meter
+    # write after the loop opens a new transaction).
+    await release_connection(session)
 
     out: Dict[str, dict] = {}
     fetched = 0
@@ -207,9 +222,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                 bars = await service.get_history(symbol, exchange, base_interval, body.before)
             else:
                 bars = await service.get_candles(symbol, exchange, base_interval)
-            if bars and body.timeframe not in ("1min", "day"):
-                bars = _frame_to_bars(build_frames(bars, "1min", [body.timeframe])[body.timeframe])
-            out[symbol] = {"bars": [b.model_dump(mode="json") for b in bars], "count": len(bars),
+            bars, shaped = await asyncio.to_thread(_shaped, bars, body.timeframe)
+            out[symbol] = {"bars": shaped, "count": len(bars),
                            "first": bars[0].timestamp.isoformat() if bars else None, "last": bars[-1].timestamp.isoformat() if bars else None, "error": None}
             if bars:
                 last_ts = bars[-1].timestamp

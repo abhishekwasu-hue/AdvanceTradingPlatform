@@ -59,7 +59,8 @@ def test_lookback_covers_the_swing_warm_up_and_the_bar_before_a_median_range():
 
 def test_describe_lists_the_choices_and_every_pattern_has_a_detector():
     d = describe()
-    assert d["Pattern"]["choices"] == {"name": list(PATTERN_NAMES)}
+    # AMW-3: the v2 candles and the confirmation status (behind `screenql_amw_functions`; tests/test_amw3_screenql_functions.py)
+    assert d["Pattern"]["choices"] == {"name": list(PATTERN_NAMES) + list(cp.V2_PATTERN_NAMES), "confirm": list(cp.CONFIRM_STATES)}
     assert d["SwingHigh"]["choices"] == {"degree": list(SWING_DEGREES)}
     assert set(cp.pattern_masks(_frame([(1, 2, 0, 1)] * 3))) == set(PATTERN_NAMES)
     assert len(SWING_DEGREES) == len(pa_settings.settings()["swing_atr_mult"])

@@ -18,12 +18,14 @@ import { FreshnessPill } from "../screener/FreshnessPill";
 import { FunnelCanvas, STARTERS } from "../screener/FunnelCanvas";
 import { blockProblems, parseSymbols, runStamp, sameRun, screenText, stageAt, TIMEFRAMES, trail, whyChips, type Registry, type RunStamp, type Stage } from "../screener/model";
 import { EvidencePanel } from "../screener/EvidencePanel";
-import { ResultBoard } from "../screener/ResultBoard";
+import { ResultViews } from "../screener/ResultViews";
 import { EtfPanel } from "../screener/EtfPanel";
 import { ScreenGallery } from "../screener/ScreenGallery";
 import { isLegends, type LegendsLibrary } from "../screener/legends";
+import { stagesFromServer } from "../screener/importStages";
 import { isMirrors, isWatchLists, mirrorsByScreen, type MirrorsResponse, type WatchListsResponse } from "../screener/library";
 import { LibraryTools } from "../screener/LibraryTools";
+import { WatchlistPicker } from "../screener/WatchlistPicker";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
 
@@ -66,6 +68,8 @@ export default function ScreenerPage(_props: PageProps) {
   // U7 LG1 (flag `screener_legends`): the Legends cards load with the taxonomy; while the flag is off the call fails,
   // the taxonomy hides the Legends screens and nothing changes.
   const [legends, setLegends] = useState<LegendsLibrary | null>(null);
+  // U2 (flag `screener_builder_u2`): formula blocks, and Legends / breakout screens open in the builder.
+  const [builderU2, setBuilderU2] = useState(false);
   // U9 TX2 (flag `screener_tx2`): mirrors and watch lists; while the flag is off the calls fail and nothing shows.
   const [mirrors, setMirrors] = useState<MirrorsResponse | null>(null);
   const [watchLists, setWatchLists] = useState<WatchListsResponse | null>(null);
@@ -74,6 +78,8 @@ export default function ScreenerPage(_props: PageProps) {
   // S10 J (flag `screener_etf`): the ETF screen in a dialog.
   const [etfOn, setEtfOn] = useState(false);
   const [etfOpen, setEtfOpen] = useState(false);
+  // AMW-2 (flag `watchlists`): "My watchlists" in the universe column.
+  const [watchlistsOn, setWatchlistsOn] = useState(false);
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
@@ -81,19 +87,32 @@ export default function ScreenerPage(_props: PageProps) {
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
     screenerApi.libraryMirrors().then((m) => setMirrors(isMirrors(m) ? m : null)).catch(() => setMirrors(null));
     screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
-    api.myFeatures().then((f) => setEtfOn(Boolean(f.screener_etf))).catch(() => setEtfOn(false));
+    api.myFeatures().then((f) => {
+      setBuilderU2(Boolean(f.screener_builder_u2)); setEtfOn(Boolean(f.screener_etf)); setWatchlistsOn(Boolean(f.watchlists));
+    }).catch(() => { setBuilderU2(false); setEtfOn(false); setWatchlistsOn(false); });
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the
   // breakout family joins with U6 BK1).
-  const canOpen = useCallback((s: TaxScreen) => !!registry && s.source === "starter" && STARTERS.some((t) => t.id === s.id), [registry]);
+  const canOpen = useCallback((s: TaxScreen) => !!registry && ((s.source === "starter" && STARTERS.some((t) => t.id === s.id))
+    || (builderU2 && (s.source === "legends" || s.source === "breakouts"))), [registry, builderU2]);
   const openScreen = (s: TaxScreen) => {
     const starter = STARTERS.find((t) => t.id === s.id);
-    if (!registry || !starter) return;
+    if (!registry || !canOpen(s)) return;
     if (stages.length > 0 && !window.confirm(`Replace the current conditions with "${s.name}"?`)) return;
-    setStages(starter.build(registry));
-    setName(s.name);
-    setGalleryOpen(false);
+    if (starter) {
+      setStages(starter.build(registry));
+      setName(s.name);
+      setGalleryOpen(false);
+      return;
+    }
+    // U2: a Legends or breakout screen - its conjuncts as blocks (a formula block where no other form writes the same text)
+    screenerApi.stages({ library_id: s.id }).then((res) => {
+      setStages(stagesFromServer(registry, res.stages));
+      setScanTf(res.base_tf);
+      setName(s.name);
+      setGalleryOpen(false);
+    }).catch((e: unknown) => setOtherProblem(errorText(e)));
   };
 
   const symbols = useMemo(() => parseSymbols(symbolsText), [symbolsText]);
@@ -234,6 +253,7 @@ export default function ScreenerPage(_props: PageProps) {
                     placeholder="RELIANCE, TCS, INFY"
                     className="mt-1 w-full resize-y rounded-control border border-border bg-surface-inset px-2 py-1.5 font-mono text-t13 text-fg placeholder:text-fg-muted/60 focus:outline-none focus:ring-2 focus:ring-brand" />
           <p className="mt-1 text-t12 text-fg-muted"><span className="font-mono font-tabular text-fg">{symbols.length}</span> symbols</p>
+          {watchlistsOn && <WatchlistPicker symbols={symbols} max={50} onLoad={(list) => setSymbolsText(list.join(", "))} />}
           </div>
           <div>
           <label className="mt-3 block text-t12 text-fg-muted" htmlFor="screener-tf">Scan timeframe</label>
@@ -254,7 +274,7 @@ export default function ScreenerPage(_props: PageProps) {
         <div className="screener-canvas">
           {registry ? (
             <FunnelCanvas stages={stages} registry={registry} scanTf={scanTf} universe={symbols.length} funnel={shown?.funnel ?? null}
-                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} />
+                          fresh={!!shown} live={liveFresh} matched={matchedNow} problems={allProblems} runKey={runKey} onChange={setStages} formula={builderU2} />
           ) : (
             <div className="h-40 animate-pulse rounded-panel border border-border bg-surface-1" aria-label="Loading the conditions" />
           )}
@@ -272,7 +292,7 @@ export default function ScreenerPage(_props: PageProps) {
               </div>
             </div>
           )}
-          <ResultBoard results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh}
+          <ResultViews results={run?.results ?? null} running={running} runKey={runKey} stale={!!run && !fresh}
                        why={fresh && registry ? (symbol) => whyChips(registry, stages, run?.funnel ?? null, symbol) : undefined}
                        onShowEvidence={(r) => { if (r.evidence_id != null) setEvidence({ id: r.evidence_id, symbol: r.symbol }); }} />
           <EvidencePanel evidenceId={evidence?.id ?? null} symbol={evidence?.symbol} onClose={() => setEvidence(null)} />

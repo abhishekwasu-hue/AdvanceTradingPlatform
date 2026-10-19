@@ -58,6 +58,7 @@ async def add_market_holiday(
         raise HTTPException(status_code=409, detail="That holiday is already recorded") from exc
     await write_audit_log(session, user.tenant_id, user.id, "market_holiday_added", f"{record.exchange} {record.holiday_date} {record.description}")
     await session.commit()
+    _forget_status()
     await session.refresh(record)
     return MarketHolidayResponse(id=record.id, exchange=record.exchange, holiday_date=record.holiday_date, description=record.description)
 
@@ -72,3 +73,10 @@ async def remove_market_holiday(
     await session.delete(record)
     await write_audit_log(session, user.tenant_id, user.id, "market_holiday_removed", f"{record.exchange} {record.holiday_date}")
     await session.commit()
+    _forget_status()
+
+
+def _forget_status() -> None:
+    """LD-7: the public status lists each venue's session; a holiday change shows there at once in this process."""
+    from app.platform.routes import forget_status
+    forget_status()

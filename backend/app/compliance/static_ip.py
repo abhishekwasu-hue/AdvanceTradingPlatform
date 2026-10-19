@@ -22,8 +22,24 @@ RULE = "IN-SEBI.static_ip.registered"
 ROLES = ("PRIMARY", "BACKUP")
 
 
+# Broker names the Static IP card saved before it used the registry's spelling (it offered `angelone`). Rows stored under
+# an old spelling are read as the registry name, and the next save of that role renames the row in place.
+LEGACY_BROKER_NAMES = {"angelone": "angel_one"}
+
+
 class StaticIpError(ValueError):
     pass
+
+
+def canonical_broker(name: Optional[str]) -> str:
+    """The registry spelling of a stored or requested broker name (lower case; `angelone` -> `angel_one`)."""
+    value = (name or "").strip().lower()
+    return LEGACY_BROKER_NAMES.get(value, value)
+
+
+def _spellings(broker_name: str) -> List[str]:
+    """The registry name first, then any old spelling rows may still be stored under."""
+    return [broker_name] + [old for old, new in LEGACY_BROKER_NAMES.items() if new == broker_name]
 
 
 def normalise_ip(value: str) -> str:
@@ -43,7 +59,7 @@ def _week_ago(now: datetime) -> datetime:
 async def changes_this_week(session: AsyncSession, tenant_id: int, broker_name: str, role: str, now: Optional[datetime] = None) -> int:
     now = now or datetime.now(timezone.utc)
     return int(await session.scalar(select(func.count()).select_from(EgressIpChangeRecord).where(
-        EgressIpChangeRecord.tenant_id == tenant_id, EgressIpChangeRecord.broker_name == broker_name,
+        EgressIpChangeRecord.tenant_id == tenant_id, EgressIpChangeRecord.broker_name.in_(_spellings(canonical_broker(broker_name))),
         EgressIpChangeRecord.role == role, EgressIpChangeRecord.old_ip.is_not(None),        # the first registration is not a change
         EgressIpChangeRecord.changed_at >= _week_ago(now))) or 0)
 
@@ -56,11 +72,22 @@ async def set_ip(session: AsyncSession, tenant_id: int, broker_name: str, role: 
     if role == "BACKUP" and not rules.load().param(RULE, "backup_ip_allowed", True):
         raise StaticIpError("backup IPs are not allowed by the rule-set")
     ip = normalise_ip(ip)
-    broker_name = broker_name.lower()
+    broker_name = canonical_broker(broker_name)
     now = now or datetime.now(timezone.utc)
-    record = await session.scalar(select(EgressIpRecord).where(EgressIpRecord.tenant_id == tenant_id,
-                                                               EgressIpRecord.broker_name == broker_name, EgressIpRecord.role == role))
+    rows = {r.broker_name: r for r in await session.scalars(select(EgressIpRecord).where(
+        EgressIpRecord.tenant_id == tenant_id, EgressIpRecord.broker_name.in_(_spellings(broker_name)), EgressIpRecord.role == role))}
+    # The row under the registry name wins; otherwise a row saved under an old spelling is this role's row. A legacy row
+    # shadowed by a registry row is removed, so the owner is never left with a stale IP they cannot edit.
+    record = next((rows[n] for n in _spellings(broker_name) if n in rows), None)
+    shadowed = [row for row in rows.values() if row is not record]
+    for row in shadowed:
+        await session.delete(row)
+    if record is not None and record.broker_name != broker_name:
+        record.broker_name = broker_name
     if record is not None and record.ip == ip:
+        if shadowed or record in session.dirty:                         # only the old spelling was fixed
+            await session.commit()
+            await session.refresh(record)
         return record
     if record is not None:
         limit = int(rules.load().param(RULE, "max_changes_per_week"))
@@ -81,8 +108,13 @@ async def set_ip(session: AsyncSession, tenant_id: int, broker_name: str, role: 
 
 
 async def registered(session: AsyncSession, tenant_id: int) -> List[EgressIpRecord]:
-    return list(await session.scalars(select(EgressIpRecord).where(EgressIpRecord.tenant_id == tenant_id)
+    """The organisation's rows, one per (broker, role). A row under an old spelling is dropped when the same role also has
+    a row under the registry name, so a stale legacy IP can never satisfy the LIVE check or show twice."""
+    rows = list(await session.scalars(select(EgressIpRecord).where(EgressIpRecord.tenant_id == tenant_id)
                                       .order_by(EgressIpRecord.broker_name, EgressIpRecord.role)))
+    current = {(r.broker_name, r.role) for r in rows if canonical_broker(r.broker_name) == r.broker_name}
+    return [r for r in rows if canonical_broker(r.broker_name) == r.broker_name
+            or (canonical_broker(r.broker_name), r.role) not in current]
 
 
 async def shared_with_others(session: AsyncSession, tenant_id: int) -> Dict[str, int]:
@@ -102,7 +134,7 @@ async def live_entry_problem(session: AsyncSession, tenant_id: int, broker_name:
     server_ip = config.SERVER_EGRESS_IP
     if not server_ip:
         return f"Static IP required ({RULE}) but SERVER_EGRESS_IP is not configured - LIVE entries paused; exits continue"
-    ips = {r.ip for r in await registered(session, tenant_id) if r.broker_name == (broker_name or "").lower()}
+    ips = {r.ip for r in await registered(session, tenant_id) if canonical_broker(r.broker_name) == canonical_broker(broker_name)}
     if server_ip not in ips:
         return (f"This server's IP {server_ip} is not registered for {broker_name} ({RULE}) - register it with the broker "
                 "and on Settings > Static IP; LIVE entries paused, exits continue")

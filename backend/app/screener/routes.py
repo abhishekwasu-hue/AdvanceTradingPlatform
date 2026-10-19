@@ -27,10 +27,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user, require_trader
 from app.core.models import bars_to_dataframe
 from app.db.models import ScreenRecord, ScreenRunRecord, User
-from app.db.session import get_session
+from app.db.session import get_session, release_connection
 from app.platform.controls import flag_enabled, require_flag
+from app.screener import amw_functions as amw_gate
 from app.screener import compile_screen, nodes
-from app.screener import legends as lg   # registers the `legends` template source (U7 LG1)
+from app.screener import legends as lg
+from app.screener import ranking as ranking_gate   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
 from app.screener import zones as zone_gate
 from app.screener import fundamentals as fundamentals_gate
@@ -39,7 +41,7 @@ from app.core.rate_limit import user_rate_limit
 from app.screener.panel import FLAG as VECTOR_FLAG
 from app.screener.registry import FUNCTIONS, describe
 from app.screener.validator import Problem
-from app.screener.runtime import SymbolData, closed_only, resample, run_screen, stage_survivors
+from app.screener.runtime import Match, ScreenMemo, SymbolData, closed_only, resample, run_screen, stage_survivors
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/screener", tags=["screener"])
@@ -59,12 +61,23 @@ async def charge_runs(user: User, units: int) -> None:
     await charge_user(RUN_BUCKET, user.id, RUN_LIMIT, RUN_WINDOW, units)
 # Data the run path loads today: bars, and the stored market-zone snapshots (Z7a-3). A screen using a function that needs
 # more is refused with the reason (the U1-d universe data and the option chain join here when they are wired in).
-RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals"})
+# U7 LG3: and the point-in-time fundamentals. N3 S7a: and the ranking systems a RankScore names (loaded by the route,
+# with the sectors a sector-neutral one needs).
+RUN_PROVIDES: frozenset = frozenset({"zones", "fundamentals", "rankings"})
 MAX_SYMBOLS = 50
 DISCLAIMER = "Matches are symbols that passed the screen's filters on the data shown; they are not recommendations."
 SESSION_MINUTES = 375              # NSE cash session 09:15-15:30
 HOLIDAY_PAD_DAYS = 4               # exchange holidays inside the window
 MAX_INTRADAY_FETCH_DAYS = 60
+FETCH_CONCURRENCY = 3     # LD-7: one screen run's broker fetches in flight at once (capped by the broker's burst)
+
+
+def fetch_concurrency(broker_name: str) -> int:
+    """How many of one screen run's symbol fetches may be in flight at once: the broker's burst allowance in the worker's
+    rate budget (app/brokers/rate_budget.py - about a third of the published limit; 3 for a broker it does not list,
+    Dhan among them), never more than FETCH_CONCURRENCY."""
+    from app.brokers.rate_budget import limits_for
+    return max(1, min(FETCH_CONCURRENCY, limits_for(broker_name).burst))
 _FETCH = {"1m": "1min", "3m": "1min", "5m": "5min", "15m": "15min", "30m": "30min", "1h": "60min", "1d": "day", "1w": "day", "1M": "day"}
 _FETCH_TF = {"1min": "1m", "5min": "5m", "15min": "15m", "30min": "30m", "60min": "1h", "day": "1d"}
 
@@ -123,6 +136,8 @@ async def registry(user: User = Depends(get_current_user), session: AsyncSession
     if off:                                       # Z7a-3 (the U6 BK1 pattern): a flagged family stays hidden while its flag is off
         entries = {k: v for k, v in entries.items()           # U6 BK3: a second flag (Spec.also_flags) hides it too
                    if not (k in FUNCTIONS and ({FUNCTIONS[k].flag, *FUNCTIONS[k].also_flags} & off))}
+        if amw_gate.FLAG in off:                  # AMW-3: the v2 candles and Pattern's `confirm` argument hide too
+            entries = amw_gate.hide(entries)
     return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
 
 
@@ -186,24 +201,87 @@ async def legend_card(card_id: str, user: User = Depends(get_current_user), sess
     return {**lg.card_payload(card, library, tx.load()), "header": lg.HEADER}
 
 
+class StagesBody(BaseModel):
+    source: Optional[Union[str, Dict[str, Any]]] = Field(default=None, description="ScreenQL text or the builder's JSON tree")
+    library_id: Optional[str] = Field(default=None, max_length=120, description="a pre-built Legends or breakout screen")
+    base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
+    params: Dict[str, Union[float, int, str, bool]] = Field(default_factory=dict)
+
+
+@router.post("/stages")
+async def screen_stages(body: StagesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """U2 (flag `screener_builder_u2`): a screen -> the funnel's stages (top-level conjuncts, parameters inlined), so the
+    builder can open it; validated and gated like `/validate`. Nothing runs, nothing is stored."""
+    from app.screener import stages as st
+    await _flag(session, user)
+    await require_flag(session, st.FLAG, user.tenant_id)
+    name: Optional[str] = None
+    source: Union[str, Dict[str, Any]]
+    if body.library_id is not None:
+        src = tx.sources().get(body.library_id.split(".", 1)[0])
+        if src is not None and src.flag and not await flag_enabled(session, src.flag, user.tenant_id):
+            raise HTTPException(status_code=404, detail="that screen's family is turned off for this organisation")
+        if body.library_id.startswith("legends."):
+            # U7 LG2: a card of a slice this organisation does not see is not there (as GET /legends/{id} answers)
+            card = lg.load().card(body.library_id)
+            if card is not None and card.slice not in await _legend_slices(session, user):
+                raise HTTPException(status_code=404, detail="no such Legends card")
+        own_flag = tx.screen_flags().get(body.library_id)                 # any single screen behind a flag of its own
+        if own_flag is not None and not await flag_enabled(session, own_flag, user.tenant_id):
+            raise HTTPException(status_code=404, detail="no such screen")
+        found, why = st.library_source(body.library_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail=why)
+        source, base_tf, params, name = found
+    elif body.source is not None:
+        source, base_tf, params = body.source, body.base_tf, dict(body.params)
+    else:
+        raise HTTPException(status_code=422, detail="give a source or a library_id")
+    ast, validated = _compiled(source, base_tf, params)
+    await _gate(session, user, ast, validated, params)        # main: params resolve RankScore($name) (N3 S7a)
+    if ast is None or not validated.ok:
+        raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
+    flat = st.inline(ast, params)
+    return {"name": name, "base_tf": base_tf, "text": nodes.to_text(flat), "stages": st.split(flat), "version": nodes.VERSION}
+
+
 @router.post("/validate")
 async def validate_screen(body: ValidateBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""
     await _flag(session, user)
     ast, validated = _compiled(body.source, body.base_tf, body.params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, body.params)
     return _view(ast, validated)
 
 
-async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
+async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
-    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`) and
-    the U7 LG3 fundamentals functions (`screener_fundamentals`)."""
+    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`),
+    the U7 LG3 fundamentals functions (`screener_fundamentals`), the AMW-3 functions, v2 candles and confirmation
+    statuses (`screenql_amw_functions`; `params` resolves a `$parameter` pattern name) and N3 S7a's RankScore
+    (`screener_rankings`; a system it names must be a platform one or this organisation's own). With the AMW-3 flag off,
+    Pattern* mistakes get main's messages (`amw_gate.flag_off_validation`). Every gate runs; RankScore's check is last
+    so its early return skips none."""
+    if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
+        amw_gate.flag_off_validation(ast, validated, params or {})
     for gate in (breakout_gate, zone_gate, fundamentals_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
             validated.problems.append(Problem(gate.refusal(blocked)))
+    amw_blocked = await amw_gate.blocked_calls(session, user.tenant_id, ast, params or {})
+    if amw_blocked:
+        validated.ok = False
+        validated.problems.append(Problem(amw_gate.refusal(amw_blocked)))
+    if ranking_gate.uses_rankscore(ast):
+        if not await ranking_gate.enabled(session, user.tenant_id):
+            validated.ok = False
+            validated.problems.append(Problem(ranking_gate.refusal()))
+            return
+        _, problems = await ranking_gate.resolve(session, user.tenant_id, ranking_gate.names_in(ast, params))
+        if problems:
+            validated.ok = False
+            validated.problems.extend(Problem(p) for p in problems)
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -225,7 +303,7 @@ async def list_screens(include_archived: bool = False, user: User = Depends(get_
 
 async def _apply(session: AsyncSession, user: User, row: ScreenRecord, body: ScreenBody) -> None:
     ast, validated = _compiled(body.source, body.base_tf, body.params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, body.params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     row.name, row.source_text, row.ast_json = body.name.strip(), nodes.to_text(ast), json.dumps(nodes.to_json(ast))
@@ -248,8 +326,27 @@ async def update_screen(screen_id: int, body: ScreenBody, user: User = Depends(r
     await _flag(session, user)
     row = await _owned(session, user, screen_id)
     await _apply(session, user, row, body)
+    await _rules_still_valid(session, user, row)
     await session.commit()
     return _screen_dict(row)
+
+
+async def _rules_still_valid(session: AsyncSession, user: User, row: ScreenRecord) -> None:
+    """N3 S7a review (LOW): the alert rules running this screen are checked against the edited screen - an edit that a
+    rule could not run (RankScore, a zone function or an AMW-3 bar-close-only function on an intrabar rule...) is refused
+    with the rule named."""
+    from app.alerts.rules_routes import screen_rule_checks
+    from app.db.models import AlertRuleRecord
+    rules = [(r.id, r.fire_on, r.exchange) for r in await session.scalars(
+        select(AlertRuleRecord).where(AlertRuleRecord.tenant_id == row.tenant_id, AlertRuleRecord.screen_id == row.id))]
+    ast, params = json.loads(row.ast_json), json.loads(row.params_json or "{}")
+    for rule_id, fire_on, exchange in rules:
+        try:
+            await screen_rule_checks(session, user, ast, fire_on, exchange, params)
+        except HTTPException as exc:
+            await session.rollback()
+            detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail
+            raise HTTPException(status_code=422, detail=f"alert rule #{rule_id} runs this screen and could not after this change: {detail}") from exc
 
 
 @router.post("/screens/{screen_id}/archive")
@@ -273,7 +370,8 @@ def fetch_days(lookback: Dict[str, int], base_tf: str) -> int:
 
 async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str], exchange: str, base_tf: str,
                        lookback: Dict[str, int], now: Optional[datetime] = None, include_forming: bool = False, *,
-                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None) -> Tuple[List[SymbolData], Dict[str, str], str]:
+                       user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
+                       release: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
     A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
@@ -281,7 +379,9 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     BT1b (flag `byob_data_tier`): the bars come only through the session of the user the run / alert rule belongs to
     (`user_id`), at a broker whose data terms are confirmed, for the symbols inside that session's budget (the rest are
     reported as EOD-only problems), cached under that session's namespace. No such session -> 409 (Tier C).
-    `tier_out` receives the data-tier badge of what was read."""
+    `tier_out` receives the data-tier badge of what was read.
+    `release` (LD-7, a request whose session has only read so far): the pool connection goes back before the broker
+    calls; the worker's callers keep their transaction."""
     from app.brokers.token_lifecycle import build_adapter
     from app.market_data import live_access
     from app.market_data.candles_routes import _pick_record
@@ -308,28 +408,35 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
     else:
         record = await _pick_record(session, tenant_id, None, "primary")
         service = MarketDataService(build_adapter(record), lookback_days=days)
+    if release:
+        await release_connection(session)
     universe: List[SymbolData] = []
     newest: List[datetime] = []
-    for symbol in symbols:
-        try:
-            bars = await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
-                          else service.get_candles(symbol, exchange, interval))
-        except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
-            problems[symbol] = f"{type(exc).__name__}: {str(exc)[:120]}"
+    # LD-7: the symbols are fetched a few at a time instead of one after another (a cold five-symbol run waited for five
+    # broker round trips in a row). At most the broker's burst allowance at once (`fetch_concurrency`); the results keep
+    # the symbols' order.
+    gate = asyncio.Semaphore(fetch_concurrency(record.broker_name))
+
+    async def fetch_one(symbol: str) -> Tuple[Any, str]:
+        async with gate:
+            try:
+                return await (service.get_candles(symbol, exchange, interval, fresh=True) if include_forming  # no cached copy
+                              else service.get_candles(symbol, exchange, interval)), ""
+            except Exception as exc:  # noqa: BLE001 - one symbol's failure is reported, the run continues
+                return None, f"{type(exc).__name__}: {str(exc)[:120]}"
+
+    got = await asyncio.gather(*(fetch_one(symbol) for symbol in symbols))
+
+    def frames_of_all() -> List[Tuple[Any, Dict[str, Any], str]]:
+        return [(None, {}, failed) if failed else _symbol_frames(bars, interval, base_tf, include_forming, now) for bars, failed in got]
+
+    # LD-7: the pandas work runs on a worker thread, so a screen does not hold the event loop - one thread for the run's
+    # symbols in turn, not one each (more CPU-bound threads only take the GIL from the event loop more often).
+    fetched = await asyncio.to_thread(frames_of_all)
+    for symbol, (df, frames, problem) in zip(symbols, fetched):
+        if problem:
+            problems[symbol] = problem
             continue
-        df = bars_to_dataframe(bars) if bars else pd.DataFrame()
-        if df.empty:
-            problems[symbol] = "no bars from the broker"
-            continue
-        if df.index.tz is None:
-            df.index = df.index.tz_localize("UTC")
-        fetched_tf = _FETCH_TF[interval]
-        if not include_forming:
-            df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
-        if df.empty:
-            problems[symbol] = "no closed bars from the broker"
-            continue
-        frames = {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}
         universe.append(SymbolData(symbol, frames, exchange=exchange))         # U6 BK2: the session clock of the symbol
         newest.append(df.index[-1].to_pydatetime())
     if attach_daily and universe:
@@ -341,6 +448,21 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
         tier_out["data_tier"] = own.badge(timeframe=_FETCH_TF[interval] if oldest is not None else None, last_bar_start=oldest,
                                           now=now or datetime.now(timezone.utc))
     return universe, problems, f"broker:{record.broker_name}"
+
+
+def _symbol_frames(bars: Any, interval: str, base_tf: str, include_forming: bool, now: Optional[datetime]) -> Tuple[Any, Dict[str, Any], str]:
+    """(closed bars as a frame, {base_tf: frame}, problem) for one symbol's fetched bars - `fetch_frames`' pandas step."""
+    df = bars_to_dataframe(bars) if bars else pd.DataFrame()
+    if df.empty:
+        return df, {}, "no bars from the broker"
+    if df.index.tz is None:
+        df.index = df.index.tz_localize("UTC")
+    fetched_tf = _FETCH_TF[interval]
+    if not include_forming:
+        df = closed_only(df, fetched_tf, now or datetime.now(timezone.utc))  # never the bar still forming
+    if df.empty:
+        return df, {}, "no closed bars from the broker"
+    return df, {base_tf: df if fetched_tf == base_tf else resample(df, fetched_tf, base_tf, keep_forming=include_forming)}, ""
 
 
 async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str, now: Optional[datetime]) -> None:
@@ -379,6 +501,33 @@ async def _attach_daily(service: Any, universe: List[SymbolData], exchange: str,
             data.frames["1d"] = df
 
 
+def screen_and_funnel(ast: Any, validated: Any, universe: List[SymbolData], *, base_tf: str, params: Dict[str, Any],
+                      vectorized: bool) -> Tuple[List[Match], Dict[str, Any]]:
+    """The screen's matches and its funnel (`stage_survivors`) on one worker thread. LD-7: one hop off the event loop, not
+    two, and one evaluation memo for both (`runtime.ScreenMemo`): the funnel's stages are the screen's own top-level
+    items, so they are read back from the full evaluation instead of computed a second time."""
+    memo: ScreenMemo = {}
+    matches = run_screen(ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized, memo=memo)
+    stages = stage_survivors(ast, validated, universe, base_tf=base_tf, params=params, matches=matches, vectorized=vectorized, memo=memo)
+    return matches, stages
+
+
+async def rank_systems(session: AsyncSession, tenant_id: int, ast: Any, params: Dict[str, Any], universe: List[SymbolData]
+                       ) -> Dict[str, Any]:
+    """N3 S7a: the ranking systems a screen's RankScore names (validated by `_gate`), and - when one is sector-neutral -
+    each symbol's NSE sector today on its SymbolData."""
+    if not ranking_gate.uses_rankscore(ast):
+        return {}
+    systems, _ = await ranking_gate.resolve(session, tenant_id, ranking_gate.names_in(ast, params))
+    if any(s.sector_neutral for s in systems.values()) and universe:
+        from app.market_data.calendar import IST
+        today = datetime.now(timezone.utc).astimezone(IST).date()
+        ranges = await ranking_gate.sector_ranges(session, [d.symbol for d in universe], today, today)
+        for d in universe:
+            d.sector = ranking_gate.sector_on(ranges.get(d.symbol, []), today)
+    return systems
+
+
 def missing_data(ast: Any) -> List[str]:
     """Functions in the screen whose data the run path does not load (`Spec.needs` not in RUN_PROVIDES)."""
     out: List[str] = []
@@ -406,7 +555,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, base_tf, params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     missing = missing_data(ast)
@@ -415,18 +564,23 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
                                                                 "yet (sector / index / F&O lists or the option chain); a run uses bars only",
                                                      "problems": [{"message": f"{m}() needs data the run does not load yet", "pos": None} for m in missing]})
     symbols = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+    # Z10-d: same matches, less time. LD-7: read before the fetch, while this request still holds its connection (read
+    # after it, the flag took a second pool checkout and a query per run).
+    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)
     tier: Dict[str, Any] = {}
     universe, fetch_problems, data_source = await fetch_frames(session, user.tenant_id, symbols, body.exchange, base_tf, validated.fetch_lookback,
-                                                               user_id=user.id, tier_out=tier)
+                                                               user_id=user.id, tier_out=tier, release=True)
     if zone_gate.flagged_calls(ast):              # Z7a-3: the tenant's zone snapshots as of each bar's close
         await zone_gate.attach_zones(session, user.tenant_id, body.exchange, universe, datetime.now(timezone.utc), ast, base_tf, params)
     if fundamentals_gate.flagged_calls(ast):      # U7 LG3: the reported figures as known by each bar's close (point in time)
         await fundamentals_gate.attach(session, universe, datetime.now(timezone.utc), tenant_id=user.tenant_id)
-    vectorized = await flag_enabled(session, VECTOR_FLAG, user.tenant_id)          # Z10-d: same matches, less time
+    systems = await rank_systems(session, user.tenant_id, ast, params, universe)       # N3 S7a: RankScore's systems
+    await release_connection(session)            # LD-7: reads only so far; no pool connection held while the screen runs
     # the evaluation is pure CPU (no database): off the event loop, so one heavy screen does not stall other requests
-    matches = await asyncio.to_thread(run_screen, ast, validated, universe, base_tf=base_tf, params=params, vectorized=vectorized)
-    stages = await asyncio.to_thread(stage_survivors, ast, validated, universe, base_tf=base_tf, params=params, matches=matches,
-                                     vectorized=vectorized)
+    # (RankScore's systems ride the context asyncio.to_thread copies into the worker - N3 S7a)
+    with ranking_gate.active(systems):
+        matches, stages = await asyncio.to_thread(screen_and_funnel, ast, validated, universe, base_tf=base_tf, params=params,
+                                                  vectorized=vectorized)
     results: List[Dict[str, Any]] = [{"symbol": m.symbol, "matched": m.matched, "reason": m.reason} for m in matches]
     results += [{"symbol": s, "matched": False, "reason": why} for s, why in fetch_problems.items()]
     payload = {"text": nodes.to_text(ast), "base_tf": base_tf, "data_source": data_source, "scanned": len(symbols),
@@ -455,10 +609,14 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     if matched_symbols and await evidence_store.enabled(session, user.tenant_id):
         # U8 EV1: the matched symbols' evidence packs, from the same bars, parameters and ranks the screen just ran on
         await session.flush()
-        ids = await evidence_store.store_for_run(session, tenant_id=user.tenant_id, user_id=user.id, run_id=run_row.id, ast=ast,
-                                                 validated=validated, universe=universe, matched=matched_symbols, base_tf=base_tf,
-                                                 params=params, exchange=body.exchange, data_source=data_source,
-                                                 screen_name=screen_name, per_user=bool(tier))   # BT1b: read through the runner's own session
+        ranking_token = ranking_gate.ACTIVE.set(systems)          # N3 S7a: the packs read the same RankScore systems
+        try:
+            ids = await evidence_store.store_for_run(session, tenant_id=user.tenant_id, user_id=user.id, run_id=run_row.id, ast=ast,
+                                                     validated=validated, universe=universe, matched=matched_symbols, base_tf=base_tf,
+                                                     params=params, exchange=body.exchange, data_source=data_source,
+                                                     screen_name=screen_name, per_user=bool(tier))   # BT1b: the runner's own session
+        finally:
+            ranking_gate.ACTIVE.reset(ranking_token)
         for r in results:
             r["evidence_id"] = ids.get(str(r["symbol"]))
         run_row.result_json = json.dumps(results)

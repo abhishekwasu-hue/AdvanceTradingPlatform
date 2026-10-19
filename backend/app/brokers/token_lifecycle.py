@@ -209,13 +209,16 @@ async def verify_token(
 
 # --- OAuth redirect flow (Upstox) -------------------------------------------------------------
 
-def create_oauth_state(tenant_id: int, user_id: int, broker_name: str, now: Optional[datetime] = None) -> str:
+def create_oauth_state(tenant_id: int, user_id: int, broker_name: str, now: Optional[datetime] = None,
+                       account_label: str = "primary") -> str:
     """A signed, short-lived state parameter. The broker echoes it back to the (unauthenticated)
-    callback, which is the only way the callback can know which tenant's credentials to update -
-    and the signature means a forged callback can't point the code at someone else's tenant."""
+    callback, which is the only way the callback can know which tenant's credentials (and which of
+    its accounts at that broker) to update - and the signature means a forged callback can't point
+    the code at someone else's tenant or account."""
     now = now or _utcnow()
     payload: Dict[str, Any] = {
         "purpose": "broker_oauth", "tenant_id": tenant_id, "user_id": user_id, "broker": broker_name,
+        "account_label": account_label or "primary",
         "iat": now, "exp": now + timedelta(minutes=OAUTH_STATE_TTL_MINUTES),
     }
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)

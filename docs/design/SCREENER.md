@@ -484,7 +484,7 @@ each one is a series (not a last-bar flag like `Trend` or `NearSupport`), it wor
 
 | Entry | Kind | What it is |
 |---|---|---|
-| `Pattern(name)` | filter | The named candlestick pattern on this bar. It reads this bar and at most the two before it. There are 14 names, from the detectors in `candlestick_patterns.py`, with the direction split where a detector has two: `doji`, `hammer`, `shooting_star`, `bullish_engulfing`, `bearish_engulfing`, `morning_star`, `evening_star`, `bullish_pin_bar`, `bearish_pin_bar`, `inside_bar`, `bullish_outside_bar`, `bearish_outside_bar`, `bullish_rejection`, `bearish_rejection`. |
+| `Pattern(name, confirm="any")` | filter | The named candlestick pattern on this bar. It reads this bar and at most the two before it. There are 14 names, from the detectors in `candlestick_patterns.py`, with the direction split where a detector has two: `doji`, `hammer`, `shooting_star`, `bullish_engulfing`, `bearish_engulfing`, `morning_star`, `evening_star`, `bullish_pin_bar`, `bearish_pin_bar`, `inside_bar`, `bullish_outside_bar`, `bearish_outside_bar`, `bullish_rejection`, `bearish_rejection`. AMW-3 (flag `screenql_amw_functions`) adds four v2 names and the `confirm` argument: see the AMW-3 section. |
 | `SwingHigh(degree)` / `SwingLow(degree)` | factor, price | The last **confirmed** swing high / low from the causal swing engine (`causal_swings.py`: ZigZag on ATR by default; degree 0 to 3 = the smallest to the largest threshold). |
 | `SwingDirection(degree)` | classifier | `UP` after a confirmed swing low, `DOWN` after a confirmed swing high, empty before the first. |
 | `MedianRange(n)` | factor, price | The median (high − low) of the n bars **before** this one: the market's own noise, as used by the break and reversal logic. |
@@ -842,6 +842,29 @@ with the indicator block, and the result table.
   (passes per stage), `test_s1d_screener_api.py` (passes in the API, preview not stored). Headless Chromium: adding a
   group, a filter and a category; a preview before Run with the "live" mark; why chips after Run; no previews with
   live counts off; no page errors. Screenshots in `docs/screenshots/screener-u5d2/`.
+
+## U2 remaining blocks (built): the formula block and opening shipped screens in the builder (flag `screener_builder_u2`, off)
+
+Source: SCREENER_SPEC §3 (builder; U2 taken as that section, SC-16) and ATP_PHASE0_FREEZE (Phase 0: only the U2 blocks
+the shipped screens use). The gap: the funnel's block forms hold no offsets (`[1]`) and no arithmetic, so the Legends and
+breakout screens could not open in the builder (TX1-7, LG1-7).
+
+- **Formula block** (`model.ts` `FormulaStage`, `StageRow`): a condition in ScreenQL text, edited in place, checked by
+  `/validate` with the rest of the screen (a problem lands on the block by its span). A top-level AND / OR inside it is
+  bracketed so it stays ONE funnel stage (`needsBrackets`, string- and bracket-aware). Empty = a problem on the block.
+  Offered in "Add a condition" only with the flag on; groups keep the other forms.
+- **Open a shipped screen** (`POST /api/screener/stages`, `app/screener/stages.py`; S_COMPUTE like `/validate`): a
+  Legends card or breakout template (its family's flag must be on; a Legends card of a slice the organisation does not
+  see - LG2 with `screener_legends_lg2` off - or a screen behind its own flag answers 404, as `GET /legends/{id}` does) or any source -> validated and gated like
+  `/validate`, parameters inlined, split into the top-level conjuncts the run path counts as stages, each with its
+  canonical text, its bracketed form and its AST. `importStages.ts` maps a conjunct to an indicator, filter, category or
+  rank block only when that block writes back exactly the server's text; everything else is a formula block. Tested:
+  every Legends card and breakout template splits and joins back to the same screen.
+- **Contract.** `builderTexts.json` has formula cases (both sides test them); the page enables Open for Legends and
+  breakout cards with the flag on.
+- **No new ScreenQL function**, no migration, no order path.
+- **Not in this step (Phase 0 freeze):** the Fundamental / Ownership / Events / F&O tabs (their data is not on the run
+  path yet), a visual editor for arithmetic and offsets, the QueryDrawer.
 
 ## Z7a-3 (built): market-zone functions `NearZone`, `ZoneRole`, `ZoneState`, `ZoneStrength`
 
@@ -1260,6 +1283,65 @@ Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §8 BK4 (B5 / B6 / B8 / B9
   non-vacuous; the gap cases use the down side because the synthetic 5m sessions gap mostly down, and the synthetic
   daily bars never gap, so the daily gap behaviour is covered by fixtures.
 
+## U6 BK5 (built): breakout screen fitness, the template catalogue, docs (flag `screener_breakouts_fitness`, off)
+Spec: `docs/specs/ATP_BREAKOUT_SCREENERS_ADDENDUM.md` §6 (screen fitness) and §8 BK5 (templates, fitness stats, docs).
+Code: `app/screener/breakouts/fitness.py` (the statistics), `fitness_job.py` (the nightly pass and the reads), the
+`/api/screener/breakouts/fitness` endpoint. Research notes: `docs/research/breakouts.md` "BK5: screen fitness". Open
+questions BK5-1..BK5-5.
+- **What it shows.** For each daily / weekly template, every past match's forward return at 1 / 5 / 20 bars (% and R,
+  signed for the side), whether the break failed, its grade and volatility regime, aggregated overall, by grade, by
+  regime, by timeframe and by side. Each bucket gives its signal count, failed-break rate, and per horizon the samples,
+  mean, median, hit rate and mean R. A bucket below `fitness_min_samples` (30) is `low_sample` (greyed). It is
+  informational only, with a disclaimer; nothing ranks or recommends a screen.
+- **Data.** Only the shared lake's daily bars (`md_candles`, read with the zones job's point-in-time reader: ended and
+  ingested by the run time). No user's broker data and no tenant's private store are read, so one set of rows serves every
+  organisation (reference data, like the market zones). The universe is `BREAKOUT_FITNESS_SYMBOLS` (empty:
+  `MARKET_ZONES_SYMBOLS`) under the label `BREAKOUT_FITNESS_UNIVERSE`, with up to `BREAKOUT_FITNESS_HISTORY_DAYS` (5
+  years) of history. Intraday templates are not computed: there is no shared intraday history (BK5-2).
+- **Pass.** The worker starts it as its own task once per IST day from `BREAKOUT_FITNESS_HOUR_IST` (21), with the NSE
+  closed, after HB1's EOD ingest (the zones job's `eod_ready`). It runs under a Postgres advisory lock and a time budget
+  (`BREAKOUT_FITNESS_BUDGET_SECONDS`), with the CPU part in a thread. It is resumable: templates stored for the day are
+  skipped, and the day counts as done only when every template was worked through. Rows go to `breakout_fitness_runs`
+  (one per template, universe and IST date, with the parameter hash), via migration `d4f6a8c0e2b5` (ROLLBACK_SAFE,
+  additive).
+- **Endpoint.** `GET /api/screener/breakouts/fitness[?template_id=]` (member; tenancy table) answers the newest stored row
+  per template. It needs `screener_v2`, `screener_breakouts` and `screener_breakouts_fitness`, and leaves out the BK3 /
+  BK4 templates while their flags are off. It answers 503 while the fitness flag is off.
+- **Templates.** Every screen has at least one template, and every template's ScreenQL compiles (a test keeps both true).
+  The catalogue:
+
+| Screen | What | ScreenQL | Timeframes | Flags | Templates |
+|---|---|---|---|---|---|
+| B1 | Range / consolidation breakout | `RangeBreakout` | any | screener_breakouts | swing_1h_range |
+| B2 | Swing-high / swing-low breakout (BOS / CHoCH) | `SwingBreakout`, `SwingBreakType` | any | screener_breakouts | daily_swing_break |
+| B3 | Volatility contraction (VCP-style) breakout | `VCPBreakout`, `VCPReady` | 1d | screener_breakouts + screener_breakouts_bk3 | daily_vcp, daily_vcp_watchlist |
+| B4 | Inside-bar / NR4 / NR7 breakout | `NRBreakout` | any | screener_breakouts | intraday_15m_nr7 |
+| B5 | Trendline / channel breakout | `TrendlineBreakout` | any | screener_breakouts + screener_breakouts_bk4 | daily_trendline_break, swing_1h_channel_break |
+| B6 | Flag / pennant / triangle breakout | `PatternBreakout` | any | screener_breakouts + screener_breakouts_bk4 | daily_flag, daily_triangle |
+| B7 | 52-week / N-week high breakout | `NewHighBreakout` | 1d / 1w | screener_breakouts | daily_52w_high, weekly_52w_high |
+| B8 | Gap breakout (gap-and-go / gap-fill) | `GapBreakout`, `GapType` | 1m / 3m / 5m / 15m / 1d | screener_breakouts + screener_breakouts_bk4 | intraday_5m_gap_and_go, daily_gap_base |
+| B9 | Retest entry (second chance) | `RetestEntry` | any | screener_breakouts + screener_breakouts_bk4 | daily_range_retest, swing_1h_range_retest |
+| B10 | Donchian channel breakout | `DonchianBreakout` | any | screener_breakouts + screener_breakouts_bk3 | daily_donchian_20, daily_donchian_55 |
+| B11 | Bollinger squeeze -> expansion (TTM squeeze variant) | `SqueezeBreakout` | any | screener_breakouts + screener_breakouts_bk3 | daily_bb_squeeze, intraday_15m_ttm_squeeze |
+| B12 | Moving-average breakout | `MABreakout` | any | screener_breakouts + screener_breakouts_bk3 | daily_50ma_breakout |
+| B13 | ATR / range expansion | `RangeExpansion` | any | screener_breakouts | intraday_15m_expansion |
+| B14 | Volume breakout | `VolumeBreakout` | any | screener_breakouts | intraday_5m_volume |
+| B15 | RSI / ADX regime breakout | `RegimeBreakout` | any | screener_breakouts + screener_breakouts_bk3 | daily_rsi_adx_regime |
+| B16 | Opening range breakout | `ORBreakout` | 1m / 3m / 5m / 15m | screener_breakouts | intraday_5m_orb15, intraday_15m_orb30 |
+| B17 | First-hour / previous-day / first-candle / pre-market level break | `DayLevelBreak` | 1m / 3m / 5m / 15m | screener_breakouts | intraday_15m_first_hour, intraday_5m_prev_day |
+| B18 | New high / low of day | `DayExtremeBreak` | 1m / 3m / 5m / 15m | screener_breakouts | intraday_5m_day_extreme |
+
+- **Review fixes (BK5 review).**
+  - The nightly pass reads daily bars only from the lake's shared-licensed sources (`price_action_layer._fetch`:
+    NSE bhavcopy, vendor, the operator's history). Per bar the preferred source wins, then its highest version. A
+    `broker:` or `stream:` row one organisation's session wrote never reaches the fitness, at any version (tested).
+  - `latest` reads each template's newest stored day only (a grouped max of `as_of`), never every day.
+  - Migration `d4f6a8c0e2b5` now revises `d7f9a1c3e5b7`, main's head, so there is one head. It is still
+    ROLLBACK_SAFE.
+  - The worker's `_last_breakout_fitness_day` is typed, so `trading_worker.py` has no new mypy error.
+  - BK4: `lines.Lines` computes the anchor-pair grid in chunks (`PAIR_CELLS`), with results equal to the one grid
+    and memory bounded by the chunk.
+
 ## U8 EV1 + EV2 (built): evidence charts (flag `evidence_charts`, off)
 Design note: `docs/design/EVIDENCE_CHARTS.md`. In short:
 - Each matched symbol of a run, and each fired bar-close alert, stores an `evidence/1` pack. The runtime's own
@@ -1363,7 +1445,7 @@ citation), updated IN PLACE, with no record of when a figure became public. A sc
 see later restatements and later reports, so it is never read by a screen. LG3 adds the point-in-time layer first.
 
 - **Store (`financial_period_versions`, migration `c4e8a2d6f0b1`, ROLLBACK_SAFE: one new table; it revises main's
-  head `f3b5d7a9c1e2`, to re-chain at merge).**
+  head `c5f7e9a1b3d4` (LD-7 dashboard indexes), re-chained at each merge with main so there is one head).**
   - Both write paths (`POST /companies/{symbol}/financials`, the import / provider upsert) append a version when a
     period's figures change (`app/fundamentals/pit.py`).
   - `known_from` (OPEN_QUESTIONS LG3-1):
@@ -1512,6 +1594,47 @@ broker's and C2's default) and `brokerage_per_order` (default 20). It is a trade
 - LOW: no stale-close sells (S6-13); the equal-weight universe keeps delisted names at their last price; a missing
   NIFTY close is skipped and counted.
 
+## N3 S7a (built): ranking systems (flag `screener_rankings`, off; needs `screener_v2`)
+
+Spec §2.5, the first of S7's two PRs (S7b: categories B and D with the fundamental rankings). A ranking system is a
+tree of weighted factors that ranks a universe 0-100, with every component shown (`app/screener/ranking.py`).
+
+- **The tree.** Nodes are leaves `{name, factor, weight, higher_is_better, neutral}` or groups `{name, weight,
+  children}`. Weights are percentages adding up to 100 at every level; at most 3 levels and 30 factors. A factor is a
+  daily ScreenQL number of one symbol's bars (not a condition, no Rank / PercentileRank / RankScore, no other
+  timeframe). `neutral: "sector"` takes the percentile within the sector.
+- **Scoring.** Each factor's percentile across the universe (ties averaged, reversed when lower is better, within the
+  sector when neutral); a group is the weighted mean of its children (a missing child is left out and the rest
+  re-weighted, S7-2); the rank is the composite's percentile (100 = best). The answer carries each factor's value and
+  score and each group's score per symbol: no black box.
+- **Platform systems** (`platform:Momentum`, `platform:Low volatility`, `platform:Trend quality`), read-only, with their
+  formulas in `GET /api/screener/rankings` (S7-4).
+- **Use.**
+  - A column / sort key: `POST /api/screener/rankings/run` ranks up to 50 symbols on their last closed daily bar,
+    read through the same path as a screen run (the organisation's session, or the runner's own under BT1b).
+  - A filter: ScreenQL `RankScore("<name>") > 80` (cross-sectional, daily, `needs: rankings`, flag-gated like the zone
+    functions; the system must be a platform one or the organisation's own). `/run` loads the systems and, for a
+    sector-neutral one, today's sectors.
+  - A backtest sort key: S6b's `rank_system` (instead of `rank_by`): the rank at each rebalance date over the symbols
+    eligible then, sectors as of that date; the ledger trial keeps the tree.
+- **Routes** (tenancy table): `GET /api/screener/rankings` (member), `POST` / `PUT /{system_id}` / `POST
+  /{system_id}/archive` (trader, tenant-scoped, archived never deleted), `POST /run` (trader, rate-limited). Table
+  `ranking_systems` (migration `c3d5e7f9a1b2`, additive, ROLLBACK_SAFE).
+- **No look-ahead.** A history rank is each factor's S6a causal series read at the date, then scored on that date's
+  cross-section; tests check it equals ranking bars cut at each date, and that rewriting every later bar leaves it
+  unchanged. Z10-a: `RankScore` is exempt as cross-sectional (like Rank) and LAST_BAR_ONLY (refused inside SMA, Count...).
+- **Perf.** 50 symbols x 60 dates of `platform:Momentum` (four factors) take about 1.5 s; the test bound is 10 s.
+- **Refused for now:** RankScore inside a screen-history run (S7-5) and in alert rules (S7-6). Information only:
+  nothing is placed, and every answer carries the disclaimer.
+
+### Review of S7a (fixed)
+- MED-2: factors read bars only and need their family's flag everywhere (S7-8). MED-3: a history work budget (S7-9).
+  MED-4: a sector-neutral backtest test with a reclassification between rebalances, and a causal test on stored
+  classifications (`sectors_by_date`: the rank at each date equals bars cut there with only the rows known by then; a
+  later reclassification changes nothing earlier). MED-1: the migration is chained onto main's head (S7-10, tested).
+- LOW: no '/' in node names; sector ranges follow the ISIN the symbol had in each period; factors longer than the
+  fetch window are refused; editing a screen that an alert rule runs is checked against that rule; archiving frees the
+  name; the result cache key carries the ranking trees.
 ## S10 (Phase 0 slice, built): the ETF screen and the WhatsApp / SMS DLT seam (flags `screener_etf`, `alerts_whatsapp_dlt`, off)
 
 Source: SCREENER_SPEC §5 S10 ("J (ETF/MF), SMS/WhatsApp, mobile push, marketplace") within ATP_PHASE0_FREEZE (no
@@ -1534,6 +1657,80 @@ marketplace, no store apps).
   plans only (402 on Free). With the flag off a WhatsApp channel or DLT fields are refused (403).
 - **Mobile push** stays the PWA's Web Push (installed on a phone it is a mobile push); native FCM / APNs come with the
   store apps (frozen). **Marketplace** is frozen (K).
+## U5 D3a (built): result board views - heatmap and chart grid (flag `screener_board_views`)
+
+- **`POST /api/screener/board/context`** (`app/screener/board.py`; tenancy "self", it stores nothing) gives, for up to 500
+  symbols in one call (one batched read each for companies, bars and splits):
+  - sector, industry and market cap from the company reference data (`companies`): the shared rows and the caller's
+    organisation's own contributed rows only (`app/fundamentals/visibility.visible`, #234). A symbol without a visible
+    row is "Unclassified", never a guessed sector;
+  - the last 30 daily closes from the shared lake (shared-licensed sources; one bar per IST trading date: the preferred
+    source, then its highest version; corrections only once ingested), adjusted for the splits and bonuses known now
+    (`app/market_lake/adjust.share_factor`), and the last day's change.
+
+  With the flag off it answers 404 and the page shows the table alone.
+- **`ResultViews`** wraps the D1 board with a Table / Heatmap / Chart grid tablist:
+  - **Heatmap:** a squarified treemap (Bruls et al.) of the scanned symbols by sector, sized by market cap. A symbol
+    with none counts at the median and the caption says so. Tiles are coloured by the day's change on the up / down
+    tokens (colour-blind safe), matched symbols are ringed in `--signal`, and each tile names its symbol, result and
+    change.
+  - **Chart grid:** the matched symbols (up to 12), each with its evidence chart (the scan's own conditions, U8)
+    when the run stored one, else the shared daily closes.
+- **Tests:** `tests/test_u5_d3_board.py` (reference data, shared closes only - no `stream:` row, no correction
+  before its ingestion - the flag and limits); `boardViews.test.tsx` (treemap areas and bounds, sector sizing and
+  the median fill, colours, accessible labels, grid limits).
+- **Review of D3a (fixed):** HIGH - the company read is filtered by `visible` (another organisation's contributed sector /
+  market cap never shows; two-org test). MED - the context covers 500 symbols per call and the heatmap lays out only
+  symbols with context, captioned "first N of M shown" (no fake "Unclassified" tiles). LOW - split / bonus adjusted
+  closes and change; the per-day winner by (IST date, source rank, version); a failed context call (not 404) says so
+  with a Retry instead of "Loading…" forever; the tablist has a roving tab stop (arrows / Home / End) and
+  `aria-controls` to its tabpanel.
+- **Next (D3b):** RRG (relative rotation against a benchmark from the shared lake) and the template sheet with live
+  thumbnails; the F&O dashboard waits for chain data on the run path (EV-11 / CH4-1).
+
+## AMW-3 (built): ScreenQL functions for the AMW screener's predicates (flag `screenql_amw_functions`, off)
+
+Source: `docs/design/AMW_PORT.md` section 4 (AMW-3) and the Strategy Lab predicate map (section 3.3). Re-implemented from
+the AMW screener's described behaviour; its tests are behaviour specifications, re-written on ATP bars
+(`backend/tests/test_amw3_screenql_functions.py`). No AMW code was run or copied.
+
+| Entry | Kind | What it is |
+|---|---|---|
+| `StDev(x, n)` | factor, unit of x | Population standard deviation of x over n bars (divides by n, like Pine's `ta.stdev`; `ZScore` keeps the sample one). Reads a history, so a last-bar-only function inside it is refused. |
+| `RsiDivergence(side, lookback=15, degree=0)` | filter | Regular RSI(14) divergence between the last two **confirmed** swing lows (`bullish`: a lower low with a higher RSI) or highs (`bearish`: a higher high with a lower RSI), from the causal swing engine at `degree`. RSI is read at each swing's extreme bar. True from the second swing's confirmation bar while that swing's extreme is at most `lookback` bars back. |
+| `SwingLabel(kind, degree=0)` | classifier | `HH` / `LH` (kind `high`) or `HL` / `LL` (kind `low`): the last confirmed swing of that kind against the one before it. An equal price reads lower, as in `DowTrend` (tested to agree with it). Missing before the second swing of the kind. |
+| `TimeOfDay(start, end)` | filter | The bar's **start** time in exchange time (IST; a naive index is read as UTC) is between `start` and `end`, both `HH:MM` and both included. `start` after `end` wraps past midnight. Intraday timeframes only (1m to 1h). |
+| `Pattern(name, confirm)` v2 names | filter | `bullish_strong_body` / `bearish_strong_body`: body >= 70 % of the range and range >= 1 x ATR(14). `bullish_gap_reversal` / `bearish_gap_reversal`: opened beyond the previous close by >= 0.5 x ATR(14) and closed back across it (a gap down closing above, a gap up closing below). ATR(14) is `app/indicators/volatility.atr` on the bars so far; false on the first 13 bars. |
+| `confirm` on `Pattern`, `PatternBullish`, `PatternBearish` | argument | `any` (the default, the pattern on this bar - the behaviour before AMW-3), or the status this bar gave the pattern on the bar **before**: `confirmed` (bullish: close above the pattern bar's high; bearish: below its low), `failed` (beyond the other side), `unconfirmed` (inside its range, ends included). `doji` and `inside_bar` have no direction, so a status other than `any` is refused. |
+
+- **No look-ahead.** Every entry has Z10-a cases (`app/quality/causal_cases.py`: SCREENQL_SERIES / SCREENQL_LAST_BAR /
+  SCREENQL_DAILY, the v2 masks, the confirmation masks and the v2 detectors as events). A swing counts from the bar that
+  confirmed it; a confirmation status is known on the bar after the pattern, never on the pattern bar.
+- **Validation.** `TimeOfDay` arguments must be `HH:MM` (a literal or a parameter; `Arg.pattern`). History:
+  `Spec.choice_extra_bars` adds bars by an argument's value (a v2 candle 15 bars in all, a status one more), the swing
+  functions use the swing degree's history (`degree_min_bars`).
+- **Kept apart.** The v2 detectors are not in `DETECTORS`: `PatternBullish` / `PatternBearish`, the scanner and signal
+  scoring keep their pattern set. `pattern_masks_v2` and `confirmation_masks` are new; `pattern_masks` is unchanged.
+- **Vectorised path (Z10-d).** `StDev` (a ddof-0 variant of the rolling-std kernel, equal to pandas bit for bit) and
+  `TimeOfDay` run in `panel.py`; the swing and candle functions run per symbol.
+- **Evidence and mirror.** `DRAWN_AS`: `StDev` series; `RsiDivergence`, `SwingLabel`, `TimeOfDay` strip. A status draws
+  the pattern bars and the confirming bar. The mirror swaps the v2 candles and keeps `confirm`; `RsiDivergence`,
+  `SwingLabel`, `TimeOfDay` and `StDev` have no mirror rule yet.
+- **Flag `screenql_amw_functions` (off), the U6 BK1 / Z7a-3 pattern.** Off: the registry endpoint hides the four
+  functions, the v2 names and the `confirm` argument (`amw_functions.hide` gives the description exactly as before
+  AMW-3, which is what `builderTexts.json` holds); a screen, a saved screen, a run, a history run, a chart study or an
+  alert rule using any of them is refused with the reason (a `$parameter` pattern name is resolved from the screen's
+  parameters); an active alert rule pauses with the reason and resumes when the flag is back. `confirm "any"` is never
+  gated. While off, a Pattern* mistake is validated against the registry as it was before AMW-3
+  (`amw_functions.FLAG_OFF_FUNCTIONS`), so its message is main's and names no hidden value or argument. Research only:
+  matches, never orders.
+- **Bar close only.** A confirmation status, `RsiDivergence` and `SwingLabel` can flip on a forming bar, so an intrabar
+  alert rule using one is refused at save and skipped with the reason by the engine (`amw_functions.intrabar_calls`).
+  The v2 candles, `StDev` and `TimeOfDay` read a forming bar like the indicators do.
+- Open question AMW3-5: the v2 candles use ATR(14) including their own bar, as AMW does.
+- Open question AMW3-1 (`docs/OPEN_QUESTIONS.md`): `RsiDivergence` measures `lookback` from the swing's extreme bar, as
+  AMW does, but ATP's ATR swings confirm later than AMW's 3-bar fractals, so a short `lookback` can miss a divergence
+  that is only confirmed later.
 
 ## Open questions (provisional answers taken, work continues)
 - **SC-16. Addenda U2 (builder) and U4 ("Then" panel) not received.** U5 refers to them; only U1 and U5 are in the

@@ -1241,6 +1241,8 @@ class AiActionRecord(Base):
               postgresql_where=text("status IN ('PROPOSED', 'APPROVED')"), sqlite_where=text("status IN ('PROPOSED', 'APPROVED')")),
         # Z3 / BT2: one ENTRY proposal per signal (a redelivered webhook or a second worker pass is refused by the database).
         UniqueConstraint("tenant_id", "idempotency_key", name="uq_ai_actions_tenant_idempotency_key"),
+        # LD-7: the dashboard's proposal list (tenant, status, newest first by id).
+        Index("ix_ai_actions_tenant_status_id", "tenant_id", "status", "id"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -1519,6 +1521,8 @@ class NotificationRecord(Base):
     """
 
     __tablename__ = "notifications"
+    # LD-7: the feed every page polls - one tenant's rows, newest first.
+    __table_args__ = (Index("ix_notifications_tenant_created", "tenant_id", "created_at"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
@@ -2696,6 +2700,27 @@ class MarketZoneRunRecord(Base):
     source_ingested_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)    # newest ingest it read
 
 
+class BreakoutFitnessRunRecord(Base):
+    """U6 BK5: one template's screen fitness as of a date - forward returns and failed-break rates of its historical
+    signals on the SHARED lake's daily bars (md_candles; never a tenant's or a user's own data), aggregated over the
+    configured universe. Reference data like the market zones: no tenant column, the same rows for every organisation.
+    Append-only per (template, universe, as_of); the latest as_of is the one shown."""
+
+    __tablename__ = "breakout_fitness_runs"
+    __table_args__ = (UniqueConstraint("template_id", "universe", "as_of", name="uq_breakout_fitness_run"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    universe: Mapped[str] = mapped_column(String(32), nullable=False)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)                                   # the IST date of the run
+    signal_tf: Mapped[str] = mapped_column(String(8), nullable=False)
+    params_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbols: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    signals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stats: Mapped[str] = mapped_column(Text, nullable=False, default="{}")                       # JSON (fitness.aggregate)
+    computed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
 class MarketZoneRecord(Base):
     """Z7a-2: one zone of a stored snapshot - its bounds, role by price, ATP lifecycle state (fresh / tested / flipped /
     invalidated) and counters, and the tracker the next run continues from (JSON)."""
@@ -3002,6 +3027,25 @@ class ScreenRecord(Base):
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 
+class RankingSystemRecord(Base):
+    """N3 S7a (spec §2.5): a saved ranking system - a weighted tree of ScreenQL factors (higher / lower is better,
+    optionally sector-neutral) that turns a universe into a 0-100 rank. Tenant-scoped, named (unique per organisation),
+    archived, never hard-deleted (a screen may refer to it by name through RankScore)."""
+
+    __tablename__ = "ranking_systems"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_ranking_systems_tenant_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    tree_json: Mapped[str] = mapped_column(Text, nullable=False)
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
 class ScreenRunRecord(Base):
     """S1d (ADR-0021 §6): one screen run - what ran (AST hash and version), on which universe and data source, and what
     matched. Append-only: a match list someone acted on can be reproduced."""
@@ -3201,6 +3245,23 @@ class ChartLayoutRecord(Base):
     name: Mapped[str] = mapped_column(String(60), nullable=False)
     layout_json: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class WatchlistRecord(Base):
+    """AMW-2: one named watchlist of one user - an ordered list of symbols the Screener and the Scanner can load as
+    their universe. Per user and tenant (BT1b), unique by name per user. A list of names only: it places nothing.
+    Behind the `watchlists` flag (off by default)."""
+
+    __tablename__ = "watchlists"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "name", name="uq_watchlists_tenant_user_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    symbols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 

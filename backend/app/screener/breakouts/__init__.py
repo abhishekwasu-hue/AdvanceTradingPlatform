@@ -12,6 +12,9 @@ timeframe selector.
   lines.py      BK4: B5 trendline / channel and B6 flag / pennant / triangle (the CH3b trendline rule as of every bar)
   gaps.py       BK4: B8 gap breakout with the gap-and-go / gap-hold / gap-fill class
   retest.py     BK4: B9 retest entry after a range / swing / Donchian / trendline breakout
+  fitness.py    BK5: screen fitness - forward returns and failed-break rates of a template's past matches, by grade /
+                timeframe / volatility regime (informational)
+  fitness_job.py  BK5: the nightly fitness pass over the shared lake's daily bars, and the stored rows' reader
   session.py    BK2: the exchange session clock (calendar, half days, special sessions), session VWAP, relative volume by
                 time of day (prior sessions only)
   quality.py    the overlay and `run_breakout` (one screen over one symbol's closed bars)

@@ -1885,6 +1885,19 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Routes are classified in the tenancy table (member).
 - Tests: `tests/test_n2_exposure_cone.py` (6, seeded lake bars with built-in beta 1 / 2 and r = 1); vitest
   `src/progression/exposure.test.tsx` (4). Open questions N2-14..N2-16.
+### 2026-10-12 IST - N2-5 market context panel (`claude/n2-5`, stacked on `claude/n2-4`)
+- Flag `context_panel` (off). `GET /api/context/panel` ("member") returns six tiles, each with status, source and
+  as-of, and NA on its own failure:
+  - regime: Dow structure of the NIFTY 50, daily and weekly;
+  - breadth from the lake;
+  - India VIX close, change, 1-year rank and percentile, plus the gate's live value under its viewer rule;
+  - FII / DII: the seam, NA until a source is set;
+  - global cues: the shared cache;
+  - events today and this week: global plus the user's own organisation.
+- Shared data only; no broker session.
+- Frontend: "Market context" card on the dashboard (progression i18n).
+- Tests: `tests/test_n2_context_panel.py` (4); vitest `src/progression/context.test.tsx` (2). Open questions
+  N2-17..N2-19.
 
 ## Fix: the trading worker acts per deployment as its creator (TX-3)
 
@@ -1919,6 +1932,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   on: "Verify with a chartered accountant; the Income-tax Act 2025 sections are not yet confirmed."; passes
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
+
+## U2 remaining blocks: the formula block and opening shipped screens (flag `screener_builder_u2`, off)
+
+- Branch `claude/n3-u2` (from main). Phase 0 scope per ATP_PHASE0_FREEZE: the blocks the shipped screens use.
+- Backend: `app/screener/stages.py` + `POST /api/screener/stages` (S_COMPUTE): a screen or a Legends / breakout id ->
+  validated, gated, parameters inlined, split into the funnel's stages. New flag in DEFAULT_OFF_FLAGS. No migration, no
+  new ScreenQL function.
+- Frontend: `FormulaStage` (bracketed to stay one stage), the formula block in StageRow and the kind picker (flag on),
+  `importStages.ts` (block form only on an exact text round trip, else formula), Open for Legends / breakout cards.
+- Tests: `tests/test_u2_stages.py`; vitest `importStages.test.ts` and the contract cases. Open questions U2-1..U2-3.
 
 ## N5 H-C4: multi-view analysis (flag `ai_multiview`, off)
 

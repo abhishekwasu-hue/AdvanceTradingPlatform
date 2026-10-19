@@ -1443,6 +1443,8 @@ export interface PlanCatalogueEntry {
   price_yearly: number;
   currency: string;
   trial_days: number;
+  /** AMW-1: listed once `plan_limits_v2` is on for every organisation. */
+  limits_v2?: Record<string, number>;
   [limit: string]: unknown;
 }
 
@@ -1484,6 +1486,10 @@ export interface BillingOverview {
   limits: Record<string, unknown>;
   metered_30d: Record<string, number>;
   usage: Record<string, unknown>;
+  /** AMW-1 (flag `plan_limits_v2`): the plan's limits for the AMW port's features; absent while the flag is off. */
+  limits_v2?: Record<string, number>;
+  /** The caller's own usage of each counted v2 limit; null where the feature that owns it is not built yet. */
+  usage_v2?: Record<string, number | null>;
 }
 
 export interface ApiKey {
@@ -2524,6 +2530,15 @@ export interface ExpectedMove {
   instrument: string; close: number; close_date: string; sigma: number; method: string; window: number; horizon: number;
   cone: ConeRow[]; selected: ConeRow; note: string;
 }
+
+/** N2-5 (flag `context_panel`): one tile of the market context panel. Fields beyond the common ones depend on the tile. */
+export interface ContextTile {
+  status: "ok" | "stale" | "na"; source: string; as_of: string | null; reason?: string;
+  [extra: string]: unknown;
+}
+export interface DowRead { trend: "UPTREND" | "DOWNTREND" | "RANGE"; swings: { kind: "HIGH" | "LOW"; label: string | null; price: number; date: string }[] }
+export interface ContextEvent { date: string; start_time: string | null; end_time: string | null; kind: string; scope: string; action: string; description: string; today: boolean; own: boolean }
+export interface ContextPanel { tiles: Record<string, ContextTile>; order: string[]; as_of: string; note: string }
 
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
 export interface PaperLadder {

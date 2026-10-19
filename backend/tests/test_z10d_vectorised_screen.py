@@ -70,6 +70,7 @@ def test_every_kernel_equals_pandas_bit_for_bit(variant, cols):
     for w in (1, 2, 5, 20, 100, 300):
         np.testing.assert_array_equal(panel._rolling_mean(x, w), df.rolling(w).mean().to_numpy(), err_msg=f"mean {w}")
         np.testing.assert_array_equal(panel._rolling_std(x, w), df.rolling(w).std().to_numpy(), err_msg=f"std {w}")
+        np.testing.assert_array_equal(panel._rolling_std(x, w, ddof=0), df.rolling(w).std(ddof=0).to_numpy(), err_msg=f"std0 {w}")  # AMW-3
         np.testing.assert_array_equal(panel._rolling_extreme(x, w, np.maximum), df.rolling(w).max().to_numpy(), err_msg=f"max {w}")
         np.testing.assert_array_equal(panel._rolling_extreme(x, w, np.minimum), df.rolling(w).min().to_numpy(), err_msg=f"min {w}")
     for span in (2, 5, 9, 20, 200):
@@ -88,6 +89,7 @@ FUNCTION_CASES = [
     "CountStreak(close > close[1])", "CrossAbove(EMA(close, 9), EMA(close, 21))", "CrossBelow(close, SMA(close, 20))",
     "PctChange(close, 5)", "ZScore(close, 20)", "ZScore(volume, 50)", "Lag(close, 3)", "EMA(PctChange(close, 1), 10)",
     "SMA(close - open, 10)", "close[2] / close - 1", "Max(close, 20)[3]",
+    "StDev(close, 20)", "StDev(volume, 1)", "StDev(close - open, 5)", "StDev(RSI(14), 10)",            # AMW-3 (population stdev)
 ]
 
 

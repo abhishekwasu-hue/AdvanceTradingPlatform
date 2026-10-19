@@ -9,6 +9,7 @@ import { Card, signClass, signTone } from "../components/ui";
 import { Badge, Button, PageHeader } from "../components/primitives";
 import GoLiveChecklist from "../components/GoLiveChecklist";
 import MarketPulseCard from "../components/MarketPulseCard";
+import ContextPanelCard from "../progression/ContextPanelCard";
 import OiBannersCard from "../components/OiBannersCard";
 import type { Page } from "../components/Sidebar";
 import type {
@@ -223,6 +224,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
                  sub={`${mtf} multi-timeframe · ${indicator} indicator`} onClick={onNavigate && (() => onNavigate("strategies"))} />
       </div>
 
+      {user && <ContextPanelCard />}
       {user && <MarketPulseCard onNavigate={onNavigate} />}
       {user && <OiBannersCard />}
 

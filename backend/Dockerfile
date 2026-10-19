@@ -33,7 +33,6 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/system/health', timeout=3)" || exit 1
 
-# Applies any pending schema migrations before the API starts serving traffic.
-# --proxy-headers: behind Caddy (prod) the client IP comes from X-Forwarded-For, but only from the proxies named in
-# FORWARDED_ALLOW_IPS (default 127.0.0.1 - i.e. never from a container peer unless the overlay says so) - P0.2 / S1.
-CMD ["sh", "-c", "python scripts/migrate_guard.py && uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips \"${FORWARDED_ALLOW_IPS:-127.0.0.1}\""]
+# Applies any pending schema migrations, then serves with API_WORKERS uvicorn processes (default 1; LD-7). Behind Caddy
+# the client IP comes from X-Forwarded-For, only from the proxies named in FORWARDED_ALLOW_IPS (P0.2 / S1) - see the script.
+CMD ["sh", "scripts/serve_api.sh"]

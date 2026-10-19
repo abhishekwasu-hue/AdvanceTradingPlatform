@@ -136,7 +136,9 @@ CASES_5M = [
     "RSI(14) <= 30", "RSI(14) BETWEEN 30 AND 50", "close BETWEEN SMA(close, 10) AND EMA(close, 20)", "ZScore(close, 20) > 1",
     'SwingDirection(0) == "UP"', 'SwingDirection(0) IN ("UP")', "NOT close > open",
     'Pattern("bullish_engulfing")', 'Pattern("morning_star")', 'Pattern("inside_bar")', 'Pattern("doji")', 'Pattern("bullish_pin_bar")',
-    'Pattern("bullish_rejection")', 'SwingZoneStrength("low", 0)', 'SwingZoneDistance("low", 0)', 'ReversalAt(SwingLow(0), "bullish")',
+    'Pattern("bullish_rejection")', 'Pattern("bullish_strong_body")', 'Pattern("bullish_gap_reversal")',              # AMW-3 v2
+    'Pattern("bullish_engulfing", "confirmed")', 'Pattern("bullish_pin_bar", "failed")', 'Pattern("bearish_rejection", "unconfirmed")',   # AMW-3 status
+    'SwingZoneStrength("low", 0)', 'SwingZoneDistance("low", 0)', 'ReversalAt(SwingLow(0), "bullish")',
     'RealBreak(SwingHigh(0), "above", 20)', 'RangeBreakout("up", 20, 0, 0)', 'RangeBreakout("down", 10, 0.1, 0, "auto")',
     'SwingBreakout("up", 0, 0)', 'NRBreakout("up", "nr7", 0, 0)', 'NRBreakout("down", "inside", 0, 0)', 'RangeExpansion("up", 1.5, 0)',
     'VolumeBreakout("up", 1.5)', 'ORBreakout("up", 15, 0, FALSE, 15, 0)', 'DayLevelBreak("up", "prev_day", 0, FALSE, 15, 0)',
@@ -436,3 +438,16 @@ def test_a_failing_trigger_keeps_the_ready_answer():
     universe = [SymbolData("S", {"5m": synthetic_bars(200, tf="5m", seed=1)})]
     ready_got, hits = lr.watch_eval(ready, trigger, ready_v, transition_v, universe, "5m", transition)
     assert ready_got["S"] == (True, None) and hits["S"][0] is False and "zones" in hits["S"][1]
+
+
+def test_the_library_refuses_rankscore_it_does_not_load(tx2_on, fake_bars):
+    """Merge of main into S7a: missing_data counts RankScore's systems as loaded by /run; the library runs do not load
+    them, so a RankScore condition is refused with the reason rather than ranking every symbol NaN."""
+    _set_flags(screener_rankings=True)
+    try:
+        headers, _ = _owner("tx2-rankscore@example.com")
+        r = client.post("/api/screener/library/watch-trigger", json={"ready": 'RankScore("platform:Momentum") > 80', "trigger": "close > high[1]",
+                                                                     "symbols": ["UP"]}, headers=headers)
+        assert r.status_code == 422 and "RankScore() is not run in confluence or watch lists" in r.text, r.text
+    finally:
+        _set_flags(screener_rankings=False)

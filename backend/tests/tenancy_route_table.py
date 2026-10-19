@@ -58,6 +58,7 @@ S_COPILOT = "self: a Copilot read or research run for the caller: read-only tool
 S_BACKTEST = "self: a backtest computed for the caller; stores nothing another member relies on"
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
+S_OWN_WATCHLISTS = "self: the caller's own watchlists (tenant and user); another member's or organisation's list is a 404"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
@@ -295,6 +296,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    ("POST", "/api/screener/board/context"): S_COMPUTE,          # U5 D3a: reference data + shared closes for the caller's symbols; stores nothing
     ("GET", "/api/charts/layers/trades"): "member",             # N4 CH4a: the caller's OWN PAPER trades only (user + organisation)
     ("GET", "/api/charts/contracts/basis"): "member",       # N4 CH4c: shared lake reference data (futures + spot closes)
     ("GET", "/api/charts/contracts/search"): "member",          # N4 CH4b: the instrument master (platform reference data)
@@ -306,6 +308,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/contract-notes"): "member",
     ("POST", "/api/contract-notes"): "trader",
     ("GET", "/api/contract-notes/{note_id}"): "member",
+    ("GET", "/api/context/panel"): "member",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,
@@ -523,6 +526,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/scanner/ai/read"): "trader",
     ("POST", "/api/scanner/run"): S_COMPUTE,
     ("GET", "/api/screener/breakouts/catalog"): "member",
+    ("GET", "/api/screener/breakouts/fitness"): "member",
     ("POST", "/api/screener/breakouts/run"): "trader",
     ("GET", "/api/screener/evidence/runs/{run_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}"): "member",
@@ -540,6 +544,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/history/asof"): "trader",        # N3 S6a: shared lake bars; the caller's own screens only
     ("POST", "/api/screener/history/fitness"): "trader",     # N3 S6a: writes one trial to the caller's organisation's ledger
     ("POST", "/api/screener/history/backtest"): "trader",    # N3 S6b: a simulation; writes one trial to the ledger
+    ("GET", "/api/screener/rankings"): "member",             # N3 S7a: the platform systems and the organisation's own
+    ("POST", "/api/screener/rankings"): "trader",
+    ("PUT", "/api/screener/rankings/{system_id}"): "trader",
+    ("POST", "/api/screener/rankings/{system_id}/archive"): "trader",
+    ("POST", "/api/screener/rankings/run"): "trader",         # N3 S7a: bars through the caller's organisation / own session
     ("GET", "/api/screener/runs/{run_id}"): "member",
     ("GET", "/api/screener/screens"): "member",
     ("POST", "/api/screener/screens"): "trader",
@@ -547,6 +556,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/screens/{screen_id}/archive"): "trader",
     ("GET", "/api/screener/taxonomy"): "member",
     ("POST", "/api/screener/validate"): S_COMPUTE,
+    ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/status"): P_STATUS_PAGE,
@@ -594,6 +604,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/telegram/webhook/{webhook_token}"): P_TELEGRAM_WEBHOOK,
     ("GET", "/api/trades"): "member",
     ("PATCH", "/api/trades/{trade_id}/journal"): "trader",
+    # AMW-2 (flag watchlists): the caller's own named watchlists (tenant and user)
+    ("GET", "/api/watchlists"): "member: the caller's own watchlists only (tenant and user, BT1b)",
+    ("POST", "/api/watchlists"): S_OWN_WATCHLISTS,
+    ("PUT", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
+    ("DELETE", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
     ("GET", "/api/webhooks/tradingview/token"): "member",
     ("POST", "/api/webhooks/tradingview/token/rotate"): "owner",
     ("POST", "/api/webhooks/tradingview/{webhook_token}"): P_TV_WEBHOOK,

@@ -157,7 +157,7 @@ def lists(path: str) -> Lists:
     from app.ai.grounding import ACRONYMS
     calls = json.loads(open(path, encoding="utf-8").read()).get("calls") or {}
     verbs = calls.get("verbs", {})
-    en = _alt(verbs.get("en", []))
+    en = _alt(verbs.get("en", []) + verbs.get("romanised", []))      # + the fixed Latin-script Hinglish verbs, read always
     # LOW10: [ \t]* after the anchor (a newline is an anchor of its own), so runs of newlines stay linear
     # round 5: "Open the chart and buy RELIANCE" - " and " / " then " open a clause too (an object is still required);
     # round 6: not after "buy" - "buy and hold" / "buy and sell" are verbs of their own (an object is still required, so

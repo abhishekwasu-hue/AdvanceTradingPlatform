@@ -36,12 +36,16 @@ def test_no_marathi_or_hindi_lists_and_ai_output_in_devanagari_is_withheld(text)
     assert not ok and shown is None and why == output_filter.NOT_ENGLISH_REASON
 
 
-def test_the_terms_file_is_english_only():
+def test_the_terms_file_is_english_plus_the_fixed_romanised_list():
     data = json.loads(output_filter.DEFAULT_FILE.read_text(encoding="utf-8"))
-    for kind in ("guarantee", "advice", "framing"):
-        assert set(data[kind]) == {"en"}, kind
-    assert set(data["calls"]["verbs"]) == {"en"} and set(data["calls"]["negated_sayings"]) == {"en"} and set(data["negations"]) == {"before"}
-    assert "light_verbs" not in data["calls"] and "pakka" not in json.dumps(data)
+    for kind in ("guarantee", "advice"):
+        assert set(data[kind]) == {"en", "romanised"}, kind               # no per-language (mr / hi) lists
+    assert set(data["framing"]) == {"en"}
+    assert set(data["calls"]["verbs"]) == {"en", "romanised"} and set(data["calls"]["negated_sayings"]) == {"en"} and set(data["negations"]) == {"before"}
+    assert data["calls"]["light_verbs"] == ["le lo", "ghya"] and "pakka" in data["calls"]["certainty"] and "pakka" in data["calls"]["certainty_lead"]
+    for phrase in ("pakka profit", "paisa double", "abhi kharido", "kharid lo", "bech do", "ye share lo", "best share hai"):
+        assert output_filter.blocked_terms(f"NIFTY 50: {phrase}.") == [phrase], phrase       # read always, whatever the language
+    assert {"kharido", "le lo", "ghya", "vika"} <= set(data["calls"]["verbs"]["romanised"])
     assert not any("\u0900" <= ch <= "\u097f" for ch in output_filter.DEFAULT_FILE.read_text(encoding="utf-8"))
     assert output_filter.framing("mr") == output_filter.framing("en") == data["framing"]["en"]
 
@@ -118,3 +122,14 @@ def test_thesis_narrative_is_filtered():
     th = thesis.compose("NIFTY 50", _snapshot(), {"sentiment": None, "globals": [], "cues": []}, [], [], "en", NOW)
     text, why = _run(thesis.narrate(_Provider(["A jackpot rally from 25200.00.", "Buy now above 25200.00."]), th, "en"))
     assert text is None and "advice/guarantee" in why
+
+
+@pytest.mark.parametrize("reply", ["RELIANCE abhi kharido, pakka profit hai.", "kharid lo, 2900 se upar jayega pakka"])
+def test_hinglish_advice_in_latin_script_is_withheld(reply):
+    """Review of #273 (B1): romanised Hinglish advice is ASCII, so the script check does not catch it - the fixed
+    romanised list does. Through the Copilot, the reply is withheld (both attempts) and the rule text is kept."""
+    facts = ["RELIANCE last 2900", "trend up"]
+    provider = _Provider([reply, reply])
+    text, why = _run(copilot.narrate(provider, "en", "brief", "RELIANCE?", facts))
+    assert text is None and "advice/guarantee" in why and provider.calls == 2
+    assert not output_filter.check(reply, "en")[0]

@@ -954,8 +954,10 @@ Never publish a listing without an attached backtest run; the API refuses the su
     keeps the text: removing it is your data-retention decision. Write the period you choose into your privacy notice.
 - **Output filter (H-C1 c)**: every Copilot, guide and thesis text is checked on the server before it is shown.
   - Guarantee and advice wording blocks the AI text: "guaranteed", "sure-shot", "risk-free", "I recommend", "you
-    should buy" and the like. The lists are English only (the owner's ruling: ATP answers in English, so the Marathi /
-    Hindi lists were removed; an AI text in another script is withheld outright). The model gets one retry; after that the
+    should buy" and the like. The lists are English (the owner's ruling: ATP answers in English, so the Marathi /
+    Hindi Devanagari lists were removed; an AI text in another script is withheld outright), plus a fixed `romanised`
+    list of Hinglish advice in Latin script ("abhi kharido", "pakka profit"), read always - ASCII text is not caught
+    by the script check. The model gets one retry; after that the
     rule-based answer is shown with a note.
   - A text that names a specific buy/sell level is kept, with an educational line (English) added.
   - The word list is data, in `backend/app/ai/data/advice_terms.json`. To use your own list, point

@@ -813,9 +813,10 @@ DEVANAGARI_ADVICE = ["\u092e\u0941\u091d\u0947 \u0915\u094c\u0928 \u0938\u093e \
 
 
 def test_no_hindi_or_marathi_lists_in_the_advice_filter():
-    """The owner's ruling removed the Marathi / Hindi advice patterns: the filter is English only."""
+    """The owner's ruling removed the Marathi / Hindi (Devanagari) advice patterns; the Latin-script Hinglish list stays,
+    because ASCII text is not caught by the script check."""
     assert output_filter.blocked_terms("\u0905\u092d\u0940 \u0916\u0930\u0940\u0926\u0947\u0902, \u092e\u0941\u0928\u093e\u092b\u093e \u092a\u0915\u094d\u0915\u093e") == []
-    assert output_filter.blocked_terms("abhi kharido") == []
+    assert output_filter.blocked_terms("abhi kharido") == ["abhi kharido"]       # the fixed romanised (Latin-script) list stays
     assert output_filter.blocked_terms("guaranteed returns, buy now") == ["guaranteed", "buy now"]
 
 

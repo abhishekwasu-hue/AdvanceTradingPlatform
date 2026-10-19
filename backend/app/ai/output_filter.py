@@ -17,7 +17,8 @@ Three kinds of finding:
 * **framed** - a specific call that is not imperative and names no instrument ("One could buy the 25000 CE above 120"):
   the text is kept, with an educational framing line appended (the spec allows framing here).
 
-The word lists are data (`app/ai/data/advice_terms.json`, or the file named by `AI_ADVICE_TERMS_FILE`), English only.
+The word lists are data (`app/ai/data/advice_terms.json`, or the file named by `AI_ADVICE_TERMS_FILE`): English, plus a
+fixed `romanised` list of Hinglish advice in Latin script (read always, not per language).
 A term right after a negation ("not a recommendation", "never guaranteed") is allowed. Every finding is counted in
 `atp_ai_output_filtered_total{kind}` and returned to the caller to show in the response. `blocked_terms` gives the words
 only (the support bot's input guard); `findings` gives words and calls (every AI output check).
@@ -34,8 +35,9 @@ from typing import List, Optional, Pattern, Tuple
 log = logging.getLogger(__name__)
 
 DEFAULT_FILE = Path(__file__).resolve().parent / "data" / "advice_terms.json"
-# English only (the owner's ruling): the lists hold no Marathi / Hindi entries; AI output in another script is withheld
-# outright (`call_detect.SCRIPT_LABEL`).
+# English only (the owner's ruling): the lists hold no Marathi / Hindi (Devanagari) entries; AI output in another script
+# is withheld outright (`call_detect.SCRIPT_LABEL`). The fixed `romanised` lists (Hinglish in Latin script) stay: ASCII
+# text is not caught by the script check.
 _WORD = "\\w"
 
 
@@ -72,7 +74,9 @@ def _bounded(words: List[str]) -> str:
 @lru_cache(maxsize=4)
 def _load(path: str) -> Terms:
     data = json.loads(Path(path).read_text(encoding="utf-8"))
-    blocked = [w for kind in ("guarantee", "advice") for w in data.get(kind, {}).get("en", [])]
+    # English plus the fixed romanised (Latin-script Hinglish) entries, read always: they are ASCII, so the
+    # not-plain-English check cannot catch them ("RELIANCE abhi kharido, pakka profit hai").
+    blocked = [w for kind in ("guarantee", "advice") for part in ("en", "romanised") for w in data.get(kind, {}).get(part, [])]
     neg = data.get("negations", {})
     verbs = data["action_verbs"]["en"]
     # A specific call: an action verb and, in the same clause and within a few words either side, a price, a strike or an

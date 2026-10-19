@@ -498,6 +498,27 @@ def test_intrabar_rules_with_a_status_or_a_swing_function_are_refused(screener_o
     _set(screener_intrabar=False)
 
 
+def test_a_screen_rule_and_an_edit_of_its_screen_pass_the_amw3_check_too(screener_on):
+    # merge of N3 S7a: screen_rule_checks (rule save, and an edit of the screen a rule runs) runs the AMW-3 check with
+    # the screen's own $parameters, beside the breakout, zone and RankScore checks
+    headers, _ = _owner("amw3-screen-rule@example.com")
+    _set(screenql_amw_functions=True, screener_intrabar=True)
+    sid = client.post("/api/screener/screens", json={"name": "s", "source": "close > 0", "base_tf": "15m"}, headers=headers).json()["id"]
+    r = client.post("/api/alerts/rules", json={"name": "r", "kind": "screen", "screen_id": sid, "symbols": ["ABC"], "fire_on": "intrabar"},
+                    headers=headers)
+    assert r.status_code in (200, 201), r.text
+    rid = r.json()["id"]
+    edit = client.put(f"/api/screener/screens/{sid}", json={"name": "s", "source": 'Pattern($p, "confirmed")', "base_tf": "15m",
+                                                             "params": {"p": "hammer"}}, headers=headers)
+    assert edit.status_code == 422 and f"alert rule #{rid}" in edit.text and "bar close only" in edit.text, edit.text
+    sid2 = client.post("/api/screener/screens", json={"name": "t", "source": 'SwingLabel("high") == "HH"', "base_tf": "15m"},
+                       headers=headers).json()["id"]
+    r = client.post("/api/alerts/rules", json={"name": "q", "kind": "screen", "screen_id": sid2, "symbols": ["ABC"], "fire_on": "intrabar"},
+                    headers=headers)
+    assert r.status_code == 422 and "bar close only" in r.text, r.text
+    _set(screener_intrabar=False)
+
+
 def test_the_engine_skips_an_intrabar_swing_rule_with_the_reason(screener_on):
     from app.alerts import barclose
     from app.db.models import AlertRuleRecord

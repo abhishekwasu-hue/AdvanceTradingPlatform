@@ -266,6 +266,18 @@ def test_amw3_functions_amw_port():
     assert _ev('RsiDivergence("bullish", 60)', walk).dtype == bool
 
 
+def test_rankscore_n3_s7a():
+    # deeper checks (scoring, no look-ahead against cut bars, the routes) are in tests/test_n3_s7a_rankings.py
+    from app.screener import ranking as RK
+    up = SymbolData("UP", {"1d": _bars([100 + i for i in range(30)], start="2026-01-01", freq="1D")})
+    down = SymbolData("DOWN", {"1d": _bars([130 - i for i in range(30)], start="2026-01-01", freq="1D")})
+    system = RK.parse("t", {"nodes": [{"name": "r", "factor": "PctChange(close, 10)", "weight": 100}]})
+    ast, v = compile_screen('RankScore("t") == 100', base_tf="1d")
+    assert v.ok
+    assert {m.symbol: m.matched for m in RK.within({"t": system}, run_screen, ast, v, [up, down], base_tf="1d")} == {"UP": True, "DOWN": False}
+    COVERED.add("RankScore")
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { Card, Disclaimer } from "../components/ui";
 import { DataSourceBar, useCandleSource } from "../components/DataSource";
@@ -23,6 +23,8 @@ import {
 import { generateSampleOptionChain } from "../utils/sampleData";
 import type { OHLCVBar, OptionChain } from "../types";
 import { PageHeader } from "../components/primitives";
+import { WatchlistPicker } from "../screener/WatchlistPicker";
+import { splitSymbols } from "../screener/watchlists";
 
 const STRUCTURE_TYPES = Object.keys(STRUCTURE_FILTER_LABELS) as StructureFilterType[];
 const OPTION_TYPES = Object.keys(OPTION_FILTER_LABELS) as OptionFilterType[];
@@ -71,6 +73,11 @@ export default function ScannerPage() {
   const source = useCandleSource();
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [lastRequest, setLastRequest] = useState<ScannerRequest | null>(null);
+  // AMW-2 (flag `watchlists`): "Load watchlist" fills the symbols from one of the caller's own lists.
+  const [watchlistsOn, setWatchlistsOn] = useState(false);
+  useEffect(() => {
+    api.myFeatures().then((f) => setWatchlistsOn(Boolean(f.watchlists))).catch(() => setWatchlistsOn(false));
+  }, []);
 
   async function planWithAi() {
     if (aiText.trim().length < 5) return;
@@ -187,6 +194,9 @@ export default function ScannerPage() {
             </select>
           </div>
         </div>
+        {watchlistsOn && (
+          <WatchlistPicker label="Load watchlist" symbols={splitSymbols(watchlist)} onLoad={(list) => setWatchlist(list.join(", "))} />
+        )}
       </Card>
 
       <Card title="Indicator filters">

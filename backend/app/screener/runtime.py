@@ -6,7 +6,7 @@ registry entry.
   aligned to the screen's bars by *close time*: a 1d value becomes visible only on the screen bars that close at or
   after that day's bar closes. No bar can see a higher-timeframe bar that had not finished (look-ahead guard, tested).
 * A missing coarser frame is resampled from the base bars, and a trailing incomplete bucket is dropped.
-* Cross-sectional functions (Rank, PercentileRank) work on the last bar of every symbol in the universe; they are
+* Cross-sectional functions (Rank, PercentileRank, RankScore) work on the last bar of every symbol in the universe; they are
   computed first (innermost first) and read back as constants per symbol.
 * NaN (not enough history, division by zero) never matches: every comparison with NaN is false.
 """
@@ -866,6 +866,10 @@ def _cross_sectional(ast: Any, universe: List[SymbolData], base_tf: str, params:
     constants: Dict[str, Dict[int, float]] = {d.symbol: {} for d in universe}
     cs = [node for node in n.walk(ast) if isinstance(node, n.Call) and FUNCTIONS.get(node.name) and FUNCTIONS[node.name].cross_sectional]
     for node in reversed(cs):                                       # pre-order reversed: inner calls first
+        if node.name == "RankScore":
+            for sym, r in _rank_score(node, universe, base_tf, params).items():
+                constants[sym][id(node)] = r
+            continue
         values: Dict[str, float] = {}
         groups: Dict[str, Any] = {}
         for d in universe:
@@ -885,6 +889,20 @@ def _cross_sectional(ast: Any, universe: List[SymbolData], base_tf: str, params:
         for sym in s.index:
             constants[sym][id(node)] = float(ranked.get(sym, np.nan))
     return constants
+
+
+def _rank_score(node: Any, universe: List[SymbolData], base_tf: str, params: Dict[str, Any]) -> Dict[str, float]:
+    """N3 S7a: RankScore("name") - the system named (from the run's `ranking.ACTIVE`, set by the route that loaded it)
+    scored over the universe's last bars. A leaf is NaN for a symbol with fewer bars than the leaf's lookback (the S6
+    history read does the same, so a live run and a history date agree). An unknown system: NaN (never matches; the
+    routes refuse it before a run)."""
+    from app.screener import ranking as RK
+    system = RK.ACTIVE.get().get(RK.system_name(node.args[0], params) or "")
+    if system is None:
+        return {d.symbol: float("nan") for d in universe}
+    sectors = {d.symbol: d.sector for d in universe} if system.sector_neutral else None
+    rank, _ = RK.score(system, RK.live_values(system, universe, base_tf), sectors)
+    return {d.symbol: float(rank.get(d.symbol, np.nan)) for d in universe}
 
 
 def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str, params: Optional[Dict[str, Any]] = None,

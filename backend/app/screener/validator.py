@@ -464,6 +464,12 @@ def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] 
     return checker.out
 
 
+def kind_of(ast: Any, *, base_tf: str = "1d") -> str:
+    """N3 S7a: the type an expression yields (NUM / BOOL / CAT / STR) - a ranking factor must be a number."""
+    kind, _ = _Checker(base_tf, {}).check(ast)
+    return str(kind)
+
+
 @dataclass
 class StudyCheck:
     """N4 CH6: a ScreenQL expression as a chart study - its validation, its kind (num: a line; bool: true / false marks)
@@ -501,4 +507,4 @@ def validate_study(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, 
     return StudyCheck(checker.out, kind, None if unit == ANY_UNIT else unit)
 
 
-__all__ = ["validate", "validate_study", "StudyCheck", "Validated", "Problem", "MAX_OFFSET", "DEFAULT_COST_CAP"]
+__all__ = ["validate", "validate_study", "kind_of", "StudyCheck", "Validated", "Problem", "MAX_OFFSET", "DEFAULT_COST_CAP"]

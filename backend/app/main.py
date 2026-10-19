@@ -80,6 +80,7 @@ from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
 from app.decision_tools.routes import router as decision_tools_router
 from app.watchlists.routes import router as watchlists_router
+from app.context_panel.routes import router as context_panel_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
@@ -284,6 +285,7 @@ app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
+app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)

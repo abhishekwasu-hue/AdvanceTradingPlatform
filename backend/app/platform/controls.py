@@ -100,6 +100,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     "news_feed": "Live news feed from public sources (unverified items, shared ingest, tenant-key classification)",
     "telegram_inbound": "Telegram commands and approve/reject buttons from whitelisted chats (PAPER + reduce/pause only)",
     "market_thesis": "Per-symbol market thesis with scenarios and a shadow-only size multiplier (never applied)",
+    # N2-5 (P1 spec 1.5, docs/design/N2_P1FGH.md): the market context panel - regime (Dow structure of the NIFTY 50 on
+    # daily and weekly bars), breadth, India VIX with its 1-year rank, FII / DII (seam, off until a source is set),
+    # global cues and this week's events, each tile with its source and as-of and NA on its own failure. Shared data
+    # only (plus the organisation's own events). OFF: /api/context/panel answers 404.
+    "context_panel": "Market context panel: regime, breadth, India VIX and its rank, FII / DII, global cues and this week's events (information only)",
     "options_builder": "Options Strategy Builder: payoff, T+0 model, PoP and strike suggestions (research only, places no orders)",
     "options_builder_saved": "Options Builder: save strategies and load them again, shared within the organisation (research data only)",
     # P0.8-D compliance switches, OFF until the operator has the SEBI RA/IA position cleared.

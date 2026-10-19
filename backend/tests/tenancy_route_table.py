@@ -308,6 +308,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/contract-notes"): "member",
     ("POST", "/api/contract-notes"): "trader",
     ("GET", "/api/contract-notes/{note_id}"): "member",
+    ("GET", "/api/context/panel"): "member",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,

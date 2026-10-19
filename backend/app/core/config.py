@@ -538,6 +538,13 @@ MARKET_ZONES_DEFAULTS: dict = _json_object("MARKET_ZONES_DEFAULTS")
 MARKET_ZONES_SYMBOLS = [k.strip().upper() for k in os.environ.get("MARKET_ZONES_SYMBOLS", "").split(",") if k.strip()]
 MARKET_ZONES_HOUR_IST = _bounded_int("MARKET_ZONES_HOUR_IST", 20, 0, 23)
 MARKET_ZONES_BUDGET_SECONDS = _bounded_int("MARKET_ZONES_BUDGET_SECONDS", 1800, 10, 6 * 3600)
+# U6 BK5: breakout screen fitness - a nightly pass over the shared lake's daily bars (flag screener_breakouts_fitness, off).
+# BREAKOUT_FITNESS_SYMBOLS: the universe ("NSE:RELIANCE,NSE:TCS,..."; empty = MARKET_ZONES_SYMBOLS).
+BREAKOUT_FITNESS_SYMBOLS = [k.strip().upper() for k in os.environ.get("BREAKOUT_FITNESS_SYMBOLS", "").split(",") if k.strip()]
+BREAKOUT_FITNESS_UNIVERSE = os.environ.get("BREAKOUT_FITNESS_UNIVERSE", "platform")[:32] or "platform"
+BREAKOUT_FITNESS_HOUR_IST = _bounded_int("BREAKOUT_FITNESS_HOUR_IST", 21, 0, 23)
+BREAKOUT_FITNESS_BUDGET_SECONDS = _bounded_int("BREAKOUT_FITNESS_BUDGET_SECONDS", 1800, 10, 6 * 3600)
+BREAKOUT_FITNESS_HISTORY_DAYS = _bounded_int("BREAKOUT_FITNESS_HISTORY_DAYS", 1825, 400, 3650)
 
 # PW6: the closed-beta cohort cap. With the `beta_cohort_gate` flag on, registration needs an invite code and stops once
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes

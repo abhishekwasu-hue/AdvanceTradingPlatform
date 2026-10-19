@@ -151,6 +151,7 @@ class CycleReport:
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
+    breakout_fitness_started: bool = False   # U6 BK5: the nightly breakout-fitness task was started this cycle
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
 
 
@@ -239,6 +240,8 @@ class TradingWorker:
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
         self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
         self._market_zones_task: Optional["asyncio.Task[None]"] = None
+        self._last_breakout_fitness_day: Optional[date] = None  # U6 BK5: the IST date the nightly breakout-fitness pass last COMPLETED
+        self._breakout_fitness_task: Optional["asyncio.Task[None]"] = None
         # HB2: the IST date the owner's intraday-history pass last COMPLETED, its task, and when an unfinished pass may
         # be started again (monotonic seconds).
         self._last_intraday_day: Optional[date] = None
@@ -287,6 +290,8 @@ class TradingWorker:
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
             self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
+        if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
+            self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -637,6 +642,15 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Market zones job not started")
                         report.errors.append(f"market zones: {exc}")
+                        await session.rollback()
+                # U6 BK5: breakout screen fitness - once per IST day from BREAKOUT_FITNESS_HOUR_IST, NSE closed (flag
+                # `screener_breakouts_fitness`, off by default). Its own task, sessions and time budget; reference data only.
+                if not nse.is_open:
+                    try:
+                        report.breakout_fitness_started = await self._maybe_start_breakout_fitness(session, now)
+                    except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                        logger.exception("Breakout fitness job not started")
+                        report.errors.append(f"breakout fitness: {exc}")
                         await session.rollback()
                 # HB2: the owner's intraday history (flag `history_intraday`, off by default) - after the close, through the
                 # owner's own broker session, drawing from that session's rate budget only while a reserve stays free for
@@ -1285,6 +1299,31 @@ class TradingWorker:
             self._then_warm_task = asyncio.get_running_loop().create_task(run())
         except RuntimeError:
             self._then_warm_task = None
+    async def _maybe_start_breakout_fitness(self, session: AsyncSession, now: datetime) -> bool:
+        """U6 BK5: starts the nightly breakout-fitness pass as a background task when it is due, the flag is on for anyone
+        and HB1's EOD ingest is done (the zones job's rule). One task per worker; the job's advisory lock keeps a second
+        replica out; the day counts as done only when a pass worked through every template."""
+        from app.price_action.zones import job as zones_job
+        from app.screener.breakouts import fitness_job
+
+        day = fitness_job.nightly_due(now, self._last_breakout_fitness_day)
+        if day is None or (self._breakout_fitness_task is not None and not self._breakout_fitness_task.done()):
+            return False
+        if not await fitness_job.any_enabled(session):
+            return False
+        if not await zones_job.eod_ready(session, day, now):
+            return False
+
+        async def run() -> None:
+            try:
+                result = await fitness_job.run_nightly(self.session_factory, now=now)
+                if result.get("complete"):
+                    self._last_breakout_fitness_day = day
+            except Exception:  # noqa: BLE001 - reference data; never reaches trading
+                logger.exception("Breakout fitness job failed")
+
+        self._breakout_fitness_task = asyncio.get_running_loop().create_task(run())
+        return True
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own

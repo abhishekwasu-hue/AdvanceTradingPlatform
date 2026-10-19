@@ -21,17 +21,18 @@ are backtested and reviewed with the same tooling.
 - The exit-parity test proves backtest and live monitor apply the same exit rules.
 - Expressiveness is bounded on purpose: no arbitrary code, so no sandbox is needed and every
   strategy can be inspected and explained. Amended by ADR-0027: the Strategy Lab's code modes run
-  user-authored code, but only in an isolated runner container, never in the backend, worker or
-  API process. Their results are research output and never trade.
+  user-authored code, but only in isolated runner containers under gVisor, never in the backend,
+  worker or API process. Their results are research output and never trade.
 - Schema versioning: the DSL reference is versioned (`dsl_version` in the doc); additive fields
   keep older documents valid.
 
 ## Amendment (ADR-0027, 2026-10)
 ADR-0027 adds the Strategy Lab. Its visual and Pine-subset modes compile to ScreenQL, and the host
 evaluates them, so they stay inside this record. Its code modes (Python, SQL, Lua, JavaScript,
-TypeScript, R) run user-authored code, but only in a separate `lab-runner` container. That
-container has no network, no secrets and no database access, and each run gets its own jail.
-Each code family is behind its own default-off flag, and gate G-LAB must pass before the flag can
-be turned on. Everything else here stands: deployable strategies are the DSL only, the AI emits
-the DSL and never code, and no user code runs in the backend, worker or API process. ADR-0027
-lists what this record still guarantees.
+TypeScript, R) run user-authored code, but only in separate runner containers under gVisor. Those
+containers have no network, no secrets and no database access, and each run gets a fresh jail.
+Runner output is handled by a separate gateway that holds no platform keys. Each code family is
+behind its own default-off flag, and gate G-LAB is checked both at the switch and before every run.
+Everything else here stands: deployable strategies are the DSL only, the AI emits the DSL and never
+code, and no user code runs in the backend, worker or API process. ADR-0027 lists what this record
+still guarantees.

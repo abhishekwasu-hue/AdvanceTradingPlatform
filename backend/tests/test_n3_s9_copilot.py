@@ -1,4 +1,4 @@
-"""N3 S9 (spec §5): the screener in the Copilot (flag screener_copilot, off by default).
+"""N3 S9 (spec section 5): the screener in the Copilot (flag screener_copilot, off by default).
 
 - the tools are offered and run only with the flag on; build_screen validates with the Screener's own gates;
 - run_screen runs live on server bars (a stored Screener run) or as of a past date on the lake; explain_results gives
@@ -571,10 +571,10 @@ def test_literals_that_name_something_real_are_not_free_text(monkeypatch):
 
 # (draft, the kind shown, fragments of the draft that must not appear anywhere in the response)
 _PROBES = (
-    ('Holding("रिलायन्स आत्ताच खरेदी करा, २०% नफा निश्चित") > 1', "non_ascii", ("रिलायन्स", "खरेदी", "२०", "नफा", "निश्चित")),
-    ('Holding("ＢＵＹ ＲＥＬＩＡＮＣＥ ＮＯＷ ＧＵＡＲＡＮＴＥＥＤ") > 1', "non_ascii", ("ＢＵＹ", "ＲＥＬＩＡＮＣＥ", "ＧＵＡＲＡＮＴＥＥＤ")),
-    ('RankScore("КУПИТЬ СЕЙЧАС") > 80', "non_ascii", ("КУПИТЬ", "СЕЙЧАС")),
-    ("close > 1 AND र > 2", "non_ascii", ("र",)),
+    ('Holding("\u0930\u093f\u0932\u093e\u092f\u0928\u094d\u0938 \u0906\u0924\u094d\u0924\u093e\u091a \u0916\u0930\u0947\u0926\u0940 \u0915\u0930\u093e, \u0968\u0966% \u0928\u092b\u093e \u0928\u093f\u0936\u094d\u091a\u093f\u0924") > 1', "non_ascii", ("\u0930\u093f\u0932\u093e\u092f\u0928\u094d\u0938", "\u0916\u0930\u0947\u0926\u0940", "\u0968\u0966", "\u0928\u092b\u093e", "\u0928\u093f\u0936\u094d\u091a\u093f\u0924")),
+    ('Holding("\uff22\uff35\uff39 \uff32\uff25\uff2c\uff29\uff21\uff2e\uff23\uff25 \uff2e\uff2f\uff37 \uff27\uff35\uff21\uff32\uff21\uff2e\uff34\uff25\uff25\uff24") > 1', "non_ascii", ("\uff22\uff35\uff39", "\uff32\uff25\uff2c\uff29\uff21\uff2e\uff23\uff25", "\uff27\uff35\uff21\uff32\uff21\uff2e\uff34\uff25\uff25\uff24")),
+    ('RankScore("\u041a\u0423\u041f\u0418\u0422\u042c \u0421\u0415\u0419\u0427\u0410\u0421") > 80', "non_ascii", ("\u041a\u0423\u041f\u0418\u0422\u042c", "\u0421\u0415\u0419\u0427\u0410\u0421")),
+    ("close > 1 AND \u0930 > 2", "non_ascii", ("\u0930",)),
     ("close > 1 ; BUY_RELIANCE_NOW > 2", "syntax", (";", "BUY_RELIANCE_NOW", "unexpected character")),
     ("close > 1 AND volume > 1 # guaranteed", "syntax", ("#", "guaranteed", "unexpected character")),
     ("RSI(3000) > 50", "window_range", ("3000",)),
@@ -661,10 +661,10 @@ def test_the_box_is_english_only(monkeypatch):
     """Owner directive (13 Oct): no language choice - an old client's `language: mr` is answered in English; the prompt
     asks for English and ASCII; non-ASCII words of the model's are withheld."""
     t = _org("english")
-    fake = _LLM([{"text": "close > SMA(close, 50)", "explanation": "मजबूत कल असलेले शेअर्स",
-                  "assumptions": ["50-day average — the trend", "सरासरी ५०"]}])
+    fake = _LLM([{"text": "close > SMA(close, 50)", "explanation": "\u092e\u091c\u092c\u0942\u0924 \u0915\u0932 \u0905\u0938\u0932\u0947\u0932\u0947 \u0936\u0947\u0905\u0930\u094d\u0938",
+                  "assumptions": ["50-day average \u2014 the trend", "\u0938\u0930\u093e\u0938\u0930\u0940 \u096b\u0966"]}])
     _provider(monkeypatch, fake)
-    r = client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "मजबूत कल असलेले शेअर्स", "language": "mr"})
+    r = client.post("/api/screener/copilot/nl", headers=t["headers"], json={"text": "\u092e\u091c\u092c\u0942\u0924 \u0915\u0932 \u0905\u0938\u0932\u0947\u0932\u0947 \u0936\u0947\u0905\u0930\u094d\u0938", "language": "mr"})
     assert r.status_code == 200, r.text
     out = r.json()
     assert out["ok"] and out["text"] == "close > SMA(close, 50)"

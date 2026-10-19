@@ -108,6 +108,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S1d (ADR-0021): the ScreenQL screener API (validate, saved screens, runs on server data). OFF: the scanner is unchanged.
     "screener_v2": "Screener v2: ScreenQL validation, saved screens and runs on the organisation's broker data",
     "screener_intrabar": "Intrabar alerts: rules may fire on the bar still forming (at most once per bar); bar-close stays the default",
+    # U2 remaining blocks (SCREENER_SPEC §3 builder; Phase 0: the blocks the shipped screens use): the formula block
+    # (ScreenQL text with offsets and arithmetic, edited in place) and "Open" for Legends and breakout screens in the
+    # builder through POST /api/screener/stages. OFF: /stages answers 503, the builder offers no formula block and
+    # those screens' Open stays disabled. Research only - places no orders.
+    "screener_builder_u2": "Screener builder: formula blocks and opening Legends / breakout screens in the builder (research only)",
     # H-C2 (ADR-0019): the Copilot agent (typed read tools, bounded loop). OFF: the single-shot Copilot is unchanged.
     "ai_agent": "Copilot agent: the AI reads typed, read-only tools (market memory, news, positions, P&L, risk limits) before answering",
     # H-C3 (spec C3): the strategy research loop - AI drafts backtested on server bars, every trial in a ledger, a
@@ -246,6 +251,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N3 S6b: the rolling screen backtest - rebalance weekly / 4-weekly / monthly, top N by a rank expression, equal or rank
     # weights, next-open fills with the part C slippage and India's delivery charges, against the equal-weight universe and
     # NIFTY 50; deflated through the research trial ledger. Needs screener_history. OFF: 503. A simulation only.
+    # N3 S7a: ranking systems - weighted factor trees (weights, higher / lower is better, sector-neutral percentiles) that
+    # rank a universe 0-100 with every component shown; a column, a sort key (the S6b backtest's rank_system) and a filter
+    # (ScreenQL RankScore("name") > 80). Platform systems with documented formulas. OFF: the routes answer 503 and a screen
+    # using RankScore is refused with the reason. Information only - places nothing.
+    "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",
     # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices
@@ -261,11 +271,6 @@ FEATURE_FLAGS: Dict[str, str] = {
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
     "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
-    # U2 remaining blocks (SCREENER_SPEC §3 builder; Phase 0: the blocks the shipped screens use): the formula block
-    # (ScreenQL text with offsets and arithmetic, edited in place) and "Open" for Legends and breakout screens in the
-    # builder through POST /api/screener/stages. OFF: /stages answers 503, the builder offers no formula block and
-    # those screens' Open stays disabled. Research only - places no orders.
-    "screener_builder_u2": "Screener builder: formula blocks and opening Legends / breakout screens in the builder (research only)",
     # H-C4 (Copilot spec C4): "analyze <symbol>" - technical, options, news and macro views from the read tools and the
     # rules' summary (readings that lean up / down, risks, possibilities). Rules-only wording: no model is called and no
     # AI text is shown (docs/OPEN_QUESTIONS.md HC4-5); no order, no proposal (ADR-0006). OFF: POST /api/ai/analyze is 503.
@@ -287,6 +292,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # on top of `screener_v2` and `screener_gallery`. OFF: /api/screener/library/* answer 503 and the Screener page shows
     # none of it. Research only - closed bars, no recommendation, places no orders.
     "screener_tx2": "Screen library tools: confluence view, short mirror screens and watch-then-trigger lists on the Screener page (research only)",
+    # AMW-2 (docs/design/AMW_PORT.md §4.1): personal named watchlists - saved symbol lists the Screener ("My watchlists")
+    # and the Scanner ("Load watchlist") load as their universe. OFF: /api/watchlists/* answers 404 and neither page
+    # shows them. A list of names only: nothing scans, alerts or places an order.
+    "watchlists": "Watchlists: your own named symbol lists, loadable as the Screener and Scanner universe",
     # N2-3 (P1 spec 1.5, docs/design/N2_P1FGH.md): decision tools - the risk-of-ruin / Kelly calculator on typed inputs
     # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
     # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information
@@ -304,6 +313,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
+    # AMW-1 (docs/design/AMW_PORT.md §4.1): the plan limits of the AMW port's features (watchlists, symbols per screener
+    # run, reports a day, report retention and storage, report schedules and their shortest interval, Strategy Lab
+    # strategies and CPU seconds). OFF: none of them is enforced and Billing shows none of them; the B2 limits are unchanged.
+    "plan_limits_v2": "Plan limits v2: watchlists, symbols per screener run, reports, report schedules and Strategy Lab limits per plan",
     # New flags: add ONE entry, in its alphabetical position (not at the end), so parallel branches do not conflict on
     # the same line. A registered flag is OFF by default automatically (DEFAULT_OFF_FLAGS below is computed).
 }

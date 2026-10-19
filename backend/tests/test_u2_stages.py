@@ -109,3 +109,18 @@ def test_a_card_of_a_slice_that_is_off_is_not_read_through_stages(u2_on):
         assert shown.status_code == 200 and shown.json()["stages"], shown.text
     finally:
         _set_flags(**{lg.FLAG_LG2: False})
+
+
+def test_stages_resolve_a_rankscore_parameter_like_validate(u2_on):
+    # merge of N3 S7a: /stages passes the screen's params to `_gate`, so RankScore($name) is checked as /validate checks it
+    headers, _ = _owner("u2-stages-rankscore@example.com")
+    _set_flags(screener_rankings=True)
+    try:
+        ok = client.post("/api/screener/stages", json={"source": "RankScore($r) > 50", "params": {"r": "platform:Momentum"}},
+                         headers=headers)
+        assert ok.status_code == 200, ok.text
+        bad = client.post("/api/screener/stages", json={"source": "RankScore($r) > 50", "params": {"r": "no such system"}},
+                          headers=headers)
+        assert bad.status_code == 422 and "no such system" in bad.text, bad.text
+    finally:
+        _set_flags(screener_rankings=False)

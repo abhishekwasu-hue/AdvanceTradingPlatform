@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, Dict, List, Literal, Optional, Union
 
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
-from fastapi import Request, Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field, field_validator
@@ -16,6 +16,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.rate_limit import user_rate_limit
+from app.core.route_cache import install as install_route_cache
 from app.core.config import ALLOWED_ORIGINS, APP_VERSION, ENVIRONMENT, MAX_REQUEST_BODY_BYTES, tables_created_at_startup, validate_production_config
 from app.core.logging_config import configure_logging
 from app.core.enums import ExecutionMode, OrderStatus
@@ -79,6 +80,8 @@ from app.support_resistance.models import SRZone
 from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
 from app.decision_tools.routes import router as decision_tools_router
+from app.watchlists.routes import router as watchlists_router
+from app.context_panel.routes import router as context_panel_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.trading.routes import router as trading_router
 from app.webhooks.routes import router as webhooks_router
@@ -119,6 +122,7 @@ from app.screener.history_routes import router as screener_history_router
 from app.screener.ranking_routes import router as screener_rankings_router
 from app.screener.breakouts.routes import router as screener_breakouts_router
 from app.screener.evidence_routes import router as screener_evidence_router
+from app.screener.board import router as screener_board_router
 from app.screener.library_routes import router as screener_library_router
 from app.screener.etf_routes import router as screener_etf_router
 from app.alerts.rules_routes import router as alert_rules_router
@@ -130,6 +134,9 @@ from app.charts.drawings import router as chart_drawings_router
 from app.charts.layouts import router as chart_layouts_router
 from app.charts.zones_layer import router as chart_zones_layer_router
 from app.charts.price_action_layer import router as chart_price_action_layer_router
+from app.charts.trades_layer import router as chart_trades_layer_router
+from app.charts.contracts import router as chart_contracts_router
+from app.charts.futures_basis import router as chart_futures_basis_router
 from app.charts.studies import router as chart_studies_router
 from app.beta.routes import admin_router as beta_admin_router, feedback_router, pwa_router
 from app.journal.routes import router as journal_router
@@ -171,15 +178,30 @@ app.add_exception_handler(RequestValidationError, request_validation_handler)
 # any origin for zero-config local dev; set ALLOWED_ORIGINS (comma-separated) to your real
 # frontend domain(s) in production - validate_production_config() refuses to boot with the "*"
 # default when ENVIRONMENT=production.
-@app.middleware("http")
-async def _limit_request_body(request: Request, call_next):
+class _LimitRequestBody:
     """P0.1 / S3: refuse oversized bodies from the declared length before anything parses them. A chunked
     upload without a Content-Length is capped by the edge (deploy/Caddyfile `request_body max_size`).
-    Registered before CORS/observability so those wrap it: the 413 carries CORS headers and a request id."""
-    declared = request.headers.get("content-length")
-    if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
-        return JSONResponse(status_code=413, content={"detail": f"Request body larger than {MAX_REQUEST_BODY_BYTES} bytes"})
-    return await call_next(request)
+    Registered before CORS/observability so those wrap it: the 413 carries CORS headers and a request id.
+    LD-7: a pure ASGI middleware - the `@app.middleware("http")` form ran every request through Starlette's
+    BaseHTTPMiddleware (an extra task and a memory stream per request) for one header check."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] == "http":
+            for name, value in scope.get("headers") or ():
+                if name == b"content-length":
+                    declared = value.decode("latin-1")
+                    if declared.isdigit() and int(declared) > MAX_REQUEST_BODY_BYTES:
+                        response = JSONResponse(status_code=413, content={"detail": f"Request body larger than {MAX_REQUEST_BODY_BYTES} bytes"})
+                        await response(scope, receive, send)
+                        return
+                    break
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_LimitRequestBody)
 
 
 # Outermost: request id, /api/v1 alias, HTTP metrics (Phase E1/E2). Added before CORS so CORS
@@ -256,6 +278,7 @@ app.include_router(screener_history_router)  # N3 S6a: who passed on a date, scr
 app.include_router(screener_rankings_router)  # N3 S7a: ranking systems (flag screener_rankings, off)
 app.include_router(screener_breakouts_router)
 app.include_router(screener_evidence_router)  # U8 EV1/EV2: evidence charts (flag evidence_charts, off)
+app.include_router(screener_board_router)  # U5 D3a: result-board heatmap / chart-grid context (flag screener_board_views, off)
 app.include_router(screener_library_router)  # U9 TX2: confluence, mirrors, watch-then-trigger lists (flag screener_tx2, off)
 app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared EOD history (flag screener_etf, off)
 app.include_router(alert_rules_router)
@@ -267,6 +290,9 @@ app.include_router(chart_drawings_router)
 app.include_router(chart_layouts_router)  # CH5: saved multi-chart workspace layouts per user (flag chart_workspace)
 app.include_router(chart_zones_layer_router)  # Z7a-3: market-zones chart layer (flag market_zones, off by default)
 app.include_router(chart_price_action_layer_router)  # N4 CH3: price-action chart layer as of a time (flag chart_price_action, off)
+app.include_router(chart_trades_layer_router)  # N4 CH4a: the caller's own PAPER trades on the chart (flag chart_trades_layer, off)
+app.include_router(chart_contracts_router)  # N4 CH4b: daily contract / spread charts from the shared lake (flag chart_contracts, off)
+app.include_router(chart_futures_basis_router)  # N4 CH4c: futures basis / carry / rollover from the shared lake (flag chart_futures_basis, off)
 app.include_router(chart_studies_router)  # N4 CH6: ScreenQL studies on charts from the screener runtime (flag chart_studies, off)
 app.include_router(live_router)  # PW4: live updates across Telegram, push and open tabs
 app.include_router(beta_admin_router)      # PW6: closed-beta invite codes, cohort and feedback (SUPER_ADMIN)
@@ -274,6 +300,8 @@ app.include_router(pwa_router)             # PW6: PWA install/update events (cou
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
+app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
+app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance
 app.include_router(support_router)         # Z10-f: the how-to support bot (flag support_bot, off by default)
@@ -714,3 +742,7 @@ def get_instrument(symbol: str) -> ContractSpec:
 @app.get("/api/system/health")
 def health() -> Dict[str, str]:
     return {"status": "ok"}
+
+
+# LD-7: a request for a path already resolved skips the scan of every route before its own (app/core/route_cache.py).
+install_route_cache(app)

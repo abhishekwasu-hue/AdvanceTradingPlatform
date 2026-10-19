@@ -131,7 +131,7 @@ invites wrong joins. The UI still says "Trades".
 Before journal estimates are shown, the "(verify)" lines in `india_costs` (the 2026-04-01 STT changes) are confirmed
 against the circulars (JM-32).
 
-## 4. Flags (all off by default, added to `DEFAULT_OFF_FLAGS`)
+## 4. Flags (all off by default: registered in `FEATURE_FLAGS`, where a new flag is off automatically)
 
 | Flag | Gates |
 |------|-------|

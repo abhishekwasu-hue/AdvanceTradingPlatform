@@ -1,5 +1,9 @@
 import type { StaticIpOverview } from "../types";
 
+/** Brokers offered in the Static IP card, spelled exactly as the backend registry names them (`app/brokers/registry.py`):
+ * the LIVE gate compares the registered row's broker_name with the deployment's, so `angelone` would never match `angel_one`. */
+export const STATIC_IP_BROKERS = ["upstox", "zerodha", "fyers", "dhan", "angel_one", "shoonya"];
+
 export type StaticIpRow = { broker: string; primary: string | null; backup: string | null; serverIpRegistered: boolean | null };
 
 /** Part D4: one row per broker (PRIMARY / BACKUP) and whether this server's egress IP is among them. */

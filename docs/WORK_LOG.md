@@ -1875,6 +1875,29 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: "Decision tools" card on Positions (progression i18n), SVG chart, story.
 - Tests: `tests/test_n2_decision_tools.py` (10); vitest `src/progression/decision.test.tsx` (6). Open questions
   N2-11..N2-13.
+### 2026-10-12 IST - N2-4 decision tools II (`claude/n2-4`, stacked on `claude/n2-3`)
+- Flag `decision_tools` (off).
+- Exposure view of the caller's own open positions (`GET /api/decision/exposure`): by underlying and sector, risk at
+  stops, beta to the NIFTY 50, and pairs moving together, from the shared daily lake (split-adjusted by ISIN when
+  known).
+- Expected-move cone (`GET /api/decision/expected-move`), from HV20 or a typed IV; an "Expected move" toggle on the
+  chart window draws ±1 / ±2 sd bands.
+- Routes are classified in the tenancy table (member).
+- Tests: `tests/test_n2_exposure_cone.py` (6, seeded lake bars with built-in beta 1 / 2 and r = 1); vitest
+  `src/progression/exposure.test.tsx` (4). Open questions N2-14..N2-16.
+### 2026-10-12 IST - N2-5 market context panel (`claude/n2-5`, stacked on `claude/n2-4`)
+- Flag `context_panel` (off). `GET /api/context/panel` ("member") returns six tiles, each with status, source and
+  as-of, and NA on its own failure:
+  - regime: Dow structure of the NIFTY 50, daily and weekly;
+  - breadth from the lake;
+  - India VIX close, change, 1-year rank and percentile, plus the gate's live value under its viewer rule;
+  - FII / DII: the seam, NA until a source is set;
+  - global cues: the shared cache;
+  - events today and this week: global plus the user's own organisation.
+- Shared data only; no broker session.
+- Frontend: "Market context" card on the dashboard (progression i18n).
+- Tests: `tests/test_n2_context_panel.py` (4); vitest `src/progression/context.test.tsx` (2). Open questions
+  N2-17..N2-19.
 
 ## Fix: the trading worker acts per deployment as its creator (TX-3)
 
@@ -1910,6 +1933,25 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
 
+## U2 remaining blocks: the formula block and opening shipped screens (flag `screener_builder_u2`, off)
+
+- Branch `claude/n3-u2` (from main). Phase 0 scope per ATP_PHASE0_FREEZE: the blocks the shipped screens use.
+- Backend: `app/screener/stages.py` + `POST /api/screener/stages` (S_COMPUTE): a screen or a Legends / breakout id ->
+  validated, gated, parameters inlined, split into the funnel's stages. New flag in DEFAULT_OFF_FLAGS. No migration, no
+  new ScreenQL function.
+- Frontend: `FormulaStage` (bracketed to stay one stage), the formula block in StageRow and the kind picker (flag on),
+  `importStages.ts` (block form only on an exact text round trip, else formula), Open for Legends / breakout cards.
+- Tests: `tests/test_u2_stages.py`; vitest `importStages.test.ts` and the contract cases. Open questions U2-1..U2-3.
+
+## N5 H-C4: multi-view analysis (flag `ai_multiview`, off)
+
+- Branch `claude/n5-hc4` (from main). Design: `docs/design/H_COPILOT.md` "H-C4".
+- Backend: `app/ai/multiview.py` (four views by the platform's read tools, each audited; cheap tier words the views,
+  strong tier the summary, every text number- / direction- / advice-checked with one rewrite then the rules; at most 6
+  model calls and 60 s; the model gets no tool) and `POST /api/ai/analyze` (flags `ai_copilot` + `ai_multiview`, 8 AI
+  rate units, tenancy table S_COPILOT). Flag in DEFAULT_OFF_FLAGS. No migration.
+- Frontend: `MultiViewPanel` on Copilot > Ask (`copilot/tabs/analyze/`), English strings, compliance lint clean.
+- Tests: `tests/test_hc4_multiview.py`; vitest `multiview.test.ts`. Open questions HC4-1..HC4-4.
 ## Fix: contributed reference data is the contributing organisation's own (security)
 
 - Branch `claude/fix-shared-fundamentals-writes` (from main). Found in the S8 review: shared tables writable by any

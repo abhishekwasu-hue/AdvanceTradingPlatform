@@ -83,7 +83,7 @@ from app.secrets_store.envelope import ensure_tenant_key
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
 from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
 from app.notifications.service import notify
-from app.trading.position_monitor import (broker_for_trade, close_position, monitor_open_positions,
+from app.trading.position_monitor import (broker_for_trade, close_group, close_position, monitor_open_positions,
                                           open_trade_families_by_tenant, trade_venues)
 from app.trading.stop_guard import verify_protective_stops
 
@@ -151,6 +151,7 @@ class CycleReport:
     news_items: int = 0          # Phase BB: new feed items stored this cycle
     news_classified: int = 0     # Phase BB: items classified with organisations' own provider keys
     market_zones_started: bool = False   # Z7a-2: the nightly market-zones task was started this cycle
+    breakout_fitness_started: bool = False   # U6 BK5: the nightly breakout-fitness task was started this cycle
     intraday_history_started: bool = False   # HB2: an owner intraday-history pass was started this cycle
 
 
@@ -239,6 +240,8 @@ class TradingWorker:
         self._history_eod_task: Optional["asyncio.Task[None]"] = None
         self._last_market_zones_day = None    # Z7a-2: the IST date the nightly market-zones job last COMPLETED
         self._market_zones_task: Optional["asyncio.Task[None]"] = None
+        self._last_breakout_fitness_day: Optional[date] = None  # U6 BK5: the IST date the nightly breakout-fitness pass last COMPLETED
+        self._breakout_fitness_task: Optional["asyncio.Task[None]"] = None
         # HB2: the IST date the owner's intraday-history pass last COMPLETED, its task, and when an unfinished pass may
         # be started again (monotonic seconds).
         self._last_intraday_day: Optional[date] = None
@@ -287,6 +290,8 @@ class TradingWorker:
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
             self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
+        if self._breakout_fitness_task is not None and not self._breakout_fitness_task.done():
+            self._breakout_fitness_task.cancel()     # U6 BK5: resumable - stored templates are skipped next time
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -304,6 +309,12 @@ class TradingWorker:
                 await self.run_cycle()
             except Exception:  # noqa: BLE001 - the loop must survive anything
                 logger.exception("Trading worker cycle crashed")
+            try:
+                from app.ai import instrument_names
+                async with self.session_factory() as session:
+                    await instrument_names.refresh_if_stale(session)       # H-C1 c: new listings every six hours
+            except Exception:  # noqa: BLE001 - never affects trading
+                logger.warning("instrument names not refreshed", exc_info=True)
             elapsed = time.monotonic() - started
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=max(1.0, self.cycle_seconds - elapsed))
@@ -317,7 +328,13 @@ class TradingWorker:
         """Phase 0 deployment defaults (app/platform/deployment_phase.py): seed the two Phase 0 flags where unset
         (ATP_DEPLOYMENT_PHASE=phase0 only) and log why LIVE entry paths are not started while `phase0_paper_only` is on.
         The worker always comes up: exits, stops, square-off and reconciliation of LIVE positions run regardless."""
+        from app.ai import instrument_names
         from app.platform import deployment_phase
+        try:
+            async with self.session_factory() as session:
+                await instrument_names.refresh(session)        # H-C1 c: instrument names for the AI output filter (never raises)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting
+            logger.warning("instrument names not loaded", exc_info=True)
         try:
             async with self.session_factory() as session:
                 state = await deployment_phase.on_startup(session, "worker")
@@ -625,6 +642,15 @@ class TradingWorker:
                     except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
                         logger.exception("Market zones job not started")
                         report.errors.append(f"market zones: {exc}")
+                        await session.rollback()
+                # U6 BK5: breakout screen fitness - once per IST day from BREAKOUT_FITNESS_HOUR_IST, NSE closed (flag
+                # `screener_breakouts_fitness`, off by default). Its own task, sessions and time budget; reference data only.
+                if not nse.is_open:
+                    try:
+                        report.breakout_fitness_started = await self._maybe_start_breakout_fitness(session, now)
+                    except Exception as exc:  # noqa: BLE001 - reference data must never stop trading
+                        logger.exception("Breakout fitness job not started")
+                        report.errors.append(f"breakout fitness: {exc}")
                         await session.rollback()
                 # HB2: the owner's intraday history (flag `history_intraday`, off by default) - after the close, through the
                 # owner's own broker session, drawing from that session's rate budget only while a reserve stays free for
@@ -1273,6 +1299,31 @@ class TradingWorker:
             self._then_warm_task = asyncio.get_running_loop().create_task(run())
         except RuntimeError:
             self._then_warm_task = None
+    async def _maybe_start_breakout_fitness(self, session: AsyncSession, now: datetime) -> bool:
+        """U6 BK5: starts the nightly breakout-fitness pass as a background task when it is due, the flag is on for anyone
+        and HB1's EOD ingest is done (the zones job's rule). One task per worker; the job's advisory lock keeps a second
+        replica out; the day counts as done only when a pass worked through every template."""
+        from app.price_action.zones import job as zones_job
+        from app.screener.breakouts import fitness_job
+
+        day = fitness_job.nightly_due(now, self._last_breakout_fitness_day)
+        if day is None or (self._breakout_fitness_task is not None and not self._breakout_fitness_task.done()):
+            return False
+        if not await fitness_job.any_enabled(session):
+            return False
+        if not await zones_job.eod_ready(session, day, now):
+            return False
+
+        async def run() -> None:
+            try:
+                result = await fitness_job.run_nightly(self.session_factory, now=now)
+                if result.get("complete"):
+                    self._last_breakout_fitness_day = day
+            except Exception:  # noqa: BLE001 - reference data; never reaches trading
+                logger.exception("Breakout fitness job failed")
+
+        self._breakout_fitness_task = asyncio.get_running_loop().create_task(run())
+        return True
 
     def _spawn_vision_drain(self) -> None:
         """BYOK-V2: audits queued Vision reports (the users' own keys, comment only) in a background task with its own
@@ -1676,11 +1727,15 @@ class TradingWorker:
         ))
         venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
         closed = 0
+        groups: Dict[str, List[TradeRecord]] = {}
         for trade in open_trades:
             if families is not None and session_family(venues[trade.id]) not in families:
                 continue
             if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
                 continue   # Phase AS: a swing position is held overnight by design
+            if trade.leg_group_id:
+                groups.setdefault(trade.leg_group_id, []).append(trade)
+                continue
             try:
                 price = await market_data.get_ltp(trade.symbol, venues[trade.id])
             except Exception as exc:  # noqa: BLE001
@@ -1700,6 +1755,21 @@ class TradingWorker:
                 closed += int(outcome.closed)
             except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
                 logger.error("Square-off of trade %s failed: %s", trade_id, exc)
+        for group_id, legs in groups.items():
+            # MED-1 (naked-short guard): a structure's legs close through close_group - shorts first, and its wings are
+            # held while a LIVE short has not closed (selling them first would leave a naked short).
+            prices: Dict[int, float] = {}
+            for leg in legs:
+                try:
+                    prices[leg.id] = await market_data.get_ltp(leg.symbol, venues[leg.id])
+                except Exception as exc:  # noqa: BLE001 - that leg is left open (a short without a quote holds its wings)
+                    logger.warning("Square-off: no price for %s (%s) - left open", leg.symbol, exc)
+            try:
+                async with guarded(session, keep=tuple(legs)):
+                    outcomes = await close_group(session, legs, prices, "Intraday square-off", broker=live_broker, user_id=user_id)
+                closed += sum(int(o.closed) for o in outcomes)
+            except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
+                logger.error("Square-off of group %s failed: %s", group_id, exc)
         if closed:
             logger.info("Square-off closed %d position(s) for tenant %s", closed, tenant_id)
         return closed

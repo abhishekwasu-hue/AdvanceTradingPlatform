@@ -2,10 +2,8 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { StaticIpOverview } from "../types";
 import { Button } from "./primitives";
-import { staticIpRows } from "./staticIps";
+import { STATIC_IP_BROKERS as BROKERS, staticIpRows } from "./staticIps";
 import { Card } from "./ui";
-
-const BROKERS = ["upstox", "zerodha", "fyers", "dhan", "angelone", "shoonya"];
 
 /** Part D4 (rule IN-SEBI.static_ip.registered): the IPs registered with each broker for API orders. */
 export default function StaticIpCard() {

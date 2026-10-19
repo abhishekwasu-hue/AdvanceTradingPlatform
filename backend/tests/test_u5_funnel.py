@@ -56,9 +56,11 @@ BUILDER_TEXTS = Path(__file__).resolve().parents[2] / "frontend" / "src" / "scre
 def test_the_text_the_builder_writes_is_valid_screenql():
     """The contract with the frontend model (src/screener/model.ts): its test writes each `text` from `stage` with
     `registry`; here every text (alone and all joined by AND, as the canvas sends them) must validate, and the registry
-    the builder was tested against must still be what the server describes."""
+    the builder was tested against must still be what the server describes. AMW-3: as it describes them by default, with
+    `screenql_amw_functions` off (no `confirm` argument, no v2 candles); with it on, see test_amw3_screenql_functions."""
+    from app.screener.amw_functions import hide
     fixture = json.loads(BUILDER_TEXTS.read_text())
-    reg = describe()
+    reg = hide(describe())
     for name, entry in fixture["registry"].items():
         assert reg[name] == entry, f"{name} changed on the server - update builderTexts.json and re-run the frontend test"
     texts = [c["text"] for c in fixture["cases"]]

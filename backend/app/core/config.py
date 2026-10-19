@@ -54,6 +54,15 @@ DATABASE_URL = os.environ.get(
 # schema migrations run as the owning role through this URL (scripts/db_roles.sql creates both).
 # Unset = same URL as the app, which is how a single-role dev database keeps working.
 MIGRATION_DATABASE_URL = os.environ.get("MIGRATION_DATABASE_URL", "").strip() or DATABASE_URL
+# LD-7: the connection pool of ONE process (an API worker process, the trading worker, the research worker). With
+# API_WORKERS > 1 every API process has its own pool, so the database sees API_WORKERS x (size + overflow) from the API
+# alone - keep that, plus the workers' pools, under Postgres `max_connections` (the Hostinger overlay does the sum).
+DB_POOL_SIZE = max(1, int(os.environ.get("DB_POOL_SIZE", "5")))
+DB_MAX_OVERFLOW = max(0, int(os.environ.get("DB_MAX_OVERFLOW", "10")))
+DB_POOL_TIMEOUT_SECONDS = max(1.0, float(os.environ.get("DB_POOL_TIMEOUT_SECONDS", "30")))
+# LD-7: how many API processes uvicorn runs (scripts/serve_api.sh reads the same variable). Sizes per-process limits
+# that are meant to be per host, such as the bcrypt thread limit (app/auth/security.py).
+API_WORKERS = max(1, int(os.environ.get("API_WORKERS", "1") or "1"))
 
 _INSECURE_DEFAULT_JWT_SECRET = "dev-only-insecure-secret-change-me"
 JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", _INSECURE_DEFAULT_JWT_SECRET)
@@ -128,7 +137,7 @@ _AI_RATE_LIMITS_DEFAULT = {"free": {"user": 60, "tenant": 120}, "pro": {"user": 
 _AI_RATE_WEIGHTS_DEFAULT = {"POST strategist/build": 20, "POST strategist/study": 10, "POST interview/plan": 10, "POST interview/refine": 10,
                             "POST drafts": 5, "POST drafts/{draft_id}/backtest": 5, "POST copilot": 3, "POST ask": 3,
                             "POST market-memory/refresh": 10, "POST plan": 3, "POST read": 3,
-                            "POST support/ask": 1}
+                            "POST support/ask": 1, "POST analyze": 8}
 
 
 def _json_table(name: str, default: dict) -> dict:
@@ -538,6 +547,13 @@ MARKET_ZONES_DEFAULTS: dict = _json_object("MARKET_ZONES_DEFAULTS")
 MARKET_ZONES_SYMBOLS = [k.strip().upper() for k in os.environ.get("MARKET_ZONES_SYMBOLS", "").split(",") if k.strip()]
 MARKET_ZONES_HOUR_IST = _bounded_int("MARKET_ZONES_HOUR_IST", 20, 0, 23)
 MARKET_ZONES_BUDGET_SECONDS = _bounded_int("MARKET_ZONES_BUDGET_SECONDS", 1800, 10, 6 * 3600)
+# U6 BK5: breakout screen fitness - a nightly pass over the shared lake's daily bars (flag screener_breakouts_fitness, off).
+# BREAKOUT_FITNESS_SYMBOLS: the universe ("NSE:RELIANCE,NSE:TCS,..."; empty = MARKET_ZONES_SYMBOLS).
+BREAKOUT_FITNESS_SYMBOLS = [k.strip().upper() for k in os.environ.get("BREAKOUT_FITNESS_SYMBOLS", "").split(",") if k.strip()]
+BREAKOUT_FITNESS_UNIVERSE = os.environ.get("BREAKOUT_FITNESS_UNIVERSE", "platform")[:32] or "platform"
+BREAKOUT_FITNESS_HOUR_IST = _bounded_int("BREAKOUT_FITNESS_HOUR_IST", 21, 0, 23)
+BREAKOUT_FITNESS_BUDGET_SECONDS = _bounded_int("BREAKOUT_FITNESS_BUDGET_SECONDS", 1800, 10, 6 * 3600)
+BREAKOUT_FITNESS_HISTORY_DAYS = _bounded_int("BREAKOUT_FITNESS_HISTORY_DAYS", 1825, 400, 3650)
 
 # PW6: the closed-beta cohort cap. With the `beta_cohort_gate` flag on, registration needs an invite code and stops once
 # this many accounts have been created through invite codes (the sum of every code's used_count, revoked codes

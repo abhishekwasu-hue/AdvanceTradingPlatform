@@ -29,7 +29,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from enum import IntEnum
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from app.cache.client import cache_get, cache_set
 from app.core import config
@@ -202,6 +202,23 @@ class SessionSymbols:
             await self._save(namespace, entries)
         return plan.keeps(symbol, exchange), plan
 
+    async def admit_many(self, namespace: str, symbols: Sequence[SymbolKey], priority: Priority, cap: int, now: datetime, *,
+                         register: bool = True) -> List[Tuple[bool, Plan]]:
+        """`admit` for each (symbol, exchange) in order, with one read and at most one write of the session's set (LD-7:
+        a five-symbol screen read and wrote it five times each, one after the other). The answers are `admit`'s called
+        in turn: with `register` each symbol's demand counts for the symbols after it; without, each is answered on its
+        own and nothing is written."""
+        base = _prune(await self.load(namespace), now)
+        out: List[Tuple[bool, Plan]] = []
+        for symbol, exchange in symbols:
+            entries = base if register else dict(base)       # _upsert assigns new lists: a shallow copy keeps base as read
+            _upsert(entries, _key(symbol, exchange), int(priority), now)
+            plan = plan_symbols(entries, cap)
+            out.append((plan.keeps(symbol, exchange), plan))
+        if register and out:
+            await self._save(namespace, base)
+        return out
+
     async def replace(self, namespace: str, priority: Priority, symbols: Iterable[SymbolKey], now: datetime) -> None:
         """Make the session's demands at `priority` exactly `symbols` (the worker's positions / screener universe)."""
         entries = _prune(await self.load(namespace), now)
@@ -367,16 +384,31 @@ class UserSessionFanIn:
         for namespace, live in list(self._sessions.items()):
             if namespace not in wanted or live.opened_day != today:
                 report.closed += int(await self.close(namespace))
+        # LD-7: every session's open positions from one select per cycle, not one per user (500 users = 500 selects every
+        # cycle). The rows are grouped by (organisation, user) below, so each session still gets only its own user's
+        # positions (BT1b); a credential without a user matches the rows without one, as `user_id == None` did.
+        owners = {(record.tenant_id, record.user_id) for record in wanted.values()}
+        by_owner: Dict[Tuple[Any, Any], List[Any]] = {}
+        venues: Dict[int, str] = {}
+        positions_error: Optional[str] = None
+        try:
+            for trade in await db.scalars(select(TradeRecord).where(
+                    TradeRecord.exit_time.is_(None), TradeRecord.tenant_id.in_(sorted({tenant for tenant, _ in owners})))):
+                if (trade.tenant_id, trade.user_id) in owners:
+                    by_owner.setdefault((trade.tenant_id, trade.user_id), []).append(trade)
+            # BK2-8: a legacy row follows its deployment's venue
+            venues = await trade_venues(db, [trade for rows in by_owner.values() for trade in rows])
+        except Exception as exc:  # noqa: BLE001 - reported for every session below; the sessions still open
+            positions_error = f"open positions not read: {exc}"
         for namespace, record in wanted.items():
             try:
                 if namespace not in self._sessions:
                     await self.open(record, now)
                     report.opened += 1
-                trades = await db.scalars(select(TradeRecord).where(
-                    TradeRecord.tenant_id == record.tenant_id, TradeRecord.user_id == record.user_id, TradeRecord.exit_time.is_(None)))
+                if positions_error is not None:
+                    raise RuntimeError(positions_error)
                 positions: set = set()
-                open_rows = list(trades)
-                venues = await trade_venues(db, open_rows)       # BK2-8: a legacy row follows its deployment's venue
+                open_rows = by_owner.get((record.tenant_id, record.user_id), [])
                 for trade in open_rows:
                     positions.add((trade.symbol, venues[trade.id]))
                     if trade.underlying_symbol:

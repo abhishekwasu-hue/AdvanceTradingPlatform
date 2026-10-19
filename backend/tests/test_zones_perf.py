@@ -274,7 +274,7 @@ def test_screen_run_evaluates_off_the_event_loop(monkeypatch):
     from tests.test_auth_api import client
     r = client.post("/api/screener/run", json={"source": "close > 1", "symbols": ["ABC"], "base_tf": "5m"}, headers=headers)
     assert r.status_code == 200, r.text
-    assert used == ["run_screen", "stage_survivors"]
+    assert used == ["screen_and_funnel"]           # LD-7: the matches and the funnel on one worker thread hop
 
 
 def test_chart_layer_says_why_there_are_no_bands():

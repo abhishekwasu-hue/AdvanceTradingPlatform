@@ -15,6 +15,8 @@ import { legacyCopilotPath } from "./copilot/tabs";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
+const ContractChartWindow = lazy(() => import("./pages/ContractChartWindow"));
+const FuturesBasisWindow = lazy(() => import("./pages/FuturesBasisWindow"));
 // CH5: the multi-chart workspace (flag `chart_workspace`), its own tab and chunk like the single chart.
 const ChartWorkspace = lazy(() => import("./pages/ChartWorkspace"));
 // Z10-e (G7): the public status page - no login, no shell, its own small chunk.
@@ -267,7 +269,15 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          {params.has("workspace") ? (
+          {params.has("basis") ? (
+            <ErrorBoundary title="The futures basis chart">
+              <Suspense fallback={null}><FuturesBasisWindow params={params} /></Suspense>
+            </ErrorBoundary>
+          ) : params.has("contract") ? (
+            <ErrorBoundary title="The contract chart">
+              <Suspense fallback={null}><ContractChartWindow params={params} /></Suspense>
+            </ErrorBoundary>
+          ) : params.has("workspace") ? (
             <ErrorBoundary title="The chart workspace">
               <Suspense fallback={null}><ChartWorkspace params={params} /></Suspense>
             </ErrorBoundary>

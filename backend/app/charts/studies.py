@@ -106,8 +106,9 @@ def _runtime_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def check(exprs: Sequence[str], tf: str) -> List[Dict[str, Any]]:
-    """Each expression parsed and checked as a study: [{expr, ok, problems, kind, unit, lookback, ast}]."""
+def check(exprs: Sequence[str], tf: str, functions: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Each expression parsed and checked as a study: [{expr, ok, problems, kind, unit, lookback, ast}]. `functions`: the
+    registry view to check against (AMW-3 review: the flag-off view while `screenql_amw_functions` is off)."""
     from app.screener import nodes
     from app.screener.parser import ScreenQLSyntaxError, parse
     from app.screener.routes import missing_data
@@ -126,7 +127,7 @@ def check(exprs: Sequence[str], tf: str) -> List[Dict[str, Any]]:
             row["problems"] = [{"message": str(exc), "pos": None}]
             out.append(row)
             continue
-        sc = validate_study(ast, base_tf=tf)
+        sc = validate_study(ast, base_tf=tf, functions=functions)
         problems = [p.as_dict() for p in sc.validated.problems]
         problems += [{"message": f"{m}() needs data a chart study does not load (sector / index / F&O lists or the option chain)", "pos": None}
                      for m in missing_data(ast)]
@@ -181,8 +182,10 @@ def admit(studies: Sequence[Dict[str, Any]], bars: int) -> List[Dict[str, Any]]:
 
 async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """The screener's function flags, per study (as `screener.routes._gate` does for a screen): a study using a U6
-    breakout function while `screener_breakouts` is off, or a market-zone function while `market_zones` is off, is
-    refused with the flag's reason. The others still draw."""
+    breakout function while `screener_breakouts` is off, a market-zone function while `market_zones` is off, or an AMW-3
+    function / v2 candle / confirmation status while `screenql_amw_functions` is off, is refused with the flag's reason.
+    The others still draw."""
+    from app.screener import amw_functions as amw_gate
     from app.screener import zones as zone_gate
     from app.screener.breakouts import gate as breakout_gate
     out: List[Dict[str, Any]] = []
@@ -192,6 +195,9 @@ async def gate(session: AsyncSession, tenant_id: Any, studies: Sequence[Dict[str
                 blocked = await g.blocked_calls(session, tenant_id, st["ast"])
                 if blocked:
                     st = _refuse(st, g.refusal(blocked))
+            amw_blocked = await amw_gate.blocked_calls(session, tenant_id, st["ast"], {})   # studies take no $parameters
+            if amw_blocked:
+                st = _refuse(st, amw_gate.refusal(amw_blocked))
         out.append(st)
     return out
 
@@ -304,7 +310,9 @@ async def chart_studies(instrument: str = Query(..., min_length=1, max_length=10
         raise HTTPException(status_code=422, detail="`start` must be before `at`")
     if when - begin > timedelta(days=STUDY_MAX_DAYS[tf]):
         raise HTTPException(status_code=422, detail=f"the window may span at most {STUDY_MAX_DAYS[tf]} days on {tf}; choose a later `start`")
-    studies = check([e.strip() for e in expr], tf)
+    from app.screener import amw_functions as amw_gate
+    flag_off_view = None if await amw_gate.enabled(session, tenant_id) else amw_gate.FLAG_OFF_FUNCTIONS
+    studies = check([e.strip() for e in expr], tf, flag_off_view)
     head = {"instrument": instrument, "at": when.isoformat(), "start": begin.isoformat(), "source": None, "note": NOTE}
     try:
         key: Optional[str] = normalise_key(instrument)

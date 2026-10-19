@@ -88,7 +88,7 @@ def text_problem(explanation: Optional[str], warnings: List[str], config, sugges
         ok, bad = grounding.check_numbers(text, allowed)
         if not ok:
             return f"numbers not in the strategy: {', '.join(bad[:5])}"
-        blocked = output_filter.blocked_terms(text)
+        blocked = output_filter.findings(text)
         if blocked:
             return f"advice/guarantee words: {', '.join(blocked[:5])}"
     return None

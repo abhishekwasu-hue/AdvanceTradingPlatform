@@ -4,7 +4,7 @@ import asyncio
 from datetime import datetime, timedelta, timezone
 
 from app.brokers.models import Quote
-from app.market_data import candles_routes
+from app.market_data import api_budget, candles_routes
 from app.market_data.stream import Tick, tick_cache
 from tests.test_phase_aa_market_data_api import _Broker, _store_credentials
 from tests.test_phase_k_commercial import _owner
@@ -50,6 +50,7 @@ def test_quote_then_ltp_fallback_with_staleness_flag(monkeypatch):
     assert body["bid"] == 2874.0 and body["age_seconds"] is not None and body["age_seconds"] < 10
 
     old = Quote(symbol="RELIANCE", ltp=2850.0, timestamp=now - timedelta(hours=18))
+    api_budget.reset()                       # CH5-a: a quote is shared for a few seconds per credential and symbol
     monkeypatch.setattr(candles_routes, "build_adapter", lambda record: _QuoteBroker(quote=old))
     body = client_get(headers, "RELIANCE").json()
     assert body["ltp"] == 2850.0 and body["stale"] is True and body["stale_reason"]
@@ -58,6 +59,7 @@ def test_quote_then_ltp_fallback_with_staleness_flag(monkeypatch):
     body = client_get(headers, "TCS").json()
     assert body["ltp"] == 99.0 and body["source"] == "ltp" and body["timestamp"] is None and body["stale"] is False
 
+    api_budget.reset()
     monkeypatch.setattr(candles_routes, "build_adapter", lambda record: _QuoteBroker(fail=True))
     res = client_get(headers, "TCS")
     assert res.status_code == 502 and "socket closed" in res.json()["detail"]

@@ -388,6 +388,148 @@ own output on the frozen fixtures, checked against Trade live when the repositor
   process; the layer cache is bounded by bytes and never holds debug answers; 60 requests a minute per user; a
   top-down row over 5,000 bars is refused, not cut; a daily chart reads its daily bars once for the chart and D / W.
 
+## CH4a (built): the trades layer - your own PAPER trades on the chart
+
+The first CH4 slice that the data ATP has supports (dependency check below; OPEN_QUESTIONS CH4-1 .. CH4-3). Flag
+`chart_trades_layer`, off by default.
+
+- **Backend.** `GET /api/charts/layers/trades?instrument=&at=&start=` (`app/charts/trades_layer.py`).
+  - Off -> 503, per organisation. Tenancy: "member", but the rows are the caller's own (`user_id` = the caller and
+    `tenant_id` = the caller's organisation), never a teammate's, never another organisation's. The trade list itself
+    is organisation-wide; a chart layer is personal.
+  - PAPER rows only.
+  - The instrument's own trades are drawn at their prices; a derived contract (an option or future on this underlying)
+    at its times only (`on_price_axis: false`). Its premium never goes on the underlying's axis.
+  - As of `at`: no trade entered after it, no exit after it (the trade is open then, without P&L), so replay shows
+    nothing before it happened.
+  - The stop, as of `at`: the position monitor overwrites `stop_loss` as a stop trails, so the row holds the latest
+    stop, not the one in force at `at`. Replaying the past (`at` before now, or a trade exiting after `at`) draws the
+    trade's `initial_stop_loss` (its `stop_loss` when none was recorded), labelled "Initial stop"; only the live chart
+    draws the current stop. The stop history is not recorded, so the trail itself is not replayed.
+  - The window is the trades active in (`start`, `at`], at most 200. The exchange filter (an underlying on another
+    exchange is another chart) runs in the query, before the cap, so the cap and `capped` count only drawn trades.
+    Read-only: it writes nothing and offers no action.
+  - An index chart (`NSE:NIFTY 50`) matches derived trades whose underlying is the F&O master's name (`NIFTY`), via
+    `app/instruments/master.py` aliases.
+- **Frontend.** `charting/tradesLayer.ts` (API, bar snapping, `toTradesLayer`, a loader that clears on every new
+  question) and `TradesLayer.tsx`, a read-only panel ("My trades": count, open count, show / hide). They are mounted on
+  the full-window chart, following replay.
+  - Each entry and exit is a label in the bar it falls in.
+  - A closed trade on its own chart has a dashed entry-to-exit segment.
+  - An open trade on its own chart has its stop and target as price lines.
+  - Colours are Okabe-Ito, by side.
+- **Tests.** `tests/test_ch4a_trades_layer.py` covers:
+  - own trades only (a teammate's and another organisation's are never drawn, a LIVE row never);
+  - instrument, exchange and contract matching;
+  - as-of (no trade and no exit before it happened) and the window;
+  - a stop trailed after `at` (the replay draws the initial stop; the live chart the current one);
+  - the exchange filter before the cap, and an index chart showing `NIFTY` option trades;
+  - flag off / per organisation;
+  - writes nothing.
+
+  Frontend `tradesLayer.test.tsx` covers snapping, shapes, the contract case, the loader and the read-only panel.
+- **Dependencies of the rest of CH4, checked on main 53c54ee:**
+  - **Part B lake.** The shared lake has daily F&O contract bars with OI from the F&O bhavcopy (HB1,
+    `nse_bhav:fo`, keys `NFO:<SYM>:FUT:<expiry>` and `NFO:<SYM>:<CE|PE>:<expiry>:<strike>`), once the backfill has
+    run. There is no IV history and no intraday chain history: the `md_option_chain_snapshots` table exists but
+    nothing writes it, and `option_chain_snapshots` (Phase W) holds only near-the-money samples of running option
+    deployments plus uploads, trimmed by retention.
+  - **U1-c.** Lots (`instrument_master_versions`, `instruments.lot_size`) and the exchange ban list
+    (`fo_ban_history`) exist (`app/universe/fo_eod.py`).
+  - **S3 Notification Service.** It exists (`app/notifications/service.notify` with the alert dispatcher).
+- **Next (CH4b, data-ready):**
+  - option and future contract charts and synthetic spreads from the lake's daily `NFO:` bars (sum of legs with sign
+    and quantity);
+  - an OI pane from the same rows;
+  - option symbol search from `instruments`;
+  - chain -> chart linking.
+
+  Intraday contract charts, IV / Greeks panes and IV / PCR / max-pain history wait for an intraday chain store
+  (CH4-1).
+
+## CH4b (built): daily contract and spread charts, OI, contract search, chain -> chart links
+
+Flag `chart_contracts`, off by default; built on CH4a's branch. The daily data the shared lake already holds:
+CH4-1's data-ready slice.
+
+- **Backend** (`app/charts/contracts.py`; tenancy "member", platform reference data):
+  - **`GET /api/charts/contracts/series?leg=[qty*]KEY&...&at=&start=&iv=`**
+    - Daily F&O bars from the shared lake (HB1 `nse_bhav:fo` keys; shared-licensed sources only, the preferred
+      source then the highest version per IST trade date - max(-rank, version), whatever END time each source
+      stamps - corrections point-in-time), as of `at`. Expired contracts included. Rate limited: 60 calls a minute
+      per user.
+    - One leg: its OHLC, volume and OI.
+    - Up to 4 legs: the spread close = sum of close x qty on the days every leg traded (no invented OHLC), with each
+      leg's OI.
+    - `iv=true`: a COMPUTED daily IV per option leg (Black-76 from the close and the same-expiry future's close,
+      `RISK_FREE_RATE`), labelled in `iv_note`. The solve uses Black-76's own bounds (call e^(-rT)max(F-K,0) .. e^(-rT)F,
+      put e^(-rT)max(K-F,0) .. e^(-rT)K), so a deep in-the-money put priced under K-F still solves. Null where
+      unsolvable, on expiry day (no life left at the close) or with no future that day.
+  - **`GET /api/charts/contracts/search?underlying=&kind=&expiry=&near=`** lists the instrument master's contracts
+    with their lake keys. NFO contracts only (the lake's keys are NSE F&O's; a BFO or MCX contract never becomes an
+    NFO key). One row per (expiry, kind, strike) across brokers, ordered and capped in the query: nearest expiry, then
+    nearest strike to `near` (or by strike). With `near`, strikes within +-25% of it (futures always); `total` counts
+    the distinct contracts.
+- **Frontend:**
+  - `charting/contracts.ts`: API, keys (the bhavcopy's strike text), URLs, candles, chain links.
+  - `pages/ContractChartWindow.tsx`: `/?contract=<leg>&contract=<leg>`, its own tab. The ProChart daily candles (a
+    spread as its close line), each leg's OI bars and the computed IV, labelled.
+  - Option chain: "chart" links on each strike's call and put. They appear only for a live (broker) chain with the
+    flag on, never for a sample chain.
+  - No order control anywhere.
+- **Tests:** `tests/test_ch4b_contracts.py` covers:
+  - keys equal the bhavcopy's;
+  - one leg's OHLC / OI from shared sources only (no `stream:` row);
+  - a correction counts only once ingested by `at`;
+  - spread = sum of legs on common days;
+  - computed IV = the Greeks library's solve; a deep ITM put under K-F solves (Black-76 bounds); none on expiry day;
+  - the daily winner per IST trade date (source rank, then version - not the latest END);
+  - search de-duplication, order and cap in the query, the strike window, `total`, no BFO / MCX contract;
+  - the per-user rate limit on `/series`;
+  - refusals and the flag.
+
+  Frontend `contracts.test.tsx` covers keys, URLs, chain links (not for a sample chain), candles, the IV label and
+  the OI figure.
+- **Not yet:** intraday contract charts, quoted IV / Greeks panes, PCR / max-pain / OI-by-strike history (CH4-1:
+  no chain history store), the basis / participant / rollover charts (CH4-4), and the options layer on the
+  underlying.
+
+## CH4c (built): futures basis, cost of carry, calendar spread and rollover
+
+Flag `chart_futures_basis`, off by default, on top of `chart_contracts`. Built on CH4b's branch. It uses the daily data
+the shared lake already holds: the CH4-4 charts that are data-ready.
+
+- **Backend.** `GET /api/charts/contracts/basis?underlying=&at=&start=` (`app/charts/futures_basis.py`; tenancy
+  "member", platform reference data). Per trade date, as of `at`:
+  - near, next and far months by expiry, each with its close and OI. They are the first three expiries on or after the
+    day in the window's own list of expiries (each counted from its first row), not ranked by that day's rows: a
+    contract with no row on a day is a gap (null close, OI and the numbers built on it), never a roll. A contract is
+    live on its expiry day; the next day the near month rolls, and the response lists the roll days.
+  - The spot: the cash close, or the index close for an index future.
+  - basis, basis %, annualised carry, calendar spread (next - near), the three months' OI and rollover % (next + far OI as % of all three).
+  - Reads come from shared-licensed sources only. Per contract and trade date the preferred source wins, then its
+    highest version; a correction counts once ingested by `at`.
+  - The futures keys are every possible monthly expiry date in the window, read by exact key in chunks of 5,000
+    (under Postgres's bind-parameter limit).
+- **Frontend.**
+  - `charting/futuresBasis.ts`: the API, the URL and the line geometry.
+  - `pages/FuturesBasisWindow.tsx`: `/?basis=<SYM>`, its own tab. It draws four small lines (basis %, carry %,
+    calendar spread, rollover %) with the roll days dashed, and the last day's reading in words.
+  - A single futures contract's chart links to the page, only when the page is on.
+  - There is no order control anywhere.
+- **Tests.** `tests/test_ch4c_futures_basis.py` checks:
+  - near / next / far and the roll after the expiry day;
+  - the figures;
+  - as of `at`;
+  - that broker and stream rows are never read, and the bhavcopy wins per trade date;
+  - the index spot;
+  - chunked reads;
+  - flags and refusals.
+
+  `futuresBasis.test.tsx` checks the URL, the last reading, the lines, the panel's wording and the link.
+- **Not yet:** the participant-wise OI chart (the NSE participant file is not ingested), intraday basis, and the
+  options layer on the underlying (CH4-1, CH4-5).
+
 ## CH6a (built): ScreenQL studies on charts from the screener runtime, a study WebWorker, 50k-bar performance
 
 - **Backend.** `GET /api/charts/studies?instrument=&tf=&at=&start=&expr=...` (`app/charts/studies.py`; flag `chart_studies`,
@@ -480,11 +622,20 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
 - **Last price, without starving exits (review HIGH, ADR-0004).** The workspace polls each (symbol, exchange) once
   (`charting/ltpHub.ts`), shared by every chart showing it: every 5 s for the active chart's symbol, every 20 s for the
   others, only while the tab is visible; a chart that gets focus again reuses a recent price. On the server
-  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`), and every broker call it makes (when no
-  fresh tick answers) first takes a token from the session's API budget (`app/market_data/api_budget.py`: per
-  tenant + broker + account, at half the conservative per-broker limits the worker's own budget uses, in the API
-  process); with none within 2 s it answers 429 (Retry-After 5) and the chart keeps its last price, instead of a queue
-  that grows while the worker's exits need the same API key. The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
+  `/api/market-data/ltp` is limited per user (60 a minute, `user_rate_limit`). When no fresh tick answers, the quote
+  is shared: cached in Redis for 4 s per (credential, exchange, symbol), with one request at a time making the broker
+  call (a short Redis lock) while the others wait for its result - every user and tab on that credential shares it.
+  That one call first takes a token from the credential's API budget (`app/market_data/api_budget.py`): sliding
+  windows in Redis (a sorted set of call times, the Redis server's clock) keyed by the credential row (`ab:{record.id}:
+  <seconds>` - a hash tag, one Cluster slot; BYOK members never share one), counted by every API worker and replica
+  together, checked and counted in one script (a refused call counts nowhere) - per second and per minute at half the
+  worker's conservative limits (Kite: the API 1/s plus the worker 2/s stays within Kite's 3/s, so exits are never
+  starved of quotes), and for Upstox at most 500 per 30 minutes (of its 2,000). Only the per-second window is waited for; a full minute or 30 minutes refuses at once. `/ltp` waits
+  at most 2 s, then 429 (Retry-After 5) and the chart keeps its last price - never a queue that grows while the
+  worker's exits need the same API key. `/candles` uses the same budget: every broker call in its symbol loop takes a
+  token (a cached answer costs none), the request waits at most 8 s in all, and a symbol that gets no token comes back
+  with `error: "budget used"` (and a warning) while the others load. Without Redis (dev) or with Redis unreachable,
+  each API process counts in-process windows at its part of the share (every limit divided by `API_WORKERS`). CI runs the real script and lock against its redis:7 service (`REDIS_URL`). The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
   window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
   cell's button) shows the active chart at full size.
 - **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and

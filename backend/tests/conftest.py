@@ -25,6 +25,8 @@ from app.brokers.circuit_breaker import reset_all
 @pytest.fixture(autouse=True)
 def _closed_circuit_breakers():
     reset_all()
+    from app.platform.routes import forget_status
+    forget_status()                     # LD-7: the public status is cached for a few seconds per process; each test reads afresh
     yield
 
 

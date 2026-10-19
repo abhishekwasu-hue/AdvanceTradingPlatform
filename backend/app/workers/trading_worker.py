@@ -83,7 +83,7 @@ from app.secrets_store.envelope import ensure_tenant_key
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
 from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
 from app.notifications.service import notify
-from app.trading.position_monitor import (broker_for_trade, close_position, monitor_open_positions,
+from app.trading.position_monitor import (broker_for_trade, close_group, close_position, monitor_open_positions,
                                           open_trade_families_by_tenant, trade_venues)
 from app.trading.stop_guard import verify_protective_stops
 
@@ -228,6 +228,8 @@ class TradingWorker:
         self._regime_wanted: set = set()
         # BYOK-V2: the Vision audit drain runs as its own background task (its own session), never inside a cycle.
         self._vision_task: Optional["asyncio.Task[None]"] = None
+        # BYOK-V3: when the daily-review queue was last checked (every 15 minutes; the queue itself is once per user per day).
+        self._last_vision_daily_check: Optional[datetime] = None
         self._then_warm_task: Optional["asyncio.Task[None]"] = None
         # IST date of the last instrument-master sync (Phase F1): once a day, pre-market.
         self._last_master_sync_day = None
@@ -279,12 +281,12 @@ class TradingWorker:
             self._history_eod_task.cancel()          # HB1: the nightly job is resumable - a cancelled day is retried
         if self._market_zones_task is not None and not self._market_zones_task.done():
             self._market_zones_task.cancel()         # Z7a-2: resumable too - stored snapshots are skipped next time
+        if self._intraday_task is not None and not self._intraday_task.done():
+            self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
         if self._then_warm_task is not None and not self._then_warm_task.done():
             self._then_warm_task.cancel()            # N1 X1: in memory only - the next worker warms again
         if self._vision_task is not None and not self._vision_task.done():
             self._vision_task.cancel()               # BYOK-V2: a claimed row is closed as "interrupted" by the next drain
-        if self._intraday_task is not None and not self._intraday_task.done():
-            self._intraday_task.cancel()             # HB2: resumable - claimed days stay `running` and are asked again
 
     async def run_forever(self) -> None:
         logger.info("Trading worker %s starting (cycle %ss)", self.holder_id, self.cycle_seconds)
@@ -302,6 +304,12 @@ class TradingWorker:
                 await self.run_cycle()
             except Exception:  # noqa: BLE001 - the loop must survive anything
                 logger.exception("Trading worker cycle crashed")
+            try:
+                from app.ai import instrument_names
+                async with self.session_factory() as session:
+                    await instrument_names.refresh_if_stale(session)       # H-C1 c: new listings every six hours
+            except Exception:  # noqa: BLE001 - never affects trading
+                logger.warning("instrument names not refreshed", exc_info=True)
             elapsed = time.monotonic() - started
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=max(1.0, self.cycle_seconds - elapsed))
@@ -315,7 +323,13 @@ class TradingWorker:
         """Phase 0 deployment defaults (app/platform/deployment_phase.py): seed the two Phase 0 flags where unset
         (ATP_DEPLOYMENT_PHASE=phase0 only) and log why LIVE entry paths are not started while `phase0_paper_only` is on.
         The worker always comes up: exits, stops, square-off and reconciliation of LIVE positions run regardless."""
+        from app.ai import instrument_names
         from app.platform import deployment_phase
+        try:
+            async with self.session_factory() as session:
+                await instrument_names.refresh(session)        # H-C1 c: instrument names for the AI output filter (never raises)
+        except Exception:  # noqa: BLE001 - never prevents the worker from starting
+            logger.warning("instrument names not loaded", exc_info=True)
         try:
             async with self.session_factory() as session:
                 state = await deployment_phase.on_startup(session, "worker")
@@ -486,6 +500,19 @@ class TradingWorker:
                     logger.exception("Alert dispatch failed")
                     report.errors.append(f"alert dispatch: {exc}")
                 try:
+                    # BYOK-V3: after the close, queue each opted-in user's daily review (rows only; idempotent per user per day).
+                    if self._last_vision_daily_check is None or now - self._last_vision_daily_check >= timedelta(minutes=15):
+                        self._last_vision_daily_check = now
+                        from app.ai import vision_audit
+                        # Review LOW-4: its own session - it commits, and must neither commit nor roll back the cycle's.
+                        async with self.session_factory() as vision_session:
+                            try:
+                                await vision_audit.enqueue_daily_reviews(vision_session, now)
+                            except Exception:
+                                await vision_session.rollback()
+                                raise
+                    # On the cycle's session: in a savepoint, so a failed read never leaves that session's transaction
+                    # aborted for the steps after it (ADR-0004).
                     async with guarded(session):
                         if await session.scalar(select(VisionReportRecord.id).where(VisionReportRecord.status == "pending").limit(1)) is not None:
                             self._spawn_vision_drain()
@@ -1661,11 +1688,15 @@ class TradingWorker:
         ))
         venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
         closed = 0
+        groups: Dict[str, List[TradeRecord]] = {}
         for trade in open_trades:
             if families is not None and session_family(venues[trade.id]) not in families:
                 continue
             if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
                 continue   # Phase AS: a swing position is held overnight by design
+            if trade.leg_group_id:
+                groups.setdefault(trade.leg_group_id, []).append(trade)
+                continue
             try:
                 price = await market_data.get_ltp(trade.symbol, venues[trade.id])
             except Exception as exc:  # noqa: BLE001
@@ -1685,6 +1716,21 @@ class TradingWorker:
                 closed += int(outcome.closed)
             except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
                 logger.error("Square-off of trade %s failed: %s", trade_id, exc)
+        for group_id, legs in groups.items():
+            # MED-1 (naked-short guard): a structure's legs close through close_group - shorts first, and its wings are
+            # held while a LIVE short has not closed (selling them first would leave a naked short).
+            prices: Dict[int, float] = {}
+            for leg in legs:
+                try:
+                    prices[leg.id] = await market_data.get_ltp(leg.symbol, venues[leg.id])
+                except Exception as exc:  # noqa: BLE001 - that leg is left open (a short without a quote holds its wings)
+                    logger.warning("Square-off: no price for %s (%s) - left open", leg.symbol, exc)
+            try:
+                async with guarded(session, keep=tuple(legs)):
+                    outcomes = await close_group(session, legs, prices, "Intraday square-off", broker=live_broker, user_id=user_id)
+                closed += sum(int(o.closed) for o in outcomes)
+            except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
+                logger.error("Square-off of group %s failed: %s", group_id, exc)
         if closed:
             logger.info("Square-off closed %d position(s) for tenant %s", closed, tenant_id)
         return closed

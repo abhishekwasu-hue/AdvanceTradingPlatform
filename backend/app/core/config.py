@@ -128,7 +128,7 @@ _AI_RATE_LIMITS_DEFAULT = {"free": {"user": 60, "tenant": 120}, "pro": {"user": 
 _AI_RATE_WEIGHTS_DEFAULT = {"POST strategist/build": 20, "POST strategist/study": 10, "POST interview/plan": 10, "POST interview/refine": 10,
                             "POST drafts": 5, "POST drafts/{draft_id}/backtest": 5, "POST copilot": 3, "POST ask": 3,
                             "POST market-memory/refresh": 10, "POST plan": 3, "POST read": 3,
-                            "POST support/ask": 1}
+                            "POST support/ask": 1, "POST analyze": 8}
 
 
 def _json_table(name: str, default: dict) -> dict:
@@ -179,6 +179,12 @@ BYOK_VISION_MODEL_CHOICES = {
 BYOK_DEFAULT_DAILY_CAP_USD = max(0.0, float(os.environ.get("BYOK_DEFAULT_DAILY_CAP_USD", "1") or 1))
 BYOK_DEFAULT_MONTHLY_CAP_USD = max(0.0, float(os.environ.get("BYOK_DEFAULT_MONTHLY_CAP_USD", "10") or 10))
 BYOK_MAX_CAP_USD = max(1.0, float(os.environ.get("BYOK_MAX_CAP_USD", "500") or 500))
+# BYOK-V3: scan-alert audits per user per rolling hour (a noisy screen cannot burn the user's cap), and the daily
+# review - after the close (IST, HH:MM) on NSE trading days, at most this many symbols per user, on this timeframe.
+BYOK_SCAN_AUDITS_PER_HOUR = max(0, int(os.environ.get("BYOK_SCAN_AUDITS_PER_HOUR", "6") or 6))
+BYOK_DAILY_REVIEW_AT = (os.environ.get("BYOK_DAILY_REVIEW_AT", "16:00") or "16:00").strip()
+BYOK_DAILY_REVIEW_MAX_SYMBOLS = min(10, max(1, int(os.environ.get("BYOK_DAILY_REVIEW_MAX_SYMBOLS", "3") or 3)))
+BYOK_DAILY_REVIEW_TIMEFRAME = (os.environ.get("BYOK_DAILY_REVIEW_TIMEFRAME", "1d") or "1d").strip()
 ALGO_ID_REQUIRED_FOR_LIVE = os.environ.get("ALGO_ID_REQUIRED_FOR_LIVE", "false").lower() in ("1", "true", "yes")
 # Part D2 (rule IN-SEBI.ops.throttle): orders per second per client and exchange, exits first. Off by default; the
 # rate is the rule-set's `ops_per_second` unless OPS_PER_SECOND overrides it for this deployment.
@@ -576,6 +582,15 @@ EXECUTION_CORE_CLAIM_STALE_SECONDS = _bounded_int("EXECUTION_CORE_CLAIM_STALE_SE
 EXECUTION_CORE_MAX_ATTEMPTS = _bounded_int("EXECUTION_CORE_MAX_ATTEMPTS", 3, 1, 10)
 # The drain stops claiming new intents once it has run this long in one cycle (the rest wait for the next cycle).
 EXECUTION_CORE_DRAIN_SECONDS = _bounded_int("EXECUTION_CORE_DRAIN_SECONDS", 20, 1, 300)
+# N1 X2 (flag scan_auto_paper, off; N1-3 is the owner's decision): limits on Auto PAPER entries from one armed scan
+# template - at most this many per IST day, and a cool-down per symbol for the same person. Over either, the setup
+# becomes a proposal instead.
+SCAN_AUTO_PAPER_MAX_PER_DAY = _bounded_int("SCAN_AUTO_PAPER_MAX_PER_DAY", 3, 1, 20)
+SCAN_AUTO_PAPER_COOLDOWN_MINUTES = _bounded_int("SCAN_AUTO_PAPER_COOLDOWN_MINUTES", 30, 0, 24 * 60)
+# Review of X2: an arming lasts this many days (then the owner arms again), and no Auto PAPER entry is placed at or after
+# this IST time (HH:MM; empty = the venue's own no-new-entries time, 15:00 on NSE, and never after the 15:15 square-off).
+SCAN_AUTO_PAPER_ARM_DAYS = _bounded_int("SCAN_AUTO_PAPER_ARM_DAYS", 7, 1, 90)
+SCAN_AUTO_PAPER_LAST_ENTRY = os.environ.get("SCAN_AUTO_PAPER_LAST_ENTRY", "").strip()
 
 # Z3-b / BT3 (beta spec, Phase 0): the per-user PAPER account (flag `paper_account`, off by default). A new account starts
 # with PAPER_STARTING_CAPITAL (the user may change it within the bounds). The progression ladder card shows the PAPER

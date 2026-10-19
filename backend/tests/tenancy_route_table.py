@@ -143,6 +143,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/actions/{action_id}/reject"): "trader",
     ("POST", "/api/ai/actions/{action_id}/snooze"): "trader",
     ("POST", "/api/ai/agent/ask"): S_COPILOT,
+    ("POST", "/api/ai/analyze"): S_COPILOT,
     ("POST", "/api/ai/ask"): S_COPILOT,
     ("GET", "/api/ai/brief"): "member",
     ("PUT", "/api/ai/byok/key"): S_OWN_AI_KEY,
@@ -211,6 +212,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/alerts/rules/{rule_id}/then"): "trader",
     ("DELETE", "/api/alerts/rules/{rule_id}/then"): "trader",
     ("GET", "/api/alerts/rules/{rule_id}/then/intents"): "member",
+    ("PUT", "/api/alerts/rules/{rule_id}/then/arm"): "trader",      # N1 X2: the template's own owner only (checked in the route)
+    ("DELETE", "/api/alerts/rules/{rule_id}/then/arm"): "trader",   # N1 X2: the template's owner or the organisation OWNER
     ("GET", "/api/alerts/then"): "member",                   # review of X1b: every Then of the rules the caller sees, one read
     ("DELETE", "/api/alerts/telegram/link"): S_OWN_TELEGRAM,
     ("GET", "/api/alerts/telegram/link"): "member",
@@ -292,6 +295,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    ("GET", "/api/charts/layers/trades"): "member",             # N4 CH4a: the caller's OWN PAPER trades only (user + organisation)
+    ("GET", "/api/charts/contracts/basis"): "member",       # N4 CH4c: shared lake reference data (futures + spot closes)
+    ("GET", "/api/charts/contracts/search"): "member",          # N4 CH4b: the instrument master (platform reference data)
+    ("GET", "/api/charts/contracts/series"): "member",          # N4 CH4b: shared-lake daily F&O bars (shared-licensed sources only)
     ("GET", "/api/compliance/golive"): "admin",
     ("PUT", "/api/compliance/golive/evidence"): "admin",
     ("GET", "/api/compliance/static-ips"): "member",
@@ -307,6 +314,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/custom-strategies/{strategy_id}"): "trader",
     ("GET", "/api/custom-strategies/{strategy_id}/versions"): "member",
     ("POST", "/api/custom-strategies/{strategy_id}/versions/{version_number}/rollback"): "trader",
+    ("GET", "/api/decision/expected-move"): "member",
+    ("GET", "/api/decision/exposure"): "member",
     ("GET", "/api/decision/positions"): "member",
     ("POST", "/api/decision/ruin"): S_COMPUTE,
     ("POST", "/api/decision/what-if"): S_OWN_WHATIF,
@@ -518,13 +527,19 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/screener/evidence/runs/{run_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}/image.png"): "member",
+    ("GET", "/api/screener/evidence/{evidence_id}/replay"): "member",  # U8 EV3: the pack recomputed from the shared lake (readable rule)
     ("POST", "/api/screener/evidence/{evidence_id}/telegram"): S_OWN_EVIDENCE_TELEGRAM,
+    ("GET", "/api/screener/library/mirrors"): "member",
+    ("GET", "/api/screener/library/watch-lists"): "member",
+    ("POST", "/api/screener/library/confluence"): "trader",
+    ("POST", "/api/screener/library/watch-trigger"): "trader",
     ("GET", "/api/screener/legends"): "member",
     ("GET", "/api/screener/legends/{card_id}"): "member",
     ("GET", "/api/screener/registry"): "member",
     ("POST", "/api/screener/run"): "trader",
     ("POST", "/api/screener/history/asof"): "trader",        # N3 S6a: shared lake bars; the caller's own screens only
     ("POST", "/api/screener/history/fitness"): "trader",     # N3 S6a: writes one trial to the caller's organisation's ledger
+    ("POST", "/api/screener/history/backtest"): "trader",    # N3 S6b: a simulation; writes one trial to the ledger
     ("GET", "/api/screener/runs/{run_id}"): "member",
     ("GET", "/api/screener/screens"): "member",
     ("POST", "/api/screener/screens"): "trader",

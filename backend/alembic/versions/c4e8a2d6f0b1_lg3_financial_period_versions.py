@@ -3,7 +3,7 @@ a screen may read as of a time), scoped like `financial_periods` after d7f9a1c3e
 set = the chain of the organisation that entered the figures (read by it only). No other table changes.
 
 Revision ID: c4e8a2d6f0b1
-Revises: d7f9a1c3e5b7 (contributed reference rows tenant scope, PR #234; was f3b5d7a9c1e2 before that merge)
+Revises: e2a4c6e8f0b3 (re-exit guard trades columns, #256 - main's head; re-chained from d7f9a1c3e5b7, earlier f3b5d7a9c1e2)
 Create Date: 2026-10-12 21:00:00
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c4e8a2d6f0b1'
-down_revision: Union[str, Sequence[str], None] = 'd7f9a1c3e5b7'
+down_revision: Union[str, Sequence[str], None] = 'e2a4c6e8f0b3'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - one new table that no earlier release reads or writes, so the previous release runs unchanged

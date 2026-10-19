@@ -16,9 +16,15 @@ exit_attempts: Dict[int, int] = {}
 rearm_rejects: Dict[int, int] = {}
 # trade id -> the stop order id the guard last re-armed (only its rejection counts against the trade)
 rearmed_order: Dict[int, str] = {}
+# Re-exit guard: trade id -> consecutive checks that found its earlier exit order still working (or unreadable)
+exit_waits: Dict[int, int] = {}
+# trade id -> monotonic time of the last "exit still working" CRITICAL
+exit_wait_alert: Dict[int, float] = {}
+# Naked-short guard: leg group id -> monotonic time of the last "wings held" CRITICAL (and its audit row)
+wings_held_alert: Dict[str, float] = {}
 
 
 def forget(trade_id: int) -> None:
     """The position is closed: nothing more to count or alert about."""
-    for table in (last_failure_alert, gave_up_alert, exit_attempts, rearm_rejects, rearmed_order):
+    for table in (last_failure_alert, gave_up_alert, exit_attempts, rearm_rejects, rearmed_order, exit_waits, exit_wait_alert):
         table.pop(trade_id, None)

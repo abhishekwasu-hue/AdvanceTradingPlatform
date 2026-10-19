@@ -1842,6 +1842,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   instance (`src/progression/i18n.ts`); there is a story.
 - No migration and no new route. Flag off returns the Z3-b answer unchanged.
 - Tests: backend `tests/test_n2_ladder_evidence.py` (9); vitest `src/progression` (12). Open questions N2-1..N2-5.
+
+## U9 TX2: confluence view, mirror screens, watch-then-trigger lists (flag `screener_tx2`, off)
+
+- Branch `claude/n3-tx2` (from main). Spec: ATP_SCREENER_TAXONOMY_ADDENDUM §3 / §4. Design: SCREENER.md "U9 TX2".
+- Backend: `app/screener/mirror.py` (AST mirror under price reflection, every rule checked on synthetic bars),
+  `app/screener/library.py` (pre-built screens as text, `<id>.short` mirrors, confluence ranking, watch lists and the
+  transition screen), `app/screener/library_routes.py` (4 routes, classified in the tenancy table). New flag in
+  DEFAULT_OFF_FLAGS. No migration, no new ScreenQL function (Z10-a case added for the `Count(...)[1]` transition).
+- Frontend: "Library tools" dialog on the Screener page (Confluence / Watch -> trigger tabs) and the mirror line on
+  gallery cards; `starters.json` carries each starter's text (checked against the builds by a vitest). Stories.
+- Tests: backend `tests/test_tx2_library.py`; vitest `src/screener/library.test.tsx`. Open questions TX2-1..TX2-5.
+
 ### 2026-10-12 IST - N2-2 experience levels (`claude/n2-2`, cut from `claude/n2-p1f` because N2-1 was not merged yet)
 - Flag `experience_levels` (off). Levels come from the user's own PAPER record. They gate futures (Intermediate) and
   naked short options (Advanced, single legs and structures with an unhedged short side) in
@@ -1863,6 +1875,16 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Frontend: "Decision tools" card on Positions (progression i18n), SVG chart, story.
 - Tests: `tests/test_n2_decision_tools.py` (10); vitest `src/progression/decision.test.tsx` (6). Open questions
   N2-11..N2-13.
+### 2026-10-12 IST - N2-4 decision tools II (`claude/n2-4`, stacked on `claude/n2-3`)
+- Flag `decision_tools` (off).
+- Exposure view of the caller's own open positions (`GET /api/decision/exposure`): by underlying and sector, risk at
+  stops, beta to the NIFTY 50, and pairs moving together, from the shared daily lake (split-adjusted by ISIN when
+  known).
+- Expected-move cone (`GET /api/decision/expected-move`), from HV20 or a typed IV; an "Expected move" toggle on the
+  chart window draws ±1 / ±2 sd bands.
+- Routes are classified in the tenancy table (member).
+- Tests: `tests/test_n2_exposure_cone.py` (6, seeded lake bars with built-in beta 1 / 2 and r = 1); vitest
+  `src/progression/exposure.test.tsx` (4). Open questions N2-14..N2-16.
 
 ## Fix: the trading worker acts per deployment as its creator (TX-3)
 
@@ -1898,6 +1920,15 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   `banned_terms`); s.194S cites CBDT Circulars 13/2022 and 14/2022 (not 23/2022); URL slugs corrected or marked verify;
   "tax year" wording for the 2025 Act; a limitation note when deployment trades are in the report (OPEN_QUESTIONS TX-3).
 
+## N5 H-C4: multi-view analysis (flag `ai_multiview`, off)
+
+- Branch `claude/n5-hc4` (from main). Design: `docs/design/H_COPILOT.md` "H-C4".
+- Backend: `app/ai/multiview.py` (four views by the platform's read tools, each audited; cheap tier words the views,
+  strong tier the summary, every text number- / direction- / advice-checked with one rewrite then the rules; at most 6
+  model calls and 60 s; the model gets no tool) and `POST /api/ai/analyze` (flags `ai_copilot` + `ai_multiview`, 8 AI
+  rate units, tenancy table S_COPILOT). Flag in DEFAULT_OFF_FLAGS. No migration.
+- Frontend: `MultiViewPanel` on Copilot > Ask (`copilot/tabs/analyze/`), English strings, compliance lint clean.
+- Tests: `tests/test_hc4_multiview.py`; vitest `multiview.test.ts`. Open questions HC4-1..HC4-4.
 ## Fix: contributed reference data is the contributing organisation's own (security)
 
 - Branch `claude/fix-shared-fundamentals-writes` (from main). Found in the S8 review: shared tables writable by any

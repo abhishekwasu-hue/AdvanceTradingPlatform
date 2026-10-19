@@ -307,6 +307,17 @@ class TradeRecord(Base):
     # exchange closed us at the stop, else the market exit), so contract-note legs can be
     # matched to both sides of the trade.
     exit_order_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    # Re-exit guard (ADR-0004): when this position's exit was claimed / sent - an exit order missing from the broker's book
+    # is treated as dead once it was sent on an earlier trading day, or a clean reconciliation since shows the position
+    # still open. While the exit is being placed `exit_order_id` holds the pending marker (position_monitor.EXIT_PENDING).
+    exit_sent_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    # Re-exit guard: when a reconciliation last found this position's symbol still open at the broker (quantities matched)
+    # with no order working on it - the proof that an exit order missing from the book is over (set only while an exit
+    # is recorded). And what earlier exits of this position already filled before the recorded one (quantity, average
+    # price), so the booking blends every part.
+    reconciled_open_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
+    exit_filled_quantity: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_filled_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     # Where `charges` came from: ESTIMATED (the platform's NSE cost model at close time) or
     # CONTRACT_NOTE (the broker's actual charges, applied from an uploaded contract note).
     charges_source: Mapped[str] = mapped_column(String(20), nullable=False, default="ESTIMATED")
@@ -1595,12 +1606,19 @@ class CompanyRecord(Base):
     """
 
     __tablename__ = "companies"
+    # A symbol is unique per scope (security LOW follow-up of #234): one shared profile (a partial unique index) and at most
+    # one per organisation - an organisation's private profile never blocks or shadows the shared one for the others.
+    __table_args__ = (
+        UniqueConstraint("symbol", "tenant_id", name="uq_companies_symbol_tenant"),
+        Index("uq_companies_symbol_shared", "symbol", unique=True, postgresql_where=text("tenant_id IS NULL"),
+              sqlite_where=text("tenant_id IS NULL")),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
     # that organisation and visible to it only (app/fundamentals/visibility.py).
     tenant_id: Mapped[int | None] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=True, index=True)
-    symbol: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(50), index=True, nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     bse_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     isin: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -1636,7 +1654,10 @@ class FinancialPeriodRecord(Base):
     """
 
     __tablename__ = "financial_periods"
-    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", name="uq_company_period_tenant"),)
+    __table_args__ = (UniqueConstraint("company_id", "period_type", "period_label", "tenant_id", name="uq_company_period_tenant"),
+                      # NULLs differ in a unique key: the shared periods get their own partial unique index
+                      Index("uq_company_period_shared", "company_id", "period_type", "period_label", unique=True,
+                            postgresql_where=text("tenant_id IS NULL"), sqlite_where=text("tenant_id IS NULL")))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     # Contributed-data scope (security fix): NULL = shared reference data (provider-ingested / platform); set = entered by
@@ -2310,15 +2331,29 @@ class VisionReportRecord(Base):
     user only. Queued as `pending` when the proposal is raised (never blocking it), audited later by the worker:
     `ok` (report written), `skipped` (no call made: vision off, no key, a cap, no chart data, proposal already decided)
     or `failed` (the provider call failed; `reason` is sanitised and never contains the key). The chart image is not
-    stored - only its SHA-256. The report only comments: nothing here approves, rejects or changes anything."""
+    stored - only its SHA-256. The report only comments: nothing here approves, rejects or changes anything.
+
+    BYOK-V3: the subject is a kind - `proposal` (V2, `ai_action_id`), `scan_alert` (one screen-alert notification of a
+    rule this user created: `notification_id`, `alert_rule_id`, the matched symbol) or `daily_review` (one symbol of this
+    user's own after-close review, `subject_date` in IST). `subject_key` ("proposal:<id>", "scan:<notification id>",
+    "daily:<date>:<EXCHANGE>:<SYMBOL>") is unique per user, so a subject is never audited twice for the same user."""
 
     __tablename__ = "vision_reports"
-    __table_args__ = (UniqueConstraint("user_id", "ai_action_id", name="uq_vision_reports_user_action"),)
+    __table_args__ = (UniqueConstraint("user_id", "ai_action_id", name="uq_vision_reports_user_action"),
+                      UniqueConstraint("user_id", "subject_key", name="uq_vision_reports_user_subject"))
 
     id: Mapped[int] = mapped_column(primary_key=True)
     tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    ai_action_id: Mapped[int] = mapped_column(ForeignKey("ai_actions.id", ondelete="CASCADE"), nullable=False, index=True)
+    ai_action_id: Mapped[int | None] = mapped_column(ForeignKey("ai_actions.id", ondelete="CASCADE"), nullable=True, index=True)
+    subject_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="proposal", server_default="proposal", index=True)
+    subject_key: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    notification_id: Mapped[int | None] = mapped_column(ForeignKey("notifications.id", ondelete="SET NULL"), nullable=True, index=True)
+    alert_rule_id: Mapped[int | None] = mapped_column(ForeignKey("alert_rules.id", ondelete="SET NULL"), nullable=True)
+    symbol: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    exchange: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    timeframe: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    subject_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     status: Mapped[str] = mapped_column(String(10), nullable=False, default="pending", index=True)   # pending/running/ok/skipped/failed
     provider: Mapped[str | None] = mapped_column(String(20), nullable=True)
     model: Mapped[str | None] = mapped_column(String(80), nullable=True)

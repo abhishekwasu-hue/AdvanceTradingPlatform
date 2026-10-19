@@ -23,94 +23,99 @@ Results from the CI staging stack (PR #222, draft). The Hostinger re-runs wait f
 3. Dhan partner application.
 4. Company registration (needed before the partner emails in docs/specs/ATP_PARTNER_EMAIL_DRAFTS.md go out).
 
-### N-list: every slice and its state (13 Oct)
+### N-list: every slice and its state (13 Oct, 02:30 UTC)
 
-States: **merged** (on `main`); **PR open** (draft or ready); **on branch, awaiting review** (pushed, no PR);
-**review fixes pushed, re-review: check** (the branch's last commit is a review fix; whether the re-review passed is
-not recorded); **parked** (with the reason); **check** (no branch or PR found; the state is unknown). Filled from
-`git branch -r`, the PRs merged to `main` (main at ed0d44e) and the open PR list (read only). Every flag named is off by default.
+States: **merged** (on `main`); **PR open**; **review: MERGE / FIX** (the independent review's verdict on the branch
+head named); **re-review: pass / fail / in progress** (a re-check of review fixes; every former "re-review: check" row now
+says which); **awaiting review**; **parked** (with the reason); **not started** (no branch). Every flag named is off by
+default. Owner rule (13 Oct): no new N-slice starts until fewer than 10 branches await review; lane D works only on the
+load test; merges go in dependency order (BK3 -> BK4 -> BK5; LG2 -> LG3 -> LG4a; S6a -> S6b -> S7a -> S8 -> S9;
+TX2 -> TX3 -> TX4; N2-4 ... N2-11; CH4a -> CH4b; CH5-b; EV3 / EV4) with at most 10 open PRs.
 
 | N | Slice | Branch | PR | State |
 |---|---|---|---|---|
 | N1 | E1 execution core: intent queue + policy routing (flag `execution_core`) | `claude/n1-e1` | #206 | merged |
-| N1 | L1 Trade level-gate port, golden parity (pure library) | `claude/n1-l1` | #210 | merged |
-| N1 | L2 Trade Daily trend fold port, golden parity (pure library) | `claude/n1-l2` | #213 | merged |
-| N1 | X1 scan Then: Notify / One-click through the level gate (flags `scan_then` + `execution_core`) | `claude/n1-x1` | #214 | merged |
-| N1 | X1b Then mode chip and drawer on each alert rule (includes U5 D4) | `claude/n1-x1b` | - | on branch, awaiting review |
-| N1 | X2 Auto PAPER from armed scan templates (flag `scan_auto_paper`) | `claude/n1-x2` | - | review fixes pushed (delta re-review LOWs), re-review: check |
-| N1 | F1 + F2 portfolio risk model and entry-only caps; F3 cards on the same branch (flags `portfolio_risk`, `portfolio_risk_caps`) | `claude/n1-f` | #219 | merged |
-| N1 | E2 hardening (CLOSING pre-claim, intents read API, venue contract suite) | - | - | check |
-| N2 | N2-1 ladder evidence (flag `ladder_evidence`) | `claude/n2-p1f` | #203 | merged |
-| N2 | N2-2 experience levels (flag `experience_levels`) | `claude/n2-2` | #207 | merged |
-| N2 | N2-3 decision tools I (flag `decision_tools`) | `claude/n2-3` | #211 | PR open (draft); review fixes pushed |
-| N2 | N2-4 decision tools II | `claude/n2-4` | - | review fixes pushed, re-review: check |
-| N2 | N2-5 market context panel | `claude/n2-5` | - | review fixes pushed, re-review: check |
-| N2 | N2-6 positions v2 | `claude/n2-6` | - | review fixes pushed, re-review: check |
-| N2 | N2-7 builder adjustments | `claude/n2-7` | - | review fixes pushed, re-review: check |
-| N2 | N2-8 builder compare (flag `builder_compare`) | `claude/n2-8` | - | on branch, awaiting review |
-| N2 | N2-9 trade workspace (flag `trade_workspace`) | `claude/n2-9` | - | on branch, awaiting review |
-| N2 | N2-10 education pages (flag `education_pages`) | `claude/n2-10` | - | on branch, awaiting review |
-| N2 | N2-11 learn from your journal (flag `journal_lessons`) | `claude/n2-11` | - | on branch, awaiting review |
-| N2-J | Journal module (docs/journal/PLAN.md) | - | - | parked: plan done; build after Phase 0 |
+| N1 | L1 Trade level-gate port, golden parity | `claude/n1-l1` | #210 | merged |
+| N1 | L2 Trade Daily trend fold port, golden parity | `claude/n1-l2` | #213 | merged |
+| N1 | X1 scan Then: Notify / One-click through the level gate | `claude/n1-x1` | #214 | merged |
+| N1 | X1b Then panel, read APIs, take-over guard (includes U5 D4) | `claude/n1-x1b` | #231 | merged |
+| N1 | X2 Auto PAPER from armed scan templates (flag `scan_auto_paper`) | `claude/n1-x2` | #239 | PR open; re-review: pass (MERGE at d551cb5) |
+| N1 | F1-F3 portfolio risk model, entry-only caps, cards | `claude/n1-f` | #219 | merged |
+| N1 | E2 hardening: (a) CLOSING pre-claim (flag `exit_preclaim`), (b) `GET /api/execution/intents`, (c) venue contract suite | - | - | not started: no branch; next for lane A once the review backlog is under 10 (docs/design/N1_EXECUTION_CORE.md E2) |
+| N2 | N2-1 ladder evidence | `claude/n2-p1f` | #203 | merged |
+| N2 | N2-2 experience levels | `claude/n2-2` | #207 | merged |
+| N2 | N2-3 decision tools I | `claude/n2-3` | #211 | merged |
+| N2 | N2-4 decision tools II | `claude/n2-4` | - | re-review: in progress (main carried up after #211) |
+| N2 | N2-5 market context panel | `claude/n2-5` | - | re-review: in progress |
+| N2 | N2-6 positions v2 | `claude/n2-6` | - | re-review: in progress |
+| N2 | N2-7 builder adjustments | `claude/n2-7` | - | re-review: in progress |
+| N2 | N2-8 builder compare (flag `builder_compare`) | `claude/n2-8` | - | awaiting review |
+| N2 | N2-9 trade workspace (flag `trade_workspace`) | `claude/n2-9` | - | awaiting review |
+| N2 | N2-10 education pages (flag `education_pages`) | `claude/n2-10` | - | awaiting review |
+| N2 | N2-11 learn from your journal (flag `journal_lessons`) | `claude/n2-11` | - | awaiting review |
+| N2-J | Journal module (docs/journal/PLAN.md) | - | - | parked: plan done; build after Phase 0 (OD-1) |
 | HB2 | Owner intraday history (flag `history_intraday`) | `claude/hb2-intraday-history` | #202 | merged |
-| N3 | U3 full gates: gate manifest, definition of done, run replay (flag `screener_run_replay`) | `claude/n3-u3` | - | on branch, awaiting review |
-| N3 | EV3 / EV4 trend strip and replay controls in the evidence panel | `claude/n3-ev3` | - | on branch, awaiting review (held back by the open-PR cap) |
-| N3 | BK3 VCP, Donchian, squeeze, MA and RSI / ADX regime breakouts | `claude/n3-bk3` | - | review fixes pushed, re-review: check |
-| N3 | BK4 trendline / channel, flag / pennant / triangle, gap, retest breakouts (on BK3) | `claude/n3-bk4` | - | on branch, awaiting review |
-| N3 | BK5 breakout screen fitness from the shared daily lake (on BK4) | `claude/n3-bk5` | - | on branch, awaiting review |
-| N3 | LG2 five Legends cards (flag `screener_legends_lg2`) | `claude/n3-lg2` | - | on branch, awaiting review |
-| N3 | LG3 point-in-time fundamentals + Graham / Greenblatt / O'Neil cards (on LG2) | `claude/n3-lg3` | - | on branch, awaiting review |
-| N3 | LG4a Legends card actions (on LG3; flag `screener_legends_actions`) | `claude/n3-lg4` | - | on branch, awaiting review |
-| N3 | LG4b fitness sparkline / stats on the cards | - | - | parked: waits for S6 to merge |
-| N3 | U2 remaining blocks: formula block, opening shipped screens | `claude/n3-u2` | - | on branch, awaiting review |
-| N3 | U5 D3a heatmap + chart grid views (flag `screener_board_views`) | `claude/n3-u5-d3` | - | on branch, awaiting review |
-| N3 | U5 D3b RRG view + template sheet | `claude/n3-u5-d3b` | - | on branch, awaiting review |
-| N3 | U5 D4 "Then" panel | `claude/n1-x1b` | - | lane A (row X1b above) |
-| N3 | U5 D5 quality bar: keyboard e2e, axe, reduce motion, visual regression | `claude/n3-u5-d5` | - | on branch, awaiting review; the whole-page axe gate follows #227 |
-| N3 | S6a screen history + fitness (flag `screener_history`) | `claude/n3-s6` | - | on branch, awaiting review |
-| N3 | S6b rolling screen backtest (on S6a; flag `screener_backtest`) | `claude/n3-s6b` | - | on branch, awaiting review |
-| N3 | S7a ranking systems (on S6b; flag `screener_rankings`) | `claude/n3-s7` | - | on branch, awaiting review |
-| N3 | S8a ownership and events + S8c one engine per venue (on S7a; flags `screener_ownership`, `screener_venues`) | `claude/n3-s8` | - | on branch, awaiting review |
-| N3 | S8b | - | - | check |
-| N3 | S9 screener in the Copilot (on S8; flag `screener_copilot`) | `claude/n3-s9` | - | review fixes pushed (security review), re-review: check |
-| N3 | S10 Phase 0 slice: ETF screen, WhatsApp / SMS DLT seam | `claude/n3-s10` | - | on branch, awaiting review |
-| N3 | TX2 confluence view, mirror screens, watch-then-trigger | `claude/n3-tx2` | - | on branch, awaiting review |
-| N3 | TX3 regime-aware greying, setup-of-the-day digest (on TX2) | `claude/n3-tx3` | - | on branch, awaiting review |
-| N3 | TX4 learn mode, provenance, forking (on TX3) | `claude/n3-tx4` | - | on branch, awaiting review |
-| N4 | CH3a price-action layer (flag `chart_price_action`) | `claude/n4-ch3` | #212 | merged |
-| N4 | CH3b legs, BOS / CHoCH, liquidity, trendlines (Trade parity) | `claude/n4-ch3b` | #218 | merged |
-| N4 | CH4a trades layer (flag `chart_trades_layer`) | `claude/n4-ch4a` | - | on branch, awaiting review |
-| N4 | CH4b contract and spread charts (on CH4a; flag `chart_contracts`) | `claude/n4-ch4b` | - | on branch, awaiting review |
-| N4 | CH5-a multi-chart workspace (flag `chart_workspace`) | `claude/n4-ch5` | #215 | merged |
-| N4 | CH5-b chart types, session breaks, 24x7 axis (on CH5-a) | `claude/n4-ch5b` | - | on branch, awaiting review |
-| N4 | CH6a ScreenQL studies on charts (flag `chart_studies`) | `claude/n4-ch6` | #223 | merged |
-| N4 | CH6a re-review LOWs | `claude/n4-ch6-lows` | - | on branch, awaiting review |
-| N4 | CH6-2 50k-candle timing + render smoke checks | `claude/n4-render-checks` | - | on branch, awaiting review |
+| N3 | U2 remaining blocks: formula block, opening shipped screens | `claude/n3-u2` | - | awaiting review |
+| N3 | U3 full gates: gate manifest, definition of done, run replay | `claude/n3-u3` | - | awaiting review |
+| N3 | U5 D3a heatmap + chart grid views | `claude/n3-u5-d3` | - | awaiting review |
+| N3 | U5 D3b RRG view + template sheet | `claude/n3-u5-d3b` | - | awaiting review |
+| N3 | U5 D4 "Then" panel | `claude/n1-x1b` | #231 | merged (with X1b) |
+| N3 | U5 D5 quality bar: keyboard e2e, axe, reduce motion, visual regression | `claude/n3-u5-d5` | - | awaiting review |
+| N3 | EV3 / EV4 trend strip, replay, drawn-as declarations (flag `evidence_context`) | `claude/n3-ev3` | #240 | PR open; review: MERGE |
+| N3 | BK3 VCP, Donchian, squeeze, MA, RSI / ADX regime breakouts | `claude/n3-bk3` | #229 | merged |
+| N3 | BK4 trendline / channel, pattern, gap / base, retest breakouts | `claude/n3-bk4` | #241 | PR open; review: MERGE (LOW fixed at 51ba195) |
+| N3 | BK5 breakout screen fitness from the shared daily lake | `claude/n3-bk5` | - | review: FIX (MED: unfiltered lake sources) -> fixes at a9eb7a5; re-review: in progress |
+| N3 | LG2 Legends cards, set 2 | `claude/n3-lg2` | #242 | PR open; review: MERGE |
+| N3 | LG3 point-in-time fundamentals + Graham / Greenblatt / O'Neil cards | `claude/n3-lg3` | - | review: FIX (HIGH tenancy) -> fixes at 4757694; re-review: pass |
+| N3 | LG4a Legends card actions | `claude/n3-lg4` | - | review: FIX (MED) -> 1dd0642, re-review: pass; LOW fix at 96d7616, re-check in progress |
+| N3 | LG4b fitness sparkline / stats on the cards | - | - | parked: waits for S6 (S6a merged; S6b in PR #243) |
+| N3 | S5-C F&O screener functions (flag `screener_fno`) | `claude/n3-s5c` | - | review: FIX (HIGH tenancy, MED) -> re-review: FIX (MED bind limit) -> d3a8032, re-review: pass; main merge c86b5c8, re-check in progress |
+| N3 | S6a screen history + fitness | `claude/n3-s6` | #235 | merged |
+| N3 | S6b rolling screen backtest | `claude/n3-s6b` | #243 | PR open; review: MERGE |
+| N3 | S7a ranking systems | `claude/n3-s7` | - | review: FIX (4 MED) -> 578ffe4; re-review: pass |
+| N3 | S8a ownership and events + S8c one engine per venue | `claude/n3-s8` | - | re-review: fail (HIGH: another org's contributed shareholding rows were read) -> fix at d69cefe; re-review: in progress |
+| N3 | S8b crypto venue for the ownership / venue screens | - | - | parked: no crypto market-data feed in Phase 0 (crypto paper is v1.3) |
+| N3 | S9 screener in the Copilot | `claude/n3-s9` | - | re-review (security fixes): queued, after S8 |
+| N3 | S10 ETF screen, WhatsApp / SMS DLT seam | `claude/n3-s10` | #233 | merged |
+| N3 | TX2 confluence, mirrors, watch-then-trigger | `claude/n3-tx2` | #238 | PR open; review: FIX (MED) -> 7991b84; re-review: pass |
+| N3 | TX3 regime-aware greying, setup-of-the-day digest | `claude/n3-tx3` | - | review: MERGE (merge of TX2 fixes checked) |
+| N3 | TX4 learn mode, provenance, forking | `claude/n3-tx4` | - | review: MERGE; LOW fixed, re-check: pass |
+| N4 | CH3a price-action layer | `claude/n4-ch3` | #212 | merged |
+| N4 | CH3b legs, BOS / CHoCH, liquidity, trendlines | `claude/n4-ch3b` | #218 | merged |
+| N4 | CH4a trades layer | `claude/n4-ch4a` | - | review: in progress |
+| N4 | CH4b contract and spread charts | `claude/n4-ch4b` | - | review: in progress |
+| N4 | CH4c futures basis, carry, calendar spread, rollover (flag `chart_futures_basis`) | `claude/n4-ch4c` | - | review: MERGE; both LOWs fixed at 04946c0 |
+| N4 | CH5-a multi-chart workspace | `claude/n4-ch5` | #215 | merged |
+| N4 | CH5-b chart types, session breaks, 24x7 axis | `claude/n4-ch5b` | - | review: in progress |
+| N4 | CH6a ScreenQL studies on charts | `claude/n4-ch6` | #223 | merged |
+| N4 | CH6a re-review LOWs | `claude/n4-ch6-lows` | - | awaiting review |
+| N4 | CH6-2 50k-candle timing + render smoke checks | `claude/n4-render-checks` | - | awaiting review |
 | N4 | CH7 TradingView Advanced Charts adapter | - | - | parked: waits for TradingView access (owner) |
-| N5 | BYOK-V3 Vision reviews on the user's own key | `claude/n5-byok-v3` | #217 | PR open (re-chained onto X1; CI) |
+| N5 | BYOK-V3 Vision reviews on the user's own key | `claude/n5-byok-v3` | #217 | PR open; migration re-chained onto main's head; CI |
+| N5 | H-C4 Copilot multiview output checks | `claude/n5-hc4` | - | review rounds 1-6: FIX; round 7 fixes at 1950ce3, re-review: in progress |
 | N6 | G Trade engine port | - | - | parked: waits for the owner's "stable" mark per module |
-| N7 | C2b fill / slippage / latency models (flag `backtest_models`) | `claude/n7-c2b` | - | on branch, awaiting review |
-| N8-N9 | Phase 1 items behind flags; crypto / IBKR / K | - | - | check |
-| Fix | Phase 0 deployment defaults | `claude/phase0-defaults` | #204 | merged |
-| Fix | Lane C LOW follow-ups | `claude/lowfix-bundle` | #209 | merged |
-| Fix | Sources verified (LG1-2, TX-1) | `claude/sources-verify` | #205 | merged |
-| Fix | Worker: watch every open position for exits (ADR-0004) | `claude/fix-exit-sweep` | #221 | merged |
-| Fix | Tax report: own trades only (BT1b) + FY statute citations | `claude/fix-tax-report-own` | #225 | merged |
-| Fix | Worker: savepoint per step on the shared cycle session (ADR-0004) | `claude/fix-session-savepoints` | #220 | merged |
-| Fix | Exit safety: re-exit guard and naked-short guard (stacked on #220) | `claude/fix-reexit-guard` | - | on branch, awaiting review |
-| Fix | Worker: entries filed under the deployment's creator (TX-3 / TX-4) | `claude/fix-worker-acting-user` | #226 | merged |
-| Fix | SMS gateway template injection and stored-header exfiltration | `claude/fix-alert-gateway-injection` | - | on branch, awaiting review |
-| Fix | Dark-theme primary buttons meet WCAG AA contrast | `claude/fix-dark-primary-contrast` | #227 | merged |
+| N7 | C2b fill / slippage / latency models | `claude/n7-c2b` | #236 | merged |
+| N7 | C2c span-like margin, black76 pricing | `claude/n7-c2c` | #237 | PR open; review: MERGE |
+| N7 | C5 trial ledger + deflation, lake windows, holdout | `claude/n7-c5` | - | review: MERGE; LOW fixes at 0943b84, re-review: pass |
+| N7 | C3 portfolio backtest (flag `backtest_portfolio`) | `claude/n7-c3` | - | review: FIX (MED DoS) -> bdd3330; re-review: pass |
+| N7 | C2d sampled latency, physical settlement | `claude/n7-c2d` | - | review: MERGE; LOWs fixed at 8e283a5 |
+| N7 | C6 distributed backtest sweeps (flag `backtest_distributed`) | `claude/n7-c6` | - | review: FIX (HIGH grid-size DoS, MED stuck sweeps); fixes in progress |
+| N7 | D7 rest: client-level F&O position limit (flag `fo_position_limits`) | `claude/n7-d7` | - | review: FIX (MED same-day limits row; docs overclaim); fixes in progress |
+| N7 | I1 options analytics (flag `options_analytics`) | `claude/n7-i1` | - | awaiting review; I2+ held (owner: no new slices) |
+| N8-N9 | Phase 1 items behind flags; crypto / IBKR / K | - | - | not started: no branches; after N7 in the freeze order, and held while the review backlog is 10 or more |
+| Fix | Exit safety: re-exit guard and naked-short guard | `claude/fix-reexit-guard` | - | review: in progress (priority) |
+| Fix | AI output filter: trading-call wording in EN/MR/HI (ADR-0006) | `claude/fix-ai-output-filter` | #230 | PR open; review rounds 1-6: FIX; round 7 at e352270, re-review: in progress |
+| Fix | Shared fundamentals scope (security) | `claude/fix-shared-fundamentals-writes` | #234 | merged |
+| Fix | Shared fundamentals: #234 LOW follow-ups (repair command, refresh scope, symbol squatting) | `claude/fix-shared-fundamentals-lows` | - | review: FIX (2 MED) -> fixes in progress |
+| Fix | Phase 0 deployment defaults; Lane C LOWs; sources verified; exit sweep; tax report; savepoints; acting user; gateway injection; dark contrast | various | #204, #209, #205, #221, #225, #220, #226, #228, #227 | merged |
 | Lane D | Phase 0 exit criteria in CI: staging stack, acceptance, load-500, rollback rehearsal | `claude/ci-staging-stack` | #222 | PR open (draft) |
-| Lane D | Load-500 p95 work (LD-7) | `claude/perf-500` | - | on branch, in progress |
-| Lane D | Shared LTP rate budget per broker credential | `claude/ltp-shared-budget` | - | on branch, awaiting review |
+| Lane D | Load-500 p95 work (LD-7) - lane D's only job until it passes | `claude/perf-500` | - | in progress: profiling the top 5 costs on the CI runner |
+| Lane D | Shared LTP rate budget per broker credential | `claude/ltp-shared-budget` | - | awaiting review (folded into the load-test work if it is one of the top costs) |
 | Lane D | CI backend timeout 55 min + slowest-test report | `claude/ci-backend-timeout` | #224 | merged |
-| Fix | Alert gateway: body injection and secret reuse after a destination change (SMS/email) | `claude/fix-alert-gateway-injection` | #228 | merged |
-| N3 | BK3 VCP / Donchian / squeeze / MA / regime breakouts (flag `screener_breakouts_bk3`) | `claude/n3-bk3` | #229 | merged |
-| Fix | AI output filter: trading-call wording in EN/MR/HI (ADR-0006) | `claude/fix-ai-output-filter` | #230 | PR open; review fixes in progress |
-| N1 | X1b scan Then panel + read APIs + take-over guard (flag `scan_then`) | `claude/n1-x1b` | #231 | PR open |
-| Lane D | Tests read today's IST date at call time; zones loop-gap test | `claude/fix-ist-midnight-tests`, `claude/fix-zones-loop-gap` | #216, #208 | merged |
-| Docs | Earlier N-list status draft | `claude/roadmap-n-list-1` | - | superseded by this update |
+
+Backlog (13 Oct, 02:30 UTC): 17 branches await a first review (N2-8..N2-11, U2, U3, U5 D3a / D3b / D5, CH6-lows,
+CH6-2, I1, LTP budget) or a queued re-check (S9, N2-4..N2-7 started), 12 reviews / re-checks are running, and 26 PRs
+merged on 13 Oct IST: #202, #207, #209, #211-#216, #218-#221, #223-#229, #231-#236.
 
 ### Phase 0 table
 
@@ -169,7 +174,7 @@ Working rules: docs/WORKING_RULES.md (multitasking and self-review are required)
 Order: A -> C1+C4 -> D -> B (ADR -> build) -> E -> C2-C6 -> F -> G1-G2 -> H -> I -> G3-G6 -> J -> K.
 Indian PAPER go-live on Hostinger comes before the global work (v1.2); crypto paper (CoinDCX spot) after it (v1.3).
 
-Last update: 2026-10-13 IST, main at ed0d44e (refreshed after every merge).
+Last update: 2026-10-13 IST (N-list table refreshed 02:30 UTC; refreshed after every merge).
 
 ## Parts and status
 
@@ -206,7 +211,7 @@ Merge train (owner's MERGE_NOW): finished 09:52 IST. PRs #82-#155 are all merged
 | G | Trade repo engine port (ADR-0015) | not started | - | 0 |
 | H | Copilot v2 (ATP_COPILOT_SPEC): design note, review findings G1-G13 checked | done (design) | #103 | 100 |
 | H-C1 | Safety: a server-side evidence, b AI rate limit, c output filter (en+mr), d grounding, e llm_calls hygiene, f prompt_version | a-c done (#103); d-f done (full suite 1364 passed) | #103, #108 | 100 |
-| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019/0020 (provisional); H-C2a core; H-C2b-1 proposal tools + injection guard; H-C2b-2 JSON answer contract + OpenAI tools; H-C2b-3 market/research tools; H-C10a golden sets + CI gate; H-C3a+b research loop (ledger, deflated report, loop + API behind `ai_research`, off; second-pass fixes: OOS warm-up, flat-draft verdict, PBO window, holdout trim) (each full suite green, flags off); H-C3c-1 studies as jobs (queue table, research worker under compose profile `research`, heartbeat, interrupted state) + H-C3c-2 Strategy Lab research panel (suite 1422 passed); H-C4 next | #115, #117-#121, #135, #142 | 70 |
+| H-C2.. | Tool-calling agent core, evals, research loop, memory, ... | ADR-0019/0020 (provisional); H-C2a core; H-C2b-1 proposal tools + injection guard; H-C2b-2 JSON answer contract + OpenAI tools; H-C2b-3 market/research tools; H-C10a golden sets + CI gate; H-C3a+b research loop (ledger, deflated report, loop + API behind `ai_research`, off; second-pass fixes: OOS warm-up, flat-draft verdict, PBO window, holdout trim) (each full suite green, flags off); H-C3c-1 studies as jobs (queue table, research worker under compose profile `research`, heartbeat, interrupted state) + H-C3c-2 Strategy Lab research panel (suite 1422 passed); H-C4 multi-view analysis behind `ai_multiview` (off), branch claude/n5-hc4 | #115, #117-#121, #135, #142 | 70 |
 | S0 | Screener v2: spec, design note, ADR-0021 engine, ADR-0022 notification service; addendum U1 planned | done (design) | #104 | 100 |
 | U1-a/b/c | NSE universe: securities + symbol history; index catalogue + membership as-of + NSE sector classification; index EOD, F&O lots, ban list | a-c done (suite 1390 passed, Postgres migration checked); d/e after S1 | #105, #106, #110 | 75 |
 | S1, S3, S4 | ScreenQL engine + scanner migration; Notification Service on the existing outbox; bar-close alert engine | S1a-S1d done (S1d API: closed bars only); S3a rules/events/throttle, S3b-1 webhook schema + dead letters, S3b-2 Telegram link + email unsubscribe done (suite 1369 passed); S3c UI, S4a bar-close engine, S4b-1 cycle cache, S4b-2 intrabar alerts (flag `screener_intrabar`, off; suite 1384 passed) done; S5-A1 price action series, S5-A2 `ReversalAt`, S5-A3 `RealBreak`, S5-A4 swing zone strength/distance (each with an independent review pass and follow-up; history per swing degree); U5 D1 screener page (tokens, funnel canvas, indicator block, result table, per-stage survivors); U5 D2 block forms, ANY / NOT groups, live counts, why-matched (#150; bars-only run path, SC-18); next U5 D3 and S5-C | #122-#125, #127-#129, #131, #132, #134, #138, #140, #143-#146, #150 | 90 |

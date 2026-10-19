@@ -119,6 +119,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # BYOK-V1 (docs/BYOK.md): each user's own AI provider key for Vision chart review. OFF: the endpoints answer 404 and
     # the Settings section says it is not enabled. Vision only comments; it never places, blocks or changes an order.
     "vision_byok": "Vision with your own AI key: users store their own provider API key (encrypted), test it and set spend caps",
+    # BYOK-V3 (docs/BYOK.md): the same Vision audit (each user's own key, comment only) for the screen alerts of rules the
+    # user created and a daily after-close review of the user's own symbols. Needs `vision_byok` too. OFF: no scan-alert or
+    # daily-review row is queued and no call is made; V2 proposal audits are unchanged.
+    "vision_byok_v3": "Vision V3: your own AI key also reviews your scan alerts and a daily after-close chart review (comment only, never an order)",
     # PW5 (beta spec 4a): a proposal links to a pre-filled order in the user's own broker app where the broker offers
     # such a link (docs/BROKER_DATA_TERMS.md). The user confirms there; ATP sends nothing to the broker API.
     "broker_app_links": "\"Trade in your broker app\" links on proposals (pre-filled basket in the user's own broker app; ATP places no order)",
@@ -190,6 +194,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # U8 EV1 + EV2 (docs/specs/ATP_SCREEN_EVIDENCE_CHARTS_ADDENDUM.md): evidence packs stored with screen runs and alert
     # events, "Show on chart" with the verify strip, and the evidence image on Telegram (the user's own linked chat).
     # OFF: no pack is built or stored, the evidence endpoints answer 404 and alerts go out as text only. Informational.
+    # U8 EV3 (docs/design/EVIDENCE_CHARTS.md): on top of `evidence_charts` - option-chain conditions draw the chain's OI
+    # walls / max pain, every pack carries the multi-timeframe trend strip, and a pack can be replayed bar by bar from the
+    # shared lake. OFF: packs as before, the replay route answers 404. Informational only.
+    "evidence_context": "Evidence context: option-chain OI walls on evidence charts, the W / D / 1H trend strip and bar-by-bar replay (informational, places no orders)",
     "evidence_charts": "Evidence charts: each screen match drawn with only the screen's own conditions, a verify strip with the engine's numbers, and the image on Telegram (informational, places no orders)",
     # Z10-e (G7): the public read-only status page (/status, GET /api/status): API, worker, data feed, alerts outbox lag
     # and the incident banner, from the existing health probes. No tenant data, no internal detail. OFF: /api/status
@@ -204,6 +212,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.
     "screener_legends": "Legends: cards on publicly described trading methods, each with an editable screen (educational only)",
+    # N1 X2: Auto PAPER from scans. OFF (the default, and while the owner has not decided N1-3): an AUTO_PAPER template
+    # stays a proposal. ON: a template its owner armed places one PAPER order per confirmed setup (approval-only mode
+    # off, within the scan limits, re-quoted) - PAPER only, never a broker order. Only the platform operator sets it.
+    "scan_auto_paper": "Auto PAPER from armed scan templates (N1 X2): a confirmed setup is placed as a PAPER order without a proposal (approval-only mode off; PAPER only, never a broker order)",
     # U7 LG2: the second slice of Legends cards (trend, pullback and intraday methods; data/legends.json `slice: lg2`), on
     # top of screener_legends. OFF: the LG2 cards are left out of /api/screener/legends and their screens out of the
     # taxonomy. Educational only - never a recommendation, never an endorsement; places no orders.
@@ -237,6 +249,10 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N3 S6a: screen history - who passed a daily screen on a past date (point in time: bars closed by then, index
     # membership as of then, delisted names included) and screen fitness (forward returns of its matches against the
     # universe, deflated through the research trial ledger). Shared end-of-day lake bars only. OFF: the routes answer 503.
+    # N3 S6b: the rolling screen backtest - rebalance weekly / 4-weekly / monthly, top N by a rank expression, equal or rank
+    # weights, next-open fills with the part C slippage and India's delivery charges, against the equal-weight universe and
+    # NIFTY 50; deflated through the research trial ledger. Needs screener_history. OFF: 503. A simulation only.
+    "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",
     # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices
     # in one), beta to NIFTY 50 from the lake's Daily closes, and the one-sided direction warning. OFF:
@@ -251,11 +267,34 @@ FEATURE_FLAGS: Dict[str, str] = {
     # answers 503 and the chart shows no study panel. Reference only - places no orders.
     "chart_studies": "Chart studies: ScreenQL expressions drawn on the chart by the screener's own engine, as of any bar (reference only, places no orders)",
     "chart_price_action": "Price-action chart layer: swings, legs, breaks, swing levels and trend per degree, as of any bar, with replay (reference only, places no orders)",
+    # H-C4 (Copilot spec C4): "analyze <symbol>" - technical, options, news and macro views from the read tools and the
+    # rules' summary (readings that lean up / down, risks, possibilities). Rules-only wording: no model is called and no
+    # AI text is shown (docs/OPEN_QUESTIONS.md HC4-5); no order, no proposal (ADR-0006). OFF: POST /api/ai/analyze is 503.
+    "ai_multiview": "Copilot multi-view analysis: technical, options, news and macro views of a symbol with a rules-generated summary (no advice, no orders)",
+    # N4 CH4a: the trades layer - the caller's own PAPER trades (entries, exits, open stop / target) on the chart of
+    # their instrument, as of a time (replay never shows a trade or an exit before it happened). OFF: GET
+    # /api/charts/layers/trades answers 503 and the chart shows no trades. Read-only - places no orders.
+    "chart_trades_layer": "Trades chart layer: your own PAPER trades on the chart, as of any bar (read-only, places no orders)",
+    # N4 CH4b: option / future contract charts and synthetic spreads - daily bars and OI from the shared lake's F&O
+    # bhavcopy rows, contract search from the instrument master, chain -> chart links, a COMPUTED daily IV (labelled).
+    # OFF: /api/charts/contracts/* answer 503 and the option chain shows no chart links. Reference only - places no orders.
+    "chart_contracts": "Contract charts: daily option / future and spread charts with OI from the shared history (reference only, places no orders)",
+    # N4 CH4c: on top of chart_contracts - an underlying's futures basis, annualised carry, calendar spread and rollover %
+    # per trade date from the shared daily history (shared-licensed sources only). OFF: the route answers 503 and the
+    # contract chart shows no link to it. Reference only, places no orders.
+    "chart_futures_basis": "Futures basis charts: basis, cost of carry, calendar spread and rollover from the shared history (reference only, places no orders)",
+    # U9 TX2 (docs/specs/ATP_SCREENER_TAXONOMY_ADDENDUM.md §4): the screen library's confluence view (symbols ranked by
+    # how many methods flag them), generated short mirrors of the long pre-built screens and watch-then-trigger lists,
+    # on top of `screener_v2` and `screener_gallery`. OFF: /api/screener/library/* answer 503 and the Screener page shows
+    # none of it. Research only - closed bars, no recommendation, places no orders.
+    "screener_tx2": "Screen library tools: confluence view, short mirror screens and watch-then-trigger lists on the Screener page (research only)",
     # N2-3 (P1 spec 1.5, docs/design/N2_P1FGH.md): decision tools - the risk-of-ruin / Kelly calculator on typed inputs
     # (prefilled from the user's own figures) and the what-if for the user's own open positions (P&L now, on a later
     # day with an IV shift, and at expiry, at the spot and IVs typed in). OFF: /api/decision/* answers 404. Information
     # only: nothing sizes, places or closes an order.
-    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, and a what-if for your own open positions (price, IV, days forward; information only)",
+    # N2-4: also the exposure view (own positions by underlying and sector, beta, correlated pairs, from the daily lake)
+    # and the expected-move cone on the chart.
+    "decision_tools": "Decision tools: risk-of-ruin and Kelly calculator, what-if for your own open positions, exposure and correlation view, expected-move cone on the chart (information only)",
     # N7 C2b: the backtest execution models after C2 PR 1 - next_open fill, spread_half / volume_share slippage, fixed_ms
     # latency (docs/design/C2_MODELS.md). OFF: a backtest naming one is refused with the reason; the defaults are unchanged.
     "backtest_models": "Backtest execution models: next-open fills, spread / volume-share slippage and order latency (opt-in per run)",
@@ -266,13 +305,25 @@ FEATURE_FLAGS: Dict[str, str] = {
     # S10 seam: the WhatsApp alert channel (a Business gateway, approved template + opt-in, paid plans) and the SMS
     # channel's India DLT fields (entity id, template id, sender header). OFF: such a channel or field is refused (403).
     "alerts_whatsapp_dlt": "WhatsApp alert channel and SMS DLT fields (India) for out-of-app alerts",
+    # New flags: add ONE entry, in its alphabetical position (not at the end), so parallel branches do not conflict on
+    # the same line. A registered flag is OFF by default automatically (DEFAULT_OFF_FLAGS below is computed).
 }
-# Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).
-DEFAULT_OFF_FLAGS = frozenset({"phase0_paper_only", "news_feed", "telegram_inbound", "market_thesis", "marketplace_ai_listings", "thesis_stock_targets", "screener_v2", "screener_intrabar", "ai_agent", "ai_research", "alerts_stale_guard", "alerts_reliable_outbox",
-                               "vision_byok", "beta_cohort_gate", "broker_app_links", "discipline_engine", "byob_data_tier", "history_import",
-                               "history_backfill", "history_intraday", "options_builder_saved", "approval_only_entries", "paper_account", "screener_gallery",
-                               "screener_vectorized", "risk_by_default", "vix_gate", "public_status_page", "market_zones", "screener_breakouts",
-                               "support_bot", "legal_pages", "evidence_charts", "screener_legends", "ladder_evidence", "execution_core", "chart_price_action", "chart_studies", "portfolio_risk", "portfolio_risk_caps", "experience_levels", "chart_workspace", "scan_then", "screener_breakouts_bk3", "screener_etf", "alerts_whatsapp_dlt", "backtest_models", "screener_history", "decision_tools", "screener_legends_lg2", "screener_breakouts_bk4", "screener_fundamentals", "screener_legends_lg3"})
+# Flags that start ON (kill-flag semantics: a feature is on until the operator turns it off). This list is CLOSED: it
+# holds exactly the flags that were ON by default before DEFAULT_OFF_FLAGS was computed. Do not add to it - never turn a
+# flag on; tests/test_flags_default_off_computed.py pins both sets.
+DEFAULT_ON_FLAGS: frozenset[str] = frozenset({
+    "ai_copilot",          # Phase N kill switch for AI strategy drafts; the AI never places orders (ADR-0006)
+    "backtest_optimizer",  # Phase N kill switch for optimisation grid runs; a simulation, places no orders
+    "live_trading",        # Phase N kill switch for new LIVE deployments only; LIVE itself is gated by the trading:live
+                           # scope, the plan, step-up and the phase0_paper_only lock (Phase 0 mode seeds this OFF)
+    "marketplace",         # Phase N kill switch for marketplace listings and subscriptions
+    "options_builder",     # P1-c1 research-only payoff tool, places no orders; saving is options_builder_saved (OFF)
+    "public_api",          # Phase N kill switch for public API keys and /api/public/v1
+    "self_signup",         # Phase N kill switch for public registration (OFF = invite-only); beta_cohort_gate is separate
+})
+# Phase BB/BE: every other registered flag starts OFF until the operator turns it on. Computed, so a new flag is OFF by
+# default as soon as it is registered in FEATURE_FLAGS - there is no second list to edit.
+DEFAULT_OFF_FLAGS: frozenset[str] = frozenset(FEATURE_FLAGS) - DEFAULT_ON_FLAGS
 
 
 async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:

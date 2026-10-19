@@ -337,7 +337,21 @@ p50 / p95 / p99 ms, from the job's annotations:
 | KVM 2 as a quota | 2 processes, `--cpus 2`, rest unpinned | 1,142 / 2,447 / 3,927 | 178 / 1,611 / 2,954 | 702 / 6,417 / 7,885 | 169 / 653 / 693 / 749 / 878 | 463 / 244 / 367 | 89.0 | 0.00% |
 | Whole runner | 3 processes, no cap | 1,108 / 1,873 / 2,837 | 162 / 969 / 2,136 | 340 / 3,306 / 5,534 | 115 / 285 / 341 / 362 / 391 | 275 / 159 / 249 | 89.5 | 0.00% |
 
-Run 13 is worse than run 12 on every profile, the uncapped runner included, and the local A/B above points the other
+**Run 14** ([39277548322](https://github.com/abhishekwasu-hue/AdvanceTradingPlatform/actions/runs/39277548322), a0f05b3 -
+the same application code as run 13, its tests and this report changed; push-triggered, shifted clock, real 20:55 IST):
+
+| Profile | Chart | Screener | Login | Dashboard p95 (5 reads) | Proposals / positions / paper p95 | req/s | Server errors |
+|---|---|---|---|---|---|---|---|
+| **Primary (decides)** | 1,126 / 2,209 / 3,727 | 165 / 1,042 / 1,793 | 1,441 / 13,391 / 20,447 | 140 / 520 / 564 / 594 / 662 | 393 / 253 / 446 | 89.1 | 0.00% (all 500 logged in) |
+| Login burst | 1,202 / 2,917 / 3,688 | 217 / 1,619 / 3,280 | 4,562 / 20,058 / 29,953 | 260 / 821 / 842 / 817 / 915 | 596 / 466 / 489 | 67.4 | 0.03% |
+| Busy (think 10 s) | 1,725 / 5,277 / 7,678 | 934 / 3,186 / 4,446 | 30,005 / 30,019 / 30,036 | 1,015 / 2,877 / 2,854 / 2,871 / 2,975 | 2,056 / 1,856 / 2,312 | 116.6 | 0.63% (253 without a login) |
+| KVM 2 as a quota | 1,118 / 1,881 / 2,480 | 168 / 1,148 / 1,686 | 500 / 5,877 / 7,992 | 91 / 260 / 304 / 329 / 360 | 270 / 170 / 259 | 89.4 | 0.00% |
+| Whole runner | 1,111 / 1,754 / 3,011 | 143 / 914 / 1,724 | 348 / 3,620 / 5,304 | 96 / 215 / 250 / 268 / 303 | 240 / 129 / 195 | 89.7 | 0.00% |
+
+Runs 13 and 14 on the same code differ by about 2x on login (28.2 s / 24 time-outs against 13.4 s / none) and by
+0.1-0.25 s on the reads: the runner's variance is as large as the effects being looked for.
+
+Runs 13 and 14 are worse than run 12 on every profile, the uncapped runner included, and the local A/B above points the other
 way, so the difference is not the changes alone. What is known: the chart's floor is #249's budget (p50 0.1 -> 1.1 s on
 every shape, above). What is not separated: the rest of main's merge (B3 is the merged code and collapsed locally), the
 shifted clock (first load run on it; the CI image's libfaketime not verified), and the runner (hosted runners vary by up
@@ -347,8 +361,8 @@ not started here (at most one run per lane turn, and the next session opens afte
 CI on 6b90273 ([39270302008](https://github.com/abhishekwasu-hue/AdvanceTradingPlatform/actions/runs/39270302008)):
 lint, frontend, perf and look-ahead passed; the backend job failed on two of this branch's new tests (shared state in
 the full suite: one session key used by two registries, and a whole-chain audit check on a chain other tests break on
-purpose - both fixed in the next commit) and on `test_contract_notes.py` (2 tests), which fails the same way on main
-(045da0c, run 39257366188) and passes alone: not from this branch.
+purpose - both fixed in a0f05b3, whose CI run 39277547649 passes them) and on `test_contract_notes.py` (2 tests), which fails the
+same way on main (045da0c, run 39257366188) and passes alone: not from this branch.
 
 
 ## The generator change (d9a8f89) - what it changed and how much of the gain it is

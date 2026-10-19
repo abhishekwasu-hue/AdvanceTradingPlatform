@@ -429,3 +429,99 @@ def test_the_mirror_swaps_the_v2_candles_and_keeps_the_status():
     assert cls == mr.INV and n.to_text(expr) == 'Pattern("bearish_gap_reversal", "confirmed")'
     with pytest.raises(mr.NoMirror):
         mr.rewrite(parse('RsiDivergence("bullish")'))                              # no mirror rule (RSI is not checked reflected)
+
+
+# ------------------------------------------------------------------------------------------ review of AMW-3 (follow-ups)
+def test_the_flag_off_view_is_the_registry_as_it_was_before_amw3():
+    from app.screener.registry import PATTERN_NAMES
+    from app.screener.validator import validate
+    off = amw.FLAG_OFF_FUNCTIONS
+    assert [a.name for a in off["Pattern"].args] == ["name"] and off["Pattern"].args[0].choices == PATTERN_NAMES
+    assert off["PatternBullish"].args == () and off["PatternBearish"].args == () and off["Pattern"].choice_extra_bars == ()
+    hidden = amw.hide(describe())
+    for name in amw.PATTERN_CALLS:
+        assert off[name].doc == hidden[name]["doc"]
+    assert set(AMW_FUNCTIONS) <= set(off)                                           # still known: refused with the flag's reason
+    v = validate(parse('Pattern("foo")'), base_tf="5m", functions=off)
+    assert v.problems[0].message == f"Pattern: name 'foo' is not one of {', '.join(PATTERN_NAMES)}"
+
+
+@pytest.mark.parametrize("source, main_message", [
+    ('Pattern("foo")', "Pattern: name 'foo' is not one of doji, hammer, shooting_star"),
+    ('Pattern("hammer", 5)', "Pattern takes 1 argument(s), got 2"),
+    ('Pattern("doji", "confirmed")', "Pattern takes 1 argument(s), got 2"),
+    ('PatternBullish("confirmed")', "PatternBullish takes 0 argument(s), got 1"),
+    ('PatternBearish(1)', "PatternBearish takes 0 argument(s), got 1"),
+])
+def test_flag_off_mistakes_get_mains_messages_and_name_nothing_hidden(screener_on, source, main_message):
+    headers, _ = _owner(f"amw3-messages-{abs(hash(source)) % 10**8}@example.com")
+    v = client.post("/api/screener/validate", json={"source": source, "base_tf": "5m"}, headers=headers).json()
+    text = " | ".join(p["message"] for p in v["problems"])
+    assert not v["ok"] and v["problems"][0]["message"].startswith(main_message), text
+    assert not any(name in text for name in PATTERN_NAMES_V2) and "confirm\"" not in text and "1-2 argument" not in text, text
+    r = client.post("/api/alerts/rules", json={"name": "m", "kind": "instrument", "symbol": "ABC", "condition": source, "base_tf": "15m"},
+                    headers=headers)
+    assert r.status_code == 422 and main_message in str(r.json()) and "strong_body" not in str(r.json())
+    _set(screenql_amw_functions=True)                                              # on: the full registry's messages
+    v = client.post("/api/screener/validate", json={"source": 'Pattern("foo")', "base_tf": "5m"}, headers=headers).json()
+    assert "bullish_strong_body" in v["problems"][0]["message"]
+
+
+def test_flag_off_chart_studies_check_against_the_flag_off_view():
+    from app.charts import studies
+    row = studies.check(['Pattern("foo")'], "15m", amw.FLAG_OFF_FUNCTIONS)[0]
+    assert not row["ok"] and "strong_body" not in row["problems"][0]["message"]
+    assert "strong_body" in studies.check(['Pattern("foo")'], "15m")[0]["problems"][0]["message"]
+
+
+def test_closed_bar_parts_are_named_for_intrabar():
+    ast = parse('Pattern("hammer", "confirmed") AND Pattern("hammer", "any") AND PatternBearish("failed") AND RsiDivergence("bullish") '
+                'AND SwingLabel("low") == "HL" AND StDev(close, 5) > 0 AND TimeOfDay("09:30", "10:00") AND Pattern("bullish_strong_body")')
+    assert amw.intrabar_calls(ast) == ['Pattern("hammer", "confirmed")', 'PatternBearish("failed")', "RsiDivergence()", "SwingLabel()"]
+    assert "bar close only" in amw.intrabar_refusal(["SwingLabel()"])
+
+
+def test_intrabar_rules_with_a_status_or_a_swing_function_are_refused(screener_on):
+    headers, _ = _owner("amw3-intrabar@example.com")
+    _set(screenql_amw_functions=True, screener_intrabar=True)
+    for condition in ('Pattern("hammer", "confirmed")', 'RsiDivergence("bullish")', 'SwingLabel("high") == "HH"', 'PatternBullish("failed")'):
+        r = client.post("/api/alerts/rules", json={"name": "i", "kind": "instrument", "symbol": "ABC", "condition": condition, "base_tf": "15m",
+                                                   "fire_on": "intrabar"}, headers=headers)
+        assert r.status_code == 422 and "bar close only" in str(r.json()), (condition, r.text)
+        r = client.post("/api/alerts/rules", json={"name": "b", "kind": "instrument", "symbol": "ABC", "condition": condition, "base_tf": "15m"},
+                        headers=headers)
+        assert r.status_code in (200, 201), (condition, r.text)                      # at bar close it is fine
+    for condition in ("StDev(close, 5) > 0", 'TimeOfDay("09:30", "14:45")', 'Pattern("bullish_strong_body")'):
+        r = client.post("/api/alerts/rules", json={"name": "j", "kind": "instrument", "symbol": "ABC", "condition": condition, "base_tf": "15m",
+                                                   "fire_on": "intrabar"}, headers=headers)
+        assert r.status_code in (200, 201), (condition, r.text)
+    _set(screener_intrabar=False)
+
+
+def test_the_engine_skips_an_intrabar_swing_rule_with_the_reason(screener_on):
+    from app.alerts import barclose
+    from app.db.models import AlertRuleRecord
+    from tests.test_s4a_barclose import TUE, FakeFetch, _bars as s4_bars, _rule, ist as s4_ist
+    _, me = _owner("amw3-intrabar-engine@example.com")
+    _set(screenql_amw_functions=True, screener_intrabar=True)
+    rid = _rule(me["tenant_id"], condition='SwingLabel("low") == "HL"', tf="5m", symbol="AMWB", fire_on="intrabar")
+    fetch = FakeFetch({"AMWB": s4_bars(s4_ist(TUE, 9, 15), [100.0] * 61)})
+
+    async def go():
+        async with _session_factory() as session:
+            await barclose.run_due(session, now=s4_ist(TUE, 14, 23), fetch=fetch, holidays=set())
+            rule = await session.get(AlertRuleRecord, rid)
+            return rule.status, rule.last_problem
+    status, problem = _run(go())
+    assert status == "active" and "bar close only" in (problem or ""), problem
+    _set(screener_intrabar=False)
+
+
+def test_v2_candles_read_the_atr_of_their_own_bar_like_amw():
+    """AMW3-5: the threshold is ATR(14) at the candle's own bar (AMW's atr14 at the same index), gap bar included."""
+    df = _trend()
+    prev = df["close"].iloc[-2]
+    df.iloc[-1] = (prev + 3.0, prev + 3.3, prev - 1.5, prev - 1.2, 1e6)
+    atr_values = cp._v2_atr(df)
+    from app.indicators.volatility import atr
+    assert atr_values[-1] == atr(df, 14).iloc[-1] and atr_values[-1] > atr_values[-2]  # the gap bar's range is in it

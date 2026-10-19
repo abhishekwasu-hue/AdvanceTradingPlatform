@@ -1518,7 +1518,13 @@ the AMW screener's described behaviour; its tests are behaviour specifications, 
   AMW-3, which is what `builderTexts.json` holds); a screen, a saved screen, a run, a history run, a chart study or an
   alert rule using any of them is refused with the reason (a `$parameter` pattern name is resolved from the screen's
   parameters); an active alert rule pauses with the reason and resumes when the flag is back. `confirm "any"` is never
-  gated. Research only: matches, never orders.
+  gated. While off, a Pattern* mistake is validated against the registry as it was before AMW-3
+  (`amw_functions.FLAG_OFF_FUNCTIONS`), so its message is main's and names no hidden value or argument. Research only:
+  matches, never orders.
+- **Bar close only.** A confirmation status, `RsiDivergence` and `SwingLabel` can flip on a forming bar, so an intrabar
+  alert rule using one is refused at save and skipped with the reason by the engine (`amw_functions.intrabar_calls`).
+  The v2 candles, `StDev` and `TimeOfDay` read a forming bar like the indicators do.
+- Open question AMW3-5: the v2 candles use ATR(14) including their own bar, as AMW does.
 - Open question AMW3-1 (`docs/OPEN_QUESTIONS.md`): `RsiDivergence` measures `lookback` from the swing's extreme bar, as
   AMW does, but ATP's ATR swings confirm later than AMW's 3-bar fractals, so a short `lookback` can miss a divergence
   that is only confirmed later.

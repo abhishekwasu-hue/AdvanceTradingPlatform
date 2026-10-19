@@ -57,6 +57,7 @@ BREAKOUT_FLAG = "screener_breakouts"                 # U6 BK1: rules using break
 BREAKOUT_EXTRA_FLAGS = ("screener_breakouts_bk3", "screener_breakouts_bk4")
 ZONES_FLAG = "market_zones"                    # Z7a-3: rules using market-zone functions pause (stay active) while it is off
 AMW_FLAG = "screenql_amw_functions"            # AMW-3: rules using an AMW-3 function / v2 candle / confirmation status pause too
+# (and a confirmation status, RsiDivergence or SwingLabel never fires intrabar: amw_functions.intrabar_calls)
 EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
 RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
@@ -318,6 +319,11 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         if amw_calls and not amw_enabled:
             # AMW-3: the rule stays active and resumes when the flag is back
             rule.last_problem = amw_gate.refusal(amw_calls)
+            return "unsupported", 0
+        closed_only = amw_gate.intrabar_calls(ast, params) if intrabar else []
+        if closed_only:
+            # AMW-3 review: a confirmation status and the swing functions can flip on a forming bar - bar close only
+            rule.last_problem = amw_gate.intrabar_refusal(closed_only)
             return "unsupported", 0
         clock = alert_clock_refusal(ast, rule.exchange) if blocked else None
         if clock:                                                 # U6 BK2: session functions on the NSE clock only (BK2-5)

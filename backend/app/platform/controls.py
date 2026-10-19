@@ -302,7 +302,8 @@ FEATURE_FLAGS: Dict[str, str] = {
     # AMW-3 (docs/design/AMW_PORT.md): the ScreenQL functions ported from the AMW screener's predicates - StDev,
     # RsiDivergence, SwingLabel, TimeOfDay, the v2 candles (strong body, gap reversal) in Pattern and the next-bar
     # confirmation status on Pattern / PatternBullish / PatternBearish. OFF: hidden from the registry, refused in screens,
-    # studies and alert rules (an active rule pauses with the reason). Closed bars only, places no orders.
+    # studies and alert rules (an active rule pauses with the reason). A confirmation status, RsiDivergence and
+    # SwingLabel fire on bar close only (intrabar rules refused); places no orders.
     "screenql_amw_functions": "AMW screener functions in ScreenQL: StDev, RSI divergence, swing labels, time of day, strong-body and gap-reversal candles, next-bar candle confirmation (research only, places no orders)",
 }
 # Phase BB/BE: flags that start OFF until the operator turns them on (everything else is a kill flag).

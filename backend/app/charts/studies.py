@@ -106,8 +106,9 @@ def _runtime_frame(frame: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def check(exprs: Sequence[str], tf: str) -> List[Dict[str, Any]]:
-    """Each expression parsed and checked as a study: [{expr, ok, problems, kind, unit, lookback, ast}]."""
+def check(exprs: Sequence[str], tf: str, functions: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Each expression parsed and checked as a study: [{expr, ok, problems, kind, unit, lookback, ast}]. `functions`: the
+    registry view to check against (AMW-3 review: the flag-off view while `screenql_amw_functions` is off)."""
     from app.screener import nodes
     from app.screener.parser import ScreenQLSyntaxError, parse
     from app.screener.routes import missing_data
@@ -126,7 +127,7 @@ def check(exprs: Sequence[str], tf: str) -> List[Dict[str, Any]]:
             row["problems"] = [{"message": str(exc), "pos": None}]
             out.append(row)
             continue
-        sc = validate_study(ast, base_tf=tf)
+        sc = validate_study(ast, base_tf=tf, functions=functions)
         problems = [p.as_dict() for p in sc.validated.problems]
         problems += [{"message": f"{m}() needs data a chart study does not load (sector / index / F&O lists or the option chain)", "pos": None}
                      for m in missing_data(ast)]
@@ -309,7 +310,9 @@ async def chart_studies(instrument: str = Query(..., min_length=1, max_length=10
         raise HTTPException(status_code=422, detail="`start` must be before `at`")
     if when - begin > timedelta(days=STUDY_MAX_DAYS[tf]):
         raise HTTPException(status_code=422, detail=f"the window may span at most {STUDY_MAX_DAYS[tf]} days on {tf}; choose a later `start`")
-    studies = check([e.strip() for e in expr], tf)
+    from app.screener import amw_functions as amw_gate
+    flag_off_view = None if await amw_gate.enabled(session, tenant_id) else amw_gate.FLAG_OFF_FUNCTIONS
+    studies = check([e.strip() for e in expr], tf, flag_off_view)
     head = {"instrument": instrument, "at": when.isoformat(), "start": begin.isoformat(), "source": None, "note": NOTE}
     try:
         key: Optional[str] = normalise_key(instrument)

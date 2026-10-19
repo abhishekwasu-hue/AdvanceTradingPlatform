@@ -196,7 +196,9 @@ async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, par
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
     screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`)
     and the AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves a
-    `$parameter` pattern name)."""
+    `$parameter` pattern name). With that flag off, Pattern* mistakes get main's messages (`amw_gate.flag_off_validation`)."""
+    if amw_gate.uses_patterns(ast) and not await amw_gate.enabled(session, user.tenant_id):
+        amw_gate.flag_off_validation(ast, validated, params or {})
     for gate in (breakout_gate, zone_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:

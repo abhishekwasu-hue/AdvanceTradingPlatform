@@ -44,6 +44,10 @@ class Validated:
     cross_sectional: bool = False
     params_used: Set[str] = field(default_factory=set)
     closed_bars_only: bool = True
+    # AMW-3 review: how it was validated, so a flag gate can re-validate the same screen against another registry view
+    base_tf: Optional[str] = field(default=None, repr=False, compare=False)
+    cost_cap: float = field(default=DEFAULT_COST_CAP, repr=False, compare=False)
+    strict_units: bool = field(default=True, repr=False, compare=False)
 
     def as_dict(self) -> Dict[str, Any]:
         return {"ok": self.ok, "problems": [p.as_dict() for p in self.problems], "timeframes": sorted(self.timeframes, key=lambda tf: n.TF_MINUTES[tf]),
@@ -55,8 +59,9 @@ T = Tuple[str, Optional[str]]          # (type, unit)
 
 
 class _Checker:
-    def __init__(self, base_tf: str, params: Dict[str, Any], strict_units: bool = True) -> None:
+    def __init__(self, base_tf: str, params: Dict[str, Any], strict_units: bool = True, functions: Optional[Dict[str, Spec]] = None) -> None:
         self.base_tf, self.params, self.strict_units = base_tf, params, strict_units
+        self.functions: Dict[str, Spec] = functions if functions is not None else FUNCTIONS   # AMW-3: a flag-off view
         self.out = Validated(True)
         self.last_bar_reported: Set[int] = set()
 
@@ -237,7 +242,7 @@ class _Checker:
         if isinstance(node, n.Field):
             spec = FIELDS.get(node.name)
             if spec is None:
-                hint = " (a function needs parentheses)" if node.name in FUNCTIONS else ""
+                hint = " (a function needs parentheses)" if node.name in self.functions else ""
                 self.err(f"unknown field {node.name!r}{hint}", node)
                 return NUM, ANY_UNIT
             own_tf = self._tf(node) if node.tf else tf
@@ -306,7 +311,7 @@ class _Checker:
     def domain(self, cat: Any, others: List[Any]) -> None:
         """S5-A review: a classifier with a fixed set of values refuses a literal outside it (`SwingDirection() == "up"`
         would otherwise validate and never match)."""
-        spec = FUNCTIONS.get(cat.name) if isinstance(cat, n.Call) else None
+        spec = self.functions.get(cat.name) if isinstance(cat, n.Call) else None
         if spec is None or not spec.values:
             return
         for other in others:
@@ -328,7 +333,7 @@ class _Checker:
         self.err(f"cannot compare {lt} with {rt} using {op}", node)
 
     def call(self, node: n.Call, tf: str) -> T:
-        spec: Optional[Spec] = FUNCTIONS.get(node.name)
+        spec: Optional[Spec] = self.functions.get(node.name)
         if spec is None:
             hint = " (a field takes no parentheses)" if node.name in FIELDS else ""
             self.err(f"unknown function {node.name!r}{hint}", node)
@@ -438,12 +443,13 @@ NOT_A_CONDITION = "a screen must be a condition (true/false), e.g. close > SMA(c
 
 
 def validate(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP,
-             strict_units: bool = True) -> Validated:
+             strict_units: bool = True, functions: Optional[Dict[str, Spec]] = None) -> Validated:
     """Every check, all problems at once (not only the first). `strict_units=False` is only for screens translated from
     the legacy scanner, whose filters never checked units (S1c parity); user-written screens are always strict."""
     if base_tf not in n.TF_MINUTES:
         return Validated(False, [Problem(f"unknown screen timeframe {base_tf!r}")])
-    checker = _Checker(base_tf, dict(params or {}), strict_units)
+    checker = _Checker(base_tf, dict(params or {}), strict_units, functions)
+    checker.out.base_tf, checker.out.cost_cap, checker.out.strict_units = base_tf, cost_cap, strict_units
     kind, _ = checker.check(ast)
     if kind != BOOL:
         checker.err(NOT_A_CONDITION, ast)
@@ -467,19 +473,20 @@ class StudyCheck:
     unit: Optional[str] = None
 
 
-def validate_study(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP) -> StudyCheck:
+def validate_study(ast: Any, *, base_tf: str = "1d", params: Optional[Dict[str, Any]] = None, cost_cap: float = DEFAULT_COST_CAP,
+                   functions: Optional[Dict[str, Spec]] = None) -> StudyCheck:
     """The screen checks (types, units, timeframes, look-ahead, cost) for an expression drawn as a series: a number or a
     condition. Refused as studies: cross-sectional functions (they rank a universe, not one chart) and functions that
     only have a value on the last bar (fundamentals, sector / index membership: no series to draw)."""
     if base_tf not in n.TF_MINUTES:
         return StudyCheck(Validated(False, [Problem(f"unknown study timeframe {base_tf!r}")]))
-    checker = _Checker(base_tf, dict(params or {}), True)
+    checker = _Checker(base_tf, dict(params or {}), True, functions)
     kind, unit = checker.check(ast)
     if kind not in (NUM, BOOL):
         checker.err("a study must be a number (a line) or a condition (true / false marks), e.g. SMA(close, 20)", ast)
     for node in n.walk(ast):
         name = getattr(node, "name", "") if isinstance(node, n.Call) else ""
-        spec = FUNCTIONS.get(name) if name else None
+        spec = checker.functions.get(name) if name else None
         if spec is not None and spec.cross_sectional:
             checker.err(f"{name} ranks a universe of symbols - it has no series on one chart", node)
         elif spec is not None and name in LAST_BAR_ONLY:

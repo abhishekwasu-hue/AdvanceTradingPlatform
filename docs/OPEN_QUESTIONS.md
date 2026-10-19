@@ -373,6 +373,7 @@ applies. When answered: mark **answered**, note the answer, and fix the code if 
 | AMW3-2 | `StDev(x, n)`: sample or population? | Population (divides by n), like Pine's `ta.stdev` (biased by default) and AMW's `stdev`, so the Pine-subset host (AMW-20) maps `ta.stdev` one to one. `ZScore` keeps its sample standard deviation. | AMW-3 | open |
 | AMW3-3 | The plan's palette labels in `builderTexts.json`. | Not needed: the builder palette is registry-driven (function names and `doc`), so the new functions appear when the flag is on. `builderTexts.json` is the builder contract; it keeps the registry as described with the flag off (the default), and `test_u5_funnel` now compares it with `amw_functions.hide(describe())`. | AMW-3 | open |
 | AMW3-4 | `TimeOfDay`: a bar's start or its close? | Its start, in exchange time (IST), the time a chart labels the bar with (AMW reads the bar's timestamp too). A window is inclusive at both ends; `start` after `end` wraps past midnight (for sessions that cross it). | AMW-3 | open |
+| AMW3-5 | Strong Body / Gap Reversal: ATR of which bar? | ATR(14) **including** the candle's own bar (`ATR[i]`), as the AMW reference does (`atr14` at the same index, Wilder over a true range that includes that bar). A large gap therefore raises its own threshold a little; `ATR[i-1]` would not, and would fire on slightly smaller gaps. Kept as AMW for parity; switching is a one-line change in `pattern_masks_v2` / the detectors. | AMW-3 | open |
 
 ## HC4-5: H-C4 round cap (13 Oct)
 

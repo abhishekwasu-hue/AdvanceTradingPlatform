@@ -165,12 +165,16 @@ SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "clos
 SCREENQL_LAST_BAR: Dict[str, List[str]] = {
     "Trend": ["Trend(3)"],
     "StructureEvent": ["StructureEvent(3)"],
-    # AMW-3: the next-bar status (PatternBearish's status shares this code; on these prefixes no bearish status shows)
+    # AMW-3: the next-bar status (PatternBearish("confirmed") on its own data length, SCREENQL_LAST_BAR_LENGTH)
     "PatternBullish": ["PatternBullish()", 'PatternBullish("failed")', 'PatternBullish("unconfirmed")'],
-    "PatternBearish": ["PatternBearish()"],
+    "PatternBearish": ["PatternBearish()", 'PatternBearish("confirmed")'],
     "NearSupport": ["NearSupport(0.5, 3)"],
     "NearResistance": ["NearResistance(0.5, 3)"],
 }
+
+# A last-bar case whose answer is "yes" on none of the default data set's 12 prefixes would fail the non-vacuity test:
+# a data length on which it says yes somewhere (the harness then runs the case on that length too).
+SCREENQL_LAST_BAR_LENGTH: Dict[str, int] = {'PatternBearish("confirmed")': 540}
 
 
 def _screenql(text: str, base_tf: str = BASE_TF):
@@ -392,7 +396,8 @@ def _register_screenql() -> None:
         register(f"screenql.daily.{text}", _screenql(text, "1d"), group="screenql", bars="1d")
     for exprs in SCREENQL_LAST_BAR.values():
         for text in exprs:
-            register(f"screenql.{text}", _screenql(text), kind=LAST_BAR, group="screenql", samples=3)
+            extra = {"length": SCREENQL_LAST_BAR_LENGTH[text]} if text in SCREENQL_LAST_BAR_LENGTH else {}
+            register(f"screenql.{text}", _screenql(text), kind=LAST_BAR, group="screenql", samples=3, **extra)
 
 
 def register_all() -> None:

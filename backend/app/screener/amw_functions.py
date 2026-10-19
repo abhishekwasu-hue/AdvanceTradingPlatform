@@ -15,16 +15,31 @@ back. Everything here reads closed bars only and places no orders.
 from __future__ import annotations
 
 import copy
+import dataclasses
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.screener import nodes
-from app.screener.registry import AMW_FLAG, CONFIRM_STATES, FUNCTIONS, PATTERN_NAMES_V2
+from app.screener.registry import AMW_FLAG, CONFIRM_STATES, FUNCTIONS, PATTERN_NAMES, PATTERN_NAMES_V2, Spec
 
 FLAG = AMW_FLAG
 PATTERN_CALLS = ("Pattern", "PatternBullish", "PatternBearish")
+INTRABAR_FUNCTIONS = ("RsiDivergence", "SwingLabel")    # read swings a forming bar can confirm and then take back
 _UNKNOWN = object()
+
+
+def _legacy_spec(spec: Spec) -> Spec:
+    """A Pattern* entry as it was before AMW-3: no `confirm` argument, no v2 candle, the old doc."""
+    name_args = tuple(dataclasses.replace(a, choices=PATTERN_NAMES) for a in spec.args if a.name == "name")
+    doc = spec.doc.split(". confirm:")[0].split(" (confirm:")[0]
+    return dataclasses.replace(spec, args=name_args, choice_extra_bars=(), doc=doc)
+
+
+# The registry the validator reads while the flag is off (review of AMW-3): Pattern / PatternBullish / PatternBearish
+# exactly as before AMW-3, so a mistake in them gets main's message, never one that names a hidden value or argument.
+# The four AMW-3 functions stay known, so using one is refused with the flag's reason (the U6 BK1 / Z7a-3 pattern).
+FLAG_OFF_FUNCTIONS: Dict[str, Spec] = {name: (_legacy_spec(spec) if name in PATTERN_CALLS else spec) for name, spec in FUNCTIONS.items()}
 
 
 def _value(arg: Any, params: Optional[Dict[str, Any]]) -> Any:
@@ -71,6 +86,51 @@ def refusal(names: List[str]) -> str:
     return f"{', '.join(names)}: the AMW screener functions are not enabled for this organisation (flag {FLAG})"
 
 
+def intrabar_calls(ast: Any, params: Optional[Dict[str, Any]] = None) -> List[str]:
+    """The AMW-3 parts that read closed bars only: a confirmation status (decided by the bar's close) and the swing
+    functions (a forming bar can confirm a swing and then take it back). A v2 candle, StDev and TimeOfDay read a forming
+    bar like the indicators do."""
+    out: List[str] = []
+    for node in nodes.walk(ast) if ast is not None else ():
+        if not isinstance(node, nodes.Call):
+            continue
+        label = None
+        if node.name in INTRABAR_FUNCTIONS:
+            label = f"{node.name}()"
+        elif node.name in PATTERN_CALLS:
+            pos = 1 if node.name == "Pattern" else 0
+            if len(node.args) > pos and _value(node.args[pos], params) != "any":
+                label = nodes.to_text(node)
+        if label is not None and label not in out:
+            out.append(label)
+    return out
+
+
+def intrabar_refusal(names: List[str]) -> str:
+    return f"{', '.join(names)}: these AMW screener functions fire on bar close only, not intrabar"
+
+
+def uses_patterns(ast: Any) -> bool:
+    return ast is not None and any(isinstance(node, nodes.Call) and node.name in PATTERN_CALLS for node in nodes.walk(ast))
+
+
+def flag_off_validation(ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None) -> None:
+    """With the flag off: a screen whose Pattern* calls do not validate against the registry as it was before AMW-3 gets
+    THAT validation's problems (main's messages - no hidden candle name, `confirm` argument or arity in them). A screen
+    that validates there validates the same way here, so nothing else changes. A valid screen that uses nothing gated
+    (e.g. `Pattern("doji", "any")`, saved while the flag was on) stays valid: `confirm "any"` is never gated."""
+    from app.screener.validator import validate
+    if not uses_patterns(ast) or getattr(validated, "base_tf", None) is None:
+        return
+    if validated.ok and not flagged_calls(ast, params):
+        return
+    legacy = validate(ast, base_tf=validated.base_tf, params=params, cost_cap=validated.cost_cap, strict_units=validated.strict_units,
+                      functions=FLAG_OFF_FUNCTIONS)
+    if not legacy.ok:
+        validated.ok = False
+        validated.problems = list(legacy.problems)
+
+
 async def enabled(session: AsyncSession, tenant_id: Any) -> bool:
     from app.platform.controls import flag_enabled
     return await flag_enabled(session, FLAG, tenant_id)
@@ -104,4 +164,5 @@ def hide(entries: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
     return out
 
 
-__all__ = ["FLAG", "PATTERN_CALLS", "CONFIRM_STATES", "flagged_calls", "refusal", "enabled", "blocked_calls", "hide"]
+__all__ = ["FLAG", "PATTERN_CALLS", "CONFIRM_STATES", "FLAG_OFF_FUNCTIONS", "INTRABAR_FUNCTIONS", "flagged_calls", "refusal", "enabled",
+           "blocked_calls", "hide", "intrabar_calls", "intrabar_refusal", "uses_patterns", "flag_off_validation"]

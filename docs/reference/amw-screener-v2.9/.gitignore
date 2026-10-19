@@ -1,0 +1,14 @@
+.venv/
+.cache/
+.sandbox/
+__pycache__/
+*.pyc
+*.log
+.pytest_cache/
+.ruff_cache/
+.env
+data/*.db
+data/*.csv
+!data/README.txt
+data/.amw_master.key
+data/reports/

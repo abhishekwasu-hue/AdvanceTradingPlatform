@@ -1,0 +1,182 @@
+# AMW AI Custom Stock Screener - settings (research defaults, NOT trading advice)
+
+universe:
+  cache_hours: 24
+  # Each universe: local file (checked first) then official URLs. Fallback list is always labelled.
+  sources:
+    "Nifty 50":
+      local_csv: data/ind_nifty50list.csv
+      urls: [https://archives.nseindia.com/content/indices/ind_nifty50list.csv,
+             https://www.niftyindices.com/IndexConstituent/ind_nifty50list.csv]
+    "Nifty 200":
+      local_csv: data/ind_nifty200list.csv
+      urls: [https://archives.nseindia.com/content/indices/ind_nifty200list.csv,
+             https://www.niftyindices.com/IndexConstituent/ind_nifty200list.csv]
+    "Nifty 500":
+      local_csv: data/ind_nifty500list.csv
+      urls: [https://archives.nseindia.com/content/indices/ind_nifty500list.csv,
+             https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv]
+    "NSE Equities (EQUITY_L)":
+      local_csv: data/EQUITY_L.csv
+      urls: [https://archives.nseindia.com/content/equities/EQUITY_L.csv]
+
+benchmark: "^NSEI"
+
+data:
+  provider: yfinance
+  cache_dir: .cache
+  ttl_minutes: {"1W": 720, "1D": 240, "1H": 30, "30m": 15, "15m": 8, "5m": 3}
+  batch_size: 25
+  pause_between_batches: 1.5
+  max_retries: 3
+  backoff_base: 2.0
+  timeout: 30
+  min_bars: {"1W": 60, "1D": 120, "1H": 120, "30m": 120, "15m": 120, "5m": 120}
+  stale_days: {"1W": 10, "1D": 5, "1H": 5, "30m": 5, "15m": 5, "5m": 5}
+  completed_candles_only: true
+
+market:
+  timezone: Asia/Kolkata
+  session_open: "09:15"
+  session_close: "15:30"
+  # Exchange holidays (YYYY-MM-DD). Maintain from the official NSE holiday list; not auto-downloaded.
+  holidays: []
+
+analysis:
+  swing_k: 3
+  equal_level_atr: 0.15
+  sr_cluster_atr: 0.5
+  zone_departure_atr: 1.3
+  pattern_tolerance_atr: 0.6
+  compression_ratio: 0.75
+  rs_lookback: 50          # bars for relative strength vs benchmark
+
+scoring:
+  # default component weights (strategies may override)
+  weights: {trend_mtf: 20, structure: 20, volume: 15, level_quality: 15, momentum: 10, relative_strength: 10, risk_reward: 10}
+  labels: {a1: 85, strong: 70, watch: 55}
+
+strategies:
+  breakout:
+    enabled: true
+    version: 1
+    timeframes: ["1D", "1H"]
+    params:
+      fresh_bars: 3              # breakout close must be within the last N bars
+      min_rvol: 1.5
+      require_volume: true
+      require_retest: false
+      min_close_beyond_atr: 0.1
+      max_gap_atr: 1.5           # open beyond level by more than this = gap breakout (warning or reject)
+      reject_large_gaps: false
+      range_bars: 20
+      max_range_atr: 4.0         # consolidation box height limit
+      stop_method: structure     # structure | atr
+      atr_stop_mult: 1.5
+      target_r: 2.0
+      min_rr: 1.5
+      expiry_bars: 5
+  pullback:
+    enabled: true
+    version: 1
+    timeframes: ["1D", "1H"]
+    params:
+      min_trend_score: 0.5
+      touch_bars: 3
+      max_distance_atr: 1.0
+      min_depth_pct: 23.6
+      max_depth_pct: 78.6
+      require_rejection: true
+      stop_buffer_atr: 0.2
+      target_r: 2.0
+      min_rr: 1.5
+      expiry_bars: 3
+  reversal:
+    enabled: true
+    version: 1
+    timeframes: ["1D", "1H"]
+    params:
+      prior_trend_max: -0.3      # bullish reversal needs trend score <= this (mirror for bearish)
+      trigger_bars: 5
+      require_choch: false       # true = only confirmed (CHoCH) reversals qualify
+      min_triggers: 2
+      stop_buffer_atr: 0.2
+      target_r: 2.0
+      min_rr: 1.5
+      expiry_bars: 5
+  trend_continuation:
+    enabled: true
+    version: 1
+    timeframes: ["1D", "1H"]
+    params:
+      min_adx: 20
+      min_structure_bias: 0.5
+      consolidation_bars: 10
+      target_r: 2.0
+      min_rr: 1.5
+      expiry_bars: 5
+  intraday:
+    enabled: true
+    version: 1
+    timeframes: ["15m", "5m", "30m"]
+    params:
+      opening_range_minutes: 15
+      session_start: "09:30"     # no signals before
+      session_end: "14:45"       # no signals after
+      min_rvol: 1.5
+      vwap_touch_atr: 0.3
+      target_r: 1.5
+      min_rr: 1.2
+      expiry_bars: 4
+  swing:
+    enabled: true
+    version: 1
+    timeframes: ["1D"]
+    params:
+      weekly_must_align: true
+      max_stop_pct: 8.0          # stop distance as % of price
+      holding_days: [3, 20]
+      target_r: 2.0
+      min_rr: 1.5
+
+risk:
+  account_equity: null           # MUST be set by the user; no balance is assumed
+  risk_per_trade_pct: 1.0
+  max_daily_loss_pct: 3.0
+  max_open_risk_pct: 6.0
+  max_sector_positions: 3
+  lot_size: 1
+  min_avg_traded_value: 10000000 # INR (20-bar avg close*volume); liquidity warning below
+
+costs:
+  brokerage_bps: 3
+  exchange_tax_bps: 10           # STT/exchange/GST/stamp approximation - set to your broker's actual values
+  slippage_bps: 5
+
+backtest:
+  max_hold_bars: 20
+  train_fraction: 0.6
+  walk_forward_folds: 4
+
+alerts:
+  default_cooldown_minutes: 120
+
+strategy_lab:
+  # Released authoring modes. Operators can restrict them with AMW_LAB_LANGUAGES=python,pine (comma list).
+  # A released mode still executes only if its runtime is installed and the sandbox (or local trusted mode) is available;
+  # the capability matrix reports this per machine.
+  enabled_languages: ["python", "pine", "visual", "sql", "javascript", "typescript", "lua", "r"]
+
+# SaaS plan entitlements (engineering defaults - commercial limits and prices are an OWNER DECISION, see Q-002).
+# null = unlimited. Enforced in the backend (services/API), not only in the UI. AI usage is BYOK and not limited here.
+# PROVISIONAL (Q-002): plan limits and retention days below are engineering assumptions, NOT approved commercial terms.
+# No prices are defined here and no paid subscription is active. Change values here; no code changes are needed.
+plan_meta:
+  commercial_status: provisional          # provisional | approved (set only after an explicit business decision)
+  prices: null                            # intentionally undefined
+  retention_note: "Report retention applies to report files; database/volume BACKUPS follow their own retention."
+plans:
+  free:       {symbols_per_scan: 50,   concurrent_jobs: 1, reports_per_day: 10,   lab_strategies: 3,    alert_rules: 3,    schedules: 1,    min_schedule_interval_min: 60, report_retention_days: 7,    report_storage_mb: 50}
+  pro:        {symbols_per_scan: 500,  concurrent_jobs: 2, reports_per_day: 200,  lab_strategies: 50,   alert_rules: 50,   schedules: 10,   min_schedule_interval_min: 15, report_retention_days: 90,   report_storage_mb: 1000}
+  premium:    {symbols_per_scan: 2500, concurrent_jobs: 4, reports_per_day: 1000, lab_strategies: 200,  alert_rules: 200,  schedules: 50,   min_schedule_interval_min: 5,  report_retention_days: 365,  report_storage_mb: 5000}
+  enterprise: {symbols_per_scan: null, concurrent_jobs: 8, reports_per_day: null, lab_strategies: null, alert_rules: null, schedules: null, min_schedule_interval_min: 5,  report_retention_days: 365,  report_storage_mb: null}

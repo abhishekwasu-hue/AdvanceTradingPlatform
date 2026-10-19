@@ -108,6 +108,18 @@ async def _zone_check(session: AsyncSession, user: User, ast: Any, fire_on: str)
         raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
 
 
+async def _amw_check(session: AsyncSession, user: User, ast: Any, params: Optional[Dict[str, Any]] = None) -> None:
+    """AMW-3: a rule (instrument condition or saved screen) using an AMW-3 function, a v2 candle or a confirmation status
+    needs `screenql_amw_functions` on."""
+    from app.screener import amw_functions as amw_gate
+    from app.screener import nodes
+    tree = nodes.from_json(ast) if isinstance(ast, dict) else ast
+    blocked = await amw_gate.blocked_calls(session, user.tenant_id, tree, params or {})
+    if blocked:
+        why = amw_gate.refusal(blocked)
+        raise HTTPException(status_code=422, detail={"message": why, "problems": [{"message": why, "pos": None}]})
+
+
 async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[str, Any]:
     if body.kind == "screen":
         if body.screen_id is None:
@@ -121,6 +133,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
             raise HTTPException(status_code=422, detail="a screen rule needs 1-50 valid symbols to run the screen on")
         await _breakout_check(session, user, json.loads(screen.ast_json), body.fire_on, body.exchange)
         await _zone_check(session, user, json.loads(screen.ast_json), body.fire_on)
+        await _amw_check(session, user, json.loads(screen.ast_json), json.loads(screen.params_json or "{}"))
         return {"screen_id": screen.id, "symbol": None, "condition_text": None, "base_tf": screen.base_tf, "universe_json": json.dumps(symbols),
                 "exchange": body.exchange}
     if not body.symbol or not body.condition:
@@ -133,6 +146,7 @@ async def _checked(session: AsyncSession, user: User, body: RuleBody) -> Dict[st
         raise HTTPException(status_code=422, detail="an instrument rule cannot rank across a universe; use a screen rule")
     await _breakout_check(session, user, ast, body.fire_on, body.exchange)
     await _zone_check(session, user, ast, body.fire_on)
+    await _amw_check(session, user, ast)
     return {"screen_id": None, "symbol": body.symbol.strip().upper(), "condition_text": nodes.to_text(ast), "base_tf": body.base_tf,
             "universe_json": None, "exchange": body.exchange}
 

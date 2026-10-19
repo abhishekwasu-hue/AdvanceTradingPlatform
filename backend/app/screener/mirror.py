@@ -74,7 +74,10 @@ NOT_SYMMETRIC: Dict[str, str] = {
 }
 PATTERN_SWAP = {"bullish_engulfing": "bearish_engulfing", "bearish_engulfing": "bullish_engulfing", "morning_star": "evening_star",
                 "evening_star": "morning_star", "bullish_pin_bar": "bearish_pin_bar", "bearish_pin_bar": "bullish_pin_bar",
-                "bullish_rejection": "bearish_rejection", "bearish_rejection": "bullish_rejection", "doji": "doji", "inside_bar": "inside_bar"}
+                "bullish_rejection": "bearish_rejection", "bearish_rejection": "bullish_rejection", "doji": "doji", "inside_bar": "inside_bar",
+                # AMW-3: the v2 candles (ATR and the gap read the same on reflected bars); a confirmation status is kept as it is
+                "bullish_strong_body": "bearish_strong_body", "bearish_strong_body": "bullish_strong_body",
+                "bullish_gap_reversal": "bearish_gap_reversal", "bearish_gap_reversal": "bullish_gap_reversal"}
 
 
 class NoMirror(ValueError):
@@ -196,7 +199,7 @@ def _call(node: n.Call) -> Rewritten:  # noqa: C901 - one switch over the rule t
         arg = node.args[0] if node.args else None
         if not isinstance(arg, n.Str) or arg.value not in PATTERN_SWAP:
             raise NoMirror(_part(node), "this candlestick pattern has no mirrored twin (hammer and shooting star differ by context)")
-        return INV, _same_call(node, name, [n.Str(PATTERN_SWAP[arg.value])])
+        return INV, _same_call(node, name, [n.Str(PATTERN_SWAP[arg.value]), *_kept(list(node.args[1:]))])
     if name in CATEGORIES:
         return "cat:" + name, _same_call(node, name, _kept(list(node.args)))
     raise NoMirror(_part(node), f"{name}() has no mirror rule (its answer on reflected prices is not defined here)")

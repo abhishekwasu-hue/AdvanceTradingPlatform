@@ -29,6 +29,7 @@ from app.core.models import bars_to_dataframe
 from app.db.models import ScreenRecord, ScreenRunRecord, User
 from app.db.session import get_session
 from app.platform.controls import flag_enabled, require_flag
+from app.screener import amw_functions as amw_gate
 from app.screener import compile_screen, nodes
 from app.screener import legends as lg   # registers the `legends` template source (U7 LG1)
 from app.screener import taxonomy as tx
@@ -122,6 +123,8 @@ async def registry(user: User = Depends(get_current_user), session: AsyncSession
     if off:                                       # Z7a-3 (the U6 BK1 pattern): a flagged family stays hidden while its flag is off
         entries = {k: v for k, v in entries.items()           # U6 BK3: a second flag (Spec.also_flags) hides it too
                    if not (k in FUNCTIONS and ({FUNCTIONS[k].flag, *FUNCTIONS[k].also_flags} & off))}
+        if amw_gate.FLAG in off:                  # AMW-3: the v2 candles and Pattern's `confirm` argument hide too
+            entries = amw_gate.hide(entries)
     return {"version": nodes.VERSION, "timeframes": list(nodes.TIMEFRAMES), "entries": entries}
 
 
@@ -185,18 +188,24 @@ async def validate_screen(body: ValidateBody, user: User = Depends(get_current_u
     """Text or builder tree -> {ok, problems (with positions), canonical text, AST, plan}. Nothing runs."""
     await _flag(session, user)
     ast, validated = _compiled(body.source, body.base_tf, body.params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, body.params)
     return _view(ast, validated)
 
 
-async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any) -> None:
+async def _gate(session: AsyncSession, user: User, ast: Any, validated: Any, params: Optional[Dict[str, Any]] = None) -> None:
     """A screen using a flagged function while its flag is off fails validation, with the reason: the U6 BK1 breakout
-    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`) and the Z7a-3 market-zone functions (`market_zones`)."""
+    screens (`screener_breakouts`; BK3's also `screener_breakouts_bk3`), the Z7a-3 market-zone functions (`market_zones`)
+    and the AMW-3 functions, v2 candles and confirmation statuses (`screenql_amw_functions`; `params` resolves a
+    `$parameter` pattern name)."""
     for gate in (breakout_gate, zone_gate):
         blocked = await gate.blocked_calls(session, user.tenant_id, ast)
         if blocked:
             validated.ok = False
             validated.problems.append(Problem(gate.refusal(blocked)))
+    amw_blocked = await amw_gate.blocked_calls(session, user.tenant_id, ast, params or {})
+    if amw_blocked:
+        validated.ok = False
+        validated.problems.append(Problem(amw_gate.refusal(amw_blocked)))
 
 
 async def _owned(session: AsyncSession, user: User, screen_id: int) -> ScreenRecord:
@@ -218,7 +227,7 @@ async def list_screens(include_archived: bool = False, user: User = Depends(get_
 
 async def _apply(session: AsyncSession, user: User, row: ScreenRecord, body: ScreenBody) -> None:
     ast, validated = _compiled(body.source, body.base_tf, body.params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, body.params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     row.name, row.source_text, row.ast_json = body.name.strip(), nodes.to_text(ast), json.dumps(nodes.to_json(ast))
@@ -399,7 +408,7 @@ async def run(body: RunBody, user: User = Depends(require_trader), session: Asyn
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, base_tf, params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation", "problems": [p.as_dict() for p in validated.problems]})
     missing = missing_data(ast)

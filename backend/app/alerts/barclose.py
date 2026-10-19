@@ -56,6 +56,7 @@ BREAKOUT_FLAG = "screener_breakouts"                 # U6 BK1: rules using break
 # U6 BK3 / BK4: rules using the VCP / indicator (bk3) or trendline / pattern / gap / retest (bk4) breakouts also pause while off
 BREAKOUT_EXTRA_FLAGS = ("screener_breakouts_bk3", "screener_breakouts_bk4")
 ZONES_FLAG = "market_zones"                    # Z7a-3: rules using market-zone functions pause (stay active) while it is off
+AMW_FLAG = "screenql_amw_functions"            # AMW-3: rules using an AMW-3 function / v2 candle / confirmation status pause too
 EVIDENCE_FLAG = "evidence_charts"              # U8 EV1/EV2: evidence packs stored with fired alert events
 RETRY_SECONDS = 60
 TIME_BUDGET_SECONDS = 10.0                     # per worker cycle; rules left over are simply still due next cycle
@@ -265,7 +266,7 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
                         holidays: Iterable[date] = (), cache: Optional[CycleCache] = None, intrabar_enabled: bool = False,
                         breakouts_enabled: bool = False, zones_enabled: bool = False, per_user: bool = False,
                         vectorized: bool = False, evidence_enabled: bool = False,
-                        breakout_extra_flags: Optional[Dict[str, bool]] = None) -> Tuple[str, int]:
+                        breakout_extra_flags: Optional[Dict[str, bool]] = None, amw_enabled: bool = False) -> Tuple[str, int]:
     """One rule at `now` -> (state, matches fired). States: done, waiting, skipped, unsupported, error. `vectorized`
     (Z10-d, flag `screener_vectorized`) evaluates the rule's symbols together: the same matches, less time. Every flag
     argument defaults to OFF (BK3 review L7): `run_due` passes each organisation's own flags; a direct caller opts in."""
@@ -311,6 +312,12 @@ async def evaluate_rule(session: AsyncSession, rule: AlertRuleRecord, now: datet
         if zone_calls and (not zones_enabled or intrabar):
             # Z7a-3: the rule stays active and resumes when the flag is back; zone rules fire on bar close only
             rule.last_problem = zone_gate.refusal(zone_calls) if not zones_enabled else zone_gate.intrabar_refusal(zone_calls)
+            return "unsupported", 0
+        from app.screener import amw_functions as amw_gate
+        amw_calls = amw_gate.flagged_calls(ast, params)
+        if amw_calls and not amw_enabled:
+            # AMW-3: the rule stays active and resumes when the flag is back
+            rule.last_problem = amw_gate.refusal(amw_calls)
             return "unsupported", 0
         clock = alert_clock_refusal(ast, rule.exchange) if blocked else None
         if clock:                                                 # U6 BK2: session functions on the NSE clock only (BK2-5)
@@ -388,6 +395,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
     breakouts_on: Dict[int, bool] = {}
     extra_on: Dict[int, Dict[str, bool]] = {}
     zones_on: Dict[int, bool] = {}
+    amw_on: Dict[int, bool] = {}
     per_user: Dict[int, bool] = {}           # BT1b: byob_data_tier per organisation
     vectorized_on: Dict[int, bool] = {}
     evidence_on: Dict[int, bool] = {}
@@ -411,6 +419,8 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
             extra_on[rule.tenant_id] = {f: await flag_enabled(session, f, rule.tenant_id) for f in BREAKOUT_EXTRA_FLAGS}
         if rule.tenant_id not in zones_on:
             zones_on[rule.tenant_id] = await flag_enabled(session, ZONES_FLAG, rule.tenant_id)
+        if rule.tenant_id not in amw_on:
+            amw_on[rule.tenant_id] = await flag_enabled(session, AMW_FLAG, rule.tenant_id)
         if rule.tenant_id not in per_user:
             per_user[rule.tenant_id] = await flag_enabled(session, "byob_data_tier", rule.tenant_id)
         if rule.tenant_id not in vectorized_on:
@@ -420,7 +430,7 @@ async def run_due(session: AsyncSession, now: Optional[datetime] = None, fetch: 
         state, fired = await evaluate_rule(session, rule, now, fetch or server_fetch, holidays, out.cache,
                                            intrabar_enabled=intrabar_on.get(rule.tenant_id, False),
                                            breakouts_enabled=breakouts_on[rule.tenant_id], zones_enabled=zones_on[rule.tenant_id],
-                                           breakout_extra_flags=extra_on[rule.tenant_id],
+                                           breakout_extra_flags=extra_on[rule.tenant_id], amw_enabled=amw_on[rule.tenant_id],
                                            per_user=per_user[rule.tenant_id], vectorized=vectorized_on[rule.tenant_id],
                                            evidence_enabled=evidence_on[rule.tenant_id])
         out.evaluated += state == "done"

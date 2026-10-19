@@ -91,7 +91,7 @@ async def _screen(session: AsyncSession, user: User, body: Screen) -> Tuple[Any,
     else:
         raise HTTPException(status_code=422, detail="give a screen_id or a source")
     ast, validated = _compiled(source, H.BASE_TF, params)
-    await _gate(session, user, ast, validated)
+    await _gate(session, user, ast, validated, params)
     if not validated.ok:
         raise HTTPException(status_code=422, detail={"message": "the screen did not pass validation",
                                                      "problems": [p.as_dict() for p in validated.problems]})
@@ -387,7 +387,7 @@ async def _rank_gates(session: AsyncSession, user: User, rank_ast: Any, rank_val
     from app.screener.registry import NUM
     from app.screener.validator import NOT_A_CONDITION, _Checker
     probe = type("V", (), {"ok": True, "problems": []})()
-    await _gate(session, user, rank_ast, probe)
+    await _gate(session, user, rank_ast, probe, params)
     problems = [p.message for p in probe.problems if p.message != NOT_A_CONDITION]
     if problems:
         raise HTTPException(status_code=422, detail="rank_by: " + "; ".join(problems))

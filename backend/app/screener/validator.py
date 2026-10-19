@@ -10,11 +10,12 @@ bars only - the executor never reads a bar that has not closed, so `[0]@1d` insi
 from __future__ import annotations
 
 import math
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple
 
 from app.screener import nodes as n
-from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, LAST_BAR_ONLY, MAX_WINDOW, NUM, READS_HISTORY, STR, Spec
+from app.screener.registry import BOOL, CAT, FIELDS, FUNCTIONS, LAST_BAR_ONLY, MAX_WINDOW, NEUTRAL_PATTERNS, NUM, READS_HISTORY, STR, Spec
 
 MAX_OFFSET = 500
 DEFAULT_COST_CAP = 200.0
@@ -125,6 +126,30 @@ class _Checker:
         lo, hi = sig.bounds
         if not lo <= float(value) <= hi:
             self.err(f"{owner.name}: {sig.name} must be between {lo:g} and {hi:g}, got {value:g}", arg)
+
+    def _value(self, arg: Any) -> Any:
+        """A literal's value, or a parameter's (None for anything else)."""
+        if isinstance(arg, (n.Num, n.Str, n.Bool)):
+            return arg.value
+        return self.params.get(arg.name) if isinstance(arg, n.Param) else None
+
+    def form(self, arg: Any, sig: Any, owner: Any) -> None:
+        """AMW-3: a text argument with a required form (TimeOfDay's HH:MM) must be a literal or a parameter that has it."""
+        value = self._value(arg)
+        if not isinstance(value, str) or re.fullmatch(sig.pattern, value) is None:
+            shown = repr(value) if value is not None else "an expression"
+            self.err(f"{owner.name}: {sig.name} must be a time as HH:MM (00:00 to 23:59), got {shown}", arg)
+
+    def arg_value(self, node: n.Call, spec: Spec, name: str) -> Any:
+        """The value an argument takes in this call: the literal / parameter given, or the default when it is left out."""
+        pos = next((i for i, a in enumerate(spec.args) if a.name == name), None)
+        if pos is None:
+            return None
+        return self._value(node.args[pos]) if pos < len(node.args) else spec.args[pos].default
+
+    def choice_bars(self, node: n.Call, spec: Spec) -> int:
+        """AMW-3: the bars an argument's value adds (Spec.choice_extra_bars)."""
+        return sum(bars for name, value, bars in spec.choice_extra_bars if self.arg_value(node, spec, name) == value)
 
     def literal(self, arg: Any, sig: Any, owner: Any) -> None:
         """Z10-a (U3 G2): a setting of the function (Supertrend / Bollinger `k`, the zone filters' `tolerance_pct`) is
@@ -349,6 +374,8 @@ class _Checker:
                 self.err(f"{node.name}: argument {sig.name!r} must be {sig.type}, got {t}", arg_node)
             elif sig.choices:
                 self.choice(arg_node, sig, node)
+            elif sig.pattern:
+                self.form(arg_node, sig, node)
             elif sig.literal_only or sig.bounds:
                 if sig.literal_only:
                     self.literal(arg_node, sig, node)
@@ -376,7 +403,11 @@ class _Checker:
         if spec.window_sum:                                           # U6 BK1: e.g. ATR warm-up + percentile lookback
             window = sum(windows)
         window *= dict(spec.window_bars).get(own_tf, 1)               # U6 BK1: weeks -> daily bars
-        min_bars = spec.min_bars
+        min_bars = spec.min_bars + (self.choice_bars(node, spec) if spec.choice_extra_bars else 0)
+        if spec.name == "Pattern" and self.arg_value(node, spec, "name") in NEUTRAL_PATTERNS \
+                and self.arg_value(node, spec, "confirm") not in (None, "any"):
+            self.err(f"Pattern: {self.arg_value(node, spec, 'name')} has no direction, so it has no confirmation status (use confirm \"any\")",
+                     node)
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))
         for name in spec.tf_multiple_args:                            # U6 BK2: e.g. a 30-minute range on 15m bars, not on 45m ones

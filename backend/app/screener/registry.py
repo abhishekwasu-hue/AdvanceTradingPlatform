@@ -25,6 +25,7 @@ class Arg:
     choices: Tuple[object, ...] = ()  # S5-A: the only values allowed (a literal or a parameter); empty = any
     literal_only: bool = False      # Z10-a: a setting read once (a literal or a $parameter), never an expression per bar
     bounds: Optional[Tuple[float, float]] = None   # U6 BK1: inclusive range of a number (checked at validation)
+    pattern: Optional[str] = None   # AMW-3: a text argument's required form (a regular expression it must match in full)
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,9 @@ class Spec:
     sessions_arg: Optional[str] = None     # U6 BK2: the argument that sets min_sessions (prior sessions + the current one)
     tf_multiple_args: Tuple[str, ...] = ()  # U6 BK2: minute arguments that must be a whole number of the timeframe's bars
     fetch_degree_bars: Tuple[int, ...] = ()  # U6 BK1: bars to FETCH by degree (fetch sizing only; min_bars decides refusal)
+    # AMW-3: further bars needed when an argument takes a value - (argument, value, bars), added to min_bars
+    # (Pattern: a v2 candle reads ATR(14); a confirmation status reads the bar after the pattern)
+    choice_extra_bars: Tuple[Tuple[str, object, int], ...] = ()
 
 
 FIELDS: Dict[str, Spec] = {s.name: s for s in (
@@ -73,6 +77,12 @@ PATTERN_NAMES: Tuple[str, ...] = (
     "bullish_pin_bar", "bearish_pin_bar", "inside_bar", "bullish_outside_bar", "bearish_outside_bar",
     "bullish_rejection", "bearish_rejection",
 )
+# AMW-3 (flag `screenql_amw_functions`): candle v2 names (candlestick_patterns.pattern_masks_v2) and the next-bar status
+PATTERN_NAMES_V2: Tuple[str, ...] = ("bullish_strong_body", "bearish_strong_body", "bullish_gap_reversal", "bearish_gap_reversal")
+NEUTRAL_PATTERNS: Tuple[str, ...] = ("doji", "inside_bar")         # no direction, so no confirmation status
+CONFIRM_STATES: Tuple[str, ...] = ("any", "confirmed", "failed", "unconfirmed")
+PATTERN_V2_EXTRA_BARS = 12                                        # min_bars 3 + 12 = 15: ATR(14) has its first value on bar 14
+AMW_FLAG = "screenql_amw_functions"
 SWING_DEGREES: Tuple[int, ...] = (0, 1, 2, 3)     # D0 smallest .. D3 largest threshold (app/price_action/pa_settings.py)
 SWING_MIN_BARS = 100                              # ATR warm-up plus room for a few confirmed pivots
 # S5-A4: history by swing degree. ZigZag pivots are path-dependent: with less history the last pivot can differ from the
@@ -85,6 +95,9 @@ BREAK_EXTRA_BARS = 21                             # RealBreak: the median range 
 _DEGREE = Arg("degree", NUM, 0, False, choices=SWING_DEGREES)
 _DEGREE1 = Arg("degree", NUM, 1, False, choices=SWING_DEGREES)
 _SIDE = Arg("side", STR, choices=("up", "down"))
+_CONFIRM = Arg("confirm", STR, "any", False, choices=CONFIRM_STATES)
+_CONFIRM_BARS = tuple(("confirm", state, 1) for state in CONFIRM_STATES[1:])
+_HHMM = r"([01][0-9]|2[0-3]):[0-5][0-9]"
 BREAKOUT_FLAG = "screener_breakouts"
 BREAKOUT_BK3_FLAG = "screener_breakouts_bk3"        # U6 BK3: VCP + indicator breakouts, on top of `screener_breakouts`
 BREAKOUT_BK4_FLAG = "screener_breakouts_bk4"        # U6 BK4: trendline / pattern / gap / retest, on top of `screener_breakouts`
@@ -177,15 +190,22 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
     Spec("StructureEvent", "classifier", CAT, None, (Arg("swing", "window", 3, False),), cost=3.0, timeframed=False,
          values=("BOS_BULLISH", "BOS_BEARISH", "CHOCH_BULLISH", "CHOCH_BEARISH", ""),
          doc="latest structure event: BOS_BULLISH / BOS_BEARISH / CHOCH_BULLISH / CHOCH_BEARISH (empty when none)"),
-    Spec("PatternBullish", "filter", BOOL, None, (), cost=2.0, timeframed=False, doc="a bullish candlestick pattern on the last bar"),
-    Spec("PatternBearish", "filter", BOOL, None, (), cost=2.0, timeframed=False, doc="a bearish candlestick pattern on the last bar"),
+    Spec("PatternBullish", "filter", BOOL, None, (_CONFIRM,), cost=2.0, timeframed=False,
+         doc="a bullish candlestick pattern on the last bar (confirm: any; or the status the last bar gave a bullish pattern on the"
+             " bar before - confirmed / failed / unconfirmed)"),
+    Spec("PatternBearish", "filter", BOOL, None, (_CONFIRM,), cost=2.0, timeframed=False,
+         doc="a bearish candlestick pattern on the last bar (confirm: any; or the status the last bar gave a bearish pattern on the"
+             " bar before - confirmed / failed / unconfirmed)"),
     Spec("NearSupport", "filter", BOOL, None, (Arg("tolerance_pct", NUM, literal_only=True), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
          doc="the close is within tolerance_pct of a support zone edge"),
     Spec("NearResistance", "filter", BOOL, None, (Arg("tolerance_pct", NUM, literal_only=True), Arg("swing", "window", 3, False)), cost=4.0, timeframed=False,
          doc="the close is within tolerance_pct of a resistance zone edge"),
     # S5-A: price action as series (bar by bar, causal), so they work with offsets, @timeframe, Count and alerts
-    Spec("Pattern", "filter", BOOL, None, (Arg("name", STR, choices=PATTERN_NAMES),), cost=2.0, min_bars=3,
-         doc="the named candlestick pattern on this bar (closed bars only; uses this bar and up to two before it)"),
+    Spec("Pattern", "filter", BOOL, None, (Arg("name", STR, choices=PATTERN_NAMES + PATTERN_NAMES_V2), _CONFIRM), cost=2.0, min_bars=3,
+         choice_extra_bars=tuple(("name", v, PATTERN_V2_EXTRA_BARS) for v in PATTERN_NAMES_V2) + _CONFIRM_BARS,
+         doc="the named candlestick pattern on this bar (closed bars only; uses this bar and up to two before it). confirm: any"
+             " (the pattern on this bar), or the status this bar gave the pattern on the bar before - confirmed (close beyond its far"
+             " side), failed (beyond the other side), unconfirmed (inside its range)"),
     Spec("SwingHigh", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
          doc="the last CONFIRMED swing high: known only once price has come back from it by the degree's threshold"),
     Spec("SwingLow", "factor", NUM, "price", (_DEGREE,), cost=2.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS,
@@ -208,6 +228,20 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          extra_bars=BREAK_EXTRA_BARS,
          doc="a REAL break of `level` (this bar's value) was confirmed within the last n bars: a close beyond it by a buffer,"
              " then displacement, acceptance (no reclaim) or a failed retest - a wick or a reclaimed close is a false break"),
+    # AMW-3 (flag `screenql_amw_functions`): the AMW screener's predicates as series - closed bars, causal
+    Spec("StDev", "factor", NUM, "same", (_X, _N), flag=AMW_FLAG,
+         doc="population standard deviation of x over n bars (divides by n, like Pine's ta.stdev)"),
+    Spec("RsiDivergence", "filter", BOOL, None, (Arg("side", STR, choices=("bullish", "bearish")), Arg("lookback", "window", 15, False), _DEGREE),
+         cost=3.0, min_bars=SWING_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=AMW_FLAG,
+         doc="regular RSI(14) divergence between the last two CONFIRMED swing lows (bullish: a lower low with a higher RSI) or"
+             " highs (bearish: a higher high with a lower RSI), the latest swing's extreme at most `lookback` bars before this bar"),
+    Spec("SwingLabel", "classifier", CAT, None, (Arg("kind", STR, choices=("high", "low")), _DEGREE), cost=2.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, values=("HH", "LH", "HL", "LL"), flag=AMW_FLAG,
+         doc="HH / LH (kind high) or HL / LL (kind low): the last CONFIRMED swing of that kind against the one before it (an equal"
+             " price reads lower); missing before the second swing of that kind"),
+    Spec("TimeOfDay", "filter", BOOL, None, (Arg("start", STR, pattern=_HHMM), Arg("end", STR, pattern=_HHMM)), cost=0.5,
+         timeframes=INTRADAY_SERIES_TFS, flag=AMW_FLAG,
+         doc="the bar starts between start and end (HH:MM, exchange time, both included; start after end wraps past midnight)"),
     Spec("MedianRange", "factor", NUM, "price", (Arg("n", "window", 20, False),), extra_bars=1,
          doc="median (high - low) of the n bars before this one (this bar excluded): the market's own noise"),
     Spec("PCR", "factor", NUM, "ratio", (), cost=2.0, timeframed=False, doc="put-call OI ratio of the supplied option chain", needs=("option_chain",)),
@@ -357,7 +391,8 @@ BREAKOUT_BK4_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS
 # repeated on every earlier bar, so a function that reads a history (READS_HISTORY) would count, average or compare
 # today's answer as if it had held all along. The validator refuses that combination.
 LAST_BAR_ONLY = frozenset(name for name, spec in FUNCTIONS.items() if not spec.timeframed and not spec.varargs)
-READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag"})
+READS_HISTORY = frozenset({"SMA", "EMA", "Max", "Min", "Count", "CountStreak", "CrossAbove", "CrossBelow", "PctChange", "ZScore", "Lag", "StDev"})
+AMW_FUNCTIONS: Tuple[str, ...] = tuple(name for name, spec in FUNCTIONS.items() if spec.flag == AMW_FLAG)
 
 
 def describe() -> Dict[str, Dict[str, object]]:
@@ -373,10 +408,12 @@ def describe() -> Dict[str, Dict[str, object]]:
                           "field": spec.name in FIELDS, "needs": list(spec.needs), "doc": spec.doc}
         if spec.timeframes:                                          # U6 BK2: only the entries limited to some timeframes
             out[spec.name]["timeframes"] = list(spec.timeframes)
+        if any(a.pattern for a in spec.args):                        # AMW-3: only the entries with a text form (TimeOfDay)
+            out[spec.name]["patterns"] = {a.name: a.pattern for a in spec.args if a.pattern}
     return out
 
 
 __all__ = ["FIELDS", "FUNCTIONS", "LAST_BAR_ONLY", "READS_HISTORY", "Spec", "Arg", "describe", "BREAKOUT_FUNCTIONS", "BREAKOUT_FLAG", "ZONE_FUNCTIONS",
            "BREAKOUT_BK3_FLAG", "BREAKOUT_BK3_FUNCTIONS", "BREAKOUT_BK4_FLAG", "BREAKOUT_BK4_FUNCTIONS",
-           "ZONES_FLAG", "MAX_WINDOW",
+           "ZONES_FLAG", "MAX_WINDOW", "AMW_FLAG", "AMW_FUNCTIONS", "PATTERN_NAMES_V2", "NEUTRAL_PATTERNS", "CONFIRM_STATES",
            "PATTERN_NAMES", "SWING_DEGREES", "NUM", "BOOL", "CAT", "STR"]

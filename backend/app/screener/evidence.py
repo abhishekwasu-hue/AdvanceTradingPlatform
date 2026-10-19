@@ -96,7 +96,8 @@ ZONE_CALLS = ("NearZone", "ZoneRole", "ZoneState", "ZoneStrength")
 CROSS_CALLS = ("CrossAbove", "CrossBelow")
 # candles a named pattern reads (this bar and up to two before it, app/price_action/candlestick_patterns.py)
 PATTERN_BARS: Dict[str, int] = {"bullish_engulfing": 2, "bearish_engulfing": 2, "inside_bar": 2, "bullish_outside_bar": 2,
-                                "bearish_outside_bar": 2, "morning_star": 3, "evening_star": 3}
+                                "bearish_outside_bar": 2, "morning_star": 3, "evening_star": 3,
+                                "bullish_gap_reversal": 2, "bearish_gap_reversal": 2}          # AMW-3: the gap is from the bar before
 # U8 EV3 (flag `evidence_context`): the option-chain functions draw the chain's OI walls / max pain on the price pane
 CHAIN_CALLS = ("PCR", "ChainBias", "MaxPainDistancePct")
 CONTEXT_TFS = ("1h", "1d", "1w")      # the multi-timeframe strip: these (above the screen's own) plus the screen's timeframes
@@ -119,6 +120,9 @@ DRAWN_AS: Dict[str, str] = {
     "RealBreak": "overlay", "ReversalAt": "overlay",
     "Pattern": "bars", "PatternBullish": "bars", "PatternBearish": "bars",
     **{name: "levels" for name in CHAIN_CALLS},
+    # AMW-3: StDev is a number drawn through its comparison; the divergence, the swing label and the time window are a
+    # filter / category with no geometry of their own (the strip, with the reason)
+    "StDev": "series", "RsiDivergence": "strip", "SwingLabel": "strip", "TimeOfDay": "strip",
 }
 
 
@@ -435,9 +439,14 @@ def _drawable(ctx: _Ctx, node: Any, row: Dict[str, Any]) -> Optional[Dict[str, A
     if call is not None and call.name == "Pattern" and call.args:
         name = str(ctx.ev.ev(call.args[0], ctx.base_tf))
         k = PATTERN_BARS.get(name, 1)
-        return {"kind": "bars", "pane": "price", "label": name.replace("_", " "), "index": list(range(max(0, ctx.j - k + 1), ctx.j + 1))}
+        confirm = str(ctx.ev.ev(call.args[1], ctx.base_tf)) if len(call.args) > 1 else "any"
+        # AMW-3: with a confirmation status the pattern is on the bar before, and this bar is the one that confirmed it
+        end = ctx.j - (confirm != "any")
+        label = name.replace("_", " ") + (f", {confirm} by the next bar" if confirm != "any" else "")
+        return {"kind": "bars", "pane": "price", "label": label, "index": list(range(max(0, end - k + 1), ctx.j + 1))}
     if call is not None and call.name in ("PatternBullish", "PatternBearish"):
-        return {"kind": "bars", "pane": "price", "label": n.to_text(call), "index": [ctx.j]}
+        confirm = str(ctx.ev.ev(call.args[0], ctx.base_tf)) if call.args else "any"
+        return {"kind": "bars", "pane": "price", "label": n.to_text(call), "index": [ctx.j - 1, ctx.j] if confirm != "any" and ctx.j else [ctx.j]}
     if call is not None and call.name in ("RealBreak", "ReversalAt") and call.args:
         d = _overlay(ctx, [call.args[0]], "price", n.to_text(call))
         if d is not None and call.name == "ReversalAt":

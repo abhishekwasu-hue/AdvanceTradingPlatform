@@ -246,6 +246,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # N3 S6b: the rolling screen backtest - rebalance weekly / 4-weekly / monthly, top N by a rank expression, equal or rank
     # weights, next-open fills with the part C slippage and India's delivery charges, against the equal-weight universe and
     # NIFTY 50; deflated through the research trial ledger. Needs screener_history. OFF: 503. A simulation only.
+    # N3 S7a: ranking systems - weighted factor trees (weights, higher / lower is better, sector-neutral percentiles) that
+    # rank a universe 0-100 with every component shown; a column, a sort key (the S6b backtest's rank_system) and a filter
+    # (ScreenQL RankScore("name") > 80). Platform systems with documented formulas. OFF: the routes answer 503 and a screen
+    # using RankScore is refused with the reason. Information only - places nothing.
+    "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",
     # N1 F1: the user's own PAPER book as one risk view - exposure, open risk at the stops by sector bucket (all indices

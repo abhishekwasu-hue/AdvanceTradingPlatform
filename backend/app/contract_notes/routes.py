@@ -22,6 +22,8 @@ from app.db.session import get_session
 router = APIRouter(prefix="/api/contract-notes", tags=["contract-notes"])
 
 MAX_UPLOAD_BYTES = 5 * 1024 * 1024
+_TRUE = frozenset({"true", "1", "yes", "on"})
+_FALSE = frozenset({"false", "0", "no", "off"})
 
 
 def _note(n: ContractNoteRecord) -> Dict:
@@ -35,9 +37,14 @@ def _note(n: ContractNoteRecord) -> Dict:
 
 @router.post("")
 async def upload_contract_note(
-    file: UploadFile = File(...), broker_name: str = Form(""), apply: bool = Form(True),
+    file: UploadFile = File(...), broker_name: str = Form(""), apply: str = Form("true"),
     user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
 ) -> Dict:
+    # `apply` is read as text: FastAPI >= 0.148 reads a missing `bool` form field as False (HTML checkbox
+    # semantics), which would turn the documented default of "apply" into a dry run.
+    flag = apply.strip().lower()
+    if flag not in _TRUE and flag not in _FALSE:
+        raise HTTPException(status_code=422, detail="apply must be true or false")
     content = await file.read()
     if len(content) > MAX_UPLOAD_BYTES:
         raise HTTPException(status_code=413, detail="File larger than 5 MB")
@@ -46,7 +53,7 @@ async def upload_contract_note(
     try:
         result = await ingest_contract_note(
             session, tenant_id=user.tenant_id, user_id=user.id, content=content, filename=file.filename or "contract-note.csv",
-            broker_name=broker_name, apply=apply,
+            broker_name=broker_name, apply=flag in _TRUE,
         )
     except ContractNoteParseError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

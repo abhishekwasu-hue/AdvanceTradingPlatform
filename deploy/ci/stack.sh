@@ -283,7 +283,7 @@ kvm2_cpus() {
   local c key seen=" " server="" client="" n=0
   for c in $(seq 0 $(( $(nproc) - 1 ))); do
     key="$(cat "/sys/devices/system/cpu/cpu$c/topology/physical_package_id" 2>/dev/null || echo 0):$(cat "/sys/devices/system/cpu/cpu$c/topology/core_id" 2>/dev/null || echo "$c")"
-    if [ "$n" -lt 2 ] && [ "${seen#* $key }" = "$seen" ]; then server="${server:+$server,}$c"; seen="$seen$key "; n=$((n + 1))
+    if [ "$n" -lt 2 ] && [ "${seen#* "$key" }" = "$seen" ]; then server="${server:+$server,}$c"; seen="$seen$key "; n=$((n + 1))
     else client="${client:+$client,}$c"; fi
   done
   echo "$server ${client:-$server}"

@@ -244,7 +244,7 @@ async def screen_stages(body: StagesBody, user: User = Depends(get_current_user)
     source: Union[str, Dict[str, Any]]
     if body.library_id is not None:
         src = tx.sources().get(body.library_id.split(".", 1)[0])
-        if src is not None and src.flag and not await flag_enabled(session, src.flag, user.tenant_id):
+        if src is not None and any([not await flag_enabled(session, f, user.tenant_id) for f in (src.flag, *src.also) if f]):
             raise HTTPException(status_code=404, detail="that screen's family is turned off for this organisation")
         if body.library_id.startswith("legends."):
             # U7 LG2: a card of a slice this organisation does not see is not there (as GET /legends/{id} answers)

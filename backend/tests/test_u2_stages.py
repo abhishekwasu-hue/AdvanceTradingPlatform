@@ -111,6 +111,21 @@ def test_a_card_of_a_slice_that_is_off_is_not_read_through_stages(u2_on):
         _set_flags(**{lg.FLAG_LG2: False})
 
 
+def test_a_family_whose_further_flag_is_off_is_not_read_through_stages(u2_on):
+    """U6 BK3: `breakouts_bk3` needs `screener_breakouts_bk3` on top of `screener_breakouts` (`also`); while either is off
+    /stages answers that the family is off, as the taxonomy hides it (the family check runs before the source lookup)."""
+    headers, _ = _owner("u2-bk3@example.com")
+    _set_flags(screener_breakouts=True, screener_breakouts_bk3=False)
+    try:
+        hidden = client.post("/api/screener/stages", json={"library_id": "breakouts_bk3.daily_vcp"}, headers=headers)
+        assert hidden.status_code == 404 and "turned off" in hidden.json()["detail"], hidden.text
+        _set_flags(screener_breakouts_bk3=True)
+        shown = client.post("/api/screener/stages", json={"library_id": "breakouts_bk3.daily_vcp"}, headers=headers)
+        assert "turned off" not in shown.json()["detail"], shown.text      # past the family check (not opened here)
+    finally:
+        _set_flags(screener_breakouts=False, screener_breakouts_bk3=False)
+
+
 def test_stages_resolve_a_rankscore_parameter_like_validate(u2_on):
     # merge of N3 S7a: /stages passes the screen's params to `_gate`, so RankScore($name) is checked as /validate checks it
     headers, _ = _owner("u2-stages-rankscore@example.com")

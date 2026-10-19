@@ -136,7 +136,8 @@ The command is `python scripts/loadtest.py --in-process --users 20 --seconds 20 
 runner does not fail the job on noise; the server-error limit is never scaled. The job fails when the SLO is missed.
 
 Run of 2026-10-11 (GitHub-hosted runner): 20 users (5 accounts) for 30 s, 3,198 requests, 102 requests/s, 0 server
-errors, **SLO PASS**.
+errors, **SLO PASS** for this 20-user in-process smoke run only. The Phase 0 criterion (500 users on the KVM 2 shape,
+below) does **not** pass: run 14 (19 Oct) login p95 13.4 s, chart 2.2 s, screener 1.04 s (`docs/reports/load_test_500.md`).
 
 | Scenario | n | p50 ms | p95 ms |
 |---|---|---|---|

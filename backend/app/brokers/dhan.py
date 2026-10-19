@@ -34,7 +34,7 @@ from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
                                 BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, OptionChainRow, Quote)
-from app.brokers.shared_http import shared_client
+from app.brokers.shared_http import ORDER_POOL, shared_client
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
 
@@ -73,6 +73,15 @@ MASTER_CACHE_TTL_SECONDS = 6 * 60 * 60
 _SHARED_SYMBOLS: Dict[str, Tuple[float, Dict[Tuple[str, str], Tuple[str, str, str, dict]]]] = {}
 _SHARED_LOCKS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
 _NO_ROW: dict = {}
+# LD-7 review B1 (ADR-0004: an exit must be able to resolve its instrument): a symbol missing from the shared map - a
+# strike listed after the map was built - rebuilds it once, if the map is older than MISS_REFRESH_SECONDS; a symbol
+# still missing after a rebuild is not looked for again for MISS_REMEMBER_SECONDS (an unknown symbol polled every cycle
+# must not download the whole master every cycle). Together: at most one rebuild a minute from misses.
+MISS_REFRESH_SECONDS = 60
+MISS_REMEMBER_SECONDS = 10 * 60
+_SHARED_MISSES: Dict[Tuple[str, str], float] = {}
+# Order and account calls go through their own connection pool (LD-7 review N2, app/brokers/shared_http.py).
+_ORDER_PATHS = ("/orders", "/trades", "/positions", "/holdings", "/fundlimit", "/profile")
 
 
 def _parse_time(raw) -> Optional[datetime]:
@@ -101,6 +110,8 @@ class DhanBroker(BrokerInterface):
         # the shared scrip master (app/brokers/shared_http.py, _SHARED_*); an injected client (tests, tools) keeps its own.
         self._shared = client is None
         self._client = client or shared_client(self.BASE_URL, 15.0)
+        # LD-7 review N2: orders (an exit among them) on a pool of their own, never queued behind data fetches
+        self._order_client = client or shared_client(self.BASE_URL, 15.0, pool=ORDER_POOL)
         self._access_token: Optional[str] = credentials.access_token
         self._profile: Optional[BrokerProfile] = None
         self._master: Optional[Tuple[float, List[dict]]] = None
@@ -115,7 +126,8 @@ class DhanBroker(BrokerInterface):
         return {"Content-Type": "application/json", "Accept": "application/json", "access-token": self._access_token, "client-id": str(self.credentials.client_id)}
 
     async def _request(self, method: str, path: str, *, json_body=None):
-        response = await self._client.request(method, path, json=json_body, headers=self._headers())
+        client = self._order_client if path.startswith(_ORDER_PATHS) else self._client
+        response = await client.request(method, path, json=json_body, headers=self._headers())
         try:
             body = response.json() if response.content else {}
         except ValueError as exc:
@@ -143,19 +155,21 @@ class DhanBroker(BrokerInterface):
     async def _scrip_master(self) -> List[dict]:
         if self._master and (time.monotonic() - self._master[0]) < MASTER_CACHE_TTL_SECONDS:
             return self._master[1]
-        response = await self._client.get(SCRIP_MASTER_URL)
+        # LD-7 review N2: on the order pool - an exit's instrument may need it (a rebuild on a miss), and a data pool full of
+        # chart and screen fetches must not hold that up; it is one download every few hours
+        response = await self._order_client.get(SCRIP_MASTER_URL)
         if response.status_code >= 400:
             raise BrokerAPIError("Failed to fetch the Dhan scrip master", response.status_code, response.text)
         rows = list(csv.DictReader(io.StringIO(response.text)))
         self._master = (time.monotonic(), rows)
         return rows
 
-    async def _shared_symbols(self) -> Dict[Tuple[str, str], Tuple[str, str, str, dict]]:
+    async def _shared_symbols(self, max_age: float = MASTER_CACHE_TTL_SECONDS) -> Dict[Tuple[str, str], Tuple[str, str, str, dict]]:
         """The process's symbol map (LD-7, `_SHARED_SYMBOLS`): built once from one download of the master - every
-        exchange, exactly as `get_instruments` maps it - and rebuilt after MASTER_CACHE_TTL_SECONDS. One build at a
-        time per event loop; the others wait for it."""
+        exchange, exactly as `get_instruments` maps it - and rebuilt when older than `max_age` (MASTER_CACHE_TTL_SECONDS;
+        a miss asks for MISS_REFRESH_SECONDS, `_resolve`). One build at a time per event loop; the others wait for it."""
         entry = _SHARED_SYMBOLS.get("map")
-        if entry and (time.monotonic() - entry[0]) < MASTER_CACHE_TTL_SECONDS:
+        if entry and (time.monotonic() - entry[0]) < max_age:
             return entry[1]
         loop = asyncio.get_running_loop()
         lock = _SHARED_LOCKS.get(loop)
@@ -163,8 +177,10 @@ class DhanBroker(BrokerInterface):
             lock = _SHARED_LOCKS[loop] = asyncio.Lock()
         async with lock:
             entry = _SHARED_SYMBOLS.get("map")
-            if entry and (time.monotonic() - entry[0]) < MASTER_CACHE_TTL_SECONDS:
+            if entry and (time.monotonic() - entry[0]) < max_age:
                 return entry[1]
+            self._master = None                       # this adapter's copy of the master may be the old one: download
+            self._instruments_cache.clear()
             await self._scrip_master()
             for exchange in SEGMENTS:
                 await self.get_instruments(exchange)
@@ -232,6 +248,8 @@ class DhanBroker(BrokerInterface):
             return ("IDX_I", INDEX_SECURITY_IDS[alias], "INDEX")
         if self._shared and (exchange, key) not in self._symbol_map:
             hit = (await self._shared_symbols()).get((exchange, key))
+            if hit is None:
+                hit = await self._resolve_missing(exchange, key)
         else:
             if (exchange, key) not in self._symbol_map:
                 await self.get_instruments(exchange)
@@ -239,6 +257,25 @@ class DhanBroker(BrokerInterface):
         if hit is None:
             raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found in the Dhan scrip master")
         return hit[0], hit[1], hit[2]
+
+    async def _resolve_missing(self, exchange: str, key: str) -> Optional[Tuple[str, str, str, dict]]:
+        """LD-7 review B1: a symbol the shared map does not have - listed after the map was built (an intraday strike)
+        - gets one rebuild of the map, unless the map is younger than MISS_REFRESH_SECONDS or this symbol was looked for
+        and not found within MISS_REMEMBER_SECONDS."""
+        missed = _SHARED_MISSES.get((exchange, key))
+        if missed is not None and (time.monotonic() - missed) < MISS_REMEMBER_SECONDS:
+            return None
+        before = _SHARED_SYMBOLS.get("map")
+        hit = (await self._shared_symbols(max_age=MISS_REFRESH_SECONDS)).get((exchange, key))
+        if hit is None:
+            after = _SHARED_SYMBOLS.get("map")
+            if after is not None and (before is None or after[0] != before[0]):
+                # a map built after this miss does not have it either: not looked for again for a while (a map that was
+                # only young is not proof - the next miss after MISS_REFRESH_SECONDS rebuilds it)
+                _SHARED_MISSES[(exchange, key)] = time.monotonic()
+        else:
+            _SHARED_MISSES.pop((exchange, key), None)
+        return hit
 
     # --- quotes ----------------------------------------------------------------------------------
     def _quote_from(self, entry: dict, symbol: str) -> Quote:
@@ -256,11 +293,21 @@ class DhanBroker(BrokerInterface):
     async def _quotes(self, keys: List[str]) -> Dict[str, Quote]:
         by_segment: Dict[str, List[int]] = {}
         back: Dict[Tuple[str, str], str] = {}
+        unresolved: List[BrokerAPIError] = []
         for key in keys:
             exchange, plain = (key.split(":", 1) if ":" in key else ("NSE", key))
-            segment, security_id, _kind = await self._resolve(plain, exchange)
+            try:
+                segment, security_id, _kind = await self._resolve(plain, exchange)
+            except BrokerAPIError as exc:
+                # LD-7 review B1: one unknown symbol leaves it out of the answer, not the batch's other symbols (an exit
+                # sweep quotes every open position together)
+                logger.warning("Dhan quote: %s", exc)
+                unresolved.append(exc)
+                continue
             by_segment.setdefault(segment, []).append(int(security_id))
             back[(segment, str(security_id))] = key
+        if unresolved and not by_segment:
+            raise unresolved[0]                       # nothing resolved: the error, as before
         out: Dict[str, Quote] = {}
         segments = list(by_segment.items())
         for i in range(0, max(1, len(segments))):

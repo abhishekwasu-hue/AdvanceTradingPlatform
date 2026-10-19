@@ -179,6 +179,7 @@ def _mock(client: httpx.AsyncClient, handler) -> None:
 def _shared_state_reset():
     from app.brokers import dhan
     dhan._SHARED_SYMBOLS.clear()
+    dhan._SHARED_MISSES.clear()
 
 
 def test_adapters_without_a_client_share_one_connection_and_one_scrip_master():
@@ -189,7 +190,8 @@ def test_adapters_without_a_client_share_one_connection_and_one_scrip_master():
 
     async def go():
         first = DhanBroker(creds)
-        _mock(first._client, server)                                  # the shared client of this loop, mocked
+        _mock(first._client, server)                                  # the shared clients of this loop, mocked
+        _mock(first._order_client, server)
         second = DhanBroker(creds)
         assert second._client is first._client                        # one connection pool per host and loop
         assert await first._resolve("RELIANCE") == ("NSE_EQ", "2885", "EQUITY")
@@ -227,3 +229,131 @@ def test_the_shared_client_keeps_no_cookie_between_requests():
         assert shared_client("https://api.dhan.co/v2", 15.0) is client and len(client.cookies) == 0
     run(go())
     assert seen == [None, None]
+
+
+# --- LD-7 review: the shared scrip map and exits (ADR-0004) -------------------------------------------------------------
+
+NEW_STRIKE = ("NSE,D,43999,OPTIDX,0,NIFTY-Oct2026-26500-CE,75,NIFTY 28 OCT 26500 CALL,2026-10-28 14:30:00,26500.000000,CE,"
+              "0.050000,M,OP,,NIFTY")
+
+
+class _ListingServer(_Server):
+    """`_Server` whose scrip master can gain a row (a strike listed during the day); counts the master downloads."""
+
+    def __init__(self):
+        super().__init__()
+        self.master = MASTER
+        self.downloads = 0
+
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if str(request.url) == SCRIP_MASTER_URL:
+            self.downloads += 1
+            self.requests.append(request)
+            return httpx.Response(200, text=self.master)
+        return super().__call__(request)
+
+
+def _age_shared_map(seconds: float) -> None:
+    import time
+    from app.brokers import dhan
+    built, table = dhan._SHARED_SYMBOLS["map"]
+    dhan._SHARED_SYMBOLS["map"] = (time.monotonic() - seconds, table)
+
+
+def test_a_symbol_listed_after_the_shared_map_was_built_resolves():
+    """B1: the worker's map was built before a strike was listed; an exit on that strike must still resolve it (one
+    rebuild of the map, not a wait until it expires)."""
+    _shared_state_reset()
+    server = _ListingServer()
+    creds = BrokerCredentials(access_token="tok-1", client_id="1000001")
+
+    async def go():
+        first = DhanBroker(creds)
+        _mock(first._client, server)
+        _mock(first._order_client, server)
+        assert await first._resolve("RELIANCE") == ("NSE_EQ", "2885", "EQUITY")      # the map, built at the open
+        server.master = MASTER + "\n" + NEW_STRIKE                                    # listed during the day
+        _age_shared_map(120)                                                           # two minutes later
+        later = DhanBroker(creds)
+        assert await later._resolve("NIFTY-Oct2026-26500-CE", "NFO") == ("NSE_FNO", "43999", "OPTIDX")
+        assert server.downloads == 2
+        assert await DhanBroker(creds)._resolve("NIFTY-Oct2026-26500-CE", "NFO") == ("NSE_FNO", "43999", "OPTIDX")
+        assert server.downloads == 2                                                   # now in the shared map
+    run(go())
+    _shared_state_reset()
+
+
+def test_an_unknown_symbol_does_not_download_the_master_every_time():
+    _shared_state_reset()
+    server = _ListingServer()
+    creds = BrokerCredentials(access_token="tok-1", client_id="1000001")
+
+    async def go():
+        adapter = DhanBroker(creds)
+        _mock(adapter._client, server)
+        _mock(adapter._order_client, server)
+        await adapter._resolve("RELIANCE")
+        assert server.downloads == 1
+        with pytest.raises(BrokerAPIError):
+            await DhanBroker(creds)._resolve("NOSUCH")             # the map is fresh: no rebuild for a miss
+        assert server.downloads == 1
+        _age_shared_map(120)
+        with pytest.raises(BrokerAPIError):
+            await DhanBroker(creds)._resolve("NOSUCH")             # an old map: one rebuild, still not there
+        assert server.downloads == 2
+        for _ in range(5):                                          # every worker cycle asks again
+            _age_shared_map(120)
+            with pytest.raises(BrokerAPIError):
+                await DhanBroker(creds)._resolve("NOSUCH")
+        assert server.downloads == 2                                # remembered as missing: no download each time
+    run(go())
+    _shared_state_reset()
+
+
+def test_one_unknown_symbol_does_not_fail_the_other_quotes():
+    server = _Server()
+    broker = _broker(server)
+    assert run(broker.get_ltp(["NSE:RELIANCE", "NSE:NOSUCH", "NSE:NIFTY"])) == {"NSE:RELIANCE": 2999.5, "NSE:NIFTY": 26050.0}
+    with pytest.raises(BrokerAPIError, match="not found in the Dhan scrip master"):
+        run(broker.get_quote_for_symbol("NOSUCH"))                  # alone: the error, as before
+
+
+def test_an_order_does_not_wait_behind_a_saturated_data_pool():
+    """N2: data fetches that hold every connection of the data client (here: never answered) do not delay an order -
+    orders and account calls go through a pool of their own."""
+    _shared_state_reset()
+    server = _Server()
+    creds = BrokerCredentials(access_token="tok-1", client_id="1000001")
+
+    async def go():
+        stuck = asyncio.Event()
+
+        async def data_handler(request: httpx.Request) -> httpx.Response:
+            await stuck.wait()                                      # a data pool with nothing left
+            return httpx.Response(503)
+
+        async def order_handler(request: httpx.Request) -> httpx.Response:
+            return server(request)
+
+        broker = DhanBroker(creds)
+        broker._client._transport = httpx.MockTransport(data_handler)
+        broker._client._mounts = {}
+        assert broker._order_client is not broker._client
+        broker._order_client._transport = httpx.MockTransport(order_handler)
+        broker._order_client._mounts = {}
+        fetches = [asyncio.ensure_future(broker._client.get("/charts/intraday")) for _ in range(150)]
+        await asyncio.sleep(0)
+        try:
+            # RELIANCE: the symbol map is not built yet, so the order also downloads the scrip master - on the order pool
+            response = await asyncio.wait_for(broker.place_order(BrokerOrderRequest(symbol="RELIANCE", transaction_type=OrderSide.SELL, quantity=10)),
+                                              timeout=2)
+            assert response.order_id == "112409290001"
+            await asyncio.wait_for(broker.cancel_order("112409290001"), timeout=2)
+            assert all(not f.done() for f in fetches)               # the data calls are still waiting
+        finally:
+            stuck.set()
+            await asyncio.gather(*fetches, return_exceptions=True)
+        assert [r.url.path for r in server.requests if r.method in ("POST", "DELETE")] == ["/v2/orders", "/v2/orders/112409290001"]
+        assert any(str(r.url) == SCRIP_MASTER_URL for r in server.requests)
+    run(go())
+    _shared_state_reset()

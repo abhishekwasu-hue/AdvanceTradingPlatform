@@ -10,6 +10,10 @@ never ride along on another user's request) - BT1b.
 
 Per event loop, because an httpx client's connections belong to the loop that opened them (tests run many loops; the
 API and the worker run one each). Without a running loop, a private client is returned, as before.
+
+Per pool, too (LD-7 review N2): order and account calls (`pool="orders"`) get a client of their own, so data fetches -
+charts, screens, quotes, a worker cycle's bars - can fill the data client's connections without an exit order queueing
+behind them for the pool timeout (ADR-0004: exits are never blocked).
 """
 import asyncio
 import weakref
@@ -18,7 +22,7 @@ from typing import Dict, Tuple
 
 import httpx
 
-_CLIENTS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Dict[Tuple[str, float], httpx.AsyncClient]]" = weakref.WeakKeyDictionary()
+_CLIENTS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Dict[Tuple[str, float, str], httpx.AsyncClient]]" = weakref.WeakKeyDictionary()
 
 
 def no_cookies() -> CookieJar:
@@ -26,7 +30,10 @@ def no_cookies() -> CookieJar:
     return CookieJar(policy=DefaultCookiePolicy(allowed_domains=[]))
 
 
-def shared_client(base_url: str, timeout: float) -> httpx.AsyncClient:
+DATA_POOL, ORDER_POOL = "data", "orders"
+
+
+def shared_client(base_url: str, timeout: float, pool: str = DATA_POOL) -> httpx.AsyncClient:
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -34,7 +41,7 @@ def shared_client(base_url: str, timeout: float) -> httpx.AsyncClient:
     per_loop = _CLIENTS.get(loop)
     if per_loop is None:
         per_loop = _CLIENTS[loop] = {}
-    key = (base_url, float(timeout))
+    key = (base_url, float(timeout), pool)
     client = per_loop.get(key)
     if client is None or client.is_closed:
         client = per_loop[key] = httpx.AsyncClient(base_url=base_url, timeout=timeout, cookies=no_cookies())

@@ -13,7 +13,7 @@ Results from the CI staging stack (PR #222, draft). The Hostinger re-runs wait f
 | End-to-end acceptance flow, two test users (Upstox, Dhan) | **16/16** on the CI stack | Hostinger run pending the server |
 | No API order path reachable in Phase 0 mode | **PASS** in CI | Z10-c static order-path guard + `phase0_paper_only` lock; Phase 0 deployment defaults (`live_trading` off, `phase0_paper_only` on at first boot) merged in #204 |
 | Stale data => alerts suppressed | **PASS** | Z10-b guard, end-to-end on the CI stack |
-| Load test, 500 sessions | **FAIL** on the KVM 2 shape, market open (run 12, 13 Oct): p95 chart 0.59 s, screener 0.85 s, dashboard reads 0.07-0.25 s, login 11.4 s vs the 0.5 s target; 0 server errors. Run 13 (19 Oct, main merged): chart 2.0 s (the #249 broker budget, LD-10), screener 1.08 s, login 28 s | perf work on `claude/perf-500` (docs/reports/load_test_500.md); login is the owner's call (OPEN_QUESTIONS LD-9); the owner re-runs it on Hostinger with one command |
+| Load test, 500 sessions | **FAIL** on the KVM 2 shape, market open (run 12, 13 Oct): p95 chart 0.59 s, screener 0.85 s, dashboard reads 0.07-0.25 s, login 11.4 s vs the 0.5 s target; 0 server errors. Runs 13 / 14 (19 Oct, main merged): chart 2.0 / 2.2 s (the #249 broker budget, LD-10), screener 1.08 / 1.04 s, login 28 / 13.4 s - still **FAIL** | perf work on `claude/perf-500` (docs/reports/load_test_500.md); login is the owner's call (OPEN_QUESTIONS LD-9); the owner re-runs it on Hostinger with one command |
 | Rollback rehearsed | **12/12** on the CI stack | Hostinger rehearsal pending the server |
 
 ### Owner blockers (only these four)

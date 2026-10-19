@@ -336,3 +336,23 @@ def test_the_timed_pool_records_each_checkout_and_changes_nothing_else(tmp_path)
         return _hist_count(DB_POOL_WAIT) - before
 
     assert asyncio.run(go()) == 3
+
+
+def test_a_bcrypt_nice_that_is_not_a_number_falls_back_with_a_warning(caplog):
+    """LD-7 review N8: BCRYPT_NICE=abc must not stop the API at import; it falls back to the default and says so."""
+    import logging
+    import subprocess
+    import sys
+
+    from app.auth import security
+    with caplog.at_level(logging.WARNING, logger="app.auth.security"):
+        assert security._bcrypt_nice("abc") == security.BCRYPT_NICE_DEFAULT == 5
+    assert "BCRYPT_NICE='abc' is not a whole number" in caplog.text
+    assert security._bcrypt_nice(None) == 5 and security._bcrypt_nice("") == 0 and security._bcrypt_nice(" 7 ") == 7
+    assert security._bcrypt_nice("-3") == 0 and security._bcrypt_nice("40") == 19
+    # the module itself imports with the bad value (a fresh interpreter, as the API process starts)
+    env = {**__import__("os").environ, "BCRYPT_NICE": "high"}
+    done = subprocess.run([sys.executable, "-c", "from app.auth import security; print(security.BCRYPT_NICE)"], cwd=str(BACKEND),
+                          env=env, capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, done.stderr[-500:]
+    assert done.stdout.strip().splitlines()[-1] == "5"

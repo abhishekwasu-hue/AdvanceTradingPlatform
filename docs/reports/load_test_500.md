@@ -365,6 +365,24 @@ purpose - both fixed in a0f05b3, whose CI run 39277547649 passes them) and on `t
 same way on main (045da0c, run 39257366188) and passes alone: not from this branch.
 
 
+### Review fixes (PR #269)
+
+- **B1 (exits, ADR-0004): the shared Dhan symbol map now refreshes on a miss.** Since 6e63404 a process kept one symbol
+  map for 6 hours, so a strike listed after it was built could not be resolved - no quote, no LIVE exit order - until
+  the map expired. Now a miss rebuilds the map once when it is older than 60 s; a symbol still missing after a rebuild
+  is not looked for again for 10 minutes (a bogus symbol polled every cycle does not download the master each time),
+  and one unknown symbol in a quote batch is left out instead of failing the batch (alone, it is the error as before).
+- **N2 (exits): orders on their own connection pool.** The shared per-process Dhan client had one 100-connection pool
+  for everything; a LIVE exit order could wait behind data fetches up to the 15 s pool timeout. Order and account calls
+  (`/orders`, `/trades`, `/positions`, `/holdings`, `/fundlimit`, `/profile`) and the scrip-master download (an exit's
+  instrument may need it) now use a second shared client (`shared_http.shared_client(pool="orders")`); quotes, bars and
+  option chains stay on the data pool. Tested with 150 data calls holding the data pool: an order and a cancel answer.
+- **N8: `BCRYPT_NICE` that is not a whole number** falls back to 5 with a warning instead of stopping the API at import.
+
+None of these changes the load test's verdict: the SLO still fails (run 14: login p95 13.4 s, chart 2.2 s, screener
+1.04 s).
+
+
 ## The generator change (d9a8f89) - what it changed and how much of the gain it is
 
 **What changed.** Each of the 25 shards started its 20 users at `ramp x i / 20` from its own start, and the shards
@@ -432,7 +450,7 @@ the costs.
 9. **Broker connections and Dhan's master** (6e63404). One HTTP client per broker host and event loop for adapters
    built per request: credentials per request, no cookie kept (tested). Dhan's public scrip master was downloaded and
    parsed on every chart and screener run (tens of MB on the real host; the CI fake is small, so the test did not show
-   it); now one slim symbol map per process, rebuilt every 6 hours.
+   it); now one slim symbol map per process, rebuilt every 6 hours and on a miss (at most once a minute; review fix B1, below).
 10. **bcrypt sizing in a capped container** (6e63404): the thread count honours the cgroup CPU quota, so the 2-CPU cap
     behaves like a 2-CPU host (before, the capped API sized itself for the runner's 4 CPUs).
 

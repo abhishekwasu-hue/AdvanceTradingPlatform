@@ -7,6 +7,7 @@ iss/aud) are accepted while `JWT_ACCEPT_LEGACY` is on - they expire within minut
 """
 import asyncio
 import hashlib
+import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
@@ -82,7 +83,25 @@ BCRYPT_CONCURRENCY = _bcrypt_concurrency()
 # core of bcrypt on a small host; at equal priority it takes CPU from every other request (the 500-user test's dashboard
 # p95 was over its limit only during the login ramp). Lower priority only orders the work: each check is the same cost
 # and runs whenever a CPU is free.
-BCRYPT_NICE = max(0, min(19, int(os.environ.get("BCRYPT_NICE", "5") or "0")))
+BCRYPT_NICE_DEFAULT = 5
+
+
+def _bcrypt_nice(raw: Optional[str]) -> int:
+    """BCRYPT_NICE from the environment, 0-19. LD-7 review N8: a value that is not a whole number falls back to the
+    default with a warning instead of stopping the API at import."""
+    if raw is None:
+        return BCRYPT_NICE_DEFAULT
+    if not raw.strip():
+        return 0
+    try:
+        value = int(raw.strip())
+    except ValueError:
+        logging.getLogger(__name__).warning("BCRYPT_NICE=%r is not a whole number - using %d", raw, BCRYPT_NICE_DEFAULT)
+        return BCRYPT_NICE_DEFAULT
+    return max(0, min(19, value))
+
+
+BCRYPT_NICE = _bcrypt_nice(os.environ.get("BCRYPT_NICE"))
 _bcrypt_executors: Dict[int, Any] = {}
 
 

@@ -12,7 +12,7 @@ costs and what it buys), **Status**.
 | [0002](0002-broker-abstraction.md) | One `BrokerInterface`, adapters per broker, credentials never leave the tenant | accepted |
 | [0003](0003-risk-hierarchy-strictest-wins.md) | Eight-scope risk hierarchy, strictest limit wins, append-only risk events | accepted |
 | [0004](0004-safety-rules-exits-never-blocked.md) | Entry refusals are cheap and many; exits are never blocked | accepted |
-| [0005](0005-declarative-strategy-dsl.md) | One declarative strategy DSL for builder, backtest, paper and live | accepted |
+| [0005](0005-declarative-strategy-dsl.md) | One declarative strategy DSL for builder, backtest, paper and live (amended by 0027: Strategy Lab code modes run only in an isolated runner) | accepted |
 | [0006](0006-ai-holds-no-credentials-acts-only-on-approval.md) | AI providers hold no credentials and never act without approval | accepted |
 | [0007](0007-billing-provider-seam.md) | Billing behind a provider seam; the gateway's secrets are the operator's | accepted |
 | [0008](0008-envelope-encryption-per-tenant-keys.md) | Envelope encryption: one wrapped data key per tenant | accepted |
@@ -22,6 +22,7 @@ costs and what it buys), **Status**.
 | [0012](0012-news-feed-shared-ingest-tenant-classification.md) | News feed: shared ingest of official feeds, classification with the organisation's own key, corroborated proposals | accepted |
 | [0025](0025-options-strategy-builder.md) | The Options Strategy Builder: the Trade repo's logic ported as pure functions with golden parity; instrument numbers as parameters; hedge first; never places an order | proposed |
 | [0026](0026-discipline-engine.md) | The discipline engine: auto-journal, behaviour tags and a weekly score; pure detectors, per-trader settings, personal scope, capture hooks that never touch the order path; flag off | proposed |
+| [0027](0027-strategy-lab-isolated-runner.md) | Strategy Lab: visual and Pine modes compile to ScreenQL on the host; user-authored code runs only in an isolated runner (no network, no secrets, a jail per run), one default-off flag per code family behind gate G-LAB; results never trade (amends 0005) | proposed |
 | [0023](0023-chart-engine-abstraction.md) | One ChartEngine interface over swappable chart engines; layers and drawings above it | provisional |
 | [0019](0019-agent-tools-and-loop.md) | Copilot agent: typed read-only tools, a bounded loop, an answer contract, proposals only | provisional |
 | [0020](0020-ai-evals-and-governance.md) | AI evals in CI and AI governance: golden sets per prompt version, a model registry, a kill switch | provisional |

@@ -42,22 +42,24 @@ from decision3 import settings as S3  # noqa: E402
 from elliott import breaks as BR  # noqa: E402
 from elliott import settings as ES  # noqa: E402
 
+# The reference implementation (Trade) writes these reasons in Marathi; ATP is English only, so they are mapped to English.
+# The Marathi side is written with \u escapes (no Devanagari in ATP source - scripts/check_english_only.py).
 TRANSLATE = [
-    ("entry वेळ-खिडकीबाहेर", "outside the entry time window"),
-    ("doji level वर — पुढच्या candle ची वाट", "doji at the level - waiting for the next candle"),
-    ("inside bar — पुढच्या candle ची वाट", "inside bar - waiting for the next candle"),
-    ("candle अजून pullback-दिशेची — वाट", "candle still in the pullback direction - waiting"),
-    ("commitment candle नाही (reversal form नाही)", "no commitment candle (no reversal form)"),
-    (" (close level पलीकडे चुकीच्या बाजूला)", " (close on the wrong side of the level)"),
-    ("commitment candle dominant नाही", "commitment candle not dominant"),
-    ("× window सरासरी", "x the window average"),
-    ("commitment candle नाही", "no commitment candle"),
-    (": protected origin close ने तुटला)", ": the protected origin was broken by a close)"),
-    (": origin धोक्यात — Q47)", ": origin at risk - Q47)"),
-    (": impulse origin तुटला, parent correction चालू)", ": impulse origin broken, a parent correction is running)"),
-    (" (दोन्ही कडा)", " (both edges)"),
-    ("आजचे बंद candles नाहीत", "no closed candles today"),
-    (" — next candle ची वाट", " - waiting for the next candle"),
+    ("entry \u0935\u0947\u0933-\u0916\u093f\u0921\u0915\u0940\u092c\u093e\u0939\u0947\u0930", "outside the entry time window"),
+    ("doji level \u0935\u0930 — \u092a\u0941\u0922\u091a\u094d\u092f\u093e candle \u091a\u0940 \u0935\u093e\u091f", "doji at the level - waiting for the next candle"),
+    ("inside bar — \u092a\u0941\u0922\u091a\u094d\u092f\u093e candle \u091a\u0940 \u0935\u093e\u091f", "inside bar - waiting for the next candle"),
+    ("candle \u0905\u091c\u0942\u0928 pullback-\u0926\u093f\u0936\u0947\u091a\u0940 — \u0935\u093e\u091f", "candle still in the pullback direction - waiting"),
+    ("commitment candle \u0928\u093e\u0939\u0940 (reversal form \u0928\u093e\u0939\u0940)", "no commitment candle (no reversal form)"),
+    (" (close level \u092a\u0932\u0940\u0915\u0921\u0947 \u091a\u0941\u0915\u0940\u091a\u094d\u092f\u093e \u092c\u093e\u091c\u0942\u0932\u093e)", " (close on the wrong side of the level)"),
+    ("commitment candle dominant \u0928\u093e\u0939\u0940", "commitment candle not dominant"),
+    ("× window \u0938\u0930\u093e\u0938\u0930\u0940", "x the window average"),
+    ("commitment candle \u0928\u093e\u0939\u0940", "no commitment candle"),
+    (": protected origin close \u0928\u0947 \u0924\u0941\u091f\u0932\u093e)", ": the protected origin was broken by a close)"),
+    (": origin \u0927\u094b\u0915\u094d\u092f\u093e\u0924 — Q47)", ": origin at risk - Q47)"),
+    (": impulse origin \u0924\u0941\u091f\u0932\u093e, parent correction \u091a\u093e\u0932\u0942)", ": impulse origin broken, a parent correction is running)"),
+    (" (\u0926\u094b\u0928\u094d\u0939\u0940 \u0915\u0921\u093e)", " (both edges)"),
+    ("\u0906\u091c\u091a\u0947 \u092c\u0902\u0926 candles \u0928\u093e\u0939\u0940\u0924", "no closed candles today"),
+    (" — next candle \u091a\u0940 \u0935\u093e\u091f", " - waiting for the next candle"),
 ]
 ALLOWED_NON_ASCII = set("·×–")
 

@@ -2,7 +2,7 @@
 # Block 1 of 3 - host bootstrap (Hostinger KVM 2, Ubuntu 24.04). Run ONCE as root right after the first SSH login:
 #
 #   ssh root@<server-ip>
-#   bash -c "$(echo <base64 from docs/DEPLOY_HOSTINGER_MR.md> | base64 -d)"      # or: bash bootstrap.sh
+#   bash -c "$(echo <base64 from docs/DEPLOY_HOSTINGER.md> | base64 -d)"      # or: bash bootstrap.sh
 #
 # Idempotent: running it again changes nothing that is already in place. It never touches the Trade repo droplet,
 # never writes a secret, and never starts the platform (that is block 2, as the new user).

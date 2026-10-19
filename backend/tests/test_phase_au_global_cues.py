@@ -83,8 +83,8 @@ def test_the_india_read_of_the_world():
     risk_off = [_g("SP500_FUT", -1.2), _g("SP500", 0.4), _g("NIKKEI", -0.9), _g("BRENT", 2.6), _g("USDINR", 0.45), _g("GOLD", 1.5)]
     m = gc.mood(risk_off, NOW)
     assert m["label"] == "NEGATIVE" and "SP500" not in m["drivers"] and "GOLD" not in m["drivers"]
-    text = " ".join(gc.view("mr", risk_off, NOW))
-    assert "जागतिक संकेत: नकारात्मक" in text and "US futures खाली" in text and "Brent कच्चे तेल +2.60%" in text and "रुपया कमजोर" in text
+    text = " ".join(gc.view("mr", risk_off, NOW))                          # English only: an older "mr" caller gets English
+    assert text.startswith("Global cues:") and "US futures are down" in text and "Brent crude +2.60%" in text and "The rupee weakened" in text
     assert "buy" not in " ".join(gc.view("en", risk_off, NOW)).lower()
     risk_on = [_g("SP500_FUT", 0.8), _g("NASDAQ_FUT", 1.0), _g("HANG_SENG", 1.2), _g("BRENT", -2.0)]
     assert gc.mood(risk_on, NOW)["label"] == "POSITIVE" and "cheaper oil" in " ".join(gc.view("en", risk_on, NOW))
@@ -123,12 +123,12 @@ def test_memory_plan_and_guide_use_the_global_cues(monkeypatch):
     assert report["globals"] == 2 and report["errors"] == ["global US10Y: yahoo: HTTP 404"]
     assert [g["symbol"] for g in memory["globals"]] == ["SP500_FUT", "BRENT"] and memory["globals"][0]["payload"]["source"] == "yahoo"
     lines = mm.describe("mr", memory, "NIFTY 50", now=NOW + timedelta(minutes=5))
-    assert lines[0].startswith("जागतिक संकेत") and "मोफत सार्वजनिक माहिती" in lines[-1]
+    assert lines[0].startswith("Global cues") and "free public data" in lines[-1]
 
-    ans = k.answer("आज crude चा भारतावर काय परिणाम?", "mr", memory)
-    assert ans["used_market_memory"] and "Brent कच्चे तेल" in ans["answer"] and ans["concepts"][0]["id"] == "global_cues"
-    assert "signal नाही" in ans["answer"]
-    assert not k.answer("RSI म्हणजे काय?", "mr", memory)["used_market_memory"]
+    ans = k.answer("What does crude mean for India today?", "mr", memory)
+    assert ans["used_market_memory"] and "Brent crude" in ans["answer"] and ans["concepts"][0]["id"] == "global_cues"
+    assert "not signals" in ans["answer"]
+    assert not k.answer("what is RSI?", "mr", memory)["used_market_memory"]
     assert "global BRENT: 82.0" in k.ai_context("en", [], memory, None)
 
 
@@ -141,7 +141,7 @@ def test_api_shows_the_global_view_and_refresh_works_without_a_broker(monkeypatc
     assert body["report"]["globals"] == 2 and body["report"]["errors"][0].startswith("broker:")
     assert body["global_view"] and "GIFT Nifty" in body["global_gift_note"]
     got = client.get("/api/ai/market-memory?language=mr", headers=headers).json()
-    assert len(got["globals"]) == 2 and got["global_view"][0].startswith("जागतिक संकेत") and "मोफत" in got["global_source"]
+    assert len(got["globals"]) == 2 and got["global_view"][0].startswith("Global cues") and "free public data" in got["global_source"]
 
 
 def test_worker_reads_the_world_before_the_open_without_a_broker(monkeypatch):

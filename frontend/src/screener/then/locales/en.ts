@@ -1,5 +1,5 @@
 /**
- * N1 X1b: the scan Then strings (namespace `scanThen`, locale `en`). English only (scripts/check-devanagari.mjs).
+ * N1 X1b: the scan Then strings (namespace `scanThen`, locale `en`). English only (scripts/check_english_only.py).
  * Compliance: no advice wording - a setup is information for the person's own decision; nothing is placed without an
  * approval, and only in PAPER. Interpolation: {{name}}.
  */

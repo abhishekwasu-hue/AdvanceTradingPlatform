@@ -57,7 +57,8 @@ def test_registry_allow_list_and_the_loop_only_gate():
         assert {"quote", "reason"} <= set(schema["required"]) and schema["additionalProperties"] is False
     assert proposals.allowed_for("What is open right now?") == []
     assert proposals.allowed_for("Please PAUSE   deployment 4, it keeps losing") == ["propose_pause_deployment"]
-    assert proposals.allowed_for("माझी risk कमी करा") == ["propose_risk_reduction"]
+    assert proposals.allowed_for("please reduce my risk") == ["propose_risk_reduction"]
+    assert proposals.allowed_for("\u092e\u093e\u091d\u0940 risk \u0915\u092e\u0940 \u0915\u0930\u093e") == []    # English only: no Marathi intent words
     # outside the loop (no guard) a proposal tool never runs
     _, me, dep = _org("hc2b-direct@example.com")
 

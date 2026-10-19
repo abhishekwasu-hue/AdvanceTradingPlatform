@@ -146,6 +146,6 @@ def test_r2_is_the_off_site_default_with_b2_as_the_alternative_and_no_credential
     for key in ("OFFSITE_S3_ENDPOINT", "OFFSITE_S3_ACCESS_KEY", "OFFSITE_S3_SECRET_KEY"):
         assert f"s/^{key}=.*/{key}=CHANGE_ME/" in deploy, key                          # the deploy stops until R2 is filled in
     assert "s/^OFFSITE_REMOTE=.*/OFFSITE_REMOTE=offsite:atp-backups/" in deploy and "OFFSITE_S3_PROVIDER=Cloudflare" in deploy
-    runbook = (ROOT / "docs/DEPLOY_HOSTINGER_MR.md").read_text()
+    runbook = (ROOT / "docs/DEPLOY_HOSTINGER.md").read_text()
     assert "offsite_fetch.sh /restore" in runbook and "verify_backup.sh \"$F\"" in runbook and "Object Read & Write" in runbook
     assert "/var/backups/atp-restore-test" in (ROOT / "deploy/hostinger/bootstrap.sh").read_text()

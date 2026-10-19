@@ -86,6 +86,6 @@ describe("WatchlistPicker (AMW-2)", () => {
 
   it("uses no Devanagari", () => {
     const words = text(renderToStaticMarkup(<WatchlistPicker symbols={["INFY"]} onLoad={() => undefined} initial={[BANKS]} client={noClient} />));
-    expect(/[ऀ-ॿ]/.test(words)).toBe(false);
+    expect(/[\u0900-\u097f]/.test(words)).toBe(false);
   });
 });

@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "check:bundle": "node scripts/check-bundle-budget.mjs",
-    "check:devanagari": "node scripts/check-devanagari.mjs",
+    "check:devanagari": "python3 ../scripts/check_english_only.py",
     "preview": "vite preview",
     "test": "vitest run",
     "storybook": "storybook dev -p 6006",

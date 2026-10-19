@@ -155,7 +155,6 @@ import type {
   NewsFeedStatus,
   BrokerLoginUrl,
   AiAcknowledgement,
-  AiPreferences,
   StaticIp,
   StaticIpOverview,
 } from "../types";
@@ -792,13 +791,10 @@ export const api = {
     request<OptimizeResult>("/backtest/optimize", { method: "POST", body: JSON.stringify({ strategy_id: strategyId, symbol, base_timeframe: baseTimeframe, candles, param_grid: paramGrid, metric, split }) }),
   // ---- Phase L: AI layer
   aiProvider: () => request<AiProviderConfig>("/ai/provider"),
-  // P0.9: the language the AI writes its answers in (the dashboard itself is English).
-  aiPreferences: () => request<AiPreferences>("/ai/preferences"),
-  aiSavePreferences: (ai_language: "en" | "mr") => request<AiPreferences>("/ai/preferences", { method: "PUT", body: JSON.stringify({ ai_language }) }),
   aiAcknowledgement: () => request<AiAcknowledgement>("/ai/acknowledgement"),
-  aiAcceptAcknowledgement: (version: string, language: "en" | "mr") =>
+  aiAcceptAcknowledgement: (version: string, language: "en" = "en") =>
     request<AiAcknowledgement>("/ai/acknowledgement", { method: "POST", body: JSON.stringify({ version, language }) }),
-  aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean; data_consent?: boolean; language?: "en" | "mr" }) =>
+  aiSaveProvider: (body: { provider: string; model?: string | null; api_key?: string | null; enabled?: boolean; data_consent?: boolean; language?: "en" }) =>
     request<AiProviderConfig>("/ai/provider", { method: "PUT", body: JSON.stringify(body) }),
   aiDeleteProvider: () => request<void>("/ai/provider", { method: "DELETE" }),
   // BYOK-V1: the user's own AI key for Vision (404 while the operator flag vision_byok is off). The key is sent once and
@@ -853,19 +849,19 @@ export const api = {
   aiProfileDelete: () => request<void>("/ai/profile", { method: "DELETE" }),
   aiMarketMemory: () => request<MarketMemory>("/ai/market-memory"),
   // Phase BD-lite: the market thesis (shadow overlay only) and its scoreboard.
-  aiThesis: (symbol: string, language: "mr" | "en" = "en", refresh = false) =>
+  aiThesis: (symbol: string, language: "en" = "en", refresh = false) =>
     request<MarketThesis>(`/ai/thesis/${encodeURIComponent(symbol)}?language=${language}${refresh ? "&refresh=true" : ""}`),
   aiThesisHistory: (symbol?: string, limit = 30) =>
     request<ThesisHistory>(`/ai/thesis/history?limit=${limit}${symbol ? `&symbol=${encodeURIComponent(symbol)}` : ""}`),
   aiMarketMemoryRefresh: (symbols?: string[]) =>
     request<MarketMemory>("/ai/market-memory/refresh", { method: "POST", body: JSON.stringify({ symbols: symbols ?? null }) }),
   // Phase AW: the strategist.
-  aiStrategistStudy: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; language: "en" | "mr" }) =>
+  aiStrategistStudy: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; language: "en" }) =>
     request<MarketStudy>("/ai/strategist/study", { method: "POST", body: JSON.stringify(body) }),
-  aiStrategistBuild: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en" | "mr"; request?: string }, signal?: AbortSignal) =>
+  aiStrategistBuild: (body: { symbol: string; candles?: OHLCVBar[]; broker?: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en"; request?: string }, signal?: AbortSignal) =>
     request<StrategistResult>("/ai/strategist/build", { method: "POST", body: JSON.stringify(body), signal }),
-  // Phase BF: what a plain-words request (Marathi or English) means to the strategist.
-  aiStrategistParse: (text: string, symbol: string, language: "en" | "mr" = "mr") =>
+  // Phase BF: what a plain-words request means to the strategist (English only).
+  aiStrategistParse: (text: string, symbol: string, language: "en" = "en") =>
     request<StrategistRequestParsed>("/ai/strategist/parse", { method: "POST", body: JSON.stringify({ request: text, symbol, language }) }),
   // P0.8 / A3: the server's candidate id plus the human's risk acceptance; a config typed by the browser is not accepted.
   aiStrategistAdopt: (candidateId: number, name: string, acceptRisk: boolean) =>
@@ -874,16 +870,16 @@ export const api = {
   aiInterviewDeploy: (candidateId: number, acceptRisk: boolean) =>
     request<{ candidate_id: number; deployment: Deployment; mode: "PAPER" }>("/ai/interview/deploy", { method: "POST", body: JSON.stringify({ candidate_id: candidateId, accept_risk: acceptRisk }) }),
   // Phase AV: the Copilot home.
-  aiBrief: (language: "en" | "mr") => request<DailyBrief>(`/ai/brief?language=${language}`),
-  aiCoach: (language: "en" | "mr", days = 30, mode: "ALL" | "PAPER" | "LIVE" = "ALL") =>
+  aiBrief: (language: "en" = "en") => request<DailyBrief>(`/ai/brief?language=${language}`),
+  aiCoach: (language: "en" = "en", days = 30, mode: "ALL" | "PAPER" | "LIVE" = "ALL") =>
     request<CoachReview>(`/ai/coach?language=${language}&days=${days}&mode=${mode}`),
-  aiCopilot: (message: string, language?: "en" | "mr", signal?: AbortSignal) =>
+  aiCopilot: (message: string, language?: "en", signal?: AbortSignal) =>
     request<CopilotReply>("/ai/copilot", { method: "POST", body: JSON.stringify({ message, language: language ?? null }), signal }),
-  aiAsk: (question: string, language?: "en" | "mr") =>
+  aiAsk: (question: string, language?: "en") =>
     request<GuideAnswer>("/ai/ask", { method: "POST", body: JSON.stringify({ question, language: language ?? null }) }),
-  aiConcepts: (language: "en" | "mr") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),
-  aiConcept: (id: string, language: "en" | "mr") => request<GuideConcept>(`/ai/concepts/${encodeURIComponent(id)}?language=${language}`),
-  aiAnalyze: (symbol: string, exchange = "NSE", language?: "en" | "mr", signal?: AbortSignal) =>
+  aiConcepts: (language: "en" = "en") => request<{ concepts: GuideConcept[] }>(`/ai/concepts?language=${language}`),
+  aiConcept: (id: string, language: "en" = "en") => request<GuideConcept>(`/ai/concepts/${encodeURIComponent(id)}?language=${language}`),
+  aiAnalyze: (symbol: string, exchange = "NSE", language?: "en", signal?: AbortSignal) =>
     request<MultiViewAnalysis>("/ai/analyze", { method: "POST", body: JSON.stringify({ symbol, exchange, ...(language ? { language } : {}) }), signal }),
   aiResearchList: () => request<{ studies: ResearchStudy[] }>("/ai/research"),
   aiResearchCreate: (body: { idea: string; symbol: string; timeframe: string; max_drafts: number }) =>

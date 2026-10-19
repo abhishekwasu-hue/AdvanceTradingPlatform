@@ -1,12 +1,15 @@
 """Phase AV: one box for everything - "ask the Copilot".
 
-`route()` reads a message (Marathi, English or a mix) and decides what the trader wants:
+`route()` reads a message and decides what the trader wants (English keywords):
 
-* `interview` - build me a strategy / plan ("strategy सांगा", "मला plan हवा")
-* `coach` - how am I trading, my mistakes ("माझे trades कसे आहेत", "review my trades")
-* `deployments` - why is my autopilot not trading ("trade का होत नाही")
-* `brief` - today's game plan ("आज काय करू", "today's plan", "आजचा brief")
+* `interview` - build me a strategy / plan ("which strategy", "build me a plan")
+* `coach` - how am I trading, my mistakes ("how am I doing", "review my trades")
+* `deployments` - why is my autopilot not trading ("why no trade")
+* `brief` - today's game plan ("today's plan", "game plan")
 * `guide` - anything else: a concept, or what a symbol is doing (the Phase AT guide)
+
+ATP is English only: the reply is in English whatever language the message is written in (only the strategy interview
+is trilingual, and only on its own screen).
 
 `answer()` builds the reply from the matching deterministic module (briefing, coach, knowledge)
 and, when the tenant has an external AI provider, lets the AI write the reply grounded on those
@@ -19,17 +22,12 @@ import re
 from typing import List, Optional, Tuple
 
 from app.ai import grounding, output_filter, prompt_versions, wording
-from app.ai.interview import tr
 
 INTENT_WORDS = {
-    "interview": ("strategy", "स्ट्रॅटेजी", "स्ट्रेटेजी", "रणनीती", "plan बनव", "प्लॅन", "plan हवा", "plan सांग", "build me", "make me a", "setup सांग",
-                  "कोणती strategy", "which strategy"),
-    "coach": ("my trades", "माझे trades", "माझ्या trades", "माझे ट्रेड", "performance", "परफॉर्मन्स", "चुका", "चूक", "mistake", "coach", "review",
-              "journal", "जर्नल", "कसा trade करतो", "how am i doing", "how am i trading", "माझा निकाल", "win rate", "विन रेट"),
-    "deployments": ("trade का होत नाही", "trade का नाही", "trade होत नाही", "why no trade", "not trading", "deployment", "autopilot", "ऑटोपायलट",
-                    "चालू आहे का", "signal का नाही", "no signal"),
-    "brief": ("brief", "ब्रीफ", "game plan", "आज काय करू", "आजचा plan", "आजचा दिवस", "today's plan", "plan for today", "what should i do today",
-              "आज trade करू का", "should i trade today", "आजचा market कसा", "how is the market today", "आजचा बाजार"),
+    "interview": ("strategy", "build me", "make me a", "which strategy"),
+    "coach": ("my trades", "performance", "mistake", "coach", "review", "journal", "how am i doing", "how am i trading", "win rate"),
+    "deployments": ("why no trade", "not trading", "deployment", "autopilot", "no signal"),
+    "brief": ("brief", "game plan", "today's plan", "plan for today", "what should i do today", "should i trade today", "how is the market today"),
 }
 ORDER = ("deployments", "coach", "brief", "interview")
 
@@ -44,15 +42,16 @@ def intent(message: str) -> str:
 
 
 ACTIONS = {
-    "interview": {"tab": "strategy", "en": "Open the strategy interview", "mr": "Strategy मुलाखत उघडा"},
-    "coach": {"tab": "coach", "en": "Open the trade coach", "mr": "Trade coach उघडा"},
-    "deployments": {"tab": "today", "en": "See your deployments", "mr": "तुमचे deployments पाहा"},
-    "brief": {"tab": "today", "en": "Open today's briefing", "mr": "आजचा briefing उघडा"},
-    "guide": {"tab": "guide", "en": "Browse the concept library", "mr": "ज्ञानकोश पाहा"},
+    "interview": {"tab": "strategy", "en": "Open the strategy interview"},
+    "coach": {"tab": "coach", "en": "Open the trade coach"},
+    "deployments": {"tab": "today", "en": "See your deployments"},
+    "brief": {"tab": "today", "en": "Open today's briefing"},
+    "guide": {"tab": "guide", "en": "Browse the concept library"},
 }
 
 COPILOT_PROMPT = """You are the AI Copilot inside AMW Algorithmic Trading - an assistant that explains the platform's rules, templates
-and data to a trader who may be a beginner. You are not an adviser and give no investment advice. Answer in {language}, in plain words,
+and data to a trader who may be a beginner. You are not an adviser and give no investment advice. Answer in {language} only - also
+when the question is written in another language or script - in plain words,
 at most 200 words, using ONLY the FACTS below for anything about the trader's account, deployments or today's market; general trading
 knowledge is fine for explanations. Rules: never tell the trader to buy, sell, hold or wait on a particular security, never recommend a
 strategy or an allocation, never promise or imply profit; describe what the rules and the data say and leave the decision to the trader;
@@ -71,7 +70,7 @@ PROMPT_VERSION = prompt_versions.version_of("copilot", COPILOT_PROMPT)      # H-
 
 def action_for(lang: str, name: str) -> dict:
     a = ACTIONS[name]
-    return {"tab": a["tab"], "label": tr(lang, a["en"], a["mr"])}
+    return {"tab": a["tab"], "label": a["en"]}
 
 
 def facts_text(lines: List[str]) -> str:
@@ -80,7 +79,7 @@ def facts_text(lines: List[str]) -> str:
 
 def grounded(text: str, facts: List[str], question: str) -> Tuple[bool, str]:
     """P0.8 / B2: the reply may only carry numbers and symbols from the facts and the question - and none of the
-    banned words (recommend, best, guaranteed, खात्रीशीर, हमखास ...)."""
+    banned words (recommend, best, guaranteed, sure-shot ...)."""
     trusted = facts_text(facts) + "\n" + (question or "")
     ok, bad = grounding.check_numbers(text, grounding.allowed_from_text(trusted))
     if not ok:
@@ -106,7 +105,7 @@ async def narrate(provider, lang: str, intent_name: str, question: str, facts: L
     """The AI's reply grounded on `facts` and the reason; (None, why) on a provider error or when the reply names numbers
     or symbols the facts do not carry (one retry naming them) - the caller keeps the rule text."""
     prompt_versions.stamp(provider, PROMPT_VERSION)
-    system = COPILOT_PROMPT.format(language=tr(lang, "English", "Marathi (Devanagari script)"), intent=intent_name, facts=facts_text(facts))
+    system = COPILOT_PROMPT.format(language="English", intent=intent_name, facts=facts_text(facts))
     user = f"QUESTION:\n{question.strip()}"
     why = "provider returned no text"
     for _attempt in range(2):
@@ -118,7 +117,7 @@ async def narrate(provider, lang: str, intent_name: str, question: str, facts: L
             return None, why
         ok, why = grounded(text, facts, question)
         if ok:
-            ok, shown, why = output_filter.check(text, lang, where="copilot")       # H-C1 c
+            ok, shown, why = output_filter.check(text, "en", where="copilot")       # H-C1 c: the English filter
             if ok:
                 return shown, why
             user = f"QUESTION:\n{question.strip()}\n\n{output_filter.retry_hint(output_filter.findings(text))}"

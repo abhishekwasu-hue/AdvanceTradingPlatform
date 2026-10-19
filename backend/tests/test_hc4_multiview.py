@@ -269,5 +269,5 @@ def test_a_cancelled_model_call_is_still_logged():
 
 def test_the_rules_wording_is_english_and_plain():
     for text in _rules_sentences(_views()):
-        assert not any("ऀ" <= ch <= "ॿ" for ch in text), text
+        assert not any("\u0900" <= ch <= "\u097f" for ch in text), text
         assert "will" not in text.lower().split() and "target" not in text.lower(), text

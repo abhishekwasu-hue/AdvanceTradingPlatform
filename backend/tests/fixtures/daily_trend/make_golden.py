@@ -228,10 +228,12 @@ def extra_series(kind, args):
     return {"range_after_break": range_after_break, "flip_spike": flip_spike}[kind](*args)
 
 
-TRANSLATE = [(": protected origin close ने तुटला)", ": the protected origin was broken by a close)"),
-             (": origin धोक्यात — Q47)", ": origin at risk - Q47)"),
-             (": impulse origin तुटला, parent correction चालू)", ": impulse origin broken, a parent correction is running)"),
-             (" (दोन्ही कडा)", " (both edges)"), ("Daily data अपुरा: ", "Daily data too short: ")]
+# The reference implementation (Trade) writes these reasons in Marathi; ATP is English only, so they are mapped to English.
+# The Marathi side is written with \u escapes (no Devanagari in ATP source - scripts/check_english_only.py).
+TRANSLATE = [(": protected origin close \u0928\u0947 \u0924\u0941\u091f\u0932\u093e)", ": the protected origin was broken by a close)"),
+             (": origin \u0927\u094b\u0915\u094d\u092f\u093e\u0924 — Q47)", ": origin at risk - Q47)"),
+             (": impulse origin \u0924\u0941\u091f\u0932\u093e, parent correction \u091a\u093e\u0932\u0942)", ": impulse origin broken, a parent correction is running)"),
+             (" (\u0926\u094b\u0928\u094d\u0939\u0940 \u0915\u0921\u093e)", " (both edges)"), ("Daily data \u0905\u092a\u0941\u0930\u093e: ", "Daily data too short: ")]
 
 
 def tr(text):

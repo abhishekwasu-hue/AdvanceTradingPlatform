@@ -1,6 +1,8 @@
 /**
- * P0.9 / P0.10: the interview namespace - the ONLY frontend file allowed to hold Devanagari (scripts/check-devanagari.mjs
- * checks that every Devanagari line here is a value of INTERVIEW_MR, and that only the interview screens import it).
+ * P0.9 / P0.10: the interview namespace - the ONLY frontend file allowed to hold Devanagari (the owner's ruling: ATP is
+ * English only, except the strategy interview, which is trilingual - English + Marathi + Hindi). The repo-wide check
+ * (scripts/check_english_only.py) allows Devanagari here only as a value of a key of INTERVIEW_MR (or of INTERVIEW_HI,
+ * the Hindi bundle's slot), and only the interview screens may import this file.
  * The dashboard is English; the strategy interview shows every English line with a small muted Marathi line under it:
  * intro, questions, answer options, tips, buttons and the template headings. The questions, their options and tips
  * come from the server with both languages; these are the interview's client-side lines.

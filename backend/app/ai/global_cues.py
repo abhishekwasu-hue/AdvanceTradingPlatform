@@ -28,7 +28,6 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
-from app.ai.interview import tr
 from app.db.models import MarketSnapshotRecord
 
 logger = logging.getLogger(__name__)
@@ -38,9 +37,7 @@ CACHE_SECONDS = 600
 TIMEOUT_SECONDS = 8.0
 STALE_DAYS = 4          # older than this (a long weekend is fine) and the quote is not shown
 SOURCE_NOTE_EN = "free public data (Yahoo Finance / Stooq), delayed about 15 minutes"
-SOURCE_NOTE_MR = "मोफत सार्वजनिक माहिती (Yahoo Finance / Stooq), सुमारे 15 मिनिटे उशिरा"
 GIFT_NOTE_EN = "GIFT Nifty has no free reliable source; the US index futures stand in for the overnight mood."
-GIFT_NOTE_MR = "GIFT Nifty साठी मोफत भरवशाचा source नाही; रात्रीच्या मूडसाठी US index futures पाहतो."
 YAHOO_URLS = ("https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?range=5d&interval=1d",
               "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?range=5d&interval=1d")
 STOOQ_URL = "https://stooq.com/q/d/l/?s={symbol}&i=d"
@@ -51,7 +48,6 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (AMW Algorithmic Trading; market backgroun
 class Market:
     key: str
     en: str
-    mr: str
     group: str        # US | ASIA | COMMODITY | FX | RATES
     yahoo: str
     stooq: str
@@ -60,17 +56,17 @@ class Market:
 
 
 MARKETS: Tuple[Market, ...] = (
-    Market("SP500_FUT", "S&P 500 futures", "S&P 500 futures", "US", "ES=F", "es.f", 1, 0.5),
-    Market("NASDAQ_FUT", "Nasdaq 100 futures", "Nasdaq 100 futures", "US", "NQ=F", "nq.f", 1, 0.6),
-    Market("SP500", "S&P 500", "S&P 500", "US", "^GSPC", "^spx", 1, 0.5),
-    Market("NASDAQ", "Nasdaq Composite", "Nasdaq Composite", "US", "^IXIC", "^ndq", 1, 0.6),
-    Market("NIKKEI", "Nikkei 225 (Japan)", "Nikkei 225 (जपान)", "ASIA", "^N225", "^nkx", 1, 0.6),
-    Market("HANG_SENG", "Hang Seng (Hong Kong)", "Hang Seng (हाँगकाँग)", "ASIA", "^HSI", "^hsi", 1, 0.7),
-    Market("BRENT", "Brent crude", "Brent कच्चे तेल", "COMMODITY", "BZ=F", "cb.f", -1, 1.5),
-    Market("GOLD", "Gold", "सोने", "COMMODITY", "GC=F", "gc.f", 0, 1.0),
-    Market("DXY", "US dollar index", "US dollar index", "FX", "DX-Y.NYB", "dx.f", -1, 0.4),
-    Market("USDINR", "USD/INR", "USD/INR (रुपया)", "FX", "INR=X", "usdinr", -1, 0.3),
-    Market("US10Y", "US 10-year yield", "US 10-वर्ष yield", "RATES", "^TNX", "10usy.b", -1, 2.0),
+    Market("SP500_FUT", "S&P 500 futures", "US", "ES=F", "es.f", 1, 0.5),
+    Market("NASDAQ_FUT", "Nasdaq 100 futures", "US", "NQ=F", "nq.f", 1, 0.6),
+    Market("SP500", "S&P 500", "US", "^GSPC", "^spx", 1, 0.5),
+    Market("NASDAQ", "Nasdaq Composite", "US", "^IXIC", "^ndq", 1, 0.6),
+    Market("NIKKEI", "Nikkei 225 (Japan)", "ASIA", "^N225", "^nkx", 1, 0.6),
+    Market("HANG_SENG", "Hang Seng (Hong Kong)", "ASIA", "^HSI", "^hsi", 1, 0.7),
+    Market("BRENT", "Brent crude", "COMMODITY", "BZ=F", "cb.f", -1, 1.5),
+    Market("GOLD", "Gold", "COMMODITY", "GC=F", "gc.f", 0, 1.0),
+    Market("DXY", "US dollar index", "FX", "DX-Y.NYB", "dx.f", -1, 0.4),
+    Market("USDINR", "USD/INR", "FX", "INR=X", "usdinr", -1, 0.3),
+    Market("US10Y", "US 10-year yield", "RATES", "^TNX", "10usy.b", -1, 2.0),
 )
 BY_KEY: Dict[str, Market] = {m.key: m for m in MARKETS}
 
@@ -231,39 +227,31 @@ def view(lang: str, globals_: List[dict], now: Optional[datetime] = None) -> Lis
     if not by_key:
         return []
     m = mood(globals_, now)
-    words = {"POSITIVE": tr(lang, "positive", "सकारात्मक"), "NEGATIVE": tr(lang, "negative", "नकारात्मक"), "MIXED": tr(lang, "mixed", "संमिश्र")}
-    drivers = ", ".join(f"{tr(lang, BY_KEY[k].en, BY_KEY[k].mr)} {_pct(by_key[k]['change_pct'])}" for k in m["drivers"])
-    lines = [tr(lang, f"Global cues: {words[m['label']]}" + (f" ({drivers})." if drivers else "."),
-                f"जागतिक संकेत: {words[m['label']]}" + (f" ({drivers})." if drivers else "."))]
+    words = {"POSITIVE": "positive", "NEGATIVE": "negative", "MIXED": "mixed"}
+    drivers = ", ".join(f"{BY_KEY[k].en} {_pct(by_key[k]['change_pct'])}" for k in m["drivers"])
+    lines = [f"Global cues: {words[m['label']]}" + (f" ({drivers})." if drivers else ".")]
 
     us = by_key.get("SP500_FUT") or by_key.get("SP500")
     if us and abs(us["change_pct"]) >= 0.5:
         if us["change_pct"] < 0:
-            lines.append(tr(lang, "US futures are down: NIFTY often opens lower on such days - let the first 15 minutes settle before judging the trend.",
-                            "US futures खाली: अशा दिवशी NIFTY बहुतेक खाली उघडतो - trend ठरवण्याआधी पहिली 15 मिनिटे स्थिर होऊ द्या."))
+            lines.append("US futures are down: NIFTY often opens lower on such days - let the first 15 minutes settle before judging the trend.")
         else:
-            lines.append(tr(lang, "US futures are up: a firmer open is likely; a gap-up can also fade, so wait for the opening range.",
-                            "US futures वर: उघडताना मजबुती शक्य; पण gap-up ओसरूही शकतो, म्हणून opening range ची वाट पाहा."))
+            lines.append("US futures are up: a firmer open is likely; a gap-up can also fade, so wait for the opening range.")
     brent = by_key.get("BRENT")
     if brent and abs(brent["change_pct"]) >= 1.5:
         if brent["change_pct"] > 0:
-            lines.append(tr(lang, f"Brent crude {_pct(brent['change_pct'])}: India imports most of its oil - pressure on oil marketers, paints, airlines and on the rupee.",
-                            f"Brent कच्चे तेल {_pct(brent['change_pct'])}: भारत बहुतेक तेल आयात करतो - OMC, paint, airline शेअर आणि रुपयावर दबाव."))
+            lines.append(f"Brent crude {_pct(brent['change_pct'])}: India imports most of its oil - pressure on oil marketers, paints, airlines and on the rupee.")
         else:
-            lines.append(tr(lang, f"Brent crude {_pct(brent['change_pct'])}: cheaper oil usually helps India - oil marketers, paints and airlines, and the rupee.",
-                            f"Brent कच्चे तेल {_pct(brent['change_pct'])}: स्वस्त तेल भारतासाठी सहसा चांगले - OMC, paint, airline आणि रुपयाला आधार."))
+            lines.append(f"Brent crude {_pct(brent['change_pct'])}: cheaper oil usually helps India - oil marketers, paints and airlines, and the rupee.")
     inr = by_key.get("USDINR")
     if inr and abs(inr["change_pct"]) >= 0.3:
         if inr["change_pct"] > 0:
-            lines.append(tr(lang, f"The rupee weakened (USD/INR {_pct(inr['change_pct'])}): foreign investors tend to sell; IT exporters gain.",
-                            f"रुपया कमजोर (USD/INR {_pct(inr['change_pct'])}): परदेशी गुंतवणूकदार (FII) विक्री करण्याची शक्यता; IT निर्यातदारांना फायदा."))
+            lines.append(f"The rupee weakened (USD/INR {_pct(inr['change_pct'])}): foreign investors tend to sell; IT exporters gain.")
         else:
-            lines.append(tr(lang, f"The rupee strengthened (USD/INR {_pct(inr['change_pct'])}): supportive for foreign buying.",
-                            f"रुपया मजबूत (USD/INR {_pct(inr['change_pct'])}): परदेशी खरेदीसाठी पोषक."))
+            lines.append(f"The rupee strengthened (USD/INR {_pct(inr['change_pct'])}): supportive for foreign buying.")
     dxy = by_key.get("DXY")
     if dxy and dxy["change_pct"] >= 0.4:
-        lines.append(tr(lang, f"Dollar index {_pct(dxy['change_pct'])}: a strong dollar pulls money out of emerging markets like India.",
-                        f"Dollar index {_pct(dxy['change_pct'])}: मजबूत डॉलर भारतासारख्या emerging markets मधून पैसा बाहेर ओढतो."))
+        lines.append(f"Dollar index {_pct(dxy['change_pct'])}: a strong dollar pulls money out of emerging markets like India.")
     return lines
 
 

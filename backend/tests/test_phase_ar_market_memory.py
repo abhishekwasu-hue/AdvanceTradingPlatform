@@ -111,11 +111,11 @@ def test_latest_keeps_one_row_per_day_and_describe_tells_the_story():
             return await mm.latest(session, tenant_id, now=NOW)
     memory = _run(read())
     assert [d["bias"] for d in memory["history"]["NIFTY BANK"]] == ["BULLISH", "BULLISH", "BULLISH"]
-    lines = mm.describe("mr", memory, "NIFTY BANK", now=NOW)
+    lines = mm.describe("mr", memory, "NIFTY BANK", now=NOW)               # English only: an older "mr" caller gets English
     text = " ".join(lines)
-    assert "India VIX 21.5" in text and "जास्त भीती" in text and "मिनिटांपूर्वी" in text
+    assert "India VIX 21.5" in text and "high fear" in text and "min ago" in text and not any("\u0900" <= ch <= "\u097f" for ch in text)
     # P0.9: data only - no bias trail and no "trade with it" / sizing advice in the market background.
-    assert "सलग तीन सत्रे" not in text and "trade करा" not in text and "size लहान" not in text
+    assert "three sessions" not in text and "trade with" not in text.lower() and "smaller size" not in text
     assert "high fear" in " ".join(mm.describe("en", memory, "NIFTY BANK", now=NOW))
     assert mm.describe("en", {"symbols": [], "cues": [], "history": {}}, "NIFTY 50") == []
 

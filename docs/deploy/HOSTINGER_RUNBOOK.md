@@ -4,7 +4,7 @@ Production host: **Hostinger KVM 2** (2 vCPU / 8 GB RAM / 100 GB NVMe, Ubuntu 24
 runs PAPER only. Everything on the server goes through one command, `deploy/atp.sh`, run by the owner. The session
 that built it never runs it, never logs in to the server, and never sees `.env`.
 
-The Marathi runbook `docs/DEPLOY_HOSTINGER_MR.md` describes the earlier blocks (`deploy/hostinger/deploy.sh`,
+The earlier runbook `docs/DEPLOY_HOSTINGER.md` (Marathi until Oct 2026, now English) describes the earlier blocks (`deploy/hostinger/deploy.sh`,
 `rollback.sh`, `status.sh`). `atp.sh` replaces the deploy and rollback blocks. Their one-line forms are gone from
 `docs/DEPLOY_HOSTINGER_ONELINERS.txt`, and once `atp.sh` has recorded a release they refuse to run, so the two cannot
 be mixed on one server.

@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card } from "./ui";
-import type { AiPreferences, AiProviderConfig, AiProviderName } from "../types";
+import type { AiProviderConfig, AiProviderName } from "../types";
 
 const input = "w-full rounded bg-surface-2 border border-border px-2 py-1 text-xs";
 
@@ -17,9 +17,6 @@ export default function AiProviderCard() {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const isOwner = user?.role === "OWNER" || user?.role === "SUPER_ADMIN";
-  // P0.9: each user's AI answer language (the dashboard itself is English).
-  const [prefs, setPrefs] = useState<AiPreferences | null>(null);
-  useEffect(() => { api.aiPreferences().then(setPrefs).catch(() => undefined); }, []);
 
   function refresh() {
     api.aiProvider().then((c) => {
@@ -55,16 +52,6 @@ export default function AiProviderCard() {
           {config.last_used_at && <span className="text-fg-muted">last used {new Date(config.last_used_at).toLocaleString()}</span>}
           {config.last_error && <span className="text-down">{config.last_error}</span>}
           {!config.ai_features_allowed && <span className="text-warn">external providers need the Pro or Business plan</span>}
-        </div>
-      )}
-      {prefs && (
-        <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-          <span className="text-fg-muted">AI answer language (your account):</span>
-          <select className="rounded bg-surface-2 border border-border px-2 py-1 text-xs" value={prefs.ai_language}
-                  onChange={(e) => void api.aiSavePreferences(e.target.value as "en" | "mr").then(setPrefs).catch((err) => setError(String(err)))}>
-            {prefs.languages.map((l) => <option key={l.code} value={l.code}>{l.label}</option>)}
-          </select>
-          <span className="text-fg-muted">The dashboard stays in English; only the AI's written answers follow this.</span>
         </div>
       )}
       {form.provider !== "rule_based" && config?.task_models?.[form.provider] && (
@@ -131,10 +118,6 @@ export default function AiProviderCard() {
             {config.data_consent.accepted && <span className="ml-2 text-up">accepted {config.data_consent.accepted_at ? new Date(config.data_consent.accepted_at).toLocaleDateString() : ""}</span>}
           </div>
           <p className="text-fg">{config.data_consent.text.en}</p>
-          <details className="mt-1 text-fg-muted">
-            <summary className="cursor-pointer text-brand hover:underline">Read in Marathi</summary>
-            <p className="mt-1" lang="mr">{config.data_consent.text.mr}</p>
-          </details>
           {!config.data_consent.accepted && <label className="mt-2 flex items-start gap-2 text-fg">
             <input type="checkbox" checked={form.data_consent} onChange={(e) => setForm({ ...form, data_consent: e.target.checked })} />
             <span>I am the owner of this organisation and consent to this data being sent to the selected provider for the stated purpose. I can opt out at any time by switching to the rule-based provider.</span>

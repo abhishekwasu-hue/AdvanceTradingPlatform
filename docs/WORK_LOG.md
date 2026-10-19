@@ -80,41 +80,41 @@ doubt choose the safe default (feature off, PAPER only, no LIVE change), write i
 - Ticker fallback took only the first all-caps word and gave up on grammar words, so `SHORT ONLY ON RELIANCE` lost the
   symbol and `INTRADAY BOTH` made INTRADAY the symbol; now the first all-caps word that is not request grammar wins.
 - A Latin-only request no longer flips a Marathi UI to English; the build runs from the form (a hand correction
-  after the parse wins) and only the detected script travels along; Marathi index variants (`निफ्टी बँक`, `नीफ्टी`,
-  bare `तेजी`/`मंदी`) recognised; debounce race guarded; timeframe grammar in rule words fixed.
+  after the parse wins) and only the detected script travels along; Marathi index variants ("nifty bank" and "nifty" spellings,
+  bare "bullish"/"bearish" words, in Devanagari) recognised; debounce race guarded; timeframe grammar in rule words fixed.
 
-## सकाळचा अहवाल (Morning report) - 2026-10-06 IST
+## Morning report - 2026-10-06 IST (translated from Marathi, Oct 2026: ATP is English only)
 
-**रात्रीचं काम पूर्ण: BC → BE → BD-lite → BF (strategist भाषा) - चारही PR tests + CI हिरवा + self-review नंतर merge.**
-LIVE शी संबंधित काहीही बदललेलं नाही; नवीन सगळी features default-off flags मागे किंवा फक्त PAPER.
+**Overnight work done: BC → BE → BD-lite → BF (strategist language) - all four PRs merged after tests + green CI + self-review.**
+Nothing related to LIVE changed; every new feature is behind a default-off flag or PAPER only.
 
-### Merge झालेले PR (main वर)
-| PR | Phase | मुख्य | Flag |
+### Merged PRs (on main)
+| PR | Phase | Main points | Flag |
 |----|-------|-------|------|
-| #51 | BC - market sentiment | PCR/OI, VIX, heavyweight breadth, global mood, FII/DII seam → -100..+100 score; memory card gauge + brief chip. Review fix: breadth quotes resolved per symbol (bulk quote Upstox/Zerodha वर silently fail होत होता). | नाही (background read) |
-| #52 | BE - Telegram inbound | Commands (/brief /positions /risk /news /levels /thesis /why + free text), Approve/Reject buttons फक्त PAPER + pause/reduce/review; HMAC single-use nonces press-time re-check. Review fix: alert-channel PUT ने inbound bypass (BLOCKING) बंद; webhook वर flag; ai_copilot kill flag Telegram ला लागू; atomic nonce claim. | `telegram_inbound` (off) |
-| #53 | BD-lite - market thesis | Per-symbol thesis, agreement matrix, bull/base/bear scenarios, numbers-checked narrative, next-session scoring. **Shadow multiplier फक्त नोंद - कुठेही लागू नाही** (source-scan test). Review fix: numbers regex bypass, worker मध्ये per-tenant news_items. | `market_thesis` (off) |
-| #54 | BF - strategist भाषा | नियम शब्दांत (mr/en), direction/timeframe/summary; मराठी/इंग्रजी request parsing (`बँक निफ्टी फक्त long scalping`) + `/strategist/parse`. Review fix: all-caps ticker fallback, Latin request ने भाषा बदलत नाही, hand correction जिंकते. | नाही (ai_copilot) |
+| #51 | BC - market sentiment | PCR/OI, VIX, heavyweight breadth, global mood, FII/DII seam → -100..+100 score; memory card gauge + brief chip. Review fix: breadth quotes resolved per symbol (the bulk quote was failing silently on Upstox/Zerodha). | none (background read) |
+| #52 | BE - Telegram inbound | Commands (/brief /positions /risk /news /levels /thesis /why + free text), Approve/Reject buttons for PAPER only + pause/reduce/review; HMAC single-use nonces, press-time re-check. Review fix: the inbound bypass through the alert-channel PUT (BLOCKING) closed; flag on the webhook; the ai_copilot kill flag applies to Telegram; atomic nonce claim. | `telegram_inbound` (off) |
+| #53 | BD-lite - market thesis | Per-symbol thesis, agreement matrix, bull/base/bear scenarios, numbers-checked narrative, next-session scoring. **The shadow multiplier is only recorded - applied nowhere** (source-scan test). Review fix: numbers regex bypass, per-tenant news_items in the worker. | `market_thesis` (off) |
+| #54 | BF - strategist language | Rules in words (mr/en), direction/timeframe/summary; Marathi/English request parsing ("bank nifty only long scalping" in Marathi) + `/strategist/parse`. Review fix: all-caps ticker fallback, a Latin request does not change the language, a hand correction wins. (The Marathi parts were removed in Oct 2026: English only.) | none (ai_copilot) |
 
-### आकडे
-- Backend suite (merged BF tree): 1055+ passed, 4 skipped (प्रत्येक PR आधी पूर्ण suite स्थानिक + CI वर Postgres `alembic upgrade head` + `alembic check`).
-- नवीन migrations: `c8d0e2f4a6b8` (telegram_callbacks, notifications.ai_action_id), `d9e1f3a5b7c9` (thesis_records). Deploy करताना `scripts/deploy.sh` migrations लावेल (market hours guard आहे).
-- Frontend `tsc` + `vite build` प्रत्येक PR वर clean.
+### Numbers
+- Backend suite (merged BF tree): 1055+ passed, 4 skipped (before every PR the full suite locally + on CI with Postgres `alembic upgrade head` + `alembic check`).
+- New migrations: `c8d0e2f4a6b8` (telegram_callbacks, notifications.ai_action_id), `d9e1f3a5b7c9` (thesis_records). On deploy `scripts/deploy.sh` applies the migrations (it has a market-hours guard).
+- Frontend `tsc` + `vite build` clean on every PR.
 
-### न सापडलेलं / interpretations
-- `ATP_FULL_EXECUTION_PROMPT` कुठेही सापडला नाही (uploads मध्ये फक्त master prompt PDFs). वरचे चारही phases approved plan + रात्रीच्या सूचनेतल्या नावांवरून केले (वर "Context" पाहा).
-- **G1** कुठेही define केलेलं नाही → चार PR नंतर थांबलो; हा अहवाल तेच.
-- BD "lite": overlay चं deployment setting (`thesis_overlay_mode`) मुद्दाम आणलं नाही - झोपेत sizing बदलू शकणारं काहीही नको.
+### Not found / interpretations
+- `ATP_FULL_EXECUTION_PROMPT` was not found anywhere (the uploads hold only the master prompt PDFs). The four phases above were built from the approved plan + the names in the overnight instruction (see "Context" above).
+- **G1** is not defined anywhere → stopped after four PRs; this report is that stop.
+- BD "lite": the overlay's deployment setting (`thesis_overlay_mode`) was deliberately not added - nothing that can change sizing overnight.
 
-### सकाळी तुम्ही ठरवायचं / करायचं
-1. Flags (Admin > Controls): `telegram_inbound`, `market_thesis` on करायचे का (default off). `news_feed` BB पासून off आहे.
-2. Telegram two-way हवं असेल तर: Settings > Alert delivery > Telegram > "Two-way Telegram" on → allowed chats → Register webhook (HTTPS domain लागतो; prod overlay चा Caddy देतो). फक्त PAPER + pause/reduce/review; exits/LIVE web + authenticator.
-3. Thesis scoreboard काही आठवडे पाहा; overlay active करण्याचा निर्णय scoreboard वर, नंतर, वेगळ्या PR मध्ये.
-4. उरलेलं (plan मधलं, न केलेलं): AY/AZ/BA price-action port (Trade repo rewrite ची वाट), weekly thesis report notification, news feedback table, FII/DII source (terms), managed Postgres (LIVE आधी).
-5. Known limits: Telegram rate-limit per-process (multi-worker API वर 20×N); sentiment/news feeds sandbox मधून live तपासलेले नाहीत (outbound नाही) - पहिल्या दिवशी logs पाहा.
+### For you to decide / do in the morning
+1. Flags (Admin > Controls): whether to turn on `telegram_inbound` and `market_thesis` (default off). `news_feed` has been off since BB.
+2. For two-way Telegram: Settings > Alert delivery > Telegram > "Two-way Telegram" on → allowed chats → Register webhook (needs an HTTPS domain; the prod overlay's Caddy provides it). PAPER only + pause/reduce/review; exits/LIVE on the web + authenticator.
+3. Watch the thesis scoreboard for a few weeks; the decision to activate the overlay comes from the scoreboard, later, in a separate PR.
+4. Left over (in the plan, not done): AY/AZ/BA price-action port (waiting for the Trade repo rewrite), weekly thesis report notification, news feedback table, FII/DII source (terms), managed Postgres (before LIVE).
+5. Known limits: the Telegram rate limit is per process (20×N on a multi-worker API); the sentiment/news feeds were not checked live from the sandbox (no outbound) - watch the logs on the first day.
 
 ### Branches
-- `main` = सगळं merged; `claude/gracious-rubin-cjrkhg` main शी sync. Feature branches: `claude/bc-sentiment`, `claude/be-telegram-inbound`, `claude/bd-lite-thesis`, `claude/bf-strategist-language` (merged; हटवता येतील).
+- `main` = everything merged; `claude/gracious-rubin-cjrkhg` in sync with main. Feature branches: `claude/bc-sentiment`, `claude/be-telegram-inbound`, `claude/bd-lite-thesis`, `claude/bf-strategist-language` (merged; can be deleted).
 
 ## Continuation - 2026-10-06 (after the morning report)
 
@@ -481,7 +481,7 @@ default and G-LIVE gate before any LIVE wiring.
   is never cached; check_against compares from the run's --start (older rows kept); the workflow starts CI before the
   pull request, warns instead of failing when Actions may not open one, and caches the bhavcopies.
 - Copilot: AICore3D has its own error boundary (SVG core on failure); banned words checked on the server on every
-  model text (English + खात्रीशीर, हमखास ...; negated disclaimers pass); Marathi line only under the interview
+  model text (English + the Marathi words for "guaranteed" / "sure" ...; negated disclaimers pass); Marathi line only under the interview
   questions; Ask Copilot sends language "en"; Playwright: Watchtower approve / reject / LIVE step-up, risk checkbox
   gate, apply-risk confirm, 3D chunk failure, strict ai-core-3d; mockApi answers /ai/actions/* by method and state.
 - Two thesis tests seeded market reads at a fixed date and broke once the wall clock passed it (date bomb) - they now
@@ -781,14 +781,14 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_phase_p0_9_english_ui.py` (9); guide/copilot/strategist/market-memory/compliance tests follow the new rules.
 
 ### 2026-10-07 - P0.8-D: compliance (SEBI / DPDP) of the AI Copilot (D1-D5)
-- D1 interview: three risk settings on **templates you choose** - no "Recommended/शिफारस", no "Three options for you",
+- D1 interview: three risk settings on **templates you choose** - no "Recommended" (or its Marathi word), no "Three options for you",
   no match % ("matches you", "Closest to you", match history), no best option; the plan says "Template shown first ...
   you choose; this is a description, not a recommendation", explains how the order came about (regime fit + backtest),
   and names "Other template" instead of "Alternative". The trading capital is the figure the trader entered (no
   allocation by experience, no "keep as reserve", no "raise the allocation"); the R:R line gives the break-even
   arithmetic *before costs* and points to the backtest's net figures; "Consider waiting" removed; the LLM prompt no
   longer asks to "improve on the pick". `/interview/choose` ignores the match field (kept for older clients).
-- D2 strategist: no "Best/सर्वोत्तम" badge (`best` is null), no "Market ठरवू दे" - `auto` now means both sides and the
+- D2 strategist: no "Best" badge (nor its Marathi word) (`best` is null), no "Let the market decide" - `auto` now means both sides and the
   default is both; no priced "Today's triggers" on templates; the "wait or paper-trade" note is data-only. Thesis: for
   a single stock the confidence % and the next reference levels ("targets") are hidden unless the operator turns on
   `thesis_stock_targets` (indices keep them); the wording is a data read ("keeps the bullish read", "this read is
@@ -864,7 +864,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 ### 2026-10-07 - P0.8-B: prompt injection and the numbers-check everywhere (B1-B3)
 - `app/ai/grounding.py` is the one place for the checks: `numbers_in_values` (numeric leaves only - digits inside
   strings such as headlines are not evidence; the sign is kept, no `abs`), `numbers_in_text` (the model's shorthand
-  `25k`, `1.2 लाख`, `2 cr`, `25,200.00`, `73%` expanded), `check_numbers`, `tickers_in`/`check_tickers` (symbols must
+  `25k`, `1.2 lakh` (also in Devanagari until Oct 2026), `2 cr`, `25,200.00`, `73%` expanded), `check_numbers`, `tickers_in`/`check_tickers` (symbols must
   appear in the facts or the question; indicator and platform acronyms are not symbols), `wrap_untrusted`.
 - B1 thesis: the facts JSON no longer carries the headlines; they follow the JSON in an `<untrusted_data>` block with
   the closing tag escaped and the prompt says they are text to summarise, never instructions. `numbers_check` keeps

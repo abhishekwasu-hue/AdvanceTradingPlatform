@@ -102,7 +102,7 @@ def test_plan_endpoint_uses_the_rule_based_provider_by_default_and_meters(monkey
     res = client.post("/api/scanner/ai/plan", headers=headers, json={"text": "TCS momentum with a fresh bullish break of structure", "language": "mr"}).json()
     assert res["provider"] == "fake" and res["model"] == "fake-1" and res["timeframe"] == "15min" and res["symbols"] == ["TCS"]
     assert res["indicator_conditions"][0]["right"]["indicator"] == "EMA" and res["structure_filters"][0]["filter_type"] == "BOS_BULLISH"
-    assert "mr" in fake.calls[-1][0] and "REQUEST:" in fake.calls[-1][1]
+    assert "sentences in English (whatever language" in fake.calls[-1][0] and "(mr)" not in fake.calls[-1][0] and "REQUEST:" in fake.calls[-1][1]   # English only
     fake.answer = "Sorry, I cannot help with that."
     fallback = client.post("/api/scanner/ai/plan", headers=headers, json={"text": "uptrend stocks with RSI(14) above 60"}).json()
     assert fallback["provider"] == "rule_based" and "did not answer usably" in fallback["warnings"][0]

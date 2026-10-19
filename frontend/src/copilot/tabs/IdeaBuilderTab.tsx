@@ -11,6 +11,7 @@ import { friendlyError, useAiTask } from "../aiTask";
 import AiProgress from "../components/AiProgress";
 import BilingualQuestion, { Secondary } from "../components/BilingualQuestion";
 import CostChip from "../components/CostChip";
+import InterviewLanguageSwitch from "../components/InterviewLanguageSwitch";
 import PrivacyNote from "../components/PrivacyNote";
 import TiltCard from "../components/TiltCard";
 import { useCostEstimate } from "../cost";
@@ -19,8 +20,9 @@ import { copilotPath } from "../tabs";
 import { Panel, Stagger, StaggerItem } from "./shared";
 
 /**
- * Idea Builder: the strategy interview, step by step. Every question is English with a small muted line in the second
- * language (default Marathi; Settings can switch it off), a progress bar, then "templates you choose": three templates
+ * Idea Builder: the strategy interview, step by step - the one trilingual screen (the owner's ruling). Every question is
+ * English with a small muted line in the second language (default Marathi; switched on this screen, never in Settings),
+ * a progress bar, then "templates you choose": three templates
  * side by side, each with its rules in words and its backtest - none highlighted, none pre-selected, no score, no
  * "recommended". Choosing one opens its risk settings and the PAPER button; nothing is applied until a button is pressed.
  */
@@ -114,6 +116,7 @@ export default function IdeaBuilderTab() {
             <span className="text-left leading-tight">{t("idea.start")}</span>
           </Button>
         </TiltCard>
+        <InterviewLanguageSwitch />
         <PrivacyNote />
       </div>
     );
@@ -216,6 +219,7 @@ export default function IdeaBuilderTab() {
             <span className="text-left leading-tight">{t("idea.startOver")}</span>
           </Button>
         </div>
+        <InterviewLanguageSwitch />
         <div className="h-1.5 overflow-hidden rounded-full bg-surface-3" role="progressbar" aria-label={t("idea.progress")} aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
           <div className="h-1.5 rounded-full bg-gradient-to-r from-ai to-ai-2 transition-all" style={{ width: `${progress * 100}%` }} />
         </div>

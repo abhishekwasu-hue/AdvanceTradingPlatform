@@ -831,7 +831,6 @@ export interface NewsClassification {
   severity: number;
   horizon: string;
   confidence: number;
-  one_line_mr: string;
   one_line_en: string;
   method: "keyword" | "ai";
 }
@@ -1718,7 +1717,7 @@ export interface AiTaskModel {
 export interface AiAcknowledgement {
   kind: "copilot_terms" | "data_consent";
   version: string;
-  text: { en: string; mr: string };
+  text: { en: string };                 // English only (the owner's ruling): the legal text, no translation
   accepted: boolean;
   accepted_at?: string | null;
   accepted_by?: number | null;
@@ -2236,7 +2235,7 @@ export interface BriefDay {
   loss_limit: number; loss_used: number; loss_left: number; consecutive_losses: number; max_consecutive_losses: number; active: boolean;
 }
 export interface DailyBrief {
-  as_of: string; language: "en" | "mr"; experience: string | null;
+  as_of: string; language: "en"; experience: string | null;
   session: { open: boolean; text: string; next_open: string | null; holidays_next_7_days: string[] };
   day_type: { kind: DayKind; regime: string; symbol: string | null; bias: string | null; change_pct: number | null; higher_regime: string | null; vix: number | null };
   plan: { headline: string; lines: string[]; fit_families: string[]; avoid_families: string[] };
@@ -2266,7 +2265,7 @@ export interface CoachReview {
 }
 export interface CopilotReply {
   intent: "interview" | "coach" | "deployments" | "brief" | "guide";
-  language: "en" | "mr"; answer: string; source: "rules" | "ai"; note?: string;
+  language: "en"; answer: string; source: "rules" | "ai"; note?: string;
   action: { tab: string; label: string };
   prefill?: Record<string, unknown>; prompt?: string;
   concepts?: GuideConcept[]; related?: { id: string; title: string }[];
@@ -2314,17 +2313,13 @@ export interface StrategistResult {
   study: MarketStudy; style: string; base_timeframe: string; higher_timeframe: string; sides: string[];
   candidates: StrategyCandidate[]; best: string | null; notes: string[]; tested: number; data_source: string;
   ai_candidates: number; provider: string;
-  request_parsed?: StrategistRequestParsed | null; language?: "en" | "mr";
+  request_parsed?: StrategistRequestParsed | null; language?: "en";
 }
 /** Phase BF: what the strategist understood from a plain-words request. */
 export interface StrategistRequestParsed {
-  symbol: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en" | "mr";
+  symbol: string; style: "intraday" | "scalping"; direction: "auto" | "long" | "short" | "both"; language: "en";
   matched: Partial<Record<"symbol" | "style" | "direction" | "language", string>>; text: string; summary?: string;
 }
-
-
-/** P0.9: the language of the AI's written answers; the dashboard is English only. */
-export interface AiPreferences { ai_language: "en" | "mr"; languages: { code: "en" | "mr"; label: string }[] }
 
 /** H-C3c: a research study (a queued job) and, once drafts were tried, its deflated report. */
 export type ResearchStatus = "queued" | "running" | "done" | "failed" | "interrupted";

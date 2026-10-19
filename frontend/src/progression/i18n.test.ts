@@ -5,7 +5,7 @@ import { PROGRESSION_EN } from "./locales/en";
  * N2 i18n: every key the progression sources ask for exists in the English bundle; no Devanagari; and no advice or
  * profit-claim wording in any string (P1: information, never advice).
  */
-const DEVANAGARI = /[ऀ-ॿ]/;
+const DEVANAGARI = /[\u0900-\u097f]/;
 const BANNED: { name: string; re: RegExp }[] = [
   { name: "advice verb", re: /\b(should|must|ought to|consider|avoid|recommend\w*|suggest\w*|advis\w*|make sure)\b/i },
   { name: "trade instruction", re: /\b(buy|sell|go long|go short|size up|size down|increase (your |the )?size|reduce (your |the )?size)\b/i },

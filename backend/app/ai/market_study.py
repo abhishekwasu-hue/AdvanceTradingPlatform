@@ -21,7 +21,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from app.ai.interview import _frame_at, analyse_market, classify_regime, tr
+from app.ai.interview import _frame_at, analyse_market, classify_regime
 from app.indicators.momentum import rsi as rsi_indicator
 from app.indicators.trend import ema
 from app.indicators.volatility import atr as atr_indicator
@@ -55,7 +55,7 @@ def tf_read(df: pd.DataFrame, tf: str, lang: str) -> dict:
         trend = "DOWN"
     else:
         trend = "MIXED"
-    words = {"UP": tr(lang, "uptrend", "वरचा trend"), "DOWN": tr(lang, "downtrend", "खालचा trend"), "MIXED": tr(lang, "mixed", "मिश्र")}
+    words = {"UP": "uptrend", "DOWN": "downtrend", "MIXED": "mixed"}
     return {"timeframe": tf, "bars": int(len(df)), "close": _r(last), "ema20": _r(e20), "ema50": _r(e50), "ema200": _r(e200),
             "rsi": _r(rsi_v), "adx": regime.adx, "regime": regime.kind, "trend": trend, "trend_text": words[trend],
             "above_ema200": None if pd.isna(e200) else bool(last > e200)}
@@ -119,11 +119,11 @@ def _nearest(ladder: List[dict], last: float, above: bool, skip: tuple = ()) -> 
     return min(pool, key=lambda r: abs(r["price"] - last))
 
 
-def study(df_1m: pd.DataFrame, symbol: str, lang: str = "mr", *, day: Optional[pd.DataFrame] = None,
+def study(df_1m: pd.DataFrame, symbol: str, lang: str = "en", *, day: Optional[pd.DataFrame] = None,
           memory: Optional[dict] = None, stock_detail: bool = False) -> dict:
     """`stock_detail` is the operator's `thesis_stock_targets` flag (P0.8-D): for a single stock, without it, the study
     shows no confidence % and no next reference level beyond the trigger - the same rule as the market thesis."""
-    lang = "mr" if lang == "mr" else "en"
+    lang = "en"         # ATP is English only
     df_1m = df_1m.sort_index()
     if len(df_1m) < MIN_STUDY_BARS:
         raise ValueError(f"Need at least {MIN_STUDY_BARS} one-minute candles to study {symbol}; got {len(df_1m)}")
@@ -143,19 +143,19 @@ def study(df_1m: pd.DataFrame, symbol: str, lang: str = "mr", *, day: Optional[p
         weight += w
         if rd["trend"] == "UP":
             score += w
-            reasons.append(tr(lang, f"{rd['timeframe']}: uptrend (price above EMA20 above EMA50)", f"{rd['timeframe']}: वरचा trend (भाव EMA20 च्या वर, EMA20 > EMA50)"))
+            reasons.append(f"{rd['timeframe']}: uptrend (price above EMA20 above EMA50)")
         elif rd["trend"] == "DOWN":
             score -= w
-            reasons.append(tr(lang, f"{rd['timeframe']}: downtrend (price below EMA20 below EMA50)", f"{rd['timeframe']}: खालचा trend (भाव EMA20 च्या खाली, EMA20 < EMA50)"))
+            reasons.append(f"{rd['timeframe']}: downtrend (price below EMA20 below EMA50)")
     vwap = lv.get("vwap")
     if vwap is not None:
         weight += 1.0
         if last > vwap:
             score += 1.0
-            reasons.append(tr(lang, "price above today's VWAP - buyers in control", "भाव आजच्या VWAP च्या वर - खरेदीदारांचे वर्चस्व"))
+            reasons.append("price above today's VWAP - buyers in control")
         else:
             score -= 1.0
-            reasons.append(tr(lang, "price below today's VWAP - sellers in control", "भाव आजच्या VWAP च्या खाली - विक्रेत्यांचे वर्चस्व"))
+            reasons.append("price below today's VWAP - sellers in control")
     if market["structure"]["trend"] in ("UPTREND", "DOWNTREND"):
         weight += 1.0
         score += 1.0 if market["structure"]["trend"] == "UPTREND" else -1.0
@@ -189,32 +189,28 @@ def study(df_1m: pd.DataFrame, symbol: str, lang: str = "mr", *, day: Optional[p
     if up and detail:
         tgt = up2["price"] if up2 else round(up["price"] + (atr5 * 3 if not pd.isna(atr5) else up["price"] * 0.004), 2)
         scenarios.append({"id": "bull", "trigger": up["price"], "trigger_name": up["name"], "target": tgt,
-                          "text": tr(lang, f"Bullish read while it holds above {up['name']} {up['price']:,.2f}; the next reference level above is {tgt:,.2f}.",
-                                     f"{up['name']} {up['price']:,.2f} च्या वर टिकला तर तेजीचे वाचन; वरची पुढची संदर्भ पातळी {tgt:,.2f}.")})
+                          "text": f"Bullish read while it holds above {up['name']} {up['price']:,.2f}; the next reference level above is {tgt:,.2f}."})
     if down and detail:
         tgt = down2["price"] if down2 else round(down["price"] - (atr5 * 3 if not pd.isna(atr5) else down["price"] * 0.004), 2)
         scenarios.append({"id": "bear", "trigger": down["price"], "trigger_name": down["name"], "target": tgt,
-                          "text": tr(lang, f"Bearish read below {down['name']} {down['price']:,.2f}; the next reference level below is {tgt:,.2f}.",
-                                     f"{down['name']} {down['price']:,.2f} च्या खाली गेला तर मंदीचे वाचन; खालची पुढची संदर्भ पातळी {tgt:,.2f}.")})
+                          "text": f"Bearish read below {down['name']} {down['price']:,.2f}; the next reference level below is {tgt:,.2f}."})
     if up and down and detail:
         scenarios.append({"id": "range", "trigger": None, "low": down["price"], "high": up["price"],
-                          "text": tr(lang, f"Between {down['price']:,.2f} and {up['price']:,.2f} the data reads as a range.",
-                                     f"{down['price']:,.2f} ते {up['price']:,.2f} दरम्यान data range दाखवतो.")})
+                          "text": f"Between {down['price']:,.2f} and {up['price']:,.2f} the data reads as a range."})
 
     # P0.8-D: the headline describes the session; it does not tell the trader what to trade.
     headline = {
-        ("TREND", "BULLISH"): ("Trend day, buyers in control on the data: higher highs above VWAP.", "Trend चा दिवस, data नुसार खरेदीदारांचे वर्चस्व: VWAP च्या वर वाढते highs."),
-        ("TREND", "BEARISH"): ("Trend day, sellers in control on the data: lower lows below VWAP.", "Trend चा दिवस, data नुसार विक्रेत्यांचे वर्चस्व: VWAP च्या खाली घटते lows."),
-        ("VOLATILE", None): ("Volatile session: wide swings, so ATR-based stops are wider in rupees.", "अस्थिर सत्र: मोठे चढ-उतार, त्यामुळे ATR वर आधारित stop रुपयांत मोठे."),
-        ("RANGE", None): ("Range-bound session: price is moving between its nearest levels without follow-through.", "Range मधले सत्र: भाव जवळच्या levels दरम्यान फिरतो, पुढे जात नाही."),
+        ("TREND", "BULLISH"): "Trend day, buyers in control on the data: higher highs above VWAP.",
+        ("TREND", "BEARISH"): "Trend day, sellers in control on the data: lower lows below VWAP.",
+        ("VOLATILE", None): "Volatile session: wide swings, so ATR-based stops are wider in rupees.",
+        ("RANGE", None): "Range-bound session: price is moving between its nearest levels without follow-through.",
     }
     key = (character, bias) if (character, bias) in headline else (character, None)
     if key not in headline:
         key = ("RANGE", None)
-    lines = [tr(lang, *headline[key])] + reasons[:5]
+    lines = [headline[key]] + reasons[:5]
     if vix is not None:
-        lines.append(tr(lang, f"India VIX {vix:.1f}" + (" - high (above 20)." if vix >= 20 else "."),
-                        f"India VIX {vix:.1f}" + (" - जास्त (20 पेक्षा वर)." if vix >= 20 else ".")))
+        lines.append(f"India VIX {vix:.1f}" + (" - high (above 20)." if vix >= 20 else "."))
     if memory and memory.get("globals"):
         from app.ai import global_cues
         g = global_cues.view(lang, memory["globals"])

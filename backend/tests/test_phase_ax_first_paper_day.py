@@ -60,9 +60,9 @@ def test_first_day_check_flags_the_blockers_then_passes_with_a_fake_broker():
     assert _check(report, "session").status == "ok" and "open now" in _check(report, "session").detail
     assert {c.key for c in report.checks} >= {"platform.migrations", "platform.worker", "platform.holidays", "tenant.kill_switch"}
     assert "tenant.mfa" not in {c.key for c in report.checks}      # LIVE-only hygiene rows stay out of a PAPER-day report
-    text = report.render("mr")
-    assert "❌" in text and "अडथळे दूर करा" in text and "काहीही बदललेले नाही" in text
-    assert "Nothing was changed" in report.render("en") and report.as_dict()["read_only"] is True
+    text = report.render()
+    assert "❌" in text and "Clear the blockers above" in text and "Nothing was changed" in text
+    assert report.render("mr") == text and report.as_dict()["read_only"] is True          # English only: "mr" is ignored
 
     # A stored session with a VALID token, a PAPER deployment and a channel: the probes run.
     _store_broker(headers, token_status="VALID")
@@ -116,7 +116,7 @@ def test_script_parses_its_arguments():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     args = module.build_parser().parse_args(["--tenant", "ops@example.com", "--no-smoke", "--json"])
-    assert args.tenant == "ops@example.com" and args.no_smoke and args.json and not args.send_test_alert and args.lang == "mr"
+    assert args.tenant == "ops@example.com" and args.no_smoke and args.json and not args.send_test_alert and not hasattr(args, "lang")   # English only
 
 
 def _add(*rows):

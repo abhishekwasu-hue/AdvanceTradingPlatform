@@ -68,7 +68,7 @@ def test_runtime_context_reflects_the_account_state():
     body = client.get("/api/ai/context?language=mr&regime=RANGING&symbol=NIFTY%2050", headers=headers).json()
     assert body["prompt_version"] == PROMPT_VERSION
     ctx = body["context"]
-    assert ctx["risk_profile"] == "conservative" and ctx["user_language"] == "mr" and ctx["market_regime"] == "RANGING"
+    assert ctx["risk_profile"] == "conservative" and ctx["user_language"] == "en" and ctx["market_regime"] == "RANGING"   # English only: "mr" ignored
     assert ctx["allowed_instruments"].startswith("NIFTY 50 (requested); ")
     assert "last 4 closed trades (PAPER): 1 won, 3 lost, net -200, 3 stopped out; the last 3 in a row lost" == ctx["recent_trade_summary"]
     assert ctx["event_calendar"] == [f"{_ist_today()} EXPIRY (INDEX): size cut 50.0% - weekly expiry"]
@@ -84,7 +84,8 @@ def test_system_prompt_carries_context_rules_and_schema():
                          market_regime="TRENDING_UP", user_language="mr", max_risk_per_trade_pct=1.0, ceiling_risk_per_trade_pct=2.0,
                          max_portfolio_risk_pct=6.0, daily_loss_limit_pct=2.0, cooldown_minutes=30, dd_level_1_pct=5.0, dd_level_2_pct=10.0, event_size_cut_pct=50.0)
     prompt = build_system_prompt(ctx)
-    assert PROMPT_VERSION in prompt and "Reply in the user's language: Marathi (mr)" in prompt
+    assert PROMPT_VERSION in prompt and "Reply in English only - also when the user writes in another language or script." in prompt
+    assert "Marathi" not in prompt and "user's language" not in prompt
     assert "Account capital: 500,000 INR" in prompt and "12,000 INR = 2.4% of capital" in prompt and "LIVE equity peak: 3.5%" in prompt
     assert "2026-10-01 RBI_POLICY" in prompt and "Market regime (from the platform's classifier): TRENDING_UP" in prompt
     assert "R3. Option selling must be defined-risk" in prompt and "count as ONE correlated bucket" in prompt and "30 minutes after a stop-out" in prompt
@@ -113,10 +114,10 @@ def test_generate_uses_the_guardian_prompt_and_stores_the_suggestion():
         "spread_width": 2, "target_credit_pct": 60, "stop_credit_pct": 150, "exit_rules": {"break_even_at_r": 2, "trailing_stop_pct": 5},
         "regime_filter": ["RANGING"], "next_step": "backtest"}))
     draft = client.get(f"/api/ai/drafts/{_gen(me, provider, regime='RANGING', language='hi', symbol='NIFTY 50')}", headers=headers).json()
-    assert len(provider.systems) == 1 and "Reply in the user's language: Hindi (hi)" in provider.systems[0]
+    assert len(provider.systems) == 1 and "Reply in English only" in provider.systems[0] and "Hindi" not in provider.systems[0]   # "hi" asked: English
     assert "Market regime (from the platform's classifier): RANGING" in provider.systems[0] and "NIFTY 50 (requested)" in provider.systems[0]
     assert provider.users[0].startswith("USER REQUEST:")
-    assert draft["status"] == "DRAFT" and draft["prompt_version"] == PROMPT_VERSION and draft["runtime_context"]["user_language"] == "hi"
+    assert draft["status"] == "DRAFT" and draft["prompt_version"] == PROMPT_VERSION and draft["runtime_context"]["user_language"] == "en"
     assert draft["deployment"]["option_strategy"] == "BULL_PUT_SPREAD" and draft["deployment"]["regime_filter"] == ["RANGING"]
     assert "bull put spread, nearest expiry" in draft["deployment_text"] and "break-even at 2R" in draft["deployment_text"]
     by_rule = {c["rule"]: c for c in draft["compliance"]["checks"]}
@@ -136,4 +137,4 @@ def test_generate_uses_the_guardian_prompt_and_stores_the_suggestion():
     fallback = client.post("/api/ai/drafts", headers=headers, json={"prompt": "Go long when RSI(14) crosses above 30 on 5min", "language": "mr"})
     assert fallback.status_code == 201, fallback.text
     assert fallback.json()["provider"] == "rule_based" and fallback.json()["deployment"] is None and fallback.json()["prompt_version"] == PROMPT_VERSION
-    assert fallback.json()["runtime_context"]["user_language"] == "mr"
+    assert fallback.json()["runtime_context"]["user_language"] == "en"

@@ -2,7 +2,7 @@
 # Block 2 of 3 - deploy (first install and every later update). Run as the non-root user from block 1:
 #
 #   ssh atp@<server-ip>
-#   bash -c "$(echo <base64 from docs/DEPLOY_HOSTINGER_MR.md> | base64 -d)"      # or, once cloned: bash /opt/atp/deploy/hostinger/deploy.sh
+#   bash -c "$(echo <base64 from docs/DEPLOY_HOSTINGER.md> | base64 -d)"      # or, once cloned: bash /opt/atp/deploy/hostinger/deploy.sh
 #
 # Stops (exit 10) and tells you what to do at the two hand-made steps; run it again after each:
 #   1. the read-only deploy key: printed here, you add it at GitHub > repo > Settings > Deploy keys (no write access);
@@ -96,7 +96,7 @@ if grep -q 'CHANGE_ME' .env; then
   echo "  JWT_SECRET_KEY / METRICS_TOKEN / passwords: python3 -c \"import secrets;print(secrets.token_urlsafe(48))\""
   echo "  SECRETS_ENCRYPTION_KEY: the SAME 44-character key the PAPER PC uses (never a new one - stored broker keys depend on it)"
   echo "  DOMAIN: your domain, or this server's IP with CADDYFILE=Caddyfile.ip"
-  echo "  OFFSITE_S3_*: the Cloudflare R2 bucket's endpoint and token (docs/DEPLOY_HOSTINGER_MR.md section 5)"
+  echo "  OFFSITE_S3_*: the Cloudflare R2 bucket's endpoint and token (docs/DEPLOY_HOSTINGER.md section 5)"
   exit 10
 fi
 

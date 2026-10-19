@@ -11,7 +11,8 @@ provisional default.
 - Exits are never blocked (ADR-0004). No exit path consults an F cap; a call-graph test enforces this.
 - BT1b: the book is the user's own (`trades.user_id`), valued at its own marks. No broker session is read, and
   nothing of one user is shown to, or used for, another.
-- Every F flag goes in `DEFAULT_OFF_FLAGS`. Every new route goes in `tests/tenancy_route_table.py`. No migration is
+- Every F flag is registered in `FEATURE_FLAGS`, where it is off by default automatically (`DEFAULT_OFF_FLAGS` is
+  computed). Every new route goes in `tests/tenancy_route_table.py`. No migration is
   planned (see F2).
 
 ## 1. What exists, and the gaps F closes

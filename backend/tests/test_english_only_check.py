@@ -118,3 +118,64 @@ def test_the_allow_list_is_narrow():
         "frontend/e2e/fixtures/interview_plan.json"}
     assert check_english_only.NAMESPACE_FILE == "frontend/src/i18n/interviewSecondary.ts"
     assert check_english_only.NAMESPACE_OBJECTS == ("INTERVIEW_MR", "INTERVIEW_HI")
+
+
+BS = "\\"                                             # one backslash: escapes below are built, never typed
+ESC = BS + "u0939" + BS + "u0947"                    # Devanagari written as \u escapes
+
+
+@pytest.mark.parametrize("rel, text", [
+    ("backend/app/ai/copilot.py", f'PROMPT = "{ESC}"\n'),                                  # \u escapes in app code
+    ("frontend/src/components/Card.tsx", f'export const t = "{BS}U00000939";\n'),                 # \U escapes
+    ("backend/app/templates/eod.html", "<p>&#x939;&#x947;</p>\n"),                       # HTML entities (hex)
+    ("docs/GUIDE.md", "Read: &#2361;&#2375;\n"),                                         # HTML entities (decimal)
+    ("frontend/src/x.ts", "export const v = '&#xA8F2;';\n"),                             # the Extended range
+])
+def test_devanagari_written_as_escapes_outside_the_tests_fails(tmp_path, rel, text):
+    problems = check_english_only.check(_tree(tmp_path, {**ALLOWED, rel: text}))
+    assert len(problems) == 1 and problems[0].startswith(f"{rel}:1: Devanagari written as an escape"), problems
+
+
+@pytest.mark.parametrize("rel", ["backend/tests/test_new.py", "backend/evals/sets/qa.jsonl", "frontend/e2e/fixtures/x.json",
+                                 "frontend/src/screener/x.test.tsx", "backend/app/ai/interview.py"])
+def test_escapes_stand_in_tests_fixtures_and_the_allow_list(tmp_path, rel):
+    assert check_english_only.check(_tree(tmp_path, {**ALLOWED, rel: f'TEXT = "{ESC}"\n'})) == []
+
+
+def test_a_range_bound_that_detects_devanagari_is_not_text(tmp_path):
+    pattern = f'DEVANAGARI = re.compile(r"[{BS}u0900-{BS}u097F{BS}ua8e0-{BS}ua8ff]")\nJSON = "[{BS}{BS}u0900-{BS}{BS}u097F]"\n'
+    assert check_english_only.check(_tree(tmp_path, {**ALLOWED, "backend/app/screener/legends.py": pattern})) == []
+
+
+def test_text_files_must_be_utf8(tmp_path):
+    root = _tree(tmp_path, ALLOWED)
+    (root / "docs/latin1.txt").write_bytes("caf\u00e9 \u00e0 la carte\n".encode("latin-1"))
+    (root / "docs/utf16.md").write_text("hello " + MR, encoding="utf-16")                     # with a BOM
+    (root / "backend/app/hidden.py").write_bytes(("X = '" + MR + "'\n").encode("utf-16-le"))      # no BOM: NUL bytes
+    (root / "frontend/public/logo.png").parent.mkdir(parents=True, exist_ok=True)
+    (root / "frontend/public/logo.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff")                 # a known binary type: not read
+    problems = sorted(check_english_only.check(root))
+    assert problems == ["backend/app/hidden.py: a UTF-16 (or NUL-byte) text file - write text files as UTF-8",
+                        "docs/latin1.txt: not valid UTF-8 text (byte 3) - write text files as UTF-8, or use a known binary type",
+                        "docs/utf16.md: a UTF-16 (or NUL-byte) text file - write text files as UTF-8"]
+
+
+@pytest.mark.parametrize("line", [
+    'import { INTERVIEW_MR } from "../i18n/interviewSecondary.ts";',
+    'import "../i18n/interviewSecondary";',
+    'const m = await import("../i18n/interviewSecondary");',
+    'const { INTERVIEW_MR } = require("../i18n/interviewSecondary.js");',
+    "import { INTERVIEW_MR } from './interviewSecondary';",
+])
+def test_every_import_form_of_the_namespace_is_checked(tmp_path, line):
+    problems = check_english_only.check(_tree(tmp_path, {**ALLOWED, "frontend/src/pages/X.tsx": line + "\n"}))
+    assert len(problems) == 1 and problems[0].startswith("frontend/src/pages/X.tsx: imports the interview namespace"), problems
+
+
+def test_a_file_over_8_mb_is_skipped_with_a_notice(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(check_english_only, "_MAX_BYTES", 1024 * 1024 // 2)
+    root = _tree(tmp_path, {**ALLOWED, "docs/huge.md": "English only. " * 40_000})
+    problems, notices = check_english_only.scan(root)
+    assert problems == [] and notices == ["docs/huge.md: over 0 MB - not checked"]
+    assert check_english_only.main(["--root", str(root)]) == 0
+    assert "notice - docs/huge.md" in capsys.readouterr().err

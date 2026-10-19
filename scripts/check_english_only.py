@@ -13,8 +13,11 @@ this check does not flag. To add an entry, the owner's approval is needed (docs/
     python3 scripts/check_english_only.py            # from anywhere; exit 0 = clean, 1 = findings
     python3 scripts/check_english_only.py --root DIR # check another tree (the tests use this)
 
-Files: the tracked and the new (not ignored) files when the root is a git work tree, else every file under the root;
-binary files (not UTF-8) are skipped. No exclusions by directory: docs/reference/ (owner-supplied reference copies)
+Files: the tracked and the new (not ignored) files when the root is a git work tree, else every file under the root.
+Known binary types (images, fonts, archives...) are skipped; any other file must be UTF-8 text - a file in another
+encoding, UTF-16 or with NUL bytes is a finding; a file over 8 MB is skipped with a notice. Devanagari written as
+\\u escapes or HTML entities counts too, outside the tests, the e2e / eval fixtures and the allow-listed files (a range
+bound in a pattern that detects Devanagari, "[\\u0900-\\u097F]", is not text). No exclusions by directory: docs/reference/ (owner-supplied reference copies)
 is checked too, and holds no Devanagari.
 """
 from __future__ import annotations
@@ -25,7 +28,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List, Optional
+from typing import Dict, Iterable, List, Optional, Tuple
 
 DEVANAGARI = re.compile("[\u0900-\u097f\ua8e0-\ua8ff]")
 
@@ -46,13 +49,29 @@ NAMESPACE_OBJECTS = ("INTERVIEW_MR", "INTERVIEW_HI")      # INTERVIEW_HI: the Hi
 # The only frontend files that may import the namespace: the Copilot's i18n instance (the `interview` namespace, used by
 # the Idea Builder - the interview screen) and its catalogue story.
 NAMESPACE_USERS = frozenset({"frontend/src/copilot/i18n.ts", "frontend/src/stories/Copilot.stories.tsx"})
-_NAMESPACE_IMPORT = re.compile(r"""from\s+["'][^"']*i18n/interviewSecondary["']|import\(\s*["'][^"']*i18n/interviewSecondary["']""")
+# import ... from "../i18n/interviewSecondary(.ts)", import "...", import("..."), require("...") - as the old .mjs did.
+_NAMESPACE_IMPORT = re.compile(r"""(?:\bfrom|\bimport|\brequire)\s*\(?\s*["'][^"']*interviewSecondary(?:\.[cm]?[jt]sx?)?["']""")
 _TEST_FILE = re.compile(r"\.test\.tsx?$")              # the namespace's own tests may import it
 _KEY_VALUE = re.compile(r"""^\s*[A-Za-z_][A-Za-z0-9_]*\s*:\s*"[^"]*",?\s*(//.*)?$""")
 
 _SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".pytest_cache",
               ".mypy_cache", ".ruff_cache", "playwright-report", "test-results", "storybook-static"}
 _MAX_BYTES = 8 * 1024 * 1024
+# Known binary types: not text, not read. Any other file must be UTF-8 text (no UTF-16, no NUL bytes) - a file in another
+# encoding would hide Devanagari from this check.
+_BINARY_EXT = frozenset({".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".ico", ".icns", ".tif", ".tiff", ".woff", ".woff2",
+                         ".ttf", ".otf", ".eot", ".pdf", ".zip", ".gz", ".tgz", ".bz2", ".xz", ".7z", ".parquet", ".feather", ".arrow",
+                         ".pkl", ".npy", ".npz", ".h5", ".mp3", ".mp4", ".webm", ".wav", ".ogg", ".sqlite", ".db", ".xlsx", ".docx",
+                         ".pptx", ".jar", ".so", ".dylib", ".dll", ".exe", ".bin", ".pyc", ".wasm"})
+# Devanagari written as escapes: \uXXXX / \U0000XXXX, HTML entities &#xXXX; and &#NNNN;. A range bound such as
+# "[\u0900-\u097F]" (a pattern that detects Devanagari) is not text and is not counted.
+_ESCAPED = re.compile(r"\\u(?:09[0-7][0-9a-fA-F]|[aA]8[eEfF][0-9a-fA-F])|\\U0000(?:09[0-7]|[aA]8[eEfF])[0-9a-fA-F]"
+                      r"|&#[xX]0*(?:9[0-7][0-9a-fA-F]|[aA]8[eEfF][0-9a-fA-F]);"
+                      r"|&#0*(?:23(?:0[4-9]|[1-9][0-9])|24(?:[0-2][0-9]|3[01])|432(?:3[2-9]|[45][0-9]|6[0-3]));")
+_RANGE = re.compile(r"\\+[uU](?:0000)?[0-9a-fA-F]{4}\s*-\s*\\+[uU](?:0000)?[0-9a-fA-F]{4}")
+# Where escaped Devanagari may stand (tests write non-English input that way): the backend tests and evals' fixtures,
+# the e2e fixtures, the frontend unit tests and the allow-listed files.
+_ESCAPES_ALLOWED = re.compile(r"^(?:backend/tests/|backend/evals/sets/|frontend/e2e/fixtures/)|^frontend/.*\.test\.tsx?$")
 
 
 def _git_files(root: Path) -> Optional[List[str]]:
@@ -80,13 +99,28 @@ def files(root: Path) -> List[str]:
     return _git_files(root) or _walk(root)
 
 
-def _read(path: Path) -> Optional[str]:
+def _read(path: Path, rel: str, problems: List[str], notices: List[str]) -> Optional[str]:
+    """The file's text, or None when there is none to check: a known binary type, or a file over 8 MB (a notice). A file
+    that is not UTF-8 text - another encoding, UTF-16, NUL bytes - is a finding: it could hide Devanagari."""
     try:
-        if not path.is_file() or path.stat().st_size > _MAX_BYTES:
+        if not path.is_file():
             return None
-        return path.read_bytes().decode("utf-8")
-    except (OSError, UnicodeDecodeError):
-        return None                         # binary (images, fonts, archives): no text to read
+        if Path(rel).suffix.lower() in _BINARY_EXT:
+            return None
+        if path.stat().st_size > _MAX_BYTES:
+            notices.append(f"{rel}: over {_MAX_BYTES // (1024 * 1024)} MB - not checked")
+            return None
+        data = path.read_bytes()
+    except OSError:
+        return None
+    if data[:2] in (b"\xff\xfe", b"\xfe\xff") or b"\x00" in data:
+        problems.append(f"{rel}: a UTF-16 (or NUL-byte) text file - write text files as UTF-8")
+        return None
+    try:
+        return data.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        problems.append(f"{rel}: not valid UTF-8 text (byte {exc.start}) - write text files as UTF-8, or use a known binary type")
+        return None
 
 
 def _namespace_problems(rel: str, text: str) -> List[str]:
@@ -108,18 +142,25 @@ def _namespace_problems(rel: str, text: str) -> List[str]:
     return problems
 
 
-def check(root: Path) -> List[str]:
-    """Every finding as 'path:line: text'. Empty = English only."""
+def scan(root: Path) -> Tuple[List[str], List[str]]:
+    """(findings, notices). Findings fail the check; notices (files over 8 MB, not read) do not."""
     root = root.resolve()
     problems: List[str] = []
+    notices: List[str] = []
     for rel in files(root):
-        text = _read(root / rel)
+        text = _read(root / rel, rel, problems, notices)
         if text is None:
             continue
-        if (rel.startswith("frontend/src/") and rel not in NAMESPACE_USERS and rel != NAMESPACE_FILE and not _TEST_FILE.search(rel)
+        if (rel.startswith("frontend/") and rel not in NAMESPACE_USERS and rel != NAMESPACE_FILE and not _TEST_FILE.search(rel)
                 and _NAMESPACE_IMPORT.search(text)):
             problems.append(f"{rel}: imports the interview namespace ({NAMESPACE_FILE}); only {', '.join(sorted(NAMESPACE_USERS))} may")
-        if rel in ALLOWED_FILES or not DEVANAGARI.search(text):
+        if rel in ALLOWED_FILES:
+            continue
+        if not _ESCAPES_ALLOWED.search(rel) and rel != NAMESPACE_FILE:
+            for n, line in enumerate(text.splitlines(), 1):
+                if _ESCAPED.search(_RANGE.sub(" ", line)):
+                    problems.append(f"{rel}:{n}: Devanagari written as an escape or an HTML entity: {line.strip()[:110]}")
+        if not DEVANAGARI.search(text):
             continue
         if rel == NAMESPACE_FILE:
             problems.extend(_namespace_problems(rel, text))
@@ -127,14 +168,21 @@ def check(root: Path) -> List[str]:
         for n, line in enumerate(text.splitlines(), 1):
             if DEVANAGARI.search(line):
                 problems.append(f"{rel}:{n}: {line.strip()[:120]}")
-    return problems
+    return problems, notices
+
+
+def check(root: Path) -> List[str]:
+    """Every finding as 'path:line: text'. Empty = English only."""
+    return scan(root)[0]
 
 
 def main(argv: Optional[Iterable[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--root", default=str(Path(__file__).resolve().parent.parent), help="the repository root (default: this script's repository)")
     args = parser.parse_args(list(argv) if argv is not None else None)
-    problems = check(Path(args.root))
+    problems, notices = scan(Path(args.root))
+    for note in notices:
+        print(f"check_english_only: notice - {note}", file=sys.stderr)
     if problems:
         print(f"English only: {len(problems)} finding(s) - Devanagari outside the strategy interview's allow-list "
               f"(scripts/check_english_only.py). Translate the text to English; a test writes non-English text with \\u escapes.",

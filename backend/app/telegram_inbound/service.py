@@ -573,8 +573,8 @@ async def _risk_text(session: AsyncSession, user: User, lang: str) -> str:
     for mode in ("PAPER", "LIVE"):
         d = day.get(mode) or {}
         if d.get("active") or d.get("trades_today"):
-            out.append(f"{mode}: {'realised today'} {d.get('realised_pnl', 0):+,.0f}, {'loss budget left'} {d.get('loss_left', 0):,.0f}, "
-                       f"{'open'} {d.get('open_positions', 0)}")
+            out.append(f"{mode}: realised today {d.get('realised_pnl', 0):+,.0f}, loss budget left {d.get('loss_left', 0):,.0f}, "
+                       f"open {d.get('open_positions', 0)}")
     out += await _portfolio_lines(session, user, lang)
     return "\n".join(out)
 

@@ -3686,12 +3686,15 @@ own screen: `app/ai/interview.py` and `app/ai/advisor.py` on the server, the `in
 switch on the interview screen (`InterviewLanguageSwitch`; not in Settings). Outside the interview every AI route
 answers in English whatever the message's language or a `language` field says (`routes._ai_language`, the prompts say
 "English only"; `/api/ai/preferences` offers English only), and AI text passes the English filter
-(`output_filter`: English word lists, Indic or other scripts withheld; `grounding` on the supplied data). The Marathi /
+(`output_filter`: English word lists plus a fixed `romanised` list of Latin-script Hinglish advice, read always; Indic
+or other scripts withheld; `grounding` on the supplied data; the AI news one-liner too, before the news push). The Marathi /
 Hindi advice-filter lists, the Marathi "Read in Marathi" translations of the acknowledgement and of the data consent
 (the English legal text is unchanged; acceptances recorded with the bilingual hash still count -
 `compliance_terms.accepted_hashes`) and every Marathi text outside the interview were removed.
 `scripts/check_english_only.py` (CI, lint job; tested by `backend/tests/test_english_only_check.py`) fails on any
-Devanagari in the repository outside its explicit allow-list (the interview files and named interview test fixtures).
+Devanagari in the repository outside its explicit allow-list (the interview files and named interview test fixtures),
+including Devanagari written as `\u` escapes or HTML entities outside the tests and fixtures, and any text file that is
+not UTF-8 (UTF-16, NUL bytes, another encoding).
 
 **P0.8-D (compliance).** `ai/compliance_terms.py`: versioned Copilot terms and data-sharing consent texts (en/mr),
 `ai_acknowledgements` rows with the text hash, `require_ai_acknowledged` / `ai_acknowledged` dependencies (428) on the

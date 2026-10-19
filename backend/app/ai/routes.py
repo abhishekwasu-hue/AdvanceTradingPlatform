@@ -3,7 +3,7 @@ regime classifier and the monitoring agent's action queue. Every mutating call i
 import copy
 import json
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
@@ -870,6 +870,35 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
             "agent": {"used": True, "run_id": answer.run_id, "stopped": answer.stopped, "contract": answer.contract,
                       "tools": [{k: c[k] for k in ("id", "name", "ok", "as_of", "duration_ms")} for c in answer.tool_calls]},
             "usage": metering.spent_by(provider)}
+
+
+class AnalyzeBody(BaseModel):
+    symbol: str = Field(min_length=1, max_length=40, pattern=r"^[A-Za-z0-9 &._:-]+$")
+    exchange: str = Field(default="NSE", pattern=r"^(NSE|BSE|NFO|BFO|MCX|CDS)$")
+    language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")      # accepted, not used: analyses are English only
+
+
+@router.post("/analyze")
+async def analyze_symbol(body: AnalyzeBody, request: Request, user: User = Depends(require_ai_acknowledged),
+                         session: AsyncSession = Depends(get_session)) -> Any:
+    """H-C4 (behind `ai_multiview`, off by default): "analyze <symbol>" - technical, options, news and macro views from the
+    platform's read tools, then the readings that lean up / down, the risks and the possibilities. Rules-only wording
+    (round cap, 13 Oct): no model is called and no AI text is shown, so nothing is metered (`usage` stays in the response
+    shape, empty). One 60 s budget covers the tool reads, and a client that disconnects stops the analysis. `language` is
+    accepted and not used (English only)."""
+    from fastapi.responses import JSONResponse
+
+    from app.ai import multiview
+    from app.ai.tools import ToolContext
+    await require_flag(session, "ai_copilot", user.tenant_id)
+    await require_flag(session, multiview.FLAG, user.tenant_id)
+    try:
+        out = await multiview.analyze(ToolContext(session, user.tenant_id, user), body.symbol, body.exchange,
+                                      client_gone=request.is_disconnected)
+    except multiview.Cancelled:
+        return JSONResponse(status_code=499, content={"detail": "the client went away; the analysis was stopped"})
+    out["usage"] = {"cheap": None, "strong": None}
+    return out
 
 
 class ResearchBody(BaseModel):

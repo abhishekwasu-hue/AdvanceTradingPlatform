@@ -24,10 +24,17 @@ def parse_broker_timestamp(value) -> Optional[datetime]:
         try:
             ts = datetime.fromisoformat(text)
         except ValueError:
-            try:
-                ts = datetime.strptime(text, "%Y-%m-%d %H:%M:%S")
-            except ValueError:
+            parsed: Optional[datetime] = None
+            # Kite's wall time; Noren's (Shoonya) order-book `norentm`, "HH:MM:SS DD-MM-YYYY".
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%H:%M:%S %d-%m-%Y"):
+                try:
+                    parsed = datetime.strptime(text, fmt)
+                    break
+                except ValueError:
+                    continue
+            if parsed is None:
                 return None
+            ts = parsed
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=IST)
     return ts.astimezone(timezone.utc)

@@ -7,6 +7,7 @@ import httpx
 
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.models import (
     BrokerCredentials,
     BrokerHolding,
@@ -260,6 +261,9 @@ class ShoonyaBroker(BrokerInterface):
                 order_type=o.get("prctyp", "MKT"), status=o.get("status", ""),
                 price=float(o["prc"]) if o.get("prc") else None,
                 average_price=float(o["avgprc"]) if o.get("avgprc") else None,
+                placed_at=parse_broker_timestamp(o.get("norentm")),   # "HH:MM:SS DD-MM-YYYY" IST; None when absent
+                tag=o.get("remarks") or None, exchange=o.get("exch") or None,
+                product=next((k for k, v in PRODUCT_MAP.items() if v == o.get("prd")), None),
             )
             for o in values
         ]

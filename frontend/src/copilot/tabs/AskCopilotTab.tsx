@@ -13,6 +13,7 @@ import PrivacyNote from "../components/PrivacyNote";
 import SourceChips, { type SourceItem } from "../components/SourceChips";
 import { useCopilotT } from "../i18n";
 import { copilotPath, tabForAction } from "../tabs";
+import MultiViewPanel from "./analyze/MultiViewPanel";
 import { Panel } from "./shared";
 
 /**
@@ -157,6 +158,7 @@ export default function AskCopilotTab() {
           </div>
         )}
       </Panel>
+      <MultiViewPanel />
       <div className="sr-only" aria-live="polite" aria-atomic="true">{announce}</div>
       <PrivacyNote />
     </div>

@@ -83,7 +83,7 @@ from app.secrets_store.envelope import ensure_tenant_key
 from app.accounts.routing import ACCOUNT_REFRESH_SECONDS, RoutingPolicy, choose_account, policy_for
 from app.accounts.service import default_account, get_account, list_accounts, routing_for_deployment, sync_account
 from app.notifications.service import notify
-from app.trading.position_monitor import (broker_for_trade, close_position, monitor_open_positions,
+from app.trading.position_monitor import (broker_for_trade, close_group, close_position, monitor_open_positions,
                                           open_trade_families_by_tenant, trade_venues)
 from app.trading.stop_guard import verify_protective_stops
 
@@ -1727,11 +1727,15 @@ class TradingWorker:
         ))
         venues = await trade_venues(session, open_trades)       # BK2-8: a row without an exchange follows its deployment
         closed = 0
+        groups: Dict[str, List[TradeRecord]] = {}
         for trade in open_trades:
             if families is not None and session_family(venues[trade.id]) not in families:
                 continue
             if (getattr(trade, "holding", None) or "INTRADAY") == "SWING":
                 continue   # Phase AS: a swing position is held overnight by design
+            if trade.leg_group_id:
+                groups.setdefault(trade.leg_group_id, []).append(trade)
+                continue
             try:
                 price = await market_data.get_ltp(trade.symbol, venues[trade.id])
             except Exception as exc:  # noqa: BLE001
@@ -1751,6 +1755,21 @@ class TradingWorker:
                 closed += int(outcome.closed)
             except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
                 logger.error("Square-off of trade %s failed: %s", trade_id, exc)
+        for group_id, legs in groups.items():
+            # MED-1 (naked-short guard): a structure's legs close through close_group - shorts first, and its wings are
+            # held while a LIVE short has not closed (selling them first would leave a naked short).
+            prices: Dict[int, float] = {}
+            for leg in legs:
+                try:
+                    prices[leg.id] = await market_data.get_ltp(leg.symbol, venues[leg.id])
+                except Exception as exc:  # noqa: BLE001 - that leg is left open (a short without a quote holds its wings)
+                    logger.warning("Square-off: no price for %s (%s) - left open", leg.symbol, exc)
+            try:
+                async with guarded(session, keep=tuple(legs)):
+                    outcomes = await close_group(session, legs, prices, "Intraday square-off", broker=live_broker, user_id=user_id)
+                closed += sum(int(o.closed) for o in outcomes)
+            except Exception as exc:  # noqa: BLE001 - left open, squared off again next cycle
+                logger.error("Square-off of group %s failed: %s", group_id, exc)
         if closed:
             logger.info("Square-off closed %d position(s) for tenant %s", closed, tenant_id)
         return closed

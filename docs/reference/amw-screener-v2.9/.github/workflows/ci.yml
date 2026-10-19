@@ -1,0 +1,35 @@
+name: CI
+on: [push, pull_request]
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_USER: amw, POSTGRES_PASSWORD: ci-only, POSTGRES_DB: amwtest}
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U amw" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install -r requirements-dev.txt
+      - run: ruff check .
+      # root is required for the namespace sandbox; strategy code still runs as uid 65534 inside it
+      - name: Tests (sandbox verified, PostgreSQL)
+        run: sudo -E env "PATH=$PATH" python -m pytest -v
+        env:
+          AMW_TEST_PG_URL: postgresql+psycopg://amw:ci-only@localhost:5432/amwtest
+      - name: Dependency vulnerability audit
+        run: pip install pip-audit && pip-audit -r requirements.txt   # fails the build on a known vulnerability
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install -r requirements-dev.txt
+      - name: Tests (no OS sandbox -> sandboxed tests skip; local trusted mode is tested)
+        run: python -m pytest -v

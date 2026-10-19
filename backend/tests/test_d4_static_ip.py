@@ -172,3 +172,36 @@ def test_a_row_saved_as_angelone_counts_as_angel_one_and_is_renamed_on_the_next_
                 select(EgressIpRecord).where(EgressIpRecord.tenant_id == tenant_id))]
     assert _run(stored()) == [("angel_one", "PRIMARY", PUBLIC)]
     assert _run(problem()) is None
+
+
+def test_a_stale_angelone_row_is_ignored_when_an_angel_one_row_exists_and_removed_on_the_next_save(monkeypatch):
+    """Both spellings stored for one role (possible only through the API before the registry check): the registry row wins
+    everywhere, the stale legacy IP never satisfies the LIVE check, and the next save of that role deletes the legacy row."""
+    monkeypatch.setattr(static_ip, "normalise_ip", lambda v: v.strip())
+    headers, me = _owner("d4-legacy-both@example.com")
+    tenant_id = me["tenant_id"]
+
+    async def seed():
+        async with _session_factory() as session:
+            session.add(EgressIpRecord(tenant_id=tenant_id, broker_name="angelone", role="PRIMARY", ip=PUBLIC))       # stale
+            session.add(EgressIpRecord(tenant_id=tenant_id, broker_name="angel_one", role="PRIMARY", ip=OTHER_PUBLIC))
+            await session.commit()
+    _run(seed())
+
+    async def problem():
+        async with _session_factory() as session:
+            return await static_ip.live_entry_problem(session, tenant_id, "angel_one")
+    monkeypatch.setattr(config, "STATIC_IP_REQUIRED_FOR_LIVE", True)
+    monkeypatch.setattr(config, "SERVER_EGRESS_IP", PUBLIC)                   # the server sits on the stale IP
+    assert _run(problem()) is not None                                        # the stale legacy row does not satisfy LIVE
+    listed = client.get("/api/compliance/static-ips", headers=headers).json()["ips"]
+    assert [(r["broker_name"], r["ip"]) for r in listed] == [("angel_one", OTHER_PUBLIC)]
+
+    res = client.put("/api/compliance/static-ips", headers=headers, json={"broker_name": "angel_one", "ip": OTHER_PUBLIC})
+    assert res.status_code == 200
+
+    async def stored():
+        async with _session_factory() as session:
+            return [(r.broker_name, r.role, r.ip) for r in await session.scalars(
+                select(EgressIpRecord).where(EgressIpRecord.tenant_id == tenant_id))]
+    assert _run(stored()) == [("angel_one", "PRIMARY", OTHER_PUBLIC)]

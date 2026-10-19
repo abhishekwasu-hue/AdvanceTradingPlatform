@@ -91,6 +91,7 @@ BODY_OVERRIDES: Dict[Tuple[str, str], dict] = {
     ("POST", "/api/journal/trades/{trade_id}/tags"): {"tag": "fomo_entry"},
     ("PATCH", "/api/team/members/{member_id}"): {"role": "VIEWER"},
     ("PUT", "/api/screener/screens/{screen_id}"): {"name": "Z10c", "source": "close > SMA(close, 20)"},
+    ("PUT", "/api/screener/rankings/{system_id}"): {"name": "Z10c", "tree": {"nodes": [{"name": "r", "factor": "PctChange(close, 20)", "weight": 100}]}},
 }
 
 # Path parameters the planted rows cannot stand for: a real member, invite and login session of tenant A, made fresh

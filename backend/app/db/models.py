@@ -2666,6 +2666,27 @@ class MarketZoneRunRecord(Base):
     source_ingested_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)    # newest ingest it read
 
 
+class BreakoutFitnessRunRecord(Base):
+    """U6 BK5: one template's screen fitness as of a date - forward returns and failed-break rates of its historical
+    signals on the SHARED lake's daily bars (md_candles; never a tenant's or a user's own data), aggregated over the
+    configured universe. Reference data like the market zones: no tenant column, the same rows for every organisation.
+    Append-only per (template, universe, as_of); the latest as_of is the one shown."""
+
+    __tablename__ = "breakout_fitness_runs"
+    __table_args__ = (UniqueConstraint("template_id", "universe", "as_of", name="uq_breakout_fitness_run"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    template_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    universe: Mapped[str] = mapped_column(String(32), nullable=False)
+    as_of: Mapped[date] = mapped_column(Date, nullable=False)                                   # the IST date of the run
+    signal_tf: Mapped[str] = mapped_column(String(8), nullable=False)
+    params_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    symbols: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    signals: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    stats: Mapped[str] = mapped_column(Text, nullable=False, default="{}")                       # JSON (fitness.aggregate)
+    computed_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, nullable=False, default=_utcnow)
+
+
 class MarketZoneRecord(Base):
     """Z7a-2: one zone of a stored snapshot - its bounds, role by price, ATP lifecycle state (fresh / tested / flipped /
     invalidated) and counters, and the tracker the next run continues from (JSON)."""
@@ -2967,6 +2988,25 @@ class ScreenRecord(Base):
     ast_version: Mapped[str] = mapped_column(String(20), nullable=False, default="screenql/1")
     base_tf: Mapped[str] = mapped_column(String(4), nullable=False, default="1d")
     params_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class RankingSystemRecord(Base):
+    """N3 S7a (spec §2.5): a saved ranking system - a weighted tree of ScreenQL factors (higher / lower is better,
+    optionally sector-neutral) that turns a universe into a 0-100 rank. Tenant-scoped, named (unique per organisation),
+    archived, never hard-deleted (a screen may refer to it by name through RankScore)."""
+
+    __tablename__ = "ranking_systems"
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_ranking_systems_tenant_name"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+    description: Mapped[str] = mapped_column(String(300), nullable=False, default="")
+    tree_json: Mapped[str] = mapped_column(Text, nullable=False)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)

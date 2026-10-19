@@ -47,6 +47,9 @@ BASE_TF = "5m"
 SCREENQL_EXEMPT: Dict[str, str] = {
     "Rank": "cross-sectional: the universe's last bars, run through run_screen only (not a per-symbol series)",
     "PercentileRank": "cross-sectional: the universe's last bars, run through run_screen only (not a per-symbol series)",
+    "RankScore": ("cross-sectional: a ranking system over the universe's last bars, run through run_screen only; each factor is a "
+                  "daily ScreenQL number with its own causal cases, and tests/test_n3_s7a_rankings.py checks the rank at each date "
+                  "equals a run on bars cut there (no look-ahead)"),
     "PCR": "the supplied option-chain snapshot, not bars",
     "ChainBias": "the supplied option-chain snapshot, not bars",
     "MaxPainDistancePct": "the supplied option-chain snapshot, not bars",
@@ -90,7 +93,11 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "PDC": ["PDC()"],
     "ORHigh": ["ORHigh(30)"],
     "ORLow": ["ORLow(15)"],
-    "Pattern": ['Pattern("hammer")', 'Pattern("bullish_engulfing")', 'Pattern("morning_star")', 'Pattern("inside_bar")@1h'],
+    "Pattern": ['Pattern("hammer")', 'Pattern("bullish_engulfing")', 'Pattern("morning_star")', 'Pattern("inside_bar")@1h',
+                # AMW-3: the v2 candles (ATR(14) of the bars so far) and the status known on the bar after the pattern
+                'Pattern("bullish_strong_body")', 'Pattern("bearish_strong_body")', 'Pattern("bearish_gap_reversal")',
+                'Pattern("bearish_pin_bar", "confirmed")', 'Pattern("bullish_engulfing", "failed")', 'Pattern("hammer", "unconfirmed")',
+                'Pattern("bullish_strong_body", "confirmed")@15m'],
     "SwingHigh": ["SwingHigh(0)", "SwingHigh(1)", "SwingHigh(2)", "SwingHigh(3)"],
     "SwingLow": ["SwingLow(0)", "SwingLow(1)"],
     "SwingDirection": ["SwingDirection(0)", "SwingDirection(1)@1h"],
@@ -99,6 +106,13 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "ReversalAt": ['ReversalAt(SwingLow(0), "bullish")', 'ReversalAt(SMA(close, 20), "bearish")'],
     "RealBreak": ['RealBreak(SwingHigh(0), "above", 20)', 'RealBreak(PDL(), "below")'],
     "MedianRange": ["MedianRange(20)", "MedianRange(10)@1h"],
+    # AMW-3 (flag screenql_amw_functions): population stdev, RSI divergence and swing labels from CONFIRMED swings, the
+    # session-time window (a bar's own start time)
+    "StDev": ["StDev(close, 20)", "StDev(close, 5)@1h", "StDev(RSI(14), 10)"],
+    "RsiDivergence": ['RsiDivergence("bullish", 30)', 'RsiDivergence("bearish", 30)', 'RsiDivergence("bullish", 60, 1)',
+                      'RsiDivergence("bullish", 40)@15m'],
+    "SwingLabel": ['SwingLabel("high")', 'SwingLabel("low", 1)', 'SwingLabel("high", 0)@15m'],
+    "TimeOfDay": ['TimeOfDay("09:30", "14:45")', 'TimeOfDay("15:00", "09:30")', 'TimeOfDay("10:15", "13:15")@1h'],
     # U6 BK1 breakout screens (one signal per leg) and their factors; volume and distance conditions off so they fire
     "RangeBreakout": ['RangeBreakout("up", 20, 0, 0)', 'RangeBreakout("down", 10, 0.1, 0, "auto")', 'RangeBreakout("up", 10, 0, 0)@1h'],
     "SwingBreakout": ['SwingBreakout("up", 0, 0)', 'SwingBreakout("down", 0, 0)@1h'],
@@ -147,16 +161,23 @@ SCREENQL_DAILY: List[str] = ["close@1w", "SMA(close, 5)@1w", "RSI(14)@1w", "clos
                              'VCPReady("up", 2, 1, 10, FALSE)', 'DonchianBreakout("up", 55, 0)', 'SqueezeBreakout("up", "bollinger", 20, 125, 0)',
                              'SqueezeBreakout("down", "ttm")', 'MABreakout("down", 50, "sma", 0)', 'RegimeBreakout("up", 15, 10, 30, 0)',
                              'TrendlineBreakout("down", "line", 2, 0)', 'PatternBreakout("down", "flag", 0, 0)',      # U6 BK4
-                             'RetestEntry("up", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)']   # daily synthetic bars open at the last close: no gaps
+                             'RetestEntry("up", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)',   # daily synthetic bars open at the last close: no gaps
+                             "StDev(close, 10)@1w", 'RsiDivergence("bullish", 40)', 'SwingLabel("low", 0)@1w',                     # AMW-3
+                             'Pattern("bullish_strong_body", "unconfirmed")']
 # Answered for the last bar only (not series): causal by construction, kept out of history-reading functions.
 SCREENQL_LAST_BAR: Dict[str, List[str]] = {
     "Trend": ["Trend(3)"],
     "StructureEvent": ["StructureEvent(3)"],
-    "PatternBullish": ["PatternBullish()"],
-    "PatternBearish": ["PatternBearish()"],
+    # AMW-3: the next-bar status (PatternBearish("confirmed") on its own data length, SCREENQL_LAST_BAR_LENGTH)
+    "PatternBullish": ["PatternBullish()", 'PatternBullish("failed")', 'PatternBullish("unconfirmed")'],
+    "PatternBearish": ["PatternBearish()", 'PatternBearish("confirmed")'],
     "NearSupport": ["NearSupport(0.5, 3)"],
     "NearResistance": ["NearResistance(0.5, 3)"],
 }
+
+# A last-bar case whose answer is "yes" on none of the default data set's 12 prefixes would fail the non-vacuity test:
+# a data length on which it says yes somewhere (the harness then runs the case on that length too).
+SCREENQL_LAST_BAR_LENGTH: Dict[str, int] = {'PatternBearish("confirmed")': 540}
 
 
 def _screenql(text: str, base_tf: str = BASE_TF):
@@ -230,8 +251,28 @@ def _operand_series(op: Any, f: pd.DataFrame) -> pd.Series:
 
 
 def _pattern_mask(name: str, f: pd.DataFrame) -> np.ndarray:
-    from app.price_action.candlestick_patterns import pattern_masks
-    return pattern_masks(f)[name]
+    from app.price_action.candlestick_patterns import pattern_masks, pattern_masks_v2
+    from app.screener.registry import PATTERN_NAMES_V2
+    return (pattern_masks_v2(f) if name in PATTERN_NAMES_V2 else pattern_masks(f))[name]
+
+
+def _confirmation_mask(name: str, status: str, f: pd.DataFrame) -> np.ndarray:
+    """AMW-3: the next-bar status of a pattern (candlestick_patterns.confirmation_masks), known on the bar after it."""
+    from app.price_action.candlestick_patterns import PATTERN_DIRECTION, confirmation_masks
+    return confirmation_masks(f, _pattern_mask(name, f), PATTERN_DIRECTION[name])[status]
+
+
+def _v2_detected(f: pd.DataFrame) -> List[Any]:
+    """AMW-3: the v2 candle detectors bar by bar (Strong Body, Gap Reversal), as records known on their own bar."""
+    from app.price_action import candlestick_patterns as cp
+    atr_values = cp._v2_atr(f)
+    out: List[Any] = []
+    for i in range(len(f)):
+        for detector in cp.V2_DETECTORS:
+            m = detector(f, i, atr_values)
+            if m is not None:
+                out.append((i, m.pattern, m.direction, m.confidence))
+    return out
 
 
 def _degree_pivots(degree: int, s: Dict[str, Any], f: pd.DataFrame) -> List[Any]:
@@ -284,9 +325,14 @@ def _register_operands() -> None:
 
 def _register_patterns() -> None:
     from app.price_action import candlestick_patterns as cp
-    from app.screener.registry import PATTERN_NAMES
-    for name in PATTERN_NAMES:
+    from app.screener.registry import PATTERN_NAMES, PATTERN_NAMES_V2
+    for name in PATTERN_NAMES + PATTERN_NAMES_V2:
         register(f"pattern.{name}", partial(_pattern_mask, name), group="pattern")
+    # AMW-3: the confirmation status of a directional pattern, on the bar after it (one pattern per status and per v2 kind)
+    for name, status in (("bearish_pin_bar", "confirmed"), ("bullish_pin_bar", "failed"), ("bearish_rejection", "unconfirmed"),
+                         ("bullish_strong_body", "confirmed"), ("bearish_strong_body", "unconfirmed")):
+        register(f"pattern.confirm.{name}.{status}", partial(_confirmation_mask, name, status), group="pattern")
+    register("pattern.detect_v2", _v2_detected, kind=EVENTS, group="pattern", known_at=lambda r: r[0], samples=12, length=200)
 
     def detected(f: pd.DataFrame) -> List[Any]:
         pos = {ts: i for i, ts in enumerate(f.index)}
@@ -344,7 +390,8 @@ def _register_zones() -> None:
 def _register_screenql() -> None:
     for exprs in SCREENQL_SERIES.values():
         for text in exprs:
-            heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady", "Gap", "Retest"))
+            heavy = any(k in text for k in ("SwingZone", "ReversalAt", "RealBreak", "Breakout", "BreakType", "VCPReady", "Gap", "Retest",
+                                            "RsiDivergence", "SwingLabel"))
             register(f"screenql.{text}", _screenql(text), group="screenql", samples=4 if heavy else 8)
     for text in SCREENQL_FIELDS:
         register(f"screenql.{text}", _screenql(text), group="screenql")
@@ -352,7 +399,8 @@ def _register_screenql() -> None:
         register(f"screenql.daily.{text}", _screenql(text, "1d"), group="screenql", bars="1d")
     for exprs in SCREENQL_LAST_BAR.values():
         for text in exprs:
-            register(f"screenql.{text}", _screenql(text), kind=LAST_BAR, group="screenql", samples=3)
+            extra = {"length": SCREENQL_LAST_BAR_LENGTH[text]} if text in SCREENQL_LAST_BAR_LENGTH else {}
+            register(f"screenql.{text}", _screenql(text), kind=LAST_BAR, group="screenql", samples=3, **extra)
 
 
 def register_all() -> None:
@@ -394,7 +442,7 @@ def screenql_case_mismatches() -> List[str]:
 def coverage_gaps() -> List[str]:
     """Shipped functions with no case and no exemption, each with the exact thing to add (the coverage test wants this
     empty)."""
-    from app.screener.registry import FUNCTIONS, LAST_BAR_ONLY, PATTERN_NAMES
+    from app.screener.registry import FUNCTIONS, LAST_BAR_ONLY, PATTERN_NAMES, PATTERN_NAMES_V2
     register_all()
     gaps: List[str] = []
     covered_sql = set(SCREENQL_SERIES) | set(SCREENQL_LAST_BAR) | set(SCREENQL_EXEMPT)
@@ -411,7 +459,7 @@ def coverage_gaps() -> List[str]:
     gaps += [f"Operand {name}: no case operand.{name} (_register_operands loops over IndicatorName - is it imported?)"
              for name in operand_indicators() if f"operand.{name}" not in REGISTRY]
     gaps += [f"pattern {name}: no case pattern.{name} (_register_patterns loops over registry.PATTERN_NAMES)"
-             for name in PATTERN_NAMES if f"pattern.{name}" not in REGISTRY]
+             for name in PATTERN_NAMES + PATTERN_NAMES_V2 if f"pattern.{name}" not in REGISTRY]
     for qual in indicator_functions():
         name = qual.split(".", 1)[1]
         if not any(n.startswith(f"indicator.{name}") for n in REGISTRY):

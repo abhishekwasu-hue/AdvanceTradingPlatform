@@ -296,6 +296,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/charts/layers/market-zones"): "member",       # Z7a-3: the organisation's zone snapshots as of a time (read-only)
     ("GET", "/api/charts/studies"): "member",                  # N4 CH6: ScreenQL studies from the shared lake bars as of a time (read-only)
     ("GET", "/api/charts/layers/price-action"): "member",       # N4 CH3: computed from the shared lake bars as of a time (read-only)
+    ("POST", "/api/screener/board/context"): S_COMPUTE,          # U5 D3a: reference data + shared closes for the caller's symbols; stores nothing
     ("GET", "/api/charts/layers/trades"): "member",             # N4 CH4a: the caller's OWN PAPER trades only (user + organisation)
     ("GET", "/api/charts/contracts/basis"): "member",       # N4 CH4c: shared lake reference data (futures + spot closes)
     ("GET", "/api/charts/contracts/search"): "member",          # N4 CH4b: the instrument master (platform reference data)
@@ -307,6 +308,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/contract-notes"): "member",
     ("POST", "/api/contract-notes"): "trader",
     ("GET", "/api/contract-notes/{note_id}"): "member",
+    ("GET", "/api/context/panel"): "member",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,
@@ -524,6 +526,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/scanner/ai/read"): "trader",
     ("POST", "/api/scanner/run"): S_COMPUTE,
     ("GET", "/api/screener/breakouts/catalog"): "member",
+    ("GET", "/api/screener/breakouts/fitness"): "member",
     ("POST", "/api/screener/breakouts/run"): "trader",
     ("GET", "/api/screener/evidence/runs/{run_id}"): "member",
     ("GET", "/api/screener/evidence/{evidence_id}"): "member",
@@ -541,6 +544,11 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/history/asof"): "trader",        # N3 S6a: shared lake bars; the caller's own screens only
     ("POST", "/api/screener/history/fitness"): "trader",     # N3 S6a: writes one trial to the caller's organisation's ledger
     ("POST", "/api/screener/history/backtest"): "trader",    # N3 S6b: a simulation; writes one trial to the ledger
+    ("GET", "/api/screener/rankings"): "member",             # N3 S7a: the platform systems and the organisation's own
+    ("POST", "/api/screener/rankings"): "trader",
+    ("PUT", "/api/screener/rankings/{system_id}"): "trader",
+    ("POST", "/api/screener/rankings/{system_id}/archive"): "trader",
+    ("POST", "/api/screener/rankings/run"): "trader",         # N3 S7a: bars through the caller's organisation / own session
     ("GET", "/api/screener/runs/{run_id}"): "member",
     ("GET", "/api/screener/screens"): "member",
     ("POST", "/api/screener/screens"): "trader",

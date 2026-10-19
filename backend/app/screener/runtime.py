@@ -6,7 +6,7 @@ registry entry.
   aligned to the screen's bars by *close time*: a 1d value becomes visible only on the screen bars that close at or
   after that day's bar closes. No bar can see a higher-timeframe bar that had not finished (look-ahead guard, tested).
 * A missing coarser frame is resampled from the base bars, and a trailing incomplete bucket is dropped.
-* Cross-sectional functions (Rank, PercentileRank) work on the last bar of every symbol in the universe; they are
+* Cross-sectional functions (Rank, PercentileRank, RankScore) work on the last bar of every symbol in the universe; they are
   computed first (innermost first) and read back as constants per symbol.
 * NaN (not enough history, division by zero) never matches: every comparison with NaN is false.
 """
@@ -299,11 +299,16 @@ class _Eval:
             "ORLow": lambda: _operand(f, "OR_LOW", win(0)),
             "Trend": lambda: _structure(f, win(0, 3))[0],
             "StructureEvent": lambda: _structure(f, win(0, 3))[1],
-            "PatternBullish": lambda: _pattern(f, "BULLISH"),
-            "PatternBearish": lambda: _pattern(f, "BEARISH"),
+            "PatternBullish": lambda: _pattern(f, "BULLISH", _text(0, "any")),
+            "PatternBearish": lambda: _pattern(f, "BEARISH", _text(0, "any")),
             "NearSupport": lambda: _near_zone(f, "NEAR_SUPPORT", num(0, 0.5), win(1, 3)),
             "NearResistance": lambda: _near_zone(f, "NEAR_RESISTANCE", num(0, 0.5), win(1, 3)),
-            "Pattern": lambda: _pattern_series(f, str(self.ev(args[0], tf))),
+            "Pattern": lambda: _pattern_series(f, str(self.ev(args[0], tf)), _text(1, "any")),
+            # AMW-3 (flag screenql_amw_functions): the AMW screener's predicates as causal series
+            "StDev": lambda: self.series(args[0], tf).rolling(win(1)).std(ddof=0),
+            "RsiDivergence": lambda: _rsi_divergence(f, _text(0, "bullish"), win(1, 15), int(num(2, 0))),
+            "SwingLabel": lambda: _swing_label(f, _text(0, "high"), int(num(1, 0))),
+            "TimeOfDay": lambda: pd.Series(time_of_day(f.index, _text(0, ""), _text(1, "")), index=f.index),
             "SwingHigh": lambda: _swings(f, int(num(0, 0)))[0],
             "SwingLow": lambda: _swings(f, int(num(0, 0)))[1],
             "SwingDirection": lambda: _swings(f, int(num(0, 0)))[2],
@@ -414,19 +419,117 @@ def _structure(f: pd.DataFrame, window: int) -> Tuple[str, str]:
     return result.trend.value, (f"{latest.event}_{latest.direction}".upper() if latest else "")
 
 
-def _pattern(f: pd.DataFrame, direction: str) -> bool:
-    from app.price_action.candlestick_patterns import detect_patterns_at
-    return any(m.direction == direction for m in detect_patterns_at(f, len(f) - 1))
+def _pattern(f: pd.DataFrame, direction: str, confirm: str = "any") -> bool:
+    """A pattern of the direction on the last bar (confirm any), or - AMW-3 - a pattern of that direction on the bar
+    before whose next-bar status (`candlestick_patterns.confirmation_masks`) the last bar gave is `confirm`."""
+    from app.price_action.candlestick_patterns import CONFIRM_STATES, detect_patterns_at
+    if confirm not in CONFIRM_STATES:
+        raise ScreenRuntimeError(f"unknown confirmation status {confirm!r}")
+    if confirm == "any":
+        return any(m.direction == direction for m in detect_patterns_at(f, len(f) - 1))
+    if len(f) < 2 or not any(m.direction == direction for m in detect_patterns_at(f, len(f) - 2)):
+        return False
+    return _status(f["high"].iloc[-2], f["low"].iloc[-2], f["close"].iloc[-1], direction) == confirm
 
 
-def _pattern_series(f: pd.DataFrame, name: str) -> pd.Series:
+def _status(high: float, low: float, close: float, direction: str) -> str:
+    """The next-bar status of a pattern bar (high, low) given the next close (the rule of confirmation_masks)."""
+    good, bad = (close > high, close < low) if direction == "BULLISH" else (close < low, close > high)
+    return "confirmed" if good else "failed" if bad else "unconfirmed"
+
+
+def _pattern_series(f: pd.DataFrame, name: str, confirm: str = "any") -> pd.Series:
     """S5-A: True on each bar where the named pattern shows (`candlestick_patterns.pattern_masks`, vectorised: a whole
-    frame costs about as much as one bar did). The first two bars are False."""
-    from app.price_action.candlestick_patterns import pattern_masks
-    masks = pattern_masks(f)
+    frame costs about as much as one bar did). The first two bars are False. AMW-3: the v2 candles
+    (`pattern_masks_v2`), and with `confirm` the status the bar gave the pattern on the bar before (`confirmation_masks`)."""
+    from app.price_action.candlestick_patterns import (CONFIRM_STATES, PATTERN_DIRECTION, V2_PATTERN_NAMES, confirmation_masks, pattern_masks,
+                                                       pattern_masks_v2)
+    if confirm not in CONFIRM_STATES:
+        raise ScreenRuntimeError(f"unknown confirmation status {confirm!r}")
+    masks = pattern_masks_v2(f) if name in V2_PATTERN_NAMES else pattern_masks(f)
     if name not in masks:
         raise ScreenRuntimeError(f"unknown pattern {name!r}")
-    return pd.Series(masks[name], index=f.index)
+    if confirm == "any":
+        return pd.Series(masks[name], index=f.index)
+    return pd.Series(confirmation_masks(f, masks[name], PATTERN_DIRECTION[name])[confirm], index=f.index)
+
+
+def _swing_pivots(f: pd.DataFrame, degree: int) -> List[Any]:
+    """The causal swing engine's confirmed pivots of a degree (default settings), in confirmation order."""
+    from app.price_action import causal_swings as cs
+    from app.price_action import pa_settings
+    s = pa_settings.settings()
+    if not 0 <= degree < len(s["swing_atr_mult"]):
+        raise ScreenRuntimeError(f"swing degree {degree} is not one of 0-{len(s['swing_atr_mult']) - 1}")
+    frame = pd.DataFrame({k: f[k].astype(float).to_numpy() for k in ("open", "high", "low", "close")})
+    frame["timestamp"] = frame["bar_end"] = f.index
+    return [p for p in cs.degree_pivots(frame, degree, s) if p.confirmed_idx is not None]
+
+
+def _swing_label(f: pd.DataFrame, kind: str, degree: int) -> pd.Series:
+    """AMW-3: on every bar, the label of the last swing high (HH / LH) or low (HL / LL) CONFIRMED by that bar against the
+    one of the same kind before it - the Dow trend's labels (an equal price reads lower). Missing (None) until two swings
+    of the kind are confirmed. A pivot counts from its confirmation bar, never from its extreme (no look-ahead)."""
+    if kind not in ("high", "low"):
+        raise ScreenRuntimeError(f"unknown swing kind {kind!r}")
+    k = "H" if kind == "high" else "L"
+    out = np.full(len(f), None, dtype=object)
+    prev: Optional[float] = None
+    for p in _swing_pivots(f, degree):
+        if p.kind != k:
+            continue
+        if prev is not None:
+            higher = p.price > prev
+            out[int(p.confirmed_idx)] = ("HH" if higher else "LH") if k == "H" else ("HL" if higher else "LL")
+        prev = p.price
+    return pd.Series(out, index=f.index, dtype=object).ffill()
+
+
+def _rsi_divergence(f: pd.DataFrame, side: str, lookback: int, degree: int) -> pd.Series:
+    """AMW-3: a regular RSI(14) divergence on every bar, from the swings CONFIRMED by that bar. Bullish: the last swing low
+    is lower than the one before and RSI(14) at it is higher; bearish: a higher swing high with a lower RSI. RSI is read
+    at each swing's extreme bar (known by the confirmation bar). True while the latest swing's extreme is at most
+    `lookback` bars before the bar; false before two swings of the kind or where RSI has no value yet."""
+    if side not in ("bullish", "bearish"):
+        raise ScreenRuntimeError(f"unknown divergence side {side!r}")
+    k = "L" if side == "bullish" else "H"
+    rsi = _rsi(f["close"].astype(float), 14).to_numpy(float)
+    n_ = len(f)
+    div = np.zeros(n_, dtype=bool)                      # the divergence state from each confirmation on
+    last_bar = np.full(n_, -1, dtype=np.int64)          # the latest swing's extreme bar, known at each bar
+    prev: Optional[Any] = None
+    for p in _swing_pivots(f, degree):
+        if p.kind != k:
+            continue
+        c, b = int(p.confirmed_idx), int(p.bar_idx)
+        state = False
+        if prev is not None:
+            r0, r1 = rsi[int(prev.bar_idx)], rsi[b]
+            if np.isfinite(r0) and np.isfinite(r1):
+                state = bool(p.price < prev.price and r1 > r0) if k == "L" else bool(p.price > prev.price and r1 < r0)
+        div[c:], last_bar[c:] = state, b
+        prev = p
+    age = np.arange(n_) - last_bar
+    return pd.Series(div & (last_bar >= 0) & (age <= lookback), index=f.index)
+
+
+def time_of_day(index: pd.DatetimeIndex, start: str, end: str) -> np.ndarray:
+    """AMW-3 TimeOfDay: each bar's START time (exchange time, IST; a naive index is read as UTC) between start and end
+    (HH:MM, both included). start after end wraps past midnight."""
+    def minutes(text: str) -> int:
+        try:
+            hh, mm = text.split(":")
+            value = int(hh) * 60 + int(mm)
+        except ValueError as exc:
+            raise ScreenRuntimeError(f"TimeOfDay needs HH:MM, got {text!r}") from exc
+        if not (len(hh) == 2 and len(mm) == 2 and 0 <= int(hh) <= 23 and 0 <= int(mm) <= 59):
+            raise ScreenRuntimeError(f"TimeOfDay needs HH:MM, got {text!r}")
+        return value
+    lo, hi = minutes(start), minutes(end)
+    idx = pd.DatetimeIndex(index)
+    local = (idx.tz_localize("UTC") if idx.tz is None else idx).tz_convert(EXCHANGE_TZ)
+    m = np.asarray(local.hour * 60 + local.minute)
+    return (m >= lo) & (m <= hi) if lo <= hi else (m >= lo) | (m <= hi)
 
 
 def _swings(f: pd.DataFrame, degree: int) -> Tuple[pd.Series, pd.Series, pd.Series]:
@@ -792,6 +895,10 @@ def _cross_sectional(ast: Any, universe: List[SymbolData], base_tf: str, params:
     constants: Dict[str, Dict[int, float]] = {d.symbol: {} for d in universe}
     cs = [node for node in n.walk(ast) if isinstance(node, n.Call) and FUNCTIONS.get(node.name) and FUNCTIONS[node.name].cross_sectional]
     for node in reversed(cs):                                       # pre-order reversed: inner calls first
+        if node.name == "RankScore":
+            for sym, r in _rank_score(node, universe, base_tf, params).items():
+                constants[sym][id(node)] = r
+            continue
         values: Dict[str, float] = {}
         groups: Dict[str, Any] = {}
         for d in universe:
@@ -811,6 +918,20 @@ def _cross_sectional(ast: Any, universe: List[SymbolData], base_tf: str, params:
         for sym in s.index:
             constants[sym][id(node)] = float(ranked.get(sym, np.nan))
     return constants
+
+
+def _rank_score(node: Any, universe: List[SymbolData], base_tf: str, params: Dict[str, Any]) -> Dict[str, float]:
+    """N3 S7a: RankScore("name") - the system named (from the run's `ranking.ACTIVE`, set by the route that loaded it)
+    scored over the universe's last bars. A leaf is NaN for a symbol with fewer bars than the leaf's lookback (the S6
+    history read does the same, so a live run and a history date agree). An unknown system: NaN (never matches; the
+    routes refuse it before a run)."""
+    from app.screener import ranking as RK
+    system = RK.ACTIVE.get().get(RK.system_name(node.args[0], params) or "")
+    if system is None:
+        return {d.symbol: float("nan") for d in universe}
+    sectors = {d.symbol: d.sector for d in universe} if system.sector_neutral else None
+    rank, _ = RK.score(system, RK.live_values(system, universe, base_tf), sectors)
+    return {d.symbol: float(rank.get(d.symbol, np.nan)) for d in universe}
 
 
 def run_screen(ast: Any, validated: Validated, universe: List[SymbolData], *, base_tf: str, params: Optional[Dict[str, Any]] = None,

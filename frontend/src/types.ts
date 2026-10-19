@@ -2531,6 +2531,15 @@ export interface ExpectedMove {
   cone: ConeRow[]; selected: ConeRow; note: string;
 }
 
+/** N2-5 (flag `context_panel`): one tile of the market context panel. Fields beyond the common ones depend on the tile. */
+export interface ContextTile {
+  status: "ok" | "stale" | "na"; source: string; as_of: string | null; reason?: string;
+  [extra: string]: unknown;
+}
+export interface DowRead { trend: "UPTREND" | "DOWNTREND" | "RANGE"; swings: { kind: "HIGH" | "LOW"; label: string | null; price: number; date: string }[] }
+export interface ContextEvent { date: string; start_time: string | null; end_time: string | null; kind: string; scope: string; action: string; description: string; today: boolean; own: boolean }
+export interface ContextPanel { tiles: Record<string, ContextTile>; order: string[]; as_of: string; note: string }
+
 /** Z3-b: the progression ladder card (PAPER stage only in Phase 0). */
 export interface PaperLadder {
   stage: string;

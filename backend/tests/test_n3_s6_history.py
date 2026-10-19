@@ -314,6 +314,7 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "DonchianBreakout": 'DonchianBreakout("up", 20, 0)',                     # U6 BK3 (main #229): rare events, every date
     "MABreakout": 'MABreakout("up", 5, "sma", 0)',
     "RegimeBreakout": 'RegimeBreakout("up", 20, 5, 60, 0)',
+    "RsiDivergence": 'RsiDivergence("bearish", 60)',                           # AMW-3: no bullish one on the sparse dates
 }
 SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt",   # rare events: every date
                "DonchianBreakout", "MABreakout", "RegimeBreakout"}

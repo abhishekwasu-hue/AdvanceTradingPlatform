@@ -63,11 +63,11 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
     }
   }
 
-  async function loginToUpstox() {
+  async function loginToUpstox(t: BrokerTokenInfo) {
     setBusy(true);
     setError(null);
     try {
-      const { authorization_url } = await api.upstoxOAuthStart();
+      const { authorization_url } = await api.upstoxOAuthStart(t.account_label ?? "primary");
       window.location.href = authorization_url;
     } catch (e) {
       setError(String(e));
@@ -92,6 +92,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
             <div className="flex items-center gap-2">
               {ok ? <ShieldCheck size={14} className="text-up" /> : <KeyRound size={14} className="text-warn" />}
               <span className="font-bold capitalize text-fg">{t.broker_name}</span>
+              <span className="text-fg-muted">/ {t.account_label ?? "primary"}</span>
               <span className={`rounded border px-1.5 py-0.5 font-semibold ${ok ? "border-up/40 text-up" : "border-warn/40 text-warn"}`}>
                 {t.token_status}
               </span>
@@ -108,7 +109,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
             <div className="flex items-center gap-3">
               {t.oauth_supported && (
                 <button
-                  onClick={loginToUpstox}
+                  onClick={() => void loginToUpstox(t)}
                   disabled={busy}
                   className="flex items-center gap-1.5 rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1 disabled:opacity-50"
                 >

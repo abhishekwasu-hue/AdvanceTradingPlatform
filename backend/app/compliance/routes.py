@@ -26,7 +26,7 @@ class StaticIpBody(BaseModel):
 
 
 def _row(r) -> dict:
-    return {"broker_name": r.broker_name, "role": r.role, "ip": r.ip,
+    return {"broker_name": static_ip.canonical_broker(r.broker_name), "role": r.role, "ip": r.ip,
             "registered_at": r.registered_at.isoformat() if r.registered_at else None,
             "updated_at": r.updated_at.isoformat() if r.updated_at else None}
 
@@ -46,8 +46,12 @@ async def list_static_ips(user: User = Depends(get_current_user), session: Async
 
 @router.put("/static-ips")
 async def set_static_ip(body: StaticIpBody, user: User = Depends(require_owner), session: AsyncSession = Depends(get_session)) -> dict:
+    from app.brokers.registry import available_brokers
+    broker_name = body.broker_name.strip().lower()
+    if broker_name not in available_brokers():
+        raise HTTPException(status_code=400, detail=f"Unknown broker '{body.broker_name}'. Use one of: {', '.join(available_brokers())}.")
     try:
-        record = await static_ip.set_ip(session, user.tenant_id, body.broker_name, body.role, body.ip, user_id=user.id,
+        record = await static_ip.set_ip(session, user.tenant_id, broker_name, body.role, body.ip, user_id=user.id,
                                         registered_at=body.registered_at)
     except static_ip.StaticIpError as exc:
         raise HTTPException(status_code=409 if "changed" in str(exc) else 422, detail=str(exc)) from exc

@@ -55,6 +55,25 @@ def _flag(tenant_id=None, on: bool = True, globally: bool = False) -> None:
     _run(go())
 
 
+@pytest.fixture(autouse=True)
+def _flag_cleared():
+    """Every case starts and ends with the flag off for every tenant (a tenant id may be reused across modules)."""
+    _clear_tenants()
+    yield
+    _clear_tenants()
+
+
+def _clear_tenants() -> None:
+    async def go():
+        async with _session_factory() as session:
+            current = await controls._get(session, controls.KEY_FEATURE_FLAGS)
+            flags = dict(current.get("flags") or {})
+            flags[limits.FLAG_V2] = {"on": False, "tenants": []}
+            await controls._set(session, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
+            await session.commit()
+    _run(go())
+
+
 def _with_tenant(tenant_id: int, fn, **fields):
     """Runs `fn(session, tenant)` on the tenant row (fields set on it first, not committed)."""
     async def go():
@@ -263,8 +282,5 @@ def test_billing_shows_v2_limits_and_usage_only_while_the_flag_is_on(monkeypatch
 def test_plan_catalogue_lists_v2_limits_only_when_the_flag_is_on_for_everyone():
     assert all("limits_v2" not in p for p in client.get("/api/billing/plans").json())
     _flag(globally=True)
-    try:
-        plans = {p["id"]: p for p in client.get("/api/billing/plans").json()}
-        assert plans["business"]["limits_v2"]["screen_symbols"] == 2500 and plans["free"]["limits_v2"]["watchlists"] == 5
-    finally:
-        _flag(on=False, globally=True)
+    plans = {p["id"]: p for p in client.get("/api/billing/plans").json()}
+    assert plans["business"]["limits_v2"]["screen_symbols"] == 2500 and plans["free"]["limits_v2"]["watchlists"] == 5

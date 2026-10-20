@@ -21,10 +21,26 @@ BLOCKED = [
     "M&M kharido", "BAJAJ-AUTO le lo", "NIFTY 50 is near its 20-day high. ITC kharido, risk is small.",
 ]
 
+# Review of #278: forms the first version let through (each one passed before the fix).
+REVIEW_BLOCKED = [
+    "RELIANCE\nkharido", "Pick of the day: RELIANCE\nKharido!", "RELIANCE looks strong. Kharido.",     # a line / sentence break
+    "RELIANCE (NSE) kharido", "RELIANCE (NSE) ko jaldi se le lo", "INFY [EQ] ghya",                    # a bracketed tag
+    "BANKNIFTY CE le lo", "NIFTY 25000 CE le lo", "BANKNIFTY 52000 PE ko le lo", "BANKNIFTY FUT le lo",  # option / segment
+    "RELIANCE 2900 par le lo", "NIFTY 22,000 par le lo", "RELIANCE 2,900.50 pe le lo",                  # a price level
+    "RELIANCE ko jaldi se le lo", "RELIANCE ke shares abhi le lo",                                     # "se", three words
+]
+
 PASSES = [
     # the decoys of the earlier review
     "Vikas", "Vikas looked at the SBIN chart.", "Avika and vikas are names, not trades.", "Leo looked at the logo",
     "becho fund", "Hold on", "TCS vikaas", "RSI ghya",
+    # the review of #278: acronyms, Hinglish without a trade verb, "<number> par" without a verb, a name
+    "ETF units trade on the exchange like shares.", "An IPO allots shares before listing.", "GDP grew 7% last year.",
+    "RBI kept the repo rate unchanged.", "SEBI sets the F&O margin rules.", "NSE publishes the bhavcopy after the close.",
+    "F&O expiry is on Thursday.", "EPS rose 12% YoY.", "The P/E of the index is 22.", "YoY growth slowed.",
+    "IT stocks fell after the US data.", "US ko tariffs se nuksan hua.", "OK, done.", "AI le lo, it explains the chart.",
+    "Nifty ko 22,000 par support mila", "RBI ko inflation ki chinta hai.", "TCS ke results Thursday ko aayenge.",
+    "Our analyst Vika wrote this note on TCS.", "RELIANCE mat kharido", "RELIANCE 2900 la le lo",
     # twenty ordinary English Copilot answers
     "RELIANCE is trading above its 20-day EMA; the trend on the daily chart is up.",
     "RSI on INFY is 62, which is neither overbought nor oversold.",
@@ -56,6 +72,44 @@ def test_instrument_then_romanised_verb_is_blocked(text):
     assert any(item.startswith("call: ") for item in output_filter.call_terms(text)), text
 
 
+@pytest.mark.parametrize("text", REVIEW_BLOCKED)
+def test_review_forms_are_blocked(text):
+    """A line break or a bracketed tag between the instrument and the verb (as English "RELIANCE\\nbuy" /
+    "RELIANCE (NSE) buy"), an option / segment tag, a strike or price ("2900 par"), and up to three linking words."""
+    assert not output_filter.check(text, "en")[0], text
+
+
+def test_english_line_break_and_bracket_forms_are_blocked_too():
+    """The English forms the romanised ones now match (blocked on main already)."""
+    for text in ("RELIANCE\nbuy", "Pick of the day: RELIANCE\nBuy!", "RELIANCE (NSE) buy"):
+        assert not output_filter.check(text, "en")[0], text
+
+
+def test_an_empty_romanised_list_matches_nothing(tmp_path, monkeypatch):
+    """An AI_ADVICE_TERMS_FILE without verbs.romanised and light_verbs must not compile an empty alternation (which would
+    match everywhere and block "RELIANCE , a note." as a call)."""
+    data = json.loads(output_filter.DEFAULT_FILE.read_text(encoding="utf-8"))
+    del data["calls"]["verbs"]["romanised"]
+    del data["calls"]["light_verbs"]
+    path = tmp_path / "terms-no-romanised.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    monkeypatch.setenv("AI_ADVICE_TERMS_FILE", str(path))
+    L = call_detect.lists(str(path))
+    assert L.after_instrument.search("RELIANCE , a note.") is None and L.short_romanised.search("") is None
+    assert L.tag_bracket.search("RELIANCE \nNSE\n kharido") is None
+    assert output_filter.call_terms("RELIANCE , a note.") == []
+    assert output_filter.call_terms("RELIANCE kharido.") == []                  # no romanised list, no romanised calls
+    assert output_filter.call_terms("Sell RELIANCE") == ["call: sell reliance"]  # the English rules still work
+
+
+def test_a_long_flood_stays_bounded():
+    import time
+    for text in (("x le lo " * 5000)[:39999], ("RELIANCE (NSE) " * 2600)[:39990] + " le lo", ("RELIANCE ko " * 3300)[:39990] + " le lo"):
+        started = time.monotonic()
+        output_filter.call_terms(text)
+        assert time.monotonic() - started < 5, text[:20]
+
+
 @pytest.mark.parametrize("text", PASSES)
 def test_decoys_and_ordinary_english_pass(text):
     assert output_filter.findings(text) == [], text
@@ -85,7 +139,8 @@ def test_terms_file_has_no_duplicate_keys_and_one_calls_block():
     calls = data["calls"]
     assert set(calls["verbs"]) == {"en", "romanised"} and len(calls["verbs"]["romanised"]) == 17
     assert calls["light_verbs"] == ["le lo", "ghya"] and "pakka" in calls["certainty"] and "pakka" in calls["certainty_lead"]
-    assert {"ko", "che", "shares"} <= set(calls["romanised_between"])
+    assert {"ko", "se", "che", "shares"} <= set(calls["romanised_between"])
+    assert {"CE", "PE", "FUT", "EQ", "NSE"} <= set(calls["instrument_tags"]) and set(calls["romanised_level_words"]) == {"par", "pe", "pr"}
 
 
 def test_light_verbs_are_read(tmp_path, monkeypatch):

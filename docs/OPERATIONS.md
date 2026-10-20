@@ -958,7 +958,8 @@ Never publish a listing without an attached backtest run; the API refuses the su
     Hindi Devanagari lists were removed; an AI text in another script is withheld outright), plus a fixed `romanised`
     list of Hinglish advice in Latin script ("abhi kharido", "pakka profit"), read always - ASCII text is not caught
     by the script check. A ticker or instrument name followed by a romanised trade verb ("RELIANCE kharido",
-    "HDFCBANK le lo", "SBIN vika") is a blocked call too. The model gets one retry; after that the
+    "HDFCBANK le lo", "SBIN vika", also past a few linking words, an option tag or a price: "RELIANCE ko jaldi se le lo",
+    "BANKNIFTY CE le lo", "RELIANCE 2900 par le lo") is a blocked call too. The model gets one retry; after that the
     rule-based answer is shown with a note.
   - A text that names a specific buy/sell level is kept, with an educational line (English) added.
   - The word list is data, in `backend/app/ai/data/advice_terms.json`. To use your own list, point

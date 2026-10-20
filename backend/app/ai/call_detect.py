@@ -25,8 +25,10 @@ markdown emphasis and code marks removed, and list markers, bullets, block quote
   instrument - across lines and sentences;
 * a price level with certainty ("RELIANCE to 3000 for sure", "will surely reach 3000", "three thousand for sure");
 * Hinglish word order, the verb after the instrument: an instrument right before a romanised verb or light verb, past at
-  most two `romanised_between` words ("RELIANCE kharido", "HDFCBANK le lo", "INFY ghya", "SBIN vika", "RELIANCE ko
-  becho") - the verb alone is not a call ("becho fund", "Vikas");
+  most three `romanised_between` words, `instrument_tags`, a strike or price and "<number> par" ("RELIANCE kharido",
+  "HDFCBANK le lo", "INFY ghya", "SBIN vika", "RELIANCE ko jaldi se le lo", "BANKNIFTY CE le lo", "RELIANCE 2900 par le
+  lo", "RELIANCE (NSE) kharido"); a romanised verb as a short sentence of its own in a paragraph naming an instrument
+  ("RELIANCE\nKharido!", like the English "Sell.") - the verb alone is not a call ("becho fund", "Vikas");
 * any of the above once a disguised spelling is undone ("B u y RELIANCE", "8uy RELIANCE").
 
 An **instrument** is an upper-case ticker (not a platform or indicator acronym) or a name from the instrument index
@@ -103,6 +105,9 @@ _TICKER = re.compile(r"[A-Z][A-Z0-9&]{1,19}(?:-[A-Z]{1,4})?")
 _NUMBER = r"(?<![\d,.])₹?\s*(?<![\d,.])\d[\d,]*(?:\.\d+)?"
 
 
+_NEVER = re.compile(r"(?!)")                                   # matches nothing (an empty word list)
+
+
 def _alt(words: Sequence[str]) -> str:
     return "|".join(re.escape(w) for w in sorted({w.strip() for w in words if w and w.strip()}, key=len, reverse=True))
 
@@ -155,6 +160,10 @@ class Lists:
     verb_line: Pattern
     after_instrument: Pattern
     romanised_between: FrozenSet[str]
+    instrument_tags: FrozenSet[str]
+    level_words: FrozenSet[str]
+    tag_bracket: Pattern
+    short_romanised: Pattern
 
 
 @lru_cache(maxsize=4)
@@ -180,6 +189,9 @@ def lists(path: str) -> Lists:
     moves = _alt(calls.get("moves", []))
     level = lambda words: re.compile(rf"(?<![{_WORD}])(?:{_alt(words)})(?![{_WORD}])\s*[:=@-]?\s*(?:of\s+|at\s+|near\s+|above\s+|below\s+)?{_NUMBER}(?![\d.,]*\s*%)", re.I)  # noqa: E731
     neg = calls.get("negated_sayings", {})
+    romanised = _alt(verbs.get("romanised", []) + calls.get("light_verbs", []))
+    between = _alt(calls.get("romanised_between", [])) or "(?!)"
+    between_or_now = _alt(calls.get("romanised_between", []) + ["just", "now", "then", "so", "please"])
     return Lists(
         imperative=re.compile(rf"{start}{prefix}(?P<verb>{en})(?![{_WORD}-]){sep}{rest}", re.I),
         modal=re.compile(rf"(?<![{_WORD}])(?:{_alt(calls.get('modal_subjects', []))})\s*(?:{_alt(calls.get('modal_verbs', []))})\s+"
@@ -208,11 +220,21 @@ def lists(path: str) -> Lists:
         howto=re.compile(r"\b(?:paper mode|in the app|button|page|tab|click|tap|screen|menu|watchlist|symbol box)\b", re.I),
         verb_line=re.compile(rf"(?im)^([ \t]*(?:{en})[ \t]*[:\-–—>=]*)[ \t]*\n(?=[ \t]*\S)"),
         # Hinglish puts the verb after its object ("RELIANCE kharido", "HDFCBANK le lo", "SBIN vika"): a romanised verb or
-        # light verb as a whole word; `_instrument_before` then requires the instrument right before it (past at most two
-        # `romanised_between` words). The verb alone is never enough ("becho fund", "Vikas", "Leo looked at the logo").
-        after_instrument=re.compile(
-            rf"(?<![{_WORD}-])(?P<verb>{_alt(verbs.get('romanised', []) + calls.get('light_verbs', []))})(?![{_WORD}-])", re.I),
+        # light verb as a whole word; `_instrument_before` then requires the instrument right before it (past a few
+        # connecting words, tags and numbers). The verb alone is never enough ("becho fund", "Vikas", "Leo looked at the logo").
+        # An empty list compiles to a pattern that never matches (an empty alternation would match everywhere).
+        after_instrument=re.compile(rf"(?<![{_WORD}-])(?P<verb>{romanised})(?![{_WORD}-])", re.I) if romanised else _NEVER,
         romanised_between=frozenset(w.lower() for w in calls.get("romanised_between", [])),
+        instrument_tags=frozenset(w.lower() for w in calls.get("instrument_tags", [])),
+        level_words=frozenset(w.lower() for w in calls.get("romanised_level_words", [])),
+        # "RELIANCE (NSE) kharido": normalise turns the brackets into line breaks; a tag alone between them, right before a
+        # romanised verb, is folded back into the line (English text is untouched: the verb must be romanised).
+        tag_bracket=re.compile(rf"[ \t]*\n[ \t]*(?:{_alt(calls.get('instrument_tags', []))})[ \t]*\n[ \t]*"
+                               rf"(?=(?:(?:{between})\s+){{0,3}}(?:{romanised})(?![{_WORD}-]))", re.I)
+        if romanised and calls.get("instrument_tags") else _NEVER,
+        # "RELIANCE looks strong. Kharido.": a romanised verb as a short sentence of its own (`_SHORT_ORDER` for English).
+        short_romanised=re.compile(rf"^\s*(?:(?:{between_or_now})\s+){{0,3}}(?:{romanised})(?:\s+(?:now|today|abhi|turant|aaj))?\s*$", re.I)
+        if romanised else _NEVER,
     )
 
 
@@ -888,30 +910,43 @@ def _instrument_at_end(before: str, L: Lists) -> Optional[str]:
     return None
 
 
-_HEAD_BREAK = re.compile(r"[\n.!?;:,(—–]|\s-\s|->")
+# A clause break before a romanised verb - not the comma or point inside a number ("22,000", "2900.50").
+_HEAD_BREAK = re.compile(r"[\n!?;:(—–]|(?<!\d)[.,]|[.,](?!\d)|\s-\s|->")
+_LEVEL_NUMBER = re.compile(r"₹?\d[\d,]*(?:\.\d+)?")
+_MAX_BETWEEN = 3                                                 # "RELIANCE ke shares abhi le lo"
+_MAX_SKIPPED = 6                                                 # every word the walk back may step over
 
 
 def _instrument_before(s: str, verb_start: int, L: Lists) -> Optional[str]:
-    """The instrument right before a romanised verb at `verb_start` ("RELIANCE kharido", "hdfc bank le lo"), past at most
-    two `romanised_between` words ("RELIANCE ko becho", "INFY che shares ghya"); only whitespace separates them, within
-    the verb's own clause. An upper-case ticker or an indexed instrument name - never a share word alone ("share le lo"
-    is the word list's job)."""
+    """The instrument right before a romanised verb at `verb_start` ("RELIANCE kharido", "hdfc bank le lo"); only
+    whitespace separates them, within the verb's own clause. The walk back may step over at most three
+    `romanised_between` words ("RELIANCE ko jaldi se le lo"), `instrument_tags` ("BANKNIFTY CE le lo"), a strike or price
+    ("NIFTY 25000 CE le lo") and a `romanised_level_words` entry after a number ("RELIANCE 2900 par le lo"). An upper-case
+    ticker or an indexed instrument name - never a share word alone ("share le lo" is the word list's job)."""
     head = s[max(0, verb_start - 120):verb_start]
     cut = list(_HEAD_BREAK.finditer(head))
     head = head[cut[-1].end():] if cut else head
     if head and not head[-1].isspace():
         return None                                             # "RELIANCE-kharido", "X/kharido": not a separate word
     words = head.split()
-    for _ in range(2):
-        if words and words[-1].lower() in L.romanised_between:
-            words.pop()
-    if not words:
-        return None
-    last = words[-1]
-    if _is_ticker(last, L):
-        return last
-    n = instrument_names.suffix_len(words)
-    return " ".join(words[-n:]) if n else None
+    between = skipped = 0
+    while words and skipped <= _MAX_SKIPPED:
+        last = words[-1]
+        if _is_ticker(last, L) and last.lower() not in L.instrument_tags:
+            return last
+        n = instrument_names.suffix_len(words)
+        if n:
+            return " ".join(words[-n:])
+        w = last.lower()
+        if w in L.romanised_between and between < _MAX_BETWEEN:
+            between += 1
+        elif w in L.level_words and len(words) > 1 and _LEVEL_NUMBER.fullmatch(words[-2]):
+            pass                                                # "2900 par": the level word after a number
+        elif w not in L.instrument_tags and not _LEVEL_NUMBER.fullmatch(w):
+            return None
+        words.pop()
+        skipped += 1
+    return None
 
 
 @functools.lru_cache(maxsize=256)
@@ -1140,6 +1175,7 @@ def detect(text: str, path: str) -> List[str]:
     body = L.verb_line.sub(r"\1 ", normalise(text))            # "Buy\nRELIANCE": a verb alone on its line opens the next one
     body = _POSSESSIVE.sub(r"\1", body)                        # "Buy RELIANCE's chart breakout": the ticker itself
     body = _DOTTED.sub(_undot, body)                            # "B.U.Y INFY": a trade word spelled with dots
+    body = L.tag_bracket.sub(" ", body)                         # "RELIANCE (NSE) kharido": the tag is part of the name
     found: List[str] = []
     parts = sentences(body)
     for i, s in enumerate(parts):
@@ -1150,7 +1186,7 @@ def detect(text: str, path: str) -> List[str]:
                 found.append(item)
     for p in _paragraphs(body):
         for s in sentences(p):
-            if len(s.split()) <= 4 and _SHORT_ORDER.match(s) and _has_instrument(p, L):
+            if len(s.split()) <= 4 and (_SHORT_ORDER.match(s) or L.short_romanised.match(s)) and _has_instrument(p, L):
                 item = f"call: order {' '.join(s.split()).lower()}"[:60]
                 if item not in found:
                     found.append(item)

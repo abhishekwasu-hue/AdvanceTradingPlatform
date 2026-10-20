@@ -4109,9 +4109,10 @@ All additive on `POST /api/market-data/candles`; no new route, migration or flag
   The daily bars come through `MarketDataService.get_daily_range`: whole-date chunks of at most the broker's
   `daily_days_per_request` (Kite and Angel One 2,000, everyone else 365), newest first, each the LD-10 shared copy of
   its dates (5 minutes for a chunk holding the last few days, an hour for older ones); it stops where the broker has
-  nothing older. Order per symbol: the newest chunk, today's bar, the future's bars, then older chunks - at most 6
-  broker fetches per symbol and request (shared copies are free), none started 8 s after the request began, none after
-  a budget refusal. A read that stops early keeps whole periods only and says so in `warnings`; the next request
+  nothing older. Two passes: first every symbol gets its newest chunk, today's bar and its future's bars; then the
+  older chunks are shared by the symbols in turn (one fetch per symbol per turn) - at most 6 broker fetches per symbol
+  in the request's pool (shared copies are free), none started 8 s after the request began, none after a budget
+  refusal. A read that stops early keeps whole periods only and says so in `warnings`; the next request
   continues from the shared chunks, and `before` pages back by whole weeks / months.
 * **Special sessions** (Diwali muhurat, a Saturday budget day) get no bar on the day itself (the calendar does not model
   them); the next day the broker's daily history has it, in the week of the Monday before it and in its month.

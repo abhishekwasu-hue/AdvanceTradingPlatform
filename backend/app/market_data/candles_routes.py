@@ -285,24 +285,43 @@ async def _base_bars(service: MarketDataService, symbol: str, exchange: str, bas
     return _Got(list(bars), added, notes, covered_from, stopped, fetched)
 
 
-async def _older_periods(service: MarketDataService, symbol: str, exchange: str, period: str, window: Tuple[date, date], got: _Got,
-                         now: datetime, *, max_new_chunks: int, deadline: Optional[float]) -> None:
-    """Week / month, after the newest chunk, today's bar and the future's bars (so a slow broker's old history never
-    takes their budget or time): the older chunks, at most `max_new_chunks` broker fetches and none started past
-    `deadline`. If the read stopped early, only whole periods are kept, so the oldest bar shown is never a cut one; the
-    rest loads on the next request (shared chunks cost nothing) or when the chart is scrolled back (`before`)."""
+def _needs_older(got: _Got, window: Tuple[date, date]) -> bool:
+    return got.stopped == CHUNK_LIMIT and got.covered_from is not None and got.covered_from > window[0]
+
+
+async def _older_round_robin(service: MarketDataService, exchange: str, window: Tuple[date, date], gots: Dict[str, _Got],
+                             now: datetime, *, pool: int, deadline: Optional[float]) -> None:
+    """Week / month, pass 2 - after every symbol has its newest chunk, today's bar and its future's bars (pass 1), so a
+    slow broker's old history never takes their budget or time: the older chunks of all the symbols, one broker fetch
+    per symbol per turn, at most `pool` fetches in all and none started past `deadline`. A symbol that gets no token,
+    fails, runs out of time or reaches where the broker's data begins drops out; the others go on."""
     start = window[0]
-    if got.stopped == CHUNK_LIMIT and got.covered_from is not None and got.covered_from > start and max_new_chunks > 0:
-        try:
-            more = await service.get_daily_range(symbol, exchange, start, got.covered_from - timedelta(days=1), now,
-                                                 max_new_chunks=max_new_chunks, deadline=deadline, newest_raises=False)
-        except Exception as exc:  # noqa: BLE001 - get_daily_range reports its own failures; this is a safety net
-            logger.info("Older daily chunks failed for %s:%s: %s", exchange, symbol, exc)
-            got.stopped = f"{type(exc).__name__}: {exc}"[:200]
-        else:
+    active = [sym for sym, got in gots.items() if _needs_older(got, window)]
+    while active and pool > 0:
+        for symbol in list(active):
+            got = gots[symbol]
+            if pool <= 0:
+                break
+            try:
+                assert got.covered_from is not None
+                more = await service.get_daily_range(symbol, exchange, start, got.covered_from - timedelta(days=1), now,
+                                                     max_new_chunks=1, deadline=deadline, newest_raises=False)
+            except Exception as exc:  # noqa: BLE001 - get_daily_range reports its own failures; this is a safety net
+                logger.info("Older daily chunks failed for %s:%s: %s", exchange, symbol, exc)
+                got.stopped = f"{type(exc).__name__}: {exc}"[:200]
+                active.remove(symbol)
+                continue
             got.bars = merge_bars(more.bars, got.bars)
             got.covered_from, got.stopped = more.covered_from, more.stopped
-    if got.stopped is None or got.covered_from is None or got.covered_from <= start:
+            pool -= more.fetched
+            if not _needs_older(got, window):
+                active.remove(symbol)
+
+
+def _trim_periods(got: _Got, period: str, window: Tuple[date, date]) -> None:
+    """A week / month read that stopped early keeps whole periods only, so the oldest bar shown is never a cut one; the
+    rest loads on the next request (shared chunks cost nothing) or when the chart is scrolled back (`before`)."""
+    if got.stopped is None or got.covered_from is None or got.covered_from <= window[0]:
         return
     first = got.covered_from
     if periods.period_start(first, period) != first:
@@ -325,7 +344,7 @@ async def _future_bars(service: MarketDataService, fut: index_volume.NearFuture,
     got = await _base_bars(service, fut.symbol, fut.exchange, base_interval, period, window, before, today_state, now,
                            max_new_chunks=FUTURE_NEW_CHUNKS if period is not None else None, deadline=deadline)
     if period is not None and window is not None:
-        await _older_periods(service, fut.symbol, fut.exchange, period, window, got, now, max_new_chunks=0, deadline=deadline)
+        _trim_periods(got, period, window)
     return got.bars
 
 
@@ -404,6 +423,9 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     out: Dict[str, dict] = {}
     fetched = 0
     newest: List[datetime] = []      # BT1b: each symbol's newest bar - the badge is timed by the data, not the fetch
+    deadline = started + PERIOD_DEADLINE_SECONDS
+    # Pass 1, every symbol: its bars - for week / month only the newest daily chunk - today's bar and its future's bars.
+    loaded: Dict[str, Tuple[_Got, Optional[List[OHLCVBar]], Optional[dict]]] = {}
     for raw in body.symbols:
         symbol = raw.strip().upper()
         if not symbol or symbol in out:
@@ -414,29 +436,42 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": ent.reason if ent else "EOD data only",
                            "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None, "volume_source": None}
             continue
+        out[symbol] = {}                      # filled below, keeping the order asked for
         try:
-            deadline = started + PERIOD_DEADLINE_SECONDS
-            # Week / month: the newest chunk and today's bar first, then the future's, then the older chunks (below).
             got = await _base_bars(service, symbol, exchange, base_interval, period, window, body.before, today_state, now,
                                    max_chunks=1 if period is not None else None, deadline=deadline)
-            fut = futures.get(symbol)
-            fut_bars: Optional[List[OHLCVBar]] = None
-            volume_source: Optional[dict] = None
-            if fut is not None:
-                try:
-                    fut_bars = await _future_bars(service, fut, base_interval, period, window, body.before,
-                                                  today_state if got.today_added else None, now, deadline)
-                    volume_source = fut.source(periods.ist_date(fut_bars[0].timestamp) if fut_bars else None)
-                except api_budget.BudgetUsed:
-                    fut_bars = None
-                    warnings.append(f"{symbol}: volume from {fut.symbol} not loaded this time (budget used)")
-                except Exception as exc:  # noqa: BLE001 - the index's own bars still make a chart
-                    logger.info("Future volume fetch failed for %s via %s: %s", fut.symbol, record.broker_name, exc)
-                    fut_bars = None
-                    warnings.append(f"{symbol}: volume from {fut.symbol} not loaded ({type(exc).__name__})")
-            if period is not None and window is not None:
-                await _older_periods(service, symbol, exchange, period, window, got, now,
-                                     max_new_chunks=PERIOD_NEW_CHUNKS - got.fetched, deadline=deadline)
+        except api_budget.BudgetUsed:
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": "budget used", "budget_used": True, "volume_source": None}
+            continue
+        except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
+            logger.info("Candle fetch failed for %s:%s via %s: %s", exchange, symbol, record.broker_name, exc)
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300], "volume_source": None}
+            continue
+        fut = futures.get(symbol)
+        fut_bars: Optional[List[OHLCVBar]] = None
+        volume_source: Optional[dict] = None
+        if fut is not None:
+            try:
+                fut_bars = await _future_bars(service, fut, base_interval, period, window, body.before,
+                                              today_state if got.today_added else None, now, deadline)
+                volume_source = fut.source(periods.ist_date(fut_bars[0].timestamp) if fut_bars else None)
+            except api_budget.BudgetUsed:
+                fut_bars = None
+                warnings.append(f"{symbol}: volume from {fut.symbol} not loaded this time (budget used)")
+            except Exception as exc:  # noqa: BLE001 - the index's own bars still make a chart
+                logger.info("Future volume fetch failed for %s via %s: %s", fut.symbol, record.broker_name, exc)
+                fut_bars = None
+                warnings.append(f"{symbol}: volume from {fut.symbol} not loaded ({type(exc).__name__})")
+        loaded[symbol] = (got, fut_bars, volume_source)
+    if period is not None and window is not None and loaded:
+        # Pass 2, week / month: the older chunks, shared by the symbols in turn within the request's share of calls.
+        gots = {symbol: item[0] for symbol, item in loaded.items()}
+        pool = PERIOD_NEW_CHUNKS * len(gots) - sum(got.fetched for got in gots.values())
+        await _older_round_robin(service, exchange, window, gots, now, pool=pool, deadline=deadline)
+        for got in gots.values():
+            _trim_periods(got, period, window)
+    for symbol, (got, fut_bars, volume_source) in loaded.items():
+        try:
             warnings.extend(f"{symbol}: {note}" for note in got.notes)
             newest_base = got.bars[-1].timestamp if got.bars else None
             bars, shaped = await asyncio.to_thread(_shaped, got.bars, body.timeframe, fut_bars)
@@ -455,11 +490,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
             fetched += 1
             if not bars:
                 warnings.append(f"{symbol}: the broker returned no candles")
-        except api_budget.BudgetUsed:
-            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": "budget used", "budget_used": True, "volume_source": None}
-            continue
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
-            logger.info("Candle fetch failed for %s:%s via %s: %s", exchange, symbol, record.broker_name, exc)
+            logger.info("Candle shaping failed for %s:%s: %s", exchange, symbol, exc)
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300], "volume_source": None}
     if fetched:
         await meter(session, user.tenant_id, "market_data_candles", quantity=fetched, source="api",

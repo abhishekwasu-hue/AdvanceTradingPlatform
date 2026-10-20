@@ -486,3 +486,48 @@ def test_the_chunk_holding_yesterday_keeps_the_short_history_lifetime():
     older = [v for k, v in left.items() if not k.endswith(":2026-01-09")]
     assert newest and newest[0] <= shared_candles.HISTORY_TTL_SECONDS
     assert older and all(v > shared_candles.HISTORY_TTL_SECONDS for v in older)
+
+
+def test_four_symbols_on_a_one_call_a_second_broker_all_get_their_newest_bars_first(monkeypatch):
+    """Review round 3: pass 1 gives every symbol its newest chunk and today's bar; the older chunks are shared in turn."""
+    today = _today()
+    syms = [_sym(f"R{i}") for i in range(4)]
+    minutes = [OHLCVBar(timestamp=datetime.combine(today, time(9, 15), tzinfo=IST) + timedelta(minutes=i), open=10, high=11, low=9,
+                        close=10.5, volume=3) for i in range(5)]
+    broker = DailyBroker({s: daily_series(today - timedelta(days=2500), today - timedelta(days=1)) for s in syms},
+                         today={s: minutes for s in syms})
+    broker.daily_days_per_request = 365
+    headers, _ = _setup(monkeypatch, broker, "four")
+
+    async def in_session(session, body, exchange, now):
+        return True if body.forming and body.before is None else None
+    monkeypatch.setattr(candles_routes, "_today_state", in_session)
+    monkeypatch.setattr(api_budget, "api_limits",
+                        lambda broker_name: api_budget.ApiLimits(per_second=1, per_minute=1000, per_30min=100_000, burst=1))
+    monkeypatch.setattr(api_budget, "CANDLE_WAIT_SECONDS", 9.5)
+    monkeypatch.setattr(candles_routes, "PERIOD_DEADLINE_SECONDS", 9.5)
+    api_budget.reset()
+    first = _post(headers, symbols=syms, timeframe="week", forming=True)
+    assert list(first["symbols"]) == syms                                                     # the order asked for
+    for s in syms:
+        item = first["symbols"][s]
+        assert item["error"] is None and item["count"] > 0 and item["bars"][-1]["forming"] is True, (s, item.get("error"))
+        mine = [w for w in broker.windows if w[0] == s]
+        oldest = datetime.fromisoformat(item["bars"][0]["timestamp"]).astimezone(IST).date()
+        assert periods.period_start(oldest, "week") >= min(_ist(w[3]).date() for w in mine)   # whole weeks only
+        assert any(f"{s}: older weekly bars not loaded this time" in w for w in first["warnings"])
+    assert len({s for s in syms}) == len({w[0] for w in broker.windows})                       # every symbol reached the broker
+
+    api_budget.reset()                                                                          # the next request goes on
+    second = _post(headers, symbols=syms, timeframe="week", forming=True)
+    assert sum(second["symbols"][s]["count"] for s in syms) > sum(first["symbols"][s]["count"] for s in syms)
+    assert all(second["symbols"][s]["count"] >= first["symbols"][s]["count"] for s in syms)
+
+    # The seam with the older page still holds.
+    _generous(monkeypatch)
+    s = syms[0]
+    oldest = datetime.fromisoformat(second["symbols"][s]["bars"][0]["timestamp"]).astimezone(IST).date()
+    page = _post(headers, symbols=[s], timeframe="week", before=oldest.isoformat())["symbols"][s]["bars"]
+    newest_older = datetime.fromisoformat(page[-1]["timestamp"]).astimezone(IST).date()
+    assert periods.next_period_start(newest_older, "week") == periods.period_start(oldest, "week")
+    api_budget.reset()

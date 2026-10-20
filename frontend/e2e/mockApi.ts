@@ -28,6 +28,11 @@ export interface MockOptions {
   ack?: unknown;
   /** Approving an action answers 403 "fresh two-factor check" until POST /auth/mfa/step-up (a LIVE deployment's action). */
   stepUp?: boolean;
+  /** UI2-1: GET /system/features answers these flags (e.g. `{ ui_v2: true }` for the v2 shell). Left out: 404, as
+   * before, which the app reads as "every flag off". */
+  features?: Record<string, boolean>;
+  /** UI2-1: GET /broker/token-status answers these rows (the broker gate's input). Left out: 404, as before. */
+  brokers?: unknown[];
 }
 
 /** What the page sent - the tests assert on it. */
@@ -43,6 +48,8 @@ export async function mockApi(page: Page, overrides: MockOptions = {}): Promise<
   for (const a of [...(actions as Action[]), ...(actionsProposed as Action[])]) actionsState.set(a.id, { ...a });
   let stepUpVerified = !overrides.stepUp;
   const table: [RegExp, unknown][] = [
+    ...(overrides.features ? [[/\/system\/features$/, overrides.features] as [RegExp, unknown]] : []),
+    ...(overrides.brokers ? [[/\/broker\/token-status$/, overrides.brokers] as [RegExp, unknown]] : []),
     [/\/auth\/refresh$/, { access_token: "e2e-token", token_type: "bearer" }],
     [/\/auth\/me$/, me],
     [/\/system\/status$/, systemStatus],

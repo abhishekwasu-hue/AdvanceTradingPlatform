@@ -36,6 +36,10 @@ activates. A redeploy of identical files keeps the same id and prompts nobody.
 - iPhone / iPad: Safari -> Share -> Add to Home Screen (the in-app guide says so). Web push on iOS works only in the
   installed app (iOS 16.4+), which PW3 relies on.
 - The service worker registers only in production builds (`npm run build`); the dev server is never cached.
+- Installing needs a trusted HTTPS origin. On a bare IP (plain http, or Caddy's internal certificate) the browser
+  refuses the service worker and never offers to install; the app then says so once (dismissable): "Install needs the
+  app's web address (domain) with a trusted certificate. Ask the owner to set up the domain." The v2 More sheet's
+  "Install the app" always answers with the browser's prompt or the plain reason (`installHelp` in `src/pwa/pwa.ts`).
 
 ## Checks done for PW1
 

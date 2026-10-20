@@ -18,6 +18,8 @@ const semantic = {
   "surface-inset": v("surface-inset"), signal: v("signal"), armed: v("armed"),
   // UI2-0 (UI v2 §8): the subtle outline / divider colour and the warning-note background
   "border-subtle": v("border-subtle"), "warn-tint": v("warn-tint"),
+  // UI2-1: the backdrop behind the More sheet and the command bar (with an alpha: `bg-scrim/50`)
+  scrim: v("scrim"),
   // aliases kept for pages not yet migrated
   bg: v("surface"), panel: v("surface-1"), panel2: v("surface-2"), panel3: v("surface-3"),
   "brand-dim": v("brand-strong"), accent: v("up"), danger: v("down"), muted: v("fg-muted"),

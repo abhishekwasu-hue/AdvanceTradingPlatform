@@ -1,20 +1,27 @@
-# P0.7: configuration for the CI secret scan (gitleaks, `lint` job). Default rules plus the two
-# strings the default `generic-api-key` rule mistakes for credentials in this repository. A real
-# secret never gets an allowlist entry: it is rotated and the commit is rewritten.
+# Configuration for the gitleaks secret scans: the push-range scan in ci.yml (`lint` job), the full-history scan in
+# secret-scan.yml and the pre-commit hook (.pre-commit-config.yaml). Default rules, plus an allowlist of the exact fake
+# values that the default rules mistake for credentials. Every entry is one anchored, literal value (regexTarget
+# "secret"), never a pattern that could cover a real credential. A real secret never gets an entry here: it is rotated
+# first, and rewriting history is the owner's decision (docs/PUBLIC_REPO_POLICY.md).
+#
+# The same findings are also listed by exact fingerprint in .gitleaksignore, so the full-history scan exits 0 with older
+# gitleaks releases too (the 8.24 line does not read [[allowlists]]).
 title = "ATP"
 
 [extend]
 useDefault = true
 
 [[allowlists]]
-description = "Documented boolean flag in .env.example and the deliberately fake token a test uses to prove the API never echoes one"
+description = "Known fake values in tests and .env.example (each one exact; see the comment on each line)"
+regexTarget = "secret"
 regexes = [
-  '''JWT_ACCEPT_LEGACY=(true|false)''',
-  '''AAGLIFsecretPartNoColon_xyz123''',
-]
-
-[[allowlists]]
-description = "BYOK-V1 tests: obviously fake provider keys and tokens, every one marked FAKEFAKE (never a real key)"
-regexes = [
-  '''FAKEFAKE''',
+  # .env.example: a documented boolean flag the generic rule reads as the value of the line above it
+  '''^JWT_ACCEPT_LEGACY=(true|false)$''',
+  # backend/tests/test_alerts.py: the fake Telegram token a test uses to prove the API never echoes one
+  '''^AAGLIFsecretPartNoColon_xyz123$''',
+  # BYOK-V1 tests (frontend/src/components/visionByok.test.ts, backend/tests/test_byok_v1.py): a fake JWT whose
+  # payload is {"sub":"FAKE"} and whose signature is the literal FAKEFAKEsig / FAKEFAKEsignature
+  '''^eyJhbGciOiJSUzI1NiJ9\.eyJzdWIiOiJGQUtFIn0\.FAKEFAKEsig(nature)?$''',
+  # Z11 deploy-bundle test (backend/tests/test_z11_deploy_bundle.py at 04b9bb2): stand-ins for .env values
+  '''^SENTINEL-(pg-7c1d9e|jwt-55aa01|r2-secret-22bb)$''',
 ]

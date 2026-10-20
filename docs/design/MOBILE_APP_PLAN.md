@@ -46,7 +46,7 @@ names, versions and platform rules are **proposals to verify at the slice that u
 
 **Two blockers on the production host:**
 
-1. **Install and push do not work there.** The host runs on the bare IP 187.126.125.208 with Caddy's internal
+1. **Install and push do not work there.** The host runs on the bare IP (`<server-ip>`) with Caddy's internal
    certificate (`deploy/Caddyfile.ip`, `tls internal`). Browsers do not allow service workers on a page whose
    certificate they do not trust. The user may click through the warning, but the service worker still does not
    register. So there is no install prompt, no web push and no update banner. Today the install banner stays hidden
@@ -302,7 +302,7 @@ lives in the server's `/opt/atp/.env` (MA-2).
 2. **New `frontend/scripts/check-api-base.mjs`, run in CI next to the colour lint.** It fails on:
    - any `"/api/` string literal outside `api/base.ts` and tests;
    - a `VITE_API_BASE_URL` that is not `https://`, or whose host is an IPv4 or IPv6 literal;
-   - any `187.126.` or other IP literal in `frontend/src`, `capacitor.config.ts` or `android/`.
+   - any IP literal (a public one anywhere, tests included) in `frontend/src`, `capacitor.config.ts` or `android/`.
 3. **Where the value comes from.**
    - In CI, it comes only from the repository variable `ATP_APP_DOMAIN`.
    - Locally, it comes from `frontend/.env.android.local` (gitignored); a committed `.env.android.example` holds a

@@ -58,7 +58,7 @@ describe("capacitor.config.ts", () => {
 
   it("refuses an IP or plain-http API base", async () => {
     vi.stubEnv("ATP_ANDROID_BUILD", "internal");
-    vi.stubEnv("VITE_API_BASE_URL", "http://187.126.125.208");
+    vi.stubEnv("VITE_API_BASE_URL", "http://203.0.113.10");
     await expect(loadConfig()).rejects.toThrow(/IP address/);
   });
 
@@ -95,7 +95,7 @@ describe("vite.config.ts build modes", () => {
 
   it("the Android build refuses an IP address", async () => {
     vi.stubEnv("ATP_ANDROID_BUILD", "internal");
-    vi.stubEnv("VITE_API_BASE_URL", "https://187.126.125.208");
+    vi.stubEnv("VITE_API_BASE_URL", "https://203.0.113.10");
     await expect(resolve("android")).rejects.toThrow(/IP address/);
   });
 });

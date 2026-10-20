@@ -32,9 +32,9 @@ describe("mobile build rules", () => {
     expect(apiBaseProblems("atp.example.com").join()).toMatch(/not a URL/);
   });
 
-  it("refuses an IP address in any spelling, the production host included", () => {
+  it("refuses an IP address in any spelling, a public one included", () => {
     for (const base of [
-      "https://187.126.125.208", "http://187.126.125.208", "https://10.0.0.1", "https://[2001:db8::1]", "https://[::1]",
+      "https://203.0.113.10", "http://203.0.113.10", "https://8.8.8.8", "https://10.0.0.1", "https://[2001:db8::1]", "https://[::1]",
       "https://3232235777",          // decimal IPv4 - the URL parser turns it into 192.168.1.1
       "https://0x7f.1",              // hex shorthand - 127.0.0.1
     ]) {
@@ -90,7 +90,7 @@ describe("mobile build rules", () => {
       .toThrow(/needs the real API origin/);
     const internal = resolveNativeBuild({ ATP_ANDROID_BUILD: "internal", VITE_API_BASE_URL: "https://atp.example.com/" }, APP_ID);
     expect(internal).toEqual({ kind: "internal", appId: APP_ID, apiBase: "https://atp.example.com", debuggable: false });
-    expect(() => resolveNativeBuild({ ATP_ANDROID_BUILD: "internal", VITE_API_BASE_URL: "https://187.126.125.208" }, APP_ID))
+    expect(() => resolveNativeBuild({ ATP_ANDROID_BUILD: "internal", VITE_API_BASE_URL: "https://203.0.113.10" }, APP_ID))
       .toThrow(/IP address/);
   });
 

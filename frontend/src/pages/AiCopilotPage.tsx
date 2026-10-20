@@ -72,7 +72,7 @@ function Hero() {
 function Tabs() {
   const params = useParams<{ tab?: string }>();
   const navigate = useNavigate();
-  const { pending, newHighNews } = useCopilotData();
+  const { pending, newHighNews, badgesLoading } = useCopilotData();
   const fromUrl = isCopilotTab(params.tab) ? params.tab : undefined;
   const tab: CopilotTab = fromUrl ?? storedTab();
   useEffect(() => {
@@ -82,7 +82,7 @@ function Tabs() {
   const Panel = TAB_COMPONENTS[tab];
   return (
     <>
-      <CopilotTabBar active={tab} onSelect={(next) => navigate(copilotPath(next))} badges={{ watchtower: pending.length, "news-radar": newHighNews }} />
+      <CopilotTabBar active={tab} onSelect={(next) => navigate(copilotPath(next))} badges={{ watchtower: pending.length, "news-radar": newHighNews }} busy={badgesLoading} />
       <AnimatePresence mode="wait" initial={false}>
         <m.div key={tab} role="tabpanel" id={`copilot-panel-${tab}`} aria-labelledby={`copilot-tab-${tab}`} className="mt-4"
                initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }}>

@@ -46,7 +46,7 @@ export default function MemoryPanel() {
   const sign = (v: number | null | undefined, d = 2) => `${(v ?? 0) > 0 ? "+" : ""}${(v ?? 0).toFixed(d)}%`;
 
   return (
-    <Panel title={t("memory.title")} icon={<Brain size={15} />} testId="pulse-memory"
+    <Panel title={t("memory.title")} icon={<Brain size={15} />} testId="pulse-memory" busy={busy || (memory === null && error === null)}
            action={(
              <>
                <span className="hidden text-xs text-fg-muted sm:inline">{t("memory.updated", { ago: ago(minutesAgo(memory?.updated_at)) })}</span>

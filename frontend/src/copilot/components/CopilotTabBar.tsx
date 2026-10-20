@@ -11,10 +11,10 @@ export const TAB_ICON: Record<CopilotTab, LucideIcon> = {
 
 /**
  * The seven tabs: a sticky glass bar on desktop, horizontally scrollable pills on a phone (the active pill scrolls
- * into view). Badges: open proposals on Watchtower, new high-severity news on News Radar. Arrow keys move between
- * tabs (the tablist pattern); each tab is also a link-like address (/copilot/<tab>).
+ * into view). Badges: open proposals on Watchtower, new high-severity news on News Radar (aria-busy while they load).
+ * Arrow keys move between tabs (the tablist pattern); each tab is also a link-like address (/copilot/<tab>).
  */
-export default function CopilotTabBar({ active, onSelect, badges }: { active: CopilotTab; onSelect: (t: CopilotTab) => void; badges: Partial<Record<CopilotTab, number>> }) {
+export default function CopilotTabBar({ active, onSelect, badges, busy }: { active: CopilotTab; onSelect: (t: CopilotTab) => void; badges: Partial<Record<CopilotTab, number>>; busy?: boolean }) {
   const t = useCopilotT();
   const refs = useRef<Partial<Record<CopilotTab, HTMLButtonElement | null>>>({});
   useEffect(() => { refs.current[active]?.scrollIntoView?.({ block: "nearest", inline: "center" }); }, [active]);
@@ -30,7 +30,7 @@ export default function CopilotTabBar({ active, onSelect, badges }: { active: Co
 
   return (
     <div className="sticky top-0 z-20 -mx-3 border-b border-border/80 bg-surface/80 px-3 py-2 backdrop-blur-md md:-mx-6 md:px-6">
-      <div role="tablist" aria-label={t("shell.tabsLabel")} className="copilot-tabs flex gap-1.5 overflow-x-auto">
+      <div role="tablist" aria-label={t("shell.tabsLabel")} aria-busy={busy || undefined} className="copilot-tabs flex gap-1.5 overflow-x-auto">
         {COPILOT_TABS.map((tab, i) => {
           const Icon = TAB_ICON[tab];
           const on = tab === active;

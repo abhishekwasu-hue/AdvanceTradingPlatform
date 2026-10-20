@@ -126,6 +126,9 @@ class BrokerInterface(ABC):
     # LD-10: True when get_historical_data reads only the IST dates of from/to (the same bars for any time of the same
     # day), so a shared candle copy can be keyed by the dates (app/market_data/shared_candles.window_anchor).
     history_by_date: bool = False
+    # UI2-4a2: the longest range of daily bars one history request may ask for; longer ranges (weekly and monthly charts)
+    # go out as whole-date chunks of at most this many days. Conservative where the broker publishes no limit.
+    daily_days_per_request: int = 365
 
     @abstractmethod
     async def authenticate(self) -> BrokerProfile: ...

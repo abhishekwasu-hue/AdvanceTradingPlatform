@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_role
 from app.core.enums import UserRole, OrderStatus, SignalDirection, SignalGrade
-from app.core.models import Signal
+from app.core.models import MAX_PRICE, Signal
 from app.db.models import Tenant, User
 from app.db.session import get_session
 from app.execution.order_persistence import get_order_by_idempotency_key
@@ -35,10 +35,11 @@ class TradingViewAlertPayload(BaseModel):
     strategy_id: str
     symbol: str
     direction: SignalDirection
-    entry: float
-    stop_loss: float
-    target1: float
-    target2: Optional[float] = None
+    # #309 review: a NaN / infinite or absurd level is refused at the door (422), as the PAPER ticket does.
+    entry: float = Field(lt=MAX_PRICE, allow_inf_nan=False)
+    stop_loss: float = Field(lt=MAX_PRICE, allow_inf_nan=False)
+    target1: float = Field(lt=MAX_PRICE, allow_inf_nan=False)
+    target2: Optional[float] = Field(default=None, lt=MAX_PRICE, allow_inf_nan=False)
     alert_id: Optional[str] = None
 
     @field_validator("direction")

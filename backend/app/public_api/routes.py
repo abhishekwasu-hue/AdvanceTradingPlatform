@@ -19,7 +19,7 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_owner
 from app.auth.scopes import require_scope
 from app.core.enums import SignalDirection, SignalGrade
-from app.core.models import Signal
+from app.core.models import MAX_PRICE, Signal
 from app.db.models import ApiKeyRecord, BacktestRunRecord, OrderRecord, RiskEventRecord, RiskLimitRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 from app.instruments import master as instrument_master
@@ -157,10 +157,10 @@ class PublicSignal(BaseModel):
     strategy_id: str = Field(min_length=1, max_length=100)
     symbol: str = Field(min_length=1, max_length=50)
     direction: SignalDirection
-    entry: float = Field(gt=0)
-    stop_loss: float = Field(gt=0)
-    target1: float = Field(gt=0)
-    target2: Optional[float] = Field(default=None, gt=0)
+    entry: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    stop_loss: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    target1: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    target2: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     mode: str = Field(default="PAPER", pattern=r"^(PAPER|LIVE)$")
     idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=100)
 

@@ -53,6 +53,11 @@ def bars_to_dataframe(bars: List[OHLCVBar]) -> pd.DataFrame:
     return df.sort_index()[["open", "high", "low", "close", "volume"]]
 
 
+# Above any listed price or strike, as the PAPER ticket's and the options builder's own bound (#309 review): the
+# signal intake routes refuse a level at or over it, which also keeps it inside the trade columns' Numeric(18, 4).
+MAX_PRICE = 1e7
+
+
 class Signal(BaseModel):
     symbol: str
     strategy_id: str

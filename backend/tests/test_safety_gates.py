@@ -272,20 +272,43 @@ def test_reconciliation_ignores_paper_positions():
     assert _tenant_row(t["tenant_id"]).broker_uncertain_since is None
 
 
-@pytest.mark.parametrize("field", ["entry", "stop_loss"])
-def test_a_paper_entry_with_a_nan_level_is_rejected_not_left_at_risk_check(field):
+@pytest.mark.parametrize("field,value", [("entry", float("nan")), ("stop_loss", float("nan")), ("entry", float("inf"))])
+def test_a_paper_entry_with_a_nan_level_is_rejected_not_left_at_risk_check(field, value):
     """#308 review: a NaN level crashed the sizing (int(NaN)) after the order reached RISK_CHECK, leaving it there (in
     flight) for good. Now the risk check refuses it: the order is REJECTED with the reason and nothing is placed."""
     from app.execution.signal_execution import execute_signal_for_user
-    t = _tenant(f"nan-level-{field}@example.com")
+    t = _tenant(f"nan-level-{field}-{value}@example.com")
 
     async def go():
         async with _session_factory() as session:
             user = await session.get(User, t["user_id"])
-            signal = _signal().model_copy(update={field: float("nan")})
+            signal = _signal().model_copy(update={field: value})
             return await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=signal)
 
     result, order = _run(go())
     assert not result.executed and order.status == "REJECTED"
-    assert "Signal entry/stop loss is not a finite number" in result.reasons
+    name = {"stop_loss": "stop loss"}.get(field, field)
+    assert f"Signal {name} {value!r} is not a finite number" in result.reasons
     assert _trades(t["tenant_id"]) == []
+
+    async def trail():
+        async with _session_factory() as session:
+            notes = list(await session.scalars(select(NotificationRecord).where(NotificationRecord.related_order_id == order.id)))
+            return [n.event_type for n in notes]
+    assert "RISK_REJECTION" in _run(trail())
+
+
+def test_signal_intake_refuses_a_level_that_is_not_a_finite_number_or_absurd():
+    """#309 review: the webhook and public API payloads refuse NaN / infinite / absurd levels (422), as the ticket does."""
+    from pydantic import ValidationError
+
+    from app.public_api.routes import PublicSignal
+    from app.webhooks.routes import TradingViewAlertPayload as TradingViewAlert
+
+    ok = {"strategy_id": "s", "symbol": "RELIANCE", "direction": "LONG", "entry": 100.0, "stop_loss": 98.0, "target1": 104.0}
+    for model in (TradingViewAlert, PublicSignal):
+        model(**ok)
+        for field in ("entry", "stop_loss", "target1", "target2"):
+            for bad in ("nan", "inf", float("-inf"), 1e8):
+                with pytest.raises(ValidationError):
+                    model(**{**ok, field: bad})

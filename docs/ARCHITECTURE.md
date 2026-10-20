@@ -4098,6 +4098,43 @@ Tests: `tests/test_phase_au_global_cues.py`.
 
 Tests: `tests/test_chart_history.py`.
 
+### UI2-4a2: week and month, the forming daily bar, index volume from the future
+
+All additive on `POST /api/market-data/candles`; no new route, migration or flag.
+
+* **Week and month** (`timeframe: "week" | "month"`, `app/market_data/periods.py`): aggregated from daily bars in IST,
+  never UTC and never the broker's own W/M. Weeks run Monday to Friday, months are calendar months; each is stamped at
+  its first trading day 00:00 IST (O first, H max, L min, C last, V sum). Default lookback 5 years (W) and 20 years
+  (M), up to 3,650 / 7,300 days (W/M only; D and intraday keep their caps), at most 4 symbols a request (422 above).
+  The daily bars come through `MarketDataService.get_daily_range`: whole-date chunks of at most the broker's
+  `daily_days_per_request` (Kite and Angel One 2,000, everyone else 365), newest first, each the LD-10 shared copy of
+  its dates (5 minutes for a chunk holding the last few days, an hour for older ones); it stops where the broker has
+  nothing older. Two passes: first every symbol gets its newest chunk, today's bar and its future's bars; then the
+  older chunks are shared by the symbols in turn (one fetch per symbol per turn) - at most 6 broker fetches per symbol
+  in the request's pool (shared copies are free), none started 8 s after the request began, none after a budget
+  refusal. A read that stops early keeps whole periods only and says so in `warnings`; the next request
+  continues from the shared chunks, and `before` pages back by whole weeks / months.
+* **Special sessions** (Diwali muhurat, a Saturday budget day) get no bar on the day itself (the calendar does not model
+  them); the next day the broker's daily history has it, in the week of the Monday before it and in its month.
+* **Freshness badge** (BT1b): a week / month answer is judged by its newest daily bar (timeframe `day`), not by the
+  period's start.
+* **Forming daily bar** (`forming: true`, sent by the v2 chart only; off by default so pages that score daily bars keep
+  completed bars): a D/W/M request without `before` gets today's daily bar from today's one-minute bars (the LD-10
+  `today` copy), marked `"forming": true, "provisional": true` while the session is open and `"forming": false,
+  "provisional": true` after the close (the broker's daily history has it from the next day; its close is the last
+  trade, not yet the official close). `get_candles(..., "day")` for strategies and workers is unchanged.
+* **Index volume** (`volume_from_future`, sent by the v2 chart; off by default so every existing page - backtests,
+  Strategy Lab, Quant, Signals, Scanner, the dashboard's market pulse - gets the same data as before;
+  `app/market_data/index_volume.py`): for an index in `master.INDEX_SYMBOLS` on its own exchange, the near-month future
+  from the instrument master (first FUT expiry on or after today) is fetched at the same base interval through the
+  same session, budget and BT1 entitlement, and each bar's volume becomes the future bar's at the same timestamp (0
+  where none). With the BYOB data tier on, such a chart uses two of the session's symbol slots (the index and its
+  future). Each symbol's answer carries `volume_source` (`{symbol, expiry, exchange, underlying, from, label}`, null for
+  anything else, when not asked for, or when the future could not be read). Only the current contract: bars older than
+  its first one get 0.
+
+Tests: `tests/test_ui2_4a_week_month.py`, `tests/test_ui2_4a_forming_bar.py`, `tests/test_ui2_4a_index_volume.py`.
+
 ## Phase AV: the Copilot home
 
 * **Briefing** (`app/ai/briefing.py`, `GET /api/ai/brief`): `day_type()` turns the market memory into

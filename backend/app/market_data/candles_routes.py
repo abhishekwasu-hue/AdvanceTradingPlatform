@@ -27,11 +27,18 @@ the copy shared by every user of the same broker (`shared_candles`: one broker f
 user's own session and budget), and `/ltp` reads the shared live feed's tick for the same broker before it spends a
 broker call. Nothing per account is shared, and a session's own ticks never feed the shared feed. Anything else is Tier C (EOD): a 409 with the reason and an `X-Data-Tier: C` header.
 `GET /api/market-data/data-tier` is the badge API for a symbol or a market-wide page.
+
+UI2-4a2 (additive): `week` and `month` timeframes, aggregated in IST from daily bars fetched in whole-date chunks per the
+broker's request cap (`periods`, `MarketDataService.get_daily_range`); `before` pages them by whole periods. `forming:
+true` (the v2 chart) adds today's daily bar from today's one-minute bars to a D/W/M request. With `volume_from_future:
+true` (the v2 chart; off by default) an index's volume comes from its near-month future (`index_volume`), fetched
+through the same session, budget and entitlement.
 """
 import asyncio
 import logging
-from datetime import date, datetime, timezone
-from typing import Dict, List, Optional, cast
+import time
+from datetime import date, datetime, timedelta, timezone
+from typing import Dict, List, Optional, Tuple, cast
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -46,13 +53,13 @@ from app.brokers.token_lifecycle import build_adapter, data_is_usable, token_is_
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
-from app.market_data import api_budget, entitlement
-from app.market_data.calendar import load_holidays
+from app.market_data import api_budget, entitlement, index_volume, periods
+from app.market_data.calendar import EXCHANGE_SESSIONS, IST, family_holidays, load_holidays, session_family, session_status
 from app.market_data.data_terms import terms_for
 from app.market_data.entitlement import DataTier, Entitlement
 from app.market_data.fanin import FLAG as BYOB_FLAG, Priority
 from app.market_data.freshness import quote_is_stale
-from app.market_data.service import MarketDataService, build_frames
+from app.market_data.service import CHUNK_LIMIT, MarketDataService, build_frames, merge_bars
 from app.market_data.stream import TickCache, tick_cache
 from app.platform.controls import flag_enabled
 
@@ -62,21 +69,41 @@ router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 
 MAX_SYMBOLS = 50
 INTRADAY_TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min")
-SUPPORTED_TIMEFRAMES = INTRADAY_TIMEFRAMES + ("day",)
+# UI2-4a2: week and month are aggregated in IST from daily bars (app/market_data/periods.py), never the broker's own.
+SUPPORTED_TIMEFRAMES = INTRADAY_TIMEFRAMES + ("day",) + periods.PERIODS
+DAILY_TIMEFRAMES = ("day",) + periods.PERIODS
 INTRADAY_MAX_LOOKBACK_DAYS = 30      # brokers serve one-minute history about a month per request
 DAILY_MAX_LOOKBACK_DAYS = 730
+WEEKLY_MAX_LOOKBACK_DAYS = periods.WEEKLY_MAX      # weekly and monthly only: their daily bars come in chunks
+MONTHLY_MAX_LOOKBACK_DAYS = periods.MONTHLY_MAX
+PERIOD_DEFAULT_DAYS = {"week": periods.WEEKLY_DEFAULT_DAYS, "month": periods.MONTHLY_DEFAULT_DAYS}
+PERIOD_MAX_DAYS = {"week": WEEKLY_MAX_LOOKBACK_DAYS, "month": MONTHLY_MAX_LOOKBACK_DAYS}
+PERIOD_MAX_SYMBOLS = 4               # week / month read years of daily bars per symbol: a chart's few symbols, not a screen
+PERIOD_NEW_CHUNKS = 6                # broker fetches of daily chunks per symbol and request (shared copies are free)
+FUTURE_NEW_CHUNKS = 2                # the future's window starts at its listing: one chunk, two across a chunk edge
+PERIOD_DEADLINE_SECONDS = 8.0        # no older chunk starts later than this after the request began
 
 
 class CandlesBody(BaseModel):
     symbols: List[str] = Field(min_length=1, max_length=MAX_SYMBOLS)
     exchange: str = Field(default="NSE", min_length=2, max_length=10)
     timeframe: str = Field(default="5min")
-    lookback_days: int = Field(default=5, ge=1, le=DAILY_MAX_LOOKBACK_DAYS)
+    # Above DAILY_MAX_LOOKBACK_DAYS for week and month only (the route refuses it for the others, as before). Omitted
+    # for week / month = five / twenty years.
+    lookback_days: int = Field(default=5, ge=1, le=MONTHLY_MAX_LOOKBACK_DAYS)
     broker: Optional[str] = Field(default=None, description="a stored broker; omitted = the first usable session")
     account_label: str = Field(default="primary", max_length=50)
     # Older history for a chart scrolled to its left edge: the `lookback_days` of completed bars
-    # ending the day before this IST date (no today's bars, no shared 60 s cache - history is final).
+    # ending the day before this IST date (no today's bars, no shared 60 s cache - history is final). For week and
+    # month: the complete weeks / months before the one holding this date.
     before: Optional[date] = None
+    # UI2-4a2 (sent by the v2 chart): append today's daily bar, built from today's one-minute bars, to a day / week /
+    # month request without `before` - marked `"forming": true` while the session is open. Off by default, so the pages
+    # that score daily bars (Signals, Scanner) keep getting completed bars only.
+    forming: bool = False
+    # UI2-4a2 (sent by the v2 chart): an index's volume from its near-month future (`volume_source` in each symbol's
+    # answer says which). Off by default, so every page that reads candles today gets the same data.
+    volume_from_future: bool = False
 
 
 async def _records(session: AsyncSession, tenant_id: int) -> List[BrokerCredentialRecord]:
@@ -133,11 +160,22 @@ async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[s
     return usable[0]
 
 
-def _shaped(bars: List[OHLCVBar], timeframe: str) -> tuple:
-    """(bars at `timeframe`, their JSON form). Pandas resampling and serialising a few thousand bars: run on a worker
-    thread (LD-7), so a chart does not hold the event loop that every other request of the process waits on."""
+def _shape(bars: List[OHLCVBar], timeframe: str) -> List[OHLCVBar]:
+    if bars and timeframe in periods.PERIODS:
+        return periods.aggregate(bars, timeframe)          # UI2-4a2: daily bars -> weeks / months, in IST
     if bars and timeframe not in ("1min", "day"):
-        bars = _frame_to_bars(build_frames(bars, "1min", [timeframe])[timeframe])
+        return _frame_to_bars(build_frames(bars, "1min", [timeframe])[timeframe])
+    return bars
+
+
+def _shaped(bars: List[OHLCVBar], timeframe: str, future_bars: Optional[List[OHLCVBar]] = None) -> tuple:
+    """(bars at `timeframe`, their JSON form). Pandas resampling and serialising a few thousand bars: run on a worker
+    thread (LD-7), so a chart does not hold the event loop that every other request of the process waits on. With
+    `future_bars` (UI2-4a2, an index's near-month future at the same base interval), each bar takes the volume of the
+    future's bar at the same timestamp, shaped the same way."""
+    bars = _shape(bars, timeframe)
+    if future_bars is not None:
+        bars = index_volume.replace_volume(bars, _shape(future_bars, timeframe))
     return bars, [b.model_dump(mode="json") for b in bars]
 
 
@@ -158,7 +196,8 @@ async def sources(user: User = Depends(get_current_user), session: AsyncSession 
         records = [r for r in records if r.user_id == user.id]   # BT1: a teammate's broker session is not this user's data source
     items = [_source(r, byob) for r in records]
     return {"sources": items, "usable": any(i["usable"] for i in items), "timeframes": list(SUPPORTED_TIMEFRAMES),
-            "max_symbols": MAX_SYMBOLS, "intraday_max_lookback_days": INTRADAY_MAX_LOOKBACK_DAYS, "daily_max_lookback_days": DAILY_MAX_LOOKBACK_DAYS}
+            "max_symbols": MAX_SYMBOLS, "intraday_max_lookback_days": INTRADAY_MAX_LOOKBACK_DAYS, "daily_max_lookback_days": DAILY_MAX_LOOKBACK_DAYS,
+            "weekly_max_lookback_days": WEEKLY_MAX_LOOKBACK_DAYS, "monthly_max_lookback_days": MONTHLY_MAX_LOOKBACK_DAYS}
 
 
 # Z10-c: every call reads through a broker session and spends that session's rate budget (shared by the organisation
@@ -171,20 +210,166 @@ chains_rate_limit = user_rate_limit("market_data_chains", limit=30, window_secon
 ltp_rate_limit = user_rate_limit("market_data_ltp", limit=60, window_seconds=60)
 
 
+def _period_window(period: str, before: Optional[date], lookback: int, today: date) -> Tuple[date, date]:
+    """UI2-4a2: the daily dates a week / month request reads - whole periods only. Without `before`: through yesterday
+    (today's bar is added on top when asked for). With it: up to the end of the period before the one holding it."""
+    if before is not None:
+        end = periods.period_start(min(before, today), period) - timedelta(days=1)
+    else:
+        end = today - timedelta(days=1)
+    return periods.period_start(end - timedelta(days=max(1, lookback) - 1), period), end
+
+
+async def _today_state(session: AsyncSession, body: CandlesBody, exchange: str, now: datetime) -> Optional[bool]:
+    """UI2-4a2: whether to add today's daily bar - None: no (not asked, older history, not a trading day yet, a 24x7
+    venue); True: the session is open, the bar is forming; False: the session closed for the day, the bar is complete
+    (the broker's daily history has it only from tomorrow)."""
+    if not body.forming or body.before is not None or body.timeframe not in DAILY_TIMEFRAMES:
+        return None
+    family = session_family(exchange)
+    spec = EXCHANGE_SESSIONS[family]
+    if spec.always_open:
+        return None
+    holidays = await family_holidays(session, family)
+    if session_status(now, holidays, family).is_open:
+        return True
+    now_ist = now.astimezone(IST)
+    if now_ist.weekday() < 5 and now_ist.date() not in holidays and now_ist.time() >= spec.close:
+        return False
+    return None
+
+
+class _Got:
+    """One symbol's base bars (daily for day / week / month, else one-minute) and what to say about them. For week /
+    month: the oldest date the daily read reached and why it stopped early (None: it did not)."""
+
+    def __init__(self, bars: List[OHLCVBar], today_added: bool = False, notes: Optional[List[str]] = None,
+                 covered_from: Optional[date] = None, stopped: Optional[str] = None, fetched: int = 0) -> None:
+        self.bars = bars
+        self.fetched = fetched
+        self.today_added = today_added
+        self.notes = notes or []
+        self.covered_from = covered_from
+        self.stopped = stopped
+
+
+async def _base_bars(service: MarketDataService, symbol: str, exchange: str, base_interval: str, period: Optional[str],
+                     window: Optional[Tuple[date, date]], before: Optional[date], today_state: Optional[bool], now: datetime, *,
+                     max_new_chunks: Optional[int] = None, max_chunks: Optional[int] = None, deadline: Optional[float] = None) -> _Got:
+    notes: List[str] = []
+    covered_from: Optional[date] = None
+    stopped: Optional[str] = None
+    fetched = 0
+    if period is not None and window is not None:
+        got = await service.get_daily_range(symbol, exchange, window[0], window[1], now, max_new_chunks=max_new_chunks,
+                                            max_chunks=max_chunks, deadline=deadline)
+        bars, covered_from, stopped, fetched = got.bars, got.covered_from, got.stopped, got.fetched
+    elif before is not None:
+        bars = await service.get_history(symbol, exchange, base_interval, before)
+    else:
+        bars = await service.get_candles(symbol, exchange, base_interval)
+    added = False
+    if today_state is not None and base_interval == "day":
+        try:
+            today_bar = await service.get_today_bar(symbol, exchange, now)
+        except api_budget.BudgetUsed:
+            today_bar = None
+            notes.append("today's bar not loaded this time (budget used)")
+        except Exception as exc:  # noqa: BLE001 - the completed bars still make a chart
+            logger.info("Today's bar failed for %s:%s: %s", exchange, symbol, exc)
+            today_bar = None
+            notes.append(f"today's bar not loaded: {type(exc).__name__}: {exc}"[:200])
+        if today_bar is not None and (not bars or periods.ist_date(bars[-1].timestamp) < periods.ist_date(today_bar.timestamp)):
+            bars = merge_bars(bars, [today_bar])
+            added = True
+    return _Got(list(bars), added, notes, covered_from, stopped, fetched)
+
+
+def _needs_older(got: _Got, window: Tuple[date, date]) -> bool:
+    return got.stopped == CHUNK_LIMIT and got.covered_from is not None and got.covered_from > window[0]
+
+
+async def _older_round_robin(service: MarketDataService, exchange: str, window: Tuple[date, date], gots: Dict[str, _Got],
+                             now: datetime, *, pool: int, deadline: Optional[float]) -> None:
+    """Week / month, pass 2 - after every symbol has its newest chunk, today's bar and its future's bars (pass 1), so a
+    slow broker's old history never takes their budget or time: the older chunks of all the symbols, one broker fetch
+    per symbol per turn, at most `pool` fetches in all and none started past `deadline`. A symbol that gets no token,
+    fails, runs out of time or reaches where the broker's data begins drops out; the others go on."""
+    start = window[0]
+    active = [sym for sym, got in gots.items() if _needs_older(got, window)]
+    while active and pool > 0:
+        for symbol in list(active):
+            got = gots[symbol]
+            if pool <= 0:
+                break
+            try:
+                assert got.covered_from is not None
+                more = await service.get_daily_range(symbol, exchange, start, got.covered_from - timedelta(days=1), now,
+                                                     max_new_chunks=1, deadline=deadline, newest_raises=False)
+            except Exception as exc:  # noqa: BLE001 - get_daily_range reports its own failures; this is a safety net
+                logger.info("Older daily chunks failed for %s:%s: %s", exchange, symbol, exc)
+                got.stopped = f"{type(exc).__name__}: {exc}"[:200]
+                active.remove(symbol)
+                continue
+            got.bars = merge_bars(more.bars, got.bars)
+            got.covered_from, got.stopped = more.covered_from, more.stopped
+            pool -= more.fetched
+            if not _needs_older(got, window):
+                active.remove(symbol)
+
+
+def _trim_periods(got: _Got, period: str, window: Tuple[date, date]) -> None:
+    """A week / month read that stopped early keeps whole periods only, so the oldest bar shown is never a cut one; the
+    rest loads on the next request (shared chunks cost nothing) or when the chart is scrolled back (`before`)."""
+    if got.stopped is None or got.covered_from is None or got.covered_from <= window[0]:
+        return
+    first = got.covered_from
+    if periods.period_start(first, period) != first:
+        first = periods.next_period_start(first, period)
+    got.bars = [b for b in got.bars if periods.ist_date(b.timestamp) >= first]
+    why = {CHUNK_LIMIT: "the request's share of broker calls was used", "time": "the broker was slow"}.get(got.stopped, got.stopped)
+    got.notes.append(f"older {period}ly bars not loaded this time ({why}); they load on the next request or when scrolled back")
+
+
+async def _future_bars(service: MarketDataService, fut: index_volume.NearFuture, base_interval: str, period: Optional[str],
+                       window: Optional[Tuple[date, date]], before: Optional[date], today_state: Optional[bool], now: datetime,
+                       deadline: Optional[float]) -> List[OHLCVBar]:
+    """UI2-4a2: the near-month future's bars for the same window, through the same service (session, budget). Nothing
+    is fetched for a window that ends before the contract can have been listed."""
+    listed = fut.expiry - timedelta(days=index_volume.LISTED_DAYS_BEFORE_EXPIRY)
+    if period is not None and window is not None:
+        window = (max(window[0], listed), window[1])         # a window ending before the listing: no call (get_daily_range)
+    elif before is not None and before <= listed:
+        return []
+    got = await _base_bars(service, fut.symbol, fut.exchange, base_interval, period, window, before, today_state, now,
+                           max_new_chunks=FUTURE_NEW_CHUNKS if period is not None else None, deadline=deadline)
+    if period is not None and window is not None:
+        _trim_periods(got, period, window)
+    return got.bars
+
+
 @router.post("/candles", dependencies=[Depends(candles_rate_limit)])
 async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    started = time.monotonic()
     if body.timeframe not in SUPPORTED_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {', '.join(SUPPORTED_TIMEFRAMES)}")
+    period = body.timeframe if body.timeframe in periods.PERIODS else None
+    if period is None and body.lookback_days > DAILY_MAX_LOOKBACK_DAYS:
+        raise HTTPException(status_code=422, detail=f"lookback_days must be at most {DAILY_MAX_LOOKBACK_DAYS} for {body.timeframe} bars "
+                                                    f"(longer only for week and month)")
     exchange = body.exchange.upper()
     byob = await _byob(session, user)
     ents: Dict[tuple, Entitlement] = {}
     namespace: Optional[str] = None
     live: Optional[Entitlement] = None
+    wanted = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+    if period is not None and len(wanted) > PERIOD_MAX_SYMBOLS:
+        raise HTTPException(status_code=422, detail=f"{body.timeframe} bars: at most {PERIOD_MAX_SYMBOLS} symbols per request "
+                                                    "(each reads years of daily bars)")
+    priority = Priority.CHART if len(wanted) == 1 else Priority.SCREENER
     if byob:
-        wanted = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
         ents = await entitlement.resolve_many(session, user, [(s, exchange) for s in wanted], broker=body.broker,
-                                              account_label=body.account_label if body.broker else None,
-                                              priority=Priority.CHART if len(wanted) == 1 else Priority.SCREENER)
+                                              account_label=body.account_label if body.broker else None, priority=priority)
         live = next((e for e in ents.values() if e.live), None)
         if live is None or live.record is None or live.session is None:
             raise _tier_c(ents)
@@ -193,9 +378,13 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         record = await _pick_record(session, user.tenant_id, body.broker, body.account_label)
 
     warnings: List[str] = []
-    daily = body.timeframe == "day"
-    lookback = body.lookback_days
-    cap = DAILY_MAX_LOOKBACK_DAYS if daily else INTRADAY_MAX_LOOKBACK_DAYS
+    daily = body.timeframe in DAILY_TIMEFRAMES
+    if period is not None:
+        lookback = body.lookback_days if "lookback_days" in body.model_fields_set else PERIOD_DEFAULT_DAYS[period]
+        cap = PERIOD_MAX_DAYS[period]
+    else:
+        lookback = body.lookback_days
+        cap = DAILY_MAX_LOOKBACK_DAYS if daily else INTRADAY_MAX_LOOKBACK_DAYS
     if lookback > cap:
         warnings.append(f"lookback clamped to {cap} days for {body.timeframe} bars")
         lookback = cap
@@ -205,6 +394,27 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     budgeted = api_budget.BudgetedAdapter(build_adapter(record), record.id, record.broker_name)
     service = MarketDataService(cast(BrokerInterface, budgeted), lookback_days=lookback, cache_namespace=namespace)
     now = datetime.now(timezone.utc)
+    today = now.astimezone(IST).date()
+    window = _period_window(period, body.before, lookback, today) if period is not None else None
+    today_state = await _today_state(session, body, exchange, now)
+    # UI2-4a2: an index's volume from its near-month future - found in the platform's instrument master, and (BT1) only
+    # when the future is inside the same session's entitlement as the index itself; else the index keeps its own volume.
+    futures: Dict[str, index_volume.NearFuture] = {}
+    if body.volume_from_future:
+        for raw in wanted:
+            main = ents.get((raw, exchange))
+            if index_volume.index_underlying(raw, exchange) is None or (byob and (main is None or not main.live)):
+                continue
+            fut = await index_volume.near_future(session, raw, exchange, today)
+            if fut is None:
+                continue
+            if byob:
+                fent = await entitlement.resolve(session, user, fut.symbol, fut.exchange, broker=record.broker_name,
+                                                 account_label=record.account_label, priority=priority)
+                if not fent.live or fent.record is None or fent.record.id != record.id:
+                    warnings.append(f"{raw}: volume from {fut.symbol} not shown ({fent.reason or 'outside your session'})")
+                    continue
+            futures[raw] = fut
     eod_date, holidays = await _eod_context(session, ents)
     # LD-7: the broker calls below can take seconds; no pool connection is held meanwhile (reads only so far - the meter
     # write after the loop opens a new transaction).
@@ -213,6 +423,9 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     out: Dict[str, dict] = {}
     fetched = 0
     newest: List[datetime] = []      # BT1b: each symbol's newest bar - the badge is timed by the data, not the fetch
+    deadline = started + PERIOD_DEADLINE_SECONDS
+    # Pass 1, every symbol: its bars - for week / month only the newest daily chunk - today's bar and its future's bars.
+    loaded: Dict[str, Tuple[_Got, Optional[List[OHLCVBar]], Optional[dict]]] = {}
     for raw in body.symbols:
         symbol = raw.strip().upper()
         if not symbol or symbol in out:
@@ -221,28 +434,65 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         if byob and (ent is None or not ent.live):
             # BT1: outside the user's session budget - EOD only for this one, the others still load.
             out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": ent.reason if ent else "EOD data only",
-                           "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None}
+                           "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None, "volume_source": None}
             continue
+        out[symbol] = {}                      # filled below, keeping the order asked for
         try:
-            if body.before is not None:
-                bars = await service.get_history(symbol, exchange, base_interval, body.before)
-            else:
-                bars = await service.get_candles(symbol, exchange, base_interval)
-            bars, shaped = await asyncio.to_thread(_shaped, bars, body.timeframe)
+            got = await _base_bars(service, symbol, exchange, base_interval, period, window, body.before, today_state, now,
+                                   max_chunks=1 if period is not None else None, deadline=deadline)
+        except api_budget.BudgetUsed:
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": "budget used", "budget_used": True, "volume_source": None}
+            continue
+        except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
+            logger.info("Candle fetch failed for %s:%s via %s: %s", exchange, symbol, record.broker_name, exc)
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300], "volume_source": None}
+            continue
+        fut = futures.get(symbol)
+        fut_bars: Optional[List[OHLCVBar]] = None
+        volume_source: Optional[dict] = None
+        if fut is not None:
+            try:
+                fut_bars = await _future_bars(service, fut, base_interval, period, window, body.before,
+                                              today_state if got.today_added else None, now, deadline)
+                volume_source = fut.source(periods.ist_date(fut_bars[0].timestamp) if fut_bars else None)
+            except api_budget.BudgetUsed:
+                fut_bars = None
+                warnings.append(f"{symbol}: volume from {fut.symbol} not loaded this time (budget used)")
+            except Exception as exc:  # noqa: BLE001 - the index's own bars still make a chart
+                logger.info("Future volume fetch failed for %s via %s: %s", fut.symbol, record.broker_name, exc)
+                fut_bars = None
+                warnings.append(f"{symbol}: volume from {fut.symbol} not loaded ({type(exc).__name__})")
+        loaded[symbol] = (got, fut_bars, volume_source)
+    if period is not None and window is not None and loaded:
+        # Pass 2, week / month: the older chunks, shared by the symbols in turn within the request's share of calls.
+        gots = {symbol: item[0] for symbol, item in loaded.items()}
+        pool = PERIOD_NEW_CHUNKS * len(gots) - sum(got.fetched for got in gots.values())
+        await _older_round_robin(service, exchange, window, gots, now, pool=pool, deadline=deadline)
+        for got in gots.values():
+            _trim_periods(got, period, window)
+    for symbol, (got, fut_bars, volume_source) in loaded.items():
+        try:
+            warnings.extend(f"{symbol}: {note}" for note in got.notes)
+            newest_base = got.bars[-1].timestamp if got.bars else None
+            bars, shaped = await asyncio.to_thread(_shaped, got.bars, body.timeframe, fut_bars)
+            if got.today_added and shaped:
+                # Built from today's one-minute bars: forming while the session is open; after the close the day's bar,
+                # provisional until the broker's daily history has it (tomorrow).
+                shaped[-1]["forming"] = bool(today_state)
+                shaped[-1]["provisional"] = True
             out[symbol] = {"bars": shaped, "count": len(bars),
-                           "first": bars[0].timestamp.isoformat() if bars else None, "last": bars[-1].timestamp.isoformat() if bars else None, "error": None}
-            if bars:
-                last_ts = bars[-1].timestamp
+                           "first": bars[0].timestamp.isoformat() if bars else None, "last": bars[-1].timestamp.isoformat() if bars else None, "error": None,
+                           "volume_source": volume_source}
+            if bars and newest_base is not None:
+                # BT1b: judged on the newest base bar - for week / month its newest daily bar, not the period's start.
+                last_ts = newest_base if period is not None else bars[-1].timestamp
                 newest.append(last_ts if last_ts.tzinfo else last_ts.replace(tzinfo=timezone.utc))
             fetched += 1
             if not bars:
                 warnings.append(f"{symbol}: the broker returned no candles")
-        except api_budget.BudgetUsed:
-            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": "budget used", "budget_used": True}
-            continue
         except Exception as exc:  # noqa: BLE001 - one bad symbol must not lose the others
-            logger.info("Candle fetch failed for %s:%s via %s: %s", exchange, symbol, record.broker_name, exc)
-            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300]}
+            logger.info("Candle shaping failed for %s:%s: %s", exchange, symbol, exc)
+            out[symbol] = {"bars": [], "count": 0, "first": None, "last": None, "error": f"{type(exc).__name__}: {exc}"[:300], "volume_source": None}
     if fetched:
         await meter(session, user.tenant_id, "market_data_candles", quantity=fetched, source="api",
                     metadata={"broker": record.broker_name, "timeframe": body.timeframe, "exchange": exchange}, commit=True)
@@ -259,7 +509,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     if live is not None:
         # The stalest symbol decides (a batch is only as fresh as its oldest feed); no bars at all = age unknown = stale.
         oldest = min(newest) if newest else None
-        result["data_tier"] = live.badge(now=now, timeframe=body.timeframe if oldest is not None else None, last_bar_start=oldest)
+        badge_tf = "day" if period is not None else body.timeframe        # a week / month is as fresh as its newest day
+        result["data_tier"] = live.badge(now=now, timeframe=badge_tf if oldest is not None else None, last_bar_start=oldest)
         result["note"] = ("Candles come through your own broker session; a copy another user of the same broker fetched in the last "
                           "minutes is used instead of a second broker call.")
     return result

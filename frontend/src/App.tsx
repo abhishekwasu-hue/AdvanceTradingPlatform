@@ -1,6 +1,6 @@
 import { Bell, LifeBuoy, Menu, MessageSquarePlus, UserCircle2 } from "lucide-react";
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
-import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
+import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ThemeToggle } from "./components/AppearanceCard";
 import BottomNav from "./components/BottomNav";
@@ -11,9 +11,10 @@ import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
 import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
-import { legacyCopilotPath } from "./copilot/tabs";
+import { flagOffFallback } from "./shell/aliases";
+import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./shell/common";
 import { setV2ThemeDefault } from "./theme";
-import { FeaturesProvider, useFeatures, v2ThemeDefaultFrom } from "./ui/useFeatures";
+import { FeaturesProvider, useFeatures, useUiV2, v2ThemeDefaultFrom } from "./ui/useFeatures";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
@@ -35,14 +36,10 @@ const SupportDialog = lazy<ComponentType<SupportDialogProps>>(
   () => import("./support/SupportDialog").catch(() => ({ default: () => null })),
 );
 const LegalPage = lazy(() => import("./legal/LegalPage"));
+// UI2-1: the v2 shell (sidebar sections, bottom bar + More sheet, command bar, /charts, broker gate on data pages) -
+// its own chunk, loaded only while `ui_v2` is on for the organisation.
+const AppShellV2 = lazy(() => import("./shell/AppShellV2"));
 
-/** The old Copilot addresses (/ai-copilot/study, /today, ...) open the redesigned tab that now holds that content. */
-function LegacyCopilot() {
-  const { tab } = useParams<{ tab?: string }>();
-  let stored: string | null = null;
-  try { stored = localStorage.getItem("atp_copilot_tab"); } catch { /* storage unavailable */ }
-  return <Navigate to={legacyCopilotPath(tab, stored)} replace />;
-}
 function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const { user } = useAuth();
   const location = useLocation();
@@ -152,48 +149,6 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   );
 }
 
-/** Links the backend sends (email verification, password reset, team invite) and the broker OAuth round-trip
- * (Settings -> "Login to Upstox" -> Upstox -> /api/broker/upstox/oauth/callback) land on the app root with a query
- * string. They keep working: the root forwards them, query intact, to the page that handles them. */
-function legacyTarget(search: string): Page | null {
-  const params = new URLSearchParams(search);
-  if (params.has("invite") || params.has("reset") || params.has("verify")) return "account";
-  if (params.has("broker")) return "settings";
-  const named = params.get("page");                // web-push notifications open /?page=notifications
-  if (named === "ai-copilot") return "copilot";        // the Copilot's old page id
-  if (named && (PAGES as string[]).includes(named)) return named as Page;
-  return null;
-}
-
-/** The query to carry to a forwarded page, minus the `page=` that only chose the destination. */
-function withoutPageParam(search: string): string {
-  const params = new URLSearchParams(search);
-  params.delete("page");
-  const rest = params.toString();
-  return rest ? `?${rest}` : "";
-}
-
-function PageLoading() {
-  return (
-    <div className="space-y-3" aria-busy="true" aria-live="polite">
-      <span className="sr-only">Loading page</span>
-      <div className="h-6 w-48 animate-pulse rounded bg-panel2" />
-      <div className="h-32 animate-pulse rounded-xl bg-panel2/70" />
-      <div className="h-32 animate-pulse rounded-xl bg-panel2/50" />
-    </div>
-  );
-}
-
-function NotFound() {
-  return (
-    <div className="rounded-xl border border-border bg-panel p-6 text-sm text-slate-200">
-      <p className="font-semibold text-slate-100">This page does not exist.</p>
-      <p className="mt-1 text-muted">The link may be old or mistyped.</p>
-      <Link to="/" className="mt-3 inline-block text-brand hover:underline">Go to the dashboard</Link>
-    </div>
-  );
-}
-
 function AppShell() {
   const location = useLocation();
   const navigate = useNavigate();
@@ -247,6 +202,28 @@ function AppShell() {
       </div>
       <BottomNav page={page} moreOpen={menuOpen} onMore={() => setMenuOpen((o) => !o)} />
     </div>
+  );
+}
+
+/** UI2-1: the v2 shell while `ui_v2` is on (known and on - "not known yet" is today's shell); today's shell, exactly
+ * as before, otherwise. */
+function Shell() {
+  const { user, loading } = useAuth();
+  const features = useFeatures();
+  const v2 = useUiV2();
+  const location = useLocation();
+  if (!v2) {
+    // Only an address today's app does not know (a v2 page's new address) is forwarded, once it is certain the flag is
+    // off (signed out, or the flags have answered); everything else renders exactly as before.
+    const back = flagOffFallback(location.pathname);
+    if (!back) return <AppShell />;
+    if (loading || (user && !features.loaded)) return null;
+    return <Navigate to={`${back}${location.search}`} replace />;
+  }
+  return (
+    <ErrorBoundary title="The app">
+      <Suspense fallback={null}><AppShellV2 /></Suspense>
+    </ErrorBoundary>
   );
 }
 
@@ -331,7 +308,7 @@ export default function App() {
               <Route path="/legal/:slug" caseSensitive element={
                 <ErrorBoundary title="The legal page"><Suspense fallback={null}><LegalPage /></Suspense></ErrorBoundary>
               } />
-              <Route path="*" element={<AppShell />} />
+              <Route path="*" element={<Shell />} />
             </Routes>
           )}
         </ToastProvider>

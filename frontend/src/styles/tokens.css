@@ -92,8 +92,10 @@
    - shadow-raised: menus, drawers, bottom sheets, dialogs (cards keep the near-flat --shadow);
    - radius-pill: chips and badges;
    - space-1..12: the 4-pt grid made explicit (gutter 16 phone / 32 desktop, card padding 16 / 20, gaps 16 / 24);
-   - dur-fast / dur-base / ease: the only motion (fades, short drawer and sheet slides), zero when motion is reduced. */
+   - dur-fast / dur-base / ease: the only motion (fades, short drawer and sheet slides), zero when motion is reduced.
+   UI2-1: scrim - the dimmed backdrop behind a sheet or the command bar (used with an alpha: `bg-scrim/50`). */
 :root {
+  --scrim: 0 0 0;
   --border-subtle: 26 33 48;
   --warn-tint: 41 30 10;
   --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
@@ -113,6 +115,7 @@
 }
 
 :root[data-theme="light"] {
+  --scrim: 15 23 42;
   --border-subtle: 229 233 240;
   --warn-tint: 255 251 235;
   --shadow-raised: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);

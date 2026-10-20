@@ -25,6 +25,7 @@ import type { OHLCVBar, OptionChain } from "../types";
 import { PageHeader } from "../components/primitives";
 import { WatchlistPicker } from "../screener/WatchlistPicker";
 import { splitSymbols } from "../screener/watchlists";
+import { useFeatures } from "../ui/useFeatures";
 
 const STRUCTURE_TYPES = Object.keys(STRUCTURE_FILTER_LABELS) as StructureFilterType[];
 const OPTION_TYPES = Object.keys(OPTION_FILTER_LABELS) as OptionFilterType[];
@@ -74,16 +75,13 @@ export default function ScannerPage() {
   const [dataWarnings, setDataWarnings] = useState<string[]>([]);
   const [lastRequest, setLastRequest] = useState<ScannerRequest | null>(null);
   // AMW-2 (flag `watchlists`): "Load watchlist" fills the symbols from one of the caller's own lists.
-  const [watchlistsOn, setWatchlistsOn] = useState(false);
-  useEffect(() => {
-    api.myFeatures().then((f) => setWatchlistsOn(Boolean(f.watchlists))).catch(() => setWatchlistsOn(false));
-  }, []);
+  const watchlistsOn = useFeatures().on("watchlists");      // UI2-0: the app's single /system/features read
 
   async function planWithAi() {
     if (aiText.trim().length < 5) return;
     setAiBusy(true); setError(null);
     try {
-      const plan = await api.scannerAiPlan(aiText, navigator.language?.slice(0, 2) || "en");
+      const plan = await api.scannerAiPlan(aiText);
       setAiPlan(plan);
       setIndicatorConditions(plan.indicator_conditions);
       setStructureFilters(plan.structure_filters);
@@ -97,7 +95,7 @@ export default function ScannerPage() {
   async function readWithAi() {
     if (!lastRequest || !result) return;
     setAiBusy(true); setError(null);
-    try { setAiRead(await api.scannerAiRead(lastRequest, result, navigator.language?.slice(0, 2) || "en")); }
+    try { setAiRead(await api.scannerAiRead(lastRequest, result)); }
     catch (e) { setError(String(e)); } finally { setAiBusy(false); }
   }
 

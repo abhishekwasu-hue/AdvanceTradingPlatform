@@ -159,7 +159,8 @@ async def put_preferences(body: PreferencesBody, user: User = Depends(get_curren
 
 @router.get("/acknowledgement")
 async def get_acknowledgement(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    """P0.8-D: the current AI Copilot acknowledgement text (en/mr), its version and whether this user accepted it."""
+    """P0.8-D: the current AI Copilot acknowledgement text (English only - no translation), its version and whether this
+    user accepted it."""
     row = await terms.latest(session, terms.KIND_COPILOT, tenant_id=user.tenant_id, user_id=user.id)
     return terms.status_dict(terms.KIND_COPILOT, row)
 

@@ -85,3 +85,40 @@
   --row-h: 36px;
   --stage-h: 44px;
 }
+
+/* UI2-0 (UI v2 proposal §8): the v2 additions. Nothing above changes value; v2 screens use these with the tokens above.
+   - border-subtle: card outlines, dividers, table rows (the stronger --border stays on inputs and buttons);
+   - warn-tint: the background of a real warning note, under --warn text;
+   - shadow-raised: menus, drawers, bottom sheets, dialogs (cards keep the near-flat --shadow);
+   - radius-pill: chips and badges;
+   - space-1..12: the 4-pt grid made explicit (gutter 16 phone / 32 desktop, card padding 16 / 20, gaps 16 / 24);
+   - dur-fast / dur-base / ease: the only motion (fades, short drawer and sheet slides), zero when motion is reduced. */
+:root {
+  --border-subtle: 26 33 48;
+  --warn-tint: 41 30 10;
+  --shadow-raised: 0 8px 24px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --radius-pill: 999px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --dur-fast: 120ms;
+  --dur-base: 200ms;
+  --ease: cubic-bezier(0.2, 0, 0, 1);
+}
+
+:root[data-theme="light"] {
+  --border-subtle: 229 233 240;
+  --warn-tint: 255 251 235;
+  --shadow-raised: 0 8px 24px rgba(15, 23, 42, 0.12), 0 0 0 1px rgba(15, 23, 42, 0.04);
+}
+
+:root[data-motion="reduce"] { --dur-fast: 0ms; --dur-base: 0ms; }
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-fast: 0ms; --dur-base: 0ms; }
+}

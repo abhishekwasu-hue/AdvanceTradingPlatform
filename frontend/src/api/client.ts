@@ -622,7 +622,7 @@ export const api = {
   runScanner: (scanRequest: ScannerRequest) =>
     request<ScannerResult>("/scanner/run", { method: "POST", body: JSON.stringify(scanRequest) }),
   // Phase Y: AI scanner - plan from plain language, read of a result.
-  scannerAiPlan: (text: string, language = "en") =>
+  scannerAiPlan: (text: string, language: "en" = "en") =>
     request<ScanPlan>("/scanner/ai/plan", { method: "POST", body: JSON.stringify({ text, language }) }),
   // Phase AD: broker option chains and exchange holidays.
   marketDataOptionChains: (underlyings: string[], expiry?: string, broker?: string) =>
@@ -652,7 +652,7 @@ export const api = {
     request<QuantRisk>("/quant/risk", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null, benchmark: benchmark ?? null }) }),
   quantExposure: (symbols: QuantSymbolInput[], weights?: Record<string, number>) =>
     request<QuantExposure>("/quant/exposure", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null }) }),
-  scannerAiRead: (scanRequest: ScannerRequest, result: ScannerResult, language = "en") =>
+  scannerAiRead: (scanRequest: ScannerRequest, result: ScannerResult, language: "en" = "en") =>
     request<ScanRead>("/scanner/ai/read", { method: "POST", body: JSON.stringify({ request: scanRequest, result, language }) }),
 
   listNewsEvents: (filters?: { category?: NewsEventCategory; symbol?: string; since?: string; origin?: "MANUAL" | "FEED" }) => {
@@ -815,9 +815,9 @@ export const api = {
     return request<VisionReportsResponse>(`/ai/byok/reports?${params.toString()}`);
   },
   byokDeleteReport: (id: number) => request<{ deleted: number }>(`/ai/byok/reports/${id}`, { method: "DELETE" }),
-  aiGenerate: (prompt: string, opts: { language?: string; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
+  aiGenerate: (prompt: string, opts: { language?: "en"; regime?: string | null; symbol?: string | null } = {}, signal?: AbortSignal) =>
     request<AiStrategyDraft>("/ai/drafts", { method: "POST", body: JSON.stringify({ prompt, ...opts }), signal }),
-  aiContext: (language?: string, regime?: string | null, symbol?: string | null) => {
+  aiContext: (language?: "en", regime?: string | null, symbol?: string | null) => {
     const params = new URLSearchParams();
     if (language) params.set("language", language);
     if (regime) params.set("regime", regime);

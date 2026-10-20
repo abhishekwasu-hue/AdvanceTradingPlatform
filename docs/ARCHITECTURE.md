@@ -1678,7 +1678,7 @@ notified, validation of plan/status values, detail view contents).
 ### B4: Per-tenant broker rate budgets and cycle fairness
 
 One worker serves every tenant, and each tenant trades on its own broker API key with its own
-published rate limits (Upstox ~25 req/s and 250/min; Kite 3 req/s on quotes/historical). Two
+published rate limits (Upstox ~25 req/s and 250/min; Kite 1 req/s on quotes, 3 req/s on historical candles). Two
 things keep one busy tenant from hurting itself or anyone else:
 
 * **`RateLimitedBroker`** (`app/brokers/rate_budget.py`): every adapter the worker hands to the

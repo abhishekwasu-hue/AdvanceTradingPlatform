@@ -59,6 +59,7 @@ S_BACKTEST = "self: a backtest computed for the caller; stores nothing another m
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
 S_OWN_WATCHLISTS = "self: the caller's own watchlists (tenant and user); another member's or organisation's list is a 404"
+S_OWN_PREFS = "self: the caller's own UI preferences (tenant and user); no route names another user"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
 S_READ_MARKS = "self: read marks are per user"
 S_OWN_TELEGRAM = "self: links or unlinks the caller's own Telegram chat"
@@ -275,6 +276,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/broker/token-status"): "member",
     ("GET", "/api/broker/upstox/oauth/callback"): P_OAUTH_CALLBACK,
     ("GET", "/api/broker/upstox/oauth/start"): "member",
+    ("POST", "/api/broker/{name}/analytics-token/check"): "trader",
+    ("DELETE", "/api/broker/{name}/analytics-token"): "trader",
     ("POST", "/api/broker/{name}/authenticate"): "trader",
     ("DELETE", "/api/broker/{name}/credentials"): "trader",
     ("POST", "/api/broker/{name}/credentials"): "trader",
@@ -286,6 +289,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/charts/drawings"): S_OWN_DRAWINGS,
     ("GET", "/api/charts/drawings/export"): "member",
     ("POST", "/api/charts/drawings/import"): S_OWN_DRAWINGS,
+    ("DELETE", "/api/charts/drawings"): S_OWN_DRAWINGS,
     ("DELETE", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("PUT", "/api/charts/drawings/{drawing_id}"): S_OWN_DRAWINGS,
     ("POST", "/api/charts/drawings/{drawing_id}/lock"): S_OWN_DRAWINGS,
@@ -430,6 +434,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/marketplace/{listing_id}"): "member",
     ("POST", "/api/marketplace/{listing_id}/subscribe"): "trader",
     ("POST", "/api/marketplace/{listing_id}/unsubscribe"): "trader",
+    # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours), per tenant and user
+    ("GET", "/api/me/prefs"): "member: the caller's own preferences only (tenant and user)",
+    ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
     ("GET", "/api/news-events"): P_NEWS_EVENTS,
     ("POST", "/api/news-events"): "trader",
     ("DELETE", "/api/news-events/{event_id}"): "trader",
@@ -609,6 +616,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # AMW-2 (flag watchlists): the caller's own named watchlists (tenant and user)
     ("GET", "/api/watchlists"): "member: the caller's own watchlists only (tenant and user, BT1b)",
     ("POST", "/api/watchlists"): S_OWN_WATCHLISTS,
+    ("PUT", "/api/watchlists/order"): S_OWN_WATCHLISTS,
     ("PUT", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
     ("DELETE", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
     ("GET", "/api/webhooks/tradingview/token"): "member",

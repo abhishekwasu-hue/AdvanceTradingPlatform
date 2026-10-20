@@ -13,10 +13,18 @@ read paths the shell polls: `/api/auth/me`, `/api/deployments`, `/api/notificati
 5-minute bars) and a screener run (`POST /api/screener/run`, `preview: true` - evaluated, never stored) - then waits
 a think time. Users start spread over `--ramp` seconds, so the logins do not all land in the same second.
 
-Prints p50/p95/p99 per scenario and the error rate, and exits 1 when an SLO is missed: p95 over 500 ms (login 1,000 ms:
-password hashing is slow on purpose; chart 1,000 ms; screener run 2,000 ms) or server errors above 0.5% of requests.
-Responses that are not failures of the API are counted apart, never as errors: a feature the operator has off (503 with
-X-Feature-Disabled), no broker session (409) and rate limiting (429).
+Prints p50/p95/p99 per scenario and the error rate, and exits 1 when an SLO is missed. Two verdicts (LD-9, owner,
+20 Oct: login is measured apart from the API target):
+
+* **API** - every scenario but login: p95 at or under 500 ms (chart 1,000 ms; screener run 2,000 ms - their documented
+  limits) and server errors at most 0.5% of the API requests. Responses that are not failures of the API are counted
+  apart, never as errors: a feature the operator has off (503 with X-Feature-Disabled), no broker session (409) and rate
+  limiting (429).
+* **Login** - p95 at or under 2,000 ms (password hashing is slow on purpose) and no errors at all: every login attempt
+  that does not answer 200 (a time-out, a 5xx, a 429, a refusal) fails it. A run with no login (`--token`) fails it
+  too: not measured is not a pass.
+
+Both must pass.
 
 Safety: read paths plus login and a preview screen - it places, changes and approves nothing, and it never sends an
 order. `--base` must be localhost or a staging host (one of its DNS labels is exactly "staging", as in
@@ -61,9 +69,13 @@ DASHBOARD = ["/api/auth/me", "/api/deployments", "/api/notifications", "/api/sys
 # (scenario, probability per loop) - the dashboard poll runs every loop
 EXTRA = [("proposals", 0.5), ("positions", 0.5), ("chart", 0.25), ("screener_run", 0.1)]
 POSITIONS_PAGE = ["positions", "paper_account"]
-P95_LIMIT_MS: Dict[str, float] = {"login": 1000.0, "chart": 1000.0, "screener_run": 2000.0}
+P95_LIMIT_MS: Dict[str, float] = {"chart": 1000.0, "screener_run": 2000.0}
 DEFAULT_P95_MS = 500.0
 ERROR_LIMIT = 0.005
+# LD-9: login is judged apart from the API scenarios - its own p95 limit, and no failed login at all.
+LOGIN = "login"
+LOGIN_P95_MS = 2000.0
+LOGIN_ERROR_LIMIT = 0
 SAFE_HOSTS = {"localhost", "127.0.0.1", "::1", "testserver"}
 SCREEN = "close > SMA(close, 20) AND RSI(14) > 40 AND PctChange(close, 5) > -10"
 SYMBOLS = ["RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "LT", "ITC", "AXISBANK", "KOTAKBANK"]
@@ -219,30 +231,54 @@ def _read_accounts(path: str) -> List[Account]:
 
 
 def report(stats: Stats, users: int, elapsed: float, slo_factor: float = 1.0) -> Dict[str, Any]:
-    """`slo_factor` scales the p95 limits (a slower CI machine), never the server-error limit."""
+    """`slo_factor` scales the p95 limits (a slower CI machine), never the error limits. LD-9: the API verdict covers
+    every scenario but login (p95 per scenario, server errors over the API requests); the login verdict is login's p95
+    against LOGIN_P95_MS and its failed attempts against LOGIN_ERROR_LIMIT (none)."""
     total = sum(len(v) for v in stats.latency.values())
-    errors = sum(o.get("server_error", 0) + o.get("transport", 0) for o in stats.outcomes.values())
+    api_total = sum(len(v) for k, v in stats.latency.items() if k != LOGIN)
+    errors = sum(o.get("server_error", 0) + o.get("transport", 0) for k, o in stats.outcomes.items() if k != LOGIN)
     out: Dict[str, Any] = {"users": users, "seconds": round(elapsed, 1), "requests": total, "rps": round(total / elapsed, 1) if elapsed else 0.0,
-                           "error_rate": round(errors / total, 4) if total else 0.0, "slo_factor": round(slo_factor, 2), "scenarios": {},
+                           "error_rate": round(errors / api_total, 4) if api_total else 0.0, "slo_factor": round(slo_factor, 2), "scenarios": {},
                            "sessions": dict(stats.sessions)}
-    slo = True
+    api_pass = True
+    login_pass = False            # LD-9 review: no login sample is no pass - "not measured" fails the login verdict
     for scenario in sorted(stats.latency):
         values = stats.latency[scenario]
         p95 = percentile(values, 95)
-        limit = P95_LIMIT_MS.get(scenario, DEFAULT_P95_MS) * slo_factor
         outcomes = dict(stats.outcomes[scenario])
-        measured = outcomes.get("ok", 0) > 0                   # a scenario the deployment refuses as a whole is reported, not judged
-        passed = (not measured) or p95 <= limit
-        slo = slo and passed
+        if scenario == LOGIN:
+            limit = LOGIN_P95_MS * slo_factor
+            failed = sum(n for outcome, n in outcomes.items() if outcome != "ok")
+            passed = len(values) > 0 and p95 <= limit and failed <= LOGIN_ERROR_LIMIT
+            login_pass = passed
+            out["login"] = {"n": len(values), "p95_ms": round(p95, 1), "p95_limit_ms": limit, "errors": failed,
+                            "error_limit": LOGIN_ERROR_LIMIT, "pass": passed}
+        else:
+            limit = P95_LIMIT_MS.get(scenario, DEFAULT_P95_MS) * slo_factor
+            measured = outcomes.get("ok", 0) > 0               # a scenario the deployment refuses as a whole is reported, not judged
+            passed = (not measured) or p95 <= limit
+            api_pass = api_pass and passed
         out["scenarios"][scenario] = {"n": len(values), "p50_ms": round(percentile(values, 50), 1), "p95_ms": round(p95, 1),
                                       "p99_ms": round(percentile(values, 99), 1), "mean_ms": round(statistics.fmean(values), 1) if values else 0.0,
                                       "p95_limit_ms": limit, "pass": passed, "outcomes": outcomes}
-    out["slo_pass"] = slo and out["error_rate"] <= ERROR_LIMIT and total > 0
+    out["api_pass"] = api_pass and out["error_rate"] <= ERROR_LIMIT and api_total > 0
+    out["login_pass"] = login_pass
+    out["slo_pass"] = out["api_pass"] and login_pass
     if stats.after_ramp:
         # Diagnostic only (LD-7): the same scenarios over the requests started after the login ramp.
         out["after_ramp"] = {name: {"n": len(values), "p50_ms": round(percentile(values, 50), 1), "p95_ms": round(percentile(values, 95), 1)}
                              for name, values in sorted(stats.after_ramp.items())}
     return out
+
+
+def _verdicts(r: Dict[str, Any]) -> str:
+    """'API PASS, login FAIL (p95 2,410 ms of 2,000; 3 failed)' - the two LD-9 verdicts in one line."""
+    login = r.get("login")
+    text = f"API {'PASS' if r.get('api_pass', r['slo_pass']) else 'FAIL'}"
+    if login is None:
+        return text + ", login FAIL (not measured: no login was made)"
+    return (text + f", login {'PASS' if login['pass'] else 'FAIL'} (p95 {login['p95_ms']:,.0f} ms of {login['p95_limit_ms']:,.0f}; "
+            f"{login['errors']} failed of {login['n']}, {login['error_limit']} allowed)")
 
 
 def print_report(r: Dict[str, Any], annotate: bool = False) -> None:
@@ -252,13 +288,14 @@ def print_report(r: Dict[str, Any], annotate: bool = False) -> None:
     for name, s in r["scenarios"].items():
         print(f"{name:38} {s['n']:>6} {s['p50_ms']:>8} {s['p95_ms']:>8} {s['p99_ms']:>8} {s['p95_limit_ms']:>6.0f}  "
               f"{', '.join(f'{k} {v}' for k, v in sorted(s['outcomes'].items()))}{'' if s['pass'] else '  <- over the p95 limit'}")
-    print(f"SLO (p95 per scenario, server errors <= {ERROR_LIMIT:.1%}):", "PASS" if r["slo_pass"] else "FAIL")
+    print(f"SLO (API: p95 per scenario, server errors <= {ERROR_LIMIT:.1%}; login: p95 <= {LOGIN_P95_MS:,.0f} ms x factor, no failed login):",
+          "PASS" if r["slo_pass"] else "FAIL", f"- {_verdicts(r)}")
     if annotate:
         lines = [f"{name} n {s['n']} p50 {s['p50_ms']} p95 {s['p95_ms']} ms ({'ok' if s['pass'] else 'OVER'} {s['p95_limit_ms']:.0f})"
                  for name, s in r["scenarios"].items()]
         print(f"::notice title=loadtest::{r['users']} users, {r['requests']} requests, {r['rps']} rps, server errors {r['error_rate']:.2%}, "
               f"p95 limits x {r.get('slo_factor', 1.0)}, "
-              f"SLO {'PASS' if r['slo_pass'] else 'FAIL'}; " + "; ".join(lines))
+              f"SLO {'PASS' if r['slo_pass'] else 'FAIL'} ({_verdicts(r)}); " + "; ".join(lines))
 
 
 def start_offsets(users: int, ramp: float, shard: int = 0, shards: int = 1) -> List[float]:
@@ -342,7 +379,8 @@ def markdown(r: Dict[str, Any], label: str = "", stats_csv: Optional[str] = None
     lines = [f"**{r['users']} users** ({sessions.get('logged_in', 0)} logged in, {sessions.get('no_login', 0)} without a login)"
              + (f", {r['shards']} shards (client IPs)" if r.get("shards") else "") + f" on {label or 'this host'}: "
              f"{r['requests']:,} requests in {r['seconds']:.0f} s ({r['rps']} requests/s), server errors {r['error_rate']:.2%}. "
-             f"**SLO {'PASS' if r['slo_pass'] else 'FAIL'}** (p95 limits x {r.get('slo_factor', 1.0)}, server errors <= {ERROR_LIMIT:.1%}).",
+             f"**SLO {'PASS' if r['slo_pass'] else 'FAIL'}** ({_verdicts(r)}; p95 limits x {r.get('slo_factor', 1.0)}, "
+             f"API server errors <= {ERROR_LIMIT:.1%}, login judged apart: p95 <= {LOGIN_P95_MS:,.0f} ms, no failed login).",
              "", "| Route / scenario | n | p50 ms | p95 ms | p99 ms | p95 limit | verdict | outcomes |", "|---|---|---|---|---|---|---|---|"]
     for name, s in r["scenarios"].items():
         verdict = "pass" if s["pass"] else "**over**"

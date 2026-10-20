@@ -254,6 +254,10 @@ jobs:
       - name: Unit tests (Vitest)
         run: npm test
 
+      # UI2-0: v2 screens (*V2*.tsx, src/ui/*.tsx) use semantic colour tokens only - no raw palette hues.
+      - name: UI v2 colour lint (no raw palette hues in v2 files)
+        run: npm run check:v2-colours
+
       - name: Type-check + production build
         run: npm run build
 

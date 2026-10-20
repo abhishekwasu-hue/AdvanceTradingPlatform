@@ -27,6 +27,23 @@ async def cache_get(key: str) -> Optional[str]:
         return None
 
 
+async def cache_get_with_ttl(key: str) -> Tuple[Optional[str], Optional[float]]:
+    """(value, seconds it has left) - LD-10 review: a copy of a copy must not outlive the original. (None, None) when the
+    key is missing or Redis is unreachable; the seconds are None when Redis cannot say."""
+    try:
+        client = _get_client()
+        value = await client.get(key)
+        if value is None:
+            return None, None
+        try:
+            ms = await client.pttl(key)
+        except Exception:
+            return value, None
+        return value, (ms / 1000.0 if ms is not None and ms > 0 else None)
+    except Exception:
+        return None, None
+
+
 async def cache_incr_window(key: str, ttl_seconds: int) -> Optional[int]:
     """P0.8 / A6: INCR + EXPIRE on first use - a fixed-window counter shared by every replica. None when Redis is
     unreachable, so the caller can fall back to its in-process count instead of failing open or closed blindly."""

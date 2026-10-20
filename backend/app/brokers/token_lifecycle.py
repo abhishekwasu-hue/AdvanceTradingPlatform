@@ -120,11 +120,23 @@ def load_credentials(record: BrokerCredentialRecord) -> BrokerCredentials:
     return BrokerCredentials(**json.loads(decrypt_text(record.encrypted_payload, PURPOSE_BROKER_CREDENTIAL, record.tenant_id)))
 
 
+def data_is_usable(record: Optional[BrokerCredentialRecord], now: Optional[datetime] = None) -> bool:
+    """Market data can be read through this row: the daily session is usable, or (Upstox) its analytics token is
+    unexpired and the last probe found at least one market-data class it serves. Never a gate for orders."""
+    if token_is_usable(record, now):
+        return True
+    from app.brokers.upstox_analytics import analytics_usable
+    return record is not None and analytics_usable(record, now)
+
+
 def build_adapter(record: BrokerCredentialRecord, client: Optional[httpx.AsyncClient] = None) -> BrokerInterface:
     """The tenant's adapter for this credential row. Phase AI: non-Upstox adapters are wrapped so
     derived-contract symbols (spelt the Upstox master's way platform-wide) go out in the broker's
     own spelling and come back in the platform's."""
-    return wrap_contract_symbols(get_broker_adapter(record.broker_name, load_credentials(record), client))
+    adapter = get_broker_adapter(record.broker_name, load_credentials(record), client)
+    from app.brokers.upstox_analytics import attach_refusal_hook
+    attach_refusal_hook(adapter, record)   # Upstox analytics token: a refusal re-probes this row (this tenant's) only
+    return wrap_contract_symbols(adapter)
 
 
 async def get_credential_record(

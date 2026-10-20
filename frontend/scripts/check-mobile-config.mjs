@@ -3,8 +3,8 @@
 // frontend CI job (next to the colour lint) and before every Android build (.github/workflows/android.yml). Fails on:
 //  - an "/api/..." string literal in src/ outside src/api/base.ts (the app's API is on another origin; every URL must
 //    come from api/base.ts) - tests and comments excepted;
-//  - an IP address in src/, capacitor.config.ts or android/ (the production IP, 187.126.*, anywhere at all; the
-//    documentation ranges 192.0.2/198.51.100/203.0.113 and loopback are allowed outside it);
+//  - an IP address in src/, capacitor.config.ts or android/ (a public address anywhere at all, tests included; the
+//    documentation ranges 192.0.2/198.51.100/203.0.113 and loopback are allowed outside tests, and private ranges in tests);
 //  - ATP_ANDROID_BUILD / VITE_API_BASE_URL that break the build rules (scripts/mobile-rules.mjs): an IP or non-https
 //    API base, a real server in a debuggable build, a release with the temporary package id;
 //  - ATP_APP_DOMAIN (the GitHub variable, MA-1), when set, that is not a plain host name or is an IP address;
@@ -41,15 +41,26 @@ export function isAllowedIp(ip) {
   return /^(192\.0\.2|198\.51\.100|203\.0\.113)\.\d+$/.test(ip) || /^127\./.test(ip) || ip === "0.0.0.0";
 }
 
-/** Every IPv4 literal in `text` that is not allowed, as { line, match }. With `strictOnly`, only the production
- * host's range (187.126.*) counts - used for tests, which may name other example addresses. */
+/** True for a public (globally routable) IPv4 address: not documentation, loopback, unspecified, private (10/8,
+ * 172.16/12, 192.168/16), link-local, shared (100.64/10), benchmarking (198.18/15), multicast or reserved. */
+export function isPublicIp(ip) {
+  const [a, b] = ip.split(".").map(Number);
+  if (isAllowedIp(ip) || a === 0 || a === 10 || a === 127 || a >= 224) return false;
+  if ((a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168) || (a === 169 && b === 254)) return false;
+  if ((a === 100 && b >= 64 && b <= 127) || (a === 198 && (b === 18 || b === 19))) return false;
+  return true;
+}
+
+/** Every IPv4 literal in `text` that is not allowed, as { line, match }. With `strictOnly`, only a public address
+ * counts - used for tests, which may name private or documentation example addresses. A real server's address is
+ * never written in this public repository (docs/PUBLIC_REPO_POLICY.md). */
 export function findIpLiterals(text, { strictOnly = false } = {}) {
   const out = [];
   text.split("\n").forEach((line, i) => {
     IPV4.lastIndex = 0;
     for (const m of line.matchAll(IPV4)) {
       const ip = m[0];
-      if (ip.startsWith("187.126.") || (!strictOnly && !isAllowedIp(ip))) out.push({ line: i + 1, match: ip });
+      if (strictOnly ? isPublicIp(ip) : !isAllowedIp(ip)) out.push({ line: i + 1, match: ip });
     }
   });
   return out;

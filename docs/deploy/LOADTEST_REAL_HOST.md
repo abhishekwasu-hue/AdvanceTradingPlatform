@@ -7,7 +7,7 @@ production stack itself - its API, worker, Postgres, Redis and Caddy as they run
 
 ## The command block
 
-Paste this as `atp` on the server (`ssh atp@187.126.125.208`). It takes about 13 minutes.
+Paste this as `atp` on the server (`ssh atp@<your-server-ip>`; the IP is in your own notes, never in this public repo). It takes about 13 minutes.
 
 ```
 # DEPLOY NOTE: the latest release must already be deployed OUTSIDE market hours (before 09:15 or after 15:30 IST),

@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
   appIdProblems, bundleProblems, findApiLiterals, findIpLiterals, gradleApplicationId, isAllowedIp, isForbiddenAndroidFile,
+  isPublicIp,
   // @ts-expect-error - a plain .mjs script without type declarations (test/ is outside the app's tsconfig)
 } from "../scripts/check-mobile-config.mjs";
 
@@ -22,17 +23,21 @@ describe("check-mobile-config", () => {
   });
 
   it("finds IP literals; documentation ranges and loopback are allowed; versions are not addresses", () => {
-    expect(matches(findIpLiterals(`host = "187.126.125.208"`))).toEqual(["187.126.125.208"]);
+    expect(matches(findIpLiterals(`host = "8.8.8.8"`))).toEqual(["8.8.8.8"]);
     expect(matches(findIpLiterals(`url: https://10.1.2.3:8443/x`))).toEqual(["10.1.2.3"]);
     expect(findIpLiterals(`placeholder="203.0.113.10" a=198.51.100.2 b=192.0.2.1 c=127.0.0.1 d=0.0.0.0`)).toEqual([]);
     expect(findIpLiterals(`gradle-8.14.3-all.zip version 1.2.3.4.5 build 300.1.1.1 androidx 1.17.0`)).toEqual([]);
     expect(isAllowedIp("203.0.113.7")).toBe(true);
-    expect(isAllowedIp("187.126.125.208")).toBe(false);
+    expect(isAllowedIp("8.8.8.8")).toBe(false);
   });
 
-  it("in tests, refuses only the production host's range", () => {
+  it("in tests, refuses only public addresses", () => {
     expect(findIpLiterals(`"10.0.0.1"`, { strictOnly: true })).toEqual([]);
-    expect(matches(findIpLiterals(`"187.126.125.208"`, { strictOnly: true }))).toEqual(["187.126.125.208"]);
+    expect(matches(findIpLiterals(`"8.8.8.8"`, { strictOnly: true }))).toEqual(["8.8.8.8"]);
+    expect(findIpLiterals(`"192.168.1.1" "172.16.0.1" "100.64.0.1" "198.18.0.1" "203.0.113.10" "224.0.0.1"`, { strictOnly: true })).toEqual([]);
+    expect(isPublicIp("8.8.8.8")).toBe(true);
+    expect(isPublicIp("9.9.9.9")).toBe(true);
+    expect(isPublicIp("172.31.0.1")).toBe(false);
   });
 
   it("reads the Gradle applicationId and compares it with the Capacitor appId", () => {
@@ -90,7 +95,7 @@ describe("check-mobile-config", () => {
     const debug = run({ ATP_ANDROID_BUILD: "debug", VITE_API_BASE_URL: "https://atp.example.com" });
     expect(debug.status).toBe(1);
     expect(debug.stderr).toMatch(/must not point at a real server/);
-    const ip = run({ ATP_ANDROID_BUILD: "internal", VITE_API_BASE_URL: "https://187.126.125.208" });
+    const ip = run({ ATP_ANDROID_BUILD: "internal", VITE_API_BASE_URL: "https://203.0.113.10" });
     expect(ip.status).toBe(1);
     expect(ip.stderr).toMatch(/IP address/);
   });
@@ -99,7 +104,7 @@ describe("check-mobile-config", () => {
     const run = (domain: string) => spawnSync(process.execPath, [join(root, "scripts", "check-mobile-config.mjs")],
       { cwd: root, env: { ...process.env, ATP_ANDROID_BUILD: "", VITE_API_BASE_URL: "", ATP_APP_DOMAIN: domain }, encoding: "utf8" });
     expect(run("atp.example.com").status).toBe(0);
-    const ip = run("187.126.125.208");
+    const ip = run("203.0.113.10");
     expect(ip.status).toBe(1);
     expect(ip.stderr).toMatch(/ATP_APP_DOMAIN: .*IP address/);
     const url = run("http://atp.example.com");

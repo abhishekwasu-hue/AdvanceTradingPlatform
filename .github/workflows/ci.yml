@@ -44,6 +44,12 @@ jobs:
       - name: English only (Devanagari only in the interview allowlist) - whole repo
         run: python scripts/check_english_only.py
 
+      # The repository is public (docs/PUBLIC_REPO_POLICY.md): no server IP, private e-mail address, Telegram token or
+      # chat id, private key, secret file type or new golden / parity / real-data fixture in the tree. Its test:
+      # backend/tests/test_public_repo_check.py. The full-history gitleaks scan is .github/workflows/secret-scan.yml.
+      - name: Public repository guard (scripts/check_public_repo.py) - whole repo
+        run: python scripts/check_public_repo.py
+
       - name: Install linters (pinned) and the application's dependencies (mypy reads them)
         working-directory: backend
         run: |
@@ -68,6 +74,7 @@ jobs:
       - name: Migration rollback safety (every migration declares ROLLBACK_SAFE; risky upgrades are not marked safe)
         run: python backend/scripts/migration_rollback_safety.py lint
 
+      # Only the commits of this push; secret-scan.yml scans the full history (push to main, weekly, on demand).
       - name: gitleaks secret scan (.gitleaks.toml)
         uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
         env:

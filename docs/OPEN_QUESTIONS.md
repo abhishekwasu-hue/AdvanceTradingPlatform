@@ -529,7 +529,7 @@ interview is the one trilingual exception. Built in `claude/english-only-cleanup
 
 | # | What Abhi provides or decides | Why / used by | Where it goes (names the build or server reads) | Status |
 |---|---|---|---|---|
-| MA-1 | A domain, and a DNS `A` record for the app host pointing to `187.126.125.208`. | Browsers install the app and run web push and service workers only with a trusted HTTPS certificate. Caddy's internal certificate on the bare IP is not trusted, and Let's Encrypt gives none for the IP in our setup. Also needed for App Links (B2) and every Android build that signs in. | `/opt/atp/.env`: `DOMAIN`, `ACME_EMAIL`, `CADDYFILE=Caddyfile`. GitHub repository **variable** (not a secret): `ATP_APP_DOMAIN`. | open (owner blocker; Abhi is choosing the name and the account it is bought on) |
+| MA-1 | A domain, and a DNS `A` record for the app host pointing to the server's IP (`<server-ip>`, in Abhi's own notes; never in this public repo). | Browsers install the app and run web push and service workers only with a trusted HTTPS certificate. Caddy's internal certificate on the bare IP is not trusted, and Let's Encrypt gives none for the IP in our setup. Also needed for App Links (B2) and every Android build that signs in. | `/opt/atp/.env`: `DOMAIN`, `ACME_EMAIL`, `CADDYFILE=Caddyfile`. GitHub repository **variable** (not a secret): `ATP_APP_DOMAIN`. | open (owner blocker; Abhi is choosing the name and the account it is bought on) |
 | MA-2 | A Firebase project with the Android app registered; its `google-services.json`; and a service account key for the server. | FCM push to the phone (B2). The Android WebView has no web push. | GitHub secret (environment `android-release`): `ANDROID_GOOGLE_SERVICES_JSON_BASE64`. Server `/opt/atp/.env`: `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_FILE` (a path to the key file on the server, never in CI or git). | open (a test registration can use the temporary MA-6 id; the final one waits for the final id) |
 | MA-3 | An upload keystore for signing Android releases, with two offline backups. | Signed APK / AAB (B4). Its SHA-256 fingerprint also goes into `assetlinks.json` (B2). | GitHub secrets (environment `android-release`): `ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_KEYSTORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`. | open (before B4) |
 | MA-4 | A Google Play Console account. | Internal testing track and, later, the store listing (BT7). | None in CI yet. The Play app-signing SHA-256 fingerprint goes into `assetlinks.json`. | later: after company registration |
@@ -543,11 +543,11 @@ interview is the one trilingual exception. Built in `claude/english-only-cleanup
 
 1. **Buy a domain** at any registrar. The app host is `atp.<domain>`, the name `docs/DEPLOY_HOSTINGER.md` already
    uses.
-2. **Add the DNS record.** In the registrar's DNS page add an `A` record: name `atp`, value `187.126.125.208`, TTL
+2. **Add the DNS record.** In the registrar's DNS page add an `A` record: name `atp`, value `<server-ip>` (the server's IP, from your own notes), TTL
    300. Add no `AAAA` record unless the server's IPv6 is set up and open on ports 80 / 443. A wrong `AAAA` record
    makes certificate issuance fail.
 3. **Wait and check.** Wait 5-30 minutes, then check from any computer that `dig +short atp.<domain>` prints
-   `187.126.125.208`.
+   `<server-ip>`.
 4. **Ports.** Ports 80 and 443 must stay open on the server. Let's Encrypt checks the domain through them.
 5. **Switch the server.** Outside market hours, edit `/opt/atp/.env` with `nano`:
    - `DOMAIN=atp.<domain>`;
@@ -589,7 +589,7 @@ interview is the one trilingual exception. Built in `claude/english-only-cleanup
    enabled. The console's layout may differ; the build PR will say what it found.
 7. **Server key, for the server only:**
    1. In Project settings → **Service accounts**, choose **Generate new private key** and download the JSON file.
-   2. Copy it to the server only: `scp <file> root@187.126.125.208:/opt/atp/secrets/fcm-service-account.json` (or the
+   2. Copy it to the server only: `scp <file> root@<your-server-ip>:/opt/atp/secrets/fcm-service-account.json` (or the
       domain once MA-1 is done).
    3. On the server: `chmod 600` and owner root.
    4. In `/opt/atp/.env`: `FCM_PROJECT_ID=<the project id shown in Project settings>` and
@@ -664,3 +664,21 @@ Nothing is needed now. When iOS starts:
    Phase C secrets named in the table, in a GitHub environment `ios-release` with Abhi as the required reviewer.
 5. A macOS CI runner is also needed: either GitHub-hosted (billed at a higher per-minute rate; check the current
    price) or Abhi's own Mac as a self-hosted runner.
+
+## Public repository (20 Oct)
+
+- **The repository is public** (owner decision, 2026-10-20, to restore the GitHub Actions minutes). The code stays
+  proprietary: `LICENSE` (all rights reserved; public visibility is not a licence). The rules, the guards and the list
+  of grandfathered fixtures are in `docs/PUBLIC_REPO_POLICY.md`.
+- **Scanned before it went public:** gitleaks over the full history found no real secret (only known fake test values,
+  now allowlisted exactly). The production server IP was in three docs and three frontend tests (and its first two
+  octets in the mobile config check); it is replaced in the tree (`<server-ip>` / a documentation address) and stays in
+  the history unless PR-4 says otherwise.
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| PR-1 | Chart Reader / KB port: the KB, the Method Pack and the reader method are strategy-sensitive and must not be public. Make the repository private again (paid Actions minutes with a spending limit), or keep the Chart Reader and the KB in a separate private package? | **Recommendation: a separate private package** (a private repository installed by the host and by a private CI job with a read-only deploy key), so ATP's public CI keeps its free minutes; going private again is the simpler alternative if the minutes cost is acceptable. **Required BEFORE the Chart Reader port (T1) starts**; until then nothing from the KB or the reader method is committed here. | Trade takeover T1-T6, KB / Method Pack (`docs/design/TRADE_TAKEOVER.md` sections 3 and 8) | open (owner) |
+| PR-2 | The existing golden / parity fixtures (29 files, listed in `docs/PUBLIC_REPO_POLICY.md` section 5): move them to a private store (CI fetches them with a secret) or regenerate them from synthetic data? | **Recommendation: regenerate from synthetic data where the inputs are already synthetic** (most of them, per their own notes) and move the rest (Trade outputs, the strike-breach file with frozen NIFTY coefficients) to the private fixtures store, with tests skipped in public CI with a visible reason. Meanwhile they are grandfathered by name: `scripts/check_public_repo.py` refuses any new one. | `backend/tests/fixtures/**`, `frontend/src/**/__fixtures__/**`, `backend/tests/golden/` | open (owner) |
+| PR-3 | `docs/reference/amw-screener-v2.9/` is third-party code (licence unknown, AMW-L1) that is now public. Remove it from the tree? | **Recommendation: remove it from the tree** and keep the owner's copy privately; the AMW port works from behaviour and the port docs anyway (AMW-L1). The history keeps it unless PR-4 rewrites it. | AMW port | open (owner) |
+| PR-4 | Rewrite history, to purge the server IP, the fixtures and the AMW code from every commit? | **Recommendation: no rewrite** unless a real secret or licensed data is found: it needs a force push, invalidates every clone and open branch, and cannot recall copies already made. The IP is protected by the server's own hardening, not by secrecy. Only the owner decides; nobody force-pushes meanwhile. | whole repository | open (owner) |
+| PR-5 | Commit author e-mail: commits show the author's e-mail address publicly. | **Recommendation:** future commits use the GitHub `noreply` address (GitHub settings: "Keep my email addresses private" and "Block command line pushes that expose my email"); past commits keep theirs unless PR-4 rewrites them. | git configuration | open (owner) |

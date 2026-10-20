@@ -151,6 +151,13 @@ def test_slos_met_but_cleanup_not_verified_exits_4(tmp_path):
     assert loadtest_summary.build(_write_run(tmp_path, _result(), None))[2] == 4
 
 
+def test_the_baseline_reads_only_ascii_digits():
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    import bcrypt_baseline
+    assert bcrypt_baseline.as_ms(" 231\r\n") == 231 and bcrypt_baseline.as_ms(231) == 231
+    assert [bcrypt_baseline.as_ms(v) for v in ("\u00b2", "\u0663", "12.5", "-1", "", None, "unknown")] == [None] * 7
+
+
 @pytest.mark.parametrize("baseline, expect", [
     ({"cpu_model": "AMD EPYC 9V45 96-Core Processor", "bcrypt12_ms": 221}, "AMD EPYC 9V45 96-Core Processor, 2 vCPU; bcrypt-12 check: 221 ms"),
     ({"cpu_model": "unknown", "bcrypt12_ms": "unknown"}, "unknown, 2 vCPU; bcrypt-12 check: unknown"),

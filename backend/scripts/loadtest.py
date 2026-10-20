@@ -428,9 +428,12 @@ def markdown(r: Dict[str, Any], label: str = "", stats_csv: Optional[str] = None
     sessions = r.get("sessions") or {}
     baseline = r.get("host_baseline")
     if baseline:                                          # informational: the login p95 follows the core's bcrypt speed
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import bcrypt_baseline
-        label = f"{label or 'this host'} ({bcrypt_baseline.note(baseline.get('cpu_model'), baseline.get('vcpus'), baseline.get('bcrypt12_ms'))})"
+        try:                                              # never fails the report
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import bcrypt_baseline
+            label = f"{label or 'this host'} ({bcrypt_baseline.note(baseline.get('cpu_model'), baseline.get('vcpus'), baseline.get('bcrypt12_ms'))})"
+        except Exception:  # noqa: BLE001 - informational only
+            pass
     lines = [f"**{r['users']} users** ({sessions.get('logged_in', 0)} logged in, {sessions.get('no_login', 0)} without a login)"
              + (f", {r['shards']} shards (client IPs)" if r.get("shards") else "") + f" on {label or 'this host'}: "
              f"{r['requests']:,} requests in {r['seconds']:.0f} s ({r['rps']} requests/s), server errors {r['error_rate']:.2%}. "
@@ -529,10 +532,13 @@ def main() -> int:
     else:
         result = asyncio.run(run(args))
     if args.cpu_model is not None or args.vcpus is not None or args.bcrypt_ms is not None:
-        sys.path.insert(0, str(Path(__file__).resolve().parent))
-        import bcrypt_baseline
-        result["host_baseline"] = {"cpu_model": args.cpu_model or "unknown", "vcpus": args.vcpus,
-                                   "bcrypt12_ms": bcrypt_baseline.as_ms(args.bcrypt_ms)}
+        try:                                              # informational only: never changes the run's result or rc
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import bcrypt_baseline
+            result["host_baseline"] = {"cpu_model": args.cpu_model or "unknown", "vcpus": args.vcpus,
+                                       "bcrypt12_ms": bcrypt_baseline.as_ms(args.bcrypt_ms)}
+        except Exception:  # noqa: BLE001
+            pass
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(result, indent=2))
     if args.markdown:

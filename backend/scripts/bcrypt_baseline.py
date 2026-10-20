@@ -39,7 +39,7 @@ def measure(checks: int = CHECKS, rounds: int = ROUNDS) -> int:
 def as_ms(value: Any) -> Optional[int]:
     """A measured time in whole ms, or None ("unknown") for anything else."""
     text = str(value if value is not None else "").strip()
-    return int(text) if text.isdigit() else None
+    return int(text) if text.isascii() and text.isdigit() else None       # ASCII only: "²".isdigit() but int("²") fails
 
 
 def note(cpu_model: Any, vcpus: Any, ms: Any) -> str:

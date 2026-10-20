@@ -361,7 +361,6 @@ def test_approval_after_drift_places_nothing_and_requotes_until_the_allowance_ru
     assert body["status"] == "EXPIRED" and "through the stop" in body["result"] and len(_actions(t["tenant_id"], "ENTRY")) == 3
 
 
-
 def test_a_requote_refused_for_its_price_says_so_not_that_entries_are_paused(monkeypatch):
     """UI2-3 review nit: InvalidEntryPrice is a subclass of EntriesPaused; the re-quote path names the price, not a pause."""
     t = _tenant(_email("requote-price"))

@@ -158,6 +158,11 @@ def tick_size_for(symbol: str) -> float:
     return tick if tick > 0 else 0.05
 
 
+# The reason requote_check gives when the live (or proposal) price is not a usable number: callers word it as a quote
+# problem, not as "the price moved".
+NO_VALID_PRICE = "No valid price to re-quote the entry"
+
+
 def requote_check(direction: str, proposal_price: float, current_price: float, *, stop_loss: Optional[float],
                   target1: Optional[float], max_drift_pct: float, max_drift_ticks: int, tick_size: float) -> Tuple[str, str]:
     """("ok" | "requote" | "expire", why). Pure: the rule the approval applies to the price it sees at the moment of
@@ -166,7 +171,7 @@ def requote_check(direction: str, proposal_price: float, current_price: float, *
     # A NaN compares false with everything, so it would pass every check below as "ok": not finite is no price.
     if (current_price is None or proposal_price is None or not math.isfinite(current_price) or not math.isfinite(proposal_price)
             or current_price <= 0 or proposal_price <= 0):
-        return "expire", "No valid price to re-quote the entry"
+        return "expire", NO_VALID_PRICE
     long = (direction or "").upper() == "LONG"
     if stop_loss is not None and ((long and current_price <= stop_loss) or (not long and current_price >= stop_loss)):
         return "expire", f"Price {current_price:g} is already through the stop {stop_loss:g}"
@@ -421,7 +426,8 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
                                         requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"),
                                         ticket=evidence.get("ticket"))
         except InvalidEntryPrice:
-            # UI2-3 review: a subclass of EntriesPaused, but the reason is the price, not a pause.
+            # UI2-3 review: a subclass of EntriesPaused, but the reason is the price, not a pause. Defensive only:
+            # requote_check already answers a non-finite or non-positive price with "expire", so this is not reached today.
             fresh = None
             result = f"Not placed: {why}. No re-quote: the current price is not usable"
         except EntriesPaused:

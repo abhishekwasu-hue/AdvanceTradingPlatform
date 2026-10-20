@@ -244,13 +244,14 @@ function Filters({ source, symbol, open, onToggle, onSource, onSymbol, updated }
 function SignalTable({ items, tab, now, selectedId, onSelect }: {
   items: SignalFeedItem[]; tab: FeedTab; now: Date; selectedId: string | null; onSelect: (id: string) => void;
 }) {
-  // Every column but Setup sizes to its content (`w-px` + no wrapping); Setup takes the rest and wraps, inside a word
-  // only when it must (`overflow-wrap: anywhere` - a long word would otherwise set its minimum and push Status past the
-  // edge at 1440 px with an always-visible scrollbar and six-digit prices). The price columns are at least 80 px of tabular figures and grow for a longer price ("1,35,000.00")
+  // Every column but Setup sizes to its content (`w-px` + no wrapping); Setup takes the rest and wraps. When space runs
+  // out (1440 px with an always-visible scrollbar and six-digit prices) it may break inside a word, hyphenated where
+  // possible (`overflow-wrap: anywhere` + `hyphens: auto`), instead of a long word pushing Status past the edge. The price
+  // columns are at least 64 px of tabular figures (72 px with padding) and grow for a longer price ("1,35,000.00")
   // instead of clipping it. History shows its date above the time, so the Time column stays as narrow as on Today.
   const th = "w-px whitespace-nowrap px-space-3 py-space-2 font-medium";
   const num = "w-px whitespace-nowrap px-space-1 text-right font-tabular";
-  const price = "inline-block min-w-[72px]";
+  const price = "inline-block min-w-[64px]";
   return (
     <div className="overflow-hidden rounded-panel border border-subtle bg-surface-1 shadow-card">
       <table className="w-full table-auto text-t14" aria-label="Signals list">
@@ -280,8 +281,8 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
                   </div>
                 </td>
                 <td className="px-space-3 py-space-3">
-                  <span className="block text-fg [overflow-wrap:anywhere]">{item.setup}</span>
-                  <span className="block text-t12 text-fg-muted [overflow-wrap:anywhere]">{sourceCaption(item)}</span>
+                  <span className="block hyphens-auto text-fg [overflow-wrap:anywhere]">{item.setup}</span>
+                  <span className="block hyphens-auto text-t12 text-fg-muted [overflow-wrap:anywhere]">{sourceCaption(item)}</span>
                 </td>
                 {[item.entry, item.stop, item.target].map((v, i) => (
                   <td key={i} className={`${num} py-space-3 text-fg`}><span className={price}>{formatPrice(v)}</span></td>

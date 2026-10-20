@@ -66,13 +66,25 @@ test("Idea Builder: the second language can be switched off", async ({ page }) =
   await expect(page.locator('main [lang="mr"]')).toHaveCount(0);
 });
 
-test("no banned recommendation words on any tab", async ({ page }) => {
-  for (const [slug] of TABS) {
-    await page.goto(`/copilot/${slug}`);
-    await expect(page.getByTestId(`tab-panel-${slug}`)).toBeVisible();
-    const text = await page.locator("main").innerText();
-    expect(text).not.toMatch(/\brecommended\b|\bbest\b|\bfor you\b|\d+\s*% match/i);
-  }
+test.describe(() => {
+  // This test reads words, not motion (the 3D core and the animations have their own tests below), so it runs with
+  // reduced motion: on a runner with software WebGL and three other workers, the 60 fps scene and the tab transitions
+  // took most of its 30 s. The words are the same either way.
+  test.use({ reducedMotion: "reduce" });
+
+  test("no banned recommendation words on any tab", async ({ page }) => {
+    // One start of the app, then the tab bar, as a trader moves between tabs (each deep link has its own test above);
+    // seven cold starts - sign-in, flags, the Copilot chunk, the acknowledgement, the tab - did not fit in 30 s either.
+    // Each tab's text is read once its data is in (no aria-busy left), not while it still shows a skeleton.
+    await page.goto("/copilot/market-pulse");
+    for (const [slug] of TABS) {
+      await page.getByTestId(`tab-${slug}`).click();
+      await expect(page.getByTestId(`tab-panel-${slug}`)).toBeVisible();
+      await expect(page.locator("main [aria-busy='true']")).toHaveCount(0);
+      const text = await page.locator("main").innerText();
+      expect(text).not.toMatch(/\brecommended\b|\bbest\b|\bfor you\b|\d+\s*% match/i);
+    }
+  });
 });
 
 test.describe("3D and motion", () => {

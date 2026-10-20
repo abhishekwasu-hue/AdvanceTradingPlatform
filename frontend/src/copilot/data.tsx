@@ -19,6 +19,8 @@ export interface CopilotData {
   /** High-severity feed items published since the trader last opened the News Radar. */
   newHighNews: number;
   markNewsSeen: (items?: NewsFeedItem[]) => void;
+  /** The open proposals or the news count (the tab badges) are still loading. */
+  badgesLoading: boolean;
 }
 
 const Ctx = createContext<CopilotData | null>(null);
@@ -38,13 +40,16 @@ export function CopilotDataProvider({ children }: { children: ReactNode }) {
   const [briefLoading, setBriefLoading] = useState(true);
   const [pending, setPending] = useState<AiAction[]>([]);
   const [newHighNews, setNewHighNews] = useState(0);
+  const [actionsLoading, setActionsLoading] = useState(true);
+  const [newsLoading, setNewsLoading] = useState(true);
 
   const reloadBrief = useCallback(() => {
     setBriefLoading(true);
     api.aiBrief("en").then((b) => { setBrief(b); setBriefError(null); }).catch(setBriefError).finally(() => setBriefLoading(false));
   }, []);
   const reloadActions = useCallback(() => {
-    api.aiActions("PROPOSED").then(setPending).catch(() => setPending([]));
+    setActionsLoading(true);
+    api.aiActions("PROPOSED").then(setPending).catch(() => setPending([])).finally(() => setActionsLoading(false));
   }, []);
   const markNewsSeen = useCallback((items?: NewsFeedItem[]) => {
     const latest = Math.max(Date.now(), ...(items ?? []).map((i) => new Date(i.published_at).getTime()));
@@ -56,11 +61,13 @@ export function CopilotDataProvider({ children }: { children: ReactNode }) {
     reloadBrief();
     reloadActions();
     // The feed may be switched off for this organisation - then there is simply no badge.
-    api.newsFeedItems(24, HIGH_SEVERITY).then((items) => setNewHighNews(countNewHigh(items, lastNewsSeen()))).catch(() => setNewHighNews(0));
+    api.newsFeedItems(24, HIGH_SEVERITY).then((items) => setNewHighNews(countNewHigh(items, lastNewsSeen()))).catch(() => setNewHighNews(0))
+      .finally(() => setNewsLoading(false));
   }, [reloadBrief, reloadActions]);
 
-  const value = useMemo(() => ({ brief, briefError, briefLoading, reloadBrief, pending, reloadActions, newHighNews, markNewsSeen }),
-    [brief, briefError, briefLoading, reloadBrief, pending, reloadActions, newHighNews, markNewsSeen]);
+  const badgesLoading = actionsLoading || newsLoading;
+  const value = useMemo(() => ({ brief, briefError, briefLoading, reloadBrief, pending, reloadActions, newHighNews, markNewsSeen, badgesLoading }),
+    [brief, briefError, briefLoading, reloadBrief, pending, reloadActions, newHighNews, markNewsSeen, badgesLoading]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

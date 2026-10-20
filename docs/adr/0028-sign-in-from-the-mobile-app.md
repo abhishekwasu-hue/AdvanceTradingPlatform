@@ -1,6 +1,6 @@
 # ADR-0028: Sign-in from the mobile app - an origin-selected refresh token in the body, held natively behind an unlock
 
-**Date:** 2026-10-20 · **Status:** Proposed (mobile B1, with B3 for storage; revised after two security review rounds of
+**Date:** 2026-10-20 · **Status:** proposed (mobile B1, with B3 for storage; revised after two security review rounds of
 PR #290) · **Phase:** mobile Phase B
 
 Plan: `docs/design/MOBILE_APP_PLAN.md` (PR #289), §4.3 "Sign-in, cookies and CORS in the app", §5.2 (device rows,

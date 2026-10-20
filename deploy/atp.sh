@@ -1309,6 +1309,7 @@ LT_CADDY_ID=""                # caddy, while it is attached to the run's network
 LT_MARKET="" LT_POSTURE="" LT_NET="" LT_BASE="" LT_ALLOWED="" LT_EDGE=""
 LT_EDGE_ARGS=() LT_HOST_ARGS=()
 LT_FLAGS_BEFORE="" LT_OTHERS_BEFORE=""    # read-only digests taken before seeding, compared at the end (lt_compare)
+LT_CPU_MODEL="unknown" LT_BCRYPT_MS="unknown"   # the preflight's host baseline, for the report (informational only)
 
 # "YYYY-MM-DD HH:MM" in IST (TZ is Asia/Kolkata above). ATP_LOADTEST_NOW stands in for the clock in the tests; the app's
 # own calendar, when it answers, decides whether NSE is open.
@@ -1510,6 +1511,23 @@ lt_worker_problem() {
   if [ "${hb:--1}" -gt "$LT_MAX_HEARTBEAT_S" ] 2>/dev/null; then printf "the trading worker's heartbeat is %ss old (limit %ss)" "$hb" "$LT_MAX_HEARTBEAT_S"
   elif [ "${wk:-ok}" != "ok" ] && [ "${wk:-ok}" != "-" ]; then printf 'the trading worker reports %s' "$wk"; fi
   return 0
+}
+
+# The host baseline the report shows beside the login verdict (informational only - never a verdict, never an abort):
+# the CPU model, and one bcrypt cost-12 check measured uncontended in the running API's container with its own bcrypt
+# (backend/scripts/bcrypt_baseline.py: a random throwaway password, nothing stored, only the time printed), within 30 s.
+# "unknown" when either cannot be read.
+lt_cpu_model() {
+  local m
+  m="$(awk -F': *' '/^model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null | tr -cd '[:print:]' || true)"
+  printf '%s' "${m:-unknown}"
+}
+lt_bcrypt_ms() {
+  local -a DC_WRAP=(timeout 30)
+  local ms="" script="$SCRIPT_DIR/../backend/scripts/bcrypt_baseline.py"
+  if [ -f "$script" ]; then ms="$(dc exec -T backend python - < "$script" 2>/dev/null | tr -d '\r' | tail -n 1 || true)"; fi
+  case "$ms" in ""|*[!0-9]*) ms="unknown" ;; esac
+  printf '%s' "$ms"
 }
 
 # M1 of the PR #284 review: every LT_WATCH_SECONDS, is production still healthy? Deep health (2 misses in a row), the
@@ -1769,6 +1787,9 @@ except ValueError:
     rows = []
 print(" ".join(r["stamp"] for r in rows if r.get("active_users")))' 2>/dev/null || true)"
   if [ -n "$leftover" ]; then warn "an earlier run's load-test organisation still has active users: $leftover - remove it with: $ATP_DIR/deploy/atp.sh loadtest-cleanup <stamp>"; fi
+  # Informational only, never a verdict or an abort: the login p95 follows the core's bcrypt speed.
+  LT_CPU_MODEL="$(lt_cpu_model)"; LT_BCRYPT_MS="$(lt_bcrypt_ms)"
+  info "host: $LT_CPU_MODEL, $(nproc) vCPU; bcrypt-12 check: $LT_BCRYPT_MS ms (CI reference: ~220 ms passes LD-9 at 500 logins over a 150 s ramp, ~500 ms fails)"
 
   if [ "$check" = "1" ]; then
     printf '\nloadtest --check: ready. Nothing was created or changed. Run without --check to start (about %s minutes).\n' "$need"
@@ -1784,7 +1805,7 @@ print(" ".join(r["stamp"] for r in rows if r.get("active_users")))' 2>/dev/null 
   LT_STAMP="$stamp"                                 # from here on, every exit cleans up
   lt_meta stamp "$stamp" started_ist "$(date '+%Y-%m-%d %H:%M:%S')" release "$RELEASE" users "$users" ramp "$ramp" seconds "$seconds" \
     think "$think" shards "$shards" client_cpus_per_shard "$cpus" client_cpu_shares_per_shard "$weight" vcpus "$(nproc)" sample_seconds "$every" market "$LT_MARKET" \
-    posture "$LT_POSTURE" client_prefix "atp-loadtest-$stamp-" \
+    posture "$LT_POSTURE" client_prefix "atp-loadtest-$stamp-" cpu_model "$LT_CPU_MODEL" bcrypt12_ms "$LT_BCRYPT_MS" \
     host "$(hostname) ($(nproc) vCPU, $(awk '/^MemTotal:/ {printf "%.1f GB", $2 / 1048576}' /proc/meminfo))" \
     chart_data "chart: the users' own broker session (none: 409); chart_lake: the shared market lake's daily bars (database only)" \
     watchdog "every ${LT_WATCH_SECONDS}s: deep health (2 misses), worker heartbeat <= ${LT_MAX_HEARTBEAT_S}s, MemAvailable >= ${LT_MIN_AVAILABLE_MIB} MiB, swap growth <= ${LT_MAX_SWAP_GROWTH_MIB} MiB, no app container restart or OOM kill"

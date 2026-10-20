@@ -171,6 +171,16 @@ The report has:
 - the load client's CPU and memory, and the server side: time per route, pool and bcrypt waits;
 - the cleanup result, and the safety checks: flags unchanged, the other organisations unchanged, no broker credentials.
 
+**Reading the host baseline.** Beside the login verdict the report shows the host's CPU model and one bcrypt cost-12
+check on it, measured in the preflight, before seeding, uncontended, in the running API's container with its own bcrypt
+(`backend/scripts/bcrypt_baseline.py`: a random throwaway password, nothing stored). It is informational only: it
+never changes the exit code or stops the run, and reads "unknown" when it could not be measured. The login p95 depends
+mostly on that number, not on the code. In 12 CI runs, about 0.22 s per check passed LD-9 (login p95 0.3-0.7 s), and
+0.45-0.57 s failed it (login p95 7-25 s). So about 0.22 s: expect a login pass; 0.45 s or more: expect the LD-9 login
+verdict to fail at 500 logins over a 150 s ramp. If the host is that slow, the options are Abhi's decision: bcrypt
+cost 11 with a rehash on login, `BCRYPT_NICE`, or a longer ramp assumption. The CI staging stack's reports show the
+same baseline for their runner in their first line.
+
 ## Safety
 
 - PAPER only, never LIVE. It never places an order, never calls a broker, never blocks an exit, and the AI places

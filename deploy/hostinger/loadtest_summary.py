@@ -196,6 +196,21 @@ def server_side(run_dir: Path) -> str:
         sys.path.pop(0)
 
 
+def host_baseline(meta: Dict[str, Any]) -> str:
+    """The host's CPU and one bcrypt-12 check (atp.sh's preflight), for beside the login verdict. Informational only:
+    the login p95 follows the core's bcrypt speed. "unknown" for what was not measured."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "scripts"))
+    try:
+        import bcrypt_baseline
+        return bcrypt_baseline.note(meta.get("cpu_model"), meta.get("vcpus"), meta.get("bcrypt12_ms"))
+    except Exception:  # noqa: BLE001 - a diagnostic; the report never depends on it
+        ms = meta.get("bcrypt12_ms")
+        return (f"{meta.get('cpu_model') or 'unknown'}, {meta.get('vcpus') or '?'} vCPU; bcrypt-12 check: "
+                f"{f'{ms} ms' if isinstance(ms, int) else 'unknown'}")
+    finally:
+        sys.path.pop(0)
+
+
 # --- the report ---------------------------------------------------------------------------------------------------
 
 def build(run_dir: Path) -> Tuple[str, str, int]:
@@ -224,7 +239,8 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
     md: List[str] = [f"# Load test on the production host - {meta.get('stamp', '?')}", ""]
     if aborted:
         md += [f"> **The run was stopped early: production degraded - {aborted}.** The cleanup still ran.", ""]
-    md += [f"**SLO verdict: {slo_line}**", "", f"**Cleanup: {cleanup_line}**", ""]
+    baseline = host_baseline(meta)
+    md += [f"**SLO verdict: {slo_line}**", "", f"Login context (informational) - host: {baseline}", "", f"**Cleanup: {cleanup_line}**", ""]
     if meta.get("market") and not str(meta["market"]).startswith("open"):
         md += [f"> Run outside NSE market hours ({meta['market']}): these numbers are not the market-hours result.", ""]
     if verdict["not_measured"]:
@@ -352,7 +368,7 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
         md += ["## Server side (the API's own metrics)", "", side, ""]
     text = "\n".join(md) + "\n"
 
-    lines = [f"LOAD TEST {meta.get('stamp', '?')} - SLO: {slo_line}", f"Cleanup: {cleanup_line}"]
+    lines = [f"LOAD TEST {meta.get('stamp', '?')} - SLO: {slo_line}", f"Host: {baseline}", f"Cleanup: {cleanup_line}"]
     for name, s in verdict["scenarios"].items():
         lines.append(f"  {name:32} {s['verdict']:12} p50 {s['p50_ms']!s:>8} p95 {s['p95_ms']!s:>8} p99 {s['p99_ms']!s:>8} ms "
                      f"(limit {s['limit_ms']:,.0f})  errors {s['errors']}")

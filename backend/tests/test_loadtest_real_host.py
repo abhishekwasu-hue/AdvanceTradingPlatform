@@ -151,6 +151,25 @@ def test_slos_met_but_cleanup_not_verified_exits_4(tmp_path):
     assert loadtest_summary.build(_write_run(tmp_path, _result(), None))[2] == 4
 
 
+@pytest.mark.parametrize("baseline, expect", [
+    ({"cpu_model": "AMD EPYC 9V45 96-Core Processor", "bcrypt12_ms": 221}, "AMD EPYC 9V45 96-Core Processor, 2 vCPU; bcrypt-12 check: 221 ms"),
+    ({"cpu_model": "unknown", "bcrypt12_ms": "unknown"}, "unknown, 2 vCPU; bcrypt-12 check: unknown"),
+    ({}, "unknown, 2 vCPU; bcrypt-12 check: unknown"),                               # an older run's meta: no baseline
+])
+def test_the_host_baseline_is_shown_beside_the_login_verdict_and_never_changes_the_exit_code(tmp_path, baseline, expect):
+    clean, dirty = {"tenant": "x", "clean": True}, {"tenant": "x", "clean": False}
+    slow = _result(login=_scenario(2500.0, {"ok": 500}))
+    for i, (result, cleanup, code) in enumerate([(_result(), clean, 0), (slow, clean, 1), (_result(), dirty, 4)]):
+        d = _write_run(tmp_path / str(i), result, cleanup)
+        meta = json.loads((d / "meta.json").read_text())
+        (d / "meta.json").write_text(json.dumps({**meta, **baseline}))
+        text, terminal, got = loadtest_summary.build(d)
+        assert got == code
+        verdict = text.index("**SLO verdict:")
+        assert text.index(f"Login context (informational) - host: {expect} (CI reference: ~220 ms passes LD-9") > verdict
+        assert f"Host: {expect}" in terminal.splitlines()[1]
+
+
 @pytest.mark.parametrize("left, code", [(0, 0), (1, 4), ("unknown", 4)])
 def test_a_load_test_network_left_over_is_a_cleanup_not_verified(tmp_path, left, code):
     """Review follow-up: a failed Caddy detach leaves the network; that outranks an abort and the SLOs, as 4."""
@@ -669,6 +688,14 @@ if sub == "exec" and "postgres" in args:
     elif "md5" in sql:
         out.append("aaa:bbb")
     finish()
+if sub == "exec" and "backend" in args and args[-1] == "-":       # a script on stdin: the bcrypt baseline
+    if "checkpw" in sys.stdin.read():
+        st["bcrypt_at"] = len(st["calls"]) - 1
+        if st.get("bcrypt_fail"):
+            rc = 1
+        else:
+            out.append("231")
+    finish()
 if sub == "exec" and "backend" in args:
     script = " ".join(args)
     if "flag_posture" in script:
@@ -1014,6 +1041,25 @@ def test_the_preflight_refuses_a_worker_state_the_watchdog_stops_on(tmp_path, wo
     assert "FAILED: refused: the trading worker" in r.stderr and reason in r.stderr and "Nothing was created" in r.stderr
     st = host.load()
     assert st["org_calls"] == [] and st["shards"] == [] and st["networks"] == []
+
+
+@needs_tools
+@pytest.mark.parametrize("fail", [False, True])
+def test_the_bcrypt_baseline_is_measured_before_seeding_and_its_failure_does_not_abort(tmp_path, fail):
+    host = FakeHost(tmp_path)
+    host.state["bcrypt_fail"] = fail
+    host.save()
+    r = host.run("loadtest", *SMALL)
+    st = host.load()
+    assert r.returncode == 0, r.stdout + r.stderr                                    # informational: never the exit code
+    seed_at = next(i for i, c in enumerate(st["calls"]) if "seed" in c)
+    assert st["bcrypt_at"] < seed_at and [c[0] for c in st["org_calls"]] == ["list", "seed", "cleanup"]
+    ms = "unknown" if fail else "231"
+    assert f"bcrypt-12 check: {ms}" in r.stdout
+    meta = json.loads((host.dir / ".deploy/loadtest" / st["seeded"] / "meta.json").read_text())
+    assert meta["bcrypt12_ms"] == ("unknown" if fail else 231) and meta["cpu_model"]
+    report = (host.reports / f"loadtest-{st['seeded']}.md").read_text()
+    assert f"bcrypt-12 check: {ms + ' ms' if not fail else 'unknown'}" in report and "SLO verdict: PASS" in report
 
 
 @needs_tools

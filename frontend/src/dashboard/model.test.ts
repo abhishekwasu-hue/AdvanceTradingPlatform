@@ -109,6 +109,9 @@ describe("UI2-2 market strip", () => {
     // A symbol converted from another currency: unknown.
     expect(todayPnl(exposure({ realised_today: 0, unrealised_pnl: 50, open_positions: 1, price_source: "ltp", by_symbol: [sym("BTCUSDT")],
       priced_symbols: ["BTCUSDT"], fx_rates_used: { "USD->INR": 84 } })).open).toBeNull();
+    // A missing rate (the symbol stays in its own currency): unknown, and the headline with it.
+    expect(todayPnl(exposure({ realised_today: 10, unrealised_pnl: 50, open_positions: 1, price_source: "ltp", by_symbol: [sym("BTCUSDT")],
+      priced_symbols: ["BTCUSDT"], fx_missing: ["USD->INR"] }))).toEqual({ total: null, booked: 10, open: null });
     expect(todayPnl(null)).toEqual({ total: null, booked: null, open: null });
   });
 });
@@ -137,6 +140,7 @@ describe("UI2-2 open positions", () => {
     expect(positionRows(positions, { ...exp, price_source: "entry" }).every((r) => r.pnl === null)).toBe(true);
     // A conversion from another currency: no price is derived (an INR value against a foreign-currency entry).
     expect(symbolPrices(positions, { ...exp, fx_rates_used: { "USD->INR": 84 } })).toEqual({});
+    expect(symbolPrices(positions, { ...exp, fx_missing: ["USD->INR"] })).toEqual({});
   });
 
   it("shows at most five", () => {

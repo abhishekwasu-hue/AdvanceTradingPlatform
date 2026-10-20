@@ -156,13 +156,19 @@ export interface TodayPnl {
   total: number | null;
   booked: number | null;
   /** 0 with no open positions; null while any open symbol has no live price (P&L at the entry price would be a made-up
-   * zero) or a symbol was converted from another currency. */
+   * zero) or a symbol was converted from another currency, or has no rate to convert it. */
   open: number | null;
+}
+
+/** Any currency conversion used or missing: some symbol is not simply in rupees (a missing rate leaves that symbol in
+ * its own currency), so neither its price nor the open P&L can be read in rupees. */
+export function convertedOrUnconverted(exposure: PortfolioExposure): boolean {
+  return Object.keys(exposure.fx_rates_used ?? {}).length > 0 || (exposure.fx_missing ?? []).length > 0;
 }
 
 /** True when every open symbol is valued at a live price in rupees: the exposure's open P&L is real. */
 export function fullyPriced(exposure: PortfolioExposure): boolean {
-  if (exposure.price_source !== "ltp" || Object.keys(exposure.fx_rates_used ?? {}).length > 0) return false;
+  if (exposure.price_source !== "ltp" || convertedOrUnconverted(exposure)) return false;
   const priced = new Set(exposure.priced_symbols ?? []);
   return (exposure.by_symbol ?? []).every((row) => priced.has(row.symbol));
 }
@@ -192,7 +198,7 @@ export interface PositionRow {
 export function symbolPrices(positions: TradeRecord[], exposure: PortfolioExposure | null | undefined): Record<string, number> {
   const out: Record<string, number> = {};
   // A symbol converted from another currency is valued in rupees against an entry in its own currency: no P&L from it.
-  if (!exposure || exposure.price_source !== "ltp" || Object.keys(exposure.fx_rates_used ?? {}).length > 0) return out;
+  if (!exposure || exposure.price_source !== "ltp" || convertedOrUnconverted(exposure)) return out;
   const priced = new Set(exposure.priced_symbols ?? []);
   for (const row of exposure.by_symbol ?? []) {
     if (!priced.has(row.symbol)) continue;

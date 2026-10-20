@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { mockDashboard } from "./dashboardMocks";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -18,8 +19,10 @@ const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_stat
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
 const V2: MockOptions = { features: { ui_v2: true }, brokers: CONNECTED };
 
-async function open(page: Page, path: string, theme: "dark" | "light", options: MockOptions = V2, storage: Record<string, string> = {}) {
-  await page.clock.install({ time: new Date("2026-10-08T10:30:00+05:30") });
+/** `time` and `before` (more routes, registered after mockApi so they answer first) are for the 1440 shot only. */
+async function open(page: Page, path: string, theme: "dark" | "light", options: MockOptions = V2, storage: Record<string, string> = {},
+  extra: { time?: string; before?: (page: Page) => Promise<void> } = {}) {
+  await page.clock.install({ time: new Date(extra.time ?? "2026-10-08T10:30:00+05:30") });
   await page.addInitScript(([t, extra]) => {
     try {
       localStorage.setItem("atp_appearance", JSON.stringify({ theme: t }));
@@ -29,6 +32,7 @@ async function open(page: Page, path: string, theme: "dark" | "light", options: 
   }, [theme, storage] as const);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, options);
+  await extra.before?.(page);
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
@@ -158,8 +162,12 @@ test.describe("v2 shell 1440 desktop", () => {
 
   for (const theme of THEMES) {
     test(`shell looks the same (${theme})`, async ({ page }) => {
-      await open(page, "/", theme);
+      // UI2-2: `/` is the v2 dashboard, whose lower blocks show at 1440. Every read it makes is answered (the dashboard
+      // spec's made-up replies, at its date) and the shot waits for its blocks, so it never captures 404 / error states.
+      await open(page, "/", theme, V2, {}, { time: "2026-10-19T11:00:00+05:30", before: (p) => mockDashboard(p) });
       await expect(page.getByRole("complementary", { name: "Navigation" })).toBeVisible();
+      await expect(page.locator("[data-block='today']")).toBeVisible();
+      await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
       await expect(page).toHaveScreenshot(`shell-v2-1440-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
     });
   }

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { readFileSync } from "node:fs";
+import { F, api, mockDashboard } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -14,10 +14,6 @@ import { expectPhoneLayout } from "./phoneLayout";
  * After an intended change: `npx playwright test --project=phone e2e/dashboard-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
  */
-
-type Fixture = Record<string, unknown>;
-const F = JSON.parse(readFileSync(new URL("./fixtures/dashboard_v2.json", import.meta.url), "utf8")) as Fixture;
-const api = (path: string) => new RegExp(`/api(?:/v1)?${path}`);
 
 interface Setup {
   /** "connected" (default), "login" (stored, not logged in today), "none" (no broker stored), "empty" (connected, nothing yet). */
@@ -41,21 +37,7 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}) {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   const brokers = state === "none" ? [] : state === "login" ? F.token_status_login : F.token_status;
   await mockApi(page, { features: flag ? (F.features as Record<string, boolean>) : undefined, brokers: brokers as unknown[] });
-  const empty = state === "empty" || state === "none";
-  const replies: [RegExp, unknown][] = [
-    [api("/auth/me$"), F.me],
-    [api("/market/strip$"), strip ?? (state === "login" ? F.strip_memory : F.strip)],
-    [api("/option-chain/banners$"), empty ? { banners: [] } : F.oi_banners],
-    [api("/portfolio/exposure"), empty ? { ...(F.exposure as object), open_positions: 0, unrealised_pnl: 0, realised_today: 0, by_symbol: [], priced_symbols: [] } : F.exposure],
-    [api("/positions$"), empty ? [] : F.positions],
-    [api("/ai/actions(\\?|$)"), empty ? [] : F.actions],
-    [api("/deployments(\\?|$)"), empty ? [] : F.deployments],
-    [api("/paper/risk$"), F.paper_risk],
-    [api("/notifications\\?unread_only=true$"), empty ? [] : F.notifications_unread],
-    [api("/analytics/summary$"), F.analytics_summary],
-    [api("/alert-channels$"), F.alert_channels],
-  ];
-  for (const [re, json] of replies) await page.route(re, (route) => route.fulfill({ json }));
+  await mockDashboard(page, { state, strip, me: true });
   await page.goto("/");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");

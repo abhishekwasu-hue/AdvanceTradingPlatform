@@ -712,7 +712,7 @@ async def upstox_oauth_start(
 ) -> OAuthStartResponse:
     """Starts the Upstox login for one stored account (`account_label`, default "primary"). The label rides
     in the signed state, so the callback updates the same account's row and no other."""
-    await ensure_live_step_up(session, user, session_id, "Logging in to the broker")
+    await _oauth_start_gates(session, user, session_id)
     label = _clean_label(account_label)
     record = await get_credential_record(session, user.tenant_id, "upstox", label)
     if record is None:
@@ -757,13 +757,16 @@ async def oauth_callback_rate_limit(request: Request) -> bool:
 async def _login_still_allowed(session: AsyncSession, tenant_id: int, user_id: int) -> bool:
     """The person who started the login is still active, still in that organisation, still holds a trading role there
     (an active organisation, no denied scope) and may still change broker connections. Checked before a code is
-    exchanged: a login started before a removal or demotion does not finish after it."""
+    exchanged: a login started before a removal or demotion does not finish after it. A verified email is needed too
+    (when EMAIL_VERIFICATION_REQUIRED is on), as at the start."""
     from app.auth.scopes import has_scope
+    from app.auth.verification import ensure_verified
     user = await session.get(User, user_id)
     if user is None or not user.is_active or int(user.tenant_id) != int(tenant_id):
         return False
     try:
         await ensure_trader(session, user)
+        ensure_verified(user, "Logging in to the broker")
     except HTTPException:
         return False
     return has_scope(user, "brokers:write")
@@ -805,14 +808,20 @@ def _scrub(text: str, *secrets_: Optional[str]) -> str:
     return text[:300]
 
 
-async def _oauth_start(name: str, request: Request, user: User, session: AsyncSession, session_id: Optional[int],
-                       account_label: str) -> "OAuthStartResponse":
+async def _oauth_start_gates(session: AsyncSession, user: User, session_id: Optional[int]) -> None:
+    """Every OAuth start (Upstox, Kite, Fyers) passes the paste-code route's gates: brokers:write, a verified email
+    (when required) and the live step-up. (require_trader on the route covers the role and an active organisation.)"""
     from app.auth.scopes import has_scope, scope_denied
     from app.auth.verification import ensure_verified
     if not has_scope(user, "brokers:write"):
         raise scope_denied(user, "brokers:write")
     ensure_verified(user, "Logging in to the broker")
     await ensure_live_step_up(session, user, session_id, "Logging in to the broker")
+
+
+async def _oauth_start(name: str, request: Request, user: User, session: AsyncSession, session_id: Optional[int],
+                       account_label: str) -> "OAuthStartResponse":
+    await _oauth_start_gates(session, user, session_id)
     spec = BROKER_FIELD_SPECS[name]
     label = _clean_label(account_label)
     record = await get_credential_record(session, user.tenant_id, name, label)

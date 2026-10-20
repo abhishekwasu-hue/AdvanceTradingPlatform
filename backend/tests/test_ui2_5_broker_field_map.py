@@ -202,7 +202,7 @@ def test_specs_list_every_broker_without_any_stored_value(monkeypatch):
     assert zerodha["readonly"]["redirect_url"].endswith("/api/broker/zerodha/oauth/callback")
     assert zerodha["readonly"]["server_ip"] == "203.0.113.10"
     fields = {f["key"]: f for f in zerodha["fields"]}
-    assert fields["api_key"]["pattern"] == r"^\S{4,128}$" and fields["api_key"]["entered_by"] == "user"
+    assert fields["api_key"]["pattern"] == r"^[\x21-\x7E]{4,128}$" and fields["api_key"]["entered_by"] == "user"
     assert fields["request_token"]["entered_by"] == "oauth_callback" and fields["request_token"]["kind"] == "code"
     assert by_name["upstox"]["daily_expiry_ist"] == "03:30" and by_name["coindcx"]["daily_expiry_ist"] is None
     assert by_name["coindcx"]["readonly"]["redirect_url"] is None
@@ -241,7 +241,7 @@ def test_bad_format_is_refused_without_echoing_the_value():
     bad_key = KITE_KEY[:6] + " " + KITE_KEY[6:]
     res = _store(headers, "zerodha", {"api_key": bad_key, "api_secret": KITE_SECRET})
     text = _errors(res)
-    assert "API key does not look right: expected 4 to 128 characters with no spaces" in text
+    assert "API key does not look right: expected 4 to 128 letters, digits or symbols with no spaces" in text
     assert bad_key not in res.text and KITE_SECRET not in res.text
     assert res.json()["detail"]["fields"].keys() == {"api_key"}
     text = _errors(_store(headers, "fyers", {"api_key": "not an app id", "api_secret": FYERS_SECRET}))
@@ -268,7 +268,21 @@ def test_patterns_only_check_what_the_brokers_document():
     for broker, bspec in fs.BROKER_FIELD_SPECS.items():
         for spec in bspec.fields:
             if spec.kind in (fs.KIND_TEXT, fs.KIND_SECRET) and spec.key not in ("public_ip", "local_ip", "mac", "redirect_uri"):
-                assert spec.pattern.startswith(r"^\S{") or spec.pattern == r"^[^\r\n]{1,128}$", (broker, spec.key, spec.pattern)
+                assert spec.pattern.startswith(r"^[\x21-\x7E]{") or spec.pattern == r"^[^\x00-\x1F\x7F]{1,128}$", (broker, spec.key, spec.pattern)
+
+
+@pytest.mark.parametrize("bad", ["\x00", "\x1b", "\x7f", "\u200b", "\u00e9", "\t"])
+def test_keys_must_be_printable_ascii(bad):
+    """Loose, but not that loose: a control character, DEL, a zero-width space or a non-ASCII letter inside a key is
+    refused (a pasted key that carries one would fail at the broker in a way nobody can see)."""
+    headers, _me = _owner(_email("printable"))
+    key = "Odd/Shape+" + _fake("k")
+    res = _store(headers, "coindcx", {"api_key": key[:8] + bad + key[8:], "api_secret": "S/" + _fake("cs")})
+    assert "API key does not look right" in _errors(res)
+    assert _store(headers, "coindcx", {"api_key": key, "api_secret": "S/" + _fake("cs") + "~!"}).status_code == 204
+    # The Shoonya password may hold spaces and non-ASCII letters, but no control character.
+    spec = fs.BROKER_FIELD_SPECS["shoonya"].get("api_secret")
+    assert re.fullmatch(spec.pattern, "pass word \u00e9") and not re.fullmatch(spec.pattern, "pass\x00word")
 
 
 def test_missing_required_field_is_refused():
@@ -750,4 +764,30 @@ def test_no_token_returned_is_audited(monkeypatch, broker):
     assert _outcome(res)["error"] == "no_token_returned"
     audit = _audit_text(me["tenant_id"])
     assert f"broker_oauth_failed {broker}/primary: the broker returned no session token" in audit and code not in audit
+    assert _row(me["tenant_id"], broker)[0].token_status == "UNKNOWN"
+
+
+@pytest.mark.parametrize("broker", ["upstox", "zerodha", "fyers"])
+def test_every_oauth_start_needs_brokers_write_and_a_verified_email(monkeypatch, broker):
+    headers, me = _connect(f"start-gates-{broker}", broker)
+    _set_user(me["id"], scope_overrides=json.dumps({"deny": ["brokers:write"], "grant": []}))
+    res = client.get(f"/api/broker/{broker}/oauth/start", headers=headers)
+    assert res.status_code == 403 and "brokers:write" in res.text
+    _set_user(me["id"], scope_overrides=None, email_verified_at=None)
+    monkeypatch.setattr(app_config, "EMAIL_VERIFICATION_REQUIRED", True)
+    res = client.get(f"/api/broker/{broker}/oauth/start", headers=headers)
+    assert res.status_code == 403 and res.headers.get("X-Step-Up") == "email"
+    assert _row(me["tenant_id"], broker)[1].oauth_pending is None          # nothing was started
+
+
+@pytest.mark.parametrize("broker", ["upstox", "zerodha", "fyers"])
+def test_an_unverified_user_cannot_finish_an_oauth_login(monkeypatch, broker):
+    headers, me = _connect(f"finish-unverified-{broker}", broker)
+    called = []
+    monkeypatch.setattr(broker_routes, "get_broker_adapter", lambda *a: called.append(a))
+    state = _start(headers, broker)["state"]
+    _set_user(me["id"], email_verified_at=None)
+    monkeypatch.setattr(app_config, "EMAIL_VERIFICATION_REQUIRED", True)
+    res = {"zerodha": _kite_callback, "fyers": _fyers_callback, "upstox": _upstox_callback}[broker](state, _fake("code"))
+    assert _outcome(res)["error"] == "not_allowed" and called == []
     assert _row(me["tenant_id"], broker)[0].token_status == "UNKNOWN"

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { isNativeApp } from "../native/platform";
 
 /** PW1: the installable app. Registers the service worker (production builds only - the dev server's modules must
  * never be cached), tracks a waiting new version ("A new version is ready - Reload") and the install offer
@@ -176,9 +177,10 @@ function watchRegistration(reg: ServiceWorkerRegistration) {
 
 let started = false;
 
-/** Called once from main.tsx. */
+/** Called once from main.tsx. Mobile B1: does nothing inside the Android app - its files are bundled (no service
+ * worker), it is already installed (no install offer) and a WebView has no web push. */
 export function initPwa(): void {
-  if (started || typeof window === "undefined") return;
+  if (started || typeof window === "undefined" || isNativeApp()) return;
   started = true;
 
   window.addEventListener("beforeinstallprompt", (e) => {

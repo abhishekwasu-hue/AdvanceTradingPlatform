@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { apiUrl } from "../api/base";
 import { getToken, tryRefresh } from "../api/client";
 import { SseParser, nextDelay } from "./sse";
 
@@ -18,7 +19,7 @@ async function loop() {
     const token = getToken();
     if (!token) { await new Promise((r) => setTimeout(r, 3000)); continue; }
     try {
-      const response = await fetch("/api/v1/live/stream", { headers: { Authorization: `Bearer ${token}` }, credentials: "same-origin" });
+      const response = await fetch(apiUrl("/live/stream"), { headers: { Authorization: `Bearer ${token}` }, credentials: "same-origin" });
       if (response.status === 401) { await tryRefresh(); failures++; }
       else if (!response.ok || !response.body) failures++;
       else {

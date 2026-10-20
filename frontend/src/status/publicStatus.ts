@@ -1,3 +1,4 @@
+import { apiUrl } from "../api/base";
 import { formatEodDate, formatIstTime } from "../components/dataTier";
 
 /** Z10-e (G7): the public status page's data (`GET /api/v1/status`, no login). Pure helpers, no React. The backend
@@ -37,7 +38,7 @@ export type StatusLoad =
   | { kind: "disabled" }
   | { kind: "unreachable" };
 
-export const STATUS_PATH = "/api/v1/status";
+export const STATUS_PATH = apiUrl("/status");
 export const REFRESH_MS = 60_000;
 
 /** One fetch of the public status. 200 and 503 both carry a body (503 = the platform's database is not answering);

@@ -162,6 +162,7 @@ import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut,
 import type { ThenBody, ThenIntent, ThenTemplate } from "../screener/then/model";
 import type { BetaCohort } from "../beta/rollout";
 
+import { API_V1 } from "./base";
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
@@ -171,7 +172,8 @@ export { ApiError, friendlyError } from "./errors";
 /** P0.8-D: fired when an AI route answers 428 ai_acknowledgement_required. */
 export const AI_ACK_REQUIRED_EVENT = "atp:ai-ack-required";
 
-const BASE = "/api/v1";
+// Mobile B1: "/api/v1" on the web, "https://<domain>/api/v1" in the Android app (api/base.ts).
+const BASE = API_V1;
 // P0.3 / S6: the access token lives in memory only (a script injected into the page cannot read it from
 // storage, and it expires in minutes); the refresh token lives in an HttpOnly cookie the browser sends to
 // /api/* by itself. A reload asks /auth/refresh with that cookie to get a new access token. Tokens an older

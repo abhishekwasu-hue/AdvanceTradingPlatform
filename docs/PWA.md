@@ -1,7 +1,12 @@
 # Installable app (PWA)
 
 Phase 0 ships the mobile and desktop app as a Progressive Web App (owner decision, `docs/BETA_LAUNCH_SPEC.md` PWA-first
-addendum). Store builds (Capacitor) and the desktop wrapper (Tauri) wait for Phase 1. This page covers PW1, the shell.
+addendum). The desktop wrapper (Tauri) waits for Phase 1. This page covers PW1, the shell.
+
+**Android app (owner decision 20 Oct 2026, `docs/design/MOBILE_APP_PLAN.md`):** a Capacitor shell around the same
+build is being added ahead of Phase 1 (slice B1: `frontend/capacitor.config.ts`, `frontend/android/`, the CI debug
+APK; how to build and install it: `docs/mobile/BUILD.md`). Inside the app none of this page applies: the files are
+bundled, so no service worker registers, no install offer is shown and the install / update counters are not sent.
 
 ## What is installed
 

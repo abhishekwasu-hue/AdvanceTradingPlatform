@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
-from sqlalchemy import select, update
+from sqlalchemy import and_, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import write_audit_log
@@ -61,6 +61,21 @@ def as_dict(row: ChartAnalysisRecord, *, with_result: bool = True) -> Dict[str, 
             "disclaimer": contract.DISCLAIMER}
 
 
+def stale_before(settings: Dict[str, Any], now: datetime) -> datetime:
+    return now - timedelta(minutes=int(settings["running_timeout_minutes"]))
+
+
+def is_stale(row: ChartAnalysisRecord, settings: Dict[str, Any], now: datetime) -> bool:
+    """A "running" row whose run started longer ago than `running_timeout_minutes` (or never recorded a start)."""
+    if row.status != RUNNING:
+        return False
+    started = row.started_at
+    if started is None:
+        return True
+    started = started if started.tzinfo else started.replace(tzinfo=timezone.utc)
+    return started < stale_before(settings, now)
+
+
 async def own(session: AsyncSession, user: User, item_id: int) -> ChartAnalysisRecord:
     row = await session.scalar(select(ChartAnalysisRecord).where(
         ChartAnalysisRecord.id == item_id, ChartAnalysisRecord.tenant_id == user.tenant_id, ChartAnalysisRecord.user_id == user.id,
@@ -74,7 +89,7 @@ async def add_item(session: AsyncSession, user: User, tenant: Tenant, settings: 
                    mode: str, source: str, source_host: Optional[str], now: Optional[datetime] = None) -> ChartAnalysisRecord:
     """Stores the cleaned image and its row. The plan limit is checked first (nothing is written when it refuses)."""
     now = now or _utcnow()
-    await limits.check_can_add(session, user, tenant, settings, now)
+    await limits.check_can_add(session, user, tenant, settings, now, lock=True)     # serialised per user until the commit below
     name = storage.new_name(user.tenant_id)
     storage.write(name, clean.png)
     row = ChartAnalysisRecord(tenant_id=user.tenant_id, user_id=user.id, mode=mode, source=source, source_host=source_host, status=READY,
@@ -100,7 +115,7 @@ async def analyze(session: AsyncSession, user: User, tenant: Tenant, settings: D
         raise HTTPException(status_code=409, detail={"message": HYBRID_SOON, "code": "hybrid_soon"})
     if row.status == DONE:
         return row
-    if row.status == RUNNING:
+    if row.status == RUNNING and not is_stale(row, settings, now):
         raise HTTPException(status_code=409, detail={"message": "This chart is being analysed already.", "code": "running"})
     engine = engine_provider.load()
     if engine is None:
@@ -108,11 +123,31 @@ async def analyze(session: AsyncSession, user: User, tenant: Tenant, settings: D
     png = storage.read(row.image_path or "")
     if png is None:
         raise HTTPException(status_code=410, detail={"message": "The chart image is no longer stored. Add it again.", "code": "image_gone"})
-    claimed = await session.execute(update(ChartAnalysisRecord).where(ChartAnalysisRecord.id == row.id, ChartAnalysisRecord.status.in_((READY, FAILED)))
-                                    .values(status=RUNNING).execution_options(synchronize_session=False))
+    claimable = or_(ChartAnalysisRecord.status.in_((READY, FAILED)),
+                    and_(ChartAnalysisRecord.status == RUNNING, or_(ChartAnalysisRecord.started_at.is_(None),
+                                                                    ChartAnalysisRecord.started_at < stale_before(settings, now))))
+    claimed = await session.execute(update(ChartAnalysisRecord).where(ChartAnalysisRecord.id == row.id, claimable)
+                                    .values(status=RUNNING, started_at=now).execution_options(synchronize_session=False))
     if getattr(claimed, "rowcount", 0) != 1:
         raise HTTPException(status_code=409, detail={"message": "This chart is being analysed already.", "code": "running"})
     await session.commit()
+    try:
+        return await _run(session, user, tenant, settings, row, engine, png, item_id, client=client, now=now)
+    except BaseException:
+        # A cancelled request, a dropped connection or anything unexpected: the row never stays "running" (best effort;
+        # a row a crash leaves behind turns stale after running_timeout_minutes and can be retried or deleted).
+        try:
+            await session.rollback()
+            current = await session.get(ChartAnalysisRecord, row.id, populate_existing=True)
+            if current is not None and current.status == RUNNING:
+                await _finish(session, row.id, FAILED, error="The analysis was interrupted. Try again.")
+        except BaseException:  # noqa: BLE001 - never mask the original error
+            pass
+        raise
+
+
+async def _run(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], row: ChartAnalysisRecord, engine: Any, png: bytes,
+               item_id: int, *, client: Optional[Any], now: datetime) -> ChartAnalysisRecord:
     try:
         instr = engine.image_only_instructions(width=row.image_width, height=row.image_height)
         answer = await ask(session, user, tenant, instr, png, settings, now=now, client=client)
@@ -168,43 +203,80 @@ async def history(session: AsyncSession, user: User, limit: int = HISTORY_MAX) -
 
 
 def _tombstone(row: ChartAnalysisRecord, now: datetime) -> None:
-    """The file and the result go; the counters (created_at, mode, cost) stay so the plan limits cannot be reset."""
-    storage.delete(row.image_path)
-    row.status, row.image_path, row.result_json, row.error, row.source_host = DELETED, None, None, None, None
+    """The file and the result go; the counters (created_at, mode, cost) stay so the plan limits cannot be reset. When
+    the file could not be removed, its path stays on the row so retention retries it (never an orphaned file)."""
+    gone = storage.delete(row.image_path)
+    row.status, row.result_json, row.error, row.source_host = DELETED, None, None, None
+    if gone:
+        row.image_path = None
     row.deleted_at = now
 
 
-async def delete_item(session: AsyncSession, user: User, item_id: int) -> None:
+async def delete_item(session: AsyncSession, user: User, item_id: int, settings: Optional[Dict[str, Any]] = None) -> None:
+    from app.chart_analyze import settings as settings_mod
+    now = _utcnow()
     row = await own(session, user, item_id)
-    if row.status == RUNNING:
+    if row.status == RUNNING and not is_stale(row, settings or await settings_mod.load(session), now):
         raise HTTPException(status_code=409, detail={"message": "Wait for the analysis to finish, then delete it.", "code": "running"})
-    _tombstone(row, _utcnow())
+    _tombstone(row, now)
     await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_deleted", f"#{item_id}")
     await session.commit()
 
 
 async def purge_expired(session: AsyncSession, now: Optional[datetime] = None, settings: Optional[Dict[str, Any]] = None,
                         batch: int = 500) -> int:
-    """Retention (run by the daily retention job): images and results older than `retention_days` are deleted (the row
-    becomes a counter); counter rows older than `counter_keep_days` are removed. Returns how many rows it changed."""
+    """Retention (run by the daily retention job), in batches until nothing is left:
+    1. images and results older than `retention_days` are deleted (the row becomes a counter) - a stale "running" row
+       included;
+    2. a deleted row whose file could not be removed earlier is retried;
+    3. counter rows older than `counter_keep_days` are removed (only once their file is gone).
+    Returns how many rows it changed."""
     from app.chart_analyze import settings as settings_mod
     now = now or _utcnow()
     settings = settings or await settings_mod.load(session)
+    expired_before = now - timedelta(days=int(settings["retention_days"]))
+    stuck: set = set()
     changed = 0
-    expired = list(await session.scalars(select(ChartAnalysisRecord).where(
-        ChartAnalysisRecord.status != DELETED, ChartAnalysisRecord.status != RUNNING,
-        ChartAnalysisRecord.created_at < now - timedelta(days=int(settings["retention_days"]))).order_by(ChartAnalysisRecord.id).limit(batch)))
-    for row in expired:
-        _tombstone(row, now)
-        changed += 1
-    old = list(await session.scalars(select(ChartAnalysisRecord).where(
-        ChartAnalysisRecord.status == DELETED,
-        ChartAnalysisRecord.created_at < now - timedelta(days=int(settings["counter_keep_days"]))).order_by(ChartAnalysisRecord.id).limit(batch)))
-    for row in old:
-        storage.delete(row.image_path)
-        await session.delete(row)
-        changed += 1
-    await session.flush()
+    while True:
+        rows = list(await session.scalars(select(ChartAnalysisRecord).where(
+            ChartAnalysisRecord.status != DELETED, ChartAnalysisRecord.created_at < expired_before,
+            or_(ChartAnalysisRecord.status != RUNNING, ChartAnalysisRecord.started_at.is_(None),
+                ChartAnalysisRecord.started_at < stale_before(settings, now)),
+            ChartAnalysisRecord.id.notin_(stuck) if stuck else true()).order_by(ChartAnalysisRecord.id).limit(batch)))
+        if not rows:
+            break
+        for row in rows:
+            _tombstone(row, now)
+            changed += 1
+            if row.image_path:
+                stuck.add(row.id)
+        await session.flush()
+    while True:
+        rows = list(await session.scalars(select(ChartAnalysisRecord).where(
+            ChartAnalysisRecord.status == DELETED, ChartAnalysisRecord.image_path.is_not(None),
+            ChartAnalysisRecord.id.notin_(stuck) if stuck else true()).order_by(ChartAnalysisRecord.id).limit(batch)))
+        if not rows:
+            break
+        for row in rows:
+            if storage.delete(row.image_path):
+                row.image_path = None
+                changed += 1
+            else:
+                stuck.add(row.id)
+        await session.flush()
+    keep_before = now - timedelta(days=int(settings["counter_keep_days"]))
+    while True:
+        rows = list(await session.scalars(select(ChartAnalysisRecord).where(
+            ChartAnalysisRecord.status == DELETED, ChartAnalysisRecord.image_path.is_(None),
+            ChartAnalysisRecord.created_at < keep_before).order_by(ChartAnalysisRecord.id).limit(batch)))
+        if not rows:
+            break
+        for row in rows:
+            await session.delete(row)
+            changed += 1
+        await session.flush()
+    if stuck:
+        logger.warning("Chart analysis retention: %s image file(s) could not be removed; retried on the next run", len(stuck))
     return changed
 
 

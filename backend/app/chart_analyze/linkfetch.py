@@ -23,6 +23,12 @@ The safety rules, on the first request AND on every redirect hop:
 - the size is enforced while streaming (and from Content-Length first); the content type must be image/png or
   image/jpeg AND the first bytes must be the PNG or JPEG signature. The image then takes the same safe decode path as
   an upload (`imaging.sanitize`).
+Internationalised and full-width host names are turned into their IDNA / ASCII form before anything else; any other
+error while fetching is an unreadable link too, never a server error.
+
+Not `EGRESS_ALLOWED_HOSTS`: that operator allow-list is for destinations an organisation configures once (webhooks, SMS
+gateways); here users paste images from any host, which no list could name. The protection is the public-address check
+on every hop plus the pinned connection, which an allow-list would not add to.
 Tests pass a fake resolver and an `httpx.MockTransport`; nothing reaches the network.
 """
 import asyncio
@@ -116,11 +122,30 @@ def _checked_parts(url: str) -> Any:
     return parts
 
 
+def ascii_host(host: str) -> str:
+    """The host as the network sees it: an internationalised name (`bücher.de`) or full-width letters (`ｅxample.com`)
+    become their IDNA / plain-ASCII form (`xn--bcher-kva.de`, `example.com`); that form is resolved, checked, put in the
+    Host header and used as the TLS name. A name that cannot be encoded is refused."""
+    host = (host or "").strip().rstrip(".").lower()
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        return host.strip("[]")
+    except ValueError:
+        pass
+    try:
+        encoded = host.encode("idna").decode("ascii").lower()
+    except (UnicodeError, ValueError):
+        raise LinkUnreadable("the link's host name is not valid") from None
+    if not encoded or not re.fullmatch(r"[a-z0-9.-]{1,253}", encoded) or ".." in encoded:
+        raise LinkUnreadable("the link's host name is not valid")
+    return encoded
+
+
 def resolve_link(raw: str) -> Target:
     """Which image a pasted link names. A TradingView page that is not a snapshot (a live chart, a symbol page, an
     idea) is refused here: it is a live page, not an image."""
     parts = _checked_parts((raw or "").strip())
-    host = parts.hostname.lower().rstrip(".")
+    host = ascii_host(parts.hostname)
     if host == TV_SUFFIX or host.endswith("." + TV_SUFFIX):
         match = TV_SNAPSHOT_PATH.match(parts.path or "/")
         if host != "s3." + TV_SUFFIX and match:
@@ -154,8 +179,11 @@ async def _pinned_address(host: str, resolver: Resolver) -> str:
     return addresses[0]
 
 
-def _pinned_request(client: httpx.AsyncClient, url: str, host: str, address: str) -> httpx.Request:
-    pinned = httpx.URL(url).copy_with(host=address)
+def _pinned_request(client: httpx.AsyncClient, parts: Any, host: str, address: str) -> httpx.Request:
+    """The request to the checked address; the URL is rebuilt from the parsed parts with the IP as its host (never
+    parsed again from the user's text), the ASCII name in Host and as the TLS name."""
+    path = parts.path or "/"
+    pinned = httpx.URL(scheme="https", host=address, path=path, query=parts.query.encode("utf-8") if parts.query else None)
     return client.build_request("GET", pinned, headers={"Host": host}, extensions={"sni_hostname": host})
 
 
@@ -173,9 +201,9 @@ async def _fetch(target: Target, settings: Dict[str, Any], resolver: Resolver, t
     async with make_client(settings, transport) as client:
         for _hop in range(int(settings["link_max_redirects"]) + 1):
             parts = _checked_parts(url)
-            host = parts.hostname.lower().rstrip(".")
+            host = ascii_host(parts.hostname)
             address = await _pinned_address(host, resolver)
-            response = await client.send(_pinned_request(client, url, host, address), stream=True)
+            response = await client.send(_pinned_request(client, parts, host, address), stream=True)
             try:
                 if response.status_code in REDIRECTS:
                     location = response.headers.get("location")
@@ -212,7 +240,12 @@ async def _fetch(target: Target, settings: Dict[str, Any], resolver: Resolver, t
 async def fetch_image(raw_url: str, settings: Dict[str, Any], *, resolver: Optional[Resolver] = None,
                       transport: Optional[httpx.AsyncBaseTransport] = None) -> Fetched:
     """The image bytes behind a link (not yet decoded - the caller runs `imaging.sanitize`), or LinkUnreadable."""
-    target = resolve_link(raw_url)
+    try:
+        target = resolve_link(raw_url)
+    except LinkUnreadable:
+        raise
+    except Exception:  # noqa: BLE001 - see below
+        raise LinkUnreadable("the link is not a valid web address") from None
     try:
         data = await asyncio.wait_for(_fetch(target, settings, resolver or system_resolver, transport),
                                       timeout=float(settings["link_total_timeout_seconds"]))
@@ -221,5 +254,7 @@ async def fetch_image(raw_url: str, settings: Dict[str, Any], *, resolver: Optio
     except (asyncio.TimeoutError, httpx.TimeoutException):
         raise LinkUnreadable("the link did not answer in time") from None
     except httpx.HTTPError:
+        raise LinkUnreadable("the link could not be opened") from None
+    except Exception:  # noqa: BLE001 - anything else (a malformed address, an encoding error) is an unreadable link, never a 500
         raise LinkUnreadable("the link could not be opened") from None
     return Fetched(data=data, target=target)

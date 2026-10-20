@@ -12,8 +12,10 @@ caller's organisation every route below answers the platform's standard 503 with
 Every item route reads the caller's own rows only (tenant AND user). Upload, link and analyze share a per-user rate
 limit from the settings. Nothing here places, proposes or changes an order.
 """
+import threading
 from typing import Any, Dict, Optional
 
+from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -32,6 +34,9 @@ admin_router = APIRouter(prefix="/api/admin/chart-analyze", tags=["admin"], depe
 
 RATE_NAME = "chart_analyze"
 READ_CHUNK = 64 * 1024
+# Process resource guard (not a plan limit): image decodes running at once in one API process.
+DECODE_SLOTS = 2
+_DECODE_GATE = threading.BoundedSemaphore(DECODE_SLOTS)     # taken in the worker thread: independent of the event loop
 
 
 class SettingsBody(BaseModel):
@@ -99,7 +104,10 @@ async def add_item(file: Optional[UploadFile] = File(default=None), link: Option
         raise HTTPException(status_code=422, detail={"message": "Send one chart: an image file or a link.", "code": "one_source"})
     await _rate(user, settings)
     tenant = await _tenant(session, user)
-    await limits.check_can_add(session, user, tenant, settings)      # before any work: a refused user costs nothing
+    # Early, unlocked: a refused user costs nothing. Then the read transaction ends here, so no connection or lock is held
+    # while the upload is read, the link fetched or the image decoded; the add re-checks under its lock before inserting.
+    await limits.check_can_add(session, user, tenant, settings)
+    await session.commit()          # ends the read-only transaction (nothing written); loaded objects stay usable
     source_host: Optional[str] = None
     try:
         if has_file and file is not None:
@@ -111,17 +119,28 @@ async def add_item(file: Optional[UploadFile] = File(default=None), link: Option
             except linkfetch.LinkUnreadable as exc:
                 raise _unreadable(exc.reason) from None
             raw, source, source_host = fetched.data, "link", fetched.target.source_host
-        try:
-            clean = imaging.sanitize(raw, settings)
-        except imaging.ImageRejected as exc:
-            if source == "link":
-                raise _unreadable(str(exc)) from None
+        clean = await _decode(raw, settings)
+    except imaging.ImageRejected as exc:
+        if has_file:
             raise HTTPException(status_code=exc.status, detail={"message": str(exc), "code": "image_rejected"}) from None
+        raise _unreadable(str(exc)) from None
+    try:
         row = await service.add_item(session, user, tenant, settings, clean, mode=mode, source=source, source_host=source_host)
     except storage.StorageUnavailable:
         raise HTTPException(status_code=503, detail={"message": "Chart storage is not available on this server. Ask the administrator.",
                                                      "code": "storage_unavailable"}) from None
     return service.as_dict(row)
+
+
+async def _decode(raw: bytes, settings: Dict[str, Any]) -> imaging.CleanImage:
+    """The CPU-bound decode in a worker thread, at most DECODE_SLOTS at a time in this process (a large image takes
+    about a second and some hundred MB while it is decoded), so the event loop never stalls on it."""
+    return await run_in_threadpool(_sanitize_gated, raw, settings)
+
+
+def _sanitize_gated(raw: bytes, settings: Dict[str, Any]) -> imaging.CleanImage:
+    with _DECODE_GATE:
+        return imaging.sanitize(raw, settings)
 
 
 @router.get("/items")
@@ -158,8 +177,8 @@ async def analyze(item_id: int, user: User = Depends(get_current_user), session:
 
 @router.delete("/items/{item_id}")
 async def delete_item(item_id: int, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
-    await _gate(session, user)
-    await service.delete_item(session, user, item_id)
+    settings = await _gate(session, user)
+    await service.delete_item(session, user, item_id, settings)
     return {"deleted": item_id}
 
 

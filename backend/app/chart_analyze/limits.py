@@ -7,14 +7,15 @@
   the 1st (UTC), like the BYOK caps. 0 = not included in the plan (402); used up = 429 with when it resets.
 - **AI cost cap**: the USD this user's analyses spent this month on the organisation's AI (not on their own key),
   plus the next call's estimate, must stay within the tier's `cost_cap_usd` (429 when it would not).
-Counting is serialised per user (the user's row is locked until the commit on Postgres), so two requests at the same
-moment cannot both take the last analysis.
+Counting before the insert is serialised per user by a transaction-scoped advisory lock (Postgres), taken only for the
+short count-and-insert, so two requests at the same moment cannot both take the last analysis. The cost cap reserves one
+estimate per running analysis and counts spend by the month the analysis ran.
 """
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.metering import month_start
@@ -47,9 +48,19 @@ async def _count(session: AsyncSession, user: User, since: datetime) -> int:
 
 
 async def platform_cost(session: AsyncSession, user: User, since: datetime) -> float:
+    """USD spent on the organisation's AI by this user's analyses that RAN since `since` (by analysed_at: an item added
+    last month and analysed this month counts this month)."""
     return float(await session.scalar(select(func.coalesce(func.sum(ChartAnalysisRecord.cost_usd), 0.0)).where(
         ChartAnalysisRecord.tenant_id == user.tenant_id, ChartAnalysisRecord.user_id == user.id,
-        ChartAnalysisRecord.billed_to_user_key.is_(False), ChartAnalysisRecord.created_at >= since)) or 0.0)
+        ChartAnalysisRecord.billed_to_user_key.is_(False), ChartAnalysisRecord.analysed_at >= since)) or 0.0)
+
+
+async def running_count(session: AsyncSession, user: User) -> int:
+    """This user's analyses running right now (their cost is not known yet: each reserves one estimate)."""
+    from app.chart_analyze.service import RUNNING
+    return int(await session.scalar(select(func.count()).select_from(ChartAnalysisRecord).where(
+        ChartAnalysisRecord.tenant_id == user.tenant_id, ChartAnalysisRecord.user_id == user.id,
+        ChartAnalysisRecord.status == RUNNING)) or 0)
 
 
 async def usage(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -62,16 +73,25 @@ async def usage(session: AsyncSession, user: User, tenant: Tenant, settings: Dic
             "resets": "daily at 00:00 UTC, monthly on the 1st (UTC)"}
 
 
+LOCK_NAMESPACE = "chart_analyze_add"
+
+
 async def lock_user(session: AsyncSession, user: User) -> None:
-    """Serialises one user's counting until the commit (a no-op on SQLite, which has no row locks)."""
+    """Serialises one user's count-then-insert until the commit: a transaction-scoped advisory lock keyed by the user
+    (it blocks only another add of the same user - never a row of `users` or an insert that references it). A no-op on
+    SQLite (tests), which serialises writes anyway."""
     if session.bind is not None and session.bind.dialect.name == "postgresql":
-        await session.execute(select(User.id).where(User.id == user.id).with_for_update())
+        await session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:ns), :uid)"), {"ns": LOCK_NAMESPACE, "uid": int(user.id)})
 
 
-async def check_can_add(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], now: Optional[datetime] = None) -> None:
+async def check_can_add(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], now: Optional[datetime] = None, *,
+                        lock: bool = False) -> None:
+    """The plan limits for one more chart. `lock=False` (the early check before the upload is read or the link fetched)
+    takes no lock; the add itself checks again with `lock=True` right before its insert."""
     from app.plans.limits import ensure_tenant_active
     ensure_tenant_active(tenant)
-    await lock_user(session, user)
+    if lock:
+        await lock_user(session, user)
     used = await usage(session, user, tenant, settings, now)
     if used["monthly_limit"] <= 0 or used["daily_limit"] <= 0:
         raise LimitReached("Analyze a chart is not included in your plan. Upgrade the plan to use it.", code=status.HTTP_402_PAYMENT_REQUIRED)
@@ -88,6 +108,9 @@ async def check_cost(session: AsyncSession, user: User, tenant: Tenant, settings
     """The organisation's AI only (a BYOK call is capped by the user's own BYOK caps instead)."""
     used = await usage(session, user, tenant, settings, now)
     cap = used["cost_cap_usd"]
-    if cap <= 0 or used["cost_used_usd"] >= cap or used["cost_used_usd"] + max(0.0, estimate_usd) > cap:
+    # Every running analysis (this one included: it is claimed before the call) reserves one estimate, so parallel runs
+    # cannot each pass the cap on the same remaining budget.
+    reserved = max(1, await running_count(session, user)) * max(0.0, estimate_usd)
+    if cap <= 0 or used["cost_used_usd"] >= cap or used["cost_used_usd"] + reserved > cap:
         raise LimitReached("Limit reached: this month's AI budget for chart analyses on your plan is used up. "
                            "It resets on the 1st (UTC), or add your own AI key in Settings.")

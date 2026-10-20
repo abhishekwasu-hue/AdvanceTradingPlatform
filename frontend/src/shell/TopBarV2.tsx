@@ -4,7 +4,7 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import { ThemeToggle } from "../components/AppearanceCard";
 import type { SystemStatus, UserResponse } from "../types";
-import { shortcutLabel } from "./CommandBarV2";
+import { currentPlatform, shortcutLabel } from "./CommandBarV2";
 import { initialsOf } from "./SidebarV2";
 
 /**
@@ -51,7 +51,7 @@ export default function TopBarV2({ title, user, notificationsActive, accountActi
     return () => window.clearInterval(id);
   }, []);
   const notices = topBarNotices(status, user);
-  const shortcut = shortcutLabel(typeof navigator === "undefined" ? "" : navigator.platform || navigator.userAgent);
+  const shortcut = shortcutLabel(currentPlatform());
 
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">

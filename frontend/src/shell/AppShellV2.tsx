@@ -9,11 +9,11 @@ import { PAGES, PAGE_COMPONENTS, pathFor } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import BottomNavV2 from "./BottomNavV2";
-import CommandBarV2, { isCommandShortcut } from "./CommandBarV2";
+import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
 import MoreSheetV2 from "./MoreSheetV2";
 import { sectionOf, visibleSections, type NavContext } from "./navModel";
-import { V2_ALIASES, isGatedPath, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
+import { V2_ALIASES, isGatedPath, routerPath, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
 
@@ -39,7 +39,10 @@ export default function AppShellV2() {
   const navigate = useNavigate();
   const { user } = useAuth();
   const features = useFeatures();
-  const key = shellKeyFromPath(location.pathname);
+  // The router decodes each segment before it matches (/%70ositions is Positions): every decision below reads the
+  // path the router sees, and the gate fails closed on an address that cannot be decoded (review M1).
+  const path = routerPath(location.pathname).path;
+  const key = shellKeyFromPath(path);
   const title = shellTitle(key);
   const role = user?.role ?? null;
   const ctx = useMemo<NavContext>(() => ({ on: features.on, role }), [features.on, role]);
@@ -60,8 +63,9 @@ export default function AppShellV2() {
 
   // Ctrl K / Cmd K opens (and closes) the command bar from anywhere in the app.
   useEffect(() => {
+    const apple = isApplePlatform(currentPlatform());
     const onKey = (e: KeyboardEvent) => {
-      if (!isCommandShortcut(e)) return;
+      if (e.defaultPrevented || !isCommandShortcut(e, apple) || otherDialogOpen(document)) return;
       e.preventDefault();
       setMoreOpen(false);
       setCommandOpen((o) => !o);
@@ -90,7 +94,7 @@ export default function AppShellV2() {
   }, [key, title]);
 
   const legacy = location.pathname === "/" ? legacyTarget(location.search) : null;
-  const redirect = legacy ? null : v2RedirectFor(location.pathname, location.search, { signedIn: !!user, on: features.on });
+  const redirect = legacy ? null : v2RedirectFor(path, location.search, { signedIn: !!user, on: features.on });
 
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
@@ -142,7 +146,7 @@ export default function AppShellV2() {
           {content}
         </main>
       </div>
-      <BottomNavV2 current={key} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} />
+      <BottomNavV2 current={key} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
       <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key}
         onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
       <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />

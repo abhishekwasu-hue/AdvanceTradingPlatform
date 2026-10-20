@@ -1,6 +1,7 @@
 import * as RD from "@radix-ui/react-dialog";
 import { CornerDownLeft, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type KeyboardEvent } from "react";
+import { useReturnFocus } from "./returnFocus";
 import { searchPages, sectionTitle, type NavContext, type NavItemV2, type SectionId } from "./navModel";
 
 /**
@@ -10,9 +11,27 @@ import { searchPages, sectionTitle, type NavContext, type NavItemV2, type Sectio
  * (Charts UI2-4, Library UI2-9b, broker login UI2-6).
  */
 
-/** Ctrl K / Cmd K, without Alt or Shift (those belong to the browser and other tools). */
-export function isCommandShortcut(e: Pick<globalThis.KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">): boolean {
-  return (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k";
+/** True on a Mac, iPhone or iPad (Cmd is the command key there; Ctrl K is "delete to end of line" in text fields). */
+export function isApplePlatform(platform: string): boolean {
+  return /mac|iphone|ipad|ipod/i.test(platform);
+}
+
+/** The platform string of this browser ("" outside one). */
+export function currentPlatform(): string {
+  if (typeof navigator === "undefined") return "";
+  const data = (navigator as Navigator & { userAgentData?: { platform?: string } }).userAgentData;
+  return data?.platform || navigator.platform || navigator.userAgent || "";
+}
+
+/** Cmd K on Apple devices, Ctrl K elsewhere - never the other modifier, never with Alt or Shift (review M6). */
+export function isCommandShortcut(e: Pick<globalThis.KeyboardEvent, "key" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey">, apple: boolean): boolean {
+  if (e.altKey || e.shiftKey || e.key.toLowerCase() !== "k") return false;
+  return apple ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+}
+
+/** True while a dialog other than the command bar and the More sheet is open: Ctrl K / Cmd K is then left alone. */
+export function otherDialogOpen(root: Pick<Document, "querySelector">): boolean {
+  return root.querySelector('[role="dialog"]:not([data-command-bar]):not([data-more-sheet]), [role="alertdialog"]') !== null;
 }
 
 /** The highlighted row after an arrow key: wraps around; -1 when there are no rows. */
@@ -24,7 +43,7 @@ export function moveActive(index: number, delta: number, count: number): number 
 
 /** "⌘K" on Apple devices, "Ctrl K" elsewhere. */
 export function shortcutLabel(platform: string): string {
-  return /mac|iphone|ipad|ipod/i.test(platform) ? "⌘K" : "Ctrl K";
+  return isApplePlatform(platform) ? "⌘K" : "Ctrl K";
 }
 
 export interface CommandBarV2Props {
@@ -81,6 +100,7 @@ export default function CommandBarV2({ open, onOpenChange, ctx, onGo }: CommandB
   useEffect(() => { if (!open) setQuery(""); }, [open]);
 
   const pick = (path: string) => { onOpenChange(false); onGo(path); };
+  const returnFocus = useReturnFocus(open);
   const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
@@ -99,7 +119,7 @@ export default function CommandBarV2({ open, onOpenChange, ctx, onGo }: CommandB
     <RD.Root open={open} onOpenChange={onOpenChange}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50" />
-        <RD.Content aria-describedby={undefined} data-command-bar
+        <RD.Content aria-describedby={undefined} data-command-bar onCloseAutoFocus={returnFocus}
           className="fixed left-1/2 top-space-4 z-50 w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-panel border border-subtle bg-surface-1 text-fg shadow-raised focus:outline-none md:top-[12vh]">
           <RD.Title className="sr-only">Search pages</RD.Title>
           <div className="flex items-center gap-space-2 border-b border-subtle px-space-4">

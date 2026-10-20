@@ -1,8 +1,8 @@
 import { ExternalLink } from "lucide-react";
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
-import { useLocation, useNavigate } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { PageIntro } from "../ui/PageIntro";
-import { chartsPath, chartsSymbolFromPath } from "./shellRoutes";
+import { chartsPath } from "./shellRoutes";
 
 const ChartWindow = lazy(() => import("../pages/ChartWindow"));
 
@@ -26,14 +26,17 @@ export function chartsSymbol(fromPath: string | null | undefined, last: string |
  * never draws sample candles. "Open in new tab" keeps the standalone window (§2 "Standalone and special routes").
  */
 export default function ChartsPageV2() {
-  const { pathname } = useLocation();
+  // The router's own reading of `/charts/:symbol` (already decoded), never a second decode of the raw address.
+  const { symbol: fromPath } = useParams<{ symbol?: string }>();
   const navigate = useNavigate();
-  const symbol = chartsSymbol(chartsSymbolFromPath(pathname), readLast());
+  const symbol = chartsSymbol(fromPath?.trim() ? fromPath : null, readLast());
   const [draft, setDraft] = useState(symbol);
   const fieldId = useId();
   useEffect(() => { setDraft(symbol); }, [symbol]);
   useEffect(() => { try { localStorage.setItem(LAST_SYMBOL_KEY, symbol); } catch { /* storage unavailable */ } }, [symbol]);
   const params = useMemo(() => new URLSearchParams({ chart: symbol }), [symbol]);
+  // TODO(UI2-4): the standalone chart windows (?chart=, ?workspace=, ?contract=, ?basis= in App.tsx) render outside
+  // the shell and so outside the broker gate; UI2-4 moves the `?chart=` window onto the gated v2 chart component.
   const newTab = `/?${new URLSearchParams({ chart: symbol, tf: "5min" }).toString()}`;
 
   const open = (e: FormEvent) => {

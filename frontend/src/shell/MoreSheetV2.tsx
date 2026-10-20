@@ -5,6 +5,7 @@ import { Link } from "react-router";
 import { ThemeToggle } from "../components/AppearanceCard";
 import { installHelp, isIosSafari, isStandalone, promptInstall, usePwa } from "../pwa/pwa";
 import { MORE_SHEET_ID } from "./BottomNavV2";
+import { useReturnFocus } from "./returnFocus";
 import { moreSheetSections, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
 
 /**
@@ -120,7 +121,8 @@ export interface MoreSheetV2Props {
 export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, onFeedback }: MoreSheetV2Props) {
   const [query, setQuery] = useState("");
   const panel = useRef<HTMLDivElement>(null);
-  useEffect(() => { if (!open) setQuery(""); }, [open]);             // closed by a choice or a route change too
+  useEffect(() => { if (!open) setQuery(""); }, [open]);
+  const returnFocus = useReturnFocus(open, () => document.querySelector<HTMLElement>("[data-bottom-nav-v2] button"));             // closed by a choice or a route change too
   const close = () => onOpenChange(false);
   // A tap on the bottom bar is not "outside": More toggles the sheet itself, and a page link navigates (the shell
   // closes the sheet on every route change).
@@ -129,7 +131,7 @@ export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, 
     <RD.Root open={open} onOpenChange={onOpenChange}>
       <RD.Portal>
         <RD.Overlay className="fixed inset-0 z-40 bg-scrim/50 md:hidden" />
-        <RD.Content id={MORE_SHEET_ID} ref={panel} tabIndex={-1}
+        <RD.Content id={MORE_SHEET_ID} ref={panel} tabIndex={-1} data-more-sheet onCloseAutoFocus={returnFocus}
           aria-describedby={undefined}
           onOpenAutoFocus={(e) => { e.preventDefault(); panel.current?.focus({ preventScroll: true }); }}
           onPointerDownOutside={(e) => { if (fromBar(e.target)) e.preventDefault(); }}

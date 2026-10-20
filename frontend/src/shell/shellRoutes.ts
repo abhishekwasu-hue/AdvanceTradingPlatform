@@ -1,9 +1,8 @@
 import { pageFromPath } from "../routes";
-import { isDataPath } from "../ui/dataPages";
-import { V2_ALIASES } from "./aliases";
+import { V2_ALIASES, needsBrokerGate } from "./aliases";
 import { navItemFor, type ShellKey } from "./navModel";
 
-export { V2_ALIASES, flagOffFallback } from "./aliases";
+export { V2_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
 
 /**
  * UI2-1 (UI v2 proposal §2 "Standalone and special routes", §12 UI2-1): the v2 shell's addresses. All of this applies
@@ -78,5 +77,5 @@ export function v2RedirectFor(pathname: string, search: string, ctx: RedirectCon
  * data). `/charts/<symbol>`, `/screener/custom` and `/option-chain/plan` are sub-paths of data pages, so they are gated
  * too; `/journal/coach` and `/settings/account` are not data pages. */
 export function isGatedPath(pathname: string): boolean {
-  return isDataPath(pathname);
+  return needsBrokerGate(pathname);
 }

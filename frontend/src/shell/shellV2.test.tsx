@@ -5,7 +5,7 @@ import { AuthProvider } from "../auth/AuthContext";
 import { DATA_PAGES } from "../ui/dataPages";
 import { FeaturesProvider } from "../ui/useFeatures";
 import AppShellV2 from "./AppShellV2";
-import { CommandList, isCommandShortcut, moveActive, shortcutLabel } from "./CommandBarV2";
+import { CommandList, isApplePlatform, isCommandShortcut, moveActive, otherDialogOpen, shortcutLabel } from "./CommandBarV2";
 import { MoreSheetContent, moreSheetResults } from "./MoreSheetV2";
 import { searchPages, visibleSections, type NavContext } from "./navModel";
 import {
@@ -22,13 +22,31 @@ describe("UI2-1 command bar", () => {
   const key = (k: string, mods: Partial<Record<"ctrlKey" | "metaKey" | "altKey" | "shiftKey", boolean>> = {}) =>
     ({ key: k, ctrlKey: false, metaKey: false, altKey: false, shiftKey: false, ...mods });
 
-  it("opens on Ctrl K and Cmd K only", () => {
-    expect(isCommandShortcut(key("k", { ctrlKey: true }))).toBe(true);
-    expect(isCommandShortcut(key("K", { metaKey: true }))).toBe(true);
-    expect(isCommandShortcut(key("k"))).toBe(false);
-    expect(isCommandShortcut(key("k", { ctrlKey: true, shiftKey: true }))).toBe(false);
-    expect(isCommandShortcut(key("k", { ctrlKey: true, altKey: true }))).toBe(false);
-    expect(isCommandShortcut(key("j", { ctrlKey: true }))).toBe(false);
+  it("opens on Ctrl K elsewhere and Cmd K on Apple devices - never the other modifier (review M6)", () => {
+    expect(isCommandShortcut(key("k", { ctrlKey: true }), false)).toBe(true);
+    expect(isCommandShortcut(key("K", { ctrlKey: true }), false)).toBe(true);
+    expect(isCommandShortcut(key("k", { metaKey: true }), false)).toBe(false);
+    expect(isCommandShortcut(key("k", { metaKey: true }), true)).toBe(true);
+    expect(isCommandShortcut(key("k", { ctrlKey: true }), true)).toBe(false);          // Mac Ctrl K: delete to end of line
+    expect(isCommandShortcut(key("k"), false)).toBe(false);
+    expect(isCommandShortcut(key("k", { ctrlKey: true, shiftKey: true }), false)).toBe(false);
+    expect(isCommandShortcut(key("k", { ctrlKey: true, altKey: true }), false)).toBe(false);
+    expect(isCommandShortcut(key("j", { ctrlKey: true }), false)).toBe(false);
+    expect(isApplePlatform("MacIntel")).toBe(true);
+    expect(isApplePlatform("macOS")).toBe(true);
+    expect(isApplePlatform("Win32")).toBe(false);
+  });
+
+  it("leaves the shortcut alone while another dialog is open", () => {
+    const doc = (hit: string | null) => ({ querySelector: (sel: string) => (hit && sel.includes(hit) ? {} : null) }) as unknown as Document;
+    expect(otherDialogOpen(doc(null))).toBe(false);
+    expect(otherDialogOpen(doc('[role="dialog"]'))).toBe(true);
+    // The selector itself excludes the command bar and the More sheet.
+    let asked = "";
+    otherDialogOpen({ querySelector: (sel: string) => { asked = sel; return null; } } as unknown as Document);
+    expect(asked).toContain(":not([data-command-bar])");
+    expect(asked).toContain(":not([data-more-sheet])");
+    expect(asked).toContain('[role="alertdialog"]');
   });
 
   it("moves the highlight with the arrow keys, wrapping around", () => {
@@ -165,6 +183,13 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
       expect(html, path).toContain('data-broker-gate="loading"');
       expect(html, path).not.toContain("Loading page");                 // the page itself is not even loading
     }
+  });
+
+  it("gates percent-encoded and undecodable addresses too (review M1)", () => {
+    for (const path of ["/%70ositions", "/option%2Dchain", "/p%6Frtfolio", "/%63harts", "/%E0%A4"]) {
+      expect(render(path), path).toContain('data-broker-gate="loading"');
+    }
+    expect(render("/%70ositions")).toContain("My positions");             // the title follows the router's reading
   });
 
   it("does not gate Settings, Orders, Journal, Account or Team", () => {

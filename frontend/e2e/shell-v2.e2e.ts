@@ -111,6 +111,21 @@ for (const size of PHONES) {
       await page.locator("[data-bottom-nav-v2] a", { hasText: "Positions" }).click();
       await expect(page).toHaveURL(/\/positions$/);
       await expect(sheet).toBeHidden();
+      // The page already on screen: the sheet still closes (review M4).
+      await more.click();
+      await expect(sheet).toBeVisible();
+      await page.locator("[data-bottom-nav-v2] a", { hasText: "Positions" }).click();
+      await expect(sheet).toBeHidden();
+    });
+
+    test("closing the More sheet puts focus back on More (review M2)", async ({ page }) => {
+      await open(page, "/", "dark");
+      const more = page.getByRole("button", { name: "More pages" });
+      await more.click();
+      await expect(page.getByRole("dialog", { name: "All pages" })).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByRole("dialog", { name: "All pages" })).toBeHidden();
+      await expect(more).toBeFocused();
     });
   });
 }
@@ -128,7 +143,8 @@ test.describe("v2 shell 390, More sheet", () => {
 
   test("an address without a trusted certificate says why the app cannot be installed", async ({ page }) => {
     await page.addInitScript(() => { Object.defineProperty(window, "isSecureContext", { value: false }); });
-    await open(page, "/", "dark", V2, { atp_install_dismissed: "" });
+    await open(page, "/", "dark", V2);                    // PW1's install offer was closed before: its own key
+
     const message = "Install needs the app's web address (domain) with a trusted certificate. Ask the owner to set up the domain.";
     await expect(page.locator("[data-install='unavailable']")).toHaveText(message);
     await page.getByRole("button", { name: "More pages" }).click();
@@ -198,6 +214,15 @@ test.describe("v2 shell 1440 desktop", () => {
     await expect(bar.getByText('No page matches "journal".')).toBeVisible();
     await page.keyboard.press("Escape");
     await expect(bar).toBeHidden();
+    await expect(page.getByRole("button", { name: /^Search pages/ })).toBeFocused();      // focus back on the opener (M2)
+  });
+
+  test("Ctrl K is left alone while another dialog is open", async ({ page }) => {
+    await open(page, "/", "light");
+    await page.getByRole("button", { name: "Send feedback" }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.keyboard.press("Control+k");
+    await expect(page.locator("[data-command-bar]")).toHaveCount(0);
   });
 
   test("old addresses forward to the new ones with the flag on", async ({ page }) => {
@@ -240,6 +265,41 @@ test.describe("v2 broker gate on data pages", () => {
     await page.getByRole("link", { name: "Connect a broker" }).click();
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator("[data-broker-gate]")).toHaveCount(0);       // Settings is not a data page
+  });
+
+  test("percent-encoded and undecodable addresses are gated too (review M1)", async ({ page }) => {
+    await open(page, "/", "light", { features: { ui_v2: true }, brokers: [] });
+    for (const path of ["/option%2Dchain", "/%70ositions", "/p%6Frtfolio", "/%63harts"]) {
+      await page.goto(path);
+      await expect(page.locator("[data-broker-gate='no-broker']"), path).toBeVisible();
+      await expect(page.getByText(/sample/i), path).toHaveCount(0);
+    }
+    // An undecodable address (the preview server refuses to serve one, so it is reached inside the app): fails closed.
+    await page.evaluate(() => { window.history.pushState({}, "", "/%E0%A4"); window.dispatchEvent(new PopStateEvent("popstate")); });
+    await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
+    await page.goto("/option%2Dchain");
+    await expect(page.locator("[data-shell='v2'] header")).toContainText("Option chain");
+  });
+
+  test("while the flags are not known yet, a data page shows neither today's page nor sample data (review M3)", async ({ page }) => {
+    await open(page, "/settings", "light", { features: { ui_v2: true }, brokers: [] });
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => { release = r; });
+    await page.route(/\/api(?:\/v1)?\/system\/features$/, async (route) => { await held; await route.fulfill({ json: { ui_v2: true } }); });
+    await page.goto("/option-chain");
+    await expect(page.locator("[data-shell='waiting']")).toBeVisible();
+    await expect(page.getByText(/sample/i)).toHaveCount(0);
+    await expect(page.locator("main")).toHaveCount(0);
+    release();
+    await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
+  });
+
+  test("a failed flags read keeps today's shell (the kill switch)", async ({ page }) => {
+    await open(page, "/settings", "light", { brokers: [] });                            // /system/features answers 404
+    await page.goto("/option-chain");
+    await expect(page.locator("[data-shell='v2']")).toHaveCount(0);
+    await expect(page.locator("[data-shell='waiting']")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open navigation menu" })).toBeVisible();
   });
 
   test("a stored broker without today's login: 'Log in to Upstox'", async ({ page }) => {

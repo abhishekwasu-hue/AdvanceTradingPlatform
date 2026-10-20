@@ -11,7 +11,7 @@ import Sidebar, { NAV, type Page } from "./components/Sidebar";
 import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
 import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
-import { flagOffFallback } from "./shell/aliases";
+import { flagOffFallback, shellMode } from "./shell/aliases";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./shell/common";
 import { setV2ThemeDefault } from "./theme";
 import { FeaturesProvider, useFeatures, useUiV2, v2ThemeDefaultFrom } from "./ui/useFeatures";
@@ -205,25 +205,31 @@ function AppShell() {
   );
 }
 
-/** UI2-1: the v2 shell while `ui_v2` is on (known and on - "not known yet" is today's shell); today's shell, exactly
- * as before, otherwise. */
+/** UI2-1: the v2 shell while `ui_v2` is known and on; today's shell, exactly as before, otherwise. While it is not
+ * known yet, a data page waits on a neutral screen instead of showing today's page (shell/aliases.ts shellMode). */
 function Shell() {
   const { user, loading } = useAuth();
   const features = useFeatures();
   const v2 = useUiV2();
   const location = useLocation();
-  if (!v2) {
-    // Only an address today's app does not know (a v2 page's new address) is forwarded, once it is certain the flag is
-    // off (signed out, or the flags have answered); everything else renders exactly as before.
-    const back = flagOffFallback(location.pathname);
-    if (!back) return <AppShell />;
-    if (loading || (user && !features.loaded)) return null;
-    return <Navigate to={`${back}${location.search}`} replace />;
-  }
+  const mode = shellMode({ v2, authLoading: loading, signedIn: !!user, featuresLoaded: features.loaded, pathname: location.pathname });
+  if (mode === "today") return <AppShell />;
+  if (mode === "wait") return <ShellWaiting />;
+  if (mode === "fallback") return <Navigate to={`${flagOffFallback(location.pathname)}${location.search}`} replace />;
   return (
     <ErrorBoundary title="The app">
-      <Suspense fallback={null}><AppShellV2 /></Suspense>
+      <Suspense fallback={<ShellWaiting />}><AppShellV2 /></Suspense>
     </ErrorBoundary>
+  );
+}
+
+/** UI2-1: a neutral screen while it is not yet known which shell this organisation uses (data pages only; see
+ * shellMode) - no page content, so never sample data in place of real data. */
+function ShellWaiting() {
+  return (
+    <div className="min-h-screen bg-surface" aria-busy="true" data-shell="waiting">
+      <span className="sr-only" role="status">Loading</span>
+    </div>
   );
 }
 

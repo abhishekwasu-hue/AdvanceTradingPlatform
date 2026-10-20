@@ -15,7 +15,11 @@ const ICONS: Record<string, LucideIcon> = { dashboard: House, charts: ChartCandl
 
 export const MORE_SHEET_ID = "more-sheet";
 
-export default function BottomNavV2({ current, moreOpen, onMore }: { current: ShellKey | null; moreOpen: boolean; onMore: () => void }) {
+export default function BottomNavV2({ current, moreOpen, onMore, onPick }: {
+  current: ShellKey | null; moreOpen: boolean; onMore: () => void;
+  /** A bar page was tapped: the shell closes the More sheet (also when it is the page already on screen). */
+  onPick?: () => void;
+}) {
   const item = "flex min-h-16 flex-1 flex-col items-center justify-center gap-space-1 text-t12 font-medium transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-brand";
   return (
     <nav aria-label="Quick navigation" data-bottom-nav-v2
@@ -26,7 +30,7 @@ export default function BottomNavV2({ current, moreOpen, onMore }: { current: Sh
         const path = navItemFor(key)?.path ?? "/";
         const preload = key === "charts" ? undefined : () => preloadPage(key as Page);
         return (
-          <Link key={key} to={path} onFocus={preload} onTouchStart={preload} aria-current={current === key ? "page" : undefined}
+          <Link key={key} to={path} onClick={onPick} onFocus={preload} onTouchStart={preload} aria-current={current === key ? "page" : undefined}
             className={`${item} ${active ? "text-brand" : "text-fg-muted"}`}>
             <Icon size={22} aria-hidden />
             {label}

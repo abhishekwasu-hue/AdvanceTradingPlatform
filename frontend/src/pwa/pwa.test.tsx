@@ -3,7 +3,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 import PwaBanners from "./PwaBanners";
 import {
   INSTALL_DONE, INSTALL_IOS, INSTALL_NEEDS_BROWSER, INSTALL_NEEDS_DOMAIN, INSTALL_NOT_OFFERED, _setPwaState, initialInstall,
-  installBlockReason, installHelp, isCertificateError, isIosSafari, isStandalone,
+  installBlockReason, installHelp, isBareIpHost, isCertificateError, isIosSafari, isSecurityError, isStandalone,
+  registrationBlocksInstall,
 } from "./pwa";
 
 describe("install offer", () => {
@@ -51,13 +52,34 @@ describe("owner mobile brief (Phase A): install explains itself when it cannot w
   });
 
   it("the banner says why once (dismissable) instead of never appearing; the iPhone guide otherwise", () => {
-    const base = { dismissed: false, standalone: false, ios: false };
+    const base = { dismissed: false, domainDismissed: false, standalone: false, ios: false };
     expect(initialInstall({ ...base, blocked: "insecure" })).toBe("unavailable");
     expect(initialInstall({ ...base, blocked: "certificate", ios: true })).toBe("unavailable");
     expect(initialInstall({ ...base, blocked: null, ios: true })).toBe("ios");
     expect(initialInstall({ ...base, blocked: "no-service-worker" })).toBeNull();      // explained by the entry, no nag
-    expect(initialInstall({ ...base, blocked: "insecure", dismissed: true })).toBeNull();
+    expect(initialInstall({ ...base, blocked: "insecure", domainDismissed: true })).toBeNull();
     expect(initialInstall({ ...base, blocked: "insecure", standalone: true })).toBeNull();
+    // Closing PW1's install offer earlier does not hide the domain explanation (its own key, review M5) ...
+    expect(initialInstall({ ...base, blocked: "certificate", dismissed: true })).toBe("unavailable");
+    // ... and closing the domain explanation does not hide the iPhone guide on a good address later.
+    expect(initialInstall({ ...base, blocked: null, ios: true, domainDismissed: true })).toBe("ios");
+  });
+
+  it("a refused registration means 'needs a domain' for any browser's wording on https, or any failure on a bare IP", () => {
+    const https = { protocol: "https:", hostname: "atp.example.com" };
+    const named = (name: string, message: string) => Object.assign(new Error(message), { name });
+    expect(registrationBlocksInstall(named("SecurityError", "An SSL certificate error occurred when fetching the script."), https)).toBe(true);   // Chrome
+    expect(registrationBlocksInstall(named("SecurityError", "The operation is insecure."), https)).toBe(true);                                 // Firefox
+    expect(registrationBlocksInstall(named("SecurityError", "Script URL https://x/sw.js fetch resulted in error"), https)).toBe(true);         // Safari
+    expect(registrationBlocksInstall("SecurityError: refused", https)).toBe(true);
+    expect(registrationBlocksInstall(named("TypeError", "Failed to fetch"), https)).toBe(false);                                               // offline / 404
+    expect(registrationBlocksInstall(named("SecurityError", "refused"), { protocol: "http:", hostname: "localhost" })).toBe(false);
+    for (const hostname of ["203.0.113.7", "[2001:db8::1]", "2001:db8::1"]) {
+      expect(registrationBlocksInstall(named("TypeError", "anything"), { protocol: "https:", hostname }), hostname).toBe(true);
+    }
+    for (const hostname of ["127.0.0.1", "localhost", "[::1]", "atp.example.com", "1.2.3.example.com"]) expect(isBareIpHost(hostname), hostname).toBe(false);
+    expect(isSecurityError({ name: "SecurityError" })).toBe(true);
+    expect(isSecurityError(null)).toBe(false);
   });
 
   it("the install entry always answers: the prompt, or a plain reason - never nothing", () => {

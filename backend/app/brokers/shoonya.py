@@ -1,14 +1,14 @@
 import hashlib
 import json
 from datetime import date, datetime, time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import httpx
 
 from app.brokers import master_cache
 from app.brokers.base import BrokerInterface
-from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
+from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError, BrokerBudgetUsed
 from app.brokers.timestamps import parse_broker_timestamp
 from app.brokers.totp import totp_code
 from app.brokers.models import (
@@ -75,7 +75,7 @@ class ShoonyaBroker(BrokerInterface):
         self._actid: Optional[str] = None
         # UI2-4a2-pre review: symbol -> token lookups shared by the process when built without a client (master_cache)
         self._shared_master = client is None
-        self._tokens: Dict[str, str] = {}
+        self._tokens: Dict[str, Tuple[str, str]] = {}
 
     @property
     def _uid(self) -> str:
@@ -159,26 +159,35 @@ class ShoonyaBroker(BrokerInterface):
         quotes = await self.get_quote(symbols)
         return {symbol: quote.ltp for symbol, quote in quotes.items()}
 
-    async def _token(self, symbol: str, exchange: str) -> str:
-        """Trading symbol -> Shoonya token via `/SearchScrip` for that symbol (the exact `tsym`, else `<symbol>-EQ`,
-        else the only hit). Cached per process (master_cache) - a token never changes within a day."""
+    async def _lookup(self, symbol: str, exchange: str) -> Tuple[str, str]:
+        """Platform symbol -> (Shoonya token, Noren trading symbol) via `/SearchScrip` for that symbol: the exact `tsym`,
+        else `<symbol>-EQ` (an NSE/BSE equity is "RELIANCE-EQ" at Noren), else the only hit. Cached per process
+        (master_cache) - neither changes within a day. The lookup is a broker call: with a `budget_hook` set it takes
+        a token first (none -> BrokerBudgetUsed, no call)."""
         exchange = (exchange or "NSE").upper()
         wanted = symbol.strip().upper()
 
-        async def look_up() -> str:
+        async def look_up() -> Tuple[str, str]:
+            if self.budget_hook is not None and not await self.budget_hook():
+                raise BrokerBudgetUsed(f"broker rate budget used - {exchange}:{symbol} not looked up this time")
             body = await self._post("/SearchScrip", {"uid": self._uid, "exch": exchange, "stext": wanted})
             values = [v for v in (body.get("values") or []) if v.get("token")] if isinstance(body, dict) else []
-            by_tsym = {str(v.get("tsym", "")).upper(): str(v["token"]) for v in values}
-            token = by_tsym.get(wanted) or by_tsym.get(f"{wanted}-EQ") or (str(values[0]["token"]) if len(values) == 1 else None)
-            if token is None:
+            by_tsym = {str(v.get("tsym", "")).upper(): (str(v["token"]), str(v.get("tsym"))) for v in values}
+            hit = by_tsym.get(wanted) or by_tsym.get(f"{wanted}-EQ")
+            if hit is None and len(values) == 1:
+                hit = (str(values[0]["token"]), str(values[0].get("tsym") or wanted))
+            if hit is None:
                 raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found")
-            return token
+            return hit
         key = f"{exchange}:{wanted}"
         if self._shared_master:
             return await master_cache.shared(self.name, key, look_up)
         if key not in self._tokens:
             self._tokens[key] = await look_up()
         return self._tokens[key]
+
+    async def _token(self, symbol: str, exchange: str) -> str:
+        return (await self._lookup(symbol, exchange))[0]
 
     async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
         """UI2-4a2-pre review: one `/GetQuotes` call for one trading symbol (its token looked up first, cached), with
@@ -212,8 +221,10 @@ class ShoonyaBroker(BrokerInterface):
         self, symbol: str, exchange: str, interval: str, from_date: datetime, to_date: datetime
     ) -> List[OHLCVBar]:
         if interval in DAILY_INTERVALS:
-            # /EODChartData names the symbol itself ("EXCH:TSYM"); no token lookup needed
-            return await self._daily_bars(exchange.upper(), symbol, from_date, to_date)
+            # /EODChartData names the symbol by Noren's trading symbol ("NSE:RELIANCE-EQ", not the platform's
+            # "RELIANCE" - that answers "no data", an empty chart), from the same cached lookup
+            _token, tradingsymbol = await self._lookup(symbol, exchange)
+            return await self._daily_bars(exchange.upper(), tradingsymbol, from_date, to_date)
         # The symbol's own token (a /SearchScrip for it, cached) - get_instruments searches the exchange's name, which
         # does not list every symbol.
         token = await self._token(symbol, exchange)

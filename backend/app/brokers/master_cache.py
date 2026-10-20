@@ -5,7 +5,11 @@ parsed again on every chart load and every watchlist poll - tens of MB for Angel
 its symbol map per process (LD-7, `dhan._SHARED_SYMBOLS`); this is the same idea for the others, keyed by
 (broker, key) - the key is usually an exchange.
 
-- **Shared per process**, kept for `ttl` seconds (MASTER_TTL_SECONDS by default), then built again on the next use.
+- **Shared per process**, kept for `ttl` seconds (MASTER_TTL_SECONDS by default), then built again on the next use. An
+  expired entry is removed when it is found, and every build sweeps the other expired ones, so nothing outlives its TTL
+  by more than the next use of the cache.
+- **`once`** shares only a build in flight and keeps nothing after it: for a large raw file (Angel One's tens-of-MB
+  scrip master) that only the derived per-exchange maps need.
 - **Single-flight**: one build per key at a time per event loop; the others wait for it and use its result.
 - **A failed build stores nothing** (the next use tries again) and raises to the caller, as a per-instance build did.
 - Only adapters built without an HTTP client of their own use it (the app's path), like Dhan's map; an adapter given a
@@ -21,15 +25,28 @@ T = TypeVar("T")
 MASTER_TTL_SECONDS = 6 * 60 * 60
 
 _ENTRIES: Dict[Tuple[str, str], Tuple[float, float, Any]] = {}          # key -> (built at, ttl, value)
+_IN_FLIGHT: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Dict[Tuple[str, str], asyncio.Future]]" = weakref.WeakKeyDictionary()
 _LOCKS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Dict[Tuple[str, str], asyncio.Lock]]" = weakref.WeakKeyDictionary()
 builds: Dict[Tuple[str, str], int] = {}                                    # key -> builds made (observability, tests)
 
 
 def _fresh(key: Tuple[str, str]) -> Optional[Tuple[Any]]:
     entry = _ENTRIES.get(key)
-    if entry is not None and (time.monotonic() - entry[0]) < entry[1]:
+    if entry is None:
+        return None
+    if (time.monotonic() - entry[0]) < entry[1]:
         return (entry[2],)
+    _ENTRIES.pop(key, None)                    # expired: gone now, not kept until the next build of the same key
     return None
+
+
+def sweep() -> int:
+    """Remove every expired entry; the number removed."""
+    now = time.monotonic()
+    expired = [k for k, (at, ttl, _) in list(_ENTRIES.items()) if (now - at) >= ttl]
+    for k in expired:
+        _ENTRIES.pop(k, None)
+    return len(expired)
 
 
 async def shared(broker: str, key: str, build: Callable[[], Awaitable[T]], ttl: float = MASTER_TTL_SECONDS) -> T:
@@ -49,10 +66,40 @@ async def shared(broker: str, key: str, build: Callable[[], Awaitable[T]], ttl: 
         hit = _fresh(k)
         if hit is not None:
             return hit[0]
+        sweep()
         value = await build()
         _ENTRIES[k] = (time.monotonic(), ttl, value)
         builds[k] = builds.get(k, 0) + 1
         return value
+
+
+async def once(broker: str, key: str, build: Callable[[], Awaitable[T]]) -> T:
+    """`build()` shared only while it runs: callers that arrive during the build await the same result; nothing is kept
+    afterwards (the next call builds again)."""
+    k = ((broker or "").lower(), str(key))
+    loop = asyncio.get_running_loop()
+    flights = _IN_FLIGHT.get(loop)
+    if flights is None:
+        flights = _IN_FLIGHT[loop] = {}
+    running = flights.get(k)
+    if running is not None:
+        return await asyncio.shield(running)
+    future: asyncio.Future = loop.create_future()
+    flights[k] = future
+    try:
+        value = await build()
+    except asyncio.CancelledError:
+        future.cancel()
+        raise
+    except BaseException as exc:
+        future.set_exception(exc)
+        future.exception()                     # retrieved here, so a build nobody else awaited logs no warning
+        raise
+    else:
+        future.set_result(value)
+        return value
+    finally:
+        flights.pop(k, None)
 
 
 def reset() -> None:

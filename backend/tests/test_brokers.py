@@ -539,8 +539,9 @@ def _shoonya_series(eod_rows, seen):
 
 def test_shoonya_day_reads_daily_bars_from_eodchart_stamped_at_the_ist_date():
     """UI2-4a2-pre: "day" used to fall back to 1-minute TPSeries bars. It now calls /EODChartData (NorenRestApiPy
-    get_daily_price_series; sym "EXCH:TSYM", from/to in epoch seconds covering the whole IST dates) and returns one bar per trading date at 00:00 IST, oldest first. Rows come
-    as JSON strings (the broker's form) or objects; `ssboe` alone still gives the right IST date."""
+    get_daily_price_series; sym "EXCH:TSYM" with Noren's trading symbol, from/to in epoch seconds covering the whole IST
+    dates) and returns one bar per trading date at 00:00 IST, oldest first. Rows come as JSON strings (the broker's
+    form) or objects; `ssboe` alone still gives the right IST date."""
     from datetime import datetime, timezone
     from zoneinfo import ZoneInfo
     ist = ZoneInfo("Asia/Kolkata")
@@ -556,10 +557,13 @@ def test_shoonya_day_reads_daily_bars_from_eodchart_stamped_at_the_ist_date():
     # The service's bounds: aware IST datetimes in the middle of the day (now - lookback .. now - 1 day).
     start = datetime(2022, 9, 21, 15, 0, tzinfo=ist)
     end = datetime(2022, 9, 23, 2, 0, tzinfo=timezone.utc)      # 07:30 IST on the 23rd
-    bars = run(broker.get_historical_data("RELIANCE-EQ", "NSE", "day", start, end))
+    # The platform's plain symbol: Noren names it RELIANCE-EQ, found by /SearchScrip (review: "NSE:RELIANCE" answers
+    # "no data" - an empty chart).
+    bars = run(broker.get_historical_data("RELIANCE", "NSE", "day", start, end))
 
     eod = [p for name, p in seen if name == "EODChartData"]
     assert len(eod) == 1 and not [n for n, _ in seen if n == "TPSeries"]
+    assert [p["stext"] for name, p in seen if name == "SearchScrip"] == ["RELIANCE"]
     assert eod[0]["sym"] == "NSE:RELIANCE-EQ" and eod[0]["uid"] == "FA12345"
     assert int(eod[0]["from"]) == int(datetime(2022, 9, 21, tzinfo=ist).timestamp())
     assert datetime.fromtimestamp(int(eod[0]["to"]), tz=ist).date().isoformat() == "2022-09-23"
@@ -607,3 +611,31 @@ def test_shoonya_book_calls_accept_the_json_list_they_answer_on_success():
     assert positions[0].quantity == 5 and positions[0].pnl == 47.5
     with pytest.raises(BrokerAPIError, match="no data"):
         run(broker.get_trade_book())
+
+
+def test_shoonya_symbol_lookup_takes_a_budget_token_and_is_made_once():
+    """UI2-4a2-pre review: /SearchScrip is a broker call - with a budget hook set it takes a token first; no token, no
+    call (BrokerBudgetUsed). The (token, trading symbol) answer is cached, so a second use asks neither."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from app.brokers.exceptions import BrokerBudgetUsed
+    ist = ZoneInfo("Asia/Kolkata")
+    seen = []
+    broker = _shoonya_series([], seen)
+    asked = []
+
+    async def refuse():
+        asked.append("no")
+        return False
+    broker.budget_hook = refuse
+    with pytest.raises(BrokerBudgetUsed):
+        run(broker._lookup("RELIANCE", "NSE"))
+    assert asked == ["no"] and seen == []
+
+    async def grant():
+        asked.append("yes")
+        return True
+    broker.budget_hook = grant
+    assert run(broker._lookup("reliance", "NSE")) == ("2885", "RELIANCE-EQ")
+    run(broker.get_historical_data("RELIANCE", "NSE", "day", datetime(2022, 9, 21, tzinfo=ist), datetime(2022, 9, 22, tzinfo=ist)))
+    assert asked == ["no", "yes"] and [n for n, _ in seen].count("SearchScrip") == 1

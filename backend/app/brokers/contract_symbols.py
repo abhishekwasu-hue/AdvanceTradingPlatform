@@ -297,6 +297,14 @@ class ContractSymbolBroker(BrokerInterface):
     def multi_quote(self) -> bool:  # type: ignore[override]
         return bool(getattr(self.inner, "multi_quote", False))
 
+    @property
+    def budget_hook(self):  # type: ignore[override]
+        return getattr(self.inner, "budget_hook", None)
+
+    @budget_hook.setter
+    def budget_hook(self, hook) -> None:
+        self.inner.budget_hook = hook
+
     async def get_quotes_batch(self, items):
         """UI2-4a2-pre: each symbol in the broker's spelling (one that does not translate is left out, so the others
         still load), the inner adapter's one call, the answer keyed by the pairs asked for."""

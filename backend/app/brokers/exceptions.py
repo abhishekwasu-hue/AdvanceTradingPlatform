@@ -15,6 +15,11 @@ class BrokerAPIError(BrokerError):
         self.raw = raw
 
 
+class BrokerBudgetUsed(BrokerAPIError):
+    """UI2-4a2-pre review: the caller's rate budget for broker calls (`BrokerInterface.budget_hook`) gave no token, so the
+    call was not made."""
+
+
 class BrokerOrderRejected(BrokerError):
     """The broker explicitly rejected an order (margin, risk check, invalid instrument, ...)."""
 

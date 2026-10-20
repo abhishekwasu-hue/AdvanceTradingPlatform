@@ -689,14 +689,21 @@ def test_two_adapter_instances_share_one_instrument_master_download():
                   {"token": "500325", "symbol": "RELIANCE", "name": "RELIANCE", "exch_seg": "BSE"}]
     angel_downloads = []
 
-    def angel_handler(request: httpx.Request) -> httpx.Response:
+    async def angel_handler(request: httpx.Request) -> httpx.Response:
         angel_downloads.append(str(request.url))
+        await asyncio.sleep(0.05)                                              # a download takes a moment
         return httpx.Response(200, content=json.dumps(angel_rows).encode())
-    first, second = _angel(angel_handler), _angel(angel_handler)
-    first._shared_master = second._shared_master = True
-    assert run(first._resolve("RELIANCE", "NSE")) == ("2885", "RELIANCE-EQ")
-    assert run(second._resolve("RELIANCE", "BSE")) == ("500325", "RELIANCE")   # another exchange: the raw rows reused
-    assert len(angel_downloads) == 1
+    first, second, third = _angel(angel_handler), _angel(angel_handler), _angel(angel_handler)
+    first._shared_master = second._shared_master = third._shared_master = True
+
+    async def two_exchanges_at_once():
+        return await asyncio.gather(first._resolve("RELIANCE", "NSE"), second._resolve("RELIANCE", "BSE"))
+    assert run(two_exchanges_at_once()) == [("2885", "RELIANCE-EQ"), ("500325", "RELIANCE")]
+    assert len(angel_downloads) == 1                                           # one download in flight, shared
+    assert run(third._resolve("RELIANCE", "NSE")) == ("2885", "RELIANCE-EQ") and len(angel_downloads) == 1
+    # Re-check finding 1: the raw scrip master is never kept after the build - only the per-exchange maps are.
+    assert ("angel_one", "*") not in master_cache._ENTRIES
+    assert {("angel_one", "NSE"), ("angel_one", "BSE")} <= set(master_cache._ENTRIES)
     # Built with a client of its own (a test, a tool), an adapter keeps its own copy, as Dhan's map does.
     assert _upstox(upstox_handler)._shared_master is False
     assert UpstoxBroker(BrokerCredentials(api_key="c", access_token="t"))._shared_master is True
@@ -714,3 +721,99 @@ def test_broker_timestamps_accept_epoch_digit_strings():
     assert parse_broker_timestamp("20260925") == datetime(2026, 9, 24, 18, 30, tzinfo=UTC)   # a compact date stays a date
     assert parse_broker_timestamp("99999999999999999999") is None             # out of range: unparseable, not an error
     assert parse_broker_timestamp("2026-09-25 10:29:58") == datetime(2026, 9, 25, 4, 59, 58, tzinfo=UTC)
+
+
+def test_expired_master_entries_are_removed_not_kept(monkeypatch):
+    """Re-check finding 1: an expired entry is gone once it is found expired, and every build sweeps the others."""
+    master_cache.reset()
+    clock = [1000.0]
+    monkeypatch.setattr(master_cache.time, "monotonic", lambda: clock[0])
+
+    async def build(value):
+        return value
+    assert run(master_cache.shared("x", "a", lambda: build("A"), ttl=10)) == "A"
+    assert run(master_cache.shared("x", "b", lambda: build("B"), ttl=100)) == "B"
+    clock[0] += 11                                                             # "a" expired, "b" not
+    assert set(master_cache._ENTRIES) == {("x", "a"), ("x", "b")}
+    assert run(master_cache.shared("x", "b", lambda: build("B2"), ttl=100)) == "B"   # a hit: nothing rebuilt
+    assert run(master_cache.shared("x", "a", lambda: build("A2"), ttl=10)) == "A2"   # found expired: removed, rebuilt
+    assert master_cache.builds[("x", "a")] == 2
+    clock[0] += 11                                                             # "a" expired again
+    assert run(master_cache.shared("x", "c", lambda: build("C"), ttl=10)) == "C"     # a build sweeps the expired "a"
+    assert ("x", "a") not in master_cache._ENTRIES and set(master_cache._ENTRIES) == {("x", "b"), ("x", "c")}
+    clock[0] += 200
+    assert master_cache.sweep() == 2 and master_cache._ENTRIES == {}
+    master_cache.reset()
+
+
+def test_once_shares_a_build_in_flight_and_keeps_nothing():
+    master_cache.reset()
+    builds = []
+
+    async def build():
+        builds.append(1)
+        await asyncio.sleep(0.05)
+        return [1, 2, 3]
+
+    async def together():
+        return await asyncio.gather(*(master_cache.once("x", "raw", build) for _ in range(3)))
+    assert run(together()) == [[1, 2, 3]] * 3 and len(builds) == 1
+    assert master_cache._ENTRIES == {}
+    run(master_cache.once("x", "raw", build))
+    assert len(builds) == 2                                                    # nothing kept: the next use builds again
+
+    async def failing():
+        raise RuntimeError("download failed")
+    with pytest.raises(RuntimeError):
+        run(master_cache.once("x", "raw", failing))
+    run(master_cache.once("x", "raw", build))                                 # a failure leaves nothing behind
+    assert len(builds) == 3
+
+
+def test_previous_closes_of_an_earlier_ist_day_are_dropped_on_write():
+    """Re-check finding 4: the in-process close cache holds one IST day; the first write of a new day drops the rest."""
+    from datetime import date
+    quotes_routes.reset()
+    day1, day2 = date(2026, 10, 19), date(2026, 10, 20)
+    run(quotes_routes._prev_close_put("upstox", ("NSE", "A"), day1, 100.0))
+    run(quotes_routes._prev_close_put("upstox", ("NSE", "B"), day1, 200.0))
+    assert len(quotes_routes._PREV_LOCAL) == 2
+    run(quotes_routes._prev_close_put("upstox", ("NSE", "A"), day2, 101.0))
+    assert list(quotes_routes._PREV_LOCAL) == [quotes_routes._prev_key("upstox", ("NSE", "A"), day2)]
+    assert run(quotes_routes._prev_close_get("upstox", ("NSE", "B"), day1)) is None
+    assert run(quotes_routes._prev_close_get("upstox", ("NSE", "A"), day2)) == 101.0
+
+
+def test_the_per_symbol_path_budgets_shoonyas_symbol_lookup(monkeypatch):
+    """Re-check finding 3: through the route, Shoonya's /SearchScrip takes a token like the quote call (two per symbol
+    the first time, one once the lookup is cached); with no token for it, the symbol says "budget used"."""
+    headers, me = _owner(_email("shoonya"))
+    _store_credentials(me, broker="shoonya")
+    calls = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path.rsplit("/", 1)[-1]
+        if path == "QuickAuth":
+            return httpx.Response(200, json={"stat": "Ok", "susertoken": "s", "actid": "FA1"})
+        payload = json.loads(parse_qs(request.content.decode())["jData"][0])
+        calls.append(path)
+        if path == "SearchScrip":
+            return httpx.Response(200, json={"stat": "Ok", "values": [{"exch": "NSE", "token": "1", "tsym": payload["stext"] + "-EQ"}]})
+        return httpx.Response(200, json={"stat": "Ok", "lp": "10.5", "c": "10", "lut": str(int(time.time()))})
+    broker = ShoonyaBroker(BrokerCredentials(client_id="FA1", api_secret="p", api_key="k", totp_secret="123456"),
+                           client=httpx.AsyncClient(transport=httpx.MockTransport(handler), base_url=ShoonyaBroker.BASE_URL))
+    run(broker.authenticate())
+    monkeypatch.setattr(quotes_routes, "build_adapter", lambda record: wrap_contract_symbols(broker))
+    taken = _count_tokens(monkeypatch)
+    a, b = _sym("A"), _sym("B")
+    body = _post(headers, [{"symbol": a}, {"symbol": b}]).json()
+    assert calls == ["SearchScrip", "GetQuotes", "SearchScrip", "GetQuotes"] and len(taken) == 4 and body["broker_calls"] == 4
+    assert [r["ltp"] for r in body["items"]] == [10.5, 10.5] and body["items"][0]["change"] == 0.5
+
+    calls.clear()
+    c = _sym("C")
+    _count_tokens(monkeypatch, grant=lambda n: n == 1)                         # one token: the quote of a (cached lookup)
+    api_budget.reset()
+    body = _post(headers, [{"symbol": a}, {"symbol": c}]).json()
+    assert calls == ["GetQuotes"] and body["items"][0]["ltp"] == 10.5
+    assert body["items"][1]["missing"] and body["items"][1]["budget_used"] is True

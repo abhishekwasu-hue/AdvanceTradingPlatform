@@ -73,7 +73,6 @@ INDEX_ALIASES = {"NIFTY": "Nifty 50", "BANKNIFTY": "Nifty Bank", "FINNIFTY": "Ni
                  "SENSEX": "SENSEX", "BANKEX": "BANKEX", "NIFTY 50": "Nifty 50", "NIFTY BANK": "Nifty Bank"}
 QUOTE_BATCH = 50
 INSTRUMENT_CACHE_TTL_SECONDS = 6 * 60 * 60
-RAW_MASTER_SHARE_SECONDS = 120          # the raw scrip master, shared only while exchanges are being built from it
 AUTH_ERROR_CODES = ("AG8001", "AG8002", "AG8003", "AB8050", "AB8051", "AB1010")
 # The stored secret becomes the current code in one shared place (Shoonya's factor2 uses the same helper).
 _totp_code = totp_code
@@ -130,8 +129,8 @@ class AngelOneBroker(BrokerInterface):
         # (exchange, platform symbol) -> (symboltoken, Angel trading symbol)
         self._symbol_map: Dict[Tuple[str, str], Tuple[str, str]] = {}
         # UI2-4a2-pre review: built without a client (the app's path, an adapter per request), each exchange's
-        # instruments and symbol map are shared by the process (master_cache); the tens-of-MB download itself is kept
-        # only RAW_MASTER_SHARE_SECONDS, long enough for a few exchanges built together to share it.
+        # instruments and symbol map are shared by the process (master_cache); the tens-of-MB download itself is shared
+        # only while it is in flight, never kept.
         self._shared_master = client is None
 
     # --- transport ------------------------------------------------------------------------------
@@ -198,12 +197,15 @@ class AngelOneBroker(BrokerInterface):
     async def _scrip_master(self) -> List[dict]:
         if self._master and (time.monotonic() - self._master[0]) < INSTRUMENT_CACHE_TTL_SECONDS:
             return self._master[1]
+        rows = await self._download_rows()
+        self._master = (time.monotonic(), rows)
+        return rows
+
+    async def _download_rows(self) -> List[dict]:
         response = await self._client.get(SCRIP_MASTER_URL)
         if response.status_code >= 400:
             raise BrokerAPIError("Failed to fetch the Angel One scrip master", response.status_code, response.text)
-        rows = json.loads(response.content)
-        self._master = (time.monotonic(), rows)
-        return rows
+        return json.loads(response.content)
 
     @staticmethod
     def _platform_symbol(row: dict) -> str:
@@ -229,7 +231,9 @@ class AngelOneBroker(BrokerInterface):
     async def _rows(self) -> List[dict]:
         if not self._shared_master:
             return await self._scrip_master()
-        return await master_cache.shared(self.name, "*", self._scrip_master, ttl=RAW_MASTER_SHARE_SECONDS)
+        # The raw master is shared only while a download is in flight (builds of several exchanges at once share it)
+        # and dropped after: only the derived per-exchange maps are kept (master_cache.shared in get_instruments).
+        return await master_cache.once(self.name, "*", self._download_rows)
 
     async def _build_exchange(self, exchange: str) -> Tuple[List[Instrument], Dict[Tuple[str, str], Tuple[str, str]]]:
         """One exchange's instruments and (exchange, platform symbol or name) -> (token, Angel trading symbol)."""

@@ -3,7 +3,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Awaitable, Callable, Dict, List, Optional, Sequence, Tuple
 
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
@@ -204,6 +204,9 @@ class BrokerInterface(ABC):
 
     # UI2-4a2-pre: True when `get_quotes_batch` is the broker's multi-quote call (one call for a whole watchlist).
     multi_quote: bool = False
+    # UI2-4a2-pre review: set by a caller that budgets broker calls - awaited before a lookup call the adapter makes on
+    # its own (Shoonya's /SearchScrip); False = no token, the adapter raises BrokerBudgetUsed. None = not budgeted.
+    budget_hook: Optional[Callable[[], Awaitable[bool]]] = None
 
     async def get_quotes_batch(self, items: Sequence[Tuple[str, str]]) -> Optional[Dict[Tuple[str, str], Quote]]:
         """UI2-4a2-pre: quotes for many (exchange, plain trading symbol) pairs in ONE broker call (the watchlist), keyed

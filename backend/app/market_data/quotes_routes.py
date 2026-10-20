@@ -40,6 +40,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.brokers.base import BrokerInterface
+from app.brokers.exceptions import BrokerBudgetUsed
 from app.brokers.models import Quote
 from app.brokers.timestamps import IST
 from app.brokers.token_lifecycle import build_adapter
@@ -167,7 +168,8 @@ def _ltp_body(record: BrokerCredentialRecord, row: dict, quote: Optional[Quote],
 
 
 # --- the previous close, per broker, symbol and IST trading day ----------------------------------------------------------
-_PREV_LOCAL: Dict[str, Tuple[float, float]] = {}       # key -> (expires at, close)
+_PREV_LOCAL: Dict[str, Tuple[float, float]] = {}       # key -> (expires at, close); keys of one IST day only
+_PREV_DAY: List[Optional[date]] = [None]                # the IST day _PREV_LOCAL holds
 
 
 def _prev_key(broker: str, pair: Pair, day: date) -> str:
@@ -193,6 +195,10 @@ async def _prev_close_get(broker: str, pair: Pair, day: date) -> Optional[float]
 async def _prev_close_put(broker: str, pair: Pair, day: date, close: float) -> None:
     from app.core.rate_limit import redis_backed
     key = _prev_key(broker, pair, day)
+    if _PREV_DAY[0] != day:
+        # A new IST day: yesterday's closes are of no use (the key carries the day) - dropped, not kept for good.
+        _PREV_LOCAL.clear()
+        _PREV_DAY[0] = day
     _PREV_LOCAL[key] = (time.monotonic() + PREV_CLOSE_SECONDS, close)
     if redis_backed():
         from app.cache.client import cache_set
@@ -202,6 +208,7 @@ async def _prev_close_put(broker: str, pair: Pair, day: date, close: float) -> N
 def reset() -> None:
     """Tests: forget the in-process previous closes."""
     _PREV_LOCAL.clear()
+    _PREV_DAY[0] = None
 
 
 # --- sources -------------------------------------------------------------------------------------------------------------
@@ -316,6 +323,15 @@ class _Fill:
         deadline = time.monotonic() + QUOTE_WAIT_SECONDS
         quote_call = _has_quote_call(self.adapter)
         calls = 0
+
+        async def lookup_token() -> bool:
+            # A lookup the adapter makes on its own (Shoonya's /SearchScrip, cached 6 h) is a broker call too.
+            if time.monotonic() >= deadline or not await api_budget.take(self.record.id, self.record.broker_name,
+                                                                         max(0.0, deadline - time.monotonic())):
+                return False
+            self.broker_calls += 1
+            return True
+        self.adapter.budget_hook = lookup_token
         for pair in self.unpriced(pairs):
             if calls >= PER_SYMBOL_MAX_CALLS or time.monotonic() >= deadline:
                 return
@@ -336,6 +352,8 @@ class _Fill:
                     quote = None
                     row = _priced(pair, await self.adapter.get_ltp_for_symbol(symbol, exchange), prev_close=None, timestamp=None,
                                   source="ltp", now=self.now, unknown_age_is_stale=self.byob)
+            except BrokerBudgetUsed:
+                return                                # its lookup got no token: this one and the rest are "budget used"
             except Exception as exc:  # noqa: BLE001 - one symbol's failure must not lose the others
                 logger.info("Quote failed for %s:%s via %s: %s", exchange, symbol, self.record.broker_name, exc)
                 self.reasons[pair] = f"{self.record.broker_name}: {type(exc).__name__}: {exc}"[:300]

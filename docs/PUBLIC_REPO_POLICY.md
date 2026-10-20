@@ -51,9 +51,9 @@ exercises the code.
 
 | Guard | When | What |
 |---|---|---|
-| `scripts/check_public_repo.py` | CI `lint` job on every push and pull request; pre-commit hook | Fails on the production server IP (matched by its sha256, dotted or with `-`, `_` or a space between the numbers), any other public IPv4 literal outside the documentation ranges and its explicit allow-list (a version after a known browser token such as `Chrome/` is not an address), e-mail addresses outside example / test domains and its explicit allow-list, Telegram bot tokens and long chat ids, private key headers, secret file types (keys, keystores, `*.ppk`, `keystore.properties`, `signing.properties`, `google-services.json`, `*service-account*.json`, `*credentials*.json`), `.env` files with values, `.npmrc` / `.pypirc` with a token or password, the KB / Method Pack / Chart Reader method by path (PR-1), new golden / parity / real-data fixture files, and any data or compressed file under `backend/tests/` or a `__fixtures__` folder that is not listed with its sha256 (so a listed file with new content fails too). Findings are printed redacted. Tests: `backend/tests/test_public_repo_check.py`. |
+| `scripts/check_public_repo.py` | CI `lint` job on every push and pull request; pre-commit hook | Fails on the production server IP (matched by its sha256, dotted or with `-`, `_`, `/`, `:` or a space between the numbers), any other public IPv4 literal outside the documentation ranges and its explicit allow-list (a version after a known browser token such as `Chrome/` is not an address), e-mail addresses outside example / test domains and its explicit allow-list, Telegram bot tokens and long chat ids, private key headers, secret file types (keys, keystores, `*.ppk`, `keystore.properties`, `signing.properties`, `google-services.json`, `*service-account*.json`, `*credentials*.json`), `.env` files with values, `.npmrc` / `.pypirc` with a token or password, the KB / Method Pack / Chart Reader method by name (PR-1; by name only - a renamed copy is caught only in review), new golden / parity / real-data fixture files, any data or compressed file under `backend/tests/`, `backend/evals/`, `frontend/test/`, `frontend/e2e/` or a `__fixtures__` folder, and any tabular or binary data file (csv, tsv, xlsx, parquet, feather, pkl, npy, npz, h5, arrow) anywhere, unless listed (section 5). Listed test data is pinned by sha256, so a listed file with new content fails too. Findings are printed redacted. Tests: `backend/tests/test_public_repo_check.py`. |
 | gitleaks, push range | CI `lint` job (`.github/workflows/ci.yml`) | Scans the commits of each push with `.gitleaks.toml`. |
-| gitleaks, full history | `.github/workflows/secret-scan.yml`: every push to any branch, weekly (Monday) and on demand | Scans every commit of every branch, tag and pull request head (`--log-opts=--all` after fetching `refs/pull/*`), then the checked-out tree (`gitleaks dir`); redacted. The release binary is pinned by version and sha256. |
+| gitleaks, full history | `.github/workflows/secret-scan.yml`: every push to any branch, weekly (Monday) and on demand | Job `gitleaks-full-history` (blocking): every commit of every branch and tag (`--log-opts=--all`), then the checked-out tree (`gitleaks dir`). Job `gitleaks-pull-request-refs` (report only): the pull request heads (`refs/pull/*`, which anyone can create from a fork and which never go away); a finding there is a warning and a job summary with counts and fingerprints, triaged as section 6 says. All redacted; the release binary is pinned by version and sha256. |
 | gitleaks, staged changes | pre-commit hook (`.pre-commit-config.yaml`, pinned to the same gitleaks release) | Stops a secret before the commit exists. Install: `pip install pre-commit && pre-commit install`. |
 
 **The IP hash is not secrecy.** A sha256 of an IPv4 address is reversible in seconds (there are only 2^32 addresses);
@@ -68,29 +68,49 @@ The allow-lists are explicit and narrow. `.gitleaks.toml` allows only exact fake
 saying where it is); `.gitleaksignore` lists the same known findings by exact fingerprint (commit, file, rule, line).
 Adding an entry is a reviewed change, and a real secret never gets one.
 
-## 5. Grandfathered fixtures (owner decision pending)
+## 5. Test data: grandfathered, allowed, and adding new
 
-These files were committed before the repository went public. `scripts/check_public_repo.py` lists them in
-`GRANDFATHERED_FIXTURES`, so they pass while every NEW file of the same kind fails. **Each is to move to private
-storage or be replaced with synthetic data - owner decision pending (open question PR-2).** The list only shrinks: when
-a file moves, its entry is removed (a test checks that every entry still exists). Each entry pins the file's sha256, so
-new content under a grandfathered name fails as well. The two other existing data files under the test folders
-(`backend/tests/fixtures/zones/chart_bands_cases.json` and its frontend copy, hand-made cases) are pinned the same way
-in `ALLOWED_TEST_DATA`; any new data file there needs a reviewed entry. Their own notes say the inputs are
-synthetic and seeded; the outputs still record Trade's or ATP's method results, so the owner decides.
+`scripts/check_public_repo.py` keeps three explicit lists:
 
-| Files | What they are (from their own notes) |
-|---|---|
-| `backend/tests/fixtures/daily_trend/golden.json.gz`, `backend/tests/fixtures/level_gate/golden.json.gz`, `backend/tests/fixtures/options_builder/golden.json.gz`, `backend/tests/fixtures/strike_breach/golden.json.gz` | Trade's own functions run on synthetic, seeded inputs (`make_golden.py` next to each). The strike-breach file carries Trade's frozen NIFTY coefficients. |
-| `backend/tests/fixtures/oi_regime/golden.json` | Trade's OI analysis results (`capture_from_trade.py`). |
-| `backend/tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz` | Trade's price-action output (CH3b parity). |
-| `backend/tests/fixtures/zones/golden_trade_eafc872.json.gz`, `backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz` | Trade's market-zones and level-memory output on the zones CSVs (see the folder's README). |
-| `backend/tests/fixtures/zones/bn_daily.csv`, `market_5m.csv`, `session_15m.csv`, `walk_1m.csv` (same folder) | Synthetic, seeded bars copied from Trade's test generators (the folder's README). |
-| `backend/tests/fixtures/z10a/structure_base_c5f6a2e.json.gz` | The market-structure baseline of the no-look-ahead harness. |
-| `backend/tests/fixtures/charts/pa_layer_golden.json`, `backend/tests/fixtures/charts/study_parity.json`, `frontend/src/charting/__fixtures__/pa_layer_golden.json`, `frontend/src/charting/__fixtures__/study_parity.json` | ATP's chart price-action layer and study cases (the frontend copies are byte-identical). |
-| `frontend/src/charting/__fixtures__/chart_types_golden.json.gz`, `frontend/src/utils/__fixtures__/indicator_parity.json` | Chart-type and indicator parity cases generated by the backend. |
-| `backend/tests/golden/c2_default_models.json` | Result hashes of the default models on crafted bars. |
-| `backend/tests/fixtures/universe/EQUITY_L.csv`, `SME_EQUITY_L.csv`, `eq_etfseclist.csv`, `fo_mktlots.csv`, `fo_secban.csv`, `ind_close_all_09102026.csv`, `ind_testindexlist.csv`, `symbolchange.csv`, `symbolchange_noheader.csv` (same folder) | Small made-up rows in NSE's file layouts, for the universe importer. |
+- **`GRANDFATHERED_FIXTURES`** - Trade's own outputs committed before the repository went public, each pinned by sha256.
+  **Each is to move to private storage or be replaced with synthetic data - owner decision pending (open question
+  PR-2).** They never change (a Trade re-sync writes to the private fixtures store) and the list only shrinks: when a
+  file moves, its entry is removed (a test checks that every entry still exists).
+- **`ALLOWED_TEST_DATA`** - synthetic or hand-made data (ATP's own goldens, seeded bars, made-up rows, eval sets,
+  e2e API replies), each pinned by sha256. A deliberate regeneration updates the hash in the same PR, after a check
+  that the file holds no real data.
+- **`ALLOWED_PUBLIC_DATA`** - public data rebuilt by automation, allowed by path only (it changes on every refresh):
+  `backend/app/instruments/data/nse_index_expiries.csv`, the NSE index expiry calendar rebuilt weekly from NSE's public
+  F&O bhavcopies by `.github/workflows/nse-expiries.yml`.
+
+Every input below is synthetic or seeded, per each file's own generator notes (checked 2026-10-20); none holds real
+market data. The grandfathered ones still record Trade's method results, so the owner decides.
+
+| List | Files | What they are (from their own notes) |
+|---|---|---|
+| grandfathered | `backend/tests/fixtures/oi_regime/golden.json` | Trade's OI analysis results on seeded inputs (`capture_from_trade.py`). |
+| grandfathered | `backend/tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz` | Trade's price-action output on the synthetic zones bars (CH3b parity, `tests/ch3b_golden.py`). |
+| grandfathered | `backend/tests/fixtures/zones/golden_trade_eafc872.json.gz`, `backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz` | Trade's market-zones and level-memory output on the synthetic zones bars (see the folder's README). |
+| allowed | `backend/tests/fixtures/daily_trend/golden.json.gz`, `backend/tests/fixtures/level_gate/golden.json.gz`, `backend/tests/fixtures/options_builder/golden.json.gz`, `backend/tests/fixtures/strike_breach/golden.json.gz` | Trade's own functions run on synthetic, seeded inputs (`make_golden.py` next to each). The strike-breach file carries the frozen NIFTY coefficients (PR-6). |
+| allowed | `backend/tests/fixtures/charts/pa_layer_golden.json`, `backend/tests/fixtures/charts/study_parity.json`, `frontend/src/charting/__fixtures__/pa_layer_golden.json`, `frontend/src/charting/__fixtures__/study_parity.json` | ATP's chart price-action layer and study cases on the synthetic 15m bars (the frontend copies are byte-identical). |
+| allowed | `frontend/src/charting/__fixtures__/chart_types_golden.json.gz`, `frontend/src/utils/__fixtures__/indicator_parity.json` | Chart-type and indicator parity cases on generated bars. |
+| allowed | `backend/tests/golden/c2_default_models.json`, `backend/tests/fixtures/z10a/structure_base_c5f6a2e.json.gz` | Model result hashes on crafted bars; the market-structure baseline on synthetic bars. |
+| allowed | `backend/tests/fixtures/zones/bn_daily.csv`, `market_5m.csv`, `session_15m.csv`, `walk_1m.csv`, `chart_bands_cases.json` (same folder) and `frontend/src/charting/__fixtures__/chart_bands_cases.json` | Synthetic, seeded bars (`build_fixtures.py`) and hand-made chart band cases. |
+| allowed | `backend/tests/fixtures/universe/*.csv` (9 files) | Small made-up rows in NSE's file layouts, for the universe importer. |
+| allowed | `backend/evals/baselines.json`, `backend/evals/sets/*.jsonl`, `frontend/e2e/fixtures/*.json` | Eval sets and baselines; hand-written API replies for the Playwright tests. |
+
+### Adding synthetic test data
+
+1. Make sure it is synthetic or hand-made: generated bars with a fixed seed, made-up rows, never an export of real
+   market data, a broker, Abhi's account or Trade's private data. Real data goes to the private fixtures store
+   (section 3).
+2. Run the guard. Its finding for the new file says that synthetic data is fine and prints the exact line to add, for
+   example `"backend/tests/fixtures/x/cases.json": "<sha256>",`. The same line comes from
+   `python3 scripts/check_public_repo.py --hash <path>`.
+3. Add the line to `ALLOWED_TEST_DATA` in `scripts/check_public_repo.py`, in the same PR, with a short comment on
+   what the data is. After a deliberate regeneration of a listed file, replace its line the same way (each
+   regeneration site names the command).
+4. A reviewer checks the data is synthetic before approving.
 
 **Frozen model coefficients fitted on real data:** `backend/app/options_builder/strike_breach.py` (the `COEF` table,
 about lines 46-55) holds Trade's strike-breach logistic coefficients, fitted on NIFTY daily data 2015-2021 and
@@ -112,6 +132,12 @@ unknown (open question AMW-L1). It is now public as well; whether it is removed 
    invalidates every clone and fork, and does not remove copies others already made. Nobody rewrites history or
    force-pushes without the owner's explicit decision (open question PR-4).
 4. **Record it** in `docs/OPEN_QUESTIONS.md` (what slipped, when, what was rotated), without repeating the value.
+
+**A finding in a pull request head** (the report-only job `gitleaks-pull-request-refs` of `secret-scan.yml`, whose job
+summary lists fingerprints only): look at the commit. If the value is **ours** (one of ATP's or Abhi's credentials),
+rotate it first, as above. If it is **not ours** (a third party's string in a fork's pull request, a fake value),
+add its exact fingerprint to `.gitleaksignore` with a comment saying what it is and which pull request it came from.
+A pull request head cannot be deleted from GitHub by us, which is why that job reports instead of failing.
 
 ## 7. Commit metadata
 

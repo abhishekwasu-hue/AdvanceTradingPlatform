@@ -2,6 +2,8 @@
 
     git -C /path/to/trade archive <rev> | tar -x -C /tmp/trade_export        # a read-only export, never the repo itself
     python make_golden.py /tmp/trade_export <the full 40-character SHA of rev> golden.json.gz
+    # Then pin the new content (public repo guard, ALLOWED_TEST_DATA in scripts/check_public_repo.py):
+    python3 ../../../../scripts/check_public_repo.py --hash golden.json.gz
 
 Inputs are synthetic and seeded (no market data): Daily series built from nested trend / correction legs with noise, so
 the fold meets starts, impulses, corrections (candidate and A1), origin breaks, flips, ranges, sharp zones and wave A.

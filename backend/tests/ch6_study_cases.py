@@ -4,6 +4,8 @@ own study math (frontend/src/charting/studyMath.ts) to match. tests/fixtures/cha
 frontend/src/charting/__fixtures__/study_parity.json is a byte-identical copy (the frontend build sees only frontend/).
 Regenerate both - only after a deliberate change to the runtime's indicators - from backend/:
     python -m tests.ch6_study_cases --write
+    # Then pin the new content (public repo guard, ALLOWED_TEST_DATA in scripts/check_public_repo.py):
+    python3 ../scripts/check_public_repo.py --hash tests/fixtures/charts/study_parity.json ../frontend/src/charting/__fixtures__/study_parity.json
 """
 import json
 import sys

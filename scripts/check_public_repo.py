@@ -4,8 +4,8 @@
 The repository is public, so everything committed is public. This check reads every tracked and new (not ignored) file
 and fails on:
 
-  - the production server's IP address, matched by its sha256 in dotted form and in dashed / underscored / spaced
-    forms ("ip-a-b-c-d"), so the literal is not written here (a sha256 of an IPv4 address is reversible in seconds:
+  - the production server's IP address, matched by its sha256 in dotted form and with - _ / : or a space between the
+    numbers ("ip-a-b-c-d"), so the literal is not written here (a sha256 of an IPv4 address is reversible in seconds:
     this only keeps the literal out of the tree, it hides nothing);
   - any other public IPv4 literal, outside the documentation ranges (192.0.2.0/24, 198.51.100.0/24, 203.0.113.0/24)
     and the explicit ALLOWED_IPS below (well-known addresses the tests use); private, loopback and other non-global
@@ -20,19 +20,23 @@ and fails on:
     an .env file holding values (.env.example / .sample / .template are allowed); an .npmrc / .pypirc holding a token
     or password (a ${VARIABLE} reference is allowed);
   - the KB / Method Pack / Chart Reader method, by path: docs/knowledge/, *method_pack*, KNOWLEDGE_BASE*,
-    *METHOD_NOTES*, CHART_READER_METHOD* (any case; open question PR-1);
+    *METHOD_NOTES*, CHART_READER_METHOD* (any case, "Method Pack" too; open question PR-1). By name only: a renamed
+    copy is caught only in review;
   - a golden / parity fixture or a real-data file (a data file whose path says golden or parity; a CSV, spreadsheet,
     compressed or image file under a fixtures folder; a trade journal, tradebook, contract note or chart export), and
-    any data or compressed file under backend/tests/ or a __fixtures__ folder, that is not in GRANDFATHERED_FIXTURES or
-    ALLOWED_TEST_DATA. Both lists pin each file's sha256, so replacing the content of a listed file fails too. The
-    grandfathered files are pending a move to private storage or a synthetic replacement (owner decision,
-    docs/OPEN_QUESTIONS.md PR-2); that list never grows.
+    any data or compressed file under backend/tests/, backend/evals/, frontend/test/, frontend/e2e/ or a __fixtures__
+    folder, and any tabular or binary data file (csv, tsv, xlsx, parquet, feather, pkl, npy, npz, h5, arrow) anywhere,
+    that is not listed. GRANDFATHERED_FIXTURES (Trade's own outputs, pending the owner's decision PR-2; it never grows)
+    and ALLOWED_TEST_DATA (synthetic or hand-made data) pin each file's sha256, so new content in a listed file fails
+    too; ALLOWED_PUBLIC_DATA allows public data rebuilt by automation by path. A synthetic file is pinned with the line
+    `--hash` prints (the finding prints it as well).
 
 Every list here is explicit and narrow; adding an entry is a reviewed change. Findings are printed without the
 secret-like value (redacted), because the CI log of a public repository is public too.
 
     python3 scripts/check_public_repo.py            # from anywhere; exit 0 = clean, 1 = findings
     python3 scripts/check_public_repo.py --root DIR # check another tree (the tests use this)
+    python3 scripts/check_public_repo.py --hash PATH [PATH ...]   # the ALLOWED_TEST_DATA line that pins each file
 
 Files: the tracked and the new (not ignored) files when the root is a git work tree, else every file under the root.
 Known binary types are checked by path only; a file over 8 MB is checked by path only, with a notice.
@@ -93,77 +97,85 @@ ALLOWED_EMAILS: Dict[str, str] = {
 # only skips these; every other rule still applies.
 EMAIL_EXEMPT_FILES: FrozenSet[str] = frozenset({"frontend/package-lock.json"})
 
-# Existing golden / parity / real-data fixture files, each pinned by the sha256 of its content (CRLF read as LF).
-# Grandfathered only until the owner decides (docs/OPEN_QUESTIONS.md PR-2: move to a private store that CI reads with a
-# secret, or regenerate from synthetic data). This list only shrinks, and a listed file's content never changes.
+# Grandfathered: golden fixtures that are Trade's own outputs, each pinned by the sha256 of its content (CRLF read as
+# LF). They stay only until the owner decides (docs/OPEN_QUESTIONS.md PR-2: move to a private store that CI reads with a
+# secret, or regenerate from synthetic data). A Trade re-sync writes to the private store (docs/design/TRADE_TAKEOVER.md
+# section 3), so these never change; the list only shrinks.
 GRANDFATHERED_FIXTURES: Dict[str, str] = {
-    "backend/tests/fixtures/charts/pa_layer_golden.json":
-        "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
-    "backend/tests/fixtures/charts/study_parity.json":
-        "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",
-    "backend/tests/fixtures/daily_trend/golden.json.gz":
-        "87fa3fb6e6c094db5c1e281771857963ab746e1308f662404797073b10ae19f2",
-    "backend/tests/fixtures/level_gate/golden.json.gz":
-        "459d69bc0e0fbc6c1c9a7f83526645b06a6dca6ae4fc92e844f109dd6e75f07d",
-    "backend/tests/fixtures/oi_regime/golden.json":
-        "497a1c2d89806e372cb9ea8e0aa9c41aabbce1dc840480b908276bca59cfd38a",
-    "backend/tests/fixtures/options_builder/golden.json.gz":
-        "50123884799210b9488aecd90ca1770edb9274f4aa9e461b741c6a8b3c16b72d",
-    "backend/tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz":
-        "99a4c37576bdb0f5b9e7440079b489772cc90deba94e09c46a17f4b57fc687e5",
-    "backend/tests/fixtures/strike_breach/golden.json.gz":
-        "1bc64569fa0e9d93d24e205339698b21014cb614b2b5b15b3f492964bd2f72e2",
-    "backend/tests/fixtures/universe/EQUITY_L.csv":
-        "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
-    "backend/tests/fixtures/universe/SME_EQUITY_L.csv":
-        "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",
-    "backend/tests/fixtures/universe/eq_etfseclist.csv":
-        "c6303d9f5bfb829376c315ff264219568c33104120cad2a697df04b18f801b48",
-    "backend/tests/fixtures/universe/fo_mktlots.csv":
-        "4c557f37797f1b105478ad38eac5cb6ce3e36be38d3e04d6f75542f0a237acbb",
-    "backend/tests/fixtures/universe/fo_secban.csv":
-        "63089b8fa563cac692080edefd8be8288c69a810c149b7b139b83406f9a6a1ad",
-    "backend/tests/fixtures/universe/ind_close_all_09102026.csv":
-        "d2128ebbe5ef12c6dc22928c11107f94461aea93b90acd98d62ccabbca092a39",
-    "backend/tests/fixtures/universe/ind_testindexlist.csv":
-        "544401c201de5479761f00ecc1ddc0e5605aeada400ee74db1db56ace85a9ee3",
-    "backend/tests/fixtures/universe/symbolchange.csv":
-        "625b27594c67da488945466f9d9ae4b96847b3fb69316ef04ce565a56dd00a5c",
-    "backend/tests/fixtures/universe/symbolchange_noheader.csv":
-        "5a9f35b030909aa202976eb08e24fcf3d488a37e1629d03768d68fee9ecb6c39",
-    "backend/tests/fixtures/z10a/structure_base_c5f6a2e.json.gz":
-        "2c5cad35f7a0b3447ff4327eeec6924b3583053cf74f099df70c6ab4e1d635de",
-    "backend/tests/fixtures/zones/bn_daily.csv":
-        "c0c34ac840bb0fb8e61aabcf0d191edb1c074c4a5c6ab1366cb60a0204599ec2",
-    "backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz":
-        "4de210c7aa0e51ad2b80acd209315f370ddc29a0a1eccd4ec6d877256be9d992",
-    "backend/tests/fixtures/zones/golden_trade_eafc872.json.gz":
-        "17c5f29440fe9bbe0f474c91c247718dd9bc765a711790de89ea32cc74da3c8e",
-    "backend/tests/fixtures/zones/market_5m.csv":
-        "7420b55dfac3550831281ad6689e513fcfd3c1c673c4b38a8b2fbb749ec4f370",
-    "backend/tests/fixtures/zones/session_15m.csv":
-        "03ade33bd2f57085ac25474e723a6892e0bccb623111f689d72a6864d0ae0c43",
-    "backend/tests/fixtures/zones/walk_1m.csv":
-        "9d0fa549c0df43a2e8b1dfe087e74e533bfe968de718accd0f003c100695719a",
-    "backend/tests/golden/c2_default_models.json":
-        "cf7840286077656ce099682a5c52adb0f6bb5a53658963f84efcc9fab27c6d79",
-    "frontend/src/charting/__fixtures__/chart_types_golden.json.gz":
-        "6be053c5f27e263e435f0a7a1ef9e74dc73e11b178597ea9fcedc21d2ec49ceb",
-    "frontend/src/charting/__fixtures__/pa_layer_golden.json":
-        "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
-    "frontend/src/charting/__fixtures__/study_parity.json":
-        "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",
-    "frontend/src/utils/__fixtures__/indicator_parity.json":
-        "670d39f2624d4b16062fb4cd9d7d0775e10701a76b32f7784ae1892b8e0496a2",
+    # Trade's own outputs captured with a Trade checkout at a pinned commit (synthetic, seeded inputs)
+    "backend/tests/fixtures/oi_regime/golden.json": "497a1c2d89806e372cb9ea8e0aa9c41aabbce1dc840480b908276bca59cfd38a",
+    "backend/tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz": "99a4c37576bdb0f5b9e7440079b489772cc90deba94e09c46a17f4b57fc687e5",
+    "backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz": "4de210c7aa0e51ad2b80acd209315f370ddc29a0a1eccd4ec6d877256be9d992",
+    "backend/tests/fixtures/zones/golden_trade_eafc872.json.gz": "17c5f29440fe9bbe0f474c91c247718dd9bc765a711790de89ea32cc74da3c8e",
 }
 
-# Other existing data files under backend/tests/ and __fixtures__ folders: synthetic, hand-made cases. Pinned by sha256
-# like the grandfathered ones, so a changed or new data file there is a reviewed change (update the hash here).
+# Allowed: synthetic or hand-made data files (tests, fixtures, evals, e2e replies), each pinned by sha256 like the
+# grandfathered ones. A deliberate regeneration updates the hash in the same PR, after checking the file holds no real
+# data: `python3 scripts/check_public_repo.py --hash <path>` prints the line to put here (docs/PUBLIC_REPO_POLICY.md 5).
 ALLOWED_TEST_DATA: Dict[str, str] = {
-    "backend/tests/fixtures/zones/chart_bands_cases.json":
-        "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
-    "frontend/src/charting/__fixtures__/chart_bands_cases.json":
-        "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
+    # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
+    "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
+    "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",
+    "frontend/src/charting/__fixtures__/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
+    "frontend/src/charting/__fixtures__/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",
+    "frontend/src/charting/__fixtures__/chart_types_golden.json.gz": "6be053c5f27e263e435f0a7a1ef9e74dc73e11b178597ea9fcedc21d2ec49ceb",
+    "frontend/src/utils/__fixtures__/indicator_parity.json": "670d39f2624d4b16062fb4cd9d7d0775e10701a76b32f7784ae1892b8e0496a2",
+    "backend/tests/golden/c2_default_models.json": "cf7840286077656ce099682a5c52adb0f6bb5a53658963f84efcc9fab27c6d79",
+    "backend/tests/fixtures/z10a/structure_base_c5f6a2e.json.gz": "2c5cad35f7a0b3447ff4327eeec6924b3583053cf74f099df70c6ab4e1d635de",
+    # make_golden.py fixtures: Trade's functions run on synthetic, seeded inputs (make_golden.py next to each)
+    "backend/tests/fixtures/daily_trend/golden.json.gz": "87fa3fb6e6c094db5c1e281771857963ab746e1308f662404797073b10ae19f2",
+    "backend/tests/fixtures/level_gate/golden.json.gz": "459d69bc0e0fbc6c1c9a7f83526645b06a6dca6ae4fc92e844f109dd6e75f07d",
+    "backend/tests/fixtures/options_builder/golden.json.gz": "50123884799210b9488aecd90ca1770edb9274f4aa9e461b741c6a8b3c16b72d",
+    "backend/tests/fixtures/strike_breach/golden.json.gz": "1bc64569fa0e9d93d24e205339698b21014cb614b2b5b15b3f492964bd2f72e2",
+    # synthetic, seeded bars (tests/fixtures/zones/build_fixtures.py) and the hand-made chart band cases
+    "backend/tests/fixtures/zones/bn_daily.csv": "c0c34ac840bb0fb8e61aabcf0d191edb1c074c4a5c6ab1366cb60a0204599ec2",
+    "backend/tests/fixtures/zones/market_5m.csv": "7420b55dfac3550831281ad6689e513fcfd3c1c673c4b38a8b2fbb749ec4f370",
+    "backend/tests/fixtures/zones/session_15m.csv": "03ade33bd2f57085ac25474e723a6892e0bccb623111f689d72a6864d0ae0c43",
+    "backend/tests/fixtures/zones/walk_1m.csv": "9d0fa549c0df43a2e8b1dfe087e74e533bfe968de718accd0f003c100695719a",
+    "backend/tests/fixtures/zones/chart_bands_cases.json": "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
+    "frontend/src/charting/__fixtures__/chart_bands_cases.json": "66a90beb9b4e75201b937005f46ad53e81494bdc19b5520458b25958eb7c3436",
+    # made-up rows in NSE's file layouts (the universe importer's tests)
+    "backend/tests/fixtures/universe/EQUITY_L.csv": "c614720d7952f79158ca3470a71b2ef56d653bf83b07646901e1d387a1cc6113",
+    "backend/tests/fixtures/universe/SME_EQUITY_L.csv": "8c2c511250ed3789508566e9bd633845f1bf8caad2e0b406a947910f87d50b19",
+    "backend/tests/fixtures/universe/eq_etfseclist.csv": "c6303d9f5bfb829376c315ff264219568c33104120cad2a697df04b18f801b48",
+    "backend/tests/fixtures/universe/fo_mktlots.csv": "4c557f37797f1b105478ad38eac5cb6ce3e36be38d3e04d6f75542f0a237acbb",
+    "backend/tests/fixtures/universe/fo_secban.csv": "63089b8fa563cac692080edefd8be8288c69a810c149b7b139b83406f9a6a1ad",
+    "backend/tests/fixtures/universe/ind_close_all_09102026.csv": "d2128ebbe5ef12c6dc22928c11107f94461aea93b90acd98d62ccabbca092a39",
+    "backend/tests/fixtures/universe/ind_testindexlist.csv": "544401c201de5479761f00ecc1ddc0e5605aeada400ee74db1db56ace85a9ee3",
+    "backend/tests/fixtures/universe/symbolchange.csv": "625b27594c67da488945466f9d9ae4b96847b3fb69316ef04ce565a56dd00a5c",
+    "backend/tests/fixtures/universe/symbolchange_noheader.csv": "5a9f35b030909aa202976eb08e24fcf3d488a37e1629d03768d68fee9ecb6c39",
+    # the AI eval sets and their baselines (backend/evals/runner.py)
+    "backend/evals/baselines.json": "73ca7f7ea5476ac64ce41055b9cc454dcc5c756792becdc22e2f348f1fe27411",
+    "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
+    "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
+    "backend/evals/sets/tool_args.jsonl": "becccbea044cd67e582bde3593bb500bccac3ba1132d1cd2ab38edc60818befa",
+    # hand-written API replies for the Playwright tests
+    "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
+    "frontend/e2e/fixtures/actions.json": "49e8cbfacbd96f95bc73a90691ae343bd487140c7ba30b5954031a1a2d96e547",
+    "frontend/e2e/fixtures/actions_proposed.json": "7ab4b210c637af15cc426efabca6f83fb94a5ff0b86879d1dd539019d99f91c9",
+    "frontend/e2e/fixtures/brief.json": "f0791d9852a6412195c3735959059e32f526477c8b78746e176504b443324aa9",
+    "frontend/e2e/fixtures/coach.json": "27695969bdfbc8781b68e088fcc86315926ab34a4e9e68350e05a3e1a04bd814",
+    "frontend/e2e/fixtures/copilot_reply.json": "9d0013cced7fe29e99d3c2c25e231d96bee15cbd4960f169194abc1247d77bcd",
+    "frontend/e2e/fixtures/drafts.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "frontend/e2e/fixtures/interview_plan.json": "3b582f587c25dfe0f99ab25fafb34f77d458e1910cbaba5747c964997fbdb42c",
+    "frontend/e2e/fixtures/interview_start.json": "b702f8734442fd26183eb52ae508de6e55edfc0df57ee406c75776cc1ecc4453",
+    "frontend/e2e/fixtures/me.json": "40267b747ce992144d3a64dab5a8800a4ba51db1451284e13f03af88cb56d7cf",
+    "frontend/e2e/fixtures/memory.json": "7c3eb9866eef9c03efa6d3c3b489c3f988c52244a95a51e60618da5564ae54fa",
+    "frontend/e2e/fixtures/news_items.json": "81d5a6eb8342a64eb397baac6de4f1378c54707f78e57380e5f87b28b3d9f7ee",
+    "frontend/e2e/fixtures/news_status.json": "be5ac693f289f43bc2bfeb790c22a9390a985a0715f8193670de81c64245e7bd",
+    "frontend/e2e/fixtures/notifications.json": "be5ded0116ca5c0f8f71caa2170c75eba590783ad737fdd99d14db74c4af4faa",
+    "frontend/e2e/fixtures/options_builder.json": "bf6df3ea9f5caddb5e3acc1d2f8360875a3cd72550f194156b21266fd550e1f0",
+    "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
+    "frontend/e2e/fixtures/system_status.json": "1e6eb9fa4f6aadbabc6128522a423a6697471cb4f71dd6c548c0b4bbe788bb91",
+    "frontend/e2e/fixtures/thesis.json": "fafc2234d7b94bb57a0a860e95d3d3cf8052796ef9d9011db2d12cf486b3bac7",
+    "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
+    "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
+}
+
+# Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.
+ALLOWED_PUBLIC_DATA: Dict[str, str] = {
+    "backend/app/instruments/data/nse_index_expiries.csv":
+        "NSE index expiry calendar, rebuilt weekly from NSE's public F&O bhavcopies by .github/workflows/nse-expiries.yml",
 }
 
 _SKIP_DIRS = {".git", "node_modules", "__pycache__", ".venv", "venv", "dist", "build", "coverage", ".pytest_cache",
@@ -180,8 +192,8 @@ _IPV4 = re.compile(r"(?<![\d.])(?:\d{1,3}\.){3}\d{1,3}(?![\d]|\.\d)")
 # A version after a known browser token ("Chrome/120.0.0.0" in a user agent) is not an address; any other "x/1.2.3.4" is.
 _BROWSER_VERSION = re.compile(r"(?<![A-Za-z])(?:Mozilla|AppleWebKit|Gecko|Chrome|Chromium|HeadlessChrome|CriOS|Firefox|FxiOS"
                               r"|Safari|Version|Edg|EdgA|EdgiOS|Edge|OPR|Opera|Trident|MSIE|SamsungBrowser|YaBrowser|Mobile)/$")
-# Four numbers joined by one of . - _ or a space ("ip-a-b-c-d", "a_b_c_d"): checked against the production hash only.
-_IP_ANY_SEPARATOR = re.compile(r"(?<!\d)(?=(\d{1,3})[-_. ](\d{1,3})[-_. ](\d{1,3})[-_. ](\d{1,3})(?!\d))")
+# Four numbers joined by one of . - _ / : or a space ("ip-a-b-c-d", "a_b_c_d"): checked against the production hash only.
+_IP_ANY_SEPARATOR = re.compile(r"(?<!\d)(?=(\d{1,3})[-_. /:](\d{1,3})[-_. /:](\d{1,3})[-_. /:](\d{1,3})(?!\d))")
 _EMAIL = re.compile(r"(?<![A-Za-z0-9._%+])[A-Za-z0-9_][A-Za-z0-9._%+-]*@[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}(?![A-Za-z0-9-])")
 _TELEGRAM_TOKEN = re.compile(r"(?<![\d])\d{8,10}:[A-Za-z0-9_-]{35}(?![A-Za-z0-9_-])")
 _CHAT_ID = re.compile(r"(?i)(?:chat_?id|telegram_?(?:user_?|chat_?)?id)[\"']?\s*[:=]\s*[\"']?-?\d{7,}")
@@ -197,8 +209,8 @@ _SECRET_JSON = re.compile(r"(?:service[_-]?account|credentials).*\.json$", re.IG
 _NPMRC_TOKEN = re.compile(r"(?:_authToken|_auth|_password)\s*=\s*(?!\$\{)\S")
 _PYPIRC_TOKEN = re.compile(r"^\s*password\s*[=:]\s*(?!\$\{|%\()\S", re.IGNORECASE)
 # The KB, the Method Pack and the Chart Reader method stay out of this public repository (open question PR-1).
-_METHOD_PATH = re.compile(r"(?:^|/)docs/knowledge/|method[_-]?pack|(?:^|/)knowledge[_-]?base[^/]*$|method[_-]?notes"
-                          r"|(?:^|/)chart[_-]?reader[_-]?method[^/]*$", re.IGNORECASE)
+_METHOD_PATH = re.compile(r"(?:^|/)docs/knowledge/|method[ _-]?pack|(?:^|/)knowledge[ _-]?base[^/]*$|method[ _-]?notes"
+                          r"|(?:^|/)chart[ _-]?reader[ _-]?method[^/]*$", re.IGNORECASE)
 _ENV_TEMPLATES = (".example", ".sample", ".template")
 _ENV_VALUE = re.compile(r"^\s*(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*\s*=\s*(?P<v>.*)$")
 _COMPRESSED = (".gz", ".zip", ".bz2", ".xz", ".7z", ".tgz")
@@ -207,8 +219,10 @@ _TABULAR_EXT = frozenset({".csv", ".tsv", ".parquet", ".xlsx", ".xls", ".feather
 _IMAGE_EXT = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf"})
 _FIXTURE_DIR = re.compile(r"(?:^|/)(?:fixtures|__fixtures__)/")
 # Any data or compressed file here must be listed (GRANDFATHERED_FIXTURES or ALLOWED_TEST_DATA).
-_TEST_DATA_DIR = re.compile(r"^backend/tests/|(?:^|/)__fixtures__/")
+_TEST_DATA_DIR = re.compile(r"^(?:backend/tests|backend/evals|frontend/test|frontend/e2e)/|(?:^|/)__fixtures__/")
 _TEST_DATA_EXT = _DATA_EXT | frozenset({".arrow", ".h5", ".db", ".sqlite"})
+# Tabular and binary data files: listed wherever they are (ALLOWED_TEST_DATA, ALLOWED_PUBLIC_DATA or grandfathered).
+_ANYWHERE_DATA_EXT = frozenset({".csv", ".tsv", ".xlsx", ".xls", ".parquet", ".feather", ".pkl", ".npy", ".npz", ".h5", ".arrow"})
 _GOLDEN = re.compile(r"golden|parity", re.IGNORECASE)
 _REAL_DATA_NAME = re.compile(r"journal|trade_?book|trade_?log|trade_?history|contract_?note|p_?n_?l_?report|chart_?export"
                              r"|tradingview|ledger", re.IGNORECASE)
@@ -283,9 +297,21 @@ def _redact_email(address: str) -> str:
     return f"{local[:1]}***@{domain}"
 
 
-def path_problems(rel: str) -> List[str]:
-    """Findings from the file's path alone (secret file types, the KB / method, fixtures / real-data files). A listed
-    fixture passes here; its content is checked against its pinned sha256 by `listed_data_problems`."""
+def allow_line(rel: str, data: bytes) -> str:
+    """The ALLOWED_TEST_DATA line that pins this content."""
+    return f'"{rel}": "{content_sha256(data)}",'
+
+
+def _pin_hint(rel: str, data: Optional[bytes]) -> str:
+    if data is None:
+        return f"run python3 scripts/check_public_repo.py --hash {rel}"
+    return f"add this line to ALLOWED_TEST_DATA in scripts/check_public_repo.py: {allow_line(rel, data)}"
+
+
+def path_problems(rel: str, data: Optional[bytes] = None) -> List[str]:
+    """Findings from the file's path (secret file types, the KB / method, fixtures / real-data files). A listed file
+    passes here; its content is checked against its pinned sha256 by `listed_data_problems`. With the file's bytes, a
+    data-file finding also prints the line that would pin it."""
     problems: List[str] = []
     name = PurePosixPath(rel).name.lower()
     data_ext, outer = _suffixes(rel)
@@ -294,12 +320,14 @@ def path_problems(rel: str) -> List[str]:
     if _METHOD_PATH.search(rel):
         problems.append(f"{rel}: the KB / Method Pack / Chart Reader method - not in this public repository "
                         f"(docs/OPEN_QUESTIONS.md PR-1)")
-    if rel in GRANDFATHERED_FIXTURES or rel in ALLOWED_TEST_DATA:
+    if rel in GRANDFATHERED_FIXTURES or rel in ALLOWED_TEST_DATA or rel in ALLOWED_PUBLIC_DATA:
         return problems
     is_data = data_ext in _DATA_EXT or outer in _COMPRESSED
     reason = None
     if _TEST_DATA_DIR.search(rel) and (data_ext in _TEST_DATA_EXT or outer in _COMPRESSED):
-        reason = "a new data file in the tests (not in ALLOWED_TEST_DATA)"
+        reason = "a new data file in the tests, fixtures or evals (not in ALLOWED_TEST_DATA)"
+    elif data_ext in _ANYWHERE_DATA_EXT or outer in _ANYWHERE_DATA_EXT:
+        reason = "a tabular or binary data file (not listed)"
     elif is_data and _GOLDEN.search(rel):
         reason = "a golden / parity fixture"
     elif _FIXTURE_DIR.search(rel) and (data_ext in _TABULAR_EXT or outer in _COMPRESSED or outer in _IMAGE_EXT):
@@ -307,8 +335,8 @@ def path_problems(rel: str) -> List[str]:
     elif (is_data or outer in _IMAGE_EXT) and _REAL_DATA_NAME.search(name):
         reason = "a trade journal / tradebook / chart export"
     if reason:
-        problems.append(f"{rel}: {reason} - real-data and golden fixtures go to the private fixtures store "
-                        f"(docs/PUBLIC_REPO_POLICY.md); a public test uses small synthetic data")
+        problems.append(f"{rel}: {reason} - real data and real-data goldens go to the private fixtures store "
+                        f"(docs/PUBLIC_REPO_POLICY.md). If it is synthetic or hand-made, that is fine: {_pin_hint(rel, data)}")
     return problems
 
 
@@ -320,7 +348,8 @@ def listed_data_problems(rel: str, data: bytes) -> List[str]:
     if rel in GRANDFATHERED_FIXTURES:
         return [f"{rel}: a grandfathered fixture with new content - it may not change; replace it with synthetic data "
                 f"under a new name in ALLOWED_TEST_DATA, or move it to the private store (docs/OPEN_QUESTIONS.md PR-2)"]
-    return [f"{rel}: test data with new content - check it holds no real data, then update its sha256 in ALLOWED_TEST_DATA"]
+    return [f"{rel}: test data with new content - check it holds no real data, then replace its line in ALLOWED_TEST_DATA "
+            f"in scripts/check_public_repo.py with: {allow_line(rel, data)}"]
 
 
 def config_token_problems(rel: str, text: str) -> List[str]:
@@ -394,7 +423,13 @@ def scan(root: Path) -> Tuple[List[str], List[str]]:
     for rel in files(root):
         if not (root / rel).is_file():
             continue                        # deleted in the work tree, not yet committed
-        problems.extend(path_problems(rel))
+        found = path_problems(rel)
+        if any("--hash" in p for p in found):
+            try:
+                found = path_problems(rel, (root / rel).read_bytes())    # with the line that would pin it
+            except OSError:
+                pass
+        problems.extend(found)
         if rel in GRANDFATHERED_FIXTURES or rel in ALLOWED_TEST_DATA:
             try:
                 problems.extend(listed_data_problems(rel, (root / rel).read_bytes()))
@@ -418,8 +453,22 @@ def check(root: Path) -> List[str]:
 def main(argv: Optional[Iterable[str]] = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     parser.add_argument("--root", default=str(Path(__file__).resolve().parent.parent), help="the repository root (default: this script's repository)")
+    parser.add_argument("--hash", nargs="+", metavar="PATH",
+                        help="print the ALLOWED_TEST_DATA line that pins each file (a path from here or from the root)")
     args = parser.parse_args(list(argv) if argv is not None else None)
-    problems, notices = scan(Path(args.root))
+    root = Path(args.root).resolve()
+    if args.hash:
+        for raw in args.hash:
+            path = Path(raw) if Path(raw).exists() else root / raw
+            try:
+                rel = path.resolve().relative_to(root).as_posix()
+                data = path.read_bytes()
+            except (OSError, ValueError) as exc:
+                print(f"check_public_repo: {raw}: {exc}", file=sys.stderr)
+                return 2
+            print("    " + allow_line(rel, data))
+        return 0
+    problems, notices = scan(root)
     for note in notices:
         print(f"check_public_repo: notice - {note}", file=sys.stderr)
     if problems:
@@ -430,7 +479,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
         return 1
     print(f"check_public_repo: OK - no server IP, private e-mail, Telegram id, key or new real-data fixture "
           f"({len(GRANDFATHERED_FIXTURES)} grandfathered fixtures pending the owner's decision, "
-          f"{len(ALLOWED_TEST_DATA)} pinned test data files)")
+          f"{len(ALLOWED_TEST_DATA)} pinned test data files, {len(ALLOWED_PUBLIC_DATA)} public data file(s))")
     return 0
 
 

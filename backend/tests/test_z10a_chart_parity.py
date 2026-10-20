@@ -4,6 +4,8 @@ out) next to that code; frontend/src/utils/indicators.parity.test.ts compares th
 fixture must equal what the backend computes today:
 
     Z10_REGENERATE=1 python -m pytest tests/test_z10a_chart_parity.py      # after an intended indicator change
+    # Then pin the new content (public repo guard, ALLOWED_TEST_DATA in scripts/check_public_repo.py):
+    python3 ../scripts/check_public_repo.py --hash ../frontend/src/utils/__fixtures__/indicator_parity.json
 """
 from __future__ import annotations
 

@@ -11,6 +11,8 @@ Normalisation only absorbs the deliberate, documented differences: ATP timeframe
 tested/fresh (compared on ATP's `first_touch` event - its `state` is the ATP lifecycle since Z7a-2), and a dynamic S/R
 row's formed time (not compared). Regenerate the golden file (after a deliberate Trade
 re-sync) from backend/ with:  python -m tests.zones_golden --write
+The golden file is grandfathered in scripts/check_public_repo.py (Trade output, open question PR-2): it may not change
+here; a Trade re-sync goes to the private fixtures store (docs/design/TRADE_TAKEOVER.md section 3).
 """
 import gzip
 import importlib

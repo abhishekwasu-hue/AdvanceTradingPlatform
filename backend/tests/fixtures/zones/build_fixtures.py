@@ -1,6 +1,8 @@
 """Rebuild the zone parity fixtures (CSV) - deterministic, seeded, no network. Run from backend/:
 
     python tests/fixtures/zones/build_fixtures.py
+    # Then pin the new content (public repo guard, ALLOWED_TEST_DATA in scripts/check_public_repo.py):
+    python3 ../scripts/check_public_repo.py --hash tests/fixtures/zones/*.csv
 
 The generators are copied from the Trade repository's tests @eafc872 (see README.md); outputs are rounded to 2 decimals
 (a price tick) and frozen as CSV, so the CSVs - not this script - are the fixtures. No NIFTY market data is used.

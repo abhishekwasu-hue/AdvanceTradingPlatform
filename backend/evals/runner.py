@@ -12,6 +12,8 @@ Sets (`evals/sets/`):
 `run_all` scores each set (pass rate) and `gate` compares with `evals/baselines.json`:
 * the baseline names the agent prompt version it was measured on - a PR that changes the prompt (its hash) must
   update the baseline in the same PR (ADR-0020 §3);
+  (and its sha256 in scripts/check_public_repo.py ALLOWED_TEST_DATA, as for the eval sets:
+  `python3 ../scripts/check_public_repo.py --hash evals/baselines.json` from backend/);
 * a score below baseline minus the tolerance fails.
 Baselines are measured, never tuned to one run (§14). The nightly real-provider runner (flag + budget cap, off until
 the operator sets it) reuses these sets and checks; it is a later slice.

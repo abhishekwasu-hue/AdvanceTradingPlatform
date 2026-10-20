@@ -2,6 +2,8 @@
 
     git -C /path/to/trade archive <rev> | tar -x -C /tmp/trade_export        # a read-only export, never the repo itself
     python make_golden.py /tmp/trade_export <the full 40-character SHA of rev> golden.json.gz
+    # Then pin the new content (public repo guard, ALLOWED_TEST_DATA in scripts/check_public_repo.py):
+    python3 ../../../../scripts/check_public_repo.py --hash golden.json.gz
 
 Inputs are synthetic and seeded (no market data): multi-day 5-minute IST sessions with trends, pullbacks, impulsive
 drives and volume (some series without volume), candidate areas around the session's own swing extremes, Daily states

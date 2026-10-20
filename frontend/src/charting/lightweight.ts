@@ -12,7 +12,7 @@
  */
 import { ANCHOR_RULES, type DrawingKind, type DrawingV1 } from "./drawings";
 import type { ChartEngine, EngineBar, EngineEvent, EngineLayout, LayerData, StudyLine, StudySpec } from "./engine";
-import { layerShapes, timeToLogical, type Converters } from "./geometry";
+import { DEFAULT_COLOR, layerShapes, timeToLogical, type Converters } from "./geometry";
 import { DrawingPrimitive, LayerPrimitive } from "./primitives";
 import { logicalToTime, type DataPoint } from "./tools";
 
@@ -39,6 +39,8 @@ export interface ChartLike {
   setCrosshairPosition?(price: number, time: never, series: never): void;
   clearCrosshairPosition?(): void;
   paneSize(): { width: number; height: number };
+  // UI2-4b1: v5 native panes (optional: a chart of one pane, or a test fake, has no panes below the price pane).
+  panes?(): readonly { getHeight(): number }[];
   priceScale(id: string): { width(): number };
   subscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
   unsubscribeCrosshairMove(handler: (p: MouseParamsLike) => void): void;
@@ -77,6 +79,7 @@ export class LightweightEngine implements ChartEngine {
   private unsubs: (() => void)[] = [];
   private disposed = false;
   private barTimes: number[] | null = null;                    // the candles' times (epoch s), rebuilt when the data changes
+  private defaultColor: string | null = null;                  // UI2-4b1: the chart theme's colour for a default-coloured drawing
 
   constructor(private readonly chart: ChartLike, private readonly candles: CandleSeriesLike, private readonly priceOf?: (y: number) => number | null,
               private readonly lines?: LineFactory) {
@@ -134,6 +137,21 @@ export class LightweightEngine implements ChartEngine {
   /** Pixels from the chart element's left edge to the pane's (the left price scale, when shown). */
   paneOffsetX(): number { return this.chart.priceScale("left").width(); }
 
+  /** UI2-4b1: the price pane's height when panes sit under it on the same chart (v5 native panes), else null. The
+   * drawing tools ignore a pointer below it: y there is a volume or RSI value, not a price. */
+  pricePaneHeight(): number | null {
+    const panes = this.chart.panes?.() ?? [];
+    return panes.length > 1 ? panes[0].getHeight() : null;
+  }
+
+  /** UI2-4b1: shows drawings saved with the default colour in the chart theme's colour instead (as shown only; the
+   * stored drawing and `serialize` keep the colour it was saved with). null: the default as saved. */
+  setDefaultDrawingColor(color: string | null) {
+    if (color === this.defaultColor) return;
+    this.defaultColor = color;
+    for (const [id, d] of [...this.drawings]) { this.removeDrawing(id); this.addDrawing(id, d); }
+  }
+
   /** A pane point (pixels) as time and price, or null outside the data's reach. Time comes from the bar under x
    * (interpolated between bars, extrapolated past the last one), so an anchor is exact on any timeframe. */
   toData(x: number, y: number): DataPoint | null {
@@ -166,7 +184,7 @@ export class LightweightEngine implements ChartEngine {
     const current = this.rendered.get(id);
     if (current?.kind === "primitive" && drawing.kind !== "hline") {     // same primitive, new anchors: no re-attach
       this.drawings.set(id, drawing);
-      current.primitive.setDrawing(drawing);
+      current.primitive.setDrawing(this.themed(drawing));
       return;
     }
     this.removeDrawing(id);
@@ -187,9 +205,14 @@ export class LightweightEngine implements ChartEngine {
     this.drawings.delete(id);
   }
 
-  private draw(d: DrawingV1): Rendered {
+  private themed(d: DrawingV1): DrawingV1 {
+    return this.defaultColor && (d.style?.color ?? DEFAULT_COLOR) === DEFAULT_COLOR ? { ...d, style: { ...d.style, color: this.defaultColor } } : d;
+  }
+
+  private draw(drawing: DrawingV1): Rendered {
+    const d = this.themed(drawing);
     const style = d.style ?? {};
-    const color = style.color ?? "#2962ff";
+    const color = style.color ?? DEFAULT_COLOR;
     const width = Math.min(4, Math.max(1, style.width ?? 1)) as 1 | 2 | 3 | 4;
     const lineStyle = LINE_STYLE[style.line ?? "solid"];
     if (d.kind === "hline" && d.anchors[0]?.p != null) {

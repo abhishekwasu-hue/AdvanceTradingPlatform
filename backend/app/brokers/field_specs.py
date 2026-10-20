@@ -48,7 +48,7 @@ SERVER_WRITTEN_FIELDS = frozenset({"analytics_meta", "oauth_pending"})
 
 _ANY_TOKEN = r"^\S{1,4096}$"
 _REDIRECT_URL = r"^https?://\S{1,500}$"
-_BASE32_SECRET = r"^[A-Z2-7]{16,64}$"
+_BASE32_SECRET = r"^[A-Z2-7]{16,128}=*$"
 
 
 @dataclass(frozen=True)
@@ -114,9 +114,9 @@ def _redirect_url(help_text: str) -> FieldSpec:
 
 def _totp_secret(broker: str, required_unless: Tuple[str, ...] = ()) -> FieldSpec:
     return FieldSpec("totp_secret", "TOTP secret", KIND_TOTP_SECRET, required=True, required_unless=required_unless,
-                     pattern=_BASE32_SECRET, format_hint="the 16 to 64 character key (letters A-Z and digits 2-7) shown when you "
+                     pattern=_BASE32_SECRET, format_hint="the 16 to 128 character key (letters A-Z and digits 2-7) shown when you "
                                                           "set up TOTP, not today's 6-digit code",
-                     max_length=80,
+                     max_length=160,
                      help=f"The key {broker} shows when you turn on TOTP (often under 'Show key' next to the QR code). Spaces "
                           "are ignored. A 6-digit code is refused because it stops working within a minute.")
 
@@ -129,12 +129,11 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         login_note="Brokers end the session every trading day. Log in once each morning; we never see or store your broker password.",
         fields=(
             FieldSpec("api_key", "API key", KIND_TEXT, required=True, required_unless=("analytics_token",),
-                      pattern=r"^[A-Za-z0-9]{8}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{12}$",
-                      format_hint="36 characters in five dash-separated groups (8-4-4-4-12)", max_length=36,
-                      help="From your app in the Upstox developer console.", example="36 characters, like a1b2c3d4-…"),
+                      pattern=r"^\S{8,128}$", format_hint="8 to 128 characters with no spaces", max_length=128,
+                      help="From your app in the Upstox developer console."),
             # Not needed for a data-only connection (an analytics token alone) or with a session already on file.
             FieldSpec("api_secret", "API secret", KIND_SECRET, required=True, required_unless=("access_token", "analytics_token"),
-                      pattern=r"^\S{8,64}$", format_hint="8 to 64 characters with no spaces", max_length=64,
+                      pattern=r"^\S{4,128}$", format_hint="4 to 128 characters with no spaces", max_length=128,
                       help="Shown next to the API key in the Upstox developer console."),
             _redirect_url("Copy this into your Upstox app's Redirect URL. ATP fills it in when you log in."),
             _access_token(),
@@ -150,11 +149,11 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         oauth_start_path="/api/broker/zerodha/oauth/start", oauth_callback_path="/api/broker/zerodha/oauth/callback",
         login_note="Brokers end the session every trading day. Log in once each morning; we never see or store your broker password.",
         fields=(
-            FieldSpec("api_key", "API key", KIND_TEXT, required=True, pattern=r"^[a-z0-9]{8,32}$",
-                      format_hint="8 to 32 lowercase letters and digits", max_length=32,
-                      help="From your app in the Kite developer console.", example="16 lowercase letters and digits"),
+            FieldSpec("api_key", "API key", KIND_TEXT, required=True, pattern=r"^\S{4,128}$",
+                      format_hint="4 to 128 characters with no spaces", max_length=128,
+                      help="From your app in the Kite developer console."),
             FieldSpec("api_secret", "API secret", KIND_SECRET, required=True, required_unless=("access_token",),
-                      pattern=r"^\S{16,64}$", format_hint="16 to 64 characters with no spaces", max_length=64,
+                      pattern=r"^\S{4,128}$", format_hint="4 to 128 characters with no spaces", max_length=128,
                       help="Shown next to the API key in the Kite developer console."),
             _access_token(),
             _login_code("Request token"),
@@ -166,11 +165,11 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         oauth_start_path="/api/broker/fyers/oauth/start", oauth_callback_path="/api/broker/fyers/oauth/callback",
         login_note="Brokers end the session every trading day. Log in once each morning; we never see or store your broker password.",
         fields=(
-            FieldSpec("api_key", "App ID", KIND_TEXT, required=True, pattern=r"^[A-Z0-9]+-[0-9]{3}$",
-                      format_hint="capital letters and digits, a dash and three digits", max_length=40,
+            FieldSpec("api_key", "App ID", KIND_TEXT, required=True, pattern=r"^\S{4,128}$",
+                      format_hint="4 to 128 characters with no spaces", max_length=128,
                       help="From your app on the Fyers API dashboard.", example="like XB12345-100"),
             FieldSpec("api_secret", "Secret ID", KIND_SECRET, required=True, required_unless=("access_token",),
-                      pattern=r"^\S{8,64}$", format_hint="8 to 64 characters with no spaces", max_length=64,
+                      pattern=r"^\S{4,128}$", format_hint="4 to 128 characters with no spaces", max_length=128,
                       help="Shown next to the App ID on the Fyers API dashboard."),
             _redirect_url("Copy this into your Fyers app's Redirect URL. ATP fills it in when you log in."),
             _access_token(),
@@ -182,14 +181,14 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         login_method=LOGIN_TOTP, console_url="https://smartapi.angelone.in/",
         login_note="ATP logs in to Angel One for you with the PIN and TOTP secret you store here, encrypted.",
         fields=(
-            FieldSpec("api_key", "SmartAPI key", KIND_TEXT, required=True, pattern=r"^\S{4,64}$",
-                      format_hint="4 to 64 characters with no spaces", max_length=64,
+            FieldSpec("api_key", "SmartAPI key", KIND_TEXT, required=True, pattern=r"^\S{4,128}$",
+                      format_hint="4 to 128 characters with no spaces", max_length=128,
                       help="From your app on the SmartAPI portal."),
             FieldSpec("client_id", "Client ID", KIND_TEXT, required=True, required_unless=("access_token",),
-                      pattern=r"^[A-Za-z0-9]{4,12}$", format_hint="4 to 12 letters and digits", max_length=12,
+                      pattern=r"^\S{2,64}$", format_hint="2 to 64 characters with no spaces", max_length=64,
                       help="Your Angel One client code."),
-            FieldSpec("pin", "PIN", KIND_PIN, required=True, required_unless=("access_token",), pattern=r"^[0-9]{4,6}$",
-                      format_hint="4 to 6 digits", max_length=6, help="The PIN you use to log in to Angel One."),
+            FieldSpec("pin", "PIN", KIND_PIN, required=True, required_unless=("access_token",), pattern=r"^[0-9]{4,8}$",
+                      format_hint="4 to 8 digits", max_length=8, help="The PIN you use to log in to Angel One."),
             _totp_secret("Angel One", required_unless=("access_token",)),
             _access_token("Session token", by=BY_LOGIN),
             # SmartAPI asks every call to name the client's addresses; the adapter sends placeholders when these are empty.
@@ -207,8 +206,8 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         login_method=LOGIN_TOTP, console_url=None,
         login_note="ATP logs in to Shoonya for you with the password and TOTP secret you store here, encrypted.",
         fields=(
-            FieldSpec("client_id", "User ID", KIND_TEXT, required=True, pattern=r"^[A-Za-z0-9]{4,12}$",
-                      format_hint="4 to 12 letters and digits", max_length=12, help="Your Shoonya user ID.",
+            FieldSpec("client_id", "User ID", KIND_TEXT, required=True, pattern=r"^\S{2,64}$",
+                      format_hint="2 to 64 characters with no spaces", max_length=64, help="Your Shoonya user ID.",
                       example="like FA12345"),
             FieldSpec("api_secret", "Login password", KIND_SECRET, required=True, pattern=r"^[^\r\n]{1,128}$",
                       format_hint="1 to 128 characters on one line", max_length=128,
@@ -217,10 +216,10 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
                       format_hint="4 to 128 characters with no spaces", max_length=128,
                       help="The API key Shoonya gave you for API access."),
             _totp_secret("Shoonya"),
-            FieldSpec("vc", "Vendor code", KIND_TEXT, pattern=r"^[A-Za-z0-9_]{1,40}$", format_hint="1 to 40 letters, digits or _",
-                      max_length=40, advanced=True, help="Leave empty to use your user ID followed by _API."),
-            FieldSpec("imei", "Device ID", KIND_TEXT, pattern=r"^[A-Za-z0-9_.:-]{1,64}$",
-                      format_hint="1 to 64 letters, digits or . _ : -", max_length=64, advanced=True,
+            FieldSpec("vc", "Vendor code", KIND_TEXT, pattern=r"^\S{1,64}$", format_hint="1 to 64 characters with no spaces",
+                      max_length=64, advanced=True, help="Leave empty to use your user ID followed by _API."),
+            FieldSpec("imei", "Device ID", KIND_TEXT, pattern=r"^\S{1,128}$",
+                      format_hint="1 to 128 characters with no spaces", max_length=128, advanced=True,
                       help="Leave empty to use ATP's default."),
         ),
     ),
@@ -229,11 +228,11 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         console_url="https://web.dhan.co/",
         login_note="Dhan's access token lasts 24 hours from when you generate it. Paste a new one when it ends.",
         fields=(
-            FieldSpec("client_id", "Client ID", KIND_TEXT, required=True, pattern=r"^[0-9]{6,12}$",
-                      format_hint="6 to 12 digits", max_length=12, help="Your Dhan client ID (digits only)."),
+            FieldSpec("client_id", "Client ID", KIND_TEXT, required=True, pattern=r"^\S{2,64}$",
+                      format_hint="2 to 64 characters with no spaces", max_length=64, help="Your Dhan client ID."),
             FieldSpec("access_token", "Paste your Dhan access token", KIND_SECRET, required=True,
-                      pattern=r"^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$",
-                      format_hint="three dot-separated parts, as Dhan shows it", max_length=4096,
+                      pattern=r"^\S{16,4096}$",
+                      format_hint="one line with no spaces, at least 16 characters", max_length=4096,
                       help="Generate it on web.dhan.co under My Profile → Access DhanHQ APIs. It lasts 24 hours."),
         ),
     ),
@@ -242,10 +241,10 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
         console_url="https://coindcx.com/api-dashboard",
         login_note="No daily login: the API key keeps working until you delete it on CoinDCX.",
         fields=(
-            FieldSpec("api_key", "API key", KIND_TEXT, required=True, pattern=r"^[A-Fa-f0-9]{32,64}$",
-                      format_hint="32 to 64 hexadecimal characters", max_length=64, help="From the CoinDCX API dashboard."),
-            FieldSpec("api_secret", "API secret", KIND_SECRET, required=True, pattern=r"^\S{32,128}$",
-                      format_hint="32 to 128 characters with no spaces", max_length=128,
+            FieldSpec("api_key", "API key", KIND_TEXT, required=True, pattern=r"^\S{16,128}$",
+                      format_hint="16 to 128 characters with no spaces", max_length=128, help="From the CoinDCX API dashboard."),
+            FieldSpec("api_secret", "API secret", KIND_SECRET, required=True, pattern=r"^\S{16,128}$",
+                      format_hint="16 to 128 characters with no spaces", max_length=128,
                       help="Shown once when you create the key on CoinDCX."),
             _access_token("Session key", by=BY_LOGIN, legacy=False),
         ),

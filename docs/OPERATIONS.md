@@ -754,7 +754,14 @@ Never publish a listing without an attached backtest run; the API refuses the su
   `BROKER_OAUTH_REDIRECT_BASE_URL` to the https origin brokers can reach (empty = the address the request came in
   on). `GET /api/broker/{zerodha|fyers}/oauth/start` returns the login page; the broker sends the browser back to
   the callback, which exchanges the code and stores the session as the paste flow does. The link works once, for the
-  user who started it, within 10 minutes. The paste-the-code routes stay for the old Settings layout.
+  user who started it, within 10 minutes (Upstox's callback too, since the UI2-5 review), and only while that user is
+  still active with a trading role. Each client IP gets 20 callback requests per 5 minutes; past that the browser
+  lands back in the app with `error=too_many_attempts`. The paste-the-code routes stay for the old Settings layout.
+- **Operator step (UI2-5 review): set `BROKER_OAUTH_REDIRECT_BASE_URL` in the production and staging `.env`** to the
+  deployment's public https origin (for example `https://atp.example.com`, no trailing path), then restart the API.
+  Until it is set, the API logs a `CONFIGURATION ACTION NEEDED` warning at startup and takes callback addresses from
+  the request's Host header. A value that does not start with `https://` stops a production or staging start.
+  The address must match the Redirect URL registered on each broker's console exactly.
 
 ### 1.6ab-0 Hardened environments (P0.1)
 

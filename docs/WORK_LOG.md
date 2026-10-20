@@ -2050,4 +2050,11 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: `tests/test_ui2_5_broker_field_map.py` (spec coverage both ways, specs route, validation, both callbacks with
   the real adapters against a mocked broker transport); tests that stored one-letter stand-in keys now use
   `tests/broker_fakes.py`. Routes added to `tests/tenancy_route_table.py`.
+- Security review follow-ups: key and ID patterns now check only length and no spaces (a wrong pattern would lock a
+  real user out; PIN digits, base32 TOTP secrets, IP / MAC and the redirect URL keep their formats); the Upstox, Kite
+  and Fyers callbacks are counted per client IP (20 per 5 minutes, then a redirect with `too_many_attempts`), check
+  before the exchange that the person who started the login is still active with a trading role and `brokers:write`
+  (`not_allowed`), and audit `no_token_returned`; Upstox uses the same single-use nonce; the log redaction covers a
+  trailing slash and any path prefix; production and staging refuse a non-https `BROKER_OAUTH_REDIRECT_BASE_URL` and
+  warn loudly when it is unset (operator step in docs/OPERATIONS.md).
 

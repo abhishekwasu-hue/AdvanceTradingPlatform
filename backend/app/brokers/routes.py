@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.accounts.service import ensure_account_for_credential
 from app.audit.log import write_audit_log
-from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
+from app.auth.dependencies import current_session_id, ensure_live_step_up, ensure_trader, get_current_user, require_trader
 from app.auth.scopes import require_scope
 from app.brokers.exceptions import BrokerError
 from app.brokers.field_specs import BROKER_FIELD_SPECS, SERVER_WRITTEN_FIELDS, normalise_value, public_view, validate_credentials
@@ -31,7 +32,6 @@ from app.brokers.token_lifecycle import (
     build_login_url,
     build_oauth_login_url,
     build_upstox_authorization_url,
-    create_oauth_state,
     get_credential_record,
     load_credentials,
     mark_expired,
@@ -43,7 +43,7 @@ from app.brokers.token_lifecycle import (
 )
 from app.core import config as app_config
 from app.core.config import FRONTEND_URL
-from app.core.rate_limit import user_rate_limit
+from app.core.rate_limit import allow as rate_limit_allow, user_rate_limit
 from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType, UserRole
 from app.core.logging_config import install_callback_query_redaction
 from app.db.models import BrokerCredentialRecord, User
@@ -725,9 +725,13 @@ async def upstox_oauth_start(
     if credentials.redirect_uri is None:
         # Remember the redirect URI we are about to use so the token exchange sends the same one.
         credentials.redirect_uri = redirect_uri
-        record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
-
-    state = create_oauth_state(user.tenant_id, user.id, "upstox", account_label=label)
+    # UI2-5 review: the same single-use nonce as Kite and Fyers (see _oauth_start).
+    expected_user, expected_payload = record.user_id, record.encrypted_payload
+    state = begin_oauth_login(credentials, user.tenant_id, user.id, "upstox", account_label=label)
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="The broker connection changed meanwhile; nothing was started. Try again.")
     await write_audit_log(session, user.tenant_id, user.id, "broker_oauth_started", f"upstox/{label}")
     await session.commit()
     return OAuthStartResponse(authorization_url=build_upstox_authorization_url(credentials.api_key, redirect_uri, state))
@@ -737,74 +741,50 @@ def _frontend_redirect(**params: str) -> RedirectResponse:
     return RedirectResponse(url=f"{FRONTEND_URL}?{urlencode(params)}", status_code=302)
 
 
+_PLAIN_WORD = re.compile(r"[a-z_]{1,40}")
+# UI2-5 review: the public callbacks are counted per client IP. A real login reaches a callback once; 20 in 5 minutes
+# leaves room for retries and shared office addresses while stopping anyone from hammering the state check.
+OAUTH_CALLBACK_LIMIT, OAUTH_CALLBACK_WINDOW_SECONDS = 20, 300
+
+
+async def oauth_callback_rate_limit(request: Request) -> bool:
+    """False once this IP has used up the callback allowance - the callback then redirects with `too_many_attempts`
+    (never a JSON 429: the person is looking at a browser tab the broker sent back)."""
+    ip = request.client.host if request.client else "unknown"
+    return await rate_limit_allow("broker_oauth_callback", ip, OAUTH_CALLBACK_LIMIT, OAUTH_CALLBACK_WINDOW_SECONDS)
+
+
+async def _login_still_allowed(session: AsyncSession, tenant_id: int, user_id: int) -> bool:
+    """The person who started the login is still active, still in that organisation, still holds a trading role there
+    (an active organisation, no denied scope) and may still change broker connections. Checked before a code is
+    exchanged: a login started before a removal or demotion does not finish after it."""
+    from app.auth.scopes import has_scope
+    user = await session.get(User, user_id)
+    if user is None or not user.is_active or int(user.tenant_id) != int(tenant_id):
+        return False
+    try:
+        await ensure_trader(session, user)
+    except HTTPException:
+        return False
+    return has_scope(user, "brokers:write")
+
+
 @router.get("/upstox/oauth/callback", include_in_schema=True)
 async def upstox_oauth_callback(
     request: Request, code: Optional[str] = None, state: Optional[str] = None, error: Optional[str] = None,
-    session: AsyncSession = Depends(get_session),
+    session: AsyncSession = Depends(get_session), within_limit: bool = Depends(oauth_callback_rate_limit),
 ) -> RedirectResponse:
     """Unauthenticated by necessity (the browser arrives here from Upstox, not from the app), so
-    the signed `state` is the sole proof of which tenant this code belongs to. Every outcome ends
-    in a redirect back to the UI with a status in the query string - never a JSON error page a
+    the signed `state` and its single-use nonce are the sole proof of which login this code belongs to. Every
+    outcome ends in a redirect back to the UI with a status in the query string - never a JSON error page a
     non-technical operator has to interpret.
     """
+    if not within_limit:
+        return _frontend_redirect(broker="upstox", error="too_many_attempts")
     if error:
-        return _frontend_redirect(broker="upstox", error=error)
-    if not code or not state:
-        return _frontend_redirect(broker="upstox", error="missing_code_or_state")
-    try:
-        claims = parse_oauth_state(state)
-    except ValueError as exc:
-        logger.warning("Rejected Upstox OAuth callback: %s", exc)
-        return _frontend_redirect(broker="upstox", error="invalid_state")
-    if claims.get("broker") != "upstox":
-        return _frontend_redirect(broker="upstox", error="invalid_state")
-
-    tenant_id, user_id = int(claims["tenant_id"]), int(claims["user_id"])
-    try:
-        # A state signed before labels were carried means the primary account, as it did then.
-        label = _clean_label(claims.get("account_label"))
-    except HTTPException:
-        return _frontend_redirect(broker="upstox", error="invalid_state")
-    record = await get_credential_record(session, tenant_id, "upstox", label)
-    if record is None:
-        return _frontend_redirect(broker="upstox", error="credentials_missing")
-    if record.user_id != user_id and await _byob(session, tenant_id):
-        # BT1b (flag on): the state names someone other than the connection's holder - the token would be theirs while
-        # the row is someone else's.
-        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"upstox/{label}: not the connection's holder")
-        await session.commit()
-        return _frontend_redirect(broker="upstox", error="not_holder")
-    expected_user, expected_payload = record.user_id, record.encrypted_payload
-
-    credentials = load_credentials(record)
-    credentials.access_token = None
-    credentials.request_token = code
-    credentials.redirect_uri = credentials.redirect_uri or _callback_url(request, "upstox")
-    adapter = get_broker_adapter("upstox", credentials)
-    try:
-        await adapter.authenticate()
-    except Exception as exc:  # noqa: BLE001 - must always end in a redirect
-        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"upstox/{label}: {exc}")
-        await session.commit()
-        await notify(
-            session, tenant_id, NotificationType.BROKER_DISCONNECT, title="Upstox login failed",
-            message=str(exc), severity=NotificationSeverity.CRITICAL, user_id=user_id,
-        )
-        return _frontend_redirect(broker="upstox", error="exchange_failed")
-
-    new_token = adapter.access_token
-    if not new_token:
-        return _frontend_redirect(broker="upstox", error="no_token_returned")
-    store_access_token(record, new_token)
-    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
-        # BT1b (both flag states): the row was stored over during the code exchange - the fresh token is not written.
-        await session.rollback()
-        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"upstox/{label}: the connection changed during the login")
-        await session.commit()
-        return _frontend_redirect(broker="upstox", error="changed_during_login")
-    await write_audit_log(session, tenant_id, user_id, "broker_authenticated", f"upstox/{label} (oauth)")
-    await session.commit()
-    return _frontend_redirect(broker="upstox", connected="1")
+        # Upstox's own error word (e.g. access_denied) is relayed as before, but only when it is a plain word.
+        return _frontend_redirect(broker="upstox", error=error if _PLAIN_WORD.fullmatch(error) else "login_cancelled")
+    return await _oauth_callback("upstox", code, state, False, session, request)
 
 
 # --- Zerodha (Kite) and Fyers OAuth callbacks (UI2-5) ---------------------------------------------
@@ -815,7 +795,7 @@ async def upstox_oauth_callback(
 # user who started that login, within ten minutes. Codes and tokens never reach a log line, an audit entry or the
 # redirect back to the app. The paste-the-code routes stay for the old Settings layout.
 
-OAUTH_BROKER_ERRORS = {"zerodha": "Kite", "fyers": "Fyers"}
+OAUTH_BROKER_ERRORS = {"upstox": "Upstox", "zerodha": "Kite", "fyers": "Fyers"}
 
 
 def _scrub(text: str, *secrets_: Optional[str]) -> str:
@@ -858,7 +838,7 @@ async def _oauth_start(name: str, request: Request, user: User, session: AsyncSe
 
 
 async def _oauth_callback(name: str, code: Optional[str], state: Optional[str], broker_refused: bool,
-                          session: AsyncSession) -> RedirectResponse:
+                          session: AsyncSession, request: Request) -> RedirectResponse:
     """Unauthenticated by necessity (the browser arrives from the broker); every outcome is a redirect back to the app
     with a fixed status word, never the code, a token or the broker's raw text."""
     if broker_refused:
@@ -872,7 +852,7 @@ async def _oauth_callback(name: str, code: Optional[str], state: Optional[str], 
     except ValueError:
         logger.warning("Rejected %s OAuth callback: the state is not valid or has expired", name)
         return _frontend_redirect(broker=name, error="invalid_state")
-    if claims.get("broker") != name or not claims.get("nonce"):
+    if claims.get("broker") != name:          # a state without a nonce fails oauth_pending_matches below
         return _frontend_redirect(broker=name, error="invalid_state")
     tenant_id, user_id = int(claims["tenant_id"]), int(claims["user_id"])
     try:
@@ -888,6 +868,11 @@ async def _oauth_callback(name: str, code: Optional[str], state: Optional[str], 
         await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"{name}/{label}: not the connection's holder")
         await session.commit()
         return _frontend_redirect(broker=name, error="not_holder")
+    if not await _login_still_allowed(session, tenant_id, user_id):
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed",
+                              f"{name}/{label}: the person who started the login may no longer change broker connections")
+        await session.commit()
+        return _frontend_redirect(broker=name, error="not_allowed")
     credentials = load_credentials(record)
     if not oauth_pending_matches(credentials, claims):
         await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed",
@@ -910,6 +895,8 @@ async def _oauth_callback(name: str, code: Optional[str], state: Optional[str], 
         return _frontend_redirect(broker=name, error="credentials_missing")
     credentials.access_token = None
     credentials.request_token = code
+    if name == "upstox":
+        credentials.redirect_uri = credentials.redirect_uri or _callback_url(request, "upstox")
     try:
         adapter = get_broker_adapter(name, credentials)
         await adapter.authenticate()
@@ -922,6 +909,8 @@ async def _oauth_callback(name: str, code: Optional[str], state: Optional[str], 
         return _frontend_redirect(broker=name, error="exchange_failed")
     new_token = adapter.access_token
     if not new_token:
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"{name}/{label}: the broker returned no session token")
+        await session.commit()
         return _frontend_redirect(broker=name, error="no_token_returned")
     # Stored as the paste-the-code login stores it: re-encrypted, the one-time code dropped, VALID until the daily expiry,
     # held by the person who logged in - and only if nobody changed the row during the exchange.
@@ -948,12 +937,15 @@ async def zerodha_oauth_start(
 
 @router.get("/zerodha/oauth/callback")
 async def zerodha_oauth_callback(
-    request_token: Optional[str] = None, state: Optional[str] = None, login_status: Optional[str] = Query(None, alias="status"),
-    session: AsyncSession = Depends(get_session),
+    request: Request, request_token: Optional[str] = None, state: Optional[str] = None,
+    login_status: Optional[str] = Query(None, alias="status"),
+    session: AsyncSession = Depends(get_session), within_limit: bool = Depends(oauth_callback_rate_limit),
 ) -> RedirectResponse:
     """Kite's redirect: `?action=login&status=success&request_token=...` plus the `state` ATP passed as redirect_params."""
+    if not within_limit:
+        return _frontend_redirect(broker="zerodha", error="too_many_attempts")
     refused = login_status is not None and login_status.lower() != "success"
-    return await _oauth_callback("zerodha", request_token, state, refused, session)
+    return await _oauth_callback("zerodha", request_token, state, refused, session, request)
 
 
 @router.get("/fyers/oauth/start", response_model=OAuthStartResponse)
@@ -967,9 +959,11 @@ async def fyers_oauth_start(
 
 @router.get("/fyers/oauth/callback")
 async def fyers_oauth_callback(
-    auth_code: Optional[str] = None, state: Optional[str] = None, s: Optional[str] = None,
-    session: AsyncSession = Depends(get_session),
+    request: Request, auth_code: Optional[str] = None, state: Optional[str] = None, s: Optional[str] = None,
+    session: AsyncSession = Depends(get_session), within_limit: bool = Depends(oauth_callback_rate_limit),
 ) -> RedirectResponse:
     """Fyers' redirect: `?s=ok&code=200&auth_code=...&state=...` (`s=error` when the login did not complete)."""
+    if not within_limit:
+        return _frontend_redirect(broker="fyers", error="too_many_attempts")
     refused = s is not None and s.lower() != "ok"
-    return await _oauth_callback("fyers", auth_code, state, refused, session)
+    return await _oauth_callback("fyers", auth_code, state, refused, session, request)

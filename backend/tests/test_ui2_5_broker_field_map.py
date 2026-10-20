@@ -202,7 +202,7 @@ def test_specs_list_every_broker_without_any_stored_value(monkeypatch):
     assert zerodha["readonly"]["redirect_url"].endswith("/api/broker/zerodha/oauth/callback")
     assert zerodha["readonly"]["server_ip"] == "203.0.113.10"
     fields = {f["key"]: f for f in zerodha["fields"]}
-    assert fields["api_key"]["pattern"] == r"^[a-z0-9]{8,32}$" and fields["api_key"]["entered_by"] == "user"
+    assert fields["api_key"]["pattern"] == r"^\S{4,128}$" and fields["api_key"]["entered_by"] == "user"
     assert fields["request_token"]["entered_by"] == "oauth_callback" and fields["request_token"]["kind"] == "code"
     assert by_name["upstox"]["daily_expiry_ist"] == "03:30" and by_name["coindcx"]["daily_expiry_ist"] is None
     assert by_name["coindcx"]["readonly"]["redirect_url"] is None
@@ -238,16 +238,37 @@ def test_unknown_field_is_refused_in_plain_english():
 
 def test_bad_format_is_refused_without_echoing_the_value():
     headers, _me = _owner(_email("format"))
-    bad_key = KITE_KEY.upper()
+    bad_key = KITE_KEY[:6] + " " + KITE_KEY[6:]
     res = _store(headers, "zerodha", {"api_key": bad_key, "api_secret": KITE_SECRET})
     text = _errors(res)
-    assert "API key does not look right: expected 8 to 32 lowercase letters and digits" in text
+    assert "API key does not look right: expected 4 to 128 characters with no spaces" in text
     assert bad_key not in res.text and KITE_SECRET not in res.text
     assert res.json()["detail"]["fields"].keys() == {"api_key"}
     text = _errors(_store(headers, "fyers", {"api_key": "not an app id", "api_secret": FYERS_SECRET}))
     assert "App ID does not look right" in text
-    text = _errors(_store(headers, "dhan", {"client_id": "12ab", "access_token": "no-dots"}))
+    text = _errors(_store(headers, "dhan", {"client_id": "12 ab", "access_token": "too-short"}))
     assert "Client ID" in text and "Paste your Dhan access token" in text
+
+
+def test_patterns_only_check_what_the_brokers_document():
+    """A wrong pattern locks a real user out, so key and ID fields check only length and no spaces: keys shaped unlike
+    the examples (not hex, mixed case, no dash suffix, a short numeric ID, a token that is not a JWT) still save."""
+    loose = {
+        "coindcx": {"api_key": "Ab" + _fake("ck").replace("-", "_") + "+/=", "api_secret": "S/" + _fake("cs") + "+="},
+        "zerodha": {"api_key": "KiteKEY" + _fake("k")[-6:], "api_secret": "Mixed/Case+" + _fake("s")},
+        "fyers": {"api_key": "app" + _fake("a")[-6:], "api_secret": "s" + _fake("b")[-6:]},
+        "upstox": {"api_key": "not-a-uuid-" + _fake("u")[-6:], "api_secret": "sec" + _fake("v")[-4:]},
+        "dhan": {"client_id": "AB12", "access_token": "opaque_" + _fake("dt")},
+        "angel_one": {"api_key": ANGEL_KEY, "client_id": "a1", "pin": "12345678", "totp_secret": TOTP_SECRET + "AB2C" * 10},
+    }
+    for broker, body in loose.items():
+        headers, _me = _owner(_email(f"loose-{broker}"))
+        res = _store(headers, broker, body)
+        assert res.status_code == 204, (broker, res.text)
+    for broker, bspec in fs.BROKER_FIELD_SPECS.items():
+        for spec in bspec.fields:
+            if spec.kind in (fs.KIND_TEXT, fs.KIND_SECRET) and spec.key not in ("public_ip", "local_ip", "mac", "redirect_uri"):
+                assert spec.pattern.startswith(r"^\S{") or spec.pattern == r"^[^\r\n]{1,128}$", (broker, spec.key, spec.pattern)
 
 
 def test_missing_required_field_is_refused():
@@ -440,10 +461,10 @@ def test_an_expired_or_forged_or_foreign_state_is_refused(monkeypatch):
     assert _outcome(_kite_callback(tl.create_oauth_state(me["tenant_id"], me["id"], "zerodha"), _fake("code")))["error"] == "invalid_state"
     started = _start(headers, "zerodha")["state"]
     assert _outcome(_fyers_callback(started, _fake("code")))["error"] == "invalid_state"
-    # Another user of the same organisation cannot finish this user's login with the nonce (the state names the user).
+    # A state naming someone who is not a user of this organisation cannot finish this user's login with the nonce.
     claims = tl.parse_oauth_state(started)
     other_user = tl.create_oauth_state(me["tenant_id"], me["id"] + 1000, "zerodha", nonce=claims["nonce"])
-    assert _outcome(_kite_callback(other_user, _fake("code")))["error"] == "invalid_state"
+    assert _outcome(_kite_callback(other_user, _fake("code")))["error"] == "not_allowed"
     assert _outcome(_kite_callback("not-a-state", _fake("code")))["error"] == "invalid_state"
     assert broker.requests == []
     assert _row(me["tenant_id"], "zerodha")[0].token_status == "UNKNOWN"
@@ -564,6 +585,169 @@ def test_validate_credentials_unit():
     assert fs.validate_credentials("nope", {}, {})[0].message == "Unknown broker 'nope'."
     merged = fake_credentials("coindcx")
     assert fs.validate_credentials("coindcx", merged, merged) == []
-    bad = fs.validate_credentials("coindcx", {"api_key": COINDCX_KEY + "zz"}, merged)
+    bad = fs.validate_credentials("coindcx", {"api_key": COINDCX_KEY + " zz"}, merged)
     assert [e.field for e in bad] == ["api_key"] and COINDCX_KEY not in bad[0].message
     assert fs.validate_credentials("upstox", {"api_key": UPSTOX_KEY}, {"api_key": UPSTOX_KEY})[0].message == "Upstox needs your API secret."
+
+
+# --- security review follow-ups (UI2-5 review) ---------------------------------------------------------------------------
+
+class _TokenlessLogin:
+    """An adapter whose exchange 'succeeds' but hands back no session token."""
+
+    def __init__(self, *_args):
+        self.access_token = None
+
+    async def authenticate(self):
+        return None
+
+
+class _UpstoxLogin:
+    calls = 0
+
+    def __init__(self, _name, creds):
+        self.creds, self.access_token = creds, None
+
+    async def authenticate(self):
+        type(self).calls += 1
+        self.access_token = _fake("upstox-access")
+
+
+def _upstox_callback(state: str, code: str):
+    return client.get("/api/broker/upstox/oauth/callback", params={"code": code, "state": state}, follow_redirects=False)
+
+
+def _set_user(user_id: int, **values) -> None:
+    from sqlalchemy import update as sa_update
+    from app.db.models import User
+
+    async def go():
+        async with _session_factory() as session:
+            await session.execute(sa_update(User).where(User.id == user_id).values(**values))
+            await session.commit()
+    run(go())
+
+
+@pytest.mark.parametrize("broker", ["zerodha", "fyers", "upstox"])
+def test_callbacks_are_rate_limited_per_ip_and_still_redirect(monkeypatch, broker):
+    from app.core import rate_limit
+    monkeypatch.delitem(app.dependency_overrides, broker_routes.oauth_callback_rate_limit)
+    monkeypatch.setattr(broker_routes, "OAUTH_CALLBACK_LIMIT", 2)
+    rate_limit.reset("broker_oauth_callback")
+    called = []
+    monkeypatch.setattr(broker_routes, "get_broker_adapter", lambda *a: called.append(a))
+    path = f"/api/broker/{broker}/oauth/callback"
+    try:
+        outcomes = [client.get(path, params={"state": "forged", "code": "c", "auth_code": "c", "request_token": "c"},
+                               follow_redirects=False) for _ in range(3)]
+    finally:
+        rate_limit.reset("broker_oauth_callback")
+    assert [o.status_code for o in outcomes] == [302, 302, 302]                       # never a JSON 429
+    assert [_outcome(o)["error"] for o in outcomes] == ["invalid_state", "invalid_state", "too_many_attempts"]
+    assert _outcome(outcomes[2])["broker"] == broker and called == []
+
+
+def test_the_redaction_covers_a_trailing_slash_and_any_path_prefix():
+    from app.core.logging_config import CallbackQueryRedactionFilter, _redact_callback_query
+    code = _fake("code")
+    for path in (f"/api/broker/zerodha/oauth/callback/?request_token={code}&state=s",
+                 f"/api/v1/broker/fyers/oauth/callback?auth_code={code}&state=s",
+                 f"/proxy/api/v2/broker/upstox/oauth/callback/?code={code}"):
+        assert code not in _redact_callback_query(path) and _redact_callback_query(path).endswith("?[redacted]")
+        record = logging.LogRecord("uvicorn.access", logging.INFO, __file__, 1, '%s - "%s %s HTTP/%s" %d',
+                                   ("198.51.100.7:5000", "GET", path, "1.1", 302), None)
+        CallbackQueryRedactionFilter().filter(record)
+        assert code not in record.getMessage()
+    plain = logging.LogRecord("httpx", logging.INFO, __file__, 1, "%s", ("/api/broker/zerodha/oauth/start?account_label=x",), None)
+    CallbackQueryRedactionFilter().filter(plain)
+    assert plain.getMessage() == "/api/broker/zerodha/oauth/start?account_label=x"
+
+
+def test_production_wants_an_https_redirect_base_url(monkeypatch, caplog):
+    assert app_config.broker_oauth_redirect_problems("development", "http://localhost:8000") == []
+    assert app_config.broker_oauth_redirect_warnings("development", "") == []
+    for env in ("production", "staging"):
+        assert app_config.broker_oauth_redirect_problems(env, "https://atp.example.com") == []
+        assert app_config.broker_oauth_redirect_warnings(env, "https://atp.example.com") == []
+        assert "must start with https://" in app_config.broker_oauth_redirect_problems(env, "http://atp.example.com")[0]
+        assert "is not set" in app_config.broker_oauth_redirect_warnings(env, "")[0]
+    # Unset in production: a loud warning, not a refusal to start (existing .env files do not have it yet).
+    monkeypatch.setattr(app_config, "ENVIRONMENT", "production")
+    monkeypatch.setattr(app_config, "JWT_SECRET_KEY", "a-real-" + uuid.uuid4().hex)
+    monkeypatch.setattr(app_config, "SECRETS_ENCRYPTION_KEY", "set-" + uuid.uuid4().hex)
+    monkeypatch.setattr(app_config, "ALLOWED_ORIGINS", ["https://atp.example.com"])
+    monkeypatch.setattr(app_config, "METRICS_TOKEN", "m-" + uuid.uuid4().hex)
+    monkeypatch.delenv("EMAIL_VERIFICATION_REQUIRED", raising=False)
+    monkeypatch.setattr(app_config, "BROKER_OAUTH_REDIRECT_BASE_URL", "")
+    with caplog.at_level(logging.WARNING, logger="app.core.config"):
+        app_config.validate_production_config()
+    assert "CONFIGURATION ACTION NEEDED: BROKER_OAUTH_REDIRECT_BASE_URL is not set" in caplog.text
+    monkeypatch.setattr(app_config, "BROKER_OAUTH_REDIRECT_BASE_URL", "http://atp.example.com")
+    with pytest.raises(RuntimeError, match="BROKER_OAUTH_REDIRECT_BASE_URL must start with https://"):
+        app_config.validate_production_config()
+    monkeypatch.setattr(app_config, "BROKER_OAUTH_REDIRECT_BASE_URL", "https://atp.example.com")
+    app_config.validate_production_config()
+
+
+@pytest.mark.parametrize("change", ["deactivated", "viewer", "brokers_scope_denied"])
+def test_a_login_started_before_a_removal_or_demotion_does_not_finish(monkeypatch, change):
+    headers, me = _connect(f"kite-gone-{change}", "zerodha")
+    broker = _BrokerHttp()
+    _mock_broker(monkeypatch, broker)
+    state = _start(headers, "zerodha")["state"]
+    if change == "deactivated":
+        _set_user(me["id"], is_active=False)
+    elif change == "viewer":
+        _set_user(me["id"], role="VIEWER")
+    else:
+        _set_user(me["id"], scope_overrides=json.dumps({"deny": ["brokers:write"], "grant": []}))
+    assert _outcome(_kite_callback(state, _fake("code")))["error"] == "not_allowed"
+    assert broker.requests == []
+    assert _row(me["tenant_id"], "zerodha")[0].token_status == "UNKNOWN"
+    assert "may no longer change broker connections" in _audit_text(me["tenant_id"])
+
+
+def test_a_trading_member_still_cannot_use_another_members_nonce(monkeypatch):
+    headers, me = _connect("kite-member-nonce", "zerodha")
+    _member_headers, member = _member(headers)
+    broker = _BrokerHttp()
+    _mock_broker(monkeypatch, broker)
+    claims = tl.parse_oauth_state(_start(headers, "zerodha")["state"])
+    theirs = tl.create_oauth_state(me["tenant_id"], member["id"], "zerodha", nonce=claims["nonce"])
+    assert _outcome(_kite_callback(theirs, _fake("code")))["error"] == "invalid_state"
+    assert broker.requests == []
+
+
+def test_upstox_callback_uses_the_single_use_nonce(monkeypatch):
+    headers, me = _connect("upstox-nonce", "upstox")
+    _UpstoxLogin.calls = 0
+    monkeypatch.setattr(broker_routes, "get_broker_adapter", _UpstoxLogin)
+    # A signed state that no start route recorded (the pre-review Upstox state, no nonce) is refused before any exchange.
+    assert _outcome(_upstox_callback(tl.create_oauth_state(me["tenant_id"], me["id"], "upstox"), "c"))["error"] == "invalid_state"
+    assert _UpstoxLogin.calls == 0
+    first = _start(headers, "upstox")["state"]
+    second = _start(headers, "upstox")["state"]
+    assert _outcome(_upstox_callback(first, "c"))["error"] == "invalid_state"          # replaced by the newer login
+    code = _fake("upstox-code")
+    assert _outcome(_upstox_callback(second, code)) == {"broker": "upstox", "connected": "1"}
+    assert _outcome(_upstox_callback(second, code))["error"] == "invalid_state"        # works once
+    assert _UpstoxLogin.calls == 1
+    record, creds = _row(me["tenant_id"], "upstox")
+    assert record.token_status == "VALID" and creds.oauth_pending is None and creds.request_token is None
+    assert creds.redirect_uri.endswith("/api/broker/upstox/oauth/callback") and code not in _audit_text(me["tenant_id"])
+    # The broker's own error word is relayed only when it is a plain word.
+    res = client.get("/api/broker/upstox/oauth/callback", params={"error": "<script>"}, follow_redirects=False)
+    assert _outcome(res)["error"] == "login_cancelled"
+
+
+@pytest.mark.parametrize("broker", ["zerodha", "fyers", "upstox"])
+def test_no_token_returned_is_audited(monkeypatch, broker):
+    headers, me = _connect(f"no-token-{broker}", broker)
+    monkeypatch.setattr(broker_routes, "get_broker_adapter", _TokenlessLogin)
+    state = _start(headers, broker)["state"]
+    code = _fake("code")
+    res = {"zerodha": _kite_callback, "fyers": _fyers_callback, "upstox": _upstox_callback}[broker](state, code)
+    assert _outcome(res)["error"] == "no_token_returned"
+    audit = _audit_text(me["tenant_id"])
+    assert f"broker_oauth_failed {broker}/primary: the broker returned no session token" in audit and code not in audit
+    assert _row(me["tenant_id"], broker)[0].token_status == "UNKNOWN"

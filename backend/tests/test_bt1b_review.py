@@ -8,6 +8,7 @@ import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from sqlalchemy import select
@@ -104,8 +105,11 @@ def test_oauth_callback_never_writes_a_fresh_token_onto_a_row_that_changed_hands
     if flag_on:
         _byob(owner["tenant_id"])
     monkeypatch.setattr(broker_routes, "get_broker_adapter", lambda name, creds: _Login(during=_take_over_row(owner["tenant_id"], member["id"])))
-    state = token_lifecycle.create_oauth_state(owner["tenant_id"], owner["id"], "upstox")
-    r = client.get(f"/api/broker/upstox/oauth/callback?code=abc&state={state}", follow_redirects=False)
+    # UI2-5 review: the Upstox callback needs the single-use nonce the start route records, so the login starts there.
+    start = client.get("/api/broker/upstox/oauth/start", headers=owner_headers)
+    assert start.status_code == 200, start.text
+    state = parse_qs(urlparse(start.json()["authorization_url"]).query)["state"][0]
+    r = client.get("/api/broker/upstox/oauth/callback", params={"code": "abc", "state": state}, follow_redirects=False)
     assert r.status_code == 302 and "error=changed_during_login" in r.headers["location"]
     holder, creds, status = _row(owner["tenant_id"])
     assert holder == member["id"] and creds.access_token is None and status == "UNKNOWN"     # the member's store stands, no token

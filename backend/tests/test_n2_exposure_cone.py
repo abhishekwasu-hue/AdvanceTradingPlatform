@@ -33,6 +33,24 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+@pytest.fixture(autouse=True)
+def _own_rows_removed():
+    """The lake rows these tests seed (source "test-n2", version 99, NSE_INDEX:NIFTY50 among them) are removed before
+    and after each test: left behind, they outrank other tests' seeds of the same keys (test_s10_etf_whatsapp's index
+    change turned negative on the dates where the two overlapped)."""
+    from sqlalchemy import delete
+
+    def clear():
+        async def go():
+            async with _session_factory() as session:
+                await session.execute(delete(MdCandleRecord).where(MdCandleRecord.source == "test-n2"))
+                await session.commit()
+        _run(go())
+    clear()
+    yield
+    clear()
+
+
 def _email(tag: str) -> str:
     return f"n2e-{tag}-{uuid.uuid4().hex[:6]}@example.com"
 

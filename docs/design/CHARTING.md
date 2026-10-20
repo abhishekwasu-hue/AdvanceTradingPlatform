@@ -639,12 +639,17 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
   window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
   cell's button) shows the active chart at full size.
 - **Watchlist prices (UI2-4a2-pre).** `POST /api/market-data/quotes` (`app/market_data/quotes_routes.py`) takes up to
-  50 (exchange, symbol) pairs and answers each with `ltp`, `prev_close`, `change`, `change_pct`, its time and `stale`,
-  or `missing: true` with `ltp: null` and the reason - never 0, never sample data. Same broker gate and BT1 entitlement
-  guard as `/ltp` (Tier C 409 when no symbol may be shown live), 30 requests a minute per user. Where the adapter has a
-  multi-quote call (`BrokerInterface.multi_quote`: Kite, Upstox, Dhan, Fyers, Angel One) the whole list is ONE broker
-  call that takes ONE token from the credential's API budget; otherwise fresh ticks of the live feed answer first
-  (free), then one quote per symbol, each call taking a token, waiting at most 2 s in all - the rest say "budget used".
+  50 (exchange, symbol) pairs (symbols checked against the chart's symbol rule, so no "|" or "," reaches a batch call)
+  and answers each with `ltp`, `prev_close`, `change`, `change_pct`, its time and `stale`, or `missing: true` with
+  `ltp: null` and the reason - never 0, never sample data. Same broker gate and BT1 entitlement guard as `/ltp` (Tier C
+  409 when no symbol may be shown live; per-symbol EOD rows otherwise), 30 requests a minute per user. Prices come from
+  fresh ticks first (under BT1 the session's own only, as BT1 `/ltp`), then the credential's cached quotes, then - where
+  the adapter has a multi-quote call (`BrokerInterface.multi_quote`: Kite, Upstox, Dhan, Fyers, Angel One) - ONE broker
+  call for the still-unpriced symbols that takes ONE token from the credential's API budget, one such fetch per
+  credential at a time; its rows are cached 8 s per credential and symbol in `/ltp`'s shape, so `/ltp` and the next poll
+  reuse them. Without a multi-quote call: one call per symbol, each taking a token, at most 5 per request and none
+  started after 2 s; the rest say "budget used". The previous close is kept per broker, symbol and IST day. Instrument
+  masters are shared per process (`app/brokers/master_cache.py`, single-flight, 6 h) for adapters built without a client.
 - **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and
   tenant, a unique name per user, at most 50 (the user's row is locked with `SELECT ... FOR UPDATE` before the count, and re-counted after the insert, so two racing creates cannot pass it),
   versioned: the save and the delete are a conditional `UPDATE` / `DELETE ... WHERE id, user, tenant AND version`

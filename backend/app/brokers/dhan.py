@@ -339,7 +339,8 @@ class DhanBroker(BrokerInterface):
 
     async def _quotes(self, keys: List[str]) -> Dict[str, Quote]:
         by_segment: Dict[str, List[int]] = {}
-        back: Dict[Tuple[str, str], str] = {}
+        # UI2-4a2-pre review: two keys may name one instrument (an index and its alias): each gets the quote
+        back: Dict[Tuple[str, str], List[str]] = {}
         unresolved: List[BrokerAPIError] = []
         for key in keys:
             exchange, plain = (key.split(":", 1) if ":" in key else ("NSE", key))
@@ -351,8 +352,9 @@ class DhanBroker(BrokerInterface):
                 logger.warning("Dhan quote: %s", exc)
                 unresolved.append(exc)
                 continue
-            by_segment.setdefault(segment, []).append(int(security_id))
-            back[(segment, str(security_id))] = key
+            if (segment, str(security_id)) not in back:
+                by_segment.setdefault(segment, []).append(int(security_id))
+            back.setdefault((segment, str(security_id)), []).append(key)
         if unresolved and not by_segment:
             raise unresolved[0]                       # nothing resolved: the error, as before
         out: Dict[str, Quote] = {}
@@ -373,13 +375,12 @@ class DhanBroker(BrokerInterface):
             out.update(await self._quote_call(pending, back))
         return out
 
-    async def _quote_call(self, payload: Dict[str, List[int]], back: Dict[Tuple[str, str], str]) -> Dict[str, Quote]:
+    async def _quote_call(self, payload: Dict[str, List[int]], back: Dict[Tuple[str, str], List[str]]) -> Dict[str, Quote]:
         body = await self._request("POST", "/marketfeed/quote", json_body=payload) or {}
         out: Dict[str, Quote] = {}
         for segment, entries in (body.get("data") or {}).items():
             for security_id, entry in (entries or {}).items():
-                key = back.get((segment, str(security_id)))
-                if key is not None:
+                for key in back.get((segment, str(security_id))) or []:
                     out[key] = self._quote_from(entry or {}, key)
         return out
 

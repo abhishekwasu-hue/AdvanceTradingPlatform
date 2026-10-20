@@ -33,6 +33,7 @@ from typing import Dict, List, Optional, Tuple
 
 import httpx
 
+from app.brokers import master_cache
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
@@ -72,6 +73,7 @@ INDEX_ALIASES = {"NIFTY": "Nifty 50", "BANKNIFTY": "Nifty Bank", "FINNIFTY": "Ni
                  "SENSEX": "SENSEX", "BANKEX": "BANKEX", "NIFTY 50": "Nifty 50", "NIFTY BANK": "Nifty Bank"}
 QUOTE_BATCH = 50
 INSTRUMENT_CACHE_TTL_SECONDS = 6 * 60 * 60
+RAW_MASTER_SHARE_SECONDS = 120          # the raw scrip master, shared only while exchanges are being built from it
 AUTH_ERROR_CODES = ("AG8001", "AG8002", "AG8003", "AB8050", "AB8051", "AB1010")
 # The stored secret becomes the current code in one shared place (Shoonya's factor2 uses the same helper).
 _totp_code = totp_code
@@ -127,6 +129,10 @@ class AngelOneBroker(BrokerInterface):
         self._instruments_cache: Dict[str, Tuple[float, List[Instrument]]] = {}
         # (exchange, platform symbol) -> (symboltoken, Angel trading symbol)
         self._symbol_map: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        # UI2-4a2-pre review: built without a client (the app's path, an adapter per request), each exchange's
+        # instruments and symbol map are shared by the process (master_cache); the tens-of-MB download itself is kept
+        # only RAW_MASTER_SHARE_SECONDS, long enough for a few exchanges built together to share it.
+        self._shared_master = client is None
 
     # --- transport ------------------------------------------------------------------------------
     def _headers(self, authenticated: bool) -> Dict[str, str]:
@@ -211,8 +217,25 @@ class AngelOneBroker(BrokerInterface):
         cached = self._instruments_cache.get(exchange)
         if cached and (time.monotonic() - cached[0]) < INSTRUMENT_CACHE_TTL_SECONDS:
             return cached[1]
+        if self._shared_master:
+            out, symbols = await master_cache.shared(self.name, exchange, lambda: self._build_exchange(exchange),
+                                                     ttl=INSTRUMENT_CACHE_TTL_SECONDS)
+        else:
+            out, symbols = await self._build_exchange(exchange)
+        self._symbol_map.update(symbols)
+        self._instruments_cache[exchange] = (time.monotonic(), out)
+        return out
+
+    async def _rows(self) -> List[dict]:
+        if not self._shared_master:
+            return await self._scrip_master()
+        return await master_cache.shared(self.name, "*", self._scrip_master, ttl=RAW_MASTER_SHARE_SECONDS)
+
+    async def _build_exchange(self, exchange: str) -> Tuple[List[Instrument], Dict[Tuple[str, str], Tuple[str, str]]]:
+        """One exchange's instruments and (exchange, platform symbol or name) -> (token, Angel trading symbol)."""
         out: List[Instrument] = []
-        for row in await self._scrip_master():
+        symbol_map: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        for row in await self._rows():
             if str(row.get("exch_seg", "")).upper() != exchange:
                 continue
             symbol = self._platform_symbol(row)
@@ -229,12 +252,11 @@ class AngelOneBroker(BrokerInterface):
                                   segment=row.get("exch_seg"), instrument_type=(row.get("instrumenttype") or None) or ("EQ" if exchange in ("NSE", "BSE") else None),
                                   lot_size=float(row.get("lotsize") or 1), tick_size=tick or 0.05, expiry=_parse_expiry(row.get("expiry")),
                                   strike=strike if strike > 0 else None))
-            self._symbol_map[(exchange, symbol)] = (token, str(row.get("symbol") or symbol))
+            symbol_map[(exchange, symbol)] = (token, str(row.get("symbol") or symbol))
             name = str(row.get("name") or "").upper()
-            if name and (exchange, name) not in self._symbol_map and not row.get("instrumenttype"):
-                self._symbol_map[(exchange, name)] = (token, str(row.get("symbol") or symbol))
-        self._instruments_cache[exchange] = (time.monotonic(), out)
-        return out
+            if name and (exchange, name) not in symbol_map and not row.get("instrumenttype"):
+                symbol_map[(exchange, name)] = (token, str(row.get("symbol") or symbol))
+        return out, symbol_map
 
     async def _resolve(self, symbol: str, exchange: str) -> Tuple[str, str]:
         """Platform symbol -> (symboltoken, Angel trading symbol)."""
@@ -285,21 +307,24 @@ class AngelOneBroker(BrokerInterface):
         if len(items) > QUOTE_BATCH:
             return None
         by_exchange: Dict[str, List[str]] = {}
-        back: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        back: Dict[Tuple[str, str], List[Tuple[str, str]]] = {}     # two pairs may name one token: each gets the quote
         for exchange, symbol in items:
+            if ":" in symbol and symbol.split(":", 1)[0].upper() != exchange.upper():
+                continue                              # "BSE:X" asked as NSE: _resolve would quote the other exchange
             try:
                 token, _raw = await self._resolve(symbol, exchange)
             except BrokerAPIError:
                 continue
-            by_exchange.setdefault(exchange.upper(), []).append(token)
-            back[(exchange.upper(), str(token))] = (exchange, symbol)
+            slot = (exchange.upper(), str(token))
+            if slot not in back:
+                by_exchange.setdefault(exchange.upper(), []).append(token)
+            back.setdefault(slot, []).append((exchange, symbol))
         if not by_exchange:
             return {}
         data = await self._request("POST", QUOTE_PATH, json_body={"mode": "FULL", "exchangeTokens": by_exchange}) or {}
         out: Dict[Tuple[str, str], Quote] = {}
         for entry in data.get("fetched") or []:
-            pair = back.get((str(entry.get("exchange", "")).upper(), str(entry.get("symbolToken"))))
-            if pair is not None:
+            for pair in back.get((str(entry.get("exchange", "")).upper(), str(entry.get("symbolToken")))) or []:
                 out[pair] = self._quote_from(entry, pair[1])
         return out
 

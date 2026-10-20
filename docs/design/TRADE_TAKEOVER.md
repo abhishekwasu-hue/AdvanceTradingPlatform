@@ -5,6 +5,13 @@ acecd23) has no `docs/reader/STABLE.md`, no `reader-layer*` tags, no `parity/` f
 `EXPORT_MANIFEST.md` and no `SUNSET.md`. The rows that track the work are section "3a. Trade takeover" of
 `docs/TRADE_PORT_MAP.md` (T1-T14).
 
+**Where the reader goes (owner decision PR-1, 2026-10-20):** this repository is public, so the reader (T1-T6), the KB
+and the Method Pack (T7), the method part of the Vision checklist (T8) and the private fixtures go into a **separate
+private package** (a private repository), never into ATP's public tree. ATP's public code holds only the boundary (a
+provider interface and a loader) and the generic parts (deployments, approval, Telegram, PAPER, exits, Vision
+plumbing, the UI behind flags). Plan: `docs/design/PRIVATE_PACKAGE.md`. Paths written `atp_private/...` below are in
+the private package.
+
 The same working rules apply as everywhere in ATP: draft PRs, self-review, tests, PAPER only, LIVE untouched, English
 only, tenant-safe, settings-driven. Current ATP priorities (load test, UI v2, broker connect) keep their place; the
 takeover starts with the data import and the port map, and each reader layer is ported when it becomes stable.
@@ -40,7 +47,7 @@ ATP does not port a layer from an untagged commit, from a branch, or from code w
 
 1. **Read the tag.** Fetch Trade at `reader-layer<N>-stable-vX`; read its `STABLE.md` entry; check that
    `parity/<layer>/<tag>/` exists and that every fixture matches its sha256.
-2. **Copy the logic as it is, with English names.** One package, `backend/app/reader/`, one owner module per concept,
+2. **Copy the logic as it is, with English names.** One package in the private package, `atp_private/reader/`, one owner module per concept,
    as in Trade's structure-reset table (`docs/design/CHART_READER_AGENT.md` section 3) and `docs/reports/v22/METHOD_MAP.md`.
    Trade's Marathi comments and labels are translated; the logic is not changed. Every module header records the Trade
    tag and commit it was ported from; the port map row records the tag.
@@ -53,9 +60,9 @@ ATP does not port a layer from an untagged commit, from a branch, or from code w
    "waiting (no tag)" to "ported" with the tag, the ATP paths and the parity test.
 
 **Parity fixtures stay private.** They are built from licensed market data and never enter ATP's git. They are copied
-from trade-data into the private fixtures store on the host (section 7) and the parity tests read them from there
-(an environment variable names the store). In the public CI the parity tests are skipped with a visible reason; they
-run on the host, or on a private runner that mounts the store read-only. A fixture manifest (paths and sha256 only,
+from trade-data into the private package's `fixtures/` (and the host's private fixtures store, section 7), and the
+parity tests read them from there (the environment variable `ATP_PRIVATE_FIXTURES` names the store). They run in the
+private package's CI job and on the host, never in the public CI. A fixture manifest (paths and sha256 only,
 no data) may be committed so a test can prove it read exactly the tag's fixtures. Each layer also keeps a few small
 synthetic cases in git (made-up bars, mirror pairs) so the public CI always exercises the code.
 
@@ -65,7 +72,7 @@ synthetic cases in git (made-up bars, mirror pairs) so the public CI always exer
   thresholds, ratios, counts, widths, multipliers, clock times, day or session resets. Numbers belong only to
   operational dashboard settings (lots, SL, target, exits, schedules), display limits and data-quality checks
   (METHOD sections 1 and 6).
-- **The CI check.** `backend/tests/test_reader_no_numbers.py` mirrors Trade's `tests/test_method_no_numbers.py`:
+- **The CI check.** `tests/test_reader_no_numbers.py` in the private package (run by its private CI job) mirrors Trade's `tests/test_method_no_numbers.py`:
   every numeric setting of the reader must be classified as a legacy what-if (off by default), operational, display
   or data quality; an unclassified number fails the build. It starts with layer 1 and grows with each layer; at
   layer 6 nothing may be "pending".
@@ -80,7 +87,7 @@ synthetic cases in git (made-up bars, mirror pairs) so the public CI always exer
 ## 5. Tenant safety
 
 - Every read runs on the tenant's own broker data (or data the tenant is entitled to), never another tenant's.
-- No shared mutable state in `backend/app/reader/`: no module-level caches keyed without the tenant, no globals that
+- No shared mutable state in `atp_private/reader/`: no module-level caches keyed without the tenant, no globals that
   hold bars, areas or working memory. Caches, if any, are keyed by tenant and input hash and hold pure results.
 - The owner's licensed intraday history (HB0 / HB2 private store) is read only for the owner's tenant.
 - Reader outputs, Vision audits and approvals are stored per tenant and per user, like every other ATP record.
@@ -114,11 +121,12 @@ Everything in Trade's `EXPORT_MANIFEST.md` is imported on the Hostinger host, ne
 
 ## 8. KB and Method Pack
 
-> **On hold while this repository is public (2026-10-20).** Nothing from the KB, the method or the Method Pack is
-> copied into this public repository until open question PR-1 (`docs/OPEN_QUESTIONS.md`) is decided: the repository
-> goes private again, or they live in a separate private package. `scripts/check_public_repo.py` refuses their paths
-> (`docs/knowledge/`, `*method_pack*`, `KNOWLEDGE_BASE*`, `*METHOD_NOTES*`, `CHART_READER_METHOD*`). See
-> `docs/PUBLIC_REPO_POLICY.md`. The plan below applies to wherever PR-1 puts them.
+> **In the private package (owner decision PR-1, 2026-10-20).** The KB, the method, the owner's notes and the Method
+> Pack go into the private package (`knowledge/`, `atp_private/method_pack/`), never into this public repository;
+> `scripts/check_public_repo.py` refuses their names here (`docs/knowledge/`, `*method_pack*`, `KNOWLEDGE_BASE*`,
+> `*METHOD_NOTES*`, `CHART_READER_METHOD*`). Trade's public tree carries them today: they are copied into the private
+> package first, and Trade removes them from its public tree only after that copy is checked and Trade reads from it
+> (`docs/design/PRIVATE_PACKAGE.md` section 8; the Trade session order is `docs/design/TRADE_ORDER_KB_MOVE.md`).
 
 - ATP copies the KB, the method and the generated Method Pack at the version that matches each stable tag (the pack
   version is its content hash, recorded in `STABLE.md` and in every reader and Vision log line).

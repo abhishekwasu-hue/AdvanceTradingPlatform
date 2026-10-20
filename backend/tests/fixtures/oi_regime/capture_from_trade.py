@@ -2,6 +2,8 @@
 
 Run by hand from a checkout of the Trade repo (never in CI):
     cd <trade checkout> && PYTHONPATH=. python <atp>/backend/tests/fixtures/oi_regime/capture_from_trade.py > <atp>/backend/tests/fixtures/oi_regime/golden.json
+The golden file is grandfathered in scripts/check_public_repo.py (Trade output, open question PR-2): it may not change
+here; a Trade re-sync goes to the private fixtures store (docs/design/TRADE_TAKEOVER.md section 3).
 
 Inputs are drawn from a fixed seed, so a re-run gives the same file. Labels are stored as Trade prints them; the test
 reads them with OISignal.parse / the class names, so the Marathi strings never reach ATP's code or UI.

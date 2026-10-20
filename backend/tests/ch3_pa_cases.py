@@ -5,6 +5,8 @@ BANKNIFTY-like, no real market data and nothing from the sealed NIFTY holdout).
 full, the debug view by fingerprint). tests/fixtures/charts/pa_layer_golden.json holds it, and frontend/src/charting/__fixtures__/pa_layer_golden.json
 is a byte-identical copy (the frontend Docker build sees only frontend/) used by priceAction.test.ts.
 Regenerate both - only after a deliberate engine or schema change - from backend/:  python -m tests.ch3_pa_cases --write
+Then pin the new content (public repo guard, ALLOWED_TEST_DATA in scripts/check_public_repo.py):  python3 ../scripts/check_public_repo.py --hash
+    tests/fixtures/charts/pa_layer_golden.json ../frontend/src/charting/__fixtures__/pa_layer_golden.json
 """
 import json
 import sys

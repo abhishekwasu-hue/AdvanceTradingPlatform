@@ -1,6 +1,8 @@
 """Regenerates golden.json from the Trade repo's own `strike_breach_model.py` (run by hand; the tests only read the JSON).
 
     python make_golden.py /path/to/trade | gzip -9 > golden.json.gz
+    # The golden file is grandfathered in scripts/check_public_repo.py (Trade output, open question PR-2): it may not
+    # change here; a Trade re-sync goes to the private fixtures store (docs/design/TRADE_TAKEOVER.md section 3).
 
 Records, on a synthetic daily series (no market data): the Trade feature table (`daily_features`, without the structure
 column ATP does not port), breach probabilities from the frozen NIFTY coefficients through Trade's own `design` +

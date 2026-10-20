@@ -2,6 +2,8 @@
 
     git -C /path/to/trade archive <rev> | tar -x -C /tmp/trade_export        # a read-only export, never the repo itself
     python make_golden.py /tmp/trade_export <the full 40-character SHA of rev> golden.json.gz
+    # The golden file is grandfathered in scripts/check_public_repo.py (Trade output, open question PR-2): it may not
+    # change here; a Trade re-sync goes to the private fixtures store (docs/design/TRADE_TAKEOVER.md section 3).
 
 Inputs are synthetic and seeded (no market data): multi-day 5-minute IST sessions with trends, pullbacks, impulsive
 drives and volume (some series without volume), candidate areas around the session's own swing extremes, Daily states

@@ -2,6 +2,8 @@
 
     git -C /path/to/trade archive <rev> | tar -x -C /tmp/trade_export        # a read-only export, never the repo itself
     python make_golden.py /tmp/trade_export <the full 40-character SHA of rev> golden.json.gz
+    # The golden file is grandfathered in scripts/check_public_repo.py (Trade output, open question PR-2): it may not
+    # change here; a Trade re-sync goes to the private fixtures store (docs/design/TRADE_TAKEOVER.md section 3).
 
 Inputs are synthetic and seeded (no market data): Daily series built from nested trend / correction legs with noise, so
 the fold meets starts, impulses, corrections (candidate and A1), origin breaks, flips, ranges, sharp zones and wave A.

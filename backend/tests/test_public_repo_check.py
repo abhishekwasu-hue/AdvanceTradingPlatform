@@ -58,12 +58,19 @@ def test_every_grandfathered_fixture_still_exists_and_is_still_caught():
 
 
 def _without_grandfathering(rel: str) -> list:
-    saved = check_public_repo.GRANDFATHERED_FIXTURES
-    check_public_repo.GRANDFATHERED_FIXTURES = frozenset()
+    saved = check_public_repo.GRANDFATHERED_FIXTURES, check_public_repo.ALLOWED_TEST_DATA
+    check_public_repo.GRANDFATHERED_FIXTURES, check_public_repo.ALLOWED_TEST_DATA = {}, {}
     try:
         return check_public_repo.path_problems(rel)
     finally:
-        check_public_repo.GRANDFATHERED_FIXTURES = saved
+        check_public_repo.GRANDFATHERED_FIXTURES, check_public_repo.ALLOWED_TEST_DATA = saved
+
+
+def test_every_listed_data_file_is_pinned_to_its_current_content():
+    for rel, pinned in {**check_public_repo.GRANDFATHERED_FIXTURES, **check_public_repo.ALLOWED_TEST_DATA}.items():
+        assert (REPO / rel).is_file(), f"{rel} is gone - remove it from the list"
+        assert check_public_repo.content_sha256((REPO / rel).read_bytes()) == pinned, rel
+        assert _without_grandfathering(rel), f"{rel} would not be flagged - it needs no entry"
 
 
 def test_a_clean_tree_passes(tmp_path):
@@ -142,7 +149,9 @@ def test_a_private_key_header_is_refused(tmp_path):
 
 @pytest.mark.parametrize("rel", ["deploy/server.pem", "certs/tls.key", "android/upload.jks", "android/release.keystore",
                                  "a/cert.p12", "a/cert.pfx", "a/encrypted.pepk", "android/app/google-services.json",
-                                 "ios/App/GoogleService-Info.plist"])
+                                 "ios/App/GoogleService-Info.plist", "deploy/putty.ppk", "android/keystore.properties",
+                                 "android/signing.properties", "deploy/fcm-service-account.json", "a/gcp_service_account_prod.json",
+                                 "a/broker_credentials.json"])
 def test_secret_file_types_are_refused(tmp_path, rel):
     root = _tree(tmp_path, {rel: b"x"})
     problems = check_public_repo.check(root)
@@ -177,7 +186,7 @@ def test_a_new_golden_parity_or_real_data_file_is_refused(tmp_path, rel):
 
 @pytest.mark.parametrize("rel", [
     "backend/tests/golden_reference.py", "backend/tests/fixtures/zones/make_golden.py", "backend/tests/test_zones_parity.py",
-    "backend/app/journal/service.py", "frontend/e2e/fixtures/notifications.json", "backend/tests/fixtures/zones/README.md",
+    "backend/app/journal/service.py", "frontend/e2e/specs/login.spec.ts", "backend/tests/fixtures/zones/README.md",
     "backend/app/instruments/data/nse_index_expiries.csv", "docs/design/ui-audit/01-dashboard.png",
 ])
 def test_code_docs_and_ordinary_data_are_not_fixtures(tmp_path, rel):
@@ -187,9 +196,58 @@ def test_code_docs_and_ordinary_data_are_not_fixtures(tmp_path, rel):
 
 def test_a_grandfathered_fixture_passes_but_a_sibling_does_not(tmp_path):
     kept = "backend/tests/fixtures/zones/bn_daily.csv"
-    root = _tree(tmp_path, {kept: "1,2\n", "backend/tests/fixtures/zones/bn_daily_v2.csv": "1,2\n"})
+    root = _tree(tmp_path, {kept: (REPO / kept).read_bytes(), "backend/tests/fixtures/zones/bn_daily_v2.csv": "1,2\n"})
     problems = check_public_repo.check(root)
     assert len(problems) == 1 and problems[0].startswith("backend/tests/fixtures/zones/bn_daily_v2.csv")
+
+
+def test_a_listed_file_with_new_content_is_refused(tmp_path):
+    kept = "backend/tests/fixtures/oi_regime/golden.json"
+    allowed = "frontend/src/charting/__fixtures__/chart_bands_cases.json"
+    original = (REPO / kept).read_bytes()
+    same_with_crlf = _tree(tmp_path / "crlf", {kept: original.replace(b"\n", b"\r\n")})
+    assert check_public_repo.check(same_with_crlf) == []
+    changed = (REPO / allowed).read_bytes() + b" "
+    root = _tree(tmp_path / "changed", {kept: original + b" ", allowed: changed})
+    problems = sorted(check_public_repo.check(root), key=lambda p: p.startswith(allowed))
+    assert len(problems) == 2
+    assert problems[0].startswith(kept) and "grandfathered fixture with new content" in problems[0]
+    assert problems[1].startswith(allowed) and "replace its line in ALLOWED_TEST_DATA" in problems[1]
+    assert check_public_repo.content_sha256(changed) in problems[1]
+
+
+@pytest.mark.parametrize("rel", [
+    "backend/tests/data/cases.json", "backend/tests/fixtures/new/arrays.npz", "backend/tests/model.pkl",
+    "backend/tests/fixtures/charts/bars.json", "backend/tests/fixtures/x/snapshot.json.gz", "backend/tests/cache.sqlite",
+    "frontend/src/charting/__fixtures__/new_cases.json", "frontend/src/utils/__fixtures__/bars.csv",
+    "frontend/e2e/fixtures/new.json", "frontend/test/data/cases.json", "backend/evals/sets/new.jsonl", "backend/evals/scores.json",
+])
+def test_a_new_data_file_in_the_tests_is_refused(tmp_path, rel):
+    root = _tree(tmp_path, {rel: b"{}"})
+    problems = check_public_repo.check(root)
+    assert len(problems) == 1 and "private fixtures store" in problems[0]
+
+
+@pytest.mark.parametrize("rel", ["docs/examples/sample.json", "backend/app/data/config.json", "backend/tests/conftest.py",
+                                 "backend/tests/fixtures/zones/NOTES.md", "frontend/e2e/specs/app.spec.ts"])
+def test_data_outside_the_test_data_folders_is_not_pinned(tmp_path, rel):
+    assert check_public_repo.check(_tree(tmp_path, {rel: "{}\n"})) == []
+
+
+@pytest.mark.parametrize("rel", [
+    "docs/knowledge/CHART_READER_METHOD.md", "docs/knowledge/zones.md", "backend/app/reader/method_pack.json",
+    "packs/Method-Pack-v3.zip", "docs/KNOWLEDGE_BASE.md", "kb/knowledge_base_2026.md", "notes/ZONES_METHOD_NOTES.md",
+    "docs/chart_reader_method_v2.md", "docs/Method Pack v1.md", "notes/Knowledge Base.md", "docs/Chart Reader Method.pdf",
+])
+def test_the_kb_and_method_pack_are_refused(tmp_path, rel):
+    problems = check_public_repo.check(_tree(tmp_path, {rel: "x\n"}))
+    assert len(problems) == 1 and "PR-1" in problems[0]
+
+
+@pytest.mark.parametrize("rel", ["docs/knowledge.md", "backend/app/reader/methods.py", "docs/design/TRADE_TAKEOVER.md",
+                                 "backend/app/kb/base.py"])
+def test_ordinary_paths_are_not_the_kb(tmp_path, rel):
+    assert check_public_repo.check(_tree(tmp_path, {rel: "x\n"})) == []
 
 
 def test_the_command_line_exit_codes(tmp_path):
@@ -199,3 +257,65 @@ def test_the_command_line_exit_codes(tmp_path):
     bad = subprocess.run([sys.executable, str(SCRIPT), "--root", str(dirty)], capture_output=True, text=True)
     assert ok.returncode == 0 and "OK" in ok.stdout
     assert bad.returncode == 1 and "Telegram bot token" in bad.stderr and BOT_TOKEN not in bad.stderr
+
+
+@pytest.mark.parametrize("rel, text, flagged", [
+    (".npmrc", "//registry.npmjs.org/:_authToken=" + "npm_" + "x" * 20 + "\n", True),
+    ("frontend/.npmrc", "_auth=" + "dXNlcjpwYXNz" + "\n", True),
+    (".npmrc", "//registry.npmjs.org/:_authToken=${NPM_TOKEN}\nsave-exact=true\n", False),
+    (".pypirc", "[pypi]\nusername = __token__\npassword = " + "pypi-" + "x" * 20 + "\n", True),
+    (".pypirc", "[pypi]\nusername = __token__\npassword = ${PYPI_TOKEN}\n", False),
+])
+def test_npmrc_and_pypirc_with_a_token(tmp_path, rel, text, flagged):
+    problems = check_public_repo.check(_tree(tmp_path, {rel: text}))
+    assert bool(problems) is flagged
+    assert all("token or password" in p and "x" * 20 not in p for p in problems)
+
+
+@pytest.mark.parametrize("spelling", ["{a}-{b}-{c}-{d}", "ip-{a}-{b}-{c}-{d}.host", "{a}_{b}_{c}_{d}", "{a} {b} {c} {d}",
+                                      "{a}.{b}.{c}.{d}", "srv/{a}.{b}.{c}.{d}", "{a}/{b}/{c}/{d}", "{a}:{b}:{c}:{d}"])
+def test_the_production_ip_is_refused_in_other_notations(tmp_path, monkeypatch, spelling):
+    a, b, c, d = "198", "51", "100", "77"
+    monkeypatch.setattr(check_public_repo, "PRODUCTION_IP_SHA256", frozenset({hashlib.sha256(f"{a}.{b}.{c}.{d}".encode()).hexdigest()}))
+    problems = check_public_repo.check(_tree(tmp_path, {"docs/a.md": "host " + spelling.format(a=a, b=b, c=c, d=d) + "\n"}))
+    assert len(problems) == 1 and "production server's IP" in problems[0]
+
+
+def test_only_known_browser_tokens_excuse_a_version_like_address(tmp_path):
+    root = _tree(tmp_path, {
+        "ua.txt": f"Mozilla/5.0 Chrome/{PUBLIC_IP} Safari/{PUBLIC_IP} HeadlessChrome/{PUBLIC_IP} Firefox/{PUBLIC_IP}\n",
+        "url.txt": f"proxy foo/{PUBLIC_IP}\nhttp://{PUBLIC_IP}/x\n",
+    })
+    problems = check_public_repo.check(root)
+    assert len(problems) == 2 and all(p.startswith("url.txt") for p in problems)
+
+
+def test_every_public_data_entry_exists():
+    for rel in check_public_repo.ALLOWED_PUBLIC_DATA:
+        assert (REPO / rel).is_file(), rel
+
+
+@pytest.mark.parametrize("rel", ["backend/app/models/model.pkl", "docs/data/bars.parquet", "scripts/out.csv", "a/b/arr.npy",
+                                 "frontend/public/x.feather", "notes/sheet.xlsx", "x/y.h5", "x/y.arrow", "x/y.tsv"])
+def test_tabular_and_binary_data_anywhere_must_be_listed(tmp_path, rel):
+    problems = check_public_repo.check(_tree(tmp_path, {rel: b"1,2\n"}))
+    assert len(problems) == 1 and "private fixtures store" in problems[0]
+
+
+def test_a_new_data_file_finding_prints_the_line_that_pins_it(tmp_path):
+    rel = "backend/tests/fixtures/new/cases.json"
+    data = b'{"bars": [1, 2, 3]}\n'
+    problems = check_public_repo.check(_tree(tmp_path, {rel: data}))
+    line = f'"{rel}": "{hashlib.sha256(data).hexdigest()}",'
+    assert len(problems) == 1 and "that is fine" in problems[0] and line in problems[0]
+
+
+def test_the_hash_option_prints_the_allow_line(tmp_path):
+    rel = "backend/tests/fixtures/new/cases.json"
+    root = _tree(tmp_path, {rel: b"a\r\nb\r\n"})
+    out = subprocess.run([sys.executable, str(SCRIPT), "--root", str(root), "--hash", rel], capture_output=True, text=True)
+    assert out.returncode == 0
+    want = hashlib.sha256(b"a\nb\n").hexdigest()
+    assert out.stdout.strip() == f'"{rel}": "{want}",'
+    missing = subprocess.run([sys.executable, str(SCRIPT), "--root", str(root), "--hash", "nope.json"], capture_output=True, text=True)
+    assert missing.returncode == 2

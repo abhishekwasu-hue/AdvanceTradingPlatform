@@ -12,6 +12,8 @@ checks ATP == Trade without Trade on disk. Normalisation only drops Trade's Mara
 
 Regenerate (only on a deliberate Trade re-sync), from backend/:
     TRADE_REPO_PATH=/path/to/trade python -m tests.ch3b_golden --write
+The golden file is grandfathered in scripts/check_public_repo.py (Trade output, open question PR-2): it may not change
+here; a Trade re-sync goes to the private fixtures store (docs/design/TRADE_TAKEOVER.md section 3).
 The Trade files are read with `git archive` at TRADE_COMMIT into a temporary directory - the checkout is never changed.
 """
 import importlib

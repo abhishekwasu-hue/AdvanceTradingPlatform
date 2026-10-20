@@ -11,6 +11,8 @@ with yesterday's remembered levels - carry, retire, distance, cap, role by price
 nightly apply over zone rows (Trade DataFrames vs ATP row dicts, other zone types untouched). Normalisation absorbs only
 the documented differences: ATP timeframe labels and zone rows without the timeframe suffix in the type.
 Regenerate (after a deliberate Trade re-sync) from backend/ with:  python -m tests.zones_memory_golden --write
+The golden file is grandfathered in scripts/check_public_repo.py (Trade output, open question PR-2): it may not change
+here; a Trade re-sync goes to the private fixtures store (docs/design/TRADE_TAKEOVER.md section 3).
 """
 import importlib
 import os

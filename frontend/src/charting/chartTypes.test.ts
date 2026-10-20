@@ -134,6 +134,8 @@ describe("goldens (CH5-b)", () => {
     const box = 20;
     const now = { input_seed: 7, bars: data.length, box, heikin_ashi: heikinAshi(data), renko: renko(data, box), range: rangeBars(data, box) };
     // Regenerate after a deliberate change: UPDATE_GOLDEN=1 npx vitest run src/charting/chartTypes.test.ts
+    // Then pin it (public repo guard): python3 ../scripts/check_public_repo.py --hash src/charting/__fixtures__/chart_types_golden.json.gz
+    // and replace its line in ALLOWED_TEST_DATA (scripts/check_public_repo.py).
     // (stored gzipped: the golden is ~116 KB of JSON).
     const env = (globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env ?? {};
     const { fs, zlib } = await node();

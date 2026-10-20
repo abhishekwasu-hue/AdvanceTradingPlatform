@@ -12,7 +12,8 @@ caller's organisation every route below answers the platform's standard 503 with
 Every item route reads the caller's own rows only (tenant AND user). Upload, link and analyze share a per-user rate
 limit from the settings. Nothing here places, proposes or changes an order.
 """
-import threading
+import asyncio
+import weakref
 from typing import Any, Dict, Optional
 
 from fastapi.concurrency import run_in_threadpool
@@ -34,9 +35,19 @@ admin_router = APIRouter(prefix="/api/admin/chart-analyze", tags=["admin"], depe
 
 RATE_NAME = "chart_analyze"
 READ_CHUNK = 64 * 1024
-# Process resource guard (not a plan limit): image decodes running at once in one API process.
+# Process resource guard (not a plan limit): image decodes running at once in one API process. The gate is taken on the
+# event loop BEFORE a thread is used, so waiting decodes never sit in anyio's shared worker threads. One gate per event
+# loop (an asyncio.Semaphore belongs to the loop it first waits on).
 DECODE_SLOTS = 2
-_DECODE_GATE = threading.BoundedSemaphore(DECODE_SLOTS)     # taken in the worker thread: independent of the event loop
+_DECODE_GATES: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Semaphore]" = weakref.WeakKeyDictionary()
+
+
+def _decode_gate() -> asyncio.Semaphore:
+    loop = asyncio.get_running_loop()
+    gate = _DECODE_GATES.get(loop)
+    if gate is None:
+        gate = _DECODE_GATES[loop] = asyncio.Semaphore(DECODE_SLOTS)
+    return gate
 
 
 class SettingsBody(BaseModel):
@@ -135,12 +146,8 @@ async def add_item(file: Optional[UploadFile] = File(default=None), link: Option
 async def _decode(raw: bytes, settings: Dict[str, Any]) -> imaging.CleanImage:
     """The CPU-bound decode in a worker thread, at most DECODE_SLOTS at a time in this process (a large image takes
     about a second and some hundred MB while it is decoded), so the event loop never stalls on it."""
-    return await run_in_threadpool(_sanitize_gated, raw, settings)
-
-
-def _sanitize_gated(raw: bytes, settings: Dict[str, Any]) -> imaging.CleanImage:
-    with _DECODE_GATE:
-        return imaging.sanitize(raw, settings)
+    async with _decode_gate():
+        return await run_in_threadpool(imaging.sanitize, raw, settings)
 
 
 @router.get("/items")

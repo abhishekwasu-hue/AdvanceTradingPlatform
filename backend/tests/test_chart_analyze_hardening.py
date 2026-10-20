@@ -104,7 +104,7 @@ def test_a_fresh_running_row_is_protected_and_a_stale_one_can_be_retried_and_del
     _age(item["id"], status="running", started_at=now - timedelta(minutes=1))
     assert client.post(f"{BASE}/items/{item['id']}/analyze", headers=who["headers"]).status_code == 409
     assert client.delete(f"{BASE}/items/{item['id']}", headers=who["headers"]).status_code == 409
-    _age(item["id"], started_at=now - timedelta(minutes=SETTINGS["running_timeout_minutes"] + 1))
+    _age(item["id"], started_at=now - timedelta(minutes=service.running_timeout_minutes(SETTINGS) + 1))
     retried = client.post(f"{BASE}/items/{item['id']}/analyze", headers=who["headers"])
     assert retried.status_code == 200 and retried.json()["status"] == "done"
     other = _upload(who).json()
@@ -306,3 +306,119 @@ def test_pillow_is_at_least_the_fixed_release():
     import PIL
     major, minor, patch = (int(x) for x in PIL.__version__.split(".")[:3])
     assert (major, minor, patch) >= (12, 1, 1)
+
+
+# --- re-review: a run only ever finishes its own claim; shielded cleanup; stale rows reserve nothing ---------------------
+
+def test_a_late_finish_after_a_re_claim_or_a_delete_changes_nothing():
+    who = _owner("late")
+    item = _upload(who).json()
+    first = datetime.now(timezone.utc) - timedelta(minutes=30)
+    second = datetime.now(timezone.utc)
+    _age(item["id"], status="running", started_at=second)              # another request re-claimed the stale row
+
+    async def finish(claimed):
+        async with _session_factory() as session:
+            return await service._finish(session, item["id"], claimed, "done", result='{"x":1}', cost=1.0)
+    assert _run(finish(first)) is False
+    row = _row(item["id"])
+    assert row.status == "running" and row.result_json is None and row.cost_usd == 0
+    assert _run(finish(second)) is True and _row(item["id"]).status == "done"
+    other = _upload(who).json()
+    _age(other["id"], status="running", started_at=first)
+    assert client.delete(f"{BASE}/items/{other['id']}", headers=who["headers"]).status_code == 200      # stale: deletable
+
+    async def late():
+        async with _session_factory() as session:
+            return await service._finish(session, other["id"], first, "done", result='{"x":1}', cost=1.0)
+    assert _run(late()) is False
+    row = _row(other["id"])
+    assert row.status == "deleted" and row.result_json is None                                            # not resurrected
+
+
+def test_the_setting_never_goes_below_the_ai_calls_worst_case():
+    assert settings_mod.BOUNDS["running_timeout_minutes"][0] >= 10
+    assert service.running_timeout_minutes({**SETTINGS, "running_timeout_minutes": 10}) >= service.ai_floor_minutes()
+
+
+def test_a_cancelled_run_is_cleaned_up_even_under_cancellation(monkeypatch):
+    import anyio
+    from app.chart_analyze import provider
+    who = _owner("shield")
+    item = _upload(who).json()
+
+    async def slow(*a, **k):
+        await anyio.sleep(30)
+    monkeypatch.setattr(service, "ask", slow)
+    provider.set_for_tests(FakeProvider())
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, who["user_id"])
+            tenant = await session.get(Tenant, who["tenant_id"])
+            async with anyio.create_task_group() as tg:
+                async def run():
+                    await service.analyze(session, user, tenant, SETTINGS, item["id"])
+                tg.start_soon(run)
+                await anyio.sleep(0.3)
+                tg.cancel_scope.cancel()
+    anyio.run(go)
+    row = _row(item["id"])
+    assert row.status == "failed" and "interrupted" in row.error
+
+
+def test_a_stale_running_row_reserves_no_cost():
+    who = _owner("stalecost")
+    item = _upload(who).json()
+    now = datetime.now(timezone.utc)
+
+    async def count():
+        async with _session_factory() as session:
+            user = await session.get(User, who["user_id"])
+            return await limits.running_count(session, user, SETTINGS, now)
+    _age(item["id"], status="running", started_at=now - timedelta(minutes=service.running_timeout_minutes(SETTINGS) + 5))
+    assert _run(count()) == 0
+    _age(item["id"], started_at=now - timedelta(minutes=1))
+    assert _run(count()) == 1
+
+
+def test_at_most_two_decodes_run_at_once_and_waiting_ones_hold_no_thread(monkeypatch):
+    import threading
+    import time
+    from app.chart_analyze import routes
+    lock = threading.Lock()
+    state = {"now": 0, "max": 0, "threads": set()}
+
+    def sanitize(raw, settings):
+        with lock:
+            state["now"] += 1
+            state["max"] = max(state["max"], state["now"])
+            state["threads"].add(threading.get_ident())
+        time.sleep(0.15)
+        with lock:
+            state["now"] -= 1
+        return "ok"
+    monkeypatch.setattr(routes.imaging, "sanitize", sanitize)
+    handed = {"now": 0, "max": 0}
+    real_pool = routes.run_in_threadpool
+
+    async def counting_pool(fn, *args):
+        handed["now"] += 1
+        handed["max"] = max(handed["max"], handed["now"])
+        try:
+            return await real_pool(fn, *args)
+        finally:
+            handed["now"] -= 1
+    monkeypatch.setattr(routes, "run_in_threadpool", counting_pool)
+
+    async def go():
+        return await asyncio.gather(*(routes._decode(b"x", SETTINGS) for _ in range(6)))
+    assert asyncio.run(go()) == ["ok"] * 6
+    assert state["max"] == routes.DECODE_SLOTS
+    assert handed["max"] == routes.DECODE_SLOTS          # the other four waited on the loop, not in a worker thread
+
+
+def test_a_raw_non_ascii_query_is_percent_encoded_not_refused():
+    fetched, sent = _fetch("https://img.example.com/c.png?q=ü&x=%20a", {"img.example.com": ["8.8.8.8"]})
+    assert fetched.data == PNG
+    assert sent[0].url.query == b"q=%C3%BC&x=%20a"

@@ -35,7 +35,8 @@ DEFAULTS: Dict[str, Any] = {
     "link_read_timeout_seconds": 10,
     "link_total_timeout_seconds": 20,
     "link_max_redirects": 3,
-    # An analysis still "running" after this long is stale (a cancelled request, a restart): it may be retried or deleted
+    # An analysis still "running" after this long is stale (a cancelled request, a restart): it may be retried or deleted.
+    # Never shorter in effect than one AI call's worst case (service.ai_floor_minutes, from the provider timeout).
     "running_timeout_minutes": 10,
     # Requests per user per minute on upload, link and analyze together
     "rate_limit_per_minute": 6,
@@ -64,7 +65,7 @@ BOUNDS: Dict[str, tuple] = {
     "link_read_timeout_seconds": (1, 60),
     "link_total_timeout_seconds": (2, 120),
     "link_max_redirects": (0, 5),
-    "running_timeout_minutes": (2, 240),
+    "running_timeout_minutes": (10, 240),      # never below the AI call's own worst case (service.ai_floor_minutes)
     "rate_limit_per_minute": (1, 600),
     "max_output_tokens": (256, 16000),
     "estimate_input_tokens": (0, 200000),

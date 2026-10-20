@@ -2,8 +2,8 @@
 
 Status: in force from 2026-10-20, when the owner (Abhi) made this repository public to restore the GitHub Actions
 minutes. The code stays proprietary: see [`LICENSE`](../LICENSE) (all rights reserved; public visibility is not a
-licence). Open owner decisions are in [`docs/OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md), section "Public repository
-(20 Oct)" (PR-1 to PR-6).
+licence). The owner's decisions are in [`docs/OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md), section "Public repository
+(20 Oct)": PR-1 to PR-5 decided on 2026-10-20; PR-6 and PR-7 open.
 
 ## 1. The rule
 
@@ -40,9 +40,9 @@ sections 3 and 7, imported by `atp.sh import-trade` on the host, never into git)
 | Secrets and settings | The server's `/opt/atp/.env` and `/opt/atp/secrets/` (mode 600); the GitHub secret store (repository or environment secrets) for CI; Abhi's password manager for backups. |
 | Server IP, SSH details | Abhi's own notes. Docs say `<server-ip>` / `ssh atp@<your-server-ip>`. |
 | Real bars and market data | The market-data lake on the host: the shared `md_candles` (daily) and the owner's private `md_tenant_candles` (intraday, FUT; HB0 / HB2 rules). |
-| Golden fixtures, parity fixtures, the owner's approved charts | The private fixtures store on the host (TRADE_TAKEOVER section 3: tests read it through an environment variable; in public CI those tests are skipped with a visible reason). A manifest of paths and sha256 only may be committed. |
+| Golden fixtures, parity fixtures, the owner's approved charts | The Trade-derived goldens of PR-2 (Trade's outputs on synthetic inputs): the private package's `fixtures/`. Parity fixtures built from licensed data and the owner's charts: the private fixtures store on the host only, never any git repository. Both are read through `ATP_PRIVATE_FIXTURES` (TRADE_TAKEOVER section 3: tests read it through an environment variable; in public CI those tests are skipped with a visible reason). A manifest of paths and sha256 only may be committed. |
 | Trade's records (PAPER journal, signals, Vision log, review and audit charts) | The private read-only archive on the host. |
-| KB and Method Pack | Not in this public repository: either the repository goes private again or they live in a separate private package (open question PR-1, decided before the Chart Reader port starts). |
+| The Chart Reader, the KB and the Method Pack | The private package: a separate private repository, installed on the host with a read-only deploy key and tested by a private CI job in its own repository (owner decision PR-1; plan in [`docs/design/PRIVATE_PACKAGE.md`](design/PRIVATE_PACKAGE.md)). Nothing from the reader or the KB is committed here. |
 
 Each port also keeps a few small **synthetic** cases in git (made-up bars, mirror pairs) so the public CI always
 exercises the code.
@@ -172,9 +172,10 @@ pending the owner's decision (open question PR-6: move to the private store, ref
 public). The strike-breach golden file moved to the private store under PR-2; the coefficients in the code are not
 part of that decision.
 
-**Vendored third-party code:** `docs/reference/amw-screener-v2.9/` is a copy of the AMW screener whose licence is
-unknown (open question AMW-L1). It is now public as well; whether it is removed from the tree is an owner decision
-(open question PR-3).
+**Third-party code:** the copy of the AMW screener that was under `docs/reference/amw-screener-v2.9/` (licence
+unknown, open question AMW-L1) was removed from the tree on 2026-10-20 (owner decision PR-3); the history keeps it
+(PR-4). Third-party code is not copied into this repository; a dependency comes through the package manager with its
+own licence.
 
 ## 6. If something slips
 
@@ -184,7 +185,7 @@ unknown (open question AMW-L1). It is now public as well; whether it is removed 
 2. **Remove it from the tree** in a normal commit (placeholder or synthetic value), so the guards pass again.
 3. **History is the owner's decision.** Rewriting history (to purge a file from every commit) needs a force push,
    invalidates every clone and fork, and does not remove copies others already made. Nobody rewrites history or
-   force-pushes without the owner's explicit decision (open question PR-4).
+   force-pushes without the owner's explicit decision (owner decision PR-4, 2026-10-20: no rewrite).
 4. **Record it** in `docs/OPEN_QUESTIONS.md` (what slipped, when, what was rotated), without repeating the value.
 
 **A finding in a pull request head** (the report-only job `gitleaks-pull-request-refs` of `secret-scan.yml`, whose job
@@ -195,5 +196,15 @@ A pull request head cannot be deleted from GitHub by us, which is why that job r
 
 ## 7. Commit metadata
 
-Commit author names and e-mail addresses are public too. Future commits can use the GitHub `noreply` address
-(open question PR-5).
+Commit author names and e-mail addresses are public too (owner decision PR-5, 2026-10-20):
+
+- Abhi turns on "Keep my email addresses private" and "Block command line pushes that expose my email" (GitHub ->
+  Settings -> Emails). From then on, merges and edits made on GitHub use his GitHub `noreply` address, and a push of a
+  commit carrying his private address is refused.
+- Sessions commit with a `noreply` address, never with a personal address: before the first commit in a checkout,
+  check `git config user.email` and set it to a `noreply` address if it is anything else. (Some earlier session
+  commits on pull request branches carry the owner's address; squash merges keep them off `main`, and the pull
+  request refs keep them, accepted under PR-4.)
+- A person committing from their own machine sets `git config user.email` to their GitHub `noreply` address
+  (`<id>+<login>@users.noreply.github.com`, shown on the same settings page).
+- Past commits keep their addresses: no history rewrite (PR-4).

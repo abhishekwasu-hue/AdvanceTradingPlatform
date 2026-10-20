@@ -431,11 +431,13 @@ export function whyChips(reg: Registry, stages: Stage[], funnel: FunnelResult | 
   return enabled.map((s, i) => ({ id: s.id, summary: stageSummary(reg, s), passed: row[i] }));
 }
 
-/** Symbols typed by the trader: upper case, no blanks, no repeats, at most `max` (the run endpoint's limit). */
+/** Symbols typed by the trader: separated by commas, semicolons or new lines; upper case, no blanks, no repeats, at
+ * most `max` (the run endpoint's limit). A space inside an entry is kept (collapsed to one), so an index such as
+ * "NIFTY 50" from a watchlist stays one symbol and is saved back whole. */
 export function parseSymbols(text: string, max = 50): string[] {
   const seen = new Set<string>();
-  for (const raw of text.split(/[\s,;]+/)) {
-    const s = raw.trim().toUpperCase();
+  for (const raw of text.split(/[,;\r\n]+/)) {
+    const s = raw.trim().replace(/\s+/g, " ").toUpperCase();
     if (s && !seen.has(s)) seen.add(s);
     if (seen.size >= max) break;
   }

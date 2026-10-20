@@ -148,7 +148,11 @@ describe("editing the list", () => {
   });
   it("reads typed symbols: upper case, no repeats, at most the run limit", () => {
     expect(parseSymbols(" reliance, TCS;infy\nreliance  ")).toEqual(["RELIANCE", "TCS", "INFY"]);
-    expect(parseSymbols(Array.from({ length: 60 }, (_, i) => `S${i}`).join(" ")).length).toBe(50);
+    expect(parseSymbols(Array.from({ length: 60 }, (_, i) => `S${i}`).join("\n")).length).toBe(50);
+  });
+  it("keeps a spaced index name whole, as a watchlist loads it (UI2-4a1)", () => {
+    expect(parseSymbols(["NIFTY 50", "NIFTY BANK", "RELIANCE"].join(", "))).toEqual(["NIFTY 50", "NIFTY BANK", "RELIANCE"]);
+    expect(parseSymbols("  nifty   50 ,\nnifty 50;tcs")).toEqual(["NIFTY 50", "TCS"]);
   });
 });
 

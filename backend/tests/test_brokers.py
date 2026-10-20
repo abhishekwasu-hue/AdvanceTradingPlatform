@@ -515,3 +515,67 @@ def test_upstox_option_chain_falls_back_to_contract_listing_for_expiry():
     broker = UpstoxBroker(BrokerCredentials(api_key="k", access_token="t"), client=_mock_client(handler, UpstoxBroker.BASE_URL))
     run(broker.get_option_chain("NIFTY BANK"))
     assert seen == {"instrument_key": "NSE_INDEX|Nifty Bank", "expiry_date": near.isoformat()}
+
+
+def _shoonya_series(eod_rows, seen):
+    """A Shoonya mock: login, the scrip search for RELIANCE-EQ, and /EODChart answering `eod_rows` (a /TPSeries call fails
+    the test - daily bars must never come from the minute series)."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/QuickAuth"):
+            return httpx.Response(200, json={"stat": "Ok", "susertoken": "sess-token-1", "actid": "FA12345"})
+        payload = json.loads(parse_qs(request.content.decode())["jData"][0])
+        seen.append((path.rsplit("/", 1)[-1], payload))
+        if path.endswith("/SearchScrip"):
+            return httpx.Response(200, json={"stat": "Ok", "values": [{"exch": "NSE", "token": "2885", "tsym": "RELIANCE-EQ"}]})
+        if path.endswith("/EODChart"):
+            return httpx.Response(200, json=eod_rows)
+        raise AssertionError(f"Unexpected path {path}")
+    creds = BrokerCredentials(client_id="FA12345", api_secret="mypassword", api_key="apikey123", totp_secret="123456")
+    broker = ShoonyaBroker(creds, client=_mock_client(handler, ShoonyaBroker.BASE_URL))
+    run(broker.authenticate())
+    return broker
+
+
+def test_shoonya_day_reads_daily_bars_from_eodchart_stamped_at_the_ist_date():
+    """UI2-4a2-pre: "day" used to fall back to 1-minute TPSeries bars. It now calls /EODChart (sym "EXCH:TSYM", from/to in
+    epoch seconds covering the whole IST dates) and returns one bar per trading date at 00:00 IST, oldest first. Rows come
+    as JSON strings (the broker's form) or objects; `ssboe` alone still gives the right IST date."""
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    rows = [  # newest first, as the broker sends them
+        json.dumps({"time": "23-SEP-2022", "into": "2400", "inth": "2420", "intl": "2390", "intc": "2410", "intv": "500", "ssboe": "1663891200"}),
+        {"time": "22-Sep-2022", "into": "2380", "inth": "2405", "intl": "2370", "intc": "2400", "intv": "400"},
+        # no `time`: 21 Sep 2022 00:00 IST in epoch seconds (= 20 Sep 18:30 UTC) - a UTC reading would say the 20th
+        json.dumps({"into": "2350", "inth": "2385", "intl": "2340", "intc": "2380", "intv": "300",
+                    "ssboe": str(int(datetime(2022, 9, 21, tzinfo=ist).timestamp()))}),
+    ]
+    seen = []
+    broker = _shoonya_series(rows, seen)
+    # The service's bounds: aware IST datetimes in the middle of the day (now - lookback .. now - 1 day).
+    start = datetime(2022, 9, 21, 15, 0, tzinfo=ist)
+    end = datetime(2022, 9, 23, 2, 0, tzinfo=timezone.utc)      # 07:30 IST on the 23rd
+    bars = run(broker.get_historical_data("RELIANCE-EQ", "NSE", "day", start, end))
+
+    eod = [p for name, p in seen if name == "EODChart"]
+    assert len(eod) == 1 and not [n for n, _ in seen if n == "TPSeries"]
+    assert eod[0]["sym"] == "NSE:RELIANCE-EQ" and eod[0]["uid"] == "FA12345"
+    assert int(eod[0]["from"]) == int(datetime(2022, 9, 21, tzinfo=ist).timestamp())
+    assert datetime.fromtimestamp(int(eod[0]["to"]), tz=ist).date().isoformat() == "2022-09-23"
+    assert [b.timestamp for b in bars] == [datetime(2022, 9, d, tzinfo=ist) for d in (21, 22, 23)]
+    assert [b.timestamp.utcoffset().total_seconds() for b in bars] == [19800.0] * 3
+    assert [(b.open, b.high, b.low, b.close, b.volume) for b in bars] == [
+        (2350.0, 2385.0, 2340.0, 2380.0, 300.0), (2380.0, 2405.0, 2370.0, 2400.0, 400.0), (2400.0, 2420.0, 2390.0, 2410.0, 500.0)]
+
+
+def test_shoonya_day_with_no_sessions_is_no_bars_and_other_errors_still_raise():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    ist = ZoneInfo("Asia/Kolkata")
+    start, end = datetime(2022, 10, 24, tzinfo=ist), datetime(2022, 10, 24, 12, tzinfo=ist)
+    broker = _shoonya_series({"stat": "Not_Ok", "emsg": 'Error Occurred : 5 "no data"'}, [])
+    assert run(broker.get_historical_data("RELIANCE-EQ", "NSE", "day", start, end)) == []
+    broker = _shoonya_series({"stat": "Not_Ok", "emsg": "Session Expired"}, [])
+    with pytest.raises(BrokerAPIError, match="Session Expired"):
+        run(broker.get_historical_data("RELIANCE-EQ", "NSE", "day", start, end))

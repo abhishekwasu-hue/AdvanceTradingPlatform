@@ -1,15 +1,17 @@
 import gzip
 import logging
 import json
+import re
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import httpx
 
 from app.instruments.master import normalise_expiry
 from app.brokers import master_cache
+from app.brokers import upstox_analytics
 from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
@@ -63,6 +65,21 @@ _INDEX_ALIASES = {
 }
 
 
+# ASCII allowlist for anything placed in an Upstox URL path: letters, digits, `_ | & . : -` and single inner spaces
+# (Upstox index keys: "NSE_INDEX|Nifty 50"); no leading/trailing space and no `..` anywhere.
+_SAFE_KEY = re.compile(r"[A-Za-z0-9_|&.:-]+(?: [A-Za-z0-9_|&.:-]+)*")
+
+
+def safe_instrument_key(key: str) -> str:
+    """An instrument key (or interval) that is safe to put in an Upstox URL path, by ASCII allowlist. Anything else -
+    path, query or escape characters, fullwidth or look-alike dots and slashes, zero-width or other whitespace - is
+    refused before a request is built, so a crafted symbol can never steer a GET to another endpoint with either token."""
+    text = key if isinstance(key, str) else ""
+    if not _SAFE_KEY.fullmatch(text) or ".." in text:
+        raise BrokerAPIError(f"Refused an unsafe Upstox instrument key: {text[:40]!r}")
+    return text
+
+
 def find_instrument(instruments: List[Instrument], symbol: str) -> Optional[Instrument]:
     """The instrument a plain symbol names: exact trading symbol first, then case-insensitive,
     then an index by its display name ("NIFTY 50" -> NSE_INDEX|Nifty 50), then a known alias."""
@@ -107,7 +124,8 @@ class UpstoxBroker(BrokerInterface):
         return BrokerCapabilities(stop_market_on_options=not config.LIVE_UPSTOX_OPTION_STOP_LIMIT)
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
-        if not credentials.api_key:
+        if not credentials.api_key and not credentials.analytics_token:
+            # A row holding only the analytics token can still read market data; logins and orders need the API key.
             raise BrokerAuthenticationError("Upstox adapter requires credentials.api_key (client_id)")
         self.credentials = credentials
         self._access_token = credentials.access_token
@@ -116,14 +134,53 @@ class UpstoxBroker(BrokerInterface):
         # UI2-4a2-pre review: built without a client (the app's path, an adapter per request), the instrument master is
         # shared by the process (master_cache) instead of downloaded again for every request.
         self._shared_master = client is None
+        # The optional Analytics Token (app/brokers/upstox_analytics.py): used only for GET market-data classes its last
+        # probe marked `works`, only until its expiry; everything else goes with the daily login token.
+        self._analytics_token = credentials.analytics_token
+        self._analytics_classes = upstox_analytics.working_classes(credentials)
+        self._analytics_expires_at = upstox_analytics.expires_at(credentials)
+        # Set by token_lifecycle.build_adapter: re-probes the class on the stored row after a refusal.
+        self.on_analytics_refusal: Optional[Callable[[str], Any]] = None
 
-    def _headers(self) -> Dict[str, str]:
-        if not self._access_token:
+    def _headers(self, token: Optional[str] = None) -> Dict[str, str]:
+        token = token or self._access_token
+        if not token:
             raise BrokerAuthenticationError("Not authenticated - call authenticate() first")
-        return {"Authorization": f"Bearer {self._access_token}", "Accept": "application/json"}
+        return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+    def analytics_class_for(self, method: str, path: str, now: Optional[datetime] = None) -> Optional[str]:
+        """The endpoint class this request may send with the analytics token, or None (use the daily token)."""
+        try:
+            target = self._client.build_request(method, path).url          # what goes on the wire, dot segments resolved
+        except Exception:  # noqa: BLE001 - an unbuildable URL never gets the analytics token
+            return None
+        if target.scheme != "https" or target.host != httpx.URL(self.BASE_URL).host:
+            return None                                                     # only Upstox's own API host ever sees it
+        cls = upstox_analytics.classify(method, target)
+        if cls is None or not self._analytics_token or cls not in self._analytics_classes:
+            return None
+        if self._analytics_expires_at is None or self._analytics_expires_at <= (now or datetime.now(timezone.utc)):
+            return None
+        return cls
+
+    def _analytics_refused(self, cls: str) -> None:
+        self._analytics_classes.discard(cls)
+        logger.warning("Upstox refused the analytics token for %s; using the daily login token for it", cls)
+        if self.on_analytics_refusal is not None:
+            try:
+                self.on_analytics_refusal(cls)
+            except Exception as exc:  # noqa: BLE001 - bookkeeping must never fail the data call
+                logger.warning("Upstox analytics re-probe could not be scheduled: %s", type(exc).__name__)
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
-        response = await self._client.request(method, path, headers=self._headers(), **kwargs)
+        cls = self.analytics_class_for(method, path)
+        if cls is not None:
+            response = await self._client.request(method, path, headers=self._headers(self._analytics_token), **kwargs)
+            if response.status_code in (401, 403):
+                self._analytics_refused(cls)
+                response = await self._client.request(method, path, headers=self._headers(), **kwargs)
+        else:
+            response = await self._client.request(method, path, headers=self._headers(), **kwargs)
         try:
             payload = response.json()
         except ValueError as exc:
@@ -202,6 +259,7 @@ class UpstoxBroker(BrokerInterface):
         instrument_key) via the cached instrument master. A symbol that already looks like an
         instrument key is passed through untouched."""
         if "|" in symbol:
+            safe_instrument_key(symbol)
             return Instrument(instrument_token=symbol, exchange=exchange, tradingsymbol=symbol)
         instruments = await self.get_instruments(exchange)
         match = find_instrument(instruments, symbol)
@@ -259,7 +317,7 @@ class UpstoxBroker(BrokerInterface):
         upstox_interval = UPSTOX_INTERVAL_MAP.get(interval, interval)
         instrument = await self._resolve_instrument(symbol, exchange)
         data = await self._request(
-            "GET", f"/historical-candle/intraday/{instrument.instrument_token}/{upstox_interval}"
+            "GET", f"/historical-candle/intraday/{safe_instrument_key(instrument.instrument_token)}/{safe_instrument_key(upstox_interval)}"
         )
         bars = [
             OHLCVBar(timestamp=c[0], open=c[1], high=c[2], low=c[3], close=c[4], volume=c[5] if len(c) > 5 else 0.0)
@@ -327,7 +385,7 @@ class UpstoxBroker(BrokerInterface):
 
         data = await self._request(
             "GET",
-            f"/historical-candle/{match.instrument_token}/{upstox_interval}/"
+            f"/historical-candle/{safe_instrument_key(match.instrument_token)}/{safe_instrument_key(upstox_interval)}/"
             f"{to_date.strftime('%Y-%m-%d')}/{from_date.strftime('%Y-%m-%d')}",
         )
         return [

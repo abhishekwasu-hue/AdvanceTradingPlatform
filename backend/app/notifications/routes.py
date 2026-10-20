@@ -39,9 +39,13 @@ def private_to_addressee():
     only their own data session (the "Live data: log in to ..." reminder). Everything else - exits, emergency exits,
     system failures, risk rejections, loss limits - stays organisation-wide even when addressed to the acting user."""
     from app.brokers.login_reminder import DATA_TITLE_PREFIX
+    from app.brokers.upstox_analytics import TITLE_PREFIX as ANALYTICS_TITLE_PREFIX
     from app.core.enums import NotificationType
     return or_(NotificationRecord.event_type == NotificationType.SCREEN_ALERT.value,
-               and_(NotificationRecord.event_type == NotificationType.TOKEN_EXPIRED.value, NotificationRecord.title.startswith(DATA_TITLE_PREFIX)))
+               and_(NotificationRecord.event_type == NotificationType.TOKEN_EXPIRED.value, NotificationRecord.title.startswith(DATA_TITLE_PREFIX)),
+               # The Upstox analytics token expiry warning concerns only its holder's own credential.
+               and_(NotificationRecord.event_type == NotificationType.TOKEN_EXPIRED.value,
+                    NotificationRecord.title.startswith(ANALYTICS_TITLE_PREFIX)))
 
 
 async def _visible(session: AsyncSession, user: User, query):

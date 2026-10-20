@@ -42,7 +42,7 @@ from app.auth.dependencies import get_current_user
 from app.core.rate_limit import user_rate_limit
 from app.billing.service import meter
 from app.brokers.base import BrokerInterface
-from app.brokers.token_lifecycle import build_adapter, token_is_usable
+from app.brokers.token_lifecycle import build_adapter, data_is_usable, token_is_usable
 from app.core.models import OHLCVBar
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session, release_connection
@@ -86,7 +86,7 @@ async def _records(session: AsyncSession, tenant_id: int) -> List[BrokerCredenti
 
 def _source(record: BrokerCredentialRecord, byob: bool = False) -> dict:
     out = {"broker": record.broker_name, "account_label": record.account_label, "token_status": record.token_status,
-           "token_expires_at": record.token_expires_at.isoformat() if record.token_expires_at else None, "usable": token_is_usable(record)}
+           "token_expires_at": record.token_expires_at.isoformat() if record.token_expires_at else None, "usable": data_is_usable(record)}
     if byob:
         # BT1: whether this broker's data may be shown in ATP at all (docs/BROKER_DATA_TERMS.md).
         terms = terms_for(record.broker_name)
@@ -122,10 +122,11 @@ async def _pick_record(session: AsyncSession, tenant_id: int, broker: Optional[s
         wanted = [r for r in records if r.broker_name == broker.lower() and r.account_label == (account_label or "primary")]
         if not wanted:
             raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{broker}' ({account_label})")
-        if not token_is_usable(wanted[0]):
+        if not data_is_usable(wanted[0]):
             raise HTTPException(status_code=409, detail=f"Broker '{broker}' has no valid session token today. Log in to it under Settings > Brokers.")
         return wanted[0]
-    usable = [r for r in records if token_is_usable(r)]
+    # A logged-in session first; else an Upstox row whose analytics token serves market data without the daily login.
+    usable = [r for r in records if token_is_usable(r)] or [r for r in records if data_is_usable(r)]
     if not usable:
         raise HTTPException(status_code=409, detail="No broker session with a valid token. Add the broker's API key under Settings > Brokers "
                                                     "(it is stored encrypted, never in the environment) and log in to it, then try again.")

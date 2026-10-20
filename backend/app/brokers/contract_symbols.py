@@ -182,6 +182,7 @@ class ContractSymbolBroker(BrokerInterface):
         self.max_tag_length = getattr(inner, "max_tag_length", 20)
         # LD-10 review: a class attribute on BrokerInterface, so __getattr__ never forwards it - copy the inner's.
         self.history_by_date = bool(getattr(inner, "history_by_date", False))
+        self.daily_days_per_request = int(getattr(inner, "daily_days_per_request", 365))     # UI2-4a2, the same reason
         self._indexes: Dict[str, _Index] = {}
         self.translations = 0
 

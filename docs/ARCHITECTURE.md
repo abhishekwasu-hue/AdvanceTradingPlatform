@@ -4098,6 +4098,31 @@ Tests: `tests/test_phase_au_global_cues.py`.
 
 Tests: `tests/test_chart_history.py`.
 
+### UI2-4a2: week and month, the forming daily bar, index volume from the future
+
+All additive on `POST /api/market-data/candles`; no new route, migration or flag.
+
+* **Week and month** (`timeframe: "week" | "month"`, `app/market_data/periods.py`): aggregated from daily bars in IST,
+  never UTC and never the broker's own W/M. Weeks run Monday to Friday, months are calendar months; each is stamped at
+  its first trading day 00:00 IST (O first, H max, L min, C last, V sum). Default lookback 5 years (W) and 20 years
+  (M), up to 3,650 / 7,300 days (W/M only; D and intraday keep their caps). The daily bars come through
+  `MarketDataService.get_daily_range`: whole-date chunks of at most the broker's `daily_days_per_request` (Kite and
+  Angel One 2,000, everyone else 365), newest first, each the LD-10 shared copy of its dates; it stops where the broker
+  has nothing older, and a budget refusal on an older chunk keeps the newer whole periods with a warning. `before`
+  pages back by whole weeks / months.
+* **Forming daily bar** (`forming: true`, sent by the v2 chart only; off by default so pages that score daily bars keep
+  completed bars): a D/W/M request without `before` gets today's daily bar from today's one-minute bars (the LD-10
+  `today` copy), marked `"forming": true` while the session is open; after the close it is today's completed bar.
+  `get_candles(..., "day")` for strategies and workers is unchanged.
+* **Index volume** (`volume_from_future`, default true; `app/market_data/index_volume.py`): for an index in
+  `master.INDEX_SYMBOLS` on its own exchange, the near-month future from the instrument master (first FUT expiry on or
+  after today) is fetched at the same base interval through the same session, budget and BT1 entitlement, and each
+  bar's volume becomes the future bar's at the same timestamp (0 where none). Each symbol's answer carries
+  `volume_source` (`{symbol, expiry, exchange, underlying, from, label}`, null for anything else or when the future
+  could not be read). Only the current contract: bars older than its first one get 0.
+
+Tests: `tests/test_ui2_4a_week_month.py`, `tests/test_ui2_4a_forming_bar.py`, `tests/test_ui2_4a_index_volume.py`.
+
 ## Phase AV: the Copilot home
 
 * **Briefing** (`app/ai/briefing.py`, `GET /api/ai/brief`): `day_type()` turns the market memory into

@@ -20,6 +20,7 @@ match the broker's own charts. That keeps the broker calls to two per symbol per
 import asyncio
 import json
 import logging
+from dataclasses import dataclass
 from datetime import date, datetime, time as dtime, timedelta, timezone
 from typing import Dict, List, Optional
 
@@ -29,7 +30,7 @@ from app.brokers.base import BrokerInterface
 from app.cache.client import cache_get, cache_set
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.core.resampling import resample_ohlc
-from app.market_data import shared_candles
+from app.market_data import periods, shared_candles
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN
 from app.market_data.freshness import StaleMarketDataError, quote_is_stale
 from app.observability.metrics import MARKET_DATA_STALE
@@ -123,6 +124,19 @@ def window_anchor_dates(start: datetime, end: datetime) -> str:
     return shared_candles.window_anchor(True, start, end)
 
 
+DATA_STARTS_WITHIN_DAYS = 7      # a chunk whose first bar is later than this after its start: the broker has nothing older
+
+
+@dataclass
+class DailyRange:
+    """UI2-4a2: completed daily bars of a date range fetched in chunks. `covered_from` is the oldest date the fetch
+    reached (later than the range's start when it stopped early); `stopped` says why it stopped early (None: it did not,
+    or the broker simply has nothing older)."""
+    bars: List[OHLCVBar]
+    covered_from: date
+    stopped: Optional[str] = None
+
+
 class MarketDataService:
     def __init__(
         self, broker: BrokerInterface, *, cache_ttl_seconds: int = DEFAULT_CANDLE_CACHE_TTL_SECONDS,
@@ -181,6 +195,68 @@ class MarketDataService:
         async def fetch() -> List[OHLCVBar]:
             return merge_bars(await self.broker.get_historical_data(symbol, exchange, interval, start, end))
         return await shared_candles.get_or_fetch(key, fetch, lambda bars: HISTORY_CACHE_TTL_SECONDS)
+
+    async def get_daily_range(self, symbol: str, exchange: str, start: date, end: date, now: Optional[datetime] = None) -> DailyRange:
+        """UI2-4a2: completed daily bars for the IST dates start..end (never today), for weekly and monthly charts.
+        Fetched newest first in whole-date chunks of at most the broker's `daily_days_per_request` days, each one the
+        shared copy of its two dates (LD-10 `page` part, the same key as an older-history page of the same dates), so
+        every user asking on the same day shares them. A chunk with no bars, or whose bars start well after its first
+        day, means the broker has nothing older: no further calls. When a later chunk gets no budget token or fails, the
+        bars fetched so far are returned with the reason; the newest chunk's failure is the caller's."""
+        from app.market_data import api_budget
+        today = (now or datetime.now(timezone.utc)).astimezone(IST).date()
+        end = min(end, today - timedelta(days=1))
+        if end < start:
+            return DailyRange([], start)
+        cap = int(getattr(self.broker, "daily_days_per_request", 365) or 365)
+        parts: List[List[OHLCVBar]] = []
+        covered_from = end + timedelta(days=1)
+        stopped: Optional[str] = None
+        for i, (lo, hi) in enumerate(periods.chunks(start, end, cap)):
+            lo_dt = datetime.combine(lo, dtime(0, 0), tzinfo=IST)
+            hi_dt = datetime.combine(hi, dtime(23, 59), tzinfo=IST)
+            key = shared_candles.key(self.broker.name, exchange, symbol, "day", "page", window_anchor_dates(lo_dt, hi_dt))
+
+            async def fetch(lo_dt: datetime = lo_dt, hi_dt: datetime = hi_dt) -> List[OHLCVBar]:
+                return merge_bars(await self.broker.get_historical_data(symbol, exchange, "day", lo_dt, hi_dt))
+            try:
+                got = await shared_candles.get_or_fetch(key, fetch, lambda bars: HISTORY_CACHE_TTL_SECONDS)
+            except api_budget.BudgetUsed:
+                if i == 0:
+                    raise
+                stopped = "budget used"
+                break
+            except Exception as exc:  # noqa: BLE001 - the newer chunks still make a chart
+                if i == 0:
+                    raise
+                logger.info("Older daily chunk %s..%s failed for %s:%s: %s", lo, hi, exchange, symbol, exc)
+                stopped = f"{type(exc).__name__}: {exc}"[:200]
+                break
+            bars = [b for b in got if lo <= periods.ist_date(b.timestamp) <= hi]
+            parts.append(bars)
+            covered_from = lo
+            if not bars or periods.ist_date(bars[0].timestamp) > lo + timedelta(days=DATA_STARTS_WITHIN_DAYS):
+                break
+        return DailyRange(merge_bars(*reversed(parts)), covered_from, stopped)
+
+    async def get_today_minutes(self, symbol: str, exchange: str, now: Optional[datetime] = None) -> List[OHLCVBar]:
+        """UI2-4a2: today's one-minute bars so far - the same shared copy (LD-10 `today` part) an intraday chart of the
+        symbol reads, fetched through this service's adapter when none is fresh."""
+        now_utc = now or datetime.now(timezone.utc)
+        key = shared_candles.key(self.broker.name, exchange, symbol, "1min", "today", shared_candles.today_anchor(now_utc))
+
+        async def call() -> List[OHLCVBar]:
+            return await self.broker.get_intraday_candles(symbol, exchange, "1min")
+
+        def ttl(bars: List[OHLCVBar]) -> int:
+            return forming_capped_ttl(bars[-1].timestamp, "1min", exchange, now or datetime.now(timezone.utc), shared_candles.TODAY_TTL_SECONDS)
+        return await shared_candles.get_or_fetch(key, call, ttl)
+
+    async def get_today_bar(self, symbol: str, exchange: str, now: Optional[datetime] = None) -> Optional[OHLCVBar]:
+        """UI2-4a2: today's daily bar (00:00 IST) built from today's one-minute bars; None before the first one. Only the
+        chart route asks for it - `get_candles(..., "day")` keeps returning completed bars to strategies and workers."""
+        now_utc = now or datetime.now(timezone.utc)
+        return periods.today_daily_bar(await self.get_today_minutes(symbol, exchange, now_utc), now_utc.astimezone(IST).date())
 
     def _lookback(self, interval: str) -> int:
         """Phase AS: daily strategies need a year of bars (EMA 200, 52-week levels), not days."""

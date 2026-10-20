@@ -94,7 +94,7 @@ TX2 -> TX3 -> TX4; N2-4 ... N2-11; CH4a -> CH4b; CH5-b; EV3 / EV4) with at most 
 | N4 | CH7 TradingView Advanced Charts adapter | - | - | parked: waits for TradingView access (owner) |
 | N5 | BYOK-V3 Vision reviews on the user's own key | `claude/n5-byok-v3` | #217 | PR open; migration re-chained onto main's head; CI |
 | N5 | H-C4 Copilot multiview output checks | `claude/n5-hc4` | - | review rounds 1-6: FIX; round 7 fixes at 1950ce3, re-review: in progress |
-| N6 | G Trade engine port | - | - | parked: waits for the owner's "stable" mark per module |
+| N6 | G Trade engine port (takeover: `docs/design/TRADE_TAKEOVER.md`) | `claude/trade-port-map-reader` | - | owner decided the takeover (2026-10-20); each reader layer is ported when Trade tags it stable; none tagged yet |
 | N7 | C2b fill / slippage / latency models | `claude/n7-c2b` | #236 | merged |
 | N7 | C2c span-like margin, black76 pricing | `claude/n7-c2c` | #237 | PR open; review: MERGE |
 | N7 | C5 trial ledger + deflation, lake windows, holdout | `claude/n7-c5` | - | review: MERGE; LOW fixes at 0943b84, re-review: pass |

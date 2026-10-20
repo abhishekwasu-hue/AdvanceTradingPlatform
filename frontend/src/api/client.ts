@@ -166,6 +166,7 @@ import { API_V1 } from "./base";
 import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
+import type { MarketStrip } from "../dashboard/types";
 
 export { ApiError, friendlyError } from "./errors";
 
@@ -784,6 +785,8 @@ export const api = {
   enableMemberTrading: (memberId: number) =>
     request<{ id: number; trading_disabled_reason: string | null }>(`/team/members/${memberId}/trading-enable`, { method: "POST" }),
   portfolioExposure: (livePrices = true) => request<PortfolioExposure>(`/portfolio/exposure?live_prices=${livePrices}`),
+  // UI2-2: the v2 dashboard's market strip - three indices and the market state in one read-only call.
+  marketStrip: () => request<MarketStrip>("/market/strip"),
   analyticsDegradation: () => request<DegradationReport>("/analytics/degradation"),
   updateTradeJournal: (tradeId: number, body: { notes?: string | null; tags?: string[] | null }) =>
     request<TradeRecord>(`/trades/${tradeId}/journal`, { method: "PATCH", body: JSON.stringify(body) }),

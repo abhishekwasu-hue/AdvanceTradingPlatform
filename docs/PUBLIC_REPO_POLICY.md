@@ -91,17 +91,23 @@ no history rewrite), so nothing is lost; the private package repository decided 
 | `backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz` | Trade's level memory on the synthetic zones bars | `test_zones_memory_parity.py` |
 
 - **The manifest** `backend/tests/private_fixtures_manifest.json` lists each path with the sha256 of its bytes (what
-  `sha256sum` prints) and the commit the export reads (`source_commit`, the last `main` commit that had the files).
+  `sha256sum` prints) and the commit the export reads (`source_commit`, a `main` commit that has the files in its
+  tree).
   It holds no data. It is pinned in `ALLOWED_TEST_DATA` like any test data file, so changing it is a reviewed change.
 - **The store** is a directory named by the environment variable `ATP_PRIVATE_FIXTURES`; each file keeps its
   repository path under it, for example `$ATP_PRIVATE_FIXTURES/backend/tests/fixtures/zones/golden_trade_eafc872.json.gz`.
+  That directory is the private package's `fixtures/` (private CI) or a directory on the host; parity fixtures built
+  on licensed data stay on the host only (section 3).
 - **Filling it:** from a full clone (not shallow), `python3 scripts/export_private_fixtures.py --to DIR` writes every
   manifest file from `source_commit` (or `--from-commit SHA`) into DIR and checks each sha256; `--list` is a dry run.
   DIR must be outside the repository. On the host, keep it read-only for the test runner.
-- **The tests** read the files only through `backend/tests/private_fixtures.py`. Store not mounted, or the file
-  missing: the test is skipped with the reason `private fixture store not mounted (ATP_PRIVATE_FIXTURES): <path> - runs
-  on the host / private CI; see docs/PUBLIC_REPO_POLICY.md section 5` (the CI test steps run pytest with `-rs`, so
-  every skip reason is in the log). A file whose sha256 is not the manifest's: an error, never a skip.
+- **The tests** read the files only through `backend/tests/private_fixtures.py`. Store not mounted
+  (`ATP_PRIVATE_FIXTURES` unset): the test is skipped with the reason `private fixture store not mounted
+  (ATP_PRIVATE_FIXTURES): <path> - runs on the host / private CI; see docs/PUBLIC_REPO_POLICY.md section 5` (the CI
+  test steps run pytest with `-rs`, so every skip reason is in the log). The variable set but the directory or a file
+  missing (a mistyped or empty store), or a file whose sha256 is not the manifest's: an error, never a skip, so the
+  private job fails instead of passing green. Manifest paths must be plain relative paths (no absolute path, no
+  `..`); the resolver, the export and the guard refuse others.
 - **Public CI** runs everything else. The synthetic inputs of those goldens (Daily series, 5-minute sessions, option
   chains, the strike-breach series) are built in code by `synthetic_inputs.py` in each fixture folder, so the tests
   that need only inputs - no look-ahead, the scan-then runner, the strike-breach report, the options-builder unit
@@ -111,7 +117,9 @@ no history rewrite), so nothing is lost; the private package repository decided 
 - **A Trade re-sync** writes a new golden into the store (each generator's notes give the command; `make_golden.py`,
   `capture_from_trade.py` and `python -m tests.<harness> --write` write to `$ATP_PRIVATE_FIXTURES/<path>`), and the
   new sha256 replaces the file's line in the manifest (and the manifest's pin) in a reviewed pull request.
-- **The guard refuses** any manifest path that comes back into the tree, whatever the other lists say.
+- **The guard refuses** any manifest path that comes back into the tree, whatever the other lists say, and any file
+  whose sha256 is one the manifest lists (a renamed copy). A missing manifest (while the resolver is in the tree) or an
+  unreadable one is a finding too.
 
 ### Allowed test data
 

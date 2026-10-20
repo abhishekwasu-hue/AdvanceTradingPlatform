@@ -669,7 +669,7 @@ Nothing is needed now. When iOS starts:
 
 - **The repository is public** (owner decision, 2026-10-20, to restore the GitHub Actions minutes). The code stays
   proprietary: `LICENSE` (all rights reserved; public visibility is not a licence). The rules, the guards and the list
-  of grandfathered fixtures are in `docs/PUBLIC_REPO_POLICY.md`.
+  of private fixtures are in `docs/PUBLIC_REPO_POLICY.md`.
 - **Scanned before it went public:** gitleaks over the full history found no real secret (only known fake test values,
   now allowlisted exactly). The production server IP was in three docs and three frontend tests (and its first two
   octets in the mobile config check); it is replaced in the tree (`<server-ip>` / a documentation address) and stays in

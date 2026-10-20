@@ -23,7 +23,9 @@ and fails on:
     *METHOD_NOTES*, CHART_READER_METHOD* (any case, "Method Pack" too; owner decision PR-1: the KB, the Method Pack and
     the reader live in the private package). By name only: a renamed copy is caught only in review;
   - a private fixture: any path listed in backend/tests/private_fixtures_manifest.json (the Trade-derived goldens moved
-    to the private fixtures store, owner decision PR-2), whatever the other lists say;
+    to the private fixtures store, owner decision PR-2), whatever the other lists say, and any file whose raw sha256 is
+    one the manifest lists (a renamed copy); a manifest that is missing (while backend/tests/private_fixtures.py is in
+    the tree), unreadable or lists an absolute or '..' path is a finding too;
   - a golden / parity fixture or a real-data file (a data file whose path says golden or parity; a CSV, spreadsheet,
     compressed or image file under a fixtures folder; a trade journal, tradebook, contract note or chart export), and
     any data or compressed file under backend/tests/, backend/evals/, frontend/test/, frontend/e2e/ or a __fixtures__
@@ -103,6 +105,7 @@ EMAIL_EXEMPT_FILES: FrozenSet[str] = frozenset({"frontend/package-lock.json"})
 # The Trade-derived goldens moved to the private fixtures store (owner decision PR-2): their manifest (paths and sha256
 # only) lists them, and none of those paths may come back into the tree.
 PRIVATE_FIXTURES_MANIFEST = "backend/tests/private_fixtures_manifest.json"
+PRIVATE_FIXTURES_RESOLVER = "backend/tests/private_fixtures.py"
 
 # Allowed: synthetic or hand-made data files (tests, fixtures, evals, e2e replies), each pinned by the sha256 of its
 # content (CRLF read as LF). A deliberate regeneration updates the hash in the same PR, after checking the file holds
@@ -136,7 +139,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/universe/symbolchange.csv": "625b27594c67da488945466f9d9ae4b96847b3fb69316ef04ce565a56dd00a5c",
     "backend/tests/fixtures/universe/symbolchange_noheader.csv": "5a9f35b030909aa202976eb08e24fcf3d488a37e1629d03768d68fee9ecb6c39",
     # the private fixtures manifest: paths and sha256 only, no data (backend/tests/private_fixtures.py, owner decision PR-2)
-    "backend/tests/private_fixtures_manifest.json": "21351997b68f68775c234bc7753b6c3621e59e527ab2442636137bf9a6ea32bf",
+    "backend/tests/private_fixtures_manifest.json": "2aeb33e870fec47b0caa3f317d68e221267a7220c96dec102239e712198b3472",
     # the AI eval sets and their baselines (backend/evals/runner.py)
     "backend/evals/baselines.json": "73ca7f7ea5476ac64ce41055b9cc454dcc5c756792becdc22e2f348f1fe27411",
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
@@ -343,27 +346,47 @@ def listed_data_problems(rel: str, data: bytes) -> List[str]:
             f"in scripts/check_public_repo.py with: {allow_line(rel, data)}"]
 
 
-def private_fixtures(root: Path) -> FrozenSet[str]:
-    """The paths the private fixtures manifest lists (empty when the tree has no manifest). Raises ValueError when the
-    manifest cannot be read as {"files": {path: sha256}}."""
+def _plain_relative(rel: str) -> bool:
+    """A manifest path: relative, POSIX, no empty, '.' or '..' segment."""
+    return bool(rel) and "\\" not in rel and not PurePosixPath(rel).is_absolute() and \
+        all(p not in ("", ".", "..") for p in rel.split("/"))
+
+
+def private_fixtures(root: Path) -> Dict[str, str]:
+    """The private fixtures manifest's {path: sha256 of the raw bytes}. Empty when the tree has neither the manifest
+    nor the resolver (another tree, e.g. in the tests). Raises ValueError when the resolver is there without the
+    manifest, or when the manifest cannot be read as {"files": {relative path: sha256}}."""
     path = root / PRIVATE_FIXTURES_MANIFEST
     if not path.is_file():
-        return frozenset()
+        if (root / PRIVATE_FIXTURES_RESOLVER).is_file():
+            raise ValueError(f"{PRIVATE_FIXTURES_MANIFEST}: missing, but {PRIVATE_FIXTURES_RESOLVER} is in the tree - "
+                             f"without it the guard cannot refuse the private fixtures")
+        return {}
     try:
         listed = json.loads(path.read_text(encoding="utf-8"))["files"]
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise ValueError(f"{PRIVATE_FIXTURES_MANIFEST}: unreadable ({exc.__class__.__name__})") from exc
-    if not isinstance(listed, dict):
-        raise ValueError(f"{PRIVATE_FIXTURES_MANIFEST}: 'files' is not a mapping")
-    return frozenset(str(k) for k in listed)
+    if not isinstance(listed, dict) or not all(isinstance(v, str) for v in listed.values()):
+        raise ValueError(f"{PRIVATE_FIXTURES_MANIFEST}: 'files' is not a mapping of path to sha256")
+    bad = sorted(str(k) for k in listed if not _plain_relative(str(k)))
+    if bad:
+        raise ValueError(f"{PRIVATE_FIXTURES_MANIFEST}: {len(bad)} path(s) not plain relative paths (absolute or with '..')")
+    return {str(k): v.lower() for k, v in listed.items()}
 
 
-def private_fixture_problems(rel: str, private: FrozenSet[str]) -> List[str]:
-    """A file the private fixtures manifest lists, back in the tree."""
-    if rel not in private:
-        return []
-    return [f"{rel}: a private fixture ({PRIVATE_FIXTURES_MANIFEST}) - Trade-derived goldens live only in the private "
-            f"fixtures store (owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5); remove it from the tree"]
+def private_fixture_problems(rel: str, private: Dict[str, str], data: Optional[bytes] = None) -> List[str]:
+    """A file the private fixtures manifest lists, back in the tree; with the file's bytes, also a copy of one under
+    another name (the same raw sha256)."""
+    if rel in private:
+        return [f"{rel}: a private fixture ({PRIVATE_FIXTURES_MANIFEST}) - Trade-derived goldens live only in the private "
+                f"fixtures store (owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5); remove it from the tree"]
+    if data is not None and private:
+        digest = hashlib.sha256(data).hexdigest()
+        for listed, pinned in sorted(private.items()):
+            if digest == pinned:
+                return [f"{rel}: a copy of the private fixture {listed} (same sha256) - it lives only in the private "
+                        f"fixtures store (owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5); remove it from the tree"]
+    return []
 
 
 def config_token_problems(rel: str, text: str) -> List[str]:
@@ -437,12 +460,16 @@ def scan(root: Path) -> Tuple[List[str], List[str]]:
     try:
         private = private_fixtures(root)
     except ValueError as exc:
-        private = frozenset()
+        private = {}
         problems.append(str(exc))
     for rel in files(root):
         if not (root / rel).is_file():
             continue                        # deleted in the work tree, not yet committed
-        problems.extend(private_fixture_problems(rel, private))
+        try:
+            raw: Optional[bytes] = (root / rel).read_bytes() if private else None
+        except OSError:
+            raw = None
+        problems.extend(private_fixture_problems(rel, private, raw))
         found = path_problems(rel)
         if any("--hash" in p for p in found):
             try:

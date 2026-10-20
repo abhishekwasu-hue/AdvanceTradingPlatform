@@ -87,6 +87,39 @@ def test_a_private_fixture_put_back_is_refused_even_if_someone_pins_it(tmp_path,
     assert len(problems) == 1 and problems[0].startswith(back) and "a private fixture" in problems[0]
 
 
+def _manifest(files: dict) -> str:
+    import json
+    return json.dumps({"files": files}) + "\n"
+
+
+def _without_the_manifest_pin(problems: list) -> list:
+    """A made-up manifest is not the pinned one; that finding is not what these tests are about."""
+    return [p for p in problems if not (p.startswith(check_public_repo.PRIVATE_FIXTURES_MANIFEST) and "test data with new content" in p)]
+
+
+def test_a_renamed_copy_of_a_private_fixture_is_refused(tmp_path):
+    body = b"pretend golden bytes\n"
+    manifest = _manifest({"backend/tests/fixtures/x/golden.json.gz": hashlib.sha256(body).hexdigest()})
+    root = _tree(tmp_path, {check_public_repo.PRIVATE_FIXTURES_MANIFEST: manifest, "docs/notes/renamed.txt": body})
+    problems = _without_the_manifest_pin(check_public_repo.check(root))
+    assert len(problems) == 1 and problems[0].startswith("docs/notes/renamed.txt")
+    assert "a copy of the private fixture backend/tests/fixtures/x/golden.json.gz" in problems[0]
+
+
+def test_a_missing_manifest_is_a_finding_when_the_resolver_is_there(tmp_path):
+    resolver = check_public_repo.PRIVATE_FIXTURES_RESOLVER
+    problems = check_public_repo.check(_tree(tmp_path, {resolver: "x = 1\n"}))
+    assert len(problems) == 1 and problems[0].startswith(check_public_repo.PRIVATE_FIXTURES_MANIFEST) and "missing" in problems[0]
+    assert check_public_repo.check(_tree(tmp_path / "other", {"app/a.py": "x = 1\n"})) == []
+
+
+@pytest.mark.parametrize("bad", ["/etc/passwd", "../outside.json", "backend/../../x.json", "backend//x.json", "./x.json", "a\\b.json"])
+def test_a_manifest_path_that_leaves_the_store_is_a_finding(tmp_path, bad):
+    root = _tree(tmp_path, {check_public_repo.PRIVATE_FIXTURES_MANIFEST: _manifest({bad: "0" * 64})})
+    problems = _without_the_manifest_pin(check_public_repo.check(root))
+    assert len(problems) == 1 and "not plain relative paths" in problems[0]
+
+
 def test_an_unreadable_private_fixtures_manifest_is_a_finding(tmp_path):
     root = _tree(tmp_path, {check_public_repo.PRIVATE_FIXTURES_MANIFEST: "not json\n"})
     problems = check_public_repo.check(root)

@@ -1,5 +1,5 @@
 {
-  "_note": "Trade-derived golden fixtures kept in the private fixtures store, not in this public repository (owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5). Paths and sha256 only (sha256sum of the file's bytes), never data. tests/private_fixtures.py reads them from $ATP_PRIVATE_FIXTURES/<path>; scripts/export_private_fixtures.py fills a store from source_commit, the last main commit that had them in the tree.",
+  "_note": "Trade-derived golden fixtures kept in the private fixtures store, not in this public repository (owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5). Paths and sha256 only (sha256sum of the file's bytes), never data. tests/private_fixtures.py reads them from $ATP_PRIVATE_FIXTURES/<path>; scripts/export_private_fixtures.py fills a store from source_commit, a main commit that has them in its tree.",
   "env": "ATP_PRIVATE_FIXTURES",
   "source_commit": "3b7c384a55ad36b534746da18a3ff9b02a79f5c8",
   "files": {

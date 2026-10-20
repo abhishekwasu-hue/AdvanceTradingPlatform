@@ -6,9 +6,11 @@ under it, e.g. `$ATP_PRIVATE_FIXTURES/backend/tests/fixtures/zones/golden_trade_
 manifest (tests/private_fixtures_manifest.json) holds only each file's path and sha256, never data. The store is filled
 from git history with `python3 scripts/export_private_fixtures.py --to DIR`.
 
-  * store not mounted (the variable unset) or the file missing: the test is skipped with a visible reason - the public
-    CI; the parity tests run on the host or on a private runner that mounts the store read-only;
-  * a file whose sha256 differs from the manifest: an error, never a skip (a stale or altered store must not pass).
+  * store not mounted (the variable unset): the test is skipped with a visible reason - the public CI; the parity tests
+    run on the host or on a private runner that mounts the store read-only;
+  * the variable set but the directory or the file missing: an error (PrivateFixtureMissing), never a skip, so a
+    mistyped or empty store fails the run instead of passing green;
+  * a file whose sha256 differs from the manifest: an error (PrivateFixtureMismatch), never a skip.
 
 Nothing is read at import time: the loaders are called from tests and fixtures.
 """
@@ -19,7 +21,7 @@ import hashlib
 import json
 import os
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Dict, Optional
 
 ENV = "ATP_PRIVATE_FIXTURES"
@@ -32,10 +34,25 @@ class PrivateFixtureMismatch(RuntimeError):
     """A file in the store whose content is not the one the manifest pins."""
 
 
+class PrivateFixtureMissing(RuntimeError):
+    """ATP_PRIVATE_FIXTURES is set, but the store directory or a file in it is missing."""
+
+
+def check_rel(rel: str) -> str:
+    """A manifest path: relative, POSIX, no empty, '.' or '..' segment (it never leaves the store root)."""
+    parts = rel.split("/")
+    if not rel or "\\" in rel or PurePosixPath(rel).is_absolute() or any(p in ("", ".", "..") for p in parts):
+        raise ValueError(f"{MANIFEST.name}: {rel!r} is not a plain relative path")
+    return rel
+
+
 @lru_cache(maxsize=1)
 def manifest() -> Dict[str, Any]:
     with open(MANIFEST, encoding="utf-8") as fh:
-        return json.load(fh)
+        data = json.load(fh)
+    for rel in data["files"]:
+        check_rel(rel)
+    return data
 
 
 def files() -> Dict[str, str]:
@@ -68,24 +85,25 @@ def sha256_of(path: Path) -> str:
 
 
 def locate(rel: str) -> Optional[Path]:
-    """The verified store file for a manifest path, or None when the store is not mounted or lacks the file. Raises
-    PrivateFixtureMismatch when the file is there with other content."""
+    """The verified store file for a manifest path, or None when the store is not mounted (the variable unset). Raises
+    PrivateFixtureMissing when the variable is set but the store or the file is missing, and PrivateFixtureMismatch
+    when the file is there with other content."""
     pinned = _pinned(rel)
     root = store_root()
     if root is None:
         return None
+    if not root.is_dir():
+        raise PrivateFixtureMissing(f"{ENV}={root} is not a directory - mount or fill the store "
+                                    f"(scripts/export_private_fixtures.py), or unset {ENV} to skip these tests")
     path = root / rel
     if not path.is_file():
-        return None
+        raise PrivateFixtureMissing(f"{path} is missing from the store named by {ENV} - refill it with "
+                                    f"scripts/export_private_fixtures.py, or unset {ENV} to skip these tests")
     got = sha256_of(path)
     if got != pinned:
         raise PrivateFixtureMismatch(f"{path}: sha256 {got} but {MANIFEST.name} pins {pinned} - refill the store with "
                                      f"scripts/export_private_fixtures.py, or update the manifest in a reviewed change")
     return path
-
-
-def available(rel: str) -> bool:
-    return locate(rel) is not None
 
 
 def path(rel: str) -> Path:
@@ -112,7 +130,8 @@ def load(rel: str) -> Any:
 
 
 def load_or_none(rel: str) -> Any:
-    """The fixture's JSON, verified, or None when the store is not mounted (for module-level case lists)."""
+    """The fixture's JSON, verified, or None when the store is not mounted (for module-level case lists); a set but
+    broken store raises, as `locate` does."""
     found = locate(rel)
     return None if found is None else read_json(found)
 

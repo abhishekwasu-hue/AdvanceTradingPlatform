@@ -10,7 +10,7 @@ manifest's sha256. The tests then read them with ATP_PRIVATE_FIXTURES=DIR (backe
     python3 scripts/export_private_fixtures.py --to /srv/atp/private-fixtures
     python3 scripts/export_private_fixtures.py --to DIR --from-commit <sha>    # another commit with the same content
 
-The default commit is the manifest's `source_commit` (the last main commit that had the files in the tree). A shallow
+The default commit is the manifest's `source_commit` (a main commit that has the files in its tree). A shallow
 clone may lack it: `git fetch --unshallow` (or `git fetch origin <sha>`) first. An existing file in DIR with the right
 content is left as it is; one with other content is refused unless --overwrite is given. Standard library only.
 """
@@ -21,16 +21,26 @@ import hashlib
 import json
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Dict, List, Optional
 
 REPO = Path(__file__).resolve().parent.parent
 MANIFEST = "backend/tests/private_fixtures_manifest.json"
 
 
+def check_rel(rel: str) -> str:
+    """A manifest path: relative, POSIX, no empty, '.' or '..' segment (it never leaves the store root)."""
+    if not rel or "\\" in rel or PurePosixPath(rel).is_absolute() or any(p in ("", ".", "..") for p in rel.split("/")):
+        raise SystemExit(f"export_private_fixtures: {MANIFEST}: {rel!r} is not a plain relative path")
+    return rel
+
+
 def load_manifest(repo: Path) -> Dict[str, object]:
     with open(repo / MANIFEST, encoding="utf-8") as fh:
-        return json.load(fh)
+        data = json.load(fh)
+    for rel in data["files"]:
+        check_rel(rel)
+    return data
 
 
 def blob(repo: Path, commit: str, rel: str) -> bytes:

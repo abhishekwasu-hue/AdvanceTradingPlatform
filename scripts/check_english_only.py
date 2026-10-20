@@ -17,8 +17,7 @@ Files: the tracked and the new (not ignored) files when the root is a git work t
 Known binary types (images, fonts, archives...) are skipped; any other file must be UTF-8 text - a file in another
 encoding, UTF-16 or with NUL bytes is a finding; a file over 8 MB is skipped with a notice. Devanagari written as
 \\u escapes or HTML entities counts too, outside the tests, the e2e / eval fixtures and the allow-listed files (a range
-bound in a pattern that detects Devanagari, "[\\u0900-\\u097F]", is not text). No exclusions by directory: docs/reference/ (owner-supplied reference copies)
-is checked too, and holds no Devanagari.
+bound in a pattern that detects Devanagari, "[\\u0900-\\u097F]", is not text). No exclusions by directory.
 """
 from __future__ import annotations
 

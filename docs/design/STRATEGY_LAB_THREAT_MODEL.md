@@ -14,7 +14,8 @@ review of PR #264)
 modes (Python, SQL, Lua, JavaScript, TypeScript, R). It ends with the **G-LAB checklist** (section 9): the exact
 evidence an independent reviewer and the owner must see before any code-mode flag can be turned on.
 
-**The AMW reference code.** AMW's sandbox (`docs/reference/amw-screener-v2.9/src/lab/*`) is untrusted reference
+**The AMW reference code.** AMW's sandbox (`src/lab/*` of the AMW screener v2.9; the copy that was under
+`docs/reference/` was removed from the tree on 2026-10-20, owner decision PR-3) is untrusted reference
 material. It was read, never run. Nothing in this document depends on running it.
 
 ---

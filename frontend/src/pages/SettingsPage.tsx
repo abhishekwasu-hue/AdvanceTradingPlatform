@@ -9,6 +9,7 @@ import BillingCard from "../components/BillingCard";
 import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import StaticIpCard from "../components/StaticIpCard";
+import StoredBrokerList from "../components/StoredBrokerList";
 import VisionByokCard from "../components/VisionByokCard";
 import { Card } from "../components/ui";
 import AppearanceCard from "../components/AppearanceCard";
@@ -174,29 +175,7 @@ export default function SettingsPage() {
       </Card>
 
       <Card title={`Connected brokers (${stored.length})`}>
-        {stored.length === 0 ? (
-          <div className="text-sm text-fg-muted py-2">None stored yet.</div>
-        ) : (
-          <div className="space-y-1.5">
-            {stored.map((s) => (
-              <div key={`${s.broker_name}/${s.account_label ?? "primary"}`} className="flex items-center justify-between rounded border border-border px-3 py-2 text-sm">
-                <div>
-                  <span className="font-medium text-fg capitalize">{s.broker_name}</span>{" "}
-                  <span className="text-xs text-fg-muted">/ {s.account_label ?? "primary"}</span>{" "}
-                  <span className="text-fg-muted text-xs">updated {new Date(s.updated_at).toLocaleString()}</span>
-                </div>
-                <div className="flex gap-3">
-                  <button onClick={() => handleAuthenticate(s.broker_name, s.account_label ?? "primary")} disabled={busy} className="text-xs text-brand hover:underline disabled:opacity-50">
-                    Authenticate
-                  </button>
-                  <button onClick={() => handleDelete(s.broker_name, s.account_label ?? "primary")} className="text-xs text-down hover:underline">
-                    Remove
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+        <StoredBrokerList stored={stored} busy={busy} onAuthenticate={handleAuthenticate} onDelete={handleDelete} />
       </Card>
 
       <Card title="Add / update broker credentials">

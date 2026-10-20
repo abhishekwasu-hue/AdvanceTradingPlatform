@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple
@@ -37,6 +36,7 @@ import httpx
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
+from app.brokers.totp import totp_code
 from app.brokers.models import (BrokerCredentials, BrokerHolding, BrokerOrderRequest, BrokerOrderResponse, BrokerOrderStatus,
                                 BrokerPosition, BrokerProfile, BrokerTradeEntry, Instrument, MarginInfo, OptionChain, OptionChainRow, Quote)
 from app.core.enums import OrderSide
@@ -73,17 +73,8 @@ INDEX_ALIASES = {"NIFTY": "Nifty 50", "BANKNIFTY": "Nifty Bank", "FINNIFTY": "Ni
 QUOTE_BATCH = 50
 INSTRUMENT_CACHE_TTL_SECONDS = 6 * 60 * 60
 AUTH_ERROR_CODES = ("AG8001", "AG8002", "AG8003", "AB8050", "AB8051", "AB1010")
-_BASE32 = re.compile(r"^[A-Z2-7]{16,}=*$")
-
-
-def _totp_code(secret_or_code: Optional[str]) -> str:
-    value = (secret_or_code or "").strip().replace(" ", "")
-    if value.isdigit() and len(value) in (6, 8):
-        return value
-    if _BASE32.match(value.upper()):
-        import pyotp
-        return pyotp.TOTP(value.upper()).now()
-    return value
+# The stored secret becomes the current code in one shared place (Shoonya's factor2 uses the same helper).
+_totp_code = totp_code
 
 
 def _parse_expiry(raw: Optional[str]) -> Optional[str]:

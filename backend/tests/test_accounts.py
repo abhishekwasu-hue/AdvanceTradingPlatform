@@ -50,7 +50,7 @@ def test_credentials_with_labels_create_accounts_and_sync(monkeypatch):
     me = _me(headers)
     assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"}).status_code == 204
     assert client.post("/api/broker/upstox/credentials?account_label=hedge", headers=headers, json={"api_key": "k2", "api_secret": "s2", "access_token": "t2"}).status_code == 204
-    assert client.post("/api/broker/upstox/credentials?account_label=bad label!", headers=headers, json={"api_key": "k"}).status_code == 400
+    assert client.post("/api/broker/upstox/credentials?account_label=bad label!", headers=headers, json={"api_key": "k"}).status_code == 422
 
     stored = client.get("/api/broker/credentials", headers=headers).json()
     assert sorted(s["account_label"] for s in stored) == ["hedge", "primary"]

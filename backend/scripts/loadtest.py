@@ -426,6 +426,14 @@ def merge(paths: List[str], slo_factor: float = 1.0) -> Dict[str, Any]:
 def markdown(r: Dict[str, Any], label: str = "", stats_csv: Optional[str] = None) -> str:
     """The result as the Markdown block docs/reports/load_test_500.md carries."""
     sessions = r.get("sessions") or {}
+    baseline = r.get("host_baseline")
+    if baseline:                                          # informational: the login p95 follows the core's bcrypt speed
+        try:                                              # never fails the report
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import bcrypt_baseline
+            label = f"{label or 'this host'} ({bcrypt_baseline.note(baseline.get('cpu_model'), baseline.get('vcpus'), baseline.get('bcrypt12_ms'))})"
+        except Exception:  # noqa: BLE001 - informational only
+            pass
     lines = [f"**{r['users']} users** ({sessions.get('logged_in', 0)} logged in, {sessions.get('no_login', 0)} without a login)"
              + (f", {r['shards']} shards (client IPs)" if r.get("shards") else "") + f" on {label or 'this host'}: "
              f"{r['requests']:,} requests in {r['seconds']:.0f} s ({r['rps']} requests/s), server errors {r['error_rate']:.2%}. "
@@ -508,6 +516,10 @@ def main() -> int:
     parser.add_argument("--markdown", default=None, help="write the report as a Markdown table here")
     parser.add_argument("--label", default="", help="where it ran (for --markdown)")
     parser.add_argument("--stats", default=None, help="docker stats CSV to summarise in --markdown")
+    parser.add_argument("--cpu-model", default=None, help="the host's CPU model, for the report (informational)")
+    parser.add_argument("--vcpus", default=None, help="the host's vCPU count, for the report (informational)")
+    parser.add_argument("--bcrypt-ms", default=None, help="one bcrypt-12 check in ms (scripts/bcrypt_baseline.py), for the report; "
+                                                          "informational, never a verdict")
     parser.add_argument("--pin-cpus", default=None, help="run on these CPUs only, e.g. 2,3 (Linux; the CI's KVM 2 shape keeps the "
                                                           "load clients off the server's CPUs)")
     args = parser.parse_args()
@@ -519,6 +531,14 @@ def main() -> int:
         result = merge(args.merge, slo_factor=_slo_factor(args.slo_factor))
     else:
         result = asyncio.run(run(args))
+    if args.cpu_model is not None or args.vcpus is not None or args.bcrypt_ms is not None:
+        try:                                              # informational only: never changes the run's result or rc
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            import bcrypt_baseline
+            result["host_baseline"] = {"cpu_model": args.cpu_model or "unknown", "vcpus": args.vcpus,
+                                       "bcrypt12_ms": bcrypt_baseline.as_ms(args.bcrypt_ms)}
+        except Exception:  # noqa: BLE001
+            pass
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(result, indent=2))
     if args.markdown:

@@ -25,8 +25,9 @@ included), with these differences that matter on the real host:
   meters, the data key, verification / reset / MFA / AI-acknowledgement rows), by the organisation id - or by user id
   where a table has no organisation column. It never deletes through a "who acted" column. Before deleting anything it
   refuses if the organisation or its users own rows in any other table (marketplace listings, orders, ...), and says
-  which. Ledgers (`audit_logs`, `audit_anchors`, `orders`, `order_events`, `trades`) are never deleted from, whatever
-  role the app connects as. A user any remaining row still names is kept as an inert tombstone (deactivated, password
+  which - having first made the (proven) organisation inert: users deactivated with an unusable password, the
+  organisation suspended, nothing deleted. Ledgers (`audit_logs`, `audit_anchors`, `orders`, `order_events`,
+  `trades`) are never deleted from, whatever role the app connects as. A user any remaining row still names is kept as an inert tombstone (deactivated, password
   replaced by the hash of a random secret nobody holds - a login is an ordinary 401); the others are deleted, which
   can cascade into nothing because nothing names them. The organisation is never deleted: it stays `suspended`, named
   by its audit rows. Then it counts again and says what is left.
@@ -354,9 +355,22 @@ async def cleanup(stamp: str, factory: Any = None, verify_audit: bool = False, t
         md = await _reflect(session)
         allow, ledger, other = _split(await _owned(session, md, tid, uids))
         if other:
+            # Proven ours (identify above), so made inert before refusing: its users deactivated with an unusable
+            # password, the organisation suspended. Nothing is deleted.
+            inert = org.tenant.status == "suspended" and not any(u.is_active for u in org.users)
+            await session.execute(update(User).where(User.id.in_(uids), User.tenant_id == tid).values(
+                is_active=False, hashed_password=tombstone_hash, mfa_enabled=False, mfa_secret_encrypted=None, scope_overrides=None))
+            await session.execute(update(Tenant).where(Tenant.id == tid).values(
+                status="suspended", status_reason=f"loadtest {stamp}: synthetic organisation, cleanup refused (rows outside the allowlist)"))
+            if not inert:                                     # a repeated refusal that finds it inert adds no audit row
+                await write_audit_log(session, tid, None, CLEAN_EVENT,
+                                      f"{tenant_name(stamp)}: cleanup refused (rows outside the allowlist), nothing deleted, "
+                                      f"{len(uids)} users deactivated, organisation suspended")
+            await session.commit()
             raise Refused(f"organisation #{tid} owns rows a load test does not write: "
                           + ", ".join(f"{k} {v}" for k, v in sorted(other.items()))
-                          + " - nothing deleted; look at them first (docs/deploy/LOADTEST_REAL_HOST.md, manual cleanup)")
+                          + f" - nothing deleted; its {len(uids)} users were deactivated (unusable password) and the organisation "
+                          "suspended; look at the rows first (docs/deploy/LOADTEST_REAL_HOST.md, manual cleanup)")
         report["ledger_rows_kept"] = ledger
         pending = [t for t in reversed(_sorted(md)) if t.name in allow and t.name not in LEDGERS]
         for _ in range(3):

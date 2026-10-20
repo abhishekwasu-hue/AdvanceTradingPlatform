@@ -18,9 +18,9 @@ Inputs in --dir (each may be missing - an interrupted run still gets a report of
 The SLOs (owner decisions, docs/OPEN_QUESTIONS.md LD-9): every API scenario p95 <= 500 ms; login measured apart,
 p95 <= 2,000 ms with all users logged in; zero errors (server errors, transport failures, other 4xx and rate-limit
 refusals). A scenario the deployment answers only with "no broker session" (409) or "feature off" is reported as not
-measured, never as passed. Exit codes, the cleanup first (PR #284 review M2): 4 = the cleanup is not verified, whatever
-else happened; 5 = the watchdog stopped the run because production degraded (cleanup verified); 1 = an SLO missed, or
-no load result; 0 = every SLO met and the cleanup verified.
+measured, never as passed. Exit codes, the cleanup first (PR #284 review M2): 4 = the cleanup is not verified (the
+organisation, or a load-test network left over), whatever else happened; 5 = the watchdog stopped the run because
+production degraded (cleanup verified); 1 = an SLO missed, or no load result; 0 = every SLO met and the cleanup verified.
 """
 from __future__ import annotations
 
@@ -196,6 +196,21 @@ def server_side(run_dir: Path) -> str:
         sys.path.pop(0)
 
 
+def host_baseline(meta: Dict[str, Any]) -> str:
+    """The host's CPU and one bcrypt-12 check (atp.sh's preflight), for beside the login verdict. Informational only:
+    the login p95 follows the core's bcrypt speed. "unknown" for what was not measured."""
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "backend" / "scripts"))
+    try:
+        import bcrypt_baseline
+        return bcrypt_baseline.note(meta.get("cpu_model"), meta.get("vcpus"), meta.get("bcrypt12_ms"))
+    except Exception:  # noqa: BLE001 - a diagnostic; the report never depends on it
+        ms = meta.get("bcrypt12_ms")
+        return (f"{meta.get('cpu_model') or 'unknown'}, {meta.get('vcpus') or '?'} vCPU; bcrypt-12 check: "
+                f"{f'{ms} ms' if isinstance(ms, int) else 'unknown'}")
+    finally:
+        sys.path.pop(0)
+
+
 # --- the report ---------------------------------------------------------------------------------------------------
 
 def build(run_dir: Path) -> Tuple[str, str, int]:
@@ -212,15 +227,20 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
     host = host_memory(run_dir / "host-memory.csv")
     vcpus = float(meta.get("vcpus") or 2)
     cap = float(meta.get("client_cpus_per_shard") or 0)
-    clean = bool(cleanup and cleanup.get("clean"))
+    # A load-test network left over (Caddy still attached to it) is a cleanup not verified, as atp.sh counts it.
+    networks_left = meta.get("network_left", 0) not in (0, "0")
+    clean = bool(cleanup and cleanup.get("clean")) and not networks_left
 
     slo_line = ("PASS - every measured SLO met" if verdict["slo_pass"] else "FAIL - " + "; ".join(verdict["reasons"]))
-    cleanup_line = ("verified clean" if clean else "NOT VERIFIED - see the Cleanup section and the runbook's manual cleanup"
+    cleanup_line = ("verified clean" if clean else
+                    "NOT VERIFIED - the load-test network is still there (Caddy may be attached): /opt/atp/deploy/atp.sh loadtest-cleanup --all"
+                    if cleanup and cleanup.get("clean") else "NOT VERIFIED - see the Cleanup section and the runbook's manual cleanup"
                     if cleanup else "NOT RUN or no report - run: /opt/atp/deploy/atp.sh loadtest-cleanup " + str(meta.get("stamp", "<stamp>")))
     md: List[str] = [f"# Load test on the production host - {meta.get('stamp', '?')}", ""]
     if aborted:
         md += [f"> **The run was stopped early: production degraded - {aborted}.** The cleanup still ran.", ""]
-    md += [f"**SLO verdict: {slo_line}**", "", f"**Cleanup: {cleanup_line}**", ""]
+    baseline = host_baseline(meta)
+    md += [f"**SLO verdict: {slo_line}**", "", f"Login context (informational) - host: {baseline}", "", f"**Cleanup: {cleanup_line}**", ""]
     if meta.get("market") and not str(meta["market"]).startswith("open"):
         md += [f"> Run outside NSE market hours ({meta['market']}): these numbers are not the market-hours result.", ""]
     if verdict["not_measured"]:
@@ -348,7 +368,7 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
         md += ["## Server side (the API's own metrics)", "", side, ""]
     text = "\n".join(md) + "\n"
 
-    lines = [f"LOAD TEST {meta.get('stamp', '?')} - SLO: {slo_line}", f"Cleanup: {cleanup_line}"]
+    lines = [f"LOAD TEST {meta.get('stamp', '?')} - SLO: {slo_line}", f"Host: {baseline}", f"Cleanup: {cleanup_line}"]
     for name, s in verdict["scenarios"].items():
         lines.append(f"  {name:32} {s['verdict']:12} p50 {s['p50_ms']!s:>8} p95 {s['p95_ms']!s:>8} p99 {s['p99_ms']!s:>8} ms "
                      f"(limit {s['limit_ms']:,.0f})  errors {s['errors']}")

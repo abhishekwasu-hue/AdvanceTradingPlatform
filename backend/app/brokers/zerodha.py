@@ -183,27 +183,46 @@ class ZerodhaBroker(BrokerInterface):
 
     async def get_quote(self, symbols: List[str]) -> Dict[str, Quote]:
         data = await self._request("GET", "/quote", params=[("i", s) for s in symbols])
-        quotes: Dict[str, Quote] = {}
-        for symbol, entry in data.items():
-            ohlc = entry.get("ohlc", {})
-            depth = entry.get("depth", {})
-            best_buy = (depth.get("buy") or [{}])[0]
-            best_sell = (depth.get("sell") or [{}])[0]
-            quotes[symbol] = Quote(
-                symbol=symbol,
-                ltp=entry["last_price"],
-                open=ohlc.get("open", 0.0),
-                high=ohlc.get("high", 0.0),
-                low=ohlc.get("low", 0.0),
-                close=ohlc.get("close", 0.0),
-                volume=entry.get("volume", 0.0),
-                oi=entry.get("oi"),
-                bid=best_buy.get("price"),
-                ask=best_sell.get("price"),
-                bid_qty=best_buy.get("quantity"),
-                ask_qty=best_sell.get("quantity"),
-            )
-        return quotes
+        return {symbol: self._quote_from(symbol, entry) for symbol, entry in data.items()}
+
+    @staticmethod
+    def _quote_from(symbol: str, entry: dict) -> Quote:
+        ohlc = entry.get("ohlc", {})
+        depth = entry.get("depth", {})
+        best_buy = (depth.get("buy") or [{}])[0]
+        best_sell = (depth.get("sell") or [{}])[0]
+        return Quote(
+            symbol=symbol,
+            ltp=entry["last_price"],
+            open=ohlc.get("open", 0.0),
+            high=ohlc.get("high", 0.0),
+            low=ohlc.get("low", 0.0),
+            close=ohlc.get("close", 0.0),
+            volume=entry.get("volume", 0.0),
+            oi=entry.get("oi"),
+            bid=best_buy.get("price"),
+            ask=best_sell.get("price"),
+            bid_qty=best_buy.get("quantity"),
+            ask_qty=best_sell.get("quantity"),
+            # Kite: ohlc.close is the close of the last trading day (the previous session's close)
+            prev_close=ohlc.get("close") or None,
+        )
+
+    multi_quote = True
+
+    async def get_quotes_batch(self, items):
+        """UI2-4a2-pre: one Kite `/quote` call for the whole list (Kite serves up to 500 instruments per call), with
+        each quote's exchange time (IST wall time, no offset) so the watchlist can say how old a price is."""
+        keys = {f"{exchange}:{symbol}": (exchange, symbol) for exchange, symbol in items}
+        if not keys:
+            return {}
+        data = await self._request("GET", "/quote", params=[("i", key) for key in keys])
+        out = {}
+        for key, entry in data.items():
+            if key in keys and entry.get("last_price") is not None:
+                out[keys[key]] = self._quote_from(keys[key][1], entry).model_copy(
+                    update={"timestamp": parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp"))})
+        return out
 
     async def get_historical_data(
         self, symbol: str, exchange: str, interval: str, from_date: datetime, to_date: datetime

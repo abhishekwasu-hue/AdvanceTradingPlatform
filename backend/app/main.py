@@ -81,6 +81,7 @@ from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
 from app.decision_tools.routes import router as decision_tools_router
 from app.watchlists.routes import router as watchlists_router
+from app.me.prefs import router as me_prefs_router
 from app.context_panel.routes import router as context_panel_router
 from app.paper.ticket_routes import router as paper_ticket_router
 from app.trading.routes import router as trading_router
@@ -100,6 +101,7 @@ from app.admin.bootstrap import promote_configured_super_admins
 from app.db.session import _session_factory as _startup_session_factory
 from app.market_data.routes import router as market_holidays_router
 from app.market_data.candles_routes import router as market_candles_router
+from app.market_data.quotes_routes import router as market_quotes_router
 from app.market_lake.import_routes import backfill_router as history_backfill_admin_router
 from app.market_lake.import_routes import intraday_router as history_intraday_admin_router
 from app.market_lake.import_routes import router as history_import_admin_router
@@ -259,6 +261,7 @@ app.include_router(ai_router)
 app.include_router(scanner_ai_router)   # Phase Y: AI scanner
 app.include_router(quant_router)        # Phase Z: factor and risk models
 app.include_router(market_candles_router)  # Phase AA: broker candles for the research pages
+app.include_router(market_quotes_router)  # UI2-4a2-pre: batch watchlist quotes (one multi-quote broker call)
 app.include_router(market_lake_router)  # Part B5: point-in-time history from the market data lake
 app.include_router(history_import_admin_router)  # HB0: R2 history import progress (SUPER_ADMIN, read-only)
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
@@ -301,6 +304,7 @@ app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
+app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)
 app.include_router(legal_router)           # Z10-f: Privacy notice, Terms of use, Risk disclosure (public) + acceptance

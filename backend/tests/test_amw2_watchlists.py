@@ -288,6 +288,163 @@ def test_usage_counter_counts_the_callers_own_lists():
     assert _run(go()) == 2.0
 
 
+# --- UI2-4a1: items with an exchange (spaces allowed), list order, version ------------------------------------------
+
+def _items(who: dict, name: str, items):
+    return client.post(BASE, headers=who["headers"], json={"name": name, "items": items})
+
+
+def test_items_keep_spaces_and_exchange_and_feed_the_plain_symbols():
+    who = _owner("items")
+    made = _items(who, "Indices", [{"symbol": "nifty  50", "exchange": "nse_index"}, {"symbol": "NIFTY BANK", "exchange": "NSE_INDEX"},
+                                   {"symbol": "reliance"}, {"symbol": "RELIANCE", "exchange": "BSE"},
+                                   {"symbol": "Nifty 50", "exchange": "NSE_INDEX"}])
+    assert made.status_code == 201, made.text
+    body = made.json()
+    assert body["items"] == [{"symbol": "NIFTY 50", "exchange": "NSE_INDEX"}, {"symbol": "NIFTY BANK", "exchange": "NSE_INDEX"},
+                             {"symbol": "RELIANCE", "exchange": "NSE"}, {"symbol": "RELIANCE", "exchange": "BSE"}]
+    # the Screener / Scanner view: each symbol once, in row order
+    assert body["symbols"] == ["NIFTY 50", "NIFTY BANK", "RELIANCE"] and body["count"] == 3
+    assert body["version"] == 1 and body["position"] is None
+    listed = client.get(BASE, headers=who["headers"]).json()
+    assert listed[0]["items"] == body["items"]
+    # row order is kept on a replace (drag to reorder)
+    wid = body["id"]
+    moved = client.put(f"{BASE}/{wid}", headers=who["headers"],
+                       json={"name": "Indices", "items": [body["items"][2], body["items"][0]], "version": 1})
+    assert moved.status_code == 200, moved.text
+    assert [i["symbol"] for i in moved.json()["items"]] == ["RELIANCE", "NIFTY 50"] and moved.json()["version"] == 2
+
+
+@pytest.mark.parametrize("items", [
+    [{"symbol": "NIFTY/50"}],
+    [{"symbol": ""}],
+    [{"symbol": "   "}],
+    [{"symbol": "X" * 41}],
+    [{"symbol": "INFY", "exchange": "LSE"}],
+    [{"symbol": "INFY", "segment": "EQ"}],
+])
+def test_invalid_items_are_refused(items):
+    who = _owner("bad-items")
+    assert _items(who, "Bad", items).status_code == 422
+    assert client.get(BASE, headers=who["headers"]).json() == []
+
+
+def test_symbols_and_items_together_are_refused():
+    who = _owner("both")
+    response = client.post(BASE, headers=who["headers"], json={"name": "X", "symbols": ["INFY"], "items": [{"symbol": "INFY"}]})
+    assert response.status_code == 422
+
+
+def test_too_many_items_are_refused():
+    who = _owner("many-items")
+    items = [{"symbol": f"S{i}"} for i in range(service.MAX_SYMBOLS + 1)]
+    assert _items(who, "Big", items).status_code == 422
+    assert _items(who, "Max", items[:service.MAX_SYMBOLS]).status_code == 201
+
+
+def test_old_clients_keep_working():
+    """An AMW-2 client sends and reads `symbols` only: same parsing, same response fields, items built on NSE; and its
+    save of a list made with items keeps each symbol's exchange and a spaced symbol whole."""
+    who = _owner("old")
+    old = _create(who, "Old", ["infy, tcs"]).json()
+    assert old["symbols"] == ["INFY", "TCS"]
+    assert old["items"] == [{"symbol": "INFY", "exchange": "NSE"}, {"symbol": "TCS", "exchange": "NSE"}]
+    assert {"id", "name", "symbols", "count", "created_at", "updated_at"} <= set(old)
+    new = _items(who, "New", [{"symbol": "NIFTY 50", "exchange": "NSE_INDEX"}, {"symbol": "SBIN", "exchange": "BSE"}]).json()
+    # the old client re-saves what it read, plus one symbol, without a version
+    saved = client.put(f"{BASE}/{new['id']}", headers=who["headers"], json={"name": "New", "symbols": new["symbols"] + ["wipro"]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["items"] == [{"symbol": "NIFTY 50", "exchange": "NSE_INDEX"}, {"symbol": "SBIN", "exchange": "BSE"},
+                                     {"symbol": "WIPRO", "exchange": "NSE"}]
+    assert saved.json()["symbols"] == ["NIFTY 50", "SBIN", "WIPRO"]
+    # a pasted "NIFTY 50" on a list that never held it is still split, as AMW-2 does
+    assert client.put(f"{BASE}/{old['id']}", headers=who["headers"], json={"name": "Old", "symbols": ["NIFTY 50"]}).json()["symbols"] == ["NIFTY", "50"]
+
+
+def test_an_old_client_save_keeps_every_exchange_of_a_symbol_and_count_is_distinct_symbols():
+    who = _owner("two-exchanges")
+    made = _items(who, "Dual", [{"symbol": "RELIANCE", "exchange": "NSE"}, {"symbol": "INFY"},
+                                {"symbol": "RELIANCE", "exchange": "BSE"}]).json()
+    # `count` is AMW-2's: distinct symbols (= len(symbols)); `items` holds one row per symbol and exchange
+    assert made["count"] == len(made["symbols"]) == 2 and len(made["items"]) == 3
+    saved = client.put(f"{BASE}/{made['id']}", headers=who["headers"], json={"name": "Dual", "symbols": ["reliance", "tcs"]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["items"] == [{"symbol": "RELIANCE", "exchange": "NSE"}, {"symbol": "RELIANCE", "exchange": "BSE"},
+                                     {"symbol": "TCS", "exchange": "NSE"}]                # INFY dropped, BSE row kept
+    assert saved.json()["symbols"] == ["RELIANCE", "TCS"] and saved.json()["count"] == 2
+    # read back unchanged (items_json and symbols_json agree)
+    assert client.get(BASE, headers=who["headers"]).json()[0]["items"] == saved.json()["items"]
+
+
+def test_a_list_changed_by_an_older_release_is_read_from_its_symbols():
+    """An older release (a code-only rollback) rewrites `symbols_json` only; the rows follow it, keeping exchanges."""
+    who = _owner("rollback")
+    wid = _items(who, "Mixed", [{"symbol": "NIFTY 50", "exchange": "NSE_INDEX"}, {"symbol": "SBIN", "exchange": "BSE"}]).json()["id"]
+
+    async def older_release_write():
+        async with _session_factory() as session:
+            row = await session.get(WatchlistRecord, wid)
+            row.symbols_json = '["SBIN", "TCS"]'
+            await session.commit()
+    _run(older_release_write())
+    got = client.get(BASE, headers=who["headers"]).json()[0]
+    assert got["symbols"] == ["SBIN", "TCS"]
+    assert got["items"] == [{"symbol": "SBIN", "exchange": "BSE"}, {"symbol": "TCS", "exchange": "NSE"}]
+    # a list saved before UI2-4a1 (no items_json) reads as NSE rows
+    row = WatchlistRecord(id=1, tenant_id=1, user_id=1, name="x", symbols_json='["INFY"]', items_json=None)
+    assert service.items_of(row) == [{"symbol": "INFY", "exchange": "NSE"}]
+    row.items_json = '{"not": "a list"}'
+    assert service.items_of(row) == [{"symbol": "INFY", "exchange": "NSE"}]
+
+
+def test_version_conflict_is_a_clean_409():
+    who = _owner("version")
+    made = _items(who, "Desk", [{"symbol": "INFY"}]).json()
+    wid = made["id"]
+    phone = client.put(f"{BASE}/{wid}", headers=who["headers"], json={"name": "Desk", "items": [{"symbol": "TCS"}], "version": 1})
+    assert phone.status_code == 200 and phone.json()["version"] == 2
+    desktop = client.put(f"{BASE}/{wid}", headers=who["headers"], json={"name": "Desk", "items": [{"symbol": "SBIN"}], "version": 1})
+    assert desktop.status_code == 409
+    detail = desktop.json()["detail"]
+    assert detail["current"]["version"] == 2 and detail["current"]["symbols"] == ["TCS"]      # the phone's edit is not lost
+    assert client.get(BASE, headers=who["headers"]).json()[0]["symbols"] == ["TCS"]
+    retry = client.put(f"{BASE}/{wid}", headers=who["headers"], json={"name": "Desk", "items": [{"symbol": "TCS"}, {"symbol": "SBIN"}], "version": 2})
+    assert retry.status_code == 200 and retry.json()["version"] == 3
+    # an old client's save (no version) bumps the version too, so a new client holding version 3 sees the change
+    assert client.put(f"{BASE}/{wid}", headers=who["headers"], json={"name": "Desk", "symbols": ["INFY"]}).json()["version"] == 4
+    assert client.put(f"{BASE}/{wid}", headers=who["headers"], json={"name": "Desk", "items": [], "version": 3}).status_code == 409
+    assert client.put(f"{BASE}/{wid}", headers=who["headers"], json={"name": "Desk", "items": [], "version": 0}).status_code == 422
+
+
+def test_order_of_lists():
+    who = _owner("order")
+    ids = {n: _create(who, n).json()["id"] for n in ("Alpha", "Bravo", "Charlie", "Delta")}
+    assert [w["name"] for w in client.get(BASE, headers=who["headers"]).json()] == ["Alpha", "Bravo", "Charlie", "Delta"]
+    ordered = client.put(f"{BASE}/order", headers=who["headers"], json={"ids": [ids["Charlie"], ids["Alpha"]]})
+    assert ordered.status_code == 200, ordered.text
+    # the named lists first, then the others in their current order
+    assert [w["name"] for w in ordered.json()] == ["Charlie", "Alpha", "Bravo", "Delta"]
+    assert [w["position"] for w in ordered.json()] == [0, 1, 2, 3]
+    assert [w["name"] for w in client.get(BASE, headers=who["headers"]).json()] == ["Charlie", "Alpha", "Bravo", "Delta"]
+    # the order is not an edit of a list: versions are unchanged
+    assert {w["version"] for w in ordered.json()} == {1}
+    # a list made later goes last, by name, until placed
+    _create(who, "Aardvark")
+    assert [w["name"] for w in client.get(BASE, headers=who["headers"]).json()][-1] == "Aardvark"
+    assert client.put(f"{BASE}/order", headers=who["headers"], json={"ids": [ids["Alpha"], ids["Alpha"]]}).status_code == 422
+
+
+def test_order_never_touches_another_users_lists():
+    a, b = _owner("order-a"), _owner("order-b")
+    mine = _create(a, "Mine").json()["id"]
+    theirs = _create(b, "Theirs").json()["id"]
+    assert client.put(f"{BASE}/order", headers=a["headers"], json={"ids": [theirs, mine]}).status_code == 404
+    assert client.get(BASE, headers=b["headers"]).json()[0]["position"] is None
+    assert client.get(BASE, headers=a["headers"]).json()[0]["position"] is None
+    assert client.put(f"{BASE}/order", headers=_owner("order-off", flag=False)["headers"], json={"ids": []}).status_code == 404
+
+
 # --- the migration ----------------------------------------------------------------------------------------------------
 
 def test_migration_is_rollback_safe_and_keeps_one_head():

@@ -148,7 +148,31 @@ describe("editing the list", () => {
   });
   it("reads typed symbols: upper case, no repeats, at most the run limit", () => {
     expect(parseSymbols(" reliance, TCS;infy\nreliance  ")).toEqual(["RELIANCE", "TCS", "INFY"]);
+    expect(parseSymbols(Array.from({ length: 60 }, (_, i) => `S${i}`).join("\n")).length).toBe(50);
     expect(parseSymbols(Array.from({ length: 60 }, (_, i) => `S${i}`).join(" ")).length).toBe(50);
+  });
+  it("keeps a spaced index name whole, as a watchlist loads it (UI2-4a1)", () => {
+    expect(parseSymbols(["NIFTY 50", "NIFTY BANK", "RELIANCE"].join(", "))).toEqual(["NIFTY 50", "NIFTY BANK", "RELIANCE"]);
+    expect(parseSymbols("  nifty   50 ,\nnifty 50;tcs")).toEqual(["NIFTY 50", "TCS"]);
+  });
+  it("splits a space-only paste on spaces, keeping known index names whole", () => {
+    expect(parseSymbols("RELIANCE TCS INFY")).toEqual(["RELIANCE", "TCS", "INFY"]);
+    expect(parseSymbols("  reliance   tcs ")).toEqual(["RELIANCE", "TCS"]);
+    expect(parseSymbols("NIFTY 50")).toEqual(["NIFTY 50"]);
+    expect(parseSymbols("NIFTY 50 RELIANCE")).toEqual(["NIFTY 50", "RELIANCE"]);
+    expect(parseSymbols("nifty next 50 nifty bank india vix nifty")).toEqual(["NIFTY NEXT 50", "NIFTY BANK", "INDIA VIX", "NIFTY"]);
+    expect(parseSymbols("NIFTY 500 NIFTY 50 NIFTY IT")).toEqual(["NIFTY 500", "NIFTY 50", "NIFTY IT"]);
+    expect(parseSymbols("NIFTY MIDCAP 100 SBIN")).toEqual(["NIFTY MIDCAP 100", "SBIN"]);
+  });
+  it("reads a tab-separated row (copied from Excel) and mixed separators", () => {
+    expect(parseSymbols("RELIANCE\tTCS\tINFY")).toEqual(["RELIANCE", "TCS", "INFY"]);
+    expect(parseSymbols("NIFTY 50\tSBIN")).toEqual(["NIFTY 50", "SBIN"]);
+    expect(parseSymbols("NIFTY 50, RELIANCE\tTCS\ninfy;  wipro ")).toEqual(["NIFTY 50", "RELIANCE", "TCS", "INFY", "WIPRO"]);
+  });
+  it("round-trips a watchlist as the Screener loads it (joined with commas)", () => {
+    const list = ["NIFTY 50", "NIFTY BANK", "NIFTY AUTO", "RELIANCE", "M&M", "BAJAJ-AUTO"];
+    expect(parseSymbols(list.join(", "))).toEqual(list);           // even an index name not in the known list stays whole
+    expect(parseSymbols(["NIFTY 50"].join(", "))).toEqual(["NIFTY 50"]);
   });
 });
 

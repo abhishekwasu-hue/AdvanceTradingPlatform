@@ -67,6 +67,23 @@ def test_the_schema_fits_the_grid_and_names_only_known_values():
     assert Layout.model_validate({**_layout(1), "cells": [_cell("nifty 50")]}).cells[0].symbol == "NIFTY 50"
 
 
+def test_layouts_accept_week_month_and_bars_and_still_refuse_unknown_values():
+    """UI2-4a2-pre: the Charts page saves W, M and the "bars" chart type; W/M/D are stored as their ids; old layouts and
+    every older value stay valid; anything else is still refused."""
+    from typing import get_args
+    from app.charts.layouts import Cell
+    assert get_args(Cell.model_fields["timeframe"].annotation) == layouts.TIMEFRAMES
+    assert get_args(Cell.model_fields["chart_type"].annotation) == layouts.CHART_TYPES
+    for tf, stored in (("week", "week"), ("month", "month"), ("W", "week"), ("M", "month"), ("D", "day"), ("day", "day")):
+        cell = Layout.model_validate({**_layout(1), "cells": [_cell(tf=tf, chart_type="bars")]}).cells[0]
+        assert (cell.timeframe, cell.chart_type) == (stored, "bars")
+    assert Layout.model_validate(_layout(8)).to_json()["cells"][3]["timeframe"] == "day"
+    for bad, words in ((_cell(tf="Y"), "timeframe"), (_cell(tf="w"), "timeframe"), (_cell(tf="1M"), "timeframe"),
+                       (_cell(tf="quarter"), "timeframe"), (_cell(chart_type="ohlc"), "chart_type"), (_cell(chart_type="Bars"), "chart_type")):
+        with pytest.raises(ValidationError, match=words):
+            Layout.model_validate({**_layout(1), "cells": [bad]})
+
+
 def test_flag_off_answers_503_and_on_stores_per_user_with_versions():
     me, who = _owner("ch5-me@example.com")
     other, _ = _owner("ch5-other@example.com")

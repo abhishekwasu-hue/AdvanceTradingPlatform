@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.core.enums import OrderSide
 
@@ -22,6 +22,11 @@ class BrokerCredentials(BaseModel):
     pin: Optional[str] = None
     totp_secret: Optional[str] = None
     redirect_uri: Optional[str] = None
+    # Upstox only: the optional, data-only Analytics Token (one year, read-only, GET-only) and what ATP knows about it
+    # (expiry, probe coverage) - both live inside the same encrypted payload; the token is never returned or logged.
+    # `analytics_meta` is server-written only (app/brokers/upstox_analytics.py); a client-sent value is dropped.
+    analytics_token: Optional[str] = Field(default=None, repr=False)
+    analytics_meta: Optional[Dict[str, Any]] = None
 
 
 class BrokerProfile(BaseModel):
@@ -58,6 +63,8 @@ class Quote(BaseModel):
     bid_qty: Optional[float] = None
     ask_qty: Optional[float] = None
     timestamp: Optional[datetime] = None
+    # UI2-4a2-pre: the previous session's close, where the broker's quote says it (for a watchlist's change); None = unknown.
+    prev_close: Optional[float] = None
 
 
 class OptionChainRow(BaseModel):

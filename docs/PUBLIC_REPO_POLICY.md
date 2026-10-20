@@ -3,7 +3,7 @@
 Status: in force from 2026-10-20, when the owner (Abhi) made this repository public to restore the GitHub Actions
 minutes. The code stays proprietary: see [`LICENSE`](../LICENSE) (all rights reserved; public visibility is not a
 licence). The owner's decisions are in [`docs/OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md), section "Public repository
-(20 Oct)": PR-1 to PR-5 decided on 2026-10-20; PR-6 and PR-7 open.
+(20 Oct)": PR-1 to PR-7, all decided on 2026-10-20.
 
 ## 1. The rule
 
@@ -167,9 +167,9 @@ content) and regenerates byte for byte.
 
 **Frozen model coefficients fitted on real data:** `backend/app/options_builder/strike_breach.py` (the `COEF` table,
 about lines 46-55) holds Trade's strike-breach logistic coefficients, fitted on NIFTY daily data 2015-2021 and
-calibrated 2022-2024. That is the banned category "frozen model coefficients fitted on real data"; it is listed here
-pending the owner's decision (open question PR-6: move to the private store, refit on synthetic data, or accept as
-public). The strike-breach golden file moved to the private store under PR-2; the coefficients in the code are not
+calibrated 2022-2024. That is the banned category "frozen model coefficients fitted on real data"; the owner accepted
+it as public for now (decision PR-6, 2026-10-20). It is the only such exception: new coefficients fitted on real data
+go to the private package. The strike-breach golden file moved to the private store under PR-2; the coefficients in the code are not
 part of that decision.
 
 **Third-party code:** the copy of the AMW screener that was under `docs/reference/amw-screener-v2.9/` (licence

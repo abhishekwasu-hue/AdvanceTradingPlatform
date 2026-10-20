@@ -5,6 +5,10 @@ Abhi pastes this into a Trade session **after** the private package holds a copy
 fills in the private repository's name and attaches that repository to the Trade session (read access), so the
 session can read the manifest.
 
+The Trade repository is private (owner decision PR-7, 2026-10-20), so this move is about one source of truth, not
+secrecy; Abhi decides when to run it. Where the text below says "public tree" or "public CI", read Trade's tree and
+Trade's CI.
+
 ---
 
 From Abhi, for the Trade repository (English).
@@ -54,7 +58,7 @@ pastes back the results.
    - method docs that state the method (for example `docs/reports/v22/METHOD_MAP.md`): list each file in the PR first;
      Abhi approves the list.
    The pack builder code (`scripts/build_method_pack.py`, `vision/method_pack.py`) stays in Trade, pointed at the
-   private copy, until open question PR-7 decides about Trade's method code.
+   private copy.
 9. The same PR removes the in-tree default: the setting becomes required, and a missing or wrong path **fails loudly**
    when a service starts (never a silent fallback); the check runs at service start, not at import, so the tests can
    still import the modules and skip (step 4).

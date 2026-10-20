@@ -130,7 +130,7 @@ the Method Pack (the Vision audit), so the move must never break it.
    at a pinned tag with a read-only deploy key, sets the setting for the running services, restarts them and shows one
    real Vision audit loading the pack hash from the private copy; **only after Abhi confirms that** does Trade remove
    the files from its public tree (a normal commit), make the setting required (a missing path fails loudly) and add a
-   CI check that keeps them out. The pack builder code stays in Trade, pointed at the private copy, until PR-7.
+   CI check that keeps them out. The pack builder code stays in Trade, pointed at the private copy.
 3. **Never delete anything before step 2's confirmation.** If any step fails, Trade keeps its files.
 
 **After the move (change control):** the KB, the method and the Method Pack are edited only in the private repository
@@ -138,5 +138,10 @@ the Method Pack (the Vision audit), so the move must never break it.
 commit and the pack hash; ATP's ports read the KB and the method docs from the private repository at that commit. The
 VPS and the host each pin a private tag; nothing follows a moving branch.
 
-**What stays public:** Trade's and ATP's history keep the old copies (no history rewrite, PR-4). Trade's method code
-(the reader being rebuilt) is public in Trade's tree too; that is open question PR-7.
+**Trade becomes private (owner decision PR-7, 2026-10-20).** Once Trade's repository is private, this move is no
+longer needed to keep the KB out of public view; it still gives the KB, the method and the Method Pack one source of
+truth in the private package, and the owner decides when to run it. The safety order above applies unchanged when it
+runs.
+
+**What stays public:** Trade's and ATP's history up to the change of visibility keeps the old copies (no history
+rewrite, PR-4).

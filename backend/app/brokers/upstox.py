@@ -63,6 +63,20 @@ _INDEX_ALIASES = {
 }
 
 
+_UNSAFE_KEY_CHARS = frozenset("/?#%\\")
+
+
+def safe_instrument_key(key: str) -> str:
+    """An instrument key that is safe to put in an Upstox URL path: no path, query, fragment or escape characters, no
+    `..`, no whitespace other than the single inner spaces Upstox index keys carry ("NSE_INDEX|Nifty 50"). Anything else
+    is refused before a request is built, so a crafted symbol can never steer a GET to another endpoint with either token."""
+    text = key or ""
+    if (not text or text != text.strip() or ".." in text or any(c in _UNSAFE_KEY_CHARS for c in text)
+            or any(c.isspace() and c != " " for c in text) or "  " in text or any(ord(c) < 32 or ord(c) == 127 for c in text)):
+        raise BrokerAPIError(f"Refused an unsafe Upstox instrument key: {text[:40]!r}")
+    return text
+
+
 def find_instrument(instruments: List[Instrument], symbol: str) -> Optional[Instrument]:
     """The instrument a plain symbol names: exact trading symbol first, then case-insensitive,
     then an index by its display name ("NIFTY 50" -> NSE_INDEX|Nifty 50), then a known alias."""
@@ -129,7 +143,11 @@ class UpstoxBroker(BrokerInterface):
 
     def analytics_class_for(self, method: str, path: str, now: Optional[datetime] = None) -> Optional[str]:
         """The endpoint class this request may send with the analytics token, or None (use the daily token)."""
-        cls = upstox_analytics.classify(method, path)
+        try:
+            target = self._client.build_request(method, path).url.path     # what goes on the wire, dot segments resolved
+        except Exception:  # noqa: BLE001 - an unbuildable URL never gets the analytics token
+            return None
+        cls = upstox_analytics.classify(method, target)
         if cls is None or not self._analytics_token or cls not in self._analytics_classes:
             return None
         if self._analytics_expires_at is None or self._analytics_expires_at <= (now or datetime.now(timezone.utc)):
@@ -225,6 +243,7 @@ class UpstoxBroker(BrokerInterface):
         instrument_key) via the cached instrument master. A symbol that already looks like an
         instrument key is passed through untouched."""
         if "|" in symbol:
+            safe_instrument_key(symbol)
             return Instrument(instrument_token=symbol, exchange=exchange, tradingsymbol=symbol)
         instruments = await self.get_instruments(exchange)
         match = find_instrument(instruments, symbol)
@@ -282,7 +301,7 @@ class UpstoxBroker(BrokerInterface):
         upstox_interval = UPSTOX_INTERVAL_MAP.get(interval, interval)
         instrument = await self._resolve_instrument(symbol, exchange)
         data = await self._request(
-            "GET", f"/historical-candle/intraday/{instrument.instrument_token}/{upstox_interval}"
+            "GET", f"/historical-candle/intraday/{safe_instrument_key(instrument.instrument_token)}/{safe_instrument_key(upstox_interval)}"
         )
         bars = [
             OHLCVBar(timestamp=c[0], open=c[1], high=c[2], low=c[3], close=c[4], volume=c[5] if len(c) > 5 else 0.0)
@@ -321,7 +340,7 @@ class UpstoxBroker(BrokerInterface):
 
         data = await self._request(
             "GET",
-            f"/historical-candle/{match.instrument_token}/{upstox_interval}/"
+            f"/historical-candle/{safe_instrument_key(match.instrument_token)}/{safe_instrument_key(upstox_interval)}/"
             f"{to_date.strftime('%Y-%m-%d')}/{from_date.strftime('%Y-%m-%d')}",
         )
         return [

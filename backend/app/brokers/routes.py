@@ -35,6 +35,7 @@ from app.brokers.token_lifecycle import (
     token_is_usable,
 )
 from app.core.config import FRONTEND_URL
+from app.core.rate_limit import user_rate_limit
 from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType, UserRole
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
@@ -262,7 +263,9 @@ async def store_broker_credentials(
             existing.token_status = BrokerTokenStatus.UNKNOWN.value
             existing.token_expires_at = None
             existing.last_verified_at = None
-        if not await _write_if_unchanged(session, existing, expected_user, expected_payload, new_user_id=user.id):
+        # Saving only the analytics token adds a data credential to the row; it does not make the saver its holder.
+        new_holder = user.id if (session_fields_sent or taking_over) else None
+        if not await _write_if_unchanged(session, existing, expected_user, expected_payload, new_user_id=new_holder):
             await session.rollback()
             raise HTTPException(status_code=409, detail="The broker connection changed while saving; nothing was stored. Try again.")
         await session.refresh(existing)
@@ -443,6 +446,9 @@ async def authenticate_broker(
 
 # --- Upstox analytics token -----------------------------------------------------------------------
 
+# Each check sends five GETs and a websocket handshake to Upstox with the user's token: a few per minute is plenty.
+analytics_check_rate_limit = user_rate_limit("analytics_check", limit=6, window_seconds=60)
+
 
 async def _analytics_record(session: AsyncSession, user: User, name: str, account_label: str, *,
                             owner_may: bool = False) -> BrokerCredentialRecord:
@@ -457,7 +463,8 @@ async def _analytics_record(session: AsyncSession, user: User, name: str, accoun
     return record
 
 
-@router.post("/{name}/analytics-token/check", response_model=AnalyticsTokenInfo, dependencies=[Depends(require_scope("brokers:write"))])
+@router.post("/{name}/analytics-token/check", response_model=AnalyticsTokenInfo,
+             dependencies=[Depends(require_scope("brokers:write")), Depends(analytics_check_rate_limit)])
 async def check_analytics_token(
     name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
 ) -> AnalyticsTokenInfo:

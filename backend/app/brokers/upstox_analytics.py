@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time as _time
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Dict, Iterable, Optional, Set, Tuple
@@ -59,6 +60,7 @@ UNVERIFIED = "unverified"
 API_ROOT = "https://api.upstox.com"
 PROBE_INSTRUMENT = "NSE_INDEX|Nifty 50"      # a known liquid instrument: every class can be asked about it
 PROBE_TIMEOUT_SECONDS = 8.0
+PROBE_DEADLINE_SECONDS = 20.0                 # the whole probe; classes still running then are left `unverified`
 REPROBE_COOLDOWN_SECONDS = 600
 
 # For UI2-6 (the Connect flow). UI2-5's broker field map (BROKER_FIELD_SPECS / GET /api/broker/specs) absorbs this entry
@@ -86,21 +88,35 @@ def _parse_dt(value: Any) -> Optional[datetime]:
 
 # --- classifying a request ----------------------------------------------------------------------
 
+_SEG = r"[^/]+"
+# Anchored on the normalised, decoded path the request is actually sent to (dot segments resolved, percent escapes
+# decoded): a crafted instrument key can add segments but can never make another endpoint look like market data.
+_CLASS_PATTERNS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
+    (WEBSOCKET, re.compile(r"^/v[23]/feed/market-data-feed/authorize$")),
+    (INTRADAY, re.compile(rf"^/v2/historical-candle/intraday/{_SEG}/{_SEG}$")),
+    (INTRADAY, re.compile(rf"^/v3/historical-candle/intraday/{_SEG}/{_SEG}/{_SEG}$")),
+    (HISTORICAL, re.compile(rf"^/v2/historical-candle/{_SEG}/{_SEG}/{_SEG}(/{_SEG})?$")),
+    (HISTORICAL, re.compile(rf"^/v3/historical-candle/{_SEG}/{_SEG}/{_SEG}/{_SEG}(/{_SEG})?$")),
+    (QUOTES, re.compile(r"^/v[23]/market-quote/(ltp|quotes|ohlc)$")),
+    (OPTION_CHAIN, re.compile(r"^/v2/option/(chain|contract)$")),
+)
+
+
 def classify(method: str, path: str) -> Optional[str]:
-    """The endpoint class of one Upstox request, or None (not market data, or not a GET - never the analytics token)."""
+    """The endpoint class of one Upstox request, or None (not market data, or not a GET - never the analytics token).
+    `path` is a URL path, or a full URL; it is normalised with httpx (dot segments resolved, escapes decoded) first."""
     if (method or "").upper() != "GET":
         return None
-    p = path or ""
-    if "/feed/market-data-feed/authorize" in p:
-        return WEBSOCKET
-    if "/historical-candle/intraday/" in p:
-        return INTRADAY
-    if "/historical-candle/" in p:
-        return HISTORICAL
-    if "/market-quote/" in p:
-        return QUOTES
-    if "/option/chain" in p or "/option/contract" in p:
-        return OPTION_CHAIN
+    try:
+        url = httpx.URL(path or "")
+        p = (url if url.is_absolute_url else httpx.URL(API_ROOT).join(path or "")).path
+    except Exception:  # noqa: BLE001 - an unparseable path is never market data
+        return None
+    if any(seg in (".", "..") for seg in p.split("/")):
+        return None
+    for cls, pattern in _CLASS_PATTERNS:
+        if pattern.match(p):
+            return cls
     return None
 
 
@@ -156,14 +172,14 @@ def _credentials_of(record: Any) -> Optional[BrokerCredentials]:
         return None
 
 
-REST_CLASSES = frozenset({HISTORICAL, INTRADAY, QUOTES, OPTION_CHAIN})
+CANDLE_CLASSES = frozenset({HISTORICAL, INTRADAY})
 
 
 def analytics_usable(record: Any, now: Optional[datetime] = None) -> bool:
-    """True when this credential row can serve some REST market data (candles, quotes, option chain) through its
-    analytics token alone, without the daily login."""
+    """True when this credential row can serve candles (historical or intraday class `works`) through its analytics
+    token alone, without the daily login - what the market-data route gate needs before it picks the row."""
     creds = _credentials_of(record)
-    return bool(creds and working_classes(creds, now) & REST_CLASSES)
+    return bool(creds and working_classes(creds, now) & CANDLE_CLASSES)
 
 
 def public_view(credentials: Optional[BrokerCredentials], now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -244,6 +260,17 @@ def _failure(exc: BaseException, now: datetime) -> Dict[str, Any]:
     return {"status": UNVERIFIED, "http_status": None, "error_code": type(exc).__name__, "probed_at": now.isoformat()}
 
 
+def feed_url_allowed(url: str) -> bool:
+    """The authorised feed URL Upstox returns must be wss:// on upstox.com (or a subdomain, e.g. its feed host); the probe
+    connects nowhere else."""
+    try:
+        parsed = httpx.URL(url)
+    except Exception:  # noqa: BLE001
+        return False
+    host = (parsed.host or "").lower().rstrip(".")
+    return parsed.scheme == "wss" and (host == "upstox.com" or host.endswith(".upstox.com"))
+
+
 async def _default_ws_connect(url: str) -> Any:
     from websockets.asyncio.client import connect
     return await connect(url, open_timeout=PROBE_TIMEOUT_SECONDS, max_size=2 ** 20)
@@ -270,6 +297,8 @@ async def _probe_ws(client: httpx.AsyncClient, headers: Dict[str, str], path: st
         url = None
     if not url:
         return {**entry, "status": UNVERIFIED, "error_code": "no_feed_url"}
+    if not feed_url_allowed(url):
+        return {**entry, "status": UNVERIFIED, "error_code": "unexpected_feed_url"}
     try:
         conn = await asyncio.wait_for((connector or _default_ws_connect)(url), PROBE_TIMEOUT_SECONDS)
     except Exception as exc:  # noqa: BLE001 - classified, never raised; the URL (one-time code) is never logged
@@ -285,7 +314,8 @@ async def _probe_ws(client: httpx.AsyncClient, headers: Dict[str, str], path: st
 
 
 async def probe(token: str, *, classes: Optional[Iterable[str]] = None, client: Optional[httpx.AsyncClient] = None,
-                ws_connector: Optional[WsConnector] = None, now: Optional[datetime] = None) -> Dict[str, Dict[str, Any]]:
+                ws_connector: Optional[WsConnector] = None, now: Optional[datetime] = None,
+                deadline: float = PROBE_DEADLINE_SECONDS) -> Dict[str, Dict[str, Any]]:
     """Read-only coverage probe: GET requests only (plus the websocket handshake, then close). Never places, modifies
     or cancels anything, never logs or returns the token. Returns {class: {status, http_status, error_code, probed_at}}."""
     from app.market_data.calendar import IST
@@ -305,8 +335,17 @@ async def probe(token: str, *, classes: Optional[Iterable[str]] = None, client: 
         except Exception as exc:  # noqa: BLE001 - a network failure leaves the class unverified
             return cls, _failure(exc, now)
 
+    tasks = {c: asyncio.ensure_future(one(c)) for c in wanted}
     try:
-        results = dict(await asyncio.gather(*(one(c) for c in wanted)))
+        await asyncio.wait(tasks.values(), timeout=deadline)
+        results: Dict[str, Dict[str, Any]] = {}
+        for cls, task in tasks.items():
+            if task.done() and not task.cancelled():
+                results[cls] = task.result()[1]
+            else:
+                task.cancel()
+                results[cls] = {"status": UNVERIFIED, "http_status": None, "error_code": "timeout", "probed_at": now.isoformat()}
+        await asyncio.gather(*tasks.values(), return_exceptions=True)
     finally:
         if own:
             await http.aclose()

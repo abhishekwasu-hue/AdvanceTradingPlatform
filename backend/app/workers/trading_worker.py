@@ -222,6 +222,7 @@ class TradingWorker:
         self._last_thesis_report_day = None
         self._last_login_reminder_day = None   # D5: the pre-open daily-login reminder, once per IST day
         self._last_analytics_expiry_day = None  # Upstox analytics token: the 7-day / last-day expiry warning, once per IST day
+        self._last_analytics_expiry_try: Optional[datetime] = None
         # Phase BB: when the news feed was last fetched (cadence 15 min, 5 min around a macro event).
         self._last_news_fetch: Optional[datetime] = None
         # Phase L: last regime per deployment (for the monitoring agent) and which deployments the
@@ -570,15 +571,23 @@ class TradingWorker:
                         report.errors.append(f"login reminder: {exc}")
                         await session.rollback()
                 # Upstox analytics token: warn its holder 7 days before it expires and on the last day (deduped per title).
-                if self._last_analytics_expiry_day != ist_now.date():
-                    self._last_analytics_expiry_day = ist_now.date()
+                # Its own session (it commits); the day counts as done only after a run succeeds, so a failed run is
+                # retried (at most every 15 minutes) and a last-day "expires today" is not lost.
+                if self._last_analytics_expiry_day != ist_now.date() and (
+                        self._last_analytics_expiry_try is None or now - self._last_analytics_expiry_try >= timedelta(minutes=15)):
+                    self._last_analytics_expiry_try = now
                     try:
                         from app.brokers import upstox_analytics
-                        await upstox_analytics.send_expiry_warnings(session, now)
+                        async with self.session_factory() as own:
+                            try:
+                                await upstox_analytics.send_expiry_warnings(own, now)
+                            except Exception:
+                                await own.rollback()
+                                raise
+                        self._last_analytics_expiry_day = ist_now.date()
                     except Exception as exc:  # noqa: BLE001 - a reminder must never break trading
                         logger.exception("Analytics token expiry warning failed")
                         report.errors.append(f"analytics token expiry: {exc}")
-                        await session.rollback()
                 # Phase BD-2: the Friday thesis scoreboard (flag market_thesis per tenant, idempotent per ISO week).
                 if thesis_module.report_due(now) and self._last_thesis_report_day != ist_now.date():
                     self._last_thesis_report_day = ist_now.date()

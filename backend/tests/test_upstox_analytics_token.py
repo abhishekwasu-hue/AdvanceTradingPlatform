@@ -44,7 +44,7 @@ def _mock_client(statuses: dict, seen: list) -> httpx.AsyncClient:
         status, code = statuses.get(cls, (200, None))
         if status >= 400:
             return httpx.Response(status, json={"status": "error", "errors": [{"errorCode": code, "message": "nope"}]})
-        data = {"authorized_redirect_uri": "wss://feed.example/one-time"} if cls == ua.WEBSOCKET else {}
+        data = {"authorized_redirect_uri": "wss://wsfeeder-api.upstox.com/market-data-feeder/v3/upstox-developer-api/feeds?requestId=x&code=y"} if cls == ua.WEBSOCKET else {}
         return httpx.Response(200, json={"status": "success", "data": data})
     return httpx.AsyncClient(base_url=ua.API_ROOT, transport=httpx.MockTransport(handler))
 
@@ -58,7 +58,7 @@ def test_probe_records_works_refused_unverified_per_class_and_sends_only_gets(ca
     statuses = {ua.INTRADAY: (403, "UDAPI1154"), ua.OPTION_CHAIN: (500, None), ua.QUOTES: (401, "UDAPI100050")}
 
     async def connector(url):
-        assert url == "wss://feed.example/one-time"
+        assert url == "wss://wsfeeder-api.upstox.com/market-data-feeder/v3/upstox-developer-api/feeds?requestId=x&code=y"
         return ws
 
     results = asyncio.run(ua.probe(ANALYTICS, client=_mock_client(statuses, seen), ws_connector=connector, now=NOW))
@@ -343,3 +343,143 @@ def test_expiry_warning_once_a_week_before_and_once_on_the_last_day():
                                         "Upstox analytics token (warn) expires today (2026-11-20)"]
     assert all(n.user_id == user_id and n.severity == "WARNING" for n in notes)
     assert all(ANALYTICS not in (n.message + n.title + (n.metadata_json or "")) for n in notes)
+
+
+# --- security review fixes ---------------------------------------------------------------------------
+
+INJECTED = "X|/../../../portfolio/short-term-positions?a="
+
+
+def test_l1_injected_instrument_key_is_refused_before_any_request():
+    from app.brokers.exceptions import BrokerAPIError
+    for creds in (_creds({c: ua.WORKS for c in ua.CLASSES}, datetime(2099, 1, 1, tzinfo=timezone.utc)),
+                  BrokerCredentials(api_key="k", access_token=DAILY)):          # the daily token is protected too
+        adapter, used = _recording_adapter(creds)
+        for symbol in (INJECTED, "X|/../../order/retrieve-all", "NSE_EQ|X%2F..", "NSE_EQ|X\tY", "NSE_EQ|X#a", "NSE_EQ|X?y=1"):
+            with pytest.raises(BrokerAPIError):
+                asyncio.run(adapter.get_intraday_candles(symbol, "NSE", "1min"))
+            with pytest.raises(BrokerAPIError):
+                asyncio.run(adapter.get_ltp_for_symbol(symbol, "NSE"))
+        assert used == []
+    # Classification runs on the normalised path the client sends: traversal never reads as market data.
+    assert ua.classify("GET", "/v2/historical-candle/intraday/" + INJECTED + "/1minute") is None
+    assert ua.classify("GET", "/v2/historical-candle/X|/../../order/retrieve-all/a/b") is None
+    assert ua.classify("GET", "/v2/historical-candle/NSE_INDEX|Nifty 50/day/2026-10-19/2026-10-15") == ua.HISTORICAL
+    from app.brokers.upstox import safe_instrument_key
+    assert safe_instrument_key("NSE_INDEX|Nifty 50") == "NSE_INDEX|Nifty 50"
+
+
+def test_l1_adapter_never_sends_the_analytics_token_to_a_traversed_path():
+    creds = _creds({c: ua.WORKS for c in ua.CLASSES}, datetime(2099, 1, 1, tzinfo=timezone.utc))
+    adapter, used = _recording_adapter(creds)
+    asyncio.run(adapter._request("GET", "/historical-candle/intraday/X|/../../../portfolio/short-term-positions"))
+    assert used[-1][1:] == ("/v2/portfolio/short-term-positions", DAILY)
+
+
+def test_l2_probe_deadline_leaves_unfinished_classes_unverified():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        if ua.classify(request.method, request.url.path) == ua.QUOTES:
+            await asyncio.sleep(5)
+        return httpx.Response(200, json={"status": "success", "data": {}})
+    slow = httpx.AsyncClient(base_url=ua.API_ROOT, transport=httpx.MockTransport(handler))
+    out = asyncio.run(ua.probe(ANALYTICS, classes=[ua.HISTORICAL, ua.QUOTES], client=slow, now=NOW, deadline=0.3))
+    assert out[ua.HISTORICAL]["status"] == ua.WORKS
+    assert out[ua.QUOTES] == {"status": ua.UNVERIFIED, "http_status": None, "error_code": "timeout", "probed_at": NOW.isoformat()}
+
+
+def test_l2_check_endpoint_is_rate_limited_per_user(mocked_upstox):
+    from app.core import rate_limit
+    rate_limit.reset("analytics_check")
+    headers = {"Authorization": f"Bearer {_register('at-rate@example.com')}"}
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "analytics_token": "opaque"}).status_code == 204
+    codes = [client.post("/api/broker/upstox/analytics-token/check", headers=headers).status_code for _ in range(7)]
+    rate_limit.reset("analytics_check")
+    assert codes[:6] == [200] * 6 and codes[6] == 429
+
+
+def test_l3_saving_only_the_analytics_token_keeps_the_holder(mocked_upstox):
+    bearer = _register("at-holder@example.com")
+    headers = {"Authorization": f"Bearer {bearer}"}
+    tenant_id = _tenant_of(bearer)
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "access_token": DAILY}).status_code == 204
+
+    async def set_holder(user_id):
+        async with _session_factory() as session:
+            row = await session.scalar(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id))
+            row.user_id = user_id
+            await session.commit()
+    asyncio.run(set_holder(987654))                                   # another member linked this connection
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"analytics_token": "opaque-two"}).status_code == 204
+    assert asyncio.run(_record(tenant_id)).user_id == 987654
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k2"}).status_code == 204
+    assert asyncio.run(_record(tenant_id)).user_id != 987654          # a session-field save still makes the saver the holder
+
+
+def test_l6_gate_needs_a_working_candle_class():
+    def row(creds: BrokerCredentials) -> BrokerCredentialRecord:
+        return BrokerCredentialRecord(tenant_id=1, user_id=1, broker_name="upstox", token_status="EXPIRED",
+                                      encrypted_payload=encrypt_text(creds.model_dump_json(), 1, PURPOSE_BROKER_CREDENTIAL))
+    far = datetime(2099, 1, 1, tzinfo=timezone.utc)
+    assert not data_is_usable(row(_creds({ua.QUOTES: ua.WORKS, ua.OPTION_CHAIN: ua.WORKS}, far)))
+    assert data_is_usable(row(_creds({ua.INTRADAY: ua.WORKS}, far)))
+    assert data_is_usable(row(_creds({ua.HISTORICAL: ua.WORKS}, far)))
+
+
+def test_l4_worker_retries_a_failed_warning_run_the_same_day(monkeypatch):
+    from tests.test_trading_worker import _FakeBroker, _worker
+    worker = _worker(monkeypatch, _FakeBroker())
+    calls: list = []
+
+    async def flaky(session, now):
+        calls.append(now)
+        if len(calls) == 1:
+            raise RuntimeError("db hiccup")
+        return 0
+    monkeypatch.setattr(ua, "send_expiry_warnings", flaky)
+    start = datetime(2026, 11, 20, 2, 0, tzinfo=timezone.utc)
+    first = asyncio.run(worker.run_cycle(start))
+    assert any("analytics token expiry" in e for e in first.errors)
+    asyncio.run(worker.run_cycle(start + timedelta(minutes=1)))      # within the retry spacing: not again yet
+    asyncio.run(worker.run_cycle(start + timedelta(minutes=16)))     # retried, succeeds
+    asyncio.run(worker.run_cycle(start + timedelta(minutes=40)))     # done for the day
+    assert len(calls) == 2
+
+
+def test_l5_expiry_warning_is_private_to_its_addressee():
+    from app.notifications.routes import private_to_addressee
+    tenant_id = _tenant_of(_register("at-private@example.com"))
+    creds = _creds({ua.HISTORICAL: ua.WORKS}, datetime(2026, 12, 1, 12, 0, tzinfo=timezone.utc))
+
+    async def go():
+        async with _session_factory() as session:
+            session.add(BrokerCredentialRecord(tenant_id=tenant_id, user_id=4242, broker_name="upstox", account_label="priv",
+                                               encrypted_payload=encrypt_text(creds.model_dump_json(), tenant_id, PURPOSE_BROKER_CREDENTIAL)))
+            await session.commit()
+        async with _session_factory() as session:
+            assert await ua.send_expiry_warnings(session, datetime(2026, 11, 28, 9, 0, tzinfo=IST)) == 1
+        async with _session_factory() as session:
+            return list(await session.scalars(select(NotificationRecord.user_id).where(
+                NotificationRecord.tenant_id == tenant_id, private_to_addressee())))
+    assert asyncio.run(go()) == [4242]
+
+
+def test_i1_probe_connects_only_to_an_upstox_wss_feed():
+    connected: list = []
+
+    async def connector(url):
+        connected.append(url)
+        return _FakeWs()
+
+    def feed(url):
+        def handler(request):
+            return httpx.Response(200, json={"status": "success", "data": {"authorized_redirect_uri": url}})
+        return httpx.AsyncClient(base_url=ua.API_ROOT, transport=httpx.MockTransport(handler))
+
+    for bad in ("wss://evil.example/feed", "ws://wsfeeder-api.upstox.com/feed", "wss://upstox.com.evil.example/x",
+                "https://wsfeeder-api.upstox.com/feed"):
+        out = asyncio.run(ua.probe(ANALYTICS, classes=[ua.WEBSOCKET], client=feed(bad), ws_connector=connector, now=NOW))
+        assert out[ua.WEBSOCKET]["status"] == ua.UNVERIFIED and out[ua.WEBSOCKET]["error_code"] == "unexpected_feed_url"
+    assert connected == []
+    good = "wss://wsfeeder-api.upstox.com/market-data-feeder/v3/upstox-developer-api/feeds?code=1"
+    assert asyncio.run(ua.probe(ANALYTICS, classes=[ua.WEBSOCKET], client=feed(good), ws_connector=connector, now=NOW))[ua.WEBSOCKET]["status"] == ua.WORKS
+    assert connected == [good]

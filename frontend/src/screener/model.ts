@@ -431,11 +431,35 @@ export function whyChips(reg: Registry, stages: Stage[], funnel: FunnelResult | 
   return enabled.map((s, i) => ({ id: s.id, summary: stageSummary(reg, s), passed: row[i] }));
 }
 
-/** Symbols typed by the trader: upper case, no blanks, no repeats, at most `max` (the run endpoint's limit). */
+/** Index names with a space that the app lists (charts, watchlists, the context panel). A list typed or pasted with
+ * spaces only between symbols keeps these whole: "NIFTY 50 RELIANCE" is two symbols. */
+export const MULTI_WORD_INDICES = [
+  "NIFTY 50", "NIFTY BANK", "NIFTY NEXT 50", "NIFTY MIDCAP 100", "NIFTY MID SELECT", "NIFTY MIDCAP SELECT",
+  "NIFTY FIN SERVICE", "NIFTY FINANCIAL SERVICES", "NIFTY IT", "INDIA VIX", "NIFTY 100", "NIFTY 200", "NIFTY 500",
+];
+const INDEX_WORDS = MULTI_WORD_INDICES.map((name) => name.split(" ")).sort((a, b) => b.length - a.length);
+
+/** Space-separated words as symbols, a known multi-word index name (longest first) kept as one. */
+function splitWords(text: string): string[] {
+  const words = text.trim().toUpperCase().split(/\s+/).filter(Boolean);
+  const out: string[] = [];
+  for (let i = 0; i < words.length; ) {
+    const index = INDEX_WORDS.find((name) => name.every((w, j) => words[i + j] === w));
+    out.push(index ? index.join(" ") : words[i]);
+    i += index ? index.length : 1;
+  }
+  return out;
+}
+
+/** Symbols typed or pasted by the trader: upper case, no blanks, no repeats, at most `max` (the run endpoint's limit).
+ * Separators are commas, semicolons, new lines and tabs (an Excel row); an entry keeps its inner spaces (collapsed to
+ * one), so a watchlist's "NIFTY 50" loads and saves back whole. Text with none of those separators is split on spaces,
+ * keeping the known multi-word index names whole ("RELIANCE TCS INFY" is three symbols, "NIFTY 50" one). */
 export function parseSymbols(text: string, max = 50): string[] {
   const seen = new Set<string>();
-  for (const raw of text.split(/[\s,;]+/)) {
-    const s = raw.trim().toUpperCase();
+  const entries = /[,;\r\n\t]/.test(text) ? text.split(/[,;\r\n\t]+/).map((raw) => raw.trim().replace(/\s+/g, " ").toUpperCase())
+    : splitWords(text);
+  for (const s of entries) {
     if (s && !seen.has(s)) seen.add(s);
     if (seen.size >= max) break;
   }

@@ -3226,6 +3226,9 @@ class ChartDrawingRecord(Base):
     drawing_json: Mapped[str] = mapped_column(Text, nullable=False)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     locked: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # UI2-4a1: the timeframe the drawing was made on (`1min` ... `month`); NULL for drawings made before it was recorded.
+    # The drawing still shows on every timeframe of its symbol (CHP-1); this is kept for a later "only this timeframe".
+    timeframe: Mapped[str | None] = mapped_column(String(8), nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
@@ -3262,7 +3265,33 @@ class WatchlistRecord(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     name: Mapped[str] = mapped_column(String(60), nullable=False)
     symbols_json: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # UI2-4a1 (all additive, so AMW-2's code runs unchanged on them):
+    # - items_json: `[{"symbol", "exchange"}]` in row order, symbols may hold spaces ("NIFTY 50" on NSE_INDEX). NULL for
+    #   a list saved before; `symbols_json` is kept equal to the items' symbols, and when an older writer changed
+    #   `symbols_json` alone the items are rebuilt from it (app/watchlists/service.py `items_of`);
+    # - position: the list's place among the user's lists (PUT /api/watchlists/order); NULL sorts last, by name;
+    # - version: optimistic concurrency - a PUT naming a stale version gets 409 instead of overwriting another device.
+    items_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    position: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
+
+
+class UserPrefsRecord(Base):
+    """UI2-4a1: one namespace of one user's UI preferences (`chart` today: chart theme, grid, candle colours, default
+    panes, reader overlay; UI-8 adds more namespaces). The value is JSON validated against the namespace's schema
+    (app/me/prefs.py) and size-capped. Per user and tenant: only its owner reads or writes it. Places nothing."""
+
+    __tablename__ = "user_prefs"
+    __table_args__ = (UniqueConstraint("tenant_id", "user_id", "namespace", name="uq_user_prefs_tenant_user_namespace"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    namespace: Mapped[str] = mapped_column(String(32), nullable=False)
+    value_json: Mapped[str] = mapped_column(Text, nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)
 
 

@@ -43,6 +43,8 @@ describe("watchlist helpers (AMW-2)", () => {
   it("reads the Scanner's symbol box like its run does", () => {
     expect(splitSymbols(" infy, tcs ,,M&M ")).toEqual(["INFY", "TCS", "M&M"]);
     expect(splitSymbols("")).toEqual([]);
+    // a spaced index name from a watchlist (UI2-4a1) stays one symbol, so "Replace" saves it back whole
+    expect(splitSymbols(["NIFTY 50", "SBIN"].join(", "))).toEqual(["NIFTY 50", "SBIN"]);
   });
 });
 

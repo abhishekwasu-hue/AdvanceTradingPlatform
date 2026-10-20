@@ -9,7 +9,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   touched: with the flag off the old page renders as before (mobile.e2e.ts keeps proving it).
  * - Approve, skip and expired paths at 360 px on made-up fixtures (e2e/fixtures/signals_v2.json): every decision goes
  *   to the existing /api/ai/actions/{id}/approve|reject|snooze and the list follows.
- * - The phone layout rules, the desktop list + detail, `?proposal=<id>`, M6 (Library drawer) and M7 (Watchtower link).
+ * - The phone layout rules, the desktop list + detail (from 1440 px, every column whole; 1280 / 1366 get the stacked
+ *   cards), `?proposal=<id>`, M6 (Library drawer) and M7 (Watchtower link).
  * After an intended change: `npx playwright test --project=phone e2e/signals-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
  */
@@ -105,6 +106,26 @@ async function open(page: Page, path: string, theme: "dark" | "light", options: 
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
   return inbox;
+}
+
+/** Every cell of the desktop list lies inside the list's box (nothing cut off), each price fits its cell, and the page
+ * does not scroll sideways (Phase A: no sideways tables). */
+async function expectWholeTable(page: Page) {
+  const m = await page.evaluate(() => {
+    const table = document.querySelector("table[aria-label='Signals list']");
+    if (!table) return null;
+    const box = table.parentElement!.getBoundingClientRect();
+    const cells = [...table.querySelectorAll("th, td")];
+    return {
+      over: Math.max(...cells.map((c) => c.getBoundingClientRect().right - box.right)),
+      clipped: cells.filter((c) => c.scrollWidth > c.clientWidth + 1).length,
+      sideways: document.documentElement.scrollWidth - window.innerWidth,
+    };
+  });
+  expect(m, "the desktop list is shown").not.toBeNull();
+  expect(m!.over, "a column runs past the list's edge").toBeLessThanOrEqual(0.5);
+  expect(m!.clipped, "a cell's content is cut off").toBe(0);
+  expect(m!.sideways, "the page scrolls sideways").toBeLessThanOrEqual(0);
 }
 
 const THEMES = ["dark", "light"] as const;
@@ -250,14 +271,13 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(detail.getByRole("button", { name: /Approve/ })).toHaveCount(0);
   });
 
-  test("a long price is shown in full: the price columns grow instead of clipping", async ({ page }) => {
+  test("every column is fully visible at 1440 - Today, History, and a row with long prices", async ({ page }) => {
     await open(page, "/signals", "light", V2, { edit: (today) => Object.assign(today[0], { entry: 135000, stop: 134250.5, target: 136500 }) });
-    const row = page.locator("[data-row='action:901']");
-    await expect(row).toContainText("1,35,000.00");
-    for (const cell of await row.locator("td.text-right").all()) {
-      const fits = await cell.evaluate((td) => td.scrollWidth <= td.clientWidth && (td.firstElementChild as HTMLElement).offsetWidth <= td.clientWidth);
-      expect(fits).toBe(true);
-    }
+    await expect(page.locator("[data-row='action:901']")).toContainText("1,35,000.00");
+    await expectWholeTable(page);
+    await page.getByRole("tab", { name: "History" }).click();
+    await expect(page.getByRole("table", { name: "Signals list" }).locator("tbody tr")).toHaveCount(9);
+    await expectWholeTable(page);
   });
 
   test("the source filter and the symbol filter ask the feed again", async ({ page }) => {
@@ -337,6 +357,33 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.locator("[data-signal-detail]")).toHaveAttribute("data-signal-detail", "action:901");
   });
 });
+
+for (const width of [1280, 1366]) {
+  test.describe(`Signals v2 at ${width} (laptop)`, () => {
+    test.use({ viewport: { width, height: 900 } });
+
+    test("the list is stacked cards, not a cut-off table: every signal whole, no sideways scroll", async ({ page }) => {
+      await open(page, "/signals", "light");
+      for (const tab of ["Waiting for you", "Today", "History"]) {
+        await page.getByRole("tab", { name: new RegExp(tab) }).click();
+        await expect(page.locator("[data-signal-card]").first()).toBeVisible();
+        await expect(page.getByRole("table", { name: "Signals list" })).toHaveCount(0);
+        const m = await page.evaluate(() => {
+          const main = document.querySelector("[data-page='signals-v2']")!.getBoundingClientRect();
+          const cards = [...document.querySelectorAll("[data-signal-card]")];
+          return { over: Math.max(...cards.map((c) => c.getBoundingClientRect().right - main.right)),
+            clipped: cards.filter((c) => c.scrollWidth > c.clientWidth + 1).length, sideways: document.documentElement.scrollWidth - window.innerWidth };
+        });
+        expect(m.over, tab).toBeLessThanOrEqual(0.5);
+        expect(m.clipped, tab).toBe(0);
+        expect(m.sideways, tab).toBeLessThanOrEqual(0);
+      }
+      const first = page.locator("[data-signal-card='action:901']");
+      await page.getByRole("tab", { name: /Waiting for you/ }).click();
+      await expect(first.getByRole("button", { name: "Approve" })).toBeVisible();     // decisions work at this width too
+    });
+  });
+}
 
 test.describe("Signals with the flag off", () => {
   test.use({ viewport: { width: 1440, height: 900 } });

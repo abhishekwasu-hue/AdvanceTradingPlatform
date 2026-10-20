@@ -451,7 +451,9 @@ def test_the_postgres_filters_read_the_evidence_with_the_json_operator():
 
 def test_a_nan_in_a_signal_is_stored_as_null_never_as_nan():
     """Review: json.dumps writes NaN, which is not JSON (Postgres refuses it). The entry proposal's evidence keeps every
-    non-finite float as null, and a NaN entry price is refused like a missing one."""
+    non-finite float as null, and a NaN entry price is refused like a missing one - as InvalidEntryPrice, an
+    EntriesPaused, so the webhook, public API, console, Telegram, ticket, worker and dispatcher callers answer it with
+    the reason (no 500, no failure streak) through the handlers they already have."""
     from app.execution import approval
     from tests.test_z3_approval_entries import _sig
     t = _owner("nan")
@@ -465,9 +467,9 @@ def test_a_nan_in_a_signal_is_stored_as_null_never_as_nan():
             try:
                 await approval.propose_entry(session, t["tenant_id"], signal=_sig(entry=nan), strategy_id="demo_strategy", source="tradingview",
                                              idempotency_key=f"ui23-nan:{uuid.uuid4().hex}")
-                refused = False
-            except ValueError:
-                refused = True
+                refused = None
+            except approval.InvalidEntryPrice as exc:              # a named refusal every caller answers like a pause
+                refused = exc
             return row.evidence_json, row.reason, refused
     text, reason, refused = _run(go())
     assert "NaN" not in text and "Infinity" not in text
@@ -475,7 +477,30 @@ def test_a_nan_in_a_signal_is_stored_as_null_never_as_nan():
     assert evidence["stop_loss"] is None and evidence["target1"] is None and evidence["risk_reward"] is None
     assert evidence["signal"]["stop_loss"] is None and evidence["signal"]["target1"] is None
     assert "nan" not in reason.lower()
-    assert refused
+    assert isinstance(refused, approval.EntriesPaused) and "no usable entry price" in str(refused)
+
+
+def test_a_tradingview_alert_with_nan_is_an_answer_never_a_500():
+    """The NaN arrives through a webhook body (Python's JSON reader accepts NaN): a NaN stop is stored as null; a NaN
+    entry is refused with the reason, as a pause would be - never a 500."""
+    from tests.test_tradingview_webhook import _get_token
+    from tests.test_z3_approval_entries import _actions, _email, _flag_for, _tenant
+    t = _tenant(_email("ui23-nan-tv"))
+    _flag_for(t["tenant_id"])
+    url = f"/api/webhooks/tradingview/{_get_token(t['headers'])}"
+
+    def alert(entry: str, stop: str, alert_id: str):
+        return client.post(url, headers={"Content-Type": "application/json"},
+                           content='{"strategy_id": "pine_breakout", "symbol": "RELIANCE", "direction": "LONG", "entry": %s, '
+                                   '"stop_loss": %s, "target1": 106.0, "alert_id": "%s"}' % (entry, stop, alert_id))
+    stop_nan = alert("100.0", "NaN", "ui23-nan-1")
+    assert stop_nan.status_code == 200 and "entry proposal #" in stop_nan.json()["reasons"][0], stop_nan.text
+    [row] = _actions(t["tenant_id"], "ENTRY")
+    assert "NaN" not in row.evidence_json and json.loads(row.evidence_json)["stop_loss"] is None
+    entry_nan = alert("NaN", "98.0", "ui23-nan-2")
+    assert entry_nan.status_code == 200, entry_nan.text                # the payload takes any float: the refusal answers it
+    assert entry_nan.json()["executed"] is False and "no usable entry price" in entry_nan.json()["reasons"][0]
+    assert len(_actions(t["tenant_id"], "ENTRY")) == 1
 
 
 def test_the_finite_json_writer():

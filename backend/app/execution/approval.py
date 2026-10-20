@@ -70,6 +70,12 @@ class EntriesPaused(ValueError):
     locked out for the day by their daily loss limit or entries-per-day limit: no proposal is raised."""
 
 
+class InvalidEntryPrice(EntriesPaused):
+    """UI2-3 review: the signal's entry price is missing, zero, negative or not a finite number (a NaN from an alert):
+    no proposal is raised. A refusal like EntriesPaused - every caller answers it with the reason (no 500, and the
+    worker does not count it as a failure)."""
+
+
 def _utc(dt: datetime) -> datetime:
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
@@ -192,13 +198,14 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     """Raises one ENTRY proposal (PROPOSED, expiring after APPROVAL_ENTRY_TTL_MINUTES) and announces it through the
     ordinary notification service (in-app, push, Telegram with Approve / Reject / Snooze). None when the same signal (or,
     for a deployment, another open entry proposal) is already there. `user_id` is the proposal's owner; raises
-    EntriesPaused when that user paused their PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d).
+    InvalidEntryPrice (an EntriesPaused) for a missing or non-finite entry price, and EntriesPaused when that user
+    paused their PAPER entries (Z3-b) or is locked out by risk by default (Z5 / P1-d).
     `strike_breach` (Z5): the short strikes' breach chances of an option proposal (app/options_builder/strike_breach.py
     ::report), shown on the card. `ticket` (Z5 / P1-d): a PAPER ticket's checked limits ({plan_id, max_quantity,
     risk_cap_amount}) - the approved order keeps them. Places nothing."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
     if signal.entry is None or not math.isfinite(signal.entry) or signal.entry <= 0:
-        raise ValueError("An entry proposal needs the signal's entry price")
+        raise InvalidEntryPrice("The signal has no usable entry price (missing, zero or not a number) - nothing was proposed")
     from app.paper.service import paused_reason
     paused = await paused_reason(session, user_id)
     if paused:

@@ -9,11 +9,13 @@ import {
   SOURCES, TABS, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
   type FeedSource, type FeedTab, type SignalFeedItem,
 } from "./feed";
-import { Direction, LevelTiles, SignalDetail, StatusChip, signalTime } from "./SignalPartsV2";
+import { Direction, LevelTiles, SignalDetail, StatusChip, signalDay, signalTime } from "./SignalPartsV2";
 import { useSignalFeed } from "./useSignalFeed";
 
-/** Desktop gets the list and the detail side by side from this width (UI v2 §8: "detail panels 430 px"). */
-export const WIDE_QUERY = "(min-width: 1280px)";
+/** Desktop gets the list and the detail side by side from this width (UI v2 §8: "detail panels 430 px"). The seven
+ * columns need about 660 px beside the 430 px panel, which a 1440 px window has and 1280-1439 does not; below it the
+ * page uses the stacked cards (no table is ever cut off or scrolled sideways - Phase A rule). */
+export const WIDE_QUERY = "(min-width: 1440px)";
 
 function matches(query: string): boolean {
   try { return typeof window.matchMedia === "function" && window.matchMedia(query).matches; } catch { return false; }
@@ -42,7 +44,7 @@ const EMPTY: Record<FeedTab, { title: string; body: string }> = {
  * UI2-3 (UI v2 proposal §7, §3 M6 / M7; MOBILE_APP_PLAN §2.1): Signals - "What should I act on?". An inbox of the trades
  * your Autopilot, scans and Copilot suggest, from the read-only `GET /api/signals/feed`:
  * - tabs Waiting for you (count) · Today (count) · History (30 days, paged); a source filter and a symbol filter;
- * - desktop (1280 px and up): the list with Time, Symbol + Long/Short, Setup + source, Entry, Stop, Target, Status, and
+ * - desktop (1440 px and up): the list with Time, Symbol + Long/Short, Setup + source, Entry, Stop, Target, Status, and
  *   the detail of the selected signal on the right (default: Today, the first waiting signal selected);
  * - phone: cards (default: Waiting for you); a card opens in place with Approve / Skip / chart / More at 44 px.
  * Approve, Skip and Snooze are the existing proposal endpoints with their step-up and owner rules; the AI never places
@@ -242,8 +244,9 @@ function Filters({ source, symbol, open, onToggle, onSource, onSymbol, updated }
 function SignalTable({ items, tab, now, selectedId, onSelect }: {
   items: SignalFeedItem[]; tab: FeedTab; now: Date; selectedId: string | null; onSelect: (id: string) => void;
 }) {
-  // Every column but Setup sizes to its content (`w-px` + no wrapping); Setup takes the rest and wraps. The price columns
-  // are at least 80 px of tabular figures and grow for a longer price ("1,35,000.00") instead of clipping it.
+  // Every column but Setup sizes to its content (`w-px` + no wrapping); Setup takes the rest and wraps (down to its
+  // longest word). The price columns are at least 80 px of tabular figures and grow for a longer price ("1,35,000.00")
+  // instead of clipping it. History shows its date above the time, so the Time column stays as narrow as on Today.
   const th = "w-px whitespace-nowrap px-space-3 py-space-2 font-medium";
   const num = "w-px whitespace-nowrap px-space-1 text-right font-tabular";
   const price = "inline-block min-w-[72px]";
@@ -263,7 +266,9 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
             return (
               <tr key={item.id} onClick={() => onSelect(item.id)} data-row={item.id}
                 className={cx("cursor-pointer border-b border-subtle last:border-b-0 transition-colors duration-fast", on ? "bg-surface-2" : "hover:bg-surface-2")}>
-                <td className={cx("whitespace-nowrap border-l-2 px-space-3 py-space-3 font-tabular text-fg-muted", on ? "border-l-brand" : "border-l-transparent")}>{signalTime(item.at, tab)}</td>
+                <td className={cx("whitespace-nowrap border-l-2 px-space-3 py-space-3 font-tabular text-fg-muted", on ? "border-l-brand" : "border-l-transparent")}>{tab === "history" ? (
+                  <><span className="block">{signalDay(item.at)}</span><span className="block">{signalTime(item.at, "today")}</span></>   // two lines: the column stays narrow
+                ) : signalTime(item.at, tab)}</td>
                 <td className="px-space-3 py-space-3">
                   <div className="w-[100px]">
                     <button type="button" onClick={(e) => { e.stopPropagation(); onSelect(item.id); }} aria-current={on || undefined} title={item.symbol}
@@ -273,7 +278,7 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
                     <Direction value={item.direction} className="block text-t12" />
                   </div>
                 </td>
-                <td className="min-w-[120px] px-space-3 py-space-3">
+                <td className="px-space-3 py-space-3">
                   <span className="block break-words text-fg">{item.setup}</span>
                   <span className="block break-words text-t12 text-fg-muted">{sourceCaption(item)}</span>
                 </td>

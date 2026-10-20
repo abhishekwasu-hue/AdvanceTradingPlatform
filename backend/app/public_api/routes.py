@@ -185,6 +185,8 @@ async def submit_signal(body: PublicSignal, p: ApiPrincipal = Depends(api_key_au
         try:
             row = await approval.propose_entry(session, p.tenant.id, signal=signal, strategy_id=body.strategy_id, source="public_api",
                                                idempotency_key=key, requested_mode=body.mode, user_id=p.user.id)
+        except approval.InvalidEntryPrice as exc:
+            return {"order_id": None, "status": "REFUSED", "executed": False, "trade_id": None, "proposal_id": None, "reasons": [str(exc)]}
         except approval.EntriesPaused as exc:
             return {"order_id": None, "status": "PAUSED", "executed": False, "trade_id": None, "proposal_id": None, "reasons": [str(exc)]}
         return {"order_id": None, "status": "PROPOSED" if row is not None else "DUPLICATE", "executed": False, "trade_id": None,

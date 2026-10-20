@@ -22,9 +22,14 @@ import {
  * outlines for every other status.
  */
 
+/** "7 Oct" - the day of a signal, without the year (History). */
+export function signalDay(at: string): string {
+  return formatDateIST(at).replace(/ \d{4}$/, "");
+}
+
 export function signalTime(at: string, tab: FeedTab): string {
   const time = formatTimeIST(at, { suffix: false });
-  return tab === "history" ? `${formatDateIST(at).replace(/ \d{4}$/, "")}, ${time}` : time;
+  return tab === "history" ? `${signalDay(at)}, ${time}` : time;
 }
 
 export function StatusChip({ item, now, short = false }: { item: SignalFeedItem; now: Date; short?: boolean }) {

@@ -462,7 +462,7 @@ print(",".join(d.get("open_sessions") or []) or "none", d.get("open_positions", 
 }
 
 # --- health ------------------------------------------------------------------------------------------------------
-# One parse of /health/deep: status database migrations worker redis seconds_since_heartbeat
+# One parse of /health/deep: status database migrations worker redis seconds_since_heartbeat cycle_seconds
 deep_fields() {
   python3 -c 'import json, sys
 try:
@@ -472,14 +472,14 @@ except Exception:
 c = d.get("checks") or {}
 w = c.get("worker") or {}
 print(d.get("status") or "unparseable", *[(c.get(k) or {}).get("status") or "-" for k in ("database", "migrations", "worker", "redis")],
-      w.get("seconds_since_heartbeat", -1))'
+      w.get("seconds_since_heartbeat", -1), w.get("cycle_seconds", -1))'
 }
 
 # Deep health acceptable? ok, or degraded only because the database is ahead after a checked code-only rollback.
 deep_ok() {
-  local body st db_s mig wk rd hb
+  local body st db_s mig wk rd hb cyc
   body="$(curl -fsS -m 10 "$API/api/system/health/deep" 2>/dev/null)" || return 1
-  read -r st db_s mig wk rd hb < <(printf '%s' "$body" | deep_fields)
+  read -r st db_s mig wk rd hb cyc < <(printf '%s' "$body" | deep_fields)
   [ "$st" = "ok" ] && return 0
   if [ "$st" = "degraded" ] && { [ -n "$DB_AHEAD" ] || db_ahead_marker; }; then
     [ "$mig" = "behind" ] && [ "$rd" = "ok" ] && [ "$wk" != "stale_market_open" ] && [ "$db_s" = "ok" ] && return 0
@@ -523,11 +523,11 @@ health_checks() {
   [ "${workers:-0}" -le 1 ] || bad "$workers trading worker containers - exactly one may run (ADR-0010)"
 
   step "API"
-  local body st db_s mig wk rd hb
+  local body st db_s mig wk rd hb cyc
   if body="$(curl -fsS -m 5 "$API/api/system/health" 2>/dev/null)" && [ "$(printf '%s' "$body" | json_get status)" = "ok" ]; then ok "/api/system/health ok"
   else bad "/api/system/health does not answer ok on $API"; fi
   if body="$(curl -sS -m 10 "$API/api/system/health/deep" 2>/dev/null)"; then
-    read -r st db_s mig wk rd hb < <(printf '%s' "$body" | deep_fields)
+    read -r st db_s mig wk rd hb cyc < <(printf '%s' "$body" | deep_fields)
     info "deep: $st (database $db_s, migrations $mig, worker $wk, redis $rd)"
     if [ "$st" = "ok" ]; then ok "deep health ok"
     elif deep_ok; then warn "deep health degraded only because the database is ahead of this code (after a checked code-only rollback) - deploy the newer release when fixed"
@@ -1296,7 +1296,9 @@ LT_APP_WEIGHT=1024            # docker's default --cpu-shares, what each app con
 LT_MAX_WINDOW=840             # ramp + duration: access tokens live 15 minutes and the client does not refresh them
 LT_MIN_AVAILABLE_MIB="${ATP_LOADTEST_MIN_AVAILABLE_MIB:-400}"   # watchdog floor: MemAvailable below this stops the run
 LT_MAX_SWAP_GROWTH_MIB=512    # watchdog: swap used growing by more than this since the start stops the run
-LT_MAX_HEARTBEAT_S=180        # watchdog: the trading worker's heartbeat older than 3 cycles stops the run (SLO-2)
+LT_HEARTBEAT_FLOOR_S=180      # the heartbeat limit below never goes under this
+LT_MAX_HEARTBEAT_S="$LT_HEARTBEAT_FLOOR_S"   # watchdog: the trading worker's heartbeat older than 3 cycles stops the run
+                              # (SLO-2); the preflight sets it from deep health's cycle_seconds (lt_heartbeat_limit)
 LT_WATCH_SECONDS="${ATP_LOADTEST_WATCH_SECONDS:-30}"
 LT_RESULT=1                   # the report's exit code
 LT_CLEAN=0                    # 1 once the cleanup is verified
@@ -1479,11 +1481,28 @@ lt_restarts() {
   docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.OOMKilled}}' $ids 2>/dev/null || true
 }
 
+# The trading worker, from one /health/deep body: why it stops a load test (the watchdog) or keeps one from starting
+# (the preflight); nothing = fine. The heartbeat limit is 3 worker cycles - 3 x the cycle_seconds deep health reports,
+# as it counts a worker stale - and never below LT_HEARTBEAT_FLOOR_S (absent or not a whole number: the floor).
+lt_heartbeat_limit() {
+  local cyc="${1:-}"
+  case "$cyc" in ""|*[!0-9]*|???????*) printf '%s' "$LT_HEARTBEAT_FLOOR_S"; return 0 ;; esac
+  cyc=$(( 10#$cyc * 3 ))
+  if [ "$cyc" -gt "$LT_HEARTBEAT_FLOOR_S" ]; then printf '%s' "$cyc"; else printf '%s' "$LT_HEARTBEAT_FLOOR_S"; fi
+}
+lt_worker_problem() {
+  local st db_s mig wk rd hb cyc
+  read -r st db_s mig wk rd hb cyc < <(printf '%s' "$1" | deep_fields) || true
+  if [ "${hb:--1}" -gt "$LT_MAX_HEARTBEAT_S" ] 2>/dev/null; then printf "the trading worker's heartbeat is %ss old (limit %ss)" "$hb" "$LT_MAX_HEARTBEAT_S"
+  elif [ "${wk:-ok}" != "ok" ] && [ "${wk:-ok}" != "-" ]; then printf 'the trading worker reports %s' "$wk"; fi
+  return 0
+}
+
 # M1 of the PR #284 review: every LT_WATCH_SECONDS, is production still healthy? Deep health (2 misses in a row), the
 # trading worker's heartbeat, MemAvailable, swap growth, app container restarts or OOM kills. The first that fails is
 # written to $LT_DIR/abort.txt; the wait loop then stops the run (and the cleanup runs). Runs in the background.
 lt_watchdog() {
-  local misses=0 reason body st db_s mig wk rd hb avail swap0 swap
+  local misses=0 reason body avail swap0 swap
   { echo "- 0 false"; lt_restarts; } > "$LT_DIR/restarts-before.txt"
   swap0="$(awk '/^SwapTotal:/ {t = $2} /^SwapFree:/ {f = $2} END {print int((t - f) / 1024)}' /proc/meminfo 2>/dev/null || echo 0)"
   while :; do
@@ -1492,9 +1511,7 @@ lt_watchdog() {
     if deep_ok; then misses=0; else misses=$((misses + 1)); fi
     if [ "$misses" -ge 2 ]; then reason="the API's deep health failed twice in a row ($API/api/system/health/deep)"; fi
     if [ -z "$reason" ] && body="$(curl -fsS -m 10 "$API/api/system/health/deep" 2>/dev/null)"; then
-      read -r st db_s mig wk rd hb < <(printf '%s' "$body" | deep_fields) || true
-      if [ "${hb:--1}" -gt "$LT_MAX_HEARTBEAT_S" ] 2>/dev/null; then reason="the trading worker's heartbeat is ${hb}s old (limit ${LT_MAX_HEARTBEAT_S}s)"
-      elif [ "${wk:-ok}" != "ok" ] && [ "${wk:-ok}" != "-" ]; then reason="the trading worker reports $wk"; fi
+      reason="$(lt_worker_problem "$body")"
     fi
     if [ -z "$reason" ]; then
       avail="$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo 2>/dev/null || echo 999999)"
@@ -1633,6 +1650,8 @@ loadtest_finish() {
     case "$out" in *'"refused"'*) break ;; esac           # a refusal does not change on a retry
     [ "$tries" = "2" ] || { info "cleanup not verified yet - trying once more"; sleep 3; }
   done
+  # A network left over (Caddy still attached to it) is a cleanup not verified too, whatever the organisation's state.
+  if [ "${nets:-0}" != "0" ] && [ "$LT_CLEAN" = "1" ]; then LT_CLEAN=0; bad "cleanup not verified: the load-test network is still there"; fi
   printf '%s\n' "${out:-}" > "$LT_DIR/cleanup.json"
   printf '%s\n' "${out:-}" | lt_print_cleanup
   rm -f "$LT_DIR/accounts.csv" "$LT_DIR/seed.out"
@@ -1709,7 +1728,16 @@ cmd_loadtest() {
     printf '%s\n' "$running" | grep -qx "$svc" || die "$svc is not running - check with: $ATP_DIR/deploy/atp.sh health" 1
   done
   deep_ok || die "the API's deep health is not ok - check with: $ATP_DIR/deploy/atp.sh health" 1
-  ok "postgres, redis, backend, worker, caddy running; deep health ok"
+  # The trading worker as the watchdog judges it: a state it stops on (never_seen, stale, ...) is refused here, before
+  # anything is created, rather than aborting the run one watchdog round after seeding.
+  local deep wk hb cyc problem
+  deep="$(curl -fsS -m 10 "$API/api/system/health/deep" 2>/dev/null)" || die "the API's deep health is not ok - check with: $ATP_DIR/deploy/atp.sh health" 1
+  read -r _ _ _ wk _ hb cyc < <(printf '%s' "$deep" | deep_fields) || true
+  LT_MAX_HEARTBEAT_S="$(lt_heartbeat_limit "${cyc:-}")"
+  problem="$(lt_worker_problem "$deep")"
+  [ -n "$problem" ] || [ "${wk:-}" = "ok" ] || problem="the trading worker reports ${wk:-nothing}"
+  [ -z "$problem" ] || die "refused: $problem - the watchdog would stop the run. Nothing was created. Check with: $ATP_DIR/deploy/atp.sh health" 1
+  ok "postgres, redis, backend, worker, caddy running; deep health ok; trading worker ok (heartbeat ${hb:-?}s ago, limit ${LT_MAX_HEARTBEAT_S}s)"
   local avail_mib need_mib
   avail_mib="$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo 2>/dev/null || echo 0)"
   # L4: what the clients use (about LT_CLIENT_RSS_MIB each), above the watchdog's floor, with 256 MiB to spare.

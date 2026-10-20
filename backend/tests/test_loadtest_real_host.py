@@ -151,6 +151,19 @@ def test_slos_met_but_cleanup_not_verified_exits_4(tmp_path):
     assert loadtest_summary.build(_write_run(tmp_path, _result(), None))[2] == 4
 
 
+@pytest.mark.parametrize("left, code", [(0, 0), (1, 4), ("unknown", 4)])
+def test_a_load_test_network_left_over_is_a_cleanup_not_verified(tmp_path, left, code):
+    """Review follow-up: a failed Caddy detach leaves the network; that outranks an abort and the SLOs, as 4."""
+    d = _write_run(tmp_path, _result(), {"tenant": "x", "clean": True})
+    meta = json.loads((d / "meta.json").read_text())
+    (d / "meta.json").write_text(json.dumps({**meta, "network_left": left, "aborted": "deep health failed" if code else None}))
+    text, terminal, got = loadtest_summary.build(d)
+    assert got == code
+    if code:
+        assert "Cleanup: NOT VERIFIED - the load-test network is still there" in text and "Verified: NO" in text
+        assert "loadtest-cleanup --all" in terminal
+
+
 # --- loadtest.py: the real-host options ----------------------------------------------------------------------------
 
 def test_chart_lake_is_off_by_default_and_reads_a_year_of_daily_bars():
@@ -437,6 +450,23 @@ def test_rows_the_org_owns_outside_the_allowlist_refuse_the_whole_cleanup(db):
             return await s.scalar(select(func.count()).select_from(UserSessionRecord).where(UserSessionRecord.tenant_id == info["tenant_id"]))
     assert _run(sessions()) == 1                                                  # nothing was deleted
 
+    # Review follow-up: the proven organisation is still made inert before the refusal - no deletes.
+    from app.db.models import AuditLogRecord, Tenant, User
+
+    async def state():
+        async with api._session_factory() as s:
+            tenant = await s.get(Tenant, info["tenant_id"])
+            users = list(await s.scalars(select(User).where(User.tenant_id == info["tenant_id"])))
+            audit = list(await s.scalars(select(AuditLogRecord.event).where(AuditLogRecord.tenant_id == info["tenant_id"])))
+            return tenant.status, tenant.status_reason, [(u.is_active, u.mfa_enabled) for u in users], audit
+    status, reason, users, audit = _run(state())
+    assert status == "suspended" and reason.startswith(f"loadtest {stamp}: ") and users == [(False, False)]
+    assert audit.count(loadtest_org.CLEAN_EVENT) == 1
+    assert api.client.post("/api/auth/login", json={"email": accounts[0][0], "password": accounts[0][1]}).status_code == 401
+    with pytest.raises(loadtest_org.Refused, match="users were deactivated"):            # again: still refused, no new audit row
+        _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"], user_ids=info["user_ids"]))
+    assert _run(state())[3].count(loadtest_org.CLEAN_EVENT) == 1 and _run(sessions()) == 1
+
 
 def test_the_org_file_is_seeds_and_the_stamp_is_ascii_and_current(db):
     api = db
@@ -534,9 +564,13 @@ if argv[:1] == ["network"]:
     elif sub == "connect":
         st["connected"].append(argv[2])
     elif sub == "disconnect":
+        if st.get("fail_disconnect"):              # Caddy stays attached; the network cannot be removed under it
+            rc = 1; finish()
         st["disconnected"].append(argv[-2])
         st["connected"] = [n for n in st["connected"] if n != argv[-2]]
     elif sub == "rm":
+        if argv[-1] in st["connected"]:
+            rc = 1; finish()
         st["networks"] = [n for n in st["networks"] if n["name"] != argv[-1]]
     elif sub == "ls":
         label = next((a.split("=", 1)[1] for a in argv if a.startswith("label=")), "")
@@ -678,7 +712,7 @@ with open(state + ".lock", "w") as lock:
         json.dump(st, fh)
 bad = st.get("deep_bad_after") is not None and st["deep_calls"] > st["deep_bad_after"]
 print(json.dumps({"status": "degraded" if bad else "ok", "checks": {"database": {"status": "ok"}, "migrations": {"status": "ok"},
-                  "worker": {"status": "ok", "seconds_since_heartbeat": 5}, "redis": {"status": "ok"}}}))
+                  "worker": st.get("worker") or {"status": "ok", "seconds_since_heartbeat": 5}, "redis": {"status": "ok"}}}))
 '''
 
 
@@ -925,6 +959,49 @@ def test_the_watchdog_stops_a_run_when_production_degrades(tmp_path, state, reas
 
 
 @needs_tools
+def test_caddy_left_attached_to_the_run_network_is_a_cleanup_not_verified(tmp_path):
+    """Review follow-up: a failed Caddy detach leaves the network behind - exit 4, even with the organisation clean."""
+    host = FakeHost(tmp_path)
+    host.state["fail_disconnect"] = True
+    host.save()
+    r = host.run("loadtest", *SMALL)
+    out = r.stdout + r.stderr
+    assert r.returncode == 4, out
+    assert "the load-test network is still there" in out and "cleanup: NOT VERIFIED (exit 4)" in r.stdout
+    report = "".join(p.read_text() for p in host.reports.glob("loadtest-2*.md"))
+    assert "Load-test networks left: 1" in report and "Cleanup: NOT VERIFIED - the load-test network is still there" in report
+
+
+@needs_tools
+@pytest.mark.parametrize("worker, reason", [
+    ({"status": "never_seen"}, "the trading worker reports never_seen"),
+    ({"status": "stale", "seconds_since_heartbeat": 900, "cycle_seconds": 60}, "heartbeat is 900s old (limit 180s)"),
+    ({"status": "stale", "seconds_since_heartbeat": 100, "cycle_seconds": 30}, "the trading worker reports stale"),
+    ({"status": "ok", "seconds_since_heartbeat": 200, "cycle_seconds": 30}, "heartbeat is 200s old (limit 180s)"),     # never under 180
+    ({"status": "ok", "seconds_since_heartbeat": 200, "cycle_seconds": "x"}, "heartbeat is 200s old (limit 180s)"),    # unusable: 180
+])
+def test_the_preflight_refuses_a_worker_state_the_watchdog_stops_on(tmp_path, worker, reason):
+    """Review follow-up: never_seen / stale / an old heartbeat are refused before anything is created, not ~30 s after."""
+    host = FakeHost(tmp_path)
+    host.state["worker"] = worker
+    host.save()
+    r = host.run("loadtest", *SMALL)
+    assert r.returncode == 1, r.stdout + r.stderr
+    assert "FAILED: refused: the trading worker" in r.stderr and reason in r.stderr and "Nothing was created" in r.stderr
+    st = host.load()
+    assert st["org_calls"] == [] and st["shards"] == [] and st["networks"] == []
+
+
+@needs_tools
+def test_the_heartbeat_limit_is_three_worker_cycles(tmp_path):
+    host = FakeHost(tmp_path)
+    host.state["worker"] = {"status": "ok", "seconds_since_heartbeat": 300, "cycle_seconds": 120}
+    host.save()
+    r = host.run("loadtest", *SMALL, "--check")
+    assert r.returncode == 0 and "heartbeat 300s ago, limit 360s" in r.stdout, r.stdout + r.stderr
+
+
+@needs_tools
 def test_too_little_memory_is_its_own_refusal(tmp_path):
     host = FakeHost(tmp_path)
     env = {**host.env(), "ATP_LOADTEST_MIN_AVAILABLE_MIB": "99999999"}
@@ -965,3 +1042,18 @@ def test_bad_options_are_refused_before_anything_runs(tmp_path):
     assert host.run("loadtest", "--client-cpus", "1;x").returncode == 2
     assert host.run("loadtest", "--nope").returncode == 2
     assert host.load()["calls"] == []
+
+
+def test_the_documented_command_block_labels_only_the_load_tests_exit_code(tmp_path):
+    """Review follow-up: when `health` fails, the block says so and prints no exit code that could pass for the load test's."""
+    block = (ROOT / "docs/deploy/LOADTEST_REAL_HOST.md").read_text(encoding="utf-8").split("## The command block", 1)[1].split("```")[1]
+    commands = [line for line in block.splitlines() if line.strip() and not line.startswith("#")]
+    assert len(commands) == 1 and commands[0].count("/opt/atp/deploy/atp.sh") == 2                # one copy-pasteable line
+    stub = tmp_path / "atp.sh"
+    stub.write_text('#!/bin/sh\ncase "$1" in health) exit "$HEALTH_RC" ;; loadtest) exit 5 ;; esac\nexit 99\n')
+    stub.chmod(0o755)
+    line = commands[0].replace("/opt/atp/deploy/atp.sh", str(stub))
+    failed = subprocess.run(["bash", "-c", line], env={**os.environ, "HEALTH_RC": "1"}, capture_output=True, text=True)
+    assert failed.stdout == "health check failed - load test not started\n" and failed.returncode != 0
+    ran = subprocess.run(["bash", "-c", line], env={**os.environ, "HEALTH_RC": "0"}, capture_output=True, text=True)
+    assert ran.stdout == "loadtest exit code: 5\n"

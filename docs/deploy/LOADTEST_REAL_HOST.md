@@ -13,19 +13,20 @@ Paste this as `atp` on the server (`ssh atp@187.126.125.208`). It takes about 13
 # DEPLOY NOTE: the latest release must already be deployed OUTSIDE market hours (before 09:15 or after 15:30 IST),
 # never during the session:   /opt/atp/deploy/atp.sh deploy
 # Then, on a trading day from 21 Oct, start between 09:20 and 15:15 IST:
-/opt/atp/deploy/atp.sh health && /opt/atp/deploy/atp.sh loadtest; echo "exit code: $?"
+/opt/atp/deploy/atp.sh health || { echo "health check failed - load test not started"; false; } && { /opt/atp/deploy/atp.sh loadtest; echo "loadtest exit code: $?"; }
 ```
 
 At its end, `loadtest` prints the report of this run between `===== report ... (paste this back) =====` and
 `===== end of report =====`. Paste that part back. It holds no secret, no password and no personal data.
-- If `health` fails, `loadtest` does not start.
+- If `health` fails, `loadtest` does not start: the block prints "health check failed - load test not started" and no
+  "loadtest exit code" line. The exit codes below are the one after "loadtest exit code:".
 - A refusal (exit 3, 6 or 10) creates nothing and prints no report.
 
 Exit codes, in this order of precedence:
 
 | Code | Meaning |
 |---|---|
-| `4` | the cleanup of the synthetic organisation was **not verified**, whatever else happened (see "Manual cleanup") |
+| `4` | the cleanup was **not verified** (the synthetic organisation, or the run's network still attached to Caddy), whatever else happened (see "Manual cleanup") |
 | `5` | the watchdog stopped the run because production degraded (the reason is in the report); cleanup verified |
 | `130` | stopped with Ctrl-C; cleanup verified |
 | `1` | an SLO missed, or the run failed; cleanup verified |
@@ -41,6 +42,9 @@ Exit codes, in this order of precedence:
    - It runs as `atp`, not root, and takes the same lock as `deploy`, so the two never overlap.
    - It reads `.env` key names only.
    - It needs a deployed release and its `atp-backend` image, every service up, and deep health ok.
+   - It needs the trading worker as the watchdog does (step 5): status `ok` (not `never_seen`, `stale` or
+     `stale_market_open`) and its heartbeat within the limit. Otherwise it refuses with exit 1 before anything is
+     created.
    - It needs enough free memory: about 48 MiB per client container (25 for 500 users; one measured for 20 sessions:
      about 31 MiB), plus the watchdog's floor (400 MiB) and 256 MiB to spare. That is about 1.9 GB of MemAvailable
      for 500 users. Less is refused, with exit 6.
@@ -77,7 +81,8 @@ Exit codes, in this order of precedence:
    - The API's `/metrics` are read before and after.
    - **Every 30 s the watchdog checks production.** It stops the run (exit 5, cleanup still runs) at the first of:
      - deep health failing twice in a row;
-     - the trading worker's heartbeat older than 180 s, or the worker not ok;
+     - the trading worker's heartbeat older than 3 worker cycles (3 x the `cycle_seconds` deep health reports, never
+       less than 180 s), or the worker not ok;
      - MemAvailable under 400 MiB;
      - swap use grown by more than 512 MiB since the start;
      - any app container restarted or OOM-killed.
@@ -211,12 +216,16 @@ SIGHUP the output goes to `.deploy/loadtest/<stamp>/run.log`. A `kill -9` cannot
 Steps:
 1. Stops the watchdog and the samplers, and a seed still running.
 2. Removes every client container (label `atp.loadtest=<stamp>`) and checks that none is left. Detaches Caddy from the
-   run's network and removes the network.
+   run's network and removes the network. A network still there (Caddy still attached) means the cleanup is not
+   verified: exit 4.
 3. Runs `backend/scripts/loadtest_org.py cleanup --stamp <stamp> --org-file - --verify-audit` with `org.json` on
    stdin, identifying the organisation as above. When the seed never reported back, it runs with `--absent-ok`: "no
    seed record at all for this stamp" then means nothing was created.
 4. **Refuses, deleting nothing**, if the organisation or its users own rows in any table outside the allowlist below
    (a marketplace listing, a strategy, an order, ...). It names the tables. Look at them before cleaning by hand.
+   Before refusing it still makes the (proven) organisation inert: every user deactivated with an unusable password,
+   the organisation `suspended`, and one `loadtest_org_cleaned` audit row says so. The cleanup is reported not
+   verified (exit 4).
 5. Deletes rows only from the **allowlist** of tables a seed and the load's scenarios write. The list was measured: a
    seed, logins and every scenario against the test app wrote `tenant_keys`, `user_sessions`, `login_events`,
    `notifications`, `paper_accounts` and `audit_logs`. The list also has what those paths can add: `notification_reads`,
@@ -273,5 +282,6 @@ cd /opt/atp && ATP_RELEASE=$(cut -c1-12 .deploy/current) docker compose -f docke
 rm -f /opt/atp/.deploy/loadtest/*/accounts.csv
 ```
 
-If it refuses because of rows outside the allowlist, it names the tables. Send that output: those rows are not what
-a load test writes and need a look first. Never delete rows by hand: the audit chain must stay intact.
+If it refuses because of rows outside the allowlist, it names the tables. Its users are already deactivated and the
+organisation suspended; nothing was deleted. Send that output: those rows are not what a load test writes and need a
+look first. Never delete rows by hand: the audit chain must stay intact.

@@ -18,9 +18,9 @@ Inputs in --dir (each may be missing - an interrupted run still gets a report of
 The SLOs (owner decisions, docs/OPEN_QUESTIONS.md LD-9): every API scenario p95 <= 500 ms; login measured apart,
 p95 <= 2,000 ms with all users logged in; zero errors (server errors, transport failures, other 4xx and rate-limit
 refusals). A scenario the deployment answers only with "no broker session" (409) or "feature off" is reported as not
-measured, never as passed. Exit codes, the cleanup first (PR #284 review M2): 4 = the cleanup is not verified, whatever
-else happened; 5 = the watchdog stopped the run because production degraded (cleanup verified); 1 = an SLO missed, or
-no load result; 0 = every SLO met and the cleanup verified.
+measured, never as passed. Exit codes, the cleanup first (PR #284 review M2): 4 = the cleanup is not verified (the
+organisation, or a load-test network left over), whatever else happened; 5 = the watchdog stopped the run because
+production degraded (cleanup verified); 1 = an SLO missed, or no load result; 0 = every SLO met and the cleanup verified.
 """
 from __future__ import annotations
 
@@ -212,10 +212,14 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
     host = host_memory(run_dir / "host-memory.csv")
     vcpus = float(meta.get("vcpus") or 2)
     cap = float(meta.get("client_cpus_per_shard") or 0)
-    clean = bool(cleanup and cleanup.get("clean"))
+    # A load-test network left over (Caddy still attached to it) is a cleanup not verified, as atp.sh counts it.
+    networks_left = meta.get("network_left", 0) not in (0, "0")
+    clean = bool(cleanup and cleanup.get("clean")) and not networks_left
 
     slo_line = ("PASS - every measured SLO met" if verdict["slo_pass"] else "FAIL - " + "; ".join(verdict["reasons"]))
-    cleanup_line = ("verified clean" if clean else "NOT VERIFIED - see the Cleanup section and the runbook's manual cleanup"
+    cleanup_line = ("verified clean" if clean else
+                    "NOT VERIFIED - the load-test network is still there (Caddy may be attached): /opt/atp/deploy/atp.sh loadtest-cleanup --all"
+                    if cleanup and cleanup.get("clean") else "NOT VERIFIED - see the Cleanup section and the runbook's manual cleanup"
                     if cleanup else "NOT RUN or no report - run: /opt/atp/deploy/atp.sh loadtest-cleanup " + str(meta.get("stamp", "<stamp>")))
     md: List[str] = [f"# Load test on the production host - {meta.get('stamp', '?')}", ""]
     if aborted:

@@ -188,7 +188,7 @@ def test_fresh_skips_the_cache_read_but_still_writes(monkeypatch):
     async def put(key, value, ttl):
         store[key] = value
 
-    async def fetch(self, symbol, exchange, interval, now):
+    async def fetch(self, symbol, exchange, interval, now, fresh=False):
         fetched.append(symbol)
         return []
     monkeypatch.setattr(svc, "cache_get", get)

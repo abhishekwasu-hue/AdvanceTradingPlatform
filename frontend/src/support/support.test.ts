@@ -43,7 +43,8 @@ describe("support bot wiring", () => {
   const dialog = dialogSource;
 
   it("the help button exists only while the support_bot flag is on, and the dialog is its own chunk", () => {
-    expect(app).toMatch(/setSupportOn\(f\.support_bot === true\)/);
+    // UI2-0: read from the shell's single /system/features fetch (useFeatures), off until known and while signed out.
+    expect(app).toMatch(/const supportOn = !!user && features\.on\("support_bot"\)/);
     expect(app).toMatch(/\{user && supportOn && \(/);
     expect(app).toContain('import("./support/SupportDialog")');
   });

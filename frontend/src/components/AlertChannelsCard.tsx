@@ -5,6 +5,7 @@ import WebPushSection from "../alerts/WebPushSection";
 import WhatsAppSection from "../alerts/WhatsAppSection";
 import { Card } from "../components/ui";
 import type { AlertChannel, AlertChannelType, AlertDelivery, NotificationSeverity, TelegramInboundStatus } from "../types";
+import { useFeatures } from "../ui/useFeatures";
 
 const SEVERITIES: NotificationSeverity[] = ["INFO", "WARNING", "CRITICAL"];
 
@@ -40,7 +41,7 @@ export default function AlertChannelsCard() {
     min_severity: "CRITICAL" as NotificationSeverity, enabled: true, dlt_entity_id: "", dlt_template_id: "", sender_id: "",
   });
   // S10 (flag alerts_whatsapp_dlt): the WhatsApp channel and the SMS channel's DLT fields (India).
-  const [s10, setS10] = useState(false);
+  const s10 = useFeatures().on("alerts_whatsapp_dlt");      // UI2-0: the app's single /system/features read
   const [em, setEm] = useState({
     smtp_host: "", smtp_port: "587", username: "", password: "", use_tls: true, from_address: "", to_addresses: "",
     min_severity: "CRITICAL" as NotificationSeverity, enabled: true,
@@ -80,7 +81,6 @@ export default function AlertChannelsCard() {
   }
 
   useEffect(refresh, []);
-  useEffect(() => { api.myFeatures().then((f) => setS10(Boolean(f.alerts_whatsapp_dlt))).catch(() => setS10(false)); }, []);
 
   async function run(label: string, fn: () => Promise<unknown>) {
     setBusy(true);

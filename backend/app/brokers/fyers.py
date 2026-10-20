@@ -294,7 +294,24 @@ class FyersBroker(BrokerInterface):
         return Quote(symbol=symbol, ltp=float(v.get("lp") or 0), open=float(v.get("open_price") or 0), high=float(v.get("high_price") or 0),
                      low=float(v.get("low_price") or 0), close=float(v.get("prev_close_price") or 0), volume=float(v.get("volume") or 0),
                      oi=float(v["oi"]) if v.get("oi") not in (None, "") else None, bid=float(v["bid"]) if v.get("bid") not in (None, "") else None,
-                     ask=float(v["ask"]) if v.get("ask") not in (None, "") else None, timestamp=_parse_time(v.get("tt")))
+                     ask=float(v["ask"]) if v.get("ask") not in (None, "") else None, timestamp=_parse_time(v.get("tt")),
+                     prev_close=float(v["prev_close_price"]) if v.get("prev_close_price") not in (None, "", 0) else None)
+
+    multi_quote = True
+
+    async def get_quotes_batch(self, items):
+        """UI2-4a2-pre: one `/quotes` call for up to QUOTE_BATCH symbols; a symbol the master does not know is left out
+        (the others still load)."""
+        if len(items) > QUOTE_BATCH:
+            return None
+        known: List[Tuple[str, str]] = []
+        for exchange, symbol in items:
+            try:
+                await self._ticker(symbol, exchange)
+            except BrokerAPIError:
+                continue
+            known.append((exchange, symbol))
+        return await self._quotes_batch_by_keys(known) if known else {}
 
     async def _quotes(self, keys: List[str]) -> Dict[str, Quote]:
         tickers: Dict[str, str] = {}

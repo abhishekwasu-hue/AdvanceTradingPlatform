@@ -272,8 +272,37 @@ class UpstoxBroker(BrokerInterface):
                 volume=entry.get("volume", 0.0), oi=entry.get("oi"),
                 bid=best_buy.get("price"), ask=best_sell.get("price"),
                 bid_qty=best_buy.get("quantity"), ask_qty=best_sell.get("quantity"),
+                prev_close=_prev_close(entry),
             )
         return quotes
+
+    multi_quote = True
+
+    async def get_quotes_batch(self, items):
+        """UI2-4a2-pre: one `/market-quote/quotes` call for the whole list (Upstox serves up to 500 instrument keys per
+        call). Upstox keys its answer by "EXCHANGE_SEGMENT:TRADINGSYMBOL", so each entry is matched back by its
+        `instrument_token`. A symbol the instrument master does not know is left out (the others still load)."""
+        by_key: Dict[str, Tuple[str, str]] = {}
+        for exchange, symbol in items:
+            try:
+                instrument = await self._resolve_instrument(symbol, exchange)
+            except BrokerAPIError:
+                continue
+            by_key[instrument.instrument_token] = (exchange, symbol)
+        if not by_key:
+            return {}
+        data = await self._request("GET", "/market-quote/quotes", params={"instrument_key": ",".join(by_key)})
+        out: Dict[Tuple[str, str], Quote] = {}
+        for entry in data.values():
+            pair = by_key.get(entry.get("instrument_token"))
+            if pair is None or entry.get("last_price") is None:
+                continue
+            ohlc = entry.get("ohlc") or {}
+            out[pair] = Quote(symbol=pair[1], ltp=float(entry["last_price"]), open=float(ohlc.get("open") or 0),
+                              high=float(ohlc.get("high") or 0), low=float(ohlc.get("low") or 0), close=float(ohlc.get("close") or 0),
+                              volume=float(entry.get("volume") or 0), oi=entry.get("oi"), prev_close=_prev_close(entry),
+                              timestamp=parse_broker_timestamp(entry.get("last_trade_time") or entry.get("timestamp")))
+        return out
 
     async def get_historical_data(
         self, symbol: str, exchange: str, interval: str, from_date: datetime, to_date: datetime
@@ -475,3 +504,13 @@ class UpstoxBroker(BrokerInterface):
             available_margin=equity.get("available_margin", 0.0),
             total_margin=equity.get("total_margin"),
         )
+
+
+def _prev_close(entry: dict) -> Optional[float]:
+    """The previous session's close from an Upstox full quote: `last_price - net_change` (Upstox documents net_change as
+    the change from the previous close); None when either is missing."""
+    try:
+        value = float(entry["last_price"]) - float(entry["net_change"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    return value if value > 0 else None

@@ -66,7 +66,7 @@ S_FEEDBACK = "self: sends product feedback (rate limited)"
 S_NEWS_CLASSIFY = "self: classifies the organisation's pending feed items with its own AI key (metered, like a Copilot question)"
 S_OWN_VERDICTS = "self: the caller's own verdicts on feed items"
 S_PREVIEW = "self: previews the contract a deployment would trade; stores nothing"
-S_OWN_MARKET_DATA = ("self: reads candles / option chains through a broker session - the organisation's (its budget) or, with the "
+S_OWN_MARKET_DATA = ("self: reads candles / option chains / watchlist quotes through a broker session - the organisation's (its budget) or, with the "
                      "bring-your-own-broker tier on, the caller's own; nothing is stored; rate limited per user")
 S_OWN_WHATIF = "self: models the caller's OWN open positions at the spot and IVs in the request; stores nothing, changes no order"
 S_COMPUTE = "self: computes over the request body or the organisation's data and returns it; stores nothing"
@@ -410,6 +410,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/market-data/data-tier"): "member",
     ("GET", "/api/market-data/history"): "member",
     ("GET", "/api/market-data/ltp"): "member",
+    ("POST", "/api/market-data/quotes"): S_OWN_MARKET_DATA,
     ("POST", "/api/market-data/option-chains"): S_OWN_MARKET_DATA,
     ("GET", "/api/market-data/sources"): "member",
     ("GET", "/api/market-holidays"): "member",

@@ -273,7 +273,35 @@ class AngelOneBroker(BrokerInterface):
                      oi=float(entry["opnInterest"]) if entry.get("opnInterest") not in (None, "") else None,
                      bid=float(buy["price"]) if buy.get("price") is not None else None, ask=float(sell["price"]) if sell.get("price") is not None else None,
                      bid_qty=float(buy["quantity"]) if buy.get("quantity") is not None else None, ask_qty=float(sell["quantity"]) if sell.get("quantity") is not None else None,
-                     timestamp=_parse_time(entry.get("exchTradeTime") or entry.get("exchFeedTime")))
+                     timestamp=_parse_time(entry.get("exchTradeTime") or entry.get("exchFeedTime")),
+                     # FULL mode: `close` is the previous session's close (ltp - close = netChange)
+                     prev_close=float(entry["close"]) if entry.get("close") not in (None, "", 0, "0") else None)
+
+    multi_quote = True
+
+    async def get_quotes_batch(self, items):
+        """UI2-4a2-pre: ONE quote request for the whole list - SmartAPI takes several exchanges in `exchangeTokens` in
+        one call, up to QUOTE_BATCH instruments in all. A symbol the scrip master does not know is left out."""
+        if len(items) > QUOTE_BATCH:
+            return None
+        by_exchange: Dict[str, List[str]] = {}
+        back: Dict[Tuple[str, str], Tuple[str, str]] = {}
+        for exchange, symbol in items:
+            try:
+                token, _raw = await self._resolve(symbol, exchange)
+            except BrokerAPIError:
+                continue
+            by_exchange.setdefault(exchange.upper(), []).append(token)
+            back[(exchange.upper(), str(token))] = (exchange, symbol)
+        if not by_exchange:
+            return {}
+        data = await self._request("POST", QUOTE_PATH, json_body={"mode": "FULL", "exchangeTokens": by_exchange}) or {}
+        out: Dict[Tuple[str, str], Quote] = {}
+        for entry in data.get("fetched") or []:
+            pair = back.get((str(entry.get("exchange", "")).upper(), str(entry.get("symbolToken"))))
+            if pair is not None:
+                out[pair] = self._quote_from(entry, pair[1])
+        return out
 
     async def _resolve_many(self, symbols: List[str]) -> Tuple[Dict[str, List[str]], Dict[Tuple[str, str], str]]:
         by_exchange: Dict[str, List[str]] = {}

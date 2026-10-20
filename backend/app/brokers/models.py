@@ -58,6 +58,8 @@ class Quote(BaseModel):
     bid_qty: Optional[float] = None
     ask_qty: Optional[float] = None
     timestamp: Optional[datetime] = None
+    # UI2-4a2-pre: the previous session's close, where the broker's quote says it (for a watchlist's change); None = unknown.
+    prev_close: Optional[float] = None
 
 
 class OptionChainRow(BaseModel):

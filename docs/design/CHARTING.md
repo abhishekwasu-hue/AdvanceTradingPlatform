@@ -638,6 +638,13 @@ and the workspace page says it is not enabled. Charts only; nothing here places,
   each API process counts in-process windows at its part of the share (every limit divided by `API_WORKERS`). CI runs the real script and lock against its redis:7 service (`REDIS_URL`). The drawing tools run on the active chart only (their keys - Esc, Delete, Ctrl/Cmd+Z / Y - are
   window-wide). In grids of 4 or more the other charts are compact (no indicator toolbar or panes). Alt+Enter (or the
   cell's button) shows the active chart at full size.
+- **Watchlist prices (UI2-4a2-pre).** `POST /api/market-data/quotes` (`app/market_data/quotes_routes.py`) takes up to
+  50 (exchange, symbol) pairs and answers each with `ltp`, `prev_close`, `change`, `change_pct`, its time and `stale`,
+  or `missing: true` with `ltp: null` and the reason - never 0, never sample data. Same broker gate and BT1 entitlement
+  guard as `/ltp` (Tier C 409 when no symbol may be shown live), 30 requests a minute per user. Where the adapter has a
+  multi-quote call (`BrokerInterface.multi_quote`: Kite, Upstox, Dhan, Fyers, Angel One) the whole list is ONE broker
+  call that takes ONE token from the credential's API budget; otherwise fresh ticks of the live feed answer first
+  (free), then one quote per symbol, each call taking a token, waiting at most 2 s in all - the rest say "budget used".
 - **Saved layouts.** `chart_layouts` (migration `b8d0f2a4c6e9`, `ROLLBACK_SAFE = True`, one new table): per user and
   tenant, a unique name per user, at most 50 (the user's row is locked with `SELECT ... FOR UPDATE` before the count, and re-counted after the insert, so two racing creates cannot pass it),
   versioned: the save and the delete are a conditional `UPDATE` / `DELETE ... WHERE id, user, tenant AND version`

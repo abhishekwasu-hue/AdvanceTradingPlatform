@@ -3,7 +3,7 @@ import re
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 from app.core.enums import OrderSide
 from app.core.models import OHLCVBar
@@ -198,6 +198,21 @@ class BrokerInterface(ABC):
         older than QUOTE_MAX_STALE_SECONDS). Default None: the broker's LTP endpoint carries no
         timestamp, the price is accepted as real-time and only its availability is checked."""
         return None
+
+    # UI2-4a2-pre: True when `get_quotes_batch` is the broker's multi-quote call (one call for a whole watchlist).
+    multi_quote: bool = False
+
+    async def get_quotes_batch(self, items: Sequence[Tuple[str, str]]) -> Optional[Dict[Tuple[str, str], Quote]]:
+        """UI2-4a2-pre: quotes for many (exchange, plain trading symbol) pairs in ONE broker call (the watchlist), keyed
+        by the pair asked for. A pair the broker returns nothing for is left out. Default None: this adapter has no
+        multi-quote call, so the caller uses the live feed's ticks and per-symbol quotes within its budget instead."""
+        return None
+
+    async def _quotes_batch_by_keys(self, items: Sequence[Tuple[str, str]]) -> Dict[Tuple[str, str], Quote]:
+        """`get_quotes_batch` for an adapter whose `get_quote` takes "EXCHANGE:SYMBOL" keys and serves them in one call."""
+        keys = {f"{exchange}:{symbol}": (exchange, symbol) for exchange, symbol in items}
+        quotes = await self.get_quote(list(keys))
+        return {keys[key]: quote for key, quote in quotes.items() if key in keys}
 
     async def get_balance(self) -> MarginInfo:
         """Free funds and margin (V3.14 rule 2: every adapter answers "how much can I trade").

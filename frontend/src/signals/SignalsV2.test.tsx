@@ -94,7 +94,8 @@ describe("UI2-3 detail panel", () => {
 
   it("a LIVE proposal says so and never promises that nothing reaches the broker", () => {
     const words = text(inRouter(<SignalDetail item={feedItem({ mode: "LIVE" })} proposal={proposal} now={NOW} canTrade onDone={noop} onError={noop} />));
-    expect(words).toContain("Approve live trade");
+    expect(words).toContain("Approve (paper order)");                // Phase 0: an approved entry is a PAPER order
+    expect(words).not.toContain("Approve live trade");
     expect(words).toContain("· Live");
     expect(words).toContain("approving asks for your authenticator code first");
     expect(words).not.toContain("Nothing reaches your broker");

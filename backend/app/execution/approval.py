@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Awaitable, Callable, Dict, Iterable, List, Optional, Tuple
 
@@ -41,6 +42,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.audit.log import write_audit_log
 from app.core import config as app_config
 from app.core.enums import NotificationSeverity, NotificationType
+from app.core.json_finite import dumps as finite_dumps
 from app.core.models import Signal
 from app.db.models import AiActionRecord, StrategyDeploymentRecord, TradeRecord, User
 from app.market_data.calendar import IST
@@ -179,7 +181,7 @@ def requote_check(direction: str, proposal_price: float, current_price: float, *
 # --- proposals ----------------------------------------------------------------------------------------------------------
 
 def _money(value: Optional[float]) -> str:
-    return "-" if value is None else f"{value:,.2f}"
+    return "-" if value is None or not math.isfinite(value) else f"{value:,.2f}"
 
 
 async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal, strategy_id: str, source: str,
@@ -195,7 +197,7 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
     ::report), shown on the card. `ticket` (Z5 / P1-d): a PAPER ticket's checked limits ({plan_id, max_quantity,
     risk_cap_amount}) - the approved order keeps them. Places nothing."""
     now = _utc(now or datetime.now(timezone.utc)).astimezone(timezone.utc)      # stored as UTC (SQLite drops the zone)
-    if signal.entry is None or signal.entry <= 0:
+    if signal.entry is None or not math.isfinite(signal.entry) or signal.entry <= 0:
         raise ValueError("An entry proposal needs the signal's entry price")
     from app.paper.service import paused_reason
     paused = await paused_reason(session, user_id)
@@ -233,7 +235,7 @@ async def propose_entry(session: AsyncSession, tenant_id: int, *, signal: Signal
                 "exchange": (exchange or "NSE").upper(),
                 "signal": signal.model_dump(mode="json"), "strike_breach": strike_breach, "ticket": ticket}
     row = AiActionRecord(tenant_id=tenant_id, deployment_id=deployment.id if deployment is not None else None, trade_id=None,
-                         action=ACTION_ENTRY, rule=RULE_ENTRY, reason=reason, evidence_json=json.dumps(evidence, default=str),
+                         action=ACTION_ENTRY, rule=RULE_ENTRY, reason=reason, evidence_json=finite_dumps(evidence),
                          status="PROPOSED", expires_at=expires, idempotency_key=idempotency_key[:200], owner_user_id=user_id)
     try:
         async with session.begin_nested():       # a duplicate is dropped alone; the caller's objects stay intact
@@ -472,9 +474,9 @@ async def propose_exit(session: AsyncSession, trade: TradeRecord, reason: str, p
         text = (f"Exit now? {trade.direction} {trade.symbol} (position #{trade.id}, {trade.mode}) reached {reason} - last price {price:,.2f}, "
                 f"entry {trade.entry_price:,.2f}. Approve to exit at the price then. The stop and the time exits stay automatic.")
         row = AiActionRecord(tenant_id=trade.tenant_id, deployment_id=trade.deployment_id, trade_id=trade.id, action="EXIT_POSITION", rule=rule,
-                             reason=text, evidence_json=json.dumps({"reason": reason, "price": price, "entry_price": trade.entry_price,
+                             reason=text, evidence_json=finite_dumps({"reason": reason, "price": price, "entry_price": trade.entry_price,
                                                                     "stop_loss": trade.stop_loss, "target1": trade.target1, "target2": trade.target2,
-                                                                    "mode": trade.mode}, default=str),
+                                                                    "mode": trade.mode}),
                              status="PROPOSED", expires_at=expires, owner_user_id=trade.user_id)
         async with session.begin_nested():       # a concurrent duplicate drops this row alone
             session.add(row)

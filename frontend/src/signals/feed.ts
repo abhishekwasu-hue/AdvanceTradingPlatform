@@ -63,9 +63,10 @@ export function countLabel(counts: FeedCounts | null | undefined, tab: FeedTab):
   return counts.capped?.[tab] ? `${n}+` : String(n);
 }
 
-/** Who may approve, skip or snooze: the trading roles (the server's require_trader). A viewer reads the inbox only. */
+/** Who may approve, skip or snooze: the server's require_trader - the trading roles, and SUPER_ADMIN, which passes every
+ * role check. A viewer reads the inbox only. */
 export function canTradeRole(role: string | null | undefined): boolean {
-  return role === "OWNER" || role === "USER" || role === "STRATEGY_CREATOR";
+  return role === "OWNER" || role === "USER" || role === "STRATEGY_CREATOR" || role === "SUPER_ADMIN";
 }
 
 export interface FeedParams { tab: FeedTab; source?: FeedSource; symbol?: string | null; cursor?: string | null; limit?: number }

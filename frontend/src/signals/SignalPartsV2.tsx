@@ -297,7 +297,9 @@ export function SignalActions({ item, now, compact = false, canTrade, onDone, on
     finally { setBusy(null); }
   }
   const live = item.mode === "LIVE";
-  const approveLabel = compact ? "Approve" : live ? "Approve live trade" : "Approve paper trade";
+  // Phase 0: an approved entry is always placed as a PAPER order, also for a LIVE deployment (whose approval still asks
+  // for the authenticator code) - the label never promises a live trade.
+  const approveLabel = compact ? "Approve" : live ? "Approve (paper order)" : "Approve paper trade";
   return (
     <div className="space-y-space-2">
       <div className={compact ? "grid grid-cols-[1fr_auto_auto_auto] gap-space-2" : "flex flex-wrap items-center gap-space-2"} role="group" aria-label={`Decide on ${item.symbol}`}>
@@ -310,7 +312,7 @@ export function SignalActions({ item, now, compact = false, canTrade, onDone, on
         {compact && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} disabled={busy !== null} />}
       </div>
       {compact && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
-      {!compact && <p className="text-t12 text-fg-muted">{live ? "This proposal is on a LIVE deployment: approving asks for your authenticator code first." : "Paper trade: practice money at the real price. Nothing reaches your broker."}</p>}
+      {!compact && <p className="text-t12 text-fg-muted">{live ? "This proposal is on a LIVE deployment: approving asks for your authenticator code first, then places a paper order." : "Paper trade: practice money at the real price. Nothing reaches your broker."}</p>}
       {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void approve(); }} />}
     </div>
   );

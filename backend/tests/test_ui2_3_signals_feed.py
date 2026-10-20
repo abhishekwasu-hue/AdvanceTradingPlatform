@@ -9,9 +9,11 @@ All data here is made up for the test."""
 import asyncio
 import inspect
 import json
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from sqlalchemy import func, select, true
 
 from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, AuditLogRecord, ExecutionIntentRecord, NotificationRecord,
@@ -445,6 +447,95 @@ def test_the_postgres_filters_read_the_evidence_with_the_json_operator():
     from sqlalchemy.dialects import postgresql
     sql = str(service._kind_clause("postgresql", "scan").compile(dialect=postgresql.dialect()))
     assert "CAST(ai_actions.evidence_json AS JSON) ->>" in sql and "deployment_id IS NULL" in sql
+
+
+def test_a_nan_in_a_signal_is_stored_as_null_never_as_nan():
+    """Review: json.dumps writes NaN, which is not JSON (Postgres refuses it). The entry proposal's evidence keeps every
+    non-finite float as null, and a NaN entry price is refused like a missing one."""
+    from app.execution import approval
+    from tests.test_z3_approval_entries import _sig
+    t = _owner("nan")
+    nan = float("nan")
+
+    async def go():
+        async with _session_factory() as session:
+            signal = _sig(stop=nan, target=float("inf")).model_copy(update={"risk_reward": nan})
+            row = await approval.propose_entry(session, t["tenant_id"], signal=signal, strategy_id="demo_strategy", source="tradingview",
+                                               idempotency_key=f"ui23-nan:{uuid.uuid4().hex}")
+            try:
+                await approval.propose_entry(session, t["tenant_id"], signal=_sig(entry=nan), strategy_id="demo_strategy", source="tradingview",
+                                             idempotency_key=f"ui23-nan:{uuid.uuid4().hex}")
+                refused = False
+            except ValueError:
+                refused = True
+            return row.evidence_json, row.reason, refused
+    text, reason, refused = _run(go())
+    assert "NaN" not in text and "Infinity" not in text
+    evidence = json.loads(text, parse_constant=lambda name: pytest.fail(f"{name} in the stored evidence"))
+    assert evidence["stop_loss"] is None and evidence["target1"] is None and evidence["risk_reward"] is None
+    assert evidence["signal"]["stop_loss"] is None and evidence["signal"]["target1"] is None
+    assert "nan" not in reason.lower()
+    assert refused
+
+
+def test_the_finite_json_writer():
+    from app.core.json_finite import dumps
+    at = datetime(2026, 10, 8, 5, 0, tzinfo=UTC)
+    assert json.loads(dumps({"a": float("nan"), "b": [1.5, float("-inf")], "c": (float("inf"),), "d": at})) == {
+        "a": None, "b": [1.5, None], "c": [None], "d": str(at)}
+
+
+def test_evidence_that_is_not_json_matches_no_filter_and_never_fails_the_feed():
+    """A row stored before the writers refused NaN (or any unreadable evidence) is left out of the filtered views and
+    the request still answers."""
+    t = _owner("badjson")
+    good = _proposal(t, source="manual", symbol="DEMO1")
+    bad = _proposal(t, source="manual", symbol="DEMO1")
+
+    async def spoil():
+        async with _session_factory() as session:
+            row = await session.get(AiActionRecord, bad)
+            row.evidence_json = "not json at all"
+            await session.commit()
+    _run(spoil())
+    for params in ({"source": "copilot"}, {"symbol": "DEMO1"}, {"source": "copilot", "symbol": "DEMO1"}, {"tab": "waiting", "source": "copilot"}):
+        assert _ids(_get(t, **params)) == [f"action:{good}"], params
+    assert f"action:{bad}" in _ids(_get(t))                          # unfiltered, it is still listed (its levels unknown)
+
+
+def test_the_postgres_filters_check_the_evidence_is_json_before_reading_it():
+    from sqlalchemy.dialects import postgresql
+    for clause in (service._kind_clause("postgresql", "copilot"), func.upper(service._evidence("postgresql", "symbol")) == "DEMO1"):
+        sql = str(clause.compile(dialect=postgresql.dialect()))
+        assert "CASE WHEN pg_input_is_valid(ai_actions.evidence_json, " in sql and "THEN CAST((CAST(ai_actions.evidence_json AS JSON) ->>" in sql
+
+
+@pytest.mark.skipif(not os.environ.get("Z5_TEST_PG_URL", "").startswith("postgresql"), reason="set Z5_TEST_PG_URL to a Postgres 16+ database")
+def test_on_postgres_a_nan_row_matches_no_filter_and_raises_nothing():
+    """On a real Postgres (CI's service): evidence with NaN or no JSON at all never makes a filtered read fail. Uses a
+    temporary table named ai_actions, so the database is left as it was."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+    rows = [(1, None, '{"source": "manual", "symbol": "DEMO1"}'), (2, None, '{"source": "scan", "symbol": "DEMO2"}'),
+            (3, 5, '{"source": "deployment", "symbol": "DEMO3"}'), (4, None, '{"source": "manual", "symbol": "DEMO1", "stop_loss": NaN}'),
+            (5, None, "not json"), (6, 7, '{"source": "deployment", "stop_loss": NaN}')]
+
+    async def go():
+        engine = create_async_engine(os.environ["Z5_TEST_PG_URL"])
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("CREATE TEMP TABLE ai_actions (id int, deployment_id int, evidence_json text)"))
+                for row in rows:
+                    await conn.execute(text("INSERT INTO ai_actions VALUES (:i, :d, :e)"), {"i": row[0], "d": row[1], "e": row[2]})
+                out = {}
+                for name, clause in (("copilot", service._kind_clause("postgresql", "copilot")), ("scan", service._kind_clause("postgresql", "scan")),
+                                     ("autopilot", service._kind_clause("postgresql", "autopilot")),
+                                     ("symbol", func.upper(service._evidence("postgresql", "symbol")) == "DEMO1")):
+                    out[name] = sorted((await conn.execute(select(AiActionRecord.id).where(clause))).scalars())
+                return out
+        finally:
+            await engine.dispose()
+    assert _run(go()) == {"copilot": [1], "scan": [2], "autopilot": [3], "symbol": [1]}
 
 
 # --- read-only ------------------------------------------------------------------------------------------------------

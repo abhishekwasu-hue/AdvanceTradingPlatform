@@ -140,8 +140,8 @@ describe("UI2-3 links and messages", () => {
   });
 
   it("only the trading roles may decide", () => {
-    for (const role of ["OWNER", "USER", "STRATEGY_CREATOR"]) expect(canTradeRole(role), role).toBe(true);
-    for (const role of ["VIEWER", "SUPPORT", "SUPER_ADMIN", undefined]) expect(canTradeRole(role), String(role)).toBe(false);
+    for (const role of ["OWNER", "USER", "STRATEGY_CREATOR", "SUPER_ADMIN"]) expect(canTradeRole(role), role).toBe(true);   // SUPER_ADMIN passes require_role
+    for (const role of ["VIEWER", "SUPPORT", undefined]) expect(canTradeRole(role), String(role)).toBe(false);
   });
 
   it("a ?proposal= link that is not in the list says so", () => {

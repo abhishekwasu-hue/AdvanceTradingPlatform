@@ -32,8 +32,9 @@ interface Inbox { decisions: { id: number; kind: string; body: unknown }[] }
 /** The inbox's server side, from the fixture: GET /signals/feed per tab and filter, GET /ai/actions?status=PROPOSED (the
  * risk pre-check) and the three decision endpoints, as the backend answers them. `expireOnApprove`: that proposal
  * expires just before the trader approves it (the server's 409). Registered after mockApi, so it answers first. */
-async function mockInbox(page: Page, opts: { expireOnApprove?: number; others?: Proposal[] } = {}): Promise<Inbox> {
+async function mockInbox(page: Page, opts: { expireOnApprove?: number; others?: Proposal[]; edit?: (today: Row[]) => void } = {}): Promise<Inbox> {
   const today = DATA.today.map((r) => ({ ...r }));
+  opts.edit?.(today);
   const earlier = DATA.earlier.map((r) => ({ ...r }));
   const all = () => [...today, ...earlier];
   const inbox: Inbox = { decisions: [] };
@@ -84,7 +85,7 @@ async function mockInbox(page: Page, opts: { expireOnApprove?: number; others?: 
 }
 
 async function open(page: Page, path: string, theme: "dark" | "light", options: MockOptions = V2,
-  opts: { expireOnApprove?: number; intro?: boolean; others?: Proposal[]; role?: string } = {}) {
+  opts: { expireOnApprove?: number; intro?: boolean; others?: Proposal[]; role?: string; edit?: (today: Row[]) => void } = {}) {
   await page.clock.install({ time: new Date("2026-10-08T10:30:00+05:30") });
   await page.addInitScript(([t, intro]) => {
     try {
@@ -247,6 +248,16 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(detail).toHaveAttribute("data-signal-detail", "action:860");
     await expect(detail.getByText("This signal expired before anyone decided. Nothing was placed.")).toBeVisible();
     await expect(detail.getByRole("button", { name: /Approve/ })).toHaveCount(0);
+  });
+
+  test("a long price is shown in full: the price columns grow instead of clipping", async ({ page }) => {
+    await open(page, "/signals", "light", V2, { edit: (today) => Object.assign(today[0], { entry: 135000, stop: 134250.5, target: 136500 }) });
+    const row = page.locator("[data-row='action:901']");
+    await expect(row).toContainText("1,35,000.00");
+    for (const cell of await row.locator("td.text-right").all()) {
+      const fits = await cell.evaluate((td) => td.scrollWidth <= td.clientWidth && (td.firstElementChild as HTMLElement).offsetWidth <= td.clientWidth);
+      expect(fits).toBe(true);
+    }
   });
 
   test("the source filter and the symbol filter ask the feed again", async ({ page }) => {

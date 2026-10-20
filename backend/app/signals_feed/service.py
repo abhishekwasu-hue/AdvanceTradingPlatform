@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from sqlalchemy import JSON, and_, cast, func, or_, select
+from sqlalchemy import JSON, and_, case, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 from sqlalchemy.sql import Select
@@ -342,23 +342,37 @@ async def _read(session: AsyncSession, q: FeedQuery, src: Source, cursor: Option
         last = (tail[0], tail[2])
 
 
+def _evidence_valid(dialect: str) -> Any:
+    """True when the proposal's evidence is JSON this database can read. A row stored before the writers refused NaN
+    (`NaN` is not JSON; app/core/json_finite.py) fails it on Postgres: it then matches no filter, and never raises."""
+    if dialect == "postgresql":
+        return func.pg_input_is_valid(AiActionRecord.evidence_json, "json")      # Postgres 16+ (CI 16, release 17)
+    return func.json_valid(AiActionRecord.evidence_json) == 1
+
+
 def _evidence(dialect: str, key: str) -> Any:
     """One top-level field of an entry proposal's evidence (JSON in a text column) as SQL text: Postgres `->>`,
-    SQLite json_extract. Every writer stores it with json.dumps (the entry proposal in app/execution/approval.py)."""
+    SQLite json_extract - only on a row whose evidence is valid JSON (CASE never evaluates the cast for another row),
+    NULL otherwise."""
     if dialect == "postgresql":
-        return cast(AiActionRecord.evidence_json, JSON)[key].as_string()
-    return func.json_extract(AiActionRecord.evidence_json, f"$.{key}")
+        raw = cast(AiActionRecord.evidence_json, JSON)[key].as_string()
+    else:
+        raw = func.json_extract(AiActionRecord.evidence_json, f"$.{key}")
+    return case((_evidence_valid(dialect), raw), else_=None)
 
 
 def _kind_clause(dialect: str, kind: str) -> Any:
-    """`action_kind` in SQL: a deployment's proposal is Autopilot, a scan's is Scan, every other one Copilot."""
+    """`action_kind` in SQL: a deployment's proposal is Autopilot, a scan's is Scan, every other one Copilot. A row whose
+    evidence is not valid JSON matches none of them."""
     origin = _evidence(dialect, "source")
     deployment = AiActionRecord.deployment_id
     if kind == "autopilot":
-        return or_(deployment.is_not(None), origin == "deployment")
-    if kind == "scan":
-        return and_(deployment.is_(None), origin == "scan")
-    return and_(deployment.is_(None), or_(origin.is_(None), origin.not_in(("deployment", "scan"))))
+        clause = or_(deployment.is_not(None), origin == "deployment")
+    elif kind == "scan":
+        clause = and_(deployment.is_(None), origin == "scan")
+    else:
+        clause = and_(deployment.is_(None), or_(origin.is_(None), origin.not_in(("deployment", "scan"))))
+    return and_(_evidence_valid(dialect), clause)
 
 
 def _sources(q: FeedQuery) -> List[Source]:

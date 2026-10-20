@@ -211,6 +211,8 @@ async def _paper_checks(session: AsyncSession, row: ExecutionIntentRecord, owner
     verdict, why = approval.requote_check(row.direction, float(signal.entry or 0.0), price, stop_loss=signal.stop_loss, target1=signal.target1,
                                           max_drift_pct=app_config.APPROVAL_REQUOTE_MAX_DRIFT_PCT,
                                           max_drift_ticks=app_config.APPROVAL_REQUOTE_MAX_DRIFT_TICKS, tick_size=approval.tick_size_for(row.symbol))
+    if why == approval.NO_VALID_PRICE:
+        return "propose", f"The live price for {row.symbol} is not usable - a proposal instead", None
     if verdict != "ok":
         return "propose", f"The price moved since the setup ({why}) - a proposal instead", None
     return "place", "", price

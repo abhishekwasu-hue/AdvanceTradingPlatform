@@ -325,6 +325,17 @@ def test_ticket_places_one_paper_order_at_the_live_price_and_stores_the_plan(mon
     assert [p["status"] for p in plans] == ["PLACED", "REFUSED", "REFUSED"] and plans[0]["trade_id"] == trade.id
 
 
+def test_ticket_with_a_live_price_that_is_not_a_number_says_the_quote_is_not_usable(monkeypatch):
+    """UI2-3 review: not "update the plan" - the plan is fine, the quote is not."""
+    t = _tenant_t("nanquote")
+    _org(t)
+    _flag(by_default.FLAG, t["tenant_id"])
+    _price(monkeypatch, float("nan"))
+    out = _place(t)
+    assert out["status"] == "REFUSED" and any("is not usable" in r for r in out["reasons"])
+    assert not any("update the plan" in r for r in out["reasons"]) and out.get("trade_id") is None
+
+
 def test_override_needs_a_reason_is_bounded_logged_and_counted(monkeypatch):
     t = _tenant_t("override")
     _org(t, risk_pct=2.0)                                          # the organisation allows 20,000; the user's cap is 10,000

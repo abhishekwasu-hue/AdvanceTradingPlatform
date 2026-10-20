@@ -2299,7 +2299,7 @@ export interface SimMetrics {
 export interface StrategyCandidate {
   id: string; name: string; family: string; direction: "LONG" | "SHORT" | "BOTH"; timeframe: string; why: string;
   params: Record<string, unknown>; rules: { long: string[]; short: string[] }; exits: string;
-  // Phase BF: the same rules in the trader's words (mr/en), the direction and timeframe in words, a one-line summary.
+  // Phase BF: the same rules in plain English words, the direction and timeframe in words, a one-line summary.
   rules_text?: { long: string[]; short: string[] }; direction_text?: string; timeframe_text?: string; summary?: string;
   triggers: { name: string; price: number }[]; stop_points: number | null; risk_amount: number; quantity_hint: number | null;
   in_sample: SimMetrics; out_of_sample: SimMetrics; all: SimMetrics; oos_sessions: string[];

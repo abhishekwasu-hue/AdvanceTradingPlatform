@@ -149,9 +149,11 @@ def test_screener_run_reads_only_the_users_own_session(monkeypatch):
     assert ra.status_code == 200, ra.text
     rb = client.post("/api/screener/run", headers=b_headers, json=body).json()
     assert ra.json()["matched"] == ["RELIANCE"] and rb["matched"] == ["RELIANCE"]
-    assert feeds[b["tenant_id"]].reads, "B's run went to B's own broker, not to A's cached bars"
+    # LD-10 (owner, 20 Oct): public candles are one shared copy per broker - B's run reads the bars A's session fetched,
+    # with no call through B's broker; no session-level or platform-wide request cache is written over the shared copy.
+    assert feeds[a["tenant_id"]].reads and not feeds[b["tenant_id"]].reads
     keys = [k for k in shared.store if ":candles:" in k]
-    assert keys and all(k.startswith("md:byob:") for k in keys) and {k.split(":")[2] for k in keys} == {_ns(a), _ns(b)}
+    assert keys == []
     badge = ra.json()["data_tier"]
     assert badge["tier"] == "A" and badge["label"] == "Live · your Upstox" and badge["stale"] is False   # yesterday's daily bar
     # An execution-only broker: no live run at all (409, the reason), and its broker is never called.

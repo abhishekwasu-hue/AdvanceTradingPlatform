@@ -33,7 +33,7 @@ from app.ai.tools import Tool, ToolContext, ToolResult, register
 from app.core.models import RiskConfig
 from app.db.models import StrategyDeploymentRecord
 
-# The words in the trader's own message that put a proposal tool on the request's allow-list (English and Marathi).
+# The words in the trader's own message that put a proposal tool on the request's allow-list (English only).
 INTENT_WORDS: Dict[str, Sequence[str]] = {
     "propose_pause_deployment": ("pause", "halt"),
     "propose_risk_reduction": ("reduce risk", "reduce my risk", "lower risk", "lower my risk", "cut risk", "cut my risk", "less risk",

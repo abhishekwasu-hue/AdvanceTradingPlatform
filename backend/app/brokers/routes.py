@@ -88,9 +88,11 @@ class BrokerTokenStatusResponse(AnalyticsTokenInfo):
 
 
 def _clean_label(label: Optional[str]) -> str:
+    """The account label every per-account broker route acts on (default "primary"). A malformed one is a
+    request-validation error (422, like any other bad parameter FastAPI rejects), never a lookup."""
     label = (label or "primary").strip().lower()
     if not label or len(label) > 50 or not all(c.isalnum() or c in "-_" for c in label):
-        raise HTTPException(status_code=400, detail="account_label must be 1-50 letters, digits, '-' or '_'")
+        raise HTTPException(status_code=422, detail="account_label must be 1-50 letters, digits, '-' or '_'")
     return label
 
 

@@ -20,6 +20,19 @@ dashboard is annoyance.
 | SLO-8 | Alert delivery | Out-of-app alerts (Telegram/email) leave within 60 s; outbox never above 20 for 10 minutes | `atp_alert_outbox_pending`, `atp_alert_deliveries_total{status}` | `AlertOutboxBacklog`, `AlertDeliveriesFailing` |
 | SLO-9 | Recovery | RTO 30 min / RPO 5 min for the database (WAL archiving + weekly base backup, docs/OPERATIONS.md 1.2a); nightly logical backup verified by restore | CI backup rehearsal; `scripts/backup/verify_backup.sh` exit status | (CI, not Prometheus) |
 
+## SLO-1 in the 500-user load test (LD-9)
+
+`backend/scripts/loadtest.py` judges a load run with two verdicts, and both must pass (owner, LD-9, 20 Oct: login is
+measured apart from the 0.5 s API target):
+
+| Verdict | Scenarios | Pass rule |
+|---|---|---|
+| API | every scenario but login: the dashboard reads, proposals, positions, the PAPER account, the chart, the screener run | p95 at or under 500 ms per scenario (the chart's documented limit 1,000 ms, the screener run's 2,000 ms); server errors at most 0.5% of the API requests |
+| Login | `POST /api/auth/login` | p95 at or under 2,000 ms at 500 concurrent sessions, and no failed login at all (a time-out, a 5xx, a 429 or a refusal each fails it) |
+
+A slower CI machine may scale the p95 limits (`--slo-factor`), never the error limits. The staging-stack job `load-500`
+passes or fails on the same rule (its primary profile's exit status).
+
 ## How the safety gates relate to the SLOs
 
 * **Staleness gate (Phase G1)** enforces SLO-4 rather than measuring it: a stale feed produces a

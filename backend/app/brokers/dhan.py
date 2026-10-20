@@ -108,6 +108,7 @@ def _parse_time(raw) -> Optional[datetime]:
 
 class DhanBroker(BrokerInterface):
     name = "dhan"
+    history_by_date = True   # LD-10: the history API takes dates only (get_historical_data)
     BASE_URL = BASE_URL
     max_tag_length = 20
 

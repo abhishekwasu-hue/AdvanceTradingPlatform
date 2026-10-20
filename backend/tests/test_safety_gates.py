@@ -9,6 +9,7 @@ from sqlalchemy import select
 from app.brokers.models import BrokerPosition, Quote
 from app.brokers.timestamps import parse_broker_timestamp
 from app.db.models import NotificationRecord, OrderRecord, StrategyDeploymentRecord, Tenant, TradeRecord, User
+from app.market_data import shared_candles
 from app.market_data.freshness import StaleMarketDataError, candle_staleness, quote_is_stale, timeframe_seconds
 from app.market_data.service import MarketDataService
 from app.trading.position_monitor import monitor_open_positions
@@ -71,8 +72,10 @@ def test_worker_refuses_to_evaluate_a_stalled_candle_feed(monkeypatch):
     err = _get(StrategyDeploymentRecord, dep_id).last_error
     assert "market data stale" in err and "1min bar is 36 min old" in err
 
-    # The feed catches up: the same deployment trades on the next cycle without intervention.
+    # The feed catches up: the same deployment trades on the next cycle without intervention (once the copy of the
+    # stalled bars has expired - LD-10's shared copy, like the Redis candle cache, lives up to a minute).
     broker.intraday_bars = 75
+    shared_candles.reset()
     report = _run(worker.run_cycle(now=OPEN_NOW))
     assert report.signals_executed == 1 and report.stale_skips == 0
 

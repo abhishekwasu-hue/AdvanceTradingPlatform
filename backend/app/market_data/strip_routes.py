@@ -132,17 +132,20 @@ def _from_memory(base: Dict[str, Any], record: MarketSnapshotRecord, market_open
 
 
 async def _memory(session: AsyncSession, tenant_id: int, symbols: List[str], now: datetime) -> Dict[str, MarketSnapshotRecord]:
-    """The newest market-memory reading per symbol, of this organisation only."""
-    rows = await session.scalars(
-        select(MarketSnapshotRecord)
-        .where(MarketSnapshotRecord.tenant_id == tenant_id, MarketSnapshotRecord.symbol.in_(symbols),
-               MarketSnapshotRecord.kind.in_(MEMORY_KINDS), MarketSnapshotRecord.captured_at >= now - MEMORY_MAX_AGE,
-               MarketSnapshotRecord.last_price.is_not(None))
-        .order_by(MarketSnapshotRecord.captured_at.desc())
-        .limit(60))
+    """The newest market-memory reading per symbol, of this organisation only, at most MEMORY_MAX_AGE old. One small
+    query per symbol (newest first, one row): a symbol whose captures stopped is still found however many newer rows
+    the other symbols have."""
     newest: Dict[str, MarketSnapshotRecord] = {}
-    for r in rows:
-        newest.setdefault(r.symbol, r)
+    for symbol in symbols:
+        record = await session.scalar(
+            select(MarketSnapshotRecord)
+            .where(MarketSnapshotRecord.tenant_id == tenant_id, MarketSnapshotRecord.symbol == symbol,
+                   MarketSnapshotRecord.kind.in_(MEMORY_KINDS), MarketSnapshotRecord.captured_at >= now - MEMORY_MAX_AGE,
+                   MarketSnapshotRecord.last_price > 0)
+            .order_by(MarketSnapshotRecord.captured_at.desc())
+            .limit(1))
+        if record is not None:
+            newest[symbol] = record
     return newest
 
 

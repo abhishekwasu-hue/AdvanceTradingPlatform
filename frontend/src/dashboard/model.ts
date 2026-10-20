@@ -84,7 +84,9 @@ export function signTone(v: number | null | undefined): Tone {
 
 /** The broker chip in the strip: "Upstox connected" (neutral, check) / "Upstox · log in" (amber) /
  * "2 brokers · 1 needs login". Null while it is not known. */
-export function brokerChip(state: BrokerGateState): { text: string; tone: "neutral" | "warn"; connected: boolean } | null {
+export function brokerChip(state: BrokerGateState, rows: { needs_login: boolean }[] | null = null): { text: string; tone: "neutral" | "warn"; connected: boolean } | null {
+  const partly = state.kind === "connected" ? partlyConnected(rows) : null;
+  if (partly) return { text: partly, tone: "warn", connected: true };
   if (state.kind === "connected") {
     const names = [...new Set(state.brokers.map((b) => brokerDisplayName(b.broker_name)))];
     return { text: names.length === 1 ? `${names[0]} connected` : `${names.length} brokers connected`, tone: "neutral", connected: true };
@@ -150,18 +152,26 @@ export function indexCaption(index: StripIndex, nowMs: number): string | null {
 // --- Today's P&L ------------------------------------------------------------------------------------------------------
 
 export interface TodayPnl {
+  /** Booked + open; null while the open part is not known (never the booked figure passed off as the day's P&L). */
   total: number | null;
   booked: number | null;
-  /** Null while open positions have no live price (P&L at the entry price would be a made-up zero). */
+  /** 0 with no open positions; null while any open symbol has no live price (P&L at the entry price would be a made-up
+   * zero) or a symbol was converted from another currency. */
   open: number | null;
+}
+
+/** True when every open symbol is valued at a live price in rupees: the exposure's open P&L is real. */
+export function fullyPriced(exposure: PortfolioExposure): boolean {
+  if (exposure.price_source !== "ltp" || Object.keys(exposure.fx_rates_used ?? {}).length > 0) return false;
+  const priced = new Set(exposure.priced_symbols ?? []);
+  return (exposure.by_symbol ?? []).every((row) => priced.has(row.symbol));
 }
 
 export function todayPnl(exposure: PortfolioExposure | null | undefined): TodayPnl {
   if (!exposure) return { total: null, booked: null, open: null };
   const booked = exposure.realised_today;
-  const priced = exposure.price_source === "ltp" || exposure.open_positions === 0;
-  const open = priced ? exposure.unrealised_pnl : null;
-  return { total: booked + (open ?? 0), booked, open };
+  const open = exposure.open_positions === 0 ? 0 : fullyPriced(exposure) ? exposure.unrealised_pnl : null;
+  return { total: open === null ? null : booked + open, booked, open };
 }
 
 // --- Open positions ---------------------------------------------------------------------------------------------------
@@ -181,7 +191,8 @@ export interface PositionRow {
 /** The live price of each priced symbol, from the exposure's per-symbol notional: notional = Σ|qty| × price. */
 export function symbolPrices(positions: TradeRecord[], exposure: PortfolioExposure | null | undefined): Record<string, number> {
   const out: Record<string, number> = {};
-  if (!exposure || exposure.price_source !== "ltp") return out;
+  // A symbol converted from another currency is valued in rupees against an entry in its own currency: no P&L from it.
+  if (!exposure || exposure.price_source !== "ltp" || Object.keys(exposure.fx_rates_used ?? {}).length > 0) return out;
   const priced = new Set(exposure.priced_symbols ?? []);
   for (const row of exposure.by_symbol ?? []) {
     if (!priced.has(row.symbol)) continue;
@@ -297,7 +308,8 @@ export interface AttentionInput {
   broker: BrokerGateState;
   /** Raw token-status rows: some usable, some waiting for a login. */
   brokerRows: { broker_name: string; needs_login: boolean; account_label?: string }[] | null;
-  actions: AiAction[] | null;
+  /** Proposals waiting for a decision (GET /ai/actions?status=PROPOSED: the server leaves snoozed ones out). */
+  pending: AiAction[] | null;
   deployments: Deployment[] | null;
   risk: PaperRiskStatus | null;
   exposure: PortfolioExposure | null;
@@ -321,8 +333,8 @@ function minutesLeft(expires: string | null, nowMs: number): number | null {
  * the daily-loss lockout; a real exposure warning; unseen alerts; LIVE paused by the operator; e-mail not verified. */
 export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): AttentionRow[] {
   const rows: AttentionRow[] = [];
-  // Snoozed proposals stay out until they wake (as the pending list and the badge do).
-  const pending = (input.actions ?? []).filter((a) => a.status === "PROPOSED" && !(toMs(a.snoozed_until) > input.nowMs));
+  // Snoozed proposals stay out until they wake (the server's pending list already leaves them out; checked again here).
+  const pending = (input.pending ?? []).filter((a) => a.status === "PROPOSED" && !(toMs(a.snoozed_until) > input.nowMs));
   const entries = pending.filter((a) => a.action === "ENTRY");
   if (input.broker.kind === "login-needed") {
     const name = brokerDisplayName(input.broker.broker.broker_name);

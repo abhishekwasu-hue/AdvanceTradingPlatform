@@ -268,9 +268,6 @@ export function useBrokerLogin(refresh: () => void): BrokerLogin {
   return { busy, error, codeStep, login, submitCode };
 }
 
-/** "<broker>/<label>": the key of a login in progress (BrokerLogin.busy). */
-export const brokerLoginKey = keyOf;
-
 /**
  * Renders `children` only while the trader's broker session is usable; otherwise the gate (see the RULE above).
  * Needs the router (Connect goes to Settings) and AuthProvider, as every page inside the app shell has.

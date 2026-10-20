@@ -93,7 +93,10 @@ export interface DashboardData {
   oi: Loadable<OiBannerResponse[]>;
   exposure: Loadable<PortfolioExposure>;
   positions: Loadable<TradeRecord[]>;
+  /** The newest proposals of every status (today's signals). */
   actions: Loadable<AiAction[]>;
+  /** Every proposal waiting for a decision (Needs attention), read on its own so none is cut off by the newest-100 list. */
+  pending: Loadable<AiAction[]>;
   deployments: Loadable<Deployment[]>;
   risk: Loadable<PaperRiskStatus | null>;
   unread: Loadable<NotificationEntry[]>;
@@ -119,13 +122,14 @@ export function useDashboardData(enabled: boolean): DashboardData {
   const [exposure, r3] = usePolled(() => api.portfolioExposure(true), every(REFRESH_MS), enabled);
   const [positions, r4] = usePolled(api.listPositions, every(REFRESH_MS), enabled);
   const [actions, r5] = usePolled(() => api.aiActions(), every(REFRESH_MS), enabled);
+  const [pending, r12] = usePolled(() => api.aiActions("PROPOSED"), every(REFRESH_MS), enabled);
   const [deployments, r6] = usePolled(() => api.listDeployments(), every(REFRESH_MS), enabled);
   const [risk, r7] = usePolled(riskOrNone, every(REFRESH_MS), enabled);
   const [unread, r8] = usePolled(() => api.listNotifications(true), every(REFRESH_MS), enabled);
   const [status, r9] = usePolled(api.systemStatus, every(REFRESH_MS), enabled);
   const [summary, r10] = usePolled(api.getAnalyticsSummary, every(REFRESH_MS), enabled);
   const [channels, r11] = usePolled(api.listAlertChannels, once, enabled);
-  const reload = useCallback(() => { for (const r of [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11]) r(); },
-    [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11]);
-  return { strip, oi, exposure, positions, actions, deployments, risk, unread, status, summary, channels, reload };
+  const reload = useCallback(() => { for (const r of [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12]) r(); },
+    [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12]);
+  return { strip, oi, exposure, positions, actions, pending, deployments, risk, unread, status, summary, channels, reload };
 }

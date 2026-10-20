@@ -197,6 +197,19 @@ def test_without_a_broker_session_the_strip_answers_from_market_memory_of_this_o
     assert body["source"] == "memory" and body["broker"] is None
 
 
+def test_an_index_whose_captures_stopped_is_still_found_behind_many_newer_rows():
+    headers, me = _owner(_email("stopped"))
+    tenant = me["tenant_id"]
+    _remember(tenant, _cue("INDIA VIX", 13.42, 13.63, timedelta(days=2)))                   # the VIX captures stopped two days ago
+    newer = [dict(kind="SYMBOL", symbol=sym, exchange="NSE", timeframe="5min", source="fake", last_price=price + i, change_pct=0.1,
+                  payload_json="{}", captured_at=datetime.now(UTC) - timedelta(minutes=i + 1))
+             for i in range(40) for sym, price in (("NIFTY 50", 24800.0), ("NIFTY BANK", 53900.0))]    # 80 newer rows
+    _remember(tenant, *newer)
+    rows = _by_key(client.get(URL, headers=headers).json())
+    assert rows["INDIA VIX"]["source"] == "memory" and rows["INDIA VIX"]["ltp"] == 13.42
+    assert rows["NIFTY 50"]["ltp"] == 24800.0 and rows["NIFTY BANK"]["ltp"] == 53900.0          # each one's newest
+
+
 def test_a_session_not_logged_in_today_falls_back_too_and_nothing_known_is_null_never_zero(monkeypatch):
     headers, me = _owner(_email("expired"))
     _store_credentials(me, status=BrokerTokenStatus.EXPIRED.value)

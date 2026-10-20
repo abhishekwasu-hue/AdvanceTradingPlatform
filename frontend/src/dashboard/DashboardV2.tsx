@@ -82,9 +82,9 @@ export default function DashboardV2(_props: PageProps = {}) {
   const exposure = dataOf(data.exposure);
   const strip = dataOf(data.strip);
   const signals = useMemo(() => signalsToday(actions, now), [actions, now]);
-  const attentionKnown = data.actions.status !== "loading" && data.deployments.status !== "loading";
+  const attentionKnown = data.pending.status !== "loading" && data.deployments.status !== "loading";
   const attention = attentionKnown ? attentionRows({
-    nowMs: now, broker, brokerRows, actions, deployments, risk: dataOf(data.risk), exposure, unread: dataOf(data.unread),
+    nowMs: now, broker, brokerRows, pending: dataOf(data.pending), deployments, risk: dataOf(data.risk), exposure, unread: dataOf(data.unread),
     status: dataOf(data.status), emailVerified: user?.email_verified, approvalsPath,
   }) : null;
   const channels = dataOf(data.channels);
@@ -113,7 +113,7 @@ export default function DashboardV2(_props: PageProps = {}) {
         <>
           {setup && <SetupChipV2 {...setup} />}
           <MarketStripV2 strip={data.strip} oi={oiLines(dataOf(data.oi))} marketText={strip ? marketLabel(strip.market, now) : null}
-            broker={brokerChip(broker)} pnl={todayPnl(exposure)} nowMs={now} />
+            broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} />
           <div className="grid grid-cols-1 gap-space-4 lg:grid-cols-3 lg:items-start lg:gap-space-6">
             <div className="min-w-0 space-y-space-4 lg:col-span-2 lg:space-y-space-6">
               <NeedsAttentionV2 rows={attention} loginBroker={broker.kind === "login-needed" ? broker.broker : null} login={login} />

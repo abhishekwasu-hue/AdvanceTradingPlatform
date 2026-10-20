@@ -59,6 +59,8 @@ describe("UI2-2 market strip", () => {
     expect(brokerChip(LOGIN)).toEqual({ text: "Upstox · log in", tone: "warn", connected: false });
     expect(brokerChip({ kind: "loading" })).toBeNull();
     expect(partlyConnected([{ needs_login: false }, { needs_login: true }])).toBe("2 brokers · 1 needs login");
+    expect(brokerChip(CONNECTED, [{ needs_login: false }, { needs_login: true }])).toEqual({ text: "2 brokers · 1 needs login", tone: "warn", connected: true });
+    expect(brokerChip(CONNECTED, [{ needs_login: false }])?.text).toBe("Upstox connected");
     expect(partlyConnected([{ needs_login: true }, { needs_login: true }])).toBeNull();      // none usable: the login row says it
     expect(partlyConnected([{ needs_login: false }])).toBeNull();
   });
@@ -90,9 +92,23 @@ describe("UI2-2 market strip", () => {
     expect(signTone(null)).toBe("neutral");
   });
 
-  it("today's P&L: booked plus open; open unknown while positions have no live price", () => {
-    expect(todayPnl(exposure({ realised_today: 2540, unrealised_pnl: 4306.5, open_positions: 3 }))).toEqual({ total: 6846.5, booked: 2540, open: 4306.5 });
-    expect(todayPnl(exposure({ realised_today: 100, unrealised_pnl: 0, open_positions: 2, price_source: "entry" }))).toEqual({ total: 100, booked: 100, open: null });
+  it("today's P&L: booked plus open, only when every open symbol has a live price in rupees", () => {
+    const sym = (symbol: string) => ({ symbol, positions: 1, quantity: 1, notional: 1, pct_of_capital: 0, unrealised_pnl: 0, risk_at_stop: 0, strategies: [] });
+    // Every open symbol priced live: the day's P&L is booked + open.
+    expect(todayPnl(exposure({ realised_today: 2540, unrealised_pnl: 4306.5, open_positions: 2, price_source: "ltp",
+      by_symbol: [sym("A"), sym("B")], priced_symbols: ["A", "B"] }))).toEqual({ total: 6846.5, booked: 2540, open: 4306.5 });
+    // No open positions: open is 0, so the booked figure IS the day's P&L.
+    expect(todayPnl(exposure({ realised_today: 1200, unrealised_pnl: 0, open_positions: 0, price_source: "entry" })))
+      .toEqual({ total: 1200, booked: 1200, open: 0 });
+    // Before the broker login (valued at entry): the headline is unknown, the booked part stays.
+    expect(todayPnl(exposure({ realised_today: 100, unrealised_pnl: 0, open_positions: 2, price_source: "entry", by_symbol: [sym("A")] })))
+      .toEqual({ total: null, booked: 100, open: null });
+    // Only some symbols priced: unknown too.
+    expect(todayPnl(exposure({ realised_today: 100, unrealised_pnl: 50, open_positions: 2, price_source: "ltp",
+      by_symbol: [sym("A"), sym("B")], priced_symbols: ["A"] }))).toEqual({ total: null, booked: 100, open: null });
+    // A symbol converted from another currency: unknown.
+    expect(todayPnl(exposure({ realised_today: 0, unrealised_pnl: 50, open_positions: 1, price_source: "ltp", by_symbol: [sym("BTCUSDT")],
+      priced_symbols: ["BTCUSDT"], fx_rates_used: { "USD->INR": 84 } })).open).toBeNull();
     expect(todayPnl(null)).toEqual({ total: null, booked: null, open: null });
   });
 });
@@ -119,6 +135,8 @@ describe("UI2-2 open positions", () => {
     expect(rows[2].pnl).toBeCloseTo(-700, 6);
     expect(rows[3]).toMatchObject({ ltp: null, pnl: null, pnlPct: null });
     expect(positionRows(positions, { ...exp, price_source: "entry" }).every((r) => r.pnl === null)).toBe(true);
+    // A conversion from another currency: no price is derived (an INR value against a foreign-currency entry).
+    expect(symbolPrices(positions, { ...exp, fx_rates_used: { "USD->INR": 84 } })).toEqual({});
   });
 
   it("shows at most five", () => {
@@ -151,7 +169,7 @@ describe("UI2-2 active signals (today's entry proposals)", () => {
 });
 
 describe("UI2-2 needs attention", () => {
-  const base: AttentionInput = { nowMs: NOW, broker: CONNECTED, brokerRows: [upstox], actions: [], deployments: [], risk: null,
+  const base: AttentionInput = { nowMs: NOW, broker: CONNECTED, brokerRows: [upstox], pending: [], deployments: [], risk: null,
     exposure: null, unread: [], status: { maintenance_mode: false, maintenance_message: null, disabled_brokers: [] }, emailVerified: true,
     approvalsPath: "/copilot/watchtower" };
 
@@ -162,7 +180,7 @@ describe("UI2-2 needs attention", () => {
   it("orders the rows by urgency, says what happened, and gives one action each; at most five", () => {
     const rows = attentionRows({
       ...base, broker: LOGIN,
-      actions: [entry(2, "2026-10-19T05:12:00", "PROPOSED", {}, "2026-10-19T05:38:00"),
+      pending: [entry(2, "2026-10-19T05:12:00", "PROPOSED", {}, "2026-10-19T05:38:00"),
         entry(3, "2026-10-19T05:06:00", "PROPOSED", { symbol: "NIFTY BANK", direction: "SHORT", source: "scan" }, "2026-10-19T05:46:00"),
         entry(7, "2026-10-19T05:06:00", "PROPOSED", {}, null), { ...entry(8, "2026-10-19T05:00:00", "PROPOSED"), snoozed_until: "2026-10-19T06:30:00Z" }],
       deployments: [{ strategy_id: "mean_reversion", symbol: "BANKNIFTY", status: "PAUSED", pause_reason: "It hit your rule of 3 losses in a row at 10:21.", last_error: null } as Deployment],

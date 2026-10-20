@@ -81,3 +81,56 @@ def test_export_import_round_trip_is_all_or_nothing(monkeypatch):
     assert client.post("/api/charts/drawings/import", json=doc, headers=me).status_code == 409     # FINNIFTY has 3 + 3 > 4
     assert client.post("/api/charts/drawings", json={"symbol": "FINNIFTY", "drawing": _trend()}, headers=me).status_code == 201
     assert client.post("/api/charts/drawings", json={"symbol": "FINNIFTY", "drawing": _trend()}, headers=me).status_code == 409
+
+
+# --- UI2-4a1: the timeframe a drawing was made on; "Delete all" for a symbol ------------------------------------------
+
+def test_timeframe_is_stored_and_every_timeframe_still_lists_the_drawing():
+    me, _ = _owner("ui24a1-tf@example.com")
+    made = client.post("/api/charts/drawings", json={"symbol": "NIFTY 50", "exchange": "NSE_INDEX", "timeframe": "15min",
+                                                     "drawing": _trend()}, headers=me)
+    assert made.status_code == 201, made.text
+    assert made.json()["timeframe"] == "15min" and made.json()["exchange"] == "NSE_INDEX"
+    legacy = client.post("/api/charts/drawings", json={"symbol": "NIFTY 50", "exchange": "NSE_INDEX", "drawing": _trend()}, headers=me)
+    assert legacy.status_code == 201 and legacy.json()["timeframe"] is None                       # old clients send none
+    listed = client.get("/api/charts/drawings?symbol=NIFTY 50&exchange=NSE_INDEX", headers=me).json()
+    assert [d["timeframe"] for d in listed] == ["15min", None]                                    # not filtered by timeframe
+    for tf in drawings.TIMEFRAMES:
+        assert client.post("/api/charts/drawings", json={"symbol": "TCS", "timeframe": tf, "drawing": _trend()}, headers=me).status_code == 201
+    for bad in ("1h", "D", "2min", ""):
+        assert client.post("/api/charts/drawings", json={"symbol": "TCS", "timeframe": bad, "drawing": _trend()}, headers=me).status_code == 422
+    v2 = client.put(f"/api/charts/drawings/{made.json()['id']}", json={"version": 1, "drawing": _trend(1, 2)}, headers=me).json()
+    assert v2["timeframe"] == "15min"                                                              # an edit keeps it
+
+
+def test_delete_all_is_scoped_to_the_user_symbol_and_exchange_and_needs_confirm():
+    me, _ = _owner("ui24a1-all@example.com")
+    other_org, _ = _owner("ui24a1-all-other@example.com")
+
+    def make(headers, symbol="INFY", exchange="NSE", timeframe="5min"):
+        r = client.post("/api/charts/drawings", json={"symbol": symbol, "exchange": exchange, "timeframe": timeframe, "drawing": _trend()},
+                        headers=headers)
+        assert r.status_code == 201, r.text
+        return r.json()["id"]
+
+    mine = [make(me), make(me, timeframe="day"), make(me, timeframe="1min")]
+    locked = make(me)
+    client.post(f"/api/charts/drawings/{locked}/lock", json={"locked": True}, headers=me)
+    other_symbol, other_exchange = make(me, "TCS"), make(me, "INFY", "BSE")
+    theirs = make(other_org)
+
+    assert client.delete("/api/charts/drawings?symbol=INFY", headers=me).status_code == 400            # no confirm
+    assert client.delete("/api/charts/drawings?symbol=INFY&confirm=false", headers=me).status_code == 400
+    assert len(client.get("/api/charts/drawings?symbol=INFY", headers=me).json()) == 4
+    assert client.delete("/api/charts/drawings?symbol=INFY&confirm=true").status_code == 401
+
+    out = client.delete("/api/charts/drawings?symbol=infy&exchange=NSE&confirm=true", headers=me)
+    assert out.status_code == 200, out.text
+    assert out.json() == {"deleted": 3, "kept_locked": 1, "ids": mine}                                 # every timeframe
+    assert [d["id"] for d in client.get("/api/charts/drawings?symbol=INFY", headers=me).json()] == [locked]
+    assert [d["id"] for d in client.get("/api/charts/drawings?symbol=TCS", headers=me).json()] == [other_symbol]
+    assert [d["id"] for d in client.get("/api/charts/drawings?symbol=INFY&exchange=BSE", headers=me).json()] == [other_exchange]
+    assert [d["id"] for d in client.get("/api/charts/drawings?symbol=INFY", headers=other_org).json()] == [theirs]
+    # another user's "delete all" on the same symbol leaves mine alone
+    assert client.delete("/api/charts/drawings?symbol=INFY&confirm=true", headers=other_org).json()["deleted"] == 1
+    assert [d["id"] for d in client.get("/api/charts/drawings?symbol=INFY", headers=me).json()] == [locked]

@@ -5,6 +5,10 @@
 * Each kind declares how many anchors it needs and which coordinates (`t` time, `p` price) each one must carry.
 * Storage is per user and symbol, versioned (optimistic concurrency: an update names the version it edits; a stale
   edit is refused with 409, and undo/redo stay client-side over versions), lockable and soft-deleted.
+* UI2-4a1: a drawing records the timeframe it was made on (`timeframe`, optional; NULL for older drawings). It still
+  shows on every timeframe of its symbol (owner's brief, CHP-1); the record is kept for a later "only this timeframe".
+  `DELETE /api/charts/drawings?symbol=&exchange=&confirm=true` soft-deletes all of the caller's unlocked drawings on
+  one symbol ("Delete all"); locked ones are kept.
 * Export / import is a JSON document (`atp-drawings/1`); an import validates every drawing first and is all or nothing.
 * A drawing is a picture: nothing here places, changes or proposes an order (a "propose from drawing" action is a
   separate PAPER proposal, CH4+).
@@ -29,7 +33,10 @@ SCHEMA = "drawing/1"
 EXPORT_FORMAT = "atp-drawings/1"
 MAX_PER_SYMBOL = 500
 SYMBOL_RE = r"^[A-Za-z0-9 &._:-]{1,40}$"
-EXCHANGE_RE = r"^(NSE|BSE|NFO|BFO|MCX|CDS|CRYPTO|NYSE|NASDAQ)$"
+EXCHANGE_RE = r"^(NSE|BSE|NFO|BFO|MCX|CDS|CRYPTO|NYSE|NASDAQ|NSE_INDEX|BSE_INDEX)$"
+# The shared timeframe ids (1m 3m 5m 15m 30m 1H D W M); `week` and `month` arrive on the candle route in UI2-4a2.
+TIMEFRAMES = ("1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month")
+Timeframe = Literal["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"]
 
 # kind -> per-anchor required coordinates ("tp" both, "p" price only, "t" time only)
 ANCHORS: Dict[str, List[str]] = {
@@ -106,6 +113,7 @@ class CreateBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
     symbol: str = Field(pattern=SYMBOL_RE)
     exchange: str = Field(default="NSE", pattern=EXCHANGE_RE)
+    timeframe: Optional[Timeframe] = Field(default=None, description="the timeframe the drawing was made on")
     drawing: Drawing
 
 
@@ -133,7 +141,8 @@ router = APIRouter(prefix="/api/charts/drawings", tags=["charts"])
 
 def _as_dict(row: ChartDrawingRecord) -> Dict[str, Any]:
     return {"id": row.id, "symbol": row.symbol, "exchange": row.exchange, "kind": row.kind, "drawing": json.loads(row.drawing_json),
-            "version": row.version, "locked": row.locked, "updated_at": row.updated_at.isoformat() if row.updated_at else None}
+            "timeframe": row.timeframe, "version": row.version, "locked": row.locked,
+            "updated_at": row.updated_at.isoformat() if row.updated_at else None}
 
 
 def _norm(symbol: str) -> str:
@@ -154,10 +163,11 @@ async def _count(session: AsyncSession, user: User, symbol: str, exchange: str) 
         ChartDrawingRecord.deleted_at.is_(None))) or 0)
 
 
-def _new(user: User, symbol: str, exchange: str, drawing: Drawing) -> ChartDrawingRecord:
+def _new(user: User, symbol: str, exchange: str, drawing: Drawing, timeframe: Optional[str] = None) -> ChartDrawingRecord:
     now = datetime.now(timezone.utc)
     return ChartDrawingRecord(tenant_id=user.tenant_id, user_id=user.id, symbol=symbol, exchange=exchange, kind=drawing.kind,
-                              drawing_json=json.dumps(drawing.to_json()), version=1, locked=False, created_at=now, updated_at=now)
+                              drawing_json=json.dumps(drawing.to_json()), timeframe=timeframe, version=1, locked=False,
+                              created_at=now, updated_at=now)
 
 
 @router.get("")
@@ -175,10 +185,29 @@ async def create_drawing(body: CreateBody, user: User = Depends(get_current_user
     symbol = _norm(body.symbol)
     if await _count(session, user, symbol, body.exchange) >= MAX_PER_SYMBOL:
         raise HTTPException(status_code=409, detail=f"at most {MAX_PER_SYMBOL} drawings per symbol")
-    row = _new(user, symbol, body.exchange, body.drawing)
+    row = _new(user, symbol, body.exchange, body.drawing, body.timeframe)
     session.add(row)
     await session.commit()
     return _as_dict(row)
+
+
+@router.delete("")
+async def delete_all_drawings(symbol: str, exchange: str = "NSE", confirm: bool = False, user: User = Depends(get_current_user),
+                              session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """"Delete all": soft-deletes every one of the caller's own unlocked drawings on one symbol and exchange (every
+    timeframe). Locked drawings are kept and counted. Needs `confirm=true`, so a stray request on the collection URL
+    removes nothing. Another user's drawings are never touched."""
+    if not confirm:
+        raise HTTPException(status_code=400, detail="Deleting all drawings of a symbol needs confirm=true")
+    rows = list(await session.scalars(select(ChartDrawingRecord).where(
+        ChartDrawingRecord.user_id == user.id, ChartDrawingRecord.tenant_id == user.tenant_id, ChartDrawingRecord.symbol == _norm(symbol),
+        ChartDrawingRecord.exchange == exchange.strip().upper(), ChartDrawingRecord.deleted_at.is_(None))))
+    now = datetime.now(timezone.utc)
+    deleted = [r for r in rows if not r.locked]
+    for row in deleted:
+        row.deleted_at = row.updated_at = now
+    await session.commit()
+    return {"deleted": len(deleted), "kept_locked": len(rows) - len(deleted), "ids": [r.id for r in deleted]}
 
 
 @router.put("/{drawing_id}")
@@ -236,4 +265,4 @@ async def import_drawings(doc: ExportDoc, user: User = Depends(get_current_user)
     return {"imported": len(rows), "ids": [r.id for r in rows]}
 
 
-__all__ = ["router", "Drawing", "ANCHORS", "SCHEMA", "EXPORT_FORMAT", "MAX_PER_SYMBOL"]
+__all__ = ["router", "Drawing", "ANCHORS", "SCHEMA", "EXPORT_FORMAT", "MAX_PER_SYMBOL", "TIMEFRAMES"]

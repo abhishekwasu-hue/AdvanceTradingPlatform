@@ -30,11 +30,13 @@ DEFAULTS: Dict[str, Any] = {
     "max_image_bytes": 5 * 1024 * 1024,
     "max_image_width": 4096,
     "max_image_height": 4096,
-    "max_image_pixels": 4096 * 4096,       # the decompression-bomb limit, checked from the header before decoding
+    "max_image_pixels": 9_000_000,         # the decompression-bomb limit, checked from the header before decoding (a 4K screenshot is 8.3 M)
     "link_connect_timeout_seconds": 5,
     "link_read_timeout_seconds": 10,
     "link_total_timeout_seconds": 20,
     "link_max_redirects": 3,
+    # An analysis still "running" after this long is stale (a cancelled request, a restart): it may be retried or deleted
+    "running_timeout_minutes": 10,
     # Requests per user per minute on upload, link and analyze together
     "rate_limit_per_minute": 6,
     # The AI call
@@ -62,6 +64,7 @@ BOUNDS: Dict[str, tuple] = {
     "link_read_timeout_seconds": (1, 60),
     "link_total_timeout_seconds": (2, 120),
     "link_max_redirects": (0, 5),
+    "running_timeout_minutes": (2, 240),
     "rate_limit_per_minute": (1, 600),
     "max_output_tokens": (256, 16000),
     "estimate_input_tokens": (0, 200000),

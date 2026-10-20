@@ -2402,6 +2402,7 @@ class ChartAnalysisRecord(Base):
     billed_to_user_key: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False, index=True)
+    started_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)       # when the running analysis was claimed
     analysed_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
     deleted_at: Mapped[datetime | None] = mapped_column(_TZ_DATETIME, nullable=True)
 

@@ -62,9 +62,13 @@ alert form says so too). Annotations are drawn as an overlay on the user's own i
   the full address. The database row (`chart_analyses`): tenant, user, created_at, mode, source, status, the relative
   file path, the image hash and size, the result JSON, the provider / model / engine version, the cost, whether it
   ran on the user's own key.
+- **Running**: an analysis is claimed (`running`, `started_at`) before the AI call; an interrupted request ends it as
+  failed, and a row still running after `running_timeout_minutes` (default 10; a crash, a restart) is stale - it can
+  be analysed again, deleted and purged.
 - **Retention**: an admin setting, `retention_days` (default **30**, as the owner proposed). The daily retention job
   (`app.retention.service.run_retention`, run by the trading worker once per IST day outside market hours) deletes
-  expired images and results. **Delete** by the user removes the file and the result at once.
+  expired images and results, batch after batch until none is left; a file that could not be removed keeps its path on
+the row and is retried (never an orphaned file). **Delete** by the user removes the file and the result at once.
 - **Counters**: a deleted or expired row keeps only created_at, mode and cost (status `deleted`) until
   `counter_keep_days` (default 32), so deleting cannot reset a daily or monthly limit; then the row goes too.
 - **Account erasure** (`erase_user`) deletes the user's files and rows.
@@ -94,7 +98,8 @@ approximate prices; hybrid coordinates are time and price.
 | 8. Key levels | `key_levels[]` {kind area / line, name, side, state, price range} - a table on desktop, cards on a phone |
 
 Validation, whatever the engine returns: every text goes through the AI output filter (`app.ai.output_filter`); a text
-that reads as a call, advice or a guarantee is **withheld** and replaced by a neutral line. Enums, lengths, list sizes
+that reads as a call, advice or a guarantee - blocked, or one the filter would only frame as a specific call - is
+**withheld** and replaced by a neutral line. Enums, lengths, list sizes
 and coordinates are bounded; a point outside the image is dropped. Unknown keys (an `order`, a `score`, a confidence)
 are dropped. A missing story, trend, setup or scenario makes the analysis **failed** - nothing partial is shown.
 
@@ -151,6 +156,21 @@ trailing bytes gone). Every decode error is a clear 4xx.
   limit counts real bytes); the size enforced from Content-Length and while streaming;
 - the content type must be image/png or image/jpeg **and** the bytes must start with the PNG / JPEG signature.
 
+- internationalised and full-width host names (`bücher.de`, `ｅxample.com`) are turned into their IDNA / ASCII form
+  first (that form is resolved, checked, sent as `Host` and as the TLS name); a name that cannot be encoded, and any
+  other error while fetching, is an unreadable link ("Please upload a screenshot instead"), never a server error.
+
+**Not `EGRESS_ALLOWED_HOSTS`.** That operator allow-list is for destinations an organisation configures once (webhooks,
+SMS gateways). Here users paste images from any host, which no list could name; the protection is the public-address
+check on every hop plus the pinned connection.
+
+**The decode is CPU-bound** (about a second and some hundred MB for a large image): the API runs it in a worker thread,
+at most two at a time per API process, so the event loop never stalls. 16-bit greyscale is reduced to 8-bit first.
+
+**No lock or connection is held during the slow part**: the plan limit is checked once without a lock, the read
+transaction ends, the upload is read / the link fetched / the image decoded, and only the add itself takes a short
+per-user transaction advisory lock (`pg_advisory_xact_lock`) to re-check the limit and insert.
+
 Tests use a fake resolver and an `httpx.MockTransport`; nothing reaches the network.
 
 ## 7. The boundary to the private package
@@ -173,7 +193,8 @@ ATP's existing AI path, no new way of holding keys (`app/chart_analyze/engine.py
    the user's BYOK daily / monthly caps (hard stop), logged in `llm_calls` as billed to the user's key.
 2. Else **the organisation's AI provider** (`provider_for`: a plan with AI features, the data-sharing consent, the
    plan's monthly AI budget), metered like every AI call; the image goes through `MeteredProvider` (a pass-through
-   added for this feature). This feature's own monthly **cost cap** per plan tier is checked before the call.
+   added for this feature). This feature's own monthly **cost cap** per plan tier is checked before the call: every
+   running analysis reserves one estimate, and spend counts in the month the analysis ran (`analysed_at`).
 3. Neither: `no_ai` with what to do ("add your own key in Settings").
 
 The AI never places orders; the feature has no import of the execution, paper, broker or approval code (a test checks).
@@ -187,7 +208,8 @@ Admin settings (`GET / PUT /api/admin/chart-analyze/settings`, stored as the pla
 |---|---|
 | `retention_days` / `counter_keep_days` | 30 / 32 |
 | `max_image_bytes` | 5 MB (at most the API body limit, 8 MB) |
-| `max_image_width` / `max_image_height` / `max_image_pixels` | 4096 / 4096 / 4096 x 4096 |
+| `max_image_width` / `max_image_height` / `max_image_pixels` | 4096 / 4096 / 9 million (a 4K screenshot is 8.3 million) |
+| `running_timeout_minutes` | 10 |
 | `link_connect_timeout_seconds` / `link_read_timeout_seconds` / `link_total_timeout_seconds` | 5 / 10 / 20 |
 | `link_max_redirects` | 3 |
 | `rate_limit_per_minute` (per user: add + analyze) | 6 |

@@ -7,9 +7,10 @@
    pixel count (the decompression-bomb limit, `max_image_pixels`) are checked before a single pixel is decoded, and
    Pillow's own bomb warning is an error.
 4. `Image.verify()` on that object, then a fresh open and a full decode (verify leaves the object unusable).
-5. Re-encode: the EXIF orientation is applied, then the pixels are copied into a NEW image (RGB or RGBA) with no
-   metadata at all, and saved as PNG. EXIF, XMP, ICC profiles, text chunks, comments and any trailing bytes after the
+5. Re-encode: 16-bit greyscale becomes 8-bit first, the EXIF orientation is applied, the pixels are converted to RGB or
+   RGBA with every piece of metadata dropped, and saved as PNG. EXIF, XMP, ICC profiles, text chunks, comments and any trailing bytes after the
    image end are gone; the original bytes are never stored or sent anywhere.
+It is CPU-bound: the API runs it in a worker thread behind a small process-wide limit (routes.DECODE_SLOTS).
 Every decode error becomes `ImageRejected` with a message the user can act on (a 4xx at the API), never a 500.
 """
 import hashlib
@@ -62,6 +63,17 @@ def check_size(n: int, settings: Dict[str, Any]) -> None:
         raise ImageRejected(f"The image is larger than {max_bytes // 1024} KB. Crop it or save it smaller, then try again.", 413)
 
 
+_WIDE_MODES = ("I", "I;16", "I;16B", "I;16L", "I;16N", "F")
+
+
+def _eight_bit(img: Image.Image) -> Image.Image:
+    """A 16-bit or 32-bit greyscale image as 8-bit greyscale, early (one small copy instead of wide ones later)."""
+    if img.mode not in _WIDE_MODES:
+        return img
+    wide = img if img.mode in ("I", "F") else img.convert("I")
+    return wide.point(lambda v: v * (1 / 257)).convert("L")
+
+
 def sanitize(data: bytes, settings: Dict[str, Any]) -> CleanImage:
     max_bytes, max_w, max_h, max_pixels = _limits(settings)
     if not data:
@@ -87,11 +99,14 @@ def sanitize(data: bytes, settings: Dict[str, Any]) -> CleanImage:
                 if img.size != (width, height):
                     raise ImageRejected("The image could not be read.", 422)
                 img.load()
-                upright = ImageOps.exif_transpose(img)
-                mode = "RGBA" if ("A" in upright.getbands() or upright.mode == "P" and "transparency" in upright.info) else "RGB"
-                pixels = upright.convert(mode)
-                clean = Image.new(mode, pixels.size)
-                clean.paste(pixels)
+                orientation = img.getexif().get(0x0112)
+                frame = _eight_bit(img)
+                if orientation not in (None, 1):
+                    frame = ImageOps.exif_transpose(frame) or frame
+                mode = "RGBA" if ("A" in frame.getbands() or frame.mode == "P" and "transparency" in frame.info) else "RGB"
+                clean = frame.convert(mode) if frame.mode != mode else frame.copy()
+                # No metadata survives: PNG writes ICC, transparency and the rest only from `info` (and EXIF only when
+                # passed to save), so an empty `info` means pixels only.
                 clean.info = {}
                 out = io.BytesIO()
                 clean.save(out, format="PNG", optimize=False)

@@ -24,7 +24,8 @@ run time and are only rendered here. The blocks (docs/design/CHART_ANALYZE.md §
 
 Safety applied here, whatever the engine returns:
 - every text goes through the platform's AI output filter (`app.ai.output_filter`): a text that reads as a trade call,
-  advice or a guarantee is withheld (replaced by a neutral line), never shown;
+  advice or a guarantee - blocked, or one the filter would only frame as a specific call - is withheld (replaced by a
+  neutral line), never shown;
 - lengths, list sizes, enums and coordinates are bounded; an out-of-image point is dropped, not drawn off-screen;
 - no order field, no score, no confidence number survives (unknown keys are dropped);
 - the image-only label and the educational disclaimer are set here, so no engine can leave them out.
@@ -67,7 +68,9 @@ class ContractError(ValueError):
 def _screen(text: str) -> str:
     from app.ai import output_filter
     checked = output_filter.screen(text, where="chart_analyze")
-    return checked.text if checked.ok else WITHHELD
+    # A blocked text AND a text the filter would only frame as a specific call (an action next to a price) are withheld:
+    # this page describes conditions, it never carries a call, framed or not.
+    return WITHHELD if (not checked.ok or checked.framed) else checked.text
 
 
 def text(value: Any, limit: int = TEXT_MAX) -> str:

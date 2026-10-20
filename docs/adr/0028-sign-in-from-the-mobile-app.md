@@ -497,6 +497,27 @@ None of this touches an order path. The app uses the same approval routes as the
 never stands between a user and the server-side protective exits, which run whatever the phone does, and the password
 sign-in always remains available.
 
+### 17. Requirements carried into the implementation PRs (security review of 925f716)
+
+The reuse PR and the B1 PR must also do the following; each gets a test.
+
+1. **The family id is stored hashed.** `token_family` holds SHA-256(family_id), and the lookup hashes the parsed value,
+   so a database or backup reader cannot revoke every live session with `<family>.anything`. The family id is never
+   returned by any API (`GET /api/auth/sessions` included) and joins the never-logged list (section 15). Hash
+   comparisons use `hmac.compare_digest`.
+2. **Strict token format before any lookup.** A new-format token is exactly 22 urlsafe characters, a dot, then the
+   secret's fixed length; anything else is a 401 with no database lookup. `RefreshRequest.refresh_token` has a length
+   cap.
+3. **Retry once at once on a network error everywhere**, not only in the B3 plugin: the B1 JS native path and the web
+   `tryRefresh` retry the same token immediately, so a lost response does not become a later previous-after-window
+   revoke with a security notification.
+4. **Optional:** on a grace-superseded hit on the web, notify when the request's IP or user agent differs from the
+   session row's last rotator (`sessions.py:113-117`); two tabs share both, so a mismatch points to a real thief.
+5. **Wording for the rollout:** the reuse PR also changes the token format for everyone and revokes on
+   grace-superseded hits (not only already-invalid tokens); the one-time revoke of older sessions ("everyone signs in
+   once") is a firm step, not optional, because with one beta user it costs one sign-in and closes the old-format gap;
+   every grace rotation resets `last_used_at`, so the grace window slides - harmless under the family scheme.
+
 ## Tests to add
 
 Reuse PR (decision 1), all sessions:

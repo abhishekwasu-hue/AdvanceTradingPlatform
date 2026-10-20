@@ -8,7 +8,6 @@
 import { Layers, LayoutGrid, Play, Save } from "lucide-react";
 import { DataTierBadge } from "../components/DataTierBadge";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api/client";
 import { ApiError } from "../api/errors";
 import { Button, cx, Dialog } from "../components/primitives";
 import { useToast } from "../components/Toast";
@@ -28,6 +27,7 @@ import { LibraryTools } from "../screener/LibraryTools";
 import { WatchlistPicker } from "../screener/WatchlistPicker";
 import { isTaxonomy, type Taxonomy, type TaxScreen } from "../screener/taxonomy";
 import "../screener/screener.css";
+import { useFeatures } from "../ui/useFeatures";
 
 const VALIDATE_DELAY_MS = 350;
 /** D2 live counts: a preview run (not stored) once the trader pauses editing, on bars the server caches per symbol. */
@@ -69,17 +69,19 @@ export default function ScreenerPage(_props: PageProps) {
   // the taxonomy hides the Legends screens and nothing changes.
   const [legends, setLegends] = useState<LegendsLibrary | null>(null);
   // U2 (flag `screener_builder_u2`): formula blocks, and Legends / breakout screens open in the builder.
-  const [builderU2, setBuilderU2] = useState(false);
+  // UI2-0: this page's flags come from the app's single /system/features read.
+  const features = useFeatures();
+  const builderU2 = features.on("screener_builder_u2");
   // U9 TX2 (flag `screener_tx2`): mirrors and watch lists; while the flag is off the calls fail and nothing shows.
   const [mirrors, setMirrors] = useState<MirrorsResponse | null>(null);
   const [watchLists, setWatchLists] = useState<WatchListsResponse | null>(null);
   const [toolsOpen, setToolsOpen] = useState(false);
   const mirrorMap = useMemo(() => mirrorsByScreen(mirrors), [mirrors]);
   // S10 J (flag `screener_etf`): the ETF screen in a dialog.
-  const [etfOn, setEtfOn] = useState(false);
+  const etfOn = features.on("screener_etf");
   const [etfOpen, setEtfOpen] = useState(false);
   // AMW-2 (flag `watchlists`): "My watchlists" in the universe column.
-  const [watchlistsOn, setWatchlistsOn] = useState(false);
+  const watchlistsOn = features.on("watchlists");
 
   useEffect(() => {
     screenerApi.registry().then((r) => setRegistry(r.entries)).catch((e: unknown) => setLoadError(errorText(e)));
@@ -87,9 +89,6 @@ export default function ScreenerPage(_props: PageProps) {
     screenerApi.legends().then((l) => setLegends(isLegends(l) ? l : null)).catch(() => setLegends(null));
     screenerApi.libraryMirrors().then((m) => setMirrors(isMirrors(m) ? m : null)).catch(() => setMirrors(null));
     screenerApi.watchLists().then((w) => setWatchLists(isWatchLists(w) ? w : null)).catch(() => setWatchLists(null));
-    api.myFeatures().then((f) => {
-      setBuilderU2(Boolean(f.screener_builder_u2)); setEtfOn(Boolean(f.screener_etf)); setWatchlistsOn(Boolean(f.watchlists));
-    }).catch(() => { setBuilderU2(false); setEtfOn(false); setWatchlistsOn(false); });
   }, []);
 
   // A gallery card opens in the builder when this page knows how to build its source (the U5 starters today; the

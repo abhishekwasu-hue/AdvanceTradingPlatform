@@ -294,6 +294,42 @@ test.describe("v2 broker gate on data pages", () => {
     await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
   });
 
+  test("flag on, flags 1 s late: the waiting screen, then the gate - never ungated content", async ({ page }) => {
+    await open(page, "/settings", "light", { features: { ui_v2: true }, brokers: [] });
+    await page.route(/\/api(?:\/v1)?\/system\/features$/, async (route) => {
+      await new Promise((r) => setTimeout(r, 1000));
+      await route.fulfill({ json: { ui_v2: true } });
+    });
+    // Record every state the page passes through: today's shell (its menu button) must never appear on a data page.
+    await page.addInitScript(() => {
+      const seen: string[] = [];
+      (window as unknown as { __seen: string[] }).__seen = seen;
+      new MutationObserver(() => {
+        if (document.querySelector("[aria-label='Open navigation menu']")) seen.push("today");
+        if (document.querySelector("[data-shell='waiting']")) seen.push("waiting");
+        if (/sample/i.test(document.body?.innerText ?? "")) seen.push("sample");
+      }).observe(document, { childList: true, subtree: true });
+    });
+    await page.goto("/positions");
+    await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
+    const seen = await page.evaluate(() => (window as unknown as { __seen: string[] }).__seen);
+    expect(seen).toContain("waiting");
+    expect(seen).not.toContain("today");
+    expect(seen).not.toContain("sample");
+  });
+
+  test("flags that never answer: today's shell within about 3 s, not a blank screen forever (review R2-1)", async ({ page }) => {
+    await open(page, "/settings", "light", { brokers: [] });
+    await page.route(/\/api(?:\/v1)?\/system\/features$/, () => new Promise(() => undefined));   // never answers
+    const started = Date.now();
+    await page.goto("/positions");
+    await expect(page.locator("[data-shell='waiting']")).toBeVisible();
+    await expect(page.locator("[data-shell='waiting']").getByText("Loading")).toBeVisible();     // visible, not only for readers
+    await expect(page.getByRole("button", { name: "Open navigation menu" })).toBeVisible({ timeout: 6_000 });
+    expect(Date.now() - started).toBeLessThan(6_000);
+    await expect(page.locator("[data-shell='waiting']")).toHaveCount(0);
+  });
+
   test("a failed flags read keeps today's shell (the kill switch)", async ({ page }) => {
     await open(page, "/settings", "light", { brokers: [] });                            // /system/features answers 404
     await page.goto("/option-chain");

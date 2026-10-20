@@ -238,6 +238,9 @@ export async function tryRefresh(): Promise<boolean> {
   return refreshInFlight;
 }
 
+/** UI2-1: GET /system/features gives up after this long (see myFeatures). */
+export const FEATURES_TIMEOUT_MS = 10_000;
+
 /** P1.1: `fetch` itself rejects (offline, DNS, the server down) with a bare TypeError - turn it into a sentence. */
 async function send(url: string, init?: RequestInit): Promise<Response> {
   try {
@@ -765,7 +768,11 @@ export const api = {
   resendVerification: () => request<VerificationSendResult>("/auth/verify-email/resend", { method: "POST" }),
   verifyEmail: (token: string) => request<UserResponse>(`/auth/verify-email/${encodeURIComponent(token)}`, { method: "POST" }),
   adminVerifyEmail: (memberId: number) => request<{ id: number; email_verified: boolean }>(`/team/members/${memberId}/verify-email`, { method: "POST" }),
-  myFeatures: () => request<TenantFeatures>("/system/features"),
+  // UI2-1 review R2-1: the shell waits on this read; a server that never answers makes it fail (and so answer "off",
+  // today's shell) instead of hanging. AbortSignal.timeout is missing only in old browsers (no limit there; the shell's
+  // own SHELL_WAIT_MS cap still applies).
+  myFeatures: () => request<TenantFeatures>("/system/features",
+    typeof AbortSignal !== "undefined" && typeof AbortSignal.timeout === "function" ? { signal: AbortSignal.timeout(FEATURES_TIMEOUT_MS) } : undefined),
   adminFlags: () => request<FeatureFlags>("/admin/controls/flags"),
   adminSetFlag: (name: string, on: boolean, tenants: number[] = []) =>
     request<FeatureFlags>(`/admin/controls/flags/${name}`, { method: "PUT", body: JSON.stringify({ on, tenants }) }),

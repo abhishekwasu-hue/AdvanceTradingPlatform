@@ -12,6 +12,8 @@ import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
 import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
 import { flagOffFallback, shellMode } from "./shell/aliases";
+import ShellWaitingV2 from "./shell/ShellWaitingV2";
+import { useWaitCap } from "./shell/shellWait";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./shell/common";
 import { setV2ThemeDefault } from "./theme";
 import { FeaturesProvider, useFeatures, useUiV2, v2ThemeDefaultFrom } from "./ui/useFeatures";
@@ -212,24 +214,17 @@ function Shell() {
   const features = useFeatures();
   const v2 = useUiV2();
   const location = useLocation();
-  const mode = shellMode({ v2, authLoading: loading, signedIn: !!user, featuresLoaded: features.loaded, pathname: location.pathname });
+  const known = { v2, authLoading: loading, signedIn: !!user, featuresLoaded: features.loaded, pathname: location.pathname };
+  // The wait is bounded (review R2-1): after SHELL_WAIT_MS, "not known" counts as "off" - today's shell.
+  const capped = useWaitCap(shellMode(known) === "wait");
+  const mode = shellMode({ ...known, capped });
   if (mode === "today") return <AppShell />;
-  if (mode === "wait") return <ShellWaiting />;
+  if (mode === "wait") return <ShellWaitingV2 />;
   if (mode === "fallback") return <Navigate to={`${flagOffFallback(location.pathname)}${location.search}`} replace />;
   return (
     <ErrorBoundary title="The app">
-      <Suspense fallback={<ShellWaiting />}><AppShellV2 /></Suspense>
+      <Suspense fallback={<ShellWaitingV2 />}><AppShellV2 /></Suspense>
     </ErrorBoundary>
-  );
-}
-
-/** UI2-1: a neutral screen while it is not yet known which shell this organisation uses (data pages only; see
- * shellMode) - no page content, so never sample data in place of real data. */
-function ShellWaiting() {
-  return (
-    <div className="min-h-screen bg-surface" aria-busy="true" data-shell="waiting">
-      <span className="sr-only" role="status">Loading</span>
-    </div>
   );
 }
 

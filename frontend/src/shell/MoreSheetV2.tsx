@@ -121,8 +121,9 @@ export interface MoreSheetV2Props {
 export default function MoreSheetV2({ open, onOpenChange, ctx, current, onHelp, onFeedback }: MoreSheetV2Props) {
   const [query, setQuery] = useState("");
   const panel = useRef<HTMLDivElement>(null);
+  // Closed by a choice or a route change too: the search starts empty next time.
   useEffect(() => { if (!open) setQuery(""); }, [open]);
-  const returnFocus = useReturnFocus(open, () => document.querySelector<HTMLElement>("[data-bottom-nav-v2] button"));             // closed by a choice or a route change too
+  const returnFocus = useReturnFocus(open, () => document.querySelector<HTMLElement>("[data-bottom-nav-v2] button"));
   const close = () => onOpenChange(false);
   // A tap on the bottom bar is not "outside": More toggles the sheet itself, and a page link navigates (the shell
   // closes the sheet on every route change).

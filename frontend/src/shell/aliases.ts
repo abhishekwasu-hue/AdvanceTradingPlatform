@@ -53,14 +53,18 @@ export function needsBrokerGate(pathname: string): boolean {
  * - "v2": the flag is known and on;
  * - "wait": not known yet (auth still checking, or a signed-in user's flags not answered) on a data page - a neutral
  *   loading screen, so a ui_v2 organisation never glimpses today's page (which may show sample data) before its
- *   flags arrive; bounded by the features call, and a failed call answers "off" (today's shell, the kill switch);
+ *   flags arrive; at most SHELL_WAIT_MS (`capped`), and a failed call answers "off" (today's shell, the kill switch);
  * - "fallback": the flag is off and this is a v2-only address (see flagOffFallback);
  * - "today": today's shell, exactly as before.
  */
 export type ShellMode = "v2" | "wait" | "fallback" | "today";
-export function shellMode(s: { v2: boolean; authLoading: boolean; signedIn: boolean; featuresLoaded: boolean; pathname: string }): ShellMode {
+export function shellMode(s: {
+  v2: boolean; authLoading: boolean; signedIn: boolean; featuresLoaded: boolean; pathname: string;
+  /** The wait has lasted SHELL_WAIT_MS (shellWait.ts): treat "not known" as "off", like a failed flags read. */
+  capped?: boolean;
+}): ShellMode {
   if (s.v2) return "v2";
-  const unknown = s.authLoading || (s.signedIn && !s.featuresLoaded);
+  const unknown = !s.capped && (s.authLoading || (s.signedIn && !s.featuresLoaded));
   if (flagOffFallback(s.pathname)) return unknown ? "wait" : "fallback";
   if (unknown && needsBrokerGate(s.pathname)) return "wait";
   return "today";

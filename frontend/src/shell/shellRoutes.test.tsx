@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DATA_PAGES } from "../ui/dataPages";
+import { renderToStaticMarkup } from "react-dom/server";
+import { afterEach, vi } from "vitest";
 import { shellMode } from "./aliases";
+import ShellWaitingV2 from "./ShellWaitingV2";
+import { SHELL_WAIT_MS, startWaitCap } from "./shellWait";
 import { DEFAULT_SYMBOL, chartsSymbol } from "./ChartsPageV2";
 import { V2_ALIASES, chartsPath, flagOffFallback, routerPath, chartsSymbolFromPath, isGatedPath, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 
@@ -147,5 +151,48 @@ describe("UI2-1 review M3: which shell, while the flags are not known yet", () =
   it("a v2-only address goes back to today's address once the flag is known off", () => {
     expect(shellMode({ ...base, pathname: "/settings/account" })).toBe("fallback");
     expect(shellMode({ ...base, featuresLoaded: false, pathname: "/settings/account" })).toBe("wait");
+  });
+});
+
+describe("UI2-1 review R2-1: the wait is bounded", () => {
+  afterEach(() => { vi.useRealTimers(); });
+  const pending = { v2: false, authLoading: false, signedIn: true, featuresLoaded: false, pathname: "/positions" };
+
+  it("waits, then falls to today's shell after SHELL_WAIT_MS when the flags never answer", () => {
+    vi.useFakeTimers();
+    let capped = false;
+    const cancel = startWaitCap(() => { capped = true; });
+    expect(shellMode({ ...pending, capped })).toBe("wait");
+    vi.advanceTimersByTime(SHELL_WAIT_MS - 1);
+    expect(shellMode({ ...pending, capped })).toBe("wait");
+    vi.advanceTimersByTime(1);
+    expect(capped).toBe(true);
+    expect(shellMode({ ...pending, capped })).toBe("today");                            // like a failed flags read
+    expect(shellMode({ ...pending, authLoading: true, signedIn: false, capped })).toBe("today");   // auth hanging too
+    expect(shellMode({ ...pending, pathname: "/settings/account", capped })).toBe("fallback");
+    cancel();
+  });
+
+  it("flags that arrive before the cap give the v2 shell, and the cap never fires", () => {
+    vi.useFakeTimers();
+    let capped = false;
+    const cancel = startWaitCap(() => { capped = true; });
+    vi.advanceTimersByTime(1000);
+    expect(shellMode({ ...pending, capped })).toBe("wait");
+    cancel();                                                                          // the wait ended: flags known
+    expect(shellMode({ ...pending, featuresLoaded: true, v2: true, capped })).toBe("v2");
+    vi.advanceTimersByTime(SHELL_WAIT_MS * 2);
+    expect(capped).toBe(false);
+    expect(SHELL_WAIT_MS).toBe(3000);
+  });
+
+  it("the waiting screen shows a visible, neutral loading indicator and no page content", () => {
+    const html = renderToStaticMarkup(<ShellWaitingV2 />);
+    expect(html).toContain('data-shell="waiting"');
+    expect(html).toContain('role="status"');
+    expect(html).toContain("animate-spin");
+    expect(html).toMatch(/>\s*Loading\s*</);
+    expect(html).not.toContain("sr-only");
+    expect(html).not.toMatch(/<main|<nav/);
   });
 });

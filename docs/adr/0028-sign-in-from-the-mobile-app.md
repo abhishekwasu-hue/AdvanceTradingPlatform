@@ -1,6 +1,6 @@
 # ADR-0028: Sign-in from the mobile app - an origin-selected refresh token in the body, held natively behind an unlock
 
-**Date:** 2026-10-20 · **Status:** Proposed (mobile B1, with B3 for storage; revised after the security review of
+**Date:** 2026-10-20 · **Status:** Proposed (mobile B1, with B3 for storage; revised after two security review rounds of
 PR #290) · **Phase:** mobile Phase B
 
 Plan: `docs/design/MOBILE_APP_PLAN.md` (PR #289), §4.3 "Sign-in, cookies and CORS in the app", §5.2 (device rows,
@@ -200,31 +200,61 @@ detection fix (decision 1), which ships as its own code PR because it hardens th
 
 ### 1. Detect reuse of any retired token (separate code PR, before B1; all sessions)
 
-**Choice: a retired-token table**, `user_session_retired_tokens` (`id`, `session_id` FK to `user_sessions` ON DELETE
-CASCADE, `tenant_id`, `token_hash` String(64) unique, `reason` String(24), `retired_at`), one Alembic migration.
+**Choice: a token family id carried in the token.** Each session gets a random 128-bit family id, and every refresh
+token of that session has the form `<family_id>.<secret>`.
 
-- Every rotation inserts the hash it retires, with reason `rotated` (the holder was given a successor). A grace
-  rotation also inserts the token issued in between, with reason `superseded_in_grace` (its holder may never have seen
-  a successor).
-- Lookup order in `rotate_refresh_token`: current hash, then previous hash (grace rules as today), then the retired
-  table. A hit in the retired table for a live session is reuse.
-- **Reuse handling:** a `rotated` hit, a previous-hash hit after the grace window, and any hit on a native session
-  revoke the session, write an audit row `refresh_token_reuse` (session id and reason, never a token) and send the user
-  a SECURITY notification ("You were signed out on a device because its sign-in was used from two places. If this was
-  not you, change your password."). A `superseded_in_grace` hit on a **web** session keeps today's plain 401 without a
-  revoke, because two browser tabs refreshing at once can legitimately produce it; the native client sends one refresh
-  at a time, so on a native session it can only mean a replay.
-- Effect on the two attacks above: after two thief rotations, the real client's Tn is a `rotated` hit, so the session
-  is revoked and the user told; a grace replay retires the holder's token as `superseded_in_grace`, so the holder's next
-  refresh (native) revokes the session and the thief's tokens die with it. The thief's window is at most until the real
-  client's next refresh.
-- **Size and clean-up:** at most 1000 rows per session (the oldest pruned at insert); rows of a revoked or expired
-  session are deleted by the retention sweep after 7 days. A token older than the kept rows gets a plain 401.
-- **Rejected alternative: self-identifying tokens** (`<sid>.<generation>.<secret>`, an unknown secret for a known live
-  session = reuse). It needs no history, but session ids are sequential integers, so anyone could send `<sid>.x.y` and
-  revoke any live session (a denial of service) unless the token is MAC'd with a server key, which adds key handling and
-  a token format migration. The table needs neither: a hit proves the caller held a real, previously issued token.
-- `test_sessions.py:58-61` stays as it is for web sessions; a native twin asserts the revoke.
+- **Schema** (one Alembic migration, no new table): `user_sessions.token_family` (String(32), unique, nullable for rows
+  created before the change) and `user_sessions.grace_superseded_hash` (String(64), nullable, not unique; see the grace
+  rule). `refresh_token_hash` and `previous_token_hash` stay as they are and hold the SHA-256 of the whole token.
+- **Issue:** `start_session` draws the family id with `secrets.token_urlsafe(16)` (128 bits) and the secret as today
+  (`secrets.token_urlsafe(48)`). `token_urlsafe` never produces a `.`, so the format is unambiguous. Every rotation
+  keeps the family id and draws a new secret.
+- **Lookup:** parse the family id, load the session by `token_family` (unique index, row lock as today,
+  `sessions.py:82`). Then:
+  - hash equals `refresh_token_hash`: normal rotation;
+  - hash equals `previous_token_hash` and the last rotation was within the grace window: grace rotation (below);
+  - **any other secret under a known, live family is reuse**, at any depth, with no history kept: the previous token
+    after the window, a token from ten or ten thousand rotations ago, or a token retired by a grace rotation.
+  - No session with that family id (or a revoked or expired one): plain 401, as today.
+- **Grace rotation, specified for the family scheme:** within `REFRESH_REUSE_GRACE_SECONDS` of a rotation, the previous
+  token may rotate once more from the same row (two tabs, a retried request). The token issued in between is retired by
+  that rotation; its hash is written to `grace_superseded_hash` (one nullable column, overwritten each time, never
+  unique, so the two-tab path cannot hit a constraint). `previous_token_hash` keeps the presented token, as today
+  (`sessions.py:104-107`). A later presentation of the token retired in between is "another secret under a known live
+  family", so it is reuse like any other.
+- **Reuse handling, every session, web included:** revoke the session, write an audit row `refresh_token_reuse`
+  (session id, client kind and whether the hash matched `grace_superseded_hash`, never a token), and notify:
+  - native session: a SECURITY notification worded so a lost connection is not read as an attack: "ATP signed you out
+    on your phone because its sign-in was used twice. This can happen after a lost connection; if it happens again or
+    you did not expect it, change your password.";
+  - web session, hit on `grace_superseded_hash`: no notification (two tabs racing produce it; the browser was already
+    getting a 401 today, and the shared cookie jar means nothing usable is lost by revoking);
+  - web session, any other reuse: the same SECURITY notification, worded for "a browser".
+- **Effect on the attacks in Context item 6:** after any number of thief rotations, the real client's next refresh
+  presents an unknown secret under the live family, so the session is revoked and the user told. A grace replay retires
+  the holder's token; the holder's next refresh revokes the session. Nothing an attacker does can push the holder's
+  token out of reach, because nothing is pruned. The thief's window is at most until the real client's next refresh
+  (15 minutes while the app is open).
+- **Why the family id needs no MAC key:** it is 128 random bits and only ever travels inside a real token of that
+  session, so guessing one is not feasible. Anyone who sees any token of the session (current or retired, for example
+  one leaked into a log) can revoke that session. That is a denial of service on one session that requires a leaked
+  token, and revoking is the safe outcome of a leak.
+- **Old-format tokens** (issued before the change, no `.`) keep today's checks (current and previous hash) until their
+  next rotation, which assigns a family id and returns a new-format token. A stolen old-format token that has already
+  been rotated past stays undetected, as today; the rollout closes that gap (step 1).
+- **Rejected alternatives:**
+  - *A retired-token table* (the previous revision of this ADR): any cap on rows lets a thief flush the holder's token by
+    rotating past the cap (at 60 refreshes per minute per IP, 1000 rows take about 17 minutes), which brings silent
+    eviction back for web and app alike; never pruning a live session's rows needs a rotation-rate ceiling and grows
+    with use. The family id gives unlimited depth with one column.
+  - *`<sid>.<generation>.<secret>`*: session ids are sequential integers, so anyone could send `<sid>.x.y` and revoke
+    any live session unless the token is MAC'd with a server key.
+- **Cost on the hot path:** a refresh still makes one locked read of one row by a unique index (`token_family` instead
+  of `refresh_token_hash`) and one update of that row; no extra insert. Measured under load before production
+  (rollout step 1).
+- **Tests change on purpose:** `test_sessions.py:58-61` today asserts that the token retired by a grace rotation gets a
+  plain 401 and the session lives on (`/me` 200 at line 62). After this change the same presentation revokes the session
+  (401, then `/me` 401), with an audit row and no notification for a web session.
 
 ### 2. Configuration (`backend/app/core/config.py`, `docker-compose.yml`, `.env.example`)
 
@@ -238,7 +268,13 @@ CASCADE, `tenant_id`, `token_hash` String(64) unique, `reason` String(24), `reti
 - `config_problems` (`config.py:353-372`) in production and staging refuses any `NATIVE_APP_ORIGINS` entry that is `*`,
   `null`, has a path, query, fragment or user info, or uses `http://`; and any entry that, **after normalising**
   (lowercase scheme and host, default port removed, no trailing slash), equals a normalised `ALLOWED_ORIGINS` entry or
-  the origin of `FRONTEND_URL`. The web origin must never receive a body token.
+  the origin of `FRONTEND_URL`. `FRONTEND_URL` defaults to `/` (`config.py:118`); the comparison uses it only when it
+  is an absolute `http(s)://` URL and skips a relative value. The web origin must never receive a body token.
+- **Changing `NATIVE_APP_ORIGINS` is a transition, not a swap.** A native session's next refresh from an origin that
+  is no longer listed would be classified web, and channel binding (decision 5) would revoke every app session at
+  once. So a new origin (a distinctive `server.hostname`, decision 13, or Phase C) is **added** first, the app update
+  that uses it ships, and the old origin is removed only after every install has updated or `NATIVE_SESSION_MAX_DAYS`
+  has passed. The B1 PR's upgrade notes say this.
 
 ### 3. Feature flag and kill switch
 
@@ -250,6 +286,9 @@ CASCADE, `tenant_id`, `token_hash` String(64) unique, `reason` String(24), `reti
   rotates, and turning the flag back on lets the same token work. (Reuse handling from decision 1 still revokes on a
   retired token, flag or not, because that is a theft response, not a sign-in.) Access tokens already issued live out
   their 15 minutes; "Sign out everywhere" ends them at once.
+- **The client keeps its stored token on this 403.** `native_app_signin_disabled` is not a sign-out: the app shows
+  "Sign-in from the app is switched off for your organisation; use ATP in the browser" (with the browser link, so
+  positions and exits stay reachable) and does not wipe the stored token, which works again when the flag is back on.
 - With `NATIVE_APP_ORIGINS` empty, no request is ever native and nothing changes.
 
 ### 4. Client kind, decided at every token-issuing site
@@ -277,14 +316,15 @@ login, MFA, refresh, password change and logout.
 In this order, with no write before step 5:
 1. **Carrier.** A native request reads the token **only from the body** and ignores any cookie; a web request keeps
    today's order (`routes.py:401`).
-2. **Lookup** (read-only): current hash, previous hash, retired table (decision 1). Nothing found or session not live:
-   401.
+2. **Lookup** (read-only apart from the row lock): by family id for a new-format token, by hash for an old-format one
+   (decision 1). No session, or a session not live: 401.
 3. **Channel binding.** A session refreshes only through the channel it was created on. A `native` session's token on
    the web channel, or a `web` session's token on the native channel, is treated as theft: revoke, audit
    `refresh_token_wrong_channel`, SECURITY notification, 401. No legitimate client crosses channels (the web never
    holds a native token; the app never holds a web token). This cannot be abused for denial of service, because it
    needs a real token.
-4. **Reuse** (decision 1): revoke, audit, notify, 401.
+4. **Reuse** (decision 1, any secret under the live family other than the current one or a grace-window previous
+   one): revoke, audit, notify as decision 1 says, 401.
 5. **Kill switch** (decision 3): native and the flag off for the session's tenant: 403, nothing changed.
 6. **Rotate.** For a native session `expires_at` becomes the earlier of now plus `NATIVE_REFRESH_TOKEN_DAYS` and
    `created_at` plus `NATIVE_SESSION_MAX_DAYS`. A native 401 clears no cookie (there is none).
@@ -328,6 +368,19 @@ requests (decision 9); it matters for the WebView's ordinary API calls.
   returns **only the access token** (and the MFA challenge) to JavaScript. Injected script can then still obtain fresh
   access tokens while the app is open and unlocked (as web XSS can by riding the cookie), but can never read or copy the
   long-lived refresh token.
+  - **The plugin takes no target from JavaScript.** The API origin is compiled in (`BuildConfig`, generated from
+    `ATP_APP_DOMAIN` at build time, `https://` only, refused if empty or an IP, as plan §4.2). No plugin method accepts
+    a URL, host, path or header from JS; each method calls one fixed auth path. Otherwise injected script could point
+    the plugin at its own server and receive the refresh token in a request body.
+  - **No method returns, exports or forwards the refresh token** (no "get token", no debug dump, no event carrying it,
+    no logging of it). The only outputs are the access token, its expiry, the MFA challenge and error codes.
+  - **Redirects are off for the auth calls** (`instanceFollowRedirects = false` or the HTTP client's equivalent): a 307
+    or 308 would re-send the body, refresh token included, to wherever the redirect points. Any 3xx is an error.
+  - **Retry on a network error:** if the refresh request fails before a response arrives (timeout, connection reset),
+    the plugin retries the **same** token at once, within the grace window, and only then reports failure. The server
+    either never saw the first request or grace-rotates from the same token, so a lost connection does not turn into a
+    reuse revoke. A retry later than the window is not attempted with the old token; the user unlocks or signs in
+    again.
   - **Per-use authentication, no validity window.** The stored token is decrypted once per unlock with a Keystore key
     that requires user authentication for every use, through `BiometricPrompt` with a `CryptoObject`. Writing a new
     token after each rotation must not need a prompt: encrypt it under the public half of a Keystore key pair (or a data
@@ -361,12 +414,20 @@ requests (decision 9); it matters for the WebView's ordinary API calls.
   debugging, enabled automatically during development, exposes JS memory to anyone with USB access; and a debuggable
   app's data can be read with `adb run-as`.
 - So the B1 CI job builds two variants: a debuggable APK against the placeholder origin (layout smoke test only, as the
-  plan already says for builds without MA-1), and a **non-debuggable internal build type** (signed with the throwaway
-  debug key, never published) for `https://<ATP_APP_DOMAIN>`, with `loggingBehavior: "none"`,
+  plan already says for builds without MA-1), and a **non-debuggable internal build type** (never published) for
+  `https://<ATP_APP_DOMAIN>`, with `loggingBehavior: "none"`,
   `android.webContentsDebuggingEnabled: false`, `android.allowMixedContent: false`, no cleartext traffic and no
   `server.url` **(verify how the Android build type maps to Capacitor's logging and debugging switches)**. This amends
   the plan's B1 `android-debug` job (PR #289, §3.2), which today builds a debug APK for the production domain; B1
   reconciles it. Release builds (B4) use the same settings.
+- **Any build that can sign in to production is signed with a non-public key:** either an internal signing key kept
+  only in CI secrets (a protected environment with the owner as required reviewer, like `android-release`) or the
+  MA-3 upload key. Never a shared, committed or well-known debug key. Android lets an APK signed with the same key
+  install as an update of the same package id and keep its data and Keystore access, so a debug key that others can
+  obtain would let their APK replace ATP on the phone and use its stored session. The internal key is generated once
+  by the owner, like MA-3; its secret names are set in the B1 PR (this amends the plan's "the debug job needs no
+  secrets" for the production-pointing variant only). Moving from the internal key to the MA-3 key needs an uninstall
+  and a fresh sign-in, as the plan already notes for debug to release.
 
 ### 11. Sessions, devices and sign out everywhere
 
@@ -402,7 +463,9 @@ requests (decision 9); it matters for the WebView's ordinary API calls.
 
 - A distinctive `server.hostname` (for example an `.invalid` name), so the app origin is not the shared
   `https://localhost`. Capacitor recommends keeping `localhost` for secure-context APIs; `https://` with another host is
-  also a secure context, but plugin and WebView behaviour must be checked.
+  also a secure context, but plugin and WebView behaviour must be checked. Switching follows the transition rule in
+  decision 2: list both origins until every install has the new build, or every app session is revoked by channel
+  binding on its next refresh.
 - Play Integrity or hardware key attestation at login, so the server can tell a genuine, unmodified app on a locked
   device from a script claiming the app origin.
 - Proof of possession: a non-exportable Keystore key pair per install, its public key registered at login, every
@@ -413,9 +476,11 @@ requests (decision 9); it matters for the WebView's ordinary API calls.
 ### 14. Tenant isolation
 
 Nothing here takes a tenant from the client. The user and tenant come from the password check or the session row
-(ADR-0001). The flag is read for the user's or session's own tenant. `client_kind` is not a tenant input. The retired
-token table carries `tenant_id` and is reached only through its session. No new route exists, and the Z10-c sweep keeps
-covering every existing auth route.
+(ADR-0001). The flag is read for the user's or session's own tenant. `client_kind` is not a tenant input. The new
+columns live on `user_sessions`, whose `tenant_id` is already a foreign key with ON DELETE CASCADE (`models.py:168`);
+no new table is added. (Should a later change add one, its `tenant_id` must be a foreign key to `tenants` with ON
+DELETE CASCADE, like every tenant-owned table.) No new route exists, and the Z10-c sweep keeps covering every existing
+auth route.
 
 ### 15. Never logged
 
@@ -437,10 +502,20 @@ sign-in always remains available.
 Reuse PR (decision 1), all sessions:
 - **Two rotations then the old token:** Tn to Tn+1 to Tn+2 outside the grace window; presenting Tn gets 401, the
   session is revoked, an audit row and a SECURITY notification exist, and Tn+2 and its access token stop working.
-- **Grace replay retires the holder:** on a native session, rotate Tn to Tn+1; replay Tn inside the window (200, Tn+2);
-  then Tn+1 gets 401, the session is revoked, audit and notification written, and Tn+2 is dead. On a web session the same
-  sequence keeps today's result (`test_sessions.py:58-61` unchanged).
-- Retired rows capped at 1000 per session; rows of ended sessions removed by the sweep; no token in audit details.
+- **Deep chain:** rotate 1100 times from one chain (beyond any cap a table would have had), then present the original
+  token: 401, session revoked, audit and notification written.
+- **Grace replay retires the holder:** rotate Tn to Tn+1; replay Tn inside the window (200, Tn+2); then Tn+1 gets 401
+  and the session is revoked with an audit row, on native (with notification) and on web (no notification).
+  `test_sessions.py:58-62` is updated to this expectation: the retired in-between token now revokes the session, and
+  `/me` with the grace rotation's access token gets 401.
+- **Two tabs at once on the web:** two concurrent refreshes with the same token both succeed (grace), no constraint
+  error and no 500; `grace_superseded_hash` is overwritten, not inserted.
+- **Lost connection:** the same token presented twice within the window (the plugin's retry) succeeds both times and
+  revokes nothing.
+- **Formats:** an old-format token (no `.`) rotates as today and comes back in the new format with a family id; a token
+  whose family id is unknown gets 401 and revokes nothing; a made-up secret under a real family id revokes that session
+  (documented behaviour: it needs a leaked token).
+- No token in audit details, notifications or logs (`caplog`).
 
 B1 PR:
 - Config: the three keys' defaults; `config_problems` refuses `*`, `null`, `http://`, a path, and an entry equal after
@@ -463,11 +538,27 @@ B1 PR:
   `test_phase_p0_3_tokens_audit.py` pass untouched; with `REFRESH_TOKEN_IN_BODY=false` a web login has no body token.
 - Logout and logout-all end native sessions; their access tokens get 401 at once.
 - Logs: `caplog` across a native login and refresh contains neither token.
+- Config: a relative `FRONTEND_URL` (the default `/`) is skipped by the origin comparison, not compared or rejected.
 - The Z10-c sweep stays green with no table change.
+
+B3 PR (plugin, instrumented or unit tests on the Kotlin side plus the TS wrapper):
+- The API origin comes from `BuildConfig`; no plugin method accepts a URL, host, path or header; a JS call with extra
+  arguments cannot change the target.
+- No plugin method, event or log line returns or contains the refresh token (a test greps the plugin's outputs and
+  `logcat` in a test build for the token value).
+- A 307 or 308 on any auth call is an error and the request is not re-sent; nothing is sent to the redirect target.
+- A network error before a response retries the same token once within the window; a later failure does not retry.
+- A 403 `native_app_signin_disabled` keeps the stored token; a 401 wipes it.
+- Lock state machine, per-use unlock, no stored session on a phone without a screen lock or below the Android level
+  that allows device credential with a `CryptoObject`.
 
 ## Rollout
 
-1. Merge the reuse PR (decision 1). It changes only what happens to already-invalid tokens.
+1. Merge the reuse PR (decision 1). It changes only what happens to already-invalid tokens, but it touches every
+   refresh, so its refresh latency is measured under the existing load test (the LD-7 setup) before it reaches
+   production, and the PR records the before and after p95. After deploying it, the operator may revoke all sessions
+   created before the change ("everyone signs in once") to close the old-format gap; with one beta user that costs one
+   sign-in.
 2. Merge B1's server part with `NATIVE_APP_ORIGINS` empty and `native_app_signin` off: production behaves as today.
 3. Operator step, independent of the app: set `REFRESH_TOKEN_IN_BODY=false` in `/opt/atp/.env` **after the 21 October
    load test, not before**. The review confirmed it is safe for every running client. Until then a web XSS can read a
@@ -493,8 +584,9 @@ risk.
   unchanged; reuse of any retired token is caught and reported for every session; the web can stop exposing the refresh
   token to page script; app sessions are visible, short, capped, revocable, switchable off and tied to device rows for
   push.
-- **Costs:** a retired-token table, one config block, one flag, one column, branching in six token sites, a CORS
-  change, a native plugin in B3 and an extra Android build type.
+- **Costs:** a token format with a family id (two columns), one config block, one flag, one more column, branching
+  in six token sites, a CORS change, a native plugin in B3, an extra Android build type and a non-public signing key
+  for it. Changing an app origin needs a transition with both origins listed.
 - **Residual risks:** in B1, WebView XSS can read the refresh token (accepted for one owner-only build). From B3, WebView
   XSS can still mint access tokens while the app is open and unlocked. A rooted or compromised phone can read native
   memory while unlocked. The `Origin` header is attacker-chosen (harmless by design: it selects a carrier, never grants

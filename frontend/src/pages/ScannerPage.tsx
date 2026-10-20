@@ -83,7 +83,7 @@ export default function ScannerPage() {
     if (aiText.trim().length < 5) return;
     setAiBusy(true); setError(null);
     try {
-      const plan = await api.scannerAiPlan(aiText, navigator.language?.slice(0, 2) || "en");
+      const plan = await api.scannerAiPlan(aiText);
       setAiPlan(plan);
       setIndicatorConditions(plan.indicator_conditions);
       setStructureFilters(plan.structure_filters);
@@ -97,7 +97,7 @@ export default function ScannerPage() {
   async function readWithAi() {
     if (!lastRequest || !result) return;
     setAiBusy(true); setError(null);
-    try { setAiRead(await api.scannerAiRead(lastRequest, result, navigator.language?.slice(0, 2) || "en")); }
+    try { setAiRead(await api.scannerAiRead(lastRequest, result)); }
     catch (e) { setError(String(e)); } finally { setAiBusy(false); }
   }
 

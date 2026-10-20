@@ -1297,6 +1297,7 @@ LT_MAX_WINDOW=840             # ramp + duration: access tokens live 15 minutes a
 LT_MIN_AVAILABLE_MIB="${ATP_LOADTEST_MIN_AVAILABLE_MIB:-400}"   # watchdog floor: MemAvailable below this stops the run
 LT_MAX_SWAP_GROWTH_MIB=512    # watchdog: swap used growing by more than this since the start stops the run
 LT_HEARTBEAT_FLOOR_S=180      # the heartbeat limit below never goes under this
+LT_HEARTBEAT_CAP_S=900        # ... nor over this: a worker silent for 15 minutes stops the run whatever its cycle
 LT_MAX_HEARTBEAT_S="$LT_HEARTBEAT_FLOOR_S"   # watchdog: the trading worker's heartbeat older than 3 cycles stops the run
                               # (SLO-2); the preflight sets it from deep health's cycle_seconds (lt_heartbeat_limit)
 LT_WATCH_SECONDS="${ATP_LOADTEST_WATCH_SECONDS:-30}"
@@ -1452,6 +1453,16 @@ lt_remove_networks() {
   done < <(docker network ls -q --filter "label=$label" 2>/dev/null || true)
   LT_CADDY_ID=""
 }
+# loadtest-cleanup: no load-test network (of STAMP, or any) left after lt_remove_networks? One left (Caddy still
+# attached) is a cleanup not verified: says so and returns 1 (the caller exits 4).
+lt_networks_gone() {
+  local n
+  n="$(docker network ls -q --filter "label=atp.loadtest${1:+=$1}" 2>/dev/null | wc -l | tr -d ' ' || true)"
+  [ "${n:-0}" != "0" ] || return 0
+  bad "the load-test network is still there: atp.sh loadtest-cleanup --all"
+  printf '\nloadtest-cleanup: NOT verified - %s load-test network(s) still there (Caddy may be attached)\n' "$n"
+  return 1
+}
 
 # Background samplers (LAB-6): every container's CPU and memory (docker stats), and the host's memory and swap.
 lt_sample_stats() {
@@ -1483,12 +1494,15 @@ lt_restarts() {
 
 # The trading worker, from one /health/deep body: why it stops a load test (the watchdog) or keeps one from starting
 # (the preflight); nothing = fine. The heartbeat limit is 3 worker cycles - 3 x the cycle_seconds deep health reports,
-# as it counts a worker stale - and never below LT_HEARTBEAT_FLOOR_S (absent or not a whole number: the floor).
+# as it counts a worker stale - never below LT_HEARTBEAT_FLOOR_S (absent or not a whole number: the floor) and never
+# above LT_HEARTBEAT_CAP_S.
 lt_heartbeat_limit() {
   local cyc="${1:-}"
   case "$cyc" in ""|*[!0-9]*|???????*) printf '%s' "$LT_HEARTBEAT_FLOOR_S"; return 0 ;; esac
   cyc=$(( 10#$cyc * 3 ))
-  if [ "$cyc" -gt "$LT_HEARTBEAT_FLOOR_S" ]; then printf '%s' "$cyc"; else printf '%s' "$LT_HEARTBEAT_FLOOR_S"; fi
+  if [ "$cyc" -lt "$LT_HEARTBEAT_FLOOR_S" ]; then cyc="$LT_HEARTBEAT_FLOOR_S"; fi
+  if [ "$cyc" -gt "$LT_HEARTBEAT_CAP_S" ]; then cyc="$LT_HEARTBEAT_CAP_S"; fi
+  printf '%s' "$cyc"
 }
 lt_worker_problem() {
   local st db_s mig wk rd hb cyc
@@ -1664,6 +1678,7 @@ loadtest_finish() {
     step "summary"
     LT_RESULT=0
     python3 "$SCRIPT_DIR/hostinger/loadtest_summary.py" --dir "$LT_DIR" --out "$report_dir/loadtest-$stamp.md" || LT_RESULT=$?
+    [ "$LT_CLEAN" = "1" ] || LT_RESULT=4              # whatever the summary read or said: an unverified cleanup is 4
     chmod 644 "$report_dir/loadtest-$stamp.md" 2>/dev/null || true
     ln -sfn "loadtest-$stamp.md" "$report_dir/loadtest-latest.md" 2>/dev/null || true
     printf '\nRaw samples and logs: %s\n' "$LT_DIR"
@@ -1918,7 +1933,12 @@ print("\n".join("%s %d" % (r["stamp"], r["tenant_id"]) for r in json.load(sys.st
     fi
     lt_remove_networks ""
   fi
-  [ -n "$rows" ] || { printf '\nnothing to clean up\n'; return 0; }
+  local scope="" nets_ok=1
+  [ "$target" = "--all" ] || scope="$target"
+  if [ -z "$rows" ]; then
+    lt_networks_gone "$scope" || exit 4
+    printf '\nnothing to clean up\n'; return 0
+  fi
   local stamp tid out ids failed=0
   while read -r stamp tid; do
     [ -n "$stamp" ] || continue
@@ -1935,7 +1955,9 @@ print("\n".join("%s %d" % (r["stamp"], r["tenant_id"]) for r in json.load(sys.st
     case "$out" in *'"clean": true'*) ;; *) failed=$((failed + 1)) ;; esac
     rm -f "$STATE_DIR/loadtest/$stamp/accounts.csv"
   done <<< "$rows"
-  [ "$failed" = "0" ] || { printf '\nloadtest-cleanup: %s organisation(s) NOT verified clean\n' "$failed"; exit 4; }
+  lt_networks_gone "$scope" || nets_ok=0
+  [ "$failed" = "0" ] || printf '\nloadtest-cleanup: %s organisation(s) NOT verified clean\n' "$failed"
+  [ "$failed" = "0" ] && [ "$nets_ok" = "1" ] || exit 4
   printf '\nloadtest-cleanup: done\n'
 }
 

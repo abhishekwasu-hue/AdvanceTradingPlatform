@@ -434,12 +434,17 @@ def test_rows_the_org_owns_outside_the_allowlist_refuse_the_whole_cleanup(db):
     from sqlalchemy import func, select
 
     from app.db.models import CustomStrategyRecord, UserSessionRecord
+    from sqlalchemy import update
+
+    from app.db.models import User
     stamp, accounts, info = _seeded(api, 1)
+    bystander = api._register(f"refused.bystander.{stamp}@example.org")             # another organisation: must stay as it is
     assert api.client.post("/api/auth/login", json={"email": accounts[0][0], "password": accounts[0][1]}).status_code == 200
 
     async def plant():
         async with api._session_factory() as s:
             s.add(CustomStrategyRecord(tenant_id=info["tenant_id"], user_id=info["user_ids"][0], name="h2b", config_json="{}"))
+            await s.execute(update(User).where(User.id == info["user_ids"][0]).values(mfa_enabled=True, mfa_secret_encrypted="x"))
             await s.commit()
     _run(plant())
     with pytest.raises(loadtest_org.Refused, match="owns rows a load test does not write: custom_strategies 1"):
@@ -451,21 +456,35 @@ def test_rows_the_org_owns_outside_the_allowlist_refuse_the_whole_cleanup(db):
     assert _run(sessions()) == 1                                                  # nothing was deleted
 
     # Review follow-up: the proven organisation is still made inert before the refusal - no deletes.
-    from app.db.models import AuditLogRecord, Tenant, User
+    from app.db.models import AuditLogRecord, Tenant
 
     async def state():
         async with api._session_factory() as s:
             tenant = await s.get(Tenant, info["tenant_id"])
             users = list(await s.scalars(select(User).where(User.tenant_id == info["tenant_id"])))
             audit = list(await s.scalars(select(AuditLogRecord.event).where(AuditLogRecord.tenant_id == info["tenant_id"])))
-            return tenant.status, tenant.status_reason, [(u.is_active, u.mfa_enabled) for u in users], audit
+            return tenant.status, tenant.status_reason, [(u.is_active, u.mfa_enabled, u.mfa_secret_encrypted) for u in users], audit
+
+    async def bystander_state():
+        async with api._session_factory() as s:
+            user = await s.scalar(select(User).where(User.email == f"refused.bystander.{stamp}@example.org"))
+            return user.is_active, (await s.get(Tenant, user.tenant_id)).status
     status, reason, users, audit = _run(state())
-    assert status == "suspended" and reason.startswith(f"loadtest {stamp}: ") and users == [(False, False)]
+    assert status == "suspended" and reason.startswith(f"loadtest {stamp}: ") and users == [(False, False, None)]   # MFA reset too
     assert audit.count(loadtest_org.CLEAN_EVENT) == 1
+    assert _run(bystander_state()) == (True, "active")
+    assert api.client.get("/api/auth/me", headers={"Authorization": f"Bearer {bystander}"}).status_code == 200
     assert api.client.post("/api/auth/login", json={"email": accounts[0][0], "password": accounts[0][1]}).status_code == 401
     with pytest.raises(loadtest_org.Refused, match="users were deactivated"):            # again: still refused, no new audit row
         _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"], user_ids=info["user_ids"]))
     assert _run(state())[3].count(loadtest_org.CLEAN_EVENT) == 1 and _run(sessions()) == 1
+
+    async def unplant():                                       # the planted strategy is outside the allowlist: removed here
+        from sqlalchemy import delete
+        async with api._session_factory() as s:
+            await s.execute(delete(CustomStrategyRecord).where(CustomStrategyRecord.tenant_id == info["tenant_id"], CustomStrategyRecord.name == "h2b"))
+            await s.commit()
+    _run(unplant())
 
 
 def test_the_org_file_is_seeds_and_the_stamp_is_ascii_and_current(db):
@@ -1002,6 +1021,31 @@ def test_the_heartbeat_limit_is_three_worker_cycles(tmp_path):
 
 
 @needs_tools
+def test_the_heartbeat_limit_is_capped_at_fifteen_minutes(tmp_path):
+    host = FakeHost(tmp_path)
+    host.state["worker"] = {"status": "ok", "seconds_since_heartbeat": 950, "cycle_seconds": 600}
+    host.save()
+    r = host.run("loadtest", *SMALL, "--check")
+    assert r.returncode == 1 and "heartbeat is 950s old (limit 900s)" in r.stderr, r.stdout + r.stderr
+    assert host.load()["org_calls"] == []
+
+
+@needs_tools
+def test_an_unverified_cleanup_is_4_even_when_the_summary_says_0(tmp_path):
+    """The run's exit code does not rest on the summary alone: LT_CLEAN=0 is 4 whatever it read (meta.json) or said."""
+    host = FakeHost(tmp_path)
+    host.state["fail_disconnect"] = True
+    host.save()
+    deploy = tmp_path / "deploy"
+    (deploy / "hostinger").mkdir(parents=True)
+    shutil.copy(ATP_SH, deploy / "atp.sh")
+    (deploy / "hostinger/loadtest_summary.py").write_text(
+        "import sys\nout = sys.argv[sys.argv.index('--out') + 1]\nopen(out, 'w').write('# stub: clean\\n')\nprint('Report: ' + out)\nsys.exit(0)\n")
+    r = subprocess.run(["bash", str(deploy / "atp.sh"), "loadtest", *SMALL], env=host.env(), capture_output=True, text=True, timeout=120)
+    assert r.returncode == 4 and "cleanup: NOT VERIFIED (exit 4)" in r.stdout, r.stdout + r.stderr
+
+
+@needs_tools
 def test_too_little_memory_is_its_own_refusal(tmp_path):
     host = FakeHost(tmp_path)
     env = {**host.env(), "ATP_LOADTEST_MIN_AVAILABLE_MIB": "99999999"}
@@ -1032,6 +1076,24 @@ def test_manual_cleanup_lists_and_cleans_only_provable_load_test_organisations(t
     refused = host.run("loadtest-cleanup", "20261020-090000")                   # named by the owner, still not provable: refused
     assert refused.returncode == 1 and "no provable load-test organisation" in refused.stderr
     assert host.run("loadtest-cleanup", "x; rm -rf /").returncode == 2
+
+
+@needs_tools
+@pytest.mark.parametrize("target, orgs", [("--all", False), ("--all", True), ("20261021-101500", True)])
+def test_manual_cleanup_with_caddy_still_attached_is_not_verified(tmp_path, target, orgs):
+    """A load-test network the manual cleanup could not remove (Caddy detach failed) is exit 4, even with no organisation."""
+    host = FakeHost(tmp_path)
+    net = "atp-loadtest-20261021-101500"
+    host.state.update({"fail_disconnect": True, "connected": [net],
+                       "networks": [{"name": net, "internal": True, "label": "atp.loadtest=20261021-101500"}],
+                       "orgs": [{"stamp": "20261021-101500", "tenant_id": 9, "name": "loadtest-20261021-101500", "status": "active", "users": 4,
+                                 "active_users": 4, "ours": True, "reason": ""}] if orgs else []})
+    host.save()
+    r = host.run("loadtest-cleanup", target)
+    assert r.returncode == 4, r.stdout + r.stderr
+    assert "the load-test network is still there" in r.stdout and "NOT verified - 1 load-test network(s) still there" in r.stdout
+    assert "nothing to clean up" not in r.stdout and "loadtest-cleanup: done" not in r.stdout
+    assert (["cleanup", "20261021-101500"] in host.load()["org_calls"]) == orgs           # the organisation is still cleaned
 
 
 @needs_tools

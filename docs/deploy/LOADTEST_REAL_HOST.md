@@ -20,7 +20,8 @@ At its end, `loadtest` prints the report of this run between `===== report ... (
 `===== end of report =====`. Paste that part back. It holds no secret, no password and no personal data.
 - If `health` fails, `loadtest` does not start: the block prints "health check failed - load test not started" and no
   "loadtest exit code" line. The exit codes below are the one after "loadtest exit code:".
-- A refusal (exit 3, 6 or 10) creates nothing and prints no report.
+- A refusal (exit 3, 6 or 10, or exit 1 from a preflight check before seeding: a service down, deep health not ok,
+  the trading worker not ok) creates nothing and prints no report.
 
 Exit codes, in this order of precedence:
 
@@ -82,7 +83,7 @@ Exit codes, in this order of precedence:
    - **Every 30 s the watchdog checks production.** It stops the run (exit 5, cleanup still runs) at the first of:
      - deep health failing twice in a row;
      - the trading worker's heartbeat older than 3 worker cycles (3 x the `cycle_seconds` deep health reports, never
-       less than 180 s), or the worker not ok;
+       less than 180 s nor more than 900 s), or the worker not ok;
      - MemAvailable under 400 MiB;
      - swap use grown by more than 512 MiB since the start;
      - any app container restarted or OOM-killed.
@@ -266,7 +267,8 @@ As `atp`:
 ```
 
 It uses `.deploy/loadtest/<stamp>/org.json` when the file is there. Otherwise it uses the organisation id from the
-seed record. An organisation that is not provably a load-test one is listed and never touched.
+seed record. An organisation that is not provably a load-test one is listed and never touched. A load-test network
+still there after it (Caddy still attached) is a cleanup not verified: exit 4.
 
 If `atp.sh` itself cannot run:
 

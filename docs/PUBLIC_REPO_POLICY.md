@@ -72,7 +72,8 @@ Adding an entry is a reviewed change, and a real secret never gets one.
 
 `scripts/check_public_repo.py` keeps three explicit lists:
 
-- **`GRANDFATHERED_FIXTURES`** - Trade's own outputs committed before the repository went public, each pinned by sha256.
+- **`GRANDFATHERED_FIXTURES`** - Trade's own outputs committed before the repository went public (8 files; each needs
+  a Trade checkout or export to regenerate), each pinned by sha256.
   **Each is to move to private storage or be replaced with synthetic data - owner decision pending (open question
   PR-2).** They never change (a Trade re-sync writes to the private fixtures store) and the list only shrinks: when a
   file moves, its entry is removed (a test checks that every entry still exists).
@@ -88,10 +89,10 @@ market data. The grandfathered ones still record Trade's method results, so the 
 
 | List | Files | What they are (from their own notes) |
 |---|---|---|
+| grandfathered | `backend/tests/fixtures/daily_trend/golden.json.gz`, `backend/tests/fixtures/level_gate/golden.json.gz`, `backend/tests/fixtures/options_builder/golden.json.gz`, `backend/tests/fixtures/strike_breach/golden.json.gz` | Trade's own functions run on a Trade export with synthetic, seeded inputs (`make_golden.py` next to each). The strike-breach file carries the frozen NIFTY coefficients (PR-6). |
 | grandfathered | `backend/tests/fixtures/oi_regime/golden.json` | Trade's OI analysis results on seeded inputs (`capture_from_trade.py`). |
 | grandfathered | `backend/tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz` | Trade's price-action output on the synthetic zones bars (CH3b parity, `tests/ch3b_golden.py`). |
 | grandfathered | `backend/tests/fixtures/zones/golden_trade_eafc872.json.gz`, `backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz` | Trade's market-zones and level-memory output on the synthetic zones bars (see the folder's README). |
-| allowed | `backend/tests/fixtures/daily_trend/golden.json.gz`, `backend/tests/fixtures/level_gate/golden.json.gz`, `backend/tests/fixtures/options_builder/golden.json.gz`, `backend/tests/fixtures/strike_breach/golden.json.gz` | Trade's own functions run on synthetic, seeded inputs (`make_golden.py` next to each). The strike-breach file carries the frozen NIFTY coefficients (PR-6). |
 | allowed | `backend/tests/fixtures/charts/pa_layer_golden.json`, `backend/tests/fixtures/charts/study_parity.json`, `frontend/src/charting/__fixtures__/pa_layer_golden.json`, `frontend/src/charting/__fixtures__/study_parity.json` | ATP's chart price-action layer and study cases on the synthetic 15m bars (the frontend copies are byte-identical). |
 | allowed | `frontend/src/charting/__fixtures__/chart_types_golden.json.gz`, `frontend/src/utils/__fixtures__/indicator_parity.json` | Chart-type and indicator parity cases on generated bars. |
 | allowed | `backend/tests/golden/c2_default_models.json`, `backend/tests/fixtures/z10a/structure_base_c5f6a2e.json.gz` | Model result hashes on crafted bars; the market-structure baseline on synthetic bars. |

@@ -107,6 +107,11 @@ GRANDFATHERED_FIXTURES: Dict[str, str] = {
     "backend/tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz": "99a4c37576bdb0f5b9e7440079b489772cc90deba94e09c46a17f4b57fc687e5",
     "backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz": "4de210c7aa0e51ad2b80acd209315f370ddc29a0a1eccd4ec6d877256be9d992",
     "backend/tests/fixtures/zones/golden_trade_eafc872.json.gz": "17c5f29440fe9bbe0f474c91c247718dd9bc765a711790de89ea32cc74da3c8e",
+    # make_golden.py fixtures: Trade's functions run with a Trade export on synthetic, seeded inputs
+    "backend/tests/fixtures/daily_trend/golden.json.gz": "87fa3fb6e6c094db5c1e281771857963ab746e1308f662404797073b10ae19f2",
+    "backend/tests/fixtures/level_gate/golden.json.gz": "459d69bc0e0fbc6c1c9a7f83526645b06a6dca6ae4fc92e844f109dd6e75f07d",
+    "backend/tests/fixtures/options_builder/golden.json.gz": "50123884799210b9488aecd90ca1770edb9274f4aa9e461b741c6a8b3c16b72d",
+    "backend/tests/fixtures/strike_breach/golden.json.gz": "1bc64569fa0e9d93d24e205339698b21014cb614b2b5b15b3f492964bd2f72e2",
 }
 
 # Allowed: synthetic or hand-made data files (tests, fixtures, evals, e2e replies), each pinned by sha256 like the
@@ -122,11 +127,6 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/src/utils/__fixtures__/indicator_parity.json": "670d39f2624d4b16062fb4cd9d7d0775e10701a76b32f7784ae1892b8e0496a2",
     "backend/tests/golden/c2_default_models.json": "cf7840286077656ce099682a5c52adb0f6bb5a53658963f84efcc9fab27c6d79",
     "backend/tests/fixtures/z10a/structure_base_c5f6a2e.json.gz": "2c5cad35f7a0b3447ff4327eeec6924b3583053cf74f099df70c6ab4e1d635de",
-    # make_golden.py fixtures: Trade's functions run on synthetic, seeded inputs (make_golden.py next to each)
-    "backend/tests/fixtures/daily_trend/golden.json.gz": "87fa3fb6e6c094db5c1e281771857963ab746e1308f662404797073b10ae19f2",
-    "backend/tests/fixtures/level_gate/golden.json.gz": "459d69bc0e0fbc6c1c9a7f83526645b06a6dca6ae4fc92e844f109dd6e75f07d",
-    "backend/tests/fixtures/options_builder/golden.json.gz": "50123884799210b9488aecd90ca1770edb9274f4aa9e461b741c6a8b3c16b72d",
-    "backend/tests/fixtures/strike_breach/golden.json.gz": "1bc64569fa0e9d93d24e205339698b21014cb614b2b5b15b3f492964bd2f72e2",
     # synthetic, seeded bars (tests/fixtures/zones/build_fixtures.py) and the hand-made chart band cases
     "backend/tests/fixtures/zones/bn_daily.csv": "c0c34ac840bb0fb8e61aabcf0d191edb1c074c4a5c6ab1366cb60a0204599ec2",
     "backend/tests/fixtures/zones/market_5m.csv": "7420b55dfac3550831281ad6689e513fcfd3c1c673c4b38a8b2fbb749ec4f370",

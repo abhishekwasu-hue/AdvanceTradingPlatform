@@ -1,8 +1,8 @@
 """Regenerates golden.json from the Trade repo's own functions (run by hand; the tests only read the JSON).
 
     python make_golden.py /path/to/trade > golden.json
-    # Then pin the new content (public repo guard, ALLOWED_TEST_DATA in scripts/check_public_repo.py):
-    python3 ../../../../scripts/check_public_repo.py --hash golden.json.gz
+    # The golden file is grandfathered in scripts/check_public_repo.py (Trade output, open question PR-2): it may not
+    # change here; a Trade re-sync goes to the private fixtures store (docs/design/TRADE_TAKEOVER.md section 3).
 
 Every case records the Trade function, its arguments and its result; tests/test_p1a_options_builder.py calls the
 ported function with the same arguments and expects the same result. The chains are synthetic (no market data).

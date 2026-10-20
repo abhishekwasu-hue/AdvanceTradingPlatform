@@ -26,7 +26,8 @@ pastes back the results.
 
 **B. Make Trade read from the private copy (a Trade PR, merged; nothing removed yet):**
 
-3. Add one setting (an environment variable) that names the KB / Method Pack directory, read by the pack builder
+3. Add one setting (an environment variable) that names the KB / Method Pack directory (the private package's
+   `knowledge/`, a copy of `docs/knowledge/` as is, generated pack included), read by the pack builder
    (`scripts/build_method_pack.py`), `vision/method_pack.py`, the Vision audit and every other reader of
    `docs/knowledge/`. For this PR its default is still the in-tree `docs/knowledge/`.
 4. Make the tests that read the KB or the pack (the stale-pack test and any other) skip with a visible reason when
@@ -55,7 +56,8 @@ pastes back the results.
    The pack builder code (`scripts/build_method_pack.py`, `vision/method_pack.py`) stays in Trade, pointed at the
    private copy, until open question PR-7 decides about Trade's method code.
 9. The same PR removes the in-tree default: the setting becomes required, and a missing or wrong path **fails loudly**
-   at start (never a silent fallback).
+   when a service starts (never a silent fallback); the check runs at service start, not at import, so the tests can
+   still import the modules and skip (step 4).
 10. Add a CI check in Trade that refuses those paths (except `docs/knowledge/README.md`), so they do not come back.
 11. Abhi pulls this Trade change on the VPS only after step 7, and checks the services start and the next Vision audit
     loads the pack.

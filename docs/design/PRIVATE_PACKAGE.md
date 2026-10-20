@@ -37,8 +37,8 @@ One Python package, so the host can put it on the backend's import path:
 <private repo>/
   atp_private/
     reader/           layers 1-6, one owner module per concept (TRADE_TAKEOVER section 3)
-    method_pack/      the pack builder, the pack text and its version hash
-  knowledge/          the KB, the method, the owner's notes (Markdown, the change-controlled source)
+    method_pack/      the pack builder and its version hash (the pack is built from knowledge/)
+  knowledge/          Trade's docs/knowledge/ as is: the KB, the method, the owner's notes, the generated pack
   fixtures/           the PR-2 goldens, same relative layout as ATP's tests expect (ATP_PRIVATE_FIXTURES)
   tests/              the reader's tests, parity tests, the no-numbers check, the stale-pack test
   .github/workflows/  the private CI job (section 5)
@@ -120,7 +120,8 @@ Trade's public tree has the KB, the Chart Reader method, the owner's method note
 the Method Pack (the Vision audit), so the move must never break it.
 
 1. **Copy.** A session with access to both repositories copies the files from Trade's `main` at a pinned commit into
-   the private package (`knowledge/`, plus a copy of the pack builder in `atp_private/method_pack/`), with a manifest:
+   the private package (`docs/knowledge/` as is, generated pack included, into `knowledge/`, the directory Trade's
+   setting names; a copy of the pack builder into `atp_private/method_pack/`), with a manifest:
    Trade path, Trade commit, sha256 per file.
 2. **Trade switches to the private copy, then removes its own.** The order for the Trade session is
    [`TRADE_ORDER_KB_MOVE.md`](TRADE_ORDER_KB_MOVE.md); Abhi pastes it into a Trade session after step 1. In short: check

@@ -7,6 +7,11 @@ cached in Redis for a short TTL, keyed by broker+exchange+symbol+interval (publi
 not tenant-private, so the cache is deliberately shared across tenants). Redis is optional: the
 cache layer fails open and the fetch simply happens every cycle.
 
+LD-10: under that per-request cache, each broker call is shared by every user, tenant and bring-your-own-broker
+session through `shared_candles` - the completed history (keyed by the broker's own request window) for a few minutes,
+today's bars until the bar forming at fetch time closes - with one fetch at a time per key, made through the
+requesting user's own adapter and budget. Candles only: prices for decisions (`get_ltp`) are never shared copies.
+
 Only the base interval (normally 1 minute) is ever fetched; every timeframe a strategy declares
 (5min, 15min, 30min, 60min, ...) is resampled up from it, anchored to the 09:15 IST open so bars
 match the broker's own charts. That keeps the broker calls to two per symbol per cycle at most
@@ -24,6 +29,7 @@ from app.brokers.base import BrokerInterface
 from app.cache.client import cache_get, cache_set
 from app.core.models import OHLCVBar, bars_to_dataframe
 from app.core.resampling import resample_ohlc
+from app.market_data import shared_candles
 from app.market_data.calendar import IST, MARKET_CLOSE, MARKET_OPEN
 from app.market_data.freshness import StaleMarketDataError, quote_is_stale
 from app.observability.metrics import MARKET_DATA_STALE
@@ -104,6 +110,10 @@ def forming_capped_ttl(last_bar_start: datetime, interval: str, exchange: str, n
     return max(1, min(ttl_seconds, int((ends - now).total_seconds())))
 
 
+def window_anchor_dates(start: datetime, end: datetime) -> str:
+    return shared_candles.window_anchor(True, start, end)
+
+
 class MarketDataService:
     def __init__(
         self, broker: BrokerInterface, *, cache_ttl_seconds: int = DEFAULT_CANDLE_CACHE_TTL_SECONDS,
@@ -133,7 +143,7 @@ class MarketDataService:
             except (ValueError, TypeError):
                 logger.warning("Discarding unreadable cached candles for %s", key)
 
-        bars = await self._fetch(symbol, exchange, interval, now)
+        bars = await (self._fetch(symbol, exchange, interval, now, fresh=True) if fresh else self._fetch(symbol, exchange, interval, now))
         if bars:
             ttl = forming_capped_ttl(bars[-1].timestamp, interval, exchange, now or datetime.now(timezone.utc), self.cache_ttl_seconds)
             await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), ttl)
@@ -146,36 +156,51 @@ class MarketDataService:
         before = min(before, datetime.now(timezone.utc).astimezone(IST).date())   # never today's forming bars
         start = datetime.combine(before - timedelta(days=self.lookback_days), dtime(0, 0), tzinfo=IST)
         end = datetime.combine(before - timedelta(days=1), dtime(23, 59), tzinfo=IST)
-        key = f"{_cache_key(self.broker.name, exchange, symbol, interval, self.cache_namespace)}:hist:{start.date()}:{end.date()}"
-        cached = await cache_get(key)
-        if cached:
-            try:
-                return [OHLCVBar.model_validate(item) for item in json.loads(cached)]
-            except (ValueError, TypeError):
-                logger.warning("Discarding unreadable cached history for %s", key)
-        bars = merge_bars(await self.broker.get_historical_data(symbol, exchange, interval, start, end))
-        if bars:
-            await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), HISTORY_CACHE_TTL_SECONDS)
-        return bars
+        # LD-10: whole IST days, so the same request for every user and broker - one shared copy (shared_candles).
+        key = shared_candles.key(self.broker.name, exchange, symbol, interval, "page", window_anchor_dates(start, end))
+
+        async def fetch() -> List[OHLCVBar]:
+            return merge_bars(await self.broker.get_historical_data(symbol, exchange, interval, start, end))
+        return await shared_candles.get_or_fetch(key, fetch, lambda bars: HISTORY_CACHE_TTL_SECONDS)
 
     def _lookback(self, interval: str) -> int:
         """Phase AS: daily strategies need a year of bars (EMA 200, 52-week levels), not days."""
         return max(self.lookback_days, DAILY_MIN_LOOKBACK_DAYS) if interval == "day" else self.lookback_days
 
-    async def _fetch(self, symbol: str, exchange: str, interval: str, now: Optional[datetime]) -> List[OHLCVBar]:
-        now_ist = (now or datetime.now(timezone.utc)).astimezone(IST)
+    async def _fetch(self, symbol: str, exchange: str, interval: str, now: Optional[datetime], *, fresh: bool = False) -> List[OHLCVBar]:
+        now_utc = now or datetime.now(timezone.utc)
+        now_ist = now_utc.astimezone(IST)
         history_to = now_ist - timedelta(days=1)
         history_from = now_ist - timedelta(days=self._lookback(interval))
+        # LD-10: each broker call through the shared copy (shared_candles) - the same request window, the same bars,
+        # whoever asks; the fetch, when one is needed, goes through this service's own adapter (the user's budget).
+        by_date = bool(getattr(self.broker, "history_by_date", False))
+        history_key = shared_candles.key(self.broker.name, exchange, symbol, interval, "hist",
+                                         shared_candles.window_anchor(by_date, history_from, history_to))
+        history_ttl = shared_candles.HISTORY_TTL_SECONDS if by_date else shared_candles.HISTORY_MINUTE_TTL_SECONDS
+
+        async def history_call() -> List[OHLCVBar]:
+            return await self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to)
+        history_part = shared_candles.get_or_fetch(history_key, history_call, lambda bars: history_ttl)
         if interval == "day":
-            history = await self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to)
+            history = await history_part
             # Phase AS: completed daily bars only - today's bar is still forming, and a swing
             # strategy decides on closed bars (entries go in the next session).
             logger.debug("Fetched %d daily candles for %s:%s", len(history), exchange, symbol)
             return merge_bars(history)
+        today_key = shared_candles.key(self.broker.name, exchange, symbol, interval, "today", shared_candles.today_anchor(now_utc))
+
+        async def today_call() -> List[OHLCVBar]:
+            return await self.broker.get_intraday_candles(symbol, exchange, interval)
+
+        def today_ttl(bars: List[OHLCVBar]) -> int:
+            # Never past the close of the bar still forming when it was fetched (Z10-b): a copy is not a closed bar.
+            return forming_capped_ttl(bars[-1].timestamp, interval, exchange, now or datetime.now(timezone.utc),
+                                      shared_candles.TODAY_TTL_SECONDS)
+        # S4b-2: `fresh` needs today's bars as of now - no shared copy of them (history is final and still shared).
+        today_part = shared_candles.get_or_fetch(today_key, today_call, today_ttl, read=not fresh)
         # LD-7: the two calls side by side, not one after the other (a chart waited for two broker round trips in a row).
-        got_history, got_intraday = await asyncio.gather(
-            self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to),
-            self.broker.get_intraday_candles(symbol, exchange, interval), return_exceptions=True)
+        got_history, got_intraday = await asyncio.gather(history_part, today_part, return_exceptions=True)
         if isinstance(got_history, BaseException):
             raise got_history                     # as before: the history call's error first
         if isinstance(got_intraday, BaseException):

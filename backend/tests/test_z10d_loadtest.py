@@ -51,7 +51,7 @@ def test_the_report_judges_each_scenario_against_its_own_p95_and_the_error_rate(
     stats = loadtest.Stats()
     for ms in range(1, 101):
         stats.add("dashboard /api/auth/me", float(ms), "ok")        # p95 95 ms
-        stats.add("login", 900.0, "ok")                               # under login's 1,000 ms
+        stats.add("login", 900.0, "ok")                               # under login's 2,000 ms (LD-9)
         stats.add("chart", 5.0, "unavailable")                        # refused as a whole (no broker): reported, not judged
     r = loadtest.report(stats, users=3, elapsed=10.0)
     assert r["slo_pass"] and r["requests"] == 300 and r["error_rate"] == 0.0
@@ -65,6 +65,44 @@ def test_the_report_judges_each_scenario_against_its_own_p95_and_the_error_rate(
         errors.add("positions", 10.0, "server_error" if i < 2 else "ok")  # 1% server errors
     assert not loadtest.report(errors, 1, 1.0)["slo_pass"]
     assert not loadtest.report(loadtest.Stats(), 1, 1.0)["slo_pass"]       # nothing measured is not a pass
+
+
+def test_login_is_judged_apart_at_two_seconds_with_no_failed_login_and_the_api_at_half_a_second():
+    """LD-9 (owner, 20 Oct): login p95 <= 2,000 ms and no failed login; every other scenario keeps its own p95 limit
+    (500 ms, the chart's 1,000 and the screener's 2,000) and the server-error limit over the API requests."""
+    def stats(login_ms, login_outcomes=(), dashboard_ms=120.0):
+        s = loadtest.Stats()
+        for i in range(100):
+            s.add("dashboard /api/auth/me", dashboard_ms, "ok")
+            s.add("login", login_ms, "ok")
+        for outcome in login_outcomes:
+            s.add("login", 300.0, outcome)
+        return s
+    ok = loadtest.report(stats(1_900.0), 100, 10.0)
+    assert ok["slo_pass"] and ok["api_pass"] and ok["login_pass"]
+    assert ok["login"] == {"n": 100, "p95_ms": 1900.0, "p95_limit_ms": 2000.0, "errors": 0, "error_limit": 0, "pass": True}
+    assert ok["scenarios"]["login"]["p95_limit_ms"] == 2000.0 and ok["scenarios"]["dashboard /api/auth/me"]["p95_limit_ms"] == 500.0
+    slow = loadtest.report(stats(2_100.0), 100, 10.0)                     # login over 2 s: the API still passes
+    assert not slow["slo_pass"] and slow["api_pass"] and not slow["login_pass"]
+    for failed in ("transport", "server_error", "throttled", "client_error"):
+        one = loadtest.report(stats(300.0, [failed]), 100, 10.0)          # one failed login fails it, whatever it was
+        assert not one["login_pass"] and one["login"]["errors"] == 1 and one["api_pass"] and not one["slo_pass"], failed
+    # A login time-out is the login verdict's, not the API's error budget (101 logins, 1 failed: 1% of all requests).
+    assert one["error_rate"] == 0.0
+    api = loadtest.report(stats(300.0, dashboard_ms=600.0), 100, 10.0)    # a read over 0.5 s fails the API verdict
+    assert not api["slo_pass"] and not api["api_pass"] and api["login_pass"]
+    for limit_ms, scenario in ((1_000.0, "chart"), (2_000.0, "screener_run")):
+        s = stats(300.0)
+        for _ in range(100):
+            s.add(scenario, limit_ms - 1, "ok")
+        assert loadtest.report(s, 100, 10.0)["api_pass"] and loadtest.report(s, 100, 10.0)["scenarios"][scenario]["p95_limit_ms"] == limit_ms
+    md = loadtest.markdown(slow)
+    assert "**SLO FAIL** (API PASS, login FAIL (p95 2,100 ms of 2,000; 0 failed of 100, 0 allowed)" in md
+    token_only = loadtest.Stats()
+    for _ in range(10):
+        token_only.add("positions", 50.0, "ok")                            # --token: no login step at all
+    r = loadtest.report(token_only, 1, 1.0)
+    assert r["slo_pass"] and "login" not in r and "login not measured" in loadtest.markdown(r)
 
 
 def test_the_slo_factor_scales_the_p95_limits_never_the_error_limit():

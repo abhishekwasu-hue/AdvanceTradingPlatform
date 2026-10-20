@@ -18,9 +18,14 @@ symbol failures are reported next to the symbols that worked. Fetches are metere
 
 BT1 (flag `byob_data_tier`, off by default; off = everything above, unchanged): every read here goes through the
 entitlement guard (`app/market_data/entitlement.py`). Live data comes only through the user's *own* broker session at a
-broker whose data terms are confirmed, for symbols inside that session's budget; ticks and candles are cached under that
-session's namespace only (never shared across users); each response carries a `data_tier` badge (tier, label,
-timestamp, staleness). Anything else is Tier C (EOD): a 409 with the reason and an `X-Data-Tier: C` header.
+broker whose data terms are confirmed, for symbols inside that session's budget; the session's own ticks and its
+per-request candle cache are kept under that session's namespace only; each response carries a `data_tier` badge (tier,
+label, timestamp, staleness).
+
+LD-10 (owner, 20 Oct): candles and prices are public market data. Once the guard has admitted a symbol, its bars come from
+the copy shared by every user of the same broker (`shared_candles`: one broker fetch per window, through the requesting
+user's own session and budget), and `/ltp` reads the shared live feed's tick for the same broker before it spends a
+broker call. Nothing per account is shared, and a session's own ticks never feed the shared feed. Anything else is Tier C (EOD): a 409 with the reason and an `X-Data-Tier: C` header.
 `GET /api/market-data/data-tier` is the badge API for a symbol or a market-wide page.
 """
 import asyncio
@@ -254,7 +259,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
         # The stalest symbol decides (a batch is only as fresh as its oldest feed); no bars at all = age unknown = stale.
         oldest = min(newest) if newest else None
         result["data_tier"] = live.badge(now=now, timeframe=body.timeframe if oldest is not None else None, last_bar_start=oldest)
-        result["note"] = "Candles come from your own broker session, are shown only to you and are cached for your session only."
+        result["note"] = ("Candles come through your own broker session; a copy another user of the same broker fetched in the last "
+                          "minutes is used instead of a second broker call.")
     return result
 
 
@@ -275,7 +281,8 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
         ent = await entitlement.resolve(session, user, symbol, exchange, broker=broker, account_label=account_label if broker else None, now=now)
         if not ent.live or ent.record is None or ent.session is None:
             raise _tier_c({(symbol, exchange): ent})
-        body = await _ltp_body(ent.record, TickCache(namespace=ent.session.namespace), symbol, exchange, now)
+        # LD-10: the user's own session's tick first, then the shared live feed's for the same broker, then the broker.
+        body = await _ltp_body(ent.record, TickCache(namespace=ent.session.namespace), symbol, exchange, now, shared_feed=tick_cache)
         # The tick's / quote's own time; a bare LTP has none, so its age is unknown and the badge says stale.
         as_of = datetime.fromisoformat(body["timestamp"]) if body["timestamp"] else None
         body["data_tier"] = ent.badge(as_of=as_of, now=now)
@@ -287,9 +294,14 @@ async def ltp(symbol: str, exchange: str = "NSE", broker: Optional[str] = None, 
     return await _ltp_body(record, tick_cache, symbol, exchange, now)
 
 
-async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: str, exchange: str, now: datetime) -> dict:
+async def _ltp_body(record: BrokerCredentialRecord, ticks: TickCache, symbol: str, exchange: str, now: datetime,
+                    shared_feed: Optional[TickCache] = None) -> dict:
     base = {"symbol": symbol, "exchange": exchange, "source_broker": record.broker_name, "fetched_at": now.isoformat()}
     tick = await ticks.fresh(record.broker_name, exchange, symbol, now)
+    if tick is None and shared_feed is not None and shared_feed is not ticks:
+        # LD-10 (owner, 20 Oct): the price is public market data - a fresh tick of the shared live feed (the platform's
+        # stream, same broker and exchange) instead of a broker call through this user's budget; else as before.
+        tick = await shared_feed.fresh(record.broker_name, exchange, symbol, now)
     if tick is not None:
         return {**base, "ltp": float(tick.ltp), "timestamp": tick.best_ts.isoformat(), "age_seconds": round(tick.age_seconds(now), 1),
                 "stale": False, "stale_reason": None, "source": "tick", "bid": None, "ask": None, "volume": None}

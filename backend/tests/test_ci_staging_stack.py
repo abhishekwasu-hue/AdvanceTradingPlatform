@@ -242,6 +242,14 @@ def test_metrics_summary_reports_route_time_shares_and_waits(tmp_path, capsys):
     summary.main(str(before), str(after))
     out = capsys.readouterr().out
     assert "| GET /api/a | 100 | 3.0 | 30.0 | 75.0% |" in out and "| GET /api/b | 10 | 1.0 | 100.0 | 25.0% |" in out
+    assert "| POST /api/auth/login | 0 | - | - |" in out                         # LD-9: login apart, none in this run
+    login = 'atp_http_request_duration_seconds_{0}{{method="POST",route="/api/auth/login"{1}}} {2}'
+    after.write_text(after.read_text() + "\n" + "\n".join([
+        login.format("bucket", ',le="0.5"', 18), login.format("bucket", ',le="2.5"', 20), login.format("bucket", ',le="+Inf"', 20),
+        login.format("count", "", 20), login.format("sum", "", 9.0)]))
+    summary.main(str(before), str(after))
+    out = capsys.readouterr().out
+    assert "| POST /api/auth/login | 20 | 450.0 | 2500 |" in out
     assert "| bcrypt: waiting for a thread | 10 | 4.0 | 400.0 | 1000 | 1000 |" in out
     assert "| pool connection checkout | 0 |" in out
 

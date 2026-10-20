@@ -9,16 +9,22 @@ same symbol on many screens - can never spend the broker allowance the trading w
   Redis Cluster.
 - **Redis missing or down.** Each API process then counts in its own in-process windows, at its part of the share:
   every limit divided by the host's API processes (`API_WORKERS`), a limit below one per process becoming one per
-  proportionally longer window. Together the processes stay at the share; what this cannot see is another host's
+  proportionally longer window; the bucket's rate is divided the same way, and its burst too (at least one token per
+  process). Together the processes stay at the share; what this cannot see is another host's
   replicas (production runs one host).
-- **Windows.** A token is granted only when every window has room, checked and counted in one Redis script. The windows
-  slide (a sorted set of call times per window, timed by the Redis server's clock): a fixed window would let twice the
-  limit through across its boundary. Per second at API_SHARE of the worker's conservative rate, per minute at
-  API_SHARE of the worker's per-minute limit, and - for Upstox, whose standard APIs allow 2,000 requests per 30 minutes
-  per user - per 30 minutes, at most UPSTOX_API_PER_30MIN (500) for the API. So API plus worker stay inside the
-  broker's allowance whatever the number of API workers (ADR-0004: Kite allows 3 quote calls a second; the worker takes
-  up to 2, the API at most 1).
-- **No queue.** Only the per-second window is waited for (it refills within a second); a full minute or 30-minute window
+- **Rate: a token bucket, then windows.** A token is granted only when the bucket holds one and every longer window has
+  room, checked and counted in one Redis script (timed by the Redis server's clock). LD-10 (owner, 20 Oct): the
+  per-second limit is a token bucket - it refills at `per_second` tokens a second (API_SHARE of the worker's
+  conservative rate: 1 a second for Dhan and Zerodha, 4 for Upstox) and holds at most `burst` = max(per_second,
+  API_BURST) tokens (2 for Dhan and Zerodha, 4 for Upstox) - so a chart's two calls (history and today's bars) go out
+  together after a quiet moment instead of the second waiting a second, while the sustained rate stays 1 a second.
+  The longer windows slide (a sorted set of call times per window; a fixed window would let twice the limit through
+  across its boundary): per minute at API_SHARE of the worker's per-minute limit (50 for Dhan and Zerodha), and - for
+  Upstox, whose standard APIs allow 2,000 requests per 30 minutes per user - per 30 minutes, at most
+  UPSTOX_API_PER_30MIN (500) for the API. So API plus worker stay inside the broker's allowance whatever the number of
+  API workers (ADR-0004: Kite allows 3 quote calls a second; the worker takes up to 2, the API 1 sustained - 2 at most
+  in one second after a second without a call).
+- **No queue.** Only the bucket is waited for (it refills within a second); a full minute or 30-minute window
   refuses at once. `/ltp` waits at most TOKEN_WAIT_SECONDS, then answers 429 (the chart keeps its last price); a
   `/candles` request waits at most CANDLE_WAIT_SECONDS in all, and a symbol without a token says "budget used".
 - **One broker call per symbol.** A quote is cached in Redis for QUOTE_CACHE_SECONDS per (credential, exchange, symbol),
@@ -38,6 +44,7 @@ from typing import Any, Deque, Dict, List, Optional, Tuple
 from app.brokers.rate_budget import limits_for
 
 API_SHARE = 0.5                   # of the worker's conservative per-broker limits (per second and per minute)
+API_BURST = 2                     # LD-10: tokens the bucket holds at most (a chart's two calls), never below per_second
 UPSTOX_API_PER_30MIN = 500        # of Upstox's 2,000 standard requests per 30 minutes per user
 TOKEN_WAIT_SECONDS = 2.0
 RETRY_EVERY_SECONDS = 0.2
@@ -47,13 +54,18 @@ FETCH_LOCK_SECONDS = 5
 
 @dataclass(frozen=True)
 class ApiLimits:
-    per_second: int
+    per_second: int                    # the bucket's sustained rate (tokens a second)
     per_minute: int
     per_30min: Optional[int] = None
+    burst: Optional[int] = None        # the bucket's capacity; None = per_second (no burst above the rate)
+
+    @property
+    def capacity(self) -> int:
+        return max(self.per_second, self.burst or 0, 1)
 
     def windows(self) -> List[Tuple[int, int]]:
-        """(window seconds, limit) for every window that applies."""
-        out = [(1, self.per_second), (60, self.per_minute)]
+        """(window seconds, limit) for every sliding window that applies (the per-second rate is the bucket)."""
+        out = [(60, self.per_minute)]
         if self.per_30min is not None:
             out.append((1800, self.per_30min))
         return out
@@ -63,28 +75,44 @@ def api_limits(broker: str) -> ApiLimits:
     """The API's share for one credential of this broker."""
     base = limits_for(broker)
     # ADR-0004: the per-second share too - the worker's own budget keeps the whole conservative rate for its exits.
-    share = ApiLimits(per_second=max(1, int(base.per_second * API_SHARE)), per_minute=max(1, int(base.per_minute * API_SHARE)))
+    per_second = max(1, int(base.per_second * API_SHARE))
+    share = ApiLimits(per_second=per_second, per_minute=max(1, int(base.per_minute * API_SHARE)), burst=max(per_second, API_BURST))
     if (broker or "").lower() == "upstox":
-        return ApiLimits(share.per_second, share.per_minute, UPSTOX_API_PER_30MIN)
+        return ApiLimits(share.per_second, share.per_minute, UPSTOX_API_PER_30MIN, burst=share.burst)
     return share
 
 
-# --- the shared windows --------------------------------------------------------------------------------------------------
-# Sliding windows: KEYS[i] is a sorted set of call times (Redis server clock, seconds) for window i; ARGV holds
-# (seconds, limit) per window, then a unique member. Prune, check every window (the longest first), then record the call
-# in every one - in one script, so two workers never both take the last token, and a refused call costs nothing in any
-# window. Returns 1 (granted) or -i (refused by the i-th window, 1-based; the longest full window is reported, so a caller
-# never waits on the second when the minute or the 30 minutes are used up).
+# --- the shared bucket and windows ---------------------------------------------------------------------------------------
+# KEYS[1] is the bucket (a hash: tokens, ts - Redis server clock, seconds); KEYS[2..] are sorted sets of call times, one
+# per sliding window. ARGV: the bucket's rate and capacity, then (seconds, limit) per window, then a unique member.
+# Check every window (the longest first), then the bucket, then take the token and record the call in every window - in
+# one script, so two workers never both take the last token, and a refused call costs nothing anywhere. Returns 1
+# (granted), -1 (the bucket is empty: waitable, it refills within a second) or -i (the (i-1)-th window is full, i >= 2;
+# the longest full window is reported, so a caller never waits on the bucket when the minute or the 30 minutes are used up).
 _TAKE_LUA = (
     "local t = redis.call('time'); local now = tonumber(t[1]) + tonumber(t[2]) / 1000000; "
-    "for i = #KEYS, 1, -1 do local w = tonumber(ARGV[2 * i - 1]); "
+    "local rate = tonumber(ARGV[1]); local cap = tonumber(ARGV[2]); "
+    "for i = #KEYS, 2, -1 do local w = tonumber(ARGV[2 * i - 1]); "
     "redis.call('zremrangebyscore', KEYS[i], '-inf', now - w); "
     "if redis.call('zcard', KEYS[i]) + 1 > tonumber(ARGV[2 * i]) then return -i end end; "
+    "local b = redis.call('hmget', KEYS[1], 'tokens', 'ts'); "
+    "local tokens = tonumber(b[1]); local ts = tonumber(b[2]); "
+    "if tokens == nil or ts == nil then tokens = cap; ts = now end; "
+    "tokens = math.min(cap, tokens + math.max(0, now - ts) * rate); "
+    "if tokens < 1 then return -1 end; "
+    "redis.call('hset', KEYS[1], 'tokens', tostring(tokens - 1), 'ts', tostring(now)); "
+    "redis.call('expire', KEYS[1], math.ceil(cap / rate) + 1); "
     "local member = ARGV[2 * #KEYS + 1]; "
-    "for i = 1, #KEYS do redis.call('zadd', KEYS[i], now, member); "
+    "for i = 2, #KEYS do redis.call('zadd', KEYS[i], now, member); "
     "redis.call('expire', KEYS[i], math.ceil(tonumber(ARGV[2 * i - 1])) + 1) end; return 1"
 )
 _LOCAL: Dict[str, Deque[float]] = defaultdict(deque)
+_LOCAL_BUCKETS: Dict[int, Tuple[float, float]] = {}       # record id -> (tokens, at)
+_clock = time.monotonic                                      # tests replace it to step time
+
+
+def _bucket_key(record_id: int) -> str:
+    return f"ab:{{{int(record_id)}}}:tb"
 
 
 def _keys(record_id: int, windows: List[Tuple[int, int]]) -> List[str]:
@@ -106,43 +134,58 @@ def _local_windows(windows: List[Tuple[int, int]]) -> List[Tuple[int, int]]:
     return [(seconds, limit // n) if limit >= n else (seconds * -(-n // limit), 1) for seconds, limit in windows]
 
 
-def _local_take(record_id: int, windows: List[Tuple[int, int]]) -> int:
-    now = time.monotonic()
-    windows = _local_windows(windows)
+def _local_bucket(limits: ApiLimits) -> Tuple[float, float]:
+    """(rate, capacity) of this process's part of the bucket: the rate divided by the API processes; the capacity too,
+    but at least one token (N processes may then each send one call at the same moment, as N windows of one could)."""
+    n = _api_processes()
+    return limits.per_second / n, max(1.0, float(limits.capacity // n))
+
+
+def _local_take(record_id: int, limits: ApiLimits) -> int:
+    now = _clock()
+    windows = _local_windows(limits.windows())
     buckets = [(_LOCAL[key], seconds, limit) for key, (seconds, limit) in zip(_keys(record_id, windows), windows)]
     for i in range(len(buckets), 0, -1):                       # the longest window first, as in the script
-        bucket, seconds, limit = buckets[i - 1]
-        while bucket and now - bucket[0] >= seconds:
-            bucket.popleft()
-        if len(bucket) + 1 > limit:
-            return -i
-    for bucket, _, _ in buckets:
-        bucket.append(now)
+        window, seconds, limit = buckets[i - 1]
+        while window and now - window[0] >= seconds:
+            window.popleft()
+        if len(window) + 1 > limit:
+            return -(i + 1)
+    rate, capacity = _local_bucket(limits)
+    tokens, at = _LOCAL_BUCKETS.get(int(record_id), (capacity, now))
+    tokens = min(capacity, tokens + max(0.0, now - at) * rate)
+    if tokens < 1:
+        return -1
+    _LOCAL_BUCKETS[int(record_id)] = (tokens - 1, now)
+    for window, _, _ in buckets:
+        window.append(now)
     return 1
 
 
-async def _redis_take(record_id: int, windows: List[Tuple[int, int]]) -> Optional[int]:
+async def _redis_take(record_id: int, limits: ApiLimits) -> Optional[int]:
     from app.cache.client import _get_client
-    args: List[Any] = []
+    windows = limits.windows()
+    args: List[Any] = [limits.per_second, limits.capacity]
     for seconds, limit in windows:
         args += [seconds, limit]
     args.append(uuid.uuid4().hex)
+    keys = [_bucket_key(record_id), *_keys(record_id, windows)]
     try:
         client: Any = _get_client()                       # redis-py types eval as sync-or-async
-        return int(await client.eval(_TAKE_LUA, len(windows), *_keys(record_id, windows), *args))
+        return int(await client.eval(_TAKE_LUA, len(keys), *keys, *args))
     except Exception:  # noqa: BLE001 - Redis down: this process's part of the share, in-process (_local_windows)
         return None
 
 
 async def _attempt(record_id: int, broker: str) -> int:
-    """1 when a token was taken; -i when the i-th window (1 = per second) has no room."""
+    """1 when a token was taken; -1 when the bucket is empty; -i (i >= 2) when a longer window has no room."""
     from app.core.rate_limit import redis_backed
-    windows = api_limits(broker).windows()
+    limits = api_limits(broker)
     if redis_backed():
-        verdict = await _redis_take(record_id, windows)
+        verdict = await _redis_take(record_id, limits)
         if verdict is not None:
             return verdict
-    return _local_take(record_id, windows)
+    return _local_take(record_id, limits)
 
 
 async def try_take(record_id: int, broker: str) -> bool:
@@ -152,7 +195,7 @@ async def try_take(record_id: int, broker: str) -> bool:
 
 async def take(record_id: int, broker: str, wait_seconds: Optional[float] = None) -> bool:
     """A token within `wait_seconds` (TOKEN_WAIT_SECONDS), or False - the caller answers 429 rather than queue. Only
-    the per-second window is waited for; a full minute or 30-minute window refuses at once."""
+    the bucket is waited for; a full minute or 30-minute window refuses at once."""
     deadline = time.monotonic() + (TOKEN_WAIT_SECONDS if wait_seconds is None else wait_seconds)
     while True:
         verdict = await _attempt(record_id, broker)
@@ -237,8 +280,9 @@ async def wait_for_quote(record_id: int, exchange: str, symbol: str, wait_second
 
 
 def reset() -> None:
-    """Tests: forget the in-process windows, quotes and fetch locks."""
+    """Tests: forget the in-process bucket, windows, quotes and fetch locks."""
     _LOCAL.clear()
+    _LOCAL_BUCKETS.clear()
     _LOCAL_QUOTES.clear()
     _LOCAL_FETCHING.clear()
 

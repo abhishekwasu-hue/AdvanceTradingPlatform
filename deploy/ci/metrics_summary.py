@@ -3,6 +3,8 @@ Prometheus text, every API process merged) turned into:
 
 * the server-side time per route (count, total seconds, mean, share of all request time) - where the request time
   goes, as the API saw it (Caddy and the network are outside it);
+* login apart from the other routes (LD-9: judged on its own p95, 2 s, not in the API's 0.5 s): its server-side
+  count, mean and approximate p95;
 * the waits: for a pooled database connection (`atp_db_pool_wait_seconds`) and for a bcrypt thread
   (`atp_bcrypt_queue_wait_seconds`), with the bcrypt checks' own run time (`atp_bcrypt_seconds`).
 
@@ -53,12 +55,18 @@ def _quantile(buckets: List[Tuple[float, float]], q: float) -> float:
     return buckets[-1][0]
 
 
-def histogram(d: Dict[Key, float], name: str) -> Tuple[float, float, List[Tuple[float, float]]]:
-    count = sum(v for (n, _), v in d.items() if n == f"{name}_count")
-    total = sum(v for (n, _), v in d.items() if n == f"{name}_sum")
+LOGIN_ROUTE = "/api/auth/login"
+
+
+def histogram(d: Dict[Key, float], name: str, route: str = "") -> Tuple[float, float, List[Tuple[float, float]]]:
+    """(count, sum, cumulative buckets) of one histogram, every label set merged - or one route's only."""
+    def wanted(labels) -> bool:
+        return not route or dict(labels).get("route") == route
+    count = sum(v for (n, labels), v in d.items() if n == f"{name}_count" and wanted(labels))
+    total = sum(v for (n, labels), v in d.items() if n == f"{name}_sum" and wanted(labels))
     per_bound: Dict[float, float] = defaultdict(float)
     for (n, labels), v in d.items():
-        if n == f"{name}_bucket":
+        if n == f"{name}_bucket" and wanted(labels):
             le = dict(labels).get("le", "+Inf")
             per_bound[float("inf") if le == "+Inf" else float(le)] += v
     return count, total, sorted(per_bound.items())
@@ -84,6 +92,15 @@ def main(before_path: str, after_path: str) -> None:
     for key, (n, t) in sorted(routes.items(), key=lambda kv: -kv[1][1])[:15]:
         if n:
             print(f"| {key} | {int(n)} | {t:.1f} | {1000 * t / n:.1f} | {100 * t / grand:.1f}% |")
+
+    print("\nLogin, measured apart (LD-9: p95 at or under 2 s and no failed login, not in the API's 0.5 s):\n")
+    print("| Route | n | mean ms | ~p95 ms (bucket bound) |")
+    print("|---|---|---|---|")
+    n, t, buckets = histogram(d, "atp_http_request_duration_seconds", LOGIN_ROUTE)
+    if n:
+        print(f"| POST {LOGIN_ROUTE} | {int(n)} | {1000 * t / n:.1f} | {1000 * _quantile(buckets, 0.95):g} |")
+    else:
+        print(f"| POST {LOGIN_ROUTE} | 0 | - | - |")
 
     print("\nWaits:\n")
     print("| What | n | total s | mean ms | ~p95 ms (bucket bound) | ~p99 ms |")

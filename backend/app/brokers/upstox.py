@@ -2,13 +2,14 @@ import gzip
 import logging
 import json
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import httpx
 
 from app.instruments.master import normalise_expiry
+from app.brokers import upstox_analytics
 from app.brokers.base import BrokerCapabilities, BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
@@ -105,20 +106,54 @@ class UpstoxBroker(BrokerInterface):
         return BrokerCapabilities(stop_market_on_options=not config.LIVE_UPSTOX_OPTION_STOP_LIMIT)
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
-        if not credentials.api_key:
+        if not credentials.api_key and not credentials.analytics_token:
+            # A row holding only the analytics token can still read market data; logins and orders need the API key.
             raise BrokerAuthenticationError("Upstox adapter requires credentials.api_key (client_id)")
         self.credentials = credentials
         self._access_token = credentials.access_token
         self._client = client or httpx.AsyncClient(base_url=self.BASE_URL, timeout=15.0)
         self._instruments_cache: Dict[str, Tuple[float, List[Instrument]]] = {}
+        # The optional Analytics Token (app/brokers/upstox_analytics.py): used only for GET market-data classes its last
+        # probe marked `works`, only until its expiry; everything else goes with the daily login token.
+        self._analytics_token = credentials.analytics_token
+        self._analytics_classes = upstox_analytics.working_classes(credentials)
+        self._analytics_expires_at = upstox_analytics.expires_at(credentials)
+        # Set by token_lifecycle.build_adapter: re-probes the class on the stored row after a refusal.
+        self.on_analytics_refusal: Optional[Callable[[str], Any]] = None
 
-    def _headers(self) -> Dict[str, str]:
-        if not self._access_token:
+    def _headers(self, token: Optional[str] = None) -> Dict[str, str]:
+        token = token or self._access_token
+        if not token:
             raise BrokerAuthenticationError("Not authenticated - call authenticate() first")
-        return {"Authorization": f"Bearer {self._access_token}", "Accept": "application/json"}
+        return {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+
+    def analytics_class_for(self, method: str, path: str, now: Optional[datetime] = None) -> Optional[str]:
+        """The endpoint class this request may send with the analytics token, or None (use the daily token)."""
+        cls = upstox_analytics.classify(method, path)
+        if cls is None or not self._analytics_token or cls not in self._analytics_classes:
+            return None
+        if self._analytics_expires_at is None or self._analytics_expires_at <= (now or datetime.now(timezone.utc)):
+            return None
+        return cls
+
+    def _analytics_refused(self, cls: str) -> None:
+        self._analytics_classes.discard(cls)
+        logger.warning("Upstox refused the analytics token for %s; using the daily login token for it", cls)
+        if self.on_analytics_refusal is not None:
+            try:
+                self.on_analytics_refusal(cls)
+            except Exception as exc:  # noqa: BLE001 - bookkeeping must never fail the data call
+                logger.warning("Upstox analytics re-probe could not be scheduled: %s", type(exc).__name__)
 
     async def _request(self, method: str, path: str, **kwargs) -> dict:
-        response = await self._client.request(method, path, headers=self._headers(), **kwargs)
+        cls = self.analytics_class_for(method, path)
+        if cls is not None:
+            response = await self._client.request(method, path, headers=self._headers(self._analytics_token), **kwargs)
+            if response.status_code in (401, 403):
+                self._analytics_refused(cls)
+                response = await self._client.request(method, path, headers=self._headers(), **kwargs)
+        else:
+            response = await self._client.request(method, path, headers=self._headers(), **kwargs)
         try:
             payload = response.json()
         except ValueError as exc:

@@ -305,7 +305,7 @@ def test_a_text_the_filter_would_frame_as_a_specific_call_is_withheld():
 def test_pillow_is_at_least_the_fixed_release():
     import PIL
     major, minor, patch = (int(x) for x in PIL.__version__.split(".")[:3])
-    assert (major, minor, patch) >= (12, 1, 1)
+    assert (major, minor, patch) >= (13, 0, 0)
 
 
 # --- re-review: a run only ever finishes its own claim; shielded cleanup; stale rows reserve nothing ---------------------

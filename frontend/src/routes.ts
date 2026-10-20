@@ -35,6 +35,8 @@ const loaders: Record<Page, () => Promise<{ default: ComponentType<PageProps> }>
   "system-logs": () => import("./pages/SystemLogsPage"),
   notifications: () => import("./pages/NotificationsPage"),
   account: () => import("./pages/AccountPage"),
+  // Analyze a chart (flag chart_analyze; the page hides itself while the flag is off).
+  "chart-analyze": () => import("./chartAnalyze/ChartAnalyzePageV2"),
 };
 
 export const PAGES = Object.keys(loaders) as Page[];

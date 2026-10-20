@@ -23,11 +23,12 @@ import {
   Users,
   Wand2,
   Zap,
-  type LucideIcon, Store, Sparkles, Sigma, ChartSpline, NotebookPen } from "lucide-react";
+  type LucideIcon, Store, Sparkles, Sigma, ChartSpline, NotebookPen, ScanSearch } from "lucide-react";
 import { useEffect } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { pathFor, preloadPage } from "../routes";
+import { useFeatures } from "../ui/useFeatures";
 import Logo from "./Logo";
 
 export type Page =
@@ -59,12 +60,15 @@ export type Page =
   | "admin"
   | "system-logs"
   | "notifications"
-  | "account";
+  | "account"
+  | "chart-analyze";
 
 interface NavItem {
   id: Page;
   label: string;
   icon: LucideIcon;
+  /** Hidden while this feature flag is off for the organisation (or not known yet). */
+  flag?: string;
 }
 
 interface NavGroup {
@@ -97,6 +101,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { id: "instruments", label: "Instruments", icon: Boxes },
       { id: "news-events", label: "News & Events", icon: Newspaper },
       { id: "quant", label: "Factor Lab", icon: Sigma },
+      { id: "chart-analyze", label: "Analyze a Chart", icon: ScanSearch, flag: "chart_analyze" },
     ],
   },
   {
@@ -136,6 +141,7 @@ export const NAV: NavItem[] = [...NAV_GROUPS, ADMIN_GROUP].flatMap((g) => g.item
  * starts loading that page's code. */
 export default function Sidebar({ page, open = false, onClose }: { page: Page | null; open?: boolean; onClose?: () => void }) {
   const { user, loading } = useAuth();
+  const features = useFeatures();
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose?.(); };
@@ -158,7 +164,7 @@ export default function Sidebar({ page, open = false, onClose }: { page: Page | 
             <div className="px-4 mb-1 text-[10px] font-bold uppercase tracking-wider text-fg-muted">
               {group.title}
             </div>
-            {group.items.map((item) => {
+            {group.items.filter((item) => !item.flag || features.on(item.flag)).map((item) => {
               const Icon = item.icon;
               const active = page === item.id;
               return (

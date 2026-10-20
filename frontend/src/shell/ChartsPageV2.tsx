@@ -1,6 +1,8 @@
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, ScanSearch } from "lucide-react";
 import { Suspense, lazy, useEffect, useId, useMemo, useState, type FormEvent } from "react";
-import { useNavigate, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
+import { pathFor } from "../routes";
+import { useFeatures } from "../ui/useFeatures";
 import { PageIntro } from "../ui/PageIntro";
 import { chartsPath } from "./shellRoutes";
 
@@ -29,6 +31,7 @@ export default function ChartsPageV2() {
   // The router's own reading of `/charts/:symbol` (already decoded), never a second decode of the raw address.
   const { symbol: fromPath } = useParams<{ symbol?: string }>();
   const navigate = useNavigate();
+  const analyzeOn = useFeatures().on("chart_analyze");
   const symbol = chartsSymbol(fromPath?.trim() ? fromPath : null, readLast());
   const [draft, setDraft] = useState(symbol);
   const fieldId = useId();
@@ -68,6 +71,12 @@ export default function ChartsPageV2() {
           className="inline-flex h-11 items-center gap-space-1 rounded-control px-space-2 text-t14 font-medium text-brand hover:underline md:h-9">
           Open in new tab <ExternalLink size={14} aria-hidden />
         </a>
+        {analyzeOn && (
+          <Link to={pathFor("chart-analyze")}
+            className="inline-flex h-11 items-center gap-space-1 rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg hover:bg-surface-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9">
+            <ScanSearch size={16} aria-hidden /> Analyze a chart
+          </Link>
+        )}
       </div>
       <Suspense fallback={<div className="h-64 animate-pulse rounded-panel bg-surface-2" aria-busy="true" />}>
         {/* Keyed by symbol: a new symbol starts from its own default timeframe and history. */}

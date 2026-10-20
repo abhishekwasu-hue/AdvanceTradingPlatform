@@ -1,7 +1,7 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
   LayoutDashboard, Link2, ListChecks, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
-  Sigma, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, type LucideIcon,
+  ScanSearch, Sigma, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, type LucideIcon,
 } from "lucide-react";
 import type { Page } from "../components/Sidebar";
 
@@ -107,6 +107,8 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
   { ...item("scanner", "Custom scan", "Custom scan", "/screener/custom", Radar, { keywords: ["market scanner", "scanner", "scan"] }), section: "markets" },
   { ...item("options-builder", "Plan an options trade", "Plan an options trade", "/option-chain/plan", ChartSpline,
     { flag: "options_builder", keywords: ["options builder", "payoff", "strategy"] }), section: "markets" },
+  { ...item("chart-analyze", "Analyze a chart", "Analyze a chart", "/chart-analyze", ScanSearch,
+    { flag: "chart_analyze", keywords: ["analyze chart", "analyse chart", "chart reading", "screenshot", "tradingview"] }), section: "markets" },
   { ...item("coach", "Coach and guide", "Coach and guide", "/coach", GraduationCap, { keywords: ["trade coach", "guide", "learn"] }), section: "insights" },
   { ...item("account", "Account", "Account", "/settings/account", UserCircle2, { keywords: ["profile", "password", "two-factor", "sessions", "email"] }), section: "account" },
 ];

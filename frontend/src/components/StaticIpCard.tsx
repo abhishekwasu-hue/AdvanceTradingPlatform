@@ -2,13 +2,17 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import type { StaticIpOverview } from "../types";
 import { Button } from "./primitives";
-import { STATIC_IP_BROKERS as BROKERS, staticIpRows } from "./staticIps";
+import { brokerDisplayName, staticIpBrokerOptions, staticIpRows } from "./staticIps";
 import { Card } from "./ui";
 
 /** Part D4 (rule IN-SEBI.static_ip.registered): the IPs registered with each broker for API orders. */
 export default function StaticIpCard() {
   const [data, setData] = useState<StaticIpOverview | null>(null);
-  const [broker, setBroker] = useState(BROKERS[0]);
+  // The registry's broker ids (GET /api/broker/available); until they load, the built-in list.
+  const [registry, setRegistry] = useState<string[] | null>(null);
+  const options = staticIpBrokerOptions(registry);
+  const [picked, setPicked] = useState(options[0].value);
+  const broker = options.some((o) => o.value === picked) ? picked : options[0].value;
   const [role, setRole] = useState<"PRIMARY" | "BACKUP">("PRIMARY");
   const [ip, setIp] = useState("");
   const [registeredAt, setRegisteredAt] = useState("");
@@ -17,12 +21,15 @@ export default function StaticIpCard() {
 
   const load = () => api.staticIps().then(setData).catch((e) => setMessage(String(e)));
   useEffect(() => { load(); }, []);
+  useEffect(() => {
+    api.availableBrokers().then((r) => setRegistry(r.brokers)).catch(() => undefined);   // keep the built-in list
+  }, []);
 
   const save = async () => {
     setBusy(true); setMessage(null);
     try {
       await api.setStaticIp({ broker_name: broker, role, ip: ip.trim(), registered_at: registeredAt ? new Date(registeredAt).toISOString() : null });
-      setIp(""); setMessage(`Saved ${role.toLowerCase()} IP for ${broker}.`);
+      setIp(""); setMessage(`Saved ${role.toLowerCase()} IP for ${brokerDisplayName(broker)}.`);
       await load();
     } catch (e) {
       setMessage(String(e instanceof Error ? e.message : e));
@@ -50,7 +57,7 @@ export default function StaticIpCard() {
             <tbody>
               {rows.map((r) => (
                 <tr key={r.broker} className="border-t border-border">
-                  <td className="py-1">{r.broker}</td>
+                  <td className="py-1">{brokerDisplayName(r.broker)}</td>
                   <td className="font-mono">{r.primary ?? "-"}</td>
                   <td className="font-mono">{r.backup ?? "-"}</td>
                   <td>{r.serverIpRegistered === null ? "-" : r.serverIpRegistered ? "registered" : "not registered"}</td>
@@ -62,8 +69,8 @@ export default function StaticIpCard() {
         {data?.warnings.map((w) => <p key={w} role="alert" className="text-xs text-warn">{w}</p>)}
         <div className="flex flex-wrap items-end gap-2">
           <label className="text-xs">Broker
-            <select className="ml-1 rounded border border-border bg-surface-2 px-2 py-1" value={broker} onChange={(e) => setBroker(e.target.value)}>
-              {BROKERS.map((b) => <option key={b} value={b}>{b}</option>)}
+            <select className="ml-1 rounded border border-border bg-surface-2 px-2 py-1" value={broker} onChange={(e) => setPicked(e.target.value)}>
+              {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
           </label>
           <label className="text-xs">Role

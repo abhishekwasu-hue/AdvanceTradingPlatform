@@ -59,13 +59,16 @@ def test_the_model_no_longer_maps_the_column():
 
 def test_no_code_reads_or_writes_ai_language():
     """Attribute access (`user.ai_language`, getattr/setattr) anywhere in the backend app, and any mention in the
-    frontend sources. The preferences response keeps the key "ai_language" for older clients - a literal, not a read."""
+    frontend sources. The preferences response keeps the key "ai_language" for older clients - a literal, not a read.
+    Frontend test files are skipped: the English-only guard (englishOnlyOutsideInterview.test.tsx) names the key in
+    order to forbid it."""
     access = re.compile(r"\.ai_language\b|(get|set)attr\([^)]*['\"]ai_language['\"]|\b_ai_language\b")
     hits = [f"{p.relative_to(REPO)}:{n}" for p in (BACKEND / "app").rglob("*.py")
             for n, line in enumerate(p.read_text(encoding="utf-8").splitlines(), 1) if access.search(line)]
     assert hits == []
     front = [str(p.relative_to(REPO)) for p in (REPO / "frontend" / "src").rglob("*")
-             if p.is_file() and p.suffix in {".ts", ".tsx", ".js", ".jsx"} and "ai_language" in p.read_text(encoding="utf-8")]
+             if p.is_file() and p.suffix in {".ts", ".tsx", ".js", ".jsx"} and ".test." not in p.name
+             and "ai_language" in p.read_text(encoding="utf-8")]
     assert front == []
 
 
@@ -75,7 +78,7 @@ def test_migration_is_the_single_head_and_declared_not_rollback_safe():
     assert len(heads) == 1
     assert REVISION in {r.revision for r in script.iterate_revisions(heads[0], "base")}     # the head, or below a later one
     rev = script.get_revision(REVISION)
-    assert rev.down_revision == "c4e8a2d6f0b1"
+    assert rev.down_revision == "d9f1b3c5e7a2"
     lint = _load("migration_rollback_safety", BACKEND / "scripts" / "migration_rollback_safety.py")
     assert lint.lint() == []
     source = Path(rev.path).read_text(encoding="utf-8")

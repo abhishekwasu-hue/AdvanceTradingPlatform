@@ -33,6 +33,12 @@ Accounts: `--accounts FILE` (one `email,password` per line; user i uses account 
 account logs in for it - so keep the file to about 8 accounts: the login limit is 10 a minute per IP), `--token` (one
 shared access token, no login step), or neither: it registers `--register` throwaway accounts (needs self sign-up on).
 Access tokens live 15 minutes: keep `--ramp` + `--seconds` under 14 minutes, or late requests answer 401.
+Real host (`deploy/atp.sh loadtest`, docs/deploy/LOADTEST_REAL_HOST.md): `--chart-lake` adds the `chart_lake` scenario
+(with the chart's probability: a year of daily bars from the shared market lake, `GET /api/market-data/history` - a
+database read, no broker), the chart data an organisation without a broker session can see; an answer without bars counts
+as `ok_empty`, apart from `ok`. `--host-header` / `--no-verify-hostname` reach Caddy by its container address when the
+edge serves a bare IP (CADDYFILE=Caddyfile.ip: no SNI, Caddy's own CA). The host must still be allowed
+(LOADTEST_ALLOWED_HOSTS), which `atp.sh loadtest` sets for that run only.
 `--in-process` runs the test app (scripts/loadtest_app.py: a temporary SQLite file, synthetic broker bars, the test
 suite's rate-limit overrides) with no server and no network. `--slo-factor auto` (CI) scales the p95 limits by the
 machine's CI factor (scripts/bench_screener.py calibration, never below 1); a staging run keeps the plain limits.
@@ -59,6 +65,7 @@ import time
 import uuid
 from collections import defaultdict
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 from urllib.parse import urlparse
@@ -88,6 +95,11 @@ def percentile(values: List[float], pct: float) -> float:
     ordered = sorted(values)
     k = max(0, min(len(ordered) - 1, round(pct / 100 * (len(ordered) - 1))))
     return ordered[k]
+
+
+# Outcomes that are an answer from the API (judged on latency); `ok_empty` = 200 without data (chart_lake on an empty lake).
+ANSWERED = ("ok", "ok_empty")
+LAKE_DAYS = 365
 
 
 def classify(status: Optional[int], headers: Optional[httpx.Headers] = None) -> str:
@@ -163,8 +175,26 @@ async def _timed(stats: Stats, scenario: str, call: Callable[[], Any]) -> Option
     except httpx.HTTPError:
         stats.add(scenario, (time.perf_counter() - started) * 1000, "transport", at)
         return None
-    stats.add(scenario, (time.perf_counter() - started) * 1000, classify(response.status_code, response.headers), at)
+    elapsed = (time.perf_counter() - started) * 1000
+    outcome = classify(response.status_code, response.headers)
+    if outcome == "ok" and scenario == "chart_lake" and not _has_candles(response):
+        outcome = "ok_empty"
+    stats.add(scenario, elapsed, outcome, at)
     return response
+
+
+def _has_candles(response: httpx.Response) -> bool:
+    try:
+        return bool(response.json().get("candles"))
+    except ValueError:
+        return False
+
+
+def lake_params(symbol: str, now: Optional[float] = None) -> Dict[str, str]:
+    """A year of daily bars of one NSE symbol from the shared lake (the history API's own query)."""
+    end = datetime.fromtimestamp(now if now is not None else time.time(), timezone.utc).replace(microsecond=0)
+    return {"instrument_key": f"NSE:{symbol}", "timeframe": "day", "start": (end - timedelta(days=LAKE_DAYS)).isoformat(),
+            "end": end.isoformat()}
 
 
 async def _login(client: httpx.AsyncClient, account: Account, stats: Stats) -> Optional[str]:
@@ -177,7 +207,7 @@ async def _login(client: httpx.AsyncClient, account: Account, stats: Stats) -> O
 
 
 async def _session(i: int, make_client: Callable[[], httpx.AsyncClient], account: Account, leader: bool, stats: Stats, start_delay: float,
-                   deadline: float, think: float, seed: int) -> None:
+                   deadline: float, think: float, seed: int, extra: Optional[List[Any]] = None) -> None:
     """One user. The first user of each account logs in; the others open more sessions on that login (the per-IP login
     limit - 10 a minute - would refuse 500 logins from one load generator, and logins are rare next to polling)."""
     rng = random.Random(seed * 1_000 + i)
@@ -201,10 +231,11 @@ async def _session(i: int, make_client: Callable[[], httpx.AsyncClient], account
             "chart": lambda: client.post("/api/market-data/candles", json={"symbols": [symbol], "timeframe": "5min", "lookback_days": 5}),
             "screener_run": lambda: client.post("/api/screener/run", json={"source": SCREEN, "base_tf": "1d", "preview": True,
                                                                            "symbols": rng.sample(SYMBOLS, 5)}),
+            "chart_lake": lambda: client.get("/api/market-data/history", params=lake_params(symbol)),
         }
         while time.monotonic() < deadline:
             await asyncio.gather(*(_timed(stats, f"dashboard {route}", lambda route=route: client.get(route)) for route in DASHBOARD))
-            for scenario, probability in EXTRA:
+            for scenario, probability in (extra if extra is not None else EXTRA):
                 if rng.random() < probability and time.monotonic() < deadline:
                     together = POSITIONS_PAGE if scenario == "positions" else [scenario]       # the Positions page loads both
                     await asyncio.gather(*(_timed(stats, name, actions[name]) for name in together))
@@ -223,6 +254,25 @@ async def _register(make_client: Callable[[], httpx.AsyncClient], count: int) ->
             r.raise_for_status()
             accounts.append(Account(email, PASSWORD, r.json()["access_token"]))
     return accounts
+
+
+def scenarios(chart_lake: bool = False) -> List[Any]:
+    """The per-loop extras; `chart_lake` adds the shared-lake chart with the broker chart's probability."""
+    return EXTRA + [("chart_lake", dict(EXTRA)["chart"])] if chart_lake else list(EXTRA)
+
+
+def ssl_context(cacert: Optional[str], verify_hostname: bool = True) -> Any:
+    """One context for every client of this process (each client building its own from the CA bundle cost about 0.7 MB
+    a client): the public CAs httpx uses, or `cacert`; `verify_hostname=False` keeps the chain check and drops the name
+    check (Caddy's internal certificate for the server's IP, reached at its container address)."""
+    import ssl
+    if not cacert:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    ctx = ssl.create_default_context(cafile=cacert)
+    if not verify_hostname:
+        ctx.check_hostname = False
+    return ctx
 
 
 def _read_accounts(path: str) -> List[Account]:
@@ -255,7 +305,7 @@ def report(stats: Stats, users: int, elapsed: float, slo_factor: float = 1.0) ->
                             "error_limit": LOGIN_ERROR_LIMIT, "pass": passed}
         else:
             limit = P95_LIMIT_MS.get(scenario, DEFAULT_P95_MS) * slo_factor
-            measured = outcomes.get("ok", 0) > 0               # a scenario the deployment refuses as a whole is reported, not judged
+            measured = sum(outcomes.get(k, 0) for k in ANSWERED) > 0   # a scenario the deployment refuses as a whole is reported, not judged
             passed = (not measured) or p95 <= limit
             api_pass = api_pass and passed
         out["scenarios"][scenario] = {"n": len(values), "p50_ms": round(percentile(values, 50), 1), "p95_ms": round(p95, 1),
@@ -319,13 +369,12 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
     else:
         check_host(base)
 
-    verify: Any = True
-    if getattr(args, "cacert", None):
-        import ssl
-        verify = ssl.create_default_context(cafile=args.cacert)
+    verify: Any = ssl_context(getattr(args, "cacert", None), not getattr(args, "no_verify_hostname", False))
+    host_header = getattr(args, "host_header", None)
+    headers = {"Host": host_header} if host_header else None
 
     def make_client() -> httpx.AsyncClient:
-        return httpx.AsyncClient(base_url=base, timeout=args.timeout, transport=transport, verify=verify)
+        return httpx.AsyncClient(base_url=base, timeout=args.timeout, transport=transport, verify=verify, headers=headers)
 
     if args.token:
         accounts = [Account(token=args.token)]
@@ -349,8 +398,9 @@ async def run(args: argparse.Namespace) -> Dict[str, Any]:
     stats.ramp_end = started + args.ramp
     deadline = started + args.ramp + args.seconds
     offsets = start_offsets(args.users, args.ramp, getattr(args, "shard", 0), getattr(args, "shards", 1))
+    extra = scenarios(getattr(args, "chart_lake", False))
     await asyncio.gather(*(_session(i, make_client, accounts[i % len(accounts)], i < len(accounts), stats,
-                                    max(0.0, started + offsets[i] - time.monotonic()), deadline, args.think, args.seed)
+                                    max(0.0, started + offsets[i] - time.monotonic()), deadline, args.think, args.seed, extra)
                            for i in range(args.users)))
     elapsed = time.monotonic() - started
     if getattr(args, "raw_out", None):
@@ -384,7 +434,7 @@ def markdown(r: Dict[str, Any], label: str = "", stats_csv: Optional[str] = None
              "", "| Route / scenario | n | p50 ms | p95 ms | p99 ms | p95 limit | verdict | outcomes |", "|---|---|---|---|---|---|---|---|"]
     for name, s in r["scenarios"].items():
         verdict = "pass" if s["pass"] else "**over**"
-        if not s["outcomes"].get("ok"):
+        if not any(s["outcomes"].get(k) for k in ANSWERED):
             verdict = "not measured"
         outcomes = ", ".join(f"{k} {v}" for k, v in sorted(s["outcomes"].items()))
         lines.append(f"| {name} | {s['n']} | {s['p50_ms']} | {s['p95_ms']} | {s['p99_ms']} | {s['p95_limit_ms']:.0f} | {verdict} | {outcomes} |")
@@ -444,6 +494,10 @@ def main() -> int:
     parser.add_argument("--annotate", action="store_true", help="also print a GitHub Actions notice with the summary")
     parser.add_argument("--slo-factor", default="1", help='scale the p95 limits (>= 1), or "auto" for the CI factor (CI only)')
     parser.add_argument("--cacert", default=None, help="CA file that verifies an HTTPS --base (the CI stack's Caddy)")
+    parser.add_argument("--no-verify-hostname", action="store_true", help="with --cacert: check the chain, not the name "
+                                                                          "(Caddy's certificate for the server's IP, reached at its container address)")
+    parser.add_argument("--host-header", default=None, help="send this Host header (the site Caddy serves) instead of --base's host")
+    parser.add_argument("--chart-lake", action="store_true", help="add the chart_lake scenario (daily bars from the shared lake, no broker)")
     parser.add_argument("--account-offset", type=int, default=0, help="start at this line of --accounts (a shard's slice)")
     parser.add_argument("--raw-out", default=None, help="also write the raw samples here, for --merge")
     parser.add_argument("--shard", type=int, default=0, help="this process's index among --shards (interleaves the start times)")

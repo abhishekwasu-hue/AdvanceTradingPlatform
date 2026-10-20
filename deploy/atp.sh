@@ -11,6 +11,12 @@
 #   /opt/atp/deploy/atp.sh backup [--verify]       database dump + files archive, encrypted + sealed, copied to R2
 #   /opt/atp/deploy/atp.sh restore-check           newest backup from R2 -> scratch database -> checks -> dropped
 #   /opt/atp/deploy/atp.sh bootstrap               host checks (as root: runs deploy/hostinger/bootstrap.sh)
+#   /opt/atp/deploy/atp.sh loadtest [--force-offhours] [--users N] [--ramp S] [--seconds S] [--think S] [--check]
+#                                                  500 synthetic PAPER sessions against this host in NSE market hours, in
+#                                                  a throwaway load-test organisation removed afterwards; memory sampled;
+#                                                  report in /opt/atp/reports/ (docs/deploy/LOADTEST_REAL_HOST.md)
+#   /opt/atp/deploy/atp.sh loadtest-cleanup [STAMP | --all]
+#                                                  removes a load-test run's organisation / containers by hand
 #   /opt/atp/deploy/atp.sh schedule | releases | help
 #
 #   --dry-run (anywhere, or ATP_DRY_RUN=1): prints every step it would take; changes nothing on the host.
@@ -36,8 +42,10 @@
 #     come only from COMPOSE_PROFILES in .env;
 #   * idempotent: running a command again converges on the same state.
 #
-# Exit codes: 0 ok | 1 failed | 2 usage | 3 refused: market session (migration / restart) | 10 owner action needed |
-#             20 key changed
+# Exit codes: 0 ok | 1 failed | 2 usage | 3 refused: market session (migration / restart) - for `loadtest`: outside
+#             NSE market hours | 4 loadtest: cleanup not verified (outranks every other outcome) | 5 loadtest: stopped
+#             by its watchdog, production degraded | 6 loadtest: refused, not enough free memory | 10 owner action
+#             needed (`loadtest`: not PAPER-only Phase 0) | 20 key changed | 130 loadtest: Ctrl-C, cleanup verified
 set -Eeuo pipefail
 umask 077
 export TZ=Asia/Kolkata
@@ -65,6 +73,12 @@ SCRATCH_DB=""       # a verify copy to drop on exit
 VERIFY_ROLE="atp_restore"  # the non-superuser role verify_backup.sh restores the copy as (its VERIFY_RESTORE_ROLE default)
 VERIFY_ROLE_LOGIN=0 # 1 while that role can log in for the audit-chain check; NOLOGIN again on exit
 WORKER_STARTED=0    # epoch when this run restarted the worker; health then wants a heartbeat newer than that
+LT_STAMP=""         # the load test in progress (`loadtest`): on any exit its containers go and its organisation is cleaned up
+LT_DIR=""           # that run's state directory (.deploy/loadtest/<stamp>)
+LT_PIDS=()          # its background samplers
+LT_REPORTED=0       # 1 once its report is written
+LT_HUP=0            # 1 when the terminal went away (output then goes to the run's log only)
+DC_WRAP=()          # a command dc runs docker compose under (setsid during the load test's cleanup: a second Ctrl-C cannot stop it)
 OWNER_ACTION=""     # what health found that only the owner can do (exit 10)
 WARNS=0
 FAILS=0
@@ -82,6 +96,8 @@ on_err() { [ "$BASHPID" = "$$" ] || return 0; printf '\nFAILED: a command failed
 on_exit() {
   local rc=$?
   [ "$BASHPID" = "$$" ] || return 0
+  local lt_ran=0
+  if [ -n "$LT_STAMP" ]; then lt_ran=1; loadtest_finish "$rc" || true; fi
   if [ "$VERIFY_ROLE_LOGIN" = "1" ]; then verify_role_login "" || true; fi
   if [ -n "$SCRATCH_DB" ]; then
     dc exec -T postgres psql -X -q -v ON_ERROR_STOP=1 -U "$(pg_user)" -d postgres -c "DROP DATABASE IF EXISTS \"$SCRATCH_DB\"" >/dev/null 2>&1 || true
@@ -91,6 +107,8 @@ on_exit() {
       printf 'checkout put back to %s (the release that still runs)\n' "${RESTORE_CHECKOUT:0:12}" >&2
     fi
   fi
+  # M2 of the PR #284 review: an unverified load-test cleanup outranks every other outcome (Ctrl-C 130, a failure 1).
+  if [ "$lt_ran" = "1" ] && [ "$LT_CLEAN" != "1" ]; then exit 4; fi
 }
 trap 'on_err "$LINENO" "$?"' ERR
 trap on_exit EXIT
@@ -162,7 +180,7 @@ dc() {
   local ahead="$DB_AHEAD"
   if [ -z "$ahead" ] && db_ahead_marker; then ahead="$(cat "$STATE_DIR/db_ahead")"; fi
   (cd "$ATP_DIR" && ATP_RELEASE="${RELEASE:-latest}" MIGRATION_ALLOW_DB_AHEAD="$ahead" ATP_DEPLOYMENT_PHASE="$(deployment_phase)" \
-    docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
+    ${DC_WRAP[@]+"${DC_WRAP[@]}"} docker compose -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.hostinger.yml \
     -f deploy/compose.release.yml -p "$PROJECT" "$@")
 }
 rdc() { printf '    + docker compose %s\n' "$*"; [ "$DRY_RUN" = "1" ] && return 0; dc "$@"; }
@@ -1263,7 +1281,637 @@ cmd_install() {
   printf '\ninstall: done. Updates: %s/deploy/atp.sh deploy   Health: %s/deploy/atp.sh health\n' "$ATP_DIR" "$ATP_DIR"
 }
 
-usage() { sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
+# --- load test on this host (docs/deploy/LOADTEST_REAL_HOST.md) ------------------------------------------------
+# N synthetic sessions (default 500) in NSE market hours against the release that runs, through Caddy as users arrive,
+# in a throwaway organisation `loadtest-<stamp>` (backend/scripts/loadtest_org.py): PAPER only, no broker credential,
+# no flag, secret, role or other organisation touched. The load client runs here, one small container per client IP on
+# a network of its own that reaches only Caddy (the API's login limit of 10 a minute per IP holds, as for real users),
+# at a low CPU weight and capped per container; its own CPU and memory are sampled and reported apart. A watchdog stops
+# the run when production degrades. Every exit - the end, a failure, an abort, Ctrl-C, a closed terminal - stops the
+# containers and cleans the organisation up by the ids its seed reported (loadtest_finish).
+LT_LOGINS_PER_IP_MINUTE=8     # under the API's 10 a minute per client IP (as the CI's sharded runs)
+LT_CLIENT_MEMORY="128m"       # per client container, no swap
+LT_CLIENT_RSS_MIB=48          # what one client container uses: ~31 MiB measured for 20 sessions with one TLS context, + samples
+LT_APP_WEIGHT=1024            # docker's default --cpu-shares, what each app container has; the client shards share it
+LT_MAX_WINDOW=840             # ramp + duration: access tokens live 15 minutes and the client does not refresh them
+LT_MIN_AVAILABLE_MIB="${ATP_LOADTEST_MIN_AVAILABLE_MIB:-400}"   # watchdog floor: MemAvailable below this stops the run
+LT_MAX_SWAP_GROWTH_MIB=512    # watchdog: swap used growing by more than this since the start stops the run
+LT_MAX_HEARTBEAT_S=180        # watchdog: the trading worker's heartbeat older than 3 cycles stops the run (SLO-2)
+LT_WATCH_SECONDS="${ATP_LOADTEST_WATCH_SECONDS:-30}"
+LT_RESULT=1                   # the report's exit code
+LT_CLEAN=0                    # 1 once the cleanup is verified
+LT_ABORT=""                   # why the watchdog stopped the run
+LT_SEED_NAME="" LT_SEED_PID=""   # the seeding container while it runs (stopped, rolling its transaction back, on an exit)
+LT_CADDY_ID=""                # caddy, while it is attached to the run's network
+LT_MARKET="" LT_POSTURE="" LT_NET="" LT_BASE="" LT_ALLOWED="" LT_EDGE=""
+LT_EDGE_ARGS=() LT_HOST_ARGS=()
+LT_FLAGS_BEFORE="" LT_OTHERS_BEFORE=""    # read-only digests taken before seeding, compared at the end (lt_compare)
+
+# "YYYY-MM-DD HH:MM" in IST (TZ is Asia/Kolkata above). ATP_LOADTEST_NOW stands in for the clock in the tests; the app's
+# own calendar, when it answers, decides whether NSE is open.
+ist_now() { if [ -n "${ATP_LOADTEST_NOW:-}" ]; then printf '%s' "$ATP_LOADTEST_NOW"; else date '+%Y-%m-%d %H:%M'; fi; }
+# Minutes left in the regular NSE cash session (Monday-Friday 09:15-15:30 IST) at $1, by the clock alone; 0 = closed.
+nse_clock_minutes_left() {
+  local dow hm mins
+  dow="$(date -d "$1" +%u 2>/dev/null)" || { printf '0'; return 0; }
+  hm="$(date -d "$1" +%H%M)"
+  mins=$(( 10#${hm:0:2} * 60 + 10#${hm:2:2} ))
+  if [ "$dow" -le 5 ] && [ "$mins" -ge 555 ] && [ "$mins" -lt 930 ]; then printf '%s' $(( 930 - mins )); else printf '0'; fi
+}
+
+# The run's meta.json (settings and safety checks for the report): lt_meta KEY VALUE [KEY VALUE ...]. Never a secret.
+lt_meta() {
+  if [ -z "$LT_DIR" ] || [ ! -d "$LT_DIR" ]; then return 0; fi
+  python3 - "$LT_DIR/meta.json" "$@" <<'PY' || true
+import json, sys
+path, kv = sys.argv[1], sys.argv[2:]
+try:
+    with open(path) as fh:
+        meta = json.load(fh)
+except (OSError, ValueError):
+    meta = {}
+for key, value in zip(kv[::2], kv[1::2]):
+    try:
+        meta[key] = json.loads(value) if value[:1] in "[{" or value in ("true", "false") or value.replace(".", "", 1).isdigit() else value
+    except ValueError:
+        meta[key] = value
+with open(path, "w") as fh:
+    json.dump(meta, fh, indent=2)
+PY
+}
+
+# loadtest_org.py in the release's backend image (the host's database, as the app connects to it).
+lt_org() { dc run --rm --no-deps -T backend python scripts/loadtest_org.py "$@"; }
+lt_shield() { if [ "${#DC_WRAP[@]}" -gt 0 ]; then "${DC_WRAP[@]}" "$@"; else "$@"; fi; }
+
+# Refuses (exit 3) outside NSE market hours unless --force-offhours, and when fewer minutes are left before 15:30 IST
+# than the run needs ($1). Sets LT_MARKET for the report.
+loadtest_market_gate() {
+  local need="$1" force="$2" now left js nse="unknown"
+  now="$(ist_now)"
+  left="$(nse_clock_minutes_left "$now")"
+  js="$(session_state "$RELEASE")"
+  if [ -n "$js" ]; then
+    nse="$(printf '%s' "$js" | python3 -c 'import json, sys
+print("open" if "NSE" in (json.load(sys.stdin).get("open_sessions") or []) else "closed")' 2>/dev/null || echo unknown)"
+  fi
+  local open=0 how
+  case "$nse" in
+    open) open=1; how="the app's calendar" ;;
+    closed) how="the app's calendar (weekend, exchange holiday or outside 09:15-15:30 IST)" ;;
+    *) how="the clock only - the app's calendar did not answer, so exchange holidays are not known"
+       warn "NSE session from the clock only: the app's calendar did not answer (holidays unknown)"
+       if [ "$left" -gt 0 ]; then open=1; fi ;;
+  esac
+  if [ "$open" = "1" ]; then
+    LT_MARKET="open (NSE, $how, $now IST)"
+    if [ "$left" = "0" ]; then
+      warn "NSE is open by the app's calendar outside 09:15-15:30 IST (a special session): the time left is not known"
+    elif [ "$left" -lt "$need" ]; then
+      if [ "$force" = "1" ]; then warn "only $left minute(s) left before 15:30 IST and the run needs about $need - running anyway (--force-offhours); part of it will be after the close"
+      else die "refused: $left minute(s) left before the NSE close (15:30 IST) and the run needs about $need. Start it before $(date -d "15:30 today - $need minutes" +%H:%M 2>/dev/null || echo 'that') IST on a trading day, or add --force-offhours to run anyway (the report marks it)." 3; fi
+    fi
+    ok "NSE market hours ($how): $now IST, $left minute(s) to the close"
+    return 0
+  fi
+  if [ "$force" = "1" ]; then
+    LT_MARKET="off-hours (--force-offhours; NSE closed by $how, $now IST)"
+    warn "outside NSE market hours ($now IST, by $how) - running anyway (--force-offhours). The report says so: it is not the market-hours result."
+    return 0
+  fi
+  die "refused: outside NSE market hours - $now IST, NSE closed by $how. The load test is meant for 09:15-15:30 IST on a trading day; run it then, or add --force-offhours to run it anyway (the report marks such a run)." 3
+}
+
+# Refuses (exit 10) unless the deployment is PAPER only: phase0 in .env and, as the running release resolves them,
+# deployment phase phase0, live_trading off for everyone and every organisation, phase0_paper_only on. Read-only - this
+# script never changes a flag.
+loadtest_posture_gate() {
+  local phase js live="" live_tenants="" po_known="" po_on="" dphase=""
+  phase="$(deployment_phase)"
+  [ "$phase" = "phase0" ] || die "refused: ATP_DEPLOYMENT_PHASE is '$phase' in .env, not phase0 - the load test runs only on a PAPER-only Phase 0 deployment" 10
+  js="$(dc exec -T backend sh -c 'test -f scripts/flag_posture.py && python scripts/flag_posture.py' 2>/dev/null | tr -d '\r' | tail -n 1 || true)"
+  [ -n "$js" ] || die "refused: the running API could not report its flag posture (scripts/flag_posture.py) - PAPER only cannot be confirmed" 10
+  read -r live live_tenants po_known po_on dphase < <(printf '%s' "$js" | python3 -c 'import json, sys
+d = json.load(sys.stdin)
+lt, po = d.get("live_trading") or {}, d.get("phase0_paper_only") or {}
+print(int(bool(lt.get("on", True))), int(lt.get("tenants") or 0), int(bool(po.get("known"))), int(bool(po.get("on"))),
+      "".join(ch for ch in str(d.get("deployment_phase") or "-") if ch.isalnum() or ch in "_-")[:20] or "-")' 2>/dev/null) || true
+  [ "$dphase" = "phase0" ] || die "refused: the running release reports deployment phase '${dphase:-unknown}', not phase0" 10
+  if [ "$live" != "0" ] || [ "$live_tenants" != "0" ]; then
+    die "refused: live_trading is on (everyone: ${live:-?}, organisations: ${live_tenants:-?}) - Phase 0 is PAPER only. Turn it off in Admin > Controls first; this script never changes a flag." 10
+  fi
+  if [ "$po_known" != "1" ] || [ "$po_on" != "1" ]; then
+    die "refused: phase0_paper_only is not on - turn it on in Admin > Controls first; this script never changes a flag." 10
+  fi
+  LT_POSTURE="PAPER only: phase0, live_trading off for everyone and every organisation, phase0_paper_only on"
+  ok "$LT_POSTURE"
+}
+
+# Where the clients reach Caddy (L5 of the PR #284 review): a network of the run's own, `--internal` (no route out), with
+# Caddy attached to it for the run and nothing else - the clients cannot reach Postgres, Redis or backend:8000, only the
+# public edge, each from its own IP there. Sets LT_NET, LT_CADDY_ID, LT_BASE, LT_ALLOWED, LT_EDGE_ARGS, LT_HOST_ARGS, LT_EDGE.
+loadtest_edge() {
+  local stamp="$1" cid ip domain caddyfile
+  cid="$(dc ps -q caddy 2>/dev/null | head -n 1 || true)"
+  [ -n "$cid" ] || die "caddy is not running" 1
+  LT_NET="atp-loadtest-$stamp"
+  docker network create --internal --label "atp.loadtest=$stamp" "$LT_NET" >/dev/null || die "could not create the load-test network $LT_NET" 1
+  docker network connect "$LT_NET" "$cid" || die "could not attach caddy to the load-test network $LT_NET" 1
+  LT_CADDY_ID="$cid"
+  ip="$(docker inspect -f "{{(index .NetworkSettings.Networks \"$LT_NET\").IPAddress}}" "$cid" 2>/dev/null || true)"
+  [ -n "$ip" ] || die "could not find caddy's address on $LT_NET" 1
+  domain="$(env_get DOMAIN)"; caddyfile="$(env_get CADDYFILE)"
+  LT_EDGE_ARGS=(); LT_HOST_ARGS=()
+  if [ "${caddyfile:-Caddyfile}" = "Caddyfile.ip" ]; then
+    # A bare IP (no SNI): Caddy answers with its internal certificate for $DOMAIN (default_sni); the client checks it
+    # against Caddy's own root and sends the site name as Host.
+    dc exec -T caddy cat /data/caddy/pki/authorities/local/root.crt > "$LT_DIR/caddy-root.crt" 2>/dev/null || true
+    [ -s "$LT_DIR/caddy-root.crt" ] || die "could not read Caddy's internal root certificate" 1
+    chmod 644 "$LT_DIR/caddy-root.crt"
+    LT_BASE="https://$ip"; LT_ALLOWED="$ip"
+    LT_EDGE_ARGS=(--cacert /lt/caddy-root.crt --no-verify-hostname --host-header "$domain")
+    LT_EDGE="Caddy over HTTPS on the run's own internal network ($ip, site $domain, Caddy's internal certificate); Postgres, Redis and the API not reachable from it"
+  else
+    LT_BASE="https://$domain"; LT_ALLOWED="$domain"
+    LT_HOST_ARGS=(--add-host "$domain:$ip")
+    LT_EDGE="Caddy over HTTPS on the run's own internal network ($domain -> $ip, its public certificate verified); Postgres, Redis and the API not reachable from it"
+  fi
+}
+
+# Detaches Caddy from the run's network and removes it (and every load-test network when $1 is empty).
+lt_remove_networks() {
+  local label="atp.loadtest${1:+=$1}" net caddy
+  caddy="${LT_CADDY_ID:-}"
+  if [ -z "$caddy" ]; then caddy="$(dc ps -q caddy 2>/dev/null | head -n 1 || true)"; fi
+  while IFS= read -r net; do
+    [ -n "$net" ] || continue
+    if [ -n "$caddy" ]; then lt_shield docker network disconnect -f "$net" "$caddy" >/dev/null 2>&1 || true; fi
+    lt_shield docker network rm "$net" >/dev/null 2>&1 || true
+  done < <(docker network ls -q --filter "label=$label" 2>/dev/null || true)
+  LT_CADDY_ID=""
+}
+
+# Background samplers (LAB-6): every container's CPU and memory (docker stats), and the host's memory and swap.
+lt_sample_stats() {
+  local out="$1" every="$2" now
+  while :; do
+    now="$(date +%s)"
+    docker stats --no-stream --format '{{.Name}},{{.CPUPerc}},{{.MemUsage}},{{.MemPerc}}' 2>/dev/null | sed "s/^/$now,/" >> "$out" || true
+    sleep "$every"
+  done
+}
+lt_sample_host() {
+  local out="$1" every="$2"
+  while :; do
+    { awk -v t="$(date +%s)" '/^MemTotal:/ {a = $2} /^MemFree:/ {b = $2} /^MemAvailable:/ {c = $2} /^SwapTotal:/ {d = $2} /^SwapFree:/ {e = $2}
+           END {printf "%s,%s,%s,%s,%s,%s", t, a, b, c, d, e}' /proc/meminfo
+      awk '/^pswpin / {i = $2} /^pswpout / {o = $2} END {printf ",%d,%d\n", i, o}' /proc/vmstat; } >> "$out" 2>/dev/null || true
+    sleep "$every"
+  done
+}
+
+# The app containers' restart counts and OOM flags ("name restarts oom" per line).
+lt_restarts() {
+  local ids
+  ids="$(dc ps -q 2>/dev/null | tr '\n' ' ' || true)"
+  [ -n "${ids// /}" ] || return 0
+  # shellcheck disable=SC2086  # one id per word
+  docker inspect -f '{{.Name}} {{.RestartCount}} {{.State.OOMKilled}}' $ids 2>/dev/null || true
+}
+
+# M1 of the PR #284 review: every LT_WATCH_SECONDS, is production still healthy? Deep health (2 misses in a row), the
+# trading worker's heartbeat, MemAvailable, swap growth, app container restarts or OOM kills. The first that fails is
+# written to $LT_DIR/abort.txt; the wait loop then stops the run (and the cleanup runs). Runs in the background.
+lt_watchdog() {
+  local misses=0 reason body st db_s mig wk rd hb avail swap0 swap
+  { echo "- 0 false"; lt_restarts; } > "$LT_DIR/restarts-before.txt"
+  swap0="$(awk '/^SwapTotal:/ {t = $2} /^SwapFree:/ {f = $2} END {print int((t - f) / 1024)}' /proc/meminfo 2>/dev/null || echo 0)"
+  while :; do
+    sleep "$LT_WATCH_SECONDS"
+    reason=""
+    if deep_ok; then misses=0; else misses=$((misses + 1)); fi
+    if [ "$misses" -ge 2 ]; then reason="the API's deep health failed twice in a row ($API/api/system/health/deep)"; fi
+    if [ -z "$reason" ] && body="$(curl -fsS -m 10 "$API/api/system/health/deep" 2>/dev/null)"; then
+      read -r st db_s mig wk rd hb < <(printf '%s' "$body" | deep_fields) || true
+      if [ "${hb:--1}" -gt "$LT_MAX_HEARTBEAT_S" ] 2>/dev/null; then reason="the trading worker's heartbeat is ${hb}s old (limit ${LT_MAX_HEARTBEAT_S}s)"
+      elif [ "${wk:-ok}" != "ok" ] && [ "${wk:-ok}" != "-" ]; then reason="the trading worker reports $wk"; fi
+    fi
+    if [ -z "$reason" ]; then
+      avail="$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo 2>/dev/null || echo 999999)"
+      swap="$(awk '/^SwapTotal:/ {t = $2} /^SwapFree:/ {f = $2} END {print int((t - f) / 1024)}' /proc/meminfo 2>/dev/null || echo 0)"
+      if [ "$avail" -lt "$LT_MIN_AVAILABLE_MIB" ]; then reason="MemAvailable ${avail} MiB is under the floor of ${LT_MIN_AVAILABLE_MIB} MiB"
+      elif [ $((swap - swap0)) -gt "$LT_MAX_SWAP_GROWTH_MIB" ]; then reason="swap use grew by $((swap - swap0)) MiB during the run (limit ${LT_MAX_SWAP_GROWTH_MIB} MiB)"; fi
+    fi
+    if [ -z "$reason" ]; then
+      lt_restarts > "$LT_DIR/restarts-now.txt"
+      reason="$(awk 'NR == FNR {n[$1] = $2; o[$1] = $3; next}
+                     ($1 in n) && $2 + 0 > n[$1] + 0 {print substr($1, 2) " restarted (restart count " $2 ")"; exit}
+                     $3 == "true" && o[$1] != "true" {print substr($1, 2) " was OOM-killed"; exit}' \
+                "$LT_DIR/restarts-before.txt" "$LT_DIR/restarts-now.txt" 2>/dev/null || true)"
+    fi
+    if [ -n "$reason" ]; then printf '%s\n' "$reason" > "$LT_DIR/abort.txt"; return 0; fi
+  done
+}
+
+# The API's /metrics (every process), read inside its container with its own token - never printed.
+lt_scrape() {
+  dc exec -T backend python -c 'import os, urllib.request
+req = urllib.request.Request("http://127.0.0.1:8000/metrics", headers={"Authorization": "Bearer " + os.environ.get("METRICS_TOKEN", "")})
+print(urllib.request.urlopen(req, timeout=30).read().decode())' 2>/dev/null
+}
+# Read-only digests that show the run changed nothing outside its organisation: the feature-flag row; every other
+# organisation and its users (ids, names, status, plan, emails, roles, active).
+lt_others_digest() {
+  psql_q "select (select md5(coalesce(string_agg(concat_ws(':', id, name, status, plan), ',' order by id), '')) from tenants where name not like 'loadtest-%') || ':' || (select md5(coalesce(string_agg(concat_ws(':', u.id, u.tenant_id, u.email, u.role, u.is_active), ',' order by u.id), '')) from users u join tenants t on t.id = u.tenant_id where t.name not like 'loadtest-%')" || printf 'unknown'
+}
+
+# One progress line from the latest samples (printed by awk directly: see the wait loop for why there is no $(...)).
+lt_progress() {
+  printf '    %(%H:%M:%S)T  t%s  clients running %s/%s  ' -1 "$1" "$2" "$3"
+  awk -F, 'END {if (NR > 1) printf "host available %d MiB, swap used %d MiB  ", $4 / 1024, ($5 - $6) / 1024}' "$LT_DIR/host-memory.csv" 2>/dev/null || true
+  awk -F, -v p="$4" 'NR > 1 && index($2, p) == 1 {s[$1] += $3 + 0; last = $1} END {if (last) printf "client CPU %.0f%% of one vCPU", s[last]; print ""}' \
+    "$LT_DIR/docker-stats.csv" 2>/dev/null || printf '\n'
+}
+
+# The run changed nothing outside its organisation: the flag row and the other organisations, before and after.
+lt_compare() {
+  [ -n "$LT_FLAGS_BEFORE" ] || return 0
+  local flags others
+  flags="$(flags_snapshot)"; others="$(lt_others_digest)"
+  if [ "$LT_FLAGS_BEFORE" = "$flags" ] && [ "$flags" != "unknown" ]; then lt_meta flags_unchanged yes; else lt_meta flags_unchanged "NO - check Admin > Controls"; fi
+  if [ "$LT_OTHERS_BEFORE" = "$others" ] && [ "$others" != "unknown" ]; then lt_meta orgs_unchanged yes
+  else lt_meta orgs_unchanged "NOT CONFIRMED - the digest of the other organisations changed during the run (a real sign-up or login meanwhile changes it too)"; fi
+  LT_FLAGS_BEFORE=""
+}
+
+# The samplers and the watchdog stop when the load does, so the cleanup's own containers are not in the memory figures.
+lt_stop_samplers() {
+  local pid
+  for pid in "${LT_PIDS[@]+"${LT_PIDS[@]}"}"; do kill "$pid" 2>/dev/null || true; done
+  for pid in "${LT_PIDS[@]+"${LT_PIDS[@]}"}"; do wait "$pid" 2>/dev/null || true; done
+  LT_PIDS=()
+}
+
+lt_print_cleanup() {
+  python3 -c 'import json, sys
+raw = sys.stdin.read().strip()
+try:
+    d = json.loads(raw.splitlines()[-1]) if raw else {}
+except ValueError:
+    d = {}
+if not d:
+    print("    FAIL  no cleanup report"); sys.exit(0)
+if d.get("refused"):
+    print("    FAIL  refused: " + d["refused"]); sys.exit(0)
+if d.get("note"):
+    print("    " + d["note"])
+t = d.get("tombstone") or {}
+print("    deleted:   " + (", ".join("%s %s" % kv for kv in sorted((d.get("deleted") or {}).items())) or "nothing"))
+print("    kept:      " + (", ".join("%s %s" % kv for kv in sorted((d.get("ledger_rows_kept") or {}).items())) or "none")
+      + " (append-only ledgers: the audit chain is never edited)")
+if t:
+    print("    tombstone: %s #%s, status %s, %s users (%s active, %s with a usable password)" % (d.get("tenant"), t.get("tenant_id"),
+          t.get("status"), t.get("users_kept"), t.get("active_users"), t.get("usable_passwords")))
+print("    left over: " + (", ".join("%s %s" % kv for kv in sorted((d.get("remaining") or {}).items())) or "none"))
+if d.get("failed"):
+    print("    failed:    " + "; ".join("%s: %s" % kv for kv in d["failed"].items()))
+if d.get("audit_chain"):
+    print("    audit chain (from its latest anchor): " + d["audit_chain"])
+print("    ok    cleanup verified" if d.get("clean") else "    FAIL  cleanup NOT verified - docs/deploy/LOADTEST_REAL_HOST.md, manual cleanup")'
+}
+
+# One organisation's cleanup through loadtest_org.py: by the ids in its org file when there is one, else by its seed
+# record (--absent-ok: no record = the seed never committed). Prints the JSON line.
+lt_clean_org() {
+  local stamp="$1" dir="$STATE_DIR/loadtest/$1" tid="${2:-}" absent="${3:-}"
+  if [ -s "$dir/org.json" ]; then
+    lt_org cleanup --stamp "$stamp" --org-file - --verify-audit < "$dir/org.json" 2>>"$dir/cleanup-stderr.txt" | tr -d '\r' | tail -n 1
+  elif [ -n "$tid" ]; then
+    lt_org cleanup --stamp "$stamp" --tenant-id "$tid" --verify-audit < /dev/null 2>>"$dir/cleanup-stderr.txt" | tr -d '\r' | tail -n 1
+  else
+    lt_org cleanup --stamp "$stamp" ${absent:+--absent-ok} --verify-audit < /dev/null 2>>"$dir/cleanup-stderr.txt" | tr -d '\r' | tail -n 1
+  fi
+}
+
+# Stops the run's containers, watchdog and samplers, detaches its network, cleans its organisation up, removes the
+# accounts file, writes and prints the report. Runs once, on the normal path and from the EXIT trap alike; Ctrl-C is
+# ignored meanwhile and docker runs in its own session, so a second Ctrl-C cannot cut the cleanup short.
+loadtest_finish() {
+  local rc="${1:-0}"
+  [ -n "$LT_STAMP" ] || return 0
+  trap '' INT TERM HUP
+  if [ "$LT_HUP" = "1" ] && [ -n "$LT_DIR" ]; then exec >>"$LT_DIR/run.log" 2>&1; fi
+  local stamp="$LT_STAMP" ids left out="" tries nets
+  LT_STAMP=""
+  if command -v setsid >/dev/null 2>&1; then DC_WRAP=(setsid -w); fi
+  if [ "$rc" = "0" ]; then step "load test $stamp: cleanup"
+  else step "load test $stamp: cleanup after an interrupted, aborted or failed run (exit $rc) - Ctrl-C is ignored until it is done"; fi
+  lt_stop_samplers
+  if [ -n "$LT_SEED_NAME" ]; then
+    # L1: a seed still running is stopped - its one transaction rolls back - before anything is cleaned.
+    lt_shield docker rm -f "$LT_SEED_NAME" >/dev/null 2>&1 || true
+    if [ -n "$LT_SEED_PID" ]; then kill "$LT_SEED_PID" 2>/dev/null || true; wait "$LT_SEED_PID" 2>/dev/null || true; fi
+    LT_SEED_NAME=""; LT_SEED_PID=""
+    info "the seeding was stopped"
+  fi
+  ids="$(docker ps -aq --filter "label=atp.loadtest=$stamp" 2>/dev/null || true)"
+  if [ -n "$ids" ]; then
+    # shellcheck disable=SC2086  # one id per word
+    lt_shield docker rm -f $ids >/dev/null 2>&1 || true
+  fi
+  left="$(docker ps -aq --filter "label=atp.loadtest=$stamp" 2>/dev/null | wc -l | tr -d ' ' || true)"
+  if [ "${left:-0}" = "0" ]; then ok "load-client containers removed"; else bad "$left load-client container(s) left: docker rm -f \$(docker ps -aq --filter label=atp.loadtest=$stamp)"; fi
+  lt_meta load_containers_left "${left:-unknown}"
+  lt_remove_networks "$stamp"
+  nets="$(docker network ls -q --filter "label=atp.loadtest=$stamp" 2>/dev/null | wc -l | tr -d ' ' || true)"
+  if [ "${nets:-0}" = "0" ]; then ok "load-test network removed, Caddy detached from it"; else bad "the load-test network is still there: atp.sh loadtest-cleanup --all"; fi
+  lt_meta network_left "${nets:-unknown}"
+  lt_compare || true
+  for tries in 1 2; do
+    out="$(lt_clean_org "$stamp" "" absent)" || true
+    case "$out" in *'"clean": true'*) LT_CLEAN=1; break ;; esac
+    case "$out" in *'"refused"'*) break ;; esac           # a refusal does not change on a retry
+    [ "$tries" = "2" ] || { info "cleanup not verified yet - trying once more"; sleep 3; }
+  done
+  printf '%s\n' "${out:-}" > "$LT_DIR/cleanup.json"
+  printf '%s\n' "${out:-}" | lt_print_cleanup
+  rm -f "$LT_DIR/accounts.csv" "$LT_DIR/seed.out"
+  if [ -e "$LT_DIR/accounts.csv" ]; then lt_meta accounts_file_removed "NO - remove $LT_DIR/accounts.csv"; else lt_meta accounts_file_removed yes; fi
+  DC_WRAP=()
+  if [ "$LT_REPORTED" != "1" ]; then
+    LT_REPORTED=1
+    local report_dir="${ATP_REPORTS_DIR:-$ATP_DIR/reports}"
+    mkdir -p "$report_dir" 2>/dev/null || report_dir="$LT_DIR"
+    step "summary"
+    LT_RESULT=0
+    python3 "$SCRIPT_DIR/hostinger/loadtest_summary.py" --dir "$LT_DIR" --out "$report_dir/loadtest-$stamp.md" || LT_RESULT=$?
+    chmod 644 "$report_dir/loadtest-$stamp.md" 2>/dev/null || true
+    ln -sfn "loadtest-$stamp.md" "$report_dir/loadtest-latest.md" 2>/dev/null || true
+    printf '\nRaw samples and logs: %s\n' "$LT_DIR"
+    if [ -s "$report_dir/loadtest-$stamp.md" ]; then
+      printf '\n===== report %s (paste this back) =====\n\n' "$report_dir/loadtest-$stamp.md"
+      cat "$report_dir/loadtest-$stamp.md"
+      printf '===== end of report =====\n'
+    fi
+  fi
+  if [ "$LT_CLEAN" = "1" ]; then printf '\ncleanup: verified\n'; else printf '\ncleanup: NOT VERIFIED (exit 4) - docs/deploy/LOADTEST_REAL_HOST.md, manual cleanup\n'; fi
+}
+
+cmd_loadtest() {
+  local users=500 ramp=150 seconds=300 think=30 cpus=0.25 every=5 force=0 check=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --users) users="${2:-}"; shift 2 ;; --ramp) ramp="${2:-}"; shift 2 ;; --seconds) seconds="${2:-}"; shift 2 ;;
+      --think) think="${2:-}"; shift 2 ;; --client-cpus) cpus="${2:-}"; shift 2 ;; --sample-seconds) every="${2:-}"; shift 2 ;;
+      --force-offhours) force=1; shift ;; --check) check=1; shift ;;
+      *) die "unknown loadtest option $1 (atp.sh help)" 2 ;;
+    esac
+  done
+  local v
+  for v in "$users" "$ramp" "$seconds" "$think" "$every" "$LT_MIN_AVAILABLE_MIB" "$LT_WATCH_SECONDS"; do
+    case "$v" in ""|*[!0-9]*) die "--users, --ramp, --seconds, --think and --sample-seconds take whole numbers" 2 ;; esac
+  done
+  if [ "$users" -lt 1 ] || [ "$users" -gt 1000 ]; then die "--users must be 1..1000" 2; fi
+  if [ "$ramp" -lt 10 ] || [ "$seconds" -lt 30 ]; then die "--ramp must be at least 10 s and --seconds at least 30 s" 2; fi
+  [ $((ramp + seconds)) -le "$LT_MAX_WINDOW" ] || die "--ramp + --seconds must stay within $LT_MAX_WINDOW s: access tokens live 15 minutes and the client does not refresh them" 2
+  [ "$every" -ge 2 ] || die "--sample-seconds must be at least 2" 2
+  case "$cpus" in ""|*[!0-9.]*|*.*.*) die "--client-cpus takes a number such as 0.25" 2 ;; esac
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ "$DRY_RUN" = "1" ] && check=1
+
+  lock 0
+  step "preflight"
+  check_tools
+  check_env report
+  local cur; cur="$(current_sha)"
+  [ -n "$cur" ] || die "no release recorded - deploy first: $ATP_DIR/deploy/atp.sh deploy (outside market hours)" 10
+  RELEASE="$(release_of "$cur")"
+  info "release running: $RELEASE"
+  if [ "$(git -C "$ATP_DIR" rev-parse HEAD 2>/dev/null)" != "$cur" ]; then warn "the checkout differs from the running release - the load test measures the running release ($RELEASE)"; fi
+  docker image inspect "atp-backend:$RELEASE" >/dev/null 2>&1 || die "image atp-backend:$RELEASE not found - deploy first: $ATP_DIR/deploy/atp.sh deploy" 10
+  local shards per window need weight
+  shards=$(( (users * 60 + ramp * LT_LOGINS_PER_IP_MINUTE - 1) / (ramp * LT_LOGINS_PER_IP_MINUTE) ))
+  [ "$shards" -ge 1 ] || shards=1
+  per=$(( (users + shards - 1) / shards ))
+  weight=$(( LT_APP_WEIGHT / shards )); [ "$weight" -ge 2 ] || weight=2
+  window=$(( 20 + shards + ramp + seconds ))
+  need=$(( (window + 240 + 59) / 60 ))              # + seeding, the client's start and the cleanup
+  info "plan: $users users in $shards client containers (one client IP each, at most $per users and $LT_LOGINS_PER_IP_MINUTE logins a minute per IP), login ramp ${ramp}s, then ${seconds}s, think ${think}s - about $need minutes"
+
+  step "NSE market hours"
+  loadtest_market_gate "$need" "$force"
+  step "PAPER-only Phase 0"
+  loadtest_posture_gate
+  step "the running stack"
+  local svc running
+  running="$(dc ps --status running --services 2>/dev/null || true)"
+  for svc in postgres redis backend worker caddy; do
+    printf '%s\n' "$running" | grep -qx "$svc" || die "$svc is not running - check with: $ATP_DIR/deploy/atp.sh health" 1
+  done
+  deep_ok || die "the API's deep health is not ok - check with: $ATP_DIR/deploy/atp.sh health" 1
+  ok "postgres, redis, backend, worker, caddy running; deep health ok"
+  local avail_mib need_mib
+  avail_mib="$(awk '/^MemAvailable:/ {print int($2 / 1024)}' /proc/meminfo 2>/dev/null || echo 0)"
+  # L4: what the clients use (about LT_CLIENT_RSS_MIB each), above the watchdog's floor, with 256 MiB to spare.
+  need_mib=$(( shards * LT_CLIENT_RSS_MIB + LT_MIN_AVAILABLE_MIB + 256 ))
+  if [ "${avail_mib:-0}" -lt "$need_mib" ]; then
+    die "refused: only ${avail_mib:-0} MiB available; the load client needs about $(( shards * LT_CLIENT_RSS_MIB )) MiB and the run stops below ${LT_MIN_AVAILABLE_MIB} MiB - $need_mib MiB needed. Nothing was created." 6
+  fi
+  ok "memory available: ${avail_mib} MiB (the client needs about $(( shards * LT_CLIENT_RSS_MIB )) MiB; the run stops below ${LT_MIN_AVAILABLE_MIB} MiB)"
+  local leftover
+  leftover="$(lt_org list 2>/dev/null | tr -d '\r' | tail -n 1 | python3 -c 'import json, sys
+try:
+    rows = json.load(sys.stdin)
+except ValueError:
+    rows = []
+print(" ".join(r["stamp"] for r in rows if r.get("active_users")))' 2>/dev/null || true)"
+  if [ -n "$leftover" ]; then warn "an earlier run's load-test organisation still has active users: $leftover - remove it with: $ATP_DIR/deploy/atp.sh loadtest-cleanup <stamp>"; fi
+
+  if [ "$check" = "1" ]; then
+    printf '\nloadtest --check: ready. Nothing was created or changed. Run without --check to start (about %s minutes).\n' "$need"
+    return 0
+  fi
+
+  local stamp; stamp="$(date +%Y%m%d-%H%M%S)"
+  LT_DIR="$STATE_DIR/loadtest/$stamp"
+  mkdir -p "$LT_DIR"; chmod 700 "$LT_DIR"
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  trap 'LT_HUP=1; exit 129' HUP
+  LT_STAMP="$stamp"                                 # from here on, every exit cleans up
+  lt_meta stamp "$stamp" started_ist "$(date '+%Y-%m-%d %H:%M:%S')" release "$RELEASE" users "$users" ramp "$ramp" seconds "$seconds" \
+    think "$think" shards "$shards" client_cpus_per_shard "$cpus" client_cpu_shares_per_shard "$weight" vcpus "$(nproc)" sample_seconds "$every" market "$LT_MARKET" \
+    posture "$LT_POSTURE" client_prefix "atp-loadtest-$stamp-" \
+    host "$(hostname) ($(nproc) vCPU, $(awk '/^MemTotal:/ {printf "%.1f GB", $2 / 1048576}' /proc/meminfo))" \
+    chart_data "chart: the users' own broker session (none: 409); chart_lake: the shared market lake's daily bars (database only)" \
+    watchdog "every ${LT_WATCH_SECONDS}s: deep health (2 misses), worker heartbeat <= ${LT_MAX_HEARTBEAT_S}s, MemAvailable >= ${LT_MIN_AVAILABLE_MIB} MiB, swap growth <= ${LT_MAX_SWAP_GROWTH_MIB} MiB, no app container restart or OOM kill"
+  LT_FLAGS_BEFORE="$(flags_snapshot)"; LT_OTHERS_BEFORE="$(lt_others_digest)"
+
+  step "load-test organisation loadtest-$stamp: $users synthetic PAPER users, no broker credentials"
+  # L1: in the background and waited for, so Ctrl-C returns at once; the exit stops the named container (its one
+  # transaction rolls back) before the cleanup.
+  LT_SEED_NAME="atp-loadtest-$stamp-seed"
+  dc run --rm --no-deps -T --name "$LT_SEED_NAME" backend python scripts/loadtest_org.py seed --stamp "$stamp" --count "$users" \
+    < /dev/null > "$LT_DIR/seed.out" 2> "$LT_DIR/seed-stderr.txt" &
+  LT_SEED_PID="$!"
+  if ! wait "$LT_SEED_PID"; then
+    LT_SEED_PID=""
+    die "seeding failed: $(tail -n 2 "$LT_DIR/seed-stderr.txt" | tr '\n' ' ')" 1
+  fi
+  LT_SEED_NAME=""; LT_SEED_PID=""
+  { printf '# email,password - synthetic load-test users (PAPER, no broker); removed at cleanup\n'
+    tr -d '\r' < "$LT_DIR/seed.out" | sed -n 's/^account,//p'; } > "$LT_DIR/accounts.csv"
+  tr -d '\r' < "$LT_DIR/seed.out" | sed -n 's/^org,//p' | tail -n 1 > "$LT_DIR/org.json"
+  rm -f "$LT_DIR/seed.out"
+  local seeded creds tid
+  seeded="$(grep -vc '^#' "$LT_DIR/accounts.csv" || true)"
+  [ "$seeded" = "$users" ] || die "seeded $seeded users, expected $users" 1
+  tid="$(python3 -c 'import json, sys; d = json.load(open(sys.argv[1])); assert d["stamp"] == sys.argv[2]; print(int(d["tenant_id"]))' "$LT_DIR/org.json" "$stamp" 2>/dev/null || true)"
+  case "$tid" in ""|*[!0-9]*) die "seed did not report the organisation's id" 1 ;; esac
+  creds="$(psql_q "select count(*) from broker_credentials where tenant_id = $tid" || echo unknown)"
+  [ "$creds" = "0" ] || die "the load-test organisation has broker credentials ($creds) - stopping" 1
+  lt_meta broker_credentials "none (0 rows)" tenant_id "$tid"
+  ok "$seeded users seeded in organisation #$tid (accounts in $LT_DIR/accounts.csv, mode 600, removed at cleanup; ids in $LT_DIR/org.json)"
+
+  step "samplers: docker stats and /proc/meminfo every ${every}s; watchdog every ${LT_WATCH_SECONDS}s"
+  echo "epoch,container,cpu,mem_usage,mem_pct" > "$LT_DIR/docker-stats.csv"
+  echo "epoch,mem_total_kb,mem_free_kb,mem_available_kb,swap_total_kb,swap_free_kb,pswpin,pswpout" > "$LT_DIR/host-memory.csv"
+  lt_sample_stats "$LT_DIR/docker-stats.csv" "$every" & LT_PIDS+=("$!")
+  lt_sample_host "$LT_DIR/host-memory.csv" "$every" & LT_PIDS+=("$!")
+  lt_watchdog & LT_PIDS+=("$!")
+  lt_scrape > "$LT_DIR/metrics-before.prom" || true
+
+  step "load client: $shards containers on the run's own network"
+  loadtest_edge "$stamp"
+  lt_meta edge "$LT_EDGE"
+  info "$LT_EDGE"
+  local start_at i offset n name uid gid
+  uid="$(id -u)"; gid="$(id -g)"
+  start_at=$(( $(date +%s) + 20 + shards ))
+  for i in $(seq 0 $((shards - 1))); do
+    offset=$((i * per)); n=$(( users - offset < per ? users - offset : per ))
+    [ "$n" -gt 0 ] || break
+    name="atp-loadtest-$stamp-$i"
+    docker run -d --name "$name" --label "atp.loadtest=$stamp" --network "$LT_NET" ${LT_HOST_ARGS[@]+"${LT_HOST_ARGS[@]}"} \
+      --cpus "$cpus" --cpu-shares "$weight" --memory "$LT_CLIENT_MEMORY" --memory-swap "$LT_CLIENT_MEMORY" --pids-limit 64 \
+      --read-only --tmpfs /tmp --no-healthcheck --cap-drop ALL --security-opt no-new-privileges --user "$uid:$gid" \
+      -e LOADTEST_ALLOWED_HOSTS="$LT_ALLOWED" -v "$LT_DIR:/lt" --entrypoint python "atp-backend:$RELEASE" \
+      scripts/loadtest.py --base "$LT_BASE" ${LT_EDGE_ARGS[@]+"${LT_EDGE_ARGS[@]}"} --chart-lake --accounts /lt/accounts.csv \
+      --account-offset "$offset" --users "$n" --seconds "$seconds" --ramp "$ramp" --think "$think" --seed "$((54 + i))" \
+      --shard "$i" --shards "$shards" --start-at "$start_at" --timeout 30 --raw-out "/lt/shard-$i.json" >/dev/null \
+      || die "could not start load-client container $name" 1
+  done
+  ok "$shards client containers started; the ramp starts at $(date -d "@$start_at" +%H:%M:%S) IST"
+
+  step "running: ramp ${ramp}s + ${seconds}s (progress every 30 s; Ctrl-C stops and cleans up)"
+  # No command substitution in this loop: bash re-parses one when it runs it, and a Ctrl-C landing mid-parse makes the
+  # trap fail to parse (the run still cleans up, but exits 2). The signal lands in `sleep` or a docker call instead.
+  local deadline last=0 t up rel _id
+  deadline=$(( start_at + ramp + seconds + 180 ))
+  while :; do
+    if [ -s "$LT_DIR/abort.txt" ]; then
+      IFS= read -r LT_ABORT < "$LT_DIR/abort.txt" || true
+      warn "ABORTED: production degraded - $LT_ABORT. Stopping the load now."
+      break
+    fi
+    docker ps -q --filter "label=atp.loadtest=$stamp" > "$LT_DIR/clients-up.txt" 2>/dev/null || true
+    up=0
+    while IFS= read -r _id; do up=$((up + 1)); done < "$LT_DIR/clients-up.txt"
+    [ "$up" -gt 0 ] || break
+    printf -v t '%(%s)T' -1
+    if [ "$t" -ge "$deadline" ]; then warn "the client is still running ${seconds}s + 3 minutes after the ramp - stopping it"; break; fi
+    if [ $((t - last)) -ge 30 ]; then
+      last="$t"
+      rel="+$((t - start_at))s"
+      if [ "$t" -lt "$start_at" ]; then rel="-$((start_at - t))s (before the ramp)"; fi
+      lt_progress "$rel" "$up" "$shards" "atp-loadtest-$stamp-"
+    fi
+    sleep 5
+  done
+  lt_stop_samplers
+  if [ -n "$LT_ABORT" ]; then
+    lt_meta aborted "$LT_ABORT"
+    # shellcheck disable=SC2046  # one id per word
+    docker rm -f $(docker ps -aq --filter "label=atp.loadtest=$stamp" 2>/dev/null || true) >/dev/null 2>&1 || true
+  fi
+  local failed=0
+  for i in $(seq 0 $((shards - 1))); do
+    docker logs "atp-loadtest-$stamp-$i" > "$LT_DIR/shard-$i.log" 2>&1 || true
+    [ -s "$LT_DIR/shard-$i.json" ] || failed=$((failed + 1))           # its own exit code is its own SLO verdict; the merge decides
+  done
+  [ "$failed" = "0" ] || [ -n "$LT_ABORT" ] || warn "$failed client container(s) failed - see $LT_DIR/shard-*.log"
+  lt_scrape > "$LT_DIR/metrics-after.prom" || true
+  local files=() f
+  for f in "$LT_DIR"/shard-*.json; do [ -e "$f" ] && files+=("/lt/$(basename "$f")"); done
+  if [ "${#files[@]}" -gt 0 ]; then
+    docker run --rm --network none --read-only --no-healthcheck --cap-drop ALL --user "$uid:$gid" -v "$LT_DIR:/lt" --entrypoint python \
+      "atp-backend:$RELEASE" scripts/loadtest.py --merge "${files[@]}" --json-out /lt/result.json > "$LT_DIR/merge.log" 2>&1 || true
+  elif [ -z "$LT_ABORT" ]; then
+    warn "no client wrote its samples - see $LT_DIR/shard-*.log"
+  fi
+
+  loadtest_finish 0
+  exit "$LT_RESULT"
+}
+
+cmd_loadtest_cleanup() {
+  local target="${1:-}"
+  [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
+  [ -n "$target" ] || die "usage: atp.sh loadtest-cleanup STAMP | --all | --list" 2
+  case "$target" in --all|--list) ;; *) [[ "$target" =~ ^[0-9]{8}-[0-9]{6}$ ]] || die "STAMP is YYYYMMDD-HHMMSS (atp.sh loadtest-cleanup --list shows them)" 2 ;; esac
+  lock 0
+  check_tools
+  check_env report
+  RELEASE="$(release_of "$(current_sha)")"
+  [ -n "$RELEASE" ] || die "no release recorded - nothing deployed here" 10
+  step "load-test organisations on this host (found by their seed audit record, never by name)"
+  local js rows
+  js="$(lt_org list | tr -d '\r' | tail -n 1)" || die "could not list them (the backend image of $RELEASE)" 1
+  printf '%s' "$js" | python3 -c 'import json, sys
+rows = json.load(sys.stdin)
+for r in rows:
+    print("    %s  organisation #%s %r  %s  users %s (%s active)%s" % (r["stamp"], r["tenant_id"], r.get("name"), r["status"], r["users"],
+          r["active_users"], "" if r["ours"] else "  - NOT provably a load-test organisation, never touched: " + r.get("reason", "")))
+if not rows:
+    print("    none")' || die "could not read the list" 1
+  # "stamp tenant_id" for every organisation still provably a load-test one
+  rows="$(printf '%s' "$js" | python3 -c 'import json, sys
+print("\n".join("%s %d" % (r["stamp"], r["tenant_id"]) for r in json.load(sys.stdin) if r["ours"]))')"
+  local containers; containers="$(docker ps -aq --filter label=atp.loadtest 2>/dev/null | wc -l | tr -d ' ' || true)"
+  info "load-client containers: ${containers:-0}"
+  [ "$target" != "--list" ] || return 0
+  if [ "$target" != "--all" ]; then
+    rows="$(printf '%s\n' "$rows" | awk -v s="$target" '$1 == s')"
+    [ -n "$rows" ] || die "no provable load-test organisation for $target (see the list above) - nothing changed" 1
+  else
+    if [ "${containers:-0}" != "0" ]; then
+      # shellcheck disable=SC2046  # one id per word
+      docker rm -f $(docker ps -aq --filter label=atp.loadtest) >/dev/null 2>&1 || true
+    fi
+    lt_remove_networks ""
+  fi
+  [ -n "$rows" ] || { printf '\nnothing to clean up\n'; return 0; }
+  local stamp tid out ids failed=0
+  while read -r stamp tid; do
+    [ -n "$stamp" ] || continue
+    step "cleanup loadtest-$stamp (organisation #$tid)"
+    mkdir -p "$STATE_DIR/loadtest/$stamp"
+    ids="$(docker ps -aq --filter "label=atp.loadtest=$stamp" 2>/dev/null || true)"
+    if [ -n "$ids" ]; then
+      # shellcheck disable=SC2086  # one id per word
+      docker rm -f $ids >/dev/null 2>&1 || true
+    fi
+    lt_remove_networks "$stamp"
+    out="$(lt_clean_org "$stamp" "$tid")" || true
+    printf '%s\n' "$out" | lt_print_cleanup
+    case "$out" in *'"clean": true'*) ;; *) failed=$((failed + 1)) ;; esac
+    rm -f "$STATE_DIR/loadtest/$stamp/accounts.csv"
+  done <<< "$rows"
+  [ "$failed" = "0" ] || { printf '\nloadtest-cleanup: %s organisation(s) NOT verified clean\n' "$failed"; exit 4; }
+  printf '\nloadtest-cleanup: done\n'
+}
+
+usage() { sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 
 main() {
   local args=() a
@@ -1284,6 +1932,8 @@ main() {
     restore-check)  cmd_restore_check "$@" ;;
     schedule)       cmd_schedule ;;
     releases)       cmd_releases ;;
+    loadtest)       cmd_loadtest "$@" ;;
+    loadtest-cleanup) cmd_loadtest_cleanup "$@" ;;
     help|-h|--help) usage ;;
     *) usage; exit 2 ;;
   esac

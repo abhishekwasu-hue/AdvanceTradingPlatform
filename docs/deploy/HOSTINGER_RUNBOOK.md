@@ -31,6 +31,8 @@ Run these as the `atp` user on the server (`ssh atp@<SERVER_IP>`). Each one is s
 | Prove the newest R2 backup restores (scratch database, row counts, audit chain) | `/opt/atp/deploy/atp.sh restore-check` |
 | Release history | `/opt/atp/deploy/atp.sh releases` |
 | The 500-user load test against this server (its own copy of the stack, section 12a) | `/opt/atp/deploy/ci/loadtest_500.sh` |
+| The 500-session load test against the production stack itself, in NSE market hours, with memory sampled (section 12b) | `/opt/atp/deploy/atp.sh loadtest` |
+| Remove a load-test run's synthetic organisation by hand (section 12b) | `/opt/atp/deploy/atp.sh loadtest-cleanup --list` |
 
 Exit codes:
 
@@ -39,8 +41,11 @@ Exit codes:
 | `0` | ok |
 | `1` | failed (the message says what, and the checkout is back on the release that still runs) |
 | `2` | wrong usage |
-| `3` | refused because of a market session: a migration while NSE is open, or a worker restart while any session (NSE, MCX until 23:30 IST, crypto) is open **and** positions are open |
-| `10` | owner action needed (the message names it: a `.env` key or a deploy key; a flag in Admin → Controls only if someone changed one after install - section 4a) |
+| `3` | refused because of a market session: a migration while NSE is open, or a worker restart while any session (NSE, MCX until 23:30 IST, crypto) is open **and** positions are open. For `loadtest` the other way round: refused **outside** NSE market hours |
+| `4` | `loadtest` only: the cleanup of its synthetic organisation was not verified - outranks every other outcome (section 12b) |
+| `5` | `loadtest` only: its watchdog stopped the run because production degraded; cleanup verified |
+| `6` | `loadtest` only: refused, not enough free memory; nothing created |
+| `10` | owner action needed (the message names it: a `.env` key or a deploy key; a flag in Admin → Controls only if someone changed one after install - section 4a). For `loadtest`: refused, the deployment is not PAPER-only Phase 0 |
 | `20` | `SECRETS_ENCRYPTION_KEY` changed |
 
 Never run `atp.sh` with `bash -x`. Tracing would print the values it reads from `.env`; its normal output never does.
@@ -404,6 +409,15 @@ CI runs the 500-user load test on every push to main against a copy of the stack
   container. Send it, or paste it into `docs/reports/load_test_500.md`.
 - `--think 10` runs the busier profile CI also runs; `--users N` another size.
 
+## 12b. The load test against the production stack, in market hours (`atp.sh loadtest`)
+
+Section 12a measures a copy of the stack. `atp.sh loadtest` measures production itself while NSE is open: its API,
+worker, Postgres, Redis and Caddy. It uses 500 synthetic PAPER sessions in a throwaway organisation `loadtest-<stamp>`
+(no broker credentials) and samples every container's memory and the host's memory and swap (LAB-6). Every exit -
+the end, a failure, Ctrl-C - removes what it made; the append-only audit trail stays intact. The command block, the
+safety rules, the verdict (API p95 <= 0.5 s, login p95 <= 2 s, zero errors), how to stop it and the manual cleanup are in
+`docs/deploy/LOADTEST_REAL_HOST.md`. Deploy the release first, outside market hours (`atp.sh deploy`).
+
 ## 12. Troubleshooting
 
 | You see | Do |
@@ -438,3 +452,5 @@ Logs from scheduled runs are in `/opt/atp/.deploy/logs/`. The release history is
   that `restore-check` makes is the only database it drops.
 - It never pulls application images from a registry.
 - It never runs as root, except `bootstrap`.
+- `loadtest` creates one synthetic organisation and removes it afterwards; it never touches another organisation, a
+  flag, `.env` or a role, and never deletes from or edits the audit ledgers (section 12b).

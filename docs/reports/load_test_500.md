@@ -514,3 +514,16 @@ Also tried, and not kept: a per-process limit of 2 CPU-bound threads (run 6: no 
 ### Hostinger result
 
 Not run yet (the server is an owner blocker).
+
+## The production host in market hours (`atp.sh loadtest`)
+
+Not run yet. From 21 Oct the owner runs the 500-session test against the production KVM 2 itself, inside an NSE
+session: `/opt/atp/deploy/atp.sh loadtest`. The command block, the method and the safety rules are in
+`docs/deploy/LOADTEST_REAL_HOST.md`. Its verdict follows the owner's decisions: login p95 at most 2 s with all users
+logged in (LD-9), every other scenario p95 at most 0.5 s, and zero errors. It also reports memory per container and
+for the host (LAB-6). The report it writes (`/opt/atp/reports/loadtest-<stamp>.md`) goes here once it has run.
+
+It differs from the CI runs above in two ways:
+- The load-test organisation has no broker session, so `chart` and `screener_run` answer 409 and are reported as not
+  measured. `chart_lake` (daily bars from the shared market lake) is measured in their place.
+- The load client runs on the same 2 vCPUs. Its CPU is reported apart.

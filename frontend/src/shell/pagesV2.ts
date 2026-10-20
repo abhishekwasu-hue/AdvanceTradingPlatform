@@ -10,6 +10,8 @@ import type { PageProps } from "../routes";
 export const PAGE_COMPONENTS_V2: Partial<Record<Page, LazyExoticComponent<ComponentType<PageProps>>>> = {
   // UI2-2: the dashboard, "Today" (src/dashboard).
   dashboard: lazy(() => import("../dashboard/DashboardV2")),
+  // UI2-3: the Signals inbox (§7, src/signals).
+  signals: lazy(() => import("../signals/SignalsV2")),
 };
 
 /**

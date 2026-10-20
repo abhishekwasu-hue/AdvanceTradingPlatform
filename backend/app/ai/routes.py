@@ -128,30 +128,33 @@ class AcknowledgementBody(BaseModel):
 ENGLISH_ONLY = [{"code": "en", "label": "English"}]
 
 
-def _ai_language(user: Optional[User] = None) -> str:
-    """The language the AI answers in: English, always (the owner's ruling - ATP is English only; only the strategy
-    interview is trilingual, on its own screen). A `language` a client still sends ("mr") is accepted and ignored."""
-    return "en"
+# The language the AI answers in: English, always (the owner's ruling - ATP is English only; only the strategy interview
+# is trilingual, on its own screen). There is no per-user choice any more (EO-4: the `ai_language` column of `users` was
+# dropped); a `language` a client still sends ("mr") is accepted and ignored.
+AI_LANGUAGE = "en"
 
 
 class PreferencesBody(BaseModel):
-    ai_language: str = Field(pattern=r"^(en|mr)$")
+    """What an older client may still send. Both fields are accepted (en / mr) and ignored: nothing is stored."""
+    ai_language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")
+    language: Optional[str] = Field(default=None, pattern=r"^(en|mr)$")
+
+
+def _preferences() -> dict:
+    return {"ai_language": AI_LANGUAGE, "languages": ENGLISH_ONLY}
 
 
 @router.get("/preferences")
 async def get_preferences(user: User = Depends(get_current_user)) -> dict:
-    """The user's AI preferences. ATP is English only: the AI answers in English (an older stored choice is ignored)."""
-    return {"ai_language": _ai_language(user), "languages": ENGLISH_ONLY}
+    """The user's AI preferences. ATP is English only: the AI answers in English (no per-user choice is stored)."""
+    return _preferences()
 
 
 @router.put("/preferences")
-async def put_preferences(body: PreferencesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
-    row = await session.get(User, user.id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="User not found")
-    row.ai_language = _ai_language(row)            # English only: an older client asking for "mr" gets English
-    await session.commit()
-    return {"ai_language": row.ai_language, "languages": ENGLISH_ONLY}
+async def put_preferences(body: PreferencesBody, user: User = Depends(get_current_user)) -> dict:
+    """Kept for older clients: a valid body is accepted and ignored (nothing is stored) and the answer is the same as
+    GET - English only. An unknown language code is still a 422."""
+    return _preferences()
 
 
 @router.get("/acknowledgement")
@@ -503,7 +506,7 @@ async def get_market_memory(symbol: Optional[str] = Query(default=None, max_leng
     out = await market_memory.latest(session, user.tenant_id, symbol=symbol)
     out["watchlist"] = await market_memory.watchlist(session, user.tenant_id)
     out["interval_minutes"] = market_memory.INTERVAL_MINUTES
-    return _with_global(out, _ai_language())
+    return _with_global(out, AI_LANGUAGE)
 
 
 @router.post("/market-memory/refresh")
@@ -544,7 +547,7 @@ async def refresh_market_memory(body: MemoryRefreshBody, user: User = Depends(re
             report["errors"] = list(report.get("errors", [])) + [f"sentiment: {type(exc).__name__}: {exc}"[:200]]
     out = await market_memory.latest(session, user.tenant_id)
     out["report"] = report
-    return _with_global(out, _ai_language())
+    return _with_global(out, AI_LANGUAGE)
 
 
 # --- Phase AT the guide ------------------------------------------------------------------------------------
@@ -557,7 +560,7 @@ class AskBody(BaseModel):
 @router.get("/concepts")
 async def concepts(language: str = Query(default="en", pattern=r"^(en|mr)$"), user: User = Depends(get_current_user)) -> dict:
     """The guide's concept library (titles), for browsing."""
-    return {"concepts": knowledge.catalogue(_ai_language())}
+    return {"concepts": knowledge.catalogue(AI_LANGUAGE)}
 
 
 @router.get("/concepts/{concept_id}")
@@ -565,7 +568,7 @@ async def concept(concept_id: str, language: str = Query(default="en", pattern=r
     found = knowledge.BY_ID.get(concept_id)
     if found is None:
         raise HTTPException(status_code=404, detail="No such concept")
-    return found.as_dict(_ai_language())
+    return found.as_dict(AI_LANGUAGE)
 
 
 @router.post("/ask")
@@ -573,7 +576,7 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
     """Ask the guide: answered from the concept library and the market memory, or - with an external
     AI provider configured - by the AI grounded on the same notes, the memory and the trader's profile."""
     await require_flag(session, "ai_copilot", user.tenant_id)
-    lang = _ai_language(user)          # English only, whatever `language` the client sends
+    lang = AI_LANGUAGE          # English only, whatever `language` the client sends
     memory = await market_memory.latest(session, user.tenant_id)
     saved, _ = await advisor.load_profile(session, user)
     provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
@@ -733,7 +736,7 @@ async def daily_brief(language: str = Query(default="en", pattern=r"^(en|mr)$"),
     """Today's briefing: the day type and game plan, the session, your P&L and risk budget, why each
     deployment is or is not trading, and the pre-trade checklist."""
     await require_flag(session, "ai_copilot", user.tenant_id)
-    return await briefing.build(session, user, _ai_language(user))
+    return await briefing.build(session, user, AI_LANGUAGE)
 
 
 # --- Phase BD-lite: the market thesis (shadow overlay only) --------------------------------------------
@@ -775,7 +778,7 @@ async def thesis_for(symbol: str, language: str = Query(default="en", pattern=r"
     from app.news_feed import service as news_feed_service
     if await news_feed_service.enabled(session, user.tenant_id):
         news_items = await news_feed_service.items(session, user.tenant_id, hours=24)
-    out = await thesis.current(session, user.tenant_id, symbol, lang=_ai_language(user), refresh=refresh or narrate, news_items=news_items, provider=provider)
+    out = await thesis.current(session, user.tenant_id, symbol, lang=AI_LANGUAGE, refresh=refresh or narrate, news_items=news_items, provider=provider)
     if out is None:
         raise HTTPException(status_code=404, detail=f"No market read of {symbol.upper()} yet - add it to the watchlist and refresh the market memory")
     if narrate and out.get("narrative_source") == "model":
@@ -791,7 +794,7 @@ async def trade_coach(language: str = Query(default="en", pattern=r"^(en|mr)$"),
                       session: AsyncSession = Depends(get_session)) -> dict:
     """The trade coach: your closed trades' numbers, breakdowns and behaviour flags with fixes."""
     await require_flag(session, "ai_copilot", user.tenant_id)
-    return await _coach_review(session, user, _ai_language(user), days, mode)
+    return await _coach_review(session, user, AI_LANGUAGE, days, mode)
 
 
 class CopilotBody(BaseModel):
@@ -805,7 +808,7 @@ async def copilot_answer(session: AsyncSession, user: User, message: str, lang: 
     answers - by the AI grounded on those facts when an external provider is configured, from the
     rules otherwise. Read-only. The answer is in English whatever language the message is written in (the owner's ruling:
     only the strategy interview is trilingual)."""
-    lang = _ai_language(user)
+    lang = AI_LANGUAGE
     name = copilot.intent(message)
     out: dict = {"intent": name, "language": lang, "action": copilot.action_for(lang, name), "source": "rules"}
     if name == "guide":
@@ -859,7 +862,7 @@ async def agent_ask(body: AgentAskBody, user: User = Depends(require_ai_acknowle
     from app.ai.tools import ToolContext
     await require_flag(session, "ai_copilot", user.tenant_id)
     await require_flag(session, "ai_agent", user.tenant_id)
-    lang = _ai_language(user)          # English only, whatever `language` the client sends
+    lang = AI_LANGUAGE          # English only, whatever `language` the client sends
     provider = await ai_settings.provider_for(session, await _tenant(session, user), task="knowledge", user_id=user.id)
     if not getattr(provider, "supports_tools", False):
         out = await copilot_answer(session, user, body.question, lang)
@@ -976,7 +979,7 @@ async def research_study_get(study_id: str, user: User = Depends(require_ai_ackn
 async def ask_copilot(body: CopilotBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> dict:
     """One box for everything - see `copilot_answer`."""
     await require_flag(session, "ai_copilot", user.tenant_id)
-    return await copilot_answer(session, user, body.message, _ai_language(user))
+    return await copilot_answer(session, user, body.message, AI_LANGUAGE)
 
 
 # --- Phase AW the strategist: live market study -> validated strategies ----------------------------------
@@ -995,9 +998,9 @@ class StrategistBody(BaseModel):
 
     def resolved(self) -> Tuple["StrategistBody", Optional[dict]]:
         if not (self.request or "").strip():
-            return self.model_copy(update={"language": _ai_language()}), None
+            return self.model_copy(update={"language": AI_LANGUAGE}), None
         parsed = strategist.parse_request(self.request, default_symbol=self.symbol)
-        update: dict = {"language": _ai_language()}      # English only
+        update: dict = {"language": AI_LANGUAGE}      # English only
         for key in ("symbol", "style", "direction"):
             if key in parsed["matched"]:
                 update[key] = parsed[key]
@@ -1057,7 +1060,7 @@ async def strategist_parse(body: StrategistParseBody, user: User = Depends(requi
     can see and correct it before the study runs. English only."""
     await require_flag(session, "ai_copilot", user.tenant_id)
     parsed = strategist.parse_request(body.request, default_symbol=body.symbol)
-    parsed["summary"] = strategist.request_summary(_ai_language(), parsed)
+    parsed["summary"] = strategist.request_summary(AI_LANGUAGE, parsed)
     return parsed
 
 

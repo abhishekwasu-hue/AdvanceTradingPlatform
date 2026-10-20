@@ -969,9 +969,12 @@ Never publish a listing without an attached backtest run; the API refuses the su
 
 - The dashboard is English only, and so are the AI's written answers (the owner's ruling, Oct 2026: the per-user
   answer-language choice and the Telegram reply in the message's language were removed - every AI answer is English,
-  whatever language the question is written in; only the strategy interview is trilingual). `users.ai_language` stays in
-  the schema and is ignored (always English).
+  whatever language the question is written in; only the strategy interview is trilingual). `GET/PUT /api/ai/preferences`
+  answer English only; a `PUT` from an older client is accepted and ignored (nothing is stored).
 - Migration `a1c3e5f7b9d2` adds `users.ai_language` (constant default, no table rewrite). Run it outside 09:15-15:30 IST.
+- Migration `e6b8d0f2a4c7` (EO-4) drops `users.ai_language` again. It is not ROLLBACK_SAFE: a code-only rollback past it
+  is refused (the previous release still maps the column); use `rollback --restore-db`, or run `alembic downgrade
+  c4e8a2d6f0b1` first, which re-adds the column (NOT NULL, default `en`, no table rewrite). Run it outside 09:15-15:30 IST.
 - Sample-data figures are stamped and blurred on purpose; switch Data to broker candles to read real numbers.
 - Optional: the per-call cost estimates on the AI provider card use `AI_USD_INR_RATE` and `AI_MODEL_PRICES_JSON` (P0.8-C).
 

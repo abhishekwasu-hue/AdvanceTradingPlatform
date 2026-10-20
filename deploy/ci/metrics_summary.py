@@ -107,13 +107,32 @@ def main(before_path: str, after_path: str) -> None:
     print("|---|---|---|---|---|---|")
     for label, name in (("pool connection checkout", "atp_db_pool_wait_seconds"),
                         ("bcrypt: waiting for a thread", "atp_bcrypt_queue_wait_seconds"),
-                        ("bcrypt: the check itself", "atp_bcrypt_seconds")):
+                        ("bcrypt: the check itself", "atp_bcrypt_seconds"),
+                        ("broker token (API budget, per call)", "atp_api_budget_wait_seconds"),
+                        ("candles: on another request's fetch", "atp_shared_candles_wait_seconds")):
         n, t, buckets = histogram(d, name)
         if n:
             print(f"| {label} | {int(n)} | {t:.1f} | {1000 * t / n:.1f} | {1000 * _quantile(buckets, 0.95):g} | "
                   f"{1000 * _quantile(buckets, 0.99):g} |")
         else:
             print(f"| {label} | 0 | - | - | - | - |")
+    shared_candles(d)
+
+
+def shared_candles(d: Dict[Key, float]) -> None:
+    """LD-10: how the shared candle reads were answered (copy, joined, filled, own, other_process, join_timeout)."""
+    counts: Dict[Tuple[str, str], float] = defaultdict(float)
+    for (name, labels), v in d.items():
+        if name == "atp_shared_candles_total":
+            lab = dict(labels)
+            counts[(lab.get("part", "?"), lab.get("outcome", "?"))] += v
+    if not counts:
+        return
+    print("\nShared candle reads (LD-10):\n")
+    print("| Part | Outcome | n |")
+    print("|---|---|---|")
+    for (part, outcome), n in sorted(counts.items()):
+        print(f"| {part} | {outcome} | {int(n)} |")
 
 
 if __name__ == "__main__":

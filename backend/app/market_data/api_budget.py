@@ -337,6 +337,14 @@ def no_wait() -> Iterator[None]:
         _NO_WAIT.reset(token)
 
 
+def _observe_wait(kind: str, seconds: float) -> None:
+    try:
+        from app.observability.metrics import API_BUDGET_WAIT
+        API_BUDGET_WAIT.labels(kind=kind).observe(seconds)
+    except Exception:  # noqa: BLE001 - a metric never fails a call
+        pass
+
+
 class BudgetedAdapter:
     """A broker adapter whose data calls each take one token from the credential's API budget first (`BUDGETED_CALLS`;
     every other attribute passes through - the instrument master, the adapter's name). Calls wait for the per-second
@@ -362,6 +370,7 @@ class BudgetedAdapter:
         async def call(*args: Any, **kwargs: Any) -> Any:
             if _NO_WAIT.get() and not self.refused:
                 verdict = await _attempt(self._record_id, self._broker, kind)
+                _observe_wait(kind, 0.0)
                 if verdict == -1:
                     raise WouldWait("no token this instant - fetched outside the shared fill")
                 if verdict != 1:
@@ -370,7 +379,10 @@ class BudgetedAdapter:
                 self.taken += 1
                 return await attr(*args, **kwargs)
             wait = 0.0 if self.refused else max(0.0, self._deadline - time.monotonic())
-            if not await take(self._record_id, self._broker, wait, kind):
+            started = time.monotonic()
+            granted = await take(self._record_id, self._broker, wait, kind)
+            _observe_wait(kind, time.monotonic() - started)
+            if not granted:
                 self.refused += 1
                 raise BudgetUsed("broker rate budget used - try again shortly")
             self.taken += 1

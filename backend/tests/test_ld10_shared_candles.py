@@ -501,10 +501,9 @@ def test_a_cache_built_from_a_shared_copy_never_outlives_it(monkeypatch):
         await MarketDataService(_Slow(HISTORY, TODAY)).get_candles(sym, "NSE", "1min", now=NOW)   # the worker's cache too
         return sym
     sym = run(go())
-    first = next(v for k, v in memory.ttls.items() if k.startswith("md:byob:u1.c1:") and sym in k)
-    second = next(v for k, v in memory.ttls.items() if k.startswith("md:byob:u2.c2:") and sym in k)
     worker = next(v for k, v in memory.ttls.items() if k.startswith("md:candles:") and sym in k)
-    assert first == 30 and second == 10 and worker == 10
+    assert worker == 10                                                       # capped at the copy's 10 s left, not 60
+    assert not [k for k in memory.ttls if k.startswith("md:byob:")]           # sessions: no copy of the copy at all
 
 
 def test_redis_reports_the_seconds_a_shared_copy_has_left(monkeypatch):
@@ -528,12 +527,14 @@ def test_redis_reports_the_seconds_a_shared_copy_has_left(monkeypatch):
         try:
             await shared_candles.store(name, HISTORY[:2], 30)
             shared_candles.reset()                                           # another process: Redis only
-            return await shared_candles.load_with_ttl(name)
+            got = await shared_candles.load_with_ttl(name)
+            kept = shared_candles._LOCAL[name][0] - shared_candles._clock()  # parsed once, kept no longer than Redis does
+            return got, kept
         finally:
             await client_.delete(name)
             await client_.aclose()
-    bars, left = run(go())
-    assert bars == HISTORY[:2] and 25 < left <= 30
+    (bars, left), kept = run(go())
+    assert bars == HISTORY[:2] and 25 < left <= 30 and kept <= left
 
 
 def test_a_worker_never_takes_the_fill_lock_nor_waits_on_an_api_processs_fill(monkeypatch):
@@ -561,3 +562,27 @@ def test_a_worker_never_takes_the_fill_lock_nor_waits_on_an_api_processs_fill(mo
     import inspect
     for module in (trading_worker, research_worker):
         assert "shared_candles.never_wait_on_other_processes()" in inspect.getsource(module.main)
+
+
+def test_the_api_reports_where_a_chart_waited(monkeypatch):
+    """LD-10 review: the budget wait per call and how each shared read was answered are on /metrics (for the load run)."""
+    from app.observability.metrics import API_BUDGET_WAIT, SHARED_CANDLES
+    _install_cache(monkeypatch, None)
+    _use_redis(monkeypatch, None)
+    monkeypatch.setenv("API_WORKERS", "1")
+    api_budget.reset()
+
+    def count(part, outcome):
+        return SHARED_CANDLES.labels(part=part, outcome=outcome)._value.get()
+    waits = API_BUDGET_WAIT.labels(kind="history")
+    before = (count("hist", "filled"), count("hist", "copy"), sum(b.get() for b in waits._buckets))
+
+    async def go():
+        sym = _sym()
+        for record in (111, 112):
+            await MarketDataService(api_budget.BudgetedAdapter(_Slow(HISTORY, TODAY, delay=0.0), record, "dhan")).get_candles(
+                sym, "NSE", "1min", now=NOW)
+    run(go())
+    after = (count("hist", "filled"), count("hist", "copy"), sum(b.get() for b in waits._buckets))
+    assert after[0] - before[0] == 1 and after[1] - before[1] >= 1 and after[2] - before[2] == 2   # one fill, one copy, 2 calls
+    api_budget.reset()

@@ -159,6 +159,11 @@ class MarketDataService:
             left = getattr(bars, "copy_seconds_left", None)
             if left is not None:
                 ttl = min(ttl, int(left))
+            # A session's own cache over the shared copies would only repeat them (one user rarely re-opens the same
+            # chart inside a minute) at the cost of a JSON dump and a Redis write per chart: not written. The shared
+            # per-request cache (the worker's, no namespace) is, capped at the copies' remaining life.
+            if self.cache_namespace and left is not None:
+                ttl = 0
             if ttl >= 1:
                 await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), ttl)
         return list(bars)

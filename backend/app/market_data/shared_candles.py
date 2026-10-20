@@ -85,7 +85,7 @@ def _redis() -> bool:
     return redis_backed()
 
 
-def _local_put(name: str, bars: List[OHLCVBar], ttl: int) -> None:
+def _local_put(name: str, bars: List[OHLCVBar], ttl: float) -> None:
     now = _clock()
     if len(_LOCAL) >= LOCAL_MAX_ENTRIES and name not in _LOCAL:
         for stale in [k for k, (expires, _) in _LOCAL.items() if expires <= now]:
@@ -112,10 +112,13 @@ async def load_with_ttl(name: str) -> Optional[Got]:
     if not raw:
         return None
     try:
-        return [OHLCVBar.model_validate(item) for item in json.loads(raw)], left
+        bars = [OHLCVBar.model_validate(item) for item in json.loads(raw)]
     except (ValueError, TypeError):
         logger.warning("Discarding unreadable shared candles for %s", name)
         return None
+    if left is not None and left > 0:
+        _local_put(name, bars, left)       # parsed once per process for the copy's remaining life, never longer
+    return bars, left
 
 
 async def load(name: str) -> Optional[List[OHLCVBar]]:
@@ -169,10 +172,12 @@ async def _own(name: str, fetch: Fetch, ttl_for: TtlFor) -> Got:
     """This request's own fetch, its budget waited for here - no lock held, nobody joined to it."""
     got = await load_with_ttl(name)
     if got is not None and got[0]:
+        _count(name, "copy")
         return got
     bars = await fetch()
     ttl = ttl_for(bars) if bars else 0
     await store(name, bars, ttl)
+    _count(name, "own")
     return bars, float(ttl) if bars else None
 
 
@@ -182,14 +187,18 @@ async def _fill(name: str, fetch: Fetch, ttl_for: TtlFor) -> Got:
     from app.market_data import api_budget
     holder = await _claim(name)
     if holder is None:
+        started = time.monotonic()
         got = await _await_other_process(name)
+        _waited("process", time.monotonic() - started)
         if got is not None and got[0]:
+            _count(name, "other_process")
             return got
     try:
         with api_budget.no_wait():
             bars = await fetch()
         ttl = ttl_for(bars) if bars else 0
         await store(name, bars, ttl)
+        _count(name, "filled")
         return bars, float(ttl) if bars else None
     finally:
         if holder is not None:
@@ -218,6 +227,7 @@ async def get_or_fetch_ttl(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bo
     for _ in range(MAX_JOINS):
         got = await load_with_ttl(name)
         if got is not None:
+            _count(name, "copy")
             return got
         pending = _INFLIGHT.get(name)
         if pending is not None and pending.get_loop() is not asyncio.get_running_loop():
@@ -231,15 +241,21 @@ async def get_or_fetch_ttl(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bo
             except api_budget.WouldWait:
                 break                                          # its token is not there yet: wait for it outside the fill
             return list(bars), left
+        started = time.monotonic()
         try:
             bars, left = await asyncio.wait_for(asyncio.shield(pending), JOIN_WAIT_SECONDS)
         except asyncio.TimeoutError:
+            _waited("join", time.monotonic() - started)
+            _count(name, "join_timeout")
             break                                              # someone else's fetch is slow: this request's own
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - another request's fetch failed (its budget, its token): try with this one's
+            _waited("join", time.monotonic() - started)
             continue
+        _waited("join", time.monotonic() - started)
         if bars:
+            _count(name, "joined")
             return list(bars), left
         break                                                  # another session's empty answer is not this one's
     return await _own(name, fetch, ttl_for)
@@ -248,6 +264,22 @@ async def get_or_fetch_ttl(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bo
 async def get_or_fetch(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bool = True) -> List[OHLCVBar]:
     """`get_or_fetch_ttl` without the copy's remaining seconds."""
     return (await get_or_fetch_ttl(name, fetch, ttl_for, read=read))[0]
+
+
+def _count(name: str, outcome: str) -> None:
+    try:
+        from app.observability.metrics import SHARED_CANDLES
+        SHARED_CANDLES.labels(part=name.split(":")[6] if name.count(":") >= 6 else "?", outcome=outcome).inc()
+    except Exception:  # noqa: BLE001 - a metric never fails a read
+        pass
+
+
+def _waited(on: str, seconds: float) -> None:
+    try:
+        from app.observability.metrics import SHARED_CANDLES_WAIT
+        SHARED_CANDLES_WAIT.labels(on=on).observe(seconds)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def never_wait_on_other_processes() -> None:

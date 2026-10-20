@@ -227,7 +227,8 @@ def test_candle_cache_is_per_session_with_a_namespace_over_one_shared_broker_cop
         bars_b = await MarketDataService(b, cache_namespace="u2.c2").get_candles("RELIANCE", "NSE", "1min")
         assert bars_a[0].close == 100.0 and a.calls
         assert bars_b == bars_a and not b.calls                                   # the shared copy, no second broker call
-        assert {k.split(":")[2] for k in memory.store if k.startswith("md:byob:")} == {"u1.c1", "u2.c2"}
+        # No session-level copy of the shared bars is written (it would only repeat them), and never a platform-wide one.
+        assert not [k for k in memory.store if ":candles:" in k]
         other = _OtherBroker(300.0)
         bars_o = await MarketDataService(other, cache_namespace="u3.c3").get_candles("RELIANCE", "NSE", "1min")
         assert bars_o[0].close == 300.0 and other.calls                           # another broker: its own bars
@@ -359,9 +360,8 @@ def test_user_b_never_gets_user_a_session_data_but_shares_the_public_feed_and_ca
     cb = client.post("/api/market-data/candles", headers=b_headers, json={"symbols": ["RELIANCE"], "timeframe": "1min"}).json()
     assert ca["symbols"]["RELIANCE"]["bars"][0]["close"] == 111.0 and cb["symbols"]["RELIANCE"]["bars"] == ca["symbols"]["RELIANCE"]["bars"]
     assert broker_a.calls and not broker_b.calls
-    keys = _candle_cache_keys(shared_redis)                       # the per-request caches stay per session
-    assert len(keys) == 2 and all(k.startswith("md:byob:") for k in keys)
-    assert {k.split(":")[2] for k in keys} == {_ns(a), _ns(b)}
+    keys = _candle_cache_keys(shared_redis)                       # no session-level or platform-wide copy of A's fetch
+    assert keys == []
     tick_cache.clear()
     _flag(False)
 

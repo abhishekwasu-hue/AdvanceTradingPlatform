@@ -153,7 +153,7 @@ budget (`scripts/check-bundle-budget.mjs`) does not grow.
 
 | Slice | Starts | Scope | Done when |
 |---|---|---|---|
-| **B1 Shell + config + CI debug APK** | after UI2-1 merges; needs MA-6 (MA-1 to log in) | See §3.2 | A debug APK from CI installs on Abhi's phone, logs in to the production domain and shows the v2 shell |
+| **B1 Shell + config + CI debug APK** | after UI2-1 merges; uses the temporary MA-6 id (MA-1 to log in) | See §3.2 | A debug APK from CI installs on Abhi's phone, logs in to the production domain and shows the v2 shell |
 | **B2 FCM push + deep links** (+ share sheet) | after B1, needs MA-1, MA-2 | See §5 and §6 | A PAPER proposal pushed to the phone opens its card; a Telegram "Open in app" link opens the app on the same screen |
 | **B3 Biometric unlock + secure storage** | after B1 (can run beside B2) | See §8 | The app is locked behind the fingerprint or device PIN; Approve asks again; the session survives an app restart only in platform secure storage |
 | **B4 Signed release + update prompt** | after B2 and B3, needs MA-3 | See §3.5 and §9 | CI builds a signed AAB and APK from a protected job; the app shows "Update available" from the server's version endpoint |
@@ -163,7 +163,7 @@ Store prep (BT7): listing text and screenshots are prepared but not published (�
 ### 3.2 B1: files to add
 
 - **`frontend/capacitor.config.ts`**
-  - `appId` from MA-6. It is permanent once on Play, so it is chosen before the first APK.
+  - `appId` from MA-6: the temporary, never-published `dev.atp.unpublished` until the domain and company name are settled, then `com.<domain>.app` (permanent once on Play). A build check refuses a release (signed) build with the temporary id.
   - `appName` "ATP"; `webDir` "dist"; `android.allowMixedContent: false`.
   - No `server.url`: the app runs its bundled files and never loads the live site into the shell. Capacitor
     documents `server.url` for live reload during development. Loading the live site would also expose the native
@@ -414,10 +414,11 @@ EMERGENCY ignores preferences, as in PW3.
   - `path` is `app_path(notification)`, a same-origin path only, as in PW3.
   - Android notification channels mirror the categories (Proposals high importance; Alerts; Account; Trades; Risk;
     Reports), so the user can tune them in Android settings.
-  - **Privacy (MA-7):** FCM payloads are not end-to-end encrypted the way web push (RFC 8291) is, so Google's servers
-    can read them. Provisional default: **minimal content**, for example "Proposal waiting: open ATP to decide" or
-    "Broker login needed". No prices, quantities or P&L in the push. The full text is on the screen it opens. The
-    AI-usage and privacy disclosure gets one line about it.
+  - **Privacy (MA-7, owner decision 2026-10-20):** FCM payloads are not end-to-end encrypted the way web push
+    (RFC 8291) is, so Google's servers can read them. **Minimal content only**, for example "A trade is waiting for
+    your approval" or "Broker login needed". No symbol, price, quantity or P&L anywhere in the payload, including the
+    data block: `path` carries only opaque ids (for example `/signals/1234`), never a symbol or other query text. The
+    details show only inside the app, after unlock (B3). The AI-usage and privacy disclosure gets one line about it.
 - **Android 13+.** Notification permission is a runtime prompt. The app asks only after an explain-first screen
   (the PW3 rule), and a refusal is explained, never re-asked in a loop.
 
@@ -528,7 +529,7 @@ EMERGENCY ignores preferences, as in PW3.
   token from secure storage and calls `/auth/refresh`. The access token stays in memory, as on the web.
 - **Before Approve.** The card asks for a fresh biometric or device-credential confirmation, then sends the request.
   Reject, Snooze and Exit now do not ask again.
-- **No screen lock on the phone (provisional, MA-8).** The app does not keep the session; the user signs in each
+- **No screen lock on the phone (owner decision, MA-8).** The app does not keep the session; the user signs in each
   time. Approve then shows the confirm dialog only, and the app explains how to set a screen lock.
 - **Sign out** clears secure storage, calls `DELETE /api/mobile/devices/{id}`, and revokes the session on the server.
   "Sign out everywhere" on the web stops this phone's session and its pushes (§5.2).
@@ -579,7 +580,7 @@ EMERGENCY ignores preferences, as in PW3.
 | Safe-area insets in the Android WebView (edge-to-edge on newer Android) | Bottom bar under the gesture bar, top bar under the status bar | Test on Abhi's phone in B1; Capacitor's status-bar or system-bars options **(verify)**; fixed padding fallback |
 | Bundled app vs a newer server | Old app calls a changed API | Backward-compatible API rule, the minimum version and the browser link (§9) |
 | Cross-site cookies in the app | Refresh fails | Origin-gated body refresh in secure storage (§4.3, ADR) |
-| FCM payloads readable by Google | Privacy | Minimal content by default (MA-7), disclosure line |
+| FCM payloads readable by Google | Privacy | Minimal content (owner decision MA-7: no symbol, price or P&L), disclosure line |
 | FCM delivery under Doze / battery saver | Late proposal push | High priority only for the proposals and account channels; Telegram stays the second path; a proposal expiry is never shortened for push |
 | Broker login pages refusing a WebView | Cannot connect a broker in the app | System browser plus App Link return; per-broker test at B2 |
 | Upload keystore lost before Play | Sideloaded installs cannot update; reinstall needed | Two offline backups (MA-3); after Play, Play App Signing allows an upload-key reset |
@@ -615,7 +616,7 @@ EMERGENCY ignores preferences, as in PW3.
 ```
 UI2-0 (merged) -> UI2-1 shell (+ needs-domain message, route-coverage guard) -> UI2-2 .. UI2-10 (each with its phone layout)
                   |
-                  +-> B1 shell + CI debug APK (needs MA-6)
+                  +-> B1 shell + CI debug APK (temporary MA-6 id)
                         |-> B2 FCM push + deep links + share (needs MA-1, MA-2)
                         |-> B3 biometric unlock + secure storage
                         +-> after B2 and B3: B4 signed release + update prompt (needs MA-3)

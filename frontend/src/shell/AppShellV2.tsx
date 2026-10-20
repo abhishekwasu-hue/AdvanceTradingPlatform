@@ -12,6 +12,7 @@ import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
 import MoreSheetV2 from "./MoreSheetV2";
+import { PAGE_V2 } from "./pagesV2";
 import { sectionOf, visibleSections, type NavContext } from "./navModel";
 import { V2_ALIASES, isGatedPath, routerPath, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 import SidebarV2 from "./SidebarV2";
@@ -101,7 +102,7 @@ export default function AppShellV2() {
       <Suspense fallback={<PageLoading />}>
         <Routes>
           {PAGES.map((p) => {
-            const PageComponent = PAGE_COMPONENTS[p];
+            const PageComponent = PAGE_V2[p] ?? PAGE_COMPONENTS[p];
             const element = <PageComponent onNavigate={go} />;
             return p === "copilot"
               ? <Route key={p} path="/copilot/:tab?" caseSensitive element={element} />

@@ -569,6 +569,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
     ("GET", "/api/signal-history"): "member",
+    ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
+                                    "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),
     ("GET", "/api/status"): P_STATUS_PAGE,
     ("GET", "/api/strategies"): P_STRATEGY_CATALOGUE,
     ("GET", "/api/strategies/{strategy_id}"): P_STRATEGY_CATALOGUE,

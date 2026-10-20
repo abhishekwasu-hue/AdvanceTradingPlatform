@@ -15,6 +15,8 @@ import { CopilotDataProvider, useCopilotData } from "../copilot/data";
 import { copilotI18n, useCopilotT } from "../copilot/i18n";
 import { copilotPath, DEFAULT_TAB, isCopilotTab, type CopilotTab } from "../copilot/tabs";
 import { TabSkeleton } from "../copilot/tabs/shared";
+import { watchtowerSplit } from "../signals/watchtower";
+import { useUiV2 } from "../ui/useFeatures";
 
 /**
  * The AI Copilot (redesign): seven tabs with their own addresses (/copilot/<tab>), an "AI Core" hero coloured by
@@ -72,7 +74,9 @@ function Hero() {
 function Tabs() {
   const params = useParams<{ tab?: string }>();
   const navigate = useNavigate();
-  const { pending, newHighNews, badgesLoading } = useCopilotData();
+  const { pending: allPending, newHighNews, badgesLoading } = useCopilotData();
+  // UI2-3 (M7): with `ui_v2` on, entry approvals are counted in Signals, not on the Watchtower tab. Flag off: unchanged.
+  const pending = watchtowerSplit(allPending, useUiV2()).others;
   const fromUrl = isCopilotTab(params.tab) ? params.tab : undefined;
   const tab: CopilotTab = fromUrl ?? storedTab();
   useEffect(() => {

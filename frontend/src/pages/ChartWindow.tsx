@@ -5,7 +5,6 @@ import ProChart, { useLiveLtp } from "../components/ProChart";
 import { SymbolTierBadge } from "../components/DataTierBadge";
 import type { ChartEngine } from "../charting/engine";
 import { MarketZonesLayer } from "../charting/MarketZonesLayer";
-import { api } from "../api/client";
 import { PriceActionLayer } from "../charting/PriceActionLayer";
 import { StudiesPanel } from "../charting/StudiesPanel";
 import { ReplayBar } from "../charting/ReplayBar";
@@ -13,6 +12,7 @@ import { TradesLayer } from "../charting/TradesLayer";
 import { layerTf } from "../charting/priceAction";
 import { REPLAY_OFF, parseCandleTime, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
 import ExpectedMoveLayer from "../progression/ExpectedMoveLayer";
+import { useFeatures } from "../ui/useFeatures";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -38,13 +38,9 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const live = useLiveLtp(!!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   // CH5: "Open in workspace" only while the multi-chart workspace is on for this organisation.
-  const [workspaceOn, setWorkspaceOn] = useState(false);
-  useEffect(() => {
-    if (!user) return;
-    let live = true;
-    api.myFeatures().then((f) => { if (live) setWorkspaceOn(f.chart_workspace === true); }).catch(() => undefined);
-    return () => { live = false; };
-  }, [user]);
+  // UI2-0: the flags come from the app's single /system/features read (useFeatures).
+  const features = useFeatures();
+  const workspaceOn = !!user && features.on("chart_workspace");
   // N4 CH3: bar replay - the chart shows the candles up to the replay bar, the layers are read as of that bar's end
   const [replay, setReplay] = useState<ReplayState>(REPLAY_OFF);
   const [paAvailable, setPaAvailable] = useState(false);
@@ -56,11 +52,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const candleTimes = useMemo(() => shown.map((c) => Math.floor(parseCandleTime(c.timestamp) / 1000)), [shown]);
   const candleCloses = useMemo(() => shown.map((c) => c.close), [shown]);
   // N2-4: the expected-move cone (flag decision_tools; the toggle shows only when the organisation has it)
-  const [decisionTools, setDecisionTools] = useState(false);
-  useEffect(() => {
-    if (!user) return;
-    api.myFeatures().then((f) => setDecisionTools(Boolean(f.decision_tools))).catch(() => setDecisionTools(false));
-  }, [user]);
+  const decisionTools = !!user && features.on("decision_tools");
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;

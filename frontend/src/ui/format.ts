@@ -1,0 +1,177 @@
+/**
+ * UI2-0 (UI v2 proposal §8 "Cards and numbers"): the one number and time formatter for v2 screens. It replaces the six
+ * copied money() / pct() helpers as each page moves to v2 (UI2-9); today's pages keep theirs until then.
+ *
+ * Rules:
+ * - Indian digit grouping (1,24,500.00): the last three digits, then pairs. Written out here, not left to
+ *   `toLocaleString("en-IN")`, so the output never depends on the browser's or Node's locale data.
+ * - A negative number uses the true minus sign "−" (U+2212), never a hyphen.
+ * - A missing or non-finite value is shown as an en dash "–", never as 0 and never as a made-up figure.
+ * - Times are India Standard Time (UTC+05:30, no daylight saving) whatever the device's time zone. A timestamp
+ *   without a zone (the backend writes UTC) is read as UTC.
+ * - Every figure is set in `font-tabular` and right-aligned in tables (the caller's class, not this module's).
+ */
+
+export const MINUS = "−";
+export const EMPTY = "–";
+export const RUPEE = "₹";
+
+type Num = number | null | undefined;
+
+function finite(v: Num): v is number {
+  return typeof v === "number" && Number.isFinite(v);
+}
+
+/** Indian grouping of a non-negative whole-number string: "12450000" -> "1,24,50,000". */
+function groupIndian(digits: string): string {
+  if (digits.length <= 3) return digits;
+  const last3 = digits.slice(-3);
+  const rest = digits.slice(0, -3);
+  return `${rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",")},${last3}`;
+}
+
+/** |v| with `decimals` places and Indian grouping, no sign: 124500 -> "1,24,500.00". */
+function magnitude(v: number, decimals: number): string {
+  const fixed = Math.abs(v).toFixed(decimals);
+  const [whole, frac] = fixed.split(".");
+  return frac === undefined ? groupIndian(whole) : `${groupIndian(whole)}.${frac}`;
+}
+
+/** True when `v` rounds to zero at `decimals` places (so "−0.00" is never shown). */
+function roundsToZero(v: number, decimals: number): boolean {
+  return Number(Math.abs(v).toFixed(decimals)) === 0;
+}
+
+/** A plain number with Indian grouping: formatNumber(1234567.8, 1) -> "12,34,567.8"; negatives get "−". */
+export function formatNumber(v: Num, decimals = 0): string {
+  if (!finite(v)) return EMPTY;
+  const sign = v < 0 && !roundsToZero(v, decimals) ? MINUS : "";
+  return `${sign}${magnitude(v, decimals)}`;
+}
+
+/** Trailing zeros of a decimal off: "2.40" -> "2.4", "3.00" -> "3". */
+function trimZeros(s: string): string {
+  return s.includes(".") ? s.replace(/\.?0+$/, "") : s;
+}
+
+/**
+ * Rupees: formatINR(124500) -> "₹1,24,500.00"; negatives "−₹700.00".
+ * `compact` (tiles only): "₹1.25 L", "₹2.4 Cr"; below one lakh the whole rupees, "₹85,000".
+ */
+export function formatINR(v: Num, opts: { compact?: boolean } = {}): string {
+  if (!finite(v)) return EMPTY;
+  if (!opts.compact) {
+    const sign = v < 0 && !roundsToZero(v, 2) ? MINUS : "";
+    return `${sign}${RUPEE}${magnitude(v, 2)}`;
+  }
+  const abs = Math.abs(v);
+  let body: string;
+  const lakhs = Number((abs / 1e5).toFixed(2));
+  if (abs >= 1e7 || lakhs >= 100) body = `${trimZeros((abs / 1e7).toFixed(2))} Cr`;
+  else if (Math.round(abs) >= 1e5) body = `${trimZeros(lakhs.toFixed(2))} L`;
+  else body = magnitude(abs, 0);
+  const sign = v < 0 && body !== "0" ? MINUS : "";
+  return `${sign}${RUPEE}${body}`;
+}
+
+/** Signed rupees, for P&L: "+₹3,120.00" / "−₹700.00". Zero (after rounding) is "₹0.00": neither profit nor loss. */
+export function formatSignedINR(v: Num, opts: { compact?: boolean } = {}): string {
+  if (!finite(v)) return EMPTY;
+  const plain = formatINR(v, opts);
+  if (plain.startsWith(MINUS)) return plain;
+  const zero = opts.compact ? plain === `${RUPEE}0` : roundsToZero(v, 2);
+  return zero ? plain : `+${plain}`;
+}
+
+/** The decimals a tick size implies: 0.05 -> 2, 0.0025 -> 4, 1 -> 0. A missing or odd tick means 2 (NSE equity). */
+export function tickDecimals(tick: Num): number {
+  if (!finite(tick) || tick <= 0) return 2;
+  for (let d = 0; d <= 6; d += 1) {
+    if (Math.abs(Math.round(tick * 10 ** d) - tick * 10 ** d) < 1e-9) return d;
+  }
+  return 6;
+}
+
+/** A price: formatPrice(24812.35, 0.05) -> "24,812.35". Decimals follow the tick size. */
+export function formatPrice(v: Num, tick: Num = 0.05): string {
+  return formatNumber(v, tickDecimals(tick));
+}
+
+/** A signed price change: "+12.35" / "−8.20" (zero unsigned). */
+export function formatChange(v: Num, tick: Num = 0.05): string {
+  if (!finite(v)) return EMPTY;
+  const d = tickDecimals(tick);
+  const plain = formatNumber(v, d);
+  return v > 0 && !roundsToZero(v, d) ? `+${plain}` : plain;
+}
+
+/** A percentage given in percent units: formatPct(0.48) -> "+0.48%", formatPct(-1.2) -> "−1.20%", 0 -> "0.00%". */
+export function formatPct(v: Num, decimals = 2): string {
+  if (!finite(v)) return EMPTY;
+  const plain = formatNumber(v, decimals);
+  return `${v > 0 && !roundsToZero(v, decimals) ? "+" : ""}${plain}%`;
+}
+
+/**
+ * A position size: formatLots(150, 75) -> "2 lots (150)", formatLots(75, 75) -> "1 lot (75)".
+ * Equity (no lot size, or a lot of 1): formatLots(50) -> "50 shares", "1 share".
+ * A quantity that is not a whole number of lots shows the fraction: formatLots(100, 75) -> "1.33 lots (100)".
+ */
+export function formatLots(qty: Num, lotSize?: Num): string {
+  if (!finite(qty)) return EMPTY;
+  const q = Math.abs(qty);
+  if (!finite(lotSize) || lotSize <= 1) return `${formatNumber(q, 0)} ${q === 1 ? "share" : "shares"}`;
+  const lots = q / lotSize;
+  const shown = Number.isInteger(lots) ? String(lots) : trimZeros(lots.toFixed(2));
+  return `${shown} ${lots === 1 ? "lot" : "lots"} (${formatNumber(q, 0)})`;
+}
+
+// --- Times, always in IST -------------------------------------------------------------------------------------------
+
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+type When = Date | string | number | null | undefined;
+
+/** The instant as epoch milliseconds; a zone-less ISO string is UTC (what the backend writes). NaN when unreadable. */
+function instant(v: When): number {
+  if (v === null || v === undefined || v === "") return Number.NaN;
+  if (v instanceof Date) return v.getTime();
+  if (typeof v === "number") return v;
+  const zoned = /([zZ]|[+-]\d{2}:?\d{2})$/.test(v) || !/T\d{2}:/.test(v) ? v : `${v}Z`;
+  return Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(zoned) ? `${zoned}T00:00:00+05:30` : zoned);
+}
+
+/** The IST wall-clock fields of an instant (read off a shifted UTC date, so the device zone never matters). */
+function istParts(ms: number) {
+  const d = new Date(ms + IST_OFFSET_MS);
+  return { y: d.getUTCFullYear(), mo: d.getUTCMonth(), day: d.getUTCDate(), wd: d.getUTCDay(),
+           h: d.getUTCHours(), mi: d.getUTCMinutes(), s: d.getUTCSeconds() };
+}
+
+const pad = (n: number) => String(n).padStart(2, "0");
+
+/** "10:42 IST" (24-hour). `seconds` adds ":05"; `suffix: false` drops " IST" where the screen already says it. */
+export function formatTimeIST(v: When, opts: { seconds?: boolean; suffix?: boolean } = {}): string {
+  const ms = instant(v);
+  if (!Number.isFinite(ms)) return EMPTY;
+  const p = istParts(ms);
+  const time = `${pad(p.h)}:${pad(p.mi)}${opts.seconds ? `:${pad(p.s)}` : ""}`;
+  return opts.suffix === false ? time : `${time} IST`;
+}
+
+/** "8 Oct 2026" in IST; `weekday` gives "Thu 8 Oct 2026". */
+export function formatDateIST(v: When, opts: { weekday?: boolean } = {}): string {
+  const ms = instant(v);
+  if (!Number.isFinite(ms)) return EMPTY;
+  const p = istParts(ms);
+  return `${opts.weekday ? `${WEEKDAYS[p.wd]} ` : ""}${p.day} ${MONTHS[p.mo]} ${p.y}`;
+}
+
+/** "8 Oct 2026, 10:42 IST". */
+export function formatDateTimeIST(v: When, opts: { seconds?: boolean } = {}): string {
+  const ms = instant(v);
+  if (!Number.isFinite(ms)) return EMPTY;
+  return `${formatDateIST(ms)}, ${formatTimeIST(ms, opts)}`;
+}

@@ -16,6 +16,8 @@ const semantic = {
   ai: v("ai"), "ai-2": v("ai-2"), glass: v("glass"),
   // U5 (screener design): the recessed surface, the funnel trail / matched colour, the armed (auto-execution) colour
   "surface-inset": v("surface-inset"), signal: v("signal"), armed: v("armed"),
+  // UI2-0 (UI v2 §8): the subtle outline / divider colour and the warning-note background
+  "border-subtle": v("border-subtle"), "warn-tint": v("warn-tint"),
   // aliases kept for pages not yet migrated
   bg: v("surface"), panel: v("surface-1"), panel2: v("surface-2"), panel3: v("surface-3"),
   "brand-dim": v("brand-strong"), accent: v("up"), danger: v("down"), muted: v("fg-muted"),
@@ -32,7 +34,8 @@ export default {
       // keep --brand. `bg-brand`, `hover:bg-brand-strong` and their alpha tints follow this.
       backgroundColor: { brand: v("brand-fill"), "brand-strong": v("brand-fill-strong"), "brand-dim": v("brand-fill-strong") },
       textColor: { ...semantic, ...palette("tx") },
-      borderColor: { ...semantic, ...palette("tx") },
+      // UI2-0: `border-subtle` (card outlines, dividers, table rows) reads --border-subtle.
+      borderColor: { ...semantic, ...palette("tx"), subtle: v("border-subtle") },
       ringColor: { ...semantic, ...palette("tx") },
       placeholderColor: { ...semantic, ...palette("tx") },
       fontFamily: {
@@ -40,15 +43,23 @@ export default {
         mono: ['"JetBrains Mono"', "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       // U5: radii (controls 6, panels 10) and the type scale 12 / 13 / 15 / 18 / 24 / 32
-      borderRadius: { control: "var(--radius-control)", panel: "var(--radius-panel)" },
+      // UI2-0: `rounded-pill` for chips and badges.
+      borderRadius: { control: "var(--radius-control)", panel: "var(--radius-panel)", pill: "var(--radius-pill)" },
       fontSize: {
         "t12": ["12px", { lineHeight: "16px" }], "t13": ["13px", { lineHeight: "18px" }], "t15": ["15px", { lineHeight: "20px" }],
+        // UI2-0: body text (the de-facto text-sm made a token) and the phone page title
+        "t14": ["14px", { lineHeight: "20px" }], "t20": ["20px", { lineHeight: "26px" }],
         "t18": ["18px", { lineHeight: "24px" }], "t24": ["24px", { lineHeight: "30px" }], "t32": ["32px", { lineHeight: "38px" }],
       },
+      // UI2-0: the 4-pt spacing tokens, as `p-space-4`, `gap-space-6`, `px-space-8`...
+      spacing: Object.fromEntries([1, 2, 3, 4, 5, 6, 8, 10, 12].map((n) => [`space-${n}`, `var(--space-${n})`])),
+      transitionDuration: { fast: "var(--dur-fast)", base: "var(--dur-base)" },
+      transitionTimingFunction: { standard: "var(--ease)" },
       height: { row: "var(--row-h)", stage: "var(--stage-h)" },
       minHeight: { row: "var(--row-h)", stage: "var(--stage-h)" },
       boxShadow: {
         card: "var(--shadow)",
+        raised: "var(--shadow-raised)",   // UI2-0: menus, drawers, sheets, dialogs
         glow: "0 0 0 1px rgb(var(--brand) / 0.4), 0 0 24px rgb(var(--brand) / 0.15)",
       },
     },

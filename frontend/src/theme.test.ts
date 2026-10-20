@@ -55,3 +55,60 @@ describe("theme-init.js (runs before the first paint)", () => {
     expect(run("{not json")).toEqual({ theme: "dark", cvd: "off", dark: true });
   });
 });
+
+describe("UI2-0 (UI-1): with UI v2 on, the theme follows the system, light when unknown", () => {
+  function run(saved: string | null, opts: { v2: boolean; system: "dark" | "light" | "unknown" | "none" }) {
+    const attrs: Record<string, string> = {};
+    const root = { setAttribute: (k: string, v: string) => { attrs[k] = v; }, classList: { add: () => undefined, remove: () => undefined } };
+    vi.stubGlobal("document", { documentElement: root });
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => (k === "atp_appearance" ? saved : k === "atp_ui_v2_theme" && opts.v2 ? "system" : null),
+    });
+    const matchMedia = (q: string) => ({ matches: opts.system !== "unknown" && q.includes(opts.system) });
+    vi.stubGlobal("window", opts.system === "none" ? {} : { matchMedia });
+    new Function(script)();
+    return attrs["data-theme"];
+  }
+
+  it("theme-init.js: no saved theme follows the system, light when the system says nothing", () => {
+    expect(run(null, { v2: true, system: "dark" })).toBe("dark");
+    expect(run(null, { v2: true, system: "light" })).toBe("light");
+    expect(run(null, { v2: true, system: "unknown" })).toBe("light");
+    expect(run(null, { v2: true, system: "none" })).toBe("light");
+    expect(run("{not json", { v2: true, system: "unknown" })).toBe("light");
+  });
+
+  it("theme-init.js: a theme the trader chose is kept", () => {
+    expect(run(JSON.stringify({ theme: "dark" }), { v2: true, system: "light" })).toBe("dark");
+    expect(run(JSON.stringify({ theme: "light" }), { v2: true, system: "dark" })).toBe("light");
+  });
+
+  it("theme-init.js: with the flag off (no hint) nothing changes - dark by default, the old 'system' rule", () => {
+    expect(run(null, { v2: false, system: "light" })).toBe("dark");
+    expect(run(null, { v2: false, system: "unknown" })).toBe("dark");
+    expect(run(JSON.stringify({ theme: "system" }), { v2: false, system: "unknown" })).toBe("dark");
+  });
+
+  it("theme.ts: the shell's switch changes only the default, and only while it is on", async () => {
+    const { loadAppearance, resolvedTheme, setV2ThemeDefault } = await import("./theme");
+    let saved: string | null = null;
+    const store: Record<string, string> = {};
+    vi.stubGlobal("localStorage", {
+      getItem: (k: string) => (k === "atp_appearance" ? saved : store[k] ?? null),
+      setItem: (k: string, v: string) => { store[k] = v; },
+      removeItem: (k: string) => { delete store[k]; },
+    });
+    vi.stubGlobal("window", { matchMedia: () => ({ matches: false }) });    // the system says nothing
+    expect(resolvedTheme(loadAppearance())).toBe("dark");
+    setV2ThemeDefault(true);
+    expect(store.atp_ui_v2_theme).toBe("system");
+    expect(loadAppearance().theme).toBe("system");
+    expect(resolvedTheme(loadAppearance())).toBe("light");
+    saved = JSON.stringify({ theme: "dark" });
+    expect(resolvedTheme(loadAppearance())).toBe("dark");                 // the trader's choice is kept
+    saved = null;
+    setV2ThemeDefault(false);
+    expect(store.atp_ui_v2_theme).toBeUndefined();
+    expect(resolvedTheme(loadAppearance())).toBe("dark");
+  });
+});

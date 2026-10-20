@@ -1,5 +1,5 @@
 import { Bell, LifeBuoy, Menu, MessageSquarePlus, UserCircle2 } from "lucide-react";
-import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ThemeToggle } from "./components/AppearanceCard";
@@ -12,6 +12,8 @@ import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
 import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
 import { legacyCopilotPath } from "./copilot/tabs";
+import { setV2ThemeDefault } from "./theme";
+import { FeaturesProvider, useFeatures } from "./ui/useFeatures";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
@@ -49,17 +51,12 @@ function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const [feedbackOpen, setFeedbackOpen] = useState(false);
   const [feedbackLoaded, setFeedbackLoaded] = useState(false);
   const [feedbackDraft, setFeedbackDraft] = useState<string | undefined>(undefined);
-  const [supportOn, setSupportOn] = useState(false);
+  // Z10-f: the help button only while the operator has turned `support_bot` on for this organisation (UI2-0: read
+  // from the shell's single /system/features fetch).
+  const features = useFeatures();
+  const supportOn = !!user && features.on("support_bot");
   const [supportOpen, setSupportOpen] = useState(false);
   const [supportLoaded, setSupportLoaded] = useState(false);
-  useEffect(() => {
-    // Z10-f: the help button only while the operator has turned `support_bot` on for this organisation.
-    setSupportOn(false);
-    if (!user) return;
-    let live = true;
-    api.myFeatures().then((f) => { if (live) setSupportOn(f.support_bot === true); }).catch(() => undefined);
-    return () => { live = false; };
-  }, [user]);
   useEffect(() => {
     const load = () => api.systemStatus().then(setStatus).catch(() => {});
     load();
@@ -253,6 +250,25 @@ function AppShell() {
   );
 }
 
+/** UI2-0: the organisation's feature flags, read once for everything below (useFeatures), refetched per signed-in
+ * user. With `ui_v2` on, the theme default follows the system (UI-1); with it off nothing changes. */
+function ShellFeatures({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
+  return (
+    <FeaturesProvider userKey={user?.id ?? null}>
+      <V2ThemeDefault />
+      {children}
+    </FeaturesProvider>
+  );
+}
+
+function V2ThemeDefault() {
+  const { loaded, on } = useFeatures();
+  const v2 = on("ui_v2");
+  useEffect(() => { if (loaded) setV2ThemeDefault(v2); }, [loaded, v2]);
+  return null;
+}
+
 export default function App() {
   // Z10-e: `/status` is public and stands alone - outside the router, the shell and the sign-in refresh.
   if (isStatusPath(window.location.pathname)) {
@@ -268,6 +284,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <ShellFeatures>
         <ToastProvider>
           {params.has("basis") ? (
             <ErrorBoundary title="The futures basis chart">
@@ -295,6 +312,7 @@ export default function App() {
             </Routes>
           )}
         </ToastProvider>
+        </ShellFeatures>
       </AuthProvider>
     </BrowserRouter>
   );

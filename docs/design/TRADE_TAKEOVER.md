@@ -6,11 +6,11 @@ acecd23) has no `docs/reader/STABLE.md`, no `reader-layer*` tags, no `parity/` f
 `docs/TRADE_PORT_MAP.md` (T1-T14).
 
 **Where the reader goes (owner decision PR-1, 2026-10-20):** this repository is public, so the reader (T1-T6), the KB
-and the Method Pack (T7), the method part of the Vision checklist (T8) and the private fixtures go into a **separate
-private package** (a private repository), never into ATP's public tree. ATP's public code holds only the boundary (a
-provider interface and a loader) and the generic parts (deployments, approval, Telegram, PAPER, exits, Vision
-plumbing, the UI behind flags). Plan: `docs/design/PRIVATE_PACKAGE.md`. Paths written `atp_private/...` below are in
-the private package.
+and the Method Pack (T7), the method part of the Vision checklist (T8) and the Trade-derived goldens (PR-2) go into a
+**separate private package** (a private repository), never into ATP's public tree. ATP's public code holds only the
+boundary (a provider interface and a loader) and the generic parts (deployments, approval, Telegram, PAPER, exits,
+Vision plumbing, the UI behind flags). Plan: `docs/design/PRIVATE_PACKAGE.md`. Paths written `atp_private/...` below are
+in the private package.
 
 The same working rules apply as everywhere in ATP: draft PRs, self-review, tests, PAPER only, LIVE untouched, English
 only, tenant-safe, settings-driven. Current ATP priorities (load test, UI v2, broker connect) keep their place; the
@@ -35,7 +35,7 @@ takeover starts with the data import and the port map, and each reader layer is 
 | | The tag `reader-layer<N>-stable-vX` on the commit that holds that code | Trade git tags |
 | | Parity fixtures for that tag: inputs (bars as the layer reads them), expected outputs, mirror cases, and a manifest with a sha256 per file | trade-data `parity/<layer>/<tag>/` |
 | Re-port a layer (bug fix) | A new tag, a new `STABLE.md` entry naming the old tag it replaces, and a new `parity/<layer>/<new tag>/` | as above |
-| Copy the KB and Method Pack (T7) | The KB, the method, the owner's method notes and the generated pack at each stable tag | Trade `docs/knowledge/` at the tag |
+| Copy the KB and Method Pack (T7) | The KB, the method, the owner's method notes and the generated pack at each stable tag | the private package at the commit `STABLE.md` records (after the move out of Trade's public tree, `docs/design/PRIVATE_PACKAGE.md` section 8; before it, Trade `docs/knowledge/` at the tag) |
 | Data import (T12-T14) | `EXPORT_MANIFEST.md` (and its machine-readable copy): every file to move, with path, sha256, size, kind, symbol and timeframe where relevant, and the ATP destination; the export bundle itself | Trade repo (manifest), trade-data (files) |
 | Trading flow (T9, T10) | The owner's dashboard settings for the one bot (symbols, SL / target / lots / exits, approval window) and the MCX bot, as a settings export | part of the export |
 | Shadow run (section 11) | Trade keeps running PAPER and exports its signals every day (read-only) so the comparison report can match them | a daily signals file in the export, or a read-only view |
@@ -47,8 +47,9 @@ ATP does not port a layer from an untagged commit, from a branch, or from code w
 
 1. **Read the tag.** Fetch Trade at `reader-layer<N>-stable-vX`; read its `STABLE.md` entry; check that
    `parity/<layer>/<tag>/` exists and that every fixture matches its sha256.
-2. **Copy the logic as it is, with English names.** One package in the private package, `atp_private/reader/`, one owner module per concept,
-   as in Trade's structure-reset table (`docs/design/CHART_READER_AGENT.md` section 3) and `docs/reports/v22/METHOD_MAP.md`.
+2. **Copy the logic as it is, with English names.** One package in the private package, `atp_private/reader/`, one
+   owner module per concept, as in Trade's structure-reset table (`docs/design/CHART_READER_AGENT.md` section 3) and
+   `docs/reports/v22/METHOD_MAP.md` (after the KB move, the method docs are read from the private package).
    Trade's Marathi comments and labels are translated; the logic is not changed. Every module header records the Trade
    tag and commit it was ported from; the port map row records the tag.
 3. **Parity tests.** The same input gives the same output as Trade's own output in the fixtures, for every case and
@@ -60,10 +61,10 @@ ATP does not port a layer from an untagged commit, from a branch, or from code w
    "waiting (no tag)" to "ported" with the tag, the ATP paths and the parity test.
 
 **Parity fixtures stay private.** They are built from licensed market data and never enter ATP's git. They are copied
-from trade-data into the private package's `fixtures/` (and the host's private fixtures store, section 7), and the
-parity tests read them from there (the environment variable `ATP_PRIVATE_FIXTURES` names the store). They run in the
-private package's CI job and on the host, never in the public CI. A fixture manifest (paths and sha256 only,
-no data) may be committed so a test can prove it read exactly the tag's fixtures. Each layer also keeps a few small
+from trade-data into the private fixtures store on the host (section 7; not into any git repository, the private
+package included), and the parity tests read them from there (the environment variable `ATP_PRIVATE_FIXTURES` names
+the store). They run on the host, never in a GitHub-hosted CI. A fixture manifest (paths and sha256 only, no data) may
+be committed so a test can prove it read exactly the tag's fixtures. Each layer also keeps a few small
 synthetic cases in git (made-up bars, mirror pairs) so the public CI always exercises the code.
 
 ## 4. Rules carried over from Trade
@@ -72,7 +73,8 @@ synthetic cases in git (made-up bars, mirror pairs) so the public CI always exer
   thresholds, ratios, counts, widths, multipliers, clock times, day or session resets. Numbers belong only to
   operational dashboard settings (lots, SL, target, exits, schedules), display limits and data-quality checks
   (METHOD sections 1 and 6).
-- **The CI check.** `tests/test_reader_no_numbers.py` in the private package (run by its private CI job) mirrors Trade's `tests/test_method_no_numbers.py`:
+- **The CI check.** `tests/test_reader_no_numbers.py` in the private package (run by its private CI job) mirrors
+  Trade's `tests/test_method_no_numbers.py`:
   every numeric setting of the reader must be classified as a legacy what-if (off by default), operational, display
   or data quality; an unclassified number fails the build. It starts with layer 1 and grows with each layer; at
   layer 6 nothing may be "pending".

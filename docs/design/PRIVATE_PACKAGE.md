@@ -22,10 +22,12 @@ after the private package holds them.
 | The KB, the Chart Reader method, the owner's method notes, the generated Method Pack, the pack builder and its stale-pack test (T7) | The deployment type, the approval flow, Telegram, PAPER fills, exits (never blocked, ADR-0004), the Vision audit plumbing (BYOK, budget), all generic |
 | The Vision checklist text built from the Method Pack (the method part of T8) | The "Read this chart" panel and the overlay, behind their flags (off), rendering whatever the provider returns |
 | The method-specific rules of the level bots rebuilt on the reader (T11) | The generic bot and deployment code those rules plug into |
-| Test fixtures that are not synthetic: the Trade-derived goldens moved under PR-2, the parity fixtures per layer tag (T13) | Synthetic test cases only (made-up bars, mirror pairs), and a manifest of paths and sha256 for the private fixtures |
+| The Trade-derived goldens moved under PR-2 (Trade's outputs on synthetic inputs, no licensed data) | Synthetic test cases only (made-up bars, mirror pairs), and a manifest of paths and sha256 for the private fixtures |
 
-Large data stays out of both repositories: real bars go to the market-data lake, Trade's records and the owner's
-charts go to the private archive on the host (`docs/design/TRADE_TAKEOVER.md` section 7).
+Licensed data and large data stay out of both repositories, GitHub-hosted or not: real bars go to the market-data
+lake; the per-layer **parity fixtures** (built from licensed market data, T13), Trade's records and the owner's charts
+go to the private fixtures store and the private archive on the host (`docs/design/TRADE_TAKEOVER.md` sections 3
+and 7). Putting licensed-data fixtures into the private repository would need an owner decision first.
 
 ## 3. Layout (proposed)
 
@@ -37,7 +39,7 @@ One Python package, so the host can put it on the backend's import path:
     reader/           layers 1-6, one owner module per concept (TRADE_TAKEOVER section 3)
     method_pack/      the pack builder, the pack text and its version hash
   knowledge/          the KB, the method, the owner's notes (Markdown, the change-controlled source)
-  fixtures/           private test fixtures, same relative layout as ATP's tests expect (ATP_PRIVATE_FIXTURES)
+  fixtures/           the PR-2 goldens, same relative layout as ATP's tests expect (ATP_PRIVATE_FIXTURES)
   tests/              the reader's tests, parity tests, the no-numbers check, the stale-pack test
   .github/workflows/  the private CI job (section 5)
   ATP_VERSION         the ATP commit or tag this version is tested against
@@ -69,7 +71,13 @@ The private CI job runs **in the private repository's own GitHub Actions**, so i
 2. Check out ATP's public repository at the commit in `ATP_VERSION` (public, no key needed).
 3. Install ATP's backend requirements and the private package.
 4. Run the private tests, then ATP's backend tests with `ATP_PRIVATE_FIXTURES` pointing at `fixtures/`, so the tests
-   that public CI skips (PR-2) run here.
+   that public CI skips (PR-2) run here. The parity tests on licensed data run on the host only, where the private
+   fixtures store is.
+
+**No key in CI.** The owner's decision names "a private CI job with a read-only deploy key". Running the job inside the
+private repository needs no key at all (it checks out its own repository and the public ATP), which is safer; the
+read-only deploy keys are for the machines that fetch the private repository: the Hostinger host (section 6) and,
+during the Trade takeover, Trade's VPS (section 8).
 
 The job does not run in ATP's public workflows. Their logs are public. Repository secrets are not given to pull
 requests from forks. And a failing private test could print private data.
@@ -98,7 +106,7 @@ into the backend container and put on its import path. Images built by public CI
 
 1. The owner creates the repository and the deploy key (section 6).
 2. **Scaffold** (a session with access to the private repository): the layout of section 3, the private CI job, and
-   the fixtures from PR-2 (exported from ATP's history with `scripts/export_private_fixtures.py`, checked against the
+   the goldens from PR-2 (exported from ATP's history with `scripts/export_private_fixtures.py`, checked against the
    committed manifest).
 3. **KB and Method Pack from Trade** (section 8).
 4. **Reader layer 1 (T1)** at its stable tag: the reader code into the private package, the provider interface and
@@ -107,23 +115,27 @@ into the backend container and put on its import path. Images built by public CI
 
 ## 8. Moving the KB, the Method Pack and the method docs out of Trade's public tree
 
-Trade's public tree has the KB, the Chart Reader method, the owner's method notes, the generated Method Pack (under
-`docs/knowledge/`), the pack builder and its test, and method docs (for example `docs/reports/v22/METHOD_MAP.md`).
-Trade's running bot reads the Method Pack (the Vision audit), so the move must not break Trade.
+Trade's public tree has the KB, the Chart Reader method, the owner's method notes and the generated Method Pack (under
+`docs/knowledge/`), and method docs (for example `docs/reports/v22/METHOD_MAP.md`). Trade's running PAPER bot reads
+the Method Pack (the Vision audit), so the move must never break it.
 
-1. **Copy.** A session with access to both repositories copies the files at a pinned Trade commit into the private
-   package (`knowledge/`, `atp_private/method_pack/`), with a manifest: Trade path, Trade commit, sha256 per file.
-2. **Check.** The owner (or the session) checks that the private copy matches the manifest; the private CI job runs
-   the stale-pack test.
-3. **Trade reads from the private copy.** Trade gets a read-only deploy key on the DigitalOcean VPS and a setting
-   that points the pack builder and the Vision audit at the private checkout. Trade's tests and the bot are checked
-   on the VPS.
-4. **Only then remove from Trade's public tree** in a normal commit (no history rewrite, no force push), leaving a
-   short README that says where the files went (without their content).
-5. **Never delete anything before steps 1-3 are done.** If any step fails, Trade keeps its files.
+1. **Copy.** A session with access to both repositories copies the files from Trade's `main` at a pinned commit into
+   the private package (`knowledge/`, plus a copy of the pack builder in `atp_private/method_pack/`), with a manifest:
+   Trade path, Trade commit, sha256 per file.
+2. **Trade switches to the private copy, then removes its own.** The order for the Trade session is
+   [`TRADE_ORDER_KB_MOVE.md`](TRADE_ORDER_KB_MOVE.md); Abhi pastes it into a Trade session after step 1. In short: check
+   Trade's current `main` and the private copy against the manifest; add a setting that points Trade's pack builder and
+   Vision audit at a private checkout (tests skip visibly without it); Abhi clones the private repository on the VPS
+   at a pinned tag with a read-only deploy key, sets the setting for the running services, restarts them and shows one
+   real Vision audit loading the pack hash from the private copy; **only after Abhi confirms that** does Trade remove
+   the files from its public tree (a normal commit), make the setting required (a missing path fails loudly) and add a
+   CI check that keeps them out. The pack builder code stays in Trade, pointed at the private copy, until PR-7.
+3. **Never delete anything before step 2's confirmation.** If any step fails, Trade keeps its files.
 
-The order for the Trade session is [`TRADE_ORDER_KB_MOVE.md`](TRADE_ORDER_KB_MOVE.md). The owner pastes it into a
-Trade session when steps 1-2 are done.
+**After the move (change control):** the KB, the method and the Method Pack are edited only in the private repository
+(KB diff -> the owner approves -> code -> test). Trade's `STABLE.md` records, per stable tag, the private repository's
+commit and the pack hash; ATP's ports read the KB and the method docs from the private repository at that commit. The
+VPS and the host each pin a private tag; nothing follows a moving branch.
 
 **What stays public:** Trade's and ATP's history keep the old copies (no history rewrite, PR-4). Trade's method code
 (the reader being rebuilt) is public in Trade's tree too; that is open question PR-7.

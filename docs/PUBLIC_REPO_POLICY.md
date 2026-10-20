@@ -40,7 +40,7 @@ sections 3 and 7, imported by `atp.sh import-trade` on the host, never into git)
 | Secrets and settings | The server's `/opt/atp/.env` and `/opt/atp/secrets/` (mode 600); the GitHub secret store (repository or environment secrets) for CI; Abhi's password manager for backups. |
 | Server IP, SSH details | Abhi's own notes. Docs say `<server-ip>` / `ssh atp@<your-server-ip>`. |
 | Real bars and market data | The market-data lake on the host: the shared `md_candles` (daily) and the owner's private `md_tenant_candles` (intraday, FUT; HB0 / HB2 rules). |
-| Golden fixtures, parity fixtures, the owner's approved charts | The private fixtures store on the host (TRADE_TAKEOVER section 3: tests read it through an environment variable; in public CI those tests are skipped with a visible reason). A manifest of paths and sha256 only may be committed. |
+| Golden fixtures, parity fixtures, the owner's approved charts | The Trade-derived goldens of PR-2 (Trade's outputs on synthetic inputs): the private package's `fixtures/`. Parity fixtures built from licensed data and the owner's charts: the private fixtures store on the host only, never any git repository. Both are read through `ATP_PRIVATE_FIXTURES` (TRADE_TAKEOVER section 3: tests read it through an environment variable; in public CI those tests are skipped with a visible reason). A manifest of paths and sha256 only may be committed. |
 | Trade's records (PAPER journal, signals, Vision log, review and audit charts) | The private read-only archive on the host. |
 | The Chart Reader, the KB and the Method Pack | The private package: a separate private repository, installed on the host with a read-only deploy key and tested by a private CI job in its own repository (owner decision PR-1; plan in [`docs/design/PRIVATE_PACKAGE.md`](design/PRIVATE_PACKAGE.md)). Nothing from the reader or the KB is committed here. |
 
@@ -132,7 +132,7 @@ own licence.
 2. **Remove it from the tree** in a normal commit (placeholder or synthetic value), so the guards pass again.
 3. **History is the owner's decision.** Rewriting history (to purge a file from every commit) needs a force push,
    invalidates every clone and fork, and does not remove copies others already made. Nobody rewrites history or
-   force-pushes without the owner's explicit decision (open question PR-4).
+   force-pushes without the owner's explicit decision (owner decision PR-4, 2026-10-20: no rewrite).
 4. **Record it** in `docs/OPEN_QUESTIONS.md` (what slipped, when, what was rotated), without repeating the value.
 
 **A finding in a pull request head** (the report-only job `gitleaks-pull-request-refs` of `secret-scan.yml`, whose job
@@ -148,7 +148,10 @@ Commit author names and e-mail addresses are public too (owner decision PR-5, 20
 - Abhi turns on "Keep my email addresses private" and "Block command line pushes that expose my email" (GitHub ->
   Settings -> Emails). From then on, merges and edits made on GitHub use his GitHub `noreply` address, and a push of a
   commit carrying his private address is refused.
-- Sessions commit with a `noreply` address (they already do), never with a personal address.
+- Sessions commit with a `noreply` address, never with a personal address: before the first commit in a checkout,
+  check `git config user.email` and set it to a `noreply` address if it is anything else. (Some earlier session
+  commits on pull request branches carry the owner's address; squash merges keep them off `main`, and the pull
+  request refs keep them, accepted under PR-4.)
 - A person committing from their own machine sets `git config user.email` to their GitHub `noreply` address
   (`<id>+<login>@users.noreply.github.com`, shown on the same settings page).
 - Past commits keep their addresses: no history rewrite (PR-4).

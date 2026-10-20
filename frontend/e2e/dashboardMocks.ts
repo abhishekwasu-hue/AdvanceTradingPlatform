@@ -31,7 +31,7 @@ export async function mockDashboard(page: Page, { state = "connected", strip, me
     [api("/deployments(\\?|$)"), empty ? [] : F.deployments],
     [api("/paper/risk$"), F.paper_risk],
     [api("/notifications\\?unread_only=true$"), empty ? [] : F.notifications_unread],
-    [api("/analytics/summary$"), F.analytics_summary],
+    [api("/analytics/summary(\\?|$)"), F.analytics_summary],
     [api("/alert-channels$"), F.alert_channels],
   ];
   for (const [re, json] of replies) await page.route(re, (route) => route.fulfill({ json }));

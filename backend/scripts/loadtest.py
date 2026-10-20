@@ -250,11 +250,13 @@ def scenarios(chart_lake: bool = False) -> List[Any]:
 
 
 def ssl_context(cacert: Optional[str], verify_hostname: bool = True) -> Any:
-    """True (the system CAs), or a context that trusts `cacert`; `verify_hostname=False` keeps the chain check and drops the
-    name check (Caddy's internal certificate for the server's IP, reached at its container address)."""
-    if not cacert:
-        return True
+    """One context for every client of this process (each client building its own from the CA bundle cost about 0.7 MB
+    a client): the public CAs httpx uses, or `cacert`; `verify_hostname=False` keeps the chain check and drops the name
+    check (Caddy's internal certificate for the server's IP, reached at its container address)."""
     import ssl
+    if not cacert:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
     ctx = ssl.create_default_context(cafile=cacert)
     if not verify_hostname:
         ctx.check_hostname = False

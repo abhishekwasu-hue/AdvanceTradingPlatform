@@ -42,7 +42,9 @@ Exit codes:
 | `1` | failed (the message says what, and the checkout is back on the release that still runs) |
 | `2` | wrong usage |
 | `3` | refused because of a market session: a migration while NSE is open, or a worker restart while any session (NSE, MCX until 23:30 IST, crypto) is open **and** positions are open. For `loadtest` the other way round: refused **outside** NSE market hours |
-| `4` | `loadtest` only: every SLO met, but the cleanup of its synthetic organisation was not verified (section 12b) |
+| `4` | `loadtest` only: the cleanup of its synthetic organisation was not verified - outranks every other outcome (section 12b) |
+| `5` | `loadtest` only: its watchdog stopped the run because production degraded; cleanup verified |
+| `6` | `loadtest` only: refused, not enough free memory; nothing created |
 | `10` | owner action needed (the message names it: a `.env` key or a deploy key; a flag in Admin → Controls only if someone changed one after install - section 4a). For `loadtest`: refused, the deployment is not PAPER-only Phase 0 |
 | `20` | `SECRETS_ENCRYPTION_KEY` changed |
 

@@ -90,7 +90,7 @@ def test_users_without_a_login_and_a_missing_result_fail():
 
 def _write_run(tmp_path, result=None, cleanup=None):
     d = tmp_path / "run"
-    d.mkdir()
+    d.mkdir(parents=True)
     (d / "meta.json").write_text(json.dumps({"stamp": "20261021-101500", "client_prefix": "atp-loadtest-20261021-101500-", "vcpus": 2,
                                              "client_cpus_per_shard": 0.25, "market": "open (NSE)", "sample_seconds": 5,
                                              "flags_unchanged": "yes"}))
@@ -125,9 +125,26 @@ def test_report_has_the_table_memory_peaks_client_cpu_and_cleanup(tmp_path):
     assert "LOAD TEST 20261021-101500 - SLO: PASS" in terminal and "Memory peaks (MiB): atp-backend-1 900" in terminal
 
 
-def test_an_interrupted_run_still_gets_a_report_and_fails(tmp_path):
+def test_an_interrupted_run_still_gets_a_report_and_an_unverified_cleanup_outranks_it(tmp_path):
     text, terminal, code = loadtest_summary.build(_write_run(tmp_path, None, {"tenant": "x", "clean": False, "remaining": {"sessions": 3}}))
-    assert code == 1 and "no load result" in text and "Cleanup: NOT VERIFIED" in text and "sessions 3" in text
+    assert code == 4 and "no load result" in text and "Cleanup: NOT VERIFIED" in text and "sessions 3" in text
+    assert loadtest_summary.build(_write_run(tmp_path / "b", None, {"tenant": "x", "clean": True}))[2] == 1
+
+
+def test_exit_codes_put_the_cleanup_first_then_an_abort_then_the_slos(tmp_path):
+    clean, dirty = {"tenant": "x", "clean": True}, {"tenant": "x", "clean": False}
+    slow = _result(login=_scenario(2500.0, {"ok": 500}))
+    cases = [(_result(), clean, None, 0), (slow, clean, None, 1), (_result(), clean, "deep health failed", 5),
+             (slow, dirty, "deep health failed", 4), (_result(), dirty, None, 4)]
+    for i, (result, cleanup, aborted, code) in enumerate(cases):
+        d = _write_run(tmp_path / str(i), result, cleanup)
+        if aborted:
+            meta = json.loads((d / "meta.json").read_text())
+            (d / "meta.json").write_text(json.dumps({**meta, "aborted": aborted}))
+        text, _, got = loadtest_summary.build(d)
+        assert got == code, (i, got)
+        if aborted:
+            assert "stopped early: production degraded - deep health failed" in text and "ABORTED by the watchdog" in text
 
 
 def test_slos_met_but_cleanup_not_verified_exits_4(tmp_path):
@@ -164,8 +181,9 @@ def test_chart_lake_without_bars_is_ok_empty_and_still_judged():
 
 
 def test_ssl_context_keeps_the_chain_check_and_can_drop_the_name_check(tmp_path):
-    assert loadtest.ssl_context(None) is True
     import ssl
+    shared = loadtest.ssl_context(None)
+    assert isinstance(shared, ssl.SSLContext) and shared.check_hostname and shared.verify_mode == ssl.CERT_REQUIRED
     ca = Path(ssl.get_default_verify_paths().cafile or "")
     if not ca.is_file():
         pytest.skip("no system CA bundle to load")
@@ -183,6 +201,15 @@ def db(monkeypatch):
     return api
 
 
+_STAMPS = iter(range(-600, 600, 7))
+
+
+def _stamp():
+    """A fresh stamp near now (IST), as atp.sh makes one: a different second for every call."""
+    from datetime import datetime, timedelta
+    return (datetime.now(loadtest_org.IST) + timedelta(seconds=next(_STAMPS))).strftime("%Y%m%d-%H%M%S")
+
+
 def _run(coro):
     return asyncio.run(coro)
 
@@ -198,12 +225,17 @@ def _audit_rows(api, tenant_id):
     return _run(go())
 
 
+def _seeded(api, n):
+    stamp = _stamp()
+    accounts, info = _run(loadtest_org.seed(stamp, n, api._session_factory))
+    return stamp, accounts, info
+
+
 def test_seed_login_cleanup_keeps_the_audit_chain_and_leaves_nothing_usable(db):
     api = db
     other = api._register("loadtest-bystander@example.com")
-    stamp = "20261021-101500"
-    accounts, info = _run(loadtest_org.seed(stamp, 5, api._session_factory))
-    assert info["users"] == 5 and [e for e, _ in accounts] == [loadtest_org.email_for(stamp, i) for i in range(5)]
+    stamp, accounts, info = _seeded(api, 5)
+    assert info["users"] == 5 and [e for e, _ in accounts] == [loadtest_org.email_for(stamp, i) for i in range(5)] and len(info["user_ids"]) == 5
     password = accounts[0][1]
     tokens = []
     for email, _ in accounts[:2]:
@@ -211,25 +243,28 @@ def test_seed_login_cleanup_keeps_the_audit_chain_and_leaves_nothing_usable(db):
         assert r.status_code == 200, r.text
         tokens.append(r.json()["access_token"])
     head = {"Authorization": f"Bearer {tokens[1]}"}
-    for path in ("/api/auth/me", "/api/notifications", "/api/deployments", "/api/portfolio/exposure"):
-        assert api.client.get(path, headers=head).status_code == 200, path
+    for path in ("/api/auth/me", "/api/notifications", "/api/deployments", "/api/portfolio/exposure", "/api/paper/account"):
+        assert api.client.get(path, headers=head).status_code in (200, 404), path
     chart = api.client.post("/api/market-data/candles", headers=head, json={"symbols": ["TCS"], "timeframe": "5min"})
     assert chart.status_code == 409                                               # no broker session: refused before any broker call
 
     before = _run(loadtest_org.counts(stamp, api._session_factory))
     assert before["users"] == 5 and before["rows"]["login_events"] == 2 and before["rows"]["audit_logs"] >= 3
+    assert before["rows"]["tenant_keys"] == 1                                     # L2: the data key a sign-up gets
     assert "broker_credentials" not in before["rows"]
     audit_before = _audit_rows(api, info["tenant_id"])
 
-    report = _run(loadtest_org.cleanup(stamp, api._session_factory))
+    report = _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"], user_ids=info["user_ids"]))
     assert report["clean"], report
-    assert report["deleted"]["login_events"] == 2 and report["deleted"]["users"] == 3      # the 3 that never logged in go entirely
+    assert report["deleted"]["login_events"] == 2 and report["deleted"]["tenant_keys"] == 1
+    assert report["deleted"]["users"] == 3                                        # the 3 that never logged in go entirely
+    assert set(report["deleted"]) <= loadtest_org.ALLOWLIST | {"users"}
     assert report["tombstone"]["users_kept"] == 2 and report["tombstone"]["active_users"] == 0
     assert report["tombstone"]["usable_passwords"] == 0 and report["tombstone"]["status"] == "suspended"
     assert report["remaining"] == {} and report["ledger_rows_kept"]["audit_logs"] == len(audit_before) + 1
     assert _audit_rows(api, info["tenant_id"])[:-1] == audit_before                # the chain's rows are untouched; one row appended
     assert _audit_rows(api, info["tenant_id"])[-1][2] == loadtest_org.CLEAN_EVENT
-    again = _run(loadtest_org.cleanup(stamp, api._session_factory))                # idempotent: nothing more, no new audit row
+    again = _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"]))   # idempotent, no new audit row
     assert again["clean"] and again["deleted"] == {} and len(_audit_rows(api, info["tenant_id"])) == len(audit_before) + 1
 
     assert api.client.get("/api/auth/me", headers=head).status_code == 401         # the session is gone
@@ -238,27 +273,199 @@ def test_seed_login_cleanup_keeps_the_audit_chain_and_leaves_nothing_usable(db):
     assert api.client.get("/api/auth/me", headers={"Authorization": f"Bearer {other}"}).status_code == 200   # the bystander is untouched
     assert _run(loadtest_org.cleanup(stamp, api._session_factory))["clean"]          # and the refused attempts' login events go too
     listed = {r["stamp"]: r for r in _run(loadtest_org.leftovers(api._session_factory))}
-    assert listed[stamp]["active_users"] == 0 and listed[stamp]["ours"]
+    assert listed[stamp]["active_users"] == 0 and listed[stamp]["ours"] and listed[stamp]["tenant_id"] == info["tenant_id"]
 
 
-def test_an_organisation_with_any_other_member_is_never_cleaned(db):
+def test_reviewer_poc_a_sign_up_renamed_to_look_like_a_load_test_org_is_refused(db):
+    """PR #284 review H1: a real sign-up with a load-test address, renamed to loadtest-<stamp>, is never listed as ours
+    and never cleaned; platform-wide rows its user made survive."""
     api = db
-    stamp = "20261021-111500"
-    _run(loadtest_org.seed(stamp, 2, api._session_factory))
+    from datetime import date
+
     from sqlalchemy import select
+
+    from app.db.models import MarketEventRecord, Tenant, User
+    stamp = _stamp()
+    email = loadtest_org.email_for(stamp, 0)
+    tok = api._register(email)
+    r = api.client.patch("/api/team/tenant", headers={"Authorization": f"Bearer {tok}"}, json={"name": loadtest_org.tenant_name(stamp)})
+    assert r.status_code == 200, r.text
+
+    async def plant():
+        async with api._session_factory() as s:
+            u = await s.scalar(select(User).where(User.email == email))
+            s.add(MarketEventRecord(tenant_id=None, event_date=date(2026, 10, 20), kind="OTHER", description="GLOBAL event H1", created_by=u.id))
+            await s.commit()
+            return (await s.scalar(select(Tenant).where(Tenant.name == loadtest_org.tenant_name(stamp)))).id
+    tid = _run(plant())
+    assert stamp not in {r["stamp"] for r in _run(loadtest_org.leftovers(api._session_factory)) if r["ours"]}
+    for kwargs in ({}, {"tenant_id": tid}, {"tenant_id": tid, "user_ids": [1, 2, 3]}):
+        with pytest.raises(loadtest_org.Refused, match="no loadtest_org_seeded audit record"):
+            _run(loadtest_org.cleanup(stamp, api._session_factory, **kwargs))
+
+    async def still():
+        async with api._session_factory() as s:
+            return (await s.scalar(select(MarketEventRecord.id).where(MarketEventRecord.description == "GLOBAL event H1")),
+                    (await s.get(Tenant, tid)).status, await s.scalar(select(User.is_active).where(User.email == email)))
+    event, status, active = _run(still())
+    assert event is not None and status == "active" and active is True
+    assert api.client.get("/api/auth/me", headers={"Authorization": f"Bearer {tok}"}).status_code == 200
+
+
+def test_a_renamed_or_joined_or_foreign_id_load_test_org_is_refused_whole(db):
+    api = db
+    from sqlalchemy import select, update
 
     from app.auth.security import hash_password
     from app.db.models import Tenant, User
+    stamp, accounts, info = _seeded(api, 2)
+    with pytest.raises(loadtest_org.Refused, match="its seed did not make"):           # an id the org file does not list
+        _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"], user_ids=info["user_ids"][:1]))
+    with pytest.raises(loadtest_org.Refused, match="no loadtest_org_seeded audit record"):   # the wrong organisation id
+        _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"] + 999))
 
-    async def add_stranger():
+    async def add_member(email):
         async with api._session_factory() as s:
-            t = await s.scalar(select(Tenant).where(Tenant.name == loadtest_org.tenant_name(stamp)))
-            s.add(User(tenant_id=t.id, email="real.person@example.org", hashed_password=hash_password("x-Pass-123456"), role="USER"))
+            s.add(User(tenant_id=info["tenant_id"], email=email, hashed_password=hash_password("x-Pass-123456"), role="USER"))
             await s.commit()
-    _run(add_stranger())
-    with pytest.raises(loadtest_org.Refused, match="not a load-test organisation"):
+    _run(add_member("real.person@example.org"))
+    with pytest.raises(loadtest_org.Refused, match="its seed did not make"):
         _run(loadtest_org.cleanup(stamp, api._session_factory))
-    assert _run(loadtest_org.counts(stamp, api._session_factory))["active_users"] == 3
+
+    stamp2, _, info2 = _seeded(api, 1)
+
+    async def rename(name):
+        async with api._session_factory() as s:
+            await s.execute(update(Tenant).where(Tenant.id == info2["tenant_id"]).values(name=name))
+            await s.commit()
+    _run(rename("Someone's real trading desk"))
+    with pytest.raises(loadtest_org.Refused, match="renamed"):
+        _run(loadtest_org.cleanup(stamp2, api._session_factory, tenant_id=info2["tenant_id"], user_ids=info2["user_ids"]))
+    listed = {r["tenant_id"]: r for r in _run(loadtest_org.leftovers(api._session_factory))}
+    assert not listed[info["tenant_id"]]["ours"] and not listed[info2["tenant_id"]]["ours"]
+
+    async def active():
+        async with api._session_factory() as s:
+            return list(await s.scalars(select(User.is_active).where(User.tenant_id.in_([info["tenant_id"], info2["tenant_id"]]))))
+    assert all(_run(active()))
+
+
+def test_an_org_with_no_member_is_not_ours(db):
+    api = db
+    from sqlalchemy import delete
+
+    from app.db.models import User
+    stamp, _, info = _seeded(api, 1)
+
+    async def empty():
+        async with api._session_factory() as s:
+            await s.execute(delete(User).where(User.tenant_id == info["tenant_id"]))
+            await s.commit()
+    _run(empty())
+    with pytest.raises(loadtest_org.Refused, match="no member"):
+        _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"]))
+    assert not {r["tenant_id"]: r for r in _run(loadtest_org.leftovers(api._session_factory))}[info["tenant_id"]]["ours"]
+
+
+def test_platform_wide_and_other_tenant_rows_survive_the_cleanup(db):
+    """PR #284 review H2: rows outside the allowlist that only name a load-test user or the organisation through a
+    "who acted" / other column are never deleted: a platform-wide market event, a platform control, another
+    organisation's marketplace charge naming the load-test organisation as its creator."""
+    api = db
+    from datetime import date
+
+    from sqlalchemy import delete, select
+
+    from app.db.models import (CustomStrategyRecord, MarketEventRecord, MarketplaceChargeRecord, MarketplaceListingRecord,
+                               PlatformControlRecord, User)
+    api._register("h2.bystander@example.org")
+    stamp, accounts, info = _seeded(api, 2)
+    lt_user = info["user_ids"][0]
+
+    async def plant():
+        async with api._session_factory() as s:
+            other = await s.scalar(select(User).where(User.email == "h2.bystander@example.org"))
+            s.add(MarketEventRecord(tenant_id=None, event_date=date(2026, 10, 20), kind="OTHER", description="GLOBAL event H2", created_by=lt_user))
+            s.add(PlatformControlRecord(key="loadtest_h2_probe", value_json="{}", updated_by=lt_user))
+            strat = CustomStrategyRecord(tenant_id=other.tenant_id, user_id=other.id, name="h2", config_json="{}")
+            s.add(strat)
+            await s.flush()
+            listing = MarketplaceListingRecord(tenant_id=other.tenant_id, custom_strategy_id=strat.id, version_number=1, config_json="{}",
+                                               title="h2", description="h2")
+            s.add(listing)
+            await s.flush()
+            s.add(MarketplaceChargeRecord(listing_id=listing.id, creator_tenant_id=info["tenant_id"], tenant_id=other.tenant_id, user_id=other.id,
+                                          amount=1.0, platform_fee_pct=10.0, platform_fee=0.1, creator_net=0.9))
+            await s.commit()
+    _run(plant())
+    report = _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"], user_ids=info["user_ids"]))
+    assert report["clean"], report
+    assert set(report["deleted"]) <= loadtest_org.ALLOWLIST | {"users"} and "market_events" not in report["deleted"]
+
+    async def survivors():
+        async with api._session_factory() as s:
+            out = (await s.scalar(select(MarketEventRecord.created_by).where(MarketEventRecord.description == "GLOBAL event H2")),
+                   await s.scalar(select(PlatformControlRecord.updated_by).where(PlatformControlRecord.key == "loadtest_h2_probe")),
+                   await s.scalar(select(MarketplaceChargeRecord.creator_tenant_id).where(MarketplaceChargeRecord.creator_tenant_id == info["tenant_id"])),
+                   await s.get(User, lt_user))
+            await s.execute(delete(PlatformControlRecord).where(PlatformControlRecord.key == "loadtest_h2_probe"))
+            await s.commit()
+            return out
+    event_by, control_by, charge_creator, user = _run(survivors())
+    assert event_by == lt_user and control_by == lt_user and charge_creator == info["tenant_id"]
+    assert user is not None and not user.is_active                                # named elsewhere: kept as a tombstone, never deleted
+
+
+def test_rows_the_org_owns_outside_the_allowlist_refuse_the_whole_cleanup(db):
+    api = db
+    from sqlalchemy import func, select
+
+    from app.db.models import CustomStrategyRecord, UserSessionRecord
+    stamp, accounts, info = _seeded(api, 1)
+    assert api.client.post("/api/auth/login", json={"email": accounts[0][0], "password": accounts[0][1]}).status_code == 200
+
+    async def plant():
+        async with api._session_factory() as s:
+            s.add(CustomStrategyRecord(tenant_id=info["tenant_id"], user_id=info["user_ids"][0], name="h2b", config_json="{}"))
+            await s.commit()
+    _run(plant())
+    with pytest.raises(loadtest_org.Refused, match="owns rows a load test does not write: custom_strategies 1"):
+        _run(loadtest_org.cleanup(stamp, api._session_factory, tenant_id=info["tenant_id"], user_ids=info["user_ids"]))
+
+    async def sessions():
+        async with api._session_factory() as s:
+            return await s.scalar(select(func.count()).select_from(UserSessionRecord).where(UserSessionRecord.tenant_id == info["tenant_id"]))
+    assert _run(sessions()) == 1                                                  # nothing was deleted
+
+
+def test_the_org_file_is_seeds_and_the_stamp_is_ascii_and_current(db):
+    api = db
+    stamp, _, info = _seeded(api, 1)
+    line = "org," + json.dumps({"stamp": stamp, "tenant_id": info["tenant_id"], "user_ids": info["user_ids"]})
+    assert loadtest_org.read_org_file("noise\n" + line + "\n", stamp) == (info["tenant_id"], info["user_ids"])
+    for bad in ("", "org,{}", "org," + json.dumps({"stamp": "20200101-000000", "tenant_id": 1, "user_ids": [1]}),
+                "org," + json.dumps({"stamp": stamp, "tenant_id": 1, "user_ids": []})):
+        with pytest.raises(loadtest_org.Refused):
+            loadtest_org.read_org_file(bad, stamp)
+    for bad in ("2026-10-21; drop table users", "٢٠٢٦١٠٢١-101500", "20261021-1015001"):
+        with pytest.raises(loadtest_org.Refused):
+            loadtest_org.check_stamp(bad)
+    assert not loadtest_org.is_loadtest_email(stamp, f"lt-{stamp}-١٢٣٤@example.com")
+    with pytest.raises(loadtest_org.Refused, match="not the current IST time"):
+        _run(loadtest_org.seed("20200101-101500", 1, api._session_factory))
+
+
+def test_absent_ok_is_clean_only_when_no_seed_record_exists_and_ledgers_are_never_on_the_list(db):
+    api = db
+    assert not loadtest_org.ALLOWLIST & loadtest_org.LEDGERS                     # never deleted from, whatever the role may do
+    never = _stamp()
+    r = _run(loadtest_org.cleanup(never, api._session_factory, absent_ok=True))
+    assert r["clean"] and r["exists"] is False and "never committed" in r["note"]
+    with pytest.raises(loadtest_org.Refused):
+        _run(loadtest_org.cleanup(never, api._session_factory))                  # without --absent-ok: refused, never "clean"
+    stamp, _, info = _seeded(api, 1)
+    r = _run(loadtest_org.cleanup(stamp, api._session_factory, absent_ok=True))    # a record exists: the real cleanup runs
+    assert r["clean"] and r["tenant_id"] == info["tenant_id"] and r["tombstone"]["status"] == "suspended"
 
 
 def test_seed_refuses_unless_paper_only_phase0_and_creates_nothing(db, monkeypatch):
@@ -269,28 +476,28 @@ def test_seed_refuses_unless_paper_only_phase0_and_creates_nothing(db, monkeypat
         async with api._session_factory() as s:
             await controls._set(s, controls.KEY_FEATURE_FLAGS, {"flags": flags}, None)
             await s.commit()
+    stamp = _stamp()
     try:
         _run(set_flags({"live_trading": {"on": False, "tenants": [7]}}))
         with pytest.raises(loadtest_org.Refused, match="live_trading is on for 1 organisation"):
-            _run(loadtest_org.seed("20261021-121500", 2, api._session_factory))
+            _run(loadtest_org.seed(stamp, 2, api._session_factory))
         _run(set_flags({"phase0_paper_only": {"on": False, "tenants": []}}))
         with pytest.raises(loadtest_org.Refused, match="phase0_paper_only is not on"):
-            _run(loadtest_org.seed("20261021-121500", 2, api._session_factory))
+            _run(loadtest_org.seed(stamp, 2, api._session_factory))
         _run(set_flags({}))
         monkeypatch.setenv("ATP_DEPLOYMENT_PHASE", "")
         with pytest.raises(loadtest_org.Refused, match="not phase0"):
-            _run(loadtest_org.seed("20261021-121500", 2, api._session_factory))
+            _run(loadtest_org.seed(stamp, 2, api._session_factory))
     finally:
         _run(set_flags({}))
-    assert _run(loadtest_org.counts("20261021-121500", api._session_factory))["exists"] is False
-    with pytest.raises(loadtest_org.Refused):
-        loadtest_org.check_stamp("2026-10-21; drop table users")
+    with pytest.raises(loadtest_org.Refused, match="no loadtest_org_seeded audit record"):
+        _run(loadtest_org.counts(stamp, api._session_factory))
 
 
 # --- atp.sh loadtest against a fake host ---------------------------------------------------------------------------
 
 FAKE_DOCKER = r'''
-import fcntl, json, os, subprocess, sys
+import fcntl, json, os, subprocess, sys, time
 STATE = os.environ["FAKE_STATE"]
 _lock = open(STATE + ".lock", "w")
 fcntl.flock(_lock, fcntl.LOCK_EX)          # the samplers call docker while the script does: one state change at a time
@@ -300,9 +507,12 @@ argv = sys.argv[1:]
 st["calls"].append(argv)
 rc, out = 0, []
 
-def finish():
+def save():
     with open(STATE, "w") as fh:
         json.dump(st, fh)
+
+def finish():
+    save()
     if out:
         sys.stdout.write("\n".join(out) + "\n")
     sys.exit(rc)
@@ -316,10 +526,33 @@ if argv[:2] == ["compose", "version"]:
     out.append("2.29.1"); finish()
 if argv[:2] == ["image", "inspect"]:
     finish()
+if argv[:1] == ["network"]:
+    sub = argv[1]
+    if sub == "create":
+        st["networks"].append({"name": argv[-1], "internal": "--internal" in argv, "label": flag("--label")})
+        out.append("net-" + argv[-1])
+    elif sub == "connect":
+        st["connected"].append(argv[2])
+    elif sub == "disconnect":
+        st["disconnected"].append(argv[-2])
+        st["connected"] = [n for n in st["connected"] if n != argv[-2]]
+    elif sub == "rm":
+        st["networks"] = [n for n in st["networks"] if n["name"] != argv[-1]]
+    elif sub == "ls":
+        label = next((a.split("=", 1)[1] for a in argv if a.startswith("label=")), "")
+        out += [n["name"] for n in st["networks"] if n["label"] == label or (label == "atp.loadtest" and n["label"].startswith("atp.loadtest="))]
+    finish()
 if argv[:1] == ["inspect"]:
-    out.append("atp_default " if "range" in argv[2] else "172.18.0.9"); finish()
+    fmt = argv[2]
+    if "RestartCount" in fmt:
+        st["restart_checks"] = st.get("restart_checks", 0) + 1
+        bumped = st.get("bump_restart") and st["restart_checks"] > 1
+        out += [f"/atp-{i}-1 {1 if bumped else 0} false" for i in argv[3:]]
+    else:
+        out.append("172.30.0.2" if "atp-loadtest-" in fmt else "atp_default ")
+    finish()
 if argv[:1] == ["stats"]:
-    out += ["atp-backend-1,50%,500MiB / 1.5GiB,33%"] + [f"{c},5%,60MiB / 192MiB,31%" for c in st["containers"]]; finish()
+    out += ["atp-backend-1,50%,500MiB / 1.5GiB,33%"] + [f"{c},5%,60MiB / 128MiB,31%" for c in st["containers"]]; finish()
 if argv[:1] == ["ps"]:
     label = next((a.split("=", 1)[1] for a in argv if a.startswith("label=")), "")
     names = [c for c in st["containers"] if label == "atp.loadtest" or c.startswith("atp-loadtest-" + label.split("=")[-1] + "-")]
@@ -344,7 +577,7 @@ if argv[:1] == ["run"]:
     name = flag("--name")
     st["containers"].append(name)
     st["shards"].append({"name": name, "network": flag("--network"), "cpus": flag("--cpus"), "shares": flag("--cpu-shares"),
-                         "add_host": flag("--add-host"), "base": flag("--base"), "host_header": flag("--host-header"),
+                         "memory": flag("--memory"), "add_host": flag("--add-host"), "base": flag("--base"), "host_header": flag("--host-header"),
                          "allowed": next((a for a in argv if a.startswith("LOADTEST_ALLOWED_HOSTS=")), None),
                          "chart_lake": "--chart-lake" in argv, "user": flag("--user"), "read_only": "--read-only" in argv})
     raw = flag("--raw-out").replace("/lt", host_dir, 1)
@@ -373,6 +606,7 @@ if sub == "exec" and "postgres" in args:
     elif "value_json" in sql:
         out.append(st["flags_json"])
     elif "broker_credentials" in sql:
+        st["creds_sql"] = sql
         out.append(str(st.get("creds", 0)))
     elif "md5" in sql:
         out.append("aaa:bbb")
@@ -404,22 +638,47 @@ if sub == "run" and "backend" in args:
         if cmd == "seed":
             n = int(flag("--count"))
             st["seeded"] = stamp
+            st["seed_name"] = flag("--name")
+            if st.get("seed_hang"):                  # Ctrl-C during seeding: runs until its container is removed
+                st["seed_started"] = True
+                save()
+                fcntl.flock(_lock, fcntl.LOCK_UN)
+                for _ in range(300):
+                    time.sleep(0.1)
+                    with open(STATE) as fh:
+                        if flag("--name") in json.load(fh)["removed"]:
+                            sys.exit(137)
+                sys.exit(137)
             sys.stdout.write("a stray log line\n" + "".join(f"account,lt-{stamp}-{k:04d}@example.com,pw-throwaway\n" for k in range(n)))
+            sys.stdout.write("org," + json.dumps({"stamp": stamp, "tenant_id": 9, "user_ids": list(range(100, 100 + n))}) + "\n")
             print(json.dumps({"tenant_id": 9, "users": n}), file=sys.stderr); finish()
         if cmd == "list":
             out.append(json.dumps(st["orgs"])); finish()
         if cmd == "cleanup":
-            out.append(json.dumps({"tenant": "loadtest-" + stamp, "clean": st.get("clean", True), "deleted": {"sessions": 4, "users": 0},
+            st["cleanup_args"].append(args[args.index("scripts/loadtest_org.py") + 1:])
+            st["cleanup_stdin"].append(sys.stdin.read() if "--org-file" in args else "")
+            if st.get("refuse_cleanup"):
+                out.append(json.dumps({"refused": "organisation #9 owns rows a load test does not write: custom_strategies 1"})); rc = 2; finish()
+            out.append(json.dumps({"tenant": "loadtest-" + stamp, "tenant_id": 9, "clean": st.get("clean", True), "deleted": {"user_sessions": 4, "users": 0},
                                    "ledger_rows_kept": {"audit_logs": 6}, "remaining": {}, "failed": {}, "audit_chain": "intact",
-                                   "tombstone": {"status": "suspended", "users_kept": 4, "active_users": 0, "usable_passwords": 0}}))
+                                   "tombstone": {"tenant_id": 9, "status": "suspended", "users_kept": 4, "active_users": 0, "usable_passwords": 0}}))
             finish()
 rc = 9; finish()
 '''
 
 FAKE_CURL = r'''
-import json, sys
-print(json.dumps({"status": "ok", "checks": {"database": {"status": "ok"}, "migrations": {"status": "ok"}, "worker": {"status": "ok"},
-                  "redis": {"status": "ok"}}}))
+import fcntl, json, os, sys
+state = os.environ["FAKE_STATE"]
+with open(state + ".lock", "w") as lock:
+    fcntl.flock(lock, fcntl.LOCK_EX)
+    with open(state) as fh:
+        st = json.load(fh)
+    st["deep_calls"] = st.get("deep_calls", 0) + 1
+    with open(state, "w") as fh:
+        json.dump(st, fh)
+bad = st.get("deep_bad_after") is not None and st["deep_calls"] > st["deep_bad_after"]
+print(json.dumps({"status": "degraded" if bad else "ok", "checks": {"database": {"status": "ok"}, "migrations": {"status": "ok"},
+                  "worker": {"status": "ok", "seconds_since_heartbeat": 5}, "redis": {"status": "ok"}}}))
 '''
 
 
@@ -440,7 +699,8 @@ class FakeHost:
             (self.bin / "id").chmod(0o755)
             os.chown(env, 1000, 1000)
         self.state_path = tmp / "state.json"
-        self.state = {"calls": [], "containers": [], "removed": [], "shards": [], "org_calls": [], "orgs": [],
+        self.state = {"calls": [], "containers": [], "removed": [], "shards": [], "org_calls": [], "orgs": [], "networks": [],
+                      "connected": [], "disconnected": [], "cleanup_args": [], "cleanup_stdin": [],
                       "running": ["postgres", "redis", "backend", "worker", "caddy", "frontend"], "posture": dict(POSTURE_OK),
                       "session": {"open_sessions": ["NSE"], "open_positions": 0, "now_ist": WEDNESDAY_10}, "flags_json": '{"flags": {}}'}
         self.save()
@@ -459,7 +719,7 @@ class FakeHost:
     def env(self, now=WEDNESDAY_10):
         return {"PATH": f"{self.bin}:{os.environ['PATH']}", "HOME": str(self.dir.parent), "ATP_DIR": str(self.dir), "FAKE_STATE": str(self.state_path),
                 "ATP_LOADTEST_NOW": now, "ATP_REPORTS_DIR": str(self.reports), "LOADTEST_PY": str(ROOT / "backend/scripts/loadtest.py"),
-                "ATP_POLL_SECONDS": "1"}
+                "ATP_POLL_SECONDS": "1", "ATP_LOADTEST_WATCH_SECONDS": "1"}
 
     def run(self, *args, now=WEDNESDAY_10, timeout=120):
         return subprocess.run(["bash", str(ATP_SH), *args], env=self.env(now), capture_output=True, text=True, timeout=timeout)
@@ -535,28 +795,40 @@ def test_a_whole_run_seeds_loads_cleans_up_and_reports(tmp_path, caddyfile):
     _no_secret(out)
     stamp = st["seeded"]
     assert [c[0] for c in st["org_calls"]] == ["list", "seed", "cleanup"] and all(c[1] == stamp for c in st["org_calls"][1:])
+    assert st["seed_name"] == f"atp-loadtest-{stamp}-seed"                      # L1: a named container an exit can stop
     first_run = next(i for i, c in enumerate(st["calls"]) if c[:2] == ["run", "-d"])
     seed_at = next(i for i, c in enumerate(st["calls"]) if "seed" in c)
     clean_at = next(i for i, c in enumerate(st["calls"]) if "cleanup" in c)
     assert seed_at < first_run < clean_at
+    # H1: the cleanup gets the ids seed reported, on stdin, never a name to look for
+    assert st["cleanup_args"][0][:5] == ["cleanup", "--stamp", stamp, "--org-file", "-"]
+    assert json.loads(st["cleanup_stdin"][0]) == {"stamp": stamp, "tenant_id": 9, "user_ids": [100, 101, 102, 103]}
+    assert "tenant_id = 9" in st["creds_sql"]
     assert len(st["shards"]) == 1 and st["containers"] == [] and st["removed"] == [f"atp-loadtest-{stamp}-0"]
     shard = st["shards"][0]
-    assert shard["network"] == "atp_default" and shard["cpus"] == "0.25" and shard["read_only"] and shard["chart_lake"]
+    # L5: the clients on an internal network of the run's own, with only Caddy attached; detached and removed after
+    assert st["networks"] == [] and st["connected"] == [] and st["disconnected"] == [f"atp-loadtest-{stamp}"]
+    created = next(c for c in st["calls"] if c[:2] == ["network", "create"])
+    assert "--internal" in created and created[-1] == f"atp-loadtest-{stamp}"
+    assert shard["network"] == f"atp-loadtest-{stamp}" and shard["cpus"] == "0.25" and shard["memory"] == "128m"
+    assert shard["read_only"] and shard["chart_lake"]
     assert shard["user"] == f"{1000 if os.getuid() == 0 else os.getuid()}:{os.getgid()}"
     if caddyfile == "Caddyfile":
-        assert shard["base"] == "https://atp.example.in" and shard["add_host"] == "atp.example.in:172.18.0.9" and shard["host_header"] is None
+        assert shard["base"] == "https://atp.example.in" and shard["add_host"] == "atp.example.in:172.30.0.2" and shard["host_header"] is None
         assert shard["allowed"] == "LOADTEST_ALLOWED_HOSTS=atp.example.in"
     else:
-        assert shard["base"] == "https://172.18.0.9" and shard["host_header"] == "atp.example.in" and shard["add_host"] is None
+        assert shard["base"] == "https://172.30.0.2" and shard["host_header"] == "atp.example.in" and shard["add_host"] is None
     assert (host.reports / "loadtest-latest.md").resolve().name == f"loadtest-{stamp}.md"
     run_dir = host.dir / ".deploy/loadtest" / stamp
     assert not (run_dir / "accounts.csv").exists() and (run_dir / "cleanup.json").exists() and st.get("merged")
     report = (host.reports / f"loadtest-{stamp}.md").read_text()
     assert "SLO verdict: PASS" in report and "Cleanup: verified clean" in report and "| chart | " in report and "NOT MEASURED" in report
     assert "Feature flags unchanged by the run: yes" in report and "Broker credentials in the load-test organisation: none" in report
+    assert "Load-test networks left: 0" in report and "Watchdog: every 1s" in report
     assert f"Report: {host.reports}/loadtest-{stamp}.md" in r.stdout and "cleanup verified" in r.stdout
+    assert "(paste this back)" in r.stdout and "# Load test on the production host" in r.stdout   # L3: printed by the run itself
     meta = json.loads((run_dir / "meta.json").read_text())
-    assert meta["shards"] == 1 and meta["market"].startswith("open (NSE")
+    assert meta["shards"] == 1 and meta["market"].startswith("open (NSE") and meta["tenant_id"] == 9
     _no_secret(report, (run_dir / "meta.json").read_text())
 
 
@@ -569,51 +841,119 @@ def test_a_failed_client_start_still_cleans_up(tmp_path):
     st = host.load()
     assert r.returncode == 1, r.stdout + r.stderr
     assert "could not start load-client container" in r.stderr
-    assert [c[0] for c in st["org_calls"]] == ["list", "seed", "cleanup"]
-    assert "cleanup after an interrupted or failed run" in r.stdout and "no load result" in r.stdout + (
-        "".join(p.read_text() for p in host.reports.glob("*.md")))
+    assert [c[0] for c in st["org_calls"]] == ["list", "seed", "cleanup"] and st["networks"] == []
+    assert "cleanup after an interrupted, aborted or failed run" in r.stdout and "no load result" in r.stdout
     assert not list((host.dir / ".deploy/loadtest").glob("*/accounts.csv"))
 
 
-@needs_tools
-def test_ctrl_c_during_the_run_stops_the_clients_and_cleans_up(tmp_path):
-    host = FakeHost(tmp_path)
-    host.state["keep_running"] = True                      # the clients never finish on their own
+def _interrupt(host, marker, extra_state=None):
+    host.state.update(extra_state or {})
     host.save()
     proc = subprocess.Popen(["bash", str(ATP_SH), "loadtest", *SMALL], env=host.env(), stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     seen = []
     deadline = time.time() + 60
     for line in proc.stdout:
         seen.append(line)
-        if "==> running:" in line or time.time() > deadline:
+        if marker in line or time.time() > deadline:
             break
+    if marker.startswith("==> load-test organisation"):
+        while not host.load().get("seed_started") and time.time() < deadline:
+            time.sleep(0.1)
     proc.send_signal(signal.SIGINT)
-    rest, _ = proc.communicate(timeout=60)
-    out = "".join(seen) + rest
-    st = host.load()
-    assert proc.returncode == 130, out
-    assert [c[0] for c in st["org_calls"]] == ["list", "seed", "cleanup"] and st["containers"] == []
-    assert "cleanup after an interrupted or failed run (exit 130)" in out and "cleanup verified" in out
+    rest, _ = proc.communicate(timeout=90)
+    return proc.returncode, "".join(seen) + rest, host.load()
+
+
+@needs_tools
+def test_ctrl_c_during_the_run_stops_the_clients_and_cleans_up(tmp_path):
+    host = FakeHost(tmp_path)
+    rc, out, st = _interrupt(host, "==> running:", {"keep_running": True})
+    assert rc == 130, out
+    assert [c[0] for c in st["org_calls"]] == ["list", "seed", "cleanup"] and st["containers"] == [] and st["networks"] == []
+    assert "cleanup after an interrupted, aborted or failed run (exit 130)" in out and "cleanup verified" in out
+    assert "\ncleanup: verified" in out
     report = "".join(p.read_text() for p in host.reports.glob("loadtest-2*.md"))
     assert "no load result" in report and "Feature flags unchanged by the run: yes" in report
     assert not list((host.dir / ".deploy/loadtest").glob("*/accounts.csv"))
 
 
 @needs_tools
-def test_manual_cleanup_lists_and_cleans_only_load_test_organisations(tmp_path):
+def test_ctrl_c_during_seeding_stops_the_seed_container_before_the_cleanup(tmp_path):
+    """L1: the seed's container is removed (its transaction rolls back), then the cleanup runs by the seed record."""
     host = FakeHost(tmp_path)
-    host.state["orgs"] = [{"stamp": "20261021-101500", "tenant_id": 9, "status": "active", "users": 500, "active_users": 500, "ours": True},
-                          {"stamp": "20261020-090000", "tenant_id": 4, "status": "active", "users": 3, "active_users": 3, "ours": False}]
+    rc, out, st = _interrupt(host, "==> load-test organisation", {"seed_hang": True})
+    assert rc == 130, out
+    stamp = st["seeded"]
+    assert f"atp-loadtest-{stamp}-seed" in st["removed"] and "the seeding was stopped" in out
+    removed_at = next(i for i, c in enumerate(st["calls"]) if c[:2] == ["rm", "-f"] and f"atp-loadtest-{stamp}-seed" in c)
+    clean_at = next(i for i, c in enumerate(st["calls"]) if "cleanup" in c)
+    assert removed_at < clean_at
+    assert st["cleanup_args"][0][:4] == ["cleanup", "--stamp", stamp, "--absent-ok"]     # no org file: the seed never reported
+    assert st["shards"] == []
+
+
+@needs_tools
+def test_an_unverified_cleanup_outranks_every_other_outcome(tmp_path):
+    host = FakeHost(tmp_path)
+    host.state["clean"] = False
+    host.save()
+    r = host.run("loadtest", *SMALL)
+    assert r.returncode == 4 and "cleanup: NOT VERIFIED (exit 4)" in r.stdout, r.stdout + r.stderr
+    host2 = FakeHost(tmp_path / "b")
+    rc, out, _ = _interrupt(host2, "==> running:", {"keep_running": True, "refuse_cleanup": True})
+    assert rc == 4 and "refused: organisation #9 owns rows a load test does not write" in out, out
+
+
+@needs_tools
+@pytest.mark.parametrize("state, reason", [
+    ({"deep_bad_after": 1}, "the API's deep health failed twice in a row"),
+    ({"bump_restart": True}, "restarted (restart count 1)"),
+])
+def test_the_watchdog_stops_a_run_when_production_degrades(tmp_path, state, reason):
+    """M1: deep health, a container restart (or OOM, the worker heartbeat, memory, swap) stop the run; it still cleans up."""
+    host = FakeHost(tmp_path)
+    host.state.update({"keep_running": True, **state})
+    host.save()
+    r = host.run("loadtest", *SMALL, timeout=120)
+    st = host.load()
+    out = r.stdout + r.stderr
+    assert r.returncode == 5, out
+    assert "ABORTED: production degraded" in out and reason in out
+    assert [c[0] for c in st["org_calls"]] == ["list", "seed", "cleanup"] and st["containers"] == [] and st["networks"] == []
+    report = "".join(p.read_text() for p in host.reports.glob("loadtest-2*.md"))
+    assert "The run was stopped early: production degraded" in report and reason in report and "Cleanup: verified clean" in report
+
+
+@needs_tools
+def test_too_little_memory_is_its_own_refusal(tmp_path):
+    host = FakeHost(tmp_path)
+    env = {**host.env(), "ATP_LOADTEST_MIN_AVAILABLE_MIB": "99999999"}
+    r = subprocess.run(["bash", str(ATP_SH), "loadtest", *SMALL], env=env, capture_output=True, text=True, timeout=120)
+    assert r.returncode == 6 and "refused: only" in r.stderr and "Nothing was created" in r.stderr, r.stdout + r.stderr
+    assert host.load()["org_calls"] == []
+
+
+@needs_tools
+def test_manual_cleanup_lists_and_cleans_only_provable_load_test_organisations(tmp_path):
+    host = FakeHost(tmp_path)
+    host.state["orgs"] = [{"stamp": "20261021-101500", "tenant_id": 9, "name": "loadtest-20261021-101500", "status": "active", "users": 500,
+                           "active_users": 500, "ours": True, "reason": ""},
+                          {"stamp": "20261020-090000", "tenant_id": 4, "name": "Renamed desk", "status": "active", "users": 3, "active_users": 3,
+                           "ours": False, "reason": "organisation #4 is now named 'Renamed desk' - renamed, not touching it"}]
     host.state["containers"] = ["atp-loadtest-20261021-101500-0"]
+    host.state["networks"] = [{"name": "atp-loadtest-20261021-101500", "internal": True, "label": "atp.loadtest=20261021-101500"}]
     host.save()
     listed = host.run("loadtest-cleanup", "--list")
-    assert listed.returncode == 0 and "NOT only load-test users: never touched" in listed.stdout
+    assert listed.returncode == 0 and "NOT provably a load-test organisation, never touched: organisation #4 is now named" in listed.stdout
     assert [c[0] for c in host.load()["org_calls"]] == ["list"]
     r = host.run("loadtest-cleanup", "--all")
     st = host.load()
     assert r.returncode == 0, r.stdout + r.stderr
     assert ["cleanup", "20261021-101500"] in st["org_calls"] and ["cleanup", "20261020-090000"] not in st["org_calls"]
-    assert st["containers"] == [] and "loadtest-cleanup: done" in r.stdout
+    assert st["cleanup_args"][-1][:5] == ["cleanup", "--stamp", "20261021-101500", "--tenant-id", "9"]
+    assert st["containers"] == [] and st["networks"] == [] and "loadtest-cleanup: done" in r.stdout
+    refused = host.run("loadtest-cleanup", "20261020-090000")                   # named by the owner, still not provable: refused
+    assert refused.returncode == 1 and "no provable load-test organisation" in refused.stderr
     assert host.run("loadtest-cleanup", "x; rm -rf /").returncode == 2
 
 

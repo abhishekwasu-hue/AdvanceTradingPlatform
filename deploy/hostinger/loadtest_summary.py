@@ -18,8 +18,9 @@ Inputs in --dir (each may be missing - an interrupted run still gets a report of
 The SLOs (owner decisions, docs/OPEN_QUESTIONS.md LD-9): every API scenario p95 <= 500 ms; login measured apart,
 p95 <= 2,000 ms with all users logged in; zero errors (server errors, transport failures, other 4xx and rate-limit
 refusals). A scenario the deployment answers only with "no broker session" (409) or "feature off" is reported as not
-measured, never as passed. Exit 0 = every SLO met and the cleanup verified, 1 = an SLO missed (or no load result),
-4 = SLOs met but the cleanup not verified.
+measured, never as passed. Exit codes, the cleanup first (PR #284 review M2): 4 = the cleanup is not verified, whatever
+else happened; 5 = the watchdog stopped the run because production degraded (cleanup verified); 1 = an SLO missed, or
+no load result; 0 = every SLO met and the cleanup verified.
 """
 from __future__ import annotations
 
@@ -202,6 +203,10 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
     result = _load_json(run_dir / "result.json")
     cleanup = _load_json(run_dir / "cleanup.json")
     verdict = judge(result)
+    aborted = meta.get("aborted")
+    if aborted:
+        verdict["reasons"].insert(0, f"ABORTED by the watchdog: {aborted}")
+        verdict["slo_pass"] = False
     prefix = meta.get("client_prefix") or ""
     containers, client = container_stats(run_dir / "docker-stats.csv", prefix)
     host = host_memory(run_dir / "host-memory.csv")
@@ -212,8 +217,10 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
     slo_line = ("PASS - every measured SLO met" if verdict["slo_pass"] else "FAIL - " + "; ".join(verdict["reasons"]))
     cleanup_line = ("verified clean" if clean else "NOT VERIFIED - see the Cleanup section and the runbook's manual cleanup"
                     if cleanup else "NOT RUN or no report - run: /opt/atp/deploy/atp.sh loadtest-cleanup " + str(meta.get("stamp", "<stamp>")))
-    md: List[str] = [f"# Load test on the production host - {meta.get('stamp', '?')}", "",
-                     f"**SLO verdict: {slo_line}**", "", f"**Cleanup: {cleanup_line}**", ""]
+    md: List[str] = [f"# Load test on the production host - {meta.get('stamp', '?')}", ""]
+    if aborted:
+        md += [f"> **The run was stopped early: production degraded - {aborted}.** The cleanup still ran.", ""]
+    md += [f"**SLO verdict: {slo_line}**", "", f"**Cleanup: {cleanup_line}**", ""]
     if meta.get("market") and not str(meta["market"]).startswith("open"):
         md += [f"> Run outside NSE market hours ({meta['market']}): these numbers are not the market-hours result.", ""]
     if verdict["not_measured"]:
@@ -298,7 +305,11 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
     md += ["## Cleanup", ""]
     if cleanup:
         tomb = cleanup.get("tombstone") or {}
-        md += [f"- Organisation: {cleanup.get('tenant')} - "
+        if cleanup.get("refused"):
+            md.append(f"- REFUSED: {cleanup['refused']}")
+        if cleanup.get("note"):
+            md.append(f"- {cleanup['note']}")
+        md += [f"- Organisation: {cleanup.get('tenant')} #{cleanup.get('tenant_id', '?')} - "
                + (f"kept as a tombstone (status {tomb.get('status')}, {tomb.get('users_kept')} users, {tomb.get('active_users')} active, "
                   f"{tomb.get('usable_passwords')} with a usable password)" if tomb else "removed entirely"),
                "- Deleted: " + (", ".join(f"{k} {v}" for k, v in sorted(cleanup.get("deleted", {}).items())) or "nothing"),
@@ -313,13 +324,14 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
         md.append(f"- Verified: {'yes' if clean else 'NO'}")
     else:
         md.append("- No cleanup report: run the manual cleanup (docs/deploy/LOADTEST_REAL_HOST.md).")
-    for key, label in (("load_containers_left", "Load-client containers left"), ("accounts_file_removed", "Accounts file removed")):
+    for key, label in (("load_containers_left", "Load-client containers left"), ("network_left", "Load-test networks left"),
+                       ("accounts_file_removed", "Accounts file removed")):
         if key in meta:
             md.append(f"- {label}: {meta[key]}")
     md.append("")
 
     md += ["## Safety checks", ""]
-    for key, label in (("posture", "Deployment"), ("flags_unchanged", "Feature flags unchanged by the run"),
+    for key, label in (("watchdog", "Watchdog"), ("posture", "Deployment"), ("flags_unchanged", "Feature flags unchanged by the run"),
                        ("orgs_unchanged", "Other organisations and their users unchanged by the run"),
                        ("broker_credentials", "Broker credentials in the load-test organisation")):
         if key in meta:
@@ -347,7 +359,7 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
                      f"{mib(host['swap_used_peak'])} MiB (swapped in {host['swap_in_mib']:.1f} / out {host['swap_out_mib']:.1f} MiB)")
     if client.get("samples"):
         lines.append(f"Load client CPU: mean {client['cpu_mean']:.0f}% / peak {client['cpu_peak']:.0f}% of one vCPU")
-    code = 0 if verdict["slo_pass"] and clean else 1 if not verdict["slo_pass"] else 4
+    code = 4 if not clean else 5 if aborted else 1 if not verdict["slo_pass"] else 0
     return text, "\n".join(lines), code
 
 

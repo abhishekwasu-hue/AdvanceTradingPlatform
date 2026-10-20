@@ -420,6 +420,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/market-holidays"): "member",
     ("POST", "/api/market-holidays"): "admin",
     ("DELETE", "/api/market-holidays/{holiday_id}"): "admin",
+    ("GET", "/api/market/strip"): "member",
     ("GET", "/api/marketplace"): "member",
     ("GET", "/api/marketplace/earnings"): "member",
     ("POST", "/api/marketplace/listings"): "trader",

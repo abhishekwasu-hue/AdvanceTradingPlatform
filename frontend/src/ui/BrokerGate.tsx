@@ -89,7 +89,8 @@ function ErrorNote({ text }: { text: string }) {
   );
 }
 
-function CodeForm({ step, onSubmit, busy }: { step: CodeStep; onSubmit?: (code: string) => void; busy: boolean }) {
+/** The paste-the-code step of "Log in to Zerodha / Fyers" (also used by the v2 dashboard's Needs attention row). */
+export function CodeForm({ step, onSubmit, busy }: { step: CodeStep; onSubmit?: (code: string) => void; busy: boolean }) {
   const name = brokerDisplayName(step.broker.broker_name);
   const fieldId = useId();
   const [code, setCode] = useState("");
@@ -223,13 +224,17 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
   }
 }
 
-/**
- * Renders `children` only while the trader's broker session is usable; otherwise the gate (see the RULE above).
- * Needs the router (Connect goes to Settings) and AuthProvider, as every page inside the app shell has.
- */
-export function BrokerGate({ children }: { children: ReactNode }) {
-  const { state, refresh } = useBrokerSession();
-  const navigate = useNavigate();
+/** "Log in to <Broker>" started from a click: the login in progress, its error and the paste-the-code step. The broker
+ * gate and the v2 dashboard's Needs attention row share it; `refresh` re-reads the broker status after a login. */
+export interface BrokerLogin {
+  busy: string | null;
+  error: string | null;
+  codeStep: CodeStep | null;
+  login: (t: BrokerTokenInfo) => void;
+  submitCode: (code: string) => void;
+}
+
+export function useBrokerLogin(refresh: () => void): BrokerLogin {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [codeStep, setCodeStep] = useState<CodeStep | null>(null);
@@ -259,6 +264,21 @@ export function BrokerGate({ children }: { children: ReactNode }) {
       .catch((e: unknown) => setError(loginErrorText(e, t.broker_name)))
       .finally(() => setBusy(null));
   }
+
+  return { busy, error, codeStep, login, submitCode };
+}
+
+/** "<broker>/<label>": the key of a login in progress (BrokerLogin.busy). */
+export const brokerLoginKey = keyOf;
+
+/**
+ * Renders `children` only while the trader's broker session is usable; otherwise the gate (see the RULE above).
+ * Needs the router (Connect goes to Settings) and AuthProvider, as every page inside the app shell has.
+ */
+export function BrokerGate({ children }: { children: ReactNode }) {
+  const { state, refresh } = useBrokerSession();
+  const navigate = useNavigate();
+  const { busy, error, codeStep, login, submitCode } = useBrokerLogin(refresh);
 
   return (
     <BrokerGateView

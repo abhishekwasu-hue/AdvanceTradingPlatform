@@ -5,6 +5,7 @@ import { AuthProvider } from "../auth/AuthContext";
 import { DATA_PAGES } from "../ui/dataPages";
 import { FeaturesProvider } from "../ui/useFeatures";
 import AppShellV2 from "./AppShellV2";
+import { OWN_BROKER_STATES } from "./pagesV2";
 import { CommandList, isApplePlatform, isCommandShortcut, moveActive, otherDialogOpen, shortcutLabel } from "./CommandBarV2";
 import { MoreSheetContent, moreSheetResults } from "./MoreSheetV2";
 import { searchPages, visibleSections, type NavContext } from "./navModel";
@@ -176,13 +177,22 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
   it("gates every data page and its v2 sub-addresses", () => {
     // An old address that forwards (/scanner, /options-builder) is checked at the address it forwards to.
     const at = (p: string) => v2RedirectFor(p, "", { signedIn: true, on: flags() }) ?? p;
-    const paths = [...DATA_PAGES.map((p) => at(p.path === "/copilot" ? "/copilot/market-pulse" : p.path)), "/charts/RELIANCE", "/screener/custom", "/option-chain/plan"];
+    // UI2-2: the v2 dashboard (`/`) shows the broker states itself (src/shell/pagesV2.ts OWN_BROKER_STATES) - see below.
+    const paths = [...DATA_PAGES.filter((p) => !OWN_BROKER_STATES.includes(p.path)).map((p) => at(p.path === "/copilot" ? "/copilot/market-pulse" : p.path)),
+      "/charts/RELIANCE", "/screener/custom", "/option-chain/plan"];
     expect(paths).toContain("/charts");
+    expect(paths).not.toContain("/");
     for (const path of paths) {
       const html = render(path);
       expect(html, path).toContain('data-broker-gate="loading"');
       expect(html, path).not.toContain("Loading page");                 // the page itself is not even loading
     }
+  });
+
+  it("UI2-2: the dashboard is not wrapped by the shell - its v2 page shows the gate's states itself", () => {
+    const html = render("/");
+    expect(html).not.toContain("data-broker-gate");
+    expect(html).toContain("Loading page");                               // the v2 dashboard's own chunk
   });
 
   it("gates percent-encoded and undecodable addresses too (review M1)", () => {

@@ -270,3 +270,22 @@ def test_reconciliation_ignores_paper_positions():
     report = _run(go())
     assert report.mismatched_count == 0 and report.items == []
     assert _tenant_row(t["tenant_id"]).broker_uncertain_since is None
+
+
+@pytest.mark.parametrize("field", ["entry", "stop_loss"])
+def test_a_paper_entry_with_a_nan_level_is_rejected_not_left_at_risk_check(field):
+    """#308 review: a NaN level crashed the sizing (int(NaN)) after the order reached RISK_CHECK, leaving it there (in
+    flight) for good. Now the risk check refuses it: the order is REJECTED with the reason and nothing is placed."""
+    from app.execution.signal_execution import execute_signal_for_user
+    t = _tenant(f"nan-level-{field}@example.com")
+
+    async def go():
+        async with _session_factory() as session:
+            user = await session.get(User, t["user_id"])
+            signal = _signal().model_copy(update={field: float("nan")})
+            return await execute_signal_for_user(session, user, mode="PAPER", strategy_id="ema_rsi_scalper_1m", signal=signal)
+
+    result, order = _run(go())
+    assert not result.executed and order.status == "REJECTED"
+    assert "Signal entry/stop loss is not a finite number" in result.reasons
+    assert _trades(t["tenant_id"]) == []

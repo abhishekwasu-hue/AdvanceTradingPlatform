@@ -37,6 +37,13 @@ def test_risk_manager_approves_valid_signal_and_sizes_position():
     assert decision.quantity == 500
 
 
+@pytest.mark.parametrize("entry,sl", [(float("nan"), 98.0), (100.0, float("nan")), (float("inf"), 98.0), (100.0, float("-inf"))])
+def test_risk_manager_refuses_a_level_that_is_not_a_finite_number(entry, sl):
+    """#308 review: a NaN level used to crash the sizing (int(NaN)) and leave the order at RISK_CHECK."""
+    decision = RiskManager(RiskConfig()).validate_and_size(_sample_signal(entry=entry, sl=sl), TradingDayState())
+    assert decision.approved is False and decision.reasons == ["Signal entry/stop loss is not a finite number"]
+
+
 def test_risk_manager_rejects_when_daily_loss_limit_breached():
     config = RiskConfig(capital=100_000, max_daily_loss_pct=2.0)
     manager = RiskManager(config)

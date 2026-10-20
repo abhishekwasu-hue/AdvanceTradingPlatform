@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass
 from typing import Optional
 
@@ -40,6 +41,10 @@ class RiskManager:
             return RiskDecision(approved=False, reasons=["Signal is NO_TRADE"])
         if signal.entry is None or signal.stop_loss is None:
             return RiskDecision(approved=False, reasons=["Signal missing entry/stop loss"])
+        # A NaN level (an alert's "nan", a broken quote) would size to NaN and crash the int() below, leaving the order
+        # at RISK_CHECK; refuse it like any other unusable signal (#308 review).
+        if not (math.isfinite(signal.entry) and math.isfinite(signal.stop_loss)):
+            return RiskDecision(approved=False, reasons=["Signal entry/stop loss is not a finite number"])
         if signal.risk_reward is not None and signal.risk_reward < self.config.min_risk_reward:
             reasons.append(
                 f"Risk/Reward {signal.risk_reward:.2f} below configured minimum {self.config.min_risk_reward:.2f}"

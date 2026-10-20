@@ -421,7 +421,12 @@ def test_platform_wide_and_other_tenant_rows_survive_the_cleanup(db):
                    await s.scalar(select(PlatformControlRecord.updated_by).where(PlatformControlRecord.key == "loadtest_h2_probe")),
                    await s.scalar(select(MarketplaceChargeRecord.creator_tenant_id).where(MarketplaceChargeRecord.creator_tenant_id == info["tenant_id"])),
                    await s.get(User, lt_user))
+            # Remove what plant() added: the OPEN charge would otherwise show in later tests' operator charge lists.
             await s.execute(delete(PlatformControlRecord).where(PlatformControlRecord.key == "loadtest_h2_probe"))
+            await s.execute(delete(MarketplaceChargeRecord).where(MarketplaceChargeRecord.creator_tenant_id == info["tenant_id"]))
+            await s.execute(delete(MarketplaceListingRecord).where(MarketplaceListingRecord.title == "h2"))
+            await s.execute(delete(CustomStrategyRecord).where(CustomStrategyRecord.name == "h2"))
+            await s.execute(delete(MarketEventRecord).where(MarketEventRecord.description == "GLOBAL event H2"))
             await s.commit()
             return out
     event_by, control_by, charge_creator, user = _run(survivors())

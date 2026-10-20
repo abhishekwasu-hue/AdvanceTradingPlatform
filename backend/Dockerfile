@@ -26,6 +26,9 @@ COPY alembic ./alembic
 COPY scripts ./scripts
 
 RUN useradd --create-home --shell /bin/bash appuser && chown -R appuser:appuser /app
+# Analyze a chart: the private data volume's mount point (docker-compose `private_data`). Created here, owned by the app
+# user, so a new named volume starts writable for it; nothing is ever written there at build time.
+RUN mkdir -p /data/private && chown appuser:appuser /data/private && chmod 700 /data/private
 USER appuser
 
 EXPOSE 8000

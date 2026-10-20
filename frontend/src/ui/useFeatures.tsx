@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { api } from "../api/client";
 import type { TenantFeatures } from "../types";
 
@@ -7,15 +7,17 @@ import type { TenantFeatures } from "../types";
  * (GET /api/system/features) and shared with every component through `useFeatures()`, instead of each page and card
  * fetching the same list on its own.
  *
- * Freshness - at least as fresh as the per-component reads it replaces:
- * - the shell re-reads on every route change (a page used to read on mount), when the signed-in user changes or is
- *   re-read (the top bar and charts used to read on `user`), and when this tab is shown again;
- * - `refresh()` re-reads at once (the Admin console calls it after changing a flag).
+ * Freshness, without re-reading on every click:
+ * - a new signed-in user is read at once (the provider's own read), and so is a re-read of the same user (the top
+ *   bar and charts used to read on `user`) and an admin flag change (`refresh()`, called by the Admin console);
+ * - a route change and showing the tab again re-read at most once per REREAD_AFTER_MS (`refreshIfStale()`), so a
+ *   flag change reaches every page within 30 s, and the server is not asked on every click (M3).
  * A re-read keeps the flags on screen until the answer is in, so nothing flickers.
  *
  * Safety:
  * - `loaded` is false until the first answer for this user, so "not known yet" is never "on".
- * - A failed read means every flag is off (as each component did on its own before): a feature never shows by mistake.
+ * - The first read for a user that fails means every flag is off (fail closed: a feature never shows by mistake).
+ *   A later re-read that fails keeps the last good flags (L7). `answered` tells a real answer from that fallback.
  * - The answer is keyed by user: another account never sees the previous account's flags, not even for one render.
  * - Outside a provider (a test or a story renders one component alone), the hook reads for itself once.
  */
@@ -24,17 +26,39 @@ export interface FeaturesState {
   loaded: boolean;
   /** True only when the flag is known and on. */
   on: (name: string) => boolean;
+  /** True when the flags come from a successful read (false before one, or when the first read failed). */
+  answered: boolean;
   /** Re-reads the flags now (keeps the current ones until the answer is in). */
   refresh: () => void;
+  /** Re-reads only when the last read started REREAD_AFTER_MS or more ago (route changes, tab shown again). */
+  refreshIfStale: () => void;
+}
+
+/** Route changes and a tab shown again re-read the flags at most this often. */
+export const REREAD_AFTER_MS = 30_000;
+
+/** True when a throttled re-read may go out: never read yet, or the last read started REREAD_AFTER_MS ago or more. */
+export function shouldReread(lastReadAt: number | null, now: number, minMs = REREAD_AFTER_MS): boolean {
+  return lastReadAt === null || now - lastReadAt >= minMs;
 }
 
 const FeaturesContext = createContext<FeaturesState | null>(null);
 const NONE: TenantFeatures = {};
 
 type Key = number | string | null;
-export interface FeaturesSnapshot { key: Key; features: TenantFeatures; loaded: boolean }
+export interface FeaturesSnapshot { key: Key; features: TenantFeatures; loaded: boolean; answered: boolean }
 type Snapshot = FeaturesSnapshot;
-const EMPTY_SNAPSHOT: Snapshot = { key: null, features: NONE, loaded: false };
+const EMPTY_SNAPSHOT: Snapshot = { key: null, features: NONE, loaded: false, answered: false };
+
+/** After a failed read: keep this user's last good flags (L7); only a first read fails closed (every flag off). */
+export function snapshotAfterError(prev: FeaturesSnapshot, key: Key): FeaturesSnapshot {
+  return prev.key === key && prev.answered ? prev : { key, features: NONE, loaded: true, answered: false };
+}
+
+/** The theme default the shell may apply (UI-1): only from a real answer, so a failed read never clears the v2 hint. */
+export function v2ThemeDefaultFrom(f: Pick<FeaturesState, "answered" | "on">): boolean | null {
+  return f.answered ? f.on("ui_v2") : null;
+}
 
 /** The answer that belongs to `key` - another user's answer (or none) reads as "not loaded", every flag off. */
 export function snapshotFor(snap: FeaturesSnapshot, enabled: boolean, key: Key): FeaturesSnapshot {
@@ -45,22 +69,27 @@ export function snapshotFor(snap: FeaturesSnapshot, enabled: boolean, key: Key):
 function useFeaturesFetch(enabled: boolean, key: Key): FeaturesState {
   const [snap, setSnap] = useState<Snapshot>(EMPTY_SNAPSHOT);
   const [nonce, setNonce] = useState(0);
+  const lastReadAt = useRef<number | null>(null);
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
+  const refreshIfStale = useCallback(() => { if (shouldReread(lastReadAt.current, Date.now())) refresh(); }, [refresh]);
   useEffect(() => {
     if (!enabled) return;
     let live = true;
+    lastReadAt.current = Date.now();
     api.myFeatures()
-      .then((f) => { if (live) setSnap({ key, features: f ?? NONE, loaded: true }); })
-      .catch(() => { if (live) setSnap({ key, features: NONE, loaded: true }); });
+      .then((f) => { if (live) setSnap({ key, features: f ?? NONE, loaded: true, answered: true }); })
+      .catch(() => { if (live) setSnap((prev) => snapshotAfterError(prev, key)); });
     return () => { live = false; };
   }, [enabled, key, nonce]);
   const current = snapshotFor(snap, enabled, key);
   return useMemo(() => ({
     features: current.features,
     loaded: current.loaded,
+    answered: current.answered,
     on: (name: string) => current.loaded && current.features[name] === true,
     refresh,
-  }), [current, refresh]);
+    refreshIfStale,
+  }), [current, refresh, refreshIfStale]);
 }
 
 /**
@@ -69,15 +98,16 @@ function useFeaturesFetch(enabled: boolean, key: Key): FeaturesState {
  */
 export function FeaturesProvider({ userKey, value, children }: { userKey: Key; value?: TenantFeatures; children: ReactNode }) {
   const fetched = useFeaturesFetch(value === undefined && userKey !== null, userKey);
-  const { refresh } = fetched;
+  const { refreshIfStale } = fetched;
   useEffect(() => {
     if (value !== undefined || userKey === null) return;
-    const onShow = () => { if (document.visibilityState === "visible") refresh(); };
+    const onShow = () => { if (document.visibilityState === "visible") refreshIfStale(); };
     document.addEventListener("visibilitychange", onShow);
     return () => document.removeEventListener("visibilitychange", onShow);
-  }, [value, userKey, refresh]);
+  }, [value, userKey, refreshIfStale]);
   const fixed = useMemo<FeaturesState | null>(() => (value === undefined ? null : {
-    features: value, loaded: true, on: (name: string) => value[name] === true, refresh: () => undefined,
+    features: value, loaded: true, answered: true, on: (name: string) => value[name] === true,
+    refresh: () => undefined, refreshIfStale: () => undefined,
   }), [value]);
   return <FeaturesContext.Provider value={fixed ?? fetched}>{children}</FeaturesContext.Provider>;
 }

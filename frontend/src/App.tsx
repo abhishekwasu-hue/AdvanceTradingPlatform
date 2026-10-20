@@ -13,7 +13,7 @@ import { api } from "./api/client";
 import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
 import { legacyCopilotPath } from "./copilot/tabs";
 import { setV2ThemeDefault } from "./theme";
-import { FeaturesProvider, useFeatures } from "./ui/useFeatures";
+import { FeaturesProvider, useFeatures, v2ThemeDefaultFrom } from "./ui/useFeatures";
 import type { SystemStatus } from "./types";
 
 const ChartWindow = lazy(() => import("./pages/ChartWindow"));
@@ -263,25 +263,32 @@ function ShellFeatures({ children }: { children: ReactNode }) {
   );
 }
 
-/** UI2-0: keeps the shared flags at least as fresh as the per-page reads they replace - a re-read on every route change
- * (pages used to read on mount) and whenever the signed-in user is re-read (the top bar and charts read on `user`).
- * The first render is the provider's own read. */
+/** UI2-0: keeps the shared flags fresh without asking the server on every click (review M3, L8):
+ * - a route change re-reads at most once per 30 s (refreshIfStale; pages used to read on mount);
+ * - a re-read of the same user (email verified, scopes changed) re-reads at once, as the top bar did on `user`;
+ * - a different user is left to the provider, which reads for the new id itself. */
 function FeaturesFreshness() {
   const { user } = useAuth();
   const { pathname } = useLocation();
-  const { refresh } = useFeatures();
-  const first = useRef(true);
+  const { refresh, refreshIfStale } = useFeatures();
+  const firstPath = useRef(true);
   useEffect(() => {
-    if (first.current) { first.current = false; return; }
-    if (user) refresh();
-  }, [pathname, user, refresh]);
+    if (firstPath.current) { firstPath.current = false; return; }
+    if (user) refreshIfStale();
+  }, [pathname]);                                   // route changes only (user and the callback are read as they are now)
+  const seen = useRef(user);
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = user;
+    if (user && before && before !== user && before.id === user.id) refresh();
+  }, [user, refresh]);
   return null;
 }
 
 function V2ThemeDefault() {
-  const { loaded, on } = useFeatures();
-  const v2 = on("ui_v2");
-  useEffect(() => { if (loaded) setV2ThemeDefault(v2); }, [loaded, v2]);
+  // Only a real answer moves the theme default: a failed read never clears the v2 hint (review L7).
+  const v2 = v2ThemeDefaultFrom(useFeatures());
+  useEffect(() => { if (v2 !== null) setV2ThemeDefault(v2); }, [v2]);
   return null;
 }
 

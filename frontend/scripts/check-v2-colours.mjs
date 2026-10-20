@@ -9,11 +9,11 @@
 //
 // Files checked (explicit, so an unrelated "V2" name is not swept in):
 //  - every .ts / .tsx under src/ui/ (the v2 building blocks), except tests, stories and fixtures;
-//  - every `*V2.tsx` page or component under src/pages/ or src/components/ (UI2-1 onward: DashboardV2.tsx, SidebarV2.tsx);
+//  - every `*V2.tsx` anywhere under src/ (UI2-1 onward: DashboardV2.tsx, shell/SidebarV2.tsx, ...);
 //  - minus EXCLUDED: files named "V2" for another reason.
 //   node scripts/check-v2-colours.mjs            # exit 0 = clean, 1 = findings
 //   node scripts/check-v2-colours.mjs FILE...    # check the named files instead
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -67,7 +67,7 @@ export function isV2File(path) {
   if (EXCLUDED.includes(rel)) return false;
   if (/\.(test|stories|fixture)\.tsx?$/.test(rel)) return false;
   if (/^src\/ui\/.+\.tsx?$/.test(rel)) return true;
-  return /^src\/(pages|components)\/(.+\/)?[^/]+V2\.tsx$/.test(rel);
+  return /^src\/(.+\/)?[^/]+V2\.tsx$/.test(rel);
 }
 
 function walk(dir, files = []) {
@@ -94,4 +94,15 @@ function main() {
   process.exit(findings ? 1 : 0);
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) main();
+/** True when this module is the program node was started with - compared as real paths, so a symlinked checkout, a
+ * relative argv[1] or a different spelling of the same file still runs the check (and an import never does). */
+export function isMain(argv1 = process.argv[1], self = fileURLToPath(import.meta.url)) {
+  if (!argv1) return false;
+  try {
+    return realpathSync(argv1) === realpathSync(self);
+  } catch {
+    return false;
+  }
+}
+
+if (isMain()) main();

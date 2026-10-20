@@ -395,14 +395,18 @@ async def feature_flags(session: AsyncSession) -> Dict[str, Dict]:
     return result
 
 
-async def flag_enabled(session: AsyncSession, name: str, tenant_id: Optional[int] = None) -> bool:
-    flags = await feature_flags(session)
-    entry = flags.get(name)
+def _entry_enabled(entry: Optional[Dict], tenant_id: Optional[int]) -> bool:
+    """One flag's answer from its resolved entry: unknown flags are ON; otherwise ON, or the tenant is allow-listed."""
     if entry is None:
         return True
     if entry["on"]:
         return True
     return tenant_id is not None and tenant_id in entry["tenants"]
+
+
+async def flag_enabled(session: AsyncSession, name: str, tenant_id: Optional[int] = None) -> bool:
+    flags = await feature_flags(session)
+    return _entry_enabled(flags.get(name), tenant_id)
 
 
 def legal_open_placeholders() -> Dict[str, List[str]]:
@@ -436,7 +440,11 @@ async def set_flag(session: AsyncSession, user: User, name: str, *, on: bool, te
 
 
 async def features_for_tenant(session: AsyncSession, tenant_id: Optional[int]) -> Dict[str, bool]:
-    return {name: await flag_enabled(session, name, tenant_id) for name in FEATURE_FLAGS}
+    # UI2-0 review M3: the stored flags are read and resolved once, then every flag is answered from that one result
+    # (same answer as flag_enabled per flag, which re-read and re-resolved all flags for each of them: N x N work on
+    # every GET /api/system/features, which the UI v2 shell re-reads as the trader moves between pages).
+    flags = await feature_flags(session)
+    return {name: _entry_enabled(flags.get(name), tenant_id) for name in FEATURE_FLAGS}
 
 
 async def require_flag(session: AsyncSession, name: str, tenant_id: Optional[int]) -> None:

@@ -114,3 +114,52 @@ describe("UI2-0 BrokerGate: details", () => {
     expect(SIGN_IN_PATH).toBe(pathFor("account"));
   });
 });
+
+describe("UI2-0 review fixes: BrokerGate", () => {
+  const codeView = (tokens: ReturnType<typeof tokenRow>[], stepFor: ReturnType<typeof tokenRow>) => renderToStaticMarkup(
+    <BrokerGateView state={brokerGateState({ ...base, tokens })} codeStep={{ broker: stepFor, link: "https://broker.example/login", opened: true }}>{REAL}</BrokerGateView>,
+  );
+
+  it("M1: the paste field shows for a login-link broker started from 'Also waiting for a login'", () => {
+    const upstox = tokenRow("upstox");
+    const zerodha = tokenRow("zerodha");                       // also labelled "primary", a different broker
+    const html = codeView([upstox, zerodha], zerodha);
+    expect(html).toContain('data-code-step="zerodha/primary"');
+    expect(html).toContain("Address or code from Zerodha");
+    expect(html).toContain("Finish logging in");
+    expect(html).toContain("Log in to Upstox");                // the primary broker keeps its own button
+    expect(html).not.toContain('data-code-step="upstox/primary"');
+    expect(html.match(/(?<![:\w-])bg-brand(?![\w-])/g)?.length).toBe(1);   // still one primary action
+  });
+
+  it("M1: the paste field shows for a second account at the same broker, and only for the account it was started for", () => {
+    const desk = tokenRow("fyers", { account_label: "desk" });
+    const main = tokenRow("fyers");
+    const html = codeView([main, desk], desk);
+    expect(html).toContain('data-code-step="fyers/desk"');
+    expect(html).not.toContain('data-code-step="fyers/primary"');
+    expect(html.match(/Address or code from Fyers/g)?.length).toBe(1);
+  });
+
+  it("M1: the primary broker's paste field still shows in place of its button", () => {
+    const zerodha = tokenRow("zerodha");
+    const html = codeView([zerodha, tokenRow("fyers", { account_label: "desk" })], zerodha);
+    expect(html).toContain('data-code-step="zerodha/primary"');
+    expect(html).toContain("Log in to Fyers (desk)");
+  });
+
+  it("L5: the paste field is plain text that browsers do not offer to save as a password", () => {
+    const t = tokenRow("zerodha");
+    const html = codeView([t], t);
+    expect(html).toContain('type="text"');
+    expect(html).toContain('autoComplete="off"');
+    expect(html).not.toContain('type="password"');
+  });
+
+  it("nit: the gate's link buttons use the control radius token", () => {
+    for (const html of [render([]), render(null, { signedIn: false })]) {
+      expect(html).toContain("rounded-control bg-brand");
+      expect(html).not.toContain("rounded-md bg-brand");
+    }
+  });
+});

@@ -30,9 +30,14 @@ function groupIndian(digits: string): string {
   return `${rest.replace(/\B(?=(\d{2})+(?!\d))/g, ",")},${last3}`;
 }
 
-/** |v| with `decimals` places and Indian grouping, no sign: 124500 -> "1,24,500.00". */
+/** |v| with `decimals` places and Indian grouping, no sign: 124500 -> "1,24,500.00". From 1e21 up `toFixed` writes an
+ * exponent ("1e+21"), so those whole numbers are written out through BigInt (their decimals are zero at that size). */
 function magnitude(v: number, decimals: number): string {
-  const fixed = Math.abs(v).toFixed(decimals);
+  let fixed = Math.abs(v).toFixed(decimals);
+  if (/e/i.test(fixed)) {
+    const whole = BigInt(Math.round(Math.abs(v))).toString();
+    fixed = decimals > 0 ? `${whole}.${"0".repeat(decimals)}` : whole;
+  }
   const [whole, frac] = fixed.split(".");
   return frac === undefined ? groupIndian(whole) : `${groupIndian(whole)}.${frac}`;
 }
@@ -67,7 +72,7 @@ export function formatINR(v: Num, opts: { compact?: boolean } = {}): string {
   const abs = Math.abs(v);
   let body: string;
   const lakhs = Number((abs / 1e5).toFixed(2));
-  if (abs >= 1e7 || lakhs >= 100) body = `${trimZeros((abs / 1e7).toFixed(2))} Cr`;
+  if (abs >= 1e7 || lakhs >= 100) body = `${trimZeros(magnitude(abs / 1e7, 2))} Cr`;     // 1,00,000 Cr and up stay grouped
   else if (Math.round(abs) >= 1e5) body = `${trimZeros(lakhs.toFixed(2))} L`;
   else body = magnitude(abs, 0);
   const sign = v < 0 && body !== "0" ? MINUS : "";
@@ -120,10 +125,13 @@ export function formatPct(v: Num, decimals = 2): string {
 export function formatLots(qty: Num, lotSize?: Num): string {
   if (!finite(qty)) return EMPTY;
   const q = Math.abs(qty);
-  if (!finite(lotSize) || lotSize <= 1) return `${formatNumber(q, 0)} ${q === 1 ? "share" : "shares"}`;
-  const lots = q / lotSize;
-  const shown = Number.isInteger(lots) ? String(lots) : trimZeros(lots.toFixed(2));
-  return `${shown} ${lots === 1 ? "lot" : "lots"} (${formatNumber(q, 0)})`;
+  // The plural follows the number as shown: 74.9999 shares of a 75 lot is "1 lot (75)", never "1 lots".
+  if (!finite(lotSize) || lotSize <= 1) {
+    const shares = formatNumber(q, 0);
+    return `${shares} ${shares === "1" ? "share" : "shares"}`;
+  }
+  const shown = trimZeros((q / lotSize).toFixed(2));
+  return `${shown} ${shown === "1" ? "lot" : "lots"} (${formatNumber(q, 0)})`;
 }
 
 // --- Times, always in IST -------------------------------------------------------------------------------------------
@@ -134,13 +142,26 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
 type When = Date | string | number | null | undefined;
 
-/** The instant as epoch milliseconds; a zone-less ISO string is UTC (what the backend writes). NaN when unreadable. */
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+// "2026-10-08T05:12:00", "2026-10-08 05:12:00.123456", with an optional zone ("Z", "+05:30", "+0530").
+const DATE_TIME = /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)([zZ]|[+-]\d{2}:?\d{2})?$/;
+
+/** The instant as epoch milliseconds. A date and time without a zone - "T" or a space between them - is UTC (what
+ * the backend writes); a bare date is midnight IST. Never read in the device's own zone. NaN when unreadable. */
 function instant(v: When): number {
   if (v === null || v === undefined || v === "") return Number.NaN;
   if (v instanceof Date) return v.getTime();
   if (typeof v === "number") return v;
-  const zoned = /([zZ]|[+-]\d{2}:?\d{2})$/.test(v) || !/T\d{2}:/.test(v) ? v : `${v}Z`;
-  return Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(zoned) ? `${zoned}T00:00:00+05:30` : zoned);
+  const text = v.trim();
+  if (DATE_ONLY.test(text)) return Date.parse(`${text}T00:00:00+05:30`);
+  const m = DATE_TIME.exec(text);
+  if (!m) return Number.NaN;
+  const [, date, time, zone] = m;
+  const fraction = time.split(".");
+  const ms = fraction[1] ? `.${fraction[1].slice(0, 3).padEnd(3, "0")}` : "";
+  const hms = fraction[0].length === 5 ? `${fraction[0]}:00` : fraction[0];
+  const offset = !zone || /z/i.test(zone) ? "Z" : zone.length === 5 ? `${zone.slice(0, 3)}:${zone.slice(3)}` : zone;
+  return Date.parse(`${date}T${hms}${ms}${offset}`);
 }
 
 /** The IST wall-clock fields of an instant (read off a shifted UTC date, so the device zone never matters). */

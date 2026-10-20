@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError, NETWORK_MESSAGE } from "../api/errors";
 import { tokenRow } from "./brokerRows.fixture";
 import {
+  FAILURES_BEFORE_UNAVAILABLE, STALE_AFTER_MS, brokerCheckFailed, knownFor,
   NEVER_STORE_PASSWORD, TOTP_BROKERS, brokerDisplayName, brokerGateState, loginErrorText, loginMethodFor, loginNote,
   startBrokerLogin, type LoginDeps,
 } from "./brokerSession";
@@ -142,6 +143,63 @@ describe("UI2-0 'Log in to <Broker>' calls the broker's existing login path", ()
     expect(loginErrorText(new ApiError(404, "x"), "upstox")).toBe("Your Upstox keys are no longer stored. Connect Upstox again in Settings.");
     expect(loginErrorText(new ApiError(0, NETWORK_MESSAGE), "upstox")).toBe(NETWORK_MESSAGE);
     expect(loginErrorText(new TypeError("Failed to fetch"), "upstox")).toBe(NETWORK_MESSAGE);
-    expect(loginErrorText(new Error("boom: stack"), "dhan")).toBe("The Dhan login did not finish. Try again.");
+    expect(loginErrorText(new Error("boom: stack"), "dhan")).toBe("The Dhan login did not finish. Try again in a moment.");
+  });
+});
+
+describe("UI2-0 review fixes: login errors never show server text (L5)", () => {
+  const RAW = "Broker authentication failed: HTTPSConnectionPool(host='api.kite.trade') token_status registry adapter";
+  it("maps every status to a fixed plain-English sentence", () => {
+    const cases: [number, string][] = [
+      [400, "Your Zerodha keys are incomplete. Check them in Settings, then try again."],
+      [401, "Your sign-in has ended. Sign in again, then log in to Zerodha."],
+      [403, "You do not have permission to log in to Zerodha. Ask the owner of your organisation."],
+      [404, "Your Zerodha keys are no longer stored. Connect Zerodha again in Settings."],
+      [409, "Your Zerodha connection changed while you were logging in. Try again."],
+      [422, "The Zerodha login did not finish. Try again in a moment."],
+      [429, "Too many attempts. Wait a minute, then try again."],
+      [500, "The Zerodha login did not finish. Try again in a moment."],
+      [502, "Zerodha did not accept the login. Try again; if it repeats, check your Zerodha keys in Settings."],
+      [503, "The Zerodha login did not finish. Try again in a moment."],
+    ];
+    for (const [status, text] of cases) {
+      const shown = loginErrorText(new ApiError(status, RAW, RAW, JSON.stringify({ detail: RAW })), "zerodha");
+      expect(shown, String(status)).toBe(text);
+      expect(shown).not.toMatch(/HTTPS|token_status|registry|adapter|kite\.trade/);
+    }
+  });
+
+  it("a 403 asking for a fresh two-factor check says so, in plain words", () => {
+    const e = new ApiError(403, "x", "Logging in to the broker requires a fresh two-factor check on this session");
+    expect(loginErrorText(e, "upstox")).toBe("Logging in to Upstox needs a fresh two-factor check. Confirm it with your authenticator app, then try again.");
+  });
+});
+
+describe("UI2-0 review fixes: a background re-check keeps the last good answer (L4)", () => {
+  it("first load fails closed at once", () => {
+    expect(brokerCheckFailed({ hasGoodAnswer: false, consecutiveFailures: 1, ageMs: 0 })).toBe(true);
+  });
+  it("one failed re-check with a recent good answer keeps that answer", () => {
+    expect(brokerCheckFailed({ hasGoodAnswer: true, consecutiveFailures: 1, ageMs: 60_000 })).toBe(false);
+  });
+  it("two failures in a row, or a good answer older than five minutes, says the check failed", () => {
+    expect(FAILURES_BEFORE_UNAVAILABLE).toBe(2);
+    expect(STALE_AFTER_MS).toBe(5 * 60 * 1000);
+    expect(brokerCheckFailed({ hasGoodAnswer: true, consecutiveFailures: 2, ageMs: 1_000 })).toBe(true);
+    expect(brokerCheckFailed({ hasGoodAnswer: true, consecutiveFailures: 1, ageMs: STALE_AFTER_MS + 1 })).toBe(true);
+  });
+  it("no failure is never 'failed', however old the answer", () => {
+    expect(brokerCheckFailed({ hasGoodAnswer: true, consecutiveFailures: 0, ageMs: 10 * STALE_AFTER_MS })).toBe(false);
+    expect(brokerCheckFailed({ hasGoodAnswer: false, consecutiveFailures: 0, ageMs: 0 })).toBe(false);
+  });
+});
+
+describe("UI2-0 review fixes: broker answers are keyed by user (L3)", () => {
+  it("another user's brokers are never shown", () => {
+    const known = { userId: 1, rows: [tokenRow("upstox", { needs_login: false })], at: 1, failures: 0 };
+    expect(knownFor(known, 1)).toBe(known);
+    expect(knownFor(known, 2).rows).toBeNull();
+    expect(knownFor(known, null).rows).toBeNull();
+    expect(brokerGateState({ ...base, tokens: knownFor(known, 2).rows }).kind).toBe("loading");
   });
 });

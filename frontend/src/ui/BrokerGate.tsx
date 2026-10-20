@@ -108,8 +108,11 @@ function CodeForm({ step, onSubmit, busy }: { step: CodeStep; onSubmit?: (code: 
         <label htmlFor={fieldId} className="block text-t12 font-medium text-fg-muted">Address or code from {name}</label>
         <input
           id={fieldId}
-          type="password"
+          type="text"
           autoComplete="off"
+          autoCapitalize="off"
+          autoCorrect="off"
+          spellCheck={false}
           value={code}
           onChange={(e) => setCode(e.target.value)}
           className="h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand"
@@ -142,7 +145,7 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
         <GateCard state={state.kind} icon={<UserCircle2 size={22} />} title="Sign in to see your data">
           <p>Your prices, positions and signals appear here once you sign in.</p>
           <a href={SIGN_IN_PATH} onClick={(e) => { if (onSignIn) { e.preventDefault(); onSignIn(); } }}
-            className="inline-flex h-11 w-full items-center justify-center rounded-md bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto">
+            className="inline-flex h-11 w-full items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto">
             Sign in
           </a>
         </GateCard>
@@ -161,7 +164,7 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
         <GateCard state={state.kind} icon={<Plug size={22} />} title="Connect your broker">
           <p>Connect your broker to see live prices, charts and your positions.</p>
           <a href={CONNECT_BROKER_PATH} onClick={(e) => { if (onConnect) { e.preventDefault(); onConnect(); } }}
-            className="inline-flex h-11 w-full items-center justify-center rounded-md bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto">
+            className="inline-flex h-11 w-full items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto">
             Connect a broker
           </a>
           <p className="text-t12">You will need the keys from your broker&apos;s developer console.</p>
@@ -172,7 +175,9 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
       const t = state.broker;
       const name = brokerDisplayName(t.broker_name);
       const account = (t.account_label ?? "primary") !== "primary" ? ` (account "${t.account_label}")` : "";
-      const step = codeStep && keyOf(codeStep.broker) === keyOf(t) ? codeStep : null;
+      // The paste-the-code step belongs to whichever broker it was started for - the primary one or one listed below.
+      const stepFor = (b: BrokerTokenInfo) => (codeStep && keyOf(codeStep.broker) === keyOf(b) ? codeStep : null);
+      const step = stepFor(t);
       return (
         <GateCard state={state.kind} tone="warn" icon={<KeyRound size={22} />} title={`Log in to ${name}`}>
           <p>
@@ -181,9 +186,10 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
               : `Log in to ${name}${account} to see live prices and your positions.`}
           </p>
           {step ? (
-            <CodeForm step={step} onSubmit={onSubmitCode} busy={busy === keyOf(t)} />
+            <div data-code-step={keyOf(t)}><CodeForm step={step} onSubmit={onSubmitCode} busy={busy === keyOf(t)} /></div>
           ) : (
-            <Button variant="primary" icon={<LogIn size={16} aria-hidden />} loading={busy === keyOf(t)} disabled={busy !== null}
+            // One primary action: while another broker's paste step is open, "Finish logging in" is the primary one.
+            <Button variant={codeStep ? "secondary" : "primary"} icon={<LogIn size={16} aria-hidden />} loading={busy === keyOf(t)} disabled={busy !== null}
               onClick={() => onLogin?.(t)} className={primaryClass}>
               Log in to {name}
             </Button>
@@ -194,11 +200,20 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
             <div className="border-t border-subtle pt-space-3 text-t12">
               <p>Also waiting for a login:</p>
               <div className="mt-space-1 flex flex-wrap justify-center gap-space-2">
-                {state.others.map((o) => (
-                  <Button key={keyOf(o)} variant="ghost" size="sm" disabled={busy !== null} onClick={() => onLogin?.(o)} className="h-11">
-                    Log in to {brokerDisplayName(o.broker_name)}{(o.account_label ?? "primary") !== "primary" ? ` (${o.account_label})` : ""}
-                  </Button>
-                ))}
+                {state.others.map((o) => {
+                  const label = `${brokerDisplayName(o.broker_name)}${(o.account_label ?? "primary") !== "primary" ? ` (${o.account_label})` : ""}`;
+                  const own = stepFor(o);
+                  return own ? (
+                    <div key={keyOf(o)} data-code-step={keyOf(o)} className="basis-full pt-space-2 text-t14">
+                      <p className="mb-space-2 font-semibold text-fg">Log in to {label}</p>
+                      <CodeForm step={own} onSubmit={onSubmitCode} busy={busy === keyOf(o)} />
+                    </div>
+                  ) : (
+                    <Button key={keyOf(o)} variant="ghost" size="sm" disabled={busy !== null} onClick={() => onLogin?.(o)} className="h-11">
+                      Log in to {label}
+                    </Button>
+                  );
+                })}
               </div>
             </div>
           )}

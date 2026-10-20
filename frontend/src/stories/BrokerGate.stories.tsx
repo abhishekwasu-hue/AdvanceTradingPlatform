@@ -59,3 +59,12 @@ export const Loading: Story = { name: "Checking", args: { state: brokerGateState
 export const CheckFailed: Story = { name: "Check failed", args: { state: brokerGateState({ ...base, tokens: null, failed: true }) } };
 
 export const SignedOut: Story = { name: "Signed out", args: { state: brokerGateState({ ...base, signedIn: false, tokens: null }) } };
+
+const fyersDesk = tokenRow("fyers", { account_label: "desk" });
+export const LoginSecondBrokerCode: Story = {
+  name: "Login needed: paste the code for a broker listed below",
+  args: {
+    state: brokerGateState({ ...base, tokens: [tokenRow("upstox"), fyersDesk] }),
+    codeStep: { broker: fyersDesk, link: "https://api-t1.fyers.in/api/v3/generate-authcode", opened: true },
+  },
+};

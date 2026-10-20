@@ -149,20 +149,44 @@ export const BROWSER_LOGIN_DEPS: LoginDeps = {
   redirect: (url) => { window.location.href = url; },
 };
 
-/** A failed login as "what happened + what to do next" (§3), never raw error text. */
+/** A failed login as "what happened + what to do next" (§3). Always one of the fixed sentences below: the server's own
+ * text is never shown (it may name internals); the status, and for 403 whether a fresh two-factor check is asked
+ * for, only choose the sentence. */
 export function loginErrorText(error: unknown, brokerName: string): string {
   const name = brokerDisplayName(brokerName);
   if (error instanceof ApiError) {
     if (error.status === 0 || error.message === NETWORK_MESSAGE) return NETWORK_MESSAGE;
-    if (error.status === 502) return `${name} did not accept the login. Try again; if it repeats, check your ${name} keys in Settings.`;
-    if (error.status === 404) return `Your ${name} keys are no longer stored. Connect ${name} again in Settings.`;
-    return error.message;
+    switch (error.status) {
+      case 400: return `Your ${name} keys are incomplete. Check them in Settings, then try again.`;
+      case 401: return `Your sign-in has ended. Sign in again, then log in to ${name}.`;
+      case 403:
+        return /two-factor|step-up|authenticator/i.test(`${error.detail} ${error.body}`)
+          ? `Logging in to ${name} needs a fresh two-factor check. Confirm it with your authenticator app, then try again.`
+          : `You do not have permission to log in to ${name}. Ask the owner of your organisation.`;
+      case 404: return `Your ${name} keys are no longer stored. Connect ${name} again in Settings.`;
+      case 409: return `Your ${name} connection changed while you were logging in. Try again.`;
+      case 429: return "Too many attempts. Wait a minute, then try again.";
+      case 502: return `${name} did not accept the login. Try again; if it repeats, check your ${name} keys in Settings.`;
+      default: return `The ${name} login did not finish. Try again in a moment.`;
+    }
   }
   if (error instanceof TypeError) return NETWORK_MESSAGE;
-  return `The ${name} login did not finish. Try again.`;
+  return `The ${name} login did not finish. Try again in a moment.`;
 }
 
 // --- The hook ------------------------------------------------------------------------------------------------------
+
+/** A re-check that fails keeps the last good answer for this long (and for one failure); after that the gate says
+ * the check failed. The first check of a session fails closed at once. */
+export const STALE_AFTER_MS = 5 * 60 * 1000;
+export const FAILURES_BEFORE_UNAVAILABLE = 2;
+
+/** True when the gate must say "We could not check your broker connection" instead of using what it knows. */
+export function brokerCheckFailed(input: { hasGoodAnswer: boolean; consecutiveFailures: number; ageMs: number }): boolean {
+  if (input.consecutiveFailures === 0) return false;
+  if (!input.hasGoodAnswer) return true;                                    // first load: fail closed
+  return input.consecutiveFailures >= FAILURES_BEFORE_UNAVAILABLE || input.ageMs > STALE_AFTER_MS;
+}
 
 export interface BrokerSession {
   state: BrokerGateState;
@@ -170,23 +194,33 @@ export interface BrokerSession {
   refresh: () => void;
 }
 
+/** What is known for one user: the last good answer and the failed checks since. Keyed by user, so another
+ * account never sees the previous account's brokers, not even for one render. */
+export interface Known { userId: number | null; rows: BrokerTokenInfo[] | null; at: number; failures: number }
+const UNKNOWN: Known = { userId: null, rows: null, at: 0, failures: 0 };
+
+/** What is known for `userId`: another user's answer (or none) is nothing - the gate shows "checking". */
+export function knownFor(known: Known, userId: number | null): Known {
+  return userId !== null && known.userId === userId ? known : UNKNOWN;
+}
+
 /** The signed-in user's broker state, re-read when the user changes, on `refresh()`, and when this tab is shown again
- * (a login finished in another tab). */
+ * (a login finished in another tab). A background re-check keeps the last good answer (see brokerCheckFailed). */
 export function useBrokerSession(): BrokerSession {
   const { user, loading } = useAuth();
   const userId = user?.id ?? null;
-  const [tokens, setTokens] = useState<BrokerTokenInfo[] | null>(null);
-  const [failed, setFailed] = useState(false);
+  const [known, setKnown] = useState<Known>(UNKNOWN);
   const [nonce, setNonce] = useState(0);
   const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
-    setFailed(false);
-    if (userId === null) { setTokens(null); return; }
+    if (userId === null) return;
     let live = true;
     api.brokerTokenStatus()
-      .then((rows) => { if (live) { setTokens(Array.isArray(rows) ? rows : []); setFailed(false); } })
-      .catch(() => { if (live) setFailed(true); });
+      .then((rows) => { if (live) setKnown({ userId, rows: Array.isArray(rows) ? rows : [], at: Date.now(), failures: 0 }); })
+      .catch(() => {
+        if (live) setKnown((k) => (k.userId === userId ? { ...k, failures: k.failures + 1 } : { userId, rows: null, at: 0, failures: 1 }));
+      });
     return () => { live = false; };
   }, [userId, nonce]);
 
@@ -196,5 +230,7 @@ export function useBrokerSession(): BrokerSession {
     return () => document.removeEventListener("visibilitychange", onShow);
   }, [refresh]);
 
-  return { state: brokerGateState({ authLoading: loading, signedIn: userId !== null, tokens, failed }), refresh };
+  const mine = knownFor(known, userId);
+  const failed = brokerCheckFailed({ hasGoodAnswer: mine.rows !== null, consecutiveFailures: mine.failures, ageMs: Date.now() - mine.at });
+  return { state: brokerGateState({ authLoading: loading, signedIn: userId !== null, tokens: mine.rows, failed }), refresh };
 }

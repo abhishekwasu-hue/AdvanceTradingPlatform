@@ -256,10 +256,26 @@ function ShellFeatures({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   return (
     <FeaturesProvider userKey={user?.id ?? null}>
+      <FeaturesFreshness />
       <V2ThemeDefault />
       {children}
     </FeaturesProvider>
   );
+}
+
+/** UI2-0: keeps the shared flags at least as fresh as the per-page reads they replace - a re-read on every route change
+ * (pages used to read on mount) and whenever the signed-in user is re-read (the top bar and charts read on `user`).
+ * The first render is the provider's own read. */
+function FeaturesFreshness() {
+  const { user } = useAuth();
+  const { pathname } = useLocation();
+  const { refresh } = useFeatures();
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) { first.current = false; return; }
+    if (user) refresh();
+  }, [pathname, user, refresh]);
+  return null;
 }
 
 function V2ThemeDefault() {

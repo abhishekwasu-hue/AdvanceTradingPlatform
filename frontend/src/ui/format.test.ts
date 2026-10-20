@@ -144,3 +144,51 @@ describe("UI2-0 format: times in IST whatever the device zone", () => {
     }
   });
 });
+
+describe("UI2-0 format: review fixes (L1, L2)", () => {
+  it("L1: a space between date and time, without a zone, is UTC - whatever the device zone", () => {
+    // Node re-reads TZ when it is assigned (the app's tsconfig has no Node types, hence the cast).
+    const env = (globalThis as unknown as { process: { env: Record<string, string | undefined> } }).process.env;
+    const saved = env.TZ;
+    try {
+      for (const tz of ["UTC", "Asia/Kolkata", "America/New_York", "Pacific/Auckland", "Europe/London"]) {
+        env.TZ = tz;
+        expect(new Date(Date.UTC(2026, 9, 8, 12)).getTimezoneOffset() === 0, tz).toBe(tz === "UTC" || tz === "Europe/London" ? tz === "UTC" : false);
+        expect(formatTimeIST("2026-10-08 05:12:00"), tz).toBe("10:42 IST");
+        expect(formatTimeIST("2026-10-08T05:12:00"), tz).toBe("10:42 IST");
+        expect(formatTimeIST("2026-10-08 05:12:00.123456", { seconds: true }), tz).toBe("10:42:00 IST");
+        expect(formatTimeIST("2026-10-08 05:12"), tz).toBe("10:42 IST");
+        expect(formatTimeIST("2026-10-08 10:42:00+05:30"), tz).toBe("10:42 IST");
+        expect(formatTimeIST("2026-10-08T10:42:00+0530"), tz).toBe("10:42 IST");
+        expect(formatDateIST("2026-10-08 20:00:00"), tz).toBe("9 Oct 2026");
+        expect(formatDateIST("2026-10-08"), tz).toBe("8 Oct 2026");
+      }
+    } finally {
+      if (saved === undefined) delete env.TZ; else env.TZ = saved;
+    }
+  });
+
+  it("L1: a text that is not an ISO date and time is unreadable, never guessed in the device zone", () => {
+    expect(formatTimeIST("Oct 8 2026 10:42")).toBe(EMPTY);
+  });
+
+  it("L2: very large numbers are written out and grouped, never in exponent form", () => {
+    expect(formatNumber(1e21)).toBe("1,00,00,00,00,00,00,00,00,00,000");
+    expect(formatNumber(-1e21, 2)).toBe(`${MINUS}1,00,00,00,00,00,00,00,00,00,000.00`);
+    expect(formatINR(1e21)).not.toMatch(/e/);
+  });
+
+  it("L2: compact crore values stay grouped", () => {
+    expect(formatINR(1e15, { compact: true })).toBe("₹10,00,00,000 Cr");
+    expect(formatINR(1.5e12, { compact: true })).toBe("₹1,50,000 Cr");
+    expect(formatINR(25e9, { compact: true })).toBe("₹2,500 Cr");
+  });
+
+  it("L2: the plural follows the rounded number", () => {
+    expect(formatLots(74.9999, 75)).toBe("1 lot (75)");
+    expect(formatLots(75.0001, 75)).toBe("1 lot (75)");
+    expect(formatLots(1.0001)).toBe("1 share");
+    expect(formatLots(0.9999)).toBe("1 share");
+    expect(formatLots(150.004, 75)).toBe("2 lots (150)");
+  });
+});

@@ -47,10 +47,25 @@ export interface SignalFeed {
   items: SignalFeedItem[];
   next_cursor: string | null;
   /** The tab counts, on the first page only (null on the next pages). */
-  counts: { waiting: number; today: number } | null;
+  counts: FeedCounts | null;
   as_of: string;
   since: string | null;
   sources: Record<string, boolean>;
+}
+
+/** `capped`: the server stopped counting at its read limit, so there are at least that many ("2000+"). */
+export interface FeedCounts { waiting: number; today: number; capped?: { waiting: boolean; today: boolean } }
+
+/** A tab's count as shown: "12", or "2000+" when the server stopped counting. */
+export function countLabel(counts: FeedCounts | null | undefined, tab: FeedTab): string | undefined {
+  if (!counts || tab === "history") return undefined;
+  const n = tab === "waiting" ? counts.waiting : counts.today;
+  return counts.capped?.[tab] ? `${n}+` : String(n);
+}
+
+/** Who may approve, skip or snooze: the trading roles (the server's require_trader). A viewer reads the inbox only. */
+export function canTradeRole(role: string | null | undefined): boolean {
+  return role === "OWNER" || role === "USER" || role === "STRATEGY_CREATOR";
 }
 
 export interface FeedParams { tab: FeedTab; source?: FeedSource; symbol?: string | null; cursor?: string | null; limit?: number }
@@ -177,12 +192,32 @@ export function itemForProposal(items: readonly SignalFeedItem[], proposal: stri
   return items.find((i) => i.action_id === id) ?? null;
 }
 
-/** The message after a decision, in plain words. */
-export function decisionMessage(kind: "approve" | "skip" | "snooze", item: Pick<SignalFeedItem, "symbol">, result?: Pick<AiAction, "status" | "result" | "snoozed_until"> | null): string {
+/** The message after a decision, in plain words. A LIVE proposal's approval is told in the server's own words (it never
+ * claims a paper trade). */
+export function decisionMessage(kind: "approve" | "skip" | "snooze", item: Pick<SignalFeedItem, "symbol"> & Partial<Pick<SignalFeedItem, "mode">>,
+  result?: Pick<AiAction, "status" | "result" | "snoozed_until"> | null): string {
   if (kind === "skip") return `Skipped ${item.symbol}. Nothing was placed.`;
   if (kind === "snooze") return `Snoozed ${item.symbol}. It comes back here before it expires.`;
   if (result && result.status !== "EXECUTED" && result.status !== "APPROVED") {
     return `Not placed for ${item.symbol}: ${result.result ?? "the price moved too far"}. Nothing was bought or sold.`;
   }
+  if (item.mode === "LIVE") return result?.result ? `Approved ${item.symbol}. ${result.result}` : `Approved ${item.symbol}.`;
   return `Approved. A paper trade for ${item.symbol} was placed at the price then.`;
+}
+
+/** What a failed decision says. 409 / 404: decided or expired meanwhile (the list reloads). 403: this login may not
+ * decide it. Anything else: the server's readable reason, or a plain retry sentence - never a raw error. */
+export function decisionFailure(status: number | null, detail = ""): { text: string; stale: boolean } {
+  if (status === 409 || status === 404) return { text: "This signal was already decided or has expired. Nothing was placed.", stale: true };
+  if (status === 403) return { text: "You can't decide this signal: your role can view signals but not trade, or it is another member's. Nothing was placed.", stale: false };
+  const why = detail.trim().replace(/\.$/, "");
+  return { text: why ? `Not done: ${why}. Nothing was placed.` : "That didn't go through. Nothing was placed. Try again in a moment.", stale: false };
+}
+
+/** The sentence for a `?proposal=<id>` link whose proposal is not waiting in this list - never a silent fallback.
+ * `other`: the proposal is waiting but is another member's (it stays on the Watchtower). */
+export function missingProposalMessage(proposal: string, other: boolean): string {
+  return other
+    ? `Signal #${proposal} is another member's, so it is not in your Signals. It stays on the Watchtower.`
+    : `Signal #${proposal} is not waiting for you any more: it was decided, snoozed or has expired. Find it under Today or History.`;
 }

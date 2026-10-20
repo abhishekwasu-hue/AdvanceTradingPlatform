@@ -11,7 +11,7 @@ import type { AiAction } from "../types";
 import { formatChange, formatDateIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
 import { glossary, type GlossaryKey } from "../ui/glossary";
 import {
-  canDecide, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
+  canDecide, decisionFailure, decisionMessage, directionLabel, effectiveStatus, levelDelta, riskSentences, sizeAndLoss, sourceCaption, statusLabel,
   type FeedTab, type SignalFeedItem,
 } from "./feed";
 
@@ -207,8 +207,8 @@ function clock(d: Date): string {
 
 function failure(onError: (message: string, stale?: boolean) => void) {
   return (e: unknown) => {
-    if (e instanceof ApiError && (e.status === 409 || e.status === 404)) onError("This signal was already decided or has expired. Nothing was placed.", true);
-    else onError(String(e));
+    const { text, stale } = e instanceof ApiError ? decisionFailure(e.status, e.detail) : decisionFailure(null);
+    onError(text, stale);
   };
 }
 
@@ -255,8 +255,8 @@ export function SnoozeMenu({ id, item, now, onDone, onError }: {
  * authenticator first, as today), Skip rejects it, Snooze hides it until later (never past its expiry). Nothing here
  * touches an exit.
  */
-export function SignalActions({ item, now, compact = false, onDone, onError }: {
-  item: SignalFeedItem; now: Date; compact?: boolean; onDone: (message: string) => void; onError: (message: string, stale?: boolean) => void;
+export function SignalActions({ item, now, compact = false, canTrade, onDone, onError }: {
+  item: SignalFeedItem; now: Date; compact?: boolean; canTrade: boolean; onDone: (message: string) => void; onError: (message: string, stale?: boolean) => void;
 }) {
   const [busy, setBusy] = useState<"approve" | "skip" | null>(null);
   const [stepUp, setStepUp] = useState<string | null>(null);
@@ -271,6 +271,15 @@ export function SignalActions({ item, now, compact = false, onDone, onError }: {
     </Link>
   );
   if (!decidable || id === null) return <div className="flex flex-wrap gap-space-2">{chart}</div>;
+  if (!canTrade) {
+    // A viewer reads the inbox; approving, skipping and snoozing need a trading role (the server's require_trader).
+    return (
+      <div className="space-y-space-2">
+        <div className="flex flex-wrap gap-space-2">{chart}</div>
+        <p className="text-t12 text-fg-muted" data-view-only>Your role can view signals but not approve or skip them. Ask your organisation owner.</p>
+      </div>
+    );
+  }
 
   const failed = failure(onError);
   async function approve() {
@@ -301,15 +310,15 @@ export function SignalActions({ item, now, compact = false, onDone, onError }: {
         {compact && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} disabled={busy !== null} />}
       </div>
       {compact && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
-      {!compact && <p className="text-t12 text-fg-muted">{live ? "A live trade asks for your authenticator code first." : "Paper trade: practice money at the real price. Nothing reaches your broker."}</p>}
+      {!compact && <p className="text-t12 text-fg-muted">{live ? "This proposal is on a LIVE deployment: approving asks for your authenticator code first." : "Paper trade: practice money at the real price. Nothing reaches your broker."}</p>}
       {stepUp && <StepUpDialog reason={stepUp} onCancel={() => setStepUp(null)} onVerified={() => { setStepUp(null); void approve(); }} />}
     </div>
   );
 }
 
 /** The full detail of one signal: the desktop right column, and a phone card when it is opened. */
-export function SignalDetail({ item, proposal, now, onDone, onError, compact = false }: {
-  item: SignalFeedItem; proposal?: AiAction; now: Date; compact?: boolean;
+export function SignalDetail({ item, proposal, now, onDone, onError, compact = false, canTrade }: {
+  item: SignalFeedItem; proposal?: AiAction; now: Date; compact?: boolean; canTrade: boolean;
   onDone: (message: string) => void; onError: (message: string, stale?: boolean) => void;
 }) {
   const waiting = canDecide(item, now);
@@ -321,7 +330,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
       <div className="space-y-space-3">
         {waiting && <CompactRisk proposal={proposal} />}
         {!waiting && <OutcomeLine item={item} now={now} />}
-        <SignalActions item={item} now={now} compact onDone={onDone} onError={onError} />
+        <SignalActions item={item} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
         {item.reasons.length > 0 && (
           <details className="group">
             <summary className="flex min-h-11 cursor-pointer items-center text-t14 font-semibold text-brand">Why this trade</summary>
@@ -345,14 +354,14 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
             {item.setup} · from {sourceCaption(item)}{modeLabel ? ` · ${modeLabel}` : ""}
           </p>
         </div>
-        {waiting && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} />}
+        {waiting && canTrade && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} />}
       </div>
-      {waiting && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
+      {waiting && canTrade && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
       <LevelsChart item={item} />
       {(item.entry !== null || item.stop !== null || item.target !== null) && <KeyFigures item={item} proposal={proposal} />}
       <Reasons item={item} />
       {waiting ? <RiskLines proposal={proposal} /> : <OutcomeLine item={item} now={now} />}
-      <SignalActions item={item} now={now} onDone={onDone} onError={onError} />
+      <SignalActions item={item} now={now} canTrade={canTrade} onDone={onDone} onError={onError} />
     </section>
   );
 }

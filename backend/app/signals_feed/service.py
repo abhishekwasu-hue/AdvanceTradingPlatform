@@ -30,11 +30,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import JSON, and_, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 from sqlalchemy.sql import Select
 
-from app.db.models import AiActionRecord, AlertEventRecord, AlertRuleRecord, ExecutionIntentRecord, SignalHistoryRecord, TradeRecord, User
+from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, ExecutionIntentRecord, SignalHistoryRecord, StrategyDeploymentRecord,
+                           TradeRecord, User)
 from app.market_data.calendar import IST
 
 TABS = ("waiting", "today", "history")
@@ -181,7 +183,13 @@ def action_kind(row: AiActionRecord, evidence: Dict[str, Any]) -> str:
     return "copilot"
 
 
-def _from_action(row: AiActionRecord, now: datetime) -> Dict[str, Any]:
+def action_mode(deployment_mode: Optional[str], trade_mode: Optional[str]) -> str:
+    """LIVE when the proposal's deployment or position runs LIVE - the same rule as the approve endpoint's step-up
+    (`_action_is_live` in app/ai/routes.py) - else PAPER."""
+    return "LIVE" if "LIVE" in (deployment_mode, trade_mode) else "PAPER"
+
+
+def _from_action(row: AiActionRecord, now: datetime, mode: str = "PAPER") -> Dict[str, Any]:
     from app.execution.approval import SOURCE_LABELS
     ev = _json(row.evidence_json)
     raw = ev.get("signal")
@@ -193,7 +201,7 @@ def _from_action(row: AiActionRecord, now: datetime) -> Dict[str, Any]:
     setup = str(signal.get("strategy_name") or strategy_name(sid) or "Entry")
     return _item(source="action", num=row.id, at=row.created_at, symbol=ev.get("symbol"), direction=ev.get("direction"), setup=setup,
                  entry=ev.get("proposal_price"), stop=ev.get("stop_loss"), target=ev.get("target1"), rr=ev.get("risk_reward"),
-                 kind=kind, name=name, mode="PAPER",      # Z3 / BT2: an approved entry proposal places a PAPER order (Phase 0)
+                 kind=kind, name=name, mode=mode,         # LIVE asks for the authenticator on approve (the endpoint's own rule)
                  status=action_status(row, now), expires_at=row.expires_at, reasons=signal.get("reasons"), action_id=row.id,
                  snoozed_until=row.snoozed_until, outcome=row.result or row.decision_note, exchange=ev.get("exchange"))
 
@@ -258,6 +266,7 @@ class FeedQuery:
     symbol: Optional[str]
     now: datetime
     flags: Dict[str, bool] = field(default_factory=dict)
+    dialect: str = "sqlite"                   # how SQL reads a proposal's evidence JSON (see _evidence)
 
     @property
     def since(self) -> Optional[datetime]:
@@ -268,6 +277,7 @@ class FeedQuery:
         return None                           # waiting: open proposals, bounded by their own expiry
 
     def keeps(self, item: Dict[str, Any]) -> bool:
+        """The filters again on the converted row - a safety net: every one of them is also in the SQL."""
         if self.source != "all" and item["source"]["kind"] != self.source:
             return False
         if self.symbol and item["symbol"] != self.symbol:
@@ -284,6 +294,15 @@ class Source:
     convert: Callable[[Any], Dict[str, Any]]
 
 
+@dataclass
+class Read:
+    rows: List[Dict[str, Any]]
+    more: bool                                # rows of this source may remain after these
+    # Set when the read stopped at SCAN_CAP before it had enough rows: the key of the last row it looked at. Rows of
+    # this source after it were not read, so a page may only hold rows at or before it (see _page).
+    stop: Optional[Tuple[datetime, int, int]] = None
+
+
 def _after(at: Any, pk: Any, rank: int, c: Cursor) -> Any:
     """Rows that sort after the cursor in (time, source rank, id) descending order."""
     if rank < c.rank:
@@ -293,13 +312,13 @@ def _after(at: Any, pk: Any, rank: int, c: Cursor) -> Any:
     return at < c.at
 
 
-async def _read(session: AsyncSession, q: FeedQuery, src: Source, cursor: Optional[Cursor], need: int) -> Tuple[List[Dict[str, Any]], bool]:
-    """Up to `need` kept rows of one source, newest first, after the cursor. Also says whether rows may remain."""
+async def _read(session: AsyncSession, q: FeedQuery, src: Source, cursor: Optional[Cursor], need: int) -> Read:
+    """Up to `need` kept rows of one source, newest first, after the cursor - reading at most SCAN_CAP rows."""
     out: List[Dict[str, Any]] = []
     scanned = 0
     last: Optional[Tuple[datetime, int]] = None
     since = q.since
-    while len(out) < need:
+    while True:
         stmt = src.query
         if since is not None:
             stmt = stmt.where(src.at >= since)
@@ -314,23 +333,51 @@ async def _read(session: AsyncSession, q: FeedQuery, src: Source, cursor: Option
                 out.append(item)
         scanned += len(rows)
         if len(rows) < BATCH:
-            return out, False
-        if scanned >= SCAN_CAP:
-            return out, True
+            return Read(out, False)
+        if len(out) >= need:
+            return Read(out, True)
         tail = src.convert(rows[-1])["_key"]
+        if scanned >= SCAN_CAP:
+            return Read(out, True, tail)
         last = (tail[0], tail[2])
-    return out, True
+
+
+def _evidence(dialect: str, key: str) -> Any:
+    """One top-level field of an entry proposal's evidence (JSON in a text column) as SQL text: Postgres `->>`,
+    SQLite json_extract. Every writer stores it with json.dumps (the entry proposal in app/execution/approval.py)."""
+    if dialect == "postgresql":
+        return cast(AiActionRecord.evidence_json, JSON)[key].as_string()
+    return func.json_extract(AiActionRecord.evidence_json, f"$.{key}")
+
+
+def _kind_clause(dialect: str, kind: str) -> Any:
+    """`action_kind` in SQL: a deployment's proposal is Autopilot, a scan's is Scan, every other one Copilot."""
+    origin = _evidence(dialect, "source")
+    deployment = AiActionRecord.deployment_id
+    if kind == "autopilot":
+        return or_(deployment.is_not(None), origin == "deployment")
+    if kind == "scan":
+        return and_(deployment.is_(None), origin == "scan")
+    return and_(deployment.is_(None), or_(origin.is_(None), origin.not_in(("deployment", "scan"))))
 
 
 def _sources(q: FeedQuery) -> List[Source]:
     user, now = q.user, q.now
-    actions = select(AiActionRecord).where(
-        AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == ENTRY,
-        or_(AiActionRecord.owner_user_id == user.id, AiActionRecord.owner_user_id.is_(None)))
+    dep, pos = aliased(StrategyDeploymentRecord), aliased(TradeRecord)
+    # The deployment's and the position's mode ride along: a LIVE one says so (and its approve asks for the authenticator).
+    actions = (select(AiActionRecord, dep.mode, pos.mode)
+               .outerjoin(dep, and_(dep.id == AiActionRecord.deployment_id, dep.tenant_id == user.tenant_id))
+               .outerjoin(pos, and_(pos.id == AiActionRecord.trade_id, pos.tenant_id == user.tenant_id))
+               .where(AiActionRecord.tenant_id == user.tenant_id, AiActionRecord.action == ENTRY,
+                      or_(AiActionRecord.owner_user_id == user.id, AiActionRecord.owner_user_id.is_(None))))
     if q.tab == "waiting":
         actions = actions.where(AiActionRecord.status == "PROPOSED", AiActionRecord.expires_at > now,
                                 or_(AiActionRecord.snoozed_until.is_(None), AiActionRecord.snoozed_until <= now))
-    out = [Source("action", actions, AiActionRecord.created_at, AiActionRecord.id, lambda r: _from_action(r[0], now))]
+    if q.source in ("autopilot", "scan", "copilot"):
+        actions = actions.where(_kind_clause(q.dialect, q.source))
+    if q.symbol:
+        actions = actions.where(func.upper(_evidence(q.dialect, "symbol")) == q.symbol)
+    out = [Source("action", actions, AiActionRecord.created_at, AiActionRecord.id, lambda r: _from_action(r[0], now, action_mode(r[1], r[2])))]
     if q.tab == "waiting":
         return out
     if q.source in ("all", "scan") and q.flags.get("execution_core"):
@@ -365,25 +412,34 @@ def _sources(q: FeedQuery) -> List[Source]:
 
 
 async def _page(session: AsyncSession, q: FeedQuery, cursor: Optional[Cursor], limit: int) -> Tuple[List[Dict[str, Any]], Optional[Cursor]]:
+    """One page across the sources. A source that stopped at SCAN_CAP was read only down to its stop point, so the page
+    keeps the rows at or before the highest such point and the next cursor carries on from there - a page may then be
+    short, or even empty, and still say more may follow; no row is ever skipped."""
     merged: List[Dict[str, Any]] = []
-    capped = False
+    stops: List[Tuple[datetime, int, int]] = []
     for src in _sources(q):
-        rows, more = await _read(session, q, src, cursor, limit + 1)
-        merged.extend(rows)
-        capped = capped or (more and len(rows) <= limit)
+        read = await _read(session, q, src, cursor, limit + 1)
+        merged.extend(read.rows)
+        if read.stop is not None:
+            stops.append(read.stop)
     merged.sort(key=lambda i: i["_key"], reverse=True)
+    floor = max(stops) if stops else None
+    if floor is not None:
+        merged = [i for i in merged if i["_key"] >= floor]
     page = merged[:limit]
-    more = len(merged) > limit or capped
-    nxt = Cursor(*page[-1]["_key"]) if more and page else None
-    return page, nxt
+    if len(merged) > limit:
+        return page, Cursor(*page[-1]["_key"])
+    return page, Cursor(*floor) if floor is not None else None
 
 
-async def _count(session: AsyncSession, q: FeedQuery) -> int:
-    total = 0
+async def _count(session: AsyncSession, q: FeedQuery) -> Tuple[int, bool]:
+    """The tab's row count, read up to SCAN_CAP rows per source; True when it stopped there (the page shows "2000+")."""
+    total, capped = 0, False
     for src in _sources(q):
-        rows, _ = await _read(session, q, src, None, SCAN_CAP)
-        total += len(rows)
-    return total
+        read = await _read(session, q, src, None, SCAN_CAP)
+        total += len(read.rows)
+        capped = capped or read.more
+    return total, capped
 
 
 async def feed(session: AsyncSession, user: User, *, tab: str = "today", source: str = "all", symbol: Optional[str] = None,
@@ -395,13 +451,16 @@ async def feed(session: AsyncSession, user: User, *, tab: str = "today", source:
     now = _utc(now or datetime.now(timezone.utc))
     flags = await features_for_tenant(session, user.tenant_id)
     sym = (symbol or "").strip().upper() or None
-    q = FeedQuery(user=user, tab=tab, source=source, symbol=sym, now=now, flags=flags)
+    dialect = session.get_bind().dialect.name
+    q = FeedQuery(user=user, tab=tab, source=source, symbol=sym, now=now, flags=flags, dialect=dialect)
     at = decode_cursor(cursor) if cursor else None
     items, nxt = await _page(session, q, at, max(1, min(int(limit), MAX_LIMIT)))
-    counts = None
+    counts: Optional[Dict[str, Any]] = None
     if at is None:                            # the tab counts come with the first page only
-        counts = {"waiting": await _count(session, FeedQuery(user, "waiting", source, sym, now, flags)),
-                  "today": await _count(session, FeedQuery(user, "today", source, sym, now, flags))}
+        waiting, waiting_capped = await _count(session, FeedQuery(user, "waiting", source, sym, now, flags, dialect))
+        today, today_capped = await _count(session, FeedQuery(user, "today", source, sym, now, flags, dialect))
+        # `capped`: the count stopped at SCAN_CAP rows of a source - there are at least that many ("2000+").
+        counts = {"waiting": waiting, "today": today, "capped": {"waiting": waiting_capped, "today": today_capped}}
     return {
         "tab": tab, "source": source, "symbol": sym,
         "items": [{k: v for k, v in i.items() if k != "_key"} for i in items],

@@ -422,7 +422,7 @@ export const COPILOT_EN = {
     emptyBody: "When the agent proposes an action it appears here and as a badge on this tab.",
     // UI2-3 (UI v2 §3 M7, flag ui_v2): entry approvals moved to Signals; the Watchtower keeps pause, exit and risk actions.
     signalsLink: "Open Signals",
-    signalsNote: "Trades waiting for your approval are in Signals now ({{count}} waiting). Pause, exit and risk proposals stay here.",
+    signalsNote: "Trades waiting for your approval are in Signals now ({{count}} waiting). Pause, exit and risk proposals, and other members' trades, stay here.",
     action: { PAUSE_DEPLOYMENT: "Pause the deployment", EXIT_POSITION: "Exit the position", REDUCE_RISK: "Reduce the risk", REVIEW_STRATEGY: "Review the strategy",
               ENTRY: "Enter a PAPER position", CREATE_ALERT: "Create the alert (notifies only)" },
     // Z3: a target reached on an approval-only position; the stop and time exits stay automatic.

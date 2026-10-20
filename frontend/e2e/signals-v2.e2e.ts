@@ -24,12 +24,15 @@ const V2: MockOptions = { features: { ui_v2: true, ai_copilot: true }, brokers: 
 const STRATEGIES = [{ id: "demo_orb", name: "Demo opening range", description: "A made-up strategy for the test.", category: "indicator_based",
   timeframes: ["5min"], default_params: {} }];
 
+/** Another member's waiting entry proposal (made up): not in this user's Signals, so it stays on the Watchtower. */
+const THEIRS: Proposal = { ...DATA.proposals[0], id: 950, owner_user_id: 99, reason: "Made-up entry proposal: LONG DEMO OTHER", evidence: { ...(DATA.proposals[0].evidence as object), symbol: "DEMO OTHER" } };
+
 interface Inbox { decisions: { id: number; kind: string; body: unknown }[] }
 
 /** The inbox's server side, from the fixture: GET /signals/feed per tab and filter, GET /ai/actions?status=PROPOSED (the
  * risk pre-check) and the three decision endpoints, as the backend answers them. `expireOnApprove`: that proposal
  * expires just before the trader approves it (the server's 409). Registered after mockApi, so it answers first. */
-async function mockInbox(page: Page, opts: { expireOnApprove?: number } = {}): Promise<Inbox> {
+async function mockInbox(page: Page, opts: { expireOnApprove?: number; others?: Proposal[] } = {}): Promise<Inbox> {
   const today = DATA.today.map((r) => ({ ...r }));
   const earlier = DATA.earlier.map((r) => ({ ...r }));
   const all = () => [...today, ...earlier];
@@ -52,7 +55,7 @@ async function mockInbox(page: Page, opts: { expireOnApprove?: number } = {}): P
     }
     if (path === "/ai/actions" && method === "GET") {
       const open = new Set(today.filter((r) => r.status === "waiting").map((r) => r.action_id));
-      return route.fulfill({ json: DATA.proposals.filter((p) => open.has(p.id)) });
+      return route.fulfill({ json: [...DATA.proposals.filter((p) => open.has(p.id)), ...(opts.others ?? [])] });
     }
     const decide = path.match(/^\/ai\/actions\/(\d+)\/(approve|reject|snooze)$/);
     if (decide && method === "POST") {
@@ -80,7 +83,8 @@ async function mockInbox(page: Page, opts: { expireOnApprove?: number } = {}): P
   return inbox;
 }
 
-async function open(page: Page, path: string, theme: "dark" | "light", options: MockOptions = V2, opts: { expireOnApprove?: number; intro?: boolean } = {}) {
+async function open(page: Page, path: string, theme: "dark" | "light", options: MockOptions = V2,
+  opts: { expireOnApprove?: number; intro?: boolean; others?: Proposal[]; role?: string } = {}) {
   await page.clock.install({ time: new Date("2026-10-08T10:30:00+05:30") });
   await page.addInitScript(([t, intro]) => {
     try {
@@ -92,6 +96,10 @@ async function open(page: Page, path: string, theme: "dark" | "light", options: 
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, options);
   const inbox = await mockInbox(page, opts);
+  if (opts.role) {
+    const me = JSON.parse(readFileSync(new URL("./fixtures/me.json", import.meta.url), "utf8")) as Record<string, unknown>;
+    await page.route(/\/api(?:\/v1)?\/auth\/me$/, (route) => route.fulfill({ json: { ...me, role: opts.role } }));
+  }
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
@@ -255,6 +263,26 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(table.locator("tbody tr")).toHaveCount(7);
   });
 
+  test("a ?proposal=<id> link that is not waiting says so, and names another member's", async ({ page }) => {
+    await open(page, "/signals?proposal=999", "light", V2, { others: [THEIRS] });
+    await expect(page.getByRole("tab", { name: /Waiting for you/ })).toHaveAttribute("aria-selected", "true");
+    await expect(page.locator("[data-missing-proposal]")).toHaveText(
+      "Signal #999 is not waiting for you any more: it was decided, snoozed or has expired. Find it under Today or History.");
+    await page.goto("/signals?proposal=950");
+    const note = page.locator("[data-missing-proposal]");
+    await expect(note).toContainText("Signal #950 is another member's, so it is not in your Signals. It stays on the Watchtower.");
+    await expect(note.getByRole("link", { name: "Open the Watchtower" })).toHaveAttribute("href", "/copilot/watchtower?action=950");
+  });
+
+  test("a viewer sees the signals but cannot approve, skip or snooze", async ({ page }) => {
+    await open(page, "/signals", "light", V2, { role: "VIEWER" });
+    const detail = page.locator("[data-signal-detail='action:901']");
+    await expect(detail).toBeVisible();
+    await expect(detail.locator("[data-view-only]")).toHaveText("Your role can view signals but not approve or skip them. Ask your organisation owner.");
+    await expect(detail.getByRole("button", { name: /Approve|Skip|More for/ })).toHaveCount(0);
+    await expect(detail.getByRole("link", { name: "Open chart" })).toBeVisible();
+  });
+
   test("a ?proposal=<id> link opens that proposal; History reaches older days", async ({ page }) => {
     await open(page, "/signals?proposal=902", "light");
     await expect(page.locator("[data-signal-detail]")).toHaveAttribute("data-signal-detail", "action:902");
@@ -277,6 +305,14 @@ test.describe("Signals v2 1440 desktop", () => {
     await drawer.getByText("Advanced").click();
     await drawer.getByLabel("Use sample data instead of your broker's candles").check();
     await expect(drawer.getByLabel("Sample data seed")).toBeVisible();
+  });
+
+  test("M7: another member's entry proposal stays on the Watchtower for the organisation owner", async ({ page }) => {
+    await open(page, "/copilot/watchtower", "light", V2, { others: [THEIRS] });
+    await expect(page.getByTestId("watch-signals-link")).toContainText("(2 waiting)", { timeout: 15_000 });   // the Signals count
+    await expect(page.getByTestId("watch-proposal")).toHaveCount(1);
+    await expect(page.getByTestId("watch-proposal")).toContainText("DEMO OTHER");
+    await expect(page.getByTestId("tab-watchtower")).toContainText("1");
   });
 
   test("M7: the Watchtower keeps its other proposals and links entry approvals to Signals", async ({ page }) => {

@@ -2,6 +2,7 @@ import { AlarmClock, Bell, CheckCircle2, ChevronRight, Clock, MessageCircle, Sat
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../../api/client";
+import { useAuth } from "../../auth/AuthContext";
 import { Badge, EmptyState, type Tone } from "../../components/primitives";
 import { isSnoozed } from "../../proposals/snooze";
 import type { AiAction, NotificationEntry, TelegramInboundStatus } from "../../types";
@@ -31,16 +32,18 @@ function when(iso: string | null): string {
 export default function WatchtowerTab() {
   const t = useCopilotT();
   const { pending: allPending, reloadActions } = useCopilotData();
-  // UI2-3 (UI v2 §3 M7): with `ui_v2` on, entry approvals are decided in Signals (the same /ai/actions data); this tab
-  // keeps the agent's other proposals (pause, exit, reduce risk, review) and links there. Flag off: unchanged.
+  // UI2-3 (UI v2 §3 M7): with `ui_v2` on, your own and organisation-wide entry approvals are decided in Signals (the
+  // same /ai/actions data); this tab keeps the agent's other proposals (pause, exit, reduce risk, review) and other
+  // members' entries (the organisation OWNER may decide them), and links to Signals. Flag off: unchanged.
   const v2 = useUiV2();
-  const { entries, others: pending } = watchtowerSplit(allPending, v2);
+  const me = useAuth().user?.id;
+  const { entries, others: pending } = watchtowerSplit(allPending, v2, me);
   const [history, setHistory] = useState<AiAction[]>([]);
   const [alerts, setAlerts] = useState<NotificationEntry[] | null>(null);
   const [telegram, setTelegram] = useState<TelegramInboundStatus | null | "unavailable">(null);
   const [message, setMessage] = useState<string | null>(null);
   const [snoozedAll, setSnoozed] = useState<AiAction[]>([]);
-  const snoozed = watchtowerSplit(snoozedAll, v2).others;
+  const snoozed = watchtowerSplit(snoozedAll, v2, me).others;
   const [now, setNow] = useState(() => new Date());
 
   // One read serves the timeline (decided proposals) and the snoozed list (PW5: hidden from the pending list).

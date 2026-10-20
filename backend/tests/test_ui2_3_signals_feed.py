@@ -12,7 +12,7 @@ import json
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, true
 
 from app.db.models import (AiActionRecord, AlertEventRecord, AlertRuleRecord, AuditLogRecord, ExecutionIntentRecord, NotificationRecord,
                            SignalHistoryRecord, StrategyDeploymentRecord, TradeRecord)
@@ -74,9 +74,9 @@ def _proposal(t, *, owner=None, status="PROPOSED", symbol="DEMO1", direction="LO
     return _add(row)[0]
 
 
-def _deployment(t) -> int:
+def _deployment(t, *, mode="PAPER") -> int:
     return _add(StrategyDeploymentRecord(tenant_id=t["tenant_id"], strategy_id="demo_strategy", symbol="DEMO2", exchange="NSE",
-                                         timeframe="5min", mode="PAPER", status="ACTIVE", created_by=t["user_id"]))[0]
+                                         timeframe="5min", mode=mode, status="ACTIVE", created_by=t["user_id"]))[0]
 
 
 def _trade(t, *, deployment_id, symbol="DEMO2", at=None, user_id=None) -> int:
@@ -121,6 +121,22 @@ def _ids(body) -> list:
     return [i["id"] for i in body["items"]]
 
 
+def _counts(waiting: int, today: int, *, capped: bool = False) -> dict:
+    return {"waiting": waiting, "today": today, "capped": {"waiting": capped, "today": capped}}
+
+
+def _pages(t, **params) -> list:
+    """Every page of a tab, in order: [(ids, next_cursor), ...]."""
+    out, cursor = [], None
+    for _ in range(20):
+        body = _get(t, **params, **({"cursor": cursor} if cursor else {}))
+        cursor = body["next_cursor"]
+        out.append((_ids(body), cursor))
+        if not cursor:
+            return out
+    raise AssertionError("the cursor never ended")
+
+
 # --- access ---------------------------------------------------------------------------------------------------------
 
 def test_login_is_required():
@@ -139,7 +155,7 @@ def test_empty_inbox():
     for tab in ("waiting", "today", "history"):
         body = _get(t, tab=tab)
         assert body["items"] == [] and body["next_cursor"] is None
-        assert body["counts"] == {"waiting": 0, "today": 0}
+        assert body["counts"] == _counts(0, 0)
         assert body["tab"] == tab
 
 
@@ -159,7 +175,7 @@ def test_a_waiting_proposal_has_the_normalised_shape_and_links_to_the_approval_e
     dep = _deployment(t)
     action_id = _proposal(t, deployment_id=dep, symbol="DEMO1")
     body = _get(t, tab="waiting")
-    assert body["counts"] == {"waiting": 1, "today": 1}
+    assert body["counts"] == _counts(1, 1)
     [item] = body["items"]
     assert set(item) == ITEM_KEYS
     assert item["id"] == f"action:{action_id}" and item["action_id"] == action_id
@@ -305,7 +321,7 @@ def test_source_and_symbol_filters():
     assert _ids(_get(t, source="copilot")) == [f"action:{copilot}"]
     by_symbol = _get(t, symbol="demo1")
     assert set(_ids(by_symbol)) == {f"action:{auto}", f"action:{copilot}", f"history:{hist}"} and by_symbol["symbol"] == "DEMO1"
-    assert by_symbol["counts"] == {"waiting": 2, "today": 3}
+    assert by_symbol["counts"] == _counts(2, 3)
 
 
 def test_today_starts_at_midnight_ist_and_history_keeps_30_days():
@@ -336,6 +352,99 @@ def test_the_cursor_pages_through_every_row_once():
     assert pages == 3
     assert len(seen) == len(set(seen)) == 9
     assert set(seen) == {f"history:{i}" for i in made} | {f"action:{i}" for i in made_actions}
+
+
+def test_a_live_deployments_proposal_says_live():
+    """The same rule as the approve endpoint's step-up: a LIVE deployment (or position) makes the proposal LIVE."""
+    t = _owner("live")
+    live = _proposal(t, deployment_id=_deployment(t, mode="LIVE"))
+    paper = _proposal(t, source="manual")
+    modes = {i["action_id"]: i["mode"] for i in _get(t, tab="waiting")["items"]}
+    assert modes == {live: "LIVE", paper: "PAPER"}
+
+
+def test_a_filtered_history_behind_many_other_rows_still_pages_to_the_end(monkeypatch):
+    """Review: SCAN_CAP=4 / BATCH=2, six newer scan proposals and three older Copilot ones - History source=copilot
+    returns the three (the kind filter is in SQL, so the scan rows are never read)."""
+    monkeypatch.setattr(service, "SCAN_CAP", 4)
+    monkeypatch.setattr(service, "BATCH", 2)
+    t = _owner("capsql")
+    base = _today(600)
+    copilot = [_proposal(t, source="manual", status="REJECTED", created=base + timedelta(seconds=i)) for i in range(3)]
+    for i in range(6):
+        _proposal(t, source="scan", status="REJECTED", created=base + timedelta(seconds=10 + i))
+    pages = _pages(t, tab="history", source="copilot")
+    assert pages == [([f"action:{i}" for i in reversed(copilot)], None)]
+
+
+def test_a_source_stopped_at_the_scan_cap_never_ends_or_skips_the_paging(monkeypatch):
+    """The same case when a filter is not in SQL (the rows are dropped after reading): the read stops at SCAN_CAP, the
+    page keeps only rows at or before that point - here none - and still gives a cursor; the next pages carry on."""
+    monkeypatch.setattr(service, "SCAN_CAP", 4)
+    monkeypatch.setattr(service, "BATCH", 2)
+    monkeypatch.setattr(service, "_kind_clause", lambda dialect, kind: true())
+    t = _owner("capcursor")
+    base = _today(600)
+    copilot = [_proposal(t, source="manual", status="REJECTED", created=base + timedelta(seconds=i)) for i in range(3)]
+    for i in range(6):
+        _proposal(t, source="scan", status="REJECTED", created=base + timedelta(seconds=10 + i))
+    pages = _pages(t, tab="history", source="copilot")
+    assert pages[0][0] == [] and pages[0][1] is not None             # nothing kept in the first 4 rows, yet more may follow
+    seen = [i for ids, _ in pages for i in ids]
+    assert seen == [f"action:{i}" for i in reversed(copilot)]
+
+
+def test_rows_of_other_sources_past_the_cap_point_wait_for_the_next_page(monkeypatch):
+    """A page across sources never jumps over a capped source's unread rows: older rows of the other sources are held
+    back until the capped source has been read down to them; every row comes once, newest first."""
+    monkeypatch.setattr(service, "SCAN_CAP", 4)
+    monkeypatch.setattr(service, "BATCH", 2)
+    keeps = service.FeedQuery.keeps
+    monkeypatch.setattr(service.FeedQuery, "keeps", lambda self, item: item["symbol"] != "HIDE" and keeps(self, item))
+    t = _owner("capmix")
+    base = _today(900)
+    for i in range(6):
+        _proposal(t, symbol="HIDE", status="REJECTED", created=base + timedelta(seconds=100 + i))
+    h50, h30 = _history(t, at=base + timedelta(seconds=50)), _history(t, at=base + timedelta(seconds=30))
+    a40, a20, a10 = (_proposal(t, status="REJECTED", created=base + timedelta(seconds=s)) for s in (40, 20, 10))
+    pages = _pages(t, tab="history")
+    assert pages[0][0] == [] and pages[0][1] is not None             # the history rows wait below the cap point
+    seen = [i for ids, _ in pages for i in ids]
+    assert seen == [f"history:{h50}", f"action:{a40}", f"history:{h30}", f"action:{a20}", f"action:{a10}"]
+
+
+def test_a_count_that_stops_at_the_scan_cap_says_so(monkeypatch):
+    monkeypatch.setattr(service, "SCAN_CAP", 4)
+    monkeypatch.setattr(service, "BATCH", 2)
+    t = _owner("capcount")
+    for _ in range(5):
+        _proposal(t, source="manual")
+    counts = _get(t, tab="waiting")["counts"]
+    assert counts == _counts(4, 4, capped=True)
+
+
+def test_the_proposal_list_says_whose_proposal_it_is():
+    """M7: the Watchtower keeps another member's entry proposals - /api/ai/actions says whose each one is."""
+    t = _owner("ownerid")
+    mine, shared = _proposal(t), _proposal(t, symbol="DEMO9")
+    _run(_clear_owner(shared))
+    response = client.get("/api/ai/actions", headers=t["headers"], params={"status": "PROPOSED"})
+    assert response.status_code == 200, response.text
+    owners = {a["id"]: a["owner_user_id"] for a in response.json()}
+    assert owners == {mine: t["user_id"], shared: None}
+
+
+async def _clear_owner(action_id: int) -> None:
+    async with _session_factory() as session:
+        row = await session.get(AiActionRecord, action_id)
+        row.owner_user_id = None
+        await session.commit()
+
+
+def test_the_postgres_filters_read_the_evidence_with_the_json_operator():
+    from sqlalchemy.dialects import postgresql
+    sql = str(service._kind_clause("postgresql", "scan").compile(dialect=postgresql.dialect()))
+    assert "CAST(ai_actions.evidence_json AS JSON) ->>" in sql and "deployment_id IS NULL" in sql
 
 
 # --- read-only ------------------------------------------------------------------------------------------------------

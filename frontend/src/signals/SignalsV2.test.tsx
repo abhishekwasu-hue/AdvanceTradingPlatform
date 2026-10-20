@@ -15,6 +15,7 @@ import partsSource from "./SignalPartsV2.tsx?raw";
 import { feedItem } from "./signals.fixture";
 import SignalsV2 from "./SignalsV2";
 import { TryOnSymbolBody } from "./TryOnSymbolV2";
+import tryOnSource from "./TryOnSymbolV2.tsx?raw";
 import hookSource from "./useSignalFeed.ts?raw";
 
 const NOW = new Date("2026-10-08T05:00:00Z");
@@ -43,7 +44,7 @@ describe("UI2-3 status chip", () => {
 
 describe("UI2-3 detail panel", () => {
   it("a waiting signal: header, levels, six figures, reasons, risk sentences and one primary action", () => {
-    const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} onDone={noop} onError={noop} />);
+    const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} canTrade onDone={noop} onError={noop} />);
     const words = text(html);
     expect(words).toContain("DEMO 50");
     expect(words).toContain("Long");
@@ -64,7 +65,7 @@ describe("UI2-3 detail panel", () => {
   });
 
   it("an expired signal: no decision buttons, says nothing was placed", () => {
-    const html = inRouter(<SignalDetail item={feedItem({ status: "expired" })} now={NOW} onDone={noop} onError={noop} />);
+    const html = inRouter(<SignalDetail item={feedItem({ status: "expired" })} now={NOW} canTrade onDone={noop} onError={noop} />);
     expect(text(html)).toContain("This signal expired before anyone decided. Nothing was placed.");
     expect(html).not.toContain("Approve");
     expect(html).not.toContain(">Skip<");
@@ -72,23 +73,42 @@ describe("UI2-3 detail panel", () => {
   });
 
   it("a waiting signal whose expiry passes on screen loses its buttons too", () => {
-    const html = inRouter(<SignalDetail item={feedItem()} now={new Date("2026-10-08T05:10:00Z")} onDone={noop} onError={noop} />);
+    const html = inRouter(<SignalDetail item={feedItem()} now={new Date("2026-10-08T05:10:00Z")} canTrade onDone={noop} onError={noop} />);
     expect(html).not.toContain("Approve");
     expect(text(html)).toContain("Expired");
   });
 
   it("without the risk pre-check nothing is invented: the figures say – and the page says the limits apply on approval", () => {
-    const words = text(inRouter(<SignalDetail item={feedItem()} now={NOW} onDone={noop} onError={noop} />));
+    const words = text(inRouter(<SignalDetail item={feedItem()} now={NOW} canTrade onDone={noop} onError={noop} />));
     expect(words).toContain("Your limits are checked again when you approve");
     expect(words).not.toContain("Fits your risk limits");
   });
 
   it("phone card content: Approve, Skip, a chart button and More, each 44 px", () => {
-    const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} compact onDone={noop} onError={noop} />);
+    const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} compact canTrade onDone={noop} onError={noop} />);
     expect(text(html)).toContain("Fits your risk limits · most you can lose ₹5,250.00");
     expect(text(html)).toContain("Approve");
     expect(html).toContain('aria-label="Open chart for DEMO 50"');
     expect(html.match(/min-h-11/g)?.length ?? 0).toBeGreaterThanOrEqual(4);
+  });
+
+  it("a LIVE proposal says so and never promises that nothing reaches the broker", () => {
+    const words = text(inRouter(<SignalDetail item={feedItem({ mode: "LIVE" })} proposal={proposal} now={NOW} canTrade onDone={noop} onError={noop} />));
+    expect(words).toContain("Approve live trade");
+    expect(words).toContain("· Live");
+    expect(words).toContain("approving asks for your authenticator code first");
+    expect(words).not.toContain("Nothing reaches your broker");
+    expect(words).not.toContain("Approve paper trade");
+  });
+
+  it("a role without trading rights sees the signal but no Approve, Skip or Snooze", () => {
+    for (const compact of [false, true]) {
+      const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} compact={compact} canTrade={false} onDone={noop} onError={noop} />);
+      expect(html).not.toMatch(/>Approve|>Skip<|More for DEMO 50/);
+      expect(text(html)).toContain("Your role can view signals but not approve or skip them.");
+      expect(html).toContain('href="/charts/DEMO%2050"');
+      expect(primaries(html)).toBe(0);
+    }
   });
 
   it("levels are drawn with Entry neutral, Stop red and Target green", () => {
@@ -142,6 +162,13 @@ describe("UI2-3 M6: the generator in the Library drawer", () => {
     expect(html).toMatch(/<details[^>]*>\s*<summary[^>]*>Advanced/);
   });
 
+  it("a sample-data result is labelled from how it was made and offers no paper trade", () => {
+    expect(tryOnSource).toContain('made?.sample ? " · sample data" : ""');
+    expect(tryOnSource).toMatch(/\{item\.direction && made && !made\.sample && \(\s*<button[^>]*onClick=\{\(\) => void paperTrade\(\)\}/);
+    expect(tryOnSource).toContain("setMade({ symbol: sym, data, sample: useSample })");
+    expect(tryOnSource).toContain("if (!made || made.sample) return;");
+  });
+
   it("the Library offers it only while ui_v2 is on", () => {
     expect(strategiesSource).toContain("const v2 = useUiV2();");
     expect(strategiesSource).toMatch(/\{v2 && \(\s*<button[^]*Try it on a symbol/);
@@ -150,9 +177,10 @@ describe("UI2-3 M6: the generator in the Library drawer", () => {
 });
 
 describe("UI2-3 M7: the Watchtower links to Signals", () => {
-  it("only while ui_v2 is on, and keeps every non-entry proposal", () => {
-    expect(watchtowerSource).toContain("watchtowerSplit(allPending, v2)");
+  it("only while ui_v2 is on, and keeps every non-entry proposal and other members' entries", () => {
+    expect(watchtowerSource).toContain("watchtowerSplit(allPending, v2, me)");
+    expect(watchtowerSource).toContain("watchtowerSplit(snoozedAll, v2, me).others");
     expect(watchtowerSource).toMatch(/\{v2 && \(\s*<Link to=\{signalsLinkFor\(entries\)\}/);
-    expect(copilotPageSource).toContain("watchtowerSplit(allPending, useUiV2()).others");     // the tab badge agrees
+    expect(copilotPageSource).toContain("watchtowerSplit(allPending, useUiV2(), me).others");     // the tab badge agrees
   });
 });

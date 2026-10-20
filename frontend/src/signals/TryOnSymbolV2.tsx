@@ -16,7 +16,8 @@ const BUTTON = "inline-flex min-h-11 items-center justify-center rounded-control
  * UI2-3 (UI v2 proposal §3 M6): the signal generator that used to fill the Signals page, moved to the Library's strategy
  * drawer as "Try it on a symbol" (shown only while `ui_v2` is on; today's Signals page keeps it with the flag off).
  * It runs the strategy on the trader's own broker candles; sample data is only under Advanced, labelled as such (owner
- * brief: no sample data where a trader sees data). "Paper trade this signal" is today's paper-execute: under
+ * brief: no sample data where a trader sees data); a result made from sample data says so and offers no trade.
+ * "Paper trade this signal" (broker candles only) is today's paper-execute: under
  * approval-only entries it raises a proposal that then waits in Signals - nothing here places a live order.
  */
 export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
@@ -28,7 +29,8 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<EnrichedSignal | null>(null);
-  const [made, setMade] = useState<{ symbol: string; data: Record<string, OHLCVBar[]> } | null>(null);
+  // How the shown result was made - its label and its paper-trade button follow this, not the checkbox now.
+  const [made, setMade] = useState<{ symbol: string; data: Record<string, OHLCVBar[]>; sample: boolean } | null>(null);
   const [executeMsg, setExecuteMsg] = useState<string | null>(null);
   const ids = { symbol: useId(), bars: useId(), seed: useId(), sample: useId() };
 
@@ -37,18 +39,19 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
     const sym = symbol.trim().toUpperCase();
     if (!sym) return;
     setBusy(true); setError(null); setExecuteMsg(null);
+    const useSample = sample;
     try {
-      if (!sample && !source.usable) throw new Error("Log in to your broker under Settings to use real candles, or turn on sample data under Advanced.");
+      if (!useSample && !source.usable) throw new Error("Log in to your broker under Settings to use real candles, or turn on sample data under Advanced.");
       // Strategies read every timeframe off one-minute bars (as the old page did).
       const broker = source.sources.find((s) => s.usable)?.broker;
-      const fetched = sample
+      const fetched = useSample
         ? { candles: { [sym]: generateSampleCandles(bars, 100, seed) } as Record<string, OHLCVBar[]> }
         : await brokerBars(sym, broker);
       const base = fetched.candles[sym];
       if (!base?.length) throw new Error(`No candles for ${sym}.`);
       const data = buildTimeframeData(base, strategy.timeframes);
       setResult(await api.enrichSignal(strategy.id, sym, data));
-      setMade({ symbol: sym, data });
+      setMade({ symbol: sym, data, sample: useSample });
     } catch (err) {
       setError(String(err instanceof Error ? err.message : err));
     } finally {
@@ -64,7 +67,7 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
   }
 
   async function paperTrade() {
-    if (!made) return;
+    if (!made || made.sample) return;                 // never a trade from made-up candles
     setExecuteMsg(null);
     try {
       const res = await api.paperExecute(strategy.id, made.symbol, made.data);
@@ -122,14 +125,14 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
           <div className="flex flex-wrap items-baseline gap-space-2">
             <h3 className="text-t18 font-semibold text-fg">{signal.symbol}</h3>
             {item.direction ? <Direction value={item.direction} /> : <span className="font-semibold text-fg-muted">No trade now</span>}
-            <span className="text-t12 text-fg-muted">Score {result?.composite_score ?? signal.score} · grade {result?.grade ?? signal.grade}{sample ? " · sample data" : ""}</span>
+            <span className="text-t12 text-fg-muted">Score {result?.composite_score ?? signal.score} · grade {result?.grade ?? signal.grade}{made?.sample ? " · sample data" : ""}</span>
           </div>
           <LevelTiles item={item} />
           {item.reasons.length > 0 && (
             <ol className="list-decimal space-y-space-1 pl-space-5 text-t14 text-fg">{item.reasons.map((r) => <li key={r}>{r}</li>)}</ol>
           )}
           <div className="flex flex-wrap gap-space-2">
-            {item.direction && (
+            {item.direction && made && !made.sample && (
               <button type="button" onClick={() => void paperTrade()} className={`${BUTTON} border border-border bg-surface-1 text-fg hover:bg-surface-2`}>Paper trade this signal</button>
             )}
             <Link to={chartsPath(signal.symbol)} className={`${BUTTON} text-brand hover:underline`}>Open chart</Link>

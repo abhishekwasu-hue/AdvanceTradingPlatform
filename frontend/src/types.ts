@@ -1839,6 +1839,9 @@ export interface AiAction {
   created_at: string | null;
   /** PW5: hidden from the pending list until this time (never later than expires_at). */
   snoozed_until?: string | null;
+  /** UI2-3 (M7): whose proposal it is (null: organisation-wide). Signals lists the caller's own and the organisation-wide
+   * entries; another member's stay on the Watchtower. */
+  owner_user_id?: number | null;
   /** PW5: the deployment's or position's mode; the approval itself still decides LIVE vs PAPER on the server. */
   mode?: "PAPER" | "LIVE" | null;
   /** PW5: the closing order's facts for "Trade in your broker app" (flag broker_app_links, exits on open positions only). */

@@ -1,11 +1,13 @@
 import { ChevronRight, Search, SlidersHorizontal, X } from "lucide-react";
 import { useEffect, useId, useMemo, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
+import { useAuth } from "../auth/AuthContext";
 import { cx } from "../components/primitives";
 import { formatPrice, formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
 import {
-  SOURCES, TABS, canDecide, defaultTab, itemForProposal, sourceCaption, type FeedSource, type FeedTab, type SignalFeedItem,
+  SOURCES, TABS, canDecide, canTradeRole, countLabel, defaultTab, itemForProposal, missingProposalMessage, sourceCaption,
+  type FeedSource, type FeedTab, type SignalFeedItem,
 } from "./feed";
 import { Direction, LevelTiles, SignalDetail, StatusChip, signalTime } from "./SignalPartsV2";
 import { useSignalFeed } from "./useSignalFeed";
@@ -51,7 +53,10 @@ export default function SignalsV2() {
   const wide = useMediaQuery(WIDE_QUERY);
   const [params] = useSearchParams();
   const proposal = params.get("proposal");
-  const [tab, setTab] = useState<FeedTab>(() => defaultTab(matches(WIDE_QUERY)));
+  const { user } = useAuth();
+  const canTrade = canTradeRole(user?.role);
+  // A `?proposal=<id>` link (Watchtower, push, Telegram) names a waiting proposal: it opens on "Waiting for you".
+  const [tab, setTab] = useState<FeedTab>(() => (proposal ? "waiting" : defaultTab(matches(WIDE_QUERY))));
   const [source, setSource] = useState<FeedSource>("all");
   const [symbol, setSymbol] = useState<string | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -69,13 +74,18 @@ export default function SignalsV2() {
   // The selected (desktop) / opened (phone) signal: a `?proposal=<id>` link's, else the first waiting one, else the first.
   const [picked, setPicked] = useState<string | null>(null);
   const linked = itemForProposal(items, proposal);
+  // The link's proposal is not waiting in this list: say so (and whether it is another member's), never fall back silently.
+  const linkedAction = proposal ? feed.proposals.get(Number(proposal)) : undefined;
+  const othersProposal = !!linkedAction && linkedAction.owner_user_id != null && linkedAction.owner_user_id !== user?.id;
+  const missing = proposal && tab === "waiting" && !feed.loading && !linked && /^\d+$/.test(proposal)
+    ? missingProposalMessage(proposal, othersProposal) : null;
   const fallback = useMemo(() => items.find((i) => canDecide(i, now)) ?? (wide ? items[0] : undefined), [items, now, wide]);
   const selected = items.find((i) => i.id === picked) ?? linked ?? fallback ?? null;
 
   const done = (text: string) => { setMessage(text); setProblem(null); feed.reload(); };
   const failed = (text: string, stale?: boolean) => { setProblem(text); setMessage(null); if (stale) feed.reload(); };
   const filtered = source !== "all" || !!symbol;
-  const count = (t: FeedTab) => (t === "waiting" ? feed.counts?.waiting : t === "today" ? feed.counts?.today : undefined);
+  const count = (t: FeedTab) => countLabel(feed.counts, t);
 
   return (
     <div className="space-y-space-4" data-page="signals-v2">
@@ -111,6 +121,14 @@ export default function SignalsV2() {
         onSource={(s) => { setSource(s); setPicked(null); }} onSymbol={(s) => { setSymbol(s); setPicked(null); }}
         updated={feed.asOf ? formatTimeIST(feed.asOf, { suffix: false }) : null} />
 
+      {missing && (
+        <p className="rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3 text-t14 text-fg" data-missing-proposal>
+          {missing}{" "}
+          {othersProposal && (
+            <Link to={`/copilot/watchtower?action=${proposal}`} className="font-semibold text-brand hover:underline">Open the Watchtower</Link>
+          )}
+        </p>
+      )}
       {message && <p role="status" className="rounded-panel border border-subtle bg-surface-1 px-space-4 py-space-3 text-t14 text-fg">{message}</p>}
       {(problem || feed.error) && (
         <p role="alert" className="rounded-panel border border-warn/40 bg-warn-tint px-space-4 py-space-3 text-t14 text-fg">
@@ -136,13 +154,13 @@ export default function SignalsV2() {
           <SignalTable items={items} tab={tab} now={now} selectedId={selected?.id ?? null} onSelect={(id) => { setPicked(id); setMessage(null); }} />
           <div className="sticky top-space-6">
             {selected && <SignalDetail key={selected.id} item={selected} proposal={selected.action_id !== null ? feed.proposals.get(selected.action_id) : undefined}
-              now={now} onDone={done} onError={failed} />}
+              now={now} canTrade={canTrade} onDone={done} onError={failed} />}
           </div>
         </div>
       ) : (
         <ul className="space-y-space-3" aria-label="Signals list">
           {items.map((item) => (
-            <SignalCard key={item.id} item={item} now={now} open={selected?.id === item.id}
+            <SignalCard key={item.id} item={item} now={now} open={selected?.id === item.id} canTrade={canTrade}
               proposalAction={item.action_id !== null ? feed.proposals.get(item.action_id) : undefined}
               onOpen={() => { setPicked(item.id); setMessage(null); }} onDone={done} onError={failed} />
           ))}
@@ -225,13 +243,13 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
   items: SignalFeedItem[]; tab: FeedTab; now: Date; selectedId: string | null; onSelect: (id: string) => void;
 }) {
   const th = "px-space-3 py-space-2 font-medium";
-  const num = "px-space-2 text-right";
+  const num = "px-space-1 text-right";                   // 80 px number columns: room for the Setup column to wrap in
   return (
     <div className="overflow-hidden rounded-panel border border-subtle bg-surface-1 shadow-card">
       <table className="w-full table-fixed text-t14" aria-label="Signals list">
         <colgroup>
           <col className={tab === "history" ? "w-[104px]" : "w-[64px]"} /><col className="w-[124px]" /><col />
-          <col className="w-[88px]" /><col className="w-[88px]" /><col className="w-[88px]" /><col className="w-[104px]" />
+          <col className="w-[80px]" /><col className="w-[80px]" /><col className="w-[80px]" /><col className="w-[104px]" />
         </colgroup>
         <thead>
           <tr className="border-b border-subtle text-left text-t12 text-fg-muted">
@@ -255,8 +273,8 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
                   <Direction value={item.direction} className="block text-t12" />
                 </td>
                 <td className="px-space-3 py-space-3">
-                  <span className="block truncate text-fg">{item.setup}</span>
-                  <span className="block truncate text-t12 text-fg-muted">{sourceCaption(item)}</span>
+                  <span className="block break-words text-fg">{item.setup}</span>
+                  <span className="block break-words text-t12 text-fg-muted">{sourceCaption(item)}</span>
                 </td>
                 {[item.entry, item.stop, item.target].map((v, i) => (
                   <td key={i} className={`${num} py-space-3 font-tabular text-fg`}>{formatPrice(v)}</td>
@@ -271,8 +289,8 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
   );
 }
 
-function SignalCard({ item, now, open, proposalAction, onOpen, onDone, onError }: {
-  item: SignalFeedItem; now: Date; open: boolean; proposalAction?: Parameters<typeof SignalDetail>[0]["proposal"];
+function SignalCard({ item, now, open, canTrade, proposalAction, onOpen, onDone, onError }: {
+  item: SignalFeedItem; now: Date; open: boolean; canTrade: boolean; proposalAction?: Parameters<typeof SignalDetail>[0]["proposal"];
   onOpen: () => void; onDone: (m: string) => void; onError: (m: string, stale?: boolean) => void;
 }) {
   const decidable = canDecide(item, now);
@@ -286,10 +304,10 @@ function SignalCard({ item, now, open, proposalAction, onOpen, onDone, onError }
           </h2>
           <StatusChip item={item} now={now} />
         </div>
-        <p className="text-t14 text-fg-muted">{item.setup} · {sourceCaption(item)}</p>
+        <p className="text-t14 text-fg-muted">{item.setup} · {sourceCaption(item)}{item.mode === "LIVE" ? " · Live" : ""}</p>
         <LevelTiles item={item} />
         {open ? (
-          <SignalDetail item={item} proposal={proposalAction} now={now} compact onDone={onDone} onError={onError} />
+          <SignalDetail item={item} proposal={proposalAction} now={now} compact canTrade={canTrade} onDone={onDone} onError={onError} />
         ) : (
           <button type="button" onClick={onOpen}
             className="inline-flex min-h-11 items-center gap-space-1 rounded-control text-t15 font-semibold text-brand hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">

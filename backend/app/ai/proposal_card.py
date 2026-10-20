@@ -108,6 +108,9 @@ async def enrich(session: AsyncSession, tenant_id: int, rows: Iterable[AiActionR
     out: List[dict] = []
     for row in rows:
         item = monitor.as_dict(row)
+        # UI2-3 (M7): whose proposal it is (None: organisation-wide) - Signals lists the caller's own and the
+        # organisation-wide entries; the Watchtower keeps another member's (the organisation OWNER may decide them).
+        item["owner_user_id"] = getattr(row, "owner_user_id", None)
         dep = deployments.get(row.deployment_id) if row.deployment_id is not None else None
         trade = trades.get(row.trade_id) if row.trade_id is not None else None
         live = (dep is not None and dep.mode == "LIVE") or (trade is not None and trade.mode == "LIVE")

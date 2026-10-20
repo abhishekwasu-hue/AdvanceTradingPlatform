@@ -101,7 +101,9 @@ def _minutes(day: date, n: int, volume) -> List[OHLCVBar]:
 
 def _index_broker(master, *, index_volume_each: float = 0.0) -> DailyBroker:
     today = _today()
-    day = today - timedelta(days=1)
+    # Two days back: the route reads history from now - lookback to now - 1 day (the last day comes from the intraday
+    # call), so bars stamped yesterday at 09:15 were outside it whenever the test ran before about 09:45 IST.
+    day = today - timedelta(days=2)
     broker = DailyBroker(
         daily={"NIFTY 50": daily_series(today - timedelta(days=900), today - timedelta(days=1), scale=index_volume_each / 1000 if index_volume_each else 0.0),
                "TCS": daily_series(today - timedelta(days=900), today - timedelta(days=1)),

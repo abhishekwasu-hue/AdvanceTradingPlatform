@@ -252,7 +252,7 @@ export default function ScreenerPage(_props: PageProps) {
           <textarea id="screener-symbols" value={symbolsText} onChange={(e) => setSymbolsText(e.target.value)} rows={4}
                     placeholder="RELIANCE, TCS, INFY"
                     className="mt-1 w-full resize-y rounded-control border border-border bg-surface-inset px-2 py-1.5 font-mono text-t13 text-fg placeholder:text-fg-muted/60 focus:outline-none focus:ring-2 focus:ring-brand" />
-          <p className="mt-1 text-t12 text-fg-muted"><span className="font-mono font-tabular text-fg">{symbols.length}</span> symbols</p>
+          <p className="mt-1 text-t12 text-fg-muted"><span className="font-mono font-tabular text-fg">{symbols.length}</span> symbols · separate with commas or new lines</p>
           {watchlistsOn && <WatchlistPicker symbols={symbols} max={50} onLoad={(list) => setSymbolsText(list.join(", "))} />}
           </div>
           <div>

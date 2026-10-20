@@ -56,8 +56,15 @@ export function statusText(r: AnalysisResult): string {
   return "No setup";
 }
 
+export const FALLBACK_DISCLAIMER = "Educational only. This is not investment advice or a recommendation to buy or sell, and ATP places no order from it.";
+
 export interface ResultViewProps {
   result: AnalysisResult;
+  /** The item's own label and disclaimer: shown when the result lacks them, so they are always on screen. */
+  itemLabel?: string | null;
+  itemDisclaimer?: string | null;
+  /** Set when the stored image is gone (retention): said in place of the drawing. */
+  imageNote?: string | null;
   imageSrc: string | null;
   onAlert: (target: AlertTarget) => void;
   onExport: () => void;
@@ -66,8 +73,10 @@ export interface ResultViewProps {
   deleting?: boolean;
 }
 
-export default function ResultViewV2({ result, imageSrc, onAlert, onExport, onDelete, exporting, deleting }: ResultViewProps) {
+export default function ResultViewV2({ result, itemLabel, itemDisclaimer, imageNote, imageSrc, onAlert, onExport, onDelete, exporting, deleting }: ResultViewProps) {
   const approx = result.approximate_prices;
+  const label = result.label || itemLabel || null;
+  const disclaimer = result.disclaimer || itemDisclaimer || FALLBACK_DISCLAIMER;
   const rec = result.recognised;
   const areas = result.annotations.areas.filter((a) => a.price_low != null || a.price_high != null);
   const firstArea = areas[0] ?? null;
@@ -79,7 +88,7 @@ export default function ResultViewV2({ result, imageSrc, onAlert, onExport, onDe
   return (
     <div className="space-y-space-4" data-testid="analysis-result" data-setup={result.setup.status}>
       <div className={card}>
-        {result.label && <p className="mb-space-2 inline-flex rounded-pill bg-warn-tint px-space-3 py-space-1 text-t12 font-medium text-fg" data-testid="image-only-label">{result.label}</p>}
+        {label && <p className="mb-space-2 inline-flex rounded-pill bg-warn-tint px-space-3 py-space-1 text-t12 font-medium text-fg" data-testid="image-only-label">{label}</p>}
         <h2 className="text-t20 font-semibold text-fg md:text-t24">{title}</h2>
         {(rec.first_bar || rec.last_bar) && <p className="mt-space-1 text-t12 text-fg-muted">Visible range: {rec.first_bar ?? "?"} to {rec.last_bar ?? "?"}</p>}
         <p className="mt-space-2 text-t14 text-fg-muted">The situation and the possibilities, as the method reads this chart. Educational, not advice.</p>
@@ -93,11 +102,15 @@ export default function ResultViewV2({ result, imageSrc, onAlert, onExport, onDe
         </div>
       </div>
 
-      {imageSrc && (
+      {imageSrc ? (
         <Section title="The chart, annotated" id="ca-annotated">
           <AnnotatedChartV2 src={imageSrc} width={result.image.width} height={result.image.height} annotations={result.annotations} />
         </Section>
-      )}
+      ) : imageNote ? (
+        <Section title="The chart, annotated" id="ca-annotated">
+          <p className="text-t14 text-fg-muted" role="note">{imageNote}</p>
+        </Section>
+      ) : null}
 
       <Section title="The story" id="ca-story">
         <div className="space-y-space-2 text-t14 text-fg">{result.story.map((p, i) => <p key={i}>{p}</p>)}</div>
@@ -211,7 +224,7 @@ export default function ResultViewV2({ result, imageSrc, onAlert, onExport, onDe
         </Section>
       )}
 
-      <p className="rounded-panel border border-subtle bg-surface-2 p-space-4 text-t12 text-fg-muted" data-testid="disclaimer" role="note">{result.disclaimer}</p>
+      <p className="rounded-panel border border-subtle bg-surface-2 p-space-4 text-t12 text-fg-muted" data-testid="disclaimer" role="note">{disclaimer}</p>
     </div>
   );
 }

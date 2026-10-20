@@ -6,7 +6,7 @@ import { CANNOT_ALERT, alertCondition, bandCondition, draftErrors, ruleBody, rul
 import { errorCode, isFeatureOff } from "./api";
 import { firstImage } from "./ChartAnalyzePageV2";
 import { DISCLAIMER, IMAGE_ONLY_LABEL, fixtureResult } from "./fixtures";
-import ResultViewV2, { price, statusText } from "./ResultViewV2";
+import ResultViewV2, { FALLBACK_DISCLAIMER, price, statusText } from "./ResultViewV2";
 import { legendFor, shapesFor } from "./shapes";
 import type { SetupStatus } from "./types";
 
@@ -59,6 +59,22 @@ describe("Analyze a chart: the result screen renders every block", () => {
     expect(html).toContain('data-present="true"');
     expect(html).toContain('data-present="false"');
     expect(html).toContain('aria-label="absent"');
+  });
+
+  it("the label and the disclaimer always show: the item's own when the result lacks them, else a fixed line", () => {
+    const bare = { ...fixtureResult("formed"), label: null, disclaimer: "" };
+    const withItem = renderToStaticMarkup(<ResultViewV2 result={bare} itemLabel={IMAGE_ONLY_LABEL} itemDisclaimer={DISCLAIMER} imageSrc={null}
+      onAlert={noop} onExport={noop} onDelete={noop} />);
+    expect(withItem).toContain(IMAGE_ONLY_LABEL);
+    expect(withItem).toContain(DISCLAIMER);
+    const alone = renderToStaticMarkup(<ResultViewV2 result={bare} imageSrc={null} onAlert={noop} onExport={noop} onDelete={noop} />);
+    expect(alone).toContain(FALLBACK_DISCLAIMER);
+  });
+
+  it("says so when the stored image is gone instead of drawing nothing", () => {
+    const html = renderToStaticMarkup(<ResultViewV2 result={fixtureResult("formed")} imageSrc={null} imageNote="The chart image is no longer stored."
+      onAlert={noop} onExport={noop} onDelete={noop} />);
+    expect(html).toContain("The chart image is no longer stored.");
   });
 
   it("prices: approximate with ≈, exact without", () => {

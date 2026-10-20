@@ -52,7 +52,7 @@ const PNG = drawnChartPng();
 
 interface Calls { adds: number; analyzes: number; alerts: unknown[] }
 
-async function mockChartAnalyze(page: Page, setup: SetupStatus, { history = true, unreadable = false } = {}): Promise<Calls> {
+async function mockChartAnalyze(page: Page, setup: SetupStatus, { history = true, unreadable = false, imageGone = false } = {}): Promise<Calls> {
   const calls: Calls = { adds: 0, analyzes: 0, alerts: [] };
   const past = history ? [fixtureItem(7, "none", "2026-10-19T08:15:00+00:00"), fixtureItem(6, null, "2026-10-18T11:05:00+00:00")] : [];
   let added = false;
@@ -75,7 +75,10 @@ async function mockChartAnalyze(page: Page, setup: SetupStatus, { history = true
       added = true;
       return route.fulfill({ status: 201, json: fixtureItem(8, null) });
     }
-    if (/^\/items\/\d+\/image$/.test(path)) return route.fulfill({ body: PNG, contentType: "image/png" });
+    if (/^\/items\/\d+\/image$/.test(path)) {
+      if (imageGone) return route.fulfill({ status: 410, json: { detail: { message: "The chart image is no longer stored.", code: "image_gone" } } });
+      return route.fulfill({ body: PNG, contentType: "image/png" });
+    }
     if (path === "/items/8/analyze") { calls.analyzes += 1; return route.fulfill({ json: fixtureItem(8, setup) }); }
     const one = /^\/items\/(\d+)$/.exec(path);
     if (one && method === "GET") return route.fulfill({ json: fixtureItem(Number(one[1]), Number(one[1]) === 6 ? null : "none") });
@@ -228,6 +231,27 @@ test.describe("Analyze a chart: the flow", () => {
     }, bytes.toString("base64"));
     expect(size.width).toBe(640);
     expect(size.height).toBeGreaterThan(360);                         // the image plus the label and disclaimer band
+  });
+
+  test("a chart whose stored image is gone (410) says so, also on Download", async ({ page }) => {
+    await open(page, "/chart-analyze", "light");
+    await mockChartAnalyze(page, "formed", { imageGone: true });
+    await page.goto("/chart-analyze");
+    await page.getByRole("region", { name: "Your analyses" }).getByRole("button", { name: /DEMO/ }).click();
+    await expect(page.getByText(/no longer stored/).first()).toBeVisible();
+    await page.getByRole("button", { name: "Download / share the result image" }).click();
+    await expect(page.getByRole("alert")).toContainText("no longer stored");
+    await expect(page.getByTestId("disclaimer")).toBeVisible();
+  });
+
+  test("engine not installed: the note and the disabled Analyze agree", async ({ page }) => {
+    await open(page, "/chart-analyze", "light");
+    await mockChartAnalyze(page, "formed");
+    await page.route(/\/api(?:\/v1)?\/chart-analyze\/status$/, (route) =>
+      route.fulfill({ json: fixtureStatus({ engine: { installed: false, message: "Analysis engine not installed" } }) }));
+    await page.goto("/chart-analyze");
+    await expect(page.getByRole("status").filter({ hasText: "Analysis engine not installed" })).toContainText("cannot be analysed");
+    await expect(page.getByRole("button", { name: "Analyze", exact: true })).toBeDisabled();
   });
 
   test("delete asks first, then removes the analysis", async ({ page }) => {

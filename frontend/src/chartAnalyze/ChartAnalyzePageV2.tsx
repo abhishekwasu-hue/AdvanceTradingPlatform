@@ -22,6 +22,7 @@ export const FLAG = "chart_analyze";
 const ACCEPT = "image/png,image/jpeg";
 const card = "rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5";
 
+export const IMAGE_GONE = "The chart image is no longer stored (it is kept for a limited time), so the result image cannot be made.";
 const SETUP_SHORT = { formed: "Formed", forming: "Forming", none: "No setup" } as const;
 
 type Phase = "idle" | "adding" | "analysing";
@@ -60,6 +61,7 @@ export default function ChartAnalyzePageV2() {
   const [problem, setProblem] = useState<Problem | null>(null);
   const [current, setCurrent] = useState<AnalysisItem | null>(null);
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  const [imageNote, setImageNote] = useState<string | null>(null);
   const [history, setHistory] = useState<AnalysisItem[]>([]);
   const [alertTarget, setAlertTarget] = useState<AlertTarget | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -106,13 +108,15 @@ export default function ChartAnalyzePageV2() {
 
   const showItem = useCallback(async (item: AnalysisItem) => {
     setCurrent(item);
+    setImageNote(null);
     try {
       const blob = await chartAnalyzeApi.image(item.id);
       if (imageUrlRef.current) URL.revokeObjectURL(imageUrlRef.current);
       imageUrlRef.current = URL.createObjectURL(blob);
       setImageSrc(imageUrlRef.current);
-    } catch {
+    } catch (e) {
       setImageSrc(null);
+      setImageNote(errorCode(e) === "image_gone" ? IMAGE_GONE : "The chart image could not be loaded. Try again later.");
     }
   }, []);
 
@@ -174,7 +178,11 @@ export default function ChartAnalyzePageV2() {
 
   const exportImage = async () => {
     const result = current?.result;
-    if (!result || !imageSrc) return;
+    if (!result) return;
+    if (!imageSrc) {
+      setProblem({ message: imageNote ?? IMAGE_GONE, code: "image_gone" });
+      return;
+    }
     setBusy("export");
     try {
       const img = new Image();
@@ -240,7 +248,7 @@ export default function ChartAnalyzePageV2() {
       {engineMissing && (
         <div role="status" className="flex items-start gap-space-3 rounded-panel border border-subtle bg-warn-tint p-space-4 text-t14 text-fg">
           <TriangleAlert size={18} aria-hidden className="mt-0.5 shrink-0 text-warn" />
-          <p><span className="font-semibold">Analysis engine not installed.</span> The administrator installs it on the server. Until then, charts can be added but not analysed.</p>
+          <p><span className="font-semibold">Analysis engine not installed.</span> The administrator installs it on the server. Until then, charts cannot be analysed here.</p>
         </div>
       )}
 
@@ -316,7 +324,8 @@ export default function ChartAnalyzePageV2() {
       </section>
 
       {current && current.result && (
-        <ResultViewV2 result={current.result} imageSrc={imageSrc} onAlert={setAlertTarget} onExport={exportImage} onDelete={() => setConfirmDelete(true)}
+        <ResultViewV2 result={current.result} itemLabel={current.label} itemDisclaimer={current.disclaimer} imageNote={imageNote}
+          imageSrc={imageSrc} onAlert={setAlertTarget} onExport={exportImage} onDelete={() => setConfirmDelete(true)}
           exporting={busy === "export"} deleting={busy === "delete"} />
       )}
       {current && !current.result && (

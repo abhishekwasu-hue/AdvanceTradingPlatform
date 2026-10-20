@@ -188,7 +188,41 @@ def test_migration_is_rollback_safe_additive_and_keeps_one_head():
     assert module.ROLLBACK_SAFE is True and module.revision == "d9f1b3c5e7a2"
     assert module.down_revision == "c4e8a2d6f0b1"                     # re-chained at merge if another lands first
     assert risky_operations(path.read_text(encoding="utf-8")) == []   # additive only: the lint needs no exception
+    assert not hasattr(module, "ROLLBACK_SAFE_REASON")                 # so a risky step added later is caught by the lint
     assert not [p for p in lint() if p.startswith(path.name)]
     script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
     assert len(script.get_heads()) == 1
     assert script.get_revision("d9f1b3c5e7a2") is not None
+
+
+def _hide_the_row_once(monkeypatch):
+    """The first-save race: this request's read misses the row another device inserted a moment before."""
+    from sqlalchemy.ext.asyncio import AsyncSession
+    real = AsyncSession.scalar
+    state = {"hidden": False}
+
+    async def scalar(self, statement, *args, **kwargs):
+        if not state["hidden"] and "user_prefs" in str(statement):
+            state["hidden"] = True
+            return None
+        return await real(self, statement, *args, **kwargs)
+    monkeypatch.setattr(AsyncSession, "scalar", scalar)
+    return state
+
+
+def test_first_save_race_without_a_version_retries_once(monkeypatch):
+    who = _who("race")
+    assert _put(who, {"theme": "dark"}).json()["version"] == 1                # the other device's first save
+    state = _hide_the_row_once(monkeypatch)
+    saved = _put(who, {"theme": "light"})
+    assert state["hidden"] and saved.status_code == 200, saved.text
+    assert saved.json()["version"] == 2                                     # retried as an update, nothing lost or refused
+    assert client.get(BASE, headers=who["headers"]).json()["prefs"]["chart"]["theme"] == "light"
+
+
+def test_first_save_race_with_a_version_is_a_409(monkeypatch):
+    who = _who("race-v")
+    assert _put(who, {"theme": "dark"}).json()["version"] == 1
+    _hide_the_row_once(monkeypatch)
+    assert _put(who, {"theme": "light"}, version=0).status_code == 409
+    assert client.get(BASE, headers=who["headers"]).json()["prefs"]["chart"]["theme"] == "dark"

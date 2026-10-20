@@ -22,7 +22,7 @@ from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
@@ -134,6 +134,15 @@ class ExportDoc(BaseModel):
     symbol: str = Field(pattern=SYMBOL_RE)
     exchange: str = Field(default="NSE", pattern=EXCHANGE_RE)
     drawings: List[Drawing] = Field(max_length=MAX_PER_SYMBOL)
+    # UI2-4a1: the timeframe each drawing was made on, in the same order (optional; a document without it imports as
+    # before, with no timeframe recorded).
+    timeframes: Optional[List[Optional[Timeframe]]] = Field(default=None, max_length=MAX_PER_SYMBOL)
+
+    @model_validator(mode="after")
+    def _one_timeframe_per_drawing(self) -> "ExportDoc":
+        if self.timeframes is not None and len(self.timeframes) != len(self.drawings):
+            raise ValueError("timeframes needs one entry (or null) per drawing")
+        return self
 
 
 router = APIRouter(prefix="/api/charts/drawings", tags=["charts"])
@@ -199,15 +208,18 @@ async def delete_all_drawings(symbol: str, exchange: str = "NSE", confirm: bool 
     removes nothing. Another user's drawings are never touched."""
     if not confirm:
         raise HTTPException(status_code=400, detail="Deleting all drawings of a symbol needs confirm=true")
-    rows = list(await session.scalars(select(ChartDrawingRecord).where(
-        ChartDrawingRecord.user_id == user.id, ChartDrawingRecord.tenant_id == user.tenant_id, ChartDrawingRecord.symbol == _norm(symbol),
-        ChartDrawingRecord.exchange == exchange.strip().upper(), ChartDrawingRecord.deleted_at.is_(None))))
+    mine = (ChartDrawingRecord.user_id == user.id, ChartDrawingRecord.tenant_id == user.tenant_id,
+            ChartDrawingRecord.symbol == _norm(symbol), ChartDrawingRecord.exchange == exchange.strip().upper(),
+            ChartDrawingRecord.deleted_at.is_(None))
     now = datetime.now(timezone.utc)
-    deleted = [r for r in rows if not r.locked]
-    for row in deleted:
-        row.deleted_at = row.updated_at = now
+    # One UPDATE whose WHERE re-checks `locked`, so a drawing locked a moment ago (on another device) is never deleted.
+    result = await session.execute(update(ChartDrawingRecord).where(*mine, ChartDrawingRecord.locked.is_(False))
+                                   .values(deleted_at=now, updated_at=now).returning(ChartDrawingRecord.id)
+                                   .execution_options(synchronize_session=False))
+    ids = sorted(result.scalars().all())
+    kept = int(await session.scalar(select(func.count()).select_from(ChartDrawingRecord).where(*mine)) or 0)
     await session.commit()
-    return {"deleted": len(deleted), "kept_locked": len(rows) - len(deleted), "ids": [r.id for r in deleted]}
+    return {"deleted": len(ids), "kept_locked": kept, "ids": ids}
 
 
 @router.put("/{drawing_id}")
@@ -250,7 +262,8 @@ async def delete_drawing(drawing_id: int, version: int, user: User = Depends(get
 async def export_drawings(symbol: str, exchange: str = "NSE", user: User = Depends(get_current_user),
                           session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     rows = await list_drawings(symbol, exchange, user, session)
-    return {"format": EXPORT_FORMAT, "symbol": _norm(symbol), "exchange": exchange.upper(), "drawings": [r["drawing"] for r in rows]}
+    return {"format": EXPORT_FORMAT, "symbol": _norm(symbol), "exchange": exchange.upper(), "drawings": [r["drawing"] for r in rows],
+            "timeframes": [r["timeframe"] for r in rows]}
 
 
 @router.post("/import", status_code=201)
@@ -259,7 +272,8 @@ async def import_drawings(doc: ExportDoc, user: User = Depends(get_current_user)
     symbol = _norm(doc.symbol)
     if await _count(session, user, symbol, doc.exchange) + len(doc.drawings) > MAX_PER_SYMBOL:
         raise HTTPException(status_code=409, detail=f"the import would pass {MAX_PER_SYMBOL} drawings for {symbol}")
-    rows = [_new(user, symbol, doc.exchange, d) for d in doc.drawings]
+    timeframes = doc.timeframes or [None] * len(doc.drawings)
+    rows = [_new(user, symbol, doc.exchange, d, tf) for d, tf in zip(doc.drawings, timeframes)]
     session.add_all(rows)
     await session.commit()
     return {"imported": len(rows), "ids": [r.id for r in rows]}

@@ -130,11 +130,17 @@ def _stored_items(row: WatchlistRecord) -> List[Dict[str, str]]:
 
 
 def items_from_symbols(symbols: Iterable[str], previous: Iterable[Mapping[str, str]] = ()) -> List[Dict[str, str]]:
-    """Items for a plain symbol list: a symbol the list already held keeps its exchange, a new one is on NSE."""
-    known: Dict[str, str] = {}
+    """Items for a plain symbol list, in its order: a symbol the list already held keeps every row it had (RELIANCE on
+    NSE and on BSE stays two rows), a new symbol is one row on NSE."""
+    known: Dict[str, List[Dict[str, str]]] = {}
     for item in previous:
-        known.setdefault(item["symbol"], item["exchange"])
-    return [{"symbol": s, "exchange": known.get(s, DEFAULT_EXCHANGE)} for s in symbols]
+        rows = known.setdefault(item["symbol"], [])
+        if item["exchange"] not in {r["exchange"] for r in rows}:
+            rows.append({"symbol": item["symbol"], "exchange": item["exchange"]})
+    out: List[Dict[str, str]] = []
+    for symbol in dict.fromkeys(symbols):
+        out.extend(known.get(symbol) or [{"symbol": symbol, "exchange": DEFAULT_EXCHANGE}])
+    return out
 
 
 def items_of(row: WatchlistRecord) -> List[Dict[str, str]]:
@@ -149,6 +155,9 @@ def items_of(row: WatchlistRecord) -> List[Dict[str, str]]:
 
 
 def as_dict(row: WatchlistRecord) -> Dict[str, Any]:
+    """`count` is AMW-2's: the number of distinct symbols, always len(`symbols`) (what the Screener and the Scanner
+    load). `items` may hold more rows than that - one symbol on two exchanges is two rows - so a UI counting rows uses
+    len(`items`)."""
     symbols = symbols_of(row)
     return {"id": row.id, "name": row.name, "symbols": symbols, "count": len(symbols), "items": items_of(row),
             "position": row.position, "version": row.version or 1,

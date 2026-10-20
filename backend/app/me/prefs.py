@@ -89,8 +89,8 @@ def stored_value(namespace: str, raw: Optional[str]) -> Dict[str, Any]:
         return defaults(namespace)
 
 
-def _own(user: User):
-    return (UserPrefsRecord.tenant_id == user.tenant_id, UserPrefsRecord.user_id == user.id)
+def _own(tenant_id: int, user_id: int):
+    return (UserPrefsRecord.tenant_id == tenant_id, UserPrefsRecord.user_id == user_id)
 
 
 async def _body(request: Request) -> bytes:
@@ -117,7 +117,7 @@ def _validate(namespace: str, raw: bytes) -> Dict[str, Any]:
 @router.get("/prefs")
 async def get_prefs(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Every namespace of the caller's own preferences, defaults filled in; version 0 = never saved."""
-    rows = {r.namespace: r for r in await session.scalars(select(UserPrefsRecord).where(*_own(user)))}
+    rows = {r.namespace: r for r in await session.scalars(select(UserPrefsRecord).where(*_own(user.tenant_id, user.id)))}
     prefs, versions = {}, {}
     for namespace in NAMESPACES:
         row = rows.get(namespace)
@@ -134,23 +134,31 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
     if namespace not in NAMESPACES:
         raise HTTPException(status_code=404, detail="Unknown preferences namespace")
     value = _validate(namespace, await _body(request))
-    row = await session.scalar(select(UserPrefsRecord).where(*_own(user), UserPrefsRecord.namespace == namespace).with_for_update())
-    current = row.version if row else 0
-    if version is not None and version != current:
-        raise HTTPException(status_code=409, detail={"message": "the preferences changed since this edit was made", "version": current,
-                                                     "current": stored_value(namespace, row.value_json if row else None)})
-    now = datetime.now(timezone.utc)
-    if row is None:
-        row = UserPrefsRecord(tenant_id=user.tenant_id, user_id=user.id, namespace=namespace, value_json=json.dumps(value),
-                              version=1, updated_at=now)
-        session.add(row)
-    else:
-        row.value_json, row.version, row.updated_at = json.dumps(value), row.version + 1, now
-    try:
-        await session.commit()
-    except IntegrityError:          # another device saved this namespace's first value at the same moment
-        await session.rollback()
-        raise HTTPException(status_code=409, detail={"message": "the preferences changed since this edit was made"}) from None
+    tenant_id, user_id = user.tenant_id, user.id        # read once: a rollback below expires the `user` object
+    # Two attempts: when two devices save a namespace's FIRST value at the same moment, one insert loses on the unique
+    # constraint. Without a version that save simply goes again, now as an update of the row the other one made; with a
+    # version it is a 409 like any other stale edit.
+    for attempt in (1, 2):
+        row = await session.scalar(select(UserPrefsRecord).where(*_own(tenant_id, user_id), UserPrefsRecord.namespace == namespace)
+                                   .with_for_update())
+        current = row.version if row else 0
+        if version is not None and version != current:
+            raise HTTPException(status_code=409, detail={"message": "the preferences changed since this edit was made", "version": current,
+                                                         "current": stored_value(namespace, row.value_json if row else None)})
+        now = datetime.now(timezone.utc)
+        if row is None:
+            row = UserPrefsRecord(tenant_id=tenant_id, user_id=user_id, namespace=namespace, value_json=json.dumps(value),
+                                  version=1, updated_at=now)
+            session.add(row)
+        else:
+            row.value_json, row.version, row.updated_at = json.dumps(value), row.version + 1, now
+        try:
+            await session.commit()
+            break
+        except IntegrityError:
+            await session.rollback()
+            if version is not None or attempt == 2:
+                raise HTTPException(status_code=409, detail={"message": "the preferences changed since this edit was made"}) from None
     return {"namespace": namespace, "value": value, "version": row.version}
 
 

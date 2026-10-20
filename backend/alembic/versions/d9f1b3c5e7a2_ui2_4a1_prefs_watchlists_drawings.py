@@ -23,8 +23,6 @@ depends_on: Union[str, Sequence[str], None] = None
 # release never reads the new table or columns; its watchlist inserts get version 1 from the server default; a list it
 # saves rewrites symbols_json only, and the new code rebuilds the rows from symbols_json when the two disagree.
 ROLLBACK_SAFE = True
-ROLLBACK_SAFE_REASON = ("one new table, nullable columns and a NOT NULL column with a server default; the previous release "
-                        "neither reads nor needs them, and its inserts fill version from the default")
 
 
 def upgrade() -> None:

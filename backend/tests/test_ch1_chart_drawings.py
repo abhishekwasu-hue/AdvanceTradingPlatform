@@ -134,3 +134,46 @@ def test_delete_all_is_scoped_to_the_user_symbol_and_exchange_and_needs_confirm(
     # another user's "delete all" on the same symbol leaves mine alone
     assert client.delete("/api/charts/drawings?symbol=INFY&confirm=true", headers=other_org).json()["deleted"] == 1
     assert [d["id"] for d in client.get("/api/charts/drawings?symbol=INFY", headers=me).json()] == [locked]
+
+
+def test_delete_all_never_deletes_a_drawing_locked_just_before():
+    """The soft-delete is one UPDATE that re-checks `locked`: a lock made on another device after this tab listed the
+    drawings (here: written straight to the database) is honoured."""
+    import asyncio
+
+    from app.db.models import ChartDrawingRecord
+    from tests.test_auth_api import _session_factory
+
+    me, _ = _owner("ui24a1-race@example.com")
+    ids = [client.post("/api/charts/drawings", json={"symbol": "SBIN", "drawing": _trend()}, headers=me).json()["id"] for _ in range(2)]
+
+    async def lock_elsewhere():
+        async with _session_factory() as session:
+            (await session.get(ChartDrawingRecord, ids[1])).locked = True
+            await session.commit()
+    asyncio.run(lock_elsewhere())
+    out = client.delete("/api/charts/drawings?symbol=SBIN&confirm=true", headers=me).json()
+    assert out == {"deleted": 1, "kept_locked": 1, "ids": [ids[0]]}
+    listed = client.get("/api/charts/drawings?symbol=SBIN", headers=me).json()
+    assert [(d["id"], d["locked"]) for d in listed] == [(ids[1], True)]
+
+
+def test_export_import_carries_the_timeframe():
+    me, _ = _owner("ui24a1-io@example.com")
+    for tf in ("5min", None, "week"):
+        body = {"symbol": "HDFCBANK", "drawing": _trend(), **({"timeframe": tf} if tf else {})}
+        assert client.post("/api/charts/drawings", json=body, headers=me).status_code == 201
+    doc = client.get("/api/charts/drawings/export?symbol=HDFCBANK", headers=me).json()
+    assert doc["timeframes"] == ["5min", None, "week"] and len(doc["drawings"]) == 3
+    doc["symbol"] = "ICICIBANK"
+    assert client.post("/api/charts/drawings/import", json=doc, headers=me).status_code == 201
+    assert [d["timeframe"] for d in client.get("/api/charts/drawings?symbol=ICICIBANK", headers=me).json()] == ["5min", None, "week"]
+    # a document without timeframes (made before UI2-4a1) imports as before
+    old = {k: v for k, v in doc.items() if k != "timeframes"} | {"symbol": "AXISBANK"}
+    assert client.post("/api/charts/drawings/import", json=old, headers=me).status_code == 201
+    assert {d["timeframe"] for d in client.get("/api/charts/drawings?symbol=AXISBANK", headers=me).json()} == {None}
+    # one timeframe per drawing, from the shared list
+    assert client.post("/api/charts/drawings/import", json={**doc, "symbol": "KOTAKBANK", "timeframes": ["5min"]}, headers=me).status_code == 422
+    assert client.post("/api/charts/drawings/import", json={**doc, "symbol": "KOTAKBANK", "timeframes": ["1h", None, None]},
+                       headers=me).status_code == 422
+    assert client.get("/api/charts/drawings?symbol=KOTAKBANK", headers=me).json() == []

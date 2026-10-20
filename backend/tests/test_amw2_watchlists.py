@@ -362,6 +362,21 @@ def test_old_clients_keep_working():
     assert client.put(f"{BASE}/{old['id']}", headers=who["headers"], json={"name": "Old", "symbols": ["NIFTY 50"]}).json()["symbols"] == ["NIFTY", "50"]
 
 
+def test_an_old_client_save_keeps_every_exchange_of_a_symbol_and_count_is_distinct_symbols():
+    who = _owner("two-exchanges")
+    made = _items(who, "Dual", [{"symbol": "RELIANCE", "exchange": "NSE"}, {"symbol": "INFY"},
+                                {"symbol": "RELIANCE", "exchange": "BSE"}]).json()
+    # `count` is AMW-2's: distinct symbols (= len(symbols)); `items` holds one row per symbol and exchange
+    assert made["count"] == len(made["symbols"]) == 2 and len(made["items"]) == 3
+    saved = client.put(f"{BASE}/{made['id']}", headers=who["headers"], json={"name": "Dual", "symbols": ["reliance", "tcs"]})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["items"] == [{"symbol": "RELIANCE", "exchange": "NSE"}, {"symbol": "RELIANCE", "exchange": "BSE"},
+                                     {"symbol": "TCS", "exchange": "NSE"}]                # INFY dropped, BSE row kept
+    assert saved.json()["symbols"] == ["RELIANCE", "TCS"] and saved.json()["count"] == 2
+    # read back unchanged (items_json and symbols_json agree)
+    assert client.get(BASE, headers=who["headers"]).json()[0]["items"] == saved.json()["items"]
+
+
 def test_a_list_changed_by_an_older_release_is_read_from_its_symbols():
     """An older release (a code-only rollback) rewrites `symbols_json` only; the rows follow it, keeping exchanges."""
     who = _owner("rollback")

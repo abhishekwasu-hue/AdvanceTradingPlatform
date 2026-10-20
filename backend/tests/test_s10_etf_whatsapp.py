@@ -95,6 +95,10 @@ def seeded():
         async def go():
             async with _session_factory() as session:
                 await session.execute(delete(MdCandleRecord).where(MdCandleRecord.source == SOURCE))
+                # Other tests seed the same index key; their rows (a higher version) would replace this test's closes
+                # on the days they overlap, so the key's daily rows are cleared too (as test_n2_context_panel does).
+                await session.execute(delete(MdCandleRecord).where(MdCandleRecord.instrument_key == "NSE_INDEX:NIFTY50",
+                                                                   MdCandleRecord.timeframe == "day"))
                 await session.execute(delete(SecurityRecord).where(SecurityRecord.source == SOURCE))
                 await session.commit()
         _run(go())

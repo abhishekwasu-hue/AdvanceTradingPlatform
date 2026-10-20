@@ -254,14 +254,16 @@ async def cached_quote(record_id: int, exchange: str, symbol: str) -> Optional[D
         return None
 
 
-async def store_quote(record_id: int, exchange: str, symbol: str, body: Dict[str, Any]) -> None:
+async def store_quote(record_id: int, exchange: str, symbol: str, body: Dict[str, Any], ttl: Optional[int] = None) -> None:
+    """`ttl` (seconds, default QUOTE_CACHE_SECONDS): the watchlist's batch rows are kept a little longer (UI2-4a2-pre)."""
     from app.core.rate_limit import redis_backed
     key = _quote_key(record_id, exchange, symbol)
     raw = json.dumps(body, default=str)
-    _LOCAL_QUOTES[key] = (time.monotonic() + QUOTE_CACHE_SECONDS, raw)
+    seconds = QUOTE_CACHE_SECONDS if ttl is None else ttl
+    _LOCAL_QUOTES[key] = (time.monotonic() + seconds, raw)
     if redis_backed():
         from app.cache.client import cache_set
-        await cache_set(key, raw, QUOTE_CACHE_SECONDS)
+        await cache_set(key, raw, seconds)
 
 
 async def claim_fetch(record_id: int, exchange: str, symbol: str) -> Optional[str]:

@@ -326,11 +326,22 @@ class DhanBroker(BrokerInterface):
                      oi=float(entry["oi"]) if entry.get("oi") not in (None, "") else None,
                      bid=float(buy["price"]) if buy.get("price") not in (None, "") else None, ask=float(sell["price"]) if sell.get("price") not in (None, "") else None,
                      bid_qty=float(buy["quantity"]) if buy.get("quantity") not in (None, "") else None, ask_qty=float(sell["quantity"]) if sell.get("quantity") not in (None, "") else None,
-                     timestamp=_parse_time(entry.get("last_trade_time")))
+                     timestamp=_parse_time(entry.get("last_trade_time")),
+                     prev_close=_prev_close(entry.get("last_price"), entry.get("net_change")))
+
+    multi_quote = True
+
+    async def get_quotes_batch(self, items):
+        """UI2-4a2-pre: one `/marketfeed/quote` call (several segments, up to QUOTE_BATCH instruments); a symbol the
+        master does not know is left out."""
+        if len(items) > QUOTE_BATCH:
+            return None
+        return await self._quotes_batch_by_keys(items)
 
     async def _quotes(self, keys: List[str]) -> Dict[str, Quote]:
         by_segment: Dict[str, List[int]] = {}
-        back: Dict[Tuple[str, str], str] = {}
+        # UI2-4a2-pre review: two keys may name one instrument (an index and its alias): each gets the quote
+        back: Dict[Tuple[str, str], List[str]] = {}
         unresolved: List[BrokerAPIError] = []
         for key in keys:
             exchange, plain = (key.split(":", 1) if ":" in key else ("NSE", key))
@@ -342,8 +353,9 @@ class DhanBroker(BrokerInterface):
                 logger.warning("Dhan quote: %s", exc)
                 unresolved.append(exc)
                 continue
-            by_segment.setdefault(segment, []).append(int(security_id))
-            back[(segment, str(security_id))] = key
+            if (segment, str(security_id)) not in back:
+                by_segment.setdefault(segment, []).append(int(security_id))
+            back.setdefault((segment, str(security_id)), []).append(key)
         if unresolved and not by_segment:
             raise unresolved[0]                       # nothing resolved: the error, as before
         out: Dict[str, Quote] = {}
@@ -364,13 +376,12 @@ class DhanBroker(BrokerInterface):
             out.update(await self._quote_call(pending, back))
         return out
 
-    async def _quote_call(self, payload: Dict[str, List[int]], back: Dict[Tuple[str, str], str]) -> Dict[str, Quote]:
+    async def _quote_call(self, payload: Dict[str, List[int]], back: Dict[Tuple[str, str], List[str]]) -> Dict[str, Quote]:
         body = await self._request("POST", "/marketfeed/quote", json_body=payload) or {}
         out: Dict[str, Quote] = {}
         for segment, entries in (body.get("data") or {}).items():
             for security_id, entry in (entries or {}).items():
-                key = back.get((segment, str(security_id)))
-                if key is not None:
+                for key in back.get((segment, str(security_id))) or []:
                     out[key] = self._quote_from(entry or {}, key)
         return out
 
@@ -549,3 +560,14 @@ class DhanBroker(BrokerInterface):
         available = f("availabelBalance", "availableBalance")       # Dhan's own spelling first
         used = f("utilizedAmount")
         return MarginInfo(available_cash=available, used_margin=used, available_margin=available, total_margin=f("sodLimit") or (available + used))
+
+
+def _prev_close(ltp, net_change) -> Optional[float]:
+    """The previous session's close from Dhan's `net_change` (last price minus the previous close); None when absent."""
+    try:
+        if ltp in (None, "") or net_change in (None, ""):
+            return None
+        value = float(ltp) - float(net_change)
+    except (TypeError, ValueError):
+        return None
+    return value if value > 0 else None

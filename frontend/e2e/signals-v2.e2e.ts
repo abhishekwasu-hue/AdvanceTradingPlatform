@@ -280,6 +280,14 @@ test.describe("Signals v2 1440 desktop", () => {
     await expectWholeTable(page);
   });
 
+  test("at 1440 with an always-visible scrollbar (17 px) a row of six-digit prices still fits", async ({ page }) => {
+    // UI2-3 review note: headless Chromium hides scrollbars, so 17 px of padding stands in for a classic one.
+    await open(page, "/signals", "light", V2, { edit: (today) => Object.assign(today[0], { entry: 135000, stop: 134250.5, target: 136500 }) });
+    await page.addStyleTag({ content: "html { padding-right: 17px !important; }" });
+    await expect(page.locator("[data-row='action:901']")).toContainText("1,36,500.00");
+    await expectWholeTable(page);
+  });
+
   test("the source filter and the symbol filter ask the feed again", async ({ page }) => {
     await open(page, "/signals", "light");
     await page.getByRole("radio", { name: "Scans" }).click();

@@ -163,7 +163,9 @@ def requote_check(direction: str, proposal_price: float, current_price: float, *
     """("ok" | "requote" | "expire", why). Pure: the rule the approval applies to the price it sees at the moment of
     Approve. A price through the stop or target 1 has no trade left in it ("expire"); a move beyond the stricter of the
     percent and tick limits is re-proposed at the new price ("requote"); anything else is placed at the new price."""
-    if current_price is None or current_price <= 0 or proposal_price is None or proposal_price <= 0:
+    # A NaN compares false with everything, so it would pass every check below as "ok": not finite is no price.
+    if (current_price is None or proposal_price is None or not math.isfinite(current_price) or not math.isfinite(proposal_price)
+            or current_price <= 0 or proposal_price <= 0):
         return "expire", "No valid price to re-quote the entry"
     long = (direction or "").upper() == "LONG"
     if stop_loss is not None and ((long and current_price <= stop_loss) or (not long and current_price >= stop_loss)):
@@ -418,6 +420,10 @@ async def _close_unplaced(session: AsyncSession, action: AiActionRecord, user: U
                                         holding=str(evidence.get("holding") or "INTRADAY"), user_id=owner_id, now=now,
                                         requotes=requotes + 1, requoted_from=action.id, exchange=str(evidence.get("exchange") or "NSE"),
                                         ticket=evidence.get("ticket"))
+        except InvalidEntryPrice:
+            # UI2-3 review: a subclass of EntriesPaused, but the reason is the price, not a pause.
+            fresh = None
+            result = f"Not placed: {why}. No re-quote: the current price is not usable"
         except EntriesPaused:
             fresh = None
             result = f"Not placed: {why}. No re-quote: PAPER entries are paused"

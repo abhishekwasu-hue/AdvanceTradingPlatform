@@ -244,8 +244,9 @@ function Filters({ source, symbol, open, onToggle, onSource, onSymbol, updated }
 function SignalTable({ items, tab, now, selectedId, onSelect }: {
   items: SignalFeedItem[]; tab: FeedTab; now: Date; selectedId: string | null; onSelect: (id: string) => void;
 }) {
-  // Every column but Setup sizes to its content (`w-px` + no wrapping); Setup takes the rest and wraps (down to its
-  // longest word). The price columns are at least 80 px of tabular figures and grow for a longer price ("1,35,000.00")
+  // Every column but Setup sizes to its content (`w-px` + no wrapping); Setup takes the rest and wraps, inside a word
+  // only when it must (`overflow-wrap: anywhere` - a long word would otherwise set its minimum and push Status past the
+  // edge at 1440 px with an always-visible scrollbar and six-digit prices). The price columns are at least 80 px of tabular figures and grow for a longer price ("1,35,000.00")
   // instead of clipping it. History shows its date above the time, so the Time column stays as narrow as on Today.
   const th = "w-px whitespace-nowrap px-space-3 py-space-2 font-medium";
   const num = "w-px whitespace-nowrap px-space-1 text-right font-tabular";
@@ -279,8 +280,8 @@ function SignalTable({ items, tab, now, selectedId, onSelect }: {
                   </div>
                 </td>
                 <td className="px-space-3 py-space-3">
-                  <span className="block break-words text-fg">{item.setup}</span>
-                  <span className="block break-words text-t12 text-fg-muted">{sourceCaption(item)}</span>
+                  <span className="block text-fg [overflow-wrap:anywhere]">{item.setup}</span>
+                  <span className="block text-t12 text-fg-muted [overflow-wrap:anywhere]">{sourceCaption(item)}</span>
                 </td>
                 {[item.entry, item.stop, item.target].map((v, i) => (
                   <td key={i} className={`${num} py-space-3 text-fg`}><span className={price}>{formatPrice(v)}</span></td>

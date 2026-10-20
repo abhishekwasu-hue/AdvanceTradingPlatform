@@ -572,7 +572,8 @@ export const api = {
   updateRiskSettings: (config: RiskConfig) =>
     request<RiskConfig>("/risk-settings", { method: "PUT", body: JSON.stringify(config) }),
 
-  getAnalyticsSummary: () => request<AnalyticsSummary>("/analytics/summary"),
+  /** `days`: only the trades closed in the last `days` days (the dashboard's 30-day win rate); open trades always count. */
+  getAnalyticsSummary: (days?: number) => request<AnalyticsSummary>(days ? `/analytics/summary?days=${days}` : "/analytics/summary"),
 
   listAuditLogs: () => request<AuditLogEntry[]>("/audit-logs"),
 

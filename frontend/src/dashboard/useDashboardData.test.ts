@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import hookSource from "./useDashboardData.ts?raw";
 import { REFRESH_MS, dataOf, startPolling, stripDelay } from "./useDashboardData";
 import type { MarketStrip } from "./types";
+import { WIN_RATE_DAYS } from "./model";
 
 /** UI2-2: the dashboard's reads - refresh timing, keeping the last good data, skipping a hidden tab, read-only. */
 
@@ -68,7 +69,22 @@ describe("UI2-2 strip timing and data", () => {
     vi.unstubAllGlobals();
     const calls = [...hookSource.matchAll(/api\.(\w+)/g)].map((m) => m[1]);
     expect(hookSource).toContain('api.aiActions("PROPOSED")');            // pending approvals: their own read
+    expect(hookSource).toContain("api.getAnalyticsSummary(WIN_RATE_DAYS)"); // the Today win rate: 30 days, not all time
     expect(new Set(calls)).toEqual(new Set(["marketStrip", "oiBanners", "portfolioExposure", "listPositions", "aiActions", "listDeployments",
       "paperRisk", "listNotifications", "systemStatus", "getAnalyticsSummary", "listAlertChannels"]));
+  });
+});
+
+describe("UI2-2 the 30-day win rate", () => {
+  it("asks GET /analytics/summary for the last 30 days, and the default call stays all time", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({}), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    await api.getAnalyticsSummary(WIN_RATE_DAYS);
+    await api.getAnalyticsSummary();
+    const urls = fetchMock.mock.calls.map((c) => (c as unknown as [string])[0]);
+    expect(WIN_RATE_DAYS).toBe(30);
+    expect(urls[0]).toMatch(/\/analytics\/summary\?days=30$/);
+    expect(urls[1]).toMatch(/\/analytics\/summary$/);
+    vi.unstubAllGlobals();
   });
 });

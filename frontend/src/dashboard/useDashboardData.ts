@@ -4,6 +4,7 @@ import type { OiBannerResponse } from "../oi/types";
 import type {
   AiAction, AlertChannel, AnalyticsSummary, Deployment, NotificationEntry, PaperRiskStatus, PortfolioExposure, SystemStatus, TradeRecord,
 } from "../types";
+import { WIN_RATE_DAYS } from "./model";
 import type { MarketStrip } from "./types";
 
 /**
@@ -110,6 +111,7 @@ export interface DashboardData {
 const every = (ms: number) => () => ms;
 const once = () => 24 * 60 * 60 * 1000;
 /** Risk by default answers 404 while its flag is off: no limits to show, not a failure. */
+const winRateSummary = () => api.getAnalyticsSummary(WIN_RATE_DAYS);
 const riskOrNone = () => api.paperRisk().catch((e: unknown) => {
   if (typeof e === "object" && e !== null && (e as { status?: number }).status === 404) return null;
   throw e;
@@ -127,7 +129,7 @@ export function useDashboardData(enabled: boolean): DashboardData {
   const [risk, r7] = usePolled(riskOrNone, every(REFRESH_MS), enabled);
   const [unread, r8] = usePolled(() => api.listNotifications(true), every(REFRESH_MS), enabled);
   const [status, r9] = usePolled(api.systemStatus, every(REFRESH_MS), enabled);
-  const [summary, r10] = usePolled(api.getAnalyticsSummary, every(REFRESH_MS), enabled);
+  const [summary, r10] = usePolled(winRateSummary, every(REFRESH_MS), enabled);
   const [channels, r11] = usePolled(api.listAlertChannels, once, enabled);
   const reload = useCallback(() => { for (const r of [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12]) r(); },
     [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12]);

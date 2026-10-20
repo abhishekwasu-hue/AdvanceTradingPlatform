@@ -88,9 +88,10 @@ def _parse_dt(value: Any) -> Optional[datetime]:
 
 # --- classifying a request ----------------------------------------------------------------------
 
-_SEG = r"[^/]+"
-# Anchored on the normalised, decoded path the request is actually sent to (dot segments resolved, percent escapes
-# decoded): a crafted instrument key can add segments but can never make another endpoint look like market data.
+_SEG = r"[A-Za-z0-9_|&.:\- ]+"
+API_HOST = "api.upstox.com"
+# Anchored on the raw (undecoded) path the request is actually sent to, dot segments resolved: a crafted instrument key
+# can neither add segments nor smuggle escapes, so another endpoint can never look like market data.
 _CLASS_PATTERNS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
     (WEBSOCKET, re.compile(r"^/v[23]/feed/market-data-feed/authorize$")),
     (INTRADAY, re.compile(rf"^/v2/historical-candle/intraday/{_SEG}/{_SEG}$")),
@@ -102,18 +103,25 @@ _CLASS_PATTERNS: Tuple[Tuple[str, "re.Pattern[str]"], ...] = (
 )
 
 
-def classify(method: str, path: str) -> Optional[str]:
+def classify(method: str, target: Any) -> Optional[str]:
     """The endpoint class of one Upstox request, or None (not market data, or not a GET - never the analytics token).
-    `path` is a URL path, or a full URL; it is normalised with httpx (dot segments resolved, escapes decoded) first."""
+    `target` is an httpx.URL, a full URL or a path (taken relative to Upstox's API root). Only https on api.upstox.com
+    counts, and the raw path is read without decoding: any percent escape other than `%20` (the encoded space inside
+    index keys such as "NSE_INDEX|Nifty 50") or any `..` means no class, so that request goes with the daily token."""
     if (method or "").upper() != "GET":
         return None
     try:
-        url = httpx.URL(path or "")
-        p = (url if url.is_absolute_url else httpx.URL(API_ROOT).join(path or "")).path
-    except Exception:  # noqa: BLE001 - an unparseable path is never market data
+        url = target if isinstance(target, httpx.URL) else httpx.URL(target or "")
+        if not url.is_absolute_url:
+            url = httpx.URL(API_ROOT).join(str(target or ""))
+        if url.scheme != "https" or url.host != API_HOST:
+            return None
+        raw = url.raw_path.split(b"?", 1)[0].decode("ascii")
+    except Exception:  # noqa: BLE001 - an unparseable or non-ASCII path is never market data
         return None
-    if any(seg in (".", "..") for seg in p.split("/")):
+    if "%" in raw.replace("%20", "") or ".." in raw:
         return None
+    p = raw.replace("%20", " ")
     for cls, pattern in _CLASS_PATTERNS:
         if pattern.match(p):
             return cls
@@ -209,7 +217,7 @@ def _next_weekday(today: date, weekday: int) -> date:
 def probe_requests(today: date) -> Dict[str, Tuple[str, Dict[str, str]]]:
     """One cheap GET per REST class (the smallest range) against PROBE_INSTRUMENT. The websocket's authorize call is
     issued separately, then a bare connect/close."""
-    key = quote(PROBE_INSTRUMENT, safe="")
+    key = quote(PROBE_INSTRUMENT, safe="|")         # the same wire form the adapter sends ("|" as is, space as %20)
     to_day = today - timedelta(days=1)
     from_day = to_day - timedelta(days=4)            # a few calendar days so a weekend still returns a bar
     expiry = _next_weekday(today, 1)                 # NIFTY weekly options expire on Tuesdays

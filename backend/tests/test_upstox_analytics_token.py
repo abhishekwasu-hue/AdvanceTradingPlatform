@@ -483,3 +483,48 @@ def test_i1_probe_connects_only_to_an_upstox_wss_feed():
     good = "wss://wsfeeder-api.upstox.com/market-data-feeder/v3/upstox-developer-api/feeds?code=1"
     assert asyncio.run(ua.probe(ANALYTICS, classes=[ua.WEBSOCKET], client=feed(good), ws_connector=connector, now=NOW))[ua.WEBSOCKET]["status"] == ua.WORKS
     assert connected == [good]
+
+
+# --- re-check hardening (R1-R3) ---------------------------------------------------------------------
+
+def test_r1_instrument_key_ascii_allowlist():
+    from app.brokers.exceptions import BrokerAPIError
+    from app.brokers.upstox import safe_instrument_key
+    real = ("NSE_EQ|INE002A01018", "NSE_INDEX|Nifty 50", "NSE_INDEX|Nifty Bank", "NSE_INDEX|NIFTY MID SELECT", "NSE_FO|56789",
+            "BSE_EQ|INE467B01029", "MCX_FO|432293", "NSE_EQ|M&M", "NSE_EQ|BAJAJ-AUTO", "BSE_INDEX|SENSEX", "1minute", "day")
+    for key in real:
+        assert safe_instrument_key(key) == key
+    bad = ("NSE_EQ|X\uff0e\uff0e\uff0fportfolio", "NSE_EQ|X\u2024\u2024", "NSE_EQ|X\u200bY", "NSE_EQ|X;Y", "NSE_EQ|X..Y",
+           "NSE_EQ|X/Y", "NSE_EQ|X%2F", "NSE_EQ|X?a", "NSE_EQ|X#a", " NSE_EQ|X", "NSE_EQ|X ", "NSE_EQ|X  Y", "NSE_EQ|X\tY",
+           "NSE_EQ|\u00c4", "")
+    for key in bad:
+        with pytest.raises(BrokerAPIError):
+            safe_instrument_key(key)
+    adapter, used = _recording_adapter(_creds({c: ua.WORKS for c in ua.CLASSES}, datetime(2099, 1, 1, tzinfo=timezone.utc)))
+    for key in bad[:4]:
+        with pytest.raises(BrokerAPIError):
+            asyncio.run(adapter.get_intraday_candles(key, "NSE", "1min"))
+    assert used == []
+
+
+def test_r2_raw_path_with_escapes_gets_no_analytics_class():
+    assert ua.classify("GET", "/v2/historical-candle/intraday/A/B%3F%2F..%2F..%2Fportfolio%2Fshort-term-positions") is None
+    assert ua.classify("GET", "/v2/historical-candle/intraday/NSE_EQ%7CX/1minute") is None
+    # The encoded space inside an index key is the one escape that stays market data.
+    assert ua.classify("GET", "/v2/historical-candle/NSE_INDEX|Nifty%2050/day/2026-10-19/2026-10-15") == ua.HISTORICAL
+    creds = _creds({c: ua.WORKS for c in ua.CLASSES}, datetime(2099, 1, 1, tzinfo=timezone.utc))
+    adapter, used = _recording_adapter(creds)
+    asyncio.run(adapter._request("GET", "/historical-candle/intraday/A/B%3F%2F..%2F..%2Fportfolio%2Fshort-term-positions"))
+    assert used[-1][2] == DAILY
+    asyncio.run(adapter._request("GET", "/historical-candle/NSE_INDEX|Nifty 50/day/2026-10-19/2026-10-15"))
+    assert used[-1][2] == ANALYTICS
+
+
+def test_r3_only_the_upstox_api_host_gets_a_class():
+    assert ua.classify("GET", "https://evil.example/v2/market-quote/ltp") is None
+    assert ua.classify("GET", "http://api.upstox.com/v2/market-quote/ltp") is None
+    assert ua.classify("GET", "https://api.upstox.com/v2/market-quote/ltp") == ua.QUOTES
+    adapter, used = _recording_adapter(_creds({c: ua.WORKS for c in ua.CLASSES}, datetime(2099, 1, 1, tzinfo=timezone.utc)))
+    assert adapter.analytics_class_for("GET", "https://evil.example/v2/market-quote/ltp") is None
+    assert adapter.analytics_class_for("GET", "https://api.upstox.com.evil.example/v2/market-quote/ltp") is None
+    assert adapter.analytics_class_for("GET", "/market-quote/ltp") == ua.QUOTES

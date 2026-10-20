@@ -1,6 +1,7 @@
 import gzip
 import logging
 import json
+import re
 import time
 from datetime import date, datetime, timezone
 from zoneinfo import ZoneInfo
@@ -63,16 +64,17 @@ _INDEX_ALIASES = {
 }
 
 
-_UNSAFE_KEY_CHARS = frozenset("/?#%\\")
+# ASCII allowlist for anything placed in an Upstox URL path: letters, digits, `_ | & . : -` and single inner spaces
+# (Upstox index keys: "NSE_INDEX|Nifty 50"); no leading/trailing space and no `..` anywhere.
+_SAFE_KEY = re.compile(r"[A-Za-z0-9_|&.:-]+(?: [A-Za-z0-9_|&.:-]+)*")
 
 
 def safe_instrument_key(key: str) -> str:
-    """An instrument key that is safe to put in an Upstox URL path: no path, query, fragment or escape characters, no
-    `..`, no whitespace other than the single inner spaces Upstox index keys carry ("NSE_INDEX|Nifty 50"). Anything else
-    is refused before a request is built, so a crafted symbol can never steer a GET to another endpoint with either token."""
-    text = key or ""
-    if (not text or text != text.strip() or ".." in text or any(c in _UNSAFE_KEY_CHARS for c in text)
-            or any(c.isspace() and c != " " for c in text) or "  " in text or any(ord(c) < 32 or ord(c) == 127 for c in text)):
+    """An instrument key (or interval) that is safe to put in an Upstox URL path, by ASCII allowlist. Anything else -
+    path, query or escape characters, fullwidth or look-alike dots and slashes, zero-width or other whitespace - is
+    refused before a request is built, so a crafted symbol can never steer a GET to another endpoint with either token."""
+    text = key if isinstance(key, str) else ""
+    if not _SAFE_KEY.fullmatch(text) or ".." in text:
         raise BrokerAPIError(f"Refused an unsafe Upstox instrument key: {text[:40]!r}")
     return text
 
@@ -144,9 +146,11 @@ class UpstoxBroker(BrokerInterface):
     def analytics_class_for(self, method: str, path: str, now: Optional[datetime] = None) -> Optional[str]:
         """The endpoint class this request may send with the analytics token, or None (use the daily token)."""
         try:
-            target = self._client.build_request(method, path).url.path     # what goes on the wire, dot segments resolved
+            target = self._client.build_request(method, path).url          # what goes on the wire, dot segments resolved
         except Exception:  # noqa: BLE001 - an unbuildable URL never gets the analytics token
             return None
+        if target.scheme != "https" or target.host != httpx.URL(self.BASE_URL).host:
+            return None                                                     # only Upstox's own API host ever sees it
         cls = upstox_analytics.classify(method, target)
         if cls is None or not self._analytics_token or cls not in self._analytics_classes:
             return None

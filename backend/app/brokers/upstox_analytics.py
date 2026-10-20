@@ -63,13 +63,8 @@ PROBE_TIMEOUT_SECONDS = 8.0
 PROBE_DEADLINE_SECONDS = 20.0                 # the whole probe; classes still running then are left `unverified`
 REPROBE_COOLDOWN_SECONDS = 600
 
-# For UI2-6 (the Connect flow). UI2-5's broker field map (BROKER_FIELD_SPECS / GET /api/broker/specs) absorbs this entry
-# into Upstox's field list; until then it is the one place the label, hint and kind are spelt.
-FIELD_SPEC: Dict[str, Any] = {
-    "name": FIELD, "label": "Analytics token (read-only, valid one year)",
-    "hint": "Generate it in Upstox Developer Apps → Analytics", "kind": "secret", "required": False,
-}
-UPSTOX_FIELD_SPECS: Tuple[Dict[str, Any], ...] = (FIELD_SPEC,)
+# The analytics token's label, hint and kind for the Connect flow live in Upstox's entry of the broker field map
+# (app/brokers/field_specs.py, UI2-5).
 
 
 def _utcnow() -> datetime:

@@ -21,6 +21,7 @@ from app.notifications.service import notify
 from app.core.enums import NotificationType
 from app.secrets_store.encryption import encrypt_text
 from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
+from tests.broker_fakes import KITE_KEY, KITE_SECRET, UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _session_factory, client
 from tests.test_bt1b_guard_all_reads import _Feed, _byob, _flags, _member, _route
 from tests.test_phase_aa_market_data_api import _store_credentials
@@ -188,7 +189,7 @@ def test_login_url_delete_and_disconnect_are_for_the_holder_or_an_owner_with_the
     assert client.delete("/api/broker/zerodha/credentials", headers=member_headers).status_code == 403
     assert _row(owner["tenant_id"], "zerodha")[0] == owner["id"]
     # The member's own connection: an owner may remove it.
-    assert client.post("/api/broker/upstox/credentials", headers=member_headers, json={"api_key": "mk", "api_secret": "ms"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=member_headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET}).status_code == 204
     assert client.delete("/api/broker/upstox/credentials", headers=owner_headers).status_code == 204
 
 
@@ -310,7 +311,7 @@ class _FakeStream:
 def _zerodha_tenant(email):
     from tests.test_trading_worker import _tenant
     t = _tenant(email, with_credentials=False)
-    client.post("/api/broker/zerodha/credentials", headers=t["headers"], json={"api_key": "k", "api_secret": "s", "access_token": "t"})
+    client.post("/api/broker/zerodha/credentials", headers=t["headers"], json={"api_key": KITE_KEY, "api_secret": KITE_SECRET, "access_token": "t"})
 
     async def mark():
         async with _session_factory() as session:

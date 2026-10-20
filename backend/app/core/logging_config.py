@@ -17,6 +17,7 @@ it, with no need to pass these ids into every individual log call by hand.
 import contextvars
 import json
 import logging
+import re
 import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -29,6 +30,36 @@ class CorrelationFilter(logging.Filter):
         for key, value in (_context.get() or {}).items():
             setattr(record, key, value)
         return True
+
+
+# UI2-5: a broker's OAuth redirect carries a one-time login code (and the signed state) in its query string. The access
+# log (uvicorn) and HTTP client logs print request URLs, so on the callback paths the query values are replaced before a
+# line is written - the code never reaches a log.
+_CALLBACK_QUERY = re.compile(r"(/api/broker/[a-z_]+/oauth/callback\?)([^\s\"']*)")
+SECRET_QUERY_LOGGERS = ("uvicorn.access", "httpx", "httpcore")
+
+
+def _redact_callback_query(text: str) -> str:
+    return _CALLBACK_QUERY.sub(lambda m: m.group(1) + "[redacted]", text)
+
+
+class CallbackQueryRedactionFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str) and "/oauth/callback?" in record.msg:
+            record.msg = _redact_callback_query(record.msg)
+        if record.args:
+            args = record.args if isinstance(record.args, tuple) else (record.args,)
+            if any("/oauth/callback?" in str(a) for a in args):
+                record.args = tuple(_redact_callback_query(str(a)) if "/oauth/callback?" in str(a) else a for a in args)
+        return True
+
+
+def install_callback_query_redaction() -> None:
+    """Idempotent: adds the filter once to each logger that prints request URLs."""
+    for name in SECRET_QUERY_LOGGERS:
+        target = logging.getLogger(name)
+        if not any(isinstance(f, CallbackQueryRedactionFilter) for f in target.filters):
+            target.addFilter(CallbackQueryRedactionFilter())
 
 
 class JsonFormatter(logging.Formatter):
@@ -57,6 +88,7 @@ def configure_logging(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    install_callback_query_redaction()
 
 
 class bind_log_context:

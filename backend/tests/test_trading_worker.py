@@ -20,6 +20,7 @@ from app.db.models import (
 from app.strategy_engine.registry import registry
 from app.workers import trading_worker as tw
 from app.workers.trading_worker import TradingWorker
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 
 pytestmark = pytest.mark.usefixtures("no_open_positions_from_earlier_tests")   # counts are per cycle (ADR-0004 sweep)
@@ -110,7 +111,7 @@ def _tenant(email: str, *, token_status="VALID", with_credentials=True) -> Dict:
     me = client.get("/api/auth/me", headers=headers).json()
     _upgrade_plan(me["tenant_id"])
     if with_credentials:
-        client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"})
+        client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"})
 
         async def mark():
             async with _session_factory() as session:

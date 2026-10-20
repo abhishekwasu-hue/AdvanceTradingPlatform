@@ -6,6 +6,7 @@ import pyotp
 
 from app.auth import mfa
 from app.db.models import Tenant, User
+from tests.broker_fakes import KITE_KEY, KITE_SECRET, UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 from tests.utils import enable_mfa
 
@@ -91,7 +92,7 @@ def test_backup_codes_work_once_and_can_be_regenerated():
 def test_live_step_up_only_when_tenant_policy_requires_it():
     headers = _headers(_register("mfa-live@example.com"))
     me = _set_tenant(headers, plan="pro")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"})
 
     async def valid_token():
         from datetime import datetime, timedelta, timezone
@@ -123,20 +124,20 @@ def test_live_step_up_only_when_tenant_policy_requires_it():
     _run(unverify())
     blocked = client.post("/api/deployments", headers=headers, json={**live, "symbol": "B"})
     assert blocked.status_code == 403 and blocked.headers.get("x-step-up") == "mfa" and "two-factor" in blocked.json()["detail"]
-    assert client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k"}).status_code == 403
+    assert client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY}).status_code == 403
     assert client.post("/api/deployments", headers=headers, json={"strategy_id": "ema_rsi_scalper_1m", "symbol": "C"}).status_code == 201  # PAPER unaffected
 
     assert client.post("/api/auth/mfa/step-up", headers=headers, json={"code": "000000"}).status_code == 401
     assert client.post("/api/auth/mfa/step-up", headers=headers, json={"code": _code(secret, step=1)}).status_code == 204
     assert client.post("/api/deployments", headers=headers, json={**live, "symbol": "B"}).status_code == 201
-    assert client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k"}).status_code == 204
+    assert client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "api_secret": KITE_SECRET}).status_code == 204
 
 
 def test_user_without_mfa_under_policy_is_told_to_enable_it():
     owner_headers = _headers(_register("mfa-policy-owner@example.com"))
     _set_tenant(owner_headers, plan="pro", require_mfa_for_live=True)
-    client.post("/api/broker/upstox/credentials", headers=owner_headers, json={"api_key": "k"})  # blocked below? no: owner has no MFA
-    blocked = client.post("/api/broker/upstox/credentials", headers=owner_headers, json={"api_key": "k"})
+    client.post("/api/broker/upstox/credentials", headers=owner_headers, json={"api_key": UPSTOX_KEY})  # blocked below? no: owner has no MFA
+    blocked = client.post("/api/broker/upstox/credentials", headers=owner_headers, json={"api_key": UPSTOX_KEY})
     assert blocked.status_code == 403 and "enable it from the Account tab" in blocked.json()["detail"]
 
 

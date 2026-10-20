@@ -3,7 +3,7 @@ import logging
 from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select, update
@@ -14,6 +14,7 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import current_session_id, ensure_live_step_up, get_current_user, require_trader
 from app.auth.scopes import require_scope
 from app.brokers.exceptions import BrokerError
+from app.brokers.field_specs import BROKER_FIELD_SPECS, SERVER_WRITTEN_FIELDS, normalise_value, public_view, validate_credentials
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
 from app.brokers import upstox_analytics
@@ -23,20 +24,28 @@ from app.brokers.token_lifecycle import (
     build_adapter,
     LOGIN_URL_BROKERS,
     OAUTH_BROKERS,
+    OAUTH_CALLBACK_BROKERS,
+    PERMANENT_KEY_BROKERS,
+    TOKEN_DAILY_EXPIRY_IST,
+    begin_oauth_login,
     build_login_url,
+    build_oauth_login_url,
     build_upstox_authorization_url,
     create_oauth_state,
     get_credential_record,
     load_credentials,
     mark_expired,
     mark_verified,
+    oauth_pending_matches,
     parse_oauth_state,
     store_access_token,
     token_is_usable,
 )
+from app.core import config as app_config
 from app.core.config import FRONTEND_URL
 from app.core.rate_limit import user_rate_limit
 from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType, UserRole
+from app.core.logging_config import install_callback_query_redaction
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.notifications.service import notify
@@ -44,6 +53,7 @@ from app.secrets_store.encryption import decrypt_text, encrypt_text
 from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
 
 logger = logging.getLogger(__name__)
+install_callback_query_redaction()      # the OAuth callbacks' one-time codes never reach an access log line
 
 router = APIRouter(prefix="/api/broker", tags=["broker"])
 
@@ -122,10 +132,17 @@ async def _probe_quietly(session: AsyncSession, record: BrokerCredentialRecord) 
         return None
 
 
+def oauth_callback_url(request: Request, path: str) -> str:
+    """The absolute callback address brokers redirect to: the BROKER_OAUTH_REDIRECT_BASE_URL setting, or (unset) the
+    address this request came in on."""
+    base = getattr(app_config, "BROKER_OAUTH_REDIRECT_BASE_URL", "") or str(request.base_url).rstrip("/")
+    return base.rstrip("/") + path
+
+
 def _callback_url(request: Request, broker_name: str) -> Optional[str]:
     if broker_name not in OAUTH_BROKERS:
         return None
-    return str(request.base_url).rstrip("/") + UPSTOX_CALLBACK_PATH
+    return oauth_callback_url(request, UPSTOX_CALLBACK_PATH)
 
 
 def _token_status_response(record: BrokerCredentialRecord, request: Request) -> BrokerTokenStatusResponse:
@@ -149,7 +166,7 @@ def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCre
     API key/secret saved yesterday. Values are trimmed (a pasted trailing space fails the broker
     login). Clearing a field means deleting the credential and storing it again."""
     fresh = {k: v.strip() if isinstance(v, str) else v for k, v in incoming.model_dump(exclude_none=True).items()}
-    fresh = {k: v for k, v in fresh.items() if v != "" and k != upstox_analytics.META}   # the metadata is server-written
+    fresh = {k: v for k, v in fresh.items() if v != "" and k not in SERVER_WRITTEN_FIELDS}   # server-written entries are dropped
     stored: dict = {}
     if existing is not None:
         try:
@@ -162,6 +179,23 @@ def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCre
         # so keeping the stale one would make every pasted code "fail" with yesterday's token).
         stored.pop("access_token", None)
     return BrokerCredentials(**{**stored, **fresh})
+
+
+def _sent_values(name: str, credentials: BrokerCredentials) -> Dict[str, Any]:
+    """The values a credentials save carries: trimmed, empty ones dropped, server-written entries dropped, each value
+    normalised as its field spec says (a TOTP secret loses its spaces)."""
+    spec = BROKER_FIELD_SPECS.get(name)
+    sent: Dict[str, Any] = {}
+    for key, value in credentials.model_dump(exclude_none=True).items():
+        if key in SERVER_WRITTEN_FIELDS:
+            continue
+        if isinstance(value, str):
+            field_spec = spec.get(key) if spec is not None else None
+            value = normalise_value(field_spec, value) if field_spec is not None else value.strip()
+            if value == "":
+                continue
+        sent[key] = value
+    return sent
 
 
 def _holder_error(record: BrokerCredentialRecord) -> str:
@@ -212,6 +246,27 @@ async def _write_if_unchanged(session: AsyncSession, record: BrokerCredentialRec
     return int(getattr(result, "rowcount", 0) or 0) == 1
 
 
+@router.get("/specs")
+async def broker_field_specs(request: Request, user: User = Depends(get_current_user)) -> Dict[str, Any]:
+    """UI2-5: the broker field map (app/brokers/field_specs.py) for the Connect flow - per broker its fields (label,
+    kind, who supplies it, format, required), how the daily login works, the read-only values to copy (the Redirect URL
+    of ATP's callback and the server's egress IP) and the daily expiry. Read-only; it never contains a stored value."""
+    server_ip = getattr(app_config, "SERVER_EGRESS_IP", "") or None
+    brokers = []
+    for name in available_brokers():
+        spec = BROKER_FIELD_SPECS[name]
+        expiry = None if name in PERMANENT_KEY_BROKERS else TOKEN_DAILY_EXPIRY_IST.get(name)
+        brokers.append({
+            **public_view(spec),
+            "daily_expiry_ist": expiry.strftime("%H:%M") if expiry else None,
+            "readonly": {
+                "redirect_url": oauth_callback_url(request, spec.oauth_callback_path) if spec.oauth_callback_path else None,
+                "server_ip": server_ip,
+            },
+        })
+    return {"brokers": brokers}
+
+
 @router.post("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
 async def store_broker_credentials(
     name: str, credentials: BrokerCredentials,
@@ -246,10 +301,21 @@ async def store_broker_credentials(
             previous_analytics = None
     # BT1b (flag on): storing over another member's row makes it yours, so nothing of theirs is kept - no stored secret
     # and above all no stored access token (their broker session): fresh secrets are required and the row starts unproven.
-    credentials = _merge_with_stored(credentials, None if taking_over else existing)
+    sent = _sent_values(name, credentials)
+    credentials = _merge_with_stored(BrokerCredentials(**sent), None if taking_over else existing)
     if taking_over and not credentials.api_key:
         raise HTTPException(status_code=400, detail=f"This {name} connection was linked by another member: enter all of your own "
                                                     "credentials (at least the API key) to replace it - nothing of theirs is kept.")
+    # UI2-5: the same field map the Connect form reads (GET /api/broker/specs) - unknown fields, values ATP fills in itself,
+    # bad formats and missing required fields are refused in plain English, without repeating any value.
+    problems = validate_credentials(name, sent, credentials.model_dump(exclude_none=True), check_required=session_fields_sent)
+    if problems:
+        spec = BROKER_FIELD_SPECS[name]
+        raise HTTPException(status_code=422, detail={
+            "message": f"The {spec.display_name} details were not saved",
+            "errors": [p.message for p in problems],
+            "fields": {p.field: p.message for p in problems if p.field},
+        })
     new_analytics = analytics_token is not None and analytics_token != previous_analytics
     if analytics_token is not None and new_analytics:
         # A new analytics token: its expiry is read now, its coverage is unverified until the probe below answers.
@@ -655,7 +721,7 @@ async def upstox_oauth_start(
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:
         raise HTTPException(status_code=400, detail="Upstox credentials need both api_key and api_secret for OAuth")
-    redirect_uri = credentials.redirect_uri or str(request.base_url).rstrip("/") + UPSTOX_CALLBACK_PATH
+    redirect_uri = credentials.redirect_uri or oauth_callback_url(request, UPSTOX_CALLBACK_PATH)
     if credentials.redirect_uri is None:
         # Remember the redirect URI we are about to use so the token exchange sends the same one.
         credentials.redirect_uri = redirect_uri
@@ -739,3 +805,171 @@ async def upstox_oauth_callback(
     await write_audit_log(session, tenant_id, user_id, "broker_authenticated", f"upstox/{label} (oauth)")
     await session.commit()
     return _frontend_redirect(broker="upstox", connected="1")
+
+
+# --- Zerodha (Kite) and Fyers OAuth callbacks (UI2-5) ---------------------------------------------
+#
+# The same daily login as the paste-the-code flow above, without the paste: with ATP's callback registered as the app's
+# Redirect URL on the broker's console, the broker sends the browser straight back here with the one-time code. The
+# signed state carries a single-use nonce (app/brokers/token_lifecycle.py) so a callback is accepted once, only for the
+# user who started that login, within ten minutes. Codes and tokens never reach a log line, an audit entry or the
+# redirect back to the app. The paste-the-code routes stay for the old Settings layout.
+
+OAUTH_BROKER_ERRORS = {"zerodha": "Kite", "fyers": "Fyers"}
+
+
+def _scrub(text: str, *secrets_: Optional[str]) -> str:
+    for value in secrets_:
+        if value:
+            text = text.replace(value, "[redacted]")
+    return text[:300]
+
+
+async def _oauth_start(name: str, request: Request, user: User, session: AsyncSession, session_id: Optional[int],
+                       account_label: str) -> "OAuthStartResponse":
+    from app.auth.scopes import has_scope, scope_denied
+    from app.auth.verification import ensure_verified
+    if not has_scope(user, "brokers:write"):
+        raise scope_denied(user, "brokers:write")
+    ensure_verified(user, "Logging in to the broker")
+    await ensure_live_step_up(session, user, session_id, "Logging in to the broker")
+    spec = BROKER_FIELD_SPECS[name]
+    label = _clean_label(account_label)
+    record = await get_credential_record(session, user.tenant_id, name, label)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"Store your {spec.display_name} keys in Settings first ({label})")
+    await _ensure_holder(session, record, user)
+    credentials = load_credentials(record)
+    if not credentials.api_key or not credentials.api_secret:
+        key_label, secret_label = spec.get("api_key").label, spec.get("api_secret").label  # type: ignore[union-attr]
+        raise HTTPException(status_code=400, detail=f"{spec.display_name} needs both the {key_label} and the {secret_label} stored before you log in")
+    redirect_uri = oauth_callback_url(request, OAUTH_CALLBACK_BROKERS[name])
+    if name == "fyers" and not credentials.redirect_uri:
+        credentials.redirect_uri = redirect_uri          # as Upstox does: the Redirect URL in use is remembered on the row
+    expected_user, expected_payload = record.user_id, record.encrypted_payload
+    state = begin_oauth_login(credentials, user.tenant_id, user.id, name, account_label=label)
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="The broker connection changed meanwhile; nothing was started. Try again.")
+    await write_audit_log(session, user.tenant_id, user.id, "broker_oauth_started", f"{name}/{label}")
+    await session.commit()
+    return OAuthStartResponse(authorization_url=build_oauth_login_url(name, credentials.api_key, redirect_uri, state))
+
+
+async def _oauth_callback(name: str, code: Optional[str], state: Optional[str], broker_refused: bool,
+                          session: AsyncSession) -> RedirectResponse:
+    """Unauthenticated by necessity (the browser arrives from the broker); every outcome is a redirect back to the app
+    with a fixed status word, never the code, a token or the broker's raw text."""
+    if broker_refused:
+        return _frontend_redirect(broker=name, error="login_cancelled")
+    if not code or not state:
+        return _frontend_redirect(broker=name, error="missing_code_or_state")
+    if len(code) > 4096 or any(c.isspace() for c in code):
+        return _frontend_redirect(broker=name, error="invalid_code")
+    try:
+        claims = parse_oauth_state(state)
+    except ValueError:
+        logger.warning("Rejected %s OAuth callback: the state is not valid or has expired", name)
+        return _frontend_redirect(broker=name, error="invalid_state")
+    if claims.get("broker") != name or not claims.get("nonce"):
+        return _frontend_redirect(broker=name, error="invalid_state")
+    tenant_id, user_id = int(claims["tenant_id"]), int(claims["user_id"])
+    try:
+        label = _clean_label(claims.get("account_label"))
+    except HTTPException:
+        return _frontend_redirect(broker=name, error="invalid_state")
+    from app.secrets_store.envelope import ensure_tenant_key
+    await ensure_tenant_key(session, tenant_id)
+    record = await get_credential_record(session, tenant_id, name, label)
+    if record is None:
+        return _frontend_redirect(broker=name, error="credentials_missing")
+    if record.user_id != user_id and await _byob(session, tenant_id):
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"{name}/{label}: not the connection's holder")
+        await session.commit()
+        return _frontend_redirect(broker=name, error="not_holder")
+    credentials = load_credentials(record)
+    if not oauth_pending_matches(credentials, claims):
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed",
+                              f"{name}/{label}: the login link was already used, replaced by a newer one, or expired")
+        await session.commit()
+        return _frontend_redirect(broker=name, error="invalid_state")
+
+    # Claim the nonce first (a conditional write): a second delivery of the same state finds nothing waiting.
+    expected_user, expected_payload = record.user_id, record.encrypted_payload
+    credentials.oauth_pending = None
+    claimed_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+    record.encrypted_payload = claimed_payload
+    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
+        await session.rollback()
+        return _frontend_redirect(broker=name, error="invalid_state")
+    await session.commit()
+    await session.refresh(record)
+
+    if not credentials.api_key or not credentials.api_secret:
+        return _frontend_redirect(broker=name, error="credentials_missing")
+    credentials.access_token = None
+    credentials.request_token = code
+    try:
+        adapter = get_broker_adapter(name, credentials)
+        await adapter.authenticate()
+    except Exception as exc:  # noqa: BLE001 - must always end in a redirect
+        reason = _scrub(f"{type(exc).__name__}: {exc}", code, credentials.api_secret)
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"{name}/{label}: {reason}")
+        await session.commit()
+        await notify(session, tenant_id, NotificationType.BROKER_DISCONNECT, title=f"{OAUTH_BROKER_ERRORS[name]} login failed",
+                     message=reason, severity=NotificationSeverity.CRITICAL, user_id=user_id)
+        return _frontend_redirect(broker=name, error="exchange_failed")
+    new_token = adapter.access_token
+    if not new_token:
+        return _frontend_redirect(broker=name, error="no_token_returned")
+    # Stored as the paste-the-code login stores it: re-encrypted, the one-time code dropped, VALID until the daily expiry,
+    # held by the person who logged in - and only if nobody changed the row during the exchange.
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+    store_access_token(record, new_token)
+    if not await _write_if_unchanged(session, record, record.user_id, claimed_payload, new_user_id=user_id):
+        await session.rollback()
+        await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"{name}/{label}: the connection changed during the login")
+        await session.commit()
+        return _frontend_redirect(broker=name, error="changed_during_login")
+    await write_audit_log(session, tenant_id, user_id, "broker_authenticated", f"{name}/{label} (oauth callback)")
+    await session.commit()
+    return _frontend_redirect(broker=name, connected="1")
+
+
+@router.get("/zerodha/oauth/start", response_model=OAuthStartResponse)
+async def zerodha_oauth_start(
+    request: Request, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id), account_label: str = "primary",
+) -> OAuthStartResponse:
+    """Starts the Kite login for one stored account. Register the Redirect URL from GET /api/broker/specs on the Kite app."""
+    return await _oauth_start("zerodha", request, user, session, session_id, account_label)
+
+
+@router.get("/zerodha/oauth/callback")
+async def zerodha_oauth_callback(
+    request_token: Optional[str] = None, state: Optional[str] = None, login_status: Optional[str] = Query(None, alias="status"),
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    """Kite's redirect: `?action=login&status=success&request_token=...` plus the `state` ATP passed as redirect_params."""
+    refused = login_status is not None and login_status.lower() != "success"
+    return await _oauth_callback("zerodha", request_token, state, refused, session)
+
+
+@router.get("/fyers/oauth/start", response_model=OAuthStartResponse)
+async def fyers_oauth_start(
+    request: Request, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id), account_label: str = "primary",
+) -> OAuthStartResponse:
+    """Starts the Fyers login for one stored account. Register the Redirect URL from GET /api/broker/specs on the Fyers app."""
+    return await _oauth_start("fyers", request, user, session, session_id, account_label)
+
+
+@router.get("/fyers/oauth/callback")
+async def fyers_oauth_callback(
+    auth_code: Optional[str] = None, state: Optional[str] = None, s: Optional[str] = None,
+    session: AsyncSession = Depends(get_session),
+) -> RedirectResponse:
+    """Fyers' redirect: `?s=ok&code=200&auth_code=...&state=...` (`s=error` when the login did not complete)."""
+    refused = s is not None and s.lower() != "ok"
+    return await _oauth_callback("fyers", auth_code, state, refused, session)

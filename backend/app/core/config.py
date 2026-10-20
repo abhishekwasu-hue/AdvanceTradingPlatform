@@ -503,6 +503,10 @@ SCREENER_COST_CAP = float(os.environ.get("SCREENER_COST_CAP", "200"))
 # S3b-2: the public https origin of this deployment (e.g. https://atp.example.com), used for the unsubscribe link in
 # screen-alert emails. Empty = no link is added (the mails still go).
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+# UI2-5: the https origin at which brokers reach this API's OAuth callbacks (e.g. https://atp.example.com); the Redirect
+# URL to register on the Upstox, Kite and Fyers developer consoles is this plus /api/broker/<broker>/oauth/callback.
+# Empty = the address the request came in on (as before), which is right when the API is served at the app's own origin.
+BROKER_OAUTH_REDIRECT_BASE_URL = os.environ.get("BROKER_OAUTH_REDIRECT_BASE_URL", "").strip().rstrip("/")
 # PW5: the Zerodha Kite Publisher api_key for "Trade in your broker app" basket links (docs/BROKER_DATA_TERMS.md). A
 # public per-app identifier that sits in the page's HTML form, not a secret - but never committed with a value. Empty =
 # no Zerodha link. Only read when the `broker_app_links` flag is on (off by default). ATP places no order with it.

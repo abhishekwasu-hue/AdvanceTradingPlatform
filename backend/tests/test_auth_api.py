@@ -10,6 +10,7 @@ from app.brokers.models import BrokerProfile
 from app.db.base import Base
 from app.db.session import get_session
 from app.main import app
+from tests.broker_fakes import KITE_KEY
 
 _engine = create_async_engine(
     "sqlite+aiosqlite:///:memory:", connect_args={"check_same_thread": False}, poolclass=StaticPool,
@@ -114,7 +115,7 @@ def test_store_list_and_delete_broker_credentials():
 
     store = client.post(
         "/api/broker/zerodha/credentials", headers=headers,
-        json={"api_key": "key123", "access_token": "tok456"},
+        json={"api_key": KITE_KEY, "access_token": "tok456"},
     )
     assert store.status_code == 204
 
@@ -152,7 +153,7 @@ def test_authenticate_without_stored_credentials_returns_404():
 def test_authenticate_success_calls_adapter_and_audits(monkeypatch):
     token = _register("heidi@example.com")
     headers = {"Authorization": f"Bearer {token}"}
-    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
+    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "access_token": "t"})
 
     class _FakeAdapter:
         async def authenticate(self):
@@ -168,7 +169,7 @@ def test_authenticate_success_calls_adapter_and_audits(monkeypatch):
 def test_authenticate_failure_returns_502_and_audits(monkeypatch):
     token = _register("ivan@example.com")
     headers = {"Authorization": f"Bearer {token}"}
-    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
+    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "access_token": "t"})
 
     class _FailingAdapter:
         async def authenticate(self):

@@ -5,6 +5,7 @@ import asyncio
 
 from app.admin import bootstrap
 from app.db.models import User
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 from tests.utils import enable_mfa
 
@@ -114,7 +115,7 @@ def test_plan_and_status_change_is_audited_and_notified():
 def test_tenant_detail_shows_usage_users_brokers_and_deployments():
     admin_headers, _ = _admin("admin-detail@example.com")
     owner_headers, owner = _owner("admin-detail-target@example.com")
-    client.post("/api/broker/upstox/credentials", headers=owner_headers, json={"api_key": "k", "api_secret": "s"})
+    client.post("/api/broker/upstox/credentials", headers=owner_headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET})
     client.post("/api/deployments", headers=owner_headers, json={"strategy_id": "ema_rsi_scalper_1m", "symbol": "RELIANCE"})
 
     detail = client.get(f"/api/admin/tenants/{owner['tenant_id']}", headers=admin_headers).json()

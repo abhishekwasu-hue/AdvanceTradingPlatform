@@ -748,6 +748,13 @@ Never publish a listing without an attached backtest run; the API refuses the su
   always drops yesterday's access token first - the auth-code adapters skip the exchange while a token is on
   file, which used to make every pasted code "fail" with the stale token. Fyers needs the app's Redirect URL
   stored once as `redirect_uri`. Local PC runbook: `docs/LOCAL_PC.md`.
+- **Kite and Fyers login without pasting (UI2-5).** Register ATP's callback as the app's Redirect URL on the
+  broker's console: `<BROKER_OAUTH_REDIRECT_BASE_URL>/api/broker/zerodha/oauth/callback` (Kite) or
+  `.../api/broker/fyers/oauth/callback` (Fyers); `GET /api/broker/specs` shows the exact address. Set
+  `BROKER_OAUTH_REDIRECT_BASE_URL` to the https origin brokers can reach (empty = the address the request came in
+  on). `GET /api/broker/{zerodha|fyers}/oauth/start` returns the login page; the broker sends the browser back to
+  the callback, which exchanges the code and stores the session as the paste flow does. The link works once, for the
+  user who started it, within 10 minutes. The paste-the-code routes stay for the old Settings layout.
 
 ### 1.6ab-0 Hardened environments (P0.1)
 

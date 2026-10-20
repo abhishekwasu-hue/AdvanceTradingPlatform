@@ -2028,3 +2028,26 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
+
+## UI2-5 Broker field map (backend only, no UI change)
+
+- Branch `claude/ui2-5-broker-field-map` (from main). No migration, no new flag.
+- `app/brokers/field_specs.py`: `BROKER_FIELD_SPECS`, one entry per registered broker (label, kind text / secret /
+  totp-secret / pin / code, who supplies it, pattern, required / required unless, help, advanced), derived from the
+  adapters; absorbs the Upstox analytics token entry (`upstox_analytics.FIELD_SPEC` removed).
+- `GET /api/broker/specs` (any member, read-only): the map plus the Redirect URL of ATP's callback, the server's
+  egress IP and the daily expiry; never a stored value.
+- `POST /api/broker/{name}/credentials` validates with the same map: unknown fields, a token ATP fills in itself where
+  nothing ever pasted it, bad formats and missing required fields are a 422 with English sentences that never repeat a
+  value. Tokens and codes the old Settings form can still paste stay accepted (`legacy_paste`) until UI2-6.
+- Zerodha (Kite) and Fyers OAuth callbacks: `GET /api/broker/{zerodha|fyers}/oauth/start` and `.../oauth/callback`.
+  The state is the signed broker-OAuth token plus a single-use nonce whose SHA-256 waits (10 minutes, per user) in the
+  credential's encrypted payload (`oauth_pending`, server-written only); the callback claims it with a conditional
+  write before exchanging the code with the adapter's own code, then stores the session as the paste flow does.
+  New setting `BROKER_OAUTH_REDIRECT_BASE_URL` (empty = the request's address). Callback query strings are redacted in
+  the access log (`app/core/logging_config.py`).
+- Shoonya's TOTP code: already fixed on main (#279, `app/brokers/totp.py`); a new test generates a made-up base32 secret.
+- Tests: `tests/test_ui2_5_broker_field_map.py` (spec coverage both ways, specs route, validation, both callbacks with
+  the real adapters against a mocked broker transport); tests that stored one-letter stand-in keys now use
+  `tests/broker_fakes.py`. Routes added to `tests/tenancy_route_table.py`.
+

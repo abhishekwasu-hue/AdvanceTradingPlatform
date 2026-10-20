@@ -17,6 +17,7 @@ from app.db.models import BrokerCredentialRecord, NotificationRecord
 from app.market_data.calendar import IST
 from app.secrets_store.encryption import encrypt_text
 from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
+from tests.broker_fakes import KITE_KEY, UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 
 NOW = datetime(2026, 10, 20, 6, 0, tzinfo=timezone.utc)
@@ -224,7 +225,7 @@ def test_saved_token_is_encrypted_probed_and_never_returned_or_logged(mocked_ups
     tenant_id = _tenant_of(bearer)
     exp = datetime(2027, 9, 30, 18, 30, tzinfo=timezone.utc)
     token = _jwt(exp)
-    sent = {"api_key": "k", "api_secret": "s", "analytics_token": token,
+    sent = {"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "analytics_token": token,
             "analytics_meta": {"coverage": {c: {"status": "works"} for c in ua.CLASSES}}}   # client metadata is dropped
     response = client.post("/api/broker/upstox/credentials", headers=headers, json=sent)
     assert response.status_code == 204, response.text
@@ -259,7 +260,7 @@ def test_saving_only_the_analytics_token_keeps_the_daily_session_and_other_broke
     bearer = _register("at-only@example.com")
     headers = {"Authorization": f"Bearer {bearer}"}
     tenant_id = _tenant_of(bearer)
-    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "access_token": DAILY}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "access_token": DAILY}).status_code == 204
 
     async def mark_valid():
         async with _session_factory() as session:
@@ -273,7 +274,7 @@ def test_saving_only_the_analytics_token_keeps_the_daily_session_and_other_broke
     creds = load_credentials(record)
     assert creds.access_token == DAILY and creds.analytics_token == "opaque-one" and creds.analytics_meta["expiry_estimated"] is True
 
-    bad = client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "analytics_token": "x"})
+    bad = client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "analytics_token": "x"})
     assert bad.status_code == 400
 
     assert client.delete("/api/broker/upstox/analytics-token", headers=headers).status_code == 204
@@ -391,7 +392,7 @@ def test_l2_check_endpoint_is_rate_limited_per_user(mocked_upstox):
     from app.core import rate_limit
     rate_limit.reset("analytics_check")
     headers = {"Authorization": f"Bearer {_register('at-rate@example.com')}"}
-    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "analytics_token": "opaque"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "analytics_token": "opaque"}).status_code == 204
     codes = [client.post("/api/broker/upstox/analytics-token/check", headers=headers).status_code for _ in range(7)]
     rate_limit.reset("analytics_check")
     assert codes[:6] == [200] * 6 and codes[6] == 429
@@ -401,7 +402,7 @@ def test_l3_saving_only_the_analytics_token_keeps_the_holder(mocked_upstox):
     bearer = _register("at-holder@example.com")
     headers = {"Authorization": f"Bearer {bearer}"}
     tenant_id = _tenant_of(bearer)
-    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "access_token": DAILY}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "access_token": DAILY}).status_code == 204
 
     async def set_holder(user_id):
         async with _session_factory() as session:
@@ -411,7 +412,7 @@ def test_l3_saving_only_the_analytics_token_keeps_the_holder(mocked_upstox):
     asyncio.run(set_holder(987654))                                   # another member linked this connection
     assert client.post("/api/broker/upstox/credentials", headers=headers, json={"analytics_token": "opaque-two"}).status_code == 204
     assert asyncio.run(_record(tenant_id)).user_id == 987654
-    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k2"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY_2}).status_code == 204
     assert asyncio.run(_record(tenant_id)).user_id != 987654          # a session-field save still makes the saver the holder
 
 

@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -16,6 +16,7 @@ from app.auth.scopes import require_scope
 from app.brokers.exceptions import BrokerError
 from app.brokers.models import BrokerCredentials, BrokerProfile
 from app.brokers.registry import available_brokers, get_broker_adapter
+from app.brokers import upstox_analytics
 from app.brokers.smoke import run_smoke
 from app.brokers.token_lifecycle import (
     _is_auth_failure,
@@ -34,6 +35,7 @@ from app.brokers.token_lifecycle import (
     token_is_usable,
 )
 from app.core.config import FRONTEND_URL
+from app.core.rate_limit import user_rate_limit
 from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType, UserRole
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
@@ -48,13 +50,25 @@ router = APIRouter(prefix="/api/broker", tags=["broker"])
 UPSTOX_CALLBACK_PATH = "/api/broker/upstox/oauth/callback"
 
 
-class StoredBrokerInfo(BaseModel):
+class AnalyticsTokenInfo(BaseModel):
+    """Upstox analytics token: whether one is stored, its expiry and the probe's coverage map - never the value."""
+    analytics_token_set: bool = False
+    analytics_token_expires_at: Optional[str] = None
+    # True when the expiry is the save date + 365 days (the token carried no readable `exp` claim).
+    analytics_token_expiry_estimated: Optional[bool] = None
+    analytics_token_expired: Optional[bool] = None
+    # {class: {status: works|refused|unverified, http_status, error_code, probed_at}}
+    analytics_coverage: Optional[Dict[str, Dict[str, Any]]] = None
+    analytics_probed_at: Optional[str] = None
+
+
+class StoredBrokerInfo(AnalyticsTokenInfo):
     broker_name: str
     updated_at: str
     account_label: str = "primary"
 
 
-class BrokerTokenStatusResponse(BaseModel):
+class BrokerTokenStatusResponse(AnalyticsTokenInfo):
     broker_name: str
     account_label: str = "primary"
     token_status: str
@@ -87,6 +101,27 @@ def _ensure_known_broker(name: str) -> None:
         raise HTTPException(status_code=404, detail=f"Unknown broker '{name}'. Available: {available_brokers()}")
 
 
+def _clean_analytics_token(name: str, value: Optional[str]) -> Optional[str]:
+    token = (value or "").strip()
+    if not token:
+        return None
+    if name != upstox_analytics.BROKER:
+        raise HTTPException(status_code=400, detail="An analytics token is an Upstox credential; other brokers do not take one")
+    if len(token) > upstox_analytics.MAX_TOKEN_LENGTH or any(c.isspace() for c in token):
+        raise HTTPException(status_code=400, detail="That does not look like an Upstox analytics token (paste it as one line)")
+    return token
+
+
+async def _probe_quietly(session: AsyncSession, record: BrokerCredentialRecord) -> Optional[dict]:
+    """Run the analytics-token probe and store its coverage; a failure leaves every class `unverified` (never a 500)."""
+    try:
+        return await upstox_analytics.refresh_coverage(session, record)
+    except Exception as exc:  # noqa: BLE001 - the save itself already succeeded
+        logger.warning("Upstox analytics probe failed for tenant %s: %s", record.tenant_id, type(exc).__name__)
+        await session.rollback()
+        return None
+
+
 def _callback_url(request: Request, broker_name: str) -> Optional[str]:
     if broker_name not in OAUTH_BROKERS:
         return None
@@ -105,6 +140,7 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
         oauth_callback_url=_callback_url(request, record.broker_name),
         login_url_supported=record.broker_name in LOGIN_URL_BROKERS,
         code_param=(LOGIN_URL_BROKERS.get(record.broker_name) or {}).get("code_param"),
+        **upstox_analytics.record_view(record),
     )
 
 
@@ -113,7 +149,7 @@ def _merge_with_stored(incoming: BrokerCredentials, existing: Optional[BrokerCre
     API key/secret saved yesterday. Values are trimmed (a pasted trailing space fails the broker
     login). Clearing a field means deleting the credential and storing it again."""
     fresh = {k: v.strip() if isinstance(v, str) else v for k, v in incoming.model_dump(exclude_none=True).items()}
-    fresh = {k: v for k, v in fresh.items() if v != ""}
+    fresh = {k: v for k, v in fresh.items() if v != "" and k != upstox_analytics.META}   # the metadata is server-written
     stored: dict = {}
     if existing is not None:
         try:
@@ -195,24 +231,43 @@ async def store_broker_credentials(
     """
     _ensure_known_broker(name)
     account_label = _clean_label(account_label)
+    analytics_token = _clean_analytics_token(name, credentials.analytics_token)
+    # Saving only the analytics token leaves the daily session as it is (it changes nothing the daily login proved).
+    session_fields_sent = any(
+        (v.strip() if isinstance(v, str) else v) not in (None, "")
+        for k, v in credentials.model_dump(exclude_none=True).items() if k not in (upstox_analytics.FIELD, upstox_analytics.META))
     existing = await get_credential_record(session, user.tenant_id, name, account_label)
     taking_over = existing is not None and existing.user_id != user.id and await _byob(session, user.tenant_id)
+    previous_analytics = None
+    if existing is not None and not taking_over and analytics_token:
+        try:
+            previous_analytics = load_credentials(existing).analytics_token
+        except Exception:  # noqa: BLE001 - unreadable old payload: the token counts as new
+            previous_analytics = None
     # BT1b (flag on): storing over another member's row makes it yours, so nothing of theirs is kept - no stored secret
     # and above all no stored access token (their broker session): fresh secrets are required and the row starts unproven.
     credentials = _merge_with_stored(credentials, None if taking_over else existing)
     if taking_over and not credentials.api_key:
         raise HTTPException(status_code=400, detail=f"This {name} connection was linked by another member: enter all of your own "
                                                     "credentials (at least the API key) to replace it - nothing of theirs is kept.")
+    new_analytics = analytics_token is not None and analytics_token != previous_analytics
+    if analytics_token is not None and new_analytics:
+        # A new analytics token: its expiry is read now, its coverage is unverified until the probe below answers.
+        credentials.analytics_token = analytics_token
+        credentials.analytics_meta = upstox_analytics.new_meta(analytics_token)
     encrypted = encrypt_text(credentials.model_dump_json(), user.tenant_id, PURPOSE_BROKER_CREDENTIAL)
 
     if existing:
         # BT1b: conditional on the row being exactly what was merged from (no concurrent store / login in between).
         expected_user, expected_payload = existing.user_id, existing.encrypted_payload
         existing.encrypted_payload = encrypted
-        existing.token_status = BrokerTokenStatus.UNKNOWN.value
-        existing.token_expires_at = None
-        existing.last_verified_at = None
-        if not await _write_if_unchanged(session, existing, expected_user, expected_payload, new_user_id=user.id):
+        if session_fields_sent or taking_over:
+            existing.token_status = BrokerTokenStatus.UNKNOWN.value
+            existing.token_expires_at = None
+            existing.last_verified_at = None
+        # Saving only the analytics token adds a data credential to the row; it does not make the saver its holder.
+        new_holder = user.id if (session_fields_sent or taking_over) else None
+        if not await _write_if_unchanged(session, existing, expected_user, expected_payload, new_user_id=new_holder):
             await session.rollback()
             raise HTTPException(status_code=409, detail="The broker connection changed while saving; nothing was stored. Try again.")
         await session.refresh(existing)
@@ -225,8 +280,12 @@ async def store_broker_credentials(
         await session.flush()
     await ensure_account_for_credential(session, record)  # Phase I2: the account row behind the credential
 
-    await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_stored", f"{name}/{account_label}")
+    await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_stored",
+                          f"{name}/{account_label}" + (" (analytics token saved)" if new_analytics else ""))
     await session.commit()
+    if new_analytics:
+        # The real-call check: one read-only GET per market-data class; the token is used only where it works.
+        await _probe_quietly(session, record)
 
 
 @router.get("/credentials", response_model=list[StoredBrokerInfo])
@@ -237,7 +296,8 @@ async def list_stored_broker_credentials(
         select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == user.tenant_id)
     )
     return [
-        StoredBrokerInfo(broker_name=r.broker_name, updated_at=r.updated_at.isoformat(), account_label=r.account_label or "primary")
+        StoredBrokerInfo(broker_name=r.broker_name, updated_at=r.updated_at.isoformat(), account_label=r.account_label or "primary",
+                         **upstox_analytics.record_view(r))
         for r in records
     ]
 
@@ -315,6 +375,10 @@ async def smoke_test_broker(
     await write_audit_log(session, user.tenant_id, user.id, "broker_smoke_test", f"{name}/{label}: {'ok' if report.ok else 'FAILED'} - {report.summary}")
     await session.commit()
     out = report.as_dict()
+    before = upstox_analytics.record_view(record) if name == upstox_analytics.BROKER else {}
+    if before.get("analytics_token_set"):
+        # "Check connection" re-probes the analytics token too (read-only GETs) and reports its coverage, never its value.
+        out["analytics_token"] = await _probe_quietly(session, record) or before
     if await _byob(session, user.tenant_id):
         from app.market_data.data_terms import terms_for
         terms = terms_for(name)
@@ -380,6 +444,63 @@ async def authenticate_broker(
     await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", f"{name}/{label}")
     await session.commit()
     return profile
+
+
+# --- Upstox analytics token -----------------------------------------------------------------------
+
+# Each check sends five GETs and a websocket handshake to Upstox with the user's token: a few per minute is plenty.
+analytics_check_rate_limit = user_rate_limit("analytics_check", limit=6, window_seconds=60)
+
+
+async def _analytics_record(session: AsyncSession, user: User, name: str, account_label: str, *,
+                            owner_may: bool = False) -> BrokerCredentialRecord:
+    if name != upstox_analytics.BROKER:
+        raise HTTPException(status_code=404, detail="Only Upstox has an analytics token")
+    label = _clean_label(account_label)
+    record = await get_credential_record(session, user.tenant_id, name, label)
+    if record is None:
+        raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}' ({label})")
+    # BT1b (flag on): the holder's connection; removing it is also open to an organisation owner, as for credentials.
+    await (_ensure_holder_or_owner if owner_may else _ensure_holder)(session, record, user)
+    return record
+
+
+@router.post("/{name}/analytics-token/check", response_model=AnalyticsTokenInfo,
+             dependencies=[Depends(require_scope("brokers:write")), Depends(analytics_check_rate_limit)])
+async def check_analytics_token(
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
+) -> AnalyticsTokenInfo:
+    """Re-run the read-only coverage probe for the stored analytics token (one GET per market-data class and a websocket
+    connect/close) and return the coverage map. Never places, modifies or cancels anything; never returns the token."""
+    record = await _analytics_record(session, user, name, account_label)
+    before, label = upstox_analytics.record_view(record), record.account_label
+    if not before["analytics_token_set"]:
+        raise HTTPException(status_code=404, detail="No analytics token stored for this Upstox account")
+    view = await _probe_quietly(session, record)
+    await write_audit_log(session, user.tenant_id, user.id, "broker_analytics_token_checked", f"{name}/{label}")
+    await session.commit()
+    return AnalyticsTokenInfo(**(view or before))
+
+
+@router.delete("/{name}/analytics-token", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_scope("brokers:write"))])
+async def delete_analytics_token(
+    name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
+) -> None:
+    """Forget the stored analytics token (market data falls back to the daily login). Revoking it at Upstox is done in
+    Upstox Developer Apps -> Analytics."""
+    record = await _analytics_record(session, user, name, account_label, owner_may=True)
+    expected_user, expected_payload, label = record.user_id, record.encrypted_payload, record.account_label
+    credentials = load_credentials(record)
+    if not credentials.analytics_token:
+        return
+    credentials.analytics_token = None
+    credentials.analytics_meta = None
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
+        await session.rollback()
+        raise HTTPException(status_code=409, detail="The broker connection changed meanwhile; nothing was removed. Try again.")
+    await write_audit_log(session, user.tenant_id, user.id, "broker_analytics_token_removed", f"{name}/{label}")
+    await session.commit()
 
 
 # --- Paste-the-code login (Fyers, Kite) -----------------------------------------------------------

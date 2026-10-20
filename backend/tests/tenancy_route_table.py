@@ -275,6 +275,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/broker/token-status"): "member",
     ("GET", "/api/broker/upstox/oauth/callback"): P_OAUTH_CALLBACK,
     ("GET", "/api/broker/upstox/oauth/start"): "member",
+    ("POST", "/api/broker/{name}/analytics-token/check"): "trader",
+    ("DELETE", "/api/broker/{name}/analytics-token"): "trader",
     ("POST", "/api/broker/{name}/authenticate"): "trader",
     ("DELETE", "/api/broker/{name}/credentials"): "trader",
     ("POST", "/api/broker/{name}/credentials"): "trader",

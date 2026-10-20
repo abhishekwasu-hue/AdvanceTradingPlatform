@@ -2008,3 +2008,23 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Review round (LOW): header values printable ASCII only; `Host` / `Content-Length` / `Transfer-Encoding` / hop-by-hop
   headers refused; `content_type` validated; one recipient's failure (any exception) never stops the others; GET params
   through `httpx.QueryParams`; Twilio preset writes `From=%2B...`; OPERATIONS 1.6e documents quoting and `%2B`.
+
+## Upstox Analytics Token, backend slice (UI2-5 / UI2-6 addition)
+
+- Branch `claude/upstox-analytics-token` (from main). No migration, no new flag: inert until an analytics token is saved.
+- `app/brokers/upstox_analytics.py`: the optional, data-only Upstox Analytics Token (one year, read-only, GET-only),
+  stored as `analytics_token` in the Upstox credential's encrypted payload (same per-tenant encryption) with
+  server-written `analytics_meta` (expiry, coverage map). Never returned or logged; API responses carry only
+  `analytics_token_set`, the expiry (JWT `exp`, else save date + 365 days, flagged estimated) and the coverage map.
+- Read-only probe on save, on `POST /api/broker/{name}/smoke-test` and on `POST /api/broker/{name}/analytics-token/check`:
+  one GET per class (historical candles, intraday candles, quotes/LTP, option chain) plus the market-data feed authorize
+  call and a websocket connect/close; each class `works` / `refused` (401/403 with the Upstox error code) / `unverified`.
+- `UpstoxBroker._request` uses the analytics token only for GET classes marked `works` and before its expiry; anything
+  else (orders, non-GET, refused or unverified classes) uses the daily login token. A 401/403 on a real call falls back
+  at once and re-probes that class on the tenant's own row (10-minute cooldown).
+- `token_lifecycle.data_is_usable`: the market-data route gate (`candles_routes._pick_record`) also accepts an Upstox row
+  whose analytics token serves REST data. Order and LIVE gates are unchanged (`token_is_usable`).
+- Worker: once per IST day, `send_expiry_warnings` notifies the credential's holder 7 days before expiry and on the last
+  day (deduped by title). `DELETE /api/broker/{name}/analytics-token` forgets the token.
+- `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
+- Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.

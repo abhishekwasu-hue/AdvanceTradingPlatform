@@ -14,19 +14,23 @@ particular nothing from the sealed NIFTY holdout (Trade `data/nifty50_*.parquet`
 The 15m / 30m / 1h frames used by the tests are resampled from these (label / closed left, as Trade's tests do), and
 Trade's `tests/test_market_zones.py::_fake_ohlc` series is generated in code (`tests/zones_golden.py::fake_ohlc`).
 
-`golden_trade_eafc872.json.gz` is Trade's output on these fixtures (`tests/zones_golden.py::trade_outputs`, normalised to
-ATP timeframe labels / ASCII tags / zone states). `tests/test_zones_parity.py` checks ATP against it on every run and,
-when the Trade checkout is on disk, checks the file against Trade run live.
+Rebuild the CSVs (from `backend/`): `python tests/fixtures/zones/build_fixtures.py`; it reproduces them byte for byte.
 
-Rebuild (from `backend/`): `python tests/fixtures/zones/build_fixtures.py` (CSV) and
-`TRADE_REPO_PATH=/path/to/trade python -m tests.zones_golden --write` (golden file - only on a deliberate Trade re-sync).
+Trade's outputs on these fixtures are not in this folder: they are in the private fixtures store (owner decision PR-2,
+`docs/PUBLIC_REPO_POLICY.md` section 5), read through `tests/private_fixtures.py` with `ATP_PRIVATE_FIXTURES` set:
 
-`golden_level_memory_eafc872.json.gz` (Z7a-2) is Trade's `level_memory.py` on the same fixtures
-(`tests/zones_memory_golden.py::trade_outputs`: tolerance, last touch, night-by-night merge walks, remember / nightly
-apply); `tests/test_zones_memory_parity.py` checks ATP's `memory.py` against it. Rebuild only on a deliberate Trade
-re-sync: `TRADE_REPO_PATH=/path/to/trade python -m tests.zones_memory_golden --write`.
+- `golden_trade_eafc872.json.gz` - Trade's market zones on these fixtures (`tests/zones_golden.py::trade_outputs`,
+  normalised to ATP timeframe labels / ASCII tags / zone states), checked by `tests/test_zones_parity.py`;
+- `golden_level_memory_eafc872.json.gz` (Z7a-2) - Trade's `level_memory.py` on the same fixtures
+  (`tests/zones_memory_golden.py::trade_outputs`: tolerance, last touch, night-by-night merge walks, remember / nightly
+  apply), checked by `tests/test_zones_memory_parity.py`;
+- `../price_action/golden_trade_1e6c9ac_ch3b.json.gz` - Trade's price-action engines on the same fixtures
+  (`tests/ch3b_golden.py`), checked by `tests/test_ch3b_trade_parity.py`.
 
-Both golden files are gzip-compressed JSON (working rule: golden fixtures over ~1,000 lines are stored compressed or
-generated). `tests/zones_golden.py::write_golden` writes them deterministically - sorted keys, one layout, gzip header
-without a name or time (mtime 0) - so regenerating from the same Trade commit gives byte-identical files (no diff), and
-`read_golden` is what the tests load. To read one by hand: `zcat golden_trade_eafc872.json.gz | less`.
+Without the store the public CI skips those checks with the reason; with the Trade checkout on disk the tests also
+check each file against Trade run live. Fill a store with `python3 scripts/export_private_fixtures.py --to DIR` (from
+the repository root). Rebuild a golden only on a deliberate Trade re-sync, into the store:
+`ATP_PRIVATE_FIXTURES=<store> TRADE_REPO_PATH=/path/to/trade python -m tests.zones_golden --write` (or
+`tests.zones_memory_golden`, `tests.ch3b_golden`), then put the new sha256 into `tests/private_fixtures_manifest.json`
+in a reviewed change. They are gzip-compressed JSON, written deterministically by `tests/zones_golden.py::write_golden`
+(sorted keys, one layout, gzip header without a name or time), so the same Trade commit gives byte-identical files.

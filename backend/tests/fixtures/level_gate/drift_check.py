@@ -4,9 +4,10 @@
     python drift_check.py /tmp/trade_new <the full 40-character SHA of that rev>
 
 Regenerates the goldens from that export with make_golden.py (same seeded inputs) into a temporary file and compares
-them with golden.json.gz case by case. Prints one line per changed section with the first changed cases, and exits 1
-when anything changed (0 when nothing did). A change is ported by a reviewed PR (code + goldens + the pinned revision
-in app/price_action/level_gate/settings.py) - never by regenerating the goldens alone.
+them with the pinned golden.json.gz case by case - the pinned file is read from the private fixtures store
+(ATP_PRIVATE_FIXTURES; owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5). Prints one line per changed section
+with the first changed cases, and exits 1 when anything changed (0 when nothing did). A change is ported by a reviewed
+PR (code + goldens + the pinned revision in app/price_action/level_gate/settings.py) - never by regenerating the goldens alone.
 """
 import gzip
 import json
@@ -16,6 +17,10 @@ import sys
 import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(HERE))))      # backend/, for tests.private_fixtures
+from tests import private_fixtures as PF  # noqa: E402
+
+GOLDEN = "backend/tests/fixtures/level_gate/golden.json.gz"
 
 
 def load(path):
@@ -27,7 +32,11 @@ def main():
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
     trade_dir, rev = sys.argv[1], sys.argv[2]
-    pinned = load(os.path.join(HERE, "golden.json.gz"))
+    found = PF.locate(GOLDEN)
+    if found is None:
+        raise SystemExit(f"{GOLDEN} not found: set {PF.ENV} to the private fixtures store "
+                         f"(python3 scripts/export_private_fixtures.py --to DIR fills it)")
+    pinned = load(str(found))
     with tempfile.TemporaryDirectory() as tmp:
         out = os.path.join(tmp, "golden.json.gz")
         subprocess.run([sys.executable, os.path.join(HERE, "make_golden.py"), trade_dir, rev, out], check=True,

@@ -1,0 +1,15 @@
+{
+  "_note": "Trade-derived golden fixtures kept in the private fixtures store, not in this public repository (owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5). Paths and sha256 only (sha256sum of the file's bytes), never data. tests/private_fixtures.py reads them from $ATP_PRIVATE_FIXTURES/<path>; scripts/export_private_fixtures.py fills a store from source_commit, a main commit that has them in its tree.",
+  "env": "ATP_PRIVATE_FIXTURES",
+  "source_commit": "3b7c384a55ad36b534746da18a3ff9b02a79f5c8",
+  "files": {
+    "backend/tests/fixtures/daily_trend/golden.json.gz": "289def7be42078218c40d71c01fdc1ab9f09b69d3d8f6cd47f72b8381fe7bfea",
+    "backend/tests/fixtures/level_gate/golden.json.gz": "93bdd8e5b36a65c18772b513cfb4e538982df8f7f00a19817241a53b1b36054b",
+    "backend/tests/fixtures/oi_regime/golden.json": "497a1c2d89806e372cb9ea8e0aa9c41aabbce1dc840480b908276bca59cfd38a",
+    "backend/tests/fixtures/options_builder/golden.json.gz": "50123884799210b9488aecd90ca1770edb9274f4aa9e461b741c6a8b3c16b72d",
+    "backend/tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz": "99a4c37576bdb0f5b9e7440079b489772cc90deba94e09c46a17f4b57fc687e5",
+    "backend/tests/fixtures/strike_breach/golden.json.gz": "1bc64569fa0e9d93d24e205339698b21014cb614b2b5b15b3f492964bd2f72e2",
+    "backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz": "4de210c7aa0e51ad2b80acd209315f370ddc29a0a1eccd4ec6d877256be9d992",
+    "backend/tests/fixtures/zones/golden_trade_eafc872.json.gz": "17c5f29440fe9bbe0f474c91c247718dd9bc765a711790de89ea32cc74da3c8e"
+  }
+}

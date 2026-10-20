@@ -48,29 +48,82 @@ def test_the_repository_is_clean():
     assert problems == [], "\n".join(problems)
 
 
-def test_every_grandfathered_fixture_still_exists_and_is_still_caught():
-    # The list only shrinks: a file moved to the private store (or replaced by synthetic data) leaves the list too.
-    for rel in sorted(check_public_repo.GRANDFATHERED_FIXTURES):
-        assert (REPO / rel).is_file(), f"{rel} is gone - remove it from GRANDFATHERED_FIXTURES"
-        assert check_public_repo.path_problems(rel) == []
-    flagged = {rel for rel in check_public_repo.GRANDFATHERED_FIXTURES if _without_grandfathering(rel)}
-    assert flagged == set(check_public_repo.GRANDFATHERED_FIXTURES), "an entry the rules would not flag needs no grandfathering"
+def test_nothing_is_grandfathered_and_the_private_fixtures_stay_out_of_the_tree():
+    # Owner decision PR-2: Trade's own outputs moved to the private fixtures store; no list lets one back in.
+    assert not hasattr(check_public_repo, "GRANDFATHERED_FIXTURES")
+    private = check_public_repo.private_fixtures(REPO)
+    assert len(private) == 8 and "backend/tests/fixtures/strike_breach/golden.json.gz" in private
+    for rel in sorted(private):
+        assert not (REPO / rel).exists(), f"{rel} is a private fixture - it lives in the private fixtures store only"
+        assert rel not in check_public_repo.ALLOWED_TEST_DATA and rel not in check_public_repo.ALLOWED_PUBLIC_DATA
+        assert check_public_repo.path_problems(rel), f"{rel} would not be flagged by the path rules either"
 
 
-def _without_grandfathering(rel: str) -> list:
-    saved = check_public_repo.GRANDFATHERED_FIXTURES, check_public_repo.ALLOWED_TEST_DATA
-    check_public_repo.GRANDFATHERED_FIXTURES, check_public_repo.ALLOWED_TEST_DATA = {}, {}
+def _unlisted(rel: str) -> list:
+    saved = check_public_repo.ALLOWED_TEST_DATA
+    check_public_repo.ALLOWED_TEST_DATA = {}
     try:
         return check_public_repo.path_problems(rel)
     finally:
-        check_public_repo.GRANDFATHERED_FIXTURES, check_public_repo.ALLOWED_TEST_DATA = saved
+        check_public_repo.ALLOWED_TEST_DATA = saved
 
 
 def test_every_listed_data_file_is_pinned_to_its_current_content():
-    for rel, pinned in {**check_public_repo.GRANDFATHERED_FIXTURES, **check_public_repo.ALLOWED_TEST_DATA}.items():
+    for rel, pinned in check_public_repo.ALLOWED_TEST_DATA.items():
         assert (REPO / rel).is_file(), f"{rel} is gone - remove it from the list"
         assert check_public_repo.content_sha256((REPO / rel).read_bytes()) == pinned, rel
-        assert _without_grandfathering(rel), f"{rel} would not be flagged - it needs no entry"
+        assert _unlisted(rel), f"{rel} would not be flagged - it needs no entry"
+
+
+def test_a_private_fixture_put_back_is_refused_even_if_someone_pins_it(tmp_path, monkeypatch):
+    manifest = check_public_repo.PRIVATE_FIXTURES_MANIFEST
+    back = "backend/tests/fixtures/oi_regime/golden.json"
+    root = _tree(tmp_path, {manifest: (REPO / manifest).read_bytes(), back: b"{}"})
+    problems = check_public_repo.check(root)
+    assert len(problems) == 2 and all(p.startswith(back) for p in problems)
+    assert any("a private fixture" in p and "PR-2" in p for p in problems)
+    monkeypatch.setitem(check_public_repo.ALLOWED_TEST_DATA, back, check_public_repo.content_sha256(b"{}"))
+    problems = check_public_repo.check(root)
+    assert len(problems) == 1 and problems[0].startswith(back) and "a private fixture" in problems[0]
+
+
+def _manifest(files: dict) -> str:
+    import json
+    return json.dumps({"files": files}) + "\n"
+
+
+def _without_the_manifest_pin(problems: list) -> list:
+    """A made-up manifest is not the pinned one; that finding is not what these tests are about."""
+    return [p for p in problems if not (p.startswith(check_public_repo.PRIVATE_FIXTURES_MANIFEST) and "test data with new content" in p)]
+
+
+def test_a_renamed_copy_of_a_private_fixture_is_refused(tmp_path):
+    body = b"pretend golden bytes\n"
+    manifest = _manifest({"backend/tests/fixtures/x/golden.json.gz": hashlib.sha256(body).hexdigest()})
+    root = _tree(tmp_path, {check_public_repo.PRIVATE_FIXTURES_MANIFEST: manifest, "docs/notes/renamed.txt": body})
+    problems = _without_the_manifest_pin(check_public_repo.check(root))
+    assert len(problems) == 1 and problems[0].startswith("docs/notes/renamed.txt")
+    assert "a copy of the private fixture backend/tests/fixtures/x/golden.json.gz" in problems[0]
+
+
+def test_a_missing_manifest_is_a_finding_when_the_resolver_is_there(tmp_path):
+    resolver = check_public_repo.PRIVATE_FIXTURES_RESOLVER
+    problems = check_public_repo.check(_tree(tmp_path, {resolver: "x = 1\n"}))
+    assert len(problems) == 1 and problems[0].startswith(check_public_repo.PRIVATE_FIXTURES_MANIFEST) and "missing" in problems[0]
+    assert check_public_repo.check(_tree(tmp_path / "other", {"app/a.py": "x = 1\n"})) == []
+
+
+@pytest.mark.parametrize("bad", ["/etc/passwd", "../outside.json", "backend/../../x.json", "backend//x.json", "./x.json", "a\\b.json"])
+def test_a_manifest_path_that_leaves_the_store_is_a_finding(tmp_path, bad):
+    root = _tree(tmp_path, {check_public_repo.PRIVATE_FIXTURES_MANIFEST: _manifest({bad: "0" * 64})})
+    problems = _without_the_manifest_pin(check_public_repo.check(root))
+    assert len(problems) == 1 and "not plain relative paths" in problems[0]
+
+
+def test_an_unreadable_private_fixtures_manifest_is_a_finding(tmp_path):
+    root = _tree(tmp_path, {check_public_repo.PRIVATE_FIXTURES_MANIFEST: "not json\n"})
+    problems = check_public_repo.check(root)
+    assert any(p.startswith(check_public_repo.PRIVATE_FIXTURES_MANIFEST) and "unreadable" in p for p in problems)
 
 
 def test_a_clean_tree_passes(tmp_path):
@@ -194,7 +247,7 @@ def test_code_docs_and_ordinary_data_are_not_fixtures(tmp_path, rel):
     assert check_public_repo.check(root) == []
 
 
-def test_a_grandfathered_fixture_passes_but_a_sibling_does_not(tmp_path):
+def test_a_listed_fixture_passes_but_a_sibling_does_not(tmp_path):
     kept = "backend/tests/fixtures/zones/bn_daily.csv"
     root = _tree(tmp_path, {kept: (REPO / kept).read_bytes(), "backend/tests/fixtures/zones/bn_daily_v2.csv": "1,2\n"})
     problems = check_public_repo.check(root)
@@ -202,7 +255,7 @@ def test_a_grandfathered_fixture_passes_but_a_sibling_does_not(tmp_path):
 
 
 def test_a_listed_file_with_new_content_is_refused(tmp_path):
-    kept = "backend/tests/fixtures/oi_regime/golden.json"
+    kept = "backend/tests/fixtures/zones/bn_daily.csv"
     allowed = "frontend/src/charting/__fixtures__/chart_bands_cases.json"
     original = (REPO / kept).read_bytes()
     same_with_crlf = _tree(tmp_path / "crlf", {kept: original.replace(b"\n", b"\r\n")})
@@ -211,7 +264,7 @@ def test_a_listed_file_with_new_content_is_refused(tmp_path):
     root = _tree(tmp_path / "changed", {kept: original + b" ", allowed: changed})
     problems = sorted(check_public_repo.check(root), key=lambda p: p.startswith(allowed))
     assert len(problems) == 2
-    assert problems[0].startswith(kept) and "grandfathered fixture with new content" in problems[0]
+    assert problems[0].startswith(kept) and "replace its line in ALLOWED_TEST_DATA" in problems[0]
     assert problems[1].startswith(allowed) and "replace its line in ALLOWED_TEST_DATA" in problems[1]
     assert check_public_repo.content_sha256(changed) in problems[1]
 

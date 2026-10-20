@@ -1,11 +1,12 @@
 """Z5 (Trade port): the short-strike breach model (Trade `strike_breach_model.py`) - golden parity with Trade's own
 functions on a synthetic series (tests/fixtures/strike_breach/make_golden.py), no look-ahead, the inversion, the per-leg
-report, the builder's evaluate answer and the proposal card."""
+report, the builder's evaluate answer and the proposal card.
+
+The golden file is Trade output, read from the private fixtures store (tests/private_fixtures.py): the public CI skips
+the parity tests with the reason. The other tests run on the same synthetic series built in code
+(fixtures/strike_breach/synthetic_inputs.py; test_the_synthetic_series_is_the_golden_s_series ties the two)."""
 import asyncio
-import gzip
-import json
 import math
-import pathlib
 import uuid
 from datetime import date, timedelta
 
@@ -13,10 +14,17 @@ import numpy as np
 import pytest
 
 from app.options_builder import strike_breach as sb
+from tests import private_fixtures as PF
+from tests.fixtures.strike_breach.synthetic_inputs import series as synthetic_series
 from tests.test_auth_api import _register, client
 
-GOLDEN = json.loads(gzip.open(pathlib.Path(__file__).parent / "fixtures" / "strike_breach" / "golden.json.gz").read())
-BARS = GOLDEN["bars"]
+_SERIES = synthetic_series()
+BARS = {k: [float(x) for x in _SERIES[k]] for k in ("open", "high", "low", "close")}
+
+
+@pytest.fixture(scope="module")
+def golden():
+    return PF.load("backend/tests/fixtures/strike_breach/golden.json.gz")     # skips when the private store is not mounted
 
 
 def _bars(n=None):
@@ -27,46 +35,51 @@ def _bars(n=None):
 
 # --- parity with the Trade functions -----------------------------------------------------------------------------------
 
-def test_frozen_coefficients_are_trades():
+def test_the_synthetic_series_is_the_golden_s_series(golden):
+    assert BARS == golden["bars"]
+
+
+def test_frozen_coefficients_are_trades(golden):
     for outcome in sb.OUTCOMES:
-        assert list(GOLDEN["coef"][outcome]["names"]) == list(sb.NAMES)
-        assert list(GOLDEN["coef"][outcome]["coef"]) == list(sb.COEF[outcome])
+        assert list(golden["coef"][outcome]["names"]) == list(sb.NAMES)
+        assert list(golden["coef"][outcome]["coef"]) == list(sb.COEF[outcome])
 
 
-def test_features_match_trade_daily_features_lagged_one_day():
+def test_features_match_trade_daily_features_lagged_one_day(golden):
     """Trade's row i holds the value through day i-1; ATP's series at i-1 is the same number."""
-    series = sb.indicator_series(BARS["high"], BARS["low"], BARS["close"])
+    bars = golden["bars"]
+    series = sb.indicator_series(bars["high"], bars["low"], bars["close"])
     for key in ("sigma20", "atr14", "adx", "di_dir"):
-        golden = GOLDEN["features"][key]
-        assert golden[0] is None
-        for i in range(1, len(golden)):
+        want = golden["features"][key]
+        assert want[0] is None
+        for i in range(1, len(want)):
             mine = series[key][i - 1]
-            if golden[i] is None:
+            if want[i] is None:
                 assert not math.isfinite(mine), (key, i)
             else:
-                assert mine == pytest.approx(golden[i], rel=1e-12, abs=1e-12), (key, i)
+                assert mine == pytest.approx(want[i], rel=1e-12, abs=1e-12), (key, i)
 
 
-def test_wilder_and_regime_match_trade():
-    w = GOLDEN["wilder"]
+def test_wilder_and_regime_match_trade(golden):
+    w = golden["wilder"]
     out = sb.wilder(np.asarray(w["x"], float), w["n"])
     for mine, theirs in zip(out, w["out"]):
         assert (theirs is None and math.isnan(mine)) or mine == pytest.approx(theirs, abs=1e-12)
-    for case in GOLDEN["regime"]:
+    for case in golden["regime"]:
         assert sb.regime_of(case["adx"], case["align"]) == case["regime"]
 
 
-def test_breach_probability_matches_trade_predict_frozen():
-    assert len(GOLDEN["predict"]) >= 500
-    for case in GOLDEN["predict"]:
+def test_breach_probability_matches_trade_predict_frozen(golden):
+    assert len(golden["predict"]) >= 500
+    for case in golden["predict"]:
         regime = sb.regime_of(case["adx"], case["align_adx"])
         for outcome in sb.OUTCOMES:
             p = sb.breach_probability(case["z_rv"], case["h"], case["weekday"], regime, struct=case["align_struct"], call=case["side"] < 0, outcome=outcome)
             assert p == pytest.approx(case[f"p_{outcome}"], abs=1e-12)
 
 
-def test_required_z_matches_trade_and_inverts_the_model():
-    for case in GOLDEN["required_z"]:
+def test_required_z_matches_trade_and_inverts_the_model(golden):
+    for case in golden["required_z"]:
         z = sb.required_z(case["target"], case["h"], case["weekday"], case["regime"], struct=case["struct"], call=bool(case["call"]), outcome=case["outcome"])
         assert (z is None) == (case["z"] is None)
         if z is not None:

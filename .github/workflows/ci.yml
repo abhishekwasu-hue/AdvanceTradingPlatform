@@ -137,7 +137,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          python -m pytest -q -rf --durations=25 -m "not lookahead" 2>&1 | tee pytest-output.txt || status=$?
+          python -m pytest -q -rfEs --durations=25 -m "not lookahead" 2>&1 | tee pytest-output.txt || status=$?
           grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=pytest::/' || true
           exit $status
 
@@ -197,7 +197,7 @@ jobs:
         run: |
           set -o pipefail
           status=0
-          python -m pytest -q -rf -m lookahead tests/test_z10a_no_lookahead.py tests/test_n1_l2_daily_trend.py 2>&1 | tee pytest-output.txt || status=$?
+          python -m pytest -q -rfEs -m lookahead tests/test_z10a_no_lookahead.py tests/test_n1_l2_daily_trend.py 2>&1 | tee pytest-output.txt || status=$?
           grep -E '^(FAILED|ERROR) ' pytest-output.txt | head -50 | sed 's/^/::error title=lookahead::/' || true
           exit $status
 

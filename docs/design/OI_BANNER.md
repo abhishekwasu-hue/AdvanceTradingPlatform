@@ -180,8 +180,9 @@ Kept as in the source, and flagged for review:
 
 ## Golden fixtures
 
-`backend/tests/fixtures/oi_regime/golden.json` holds 1,300+ cases produced by running Trade's own functions on
-seeded random inputs (`capture_from_trade.py`, run by hand, never in CI). It covers:
+`backend/tests/fixtures/oi_regime/golden.json` (in the private fixtures store, not in the tree:
+`docs/PUBLIC_REPO_POLICY.md` section 5; public CI skips these golden tests with the reason) holds 1,300+ cases produced
+by running Trade's own functions on seeded random inputs (`capture_from_trade.py`, run by hand, never in CI). It covers:
 - classification;
 - rotation;
 - 150 hysteresis sequences replayed step by step;

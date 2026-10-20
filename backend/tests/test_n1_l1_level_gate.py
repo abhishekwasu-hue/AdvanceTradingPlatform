@@ -4,9 +4,11 @@ made by make_golden.py from Trade at the pinned revision; drift_check.py compare
 Every recorded output is reproduced: the gate's state machine (states, events, reasons, entry / SL / target / R:R,
 grade, evidence, ticket lines, the one-line description), the trend context and allowed sides, the decision3 functions
 (candle read, contraction, power shift, zone study, patterns, reversal forms, commitment with its wait reasons), the
-real-break rule (`break_from`, time acceptance) and the settings defaults."""
+real-break rule (`break_from`, time acceptance) and the settings defaults.
+
+The golden file is Trade output, read from the private fixtures store (tests/private_fixtures.py): the public CI skips
+the parity tests with the reason; the tests that need no Trade output always run."""
 import ast
-import gzip
 import subprocess
 import sys
 import json
@@ -25,16 +27,18 @@ from app.price_action import pa_settings
 from app.price_action.level_gate import gate as G
 from app.price_action.level_gate import method as M
 from app.price_action.level_gate import settings as LS
+from tests import private_fixtures as PF
+from tests.fixtures.level_gate.synthetic_inputs import session_bars
 
 BACKEND = Path(__file__).resolve().parents[1]
-GOLDEN = BACKEND / "tests" / "fixtures" / "level_gate" / "golden.json.gz"
+GOLDEN = "backend/tests/fixtures/level_gate/golden.json.gz"      # a private fixture (manifest path)
 PACKAGE = BACKEND / "app" / "price_action" / "level_gate"
 
 
 @lru_cache(maxsize=1)
 def golden() -> Dict[str, Any]:
-    with gzip.open(GOLDEN, "rt", encoding="utf-8") as fh:
-        return json.load(fh)
+    """The golden file from the private fixtures store; skips the calling test when the store is not mounted."""
+    return PF.load(GOLDEN)
 
 
 def norm(x: Any) -> Any:
@@ -253,7 +257,7 @@ def test_method_parity():
 
 
 def test_commitment_refuses_an_unknown_mode():
-    A = arrays(series(0))
+    A = arrays(session_bars(11))                       # the golden's series 0, built in code
     with pytest.raises(ValueError):
         M.commitment(A, 5, M.UP, {"lo": 0.0, "hi": 1.0}, dict(LS.METHOD_DEFAULTS, commit_beyond="wick"))
 

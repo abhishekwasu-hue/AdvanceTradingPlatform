@@ -36,10 +36,10 @@ class TradingViewAlertPayload(BaseModel):
     symbol: str
     direction: SignalDirection
     # #309 review: a NaN / infinite or absurd level is refused at the door (422), as the PAPER ticket does.
-    entry: float = Field(lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
-    stop_loss: float = Field(lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
-    target1: float = Field(lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
-    target2: Optional[float] = Field(default=None, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
+    entry: float = Field(gt=-MAX_SIGNAL_PRICE, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
+    stop_loss: float = Field(gt=-MAX_SIGNAL_PRICE, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
+    target1: float = Field(gt=-MAX_SIGNAL_PRICE, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
+    target2: Optional[float] = Field(default=None, gt=-MAX_SIGNAL_PRICE, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
     alert_id: Optional[str] = None
 
     _unset_target2 = field_validator("target2", mode="before")(lambda value: unset_if_not_finite(value))

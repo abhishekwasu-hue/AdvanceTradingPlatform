@@ -319,3 +319,6 @@ def test_signal_intake_refuses_a_level_that_is_not_a_finite_number_or_absurd():
             assert model(**{**ok, "target2": unset}).target2 is None
         with pytest.raises(ValidationError):
             model(**{**ok, "target2": 1e11})
+    with pytest.raises(ValidationError):                                     # the webhook allows 0 / negative, bounded
+        TradingViewAlert(**{**ok, "stop_loss": -1e11})
+    assert TradingViewAlert(**{**ok, "stop_loss": 0.0}).stop_loss == 0.0

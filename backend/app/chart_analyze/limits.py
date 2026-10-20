@@ -55,12 +55,13 @@ async def platform_cost(session: AsyncSession, user: User, since: datetime) -> f
         ChartAnalysisRecord.billed_to_user_key.is_(False), ChartAnalysisRecord.analysed_at >= since)) or 0.0)
 
 
-async def running_count(session: AsyncSession, user: User) -> int:
-    """This user's analyses running right now (their cost is not known yet: each reserves one estimate)."""
-    from app.chart_analyze.service import RUNNING
+async def running_count(session: AsyncSession, user: User, settings: Dict[str, Any], now: datetime) -> int:
+    """This user's analyses running right now (their cost is not known yet: each reserves one estimate). A stale
+    "running" row (past running_timeout_minutes: its run is gone) reserves nothing."""
+    from app.chart_analyze.service import RUNNING, stale_before
     return int(await session.scalar(select(func.count()).select_from(ChartAnalysisRecord).where(
         ChartAnalysisRecord.tenant_id == user.tenant_id, ChartAnalysisRecord.user_id == user.id,
-        ChartAnalysisRecord.status == RUNNING)) or 0)
+        ChartAnalysisRecord.status == RUNNING, ChartAnalysisRecord.started_at >= stale_before(settings, now))) or 0)
 
 
 async def usage(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], now: Optional[datetime] = None) -> Dict[str, Any]:
@@ -106,11 +107,12 @@ async def check_can_add(session: AsyncSession, user: User, tenant: Tenant, setti
 async def check_cost(session: AsyncSession, user: User, tenant: Tenant, settings: Dict[str, Any], estimate_usd: float,
                      now: Optional[datetime] = None) -> None:
     """The organisation's AI only (a BYOK call is capped by the user's own BYOK caps instead)."""
+    now = now or datetime.now(timezone.utc)
     used = await usage(session, user, tenant, settings, now)
     cap = used["cost_cap_usd"]
     # Every running analysis (this one included: it is claimed before the call) reserves one estimate, so parallel runs
     # cannot each pass the cap on the same remaining budget.
-    reserved = max(1, await running_count(session, user)) * max(0.0, estimate_usd)
+    reserved = max(1, await running_count(session, user, settings, now)) * max(0.0, estimate_usd)
     if cap <= 0 or used["cost_used_usd"] >= cap or used["cost_used_usd"] + reserved > cap:
         raise LimitReached("Limit reached: this month's AI budget for chart analyses on your plan is used up. "
                            "It resets on the 1st (UTC), or add your own AI key in Settings.")

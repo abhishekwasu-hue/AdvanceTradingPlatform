@@ -63,8 +63,11 @@ alert form says so too). Annotations are drawn as an overlay on the user's own i
   file path, the image hash and size, the result JSON, the provider / model / engine version, the cost, whether it
   ran on the user's own key.
 - **Running**: an analysis is claimed (`running`, `started_at`) before the AI call; an interrupted request ends it as
-  failed, and a row still running after `running_timeout_minutes` (default 10; a crash, a restart) is stale - it can
-  be analysed again, deleted and purged.
+  failed (the cleanup is shielded from the cancellation), and a row still running after `running_timeout_minutes`
+  (default 10, never below the AI call's own worst case derived from the provider timeout; a crash, a restart) is
+  stale - it can be analysed again, deleted and purged, and reserves no cost. A run finishes only its own claim (a
+  conditional update on status and `started_at`): a late run never overwrites a re-claimed row or brings back a
+  deleted one.
 - **Retention**: an admin setting, `retention_days` (default **30**, as the owner proposed). The daily retention job
   (`app.retention.service.run_retention`, run by the trading worker once per IST day outside market hours) deletes
   expired images and results, batch after batch until none is left; a file that could not be removed keeps its path on
@@ -157,7 +160,8 @@ trailing bytes gone). Every decode error is a clear 4xx.
 - the content type must be image/png or image/jpeg **and** the bytes must start with the PNG / JPEG signature.
 
 - internationalised and full-width host names (`bücher.de`, `ｅxample.com`) are turned into their IDNA / ASCII form
-  first (that form is resolved, checked, sent as `Host` and as the TLS name); a name that cannot be encoded, and any
+  first (that form is resolved, checked, sent as `Host` and as the TLS name); a raw non-ASCII query is percent-encoded
+  as a browser would; a name that cannot be encoded, and any
   other error while fetching, is an unreadable link ("Please upload a screenshot instead"), never a server error.
 
 **Not `EGRESS_ALLOWED_HOSTS`.** That operator allow-list is for destinations an organisation configures once (webhooks,
@@ -165,7 +169,8 @@ SMS gateways). Here users paste images from any host, which no list could name; 
 check on every hop plus the pinned connection.
 
 **The decode is CPU-bound** (about a second and some hundred MB for a large image): the API runs it in a worker thread,
-at most two at a time per API process, so the event loop never stalls. 16-bit greyscale is reduced to 8-bit first.
+at most two at a time per API process (the gate is taken on the event loop before a thread is used, so waiting
+decodes hold no worker thread), so the event loop never stalls. 16-bit greyscale is reduced to 8-bit first.
 
 **No lock or connection is held during the slow part**: the plan limit is checked once without a lock, the read
 transaction ends, the upload is read / the link fetched / the image decoded, and only the add itself takes a short

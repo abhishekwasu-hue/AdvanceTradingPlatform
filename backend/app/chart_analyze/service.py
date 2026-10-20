@@ -6,9 +6,11 @@ does not offer that for personal AI records; BYOK reports work the same way).
 """
 import json
 import logging
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import anyio
 from fastapi import HTTPException
 from sqlalchemy import and_, or_, select, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -61,8 +63,20 @@ def as_dict(row: ChartAnalysisRecord, *, with_result: bool = True) -> Dict[str, 
             "disclaimer": contract.DISCLAIMER}
 
 
+def ai_floor_minutes() -> int:
+    """The longest one AI call of a run may take (the provider timeout with the largest thinking headroom, twice for the
+    retry after a cut-off answer), in whole minutes plus one: a run is never called stale while its call can still run."""
+    from app.ai import providers
+    worst = providers.timeout_for(max(providers.THINKING_HEADROOM.values())) * 2
+    return math.ceil(worst / 60) + 1
+
+
+def running_timeout_minutes(settings: Dict[str, Any]) -> int:
+    return max(int(settings["running_timeout_minutes"]), ai_floor_minutes())
+
+
 def stale_before(settings: Dict[str, Any], now: datetime) -> datetime:
-    return now - timedelta(minutes=int(settings["running_timeout_minutes"]))
+    return now - timedelta(minutes=running_timeout_minutes(settings))
 
 
 def is_stale(row: ChartAnalysisRecord, settings: Dict[str, Any], now: datetime) -> bool:
@@ -79,7 +93,7 @@ def is_stale(row: ChartAnalysisRecord, settings: Dict[str, Any], now: datetime) 
 async def own(session: AsyncSession, user: User, item_id: int) -> ChartAnalysisRecord:
     row = await session.scalar(select(ChartAnalysisRecord).where(
         ChartAnalysisRecord.id == item_id, ChartAnalysisRecord.tenant_id == user.tenant_id, ChartAnalysisRecord.user_id == user.id,
-        ChartAnalysisRecord.status != DELETED))
+        ChartAnalysisRecord.status != DELETED).execution_options(populate_existing=True))      # the row as stored now
     if row is None:
         raise HTTPException(status_code=404, detail="Analysis not found")
     return row
@@ -134,15 +148,15 @@ async def analyze(session: AsyncSession, user: User, tenant: Tenant, settings: D
     try:
         return await _run(session, user, tenant, settings, row, engine, png, item_id, client=client, now=now)
     except BaseException:
-        # A cancelled request, a dropped connection or anything unexpected: the row never stays "running" (best effort;
-        # a row a crash leaves behind turns stale after running_timeout_minutes and can be retried or deleted).
-        try:
-            await session.rollback()
-            current = await session.get(ChartAnalysisRecord, row.id, populate_existing=True)
-            if current is not None and current.status == RUNNING:
-                await _finish(session, row.id, FAILED, error="The analysis was interrupted. Try again.")
-        except BaseException:  # noqa: BLE001 - never mask the original error
-            pass
+        # A cancelled request, a dropped connection or anything unexpected: the row never stays "running". The cleanup is
+        # shielded, so the cancellation that brought us here cannot skip it; it ends only this run's claim (a crash that
+        # skips even this leaves a row that turns stale after running_timeout_minutes).
+        with anyio.CancelScope(shield=True):
+            try:
+                await session.rollback()
+                await _finish(session, row.id, now, FAILED, error="The analysis was interrupted. Try again.")
+            except BaseException:  # noqa: BLE001 - never mask the original error
+                pass
         raise
 
 
@@ -152,47 +166,53 @@ async def _run(session: AsyncSession, user: User, tenant: Tenant, settings: Dict
         instr = engine.image_only_instructions(width=row.image_width, height=row.image_height)
         answer = await ask(session, user, tenant, instr, png, settings, now=now, client=client)
     except EngineUnavailable as exc:
-        await _finish(session, row.id, FAILED, error=str(exc)[:300])
+        await _finish(session, row.id, now, FAILED, error=str(exc)[:300])
         raise HTTPException(status_code=409, detail={"message": str(exc), "code": "no_ai"}) from None
     except HTTPException:
-        await _finish(session, row.id, READY)
+        await _finish(session, row.id, now, READY)
         raise
     except Exception as exc:  # noqa: BLE001 - recorded on the row, never a raw error to the user
         logger.warning("Chart analysis %s failed: %s", row.id, exc.__class__.__name__)
-        await _finish(session, row.id, FAILED, error=f"The analysis failed ({exc.__class__.__name__}). Try again.")
+        await _finish(session, row.id, now, FAILED, error=f"The analysis failed ({exc.__class__.__name__}). Try again.")
         return await own(session, user, item_id)
     values: Dict[str, Any] = {"provider": answer.provider[:20], "model": (answer.model or "")[:80] or None,
                               "engine_version": f"{engine.name} {engine.version} / {engine.method_version}"[:80],
                               "billed_to_user_key": answer.billed_to_user_key, "analysed_at": now}
     if answer.error is not None:
-        await _finish(session, row.id, FAILED, error=f"The AI could not answer: {answer.error}"[:300], cost=answer.cost_usd, **values)
+        await _finish(session, row.id, now, FAILED, error=f"The AI could not answer: {answer.error}"[:300], cost=answer.cost_usd, **values)
         return await own(session, user, item_id)
     try:
         raw = engine.parse_image_only(answer.text or "", width=row.image_width, height=row.image_height)
         result = contract.validate(raw, mode="image_only", width=row.image_width, height=row.image_height)
     except Exception as exc:  # noqa: BLE001 - a reply the engine cannot read is a failed analysis, never a partial one
         logger.info("Chart analysis %s: the reply did not fill the contract (%s)", row.id, exc.__class__.__name__)
-        await _finish(session, row.id, FAILED, error="The AI's answer could not be read. Try again.", cost=answer.cost_usd, **values)
+        await _finish(session, row.id, now, FAILED, error="The AI's answer could not be read. Try again.", cost=answer.cost_usd, **values)
         return await own(session, user, item_id)
-    await _finish(session, row.id, DONE, result=json.dumps(result, separators=(",", ":")), cost=answer.cost_usd, **values)
-    await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_done", f"#{row.id} {answer.provider}")
-    await session.commit()
+    if await _finish(session, row.id, now, DONE, result=json.dumps(result, separators=(",", ":")), cost=answer.cost_usd, **values):
+        await write_audit_log(session, user.tenant_id, user.id, "chart_analyze_done", f"#{row.id} {answer.provider}")
+        await session.commit()
     return await own(session, user, item_id)
 
 
-async def _finish(session: AsyncSession, item_id: int, status: str, *, error: Optional[str] = None, result: Optional[str] = None,
-                  cost: float = 0.0, **values: Any) -> None:
-    current = await session.get(ChartAnalysisRecord, item_id, populate_existing=True)      # the row as stored now, not a stale copy
-    if current is None:
-        return
-    current.status = status
-    current.error = error
+async def _finish(session: AsyncSession, item_id: int, claimed_at: datetime, status: str, *, error: Optional[str] = None,
+                  result: Optional[str] = None, cost: float = 0.0, **values: Any) -> bool:
+    """Ends THIS run: one conditional UPDATE on the row only while it is still the run this request claimed (status
+    running and the same started_at). A run that outlived running_timeout_minutes and was re-claimed by another request,
+    or whose row was deleted or purged meanwhile, changes nothing (no double result, no double cost, no resurrected
+    row). Returns whether it wrote."""
+    fields: Dict[str, Any] = {"status": status, "error": error,
+                              "cost_usd": ChartAnalysisRecord.cost_usd + float(cost or 0.0), **values}
     if result is not None:
-        current.result_json = result
-    current.cost_usd = float(current.cost_usd or 0.0) + float(cost or 0.0)
-    for key, value in values.items():
-        setattr(current, key, value)
+        fields["result_json"] = result
+    done = await session.execute(update(ChartAnalysisRecord).where(
+        ChartAnalysisRecord.id == item_id, ChartAnalysisRecord.status == RUNNING, ChartAnalysisRecord.started_at == claimed_at)
+        .values(**fields).execution_options(synchronize_session=False))
+    owned = getattr(done, "rowcount", 0) == 1
     await session.commit()
+    if not owned:
+        logger.warning("Chart analysis %s: this run no longer owns the row (re-claimed, deleted or purged); its %s result is dropped",
+                       item_id, status)
+    return owned
 
 
 async def history(session: AsyncSession, user: User, limit: int = HISTORY_MAX) -> List[Dict[str, Any]]:

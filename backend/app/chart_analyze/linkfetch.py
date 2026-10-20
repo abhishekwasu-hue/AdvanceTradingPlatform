@@ -37,7 +37,7 @@ import re
 import socket
 from dataclasses import dataclass
 from typing import Any, Awaitable, Callable, Dict, List, Optional
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 
@@ -183,7 +183,9 @@ def _pinned_request(client: httpx.AsyncClient, parts: Any, host: str, address: s
     """The request to the checked address; the URL is rebuilt from the parsed parts with the IP as its host (never
     parsed again from the user's text), the ASCII name in Host and as the TLS name."""
     path = parts.path or "/"
-    pinned = httpx.URL(scheme="https", host=address, path=path, query=parts.query.encode("utf-8") if parts.query else None)
+    # A raw non-ASCII query (`?q=ü`) is percent-encoded as UTF-8, as a browser sends it; existing %-escapes are kept.
+    query = quote(parts.query, safe="=&;%+/?:@!$'()*,~-._") if parts.query else ""
+    pinned = httpx.URL(scheme="https", host=address, path=path, query=query.encode("ascii") if query else None)
     return client.build_request("GET", pinned, headers={"Host": host}, extensions={"sni_hostname": host})
 
 

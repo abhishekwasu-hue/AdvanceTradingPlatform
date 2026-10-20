@@ -162,7 +162,10 @@ export class LightweightEngine implements ChartEngine {
   }
 
   /** Scrolling and zooming off while a drawing is dragged, so the chart does not pan under the pointer. */
-  setPanning(enabled: boolean) { this.chart.applyOptions({ handleScroll: enabled, handleScale: enabled }); }
+  setPanning(enabled: boolean) {
+    if (this.disposed) return;                                 // a tool unbinding after the chart was removed (unmount mid-drag)
+    this.chart.applyOptions({ handleScroll: enabled, handleScale: enabled });
+  }
 
   private price(p: MouseParamsLike): number | null {
     return p.point && this.priceOf ? this.priceOf(p.point.y) : null;
@@ -206,7 +209,8 @@ export class LightweightEngine implements ChartEngine {
   }
 
   private themed(d: DrawingV1): DrawingV1 {
-    return this.defaultColor && (d.style?.color ?? DEFAULT_COLOR) === DEFAULT_COLOR ? { ...d, style: { ...d.style, color: this.defaultColor } } : d;
+    return this.defaultColor && (d.style?.color ?? DEFAULT_COLOR).toLowerCase() === DEFAULT_COLOR.toLowerCase()
+      ? { ...d, style: { ...d.style, color: this.defaultColor } } : d;
   }
 
   private draw(drawing: DrawingV1): Rendered {

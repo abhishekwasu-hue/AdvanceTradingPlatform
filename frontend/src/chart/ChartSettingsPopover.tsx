@@ -1,5 +1,5 @@
 import { Check, Settings2 } from "lucide-react";
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { CANDLE_PRESETS, type ChartThemeChoice } from "./chartTheme";
 import type { ChartPrefs, ChartPrefsPatch } from "./useChartPrefs";
 
@@ -28,6 +28,19 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
   );
 }
 
+/** Arrow keys move the choice within a radio group (WAI-ARIA radio pattern: one tab stop, the checked option). */
+export function radioKeys<T>(ids: readonly T[], current: T | undefined, pick: (id: T) => void) {
+  return (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    const step = e.key === "ArrowRight" || e.key === "ArrowDown" ? 1 : e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 0;
+    if (!step) return;
+    e.preventDefault();
+    const at = current === undefined ? -1 : ids.indexOf(current);
+    const next = (Math.max(at, step > 0 ? -1 : 0) + step + ids.length) % ids.length;
+    pick(ids[next]);
+    e.currentTarget.querySelectorAll<HTMLElement>('[role="radio"]')[next]?.focus();
+  };
+}
+
 export function ChartSettingsPopover({ prefs, onChange, error, defaultOpen = false }: {
   prefs: ChartPrefs; onChange: (patch: ChartPrefsPatch) => void; error?: string | null; defaultOpen?: boolean;
 }) {
@@ -42,8 +55,8 @@ export function ChartSettingsPopover({ prefs, onChange, error, defaultOpen = fal
     window.addEventListener("pointerdown", onDown);
     return () => { window.removeEventListener("keydown", onKey); window.removeEventListener("pointerdown", onDown); };
   }, [open]);
-  const preset = CANDLE_PRESETS.find((p) => (p.colors?.up ?? null) === (prefs.candle_colors?.up ?? null)
-    && (p.colors?.down ?? null) === (prefs.candle_colors?.down ?? null))?.id;
+  const same = (a?: string | null, b?: string | null) => (a ?? "").toLowerCase() === (b ?? "").toLowerCase();
+  const preset = CANDLE_PRESETS.find((p) => same(p.colors?.up, prefs.candle_colors?.up) && same(p.colors?.down, prefs.candle_colors?.down))?.id;
 
   return (
     <div ref={ref} className="relative inline-flex">
@@ -55,9 +68,11 @@ export function ChartSettingsPopover({ prefs, onChange, error, defaultOpen = fal
         <div id={id} role="dialog" aria-label="Chart settings"
           className="absolute right-0 top-full z-30 mt-space-1 w-72 max-w-[calc(100vw-2rem)] space-y-space-4 rounded-panel border border-subtle bg-surface-1 p-space-4 text-t14 text-fg shadow-raised">
           <Section title="Chart theme">
-            <div role="radiogroup" aria-label="Chart theme" className="grid grid-cols-3 gap-space-1 rounded-panel bg-surface-2 p-space-1">
+            <div role="radiogroup" aria-label="Chart theme" className="grid grid-cols-3 gap-space-1 rounded-panel bg-surface-2 p-space-1"
+              onKeyDown={radioKeys(THEMES.map((t) => t.id), prefs.theme, (theme) => onChange({ theme }))}>
               {THEMES.map((t) => (
-                <button key={t.id} type="button" role="radio" aria-checked={prefs.theme === t.id} onClick={() => onChange({ theme: t.id })}
+                <button key={t.id} type="button" role="radio" aria-checked={prefs.theme === t.id} tabIndex={prefs.theme === t.id ? 0 : -1}
+                  onClick={() => onChange({ theme: t.id })}
                   className={cx("min-h-11 rounded-control px-space-2 md:min-h-9", focus,
                     prefs.theme === t.id ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
                   {t.label}
@@ -72,9 +87,12 @@ export function ChartSettingsPopover({ prefs, onChange, error, defaultOpen = fal
               className={cx("h-4 w-4 accent-brand", focus)} />
           </label>
           <Section title="Candle colours">
-            <div role="radiogroup" aria-label="Candle colours" className="space-y-space-1">
-              {CANDLE_PRESETS.map((p) => (
-                <button key={p.id} type="button" role="radio" aria-checked={preset === p.id} onClick={() => onChange({ candle_colors: p.colors })}
+            <div role="radiogroup" aria-label="Candle colours" className="space-y-space-1"
+              onKeyDown={radioKeys(CANDLE_PRESETS.map((p) => p.id), preset,
+                (pid) => onChange({ candle_colors: CANDLE_PRESETS.find((p) => p.id === pid)?.colors ?? null }))}>
+              {CANDLE_PRESETS.map((p, i) => (
+                <button key={p.id} type="button" role="radio" aria-checked={preset === p.id}
+                  tabIndex={preset === p.id || (preset === undefined && i === 0) ? 0 : -1} onClick={() => onChange({ candle_colors: p.colors })}
                   className={cx("flex min-h-11 w-full items-center gap-space-2 rounded-control px-space-2 text-left hover:bg-surface-2 md:min-h-9", focus)}>
                   <Swatch color={p.colors?.up ?? "rgb(var(--chart-up))"} />
                   <Swatch color={p.colors?.down ?? "rgb(var(--chart-down))"} />

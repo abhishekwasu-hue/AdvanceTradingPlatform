@@ -82,7 +82,8 @@ export default function ChartV2({
   useEffect(() => { core?.setType(chartType); }, [core, chartType]);
   const overlayKey = overlays.join(",");
   useEffect(() => { core?.setOverlays(overlays); }, [core, overlayKey]);  // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { core?.setData(display, `${symbol ?? ""}|${exchange}|${timeframe}|${chartType}`); }, [core, display, symbol, exchange, timeframe, chartType]);
+  // The chart type is not in the key: setType re-renders the same bars in place, so the trader's zoom stays.
+  useEffect(() => { core?.setData(display, `${symbol ?? ""}|${exchange}|${timeframe}`); }, [core, display, symbol, exchange, timeframe]);
 
   const tools = useDrawingTools(core?.engine ?? null, core ? plotRef.current : null, symbol, exchange, drawingTools);
   useEffect(() => { callbacks.current.onTools?.(tools); }, [tools.view, tools.controller]);  // eslint-disable-line react-hooks/exhaustive-deps

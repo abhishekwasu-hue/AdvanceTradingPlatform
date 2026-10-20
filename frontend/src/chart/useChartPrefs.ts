@@ -132,11 +132,21 @@ export class ChartPrefsStore {
   // The patch is applied again on the value at save time (a patch holds whole values, so twice is the same as once):
   // the server's value may have come in, or a conflict replaced it, since the change was made.
   private async save(patch: ChartPrefsPatch, retry: boolean): Promise<void> {
+    if (this.version == null) {
+      // The first read failed: read again before writing, so a save never replaces another device's newer value blindly.
+      try {
+        const r = await this.fetcher<{ prefs: { chart?: unknown }; versions: { chart?: number } }>("/me/prefs");
+        this.version = r.versions?.chart ?? 0;
+        this.set({ prefs: cleanPrefs(r.prefs?.chart), loaded: true });
+      } catch {
+        this.set({ error: "Chart settings were not saved. Check your connection and try again." });
+        return;
+      }
+    }
     const value = applyPatch(this.state.prefs, patch);
     this.set({ prefs: value });
     try {
-      const query = this.version == null ? "" : `?version=${this.version}`;
-      const r = await this.fetcher<{ version: number }>(`/me/prefs/chart${query}`, { method: "PUT", body: JSON.stringify(value) });
+      const r = await this.fetcher<{ version: number }>(`/me/prefs/chart?version=${this.version}`, { method: "PUT", body: JSON.stringify(value) });
       this.version = r.version;
     } catch (error) {
       const conflict = conflictOf(error);

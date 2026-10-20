@@ -105,9 +105,23 @@ describe("UI2-4b1 chart prefs", () => {
     await offline.loadOnce();
     expect(offline.get().error).toMatch(/could not be loaded/);
     await offline.update({ theme: "light" });
-    expect(down.calls[1].path).toBe("/me/prefs/chart");                            // never read: no version check
+    expect(down.calls.map((c) => c.path)).toEqual(["/me/prefs", "/me/prefs"]);  // never read: read again, never a blind write
     expect(offline.get().prefs.theme).toBe("light");
     expect(offline.get().error).toMatch(/not saved/);
+  });
+
+  it("after a failed first read, a save reads the version first and writes on it", async () => {
+    let n = 0;
+    const s = server((c) => {
+      n += 1;
+      if (c.path === "/me/prefs") return n === 1 ? new ApiError(0, "offline") : { prefs: { chart: { ...DEFAULT_CHART_PREFS, grid: true } }, versions: { chart: 7 } };
+      return { version: 8 };
+    });
+    const store = new ChartPrefsStore(6, s.fetcher);
+    await store.loadOnce();
+    await store.update({ theme: "dark" });
+    expect(s.calls.map((c) => c.path)).toEqual(["/me/prefs", "/me/prefs", "/me/prefs/chart?version=7"]);
+    expect(s.body(2)).toMatchObject({ theme: "dark", grid: true });             // the other device's grid is kept
   });
 
   it("conflictOf reads only a 409 with a version", () => {

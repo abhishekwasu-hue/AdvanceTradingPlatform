@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ChartBar } from "./timeframes";
+import chartV2Source from "./ChartV2.tsx?raw";
 
 vi.mock("lightweight-charts", () => import("./lightweightFake.fixture"));
 const fake = await import("./lightweightFake.fixture");
@@ -124,6 +125,18 @@ describe("UI2-4b1 ChartV2: one chart with v5 native panes", () => {
     expect(chart.range).toEqual({ from: 30, to: 60 });
     c.setData(bars(30), "BANKNIFTY|5min");
     expect(chart.calls.filter((x) => x === "fitContent")).toHaveLength(2);
+  });
+
+  it("changing the chart type redraws the same bars in place: the zoom stays (the data key has no chart type)", () => {
+    const { c, chart } = core();
+    c.setData(bars(50, 20), "NIFTY|NSE|5min");
+    chart.range = { from: 10, to: 40 };
+    for (const type of ["bars", "heikin_ashi", "line", "candles"] as const) c.setType(type);
+    expect(chart.range).toEqual({ from: 10, to: 40 });
+    expect(chart.calls.filter((x) => x === "fitContent")).toHaveLength(1);
+    const keyLine = chartV2Source.split("\n").find((l) => l.includes("core?.setData("));
+    expect(keyLine).toBeDefined();
+    expect(keyLine).not.toContain("chartType");
   });
 
   it("asks for older history when scrolled to within 10 bars of the oldest", () => {

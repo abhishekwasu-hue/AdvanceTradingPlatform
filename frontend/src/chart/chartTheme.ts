@@ -26,7 +26,7 @@ export const VOLUME_ALPHA = 0.28;
 /** The candle colour presets (CHP-12): one pair for both themes, so each is AA (3 : 1) on the light and the dark
  * background (tokens.test.ts). `null` = the theme's own up / down colours (green / red, blue / orange colour-blind). */
 export const CANDLE_PRESETS: { id: string; label: string; colors: CandleColors | null }[] = [
-  { id: "theme", label: "Green / red", colors: null },
+  { id: "theme", label: "Theme colours", colors: null },     // green / red, or blue / orange with the colour-blind option
   { id: "teal", label: "Teal / orange", colors: { up: "#0d9488", down: "#ea580c" } },
   { id: "blue", label: "Blue / orange", colors: { up: "#2563eb", down: "#d55e00" } },
 ];

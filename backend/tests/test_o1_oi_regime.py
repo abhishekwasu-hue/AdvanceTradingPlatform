@@ -1,7 +1,7 @@
 """OI Banner O1: the ported OI-regime math. Golden cases come from the Trade repo's own functions
-(fixtures/oi_regime/golden.json, captured by capture_from_trade.py); the named cases are Trade's tests/test_oi_analysis.py
-in English."""
-import json
+(fixtures/oi_regime/golden.json, captured by capture_from_trade.py; Trade output, so it is read from the private fixtures
+store and the public CI skips the golden tests with the reason - tests/private_fixtures.py); the named cases are Trade's
+tests/test_oi_analysis.py in English."""
 import pathlib
 import re
 from datetime import date, datetime, timedelta
@@ -11,8 +11,8 @@ import pytest
 from app.brokers.models import OptionChain, OptionChainRow
 from app.option_chain import oi_regime as oi
 from app.option_chain.oi_regime import Direction, OIClass, OISignal, SnapshotPoint, Strength
+from tests import private_fixtures as PF
 
-GOLDEN = json.loads((pathlib.Path(__file__).resolve().parent / "fixtures" / "oi_regime" / "golden.json").read_text(encoding="utf-8"))
 SRC = pathlib.Path(__file__).resolve().parents[1] / "app" / "option_chain" / "oi_regime.py"
 
 
@@ -32,20 +32,25 @@ def _history(rows):
 
 # ---------------------------------------------------------------- golden: same inputs, same outputs as Trade
 
-def test_golden_classification_and_rotation():
-    for case in GOLDEN["classify"]:
+@pytest.fixture(scope="module")
+def golden():
+    return PF.load("backend/tests/fixtures/oi_regime/golden.json")        # skips when the private store is not mounted
+
+
+def test_golden_classification_and_rotation(golden):
+    for case in golden["classify"]:
         assert oi.classify_oi_price_action(*case["in"]).value == case["out"], case
-    for case in GOLDEN["rotation"]:
+    for case in golden["rotation"]:
         assert oi.is_genuine_rotation(*case["in"]) == _dir(case["out"]), case
-    for case in GOLDEN["rotation2"]:
+    for case in golden["rotation2"]:
         assert oi.rotation_confirmed_for_2_snapshots([tuple(r) for r in case["in"]]) == _dir(case["out"]), case
-    seen = {c["out"] for c in GOLDEN["classify"]}
+    seen = {c["out"] for c in golden["classify"]}
     assert seen == {c.value for c in OIClass}                                  # every class is exercised
 
 
-def test_golden_hysteresis_sequences_replay_identically():
+def test_golden_hysteresis_sequences_replay_identically(golden):
     flips = 0
-    for steps in GOLDEN["hysteresis"]:
+    for steps in golden["hysteresis"]:
         held = []
         for step in steps:
             got = oi.compute_oi_signal_with_hysteresis(step["diff"], step["put"], step["call"], held[-5:])
@@ -57,35 +62,35 @@ def test_golden_hysteresis_sequences_replay_identically():
     assert flips > 0                                                           # the fixture contains confirmed flips
 
 
-def test_golden_pcr_matrix_levels_and_gates():
-    for case in GOLDEN["pcr"]:
+def test_golden_pcr_matrix_levels_and_gates(golden):
+    for case in golden["pcr"]:
         pcr, bias = oi.compute_pcr_signal(*case["in"])
         assert (pcr, bias.value) == (case["pcr"], case["bias"]), case
-    for case in GOLDEN["matrix"]:
+    for case in golden["matrix"]:
         got = oi.compute_oi_price_matrix(*case["in"])
         assert (got.category, got.bias.value, got.strength) == (case["out"]["category"], case["out"]["bias"], case["out"]["strength"]), case
-    for case in GOLDEN["psych"]:
+    for case in golden["psych"]:
         assert oi.find_psychological_level(*case["in"]) == case["out"], case
-    for case in GOLDEN["gate"]:
+    for case in golden["gate"]:
         direction, label = case["in"]
         assert oi.check_oi_diff_entry_gate(direction, OISignal.parse(label)) == case["diff_gate"], case
         if label is not None:                                                  # missing data: ATP fails closed (see below)
             assert oi.check_oi_confirmation(direction, OISignal.parse(label), "A")[0] == case["confirm_a"], case
 
 
-def test_golden_swing_gate_rollover_and_max_pain():
-    for case in GOLDEN["swing"]:
+def test_golden_swing_gate_rollover_and_max_pain(golden):
+    for case in golden["swing"]:
         d, matrix, pcr_bias, mp, price, roll, max_opposing = case["in"]
         m = oi.OIPriceMatrix(matrix["category"], Direction(matrix["bias"]), matrix["strength"]) if matrix else None
         r = oi.RolloverProxy(None, None, Direction(roll["bias"]), 0, 0) if roll else None
         ok, detail = oi.swing_oi_gate(d, m, _dir(pcr_bias), mp, price, r, max_opposing)
         assert (ok, len(detail.supporting), len(detail.opposing), detail.total_signals) == (case["ok"], case["supporting"], case["opposing"], case["total"]), case
-    for case in GOLDEN["rollover"]:
+    for case in golden["rollover"]:
         got = oi.compute_rollover_proxy(_chain(case["near"]), _chain(case["next"]), case["atm"])
         want = case["out"]
         assert (got.rollover_pct, got.cost_of_carry, got.bias.value, got.near_expiry_total_oi, got.next_expiry_total_oi) == (
             want["rollover_pct"], want["cost_of_carry"], want["bias"], want["near_expiry_total_oi"], want["next_expiry_total_oi"]), case
-    for case in GOLDEN["max_pain"]:                                            # ATP's existing max pain, Trade's answers
+    for case in golden["max_pain"]:                                            # ATP's existing max pain, Trade's answers
         assert oi.max_pain(_chain(case["chain"]).rows) == case["out"]
 
 

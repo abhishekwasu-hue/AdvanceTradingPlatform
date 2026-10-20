@@ -20,16 +20,18 @@ and fails on:
     an .env file holding values (.env.example / .sample / .template are allowed); an .npmrc / .pypirc holding a token
     or password (a ${VARIABLE} reference is allowed);
   - the KB / Method Pack / Chart Reader method, by path: docs/knowledge/, *method_pack*, KNOWLEDGE_BASE*,
-    *METHOD_NOTES*, CHART_READER_METHOD* (any case, "Method Pack" too; open question PR-1). By name only: a renamed
-    copy is caught only in review;
+    *METHOD_NOTES*, CHART_READER_METHOD* (any case, "Method Pack" too; owner decision PR-1: the KB, the Method Pack and
+    the reader live in the private package). By name only: a renamed copy is caught only in review;
+  - a private fixture: any path listed in backend/tests/private_fixtures_manifest.json (the Trade-derived goldens moved
+    to the private fixtures store, owner decision PR-2), whatever the other lists say;
   - a golden / parity fixture or a real-data file (a data file whose path says golden or parity; a CSV, spreadsheet,
     compressed or image file under a fixtures folder; a trade journal, tradebook, contract note or chart export), and
     any data or compressed file under backend/tests/, backend/evals/, frontend/test/, frontend/e2e/ or a __fixtures__
     folder, and any tabular or binary data file (csv, tsv, xlsx, parquet, feather, pkl, npy, npz, h5, arrow) anywhere,
-    that is not listed. GRANDFATHERED_FIXTURES (Trade's own outputs, pending the owner's decision PR-2; it never grows)
-    and ALLOWED_TEST_DATA (synthetic or hand-made data) pin each file's sha256, so new content in a listed file fails
-    too; ALLOWED_PUBLIC_DATA allows public data rebuilt by automation by path. A synthetic file is pinned with the line
-    `--hash` prints (the finding prints it as well).
+    that is not listed. ALLOWED_TEST_DATA (synthetic or hand-made data) pins each file's sha256, so new content in a
+    listed file fails too; ALLOWED_PUBLIC_DATA allows public data rebuilt by automation by path. A synthetic file is
+    pinned with the line `--hash` prints (the finding prints it as well). Trade's own outputs are never listed: they
+    live in the private fixtures store (backend/tests/private_fixtures.py, docs/PUBLIC_REPO_POLICY.md section 5).
 
 Every list here is explicit and narrow; adding an entry is a reviewed change. Findings are printed without the
 secret-like value (redacted), because the CI log of a public repository is public too.
@@ -50,6 +52,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import ipaddress
+import json
 import os
 import re
 import subprocess
@@ -97,33 +100,21 @@ ALLOWED_EMAILS: Dict[str, str] = {
 # only skips these; every other rule still applies.
 EMAIL_EXEMPT_FILES: FrozenSet[str] = frozenset({"frontend/package-lock.json"})
 
-# Grandfathered: golden fixtures that are Trade's own outputs, each pinned by the sha256 of its content (CRLF read as
-# LF). They stay only until the owner decides (docs/OPEN_QUESTIONS.md PR-2: move to a private store that CI reads with a
-# secret, or regenerate from synthetic data). A Trade re-sync writes to the private store (docs/design/TRADE_TAKEOVER.md
-# section 3), so these never change; the list only shrinks.
-GRANDFATHERED_FIXTURES: Dict[str, str] = {
-    # Trade's own outputs captured with a Trade checkout at a pinned commit (synthetic, seeded inputs)
-    "backend/tests/fixtures/oi_regime/golden.json": "497a1c2d89806e372cb9ea8e0aa9c41aabbce1dc840480b908276bca59cfd38a",
-    "backend/tests/fixtures/price_action/golden_trade_1e6c9ac_ch3b.json.gz": "99a4c37576bdb0f5b9e7440079b489772cc90deba94e09c46a17f4b57fc687e5",
-    "backend/tests/fixtures/zones/golden_level_memory_eafc872.json.gz": "4de210c7aa0e51ad2b80acd209315f370ddc29a0a1eccd4ec6d877256be9d992",
-    "backend/tests/fixtures/zones/golden_trade_eafc872.json.gz": "17c5f29440fe9bbe0f474c91c247718dd9bc765a711790de89ea32cc74da3c8e",
-    # make_golden.py fixtures: Trade's functions run with a Trade export on synthetic, seeded inputs
-    "backend/tests/fixtures/daily_trend/golden.json.gz": "87fa3fb6e6c094db5c1e281771857963ab746e1308f662404797073b10ae19f2",
-    "backend/tests/fixtures/level_gate/golden.json.gz": "459d69bc0e0fbc6c1c9a7f83526645b06a6dca6ae4fc92e844f109dd6e75f07d",
-    "backend/tests/fixtures/options_builder/golden.json.gz": "50123884799210b9488aecd90ca1770edb9274f4aa9e461b741c6a8b3c16b72d",
-    "backend/tests/fixtures/strike_breach/golden.json.gz": "1bc64569fa0e9d93d24e205339698b21014cb614b2b5b15b3f492964bd2f72e2",
-}
+# The Trade-derived goldens moved to the private fixtures store (owner decision PR-2): their manifest (paths and sha256
+# only) lists them, and none of those paths may come back into the tree.
+PRIVATE_FIXTURES_MANIFEST = "backend/tests/private_fixtures_manifest.json"
 
-# Allowed: synthetic or hand-made data files (tests, fixtures, evals, e2e replies), each pinned by sha256 like the
-# grandfathered ones. A deliberate regeneration updates the hash in the same PR, after checking the file holds no real
-# data: `python3 scripts/check_public_repo.py --hash <path>` prints the line to put here (docs/PUBLIC_REPO_POLICY.md 5).
+# Allowed: synthetic or hand-made data files (tests, fixtures, evals, e2e replies), each pinned by the sha256 of its
+# content (CRLF read as LF). A deliberate regeneration updates the hash in the same PR, after checking the file holds
+# no real data: `python3 scripts/check_public_repo.py --hash <path>` prints the line to put here
+# (docs/PUBLIC_REPO_POLICY.md 5).
 ALLOWED_TEST_DATA: Dict[str, str] = {
     # ATP-generated goldens on synthetic, seeded inputs (each regeneration site names this list)
     "backend/tests/fixtures/charts/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "backend/tests/fixtures/charts/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",
     "frontend/src/charting/__fixtures__/pa_layer_golden.json": "1668c82ad3cd0aeb6d9620192117d36cfc8ce714407cfe15ee0a355674677e11",
     "frontend/src/charting/__fixtures__/study_parity.json": "790d11653b0056049d8207378cecf1bafce0de40a9e4d0a1ae38bf83518a518b",
-    "frontend/src/charting/__fixtures__/chart_types_golden.json.gz": "6be053c5f27e263e435f0a7a1ef9e74dc73e11b178597ea9fcedc21d2ec49ceb",
+    "frontend/src/charting/__fixtures__/chart_types_golden.json": "f1d1d1178b01d7fcbafee48e33f1c7dd0b3a02b1cbbcbdaf58cba04f5ad94fe5",
     "frontend/src/utils/__fixtures__/indicator_parity.json": "670d39f2624d4b16062fb4cd9d7d0775e10701a76b32f7784ae1892b8e0496a2",
     "backend/tests/golden/c2_default_models.json": "cf7840286077656ce099682a5c52adb0f6bb5a53658963f84efcc9fab27c6d79",
     "backend/tests/fixtures/z10a/structure_base_c5f6a2e.json.gz": "2c5cad35f7a0b3447ff4327eeec6924b3583053cf74f099df70c6ab4e1d635de",
@@ -144,6 +135,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/universe/ind_testindexlist.csv": "544401c201de5479761f00ecc1ddc0e5605aeada400ee74db1db56ace85a9ee3",
     "backend/tests/fixtures/universe/symbolchange.csv": "625b27594c67da488945466f9d9ae4b96847b3fb69316ef04ce565a56dd00a5c",
     "backend/tests/fixtures/universe/symbolchange_noheader.csv": "5a9f35b030909aa202976eb08e24fcf3d488a37e1629d03768d68fee9ecb6c39",
+    # the private fixtures manifest: paths and sha256 only, no data (backend/tests/private_fixtures.py, owner decision PR-2)
+    "backend/tests/private_fixtures_manifest.json": "21351997b68f68775c234bc7753b6c3621e59e527ab2442636137bf9a6ea32bf",
     # the AI eval sets and their baselines (backend/evals/runner.py)
     "backend/evals/baselines.json": "73ca7f7ea5476ac64ce41055b9cc454dcc5c756792becdc22e2f348f1fe27411",
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
@@ -208,7 +201,8 @@ _SECRET_JSON = re.compile(r"(?:service[_-]?account|credentials).*\.json$", re.IG
 # .npmrc / .pypirc: a token or password with a literal value (a ${VARIABLE} reference is fine).
 _NPMRC_TOKEN = re.compile(r"(?:_authToken|_auth|_password)\s*=\s*(?!\$\{)\S")
 _PYPIRC_TOKEN = re.compile(r"^\s*password\s*[=:]\s*(?!\$\{|%\()\S", re.IGNORECASE)
-# The KB, the Method Pack and the Chart Reader method stay out of this public repository (open question PR-1).
+# The KB, the Method Pack and the Chart Reader method stay out of this public repository (owner decision PR-1: the KB,
+# the Method Pack and the reader live in the private package).
 _METHOD_PATH = re.compile(r"(?:^|/)docs/knowledge/|method[ _-]?pack|(?:^|/)knowledge[ _-]?base[^/]*$|method[ _-]?notes"
                           r"|(?:^|/)chart[ _-]?reader[ _-]?method[^/]*$", re.IGNORECASE)
 _ENV_TEMPLATES = (".example", ".sample", ".template")
@@ -218,10 +212,10 @@ _DATA_EXT = frozenset({".csv", ".tsv", ".json", ".jsonl", ".parquet", ".xlsx", "
 _TABULAR_EXT = frozenset({".csv", ".tsv", ".parquet", ".xlsx", ".xls", ".feather", ".pkl", ".npy", ".npz"})
 _IMAGE_EXT = frozenset({".png", ".jpg", ".jpeg", ".webp", ".gif", ".pdf"})
 _FIXTURE_DIR = re.compile(r"(?:^|/)(?:fixtures|__fixtures__)/")
-# Any data or compressed file here must be listed (GRANDFATHERED_FIXTURES or ALLOWED_TEST_DATA).
+# Any data or compressed file here must be listed (ALLOWED_TEST_DATA).
 _TEST_DATA_DIR = re.compile(r"^(?:backend/tests|backend/evals|frontend/test|frontend/e2e)/|(?:^|/)__fixtures__/")
 _TEST_DATA_EXT = _DATA_EXT | frozenset({".arrow", ".h5", ".db", ".sqlite"})
-# Tabular and binary data files: listed wherever they are (ALLOWED_TEST_DATA, ALLOWED_PUBLIC_DATA or grandfathered).
+# Tabular and binary data files: listed wherever they are (ALLOWED_TEST_DATA or ALLOWED_PUBLIC_DATA).
 _ANYWHERE_DATA_EXT = frozenset({".csv", ".tsv", ".xlsx", ".xls", ".parquet", ".feather", ".pkl", ".npy", ".npz", ".h5", ".arrow"})
 _GOLDEN = re.compile(r"golden|parity", re.IGNORECASE)
 _REAL_DATA_NAME = re.compile(r"journal|trade_?book|trade_?log|trade_?history|contract_?note|p_?n_?l_?report|chart_?export"
@@ -319,8 +313,8 @@ def path_problems(rel: str, data: Optional[bytes] = None) -> List[str]:
         problems.append(f"{rel}: a secret file type ({name}) - keys, keystores and service files never go into git")
     if _METHOD_PATH.search(rel):
         problems.append(f"{rel}: the KB / Method Pack / Chart Reader method - not in this public repository "
-                        f"(docs/OPEN_QUESTIONS.md PR-1)")
-    if rel in GRANDFATHERED_FIXTURES or rel in ALLOWED_TEST_DATA or rel in ALLOWED_PUBLIC_DATA:
+                        f"(owner decision PR-1: the KB, the Method Pack and the reader live in the private package)")
+    if rel in ALLOWED_TEST_DATA or rel in ALLOWED_PUBLIC_DATA:
         return problems
     is_data = data_ext in _DATA_EXT or outer in _COMPRESSED
     reason = None
@@ -341,15 +335,35 @@ def path_problems(rel: str, data: Optional[bytes] = None) -> List[str]:
 
 
 def listed_data_problems(rel: str, data: bytes) -> List[str]:
-    """A grandfathered or allowed data file whose content no longer matches its pinned sha256."""
-    pinned = GRANDFATHERED_FIXTURES.get(rel) or ALLOWED_TEST_DATA.get(rel)
+    """An allowed data file whose content no longer matches its pinned sha256."""
+    pinned = ALLOWED_TEST_DATA.get(rel)
     if pinned is None or content_sha256(data) == pinned:
         return []
-    if rel in GRANDFATHERED_FIXTURES:
-        return [f"{rel}: a grandfathered fixture with new content - it may not change; replace it with synthetic data "
-                f"under a new name in ALLOWED_TEST_DATA, or move it to the private store (docs/OPEN_QUESTIONS.md PR-2)"]
     return [f"{rel}: test data with new content - check it holds no real data, then replace its line in ALLOWED_TEST_DATA "
             f"in scripts/check_public_repo.py with: {allow_line(rel, data)}"]
+
+
+def private_fixtures(root: Path) -> FrozenSet[str]:
+    """The paths the private fixtures manifest lists (empty when the tree has no manifest). Raises ValueError when the
+    manifest cannot be read as {"files": {path: sha256}}."""
+    path = root / PRIVATE_FIXTURES_MANIFEST
+    if not path.is_file():
+        return frozenset()
+    try:
+        listed = json.loads(path.read_text(encoding="utf-8"))["files"]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"{PRIVATE_FIXTURES_MANIFEST}: unreadable ({exc.__class__.__name__})") from exc
+    if not isinstance(listed, dict):
+        raise ValueError(f"{PRIVATE_FIXTURES_MANIFEST}: 'files' is not a mapping")
+    return frozenset(str(k) for k in listed)
+
+
+def private_fixture_problems(rel: str, private: FrozenSet[str]) -> List[str]:
+    """A file the private fixtures manifest lists, back in the tree."""
+    if rel not in private:
+        return []
+    return [f"{rel}: a private fixture ({PRIVATE_FIXTURES_MANIFEST}) - Trade-derived goldens live only in the private "
+            f"fixtures store (owner decision PR-2, docs/PUBLIC_REPO_POLICY.md section 5); remove it from the tree"]
 
 
 def config_token_problems(rel: str, text: str) -> List[str]:
@@ -420,9 +434,15 @@ def scan(root: Path) -> Tuple[List[str], List[str]]:
     root = root.resolve()
     problems: List[str] = []
     notices: List[str] = []
+    try:
+        private = private_fixtures(root)
+    except ValueError as exc:
+        private = frozenset()
+        problems.append(str(exc))
     for rel in files(root):
         if not (root / rel).is_file():
             continue                        # deleted in the work tree, not yet committed
+        problems.extend(private_fixture_problems(rel, private))
         found = path_problems(rel)
         if any("--hash" in p for p in found):
             try:
@@ -430,7 +450,7 @@ def scan(root: Path) -> Tuple[List[str], List[str]]:
             except OSError:
                 pass
         problems.extend(found)
-        if rel in GRANDFATHERED_FIXTURES or rel in ALLOWED_TEST_DATA:
+        if rel in ALLOWED_TEST_DATA:
             try:
                 problems.extend(listed_data_problems(rel, (root / rel).read_bytes()))
             except OSError:
@@ -478,7 +498,7 @@ def main(argv: Optional[Iterable[str]] = None) -> int:
             print("  " + p, file=sys.stderr)
         return 1
     print(f"check_public_repo: OK - no server IP, private e-mail, Telegram id, key or new real-data fixture "
-          f"({len(GRANDFATHERED_FIXTURES)} grandfathered fixtures pending the owner's decision, "
+          f"({len(private_fixtures(root))} private fixtures kept out of the tree, "
           f"{len(ALLOWED_TEST_DATA)} pinned test data files, {len(ALLOWED_PUBLIC_DATA)} public data file(s))")
     return 0
 

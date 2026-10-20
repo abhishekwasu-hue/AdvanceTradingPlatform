@@ -34,7 +34,7 @@ export default function FirstUseModal({ children, placeholder }: { children: Rea
   }
 
   if (loadError) return <div className="rounded-xl border border-down/40 bg-down/5 p-4 text-sm text-fg" role="alert">{loadError}</div>;
-  if (!ack) return <>{placeholder}</>;
+  if (!ack) return <div aria-busy="true">{placeholder}</div>;     // the acknowledgement is still loading
   if (ack.accepted) return <>{children}</>;
   return (
     <>

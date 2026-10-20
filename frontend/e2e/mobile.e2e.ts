@@ -39,6 +39,12 @@ async function open(page: Page, path: string, theme: "dark" | "light") {
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
+  // "networkidle" is not "loaded": a page that loads in steps (the Copilot: its chunk, the acknowledgement, the tab's
+  // chunk, then the briefing, the thesis and its history, the market memory) can sit 500 ms between two steps on a
+  // busy runner, and the checks then measure - and scroll - a page that is still growing. Every loading region carries
+  // aria-busy, so the page is final once <main> is up and none of them is left.
+  await expect(page.locator("main")).toBeVisible();
+  await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
 }
 
 for (const size of SIZES) {

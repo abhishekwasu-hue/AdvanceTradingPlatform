@@ -1,0 +1,54 @@
+[
+ {
+  "name": "dashboard-desktop-1440",
+  "w": 1440
+ },
+ {
+  "name": "dashboard-mobile-390",
+  "w": 390
+ },
+ {
+  "name": "chart-desktop-1440",
+  "w": 1440
+ },
+ {
+  "name": "chart-mobile-390",
+  "w": 390
+ },
+ {
+  "name": "signals-desktop-1440",
+  "w": 1440
+ },
+ {
+  "name": "signals-mobile-390",
+  "w": 390
+ },
+ {
+  "name": "nav-sidebar-1440",
+  "w": 1440
+ },
+ {
+  "name": "nav-bottom-mobile",
+  "w": 1440
+ },
+ {
+  "name": "broker-1-choose-1440",
+  "w": 1440
+ },
+ {
+  "name": "broker-2-keys-upstox-1440",
+  "w": 1440
+ },
+ {
+  "name": "broker-2-keys-totp-mobile-390",
+  "w": 390
+ },
+ {
+  "name": "broker-3-connected-1440",
+  "w": 1440
+ },
+ {
+  "name": "broker-list-1440",
+  "w": 1440
+ }
+]

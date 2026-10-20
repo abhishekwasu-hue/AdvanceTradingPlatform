@@ -383,3 +383,106 @@ def test_the_brokers_cap_survives_the_production_wrappers():
         assert adapter.daily_days_per_request == days
         assert RateLimitedBroker(adapter, RateBudget(limits_for(cls.name))).daily_days_per_request == days
         assert api_budget.BudgetedAdapter(adapter, 1, cls.name).daily_days_per_request == days
+
+
+# --- review round 1: freshness badge, call order and limits, chunk lifetime ------------------------------------------------
+
+@pytest.fixture()
+def byob():
+    from tests.test_bt1_byob_data_tier import _flag
+    tenants: List[int] = []
+    yield lambda tenant_id: (tenants.append(tenant_id), _flag(False, tenants))
+    _flag(False, [])
+
+
+def test_byob_week_and_month_badge_is_judged_on_the_newest_daily_bar(monkeypatch, byob):
+    today = _today()
+    sym = _sym("BG")
+    broker = DailyBroker({sym: daily_series(today - timedelta(days=3000), today - timedelta(days=1))})
+    headers, me = _setup(monkeypatch, broker, "badge")
+    byob(me["tenant_id"])
+    for period in ("week", "month"):
+        body = _post(headers, symbols=[sym], timeframe=period)
+        assert body["data_tier"]["tier"] == "A" and body["data_tier"]["stale"] is False, body["data_tier"]
+    stale = DailyBroker({sym: daily_series(today - timedelta(days=3000), today - timedelta(days=40))})
+    stale.name = "ui24wmstale"
+    monkeypatch.setattr(candles_routes, "build_adapter", lambda record: stale)
+    assert _post(headers, symbols=[sym], timeframe="week")["data_tier"]["stale"] is True       # a feed 40 days behind still says so
+
+
+def test_on_a_one_call_a_second_broker_todays_bar_comes_before_old_history(monkeypatch):
+    today = _today()
+    sym = _sym("SL")
+    broker = DailyBroker({sym: daily_series(today - timedelta(days=2500), today - timedelta(days=1))},
+                         today={sym: [OHLCVBar(timestamp=datetime.combine(today, time(9, 15), tzinfo=IST) + timedelta(minutes=i),
+                                               open=10, high=11, low=9, close=10.5, volume=3) for i in range(5)]})
+    broker.daily_days_per_request = 365
+    headers, _ = _setup(monkeypatch, broker, "slow")
+
+    async def in_session(session, body, exchange, now):
+        return True if body.forming and body.before is None else None
+    monkeypatch.setattr(candles_routes, "_today_state", in_session)
+    monkeypatch.setattr(api_budget, "api_limits",
+                        lambda broker_name: api_budget.ApiLimits(per_second=1, per_minute=1000, per_30min=100_000, burst=1))
+    monkeypatch.setattr(api_budget, "CANDLE_WAIT_SECONDS", 2.6)
+    monkeypatch.setattr(candles_routes, "PERIOD_DEADLINE_SECONDS", 2.6)
+    api_budget.reset()
+    body = _post(headers, symbols=[sym], timeframe="week", forming=True)
+    item = body["symbols"][sym]
+    assert item["error"] is None and item["bars"][-1]["forming"] is True                       # today's bar made it
+    assert broker.intraday and broker.intraday[0][0] == sym
+    assert len(broker.windows) < 6 and any("older weekly bars not loaded this time" in w for w in body["warnings"])
+    oldest = datetime.fromisoformat(item["bars"][0]["timestamp"]).astimezone(IST).date()
+    assert periods.period_start(oldest, "week") >= _ist(broker.windows[-1][3]).date()          # whole weeks only
+    api_budget.reset()
+
+
+def test_a_slow_broker_stops_older_chunks_at_the_deadline(monkeypatch):
+    today = _today()
+    sym = _sym("DL")
+
+    class Slow(DailyBroker):
+        async def get_historical_data(self, *args, **kwargs):
+            await asyncio.sleep(0.3)
+            return await super().get_historical_data(*args, **kwargs)
+    broker = Slow({sym: daily_series(today - timedelta(days=7400), today - timedelta(days=1))})
+    broker.daily_days_per_request = 365
+    headers, _ = _setup(monkeypatch, broker, "deadline")
+    monkeypatch.setattr(candles_routes, "PERIOD_DEADLINE_SECONDS", 0.5)
+    body = _post(headers, symbols=[sym], timeframe="month")
+    assert 1 <= len(broker.windows) <= 3
+    assert any("older monthly bars not loaded this time (the broker was slow)" in w for w in body["warnings"])
+    first = datetime.fromisoformat(body["symbols"][sym]["bars"][0]["timestamp"]).astimezone(IST).date()
+    assert first.day <= 7 and periods.period_start(first, "month") >= _ist(broker.windows[-1][3]).date()
+
+
+def test_week_month_take_a_few_symbols_and_a_capped_number_of_new_chunks(monkeypatch):
+    today = _today()
+    sym = _sym("CC")
+    broker = DailyBroker({sym: daily_series(today - timedelta(days=7400), today - timedelta(days=1))})
+    broker.daily_days_per_request = 365
+    headers, _ = _setup(monkeypatch, broker, "cap")
+    res = client.post("/api/market-data/candles", headers=headers, json={"symbols": ["A", "B", "C", "D", "E"], "timeframe": "week"})
+    assert res.status_code == 422 and "at most 4 symbols" in res.json()["detail"]
+    first = _post(headers, symbols=[sym], timeframe="month")
+    assert len(broker.windows) == candles_routes.PERIOD_NEW_CHUNKS
+    assert any("the request's share of broker calls was used" in w for w in first["warnings"])
+    second = _post(headers, symbols=[sym], timeframe="month")                     # the shared chunks are free: six more
+    assert len(broker.windows) == 2 * candles_routes.PERIOD_NEW_CHUNKS
+    assert second["symbols"][sym]["count"] > first["symbols"][sym]["count"]
+
+
+def test_the_chunk_holding_yesterday_keeps_the_short_history_lifetime():
+    async def go():
+        shared_candles.reset()
+        sym = _sym("TT")
+        broker = DailyBroker(default=daily_series(date(2023, 1, 1), date(2026, 1, 9)))
+        broker.daily_days_per_request = 365
+        now = datetime(2026, 1, 10, 12, 0, tzinfo=IST)
+        await MarketDataService(broker).get_daily_range(sym, "NSE", date(2024, 1, 1), date(2026, 1, 9), now=now)
+        return {k: expires - shared_candles._clock() for k, (expires, _bars) in shared_candles._LOCAL.items() if f":{sym}:" in k}
+    left = run(go())
+    newest = [v for k, v in left.items() if k.endswith(":2026-01-09")]
+    older = [v for k, v in left.items() if not k.endswith(":2026-01-09")]
+    assert newest and newest[0] <= shared_candles.HISTORY_TTL_SECONDS
+    assert older and all(v > shared_candles.HISTORY_TTL_SECONDS for v in older)

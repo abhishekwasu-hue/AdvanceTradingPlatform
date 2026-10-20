@@ -1,10 +1,10 @@
 """UI2-4a2: the forming daily bar on the chart route.
 
 * With `forming: true` and no `before`, a day / week / month request gets today's daily bar, built from today's
-  one-minute bars (the LD-10 `today` copy an intraday chart shares), marked `"forming": true` while the session is open;
-  the newest week / month includes it.
-* After the close on a trading day the bar is the last completed one (no mark); before the open, on a weekend or holiday,
-  and on a 24x7 venue there is none.
+  one-minute bars (the LD-10 `today` copy an intraday chart shares), marked `"forming": true, "provisional": true` while
+  the session is open; the newest week / month includes it.
+* After the close on a trading day the bar is the day's bar, `"forming": false, "provisional": true` (the broker's daily
+  history has it tomorrow); before the open, on a weekend or holiday, and on a 24x7 venue there is none.
 * Without `forming` (every page today), with `before`, and for strategies and workers (`get_candles(..., "day")`): the
   completed bars only, as before - no call for today's bars."""
 import asyncio
@@ -60,7 +60,8 @@ def test_forming_day_bar_is_the_aggregate_of_todays_one_minute_bars(monkeypatch)
     mins = _minutes(today)
     last = bars[-1]
     assert datetime.fromisoformat(last["timestamp"]) == datetime.combine(today, time(0, 0), tzinfo=IST)
-    assert last["forming"] is True and not any("forming" in b for b in bars[:-1])
+    assert last["forming"] is True and last["provisional"] is True
+    assert not any("forming" in b or "provisional" in b for b in bars[:-1])
     assert (last["open"], last["high"], last["low"], last["close"], last["volume"]) == (
         mins[0].open, max(b.high for b in mins), min(b.low for b in mins), mins[-1].close, sum(b.volume for b in mins))
     assert broker.intraday == [(sym, "NSE", "1min")]
@@ -95,7 +96,9 @@ def test_after_the_close_todays_bar_is_the_last_completed_one(monkeypatch):
     headers, _ = _setup(monkeypatch, broker, "closed")
     _state(monkeypatch, False)
     bars = _post(headers, symbols=[sym], timeframe="day", lookback_days=30, forming=True)["symbols"][sym]["bars"]
-    assert datetime.fromisoformat(bars[-1]["timestamp"]).astimezone(IST).date() == _today() and "forming" not in bars[-1]
+    assert datetime.fromisoformat(bars[-1]["timestamp"]).astimezone(IST).date() == _today()
+    assert bars[-1]["forming"] is False and bars[-1]["provisional"] is True                  # labelled until history has it
+    assert not any("forming" in b or "provisional" in b for b in bars[:-1])
 
 
 def test_no_forming_bar_without_the_field_with_before_or_outside_trading_days(monkeypatch):

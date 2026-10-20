@@ -115,7 +115,7 @@ def _index_broker(master, *, index_volume_each: float = 0.0) -> DailyBroker:
 def test_intraday_volume_from_the_future_by_timestamp(monkeypatch, master):
     broker = _index_broker(master)
     headers, _ = _setup(monkeypatch, broker, "intraday")
-    body = _post(headers, symbols=["NIFTY 50", "TCS"], timeframe="5min", lookback_days=3)
+    body = _post(headers, symbols=["NIFTY 50", "TCS"], timeframe="5min", lookback_days=3, volume_from_future=True)
     nifty = body["symbols"]["NIFTY 50"]
     assert nifty["error"] is None and [b["volume"] for b in nifty["bars"]] == [sum(7.0 + i for i in range(k, k + 5)) for k in range(0, 20, 5)] + [0.0, 0.0]
     assert nifty["volume_source"]["symbol"] == master["near_symbol"] and nifty["volume_source"]["exchange"] == "NFO"
@@ -129,6 +129,10 @@ def test_intraday_volume_from_the_future_by_timestamp(monkeypatch, master):
     off = _post(headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3, volume_from_future=False)
     assert off["symbols"]["NIFTY 50"]["volume_source"] is None and {b["volume"] for b in off["symbols"]["NIFTY 50"]["bars"]} == {0.0}
     assert not any(w[0] == master["near_symbol"] for w in broker.windows)
+    # Not asked for (every page today): the same data as before - the index's own volume, no future, null source.
+    default = _post(headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3)
+    assert default["symbols"]["NIFTY 50"]["volume_source"] is None and default["symbols"]["NIFTY 50"]["bars"] == off["symbols"]["NIFTY 50"]["bars"]
+    assert not any(w[0] == master["near_symbol"] for w in broker.windows)
 
 
 def test_daily_and_weekly_volume_from_the_current_near_month_only(monkeypatch, master):
@@ -136,7 +140,7 @@ def test_daily_and_weekly_volume_from_the_current_near_month_only(monkeypatch, m
     headers, _ = _setup(monkeypatch, broker, "daily")
     fut_daily = {b.timestamp: b.volume for b in broker.daily[master["near_symbol"]]}
     first = min(fut_daily).date()
-    body = _post(headers, symbols=["NIFTY 50"], timeframe="day", lookback_days=400)
+    body = _post(headers, symbols=["NIFTY 50"], timeframe="day", lookback_days=400, volume_from_future=True)
     nifty = body["symbols"]["NIFTY 50"]
     for bar in nifty["bars"]:
         ts = datetime.fromisoformat(bar["timestamp"])
@@ -144,7 +148,7 @@ def test_daily_and_weekly_volume_from_the_current_near_month_only(monkeypatch, m
     assert any(b["volume"] > 0 for b in nifty["bars"]) and nifty["bars"][0]["volume"] == 0.0
     assert nifty["volume_source"]["from"] == first.isoformat()
 
-    week = _post(headers, symbols=["NIFTY 50"], timeframe="week")["symbols"]["NIFTY 50"]
+    week = _post(headers, symbols=["NIFTY 50"], timeframe="week", volume_from_future=True)["symbols"]["NIFTY 50"]
     fut_weeks = {b.timestamp: b.volume for b in periods.aggregate(broker.daily[master["near_symbol"]], "week")}
     for bar in week["bars"]:
         ts = datetime.fromisoformat(bar["timestamp"])
@@ -158,11 +162,11 @@ def test_daily_and_weekly_volume_from_the_current_near_month_only(monkeypatch, m
 def test_no_future_in_the_master_leaves_the_volume_and_says_null(monkeypatch, master):
     broker = _index_broker(master, index_volume_each=5.0)
     headers, _ = _setup(monkeypatch, broker, "nofuture")
-    body = _post(headers, symbols=["NIFTY BANK"], timeframe="5min", lookback_days=3)
+    body = _post(headers, symbols=["NIFTY BANK"], timeframe="5min", lookback_days=3, volume_from_future=True)
     item = body["symbols"]["NIFTY BANK"]
     assert item["error"] is None and item["volume_source"] is None
     monkeypatch.setattr(index_volume, "MASTER_BROKER", "ui24iv-empty")                 # a missing master
-    body = _post(headers, symbols=["NIFTY 50"], timeframe="1min", lookback_days=3)
+    body = _post(headers, symbols=["NIFTY 50"], timeframe="1min", lookback_days=3, volume_from_future=True)
     assert body["symbols"]["NIFTY 50"]["volume_source"] is None and {b["volume"] for b in body["symbols"]["NIFTY 50"]["bars"]} == {5.0}
 
 
@@ -170,7 +174,7 @@ def test_budget_refusal_for_the_future_keeps_the_index_volume(monkeypatch, maste
     broker = _index_broker(master, index_volume_each=5.0)
     headers, _ = _setup(monkeypatch, broker, "budget")
     _generous(monkeypatch, per_minute=2)                                    # the index's two calls (history, today), no more
-    body = _post(headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3)
+    body = _post(headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3, volume_from_future=True)
     item = body["symbols"]["NIFTY 50"]
     assert item["error"] is None and item["count"] == 6 and item["volume_source"] is None
     assert {b["volume"] for b in item["bars"]} == {25.0}
@@ -194,10 +198,10 @@ def test_the_future_goes_through_the_requesting_tenants_own_session(monkeypatch,
         return brokers[record.tenant_id]
     _setup(monkeypatch, brokers[a["tenant_id"]], "tenant-x")
     monkeypatch.setattr(candles_routes, "build_adapter", build)
-    rb = _post(b_headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3)
+    rb = _post(b_headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3, volume_from_future=True)
     assert seen == [b["tenant_id"]] and brokers[a["tenant_id"]].windows == []
     assert any(w[0] == master["near_symbol"] for w in brokers[b["tenant_id"]].windows)
-    ra = _post(a_headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3)
+    ra = _post(a_headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3, volume_from_future=True)
     assert seen == [b["tenant_id"], a["tenant_id"]]
     assert ra["symbols"]["NIFTY 50"]["bars"] == rb["symbols"]["NIFTY 50"]["bars"]   # the same public bars, A's own session asked
 
@@ -220,7 +224,7 @@ def test_byob_the_future_passes_the_same_entitlement_as_the_index(monkeypatch, m
         asked.append((symbol, exchange, kw.get("broker"), kw.get("account_label")))
         return await real(session, user, symbol, exchange, segment, **kw)
     monkeypatch.setattr(entitlement, "resolve", resolve)
-    body = _post(headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3)
+    body = _post(headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3, volume_from_future=True)
     assert body["data_tier"]["tier"] == "A" and body["symbols"]["NIFTY 50"]["volume_source"]["symbol"] == master["near_symbol"]
     assert asked == [(master["near_symbol"], "NFO", "upstox", "primary")]
 
@@ -229,7 +233,7 @@ def test_byob_the_future_passes_the_same_entitlement_as_the_index(monkeypatch, m
     monkeypatch.setattr(entitlement, "resolve", refused)
     shared_candles.reset()
     broker.windows.clear()
-    body = _post(headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3)
+    body = _post(headers, symbols=["NIFTY 50"], timeframe="5min", lookback_days=3, volume_from_future=True)
     assert body["symbols"]["NIFTY 50"]["volume_source"] is None and {b["volume"] for b in body["symbols"]["NIFTY 50"]["bars"]} == {0.0}
     assert any("not shown (outside your session budget)" in w for w in body["warnings"])
     assert not any(w[0] == master["near_symbol"] for w in broker.windows)

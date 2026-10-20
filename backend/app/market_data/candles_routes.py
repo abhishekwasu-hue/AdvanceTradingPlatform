@@ -30,11 +30,13 @@ broker call. Nothing per account is shared, and a session's own ticks never feed
 
 UI2-4a2 (additive): `week` and `month` timeframes, aggregated in IST from daily bars fetched in whole-date chunks per the
 broker's request cap (`periods`, `MarketDataService.get_daily_range`); `before` pages them by whole periods. `forming:
-true` (the v2 chart) adds today's daily bar from today's one-minute bars to a D/W/M request. An index's volume comes from
-its near-month future (`index_volume`, `volume_from_future`), fetched through the same session, budget and entitlement.
+true` (the v2 chart) adds today's daily bar from today's one-minute bars to a D/W/M request. With `volume_from_future:
+true` (the v2 chart; off by default) an index's volume comes from its near-month future (`index_volume`), fetched
+through the same session, budget and entitlement.
 """
 import asyncio
 import logging
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Dict, List, Optional, Tuple, cast
 
@@ -57,7 +59,7 @@ from app.market_data.data_terms import terms_for
 from app.market_data.entitlement import DataTier, Entitlement
 from app.market_data.fanin import FLAG as BYOB_FLAG, Priority
 from app.market_data.freshness import quote_is_stale
-from app.market_data.service import MarketDataService, build_frames, merge_bars
+from app.market_data.service import CHUNK_LIMIT, MarketDataService, build_frames, merge_bars
 from app.market_data.stream import TickCache, tick_cache
 from app.platform.controls import flag_enabled
 
@@ -76,6 +78,10 @@ WEEKLY_MAX_LOOKBACK_DAYS = periods.WEEKLY_MAX      # weekly and monthly only: th
 MONTHLY_MAX_LOOKBACK_DAYS = periods.MONTHLY_MAX
 PERIOD_DEFAULT_DAYS = {"week": periods.WEEKLY_DEFAULT_DAYS, "month": periods.MONTHLY_DEFAULT_DAYS}
 PERIOD_MAX_DAYS = {"week": WEEKLY_MAX_LOOKBACK_DAYS, "month": MONTHLY_MAX_LOOKBACK_DAYS}
+PERIOD_MAX_SYMBOLS = 4               # week / month read years of daily bars per symbol: a chart's few symbols, not a screen
+PERIOD_NEW_CHUNKS = 6                # broker fetches of daily chunks per symbol and request (shared copies are free)
+FUTURE_NEW_CHUNKS = 2                # the future's window starts at its listing: one chunk, two across a chunk edge
+PERIOD_DEADLINE_SECONDS = 8.0        # no older chunk starts later than this after the request began
 
 
 class CandlesBody(BaseModel):
@@ -95,8 +101,9 @@ class CandlesBody(BaseModel):
     # month request without `before` - marked `"forming": true` while the session is open. Off by default, so the pages
     # that score daily bars (Signals, Scanner) keep getting completed bars only.
     forming: bool = False
-    # UI2-4a2: an index's volume from its near-month future (`volume_source` in each symbol's answer says which).
-    volume_from_future: bool = True
+    # UI2-4a2 (sent by the v2 chart): an index's volume from its near-month future (`volume_source` in each symbol's
+    # answer says which). Off by default, so every page that reads candles today gets the same data.
+    volume_from_future: bool = False
 
 
 async def _records(session: AsyncSession, tenant_id: int) -> List[BrokerCredentialRecord]:
@@ -233,28 +240,30 @@ async def _today_state(session: AsyncSession, body: CandlesBody, exchange: str, 
 
 
 class _Got:
-    """One symbol's base bars (daily for day / week / month, else one-minute) and what to say about them."""
+    """One symbol's base bars (daily for day / week / month, else one-minute) and what to say about them. For week /
+    month: the oldest date the daily read reached and why it stopped early (None: it did not)."""
 
-    def __init__(self, bars: List[OHLCVBar], today_added: bool = False, notes: Optional[List[str]] = None) -> None:
+    def __init__(self, bars: List[OHLCVBar], today_added: bool = False, notes: Optional[List[str]] = None,
+                 covered_from: Optional[date] = None, stopped: Optional[str] = None, fetched: int = 0) -> None:
         self.bars = bars
+        self.fetched = fetched
         self.today_added = today_added
         self.notes = notes or []
+        self.covered_from = covered_from
+        self.stopped = stopped
 
 
 async def _base_bars(service: MarketDataService, symbol: str, exchange: str, base_interval: str, period: Optional[str],
-                     window: Optional[Tuple[date, date]], before: Optional[date], today_state: Optional[bool], now: datetime) -> _Got:
+                     window: Optional[Tuple[date, date]], before: Optional[date], today_state: Optional[bool], now: datetime, *,
+                     max_new_chunks: Optional[int] = None, max_chunks: Optional[int] = None, deadline: Optional[float] = None) -> _Got:
     notes: List[str] = []
+    covered_from: Optional[date] = None
+    stopped: Optional[str] = None
+    fetched = 0
     if period is not None and window is not None:
-        start, end = window
-        got = await service.get_daily_range(symbol, exchange, start, end, now)
-        bars = got.bars
-        if got.stopped is not None and got.covered_from > start:
-            # The older chunks did not load this time: whole periods only, so the oldest bar shown is never a cut one.
-            first = got.covered_from
-            if periods.period_start(first, period) != first:
-                first = periods.next_period_start(first, period)
-            bars = [b for b in bars if periods.ist_date(b.timestamp) >= first]
-            notes.append(f"older {period}ly bars not loaded this time ({got.stopped}); they load on the next request")
+        got = await service.get_daily_range(symbol, exchange, window[0], window[1], now, max_new_chunks=max_new_chunks,
+                                            max_chunks=max_chunks, deadline=deadline)
+        bars, covered_from, stopped, fetched = got.bars, got.covered_from, got.stopped, got.fetched
     elif before is not None:
         bars = await service.get_history(symbol, exchange, base_interval, before)
     else:
@@ -273,11 +282,39 @@ async def _base_bars(service: MarketDataService, symbol: str, exchange: str, bas
         if today_bar is not None and (not bars or periods.ist_date(bars[-1].timestamp) < periods.ist_date(today_bar.timestamp)):
             bars = merge_bars(bars, [today_bar])
             added = True
-    return _Got(list(bars), added, notes)
+    return _Got(list(bars), added, notes, covered_from, stopped, fetched)
+
+
+async def _older_periods(service: MarketDataService, symbol: str, exchange: str, period: str, window: Tuple[date, date], got: _Got,
+                         now: datetime, *, max_new_chunks: int, deadline: Optional[float]) -> None:
+    """Week / month, after the newest chunk, today's bar and the future's bars (so a slow broker's old history never
+    takes their budget or time): the older chunks, at most `max_new_chunks` broker fetches and none started past
+    `deadline`. If the read stopped early, only whole periods are kept, so the oldest bar shown is never a cut one; the
+    rest loads on the next request (shared chunks cost nothing) or when the chart is scrolled back (`before`)."""
+    start = window[0]
+    if got.stopped == CHUNK_LIMIT and got.covered_from is not None and got.covered_from > start and max_new_chunks > 0:
+        try:
+            more = await service.get_daily_range(symbol, exchange, start, got.covered_from - timedelta(days=1), now,
+                                                 max_new_chunks=max_new_chunks, deadline=deadline, newest_raises=False)
+        except Exception as exc:  # noqa: BLE001 - get_daily_range reports its own failures; this is a safety net
+            logger.info("Older daily chunks failed for %s:%s: %s", exchange, symbol, exc)
+            got.stopped = f"{type(exc).__name__}: {exc}"[:200]
+        else:
+            got.bars = merge_bars(more.bars, got.bars)
+            got.covered_from, got.stopped = more.covered_from, more.stopped
+    if got.stopped is None or got.covered_from is None or got.covered_from <= start:
+        return
+    first = got.covered_from
+    if periods.period_start(first, period) != first:
+        first = periods.next_period_start(first, period)
+    got.bars = [b for b in got.bars if periods.ist_date(b.timestamp) >= first]
+    why = {CHUNK_LIMIT: "the request's share of broker calls was used", "time": "the broker was slow"}.get(got.stopped, got.stopped)
+    got.notes.append(f"older {period}ly bars not loaded this time ({why}); they load on the next request or when scrolled back")
 
 
 async def _future_bars(service: MarketDataService, fut: index_volume.NearFuture, base_interval: str, period: Optional[str],
-                       window: Optional[Tuple[date, date]], before: Optional[date], today_state: Optional[bool], now: datetime) -> List[OHLCVBar]:
+                       window: Optional[Tuple[date, date]], before: Optional[date], today_state: Optional[bool], now: datetime,
+                       deadline: Optional[float]) -> List[OHLCVBar]:
     """UI2-4a2: the near-month future's bars for the same window, through the same service (session, budget). Nothing
     is fetched for a window that ends before the contract can have been listed."""
     listed = fut.expiry - timedelta(days=index_volume.LISTED_DAYS_BEFORE_EXPIRY)
@@ -285,11 +322,16 @@ async def _future_bars(service: MarketDataService, fut: index_volume.NearFuture,
         window = (max(window[0], listed), window[1])         # a window ending before the listing: no call (get_daily_range)
     elif before is not None and before <= listed:
         return []
-    return (await _base_bars(service, fut.symbol, fut.exchange, base_interval, period, window, before, today_state, now)).bars
+    got = await _base_bars(service, fut.symbol, fut.exchange, base_interval, period, window, before, today_state, now,
+                           max_new_chunks=FUTURE_NEW_CHUNKS if period is not None else None, deadline=deadline)
+    if period is not None and window is not None:
+        await _older_periods(service, fut.symbol, fut.exchange, period, window, got, now, max_new_chunks=0, deadline=deadline)
+    return got.bars
 
 
 @router.post("/candles", dependencies=[Depends(candles_rate_limit)])
 async def candles(body: CandlesBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> dict:
+    started = time.monotonic()
     if body.timeframe not in SUPPORTED_TIMEFRAMES:
         raise HTTPException(status_code=400, detail=f"timeframe must be one of {', '.join(SUPPORTED_TIMEFRAMES)}")
     period = body.timeframe if body.timeframe in periods.PERIODS else None
@@ -302,6 +344,9 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     namespace: Optional[str] = None
     live: Optional[Entitlement] = None
     wanted = list(dict.fromkeys(s.strip().upper() for s in body.symbols if s.strip()))
+    if period is not None and len(wanted) > PERIOD_MAX_SYMBOLS:
+        raise HTTPException(status_code=422, detail=f"{body.timeframe} bars: at most {PERIOD_MAX_SYMBOLS} symbols per request "
+                                                    "(each reads years of daily bars)")
     priority = Priority.CHART if len(wanted) == 1 else Priority.SCREENER
     if byob:
         ents = await entitlement.resolve_many(session, user, [(s, exchange) for s in wanted], broker=body.broker,
@@ -370,15 +415,17 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                            "data_tier": ent.badge(eod_date=eod_date, now=now, holidays=holidays) if ent else None, "volume_source": None}
             continue
         try:
-            got = await _base_bars(service, symbol, exchange, base_interval, period, window, body.before, today_state, now)
-            warnings.extend(f"{symbol}: {note}" for note in got.notes)
+            deadline = started + PERIOD_DEADLINE_SECONDS
+            # Week / month: the newest chunk and today's bar first, then the future's, then the older chunks (below).
+            got = await _base_bars(service, symbol, exchange, base_interval, period, window, body.before, today_state, now,
+                                   max_chunks=1 if period is not None else None, deadline=deadline)
             fut = futures.get(symbol)
             fut_bars: Optional[List[OHLCVBar]] = None
             volume_source: Optional[dict] = None
             if fut is not None:
                 try:
                     fut_bars = await _future_bars(service, fut, base_interval, period, window, body.before,
-                                                  today_state if got.today_added else None, now)
+                                                  today_state if got.today_added else None, now, deadline)
                     volume_source = fut.source(periods.ist_date(fut_bars[0].timestamp) if fut_bars else None)
                 except api_budget.BudgetUsed:
                     fut_bars = None
@@ -387,14 +434,23 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
                     logger.info("Future volume fetch failed for %s via %s: %s", fut.symbol, record.broker_name, exc)
                     fut_bars = None
                     warnings.append(f"{symbol}: volume from {fut.symbol} not loaded ({type(exc).__name__})")
+            if period is not None and window is not None:
+                await _older_periods(service, symbol, exchange, period, window, got, now,
+                                     max_new_chunks=PERIOD_NEW_CHUNKS - got.fetched, deadline=deadline)
+            warnings.extend(f"{symbol}: {note}" for note in got.notes)
+            newest_base = got.bars[-1].timestamp if got.bars else None
             bars, shaped = await asyncio.to_thread(_shaped, got.bars, body.timeframe, fut_bars)
-            if got.today_added and today_state and shaped:
-                shaped[-1]["forming"] = True
+            if got.today_added and shaped:
+                # Built from today's one-minute bars: forming while the session is open; after the close the day's bar,
+                # provisional until the broker's daily history has it (tomorrow).
+                shaped[-1]["forming"] = bool(today_state)
+                shaped[-1]["provisional"] = True
             out[symbol] = {"bars": shaped, "count": len(bars),
                            "first": bars[0].timestamp.isoformat() if bars else None, "last": bars[-1].timestamp.isoformat() if bars else None, "error": None,
                            "volume_source": volume_source}
-            if bars:
-                last_ts = bars[-1].timestamp
+            if bars and newest_base is not None:
+                # BT1b: judged on the newest base bar - for week / month its newest daily bar, not the period's start.
+                last_ts = newest_base if period is not None else bars[-1].timestamp
                 newest.append(last_ts if last_ts.tzinfo else last_ts.replace(tzinfo=timezone.utc))
             fetched += 1
             if not bars:
@@ -421,7 +477,8 @@ async def candles(body: CandlesBody, user: User = Depends(get_current_user), ses
     if live is not None:
         # The stalest symbol decides (a batch is only as fresh as its oldest feed); no bars at all = age unknown = stale.
         oldest = min(newest) if newest else None
-        result["data_tier"] = live.badge(now=now, timeframe=body.timeframe if oldest is not None else None, last_bar_start=oldest)
+        badge_tf = "day" if period is not None else body.timeframe        # a week / month is as fresh as its newest day
+        result["data_tier"] = live.badge(now=now, timeframe=badge_tf if oldest is not None else None, last_bar_start=oldest)
         result["note"] = ("Candles come through your own broker session; a copy another user of the same broker fetched in the last "
                           "minutes is used instead of a second broker call.")
     return result

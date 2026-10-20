@@ -516,3 +516,151 @@ interview is the one trilingual exception. Built in `claude/english-only-cleanup
 | AMW-L2 | The name "Strategy Lab" is already a Copilot tab label (AMW-Q2). | **Parked for Abhi.** Meanwhile the port plan's default stands: the new page is "Strategy Lab", the Copilot tab becomes "AI Drafts". | AMW-19 | parked |
 | AMW-L3 | FYERS minute-data terms need written consent (AMW-Q5). | **Parked for Abhi.** `fyers_minute_feed` stays off; `set_flag` refuses it until the terms file says `allowed`. | AMW-17 | parked |
 | AMW-L4 | PDF export needs a new dependency (AMW-Q4). | **Parked for Abhi.** JSON, CSV, PNG and a standard-library XLSX ship first; PDF waits for his OK on the dependency. | AMW-14 | parked |
+
+## Mobile app - what Abhi must provide (owner, 20 Oct)
+
+- **Mobile brought forward (owner decision).** Phase A makes every page phone-first, with each UI2 PR. Phase B is the
+  Android app (Capacitor, the same React app); B1 starts after UI2-1 merges. Phase C (iOS) comes later. The plan is
+  `docs/design/MOBILE_APP_PLAN.md`.
+- **Only Abhi can do these items** (accounts, keys, payments). The how-to for each is below the table.
+- **Never paste a secret** into a PR, issue, chat, e-mail or this file. Secrets go only into the GitHub secret store
+  or the server's `/opt/atp/.env`.
+- **Safe to share in chat or a PR:** fingerprints, package names and domain names.
+
+| # | What Abhi provides or decides | Why / used by | Where it goes (names the build or server reads) | Status |
+|---|---|---|---|---|
+| MA-1 | A domain, and a DNS `A` record for the app host pointing to `187.126.125.208`. | Browsers install the app and run web push and service workers only with a trusted HTTPS certificate. Caddy's internal certificate on the bare IP is not trusted, and Let's Encrypt gives none for the IP in our setup. Also needed for App Links (B2) and every Android build that signs in. | `/opt/atp/.env`: `DOMAIN`, `ACME_EMAIL`, `CADDYFILE=Caddyfile`. GitHub repository **variable** (not a secret): `ATP_APP_DOMAIN`. | open (owner blocker; Abhi is choosing the name and the account it is bought on) |
+| MA-2 | A Firebase project with the Android app registered; its `google-services.json`; and a service account key for the server. | FCM push to the phone (B2). The Android WebView has no web push. | GitHub secret (environment `android-release`): `ANDROID_GOOGLE_SERVICES_JSON_BASE64`. Server `/opt/atp/.env`: `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_FILE` (a path to the key file on the server, never in CI or git). | open (a test registration can use the temporary MA-6 id; the final one waits for the final id) |
+| MA-3 | An upload keystore for signing Android releases, with two offline backups. | Signed APK / AAB (B4). Its SHA-256 fingerprint also goes into `assetlinks.json` (B2). | GitHub secrets (environment `android-release`): `ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_KEYSTORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`. | open (before B4) |
+| MA-4 | A Google Play Console account. | Internal testing track and, later, the store listing (BT7). | None in CI yet. The Play app-signing SHA-256 fingerprint goes into `assetlinks.json`. | later: after company registration |
+| MA-5 | An Apple Developer Program membership. | iOS app (Phase C). | Names decided in Phase C. Proposed: `IOS_DIST_CERT_P12_BASE64`, `IOS_DIST_CERT_PASSWORD`, `IOS_PROVISIONING_PROFILE_BASE64`, `APPSTORE_CONNECT_API_KEY_ID`, `APPSTORE_CONNECT_API_ISSUER_ID`, `APPSTORE_CONNECT_API_KEY_P8_BASE64`. | later: Phase C |
+| MA-6 | The Android application ID (package name). It is permanent once the app is on Play. | `capacitor.config.ts` `appId`, Firebase registration (MA-2), `assetlinks.json`. | Committed in `frontend/capacitor.config.ts` (not a secret). | **answered 2026-10-20 (owner): not fixed yet.** The final id is the reverse of the final domain, `com.<domain>.app`, chosen once the domain (MA-1) is bought and the company name is settled. Until then builds use a clearly temporary development id, `dev.atp.unpublished` (debug builds add `.debug`), which is never published to any store. Firebase (MA-2) can register the temporary id for testing; the final id needs its own registration and a fresh install. |
+| MA-7 | What a phone push may say. FCM messages pass through Google's servers unencrypted end to end, unlike web push. | B2 payload. | Server code; no setting. | **answered 2026-10-20 (owner): minimal content.** For example "A trade is waiting for your approval" or "Broker login needed". No symbol, price, quantity or P&L in the payload; the details show only inside the app, after unlock. One line in the privacy / AI-usage disclosure. |
+| MA-8 | A phone with no screen lock (no PIN, pattern or biometrics). | B3 biometric unlock. | Server code; no setting. | **answered 2026-10-20 (owner): no persistent session.** On a phone without a screen lock the app does not keep the session (sign in each time). Approve shows the confirm dialog only. The app explains how to set a screen lock. Exits are never blocked. |
+| MA-9 | Where Abhi gets a new sideloaded APK, and where "Update available" links to before Play exists. | B4 update prompt. | Server `/opt/atp/.env`: `ANDROID_APP_LATEST_VERSION_CODE`, `ANDROID_APP_LATEST_VERSION_NAME`, `ANDROID_APP_MIN_SUPPORTED_VERSION_CODE` (0 = no prompt), `ANDROID_APP_DOWNLOAD_URL`. | **answered 2026-10-20 (owner):** the `android-release` workflow run's downloads (artifacts) on GitHub (Abhi signed in); no public download link. |
+
+### MA-1: domain and DNS, then a trusted certificate
+
+1. **Buy a domain** at any registrar. The app host is `atp.<domain>`, the name `docs/DEPLOY_HOSTINGER.md` already
+   uses.
+2. **Add the DNS record.** In the registrar's DNS page add an `A` record: name `atp`, value `187.126.125.208`, TTL
+   300. Add no `AAAA` record unless the server's IPv6 is set up and open on ports 80 / 443. A wrong `AAAA` record
+   makes certificate issuance fail.
+3. **Wait and check.** Wait 5-30 minutes, then check from any computer that `dig +short atp.<domain>` prints
+   `187.126.125.208`.
+4. **Ports.** Ports 80 and 443 must stay open on the server. Let's Encrypt checks the domain through them.
+5. **Switch the server.** Outside market hours, edit `/opt/atp/.env` with `nano`:
+   - `DOMAIN=atp.<domain>`;
+   - `ACME_EMAIL=<an address that gets certificate expiry notices>`;
+   - `CADDYFILE=Caddyfile`;
+   - if `PUBLIC_BASE_URL` is set, `PUBLIC_BASE_URL=https://atp.<domain>`.
+
+   Then run `/opt/atp/deploy/atp.sh deploy`. `ALLOWED_ORIGINS` and `FRONTEND_URL` follow `DOMAIN` by themselves
+   (`docker-compose.prod.yml`).
+6. **Caddy gets the certificate.** It obtains a Let's Encrypt certificate for the domain on its own and renews it
+   (`deploy/Caddyfile`, automatic HTTPS). Nothing is installed or rotated by hand.
+7. **Verify:**
+   - `curl -sI https://atp.<domain>/api/system/health` (no `-k`) answers 200;
+   - the browser shows no certificate warning;
+   - Chrome on Android offers "Install app";
+   - Settings → Alert delivery → Push notifications can be enabled.
+8. **Follow-ups:**
+   - Update the Upstox app's redirect URL to `https://atp.<domain>/api/broker/upstox/oauth/callback`.
+   - Register the two-way Telegram webhook if wanted (`docs/GO_LIVE_RUNBOOK.md` step 1.9; it needs an HTTPS domain).
+   - Everyone signs in once on the new address. The login cookie belongs to the host name.
+   - The bare IP stops being the address; use the domain everywhere.
+9. **GitHub variable.** In GitHub → repository → Settings → Secrets and variables → Actions → **Variables**, add
+   `ATP_APP_DOMAIN` = `atp.<domain>`. It is not a secret. The Android build refuses an empty value, an IP or a
+   non-https address.
+
+### MA-2: Firebase project, Android app, `google-services.json`, server key
+
+1. **Use the MA-6 id.** Firebase registers the app by its package name: the temporary `dev.atp.unpublished` for testing now, the final `com.<domain>.app` once it is chosen (a second registration).
+2. **Create the project.** Open the Firebase console (console.firebase.google.com) → **Add project** → name "ATP".
+   Google Analytics is not needed: turn it off.
+3. **Register the Android app.** Project settings → General → **Add app** → Android → package name = MA-6, nickname
+   "ATP Android". The SHA-1 field is not needed for push.
+4. **Download `google-services.json`** and base64 it (the commands are the same as in MA-3, with this file name).
+5. **Store it in GitHub.** GitHub → repository → Settings → Environments → `android-release` (created in MA-3) →
+   **Add secret** `ANDROID_GOOGLE_SERVICES_JSON_BASE64` = the base64 text. Or run
+   `gh secret set ANDROID_GOOGLE_SERVICES_JSON_BASE64 --env android-release < google-services.json.b64`.
+   Delete the `.b64` file afterwards.
+6. **Check the API.** In Project settings → **Cloud Messaging**, check that "Firebase Cloud Messaging API (V1)" is
+   enabled. The console's layout may differ; the build PR will say what it found.
+7. **Server key, for the server only:**
+   1. In Project settings → **Service accounts**, choose **Generate new private key** and download the JSON file.
+   2. Copy it to the server only: `scp <file> root@187.126.125.208:/opt/atp/secrets/fcm-service-account.json` (or the
+      domain once MA-1 is done).
+   3. On the server: `chmod 600` and owner root.
+   4. In `/opt/atp/.env`: `FCM_PROJECT_ID=<the project id shown in Project settings>` and
+      `FCM_SERVICE_ACCOUNT_FILE=/opt/atp/secrets/fcm-service-account.json`. The mount path is final in B2.
+   5. Keep one backup in the password manager and delete the downloaded copy.
+   6. It never goes into git, GitHub secrets, chat or e-mail.
+8. **Turn push on.** Push stays off until the `mobile_push` flag is turned on for the organisation.
+
+### MA-3: upload keystore (Android signing)
+
+1. **Get `keytool`.** It ships with any JDK, including the one inside Android Studio.
+2. **Create the keystore.** Replace the `<...>` parts. Type the password when `keytool` asks, not on the command line,
+   so it stays out of the shell history.
+
+   ```
+   keytool -genkeypair -v \
+     -keystore atp-upload.jks -storetype PKCS12 \
+     -alias <KEY_ALIAS> \
+     -keyalg RSA -keysize 4096 -validity 10000 \
+     -dname "CN=<YOUR NAME>, O=<COMPANY OR YOUR NAME>, C=IN"
+   ```
+
+   A PKCS12 keystore uses one password for the store and the key, so `ANDROID_UPLOAD_KEY_PASSWORD` is the same value
+   as `ANDROID_UPLOAD_KEYSTORE_PASSWORD`.
+3. **Fingerprint (public, safe to share).** Run `keytool -list -v -keystore atp-upload.jks -alias <KEY_ALIAS>` and
+   copy the `SHA256:` line into the B2 PR for `assetlinks.json`.
+4. **Base64 the file:**
+   - Linux: `base64 -w0 atp-upload.jks > atp-upload.jks.b64`
+   - macOS: `base64 -i atp-upload.jks -o atp-upload.jks.b64`
+   - Windows PowerShell:
+     `[Convert]::ToBase64String([IO.File]::ReadAllBytes("atp-upload.jks")) | Set-Content -NoNewline atp-upload.jks.b64`
+5. **Create the GitHub environment.** GitHub → repository → Settings → Environments → **New environment**
+   `android-release`. Under "Required reviewers" add yourself, so no release build runs without your click.
+6. **Add the four secrets to that environment:**
+   - `ANDROID_UPLOAD_KEYSTORE_BASE64`: the content of `atp-upload.jks.b64`;
+   - `ANDROID_UPLOAD_KEYSTORE_PASSWORD`;
+   - `ANDROID_UPLOAD_KEY_ALIAS`;
+   - `ANDROID_UPLOAD_KEY_PASSWORD`.
+
+   With the CLI: `gh secret set ANDROID_UPLOAD_KEYSTORE_BASE64 --env android-release < atp-upload.jks.b64`, and for the
+   others `gh secret set <NAME> --env android-release`, which prompts without echoing the value.
+7. **Delete `atp-upload.jks.b64`.**
+8. **Backups.** Keep the keystore and its password in two places that are not online together: a password manager
+   entry (the file as an attachment, plus the password and alias) and an encrypted USB drive kept elsewhere.
+   - Never put them in git, e-mail, chat or an unencrypted cloud folder.
+   - Do not reuse the key for anything else.
+   - **Why it matters:** before Play, a lost key means the installed app cannot be updated. You must uninstall it and
+     reinstall a build signed with a new key, which loses the app's local data. After Play App Signing (MA-4), Google
+     can reset a lost upload key through Play support.
+
+### MA-4: Google Play Console (later, after company registration)
+
+1. **Wait.** Start only after the company is registered and the BT7 compliance pack is under way. The store listing
+   is prepared but **not published** until Abhi says so.
+2. **Sign up.** Go to play.google.com/console and sign up as an **organisation**. Check the current requirements
+   when you do this: Google has asked for a D-U-N-S number, a one-time registration fee and identity verification for
+   organisation accounts. Personal accounts have had extra closed-testing rules before production.
+3. **Create the app** with the final MA-6 package name (`com.<domain>.app`, never the temporary id) and keep **Play App Signing** on (the default for new apps).
+4. **Upload a test build.** Upload the AAB from the `android-release` job to the **Internal testing** track only.
+5. **Send the fingerprint.** From Play Console → App integrity → "App signing key certificate", copy the SHA-256
+   fingerprint into a PR, so `assetlinks.json` lists it next to the upload key's.
+
+### MA-5: Apple Developer Program (Phase C, later)
+
+Nothing is needed now. When iOS starts:
+
+1. Enrol as an organisation. Check the current requirements: a D-U-N-S number and an annual fee.
+2. Create the app record in App Store Connect with a bundle id matching MA-6.
+3. Create an APNs auth key (`.p8`) and upload it to the Firebase project from MA-2 (Cloud Messaging → Apple app
+   configuration), so the server's FCM sender also reaches iPhones.
+4. Create the signing certificate and provisioning profile, or an App Store Connect API key. They go into the
+   Phase C secrets named in the table, in a GitHub environment `ios-release` with Abhi as the required reviewer.
+5. A macOS CI runner is also needed: either GitHub-hosted (billed at a higher per-minute rate; check the current
+   price) or Abhi's own Mac as a self-hosted runner.

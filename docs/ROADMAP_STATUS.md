@@ -140,7 +140,7 @@ Also merged: #183 fix - the tax report uses the platform charges table (india_co
 Data source note: the Trade-repo data collector was cancelled by the owner (2026-10-11), so HB0's R2 importer (#164) stays idle unless data arrives in that store. HB1 (NSE bhavcopy, run on the server) covers the daily history. The owner's intraday history comes from **HB2** (merged #202, flag `history_intraday` off), run on the server.
 
 
-docs/TRADE_PORT_MAP.md maps Trade -> ATP (Phase 0 ports fold into Z3/Z5/Z10; N-list ports in its section "N-list ports"). Still parked: G (owner's "stable" mark), CH7 (TradingView access), BV vendor tier, Capacitor/Tauri, crypto, IBKR, K. The old BYOK-V3 WIP branch `claude/byok-v3-scan-daily` is superseded by #217.
+docs/TRADE_PORT_MAP.md maps Trade -> ATP (Phase 0 ports fold into Z3/Z5/Z10; N-list ports in its section "N-list ports"). Still parked: G (owner's "stable" mark), CH7 (TradingView access), BV vendor tier, Tauri (Capacitor moved to the mobile app track, row MA), crypto, IBKR, K. The old BYOK-V3 WIP branch `claude/byok-v3-scan-daily` is superseded by #217.
 Not doing: the Trade-repo data collector (owner cancelled it 2026-10-11).
 
 ### After Phase 0 (N-list, docs/specs/ATP_PHASE0_FREEZE.md §3)
@@ -227,6 +227,7 @@ Merge train (owner's MERGE_NOW): finished 09:52 IST. PRs #82-#155 are all merged
 | PW4 | Telegram <-> app: Open in app on alerts and proposals; live stream (decisions on both sides within 2 s) | done, draft (stacked on #157) | #158 | 100 |
 | PW5 | Phase 0 proposal card (Approve PAPER / Reject / Snooze, broker-app deep link) | next | - | 0 |
 | PW6 | Beta cohort gate (invite codes, cap 500), install/update metrics, Send feedback (flag beta_cohort_gate off) | in progress | - | 50 |
+| MA | Mobile app track (owner, 20 Oct: brought forward; supersedes "Capacitor in Phase 1"): Phase A phone-first pages with each UI2 PR + phone screenshots for every route (light / dark) + "install needs the secure web address" on the IP host; Phase B Android via Capacitor, same React app - B1 shell + CI debug APK (after UI2-1), B2 FCM push (flag `mobile_push` off) + App Links + share, B3 biometric unlock + secure storage, B4 signed release + update prompt; Play listing prepared, not published (BT7); Phase C iOS later. Plan: docs/design/MOBILE_APP_PLAN.md; owner items MA-1..MA-9 in OPEN_QUESTIONS (MA-1 domain is the first blocker) | plan (docs); B1 waits for UI2-1 | - | 0 |
 | BYOK-V1 | Vision with the user's own AI key: per-user encrypted keys, key test, caps, settings (flag vision_byok off) | done, draft | #160 | 100 |
 | J | UX / real-time | not started | - | 0 |
 | K | Community / enterprise | not started | - | 0 |

@@ -1,5 +1,5 @@
 import { pageFromPath } from "../routes";
-import { V2_ALIASES, needsBrokerGate } from "./aliases";
+import { V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
 import { navItemFor, type ShellKey } from "./navModel";
 
 export { V2_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
@@ -78,4 +78,15 @@ export function v2RedirectFor(pathname: string, search: string, ctx: RedirectCon
  * too; `/journal/coach` and `/settings/account` are not data pages. */
 export function isGatedPath(pathname: string): boolean {
   return needsBrokerGate(pathname);
+}
+
+/** UI2-2: true when the shell puts the broker gate in front of this address *and* the page there is not one that shows
+ * the broker states itself (`ownStates`, src/shell/pagesV2.ts: the v2 dashboard). An address that cannot be decoded
+ * stays gated (fail closed). */
+export function shellGates(pathname: string, ownStates: readonly string[]): boolean {
+  if (!isGatedPath(pathname)) return false;
+  const { path, malformed } = routerPath(pathname);
+  if (malformed) return true;
+  const clean = `/${path.replace(/^\/+|\/+$/g, "")}`;
+  return !ownStates.includes(clean);
 }

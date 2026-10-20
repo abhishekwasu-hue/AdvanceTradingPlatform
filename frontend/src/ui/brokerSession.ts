@@ -192,6 +192,9 @@ export interface BrokerSession {
   state: BrokerGateState;
   /** Reads the broker status again (after a login, or when the trader asks). */
   refresh: () => void;
+  /** UI2-2: this user's token-status rows as last read (null until the first answer) - the dashboard tells "2 brokers ·
+   * 1 needs login" from them. */
+  rows: BrokerTokenInfo[] | null;
 }
 
 /** What is known for one user: the last good answer and the failed checks since. Keyed by user, so another
@@ -232,5 +235,5 @@ export function useBrokerSession(): BrokerSession {
 
   const mine = knownFor(known, userId);
   const failed = brokerCheckFailed({ hasGoodAnswer: mine.rows !== null, consecutiveFailures: mine.failures, ageMs: Date.now() - mine.at });
-  return { state: brokerGateState({ authLoading: loading, signedIn: userId !== null, tokens: mine.rows, failed }), refresh };
+  return { state: brokerGateState({ authLoading: loading, signedIn: userId !== null, tokens: mine.rows, failed }), refresh, rows: mine.rows };
 }

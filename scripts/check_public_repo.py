@@ -152,6 +152,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/brief.json": "f0791d9852a6412195c3735959059e32f526477c8b78746e176504b443324aa9",
     "frontend/e2e/fixtures/coach.json": "27695969bdfbc8781b68e088fcc86315926ab34a4e9e68350e05a3e1a04bd814",
     "frontend/e2e/fixtures/copilot_reply.json": "9d0013cced7fe29e99d3c2c25e231d96bee15cbd4960f169194abc1247d77bcd",
+    # UI2-2: hand-written, made-up dashboard replies for the v2 dashboard screenshots (frontend/e2e/dashboard-v2.e2e.ts)
+    "frontend/e2e/fixtures/dashboard_v2.json": "6e9629add17dd3b9801e2db91a4aebc984b2a00055c5e7b137e93653782a110f",
     "frontend/e2e/fixtures/drafts.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "frontend/e2e/fixtures/interview_plan.json": "3b582f587c25dfe0f99ab25fafb34f77d458e1910cbaba5747c964997fbdb42c",
     "frontend/e2e/fixtures/interview_start.json": "b702f8734442fd26183eb52ae508de6e55edfc0df57ee406c75776cc1ecc4453",

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AuthProvider } from "../auth/AuthContext";
 import strategiesSource from "../pages/StrategiesPage.tsx?raw";
 import appShellSource from "../shell/AppShellV2.tsx?raw";
-import { PAGE_V2 } from "../shell/pagesV2";
+import { PAGE_COMPONENTS_V2 } from "../shell/pagesV2";
 import watchtowerSource from "../copilot/tabs/WatchtowerTab.tsx?raw";
 import copilotPageSource from "../pages/AiCopilotPage.tsx?raw";
 import type { AiAction, StrategyInfo } from "../types";
@@ -136,8 +136,8 @@ describe("UI2-3 the page", () => {
   });
 
   it("is the v2 page for /signals; today's page stays for the old shell", () => {
-    expect(PAGE_V2.signals).toBeDefined();
-    expect(appShellSource).toContain("PAGE_V2[p] ?? PAGE_COMPONENTS[p]");
+    expect(PAGE_COMPONENTS_V2.signals).toBeDefined();
+    expect(appShellSource).toContain("PAGE_COMPONENTS_V2[p] ?? PAGE_COMPONENTS[p]");
   });
 
   it("reads only: the feed is a GET, every decision goes to the existing proposal endpoints, nothing places an order", () => {

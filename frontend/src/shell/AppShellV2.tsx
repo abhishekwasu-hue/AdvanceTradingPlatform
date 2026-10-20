@@ -12,9 +12,9 @@ import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
 import MoreSheetV2 from "./MoreSheetV2";
-import { PAGE_V2 } from "./pagesV2";
 import { sectionOf, visibleSections, type NavContext } from "./navModel";
-import { V2_ALIASES, isGatedPath, routerPath, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
+import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
+import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
 
@@ -102,7 +102,8 @@ export default function AppShellV2() {
       <Suspense fallback={<PageLoading />}>
         <Routes>
           {PAGES.map((p) => {
-            const PageComponent = PAGE_V2[p] ?? PAGE_COMPONENTS[p];
+            // UI v2 §12: the page's v2 layout where it has one (UI2-2: the dashboard), today's page otherwise.
+            const PageComponent = PAGE_COMPONENTS_V2[p] ?? PAGE_COMPONENTS[p];
             const element = <PageComponent onNavigate={go} />;
             return p === "copilot"
               ? <Route key={p} path="/copilot/:tab?" caseSensitive element={element} />
@@ -124,7 +125,8 @@ export default function AppShellV2() {
   if (legacy) content = <Navigate to={`${pathFor(legacy)}${withoutPageParam(location.search)}`} replace />;
   else if (redirect) content = <Navigate to={redirect} replace />;
   // The gate stays mounted while the trader moves between data pages, so the broker status is not re-read per click.
-  else if (isGatedPath(location.pathname)) content = <BrokerGate>{routes}</BrokerGate>;
+  // A page that shows the broker states itself (UI2-2: the dashboard) is not wrapped (src/shell/pagesV2.ts).
+  else if (shellGates(location.pathname, OWN_BROKER_STATES)) content = <BrokerGate>{routes}</BrokerGate>;
   else content = routes;
 
   const wide = key === "screener" || key === "options-builder" || key === "charts";

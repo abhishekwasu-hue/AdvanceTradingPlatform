@@ -1922,6 +1922,8 @@ export interface PortfolioExposure {
   short_notional: number; gross_pct_of_capital: number; unrealised_pnl: number; realised_today: number; risk_at_stops: number;
   risk_pct_of_capital: number; largest_symbol_pct: number; by_symbol: SymbolExposure[]; by_strategy: Record<string, number>;
   by_mode: Record<string, number>; warnings: string[]; price_source: "ltp" | "entry"; priced_symbols: string[];
+  /** Phase P3: the base currency and the conversions applied (a non-INR symbol is converted before aggregating). */
+  base_currency?: string; fx_rates_used?: Record<string, number>; fx_missing?: string[];
 }
 
 export interface DegradationMetrics {

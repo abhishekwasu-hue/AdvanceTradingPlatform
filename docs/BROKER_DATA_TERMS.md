@@ -76,8 +76,13 @@ referenced here.
 
 - One user's session = the broker credential that user linked themselves (`broker_credentials.user_id`). Credentials
   are stored per tenant; a teammate's credential in the same tenant is never used for another user's data.
-- Every cache entry written for a session is keyed by that session (`md:byob:u<user>.c<credential>:...`): ticks,
-  candles and the session's symbol set. The shared, platform-wide caches are not read or written for Tier A reads.
+- Every cache entry written for a session is keyed by that session (`md:byob:u<user>.c<credential>:...`): its ticks,
+  its per-request candle cache and the session's symbol set; no other session reads them.
+- LD-10 (owner, 20 Oct): candles and prices are public market data. After the guard has admitted a symbol for the user
+  (Tier A, own session, inside the budget), the bars come from one copy shared by every user of the *same broker*
+  (`md:shared:<broker>:...`, `app/market_data/shared_candles.py`): the broker fetch that fills it goes through the
+  requesting user's own session and budget, and another broker's bars are never served. `/ltp` reads the shared live
+  feed's tick for the same broker before it calls the user's broker. Nothing per account is shared.
 - A per-user websocket stream never feeds platform-wide consumers (the lake recorder); nothing is pooled.
 - Symbols per session: open positions > open charts > watchlist > screener universe, up to the cap; beyond it the
   symbol is EOD for that user (a symbol already held keeps its slot; the latest scan wins among screener symbols), with

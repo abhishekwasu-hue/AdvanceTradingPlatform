@@ -338,8 +338,8 @@ def build(run_dir: Path) -> Tuple[str, str, int]:
             md.append(f"- {label}: {meta[key]}")
     md += ["", "## How the charts got data", "",
            "- `chart` (" + SCENARIO_NOTES["chart"] + "): the load-test organisation has no broker session, so this answers 409 "
-           "before any broker call. It is reported as not measured. If LD-10 lets a chart read shared candles without a session of "
-           "its own, the same scenario is measured with no change here.",
+           "before any broker call. It is reported as not measured. LD-10 shares fetched candles between users of one broker, but a "
+           "fetch still needs the user's own session, so it stays 409 for this organisation.",
            "- `chart_lake` (" + SCENARIO_NOTES["chart_lake"] + "): the chart data such an organisation can see. Answers without bars "
            "(an empty lake for a symbol) are counted apart in the outcomes table.",
            "- `screener_run`: like `chart`, through the user's own broker session - 409 here.", ""]

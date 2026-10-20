@@ -16,9 +16,10 @@ Results from the CI staging stack (PR #222, draft). The Hostinger re-runs wait f
 | Load test, 500 sessions | **FAIL** on the KVM 2 shape, market open (run 12, 13 Oct): p95 chart 0.59 s, screener 0.85 s, dashboard reads 0.07-0.25 s, login 11.4 s vs the 0.5 s target; 0 server errors. Runs 13 / 14 (19 Oct, main merged): chart 2.0 / 2.2 s (the #249 broker budget, LD-10), screener 1.08 / 1.04 s, login 28 / 13.4 s - still **FAIL** | perf work on `claude/perf-500` (docs/reports/load_test_500.md); login is the owner's call (OPEN_QUESTIONS LD-9); the owner re-runs it on Hostinger with one command |
 | Rollback rehearsed | **12/12** on the CI stack | Hostinger rehearsal pending the server |
 
-### Owner blockers (only these four)
+### Owner blockers (three left)
 
-1. Hostinger server IP.
+1. ~~Hostinger server IP.~~ **Closed 20 Oct:** ATP is deployed on Hostinger (Phase 0, health OK); updates go through
+   `/opt/atp/deploy/atp.sh deploy`, outside market hours.
 2. R2 bucket / token in the host `.env`.
 3. Dhan partner application.
 4. Company registration (needed before the partner emails in docs/specs/ATP_PARTNER_EMAIL_DRAFTS.md go out).

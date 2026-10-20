@@ -52,10 +52,26 @@ runner without a cap is kept as a secondary run. The SLO limits are unchanged fr
   scrapes, `deploy/ci/metrics_summary.py`); the top statements (`pg_stat_statements`). py-spy samples the API when the
   workflow's `profile` input is on (off by default: it costs the runner CPU).
 
-**SLO** (docs/SLO.md SLO-1, `loadtest.py`): p95 at or under 500 ms per read route; login 1,000 ms, chart 1,000 ms,
-screener run 2,000 ms; server errors at most 0.5% of requests. The owner's "p95 at or under 0.5 s on the key routes" is
-met where the tables say so. Login's documented limit is 1.0 s, chart's 1.0 s and the screener run's 2.0 s: the
-coordinator puts that distinction to the owner, and the job judges the documented limits.
+**SLO** (docs/SLO.md SLO-1, `loadtest.py`). From 20 Oct (owner, LD-9) a run has two verdicts and needs both:
+
+- **API**: every scenario but login - p95 at or under 500 ms per read route (chart 1,000 ms and screener run 2,000 ms,
+  their documented limits); server errors at most 0.5% of the API requests.
+- **Login**, measured apart: p95 at or under 2,000 ms at 500 concurrent sessions, and no failed login (a time-out, a
+  5xx, a 429 or a refusal each fails it).
+
+The report's first line names both (`**SLO PASS** (API PASS, login PASS (p95 ... ms of 2,000; 0 failed of 500, 0
+allowed); ...)`), and the job `load-500` passes or fails on the same rule. Runs 1-14 below were judged on the earlier
+rule - login at 1,000 ms inside one verdict, server errors over all requests - so their verdicts are not comparable;
+their numbers are.
+
+LD-10 (owner, 20 Oct), from the first run after it: the API's broker budget stays at 1 call a second per credential and
+a chart spends fewer calls instead - history and today's candles are one shared copy per broker, symbol, interval and
+request window for every user (one broker fetch, through the requesting user's own session; today's copy expires when
+its forming bar closes), the chart's last price comes from the shared live feed when it has the symbol, and the budget's
+per-second rate is a token bucket with a burst of 2 (`app/market_data/api_budget.py`, `app/market_data/shared_candles.py`).
+A cold chart's two calls no longer wait for the next second, and in this profile (500 users, 10 symbols) the charts
+make about one history fetch per symbol every 5 minutes and one fetch of today's bars per symbol a minute, instead of
+two calls per chart.
 
 ## Results
 

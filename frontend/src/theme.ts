@@ -12,19 +12,44 @@ const KEY = "atp_appearance";
 const EVENT = "atp-theme";
 const DEFAULTS: Appearance = { theme: "dark", colorBlind: false, reduceMotion: false };
 
+/** UI2-0 (UI v2 open question UI-1, owner default): while `ui_v2` is on, a trader who never chose a theme follows the
+ * system, and light when the system says nothing; a theme the trader chose is kept. The shell sets this once it has
+ * read the flag, and keeps a hint in storage so public/theme-init.js paints the same theme before the app loads.
+ * While the flag is off nothing here changes: the default stays dark. */
+export const V2_THEME_HINT_KEY = "atp_ui_v2_theme";
+
+function readV2Hint(): boolean {
+  try { return localStorage.getItem(V2_THEME_HINT_KEY) === "system"; } catch { return false; }
+}
+let v2Default = readV2Hint();
+
+/** UI2-0: called by the shell with the `ui_v2` flag. Re-applies the theme only when the default actually changes. */
+export function setV2ThemeDefault(on: boolean): void {
+  try {
+    if (on) localStorage.setItem(V2_THEME_HINT_KEY, "system");
+    else localStorage.removeItem(V2_THEME_HINT_KEY);
+  } catch { /* storage unavailable: this tab only */ }
+  if (on === v2Default) return;
+  v2Default = on;
+  if (typeof document !== "undefined") applyAppearance();
+}
+
 export function loadAppearance(): Appearance {
+  const fallback: Appearance = v2Default ? { ...DEFAULTS, theme: "system" } : DEFAULTS;
   try {
     const raw = localStorage.getItem(KEY);
     const v = raw ? (JSON.parse(raw) as Partial<Appearance>) : {};
-    const theme: ThemeChoice = v.theme === "light" || v.theme === "system" || v.theme === "dark" ? v.theme : DEFAULTS.theme;
+    const theme: ThemeChoice = v.theme === "light" || v.theme === "system" || v.theme === "dark" ? v.theme : fallback.theme;
     return { theme, colorBlind: v.colorBlind === true, reduceMotion: v.reduceMotion === true };
   } catch {
-    return DEFAULTS;
+    return fallback;
   }
 }
 
 function prefersLight(): boolean {
-  return typeof window !== "undefined" && !!window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
+  if (typeof window === "undefined" || !window.matchMedia) return v2Default;     // v2: light when the system is unknown
+  if (v2Default) return !window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return window.matchMedia("(prefers-color-scheme: light)").matches;
 }
 
 export function resolvedTheme(a: Appearance = loadAppearance()): "dark" | "light" {
@@ -53,6 +78,10 @@ export function initAppearance(): void {
   window.addEventListener("storage", (e) => { if (e.key === KEY) applyAppearance(); });
   window.matchMedia?.("(prefers-color-scheme: light)").addEventListener?.("change", () => {
     if (loadAppearance().theme === "system") applyAppearance();
+  });
+  // UI2-0: v2 resolves "system" from the dark query (light when unknown), so it listens to that one too.
+  window.matchMedia?.("(prefers-color-scheme: dark)").addEventListener?.("change", () => {
+    if (v2Default && loadAppearance().theme === "system") applyAppearance();
   });
 }
 

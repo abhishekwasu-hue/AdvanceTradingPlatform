@@ -96,6 +96,7 @@ class UpstoxBroker(BrokerInterface):
     """
 
     name = "upstox"
+    history_by_date = True   # LD-10: the history API takes dates only (get_historical_data)
     BASE_URL = "https://api.upstox.com/v2"
 
     @property

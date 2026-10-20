@@ -10,6 +10,7 @@ import GoLiveChecklist from "../components/GoLiveChecklist";
 import HolidaysCard from "../components/HolidaysCard";
 import type { AdminOverview, AdminPlan, AdminTenantDetail, AdminTenantSummary, EncryptionStatus, FeatureFlags, Incident, PlatformAuditLog, RiskCeilings, SystemStatus } from "../types";
 import { PageHeader } from "../components/primitives";
+import { useFeatures } from "../ui/useFeatures";
 
 const STATUSES = ["active", "suspended"];
 
@@ -28,6 +29,10 @@ export default function AdminPage() {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [cohort, setCohort] = useState<BetaCohort | null>(null);
   const [flags, setFlags] = useState<FeatureFlags | null>(null);
+  // UI2-0: after a flag change, the app's shared flags (useFeatures) are read again, so this console's own
+  // organisation sees the change at once.
+  const { refresh: refreshFeatures } = useFeatures();
+  const flagsChanged = (next: FeatureFlags) => { setFlags(next); refreshFeatures(); };
   const [flagTenants, setFlagTenants] = useState<Record<string, string>>({});
   const [encryption, setEncryption] = useState<EncryptionStatus | null>(null);
   const [ceilings, setCeilings] = useState<RiskCeilings | null>(null);
@@ -166,10 +171,10 @@ export default function AdminPage() {
                 <td className="py-1.5 pr-3"><input className="w-full rounded bg-surface-2 border border-border px-2 py-1" placeholder="e.g. 3, 17" value={flagTenants[name] ?? ""} onChange={(e) => setFlagTenants({ ...flagTenants, [name]: e.target.value })} /></td>
                 <td className="py-1.5 text-right whitespace-nowrap">
                   {f.on
-                    ? <button disabled={busy} onClick={() => act(`${name} turned off.`, () => api.adminSetFlag(name, false, (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n))).then(setFlags))} className="rounded border border-down/40 text-down hover:bg-down/10 px-2 py-0.5">Turn off</button>
+                    ? <button disabled={busy} onClick={() => act(`${name} turned off.`, () => api.adminSetFlag(name, false, (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n))).then(flagsChanged))} className="rounded border border-down/40 text-down hover:bg-down/10 px-2 py-0.5">Turn off</button>
                     : <>
-                        <button disabled={busy} onClick={() => act(`${name} allow-list saved.`, () => api.adminSetFlag(name, false, (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n))).then(setFlags))} className="rounded border border-border hover:bg-surface-2 text-fg px-2 py-0.5 mr-1">Save list</button>
-                        <button disabled={busy} onClick={() => act(`${name} turned on.`, () => api.adminSetFlag(name, true).then(setFlags))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-2 py-0.5">Turn on</button>
+                        <button disabled={busy} onClick={() => act(`${name} allow-list saved.`, () => api.adminSetFlag(name, false, (flagTenants[name] ?? "").split(",").map((t) => parseInt(t.trim(), 10)).filter((n) => !Number.isNaN(n))).then(flagsChanged))} className="rounded border border-border hover:bg-surface-2 text-fg px-2 py-0.5 mr-1">Save list</button>
+                        <button disabled={busy} onClick={() => act(`${name} turned on.`, () => api.adminSetFlag(name, true).then(flagsChanged))} className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-2 py-0.5">Turn on</button>
                       </>}
                 </td>
               </tr>

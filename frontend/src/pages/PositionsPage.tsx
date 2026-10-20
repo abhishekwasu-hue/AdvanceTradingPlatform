@@ -10,6 +10,7 @@ import PositionChartCard from "../components/PositionChartCard";
 import { Card, DirectionBadge, StatTile, signClass } from "../components/ui";
 import type { PositionGreeks, TradeRecord } from "../types";
 import { PageHeader } from "../components/primitives";
+import { useFeatures } from "../ui/useFeatures";
 
 // N1 F3 (flag portfolio_risk): the portfolio risk card is its own chunk, loaded only while the flag is on.
 const PortfolioRiskCard = lazy(() => import("../portfolio/PortfolioRiskCard"));
@@ -26,8 +27,10 @@ export default function PositionsPage() {
   const [greeksError, setGreeksError] = useState<string | null>(null);
   const [greeksBusy, setGreeksBusy] = useState(false);
   // Z3: "Exit now" exists only with approval-only entries or the PAPER account on (otherwise exits run automatically).
-  const [exitNowOn, setExitNowOn] = useState(false);
-  const [portfolioRiskOn, setPortfolioRiskOn] = useState(false);
+  // UI2-0: from the app's single /system/features read.
+  const features = useFeatures();
+  const exitNowOn = features.on("approval_only_entries") || features.on("paper_account");
+  const portfolioRiskOn = features.on("portfolio_risk");
 
   async function loadGreeks() {
     setGreeksBusy(true); setGreeksError(null);
@@ -54,10 +57,6 @@ export default function PositionsPage() {
   useEffect(() => {
     if (!user) return;
     refresh();
-    api.myFeatures().then((f) => {
-      setExitNowOn(Boolean(f.approval_only_entries || f.paper_account));
-      setPortfolioRiskOn(Boolean(f.portfolio_risk));
-    }).catch(() => { setExitNowOn(false); setPortfolioRiskOn(false); });
   }, [user]);
 
   async function handleMarkPrice(tradeId: number) {

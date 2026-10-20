@@ -61,6 +61,13 @@ _WAIT_BUCKETS = (0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
 DB_POOL_WAIT = _histogram("db_pool_wait_seconds", "Time to get a pooled database connection", buckets=_WAIT_BUCKETS)
 BCRYPT_QUEUE_WAIT = _histogram("bcrypt_queue_wait_seconds", "Time a password check waited for a bcrypt thread", buckets=_WAIT_BUCKETS)
 BCRYPT_SECONDS = _histogram("bcrypt_seconds", "Time of one password check on its bcrypt thread", buckets=_WAIT_BUCKETS)
+# LD-10 review: where a chart waits - for its credential's broker token (api_budget), and for another request's or API
+# process's fetch of the shared candles (shared_candles); and how each shared read was answered.
+API_BUDGET_WAIT = _histogram("api_budget_wait_seconds", "Time an API broker data call waited for its credential's token",
+                             ("kind",), buckets=_WAIT_BUCKETS)
+SHARED_CANDLES_WAIT = _histogram("shared_candles_wait_seconds", "Time a candle read waited on another request's fetch",
+                                 ("on",), buckets=_WAIT_BUCKETS)
+SHARED_CANDLES = _counter("shared_candles", "Shared candle reads by part and how they were answered", ("part", "outcome"))
 
 # --- trading -----------------------------------------------------------------------------------
 ORDERS = _counter("orders", "Order attempts by mode and final status", ("mode", "status"))

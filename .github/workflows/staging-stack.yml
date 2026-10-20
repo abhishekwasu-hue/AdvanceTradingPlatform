@@ -4,7 +4,8 @@
 #               NSE session when needed): invite -> sign up -> broker -> screen -> proposal -> Approve PAPER ->
 #               protective exit -> journal; no order-API call reaches a broker; stale data -> no alert
 #   load-500    the same stack on the real clock: 500 synthetic sessions (backend/scripts/loadtest.py, sharded so the
-#               login wave comes from many client IPs) - p95 per route, server errors, SLO verdict
+#               login wave comes from many client IPs) - p95 per route, server errors, SLO verdict (LD-9: the API
+#               scenarios at their p95 limits, 0.5 s for reads; login apart - p95 <= 2 s and no failed login; both pass)
 #   rollback    deploy/atp.sh itself on a throwaway clone: deploy N -> N+1 (migration) -> rollback -> verify; then a
 #               non-rollback-safe migration: code-only rollback refused, --restore-db
 #

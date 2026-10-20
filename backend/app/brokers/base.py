@@ -123,6 +123,9 @@ class BrokerInterface(ABC):
     max_tag_length: int = 20
     # P0.5 / T2: order types this broker accepts (see BrokerCapabilities).
     capabilities: BrokerCapabilities = BrokerCapabilities()
+    # LD-10: True when get_historical_data reads only the IST dates of from/to (the same bars for any time of the same
+    # day), so a shared candle copy can be keyed by the dates (app/market_data/shared_candles.window_anchor).
+    history_by_date: bool = False
 
     @abstractmethod
     async def authenticate(self) -> BrokerProfile: ...

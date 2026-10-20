@@ -1,6 +1,7 @@
 import { HelpCircle, Maximize2, Minimize2, Save, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api/client";
+import { useFeatures } from "../ui/useFeatures";
 import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
 import ProChart from "../components/ProChart";
@@ -46,13 +47,9 @@ function store(key: string, value: string | null) {
  */
 export default function ChartWorkspace({ params }: { params: URLSearchParams }) {
   const { user, loading } = useAuth();
-  const [enabled, setEnabled] = useState<boolean | null>(null);
-  useEffect(() => {
-    if (!user) return;
-    let live = true;
-    api.myFeatures().then((f) => { if (live) setEnabled(f.chart_workspace === true); }).catch(() => { if (live) setEnabled(false); });
-    return () => { live = false; };
-  }, [user]);
+  // UI2-0: from the app's single /system/features read; null until it is in.
+  const features = useFeatures();
+  const enabled: boolean | null = features.loaded ? features.on("chart_workspace") : null;
 
   if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the workspace again.</div>;

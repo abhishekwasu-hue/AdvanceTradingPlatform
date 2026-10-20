@@ -8,6 +8,7 @@ import httpx
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
+from app.brokers.totp import totp_code
 from app.brokers.models import (
     BrokerCredentials,
     BrokerHolding,
@@ -45,8 +46,9 @@ class ShoonyaBroker(BrokerInterface):
     the live docs before production use, since broker APIs evolve.
 
     Requires `credentials.client_id` (uid), `credentials.api_secret` (login password),
-    `credentials.api_key` (used to derive the appkey hash), and `credentials.totp_secret` used
-    here as the current 2FA code (factor2 - a TOTP or DOB/PAN depending on account setup).
+    `credentials.api_key` (used to derive the appkey hash), and `credentials.totp_secret` for the
+    second factor (factor2): the base32 TOTP secret, turned into the current code at login (see
+    `app.brokers.totp`); a 6- or 8-digit code, or a DOB/PAN on accounts set up that way, is sent as-is.
     Optional extra fields (via `BrokerCredentials`' `extra="allow"`): `vc` (vendor code, default
     `f"{uid}_API"`) and `imei` (device id, default `"abc1111"`).
     """
@@ -102,7 +104,7 @@ class ShoonyaBroker(BrokerInterface):
             "apkversion": "1.0.0",
             "uid": self._uid,
             "pwd": pwd_hash,
-            "factor2": self.credentials.totp_secret or "",
+            "factor2": totp_code(self.credentials.totp_secret),
             "vc": self._vc,
             "appkey": appkey_hash,
             "imei": self._imei,

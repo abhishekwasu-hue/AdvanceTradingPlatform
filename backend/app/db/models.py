@@ -2152,7 +2152,7 @@ class ThesisRecord(Base):
     agreement: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)      # share of factors agreeing
     shadow_multiplier: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
     last_price: Mapped[float | None] = mapped_column(Float, nullable=True)
-    lang: Mapped[str] = mapped_column(String(5), nullable=False, default="mr")
+    lang: Mapped[str] = mapped_column(String(5), nullable=False, default="en")         # ATP is English only
     narrative_source: Mapped[str] = mapped_column(String(10), nullable=False, default="rules")   # rules | model
     thesis_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
     created_at: Mapped[datetime] = mapped_column(_TZ_DATETIME, default=_utcnow, nullable=False)

@@ -136,9 +136,10 @@ its own waiting.
 The organisation has no broker session, by design: no request of its users can reach a broker or spend Abhi's broker
 limits.
 - **`chart`** (`POST /api/market-data/candles`) reads candles through the user's own broker session. Here it answers
-  409 "no broker session" before any broker call. The report lists it as **not measured**, never as passed. If LD-10
-  (being built separately) lets a chart serve shared candles without a session of its own, the same scenario is
-  measured with no change to this tool. This tool does not depend on LD-10.
+  409 "no broker session" before any broker call. The report lists it as **not measured**, never as passed. LD-10
+  (merged in #282) shares fetched candles between users of the same broker, but each fetch still needs the requesting
+  user's own session, so this stays 409 here. This tool does not depend on LD-10's code; if a later change serves
+  charts without a session of one's own, the same scenario is measured with no change here.
 - **`chart_lake`** (`GET /api/market-data/history`, a year of daily bars of the same 10 NSE symbols) is added to the
   session model for this run. It is the chart data such an organisation can see: the shared market lake, a database
   read with no broker. It is judged against 0.5 s like any other API scenario. An answer without bars (the lake holds

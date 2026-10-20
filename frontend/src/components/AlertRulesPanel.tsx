@@ -14,6 +14,7 @@ import {
 import { Badge, Button, Input, Select } from "./primitives";
 import { Card } from "./ui";
 import type { ThenTemplate } from "../screener/then/model";
+import { useFeatures } from "../ui/useFeatures";
 
 // N1 X1b (flag scan_then): a rule's Then chip and drawer, loaded only when the flag is on (its i18n bundle stays out of
 // this page's chunk otherwise).
@@ -238,13 +239,10 @@ function PersonalChannels() {
 export function AlertRulesPanel() {
   const [rules, setRules] = useState<AlertRule[] | null>(null);
   const [off, setOff] = useState(false);
-  const [thenOn, setThenOn] = useState(false);
+  const thenOn = useFeatures().on("scan_then");              // UI2-0: the app's single /system/features read
   // Review of X1b: one batch read of every rule's Then (undefined until it answers, or when it fails - each rule then
   // reads its own)
   const [thens, setThens] = useState<Record<string, ThenTemplate> | null | undefined>(undefined);   // null: the batch read failed
-  useEffect(() => {
-    api.myFeatures().then((f) => setThenOn(Boolean(f.scan_then))).catch(() => setThenOn(false));
-  }, []);
   useEffect(() => {
     if (thenOn) api.allThen().then((r) => setThens(r.templates)).catch(() => setThens(null));
   }, [thenOn]);

@@ -100,7 +100,7 @@ def test_authenticate_refuses_an_unknown_or_malformed_label(monkeypatch):
     headers, _me = _two_accounts("auth-bad")
     seen = _fake_broker(monkeypatch)
     assert client.post("/api/broker/upstox/authenticate?account_label=third", headers=headers).status_code == 404
-    assert client.post("/api/broker/upstox/authenticate?account_label=../primary", headers=headers).status_code == 400
+    assert client.post("/api/broker/upstox/authenticate?account_label=../primary", headers=headers).status_code == 422
     assert seen == []
 
 
@@ -180,3 +180,91 @@ def test_login_url_and_code_for_the_second_kite_account(monkeypatch):
     assert [c.api_key for c in seen] == ["k-second"]
     rows = _rows(me["tenant_id"], "zerodha")
     assert rows["second"][0] == "VALID" and rows["primary"][0] == "UNKNOWN"
+
+
+# --- the audit's case: "Authenticate" on zerodha/backup, and the other per-account actions on that row ------------------
+
+def test_authenticate_on_zerodha_backup_marks_only_the_backup_row(monkeypatch):
+    headers, me = _owner(_email("zbackup"))
+    _store(headers, "zerodha", "primary", api_key="k-primary", api_secret="s-primary")
+    _store(headers, "zerodha", "backup", api_key="k-backup", api_secret="s-backup")
+    seen = _fake_broker(monkeypatch)
+    res = client.post("/api/broker/zerodha/authenticate?account_label=backup", headers=headers)
+    assert res.status_code == 200, res.text
+    assert [c.api_key for c in seen] == ["k-backup"]
+    rows = _rows(me["tenant_id"], "zerodha")
+    assert rows["backup"][0] == "VALID" and rows["backup"][1].access_token == "token-for-k-backup"
+    assert rows["primary"][0] == "UNKNOWN" and rows["primary"][1].access_token is None
+    # Token status reports each account on its own: only the backup is usable.
+    status = {(t["broker_name"], t["account_label"]): t for t in client.get("/api/broker/token-status", headers=headers).json()}
+    assert status[("zerodha", "backup")]["token_status"] == "VALID" and status[("zerodha", "backup")]["needs_login"] is False
+    assert status[("zerodha", "primary")]["token_status"] == "UNKNOWN" and status[("zerodha", "primary")]["needs_login"] is True
+    assert "s-backup" not in res.text and "token-for" not in res.text
+
+
+class _Probe:
+    def __init__(self, seen: list, creds):
+        self.creds, self.access_token = creds, creds.access_token
+        seen.append(creds.api_key)
+
+    async def disconnect(self):
+        return None
+
+
+def test_smoke_test_and_disconnect_act_on_the_backup_row_only(monkeypatch):
+    headers, me = _owner(_email("zsmoke"))
+    _store(headers, "zerodha", "primary", api_key="k-primary", api_secret="s-primary", access_token="t-primary")
+    _store(headers, "zerodha", "backup", api_key="k-backup", api_secret="s-backup", access_token="t-backup")
+    seen: list = []
+    monkeypatch.setattr(broker_routes, "build_adapter", lambda record: _Probe(seen, tl.load_credentials(record)))
+
+    class _Report:
+        ok, summary = True, "all good"
+
+        def as_dict(self):
+            return {"ok": True, "summary": "all good", "steps": []}
+
+    smoked: list = []
+
+    async def fake_smoke(adapter, account_label):
+        smoked.append((adapter.creds.api_key, account_label))
+        return _Report()
+
+    monkeypatch.setattr(broker_routes, "run_smoke", fake_smoke)
+    assert client.post("/api/broker/zerodha/smoke-test?account_label=backup", headers=headers).status_code == 200
+    assert smoked == [("k-backup", "backup")]
+
+    assert client.post("/api/broker/zerodha/disconnect?account_label=backup", headers=headers).status_code == 204
+    assert seen == ["k-backup", "k-backup"]
+    rows = _rows(me["tenant_id"], "zerodha")
+    assert rows["backup"][0] == "EXPIRED" and rows["backup"][1].access_token is None
+    assert rows["primary"][1].access_token == "t-primary" and rows["primary"][0] != "EXPIRED"
+
+
+@pytest.mark.parametrize("method,path", [
+    ("post", "/api/broker/zerodha/authenticate"),
+    ("post", "/api/broker/zerodha/smoke-test"),
+    ("post", "/api/broker/zerodha/disconnect"),
+    ("delete", "/api/broker/zerodha/credentials"),
+    ("get", "/api/broker/zerodha/login-url"),
+    ("get", "/api/broker/upstox/oauth/start"),
+])
+@pytest.mark.parametrize("bad", ["../primary", "bad label!", "x" * 51])
+def test_a_malformed_label_is_a_422_on_every_per_account_route(monkeypatch, method, path, bad):
+    headers, _me = _owner(_email("bad422"))
+    _store(headers, "zerodha", "primary", api_key="k-primary", api_secret="s-primary")
+    seen = _fake_broker(monkeypatch)
+    res = getattr(client, method)(path, params={"account_label": bad}, headers=headers)
+    assert res.status_code == 422, (path, bad, res.text)
+    assert seen == []
+
+
+def test_a_malformed_label_on_store_and_login_code_is_a_422(monkeypatch):
+    headers, me = _owner(_email("bad422b"))
+    seen = _fake_broker(monkeypatch)
+    res = client.post("/api/broker/zerodha/credentials", params={"account_label": "a/b"}, headers=headers, json={"api_key": "k"})
+    assert res.status_code == 422
+    _store(headers, "zerodha", "primary", api_key="k-primary", api_secret="s-primary")
+    res = client.post("/api/broker/zerodha/login-code", params={"account_label": "a b"}, headers=headers, json={"code": "abc"})
+    assert res.status_code == 422
+    assert seen == [] and set(_rows(me["tenant_id"], "zerodha")) == {"primary"}

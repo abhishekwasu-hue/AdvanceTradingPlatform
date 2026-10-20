@@ -114,6 +114,12 @@ Everything in Trade's `EXPORT_MANIFEST.md` is imported on the Hostinger host, ne
 
 ## 8. KB and Method Pack
 
+> **On hold while this repository is public (2026-10-20).** Nothing from the KB, the method or the Method Pack is
+> copied into this public repository until open question PR-1 (`docs/OPEN_QUESTIONS.md`) is decided: the repository
+> goes private again, or they live in a separate private package. `scripts/check_public_repo.py` refuses their paths
+> (`docs/knowledge/`, `*method_pack*`, `KNOWLEDGE_BASE*`, `*METHOD_NOTES*`, `CHART_READER_METHOD*`). See
+> `docs/PUBLIC_REPO_POLICY.md`. The plan below applies to wherever PR-1 puts them.
+
 - ATP copies the KB, the method and the generated Method Pack at the version that matches each stable tag (the pack
   version is its content hash, recorded in `STABLE.md` and in every reader and Vision log line).
 - The pack is generated from the KB, never edited by hand; a stale-pack test fails when they differ (as in Trade).

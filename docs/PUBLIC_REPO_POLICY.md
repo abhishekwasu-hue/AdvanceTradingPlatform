@@ -3,7 +3,7 @@
 Status: in force from 2026-10-20, when the owner (Abhi) made this repository public to restore the GitHub Actions
 minutes. The code stays proprietary: see [`LICENSE`](../LICENSE) (all rights reserved; public visibility is not a
 licence). Open owner decisions are in [`docs/OPEN_QUESTIONS.md`](OPEN_QUESTIONS.md), section "Public repository
-(20 Oct)" (PR-1 to PR-5).
+(20 Oct)" (PR-1 to PR-6).
 
 ## 1. The rule
 
@@ -51,10 +51,18 @@ exercises the code.
 
 | Guard | When | What |
 |---|---|---|
-| `scripts/check_public_repo.py` | CI `lint` job on every push and pull request; pre-commit hook | Fails on the production server IP (matched by its sha256), any other public IPv4 literal outside the documentation ranges and its explicit allow-list, e-mail addresses outside example / test domains and its explicit allow-list, Telegram bot tokens and long chat ids, private key headers, secret file types, `.env` files with values, and new golden / parity / real-data fixture files. Findings are printed redacted. Tests: `backend/tests/test_public_repo_check.py`. |
+| `scripts/check_public_repo.py` | CI `lint` job on every push and pull request; pre-commit hook | Fails on the production server IP (matched by its sha256, dotted or with `-`, `_` or a space between the numbers), any other public IPv4 literal outside the documentation ranges and its explicit allow-list (a version after a known browser token such as `Chrome/` is not an address), e-mail addresses outside example / test domains and its explicit allow-list, Telegram bot tokens and long chat ids, private key headers, secret file types (keys, keystores, `*.ppk`, `keystore.properties`, `signing.properties`, `google-services.json`, `*service-account*.json`, `*credentials*.json`), `.env` files with values, `.npmrc` / `.pypirc` with a token or password, the KB / Method Pack / Chart Reader method by path (PR-1), new golden / parity / real-data fixture files, and any data or compressed file under `backend/tests/` or a `__fixtures__` folder that is not listed with its sha256 (so a listed file with new content fails too). Findings are printed redacted. Tests: `backend/tests/test_public_repo_check.py`. |
 | gitleaks, push range | CI `lint` job (`.github/workflows/ci.yml`) | Scans the commits of each push with `.gitleaks.toml`. |
-| gitleaks, full history | `.github/workflows/secret-scan.yml`: every push to main, weekly (Monday) and on demand | Scans every commit of every branch and tag (`--log-opts=--all`, redacted). The release binary is pinned by version and sha256. |
+| gitleaks, full history | `.github/workflows/secret-scan.yml`: every push to any branch, weekly (Monday) and on demand | Scans every commit of every branch, tag and pull request head (`--log-opts=--all` after fetching `refs/pull/*`), then the checked-out tree (`gitleaks dir`); redacted. The release binary is pinned by version and sha256. |
 | gitleaks, staged changes | pre-commit hook (`.pre-commit-config.yaml`, pinned to the same gitleaks release) | Stops a secret before the commit exists. Install: `pip install pre-commit && pre-commit install`. |
+
+**The IP hash is not secrecy.** A sha256 of an IPv4 address is reversible in seconds (there are only 2^32 addresses);
+the hash only keeps the literal out of the tree. The address is in the history anyway (PR-4).
+
+**What the guards do not see** (a person reviews these in every pull request): an IP address written as an integer, in
+hex or split across lines; text inside binary files (images, archives, PDFs), UTF-16 files and files over 8 MB; and
+the content of screenshots. **Screenshots and images under `docs/` get a human review** before they are committed:
+no real account, balance, position, order, chart of Abhi's, broker id, e-mail address or server address in them.
 
 The allow-lists are explicit and narrow. `.gitleaks.toml` allows only exact fake values (each anchored, with a comment
 saying where it is); `.gitleaksignore` lists the same known findings by exact fingerprint (commit, file, rule, line).
@@ -65,7 +73,10 @@ Adding an entry is a reviewed change, and a real secret never gets one.
 These files were committed before the repository went public. `scripts/check_public_repo.py` lists them in
 `GRANDFATHERED_FIXTURES`, so they pass while every NEW file of the same kind fails. **Each is to move to private
 storage or be replaced with synthetic data - owner decision pending (open question PR-2).** The list only shrinks: when
-a file moves, its entry is removed (a test checks that every entry still exists). Their own notes say the inputs are
+a file moves, its entry is removed (a test checks that every entry still exists). Each entry pins the file's sha256, so
+new content under a grandfathered name fails as well. The two other existing data files under the test folders
+(`backend/tests/fixtures/zones/chart_bands_cases.json` and its frontend copy, hand-made cases) are pinned the same way
+in `ALLOWED_TEST_DATA`; any new data file there needs a reviewed entry. Their own notes say the inputs are
 synthetic and seeded; the outputs still record Trade's or ATP's method results, so the owner decides.
 
 | Files | What they are (from their own notes) |
@@ -80,6 +91,12 @@ synthetic and seeded; the outputs still record Trade's or ATP's method results, 
 | `frontend/src/charting/__fixtures__/chart_types_golden.json.gz`, `frontend/src/utils/__fixtures__/indicator_parity.json` | Chart-type and indicator parity cases generated by the backend. |
 | `backend/tests/golden/c2_default_models.json` | Result hashes of the default models on crafted bars. |
 | `backend/tests/fixtures/universe/EQUITY_L.csv`, `SME_EQUITY_L.csv`, `eq_etfseclist.csv`, `fo_mktlots.csv`, `fo_secban.csv`, `ind_close_all_09102026.csv`, `ind_testindexlist.csv`, `symbolchange.csv`, `symbolchange_noheader.csv` (same folder) | Small made-up rows in NSE's file layouts, for the universe importer. |
+
+**Frozen model coefficients fitted on real data:** `backend/app/options_builder/strike_breach.py` (the `COEF` table,
+about lines 46-55) holds Trade's strike-breach logistic coefficients, fitted on NIFTY daily data 2015-2021 and
+calibrated 2022-2024. That is the banned category "frozen model coefficients fitted on real data"; it is listed here
+pending the owner's decision (open question PR-6: move to the private store, refit on synthetic data, or accept as
+public).
 
 **Vendored third-party code:** `docs/reference/amw-screener-v2.9/` is a copy of the AMW screener whose licence is
 unknown (open question AMW-L1). It is now public as well; whether it is removed from the tree is an owner decision

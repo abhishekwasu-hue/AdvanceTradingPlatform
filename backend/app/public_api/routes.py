@@ -11,7 +11,7 @@ from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,7 +19,7 @@ from app.audit.log import write_audit_log
 from app.auth.dependencies import get_current_user, require_owner
 from app.auth.scopes import require_scope
 from app.core.enums import SignalDirection, SignalGrade
-from app.core.models import MAX_PRICE, Signal
+from app.core.models import MAX_SIGNAL_PRICE, Signal, unset_if_not_finite
 from app.db.models import ApiKeyRecord, BacktestRunRecord, OrderRecord, RiskEventRecord, RiskLimitRecord, SignalHistoryRecord, TradeRecord, User
 from app.db.session import get_session
 from app.instruments import master as instrument_master
@@ -157,12 +157,14 @@ class PublicSignal(BaseModel):
     strategy_id: str = Field(min_length=1, max_length=100)
     symbol: str = Field(min_length=1, max_length=50)
     direction: SignalDirection
-    entry: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    stop_loss: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    target1: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    target2: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+    entry: float = Field(gt=0, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
+    stop_loss: float = Field(gt=0, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
+    target1: float = Field(gt=0, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
+    target2: Optional[float] = Field(default=None, gt=0, lt=MAX_SIGNAL_PRICE, allow_inf_nan=False)
     mode: str = Field(default="PAPER", pattern=r"^(PAPER|LIVE)$")
     idempotency_key: Optional[str] = Field(default=None, min_length=8, max_length=100)
+
+    _unset_target2 = field_validator("target2", mode="before")(lambda value: unset_if_not_finite(value))
 
 
 @public_router.post("/signals", status_code=201)

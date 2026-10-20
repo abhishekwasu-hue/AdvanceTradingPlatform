@@ -299,7 +299,8 @@ def test_a_paper_entry_with_a_nan_level_is_rejected_not_left_at_risk_check(field
 
 
 def test_signal_intake_refuses_a_level_that_is_not_a_finite_number_or_absurd():
-    """#309 review: the webhook and public API payloads refuse NaN / infinite / absurd levels (422), as the ticket does."""
+    """#309 review: the webhook and public API payloads refuse a NaN / infinite / absurd entry, stop or target1 (422);
+    an unset second target from Pine (`na` renders as NaN) is "not set", and BTCINR above Rs 1 crore is accepted."""
     from pydantic import ValidationError
 
     from app.public_api.routes import PublicSignal
@@ -308,7 +309,13 @@ def test_signal_intake_refuses_a_level_that_is_not_a_finite_number_or_absurd():
     ok = {"strategy_id": "s", "symbol": "RELIANCE", "direction": "LONG", "entry": 100.0, "stop_loss": 98.0, "target1": 104.0}
     for model in (TradingViewAlert, PublicSignal):
         model(**ok)
-        for field in ("entry", "stop_loss", "target1", "target2"):
-            for bad in ("nan", "inf", float("-inf"), 1e8):
+        btc = model(**{**ok, "symbol": "BTCINR", "entry": 1.2e7, "stop_loss": 1.18e7, "target1": 1.25e7, "target2": 1.3e7})
+        assert btc.entry == 1.2e7 and btc.target2 == 1.3e7
+        for field in ("entry", "stop_loss", "target1"):
+            for bad in ("nan", "inf", float("-inf"), float("nan"), 1e11):
                 with pytest.raises(ValidationError):
                     model(**{**ok, field: bad})
+        for unset in ("NaN", "nan", float("nan"), float("inf"), "-Infinity"):
+            assert model(**{**ok, "target2": unset}).target2 is None
+        with pytest.raises(ValidationError):
+            model(**{**ok, "target2": 1e11})

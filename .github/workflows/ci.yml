@@ -258,6 +258,11 @@ jobs:
       - name: UI v2 colour lint (no raw palette hues in v2 files)
         run: npm run check:v2-colours
 
+      # Mobile B1: API URLs only through src/api/base.ts, no IP address in src/ or android/, the Android build rules
+      # (scripts/mobile-rules.mjs) and one package id. The APK itself is built by .github/workflows/android.yml.
+      - name: Mobile config lint (API base, no IP addresses, Android build rules)
+        run: npm run check:mobile
+
       - name: Type-check + production build
         run: npm run build
 

@@ -5,6 +5,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
+import { APP_ID, NATIVE_BUILD_MARKER, resolveNativeBuild } from "./scripts/mobile-rules.mjs";
 
 /** PW1: stamps public/sw.js (copied to the build as-is) with a build id - a hash of the emitted file names, which
  * change whenever any code or style changes. A new id makes the browser install the new worker, and the page then
@@ -43,32 +44,58 @@ function appVersion(): string {
   return sha ? `${version}+${sha}` : version;
 }
 
-export default defineConfig({
-  plugins: [react(), atpServiceWorker()],
-  define: {
-    __APP_VERSION__: JSON.stringify(appVersion()),
-  },
-  build: {
-    // The import graph per entry (dist/.vite/manifest.json): scripts/check-bundle-budget.mjs measures each route from it.
-    manifest: true,
-    rollupOptions: {
-      output: {
-        // P1.1: the chart library is its own chunk, fetched only by pages that draw a chart.
-        manualChunks: { charts: ["lightweight-charts"] },
+/** Mobile B1: `vite build --mode android` (npm run build:android) is the bundle inside the Android app. It records
+ * which build kind and API origin it was made for (dist/atp-native-build.json; capacitor.config.ts, the CI check and
+ * Gradle refuse a mismatch). Every other mode is the web build and emits nothing extra. */
+function atpNativeBuildMarker(marker: { kind: string; apiOrigin: string; appId: string }): Plugin {
+  return {
+    name: "atp-native-build-marker",
+    apply: "build",
+    generateBundle() {
+      this.emitFile({ type: "asset", fileName: NATIVE_BUILD_MARKER, source: `${JSON.stringify(marker, null, 2)}\n` });
+    },
+  };
+}
+
+export default defineConfig(({ mode }) => {
+  // The Android build reads ATP_ANDROID_BUILD and VITE_API_BASE_URL from the process environment only (not .env
+  // files), exactly as `cap sync` does (capacitor.config.ts), so the two can never disagree. A bad value stops here.
+  const native = mode === "android" ? resolveNativeBuild(process.env, APP_ID) : null;
+  return {
+    plugins: [
+      react(),
+      atpServiceWorker(),
+      ...(native ? [atpNativeBuildMarker({ kind: native.kind, apiOrigin: native.apiBase, appId: native.appId })] : []),
+    ],
+    define: {
+      __APP_VERSION__: JSON.stringify(appVersion()),
+      // Constants, so the web build drops every native-only branch and chunk (src/native/), and its API URLs stay the
+      // relative /api/v1 whatever the environment says.
+      __ATP_NATIVE__: JSON.stringify(native !== null),
+      __ATP_API_ORIGIN__: JSON.stringify(native ? native.apiBase : ""),
+    },
+    build: {
+      // The import graph per entry (dist/.vite/manifest.json): scripts/check-bundle-budget.mjs measures each route from it.
+      manifest: true,
+      rollupOptions: {
+        output: {
+          // P1.1: the chart library is its own chunk, fetched only by pages that draw a chart.
+          manualChunks: { charts: ["lightweight-charts"] },
+        },
       },
     },
-  },
-  test: {
-    // U5: the token contrast test reads tokens.css as text; every other stylesheet stays out of the unit tests
-    css: { include: [/styles\/tokens\.css/] },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      "/api": {
-        target: "http://localhost:8000",
-        changeOrigin: true,
+    test: {
+      // U5: the token contrast test reads tokens.css as text; every other stylesheet stays out of the unit tests
+      css: { include: [/styles\/tokens\.css/] },
+    },
+    server: {
+      port: 5173,
+      proxy: {
+        "/api": {
+          target: "http://localhost:8000",
+          changeOrigin: true,
+        },
       },
     },
-  },
+  };
 });

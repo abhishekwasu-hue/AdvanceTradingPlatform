@@ -162,6 +162,16 @@ Store prep (BT7): listing text and screenshots are prepared but not published (Â
 
 ### 3.2 B1: files to add
 
+**Status (20 Oct 2026): shell part built** on `claude/mobile-b1-capacitor-shell`: Capacitor 8.5.2 (`@capacitor/app`
+8.1.2), `frontend/capacitor.config.ts`, the committed `frontend/android/` project, the API base as a build setting
+(`frontend/src/api/base.ts`, `frontend/scripts/mobile-rules.mjs`, `frontend/scripts/check-mobile-config.mjs`),
+`frontend/src/native/` (platform, versions, the debug build's "not connected" notice) and the `android-debug` job in
+`.github/workflows/android.yml`. Per ADR-0028 decision 10 that job builds only a debuggable APK against the `.invalid`
+placeholder origin (a layout smoke test that cannot sign in). Still to come in the B1 sign-in PR, after ADR-0028 is
+accepted and the 21 Oct load test: the backend (`NATIVE_APP_ORIGINS`, origin-selected body refresh), the client's native
+refresh path, the app CSP meta tag, the non-debuggable internal build type with its non-public signing key, the
+back-button "Leave ATP?" prompt and the Settings â†’ About versions. How to build and install: `docs/mobile/BUILD.md`.
+
 - **`frontend/capacitor.config.ts`**
   - `appId` from MA-6: the temporary, never-published `dev.atp.unpublished` until the domain and company name are settled, then `com.<domain>.app` (permanent once on Play). A build check refuses a release (signed) build with the temporary id.
   - `appName` "ATP"; `webDir` "dist"; `android.allowMixedContent: false`.

@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 
+from app.brokers import master_cache
 from app.brokers.base import BrokerInterface
 from app.brokers.exceptions import BrokerAPIError, BrokerAuthenticationError
 from app.brokers.timestamps import parse_broker_timestamp
@@ -31,8 +32,9 @@ from app.core.models import OHLCVBar
 SHOONYA_INTERVAL_MINUTES = {
     "1min": "1", "3min": "3", "5min": "5", "10min": "10", "15min": "15", "30min": "30", "60min": "60",
 }
-# UI2-4a2-pre: daily bars come from NorenApi's EOD call (`/EODChart`, `get_daily_price_series` in the broker's own client
-# library), never from the minute series (`/TPSeries` has no daily `intrv`, so "day" used to fall back to 1-minute bars).
+# UI2-4a2-pre: daily bars come from NorenApi's EOD call (`/EODChartData`, `get_daily_price_series` in the broker's own
+# client library NorenRestApiPy), never from the minute series (`/TPSeries` has no daily `intrv`, so "day" used to fall
+# back to 1-minute bars).
 DAILY_INTERVALS = ("day", "1day", "1d", "D")
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -71,6 +73,9 @@ class ShoonyaBroker(BrokerInterface):
         self._session_token: Optional[str] = None
         self._profile: Optional[BrokerProfile] = None
         self._actid: Optional[str] = None
+        # UI2-4a2-pre review: symbol -> token lookups shared by the process when built without a client (master_cache)
+        self._shared_master = client is None
+        self._tokens: Dict[str, str] = {}
 
     @property
     def _uid(self) -> str:
@@ -98,7 +103,7 @@ class ShoonyaBroker(BrokerInterface):
         except ValueError as exc:
             raise BrokerAPIError(f"Non-JSON response from Shoonya: {response.text[:200]}", response.status_code) from exc
 
-        # The series calls (/TPSeries, /EODChart) answer a JSON list on success; only a dict carries `stat`.
+        # The series and book calls (/TPSeries, /EODChartData, /OrderBook, /TradeBook, /PositionBook, /Holdings) answer a JSON list on success; only a dict carries `stat`.
         failed = isinstance(body, dict) and body.get("stat") == "Not_Ok"
         if response.status_code >= 400 or failed:
             emsg = body.get("emsg", "Shoonya API error") if isinstance(body, dict) else "Shoonya API error"
@@ -154,6 +159,39 @@ class ShoonyaBroker(BrokerInterface):
         quotes = await self.get_quote(symbols)
         return {symbol: quote.ltp for symbol, quote in quotes.items()}
 
+    async def _token(self, symbol: str, exchange: str) -> str:
+        """Trading symbol -> Shoonya token via `/SearchScrip` for that symbol (the exact `tsym`, else `<symbol>-EQ`,
+        else the only hit). Cached per process (master_cache) - a token never changes within a day."""
+        exchange = (exchange or "NSE").upper()
+        wanted = symbol.strip().upper()
+
+        async def look_up() -> str:
+            body = await self._post("/SearchScrip", {"uid": self._uid, "exch": exchange, "stext": wanted})
+            values = [v for v in (body.get("values") or []) if v.get("token")] if isinstance(body, dict) else []
+            by_tsym = {str(v.get("tsym", "")).upper(): str(v["token"]) for v in values}
+            token = by_tsym.get(wanted) or by_tsym.get(f"{wanted}-EQ") or (str(values[0]["token"]) if len(values) == 1 else None)
+            if token is None:
+                raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found")
+            return token
+        key = f"{exchange}:{wanted}"
+        if self._shared_master:
+            return await master_cache.shared(self.name, key, look_up)
+        if key not in self._tokens:
+            self._tokens[key] = await look_up()
+        return self._tokens[key]
+
+    async def get_quote_for_symbol(self, symbol: str, exchange: str = "NSE") -> Optional[Quote]:
+        """UI2-4a2-pre review: one `/GetQuotes` call for one trading symbol (its token looked up first, cached), with
+        `c` - the previous session's close - as `prev_close` and `lut` (epoch seconds) as the quote's time."""
+        token = await self._token(symbol, exchange)
+        body = await self._post("/GetQuotes", {"uid": self._uid, "exch": exchange.upper(), "token": token})
+        return Quote(symbol=symbol, ltp=float(body.get("lp", 0) or 0), open=float(body.get("o", 0) or 0),
+                     high=float(body.get("h", 0) or 0), low=float(body.get("l", 0) or 0), close=float(body.get("c", 0) or 0),
+                     volume=float(body.get("v", 0) or 0), oi=float(body["oi"]) if body.get("oi") else None,
+                     bid=float(body["bp1"]) if body.get("bp1") else None, ask=float(body["sp1"]) if body.get("sp1") else None,
+                     prev_close=float(body["c"]) if body.get("c") not in (None, "", "0", 0) else None,
+                     timestamp=parse_broker_timestamp(body.get("lut")))
+
     async def get_quote(self, symbols: List[str]) -> Dict[str, Quote]:
         quotes: Dict[str, Quote] = {}
         for symbol in symbols:
@@ -173,15 +211,15 @@ class ShoonyaBroker(BrokerInterface):
     async def get_historical_data(
         self, symbol: str, exchange: str, interval: str, from_date: datetime, to_date: datetime
     ) -> List[OHLCVBar]:
-        instruments = await self.get_instruments(exchange)
-        match = next((i for i in instruments if i.tradingsymbol == symbol), None)
-        if match is None:
-            raise BrokerAPIError(f"Instrument {exchange}:{symbol} not found")
         if interval in DAILY_INTERVALS:
-            return await self._daily_bars(match.exchange or exchange, match.tradingsymbol, from_date, to_date)
+            # /EODChartData names the symbol itself ("EXCH:TSYM"); no token lookup needed
+            return await self._daily_bars(exchange.upper(), symbol, from_date, to_date)
+        # The symbol's own token (a /SearchScrip for it, cached) - get_instruments searches the exchange's name, which
+        # does not list every symbol.
+        token = await self._token(symbol, exchange)
 
         body = await self._post("/TPSeries", {
-            "uid": self._uid, "exch": exchange, "token": match.instrument_token,
+            "uid": self._uid, "exch": exchange, "token": token,
             "st": str(int(from_date.timestamp())), "et": str(int(to_date.timestamp())),
             "intrv": SHOONYA_INTERVAL_MINUTES.get(interval, "1"),
         })
@@ -196,14 +234,14 @@ class ShoonyaBroker(BrokerInterface):
         return list(reversed(bars))
 
     async def _daily_bars(self, exchange: str, tradingsymbol: str, from_date: datetime, to_date: datetime) -> List[OHLCVBar]:
-        """Daily bars from `/EODChart` for the IST dates `from_date`..`to_date` (both whole days), oldest first, each
+        """Daily bars from `/EODChartData` for the IST dates `from_date`..`to_date` (both whole days), oldest first, each
         stamped at 00:00 IST of its trading date - like every other broker's daily bars here. The request names the
         symbol as "EXCH:TSYM" and the range in epoch seconds; each row comes back as a JSON string (or an object) with
         `time` "DD-MON-YYYY", `ssboe` (that date's midnight in epoch seconds), `into/inth/intl/intc` and `intv`."""
         start = datetime.combine(_ist_date(from_date), time.min, tzinfo=IST)
         end = datetime.combine(_ist_date(to_date), time.max, tzinfo=IST)
         try:
-            body = await self._post("/EODChart", {"uid": self._uid, "sym": f"{exchange}:{tradingsymbol}",
+            body = await self._post("/EODChartData", {"uid": self._uid, "sym": f"{exchange}:{tradingsymbol}",
                                                   "from": str(int(start.timestamp())), "to": str(int(end.timestamp()))})
         except BrokerAPIError as exc:
             if "no data" in str(exc).lower():         # a range with no sessions (a holiday stretch) is no bars, not an error
@@ -359,7 +397,7 @@ def _ist_date(value: datetime) -> date:
 
 
 def _eod_date(row: dict) -> Optional[date]:
-    """The trading date of one /EODChart row: its `time` ("21-SEP-2022"), else its `ssboe` (that date's midnight) read in
+    """The trading date of one /EODChartData row: its `time` ("21-SEP-2022"), else its `ssboe` (that date's midnight) read in
     IST - right whether the broker counts the midnight in UTC (05:30 IST, same date) or in IST (00:00 IST); a UTC reading
     of an IST midnight would slip to the day before."""
     text = str(row.get("time") or "").strip()

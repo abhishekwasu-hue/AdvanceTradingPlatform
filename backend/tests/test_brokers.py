@@ -518,7 +518,7 @@ def test_upstox_option_chain_falls_back_to_contract_listing_for_expiry():
 
 
 def _shoonya_series(eod_rows, seen):
-    """A Shoonya mock: login, the scrip search for RELIANCE-EQ, and /EODChart answering `eod_rows` (a /TPSeries call fails
+    """A Shoonya mock: login, the scrip search for RELIANCE-EQ, and /EODChartData answering `eod_rows` (a /TPSeries call fails
     the test - daily bars must never come from the minute series)."""
     def handler(request: httpx.Request) -> httpx.Response:
         path = request.url.path
@@ -528,7 +528,7 @@ def _shoonya_series(eod_rows, seen):
         seen.append((path.rsplit("/", 1)[-1], payload))
         if path.endswith("/SearchScrip"):
             return httpx.Response(200, json={"stat": "Ok", "values": [{"exch": "NSE", "token": "2885", "tsym": "RELIANCE-EQ"}]})
-        if path.endswith("/EODChart"):
+        if path.endswith("/EODChartData"):
             return httpx.Response(200, json=eod_rows)
         raise AssertionError(f"Unexpected path {path}")
     creds = BrokerCredentials(client_id="FA12345", api_secret="mypassword", api_key="apikey123", totp_secret="123456")
@@ -538,8 +538,8 @@ def _shoonya_series(eod_rows, seen):
 
 
 def test_shoonya_day_reads_daily_bars_from_eodchart_stamped_at_the_ist_date():
-    """UI2-4a2-pre: "day" used to fall back to 1-minute TPSeries bars. It now calls /EODChart (sym "EXCH:TSYM", from/to in
-    epoch seconds covering the whole IST dates) and returns one bar per trading date at 00:00 IST, oldest first. Rows come
+    """UI2-4a2-pre: "day" used to fall back to 1-minute TPSeries bars. It now calls /EODChartData (NorenRestApiPy
+    get_daily_price_series; sym "EXCH:TSYM", from/to in epoch seconds covering the whole IST dates) and returns one bar per trading date at 00:00 IST, oldest first. Rows come
     as JSON strings (the broker's form) or objects; `ssboe` alone still gives the right IST date."""
     from datetime import datetime, timezone
     from zoneinfo import ZoneInfo
@@ -558,7 +558,7 @@ def test_shoonya_day_reads_daily_bars_from_eodchart_stamped_at_the_ist_date():
     end = datetime(2022, 9, 23, 2, 0, tzinfo=timezone.utc)      # 07:30 IST on the 23rd
     bars = run(broker.get_historical_data("RELIANCE-EQ", "NSE", "day", start, end))
 
-    eod = [p for name, p in seen if name == "EODChart"]
+    eod = [p for name, p in seen if name == "EODChartData"]
     assert len(eod) == 1 and not [n for n, _ in seen if n == "TPSeries"]
     assert eod[0]["sym"] == "NSE:RELIANCE-EQ" and eod[0]["uid"] == "FA12345"
     assert int(eod[0]["from"]) == int(datetime(2022, 9, 21, tzinfo=ist).timestamp())
@@ -579,3 +579,31 @@ def test_shoonya_day_with_no_sessions_is_no_bars_and_other_errors_still_raise():
     broker = _shoonya_series({"stat": "Not_Ok", "emsg": "Session Expired"}, [])
     with pytest.raises(BrokerAPIError, match="Session Expired"):
         run(broker.get_historical_data("RELIANCE-EQ", "NSE", "day", start, end))
+
+
+def test_shoonya_book_calls_accept_the_json_list_they_answer_on_success():
+    """UI2-4a2-pre review: Noren answers OrderBook / TradeBook / PositionBook / Holdings with a JSON list on success; `_post`
+    called `.get("stat")` on it and raised, so the reconciliation path failed on any non-empty book. A list now passes
+    through; a Not_Ok dict still raises."""
+    def handler(request: httpx.Request) -> httpx.Response:
+        path = request.url.path
+        if path.endswith("/QuickAuth"):
+            return httpx.Response(200, json={"stat": "Ok", "susertoken": "sess-token-1", "actid": "FA12345"})
+        if path.endswith("/OrderBook"):
+            return httpx.Response(200, json=[{"stat": "Ok", "norenordno": "24101500001", "tsym": "RELIANCE-EQ", "trantype": "B",
+                                              "qty": "5", "fillshares": "5", "prctyp": "MKT", "status": "COMPLETE", "avgprc": "2900.5",
+                                              "norentm": "10:15:00 15-10-2024", "exch": "NSE", "prd": "I"}])
+        if path.endswith("/PositionBook"):
+            return httpx.Response(200, json=[{"stat": "Ok", "tsym": "RELIANCE-EQ", "exch": "NSE", "prd": "I", "netqty": "5",
+                                              "netavgprc": "2900.5", "lp": "2910", "rpnl": "0", "urmtom": "47.5"}])
+        return httpx.Response(200, json={"stat": "Not_Ok", "emsg": "no data"})
+
+    creds = BrokerCredentials(client_id="FA12345", api_secret="mypassword", api_key="apikey123", totp_secret="123456")
+    broker = ShoonyaBroker(creds, client=_mock_client(handler, ShoonyaBroker.BASE_URL))
+    run(broker.authenticate())
+    orders = run(broker.get_order_book())
+    assert [(o.order_id, o.symbol, o.filled_quantity, o.average_price) for o in orders] == [("24101500001", "RELIANCE-EQ", 5, 2900.5)]
+    positions = run(broker.get_positions())
+    assert positions[0].quantity == 5 and positions[0].pnl == 47.5
+    with pytest.raises(BrokerAPIError, match="no data"):
+        run(broker.get_trade_book())

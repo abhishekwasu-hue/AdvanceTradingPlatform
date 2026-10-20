@@ -39,10 +39,14 @@ HISTORY_TTL_SECONDS = 300            # completed days: final bars; short so a br
 HISTORY_MINUTE_TTL_SECONDS = 90      # a minute-anchored window is read only during its own minute
 TODAY_TTL_SECONDS = 60               # today's bars, then capped at the forming bar's close (service.forming_capped_ttl)
 FILL_LOCK_SECONDS = 10               # a crashed filler never blocks the key for longer
-FILL_WAIT_SECONDS = 6.0              # a waiter fetches itself after this (inside the /candles request's 8 s allowance)
+FILL_WAIT_SECONDS = 2.5              # a waiter on another process's fill fetches itself after this (LD-10 review)
+JOIN_WAIT_SECONDS = 2.5              # the same for a request joined to another request's fill in this process
 POLL_SECONDS = 0.05
 LOCAL_MAX_ENTRIES = 64
 MAX_JOINS = 3                        # times a request joins another's fetch that then failed, before fetching itself
+# LD-10 review: the trading and research workers set this False at start (`never_wait_on_other_processes`): they read a
+# copy when there is one and otherwise fetch with their own budget - no lock, no wait on an API process's fill.
+WAIT_ON_OTHER_PROCESSES = True
 
 Fetch = Callable[[], Awaitable[List[OHLCVBar]]]
 TtlFor = Callable[[List[OHLCVBar]], int]
@@ -81,16 +85,6 @@ def _redis() -> bool:
     return redis_backed()
 
 
-def _local_get(name: str) -> Optional[List[OHLCVBar]]:
-    hit = _LOCAL.get(name)
-    if hit is None:
-        return None
-    if hit[0] <= _clock():
-        _LOCAL.pop(name, None)
-        return None
-    return list(hit[1])
-
-
 def _local_put(name: str, bars: List[OHLCVBar], ttl: int) -> None:
     now = _clock()
     if len(_LOCAL) >= LOCAL_MAX_ENTRIES and name not in _LOCAL:
@@ -101,21 +95,33 @@ def _local_put(name: str, bars: List[OHLCVBar], ttl: int) -> None:
     _LOCAL[name] = (now + ttl, list(bars))
 
 
-async def load(name: str) -> Optional[List[OHLCVBar]]:
-    """The shared bars under this key, or None."""
-    bars = _local_get(name)
-    if bars is not None or not _redis():
-        return bars
-    from app.cache.client import cache_get
-    raw = await cache_get(name)
+Got = Tuple[List[OHLCVBar], Optional[float]]        # (bars, seconds the copy has left; None = not known)
+
+
+async def load_with_ttl(name: str) -> Optional[Got]:
+    """The shared bars under this key with the seconds the copy has left, or None."""
+    hit = _LOCAL.get(name)
+    if hit is not None and hit[0] > _clock():
+        return list(hit[1]), hit[0] - _clock()
+    if hit is not None:
+        _LOCAL.pop(name, None)
+    if not _redis():
+        return None
+    from app.cache.client import cache_get_with_ttl
+    raw, left = await cache_get_with_ttl(name)
     if not raw:
         return None
     try:
-        bars = [OHLCVBar.model_validate(item) for item in json.loads(raw)]
+        return [OHLCVBar.model_validate(item) for item in json.loads(raw)], left
     except (ValueError, TypeError):
         logger.warning("Discarding unreadable shared candles for %s", name)
         return None
-    return bars
+
+
+async def load(name: str) -> Optional[List[OHLCVBar]]:
+    """The shared bars under this key, or None."""
+    got = await load_with_ttl(name)
+    return got[0] if got is not None else None
 
 
 async def store(name: str, bars: List[OHLCVBar], ttl: int) -> None:
@@ -127,73 +133,92 @@ async def store(name: str, bars: List[OHLCVBar], ttl: int) -> None:
         await cache_set(name, json.dumps([b.model_dump(mode="json") for b in bars]), ttl)
 
 
-async def _claim(name: str) -> Tuple[Optional[str], bool]:
-    """(holder, others_may_hold): the right to fetch this key across processes. Without Redis this process alone."""
+async def _claim(name: str) -> Optional[str]:
+    """The right to fetch this key across processes (a holder id), or None when another process holds it. Without Redis,
+    or in a process that never waits on another's fill (WAIT_ON_OTHER_PROCESSES off), this process alone: no lock."""
     holder = uuid.uuid4().hex
-    if not _redis():
-        return holder, False
+    if not _redis() or not WAIT_ON_OTHER_PROCESSES:
+        return holder
     from app.cache.client import cache_try_lock
     acquired, reachable = await cache_try_lock("lock:" + name, holder, FILL_LOCK_SECONDS)
-    if not reachable:
-        return holder, False
-    return (holder if acquired else None), True
+    return holder if acquired or not reachable else None
 
 
 async def _release(name: str, holder: str) -> None:
-    if _redis():
+    if _redis() and WAIT_ON_OTHER_PROCESSES:
         from app.cache.client import cache_release_lock
         await cache_release_lock("lock:" + name, holder)
 
 
-async def _await_other_process(name: str) -> Optional[List[OHLCVBar]]:
+async def _await_other_process(name: str) -> Optional[Got]:
     """Another API process holds the fetch: its result once stored, or None when it gave up or took too long."""
     from app.cache.client import cache_lock_holder
     deadline = time.monotonic() + FILL_WAIT_SECONDS
     while time.monotonic() < deadline:
         await asyncio.sleep(POLL_SECONDS)
-        bars = await load(name)
-        if bars is not None:
-            return bars
+        got = await load_with_ttl(name)
+        if got is not None:
+            return got
         holder, reachable = await cache_lock_holder("lock:" + name)
         if holder is None or not reachable:
-            return await load(name)       # released without a result (its fetch failed): the caller fetches
+            return await load_with_ttl(name)     # released without a result (its fetch failed): the caller fetches
     return None
 
 
-async def _fill(name: str, fetch: Fetch, ttl_for: TtlFor) -> List[OHLCVBar]:
-    holder, _ = await _claim(name)
+async def _own(name: str, fetch: Fetch, ttl_for: TtlFor) -> Got:
+    """This request's own fetch, its budget waited for here - no lock held, nobody joined to it."""
+    got = await load_with_ttl(name)
+    if got is not None and got[0]:
+        return got
+    bars = await fetch()
+    ttl = ttl_for(bars) if bars else 0
+    await store(name, bars, ttl)
+    return bars, float(ttl) if bars else None
+
+
+async def _fill(name: str, fetch: Fetch, ttl_for: TtlFor) -> Got:
+    """The shared fill: the broker call only if this request's token is there now (api_budget.no_wait - WouldWait
+    otherwise), so a lock or a joiner never waits on one user's budget."""
+    from app.market_data import api_budget
+    holder = await _claim(name)
     if holder is None:
-        bars = await _await_other_process(name)
-        if bars is not None:
-            return bars
+        got = await _await_other_process(name)
+        if got is not None and got[0]:
+            return got
     try:
-        bars = await fetch()
-        await store(name, bars, ttl_for(bars) if bars else 0)
-        return bars
+        with api_budget.no_wait():
+            bars = await fetch()
+        ttl = ttl_for(bars) if bars else 0
+        await store(name, bars, ttl)
+        return bars, float(ttl) if bars else None
     finally:
         if holder is not None:
             await _release(name, holder)
 
 
-def _settled(name: str, done: "asyncio.Future[List[OHLCVBar]]") -> None:
+def _settled(name: str, done: "asyncio.Future[Got]") -> None:
     if _INFLIGHT.get(name) is done:
         _INFLIGHT.pop(name, None)
     if not done.cancelled():
         done.exception()               # retrieved: a fetch whose requester went away never logs "never retrieved"
 
 
-async def get_or_fetch(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bool = True) -> List[OHLCVBar]:
-    """The shared bars for `name`, fetched once through `fetch` (the caller's own adapter) when no copy is fresh.
-    `read=False` skips the copy and any fetch in flight (a caller that needs the bars as of now); its result is still
-    stored for the others."""
+async def get_or_fetch_ttl(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bool = True) -> Got:
+    """(bars, seconds the shared copy has left) for `name`, fetched once through `fetch` (the caller's own adapter) when
+    no copy is fresh. `read=False` skips the copy and any fetch in flight (a caller that needs the bars as of now); its
+    result is still stored for the others. A request never waits on someone else's budget: it joins another request's
+    fetch for at most JOIN_WAIT_SECONDS, an empty or failed result is never taken as its own, and its own fill takes its
+    token only if it is there now - else it waits for it outside the fill."""
+    from app.market_data import api_budget
     if not read:
         bars = await fetch()
-        await store(name, bars, ttl_for(bars) if bars else 0)
-        return bars
+        ttl = ttl_for(bars) if bars else 0
+        await store(name, bars, ttl)
+        return bars, float(ttl) if bars else None
     for _ in range(MAX_JOINS):
-        bars = await load(name)
-        if bars is not None:
-            return bars
+        got = await load_with_ttl(name)
+        if got is not None:
+            return got
         pending = _INFLIGHT.get(name)
         if pending is not None and pending.get_loop() is not asyncio.get_running_loop():
             pending = None                                     # left by another event loop (tests): not joinable
@@ -201,16 +226,34 @@ async def get_or_fetch(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bool =
             task = asyncio.ensure_future(_fill(name, fetch, ttl_for))
             _INFLIGHT[name] = task
             task.add_done_callback(lambda done, name=name: _settled(name, done))
-            return list(await asyncio.shield(task))           # this request's own fetch: its error is its own
+            try:
+                bars, left = await asyncio.shield(task)        # this request's own fetch: its error is its own
+            except api_budget.WouldWait:
+                break                                          # its token is not there yet: wait for it outside the fill
+            return list(bars), left
         try:
-            return list(await asyncio.shield(pending))
+            bars, left = await asyncio.wait_for(asyncio.shield(pending), JOIN_WAIT_SECONDS)
+        except asyncio.TimeoutError:
+            break                                              # someone else's fetch is slow: this request's own
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - another request's fetch failed (its budget, its token): try with this one's
             continue
-    bars = await fetch()
-    await store(name, bars, ttl_for(bars) if bars else 0)
-    return bars
+        if bars:
+            return list(bars), left
+        break                                                  # another session's empty answer is not this one's
+    return await _own(name, fetch, ttl_for)
+
+
+async def get_or_fetch(name: str, fetch: Fetch, ttl_for: TtlFor, *, read: bool = True) -> List[OHLCVBar]:
+    """`get_or_fetch_ttl` without the copy's remaining seconds."""
+    return (await get_or_fetch_ttl(name, fetch, ttl_for, read=read))[0]
+
+
+def never_wait_on_other_processes() -> None:
+    """This process (a worker) reads shared copies but never takes the fill lock nor waits on another process's fill."""
+    global WAIT_ON_OTHER_PROCESSES
+    WAIT_ON_OTHER_PROCESSES = False
 
 
 def reset() -> None:

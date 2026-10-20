@@ -110,6 +110,15 @@ def forming_capped_ttl(last_bar_start: datetime, interval: str, exchange: str, n
     return max(1, min(ttl_seconds, int((ends - now).total_seconds())))
 
 
+class _SharedBars(list):
+    """Bars built from shared copies, with the seconds the shortest-lived copy has left (None: not known/not shared) -
+    the per-request cache above them is capped at it."""
+
+    def __init__(self, bars: List[OHLCVBar], copy_seconds_left: Optional[float]) -> None:
+        super().__init__(bars)
+        self.copy_seconds_left = copy_seconds_left
+
+
 def window_anchor_dates(start: datetime, end: datetime) -> str:
     return shared_candles.window_anchor(True, start, end)
 
@@ -146,8 +155,13 @@ class MarketDataService:
         bars = await (self._fetch(symbol, exchange, interval, now, fresh=True) if fresh else self._fetch(symbol, exchange, interval, now))
         if bars:
             ttl = forming_capped_ttl(bars[-1].timestamp, interval, exchange, now or datetime.now(timezone.utc), self.cache_ttl_seconds)
-            await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), ttl)
-        return bars
+            # LD-10 review: built from shared copies, this entry never outlives them (today's bars stay <= 60 s old).
+            left = getattr(bars, "copy_seconds_left", None)
+            if left is not None:
+                ttl = min(ttl, int(left))
+            if ttl >= 1:
+                await cache_set(key, json.dumps([b.model_dump(mode="json") for b in bars]), ttl)
+        return list(bars)
 
     async def get_history(self, symbol: str, exchange: str, interval: str, before: date) -> List[OHLCVBar]:
         """Completed bars for the `lookback_days` calendar days ending the day before `before` (IST) -
@@ -181,13 +195,13 @@ class MarketDataService:
 
         async def history_call() -> List[OHLCVBar]:
             return await self.broker.get_historical_data(symbol, exchange, interval, history_from, history_to)
-        history_part = shared_candles.get_or_fetch(history_key, history_call, lambda bars: history_ttl)
+        history_part = shared_candles.get_or_fetch_ttl(history_key, history_call, lambda bars: history_ttl)
         if interval == "day":
-            history = await history_part
+            history, left = await history_part
             # Phase AS: completed daily bars only - today's bar is still forming, and a swing
             # strategy decides on closed bars (entries go in the next session).
             logger.debug("Fetched %d daily candles for %s:%s", len(history), exchange, symbol)
-            return merge_bars(history)
+            return _SharedBars(merge_bars(history), left)
         today_key = shared_candles.key(self.broker.name, exchange, symbol, interval, "today", shared_candles.today_anchor(now_utc))
 
         async def today_call() -> List[OHLCVBar]:
@@ -198,17 +212,19 @@ class MarketDataService:
             return forming_capped_ttl(bars[-1].timestamp, interval, exchange, now or datetime.now(timezone.utc),
                                       shared_candles.TODAY_TTL_SECONDS)
         # S4b-2: `fresh` needs today's bars as of now - no shared copy of them (history is final and still shared).
-        today_part = shared_candles.get_or_fetch(today_key, today_call, today_ttl, read=not fresh)
+        today_part = shared_candles.get_or_fetch_ttl(today_key, today_call, today_ttl, read=not fresh)
         # LD-7: the two calls side by side, not one after the other (a chart waited for two broker round trips in a row).
         got_history, got_intraday = await asyncio.gather(history_part, today_part, return_exceptions=True)
         if isinstance(got_history, BaseException):
             raise got_history                     # as before: the history call's error first
         if isinstance(got_intraday, BaseException):
             raise got_intraday
-        history, intraday = got_history, got_intraday
+        (history, history_left), (intraday, today_left) = got_history, got_intraday
         merged = merge_bars(history, intraday)
         logger.debug("Fetched %d candles for %s:%s (%d history, %d intraday)", len(merged), exchange, symbol, len(history), len(intraday))
-        return merged
+        lefts = [x for x in (history_left, today_left) if x is not None]
+        # An empty part was not stored (nothing to share) - it says nothing about how long the other part may live.
+        return _SharedBars(merged, min(lefts) if lefts else None)
 
     async def get_frames(
         self, symbol: str, exchange: str, base_timeframe: str, timeframes: List[str],

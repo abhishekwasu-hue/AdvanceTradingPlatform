@@ -102,7 +102,8 @@ def test_login_is_judged_apart_at_two_seconds_with_no_failed_login_and_the_api_a
     for _ in range(10):
         token_only.add("positions", 50.0, "ok")                            # --token: no login step at all
     r = loadtest.report(token_only, 1, 1.0)
-    assert r["slo_pass"] and "login" not in r and "login not measured" in loadtest.markdown(r)
+    assert r["api_pass"] and not r["login_pass"] and not r["slo_pass"] and "login" not in r     # not measured is no pass
+    assert "login FAIL (not measured" in loadtest.markdown(r)
 
 
 def test_the_slo_factor_scales_the_p95_limits_never_the_error_limit():
@@ -111,7 +112,7 @@ def test_the_slo_factor_scales_the_p95_limits_never_the_error_limit():
         stats.add("positions", 700.0, "ok")
     assert not loadtest.report(stats, 1, 1.0)["slo_pass"]
     scaled = loadtest.report(stats, 1, 1.0, slo_factor=1.5)
-    assert scaled["slo_pass"] and scaled["scenarios"]["positions"]["p95_limit_ms"] == 750.0 and scaled["slo_factor"] == 1.5
+    assert scaled["api_pass"] and scaled["scenarios"]["positions"]["p95_limit_ms"] == 750.0 and scaled["slo_factor"] == 1.5
     for _ in range(2):
         stats.add("positions", 10.0, "server_error")
     assert not loadtest.report(stats, 1, 1.0, slo_factor=10.0)["slo_pass"]

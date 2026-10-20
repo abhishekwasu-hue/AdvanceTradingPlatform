@@ -21,7 +21,8 @@ Prints p50/p95/p99 per scenario and the error rate, and exits 1 when an SLO is m
   apart, never as errors: a feature the operator has off (503 with X-Feature-Disabled), no broker session (409) and rate
   limiting (429).
 * **Login** - p95 at or under 2,000 ms (password hashing is slow on purpose) and no errors at all: every login attempt
-  that does not answer 200 (a time-out, a 5xx, a 429, a refusal) fails it.
+  that does not answer 200 (a time-out, a 5xx, a 429, a refusal) fails it. A run with no login (`--token`) fails it
+  too: not measured is not a pass.
 
 Both must pass.
 
@@ -240,7 +241,7 @@ def report(stats: Stats, users: int, elapsed: float, slo_factor: float = 1.0) ->
                            "error_rate": round(errors / api_total, 4) if api_total else 0.0, "slo_factor": round(slo_factor, 2), "scenarios": {},
                            "sessions": dict(stats.sessions)}
     api_pass = True
-    login_pass = True
+    login_pass = False            # LD-9 review: no login sample is no pass - "not measured" fails the login verdict
     for scenario in sorted(stats.latency):
         values = stats.latency[scenario]
         p95 = percentile(values, 95)
@@ -248,7 +249,7 @@ def report(stats: Stats, users: int, elapsed: float, slo_factor: float = 1.0) ->
         if scenario == LOGIN:
             limit = LOGIN_P95_MS * slo_factor
             failed = sum(n for outcome, n in outcomes.items() if outcome != "ok")
-            passed = p95 <= limit and failed <= LOGIN_ERROR_LIMIT
+            passed = len(values) > 0 and p95 <= limit and failed <= LOGIN_ERROR_LIMIT
             login_pass = passed
             out["login"] = {"n": len(values), "p95_ms": round(p95, 1), "p95_limit_ms": limit, "errors": failed,
                             "error_limit": LOGIN_ERROR_LIMIT, "pass": passed}
@@ -275,7 +276,7 @@ def _verdicts(r: Dict[str, Any]) -> str:
     login = r.get("login")
     text = f"API {'PASS' if r.get('api_pass', r['slo_pass']) else 'FAIL'}"
     if login is None:
-        return text + ", login not measured"
+        return text + ", login FAIL (not measured: no login was made)"
     return (text + f", login {'PASS' if login['pass'] else 'FAIL'} (p95 {login['p95_ms']:,.0f} ms of {login['p95_limit_ms']:,.0f}; "
             f"{login['errors']} failed of {login['n']}, {login['error_limit']} allowed)")
 

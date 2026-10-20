@@ -307,7 +307,7 @@ def test_bucket_bursts_then_holds_the_sustained_rate_and_the_minute_still_refuse
     clock = {"t": 50.0}
     monkeypatch.setattr(api_budget, "_clock", lambda: clock["t"])
     api_budget.reset()
-    take = lambda: run(api_budget.try_take(81, "dhan"))  # noqa: E731 - Dhan: 1 a second, burst 2, 50 a minute
+    take = lambda: run(api_budget.try_take(81, "dhan", "history"))  # noqa: E731 - Dhan candles: 1/s, burst 2, 50 a minute
     assert [take(), take(), take()] == [True, True, False]                # a chart's two calls at once, not a third
     clock["t"] += 0.5
     assert take() is False                                                # half a token
@@ -326,11 +326,13 @@ def test_bucket_in_the_shared_script_bursts_and_refills(monkeypatch):
     fake = FakeRedis()
     _use_redis(monkeypatch, fake)
     api_budget.reset()
-    got = [run(api_budget.try_take(82, "dhan")) for _ in range(3)]
+    got = [run(api_budget.try_take(82, "dhan", "history")) for _ in range(3)]
     keys, argv = fake.evals[0]
-    assert got == [True, True, False] and keys == ("ab:{82}:tb", "ab:{82}:60") and argv[:4] == (1, 2, 60, 50)
+    assert got == [True, True, False] and keys == ("ab:{82}:tb", "ab:{82}:60") and argv[:4] == (1, 2, 60, 50) and argv[-1] == 0
     time.sleep(1.05)
-    assert [run(api_budget.try_take(82, "dhan")), run(api_budget.try_take(82, "dhan"))] == [True, False]
+    assert run(api_budget.try_take(82, "dhan")) is False                    # a quote must leave the burst: 1 token is not 2
+    assert [run(api_budget.try_take(82, "dhan", "history")), run(api_budget.try_take(82, "dhan", "history"))] == [True, False]
+    assert fake.evals[-3][1][-1] == 1                                       # the quote's reserve went to the script
     api_budget.reset()
 
 
@@ -351,3 +353,211 @@ def test_a_cold_chart_makes_its_two_calls_without_waiting(monkeypatch):
     took, bars, budgeted = run(go())
     assert len(bars) == 78 and budgeted.taken == 2 and took < 0.5
     api_budget.reset()
+
+
+# --- review fixes (PR #282) -------------------------------------------------------------------------------------------------
+
+def test_dhan_history_is_keyed_by_date_through_the_production_wrappers(monkeypatch):
+    """Review 1: build_adapter wraps Dhan in ContractSymbolBroker; the date-keyed history must survive every wrapper."""
+    from app.brokers.contract_symbols import wrap_contract_symbols
+    from app.brokers.dhan import DhanBroker
+    from app.brokers.models import BrokerCredentials
+    from app.brokers.rate_budget import RateBudget, RateLimitedBroker, limits_for
+    from app.brokers.token_lifecycle import build_adapter
+    from tests.test_bt1_byob_data_tier import _record
+    wrapped = wrap_contract_symbols(DhanBroker(BrokerCredentials(access_token="t", client_id="c")))
+    assert type(wrapped).__name__ == "ContractSymbolBroker" and wrapped.history_by_date is True
+    assert api_budget.BudgetedAdapter(wrapped, 1, "dhan").history_by_date is True
+    assert RateLimitedBroker(wrapped, RateBudget(limits_for("dhan"))).history_by_date is True       # the worker's wrapper
+    _, me = _owner(_email("ld10-dhan"))
+
+    async def store_dhan():
+        from app.core.enums import BrokerTokenStatus
+        from app.secrets_store.encryption import encrypt_text
+        from app.db.models import BrokerCredentialRecord
+        from tests.test_auth_api import _session_factory
+        async with _session_factory() as session:
+            session.add(BrokerCredentialRecord(tenant_id=me["tenant_id"], user_id=me["id"], broker_name="dhan", account_label="primary",
+                                               encrypted_payload=encrypt_text(json.dumps({"access_token": "t", "client_id": "c"}), me["tenant_id"]),
+                                               token_status=BrokerTokenStatus.VALID.value, token_expires_at=None))
+            await session.commit()
+    run(store_dhan())
+    built = build_adapter(_record(me, "dhan"))
+    assert built.name == "dhan" and built.history_by_date is True
+    names = []
+    real = shared_candles.get_or_fetch_ttl
+
+    async def spy(name, fetch, ttl_for, *, read=True):
+        names.append(name)
+        return await real(name, fetch, ttl_for, read=read)
+    monkeypatch.setattr(shared_candles, "get_or_fetch_ttl", spy)
+    _install_cache(monkeypatch, None)
+
+    class _Inner(_Slow):
+        name = "dhan"
+        history_by_date = True
+    run(MarketDataService(api_budget.BudgetedAdapter(wrap_contract_symbols(_Inner(HISTORY, TODAY)), 1, "dhan"))
+        .get_candles(_sym(), "NSE", "1min", now=NOW))
+    assert any(":hist:d:2026-10-16:2026-10-20" in n for n in names)          # dates, not minutes
+
+
+def test_a_joiner_never_waits_long_on_another_requests_slow_fetch(monkeypatch):
+    """Review 2: a request joined to another's fill waits at most JOIN_WAIT_SECONDS, then fetches with its own session."""
+    monkeypatch.setattr(shared_candles, "JOIN_WAIT_SECONDS", 0.2)
+    calls = []
+
+    async def slow():
+        calls.append("slow")
+        await asyncio.sleep(2.0)
+        return HISTORY[:2]
+
+    async def own():
+        calls.append("own")
+        return HISTORY[:3]
+
+    async def go():
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:a:b")
+        first = asyncio.ensure_future(shared_candles.get_or_fetch(name, slow, lambda bars: 60))
+        await asyncio.sleep(0.05)
+        started = time.monotonic()
+        mine = await shared_candles.get_or_fetch(name, own, lambda bars: 60)
+        took = time.monotonic() - started
+        first.cancel()
+        return mine, took
+    mine, took = run(go())
+    assert mine == HISTORY[:3] and took < 1.0 and calls == ["slow", "own"]
+
+
+def test_a_fill_never_waits_for_its_users_budget_so_nobody_else_does(monkeypatch):
+    """Review 2: user A's bucket is empty - A's fill gives up at once (no lock or fill held while A waits for its token)
+    and B, whose token is there, fetches and answers at once; A gets its bars after its own wait."""
+    fake = FakeRedis()
+    _use_redis(monkeypatch, fake)
+    monkeypatch.setenv("API_WORKERS", "1")
+    api_budget.reset()
+    assert [run(api_budget.try_take(101, "dhan", "history")) for _ in range(2)] == [True, True]   # A's burst spent
+    locks_while_a_waits = []
+
+    async def go():
+        sym = _sym()
+        a_broker, b_broker = _Slow(HISTORY, TODAY, delay=0.02), _Slow(HISTORY, TODAY, delay=0.02)
+        a = MarketDataService(api_budget.BudgetedAdapter(a_broker, 101, "dhan"), cache_namespace="ua.ca")
+        b = MarketDataService(api_budget.BudgetedAdapter(b_broker, 102, "dhan"), cache_namespace="ub.cb")
+        a_task = asyncio.ensure_future(a.get_candles(sym, "NSE", "1min", now=NOW))
+        await asyncio.sleep(0.05)
+        locks_while_a_waits.extend(k for k in fake.store if k.startswith("lock:"))
+        started = time.monotonic()
+        b_bars = await b.get_candles(sym, "NSE", "1min", now=NOW)
+        b_took = time.monotonic() - started
+        a_bars = await a_task
+        return a_bars, b_bars, b_took, b_broker
+    a_bars, b_bars, b_took, b_broker = run(go())
+    assert locks_while_a_waits == []                                         # A holds no fill lock while it waits
+    assert b_took < 0.5 and (b_broker.history_calls, b_broker.intraday_calls) == (1, 1)
+    assert a_bars == b_bars and len(a_bars) == 78
+    api_budget.reset()
+
+
+def test_an_empty_answer_from_another_session_is_not_taken_as_ones_own():
+    """Review 6a: a joiner whose filler got no bars fetches with its own session."""
+    async def empty():
+        await asyncio.sleep(0.1)
+        return []
+
+    async def own():
+        return HISTORY[:4]
+
+    async def go():
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "today", "t:x")
+        first = asyncio.ensure_future(shared_candles.get_or_fetch(name, empty, lambda bars: 60))
+        await asyncio.sleep(0.02)
+        mine = await shared_candles.get_or_fetch(name, own, lambda bars: 60)
+        return await first, mine
+    theirs, mine = run(go())
+    assert theirs == [] and mine == HISTORY[:4]
+
+
+def test_a_cache_built_from_a_shared_copy_never_outlives_it(monkeypatch):
+    """Review 3: the per-request cache (and the worker's md:candles) is capped at the copy's remaining life, so today's
+    bars stay at most 60 s old end to end."""
+    class _Recording(_MemoryCache):
+        def __init__(self):
+            super().__init__()
+            self.ttls = {}
+
+        async def set(self, key, value, ex=None):
+            self.ttls[key] = ex
+            await super().set(key, value, ex)
+    memory = _Recording()
+    _install_cache(monkeypatch, memory)
+    clock = {"t": 500.0}
+    monkeypatch.setattr(shared_candles, "_clock", lambda: clock["t"])
+
+    async def go():
+        sym = _sym()
+        await MarketDataService(_Slow(HISTORY, TODAY), cache_namespace="u1.c1").get_candles(sym, "NSE", "1min", now=NOW)
+        clock["t"] += 20                                                     # the copy of today's bars has 10 s left
+        await MarketDataService(_Slow(HISTORY, TODAY), cache_namespace="u2.c2").get_candles(sym, "NSE", "1min", now=NOW)
+        await MarketDataService(_Slow(HISTORY, TODAY)).get_candles(sym, "NSE", "1min", now=NOW)   # the worker's cache too
+        return sym
+    sym = run(go())
+    first = next(v for k, v in memory.ttls.items() if k.startswith("md:byob:u1.c1:") and sym in k)
+    second = next(v for k, v in memory.ttls.items() if k.startswith("md:byob:u2.c2:") and sym in k)
+    worker = next(v for k, v in memory.ttls.items() if k.startswith("md:candles:") and sym in k)
+    assert first == 30 and second == 10 and worker == 10
+
+
+def test_redis_reports_the_seconds_a_shared_copy_has_left(monkeypatch):
+    """Review 3: a copy read from Redis carries its PTTL (another API process filled it)."""
+    import os
+
+    import pytest
+    import redis.asyncio as redis_async
+
+    import app.cache.client as cache_client
+    from app.core import rate_limit
+    url = os.environ.get("REDIS_URL")
+    if not url:
+        pytest.skip("REDIS_URL not set (CI runs a redis:7 service)")
+    monkeypatch.setattr(rate_limit, "redis_backed", lambda: True)
+
+    async def go():
+        client_ = redis_async.from_url(url, decode_responses=True)
+        monkeypatch.setattr(cache_client, "_get_client", lambda: client_)
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "today", "t:r")
+        try:
+            await shared_candles.store(name, HISTORY[:2], 30)
+            shared_candles.reset()                                           # another process: Redis only
+            return await shared_candles.load_with_ttl(name)
+        finally:
+            await client_.delete(name)
+            await client_.aclose()
+    bars, left = run(go())
+    assert bars == HISTORY[:2] and 25 < left <= 30
+
+
+def test_a_worker_never_takes_the_fill_lock_nor_waits_on_an_api_processs_fill(monkeypatch):
+    """Review 4: the trading worker reads a copy when there is one, else fetches at once with its own budget."""
+    fake = FakeRedis()
+    _use_redis(monkeypatch, fake)
+    monkeypatch.setattr(shared_candles, "WAIT_ON_OTHER_PROCESSES", True)
+    shared_candles.never_wait_on_other_processes()
+    assert shared_candles.WAIT_ON_OTHER_PROCESSES is False
+    calls = []
+
+    async def fetch():
+        calls.append(1)
+        return HISTORY[:2]
+
+    async def go():
+        name = shared_candles.key("dhan", "NSE", _sym(), "1min", "hist", "d:w:w")
+        fake.store["lock:" + name] = "an-api-process"                         # an API process is filling
+        started = time.monotonic()
+        bars = await shared_candles.get_or_fetch(name, fetch, lambda bars: 60)
+        return bars, time.monotonic() - started, name
+    bars, took, name = run(go())
+    assert bars == HISTORY[:2] and calls == [1] and took < 0.2 and fake.store["lock:" + name] == "an-api-process"
+    from app.workers import research_worker, trading_worker
+    import inspect
+    for module in (trading_worker, research_worker):
+        assert "shared_candles.never_wait_on_other_processes()" in inspect.getsource(module.main)

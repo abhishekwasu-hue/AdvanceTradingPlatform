@@ -1,7 +1,8 @@
 """Per-tenant broker API rate budgets.
 
 Every Indian broker API is rate limited per API key (Upstox: roughly 25 req/s and 250 req/min on
-most endpoints; Kite: 3 req/s on quotes and historical data, 10 req/s on orders). On a shared
+most endpoints; Kite: 1 req/s on quotes, 3 req/s on historical candles, 10 req/s on orders - Kite Connect's
+published rate-limit table; LD-10 review: quotes were recorded here as 3/s). On a shared
 worker one tenant with forty deployments can burn a broker's whole allowance - and, worse, the
 429s it provokes land on *its own* exit orders. So each tenant's adapter is wrapped in a
 `RateLimitedBroker` that draws from that tenant's own `RateBudget` (a per-second and a per-minute

@@ -71,9 +71,10 @@ class FakeRedis:
             calls = self.zsets[keys[i]] = [t for t in self.zsets.get(keys[i], []) if t > now - float(argv[2 * i])]
             if len(calls) + 1 > int(argv[2 * i + 1]):
                 return -(i + 1)
+        reserve = float(argv[2 * len(keys) + 1]) if len(argv) > 2 * len(keys) + 1 else 0.0   # after the member
         tokens, at = self.buckets.get(keys[0], (cap, now))
         tokens = min(cap, tokens + (now - at) * rate)
-        if tokens < 1:
+        if tokens < 1 + reserve:
             return -1
         self.buckets[keys[0]] = (tokens - 1, now)
         for key in keys[1:]:
@@ -108,11 +109,13 @@ def test_the_api_share_per_broker_and_its_upstox_30_minute_window():
     for broker in ("zerodha", "dhan"):
         limits = api_budget.api_limits(broker)
         assert (limits.per_second, limits.per_minute, limits.per_30min) == (1, 50, None)
-        assert limits.capacity == api_budget.API_BURST == 2                         # LD-10: a chart's two calls at once
+    assert api_budget.api_limits("dhan").capacity == api_budget.API_BURST == 2        # LD-10: a chart's two calls at once
+    assert api_budget.api_limits("zerodha").capacity == 1                             # Kite: no room for a burst (below)
+    assert api_budget.api_limits("some-new-broker").capacity == 1                     # no published limit recorded: none
 
 
-# The brokers' own published per-second allowances for the calls the API budgets (quotes, history): Kite 3/s on quotes
-# and historical data, Upstox about 25/s (app/brokers/rate_budget.py).
+# The brokers' own published per-second allowances on historical-candle calls: Kite 3/s, Upstox about 25/s
+# (app/brokers/rate_budget.py). Kite's and Dhan's quotes allow 1/s - not modelled by the worker's budget (open question).
 PUBLISHED_PER_SECOND = {"zerodha": 3, "upstox": 25}
 
 
@@ -128,6 +131,28 @@ def test_api_and_worker_together_stay_inside_each_brokers_per_second_allowance()
         assert api.per_second <= max(1, worker.per_second * api_budget.API_SHARE), broker
         assert api.per_minute <= max(1, worker.per_minute * api_budget.API_SHARE), broker
     assert api_budget.api_limits("some-new-broker").per_second <= DEFAULT_RATE_LIMITS.per_second * api_budget.API_SHARE
+
+
+def test_the_burst_never_takes_a_brokers_history_peak_past_its_published_limit_and_quotes_never_burst(monkeypatch):
+    """LD-10 review: in the worst second the worker's own burst and the API's burst land together. The API burst exists
+    only where that sum stays inside the broker's published history limit, and only candle calls may use it."""
+    from app.brokers.rate_budget import BROKER_RATE_LIMITS, limits_for
+    for broker in {*BROKER_RATE_LIMITS, *api_budget.PUBLISHED_HISTORY_PER_SECOND, "dhan", "some-new-broker"}:
+        api, worker = api_budget.api_limits(broker), limits_for(broker)
+        published = api_budget.PUBLISHED_HISTORY_PER_SECOND.get(broker)
+        if api.capacity > api.per_second:                                          # a burst was given
+            assert published is not None and worker.burst + api.capacity <= published, broker
+        assert api.reserve("quote") == api.capacity - api.per_second and api.reserve("history") == 0
+    _use_redis(monkeypatch, None)
+    monkeypatch.setenv("API_WORKERS", "1")
+    clock = {"t": 10.0}
+    monkeypatch.setattr(api_budget, "_clock", lambda: clock["t"])
+    api_budget.reset()
+    quotes = [run(api_budget.try_take(91, "dhan")) for _ in range(2)]                 # /ltp: one a second, no burst
+    clock["t"] += 1.0
+    history = [run(api_budget.try_take(91, "dhan", "history")) for _ in range(3)]     # a chart: two at once
+    assert quotes == [True, False] and history == [True, True, False]
+    api_budget.reset()
 
 
 def test_without_burst_the_bucket_refills_one_token_a_second_never_two_at_a_boundary(monkeypatch):

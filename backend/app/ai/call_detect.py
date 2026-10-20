@@ -24,6 +24,9 @@ markdown emphasis and code marks removed, and list markers, bullets, block quote
 * a stop AND a target with price levels in one paragraph, plus an entry level ("entry", "buy above", "long above") or an
   instrument - across lines and sentences;
 * a price level with certainty ("RELIANCE to 3000 for sure", "will surely reach 3000", "three thousand for sure");
+* Hinglish word order, the verb after the instrument: an instrument right before a romanised verb or light verb, past at
+  most two `romanised_between` words ("RELIANCE kharido", "HDFCBANK le lo", "INFY ghya", "SBIN vika", "RELIANCE ko
+  becho") - the verb alone is not a call ("becho fund", "Vikas");
 * any of the above once a disguised spelling is undone ("B u y RELIANCE", "8uy RELIANCE").
 
 An **instrument** is an upper-case ticker (not a platform or indicator acronym) or a name from the instrument index
@@ -150,6 +153,8 @@ class Lists:
     negated: Pattern
     howto: Pattern
     verb_line: Pattern
+    after_instrument: Pattern
+    romanised_between: FrozenSet[str]
 
 
 @lru_cache(maxsize=4)
@@ -202,6 +207,12 @@ def lists(path: str) -> Lists:
         negated=re.compile(rf"(?<![{_WORD}])(?:{_alt(neg.get('en', []))})(?![{_WORD}])", re.I),
         howto=re.compile(r"\b(?:paper mode|in the app|button|page|tab|click|tap|screen|menu|watchlist|symbol box)\b", re.I),
         verb_line=re.compile(rf"(?im)^([ \t]*(?:{en})[ \t]*[:\-–—>=]*)[ \t]*\n(?=[ \t]*\S)"),
+        # Hinglish puts the verb after its object ("RELIANCE kharido", "HDFCBANK le lo", "SBIN vika"): a romanised verb or
+        # light verb as a whole word; `_instrument_before` then requires the instrument right before it (past at most two
+        # `romanised_between` words). The verb alone is never enough ("becho fund", "Vikas", "Leo looked at the logo").
+        after_instrument=re.compile(
+            rf"(?<![{_WORD}-])(?P<verb>{_alt(verbs.get('romanised', []) + calls.get('light_verbs', []))})(?![{_WORD}-])", re.I),
+        romanised_between=frozenset(w.lower() for w in calls.get("romanised_between", [])),
     )
 
 
@@ -877,6 +888,32 @@ def _instrument_at_end(before: str, L: Lists) -> Optional[str]:
     return None
 
 
+_HEAD_BREAK = re.compile(r"[\n.!?;:,(—–]|\s-\s|->")
+
+
+def _instrument_before(s: str, verb_start: int, L: Lists) -> Optional[str]:
+    """The instrument right before a romanised verb at `verb_start` ("RELIANCE kharido", "hdfc bank le lo"), past at most
+    two `romanised_between` words ("RELIANCE ko becho", "INFY che shares ghya"); only whitespace separates them, within
+    the verb's own clause. An upper-case ticker or an indexed instrument name - never a share word alone ("share le lo"
+    is the word list's job)."""
+    head = s[max(0, verb_start - 120):verb_start]
+    cut = list(_HEAD_BREAK.finditer(head))
+    head = head[cut[-1].end():] if cut else head
+    if head and not head[-1].isspace():
+        return None                                             # "RELIANCE-kharido", "X/kharido": not a separate word
+    words = head.split()
+    for _ in range(2):
+        if words and words[-1].lower() in L.romanised_between:
+            words.pop()
+    if not words:
+        return None
+    last = words[-1]
+    if _is_ticker(last, L):
+        return last
+    n = instrument_names.suffix_len(words)
+    return " ".join(words[-n:]) if n else None
+
+
 @functools.lru_cache(maxsize=256)
 def _has_instrument(text: str, L: Lists) -> bool:
     """Whether `text` names an instrument - cached: the sentence-wide checks ask once per verb."""
@@ -1011,6 +1048,12 @@ def _sentence_calls(s: str, L: Lists) -> List[str]:
         obj = _instrument_at_end(head, L)
         if obj and obj.lower() not in L.share_words:
             add(f"{obj}:", m.group("verb"))
+    for m in L.after_instrument.finditer(s):                     # Hinglish word order: "RELIANCE kharido", "SBIN vika"
+        if exempt(m):
+            continue
+        obj = _instrument_before(s, m.start("verb"), L)
+        if obj:
+            add(obj, m.group("verb"))
     for m in L.opinion.finditer(s):
         obj = _instrument_at_start(m.group("rest"), L, allow_level=False)
         if obj and not _negated(s, m.start(), L):

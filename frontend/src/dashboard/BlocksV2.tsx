@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { EMPTY, formatINR, formatPct, formatPrice, formatSignedINR } from "../ui/format";
 import { TermHint } from "../ui/TermHint";
 import { CardV2, ChipV2, EmptyStateV2, LoadFailedV2, LoadingRowsV2, toneClass } from "./CardV2";
-import { signTone, type PositionRow, type SignalRow, type TodayTiles } from "./model";
+import { WIN_RATE_DAYS, signTone, type PositionRow, type SignalRow, type TodayTiles } from "./model";
 
 /**
  * UI2-2 (UI v2 proposal §5 blocks 5-7): Open positions (up to five rows, "View all" to My positions), Active signals (up
@@ -105,7 +105,7 @@ export function TodaySummaryV2({ tiles, loading }: { tiles: TodayTiles; loading:
           <Tile label="Booked today" value={tiles.booked === null ? EMPTY : formatSignedINR(tiles.booked, { compact: true })}
             tone={signTone(tiles.booked)} sub={tiles.booked === null ? undefined : "closed trades since the open"} />
           <Tile label="Win rate" hint="win-rate" value={tiles.winRate === null ? EMPTY : `${tiles.winRate.toFixed(0)}%`}
-            sub={tiles.closedTrades === null ? undefined : tiles.closedTrades ? `${tiles.closedTrades} closed ${tiles.closedTrades === 1 ? "trade" : "trades"}` : "no closed trades yet"} />
+            sub={tiles.closedTrades === null ? undefined : tiles.closedTrades ? `${tiles.closedTrades} closed ${tiles.closedTrades === 1 ? "trade" : "trades"} in ${WIN_RATE_DAYS} days` : `no closed trades in ${WIN_RATE_DAYS} days`} />
           <Tile label="Risk in use" hint="risk-in-use" value={risk === null ? EMPTY : `${Math.round(risk)}%`} tone={risk !== null && risk >= 80 ? "warn" : "neutral"}
             sub={tiles.riskLimit === null ? "no daily limit set" : `${formatINR(tiles.riskUsed, { compact: true })} of ${formatINR(tiles.riskLimit, { compact: true })} daily limit`}>
             {risk !== null && (

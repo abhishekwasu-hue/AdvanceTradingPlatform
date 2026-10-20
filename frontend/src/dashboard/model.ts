@@ -18,6 +18,8 @@ import type { StripIndex, StripMarket } from "./types";
 export const MAX_ATTENTION = 5;
 export const MAX_POSITIONS = 5;
 export const MAX_SIGNALS = 3;
+/** The Today block's win rate covers the trades closed in this many days (§5: "Win rate (30 days)"). */
+export const WIN_RATE_DAYS = 30;
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const WEEKDAYS_LONG = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];

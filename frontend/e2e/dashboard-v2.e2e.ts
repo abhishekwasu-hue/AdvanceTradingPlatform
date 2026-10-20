@@ -164,6 +164,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     const today = page.locator("[data-block='today']");
     await expect(today).toContainText("+₹2,540");
     await expect(today).toContainText("58%");
+    await expect(today).toContainText("41 closed trades in 30 days");
     await expect(today).toContainText("39%");
     await expect(today).toContainText("2 waiting · 1 taken");
     await expect(page.locator("[data-block='setup']")).toContainText("Setup 3 of 3");

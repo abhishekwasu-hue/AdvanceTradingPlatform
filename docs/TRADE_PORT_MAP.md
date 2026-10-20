@@ -13,6 +13,10 @@ Spec: `docs/specs/ATP_TRADE_PORT_MAP_SPEC.md` (arrives with PR #165).
   rows they name were re-read on `main` at 399eda3 (#200), and the level-bot gate row on Trade `origin/main` at 1e6c9ac.
 - **N-list rows** (section "N-list ports: status on 2026-10-13") were read on `main` at ed0d44e (#221) and, for the
   slices not merged yet, on their branches at the heads named in that section (Trade `origin/main` at 1e6c9ac).
+- **Takeover rows** (section "3a. Trade takeover") were read at Trade `origin/main` **acecd23** (#335, 2026-10-20) and
+  ATP `main` at 880fa8c (#278). The owner decided that ATP takes over everything from Trade and that Trade will be shut
+  down; the plan is `docs/design/TRADE_TAKEOVER.md`. On that date Trade has no `docs/reader/STABLE.md` and no
+  `reader-layer*` tags, so no reader layer is stable yet.
 - **What a port means here:** the logic, plus golden-parity tests against the Trade functions (same input, same
   output), English names, settings-driven (no hard-coded symbols, strike steps or times), multi-tenant safe.
 - **Never ported:** Streamlit pages and widgets, Trade's own DB layers (`cloud_db.py`, `database.py`), broker
@@ -28,6 +32,7 @@ Spec: `docs/specs/ATP_TRADE_PORT_MAP_SPEC.md` (arrives with PR #165).
 | partial (unverified) | ATP has something similar, but nobody has compared it with Trade. Check it before relying on it. |
 | in progress (Z7a) | Being ported now as Z7a, the market zones port (`docs/specs/ATP_MARKET_ZONES_PORT.md`, PR #165). |
 | missing | Not in ATP. The row names the target. |
+| waiting (no tag) | Group G takeover row (section 3a): ATP ports it only after Trade tags it stable (`docs/reader/STABLE.md`, tag `reader-layer<N>-stable-vX`) and exports its parity fixtures. Nothing is ported before that. |
 | not needed | Not ported on purpose. The reason is given: a Streamlit page, a Trade DB layer, an adapter ATP already has, a research or ops script, or ATP's own equivalent. |
 
 ## Summary
@@ -38,7 +43,12 @@ One row per top-level `.py` file (140) and per folder (35: 25 code packages and 
 level-bot gate; it was one planned row until Trade #292 added it) and `decision3/` (2 rows: the `method.py` functions
 the level gate calls, and the rest). N1 (2026-10-12) adds `level_bots_replay.py` (Trade #295) as a top-level file:
 141 + 31 + 9 + 8 + 2 + 3 + 2 = **196 rows**. Other Trade
-additions after eafc872 (for example `reader2/`, #296) are not mapped yet.
+additions after eafc872 (for example `reader2/`, #296) are not mapped as file rows yet; the takeover rows in section 3a
+name the ones the reader and the trading flow use (`facts/`, `engine3_live.py`, `bots_common/one_bot.py`,
+`bots_common/plain_text.py`).
+
+Section 3a adds **14 takeover rows** (one per reader layer or takeover item, not per file). They are counted on their
+own and are not part of the 196: all 14 are "waiting (no tag)".
 
 | Status | Rows |
 |---|---|
@@ -190,6 +200,15 @@ Still changing in Trade (degree-aware Dow, the correction-pattern fixture librar
 ATP's `price_action` follows their behaviour specs, not their code. All rows: ATP equivalent none, status missing
 (waiting), no parity test.
 
+Since the owner's takeover decision (2026-10-20) these file rows are ported through the per-layer rows of section 3a:
+a row here closes when every layer that uses it is ported at a stable tag. Trade's `docs/reports/v22/METHOD_MAP.md`
+says which of them are in the reading path: `decision3/` (`engine`, `levels`, `flip`, `method`, `daily`, `daily_legs`,
+`trendline`, `liquidity`, `telegram_view`), `swings2/`, `legs2/` (volume, features), `patterns2/` (shapes inside
+`daily_legs`) and `rsi2/` (`Divergence`). It lists `chart_reader/`, `opportunity_engine/` (except
+`opportunity_engine/volume.py`, the FUT-volume data path), `elliott/`, `market_state/`, `decision2/`, `pivots/` (v1),
+`zones2/` and the `trendlines2/` layer as outside the reading path; those rows are expected to become "not needed"
+when the last layer is stable, unless `STABLE.md` names them.
+
 | Trade module | Purpose | Note |
 |---|---|---|
 | `decision3/` (rest) | v2.2 method-first engine (Abhi's six steps): daily legs / swings, levels, liquidity, trendline, advisory, vision audit, Telegram view | owner's G list. The level gate's Daily trend (`daily.fold` with `daily_legs`, `legs2`, `patterns2`) is ported at a pinned revision in N1 L2 unless the owner says otherwise (OPEN_QUESTIONS N1-2); `method.py`'s gate functions are their own row in group 2. N4 CH3b ported `liquidity.py` pools, sweeps and marks (not the trapped zones) to `backend/app/price_action/liquidity.py` for the chart, with parity |
@@ -217,6 +236,39 @@ ATP's `price_action` follows their behaviour specs, not their code. All rows: AT
 | `run_opportunity_backtest.py` | Opportunity engine backtest (D1-D3, V1-V3) | goes with `opportunity_engine/` |
 | `run_visual_audit.py` | Opportunity engine: EOD vision check of engine levels | goes with `opportunity_engine/` |
 | `run_visual_forward_report.py` | Opportunity engine: forward report from the daily visual audit | goes with `opportunity_engine/` |
+
+## 3a. Trade takeover (G, waits for stable)
+
+The owner's plan: `docs/design/TRADE_TAKEOVER.md`. Trade finishes the Chart Reader layer by layer (the six layers of
+Trade's `docs/knowledge/CHART_READER_METHOD.md` section 7). Each layer the owner approves gets an entry in Trade's
+`docs/reader/STABLE.md`, a tag `reader-layer<N>-stable-vX` and parity fixtures in the private trade-data repo
+(`parity/<layer>/<tag>/`). ATP ports each layer as soon as it is tagged, into one package, `backend/app/reader/`, with
+one owner module per concept (Trade's structure-reset table, `docs/design/CHART_READER_AGENT.md` section 3, as refined
+by `docs/reports/v22/METHOD_MAP.md`). A row moves out of "waiting (no tag)" when its tag appears; a new tag for the same
+layer (a bug fix) means a re-port and a new parity run, and the row records the newest tag.
+
+Trade sources are at acecd23. They are the owners named today; the `STABLE.md` entry for the tag is what ATP ports,
+and it wins where it differs. ATP targets are proposed paths under `backend/app/reader/` (nothing there exists yet).
+Parity fixtures never enter ATP's git: they live in the private fixtures store on the host
+(`<fixtures store>/parity/<layer>/<tag>/`, see `docs/design/TRADE_TAKEOVER.md` section 3), and the test reads them
+from there. "Trade state" is Trade's own progress on 2026-10-20, from Trade's `docs/WORK_LOG.md` and `METHOD_MAP.md`.
+
+| # | Layer / item | Trade source (Trade@acecd23) | Stable tag | ATP target | Parity fixtures | Status |
+|---|---|---|---|---|---|---|
+| T1 | Reader layer 1: swings and structure (swing, degree, impulse vs correction, equal highs / lows, weekly and daily trend) | `swings2/engine.py` (`build`, `known`; `pivots/` is its pivot engine), `swings2/structure.py` (`all_structure`, `trend_of`), `decision3/daily.py` (`fold`, `state_at`), `decision3/daily_swings.py`, `decision3/daily_legs.py` (with its `legs2/` features and `patterns2/` shapes) | - | `backend/app/reader/swings.py`, `reader/legs.py`, `reader/trend.py`; the CI check `backend/tests/test_reader_no_numbers.py` starts here | `parity/layer1/<tag>/` | waiting (no tag). Trade state: being rebuilt (logic-only swings under the owner's review). ATP's `price_action/daily_trend/` (N1 L2, Trade@1e6c9ac) stays for the level gate; the reader gets its own module at the tag |
+| T2 | Reader layer 2: areas and lifecycle (one base per area, demand / supply / flipped / origin of a sharp move, sweep, broken, flipped, dead, every valid area ahead armed) | `decision3/levels.py` (`_born`, `_band_swing`, `_step_far_swing`, `active`, `snapshot`, `display_bands`), `decision3/flip.py` (`far_swing`, `structural`, `zone_read`, ...), `decision3/liquidity.py` (`pools`) | - | `backend/app/reader/areas.py`, `reader/liquidity.py` | `parity/layer2/<tag>/` | waiting (no tag). Trade state: layer built (`break_rule = structure`, `liquidity_rule = equal`, no cap on armed areas), not tagged. Not the same engine as ATP's Z7a market zones (`price_action/zones/`), which stay for screens and the "Market zones" layer |
+| T3 | Reader layer 3: zone study, commitment and lower-timeframe change (visit, slow and fast handover, absorption, commitment form and volume, LTF change of character, raw FUT volume) | `decision3/engine.py` (`visit`, `_visit_structure`, `_at_area`, `_failed_commit_outside`, `vol_view`), `decision3/method.py` (`zone_study`, `handover_episode`, `sharp_reversal`, `commitment`, `reversal_form`, `candle_read`, `zone_pattern`, `ltf_frame`, `ltf_choch`), `decision3/flip.py` (`approach_context`, `legs_arrays`), `decision3/liquidity.py` (`sweeps_and_traps`), `legs2/volume.py` (`bar_volume`), `opportunity_engine/volume.py` (`attach_futures_volume`, `near_month_rows`) | - | `backend/app/reader/visit.py`, `reader/zone_study.py`, `reader/candles.py`, `reader/volume.py`, `reader/ltf.py` | `parity/layer3/<tag>/` | waiting (no tag). Trade state: 3a and 3b built; the owner's layer-3 notes (approach leg across gaps and sessions) merged in #335; not tagged. ATP's `price_action/level_gate/method.py` (N1 L1) holds older reads of the same functions, pinned for the level gate; it is not edited by this port |
+| T4 | Reader layer 4: lines and confluence (two reactions, third touch as the trade location, lines on the structure's own swings, band + line confluence, correction-line trigger) | `facts/validity.py` (`check_line`, `check_band`, `confluence`, `select_lines`, `select_bands`), `decision3/trendline.py` (`k_line`, `swing_line`, `confluence_areas`), `trendlines2/two_touch.py` (`display_lines`) | - | `backend/app/reader/lines.py`, `reader/confluence.py` | `parity/layer4/<tag>/` | waiting (no tag). Trade state: not started (the line finder still has numbers). ATP's CH3b `price_action/trendlines.py` is an older rule and stays a chart reference |
+| T5 | Reader layer 5: RSI divergence (consecutive real swings of one degree, equal RSI counts, evidence only) | `rsi2/engine.py` (`Divergence`; `RSI`), `rsi2/settings.py` | - | `backend/app/reader/divergence.py` | `parity/layer5/<tag>/` | waiting (no tag). Trade state: not started (`div_degrees` follows layer 1) |
+| T6 | Reader layer 6: reader output (decision enter / wait / no trade, A / B label without scores, story, evidence list present / absent, every price from the data; context lines as context only) | `decision3/engine.py` (`decide`, `V22`), `decision3/telegram_view.py`, `decision3/setup_chart.py`, `engine3_live.py` (`row_from_v22`), `bots_common/plain_text.py`, `facts/dossier.py` (`build_dossier`, `NOT_FACTS`), `vision/context.py`, `vision/gap_context.py` | - | `backend/app/reader/decide.py`, `reader/output.py` (the output contract: METHOD section 5), `reader/dossier.py`, `reader/chart.py` (overlay data) | `parity/layer6/<tag>/` | waiting (no tag). Trade state: not started (evidence weights still give A / B / weak). The "Read this chart" panel and the "Reader zones & lines" overlay read this output |
+| T7 | KB and Method Pack | `docs/knowledge/KNOWLEDGE_BASE.md`, `docs/knowledge/CHART_READER_METHOD.md`, `docs/knowledge/ABHI_METHOD_NOTES.md`, `docs/knowledge/method_pack.md` (built by `scripts/build_method_pack.py` with `vision/method_pack.py`; stale-pack test `tests/test_method_pack.py`) | - (the version that matches each layer tag) | `docs/knowledge/` (copied at each tag), `backend/app/reader/method_pack.py` (pack text and version hash), a stale-pack test | none (text; the pack version hash is recorded per tag) | waiting (no tag). After the switch-over ATP owns them with the same change control |
+| T8 | Vision audit (audit-only checklist 1-7 with the Method Pack as the cached system prefix; never blocks or changes a decision) | `vision/v4.py`, `vision/checklist.py` (`DECISION3_MAP`), `vision/method_pack.py`, `decision3/vision_audit.py`, `vision/signal_audit.py` (cost, usage) | - | `backend/app/ai/vision_audit.py` (exists: ATP's own audit-only Vision, BYOK and budget) plus the checklist prompt from `reader/method_pack.py` | `parity/vision/<tag>/` (the checklist cases, if Trade exports them) | waiting (no tag). ATP's audit exists; the V4 checklist waits for the KB / pack at a tag and for layer 6 |
+| T9 | The one-bot PAPER executor with approvals: the 15M SRv2 engine-signal flow (signal, Telegram ✅ / ✏️ entry only / ❌ reason, PAPER, SL / target / lots / exits from the dashboard, exits never blocked) | `bots_common/one_bot.py`, `srv2_momentum_reversal_strategy.py` (`15m_dynamic_sr`, `signal_source = engine`), `engine3_live.py`, `engine_signal.py`, `scripts/engine_signal_run.py`, `paper/bot_hooks.py`, `paper/engine_entry.py`, `vision/approval.py`, `vision/telegram_bot.py`, `paper/watch.py`, `paper/journal.py` | - (after T6) | a deployment type in `backend/app/deployments/` (a `strategy_deployments` row whose strategy is the reader flow), entries through the E1 core (`backend/app/execution/core/`) and `backend/app/execution/approval.py`, Telegram in `backend/app/telegram_inbound/service.py`, PAPER fills in `backend/app/execution/paper_broker.py`, exits in `backend/app/trading/position_monitor.py` | the shadow comparison (section 11 of the design) | waiting (no tag). Needs layer 6. Overlaps the group 1 `paper/` rows (journal, watch, engine entry) |
+| T10 | The MCX bot | `mcx_futures_trader.py`, `mcx_filters.py`, `mcx_contract_specs.py`, `mcx_quantity_check.py`, `refresh_market_zones_mcx.py` (MCX exits: `position_stream_monitor_mcx.service`) | - | an MCX deployment type on the same core; MCX specs in `backend/app/instruments/registry.py`, quantity rule in `backend/app/brokers/upstox.py` | Trade's MCX tests as golden cases | waiting (no tag). In Trade its entries go through the level-bot gate and are off in one-bot mode; see the open question in the design |
+| T11 | The level bots (5M instant, classic S/R reversal, 15M SRv2 touch / confirmation, MCX) | today `bots_common/level_reaction.py`, `bots_common/level_gate_bot.py`, `bots_common/level_visibility.py`; the owner decided they are rebuilt on the method after the reader's last layer, and not in Trade | - | rebuilt in ATP on `backend/app/reader/` after T6 is stable (ATP's N1 X1 scan Then and the L1 gate are the current base) | ATP's own tests (nothing to compare in Trade) | waiting (no tag): starts only after the last reader layer is stable |
+| T12 | Data: bars (index spot 1-minute to daily, near-month FUT 5-minute volume and OI, MCX bars, NSE F&O bhavcopy history) | trade-data folders of bars and bhavcopy, Trade's `data/*.parquet`, listed in Trade's `EXPORT_MANIFEST.md` | - (the manifest's own version) | daily bars: the shared lake `md_candles` (sources `nse_bhav:*` already cover NSE daily); intraday and FUT bars: the owner's private store `md_tenant_candles` (HB0 / HB2 rules), loaded by `atp.sh import-trade` | checksums in the manifest | waiting: `EXPORT_MANIFEST.md` does not exist yet |
+| T13 | Data: golden fixtures, parity fixtures and the owner's approved charts | trade-data golden case files, `parity/<layer>/<tag>/` (once it exists), the owner's marked and approved charts | - | the private fixtures store on the host (outside git and outside the Method Pack), read by the parity tests | the store itself | waiting: no parity folder and no manifest yet |
+| T14 | Data: Trade's records and review artefacts (PAPER journal, engine signals, Vision log, review and audit charts and reports) | Trade's database (`cloud_db.py` tables), trade-data review, report and audit folders | - | a private, read-only archive on the host (kept for the shadow comparison and the owner's reference; never served to another tenant) | none | waiting: depends on what `EXPORT_MANIFEST.md` lists |
 
 ## 4. Already ported or covered, outside the groups
 
@@ -378,3 +430,11 @@ Non-Python files at the top level (`config.yaml`, `PRE_LIVE_CHECKLIST.md`, `requ
    owner did not list (`chart_reader/`, `correction/`, `decision2/`, `market_state/`, `pivots/`, `review7/`) belong to
    the same still-changing analysis family, so this map treats them as G. That is an assumption for the owner to
    confirm.
+8. **Two owner tables in Trade disagree on two concepts.** The structure-reset table (`docs/design/CHART_READER_AGENT.md`
+   section 3, 13 Oct) names `reader2` as the owner of legs (impulse vs correction) and plans to merge decision3's Daily
+   Dow into `swings2`. The later `docs/reports/v22/METHOD_MAP.md` (19 Oct, governed by `CHART_READER_METHOD.md`) names
+   `decision3/daily_legs.py` and `decision3/daily.py` as those owners, and `reader2` stays research-only behind its
+   gallery gate. Rows T1-T6 follow `METHOD_MAP.md`; the `STABLE.md` entry of each tag decides.
+9. **The 13 Oct design said ATP would port the reader only after Trade's shadow had proved it (N6).** The owner's
+   takeover decision (2026-10-20) replaces that: ATP ports each layer as soon as it is tagged stable, runs its own
+   shadow, and Trade's last work is the reader.

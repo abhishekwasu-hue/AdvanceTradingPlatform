@@ -34,7 +34,7 @@ export function PageTitleV2({ title, subtitle, action }: { title: string; subtit
 
 /** A grid of figures with 1 px dividers (§8: "Groups inside a card use dividers or a tile grid with 1 px gaps"). */
 export function TilesV2({ children, columns = 4 }: { children: ReactNode; columns?: 2 | 3 | 4 }) {
-  const cols = columns === 4 ? "grid-cols-2 lg:grid-cols-4" : columns === 3 ? "grid-cols-2 lg:grid-cols-3" : "grid-cols-2";
+  const cols = columns === 4 ? "grid-cols-2 lg:grid-cols-4" : columns === 3 ? "grid-cols-1 sm:grid-cols-3" : "grid-cols-2";
   return <div className={`grid ${cols} gap-px overflow-hidden rounded-control border border-subtle bg-border-subtle`}>{children}</div>;
 }
 
@@ -79,15 +79,16 @@ export function NoteV2({ kind = "info", children, testId }: { kind?: "done" | "i
   );
 }
 
-/** A small rounded status label with an icon for a warning, so colour is never the only signal (§8 Accessibility). */
-export function StateChipV2({ tone, children }: { tone: Tone; children: ReactNode }) {
+/** A small rounded status label with an icon for a warning, so colour is never the only signal (§8 Accessibility). A
+ * neutral one carries a check ("done", "normal") unless `check` is false (a plain description such as a size cut). */
+export function StateChipV2({ tone, check = true, children }: { tone: Tone; check?: boolean; children: ReactNode }) {
   return tone === "warn" ? (
     <span className="inline-flex h-6 shrink-0 items-center gap-space-1 rounded-pill bg-warn-tint px-space-2 text-t12 font-semibold text-warn">
       <TriangleAlert size={12} aria-hidden />{children}
     </span>
   ) : (
     <span className="inline-flex h-6 shrink-0 items-center gap-space-1 rounded-pill border border-border px-space-2 text-t12 font-medium text-fg-muted">
-      <Check size={12} aria-hidden />{children}
+      {check && <Check size={12} aria-hidden />}{children}
     </span>
   );
 }

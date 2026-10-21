@@ -138,7 +138,7 @@ export function MarketEventsV2({ user, defaultCut, nonce, onChanged }: {
                   <div className="flex flex-wrap items-center gap-space-2">
                     <span className="text-t14 font-semibold text-fg">{formatDateIST(ev.event_date, { weekday: true })}</span>
                     <span className="text-t14 text-fg">{eventKindLabel(ev.kind)}</span>
-                    <StateChipV2 tone={ev.action === "BLOCK" ? "warn" : "neutral"}>{eventAction(ev, defaultCut)}</StateChipV2>
+                    <StateChipV2 tone={ev.action === "BLOCK" ? "warn" : "neutral"} check={false}>{eventAction(ev, defaultCut)}</StateChipV2>
                     {ev.global && <ChipV2>Platform</ChipV2>}
                   </div>
                   <p className="mt-px text-t13 text-fg-muted">

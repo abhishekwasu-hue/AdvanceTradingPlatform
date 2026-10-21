@@ -1,0 +1,154 @@
+import { expect, test, type Page } from "@playwright/test";
+import { mockApi } from "./mockApi";
+import { expectPhoneLayout } from "./phoneLayout";
+import { T, mockTrading, type TradingMocks, type Writes } from "./tradingMocks";
+
+/**
+ * UI2-9a (UI v2 proposal §2 row 17, §8, §9, §13 UI-11): Risk limits with the `ui_v2` flag on.
+ * - Baselines `risk-v2-<width>-<theme>.png` at 1440, 390 and 360. Today's Risk Management page has no baseline of its
+ *   own, and with the flag off it renders as before.
+ * - Today's limit in rupees and the guardian's state; the one primary action, "Save limits", sending today's request;
+ *   a value above the platform ceiling stopped next to its field; removing an event behind a confirm that names what
+ *   changes.
+ * Every reply is hand-written, made-up data (e2e/fixtures/trading_v2.json). After an intended change:
+ * `npx playwright test --project=phone e2e/risk-v2.e2e.ts --update-snapshots`, check the new images, commit.
+ */
+
+async function open(page: Page, theme: "dark" | "light", setup: TradingMocks & { flag?: boolean } = {}): Promise<Writes> {
+  const { flag = true, ...mocks } = setup;
+  await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
+  await page.addInitScript((t) => {
+    try {
+      localStorage.setItem("atp_appearance", JSON.stringify({ theme: t }));
+      localStorage.setItem("atp_install_dismissed", "1");
+    } catch { /* storage unavailable */ }
+  }, theme);
+  await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
+  await mockApi(page, { features: flag ? (T.features as Record<string, boolean>) : undefined, brokers: T.token_status as unknown[] });
+  const writes = await mockTrading(page, mocks);
+  await page.goto("/risk-management");
+  await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
+  await page.waitForLoadState("networkidle");
+  await expect(page.locator("main")).toBeVisible();
+  await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
+  return writes;
+}
+
+const THEMES = ["dark", "light"] as const;
+const PHONES = [{ width: 360, height: 800 }, { width: 390, height: 844 }];
+
+for (const size of PHONES) {
+  test.describe(`v2 risk ${size.width} x ${size.height}`, () => {
+    test.use({ viewport: size, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+    for (const theme of THEMES) {
+      test(`looks the same (${theme})`, async ({ page }) => {
+        await open(page, theme);
+        await expect(page.locator("[data-page='risk-v2']")).toBeVisible();
+        await expect(page).toHaveScreenshot(`risk-v2-${size.width}-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      });
+    }
+
+    test("no sideways scroll, 44 px targets, nothing hidden behind the bottom bar", async ({ page }) => {
+      await open(page, "dark");
+      await expect(page.locator("[data-page='risk-v2']")).toBeVisible();
+      await expectPhoneLayout(page);
+    });
+  });
+}
+
+test.describe("v2 risk 1440 desktop", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const theme of THEMES) {
+    test(`looks the same (${theme})`, async ({ page }) => {
+      await open(page, theme);
+      await expect(page.locator("[data-page='risk-v2']")).toBeVisible();
+      await expect(page).toHaveScreenshot(`risk-v2-1440-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+    });
+  }
+
+  test("today: the daily loss limit in rupees, the paper limit in use and the guardian's state", async ({ page }) => {
+    await open(page, "light");
+    await expect(page.locator("[data-shell='v2'] header").first()).toContainText("Risk limits");
+    const today = page.locator("[data-block='today']");
+    await expect(today.locator("[data-tile='daily-limit']")).toContainText("₹15,000.00");
+    await expect(today.locator("[data-tile='daily-limit']")).toContainText("3.0% of ₹5 L capital");
+    await expect(today.locator("[data-tile='per-trade']")).toContainText("₹5,000.00");
+    await expect(today.locator("[data-tile='paper-used']")).toContainText("39%");
+    await expect(today.locator("[data-tile='paper-used']")).toContainText("₹5,775 of ₹15,000 today");
+    await expect(today.locator("[data-mode='PAPER']")).toContainText("Normal size");
+    await expect(today.locator("[data-mode='PAPER']")).toContainText("Waiting after a stop-out: HDFCBANK (12 min left)");
+    await expect(today.locator("[data-mode='LIVE']")).toContainText("Size cut to 50%");
+    await expect(today).toContainText("Exits are never blocked.");
+  });
+
+  test("one primary action: 'Save limits' sends today's request with the changed value", async ({ page }) => {
+    const writes = await open(page, "light");
+    const primaries = page.locator("main .bg-brand:is(a, button)");
+    await expect(primaries).toHaveCount(1);
+    await expect(primaries).toHaveText("Save limits");
+    await page.getByLabel("Daily loss limit (% of capital)").fill("2.5");
+    await primaries.click();
+    await expect(page.locator("[data-note='save']")).toHaveText("Saved. Every paper and live entry now uses these limits and guardian rules.");
+    const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
+    expect(put?.body).toEqual({ ...(T.risk_settings as object), max_daily_loss_pct: 2.5 });
+  });
+
+  test("a value above the platform ceiling is marked next to its field and nothing is sent", async ({ page }) => {
+    const writes = await open(page, "light");
+    const field = page.getByLabel("Risk per trade (% of capital)");
+    await field.fill("3");
+    await field.blur();
+    await expect(page.locator("[data-field='risk_per_trade_pct'] [role='alert']")).toHaveText("The most allowed is 2.");
+    await page.getByRole("button", { name: "Save limits" }).click();
+    await expect(page.locator("[data-note='save']")).toContainText("Nothing was saved.");
+    expect(writes.calls.filter((c) => c.url === "/risk-settings")).toHaveLength(0);
+  });
+
+  test("removing an event: a neutral button, then a confirm that names what changes", async ({ page }) => {
+    const writes = await open(page, "light");
+    const row = page.locator("[data-event='32']");
+    await expect(row).toContainText("Fri 23 Oct 2026");
+    await expect(row).toContainText("No new entries");
+    await expect(row).toContainText("RELIANCE · 09:15 to 11:00 · Quarterly results");
+    await expect(page.locator("[data-event='31']")).toContainText("Size cut by 50%");
+    const remove = row.getByRole("button", { name: "Remove" });
+    await expect(remove).not.toHaveClass(/(^|\s)(bg-brand|text-down|bg-down)(\s|$)/);
+    await remove.click();
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toContainText("Remove this market event?");
+    await expect(dialog).toContainText("New entries in RELIANCE will no longer be blocked on 23 Oct 2026.");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    expect(writes.calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
+    await remove.click();
+    await page.getByRole("dialog").getByRole("button", { name: "Remove event" }).click();
+    await expect(page.locator("[data-event='32']")).toHaveCount(0);
+    expect(writes.calls.filter((c) => c.method === "DELETE").map((c) => c.url)).toEqual(["/risk-guardian/events/32"]);
+  });
+
+  test("organisation limits and recent checks in plain words", async ({ page }) => {
+    await open(page, "light");
+    const limits = page.locator("[data-block='org-limits']");
+    await expect(limits.locator("[data-limit='41']")).toContainText("Daily loss₹15,000.00");
+    await expect(limits.locator("[data-limit='42']")).toContainText("One symbol: RELIANCE");
+    await expect(limits.locator("[data-limit='43']")).toContainText("Platform");
+    await expect(limits.locator("[data-limit='43']").getByRole("button", { name: "Remove" })).toHaveCount(0);
+    const checks = page.locator("[data-block='checks']");
+    await expect(checks.locator("[data-check='502']")).toContainText("Warning");
+    await expect(checks.locator("[data-check='501']")).toContainText("Passed");
+    for (const gone of ["Risk Guardian status", "Save risk settings", "(R4)", "(P2)", "Phase", "Sample", "recommended"]) {
+      await expect(page.locator("main").getByText(gone, { exact: false }), gone).toHaveCount(0);
+    }
+  });
+});
+
+test.describe("flag off", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+  test("today's risk page, exactly as before", async ({ page }) => {
+    await open(page, "light", { flag: false });
+    await expect(page.locator("[data-shell='v2']")).toHaveCount(0);
+    await expect(page.locator("[data-page='risk-v2']")).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: "Risk Management", exact: true })).toBeVisible();
+  });
+});

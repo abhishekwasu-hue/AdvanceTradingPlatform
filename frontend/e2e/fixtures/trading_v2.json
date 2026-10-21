@@ -1,0 +1,539 @@
+{
+ "_note": "UI2-9a: hand-written, made-up replies for My positions, My portfolio and Risk limits (no real account, price, order or id).",
+ "me": {
+  "id": 7,
+  "email": "trader@example.com",
+  "tenant_id": 3,
+  "role": "OWNER",
+  "mfa_enabled": false,
+  "email_verified": true,
+  "scopes": [
+   "trading:write",
+   "risk:write"
+  ]
+ },
+ "token_status": [
+  {
+   "broker_name": "upstox",
+   "account_label": "primary",
+   "token_status": "VALID",
+   "token_expires_at": null,
+   "last_verified_at": null,
+   "needs_login": false,
+   "oauth_supported": true,
+   "oauth_callback_url": null,
+   "login_url_supported": false,
+   "code_param": null
+  }
+ ],
+ "token_status_login": [
+  {
+   "broker_name": "upstox",
+   "account_label": "primary",
+   "token_status": "EXPIRED",
+   "token_expires_at": null,
+   "last_verified_at": null,
+   "needs_login": true,
+   "oauth_supported": true,
+   "oauth_callback_url": null,
+   "login_url_supported": false,
+   "code_param": null
+  }
+ ],
+ "features": {
+  "ui_v2": true,
+  "approval_only_entries": true
+ },
+ "positions": [
+  {
+   "id": 201,
+   "mode": "PAPER",
+   "symbol": "NIFTY 24800 CE",
+   "strategy_id": "orb_nifty",
+   "direction": "LONG",
+   "entry_time": "2026-10-19T04:05:00",
+   "entry_price": 121.8,
+   "quantity": 150,
+   "stop_loss": 100,
+   "target1": null,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 75,
+   "exchange": "NFO",
+   "instrument_kind": "OPTION",
+   "option_position": "BUY",
+   "underlying_symbol": "NIFTY 50",
+   "underlying_direction": "LONG",
+   "underlying_stop_loss": 24700,
+   "underlying_target1": 24950
+  },
+  {
+   "id": 202,
+   "mode": "PAPER",
+   "symbol": "RELIANCE",
+   "strategy_id": "demo_swing",
+   "direction": "SHORT",
+   "entry_time": "2026-10-19T04:20:00",
+   "entry_price": 1480,
+   "quantity": 50,
+   "stop_loss": 1510,
+   "target1": 1420,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 1,
+   "exchange": "NSE",
+   "instrument_kind": "UNDERLYING"
+  },
+  {
+   "id": 203,
+   "mode": "LIVE",
+   "symbol": "TCS",
+   "strategy_id": "demo_swing",
+   "direction": "LONG",
+   "entry_time": "2026-10-17T05:00:00",
+   "entry_price": 3400,
+   "quantity": 20,
+   "stop_loss": 3340,
+   "target1": 3520,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 1,
+   "exchange": "NSE",
+   "instrument_kind": "UNDERLYING"
+  }
+ ],
+ "trades": [
+  {
+   "id": 201,
+   "mode": "PAPER",
+   "symbol": "NIFTY 24800 CE",
+   "strategy_id": "orb_nifty",
+   "direction": "LONG",
+   "entry_time": "2026-10-19T04:05:00",
+   "entry_price": 121.8,
+   "quantity": 150,
+   "stop_loss": 100,
+   "target1": null,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 75,
+   "exchange": "NFO",
+   "instrument_kind": "OPTION",
+   "option_position": "BUY",
+   "underlying_symbol": "NIFTY 50",
+   "underlying_direction": "LONG",
+   "underlying_stop_loss": 24700,
+   "underlying_target1": 24950
+  },
+  {
+   "id": 202,
+   "mode": "PAPER",
+   "symbol": "RELIANCE",
+   "strategy_id": "demo_swing",
+   "direction": "SHORT",
+   "entry_time": "2026-10-19T04:20:00",
+   "entry_price": 1480,
+   "quantity": 50,
+   "stop_loss": 1510,
+   "target1": 1420,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 1,
+   "exchange": "NSE",
+   "instrument_kind": "UNDERLYING"
+  },
+  {
+   "id": 203,
+   "mode": "LIVE",
+   "symbol": "TCS",
+   "strategy_id": "demo_swing",
+   "direction": "LONG",
+   "entry_time": "2026-10-17T05:00:00",
+   "entry_price": 3400,
+   "quantity": 20,
+   "stop_loss": 3340,
+   "target1": 3520,
+   "target2": null,
+   "exit_time": null,
+   "exit_price": null,
+   "exit_reason": null,
+   "pnl": null,
+   "charges": 0,
+   "lot_size": 1,
+   "exchange": "NSE",
+   "instrument_kind": "UNDERLYING"
+  },
+  {
+   "id": 190,
+   "mode": "PAPER",
+   "symbol": "HDFCBANK",
+   "strategy_id": "orb_nifty",
+   "direction": "LONG",
+   "entry_time": "2026-10-19T03:50:00",
+   "entry_price": 1650,
+   "quantity": 30,
+   "stop_loss": 1635,
+   "target1": 1672,
+   "target2": null,
+   "exit_time": "2026-10-19T05:10:00",
+   "exit_price": 1672,
+   "exit_reason": "TARGET_1",
+   "pnl": 660,
+   "charges": 38.4,
+   "charges_source": "ESTIMATED",
+   "lot_size": 1,
+   "instrument_kind": "UNDERLYING",
+   "tags": [],
+   "notes": null
+  },
+  {
+   "id": 191,
+   "mode": "PAPER",
+   "symbol": "NIFTY 24700 PE",
+   "strategy_id": "orb_nifty",
+   "direction": "LONG",
+   "entry_time": "2026-10-16T04:00:00",
+   "entry_price": 98.5,
+   "quantity": 75,
+   "stop_loss": 84,
+   "target1": null,
+   "target2": null,
+   "exit_time": "2026-10-16T08:20:00",
+   "exit_price": 84,
+   "exit_reason": "STOP_LOSS",
+   "pnl": -1087.5,
+   "charges": 52.1,
+   "charges_source": "CONTRACT_NOTE",
+   "lot_size": 75,
+   "instrument_kind": "OPTION",
+   "underlying_symbol": "NIFTY 50",
+   "tags": [
+    "early"
+   ],
+   "notes": "Entered before the level held."
+  },
+  {
+   "id": 192,
+   "mode": "LIVE",
+   "symbol": "INFY",
+   "strategy_id": "demo_swing",
+   "direction": "SHORT",
+   "entry_time": "2026-10-13T04:00:00",
+   "entry_price": 1525,
+   "quantity": 40,
+   "stop_loss": 1545,
+   "target1": 1490,
+   "target2": null,
+   "exit_time": "2026-10-14T06:00:00",
+   "exit_price": 1490,
+   "exit_reason": "TARGET_1",
+   "pnl": 1400,
+   "charges": 61.75,
+   "charges_source": "ESTIMATED",
+   "lot_size": 1,
+   "instrument_kind": "UNDERLYING",
+   "tags": [],
+   "notes": null
+  }
+ ],
+ "exposure": {
+  "as_of": "2026-10-19T05:30:00Z",
+  "capital": 500000,
+  "open_positions": 3,
+  "gross_notional": 161990,
+  "net_notional": 15990,
+  "long_notional": 88990,
+  "short_notional": 73000,
+  "gross_pct_of_capital": 32.4,
+  "unrealised_pnl": 3720,
+  "realised_today": 660,
+  "risk_at_stops": 5970,
+  "risk_pct_of_capital": 1.19,
+  "largest_symbol_pct": 14.6,
+  "by_symbol": [
+   {
+    "symbol": "NIFTY 24800 CE",
+    "positions": 1,
+    "quantity": 150,
+    "notional": 21390,
+    "pct_of_capital": 4.28,
+    "unrealised_pnl": 3120,
+    "risk_at_stop": 3270,
+    "strategies": [
+     "orb_nifty"
+    ]
+   },
+   {
+    "symbol": "RELIANCE",
+    "positions": 1,
+    "quantity": -50,
+    "notional": 73000,
+    "pct_of_capital": 14.6,
+    "unrealised_pnl": 1000,
+    "risk_at_stop": 1500,
+    "strategies": [
+     "demo_swing"
+    ]
+   },
+   {
+    "symbol": "TCS",
+    "positions": 1,
+    "quantity": 20,
+    "notional": 67600,
+    "pct_of_capital": 13.52,
+    "unrealised_pnl": -400,
+    "risk_at_stop": 1200,
+    "strategies": [
+     "demo_swing"
+    ]
+   }
+  ],
+  "by_strategy": {
+   "orb_nifty": 21390,
+   "demo_swing": 140600
+  },
+  "by_mode": {
+   "PAPER": 94390,
+   "LIVE": 67600
+  },
+  "warnings": [],
+  "price_source": "ltp",
+  "priced_symbols": [
+   "NIFTY 24800 CE",
+   "RELIANCE",
+   "TCS"
+  ]
+ },
+ "exit_now": {
+  "closed": [
+   {
+    "closed": true,
+    "exit_reason": "EXIT_NOW",
+    "exit_price": 142.6,
+    "pnl": 3120
+   }
+  ],
+  "warnings": []
+ },
+ "risk_settings": {
+  "capital": 500000,
+  "risk_per_trade_pct": 1,
+  "max_daily_loss_pct": 3,
+  "max_trades_per_day": 6,
+  "max_open_positions": 4,
+  "max_consecutive_losses": 3,
+  "min_risk_reward": 1.5,
+  "lot_size": 1,
+  "max_portfolio_risk_pct": 6,
+  "stop_cooldown_minutes": 30,
+  "dd_level_1_pct": 5,
+  "dd_level_2_pct": 10,
+  "event_size_cut_pct": 50
+ },
+ "ceilings": {
+  "risk_per_trade_pct": 2,
+  "max_daily_loss_pct": 5,
+  "max_portfolio_risk_pct": 10,
+  "dd_level_2_pct": 25
+ },
+ "guardian": {
+  "as_of": "2026-10-19T05:30:00Z",
+  "settings": {
+   "capital": 500000,
+   "risk_per_trade_pct": 1,
+   "max_daily_loss_pct": 3,
+   "max_trades_per_day": 6,
+   "max_open_positions": 4,
+   "max_consecutive_losses": 3,
+   "min_risk_reward": 1.5,
+   "lot_size": 1,
+   "max_portfolio_risk_pct": 6,
+   "stop_cooldown_minutes": 30,
+   "dd_level_1_pct": 5,
+   "dd_level_2_pct": 10,
+   "event_size_cut_pct": 50
+  },
+  "modes": {
+   "PAPER": {
+    "equity": 503200,
+    "peak": 506000,
+    "drawdown_pct": 0.55,
+    "closed_trades": 18,
+    "state": "normal",
+    "size_multiplier": 1,
+    "open_risk_by_bucket": {
+     "INDEX": 3270,
+     "RELIANCE": 1500
+    },
+    "open_risk_total": 4770,
+    "open_risk_pct": 0.95,
+    "portfolio_cap": 30000,
+    "cooldowns": [
+     {
+      "underlying": "HDFCBANK",
+      "exit_reason": "TARGET_1",
+      "minutes_left": 12
+     }
+    ]
+   },
+   "LIVE": {
+    "equity": 471500,
+    "peak": 500000,
+    "drawdown_pct": 5.7,
+    "closed_trades": 6,
+    "state": "reduced",
+    "size_multiplier": 0.5,
+    "open_risk_by_bucket": {
+     "TCS": 1200
+    },
+    "open_risk_total": 1200,
+    "open_risk_pct": 0.24,
+    "portfolio_cap": 30000,
+    "cooldowns": []
+   }
+  },
+  "events_today": [],
+  "ceilings": {
+   "risk_per_trade_pct": 2,
+   "max_daily_loss_pct": 5,
+   "max_portfolio_risk_pct": 10,
+   "dd_level_2_pct": 25
+  }
+ },
+ "paper_risk": {
+  "mode": "PAPER",
+  "today": {
+   "realised": 660,
+   "open_marks": 3720,
+   "pnl": 4380,
+   "worst": -5770,
+   "limit": 15000,
+   "used": 0.385,
+   "entries": 3,
+   "max_entries": 6
+  },
+  "lockout": null
+ },
+ "market_events": [
+  {
+   "id": 31,
+   "tenant_id": 3,
+   "global": false,
+   "underlying": "INDEX",
+   "event_date": "2026-10-27",
+   "start_time": null,
+   "end_time": null,
+   "kind": "EXPIRY",
+   "action": "SIZE_CUT",
+   "size_cut_pct": null,
+   "description": "Monthly expiry",
+   "created_at": "2026-10-15T10:00:00"
+  },
+  {
+   "id": 32,
+   "tenant_id": 3,
+   "global": false,
+   "underlying": "RELIANCE",
+   "event_date": "2026-10-23",
+   "start_time": "09:15",
+   "end_time": "11:00",
+   "kind": "RESULTS",
+   "action": "BLOCK",
+   "size_cut_pct": null,
+   "description": "Quarterly results",
+   "created_at": "2026-10-15T10:00:00"
+  }
+ ],
+ "risk_limits": [
+  {
+   "id": 41,
+   "tenant_id": 3,
+   "scope": "TENANT",
+   "scope_id": "",
+   "limit_type": "MAX_DAILY_LOSS",
+   "limit_value": 15000,
+   "enabled": true,
+   "note": null,
+   "created_by": 7,
+   "updated_at": "2026-10-10T10:00:00"
+  },
+  {
+   "id": 42,
+   "tenant_id": 3,
+   "scope": "INSTRUMENT",
+   "scope_id": "RELIANCE",
+   "limit_type": "MAX_ORDER_VALUE",
+   "limit_value": 200000,
+   "enabled": true,
+   "note": null,
+   "created_by": 7,
+   "updated_at": "2026-10-10T10:00:00"
+  },
+  {
+   "id": 43,
+   "tenant_id": null,
+   "scope": "GLOBAL",
+   "scope_id": "",
+   "limit_type": "MAX_OPEN_POSITIONS",
+   "limit_value": 20,
+   "enabled": true,
+   "note": null,
+   "created_by": null,
+   "updated_at": "2026-10-01T10:00:00"
+  }
+ ],
+ "risk_events": [
+  {
+   "id": 501,
+   "created_at": "2026-10-19T04:20:00",
+   "strategy_id": "demo_swing",
+   "symbol": "RELIANCE",
+   "account_id": null,
+   "rule_type": "MAX_ORDER_VALUE",
+   "scope": "INSTRUMENT",
+   "current_value": 74000,
+   "limit_value": 200000,
+   "severity": "INFO",
+   "action": "ALLOW",
+   "status": "PASS",
+   "reason": "Order value 74,000 is within the 2,00,000 limit.",
+   "order_id": 88
+  },
+  {
+   "id": 502,
+   "created_at": "2026-10-19T04:05:00",
+   "strategy_id": "orb_nifty",
+   "symbol": "NIFTY 24800 CE",
+   "account_id": null,
+   "rule_type": "MAX_OPEN_POSITIONS",
+   "scope": "TENANT",
+   "current_value": 3,
+   "limit_value": 4,
+   "severity": "WARN",
+   "action": "WARN",
+   "status": "WARN",
+   "reason": "Open positions would be 3 of 4 after this order.",
+   "order_id": 87
+  }
+ ]
+}

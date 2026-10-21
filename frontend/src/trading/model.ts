@@ -329,7 +329,7 @@ export function guardianLine(mode: "PAPER" | "LIVE", m: GuardianModeStatus): Gua
     `Risk at the stops ${formatINR(m.open_risk_total, { compact: true })} (${formatNumber(m.open_risk_pct, 1)}% of capital; the cap is ${formatINR(m.portfolio_cap, { compact: true })})`,
   ];
   const buckets = Object.entries(m.open_risk_by_bucket ?? {});
-  if (buckets.length) detail.push(`By group: ${buckets.map(([b, v]) => `${humanise(b.toLowerCase())} ${formatINR(v, { compact: true })}`).join(" · ")}`);
+  if (buckets.length) detail.push(`By group: ${buckets.map(([b, v]) => `${b.toUpperCase() === "INDEX" ? "Indices" : b} ${formatINR(v, { compact: true })}`).join(" · ")}`);
   if (m.cooldowns.length) detail.push(`Waiting after a stop-out: ${m.cooldowns.map((c) => `${c.underlying} (${c.minutes_left} min left)`).join(", ")}`);
   return { mode: mode === "LIVE" ? "Live" : "Paper", state, tone: m.state === "normal" ? "neutral" : "warn", detail };
 }

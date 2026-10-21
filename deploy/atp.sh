@@ -190,7 +190,9 @@ rdc() { printf '    + docker compose %s\n' "$*"; [ "$DRY_RUN" = "1" ] && return 
 # brings a change is deployed by the previous release's atp.sh, and a run can stop between `up -d` and this step.
 # Certificates stay in the caddy_data volume; the edge is down for about a second.
 caddy_config_current() {
-  dc exec -T caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - "$ATP_DIR/deploy/$(env_get CADDYFILE | grep . || echo Caddyfile)"
+  local want; want="$ATP_DIR/deploy/$(env_get CADDYFILE | grep . || echo Caddyfile)"
+  [ -f "$want" ] || return 0                       # nothing to compare with (compose itself would refuse to start)
+  dc exec -T caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - "$want"
 }
 refresh_edge() {
   [ -n "$(dc ps -q caddy 2>/dev/null || true)" ] || return 0             # not running: `up -d` creates it from the file

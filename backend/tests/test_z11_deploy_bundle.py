@@ -850,28 +850,31 @@ def test_caddy_is_recreated_whenever_it_runs_another_caddyfile_than_the_checkout
     then health fails."""
     def recreations(since):
         return [c["argv"] for c in host.state["calls"][since:] if "--force-recreate" in c["argv"]]
-    assert host.run("deploy", host.sha_a).returncode == 0
-    before = len(host.state["calls"])
-    assert host.run("deploy", host.sha_b).returncode == 0                                 # same Caddyfile: left alone
-    assert recreations(before) == []
+
+    def release(text, message):
+        (host.work / "deploy" / "Caddyfile.ip").write_text(text)
+        _git(host.work, "add", "-A"); _git(host.work, "commit", "-q", "-m", message)
+        sha = _git(host.work, "rev-parse", "HEAD"); _git(host.work, "push", "-q", "origin", "main")
+        host.state["heads"][sha[:12]] = "rev1"; host.save()
+        return sha
     _git(host.work, "checkout", "-q", "main")
-    (host.work / "deploy" / "Caddyfile.ip").write_text("www.{$DOMAIN} {\n\tredir https://{$DOMAIN}{uri} permanent\n}\n")
-    _git(host.work, "add", "-A"); _git(host.work, "commit", "-q", "-m", "release C: www")
-    sha_c = _git(host.work, "rev-parse", "HEAD"); _git(host.work, "push", "-q", "origin", "main")
-    host.state["heads"][sha_c[:12]] = "rev1"; host.save()
+    sha_c = release("https://{$DOMAIN} {\n\ttls internal\n}\n", "release C")
+    sha_d = release("www.{$DOMAIN} {\n\tredir https://{$DOMAIN}{uri} permanent\n}\n", "release D: www")
+    assert host.run("deploy", sha_c).returncode == 0                                     # first deploy: created from the file
     before = len(host.state["calls"])
-    res = host.run("deploy", sha_c)
+    assert host.run("deploy", sha_c).returncode == 0 and recreations(before) == []       # unchanged: left alone
+    res = host.run("deploy", sha_d)
     assert res.returncode == 0, res.all
     assert recreations(before) and recreations(before)[0][-1] == "caddy" and "recreating it so it reads this one" in res.stdout
     host.state["caddy_conf"] = "an older file\n"; host.save()                           # e.g. deployed by an older atp.sh
     res = host.run("health")
     assert res.returncode == 1 and "caddy runs an older Caddyfile than deploy/Caddyfile.ip" in res.stdout
     before = len(host.state["calls"])
-    res = host.run("deploy", sha_c)                                                      # a converge repairs it
+    res = host.run("deploy", sha_d)                                                      # a converge repairs it
     assert res.returncode == 0 and recreations(before), res.all
     assert host.run("health").returncode == 0
     before = len(host.state["calls"])
-    res = host.run("rollback")                                                           # back to B: the old file again
+    res = host.run("rollback")                                                           # back to C: its file again
     assert res.returncode == 0 and recreations(before), res.all
 
 

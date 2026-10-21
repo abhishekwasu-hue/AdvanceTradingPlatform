@@ -13,6 +13,10 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const matches = (found: { match: string }[]) => found.map((f) => f.match);
 
 /** Mobile B1: the app's configuration lint (scripts/check-mobile-config.mjs; frontend CI job and android.yml). */
+// These tests start the checker as its own Node process (5 runs in one test). Under a loaded CI runner or a full
+// parallel `vitest run`, that can take longer than vitest's 5 s default even though each run is fast alone.
+const SPAWN_TIMEOUT_MS = 30_000;
+
 describe("check-mobile-config", () => {
   it("finds quoted /api/ literals, not comments or other paths", () => {
     expect(matches(findApiLiterals(`const a = "/api/v1/x";`))).toEqual([`"/api/v1/x`]);
@@ -117,7 +121,7 @@ describe("check-mobile-config", () => {
     expect(run.stderr).toBe("");
     expect(run.status).toBe(0);
     expect(run.stdout).toMatch(/debug build, package tech\.aialgodesk\.app, API https:\/\/atp-not-configured\.invalid; 0 problem/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it("passes a release build with the final id on the production domain; fails a debug build pointed at a server", () => {
     const run = (extra: Record<string, string>) =>
@@ -138,7 +142,7 @@ describe("check-mobile-config", () => {
     const ip = run({ ATP_ANDROID_BUILD: "internal", VITE_API_BASE_URL: "https://203.0.113.10" });
     expect(ip.status).toBe(1);
     expect(ip.stderr).toMatch(/IP address/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 
   it("checks the ATP_APP_DOMAIN variable when it is set: a host name, never an IP or a URL", () => {
     const run = (domain: string) => spawnSync(process.execPath, [join(root, "scripts", "check-mobile-config.mjs")],
@@ -150,5 +154,5 @@ describe("check-mobile-config", () => {
     const url = run("http://atp.example.com");
     expect(url.status).toBe(1);
     expect(url.stderr).toMatch(/host name only/);
-  });
+  }, SPAWN_TIMEOUT_MS);
 });

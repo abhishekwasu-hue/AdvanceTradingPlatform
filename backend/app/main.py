@@ -34,6 +34,7 @@ from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, Opt
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
+from app.brokers.connect import router as broker_connect_router
 from app.live.routes import router as live_router
 from app.cache.client import cache_get, cache_set
 from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
@@ -111,6 +112,7 @@ from app.market_lake.import_routes import intraday_router as history_intraday_ad
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
+from app.option_chain.analyses_routes import router as oc_analyses_router
 from app.platform.readiness_routes import router as readiness_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
@@ -223,6 +225,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(broker_router)
+app.include_router(broker_connect_router)   # P2a: simple broker connect (catalog, connections, connect, renew)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
 app.include_router(journal_router)  # Z6 / P1-e: journal, behaviour tags, discipline score (flag discipline_engine, off)
@@ -272,6 +275,7 @@ app.include_router(history_import_admin_router)  # HB0: R2 history import progre
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
 app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
+app.include_router(oc_analyses_router)     # OC2: the built-in option chain analyses, read-only (flag ui_v2, off)
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)

@@ -111,6 +111,7 @@ from app.market_lake.import_routes import intraday_router as history_intraday_ad
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
+from app.option_chain.analyses_routes import router as oc_analyses_router
 from app.platform.readiness_routes import router as readiness_router
 from app.billing.routes import admin_router as billing_admin_router, router as billing_router, webhook_router as billing_webhook_router
 from app.billing.service import meter
@@ -273,6 +274,7 @@ app.include_router(history_import_admin_router)  # HB0: R2 history import progre
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
 app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
+app.include_router(oc_analyses_router)     # OC2: the built-in option chain analyses, read-only (flag ui_v2, off)
 app.include_router(readiness_router)       # Phase AB: go-live checklist
 app.include_router(system_status_router)
 app.include_router(controls_admin_router)

@@ -1,0 +1,670 @@
+{
+ "_note": "OC1: hand-made option chain for the browser tests - round, made-up numbers, not market data.",
+ "expiries": {
+  "underlying": "NIFTY",
+  "today": "2026-10-27",
+  "source": "master",
+  "default": "2026-11-03",
+  "expiries": [
+   {
+    "date": "2026-10-27",
+    "kind": "monthly"
+   },
+   {
+    "date": "2026-11-03",
+    "kind": "weekly"
+   },
+   {
+    "date": "2026-11-10",
+    "kind": "weekly"
+   },
+   {
+    "date": "2026-11-17",
+    "kind": "weekly"
+   },
+   {
+    "date": "2026-11-24",
+    "kind": "monthly"
+   }
+  ]
+ },
+ "live": {
+  "underlying": "NIFTY",
+  "expiry": "2026-11-03",
+  "fetched_at": "2026-10-27T05:00:00+00:00",
+  "market_open": true,
+  "oi_change": {
+   "status": "ready",
+   "source": "broker",
+   "since": null
+  },
+  "summary": {
+   "spot": 24480.0,
+   "futures": {
+    "symbol": "NIFTY FUT 24 NOV 26",
+    "expiry": "2026-11-24",
+    "ltp": 24531.5
+   },
+   "atm_strike": 24500,
+   "pcr_oi": 0.9077134986225895,
+   "max_pain": 24500,
+   "atm_iv": 12.0,
+   "days_to_expiry": 7,
+   "max_call_oi_strike": 25000,
+   "max_put_oi_strike": 24100,
+   "total_call_oi": 7260000.0,
+   "total_put_oi": 6590000.0
+  },
+  "rows": [
+   {
+    "strike": 23500,
+    "call": {
+     "oi": 50000,
+     "oi_change": -24000,
+     "ltp": 990.0,
+     "iv": 14.5,
+     "volume": 50000,
+     "bid": 989.5,
+     "ask": 990.5,
+     "delta": 0.98,
+     "gamma": 0.0005,
+     "theta": -4.0,
+     "vega": 5.0
+    },
+    "put": {
+     "oi": 310000.0,
+     "oi_change": -10000,
+     "ltp": 10.0,
+     "iv": 14.5,
+     "volume": 40000,
+     "bid": 9.5,
+     "ask": 10.5,
+     "delta": -0.02,
+     "gamma": 0.0005,
+     "theta": -4.0,
+     "vega": 5.0
+    }
+   },
+   {
+    "strike": 23600,
+    "call": {
+     "oi": 50000,
+     "oi_change": -21000,
+     "ltp": 904.0,
+     "iv": 14.25,
+     "volume": 53000,
+     "bid": 903.5,
+     "ask": 904.5,
+     "delta": 0.98,
+     "gamma": 0.0006,
+     "theta": -4.8,
+     "vega": 5.9
+    },
+    "put": {
+     "oi": 350000.0,
+     "oi_change": -7500,
+     "ltp": 24.0,
+     "iv": 14.25,
+     "volume": 43000,
+     "bid": 23.5,
+     "ask": 24.5,
+     "delta": -0.02,
+     "gamma": 0.0006,
+     "theta": -4.8,
+     "vega": 5.9
+    }
+   },
+   {
+    "strike": 23700,
+    "call": {
+     "oi": 80000.0,
+     "oi_change": -18000,
+     "ltp": 818.0,
+     "iv": 14.0,
+     "volume": 56000,
+     "bid": 817.5,
+     "ask": 818.5,
+     "delta": 0.98,
+     "gamma": 0.0007,
+     "theta": -5.6,
+     "vega": 6.8
+    },
+    "put": {
+     "oi": 390000.0,
+     "oi_change": -5000,
+     "ltp": 38.0,
+     "iv": 14.0,
+     "volume": 46000,
+     "bid": 37.5,
+     "ask": 38.5,
+     "delta": -0.02,
+     "gamma": 0.0007,
+     "theta": -5.6,
+     "vega": 6.8
+    }
+   },
+   {
+    "strike": 23800,
+    "call": {
+     "oi": 120000.0,
+     "oi_change": -15000,
+     "ltp": 732.0,
+     "iv": 13.75,
+     "volume": 59000,
+     "bid": 731.5,
+     "ask": 732.5,
+     "delta": 0.98,
+     "gamma": 0.0008,
+     "theta": -6.4,
+     "vega": 7.7
+    },
+    "put": {
+     "oi": 430000.0,
+     "oi_change": -2500,
+     "ltp": 52.0,
+     "iv": 13.75,
+     "volume": 49000,
+     "bid": 51.5,
+     "ask": 52.5,
+     "delta": -0.02,
+     "gamma": 0.0008,
+     "theta": -6.4,
+     "vega": 7.7
+    }
+   },
+   {
+    "strike": 23900,
+    "call": {
+     "oi": 160000.0,
+     "oi_change": -12000,
+     "ltp": 646.0,
+     "iv": 13.5,
+     "volume": 62000,
+     "bid": 645.5,
+     "ask": 646.5,
+     "delta": 0.98,
+     "gamma": 0.0009,
+     "theta": -7.2,
+     "vega": 8.6
+    },
+    "put": {
+     "oi": 470000.0,
+     "oi_change": 0,
+     "ltp": 66.0,
+     "iv": 13.5,
+     "volume": 52000,
+     "bid": 65.5,
+     "ask": 66.5,
+     "delta": -0.02,
+     "gamma": 0.0009,
+     "theta": -7.2,
+     "vega": 8.6
+    }
+   },
+   {
+    "strike": 24000,
+    "call": {
+     "oi": 200000.0,
+     "oi_change": -9000,
+     "ltp": 560.0,
+     "iv": 13.25,
+     "volume": 65000,
+     "bid": 559.5,
+     "ask": 560.5,
+     "delta": 0.9,
+     "gamma": 0.001,
+     "theta": -8.0,
+     "vega": 9.5
+    },
+    "put": {
+     "oi": 510000.0,
+     "oi_change": 2500,
+     "ltp": 80.0,
+     "iv": 13.25,
+     "volume": 55000,
+     "bid": 79.5,
+     "ask": 80.5,
+     "delta": -0.1,
+     "gamma": 0.001,
+     "theta": -8.0,
+     "vega": 9.5
+    }
+   },
+   {
+    "strike": 24100,
+    "call": {
+     "oi": 240000.0,
+     "oi_change": -6000,
+     "ltp": 474.0,
+     "iv": 13.0,
+     "volume": 68000,
+     "bid": 473.5,
+     "ask": 474.5,
+     "delta": 0.82,
+     "gamma": 0.0011,
+     "theta": -8.8,
+     "vega": 10.4
+    },
+    "put": {
+     "oi": 550000.0,
+     "oi_change": 5000,
+     "ltp": 94.0,
+     "iv": 13.0,
+     "volume": 58000,
+     "bid": 93.5,
+     "ask": 94.5,
+     "delta": -0.18,
+     "gamma": 0.0011,
+     "theta": -8.8,
+     "vega": 10.4
+    }
+   },
+   {
+    "strike": 24200,
+    "call": {
+     "oi": 280000.0,
+     "oi_change": -3000,
+     "ltp": 388.0,
+     "iv": 12.75,
+     "volume": 71000,
+     "bid": 387.5,
+     "ask": 388.5,
+     "delta": 0.74,
+     "gamma": 0.0012,
+     "theta": -9.6,
+     "vega": 11.3
+    },
+    "put": {
+     "oi": 510000.0,
+     "oi_change": 7500,
+     "ltp": 108.0,
+     "iv": 12.75,
+     "volume": 61000,
+     "bid": 107.5,
+     "ask": 108.5,
+     "delta": -0.26,
+     "gamma": 0.0012,
+     "theta": -9.6,
+     "vega": 11.3
+    }
+   },
+   {
+    "strike": 24300,
+    "call": {
+     "oi": 320000.0,
+     "oi_change": 0,
+     "ltp": 302.0,
+     "iv": 12.5,
+     "volume": 74000,
+     "bid": 301.5,
+     "ask": 302.5,
+     "delta": 0.66,
+     "gamma": 0.0013,
+     "theta": -10.4,
+     "vega": 12.2
+    },
+    "put": {
+     "oi": 470000.0,
+     "oi_change": 10000,
+     "ltp": 122.0,
+     "iv": 12.5,
+     "volume": 64000,
+     "bid": 121.5,
+     "ask": 122.5,
+     "delta": -0.34,
+     "gamma": 0.0013,
+     "theta": -10.4,
+     "vega": 12.2
+    }
+   },
+   {
+    "strike": 24400,
+    "call": {
+     "oi": 360000.0,
+     "oi_change": 3000,
+     "ltp": 216.0,
+     "iv": 12.25,
+     "volume": 77000,
+     "bid": 215.5,
+     "ask": 216.5,
+     "delta": 0.58,
+     "gamma": 0.0014,
+     "theta": -11.2,
+     "vega": 13.1
+    },
+    "put": {
+     "oi": 430000.0,
+     "oi_change": 7500,
+     "ltp": 136.0,
+     "iv": 12.25,
+     "volume": 67000,
+     "bid": 135.5,
+     "ask": 136.5,
+     "delta": -0.42,
+     "gamma": 0.0014,
+     "theta": -11.2,
+     "vega": 13.1
+    }
+   },
+   {
+    "strike": 24500,
+    "call": {
+     "oi": 400000.0,
+     "oi_change": 6000,
+     "ltp": 150.0,
+     "iv": 12.0,
+     "volume": 80000,
+     "bid": 149.5,
+     "ask": 150.5,
+     "delta": 0.5,
+     "gamma": 0.0015,
+     "theta": -12.0,
+     "vega": 14.0
+    },
+    "put": {
+     "oi": 390000.0,
+     "oi_change": 5000,
+     "ltp": 170.0,
+     "iv": 12.0,
+     "volume": 70000,
+     "bid": 169.5,
+     "ask": 170.5,
+     "delta": -0.5,
+     "gamma": 0.0015,
+     "theta": -12.0,
+     "vega": 14.0
+    }
+   },
+   {
+    "strike": 24600,
+    "call": {
+     "oi": 440000.0,
+     "oi_change": 9000,
+     "ltp": 136.0,
+     "iv": 12.25,
+     "volume": 77000,
+     "bid": 135.5,
+     "ask": 136.5,
+     "delta": 0.42,
+     "gamma": 0.0014,
+     "theta": -11.2,
+     "vega": 13.1
+    },
+    "put": {
+     "oi": 350000.0,
+     "oi_change": 2500,
+     "ltp": 256.0,
+     "iv": 12.25,
+     "volume": 67000,
+     "bid": 255.5,
+     "ask": 256.5,
+     "delta": -0.58,
+     "gamma": 0.0014,
+     "theta": -11.2,
+     "vega": 13.1
+    }
+   },
+   {
+    "strike": 24700,
+    "call": {
+     "oi": 480000.0,
+     "oi_change": 12000,
+     "ltp": 122.0,
+     "iv": 12.5,
+     "volume": 74000,
+     "bid": 121.5,
+     "ask": 122.5,
+     "delta": 0.34,
+     "gamma": 0.0013,
+     "theta": -10.4,
+     "vega": 12.2
+    },
+    "put": {
+     "oi": 310000.0,
+     "oi_change": 0,
+     "ltp": 342.0,
+     "iv": 12.5,
+     "volume": 64000,
+     "bid": 341.5,
+     "ask": 342.5,
+     "delta": -0.66,
+     "gamma": 0.0013,
+     "theta": -10.4,
+     "vega": 12.2
+    }
+   },
+   {
+    "strike": 24800,
+    "call": {
+     "oi": 520000.0,
+     "oi_change": 15000,
+     "ltp": 108.0,
+     "iv": 12.75,
+     "volume": 71000,
+     "bid": 107.5,
+     "ask": 108.5,
+     "delta": 0.26,
+     "gamma": 0.0012,
+     "theta": -9.6,
+     "vega": 11.3
+    },
+    "put": {
+     "oi": 270000.0,
+     "oi_change": -2500,
+     "ltp": 428.0,
+     "iv": 12.75,
+     "volume": 61000,
+     "bid": 427.5,
+     "ask": 428.5,
+     "delta": -0.74,
+     "gamma": 0.0012,
+     "theta": -9.6,
+     "vega": 11.3
+    }
+   },
+   {
+    "strike": 24900,
+    "call": {
+     "oi": 560000.0,
+     "oi_change": 12000,
+     "ltp": 94.0,
+     "iv": 13.0,
+     "volume": 68000,
+     "bid": 93.5,
+     "ask": 94.5,
+     "delta": 0.18,
+     "gamma": 0.0011,
+     "theta": -8.8,
+     "vega": 10.4
+    },
+    "put": {
+     "oi": 230000.0,
+     "oi_change": -5000,
+     "ltp": 514.0,
+     "iv": 13.0,
+     "volume": 58000,
+     "bid": 513.5,
+     "ask": 514.5,
+     "delta": -0.82,
+     "gamma": 0.0011,
+     "theta": -8.8,
+     "vega": 10.4
+    }
+   },
+   {
+    "strike": 25000,
+    "call": {
+     "oi": 600000.0,
+     "oi_change": 9000,
+     "ltp": 80.0,
+     "iv": 13.25,
+     "volume": 65000,
+     "bid": 79.5,
+     "ask": 80.5,
+     "delta": 0.1,
+     "gamma": 0.001,
+     "theta": -8.0,
+     "vega": 9.5
+    },
+    "put": {
+     "oi": 190000.0,
+     "oi_change": -7500,
+     "ltp": 600.0,
+     "iv": 13.25,
+     "volume": 55000,
+     "bid": 599.5,
+     "ask": 600.5,
+     "delta": -0.9,
+     "gamma": 0.001,
+     "theta": -8.0,
+     "vega": 9.5
+    }
+   },
+   {
+    "strike": 25100,
+    "call": {
+     "oi": 560000.0,
+     "oi_change": 6000,
+     "ltp": 66.0,
+     "iv": 13.5,
+     "volume": 62000,
+     "bid": 65.5,
+     "ask": 66.5,
+     "delta": 0.02,
+     "gamma": 0.0009,
+     "theta": -7.2,
+     "vega": 8.6
+    },
+    "put": {
+     "oi": 150000.0,
+     "oi_change": -10000,
+     "ltp": 686.0,
+     "iv": 13.5,
+     "volume": 52000,
+     "bid": 685.5,
+     "ask": 686.5,
+     "delta": -0.98,
+     "gamma": 0.0009,
+     "theta": -7.2,
+     "vega": 8.6
+    }
+   },
+   {
+    "strike": 25200,
+    "call": {
+     "oi": 520000.0,
+     "oi_change": 3000,
+     "ltp": 52.0,
+     "iv": 13.75,
+     "volume": 59000,
+     "bid": 51.5,
+     "ask": 52.5,
+     "delta": 0.02,
+     "gamma": 0.0008,
+     "theta": -6.4,
+     "vega": 7.7
+    },
+    "put": {
+     "oi": 110000.0,
+     "oi_change": -12500,
+     "ltp": 772.0,
+     "iv": 13.75,
+     "volume": 49000,
+     "bid": 771.5,
+     "ask": 772.5,
+     "delta": -0.98,
+     "gamma": 0.0008,
+     "theta": -6.4,
+     "vega": 7.7
+    }
+   },
+   {
+    "strike": 25300,
+    "call": {
+     "oi": 480000.0,
+     "oi_change": 0,
+     "ltp": 38.0,
+     "iv": 14.0,
+     "volume": 56000,
+     "bid": 37.5,
+     "ask": 38.5,
+     "delta": 0.02,
+     "gamma": 0.0007,
+     "theta": -5.6,
+     "vega": 6.8
+    },
+    "put": {
+     "oi": 70000.0,
+     "oi_change": -15000,
+     "ltp": 858.0,
+     "iv": 14.0,
+     "volume": 46000,
+     "bid": 857.5,
+     "ask": 858.5,
+     "delta": -0.98,
+     "gamma": 0.0007,
+     "theta": -5.6,
+     "vega": 6.8
+    }
+   },
+   {
+    "strike": 25400,
+    "call": {
+     "oi": 440000.0,
+     "oi_change": -3000,
+     "ltp": 24.0,
+     "iv": 14.25,
+     "volume": 53000,
+     "bid": 23.5,
+     "ask": 24.5,
+     "delta": 0.02,
+     "gamma": 0.0006,
+     "theta": -4.8,
+     "vega": 5.9
+    },
+    "put": {
+     "oi": 50000,
+     "oi_change": -17500,
+     "ltp": 944.0,
+     "iv": 14.25,
+     "volume": 43000,
+     "bid": 943.5,
+     "ask": 944.5,
+     "delta": -0.98,
+     "gamma": 0.0006,
+     "theta": -4.8,
+     "vega": 5.9
+    }
+   },
+   {
+    "strike": 25500,
+    "call": {
+     "oi": 400000.0,
+     "oi_change": -6000,
+     "ltp": 10.0,
+     "iv": 14.5,
+     "volume": 50000,
+     "bid": 9.5,
+     "ask": 10.5,
+     "delta": 0.02,
+     "gamma": 0.0005,
+     "theta": -4.0,
+     "vega": 5.0
+    },
+    "put": {
+     "oi": 50000,
+     "oi_change": -20000,
+     "ltp": 1030.0,
+     "iv": 14.5,
+     "volume": 40000,
+     "bid": 1029.5,
+     "ask": 1030.5,
+     "delta": -0.98,
+     "gamma": 0.0005,
+     "theta": -4.0,
+     "vega": 5.0
+    }
+   }
+  ]
+ }
+}

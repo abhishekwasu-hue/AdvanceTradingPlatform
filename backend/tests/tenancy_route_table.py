@@ -272,6 +272,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/billing/usage"): "member",
     ("POST", "/api/billing/webhooks/razorpay"): P_PAYMENT_WEBHOOK,
     ("GET", "/api/broker/available"): P_BROKER_CATALOGUE,
+    ("GET", "/api/broker/catalog"): "member",
+    ("GET", "/api/broker/connections"): "member",
+    ("POST", "/api/broker/{broker}/connect"): "trader",
+    ("POST", "/api/broker/{broker}/renew"): "trader",
     ("GET", "/api/broker/credentials"): "member",
     ("GET", "/api/broker/token-status"): "member",
     ("GET", "/api/broker/upstox/oauth/callback"): P_OAUTH_CALLBACK,
@@ -459,7 +463,15 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/notifications/read-all"): S_READ_MARKS,
     ("POST", "/api/notifications/{notification_id}/read"): S_READ_MARKS,
     ("POST", "/api/option-chain/analyze"): S_COMPUTE,
+    ("GET", "/api/option-chain/analyses"): ("member: the six option chain analyses from the organisation's broker session (or, with "
+                                            "the own-broker tier on, the caller's own) plus shared collector snapshots; stores only the "
+                                            "usage count (OC2, flag ui_v2)"),
+    # OC3 (flag ui_v2): the caller's question -> an analysis spec evaluated on the option chain read through a broker session
+    ("POST", "/api/option-chain/ask"): ("self: an Ask AI read for the caller - the AI writes an analysis spec, the server evaluates it on "
+                                        "the option chain; stores only the metered AI call and an audit row; no order (rate limited)"),
     ("GET", "/api/option-chain/banners"): "member",
+    ("POST", "/api/option-chain/eval"): ("self: evaluates the caller's own analysis spec on the option chain read through a broker "
+                                         "session; no AI, stores nothing (rate limited)"),
     ("POST", "/api/option-chain/greeks"): S_COMPUTE,
     ("GET", "/api/option-chain/{underlying}/alerts"): "member",
     ("POST", "/api/option-chain/{underlying}/alerts/mute-today"): "trader",
@@ -467,6 +479,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/option-chain/{underlying}/alerts/snooze"): "trader",
     ("POST", "/api/option-chain/{underlying}/alerts/test"): "trader",
     ("GET", "/api/option-chain/{underlying}/banner"): "member",
+    ("GET", "/api/option-chain/{underlying}/expiries"): "member",
+    ("GET", "/api/option-chain/{underlying}/live"): "member",
     ("GET", "/api/option-chain/{underlying}/history"): "member",
     ("GET", "/api/option-chain/{underlying}/settings"): "member",
     ("PUT", "/api/option-chain/{underlying}/settings"): "owner",

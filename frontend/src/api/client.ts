@@ -155,6 +155,9 @@ import type {
   NewsFeedSource,
   NewsFeedStatus,
   BrokerLoginUrl,
+  BrokerCatalogEntry,
+  BrokerConnection,
+  BrokerConnectResult,
   AiAcknowledgement,
   StaticIp,
   StaticIpOverview,
@@ -168,6 +171,7 @@ import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
 import type { MarketStrip } from "../dashboard/types";
+import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
 export { ApiError, friendlyError } from "./errors";
 
@@ -413,6 +417,11 @@ export const api = {
   saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
     request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),
 
+  // OC1: the automatic Option chain page (v2): the expiry list with its default, and one chain ready to show.
+  optionChainExpiries: (underlying: string) => request<ChainExpiries>(`/option-chain/${encodeURIComponent(underlying)}/expiries`),
+  optionChainLive: (underlying: string, expiry?: string | null) =>
+    request<LiveChain>(`/option-chain/${encodeURIComponent(underlying)}/live${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
+
   analyzeOptionChain: (chain: OptionChain) =>
     request<OptionChainAnalysis>("/option-chain/analyze", {
       method: "POST",
@@ -598,6 +607,19 @@ export const api = {
 
   storeBrokerCredentials: (name: string, credentials: BrokerCredentialsInput, accountLabel = "primary") =>
     request<void>(`/broker/${name}/credentials?account_label=${encodeURIComponent(accountLabel)}`, { method: "POST", body: JSON.stringify(credentials) }),
+
+  // P2b: the Broker page. The catalog says which 1-2 fields each broker needs and where to find them; connections
+  // are this organisation's brokers with one plain status each. Remove uses deleteBrokerCredentials below.
+  brokerCatalog: () => request<BrokerCatalogEntry[]>("/broker/catalog"),
+  brokerConnections: () => request<BrokerConnection[]>("/broker/connections"),
+  brokerConnect: (name: string, fields: Record<string, string>, accountLabel?: string) =>
+    request<BrokerConnectResult>(`/broker/${encodeURIComponent(name)}/connect`, {
+      method: "POST", body: JSON.stringify(accountLabel ? { fields, account_label: accountLabel } : { fields }),
+    }),
+  brokerRenew: (name: string, fields: Record<string, string>, accountLabel?: string) =>
+    request<BrokerConnectResult>(`/broker/${encodeURIComponent(name)}/renew`, {
+      method: "POST", body: JSON.stringify(accountLabel ? { fields, account_label: accountLabel } : { fields }),
+    }),
 
   listAccounts: () => request<BrokerAccount[]>("/accounts"),
   syncAccount: (id: number) => request<BrokerAccount>(`/accounts/${id}/sync`, { method: "POST" }),

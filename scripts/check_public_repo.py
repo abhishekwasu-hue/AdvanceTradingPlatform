@@ -154,6 +154,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/copilot_reply.json": "9d0013cced7fe29e99d3c2c25e231d96bee15cbd4960f169194abc1247d77bcd",
     # UI2-2: hand-written, made-up dashboard replies for the v2 dashboard screenshots (frontend/e2e/dashboard-v2.e2e.ts)
     "frontend/e2e/fixtures/dashboard_v2.json": "6e9629add17dd3b9801e2db91a4aebc984b2a00055c5e7b137e93653782a110f",
+    # P2b: P2a's broker catalog (static, public broker names and how-to steps; no account data).
+    "frontend/e2e/fixtures/broker_catalog.json": "075bd516ec146878bbca8bbfcfe3db046527510c7a080f44f71e58eb387eeb20",
     "frontend/e2e/fixtures/drafts.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "frontend/e2e/fixtures/interview_plan.json": "3b582f587c25dfe0f99ab25fafb34f77d458e1910cbaba5747c964997fbdb42c",
     "frontend/e2e/fixtures/interview_start.json": "b702f8734442fd26183eb52ae508de6e55edfc0df57ee406c75776cc1ecc4453",
@@ -162,6 +164,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/news_items.json": "81d5a6eb8342a64eb397baac6de4f1378c54707f78e57380e5f87b28b3d9f7ee",
     "frontend/e2e/fixtures/news_status.json": "be5ac693f289f43bc2bfeb790c22a9390a985a0715f8193670de81c64245e7bd",
     "frontend/e2e/fixtures/notifications.json": "be5ded0116ca5c0f8f71caa2170c75eba590783ad737fdd99d14db74c4af4faa",
+    "frontend/e2e/fixtures/option_chain_v2.json": "c37438deaa26205fcc03016050fae76b6e181a2f9911587e4ac51d81e2a98848",
     "frontend/e2e/fixtures/options_builder.json": "bf6df3ea9f5caddb5e3acc1d2f8360875a3cd72550f194156b21266fd550e1f0",
     "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
     "frontend/e2e/fixtures/setup_v2.json": "cff0561b071bfa9bfb79e7e4b85029ddc0cbb3f395a64cd7d0c209aebdd419e7",

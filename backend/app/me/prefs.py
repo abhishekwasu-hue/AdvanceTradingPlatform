@@ -8,6 +8,9 @@
 * Namespaces are an allow-list (NAMESPACES). `chart` is the first; `setup` (UI2-7, UI-8) holds the setup wizard's own
   marks - skips, the chip's dismissal, the first automatic opening - and (P3) the Dashboard's Get started card's marks.
   Whether a step is done is never stored: app/me/setup.py works it out on every read from the rows that prove it.
+  `oc_analyses` (OC3) holds the user's saved Option chain analyses ("My analyses"): a name and a validated analysis spec
+  each (app/option_chain/ask_spec.py), at most MAX_SAVED_ANALYSES, sized so the most a user can save stays inside
+  MAX_BODY_BYTES (no table, no migration).
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -19,7 +22,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Annotated, Any, Dict, Literal, Optional, Tuple, Type
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,6 +30,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.db.models import User, UserPrefsRecord
 from app.db.session import get_session
+from app.option_chain.ask_spec import AnalysisSpec
 
 MAX_BODY_BYTES = 16 * 1024
 HEX = r"^#[0-9a-fA-F]{6}$"
@@ -105,7 +109,31 @@ class SetupPrefs(_Prefs):
     get_started_shown_at: MarkTime = Field(default=None, description="the Get started card was brought back from Help with every step done")
 
 
-NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs}
+MAX_SAVED_ANALYSES = 8
+ANALYSIS_ID = r"^[a-z0-9]{4,16}$"
+ANALYSIS_NAME = r"^[A-Za-z0-9][A-Za-z0-9 %()+\-/.,:<>=]{0,39}$"
+
+
+class SavedAnalysis(_Prefs):
+    """One saved analysis: the user's own name for the tab and the spec, validated exactly as `/api/option-chain/eval`
+    validates it (an expression outside the whitelist is refused here too)."""
+    name: str = Field(pattern=ANALYSIS_NAME, max_length=40)
+    spec: AnalysisSpec
+    saved_at: MarkTime = Field(default=None)
+
+
+class OcAnalysesPrefs(_Prefs):
+    """`oc_analyses` (OC3): the user's saved Option chain analyses, by id in tab order. Evaluating one costs no AI."""
+    items: Dict[Annotated[str, StringConstraints(pattern=ANALYSIS_ID)], SavedAnalysis] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _at_most(self) -> "OcAnalysesPrefs":
+        if len(self.items) > MAX_SAVED_ANALYSES:
+            raise ValueError(f"at most {MAX_SAVED_ANALYSES} saved analyses; delete one first")
+        return self
+
+
+NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -238,4 +266,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

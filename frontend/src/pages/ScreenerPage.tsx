@@ -35,7 +35,7 @@ const PREVIEW_DELAY_MS = 900;
 
 function errorText(e: unknown): string {
   if (e instanceof ApiError && e.status === 404) return "The screener is not turned on for this organisation yet.";
-  if (e instanceof ApiError && e.status === 409) return "Connect a broker under Settings > Brokers - the scan reads its bars from there.";
+  if (e instanceof ApiError && e.status === 409) return "Connect a broker on the Broker page - the scan reads its bars from there.";
   return e instanceof Error ? e.message : String(e);
 }
 

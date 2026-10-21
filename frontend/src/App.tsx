@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ThemeToggle } from "./components/AppearanceCard";
 import BottomNav from "./components/BottomNav";
 import ErrorBoundary from "./components/ErrorBoundary";
+import BrokerPromptHost from "./broker/BrokerPromptHost";
 import PwaBanners from "./pwa/PwaBanners";
 import LegalAcceptanceBanner from "./legal/LegalAcceptanceBanner";
 import Sidebar, { NAV, type Page } from "./components/Sidebar";
@@ -206,6 +207,8 @@ function AppShell() {
         </main>
       </div>
       <BottomNav page={page} moreOpen={menuOpen} onMore={() => setMenuOpen((o) => !o)} />
+      {/* P2b: "Connect your broker" right after sign-in while none is connected; a new account opens the Broker page. */}
+      <BrokerPromptHost />
     </div>
   );
 }

@@ -95,7 +95,7 @@ TYPICAL_CALL_TOKENS = {"cheap": (1500, 300), "fast": (3000, 1200), "strong": (60
 TASK_LABELS = {"strategy_generation": "Strategy drafts", "strategist": "Strategist rule proposals", "scanner_plan": "Scanner plans",
                "narration": "Narration", "copilot": "Copilot chat", "knowledge": "Guide answers", "thesis": "Thesis wording",
                "classification": "News classification", "scanner_read": "Scanner reads",
-               "support": "Help desk answers"}
+               "support": "Help desk answers", "option_chain_ask": "Option chain Ask AI"}
 
 
 def task_models(tenant_model: Optional[str] = None, tenant_provider: Optional[str] = None) -> dict:

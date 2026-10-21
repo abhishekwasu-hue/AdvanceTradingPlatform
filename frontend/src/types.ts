@@ -1176,6 +1176,52 @@ export interface BrokerTokenInfo {
   account_label?: string;
 }
 
+/** P2b: the Broker page's contract (GET /api/broker/catalog, GET /api/broker/connections, POST connect / renew). */
+export interface BrokerCatalogField {
+  key: string;
+  label: string;
+  kind: "secret" | "text";
+  placeholder?: string;
+}
+
+export interface BrokerCatalogEntry {
+  broker: string;
+  name: string;
+  /** "analytics_token" (Upstox), "access_token" (Dhan), "login_code" (Zerodha, Fyers), "totp_auto" (Angel One,
+   * Shoonya), "api_key_secret" (CoinDCX). */
+  method: string;
+  fields: BrokerCatalogField[];
+  /** Three short steps: where the trader finds the fields above. */
+  how_to: string[];
+  doc_url: string;
+  /** True when the broker ends the session every day, so the connection needs a daily renewal. */
+  daily_renewal: boolean;
+  available: boolean;
+  /** What POST /renew takes each day: [] is one click (or no daily renewal); `request_token` is the address the
+   * trader lands on after the broker's own login (method "login_code": Zerodha, Fyers). */
+  renew_fields: BrokerCatalogField[];
+}
+
+export type BrokerConnectionStatus = "connected" | "needs_login" | "not_working";
+
+export interface BrokerConnection {
+  broker: string;
+  account_label: string;
+  name: string;
+  status: BrokerConnectionStatus;
+  /** One plain sentence from the server about this connection. */
+  message: string;
+  /** True for a data-only connection (an Upstox analytics token): charts work, nothing to log in to each day. */
+  data_only: boolean;
+  /** True when "Renew" applies to this connection (a broker with a daily login). */
+  renew: boolean;
+}
+
+export interface BrokerConnectResult {
+  status: string;
+  message: string;
+}
+
 /** D2: GET /broker/upstox/redirect-url - the Redirect URL to register on the Upstox developer app, and a flag for each
  * stored Upstox account whose stored Redirect URI differs from it (booleans only, never a stored value). */
 export interface UpstoxRedirectAccount {

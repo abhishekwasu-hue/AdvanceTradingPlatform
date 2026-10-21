@@ -16,7 +16,7 @@ describe("D2 BrokerTokenBanner: the Upstox redirect line", () => {
   it("points to Settings instead of an address the login will not use when the saved one differs", () => {
     const html = renderToStaticMarkup(<RedirectUriNote t={{ ...tokenRow("upstox"), oauth_callback_url: PUBLIC, redirect_uri_mismatch: true }} />);
     expect(html).toContain("data-redirect-mismatch");
-    expect(html).toContain("The saved Redirect URI differs from this site&#x27;s address - see Settings");
+    expect(html).toContain("The saved Redirect URI differs from this site&#x27;s address - see Advanced on the Broker page");
     expect(html).not.toContain(PUBLIC);
     expect(html).not.toMatch(/text-down|bg-down/);                          // neutral, not an error
   });

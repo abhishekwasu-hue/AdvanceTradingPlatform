@@ -84,6 +84,7 @@ from app.decision_tools.routes import router as decision_tools_router
 from app.watchlists.routes import router as watchlists_router
 from app.signals_feed.routes import router as signals_feed_router
 from app.me.prefs import router as me_prefs_router
+from app.option_chain.ask_routes import router as oc_ask_router
 from app.me.setup import router as me_setup_router
 from app.context_panel.routes import router as context_panel_router
 from app.paper.ticket_routes import router as paper_ticket_router
@@ -317,6 +318,7 @@ app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and p
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)
 app.include_router(me_prefs_router)  # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours; per user)
+app.include_router(oc_ask_router)  # OC3: Ask AI on the Option chain + saved analyses' evaluation (flag ui_v2, off)
 app.include_router(me_setup_router)  # UI2-7: the caller's setup wizard progress (stored marks + steps worked out; reads only)
 app.include_router(context_panel_router)   # N2-5: market context panel (flag context_panel)
 app.include_router(paper_ticket_router)    # Z5 / P1-d: plan-before-trade PAPER ticket, risk by default (flag risk_by_default)

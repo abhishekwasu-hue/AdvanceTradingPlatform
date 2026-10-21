@@ -48,8 +48,8 @@ The Android project allows no plain-http traffic (`usesCleartextTraffic="false"`
 self-signed certificates, so the old bare-IP setup with Caddy's internal certificate cannot be reached, by design.
 `capacitor.config.ts` sets no `server.url`, `server.cleartext` or `allowNavigation`.
 
-`ATP_ANDROID_BUILD` and `VITE_API_BASE_URL` are read from the **process environment only** (not from `.env` files),
-so `npm run build:android` and `npx cap sync android` always see the same values.
+`ATP_ANDROID_BUILD`, `VITE_API_BASE_URL` and `ATP_APP_DOMAIN` are read from the **process environment only** (not
+from `.env` files), so `npm run build:android` and `npx cap sync android` always see the same values.
 
 The web build is unchanged: `npm run build` keeps the relative `/api/v1`, ignores both variables, and contains no
 Capacitor code (the native code sits behind the build constant `__ATP_NATIVE__`, which is `false` there).

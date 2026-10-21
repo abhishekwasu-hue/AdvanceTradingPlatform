@@ -348,7 +348,7 @@ You need an Android phone with Chrome, and a PAPER account you can sign in to.
 3. **Open it from the home screen.** Tap the **ATP** icon.
    - Expected: the app opens in its own window with no Chrome address bar, on the dashboard. The Android recent-apps
      view shows it as **ATP**, separate from Chrome.
-   - The More menu's **Install the app** entry now says "The app is installed on this device."
+   - Optional, new layout (ui_v2) only: the More menu no longer shows **Install the app** inside the installed app.
 4. **Turn on notifications.** In the installed app: **Settings → Alert delivery → Push notifications → Enable on this
    device**, read the explanation, press **Continue**, then tap **Allow** when Android asks.
    - Expected: the section lists this device. If Android shows "Notifications are blocked", open the phone's

@@ -17,8 +17,8 @@ import { APP_ID, NATIVE_BUILD_MARKER, resolveNativeBuild } from "./scripts/mobil
  * - Bridge logging and WebView debugging only in a debug build, which can never reach a real server (its API origin is
  *   the `.invalid` placeholder).
  *
- * ATP_ANDROID_BUILD (debug | internal | release) and VITE_API_BASE_URL come from the environment, the same for
- * `npm run build:android` and `npx cap sync android`. A bad combination, or a web build in dist/ made for another
+ * ATP_ANDROID_BUILD (debug | internal | release), VITE_API_BASE_URL and ATP_APP_DOMAIN come from the environment, the
+ * same for `npm run build:android` and `npx cap sync android`. A bad combination, or a web build in dist/ made for another
  * build kind, makes this file throw, so no Capacitor command runs with it.
  */
 const build = resolveNativeBuild(process.env, APP_ID);
@@ -30,7 +30,7 @@ if (existsSync(markerPath)) {
   if (made.kind !== build.kind || made.apiOrigin !== build.apiBase) {
     throw new Error(
       `dist/ was built for a ${made.kind} build against ${made.apiOrigin}, but this is a ${build.kind} build against ` +
-      `${build.apiBase}. Run \`npm run build:android\` with the same ATP_ANDROID_BUILD and VITE_API_BASE_URL first.`,
+      `${build.apiBase}. Run \`npm run build:android\` with the same ATP_ANDROID_BUILD, VITE_API_BASE_URL and ATP_APP_DOMAIN first.`,
     );
   }
 }

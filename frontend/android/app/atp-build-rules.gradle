@@ -12,7 +12,7 @@ gradle.taskGraph.whenReady { graph ->
     if (!wantsRelease && !wantsDebug) return
     if (wantsRelease && android.defaultConfig.applicationId == TEMPORARY_APP_ID) {
         throw new GradleException("Refused: a release build cannot use the temporary package id ${TEMPORARY_APP_ID} " +
-            "(MA-6: it is never published). Set the final id (com.<domain>.app) first.")
+            "(MA-6: it is never published). Set the final id (tech.aialgodesk.app) first.")
     }
     def marker = file(NATIVE_BUILD_MARKER)
     if (!marker.exists()) {

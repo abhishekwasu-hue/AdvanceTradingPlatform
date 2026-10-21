@@ -29,6 +29,7 @@ function pngSize(bytes: Buffer): [number, number] {
 test.describe("PWA installability (D3)", () => {
   let context: BrowserContext;
   let profile = "";
+  let ownTrace = false;
 
   test.beforeEach(async ({}, info) => {
     // One run is enough (it starts its own Chromium); the desktop project owns it.
@@ -41,10 +42,20 @@ test.describe("PWA installability (D3)", () => {
       headless: true,
       ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}),
     });
+    // A trace for CI when a test fails. With the config's `trace` option on, Playwright Test already traces every
+    // context this worker opens, this hand-made one included (and attaches it on failure); start our own only when it
+    // does not, so a failure always leaves trace.zip in the test's output folder.
+    ownTrace = await context.tracing.start({ screenshots: true, snapshots: true, sources: true }).then(() => true, () => false);
   });
 
-  test.afterEach(async () => {
-    await context?.close();
+  test.afterEach(async ({}, info) => {
+    if (context) {
+      if (ownTrace) {
+        const failed = info.status !== info.expectedStatus;
+        await context.tracing.stop(failed ? { path: info.outputPath("trace.zip") } : undefined).catch(() => undefined);
+      }
+      await context.close();
+    }
     if (profile) rmSync(profile, { recursive: true, force: true });
   });
 

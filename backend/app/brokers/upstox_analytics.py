@@ -143,6 +143,80 @@ def token_expiry(token: str, saved_at: datetime) -> Tuple[datetime, bool]:
     return saved_at + timedelta(days=VALIDITY_DAYS), True
 
 
+ANALYTICS_KIND = "analytics"
+DAILY_KIND = "daily"
+EXPIRED_KIND = "expired"
+REJECTED_KIND = "rejected"
+# An Upstox daily access token dies at the next 03:30 IST, so it lives at most ~27.5 hours from issue; an analytics token
+# lives a year. A lifetime past ANALYTICS_MIN_LIFETIME is an analytics token, one within DAILY_MAX_LIFETIME a daily one;
+# anything between (or a token with no readable `exp`) is settled by a probe instead.
+DAILY_MAX_LIFETIME = timedelta(days=2)
+ANALYTICS_MIN_LIFETIME = timedelta(days=7)
+
+
+def token_kind_from_claims(token: str, now: Optional[datetime] = None) -> Optional[str]:
+    """P2a: which kind of Upstox token a pasted value is, from its JWT claims read without verifying the signature (a
+    hint for where to store it, never trusted for auth): ANALYTICS_KIND, DAILY_KIND, EXPIRED_KIND (its `exp` has
+    passed), or None when the claims do not say (not a JWT, no `exp`, or a lifetime between the two bounds)."""
+    now = now or _utcnow()
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
+    except Exception:  # noqa: BLE001 - not a JWT: the claims say nothing
+        return None
+    exp = claims.get("exp") if isinstance(claims, dict) else None
+    if not isinstance(exp, (int, float)) or isinstance(exp, bool) or exp <= 0:
+        return None
+    try:
+        expires = datetime.fromtimestamp(float(exp), tz=timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
+    if expires <= now:
+        return EXPIRED_KIND
+    iat = claims.get("iat")
+    issued = now
+    if isinstance(iat, (int, float)) and not isinstance(iat, bool) and 0 < iat:
+        try:
+            issued = min(now, datetime.fromtimestamp(float(iat), tz=timezone.utc))
+        except (OverflowError, OSError, ValueError):
+            issued = now
+    lifetime = expires - issued
+    if lifetime >= ANALYTICS_MIN_LIFETIME:
+        return ANALYTICS_KIND
+    if lifetime <= DAILY_MAX_LIFETIME:
+        return DAILY_KIND
+    return None
+
+
+async def probe_token_kind(token: str, *, client: Optional[httpx.AsyncClient] = None) -> Optional[str]:
+    """P2a: settle the kind of a token whose claims do not, with read-only GETs. The account profile answers a daily
+    login token; Upstox refuses it to an analytics token (outside a registered static IP), which still reads quotes.
+    Returns DAILY_KIND, ANALYTICS_KIND, REJECTED_KIND (refused by both: not a usable token) or None (Upstox did not
+    answer clearly - a network failure, 429 or 5xx). Never logs or returns the token."""
+    headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+    own = client is None
+    http = client or _client()
+    try:
+        try:
+            profile = await http.get("/v2/user/profile", headers=headers)
+        except Exception:  # noqa: BLE001 - unreachable: undecided
+            return None
+        if 200 <= profile.status_code < 300 and _body_ok(profile):
+            return DAILY_KIND
+        if profile.status_code not in (401, 403):
+            return None
+        path, params = probe_requests(_utcnow().date())[QUOTES]
+        try:
+            quote = outcome(await http.get(path, params=params, headers=headers), _utcnow())
+        except Exception:  # noqa: BLE001
+            return None
+        if quote["status"] == WORKS:
+            return ANALYTICS_KIND
+        return REJECTED_KIND if quote["status"] == REFUSED else None
+    finally:
+        if own:
+            await http.aclose()
+
+
 def new_meta(token: str, now: Optional[datetime] = None) -> Dict[str, Any]:
     now = now or _utcnow()
     expires_at, estimated = token_expiry(token, now)

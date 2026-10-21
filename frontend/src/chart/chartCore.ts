@@ -203,13 +203,23 @@ export class ChartCore {
     this.chart.applyOptions({ timeScale: { timeVisible: !DAILY_OR_LONGER.has(timeframe) } });
   }
 
-  /** UI2-4e: the level lines (replaced as a whole; a price that is not a number is left out). */
+  /** UI2-4e: the level lines (replaced as a whole; a price that is not a number is left out). While there are levels
+   * the last-price line is neutral and dotted, so it never reads as the red dashed Stop. */
   setLevels(levels: readonly LevelLine[]): void {
     for (const line of this.levelLines) this.candles.removePriceLine(line);
+    const had = this.levels.length > 0;
     this.levels = levels.filter((l) => Number.isFinite(l.price));
+    if (had !== this.levels.length > 0) this.candles.applyOptions(this.lastPriceLine());
     this.levelLines = this.levels.map((l) => this.candles.createPriceLine({
       price: l.price, color: this.levelColour(l.tone), lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: l.title,
     }));
+  }
+
+  /** The last-price line: the library's own (the bar's colour, dashed), or neutral and dotted beside level lines. */
+  private lastPriceLine() {
+    return this.levels.length > 0
+      ? { priceLineColor: this.opts.palette.crosshair, priceLineStyle: LineStyle.Dotted }
+      : { priceLineColor: "", priceLineStyle: LineStyle.Dashed };
   }
 
   private levelColour(tone: LevelLine["tone"]): string {
@@ -246,6 +256,7 @@ export class ChartCore {
                                   rsiBands: this.rsiBands, overlays: this.overlays }, palette, grid, this.candlesHidden());
     this.engine.setDefaultDrawingColor(palette.drawing);
     this.levelLines.forEach((line, i) => line.applyOptions({ color: this.levelColour(this.levels[i].tone) }));
+    if (this.levels.length > 0) this.candles.applyOptions(this.lastPriceLine());
     this.paintLabels();
     this.paintVolume(this.data.map((b) => toTime(b.timestamp)));      // volume carries its colour per bar
   }

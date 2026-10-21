@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { useBrokerChart } from "../components/chartHistory";
 import ProChart, { useLiveLtp } from "../components/ProChart";
@@ -14,6 +14,7 @@ import { REPLAY_OFF, parseCandleTime, replayAt, visibleCandles, windowStart, typ
 import ExpectedMoveLayer from "../progression/ExpectedMoveLayer";
 import { useFeatures } from "../ui/useFeatures";
 import { chartWindowRedirect } from "../chart/chartsPage";
+import { useWaitCap } from "../shell/shellWait";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -29,11 +30,21 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   // UI2-0: the flags come from the app's single /system/features read (useFeatures).
   const features = useFeatures();
   // UI2-4e: with `ui_v2` on, this window's link opens the Charts page's Chart tab instead (its timeframe and exchange),
-  // and nothing is read here (the reads wait for the flags). The Charts page has no `chart` parameter, so this cannot
-  // loop. With `ui_v2` off: as before.
-  const v2 = features.loaded && features.on("ui_v2");
-  const reads = features.loaded && !v2;
-  useEffect(() => { if (v2) window.location.replace(chartWindowRedirect(params)); }, [v2, params]);
+  // and nothing is read here: the window waits for the flags, at most SHELL_WAIT_MS (as the shell does); a read that
+  // has not answered by then counts as "every flag off" for this window's life. The Charts page has no `chart`
+  // parameter, so this cannot loop, and the redirect is sent once. With `ui_v2` off: the chart as before.
+  const capped = useWaitCap(!!user && !features.loaded);
+  const [flagsOff, setFlagsOff] = useState(false);
+  if (capped && !features.loaded && !flagsOff) setFlagsOff(true);
+  const known = features.loaded || flagsOff;
+  const v2 = !flagsOff && features.loaded && features.on("ui_v2");
+  const reads = known && !v2;
+  const redirected = useRef(false);
+  useEffect(() => {
+    if (!v2 || redirected.current) return;
+    redirected.current = true;
+    window.location.replace(chartWindowRedirect(params));
+  }, [v2, params]);
   const symbol = (params.get("chart") ?? "").trim().toUpperCase();
   const exchange = (params.get("exchange") ?? "NSE").toUpperCase();
   const broker = params.get("broker_name") || undefined;
@@ -43,6 +54,11 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   const chart = useBrokerChart({ enabled: reads && !!user && !!symbol, symbol, timeframe, exchange, broker });
   const error = chart.error;
+  // UI2-4e review: until the first candle answer the window says "Loading…", so the chart's empty-state line ("No
+  // candles yet …") never stands in for prices still on their way. After it the chart stays, as before.
+  const [firstRead, setFirstRead] = useState<"waiting" | "reading" | "done">("waiting");
+  if (firstRead === "waiting" && chart.loading) setFirstRead("reading");
+  if (firstRead === "reading" && !chart.loading) setFirstRead("done");
 
   const live = useLiveLtp(reads && !!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
@@ -61,9 +77,10 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   // N2-4: the expected-move cone (flag decision_tools; the toggle shows only when the organisation has it)
   const decisionTools = !!user && features.on("decision_tools");
 
-  if (loading || v2) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (loading || v2 || (user && !known)) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
   if (!symbol) return <div className="p-6 text-sm text-fg">No symbol given.</div>;
+  if (firstRead !== "done") return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
 
   return (
     <div className="min-h-screen bg-surface p-4">

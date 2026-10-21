@@ -1,16 +1,16 @@
 /**
  * UI2-4e (Charts page plan §3, 1(k)): the small chip a v2 chart shows about its live price, without React.
  * - "Live" while the last price is fresh (hover: "Updated 3 s ago");
- * - "Price delayed · 4 min" when the newest quote is older than the app's staleness rule: the server marks a quote
- *   `stale` past `QUOTE_MAX_STALE_SECONDS` (backend `market_data/freshness.quote_is_stale`), and a price this chart has
- *   not had renewed for as long (the poll keeps failing) counts the same;
+ * - "Price delayed · 4 min" when the server says the quote is stale (`/market-data/ltp` `stale`: the backend's
+ *   `QUOTE_MAX_STALE_SECONDS` rule, set per deployment, which may also turn staleness off), or when this browser has
+ *   had no renewed answer for `RENEW_LIMIT_SECONDS` while the tab was shown (the poll keeps failing);
  * - nothing while the market is closed, or while the chart has no live price at all.
- * The age is the server's (measured at the exchange time when it read the quote) plus the time since this browser got
- * the answer - never this device's clock against the server's, which may differ.
+ * The server's own age is only shown, never compared here: the server decides about its quote. The local time counts
+ * from when this browser got the answer, on its own clock, and stops while the tab is hidden (LiveChip).
  */
 
-/** The backend's `QUOTE_MAX_STALE_SECONDS` default (app/core/config.py): a quote older than this is stale. */
-export const QUOTE_MAX_STALE_SECONDS = 120;
+/** No renewed answer for this long (the tab shown) reads as delayed: the backend's default staleness limit. */
+export const RENEW_LIMIT_SECONDS = 120;
 
 /** The parts of a `/market-data/ltp` answer the chip reads. */
 export interface LiveQuote { stale?: boolean; age_seconds?: number | null }
@@ -19,7 +19,8 @@ export type LiveChipState =
   | { kind: "live"; ageSeconds: number }
   | { kind: "delayed"; ageSeconds: number | null };
 
-/** The chip for a quote received at `receivedAt` (this browser's clock, ms); null shows no chip. Pure. */
+/** The chip for a quote received at `receivedAt` (this browser's clock, ms, hidden time left out); null shows no
+ * chip. `ageSeconds`: for Live, the time since the answer; for delayed, the price's age when known. Pure. */
 export function liveChipState(quote: LiveQuote | null | undefined, receivedAt: number | null, marketOpen: boolean | null | undefined,
                               nowMs: number): LiveChipState | null {
   if (marketOpen === false || !quote || receivedAt === null) return null;
@@ -27,8 +28,8 @@ export function liveChipState(quote: LiveQuote | null | undefined, receivedAt: n
   const known = typeof quote.age_seconds === "number" && Number.isFinite(quote.age_seconds);
   const age = (known ? Math.max(0, quote.age_seconds as number) : 0) + since;
   if (quote.stale) return { kind: "delayed", ageSeconds: known ? age : null };
-  if (age > QUOTE_MAX_STALE_SECONDS) return { kind: "delayed", ageSeconds: age };
-  return { kind: "live", ageSeconds: age };
+  if (since > RENEW_LIMIT_SECONDS) return { kind: "delayed", ageSeconds: age };
+  return { kind: "live", ageSeconds: since };
 }
 
 /** "3 s", "4 min", "2 h". */

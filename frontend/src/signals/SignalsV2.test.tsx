@@ -59,7 +59,7 @@ describe("UI2-3 detail panel", () => {
     expect(words).toContain("Most you can lose (₹5,250.00) is within your ₹6,000.00 per-trade limit.");
     expect(words).toContain("Approve paper trade");
     expect(words).toContain("Skip");
-    expect(html).toContain('href="/charts/DEMO%2050"');
+    expect(html).toContain('href="/charts/DEMO%2050?tf=5min"');      // UI2-4e: with the detail chart's timeframe
     expect(primaries(html)).toBe(1);
     expect(html).toContain('aria-label="More for DEMO 50"');      // snooze sits under More
   });
@@ -107,7 +107,7 @@ describe("UI2-3 detail panel", () => {
       const html = inRouter(<SignalDetail item={feedItem()} proposal={proposal} now={NOW} compact={compact} canTrade={false} onDone={noop} onError={noop} />);
       expect(html).not.toMatch(/>Approve|>Skip<|More for DEMO 50/);
       expect(text(html)).toContain("Your role can view signals but not approve or skip them.");
-      expect(html).toContain('href="/charts/DEMO%2050"');
+      expect(html).toContain(compact ? 'href="/charts/DEMO%2050"' : 'href="/charts/DEMO%2050?tf=5min"');
       expect(primaries(html)).toBe(0);
     }
   });

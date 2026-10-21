@@ -3,11 +3,12 @@ import { Suspense, lazy, useId, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
 import type { LevelLine } from "../chart/chartCore";
+import type { TimeframeId } from "../chart/timeframes";
 import { ApiError } from "../api/errors";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { cx } from "../components/primitives";
 import { snoozeChoices } from "../proposals/snooze";
-import { chartsPath } from "../shell/shellRoutes";
+import { chartTabPath } from "../shell/shellRoutes";
 import type { AiAction } from "../types";
 import { formatChange, formatDateIST, formatINR, formatLots, formatNumber, formatPrice, formatSignedINR, formatTimeIST } from "../ui/format";
 import { glossary, type GlossaryKey } from "../ui/glossary";
@@ -101,13 +102,14 @@ export function signalLevels(item: Pick<SignalFeedItem, "entry" | "stop" | "targ
 }
 
 /** UI2-4e (Charts page plan §3, CHP-10): the signal's chart - the v2 chart of its symbol with Entry, Stop and Target
- * marked, the trader's chart settings and "Open in Chart tab". While its code loads, the levels drawn to scale hold
- * its place. */
-export function SignalChart({ item }: { item: SignalFeedItem }) {
+ * marked and the trader's chart settings. Its timeframe is the detail's, so the one "Open chart" button carries it
+ * (the chart's own link is off). While its code loads, the levels drawn to scale hold its place. */
+export function SignalChart({ item, timeframe, onTimeframe }: { item: SignalFeedItem; timeframe: TimeframeId; onTimeframe: (tf: TimeframeId) => void }) {
   return (
     <div data-signal-chart={item.symbol}>
       <Suspense fallback={<div aria-busy="true" className="flex min-h-[303px] items-center rounded-panel border border-subtle"><LevelsChart item={item} /></div>}>
-        <EmbeddedChartV2 symbol={item.symbol} exchange={item.exchange || "NSE"} levels={signalLevels(item)} />
+        <EmbeddedChartV2 symbol={item.symbol} exchange={item.exchange || "NSE"} levels={signalLevels(item)}
+          timeframe={timeframe} onTimeframe={onTimeframe} openLink={false} />
       </Suspense>
     </div>
   );
@@ -283,8 +285,10 @@ export function SnoozeMenu({ id, item, now, onDone, onError }: {
  * authenticator first, as today), Skip rejects it, Snooze hides it until later (never past its expiry). Nothing here
  * touches an exit.
  */
-export function SignalActions({ item, now, compact = false, canTrade, onDone, onError }: {
+export function SignalActions({ item, now, compact = false, canTrade, chartTimeframe, onDone, onError }: {
   item: SignalFeedItem; now: Date; compact?: boolean; canTrade: boolean; onDone: (message: string) => void; onError: (message: string, stale?: boolean) => void;
+  /** UI2-4e: the timeframe of the detail's chart, which "Open chart" opens on the Chart tab. */
+  chartTimeframe?: TimeframeId;
 }) {
   const [busy, setBusy] = useState<"approve" | "skip" | null>(null);
   const [stepUp, setStepUp] = useState<string | null>(null);
@@ -293,7 +297,7 @@ export function SignalActions({ item, now, compact = false, canTrade, onDone, on
   const decidable = canDecide(item, now);
   const id = item.action_id;
   const chart = (
-    <Link to={chartsPath(item.symbol)} aria-label={compact ? `Open chart for ${item.symbol}` : undefined}
+    <Link to={chartTabPath(item.symbol, item.exchange, chartTimeframe)} aria-label={compact ? `Open chart for ${item.symbol}` : undefined}
       className={compact ? ICON : `${BUTTON} px-space-2 text-brand hover:underline`}>
       {compact ? <ChartCandlestick size={18} aria-hidden /> : "Open chart"}
     </Link>
@@ -314,7 +318,7 @@ export function SignalActions({ item, now, compact = false, canTrade, onDone, on
     if (id === null) return;
     setBusy("approve");
     try { onDone(decisionMessage("approve", item, await api.aiApproveAction(id))); }
-    catch (e) { if (isStepUpError(e)) setStepUp(String(e)); else failed(e); }
+    catch (e) { if (isStepUpError(e)) setStepUp((e as ApiError).message); else failed(e); }   // the server's words, no "ApiError:"
     finally { setBusy(null); }
   }
   async function skip() {
@@ -353,6 +357,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
 }) {
   const waiting = canDecide(item, now);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [timeframe, setTimeframe] = useState<TimeframeId>("5min");         // the charts' default (chart/timeframes.ts)
   const menuId = useId();
   const modeLabel = item.mode === "LIVE" ? "Live" : item.mode === "PAPER" ? "Paper" : null;
   if (compact) {
@@ -387,11 +392,11 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
         {waiting && canTrade && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} />}
       </div>
       {waiting && canTrade && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
-      <SignalChart item={item} />
+      <SignalChart item={item} timeframe={timeframe} onTimeframe={setTimeframe} />
       {(item.entry !== null || item.stop !== null || item.target !== null) && <KeyFigures item={item} proposal={proposal} />}
       <Reasons item={item} />
       {waiting ? <RiskLines proposal={proposal} /> : <OutcomeLine item={item} now={now} />}
-      <SignalActions item={item} now={now} canTrade={canTrade} onDone={onDone} onError={onError} />
+      <SignalActions item={item} now={now} canTrade={canTrade} chartTimeframe={timeframe} onDone={onDone} onError={onError} />
     </section>
   );
 }

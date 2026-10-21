@@ -838,6 +838,23 @@ test.describe("UI2-4e: old chart window links and the live chip", () => {
     expect(calls.ltp).toBe(0);
   });
 
+  test("a hidden tab stops the chip's clock: shown again it is still Live, then delayed only after two shown minutes", async ({ page }) => {
+    await open(page, "light");
+    await chartReady(page);
+    await expect(chip(page)).toHaveText("Live");
+    await page.route(/\/api(?:\/v1)?\/market-data\/ltp/, (r) => r.fulfill({ status: 503, json: { detail: "unavailable" } }));
+    const show = (state: "hidden" | "visible") => page.evaluate((v) => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => v });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, state);
+    await show("hidden");
+    await page.clock.runFor(150_000);
+    await show("visible");
+    await expect(chip(page)).toHaveText("Live");
+    await page.clock.runFor(125_000);
+    await expect(chip(page)).toHaveText("Price delayed · 2 min");
+  });
+
   test("a Multi-chart cell shows the chip too", async ({ page }) => {
     await open(page, "light", { path: "/charts?tab=multi" });
     await expect(page.locator("[data-cell] [data-live-chip]").first()).toHaveText("Live");
@@ -946,6 +963,42 @@ test.describe("v2 Charts 390x560 phone: off-screen cells (UI2-4d)", () => {
 
 test.describe("flag off", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
+
+  /** Records whether the old chart's "No candles yet ... session token has expired" line ever showed, and whether it did
+   * before the first candle read went out (while the window waited for the flags) - UI2-4e review. */
+  async function watchEmptyText(page: Page): Promise<{ beforeRead: () => boolean | null }> {
+    await page.addInitScript(() => {
+      const w = window as unknown as { __emptySeen?: boolean };
+      new MutationObserver(() => { if (document.body?.textContent?.includes("No candles yet")) w.__emptySeen = true; })
+        .observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    let seen: boolean | null = null;
+    await page.route(/\/api(?:\/v1)?\/market-data\/candles$/, async (r) => {
+      if (seen === null) seen = await page.evaluate(() => !!(window as unknown as { __emptySeen?: boolean }).__emptySeen);
+      return r.fallback();
+    });
+    return { beforeRead: () => seen };
+  }
+
+  for (const [name, answer] of [["answers 500", "500"], ["never answers", "never"]] as const) {
+    test(`the flags read ${name}: the old chart window loads (no redirect), with "Loading…" while it waits`, async ({ page }) => {
+      const t0 = Date.now();
+      let empty: Awaited<ReturnType<typeof watchEmptyText>> | null = null;
+      const calls = await open(page, "dark", { flag: false, path: "/?chart=NIFTY%2050&tf=15min", settle: false, before: async (p) => {
+        empty = await watchEmptyText(p);
+        await p.route(/\/api(?:\/v1)?\/system\/features$/, (r) => (answer === "500" ? r.fulfill({ status: 500, json: { detail: "error" } }) : new Promise<void>(() => undefined)));
+      } });
+      if (answer === "never") await expect(page.getByText("Loading…")).toBeVisible();
+      await expect(page.getByText("refreshes every minute · live price every 5 s · scroll left for older history")).toBeVisible({ timeout: 6_000 });
+      expect(Date.now() - t0, "the shell's 3 s cap, not the 10 s fetch timeout").toBeLessThan(9_000);
+      await expect.poll(() => calls.candles.some((c) => c.symbol === "NIFTY 50" && c.timeframe === "15min")).toBe(true);
+      expect(empty!.beforeRead(), "the empty-chart line showed while the flags were read").toBe(false);
+      await expect(page.getByText(/No candles yet/)).toHaveCount(0);
+      expect(await page.evaluate(() => !!(window as unknown as { __emptySeen?: boolean }).__emptySeen), "the empty-chart line showed at all").toBe(false);
+      await expect(page).toHaveURL(/\/\?chart=NIFTY%2050&tf=15min$/);
+      await expect(page.locator("[data-page='charts-v2']")).toHaveCount(0);
+    });
+  }
 
   test("today's pages: no /charts page, and the ?chart= window as before", async ({ page }) => {
     const calls = await open(page, "dark", { flag: false, path: "/?chart=NIFTY%2050&tf=15min" });

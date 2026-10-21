@@ -4,6 +4,7 @@
  * hidden, the watchlist column and list) kept per browser.
  */
 import type { CandleVolumeSource, SystemStatus } from "../types";
+import { chartTabPath } from "../shell/shellRoutes";
 import { formatDateIST, formatTimeIST } from "../ui/format";
 import { CHART_TYPES_V2, OVERLAYS_V2, type ChartTypeV2, type OverlayId } from "./chartCore";
 import { DEFAULT_TIMEFRAME, TIMEFRAMES, isTimeframe, type TimeframeId } from "./timeframes";
@@ -127,23 +128,13 @@ export function drawingNote(message: string | null | undefined): string | null {
 
 // --- Addresses of the Chart tab (UI2-4e) -----------------------------------------------------------------------------
 
-/** A chart on the Chart tab with its timeframe: `/charts/NIFTY%2050?tf=15min` (`&exchange=BSE` off NSE). An embedded
- * chart's "Open in Chart tab"; the Charts page takes the timeframe, then drops it from the address. */
-export function chartTabPath(symbol: string, exchange?: string | null, timeframe?: string | null): string {
-  const s = symbol.trim().toUpperCase();
-  const q = new URLSearchParams();
-  if (timeframe && isTimeframe(timeframe)) q.set("tf", timeframe);
-  const x = (exchange ?? "").trim().toUpperCase();
-  if (s && x && x !== "NSE") q.set("exchange", x);
-  const path = s ? `/charts/${encodeURIComponent(s)}` : "/charts";
-  const query = q.toString();
-  return query ? `${path}?${query}` : path;
-}
+export { chartTabPath };
 
 /** UI2-4e: an old single-chart window link (`/?chart=SYM&tf=15min&exchange=NSE&broker_name=..`) under `ui_v2` opens the
  * Chart tab instead, with its timeframe and exchange. The broker name is dropped: v2 charts read the trader's session. */
 export function chartWindowRedirect(params: URLSearchParams): string {
-  return chartTabPath(params.get("chart") ?? "", params.get("exchange"), params.get("tf"));
+  const tf = params.get("tf");
+  return chartTabPath(params.get("chart") ?? "", params.get("exchange"), isTimeframe(tf) ? tf : null);
 }
 
 /** The timeframe a Chart tab address asks for (`?tf=`), or null. Not with `symbol` (an old workspace link's start). */

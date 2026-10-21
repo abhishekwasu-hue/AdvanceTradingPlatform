@@ -13,7 +13,7 @@ import { expectPhoneLayout } from "./phoneLayout";
  * - The phone layout rules, the desktop list + detail (from 1440 px, every column whole; 1280 / 1366 get the stacked
  *   cards), `?proposal=<id>`, M6 (Library drawer) and M7 (Watchtower link).
  * - UI2-4e: the desktop detail's chart is the v2 chart (made-up candles, e2e/chartsMocks.ts) with the levels marked,
- *   "Open in Chart tab" and the "Live" / "Price delayed" chip; the 1440 baselines show it.
+ *   "Open chart" carrying its timeframe, and the "Live" / "Price delayed" chip; the 1440 baselines show it.
  * After an intended change: `npx playwright test --project=phone e2e/signals-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
  */
@@ -278,14 +278,14 @@ test.describe("Signals v2 1440 desktop", () => {
     for (const label of ["Entry", "Stop", "Target", "Size", "Max loss", "Reward : risk"]) await expect(detail.locator("[data-key-figures]")).toContainText(label);
     await expect(detail.getByText("1 lot (75)")).toBeVisible();
     await expect(detail.getByRole("button", { name: "Approve paper trade" })).toBeVisible();
-    await expect(detail.getByRole("link", { name: "Open chart" })).toHaveAttribute("href", "/charts/NIFTY%2050");
+    await expect(detail.getByRole("link", { name: "Open chart" })).toHaveAttribute("href", "/charts/NIFTY%2050?tf=5min");
     await table.getByRole("button", { name: "AXISBANK" }).click();
     await expect(detail).toHaveAttribute("data-signal-detail", "action:860");
     await expect(detail.getByText("This signal expired before anyone decided. Nothing was placed.")).toBeVisible();
     await expect(detail.getByRole("button", { name: /Approve/ })).toHaveCount(0);
   });
 
-  test("UI2-4e: the detail's chart is the v2 chart of the signal, with the trader's settings; Open in Chart tab keeps its timeframe", async ({ page }) => {
+  test("UI2-4e: the detail's chart is the v2 chart of the signal, with the trader's settings; Open chart keeps its timeframe", async ({ page }) => {
     const { charts } = await open(page, "/signals", "light");
     const chart = page.locator("[data-signal-chart='NIFTY 50']");
     await chartReady(page);
@@ -296,8 +296,11 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(chart.getByRole("button", { name: "Chart settings" })).toBeVisible();
     await tfs.getByRole("button", { name: "15m", exact: true }).click();
     await expect.poll(() => charts!.candles.some((c) => c.symbol === "NIFTY 50" && c.timeframe === "15min")).toBe(true);
-    await expect(chart.getByRole("link", { name: "Open in Chart tab" })).toHaveAttribute("href", "/charts/NIFTY%2050?tf=15min");
-    await chart.getByRole("link", { name: "Open in Chart tab" }).click();
+    // One link to the Chart tab (the detail's "Open chart"), carrying the chart's timeframe.
+    await expect(chart.getByRole("link", { name: "Open in Chart tab" })).toHaveCount(0);
+    const openChart = page.locator("[data-signal-detail]").getByRole("link", { name: "Open chart" });
+    await expect(openChart).toHaveAttribute("href", "/charts/NIFTY%2050?tf=15min");
+    await openChart.click();
     await expect(page).toHaveURL(/\/charts\/NIFTY%2050$/);
     await expect(page.locator("[data-page='charts-v2']")).toBeVisible();
     await expect(page.locator("[data-page='charts-v2']").getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true }))

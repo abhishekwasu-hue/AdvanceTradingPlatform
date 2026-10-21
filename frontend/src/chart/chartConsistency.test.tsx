@@ -9,7 +9,7 @@ import partsSource from "../signals/SignalPartsV2.tsx?raw";
 import topBarSource from "../shell/TopBarV2.tsx?raw";
 import { feedItem } from "../signals/signals.fixture";
 import { addressTimeframe, chartTabPath, chartWindowRedirect } from "./chartsPage";
-import { QUOTE_MAX_STALE_SECONDS, ageText, liveChipState, liveChipText } from "./liveChip";
+import { RENEW_LIMIT_SECONDS, ageText, liveChipState, liveChipText } from "./liveChip";
 import { STATUS_EVERY_MS, StatusPoll } from "./useMarketStatus";
 import type { SystemStatus } from "../types";
 
@@ -39,10 +39,13 @@ describe("UI2-4e an old ?chart= window link under ui_v2", () => {
     for (const s of ["chart=A&tf=5min", "chart=A%26B&exchange=MCX", "chart=X"]) expect(chartWindowRedirect(q(s))).not.toMatch(/[?&]chart=/);
   });
 
-  it("is guarded: only once the flags are read and ui_v2 is on, with no reads before", () => {
-    expect(chartWindowSource).toContain('const v2 = features.loaded && features.on("ui_v2");');
-    expect(chartWindowSource).toContain("useEffect(() => { if (v2) window.location.replace(chartWindowRedirect(params)); }, [v2, params]);");
-    expect(chartWindowSource).toContain("const reads = features.loaded && !v2;");
+  it("is guarded: once the flags are read (or the shell's 3 s cap counts them off), sent once, with no reads before", () => {
+    expect(chartWindowSource).toContain("const capped = useWaitCap(!!user && !features.loaded);");     // shell/shellWait SHELL_WAIT_MS
+    expect(chartWindowSource).toContain("if (capped && !features.loaded && !flagsOff) setFlagsOff(true);");
+    expect(chartWindowSource).toContain('const v2 = !flagsOff && features.loaded && features.on("ui_v2");');
+    expect(chartWindowSource).toContain("const reads = known && !v2;");
+    expect(chartWindowSource).toMatch(/if \(!v2 \|\| redirected\.current\) return;\s*redirected\.current = true;\s*window\.location\.replace\(chartWindowRedirect\(params\)\);/);
+    expect(chartWindowSource).toContain("if (loading || v2 || (user && !known)) return");                 // "Loading…" while waiting
     expect(chartWindowSource).toMatch(/useBrokerChart\(\{ enabled: reads && /);
     expect(chartWindowSource).toMatch(/useLiveLtp\(reads && /);
   });
@@ -61,23 +64,26 @@ describe("UI2-4e the Live / Price delayed chip", () => {
   const T = 1_000_000;
   const fresh = { stale: false, age_seconds: 2 };
 
-  it("Live while the newest quote is within the staleness rule; the age counts on from when it came", () => {
-    expect(liveChipState(fresh, T, true, T + 3_000)).toEqual({ kind: "live", ageSeconds: 5 });
-    expect(liveChipState(fresh, T, null, T)).toEqual({ kind: "live", ageSeconds: 2 });     // market state not known yet
+  it("Live while the server calls the quote fresh and answers keep coming; the hover says when the last one came", () => {
+    expect(liveChipState(fresh, T, true, T + 3_000)).toEqual({ kind: "live", ageSeconds: 3 });
+    expect(liveChipState(fresh, T, null, T)).toEqual({ kind: "live", ageSeconds: 0 });     // market state not known yet
+    // The server decides about its quote: an old exchange time it does not call stale (its limit is set per deployment,
+    // or turned off) is not judged again here.
+    expect(liveChipState({ stale: false, age_seconds: 900 }, T, true, T + 1_000)?.kind).toBe("live");
     expect(liveChipText({ kind: "live", ageSeconds: 3.2 })).toEqual({ text: "Live", title: "Updated 3 s ago" });
     expect(liveChipText({ kind: "live", ageSeconds: 0.4 }).title).toBe("Updated just now");
   });
 
-  it("Price delayed with the age: marked stale by the server, or not renewed for longer than the rule", () => {
-    expect(QUOTE_MAX_STALE_SECONDS).toBe(120);                   // backend config.QUOTE_MAX_STALE_SECONDS default
+  it("Price delayed with the age: marked stale by the server, or no renewed answer here for longer than the limit", () => {
+    expect(RENEW_LIMIT_SECONDS).toBe(120);                       // the backend's default QUOTE_MAX_STALE_SECONDS
     expect(liveChipState({ stale: true, age_seconds: 300 }, T, true, T)).toEqual({ kind: "delayed", ageSeconds: 300 });
-    expect(liveChipState(fresh, T, true, T + 118_000)?.kind).toBe("live");
-    expect(liveChipState(fresh, T, true, T + 119_000)).toEqual({ kind: "delayed", ageSeconds: 121 });
+    expect(liveChipState(fresh, T, true, T + 120_000)?.kind).toBe("live");
+    expect(liveChipState(fresh, T, true, T + 121_000)).toEqual({ kind: "delayed", ageSeconds: 123 });   // shown: the price's age
     expect(liveChipText({ kind: "delayed", ageSeconds: 300 })).toEqual({ text: "Price delayed · 5 min", title: "The newest price is 5 min old." });
     // A stale quote with no exchange time: delayed, with no made-up age.
     expect(liveChipState({ stale: true, age_seconds: null }, T, true, T)).toEqual({ kind: "delayed", ageSeconds: null });
     expect(liveChipText({ kind: "delayed", ageSeconds: null }).text).toBe("Price delayed");
-    // A bare price (no exchange time, not stale): its own age is how long ago it came.
+    // A bare price (no exchange time, not stale): its age is how long ago it came.
     expect(liveChipState({ stale: false, age_seconds: null }, T, true, T + 130_000)).toEqual({ kind: "delayed", ageSeconds: 130 });
   });
 
@@ -108,8 +114,11 @@ describe("UI2-4e level lines on the v2 chart", () => {
       .toEqual([["Target", 104, palette.up, 2, true], ["Entry", 100, palette.text, 2, true], ["Stop", 98, palette.down, 2, true]]);
     c.applyTheme({ ...palette, up: "rgb(1, 2, 3)" }, false);
     expect(candles.priceLines[0].options.color).toBe("rgb(1, 2, 3)");
+    // Beside levels the last-price line is neutral and dotted, never the red dashed Stop look.
+    expect([candles.options.priceLineColor, candles.options.priceLineStyle]).toEqual([palette.crosshair, 1]);
     c.setLevels([{ price: Number.NaN, title: "Entry", tone: "neutral" }]);
     expect(candles.priceLines).toHaveLength(0);
+    expect([candles.options.priceLineColor, candles.options.priceLineStyle]).toEqual(["", 2]);
   });
 
   it("the price scale takes the levels in, so a stop away from the bars still shows", () => {
@@ -141,10 +150,18 @@ describe("UI2-4e the v2 chart on other pages", () => {
     expect(html).not.toMatch(/candles via|refreshes every|as of|source/i);
   });
 
+  it("a host that shows its own link turns the chart's off, and keeps the timeframe", () => {
+    const html = render(<EmbeddedChartV2 symbol="SBIN" timeframe="15min" onTimeframe={() => undefined} openLink={false} />);
+    expect(html).not.toContain("Open in Chart tab");
+    expect(html).toMatch(/aria-pressed="true"[^>]*>15m</);
+  });
+
   it("Signals under v2: the detail shows the v2 chart of the signal (its code loads on demand); today's Signals page keeps ProChart", () => {
     const html = render(<SignalDetail item={feedItem()} now={new Date("2026-10-08T05:00:00Z")} canTrade onDone={() => undefined} onError={() => undefined} />);
     expect(html).toContain('data-signal-chart="DEMO 50"');
     expect(html).toContain("data-levels-chart");                       // the levels hold its place while the chart loads
+    expect(html).toContain('href="/charts/DEMO%2050?tf=5min"');         // one "Open chart", with the chart's timeframe
+    expect(html).not.toContain("Open in Chart tab");
     expect(partsSource).toContain('lazy(() => import("../chart/EmbeddedChartV2"))');
     expect(partsSource).not.toMatch(/ProChart/);
     expect(signalsPageSource).toMatch(/<ProChart /);
@@ -187,14 +204,42 @@ describe("UI2-4e one shared status read", () => {
     c();
   });
 
+  it("nothing is read while the tab is hidden; shown again with an answer a minute old, it reads at once", async () => {
+    vi.useFakeTimers();
+    let now = 0;
+    let shown = true;
+    const handlers = new Map<string, () => void>();
+    const events = { addEventListener: (t: string, h: () => void) => { handlers.set(t, h); }, removeEventListener: (t: string) => { handlers.delete(t); } };
+    const read = vi.fn(async () => ({ maintenance_mode: false, maintenance_message: null, disabled_brokers: [] }) as SystemStatus);
+    const poll = new StatusPoll(read, () => now, () => shown, events as unknown as Document);
+    const stop = poll.subscribe(() => undefined);
+    await vi.runAllTicks();
+    expect(read).toHaveBeenCalledTimes(1);
+    shown = false;
+    now += 3 * STATUS_EVERY_MS;
+    await vi.advanceTimersByTimeAsync(3 * STATUS_EVERY_MS);
+    expect(read).toHaveBeenCalledTimes(1);                      // hidden: the timer fires, nothing is read
+    shown = true;
+    handlers.get("visibilitychange")?.();
+    await vi.runAllTicks();
+    expect(read).toHaveBeenCalledTimes(2);
+    handlers.get("visibilitychange")?.();                       // fresh now: no second read
+    await vi.runAllTicks();
+    expect(read).toHaveBeenCalledTimes(2);
+    stop();
+    expect(handlers.has("visibilitychange")).toBe(false);
+  });
+
   it("the v2 top bar reads it too (no second status poll)", () => {
     expect(topBarSource).toContain("useMarketStatus()");
     expect(topBarSource).not.toContain("api.systemStatus");
   });
 });
 
-// The plan's banned words (Charts page plan §3 UI2-4e, 1(k)): none in what a v2 chart shows.
-const sources = import.meta.glob(["./*.ts", "./*.tsx", "!./*.test.ts", "!./*.test.tsx", "!./*.fixture.ts"], { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+// The plan's banned words (Charts page plan §3 UI2-4e, 1(k)): none in what the v2 chart surfaces show - src/chart and
+// the Signals pages that hold a v2 chart.
+const sources = import.meta.glob(["./*.ts", "./*.tsx", "!./*.test.ts", "!./*.test.tsx", "!./*.fixture.ts",
+  "../signals/SignalsV2.tsx", "../signals/SignalPartsV2.tsx", "../utils/usePageVisible.ts"], { query: "?raw", import: "default", eager: true }) as Record<string, string>;
 
 /** The source without comments (as the colour check does: a `//` right after ":" is a URL, not a comment). */
 const noComments = (text: string) => text.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:"'`\\])\/\/[^\n]*/g, "$1");
@@ -209,7 +254,8 @@ function shownText(source: string): string[] {
 
 describe("UI2-4e no developer wording on the v2 chart surfaces", () => {
   it("covers the v2 chart files", () => {
-    expect(Object.keys(sources)).toEqual(expect.arrayContaining(["./ChartV2.tsx", "./ChartsPageV2.tsx", "./EmbeddedChartV2.tsx", "./LiveChip.tsx", "./liveChip.ts"]));
+    expect(Object.keys(sources)).toEqual(expect.arrayContaining(["./ChartV2.tsx", "./ChartsPageV2.tsx", "./EmbeddedChartV2.tsx", "./LiveChip.tsx", "./liveChip.ts",
+      "../signals/SignalsV2.tsx", "../signals/SignalPartsV2.tsx"]));
     // The scan sees shown words, and not comments or code names.
     expect(shownText(`<span>{broker && <span>candles via {broker}</span>}</span>`)).toContain("candles via ");
     expect(shownText(`const t = \`as of \${x}\`; // a debug note`)).toEqual(["as of ${x}"]);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ApiError } from "../api/errors";
 import {
-  allocationRows, bookedCurve, checkStatus, closedRows, closedText, eventAction, eventRemoveConsequence, eventScope, eventWindow, exitConfirmText,
+  allocationRows, bookedCurve, checkStatus, closedRows, closedText, drawdownOrderProblem, eventAction, eventRemoveConsequence, eventScope, eventWindow, exitConfirmText,
   failedText, fieldProblem, guardianLine, heldRows, holdingTiles, limitScopeLabel, limitValueText, longShortLine, openCaption, portfolioTiles,
   positionLevels, structureLabel, todayRisk,
 } from "./model";
@@ -154,6 +154,16 @@ describe("Risk limits", () => {
     expect(fieldProblem("3", 2)).toBe("The most allowed is 2.");
     expect(fieldProblem("2", 2)).toBeNull();
     expect(fieldProblem("1.5")).toBeNull();
+    expect(fieldProblem("5", null, 15)).toBe("The least allowed is 15.");
+    expect(fieldProblem("15", null, 15)).toBeNull();
+    expect(fieldProblem("5", null, 0)).toBeNull();
+  });
+
+  it("the drawdown ladder halves the size before it pauses entries (an added check only)", () => {
+    expect(drawdownOrderProblem("12", "10")).toBe("Halve the size at a drawdown no larger than the one that pauses new entries (10%).");
+    expect(drawdownOrderProblem("10", "10")).toBeNull();
+    expect(drawdownOrderProblem("5", "10")).toBeNull();
+    expect(drawdownOrderProblem("", "10")).toBeNull();                  // the blank field has its own message
   });
 });
 

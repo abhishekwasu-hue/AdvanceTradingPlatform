@@ -535,5 +535,70 @@
    "reason": "Open positions would be 3 of 4 after this order.",
    "order_id": 87
   }
- ]
+ ],
+ "paper_account": {
+  "user_id": 7,
+  "mode": "PAPER",
+  "starting_capital": 500000,
+  "balance": 500972.5,
+  "equity": 504692.5,
+  "realised": {
+   "gross": 1172.5,
+   "charges": 200.0,
+   "net": 972.5
+  },
+  "unrealised": 3720,
+  "closed_trades": 3,
+  "open_positions": 3,
+  "wins": 2,
+  "losses": 1,
+  "win_rate": 66.7,
+  "sessions": 4,
+  "max_drawdown": 1087.5,
+  "max_drawdown_pct": 0.22,
+  "paused": false,
+  "paused_reason": null,
+  "excluded_trades": 0,
+  "positions": [],
+  "journal": [],
+  "not_taken": [],
+  "proposals": {
+   "approved_by_you": 2,
+   "rejected_by_you": 1,
+   "pending": 0,
+   "expired_unanswered": 0
+  },
+  "as_of": "2026-10-19T05:30:00Z",
+  "note": "Made-up paper account for the test."
+ },
+ "paper_ladder": {
+  "stage": "PAPER",
+  "stages": [
+   {
+    "key": "PAPER",
+    "label": "Paper",
+    "status": "current"
+   },
+   {
+    "key": "LIVE",
+    "label": "Live",
+    "status": "locked",
+    "note": "locked"
+   }
+  ],
+  "criteria": [
+   {
+    "key": "closed_trades",
+    "label": "Closed paper trades",
+    "value": 3,
+    "target": 30,
+    "comparison": "at_least",
+    "met": false
+   }
+  ],
+  "met": 0,
+  "measured": 1,
+  "summary": {},
+  "as_of": "2026-10-19T05:30:00Z"
+ }
 }

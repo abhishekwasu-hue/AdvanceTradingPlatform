@@ -15,11 +15,15 @@ export interface TradingMocks {
   empty?: boolean;
   /** /positions answers 404 (the read fails). */
   positionsFail?: boolean;
+  /** /portfolio/exposure answers 500 (no live prices). */
+  exposureFail?: boolean;
+  /** Answer /paper/account and /paper/ladder (the paper account card with "Pause new PAPER entries"); left out: 404. */
+  paperAccount?: boolean;
 }
 
 export interface Writes { calls: { method: string; url: string; body: unknown }[] }
 
-export async function mockTrading(page: Page, { empty = false, positionsFail = false }: TradingMocks = {}): Promise<Writes> {
+export async function mockTrading(page: Page, { empty = false, positionsFail = false, exposureFail = false, paperAccount = false }: TradingMocks = {}): Promise<Writes> {
   const writes: Writes = { calls: [] };
   const exposure = empty
     ? { ...(T.exposure as object), open_positions: 0, gross_notional: 0, net_notional: 0, long_notional: 0, short_notional: 0, gross_pct_of_capital: 0,
@@ -38,6 +42,7 @@ export async function mockTrading(page: Page, { empty = false, positionsFail = f
     [api("/paper/risk$"), () => T.paper_risk],
     [api("/risk/limits$"), () => T.risk_limits],
     [api("/risk/events(\\?|$)"), () => T.risk_events],
+    ...(paperAccount ? [[api("/paper/account$"), () => T.paper_account], [api("/paper/ladder$"), () => T.paper_ladder]] as [RegExp, () => unknown][] : []),
   ];
   await page.route(/\/api(?:\/v1)?\//, async (route) => {
     const request = route.request();
@@ -46,6 +51,7 @@ export async function mockTrading(page: Page, { empty = false, positionsFail = f
     const path = url.replace(/^https?:\/\/[^/]+/, "");
     if (method === "GET") {
       if (positionsFail && api("/positions$").test(path)) return route.fulfill({ status: 404, json: { detail: "Not found" } });
+      if (exposureFail && api("/portfolio/exposure").test(path)) return route.fulfill({ status: 500, json: { detail: "Made-up failure" } });
       const hit = gets.find(([re]) => re.test(path));
       return hit ? route.fulfill({ json: hit[1]() }) : route.fallback();
     }

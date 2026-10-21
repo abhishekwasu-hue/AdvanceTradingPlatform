@@ -45,8 +45,9 @@ type Notice = { kind: "done" | "info" | "warn"; text: string } | null;
  *
  * Exits (ADR-0004): "Exit now" is a neutral button (UI-11) that keeps today's handler and confirm exactly, is never
  * disabled by this page, and stays reachable in every broker state. This page shows the broker states itself (it is in
- * OWN_BROKER_STATES): while no broker session is usable the gate says what is missing, and below it the trader's own open
- * positions - their real records at the entry price, no live price and nothing made up - keep their exit buttons. The
+ * OWN_BROKER_STATES): while no broker session is usable (or still being checked) the gate says what is missing, and below
+ * it the trader's own open positions - their real records at the entry price, with no price or P&L columns and nothing
+ * made up - keep their exit buttons, and the paper account keeps "Pause new PAPER entries". The
  * page places no entry order of its own and the AI never places one (ADR-0006).
  */
 export default function PositionsV2(_props: PageProps = {}) {
@@ -108,15 +109,24 @@ export default function PositionsV2(_props: PageProps = {}) {
           <BrokerGateView state={broker} onConnect={() => navigate(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)}
             onLogin={login.login} onRetry={refreshBroker} busy={login.busy} error={login.error} codeStep={login.codeStep} onSubmitCode={login.submitCode} />
         </div>
-        {signedIn && broker.kind !== "loading" && list && list.length > 0 && (
+        {signedIn && (
+          // Shown whatever the broker state - even while the broker check is still running or never answers - so the
+          // trader's own paper positions keep their exits and the paper account keeps its pause (ADR-0004).
           <div className="space-y-space-4">
-            {notice && <NoteV2 kind={notice.kind}>{notice.text}</NoteV2>}
-            <CardV2 title="Your open positions" count={list.length} testId="exits">
-              <p className="mb-space-3 text-t13 text-fg-muted">
-                Live prices and profit or loss show once your broker is connected. You can still exit a paper position here.
-              </p>
-              <PositionList rows={rows} byId={byId} actions={actions} />
+            {notice && <NoteV2 kind={notice.kind} testId="action">{notice.text}</NoteV2>}
+            <CardV2 title="Your open positions" count={list?.length} testId="exits">
+              {positions.status === "loading" ? <LoadingRowsV2 /> : positions.status === "error" ? <LoadFailedV2 what="your positions" /> : rows.length === 0 ? (
+                <EmptyStateV2 text="No open positions." />
+              ) : (
+                <>
+                  <p className="mb-space-3 text-t13 text-fg-muted">
+                    Live prices and profit or loss show once your broker is connected.{exitNowOn && canTrade ? " You can still exit a paper position here." : ""}
+                  </p>
+                  <PositionList rows={rows} byId={byId} actions={actions} prices={false} />
+                </>
+              )}
             </CardV2>
+            <PaperAccountCard canTrade={canTrade} />
           </div>
         )}
       </div>
@@ -182,18 +192,19 @@ export interface RowActions {
   onCheck: (p: TradeRecord, price: number) => void;
 }
 
-function PositionList({ rows, byId, actions }: { rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions }) {
+/** `prices: false` (no broker session): no LTP or P&L columns at all - an entry-price row with nothing made up. */
+function PositionList({ rows, byId, actions, prices = true }: { rows: HeldRow[]; byId: Map<number, TradeRecord>; actions: RowActions; prices?: boolean }) {
   return (
     <ul className="divide-y divide-subtle">
       {rows.map((r) => {
         const p = byId.get(r.id);
-        return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} /> : null;
+        return p ? <PositionRowV2 key={r.id} row={r} position={p} actions={actions} prices={prices} /> : null;
       })}
     </ul>
   );
 }
 
-export function PositionRowV2({ row, position, actions }: { row: HeldRow; position: TradeRecord; actions: RowActions }) {
+export function PositionRowV2({ row, position, actions, prices = true }: { row: HeldRow; position: TradeRecord; actions: RowActions; prices?: boolean }) {
   const tone = toneClass(signTone(row.pnl));
   const showExit = actions.exitNowOn && actions.canTrade && position.mode === "PAPER";
   return (
@@ -218,15 +229,19 @@ export function PositionRowV2({ row, position, actions }: { row: HeldRow; positi
           {row.structureNote && <p className="mt-px text-t12 text-fg-muted">{row.structureNote}</p>}
           {row.strategy && <p className="mt-px text-t12 text-fg-muted">{row.strategy}</p>}
         </div>
-        <div className="hidden w-28 shrink-0 text-right sm:block">
-          <div className="flex items-center justify-end gap-space-1 text-t12 text-fg-muted">LTP</div>
-          <div className="font-tabular text-t15 font-medium text-fg">{formatPrice(row.ltp)}</div>
-        </div>
-        <div className="w-28 shrink-0 text-right">
-          <div className="text-t12 text-fg-muted">P&amp;L</div>
-          <div className={`font-tabular text-t15 font-semibold ${tone}`}>{formatSignedINR(row.pnl)}</div>
-          <div className={`font-tabular text-t13 ${tone}`}>{formatPct(row.pnlPct)}</div>
-        </div>
+        {prices && (
+          <>
+            <div className="hidden w-28 shrink-0 text-right sm:block" data-col="ltp">
+              <div className="flex items-center justify-end gap-space-1 text-t12 text-fg-muted">LTP</div>
+              <div className="font-tabular text-t15 font-medium text-fg">{formatPrice(row.ltp)}</div>
+            </div>
+            <div className="w-28 shrink-0 text-right" data-col="pnl">
+              <div className="text-t12 text-fg-muted">P&amp;L</div>
+              <div className={`font-tabular text-t15 font-semibold ${tone}`}>{formatSignedINR(row.pnl)}</div>
+              <div className={`font-tabular text-t13 ${tone}`}>{formatPct(row.pnlPct)}</div>
+            </div>
+          </>
+        )}
       </div>
       <div className="mt-space-2 flex flex-wrap items-center gap-space-2">
         {showExit && (

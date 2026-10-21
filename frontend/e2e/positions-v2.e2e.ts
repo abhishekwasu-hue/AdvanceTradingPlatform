@@ -16,10 +16,12 @@ import { T, mockTrading, type TradingMocks, type Writes } from "./tradingMocks";
 interface Setup extends TradingMocks {
   flag?: boolean;
   broker?: "connected" | "login" | "none";
+  /** /broker/token-status never answers (the broker check hangs). */
+  hangBroker?: boolean;
 }
 
 async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Promise<Writes> {
-  const { flag = true, broker = "connected", ...mocks } = setup;
+  const { flag = true, broker = "connected", hangBroker = false, ...mocks } = setup;
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript((t) => {
     try {
@@ -31,8 +33,13 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Pro
   const brokers = broker === "none" ? [] : broker === "login" ? T.token_status_login : T.token_status;
   await mockApi(page, { features: flag ? (T.features as Record<string, boolean>) : undefined, brokers: brokers as unknown[] });
   const writes = await mockTrading(page, mocks);
+  if (hangBroker) await page.route(/\/api(?:\/v1)?\/broker\/token-status$/, () => new Promise(() => undefined));
   await page.goto("/positions");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
+  if (hangBroker) {
+    await expect(page.locator("main")).toBeVisible();
+    return writes;                                          // the gate stays "checking" (aria-busy) for good
+  }
   await page.waitForLoadState("networkidle");
   await expect(page.locator("main")).toBeVisible();
   await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
@@ -54,7 +61,14 @@ for (const size of PHONES) {
       });
     }
 
-    for (const state of [{ name: "connected" }, { name: "empty", empty: true }, { name: "login", broker: "login" as const }]) {
+    test("before the broker login: the gate, the exits and the paper account look the same", async ({ page }) => {
+      test.skip(size.width !== 390, "one baseline of the gated state");
+      await open(page, "light", { broker: "login", paperAccount: true });
+      await expect(page.locator("[data-block='exits']")).toBeVisible();
+      await expect(page).toHaveScreenshot("positions-v2-login-390-light.png", { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+    });
+
+    for (const state of [{ name: "connected" }, { name: "empty", empty: true }, { name: "login", broker: "login" as const, paperAccount: true }]) {
       test(`${state.name}: no sideways scroll, 44 px targets, nothing hidden behind the bottom bar`, async ({ page }) => {
         await open(page, "dark", state);
         await expect(page.locator("[data-page='positions-v2']")).toBeVisible();
@@ -167,11 +181,51 @@ test.describe("v2 positions 1440 desktop", () => {
     await expect.poll(() => writes.calls.filter((c) => c.url === "/positions/202/exit-now").length).toBe(1);
   });
 
-  test("no broker stored: 'Connect your broker', and the paper exits still work", async ({ page }) => {
-    await open(page, "light", { broker: "none" });
+  test("no broker stored: 'Connect your broker', the paper exits and 'Pause new PAPER entries' still work", async ({ page }) => {
+    const writes = await open(page, "light", { broker: "none", paperAccount: true });
     await expect(page.locator("[data-broker-gate='no-broker']")).toBeVisible();
     await expect(page.locator("[data-block='exits'] [data-testid='exit-now']")).toHaveCount(2);
     await expect(page.locator("[data-block='summary']")).toHaveCount(0);
+    await expect(page.locator("[data-block='exits'] [data-col]")).toHaveCount(0);             // no price or P&L columns
+    const pause = page.getByRole("button", { name: "Pause new PAPER entries" });
+    await expect(pause).toBeEnabled();
+    await pause.click();
+    await expect.poll(() => writes.calls.filter((c) => c.method === "POST" && c.url === "/paper/pause").length).toBe(1);
+  });
+
+  test("before the day's broker login: 'Pause new PAPER entries' is there, and no price or P&L is shown", async ({ page }) => {
+    await open(page, "light", { broker: "login", paperAccount: true });
+    await expect(page.getByTestId("paper-account")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Pause new PAPER entries" })).toBeEnabled();
+    const card = page.locator("[data-block='exits']");
+    await expect(card.locator("[data-col]")).toHaveCount(0);
+    await expect(card).not.toContainText("P&L");
+  });
+
+  test("the broker check never answers: the exits show as soon as the positions load", async ({ page }) => {
+    await open(page, "light", { hangBroker: true });
+    await expect(page.locator("[data-broker-gate='loading']")).toBeVisible();
+    await expect(page.locator("[data-block='exits'] [data-position]")).toHaveCount(3);
+    await expect(page.locator("[data-block='exits'] [data-testid='exit-now']").first()).toBeEnabled();
+  });
+
+  test("positions cannot be read before the broker login: the error is shown, not an empty list", async ({ page }) => {
+    await open(page, "light", { broker: "login", positionsFail: true });
+    const card = page.locator("[data-block='exits']");
+    await expect(card).toContainText("We could not load your positions. We will try again in a moment.");
+    await expect(card).not.toContainText("No open positions.");
+  });
+
+  test("live prices cannot be read: every row and its Exit now stay, with no price made up", async ({ page }) => {
+    await open(page, "light", { exposureFail: true });
+    await expect(page.locator("[data-block='positions'] [data-position]")).toHaveCount(3);
+    await expect(page.getByTestId("exit-now")).toHaveCount(2);
+    for (const b of await page.getByTestId("exit-now").all()) await expect(b).toBeEnabled();
+    const row = page.locator("[data-position='201']");
+    await expect(row.locator("[data-col='ltp']")).toContainText("–");
+    await expect(row.locator("[data-col='pnl']")).toContainText("–");
+    await expect(row).not.toContainText("+₹3,120.00");
+    await expect(page.locator("[data-tile='open-pnl']")).toContainText("–");
   });
 });
 

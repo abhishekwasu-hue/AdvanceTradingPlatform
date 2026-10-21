@@ -9,11 +9,11 @@ import { formatINR, formatNumber } from "../ui/format";
 import type { GlossaryKey } from "../ui/glossary";
 import { PageIntro } from "../ui/PageIntro";
 import { TermHint } from "../ui/TermHint";
-import { failedText, fieldProblem, guardianLine, todayRisk } from "./model";
+import { drawdownOrderProblem, failedText, fieldProblem, guardianLine, todayRisk } from "./model";
 import { BUTTON_PRIMARY, FIELD, LABEL, NoteV2, PageTitleV2, ShareBarV2, StateChipV2, TileV2, TilesV2 } from "./PartsV2";
 import { MarketEventsV2, OrgLimitsV2, RiskChecksV2 } from "./RiskPartsV2";
 
-interface FieldSpec { key: keyof RiskConfig; label: string; unit?: string; hint?: GlossaryKey; ceiling?: string; help: string; step?: string }
+interface FieldSpec { key: keyof RiskConfig; label: string; unit?: string; hint?: GlossaryKey; ceiling?: string; minimum?: string; help: string; step?: string }
 
 /** The account's own limits (today's "Risk Management" fields, in plain words; same keys, same save). */
 const LIMIT_FIELDS: FieldSpec[] = [
@@ -30,7 +30,7 @@ const LIMIT_FIELDS: FieldSpec[] = [
 /** Phase V1: the risk guardian's rules, checked on every entry, paper or live, whatever built the strategy. */
 const GUARDIAN_FIELDS: FieldSpec[] = [
   { key: "max_portfolio_risk_pct", label: "Risk across open positions", unit: "% of capital", hint: "risk-at-stops", step: "0.5", ceiling: "max_portfolio_risk_pct", help: "What every open stop and the new trade could lose together. Index positions count as one group." },
-  { key: "stop_cooldown_minutes", label: "Cool-down after a stop-out", unit: "minutes", hint: "cool-down", help: "No new entry in the same index or stock for this long after a stop." },
+  { key: "stop_cooldown_minutes", label: "Cool-down after a stop-out", unit: "minutes", hint: "cool-down", minimum: "min_stop_cooldown_minutes", help: "No new entry in the same index or stock for this long after a stop." },
   { key: "dd_level_1_pct", label: "Halve the size at a drawdown of", unit: "%", hint: "drawdown", step: "0.5", help: "This far below your equity peak, the risk per trade is halved." },
   { key: "dd_level_2_pct", label: "Pause new entries at a drawdown of", unit: "%", step: "0.5", ceiling: "dd_level_2_pct", help: "This far below the peak, new entries pause until your equity recovers." },
   { key: "event_size_cut_pct", label: "Size cut on event days", unit: "%", step: "5", help: "Used by a market event that cuts the size and names no cut of its own." },
@@ -86,7 +86,9 @@ export default function RiskV2(_props: PageProps = {}) {
   }, [user]);
 
   const ceilingOf = (f: FieldSpec) => (f.ceiling && ceilings ? ceilings[f.ceiling] : undefined);
-  const problemOf = (f: FieldSpec) => fieldProblem(drafts[f.key] ?? "", ceilingOf(f));
+  const minimumOf = (f: FieldSpec) => (f.minimum && ceilings ? ceilings[f.minimum] : undefined);
+  const problemOf = (f: FieldSpec) => fieldProblem(drafts[f.key] ?? "", ceilingOf(f), minimumOf(f))
+    ?? (f.key === "dd_level_1_pct" ? drawdownOrderProblem(drafts.dd_level_1_pct ?? "", drafts.dd_level_2_pct ?? "") : null);
 
   async function save(e: FormEvent) {
     e.preventDefault();
@@ -184,9 +186,9 @@ export default function RiskV2(_props: PageProps = {}) {
           className="rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5">
           <h2 className="text-t15 font-semibold text-fg">Your limits</h2>
           <p className="mt-space-1 text-t13 text-fg-muted">Checked before every paper and live entry you place. A limit can never be set above the platform&apos;s ceiling.</p>
-          <FieldGroup title="Size and daily limits" fields={LIMIT_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} problemOf={problemOf}
+          <FieldGroup title="Size and daily limits" fields={LIMIT_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} minimumOf={minimumOf} problemOf={problemOf}
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))} />
-          <FieldGroup title="Guardian rules" fields={GUARDIAN_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} problemOf={problemOf}
+          <FieldGroup title="Guardian rules" fields={GUARDIAN_FIELDS} drafts={drafts} touched={touched} ceilingOf={ceilingOf} minimumOf={minimumOf} problemOf={problemOf}
             onChange={(k, v) => setDrafts((d) => ({ ...d, [k]: v }))} onBlur={(k) => setTouched((t) => ({ ...t, [k]: true }))}
             note="The risk guardian checks these on every entry, paper or live, whatever built the strategy." />
           <div className="mt-space-5">
@@ -202,9 +204,9 @@ export default function RiskV2(_props: PageProps = {}) {
   );
 }
 
-function FieldGroup({ title, note, fields, drafts, touched, ceilingOf, problemOf, onChange, onBlur }: {
+function FieldGroup({ title, note, fields, drafts, touched, ceilingOf, minimumOf, problemOf, onChange, onBlur }: {
   title: string; note?: string; fields: FieldSpec[]; drafts: Drafts; touched: Partial<Record<keyof RiskConfig, boolean>>;
-  ceilingOf: (f: FieldSpec) => number | undefined; problemOf: (f: FieldSpec) => string | null;
+  ceilingOf: (f: FieldSpec) => number | undefined; minimumOf: (f: FieldSpec) => number | undefined; problemOf: (f: FieldSpec) => string | null;
   onChange: (k: keyof RiskConfig, v: string) => void; onBlur: (k: keyof RiskConfig) => void;
 }) {
   return (
@@ -213,7 +215,7 @@ function FieldGroup({ title, note, fields, drafts, touched, ceilingOf, problemOf
       {note && <p className="mt-space-1 text-t13 text-fg-muted">{note}</p>}
       <div className="mt-space-3 grid grid-cols-1 gap-space-4 sm:grid-cols-2 lg:grid-cols-3">
         {fields.map((f) => (
-          <LimitField key={f.key} spec={f} value={drafts[f.key] ?? ""} ceiling={ceilingOf(f)} problem={touched[f.key] ? problemOf(f) : null}
+          <LimitField key={f.key} spec={f} value={drafts[f.key] ?? ""} ceiling={ceilingOf(f)} minimum={minimumOf(f)} problem={touched[f.key] ? problemOf(f) : null}
             onChange={(v) => onChange(f.key, v)} onBlur={() => onBlur(f.key)} />
         ))}
       </div>
@@ -221,8 +223,8 @@ function FieldGroup({ title, note, fields, drafts, touched, ceilingOf, problemOf
   );
 }
 
-function LimitField({ spec, value, ceiling, problem, onChange, onBlur }: {
-  spec: FieldSpec; value: string; ceiling: number | undefined; problem: string | null; onChange: (v: string) => void; onBlur: () => void;
+function LimitField({ spec, value, ceiling, minimum, problem, onChange, onBlur }: {
+  spec: FieldSpec; value: string; ceiling: number | undefined; minimum: number | undefined; problem: string | null; onChange: (v: string) => void; onBlur: () => void;
 }) {
   const id = useId();
   const helpId = `${id}-help`;
@@ -239,7 +241,8 @@ function LimitField({ spec, value, ceiling, problem, onChange, onBlur }: {
         className={`${FIELD} font-tabular ${problem ? "border-warn" : ""}`} />
       {problem && <p id={errId} role="alert" className="mt-space-1 text-t12 font-medium text-warn">{problem}</p>}
       <p id={helpId} className="mt-space-1 text-t12 text-fg-muted">
-        {spec.help}{typeof ceiling === "number" ? ` Up to ${formatNumber(ceiling, Number.isInteger(ceiling) ? 0 : 2)}.` : ""}
+        {spec.help}{typeof minimum === "number" && minimum > 0 ? ` At least ${formatNumber(minimum, Number.isInteger(minimum) ? 0 : 2)}.` : ""}
+        {typeof ceiling === "number" ? ` Up to ${formatNumber(ceiling, Number.isInteger(ceiling) ? 0 : 2)}.` : ""}
       </p>
     </div>
   );

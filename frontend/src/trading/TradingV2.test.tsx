@@ -23,10 +23,10 @@ const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, 
 const code = (src: string) => src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1");
 const ALL = [positionsSource, portfolioSource, riskSource, riskPartsSource, partsSource, modelSource, confirmSource].map(code).join("\n");
 
-function row(p = trade(), actions: Partial<RowActions> = {}) {
+function row(p = trade(), actions: Partial<RowActions> = {}, prices = true) {
   const [r] = heldRows([p], exposure());
   const a: RowActions = { exitNowOn: true, canTrade: true, onExit: noop, onCheck: noop, ...actions };
-  return renderToStaticMarkup(<MemoryRouter><ul><PositionRowV2 row={r} position={p} actions={a} /></ul></MemoryRouter>);
+  return renderToStaticMarkup(<MemoryRouter><ul><PositionRowV2 row={r} position={p} actions={a} prices={prices} /></ul></MemoryRouter>);
 }
 
 describe("UI2-9a router wiring (UI v2 §12: PageV2 ?? Page)", () => {
@@ -56,6 +56,19 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
     expect(button).toContain("border-border");
     expect(code(positionsSource)).toMatch(/if \(!window\.confirm\(exitConfirmText\(p\)\)\) return;\s*try \{\s*const result = await api\.exitNow\(p\.id\)/);
     expect(code(oldPositionsSource)).toContain("window.confirm(`Exit ${p.direction} ${p.symbol} x${p.quantity} (PAPER) now, at the current price?`)");
+  });
+
+  it("without a broker session: the same Exit now, no price or P&L columns, and the paper account's pause stays", () => {
+    const html = row(trade(), {}, false);
+    expect(html).toContain('data-testid="exit-now"');
+    expect(html).not.toContain("data-col");
+    expect(text(html)).not.toMatch(/LTP|P&L|₹/);
+    const gated = code(positionsSource).slice(code(positionsSource).indexOf("if (!connected)"), code(positionsSource).indexOf("const tiles"));
+    expect(gated).toContain("<PaperAccountCard canTrade={canTrade} />");
+    expect(gated).toContain("prices={false}");
+    expect(gated).toContain('<LoadFailedV2 what="your positions" />');
+    expect(gated).not.toContain('broker.kind !== "loading"');
+    expect(gated).toMatch(/exitNowOn && canTrade \? " You can still exit a paper position here\." : ""/);
   });
 
   it("only for a paper position the trader can trade; a live one is closed in the broker's app", () => {
@@ -89,6 +102,7 @@ describe("UI2-9a exits (ADR-0004, UI-11)", () => {
     expect(riskPartsSource).toContain("Orders will no longer be checked against");
     expect(code(confirmSource)).not.toMatch(/bg-down|text-down|bg-brand/);
     expect(code(confirmSource)).toContain("bg-fg text-surface-1");
+    expect(code(confirmSource)).toMatch(/description=\{<span[^>]*data-consequence>\{consequence\}<\/span>\}/);   // read with the title
   });
 });
 

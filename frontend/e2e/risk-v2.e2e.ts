@@ -106,6 +106,15 @@ test.describe("v2 risk 1440 desktop", () => {
     expect(writes.calls.filter((c) => c.url === "/risk-settings")).toHaveLength(0);
   });
 
+  test("halving the size at a larger drawdown than the pause is marked and nothing is sent", async ({ page }) => {
+    const writes = await open(page, "light");
+    await page.getByLabel("Halve the size at a drawdown of (%)").fill("12");
+    await page.getByRole("button", { name: "Save limits" }).click();
+    await expect(page.locator("[data-field='dd_level_1_pct'] [role='alert']"))
+      .toHaveText("Halve the size at a drawdown no larger than the one that pauses new entries (10%).");
+    expect(writes.calls.filter((c) => c.url === "/risk-settings")).toHaveLength(0);
+  });
+
   test("removing an event: a neutral button, then a confirm that names what changes", async ({ page }) => {
     const writes = await open(page, "light");
     const row = page.locator("[data-event='32']");
@@ -119,6 +128,8 @@ test.describe("v2 risk 1440 desktop", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Remove this market event?");
     await expect(dialog).toContainText("New entries in RELIANCE will no longer be blocked on 23 Oct 2026.");
+    const described = await dialog.getAttribute("aria-describedby");
+    await expect(page.locator(`[id="${described}"]`)).toContainText("will no longer be blocked");     // read with the title
     await dialog.getByRole("button", { name: "Cancel" }).click();
     expect(writes.calls.filter((c) => c.method === "DELETE")).toHaveLength(0);
     await remove.click();

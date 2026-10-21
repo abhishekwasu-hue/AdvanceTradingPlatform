@@ -25,7 +25,9 @@ const BUTTON = "inline-flex h-11 items-center justify-center rounded-control px-
 
 export function ConfirmDialog({ open, onOpenChange, title, consequence, confirmLabel, onConfirm, busy = false }: ConfirmDialogProps) {
   return (
+    // The consequence is the dialog's description, so a screen reader reads it with the title (aria-describedby).
     <Dialog open={open} onOpenChange={onOpenChange} title={title}
+      description={<span className="text-t14 text-fg" data-consequence>{consequence}</span>}
       footer={(
         <>
           <button type="button" onClick={() => onOpenChange(false)} className={`${BUTTON} border border-border bg-surface-1 text-fg hover:bg-surface-2`}>
@@ -36,8 +38,6 @@ export function ConfirmDialog({ open, onOpenChange, title, consequence, confirmL
             {confirmLabel}
           </button>
         </>
-      )}>
-      <p className="text-t14 text-fg" data-consequence>{consequence}</p>
-    </Dialog>
+      )} />
   );
 }

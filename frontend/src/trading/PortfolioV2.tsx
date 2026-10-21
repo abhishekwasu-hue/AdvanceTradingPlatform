@@ -57,7 +57,7 @@ export default function PortfolioV2(_props: PageProps = {}) {
               sub={tiles.investedPct === null ? undefined : `${formatNumber(tiles.investedPct, 0)}% of capital`} />
             <TileV2 testId="open-pnl" label="Open P&L" hint="open-pnl" value={formatSignedINR(tiles.openPnl, { compact: true })} tone={signTone(tiles.openPnl)}
               sub={tiles.openPnl === null && (pos?.length ?? 0) > 0 ? "waiting for live prices" : undefined} />
-            <TileV2 testId="booked" label="Booked so far" value={formatSignedINR(tiles.booked, { compact: true })} tone={signTone(tiles.booked)}
+            <TileV2 testId="booked" label="Booked so far (paper and live)" value={formatSignedINR(tiles.booked, { compact: true })} tone={signTone(tiles.booked)}
               sub={done ? `${closedCount} closed ${closedCount === 1 ? "trade" : "trades"}` : undefined} />
             <TileV2 testId="risk" label="Risk at stops" hint="risk-at-stops" value={formatINR(tiles.riskAtStops, { compact: true })}
               sub={tiles.riskPct === null ? undefined : `${formatNumber(tiles.riskPct, 1)}% of capital`} />

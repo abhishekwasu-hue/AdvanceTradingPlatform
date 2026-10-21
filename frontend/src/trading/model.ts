@@ -249,7 +249,8 @@ export interface PortfolioTiles {
   riskPct: number | null;
 }
 
-/** The four tiles: money in open positions, open P&L, booked P&L (every closed trade), risk at the stops. */
+/** The four tiles: money in open positions, open P&L, booked P&L (every closed trade, paper and live together - the
+ * tile says so), risk at the stops. */
 export function portfolioTiles(positions: TradeRecord[] | null, trades: TradeRecord[] | null, exposure: PortfolioExposure | null): PortfolioTiles {
   const fallback = positions ? positions.reduce((a, p) => a + Math.abs(p.entry_price * p.quantity), 0) : null;
   const booked = trades ? trades.filter((t) => t.exit_time !== null).reduce((a, t) => a + (t.pnl ?? 0), 0) : null;
@@ -423,16 +424,25 @@ export function checkStatus(status: "PASS" | "WARN" | "BLOCK"): { label: string;
   return status === "BLOCK" ? { label: "Blocked", tone: "warn" } : status === "WARN" ? { label: "Warning", tone: "warn" } : { label: "Passed", tone: "neutral" };
 }
 
-/** A limit field's problem in words, or null: blank or not a number, below zero, or above the platform's ceiling. The
- * server checks the same again; this only says it next to the field before anything is sent. */
-export function fieldProblem(raw: string, ceiling?: number | null): string | null {
+/** A limit field's problem in words, or null: blank or not a number, below zero, below the platform's minimum, or above
+ * its ceiling. The server checks the same again; this only says it next to the field before anything is sent. */
+export function fieldProblem(raw: string, ceiling?: number | null, minimum?: number | null): string | null {
   const text = raw.trim();
   if (text === "") return "Enter a number.";
   const v = Number(text);
   if (!Number.isFinite(v)) return "Enter a number.";
   if (v < 0) return "Enter 0 or more.";
-  if (typeof ceiling === "number" && Number.isFinite(ceiling) && v > ceiling) {
-    return `The most allowed is ${formatNumber(ceiling, Number.isInteger(ceiling) ? 0 : 2)}.`;
-  }
+  const shown = (n: number) => formatNumber(n, Number.isInteger(n) ? 0 : 2);
+  if (typeof minimum === "number" && Number.isFinite(minimum) && minimum > 0 && v < minimum) return `The least allowed is ${shown(minimum)}.`;
+  if (typeof ceiling === "number" && Number.isFinite(ceiling) && v > ceiling) return `The most allowed is ${shown(ceiling)}.`;
   return null;
+}
+
+/** The drawdown ladder halves the size before it pauses entries: the first level may not be above the second. Only an
+ * added check - it never lets through anything the server would refuse. */
+export function drawdownOrderProblem(level1: string, level2: string): string | null {
+  const a = Number(level1.trim());
+  const b = Number(level2.trim());
+  if (level1.trim() === "" || level2.trim() === "" || !Number.isFinite(a) || !Number.isFinite(b) || a <= b) return null;
+  return `Halve the size at a drawdown no larger than the one that pauses new entries (${formatNumber(b, Number.isInteger(b) ? 0 : 2)}%).`;
 }

@@ -4,6 +4,7 @@
  * hidden, the watchlist column and list) kept per browser.
  */
 import type { CandleVolumeSource, SystemStatus } from "../types";
+import { chartTabPath } from "../shell/shellRoutes";
 import { formatDateIST, formatTimeIST } from "../ui/format";
 import { CHART_TYPES_V2, OVERLAYS_V2, type ChartTypeV2, type OverlayId } from "./chartCore";
 import { DEFAULT_TIMEFRAME, TIMEFRAMES, isTimeframe, type TimeframeId } from "./timeframes";
@@ -123,4 +124,21 @@ export function drawingNote(message: string | null | undefined): string | null {
   if (/^This drawing (is locked|changed in another window)/.test(message)) return message;
   if (/needs (a )?(text|time|price)|anchor|< or >/.test(message)) return "That drawing was not finished. Pick the tool and place it again.";
   return "A drawing change could not be saved. Check your connection, then try again.";
+}
+
+// --- Addresses of the Chart tab (UI2-4e) -----------------------------------------------------------------------------
+
+export { chartTabPath };
+
+/** UI2-4e: an old single-chart window link (`/?chart=SYM&tf=15min&exchange=NSE&broker_name=..`) under `ui_v2` opens the
+ * Chart tab instead, with its timeframe and exchange. The broker name is dropped: v2 charts read the trader's session. */
+export function chartWindowRedirect(params: URLSearchParams): string {
+  const tf = params.get("tf");
+  return chartTabPath(params.get("chart") ?? "", params.get("exchange"), isTimeframe(tf) ? tf : null);
+}
+
+/** The timeframe a Chart tab address asks for (`?tf=`), or null. Not with `symbol` (an old workspace link's start). */
+export function addressTimeframe(params: URLSearchParams): TimeframeId | null {
+  const tf = params.get("tf");
+  return !params.has("symbol") && isTimeframe(tf) ? tf : null;
 }

@@ -34,6 +34,19 @@ export function chartsPath(symbol?: string | null): string {
   return s ? `/charts/${encodeURIComponent(s)}` : "/charts";
 }
 
+/** UI2-4e: a chart on the Chart tab with its timeframe: `/charts/NIFTY%2050?tf=15min` (`&exchange=BSE` off NSE) - an
+ * embedded chart's "Open in Chart tab", Signals' "Open chart". The Charts page takes the timeframe (when it is one it
+ * knows), then drops it from the address. */
+export function chartTabPath(symbol: string, exchange?: string | null, timeframe?: string | null): string {
+  const s = symbol.trim().toUpperCase();
+  const q = new URLSearchParams();
+  if (timeframe) q.set("tf", timeframe);
+  const x = (exchange ?? "").trim().toUpperCase();
+  if (s && x && x !== "NSE") q.set("exchange", x);
+  const query = q.toString();
+  return query ? `${chartsPath(s)}?${query}` : chartsPath(s);
+}
+
 /** What the v2 shell shows at `pathname`: the Charts page, a merged page's new address, or today's page id. */
 export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (chartsSymbolFromPath(pathname) !== undefined) return "charts";

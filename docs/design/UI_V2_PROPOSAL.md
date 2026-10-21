@@ -608,6 +608,8 @@ It is served by a new **`GET /api/broker/specs`**. `store_broker_credentials` va
 
 Opens on first sign-in. It is skippable at any step ("Skip for now") and resumable: progress is stored on the server per user, and the dashboard chip "Setup 2 of 4 · Next: set your risk limits" stays until all 4 steps are done or dismissed. The wizard also lives at **Settings → Setup**, together with the moved go-live checklist (`GET /api/readiness`).
 
+**Accepted (UI2-7):** the wizard opens by itself only while no step is done (and never for a VIEWER), so a new member who joins an organisation that is already set up sees the Setup chip on the dashboard, not the auto-opened wizard.
+
 | Step | Title | What the user does | Done when | Reuses |
 |---|---|---|---|---|
 | 1 | **Connect your broker** | The 3-step Connect flow (§10). "I'll trade on paper first" skips it. | A credential is stored and the smoke test passed, or skipped | Connect flow, `/broker/*` |

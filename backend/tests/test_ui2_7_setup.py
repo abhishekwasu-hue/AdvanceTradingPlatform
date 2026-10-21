@@ -319,5 +319,12 @@ def test_reading_writes_nothing():
 def test_stored_value_reads_leniently():
     assert prefs.stored_value("setup", None) == SETUP_DEFAULTS
     assert prefs.stored_value("setup", json.dumps({"steps": {"broker": {"skipped_at": "nonsense"}}})) == SETUP_DEFAULTS
+    # one bad mark is dropped on its own; the other marks are kept
+    one_bad = json.dumps({"steps": {"broker": {"skipped_at": "nonsense"}, "risk": {"skipped_at": T}}, "opened_at": T,
+                          "dismissed_at": "2019-01-01T00:00:00Z"})
+    read = prefs.stored_value("setup", one_bad)
+    assert read["steps"]["broker"] == NO_MARK and read["steps"]["risk"] == {"skipped_at": "2026-10-21T09:30:00Z"}
+    assert read["opened_at"] == "2026-10-21T09:30:00Z" and read["dismissed_at"] is None
+    assert prefs.stored_value("setup", json.dumps({"steps": "x", "opened_at": T}))["opened_at"] == "2026-10-21T09:30:00Z"
     newer = json.dumps({"opened_at": T, "intro_dismissed": ["dashboard"]})       # a key a newer release saved is dropped
     assert prefs.stored_value("setup", newer)["opened_at"] == "2026-10-21T09:30:00Z"

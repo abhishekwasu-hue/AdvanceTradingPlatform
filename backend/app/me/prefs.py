@@ -109,9 +109,23 @@ def defaults(namespace: str) -> Dict[str, Any]:
     return NAMESPACES[namespace]().model_dump(mode="json")
 
 
+def _drop_at(data: Dict[str, Any], loc: Tuple[Any, ...]) -> bool:
+    """Removes the value at `loc` (or the nearest enclosing key that exists) so its default applies; False if none."""
+    for size in range(len(loc), 0, -1):
+        node: Any = data
+        for key in loc[:size - 1]:
+            node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, dict) and loc[size - 1] in node:
+            del node[loc[size - 1]]
+            return True
+    return False
+
+
 def stored_value(namespace: str, raw: Optional[str]) -> Dict[str, Any]:
     """A stored value as the current schema reads it: keys this release does not know (a newer release saved them) are
-    dropped; anything else that no longer validates falls back to the defaults, so a read never fails."""
+    dropped, and so is each value that no longer validates (that field takes its default, the rest is kept - one bad
+    setup mark never loses the others); a value that still cannot be read falls back to the defaults, so a read never
+    fails."""
     model = NAMESPACES[namespace]
     try:
         data = json.loads(raw or "{}")
@@ -120,10 +134,14 @@ def stored_value(namespace: str, raw: Optional[str]) -> Dict[str, Any]:
     if not isinstance(data, dict):
         return defaults(namespace)
     known = {k: v for k, v in data.items() if k in model.model_fields}
-    try:
-        return model.model_validate_json(json.dumps(known)).model_dump(mode="json")
-    except ValidationError:
-        return defaults(namespace)
+    for _ in range(16):                                  # each pass drops at least one bad value, so this ends
+        try:
+            return model.model_validate_json(json.dumps(known)).model_dump(mode="json")
+        except ValidationError as exc:
+            dropped = [_drop_at(known, tuple(e.get("loc", ()))) for e in exc.errors(include_input=False, include_url=False)]
+            if not any(dropped):
+                break
+    return defaults(namespace)
 
 
 def _own(tenant_id: int, user_id: int):

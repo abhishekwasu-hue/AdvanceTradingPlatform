@@ -140,8 +140,9 @@ async def upsert_alert_channel(
         session.add(record)
         event = "alert_channel_created"
     else:
-        if existing_raw != json.loads(config.model_dump_json()):
-            # UI2-7: another destination or credential - the last good send no longer proves this channel works.
+        if kind != AlertChannelType.PUSH.value and existing_raw != json.loads(config.model_dump_json()):
+            # UI2-7: another destination or credential - the last good send no longer proves this channel works. Not for
+            # PUSH: its upserts add or remove one member's device (merge_push), which says nothing about the others.
             record.last_delivered_at = None
         record.encrypted_config = encrypt_config(config, user.tenant_id)
         event = "alert_channel_updated"

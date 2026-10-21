@@ -7,6 +7,7 @@ import type { DrawingKind } from "../charting/drawings";
 import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
 import type { DrawingController } from "../charting/tools";
+import { LtpHub } from "../charting/ltpHub";
 import { useLiveLtp } from "../components/chartHelpers";
 import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
@@ -28,7 +29,7 @@ import {
 } from "./chartsPage";
 import { IndicatorsMenu } from "./IndicatorsMenu";
 import { toggle as toggleIndicator } from "./indicatorsModel";
-import { START_PARAMS, startChartFrom } from "./multiChart";
+import { CandlePool, START_PARAMS, startChartFrom } from "./multiChart";
 import MultiChartV2 from "./MultiChartV2";
 import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
 import { useChartCandles } from "./useChartCandles";
@@ -43,7 +44,8 @@ import type { WatchItem } from "./watchlistsV2";
  * - Tab "Chart" (default): one large v2 chart (ChartV2) and one top bar - symbol, market state, timeframe, chart type,
  *   Indicators, undo / redo for drawings, chart settings, full screen (button, F, Escape).
  * - Tab "Multi-chart" (only while `chart_workspace` is on): UI2-4d, the CH5 workspace with a v2 chart per cell
- *   (MultiChartV2). The Chart tab reads nothing while it is not shown.
+ *   (MultiChartV2). Each tab reads nothing while the other shows; both keep their bars, and the cells' shared reads
+ *   (one candle pool, one last-price hub) belong to the page, so switching tabs does not read everything again.
  * The v2 shell puts the broker gate in front of this page (src/ui/dataPages.ts): signed out, with no broker or before
  * the day's broker login the trader sees the gate card, never candles or sample data. Candles, the live price and the
  * drawings all come from the trader's own broker session and account.
@@ -108,7 +110,8 @@ export default function ChartsPageV2(_props: PageProps) {
   const chip = marketChip(status, exchange, now);
 
   const prefs = useChartPrefs(userId);
-  const data = useChartCandles({ enabled: !waiting && tab === "chart", symbol, exchange, timeframe });
+  // While the Multi-chart tab shows, the Chart tab keeps its bars and reads nothing (one refresh when it shows again).
+  const data = useChartCandles({ enabled: !waiting, paused: tab !== "chart", symbol, exchange, timeframe });
   const last = data.candles[data.candles.length - 1];
   // The live price moves the newest bar: intraday while the market is open (or its state is not known), day / week /
   // month only while the server marks that bar as forming.
@@ -175,6 +178,15 @@ export default function ChartsPageV2(_props: PageProps) {
     for (const k of START_PARAMS) next.delete(k);
     return next;
   }, { replace: true }), [setParams]);
+  // Without the Multi-chart tab those parameters mean nothing here: they leave the address.
+  const stray = tab === "chart" && params.has("symbol");
+  useEffect(() => { if (stray) clearStart(); }, [stray, clearStart]);
+  // The Multi-chart tab's shared reads, for the page's life; the tab itself stays mounted (hidden) after its first visit.
+  const pool = useMemo(() => new CandlePool(api.marketDataCandles), []);
+  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e)), []);
+  useEffect(() => () => ltpHub.dispose(), [ltpHub]);
+  const [multiSeen, setMultiSeen] = useState(tab === "multi");
+  if (tab === "multi" && !multiSeen) setMultiSeen(true);
 
   return (
     <div ref={root} data-page="charts-v2" data-fullscreen={fs.on ? "on" : "off"}
@@ -196,11 +208,7 @@ export default function ChartsPageV2(_props: PageProps) {
         </div>
       )}
 
-      {tab === "multi" ? (
-        <MultiChartV2 key={String(userId)} symbol={symbol} exchange={exchange} userId={userId} offered={offered} timeframesKnown={timeframes !== null}
-          prefs={prefs.prefs} drawingsHidden={view.drawings_hidden} marketOpen={(ex) => marketChip(status, ex, now)?.open ?? null}
-          start={startChartFrom(params)} onStarted={clearStart} onOpenChart={openChart} />
-      ) : (
+      {tab === "chart" && (
         <div className={cx("flex min-h-0 gap-space-3", fs.on && "flex-1")}>
           <section aria-label={`Chart of ${symbol}`} className="flex min-h-0 min-w-0 flex-1 flex-col rounded-panel border border-subtle bg-surface-1">
             <div role="toolbar" aria-label="Chart controls" data-chart-toolbar
@@ -272,6 +280,12 @@ export default function ChartsPageV2(_props: PageProps) {
             </aside>
           )}
         </div>
+      )}
+      {multi && multiSeen && (
+        <MultiChartV2 key={String(userId)} shown={tab === "multi"} pool={pool} ltpHub={ltpHub}
+          symbol={symbol} exchange={exchange} userId={userId} offered={offered} timeframesKnown={timeframes !== null}
+          prefs={prefs.prefs} drawingsHidden={view.drawings_hidden} marketOpen={(ex) => marketChip(status, ex, now)?.open ?? null}
+          start={startChartFrom(params)} onStarted={clearStart} onOpenChart={openChart} />
       )}
       {watchOn && !wide && (
         <Sheet side="bottom" open={sheet} onOpenChange={setSheet} title="Watchlist">

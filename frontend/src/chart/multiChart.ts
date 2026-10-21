@@ -66,8 +66,15 @@ export function startLayoutV2(start: StartChart | null, draft: LayoutV1 | null, 
   return draft ?? defaultLayoutV2(symbol, exchange);
 }
 
-/** UI2-4d: an old `/?workspace=1[&chart=&tf=&exchange=]` link under `ui_v2` opens the Multi-chart tab. */
-export function workspaceRedirect(params: URLSearchParams): string {
+/** UI2-4d: an old `/?workspace=1[&chart=&tf=&exchange=]` link under `ui_v2` opens the Multi-chart tab. While
+ * `chart_workspace` is off there is no such tab: the link's symbol opens on the Chart tab, with its exchange. */
+export function workspaceRedirect(params: URLSearchParams, multi = true): string {
+  if (!multi) {
+    const symbol = params.get("chart")?.trim().toUpperCase();
+    const exchange = params.get("exchange")?.trim().toUpperCase();
+    const path = symbol ? `/charts/${encodeURIComponent(symbol)}` : "/charts";
+    return symbol && exchange && exchange !== "NSE" ? `${path}?exchange=${encodeURIComponent(exchange)}` : path;
+  }
   const next = new URLSearchParams({ tab: "multi" });
   for (const [from, to] of [["chart", "symbol"], ["tf", "tf"], ["exchange", "exchange"]] as const) {
     const v = params.get(from)?.trim();
@@ -110,52 +117,104 @@ export interface PoolOptions {
   maxInFlight: number;
   /** An identical request answered this recently is answered again from memory (charts of one symbol and timeframe). */
   freshMs: number;
+  /** A read with no answer after this long gives its place up and fails (it is asked again on the next tick). */
+  timeoutMs: number;
+}
+
+/** What a stopped read rejects with. */
+export const aborted = (): Error => Object.assign(new Error("The read was stopped."), { name: "AbortError" });
+
+interface Job {
+  key: string; args: Parameters<FetchCandles>; waiters: number; started: boolean;
+  promise: Promise<CandlesResponse>; resolve: (v: CandlesResponse) => void; reject: (e: unknown) => void;
 }
 
 /**
- * UI2-4d: the Multi-chart tab's candle reads, shared by its cells. Identical requests (symbol, timeframe, days,
- * exchange, before, options) are sent once: one in flight is joined, and one answered within `freshMs` is answered
- * again. At most `maxInFlight` go out at once. A failed read is never kept. The server's per-user limit (120 candle
- * reads a minute) and its shared candle copies (LD-10) stay the backstop; this keeps eight charts well under both.
- * Pure (the fetch and the clock are given).
+ * UI2-4d: the Multi-chart tab's candle reads, shared by its cells (and kept by the page across tab switches).
+ * Identical requests (symbol, timeframe, days, exchange, before, options) are sent once: one waiting or in flight is
+ * joined, and one answered within `freshMs` is answered again. At most `maxInFlight` go out at once; a read still
+ * waiting its turn when every chart that asked for it has stopped (its signal aborted) is never sent, and a read with
+ * no answer after `timeoutMs` frees its place. A failed read is never kept. The server's per-user limit (120 candle
+ * reads a minute) and its shared candle copies (LD-10) stay the backstop. Pure (the fetch and the clock are given).
  */
 export class CandlePool {
-  private inFlight = new Map<string, Promise<CandlesResponse>>();
+  private jobs = new Map<string, Job>();
   private recent = new Map<string, { at: number; value: CandlesResponse }>();
-  private waiting: (() => void)[] = [];
+  private queue: Job[] = [];
   private running = 0;
   /** Requests actually sent (tests, diagnostics). */
   sent = 0;
 
-  constructor(private readonly fetch: FetchCandles, private readonly options: PoolOptions = { maxInFlight: 2, freshMs: 30_000 },
+  constructor(private readonly fetch: FetchCandles,
+              private readonly options: PoolOptions = { maxInFlight: 2, freshMs: 30_000, timeoutMs: 30_000 },
               private readonly now: () => number = () => Date.now()) {}
 
-  /** The pool as a drop-in for `api.marketDataCandles`. */
-  readonly fetchCandles: FetchCandles = (...args) => this.get(args);
+  /** The pool as a drop-in for `api.marketDataCandles`, with an optional last argument: the asking chart's signal. */
+  readonly fetchCandles: FetchCandles = (...args) => {
+    const signal = args[7];
+    return this.get(args.slice(0, 7) as Parameters<FetchCandles>, signal);
+  };
 
-  private get(args: Parameters<FetchCandles>): Promise<CandlesResponse> {
-    const key = JSON.stringify(args.map((a) => a ?? null));
+  private get(args: Parameters<FetchCandles>, signal?: AbortSignal): Promise<CandlesResponse> {
+    if (signal?.aborted) return Promise.reject(aborted());
+    const key = JSON.stringify(Array.from({ length: 7 }, (_, i) => args[i] ?? null));   // a left-out argument = undefined
     const t = this.now();
     for (const [k, r] of this.recent) if (t - r.at >= this.options.freshMs) this.recent.delete(k);
     const hit = this.recent.get(key);
     if (hit) return Promise.resolve(hit.value);
-    const flying = this.inFlight.get(key);
-    if (flying) return flying;
-    const p = this.slot()
-      .then(() => { this.sent += 1; return this.fetch(...args); })
-      .then((value) => { this.recent.set(key, { at: this.now(), value }); return value; })
-      .finally(() => { this.inFlight.delete(key); this.release(); });
-    this.inFlight.set(key, p);
-    return p;
+    let job = this.jobs.get(key);
+    if (!job) {
+      let resolve!: (v: CandlesResponse) => void;
+      let reject!: (e: unknown) => void;
+      const promise = new Promise<CandlesResponse>((res, rej) => { resolve = res; reject = rej; });
+      promise.catch(() => undefined);                    // a job nobody waits for any more fails quietly
+      job = { key, args, waiters: 0, started: false, promise, resolve, reject };
+      this.jobs.set(key, job);
+      this.queue.push(job);
+    }
+    job.waiters += 1;
+    const answer = this.follow(job, signal);
+    this.pump();
+    return answer;
   }
 
-  private slot(): Promise<void> {
-    if (this.running < this.options.maxInFlight) { this.running += 1; return Promise.resolve(); }
-    return new Promise((resolve) => this.waiting.push(() => { this.running += 1; resolve(); }));
+  /** The job's answer for one chart; that chart stopping leaves the job (and drops it while it is still waiting). */
+  private follow(job: Job, signal?: AbortSignal): Promise<CandlesResponse> {
+    if (!signal) return job.promise;
+    return new Promise((resolve, reject) => {
+      const stop = () => { this.leave(job); reject(aborted()); };
+      signal.addEventListener("abort", stop, { once: true });
+      job.promise.then(
+        (v) => { signal.removeEventListener("abort", stop); resolve(v); },
+        (e) => { signal.removeEventListener("abort", stop); reject(e); },
+      );
+    });
   }
 
-  private release(): void {
-    this.running -= 1;
-    this.waiting.shift()?.();
+  private leave(job: Job): void {
+    job.waiters -= 1;
+    if (job.waiters > 0 || job.started) return;
+    this.queue = this.queue.filter((j) => j !== job);
+    if (this.jobs.get(job.key) === job) this.jobs.delete(job.key);
+    job.reject(aborted());
+  }
+
+  private pump(): void {
+    while (this.running < this.options.maxInFlight && this.queue.length) {
+      const job = this.queue.shift() as Job;
+      job.started = true;
+      this.running += 1;
+      this.sent += 1;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The read took too long.")), this.options.timeoutMs); });
+      Promise.race([Promise.resolve().then(() => this.fetch(...job.args)), late])
+        .then((value) => { this.recent.set(job.key, { at: this.now(), value }); job.resolve(value); }, job.reject)
+        .finally(() => {
+          clearTimeout(timer);
+          if (this.jobs.get(job.key) === job) this.jobs.delete(job.key);
+          this.running -= 1;
+          this.pump();
+        });
+    }
   }
 }

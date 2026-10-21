@@ -6,7 +6,7 @@ import {
 import type { CandlesResponse } from "../types";
 import { offeredTimeframes } from "./chartsPage";
 import {
-  CandlePool, LAST_LAYOUT_KEY, MULTI_DRAFT_KEY, cellChartType, cellTimeframe, layoutErrorText, readMultiDraft, saveMultiDraft, shownCount,
+  CandlePool, LAST_LAYOUT_KEY, aborted, MULTI_DRAFT_KEY, cellChartType, cellTimeframe, layoutErrorText, readMultiDraft, saveMultiDraft, shownCount,
   startChartFrom, startLayoutV2, workspaceRedirect,
 } from "./multiChart";
 import { FeedGate, type FetchCandles } from "./useChartCandles";
@@ -21,11 +21,13 @@ function wire() {
     calls.push(args);
     return new Promise<CandlesResponse>((resolve, reject) => pending.push({ resolve, reject }));
   }) as unknown as FetchCandles;
+  const flush = async () => { for (let k = 0; k < 20; k += 1) await Promise.resolve(); };
   const settle = async (i: number, fail = false) => {
+    await flush();
     if (fail) pending[i].reject(new Error("down")); else pending[i].resolve(answer(calls[i][0][0]));
-    await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    await flush();
   };
-  return { calls, fetch, settle };
+  return { calls, fetch, settle, flush };
 }
 
 beforeEach(() => {
@@ -66,6 +68,10 @@ describe("UI2-4d Multi-chart: where a layout starts", () => {
     expect(workspaceRedirect(new URLSearchParams("workspace=1"))).toBe("/charts?tab=multi");
     expect(workspaceRedirect(new URLSearchParams("workspace=1&chart=NIFTY%2050&tf=15min&exchange=NSE")))
       .toBe("/charts?tab=multi&symbol=NIFTY+50&tf=15min&exchange=NSE");
+    // chart_workspace off: no Multi-chart tab - the symbol on the Chart tab, with its exchange (NSE left out).
+    expect(workspaceRedirect(new URLSearchParams("workspace=1&chart=sbin&tf=15min&exchange=bse"), false)).toBe("/charts/SBIN?exchange=BSE");
+    expect(workspaceRedirect(new URLSearchParams("workspace=1&chart=NIFTY%2050&exchange=NSE"), false)).toBe("/charts/NIFTY%2050");
+    expect(workspaceRedirect(new URLSearchParams("workspace=1"), false)).toBe("/charts");
   });
 
   it("grid sizes are CH5's 1, 2, 4, 6 and 8; a phone shows one or two of them", () => {
@@ -119,10 +125,10 @@ describe("UI2-4d Multi-chart: cells on the v2 chart", () => {
 describe("UI2-4d Multi-chart: shared reads", () => {
   it("four charts on two symbols ask twice: identical reads in flight are joined", async () => {
     const w = wire();
-    const pool = new CandlePool(w.fetch, { maxInFlight: 4, freshMs: 30_000 });
+    const pool = new CandlePool(w.fetch, { maxInFlight: 4, freshMs: 30_000, timeoutMs: 30_000 });
     const read = (s: string) => pool.fetchCandles([s], "5min", 10, "NSE", undefined, undefined, { forming: false, volume_from_future: true });
     const answers = [read("NIFTY 50"), read("NIFTY 50"), read("NIFTY BANK"), read("NIFTY BANK")];
-    await Promise.resolve();
+    await w.flush();
     expect(w.calls.map((c) => c[0][0])).toEqual(["NIFTY 50", "NIFTY BANK"]);
     await w.settle(0); await w.settle(1);
     const got = await Promise.all(answers);
@@ -130,17 +136,17 @@ describe("UI2-4d Multi-chart: shared reads", () => {
     expect(pool.sent).toBe(2);
     // Another timeframe or lookback of the same symbol is its own read.
     void pool.fetchCandles(["NIFTY 50"], "15min", 20, "NSE");
-    await Promise.resolve();
+    await w.flush();
     expect(w.calls).toHaveLength(3);
   });
 
   it("a read answered within freshMs is answered again; after it, or after a failure, it is sent again", async () => {
     let t = 0;
     const w = wire();
-    const pool = new CandlePool(w.fetch, { maxInFlight: 2, freshMs: 30_000 }, () => t);
+    const pool = new CandlePool(w.fetch, { maxInFlight: 2, freshMs: 30_000, timeoutMs: 30_000 }, () => t);
     const read = () => pool.fetchCandles(["SBIN"], "day", 730, "NSE");
     const first = read();
-    await Promise.resolve();
+    await w.flush();
     await w.settle(0);
     await first;
     t = 29_000;
@@ -148,12 +154,12 @@ describe("UI2-4d Multi-chart: shared reads", () => {
     expect(w.calls).toHaveLength(1);
     t = 31_000;
     const again = read();
-    await Promise.resolve();
+    await w.flush();
     expect(w.calls).toHaveLength(2);
     await w.settle(1, true);
     await expect(again).rejects.toThrow("down");
     const retry = read();
-    await Promise.resolve();
+    await w.flush();
     expect(w.calls).toHaveLength(3);                                       // a failure is never kept
     await w.settle(2);
     await retry;
@@ -161,15 +167,72 @@ describe("UI2-4d Multi-chart: shared reads", () => {
 
   it("eight first loads are staggered: two on the wire at once, the next as one is answered", async () => {
     const w = wire();
-    const pool = new CandlePool(w.fetch, { maxInFlight: 2, freshMs: 30_000 });
+    const pool = new CandlePool(w.fetch, { maxInFlight: 2, freshMs: 30_000, timeoutMs: 30_000 });
     const all = ["A", "B", "C", "D", "E", "F", "G", "H"].map((s) => pool.fetchCandles([s], "5min", 10, "NSE"));
-    await Promise.resolve();
+    await w.flush();
     expect(w.calls.map((c) => c[0][0])).toEqual(["A", "B"]);
     await w.settle(0);
     expect(w.calls.map((c) => c[0][0])).toEqual(["A", "B", "C"]);
     for (let i = 1; i < 8; i += 1) await w.settle(i);
     await Promise.all(all);
     expect(pool.sent).toBe(8);
+  });
+
+  it("a read still waiting its turn is dropped when every chart that asked for it has stopped", async () => {
+    const w = wire();
+    const pool = new CandlePool(w.fetch, { maxInFlight: 1, freshMs: 30_000, timeoutMs: 30_000 });
+    const first = pool.fetchCandles(["A"], "5min", 10, "NSE");
+    const one = new AbortController();
+    const two = new AbortController();
+    const b1 = pool.fetchCandles(["B"], "5min", 10, "NSE", undefined, undefined, undefined, one.signal);
+    const b2 = pool.fetchCandles(["B"], "5min", 10, "NSE", undefined, undefined, undefined, two.signal);
+    const c = pool.fetchCandles(["C"], "5min", 10, "NSE");
+    await w.flush();
+    one.abort();
+    await expect(b1).rejects.toMatchObject({ name: "AbortError" });
+    two.abort();                                                           // nobody waits for B any more
+    await expect(b2).rejects.toMatchObject({ name: "AbortError" });
+    await w.settle(0);
+    await first;
+    expect(w.calls.map((x) => x[0][0])).toEqual(["A", "C"]);              // B was never sent
+    await w.settle(1);
+    await c;
+    expect(pool.sent).toBe(2);
+    expect(aborted().name).toBe("AbortError");
+  });
+
+  it("a chart that stops keeps a shared read going for the others, and a read already sent is not dropped", async () => {
+    const w = wire();
+    const pool = new CandlePool(w.fetch, { maxInFlight: 2, freshMs: 30_000, timeoutMs: 30_000 });
+    const gone = new AbortController();
+    const a1 = pool.fetchCandles(["A"], "5min", 10, "NSE", undefined, undefined, undefined, gone.signal);
+    const a2 = pool.fetchCandles(["A"], "5min", 10, "NSE");
+    await w.flush();
+    gone.abort();
+    await expect(a1).rejects.toMatchObject({ name: "AbortError" });
+    await w.settle(0);
+    expect((await a2).symbols.A).toBeDefined();
+    expect(pool.sent).toBe(1);
+  });
+
+  it("two reads with no answer give their places up after timeoutMs; the next ones go out", async () => {
+    vi.useFakeTimers();
+    try {
+      const w = wire();
+      const pool = new CandlePool(w.fetch, { maxInFlight: 2, freshMs: 30_000, timeoutMs: 30_000 });
+      const hung = [pool.fetchCandles(["A"], "5min", 10, "NSE"), pool.fetchCandles(["B"], "5min", 10, "NSE")];
+      for (const h of hung) h.catch(() => undefined);
+      const next = pool.fetchCandles(["C"], "5min", 10, "NSE");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(w.calls).toHaveLength(2);
+      await vi.advanceTimersByTimeAsync(30_000);
+      await expect(hung[0]).rejects.toThrow("too long");
+      expect(w.calls.map((x) => x[0][0])).toEqual(["A", "B", "C"]);
+      await w.settle(2);
+      await next;
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("a paused chart (off screen, hidden tab) reads nothing; a read missed while paused follows once on resume", () => {

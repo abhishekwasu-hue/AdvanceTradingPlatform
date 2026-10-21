@@ -113,7 +113,9 @@ export class FeedGate {
   }
 }
 
-export type FetchCandles = typeof api.marketDataCandles;
+/** The candle read, with an optional last argument: this chart's signal, aborted when it stops (a shared pool then
+ * drops a read nobody waits for; the plain API call ignores it). */
+export type FetchCandles = (...args: [...Parameters<typeof api.marketDataCandles>, AbortSignal?]) => ReturnType<typeof api.marketDataCandles>;
 
 /** One chart's reads: the timeframe's whole history until one read succeeds (a failed first read is retried whole on
  * the next tick, never as a short refresh), then the newest days. After `stop` no answer is used, so a late answer
@@ -185,13 +187,16 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
   const pausedRef = useRef(paused);
   pausedRef.current = paused;
   const gate = useRef<FeedGate | null>(null);
+  const stopRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     guard.current.reset();
     setCandles([]); setError(null); setExhausted(false); setLoadingOlder(false); setVolumeSource(null);
     if (!enabled || !sym) return undefined;
     const v2 = { forming: DAILY_OR_LONGER.has(timeframe), volume_from_future: true };
-    const feed = new CandleFeed((days) => fetchRef.current([sym], timeframe, days, exchange, undefined, undefined, v2), sym, timeframe, {
+    const stop = new AbortController();
+    stopRef.current = stop;
+    const feed = new CandleFeed((days) => fetchRef.current([sym], timeframe, days, exchange, undefined, undefined, v2, stop.signal), sym, timeframe, {
       loading: setLoading,
       replace: (bars, volume) => { setCandles(bars); setVolumeSource(volume); },
       merge: (bars, volume) => { setCandles((prev) => mergeBars(prev, bars)); setVolumeSource(volume); },
@@ -200,7 +205,7 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
     const g = new FeedGate(() => void feed.tick(), pausedRef.current);
     gate.current = g;
     const id = window.setInterval(() => g.timer(), refreshMs);
-    return () => { feed.stop(); window.clearInterval(id); setLoading(false); if (gate.current === g) gate.current = null; };
+    return () => { feed.stop(); stop.abort(); window.clearInterval(id); setLoading(false); if (gate.current === g) gate.current = null; };
   }, [enabled, sym, exchange, timeframe, refreshMs, nonce]);
   useEffect(() => { gate.current?.setPaused(paused); }, [paused]);
 
@@ -211,7 +216,7 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
     const oldest = Date.parse(bars[0].timestamp);
     setLoadingOlder(true);
     fetchRef.current([sym], timeframe, olderPageDaysFor(timeframe), exchange, undefined, istDate(bars[0]),
-                          { forming: false, volume_from_future: true })
+                     { forming: false, volume_from_future: true }, stopRef.current?.signal)
       .then((r) => {
         const entry = r.symbols[sym];
         // Only a good answer with nothing older ends the paging; a per-symbol error (budget, a broker hiccup) is retried.

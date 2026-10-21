@@ -12,9 +12,10 @@ import { expectPhoneLayout } from "./phoneLayout";
  * - UI2-4c: the watchlist (column `charts-v2-watchlist-1440-<theme>.png`, phone sheet `charts-v2-390-sheet-light.png`),
  *   versioned saves, the batch quotes, the drawing rail (a new drawing sends its timeframe; Delete all asks first) and
  *   the phone's drawing menu. The watchlist only with the `watchlists` flag on.
- * - UI2-4d: the Multi-chart tab (`charts-v2-multi-1440-<theme>.png`, `charts-v2-multi-390-light.png`) - only with
+ * - UI2-4d: the Multi-chart tab (`charts-v2-multi-1440-<theme>.png`, `charts-v2-multi-390-<theme>.png`) - only with
  *   `chart_workspace` on, two charts for a new trader, grids, link groups, a saved layout's PUT read back, "Open in
- *   Chart tab", old `?workspace=1` links, and the shared reads (one per symbol and timeframe).
+ *   Chart tab", old `?workspace=1` links, the shared reads (one per symbol and timeframe) and the reads a hidden tab or
+ *   an off-screen cell does not make.
  * Every reply is made-up data (e2e/chartsMocks.ts): no real account, price or id.
  * After an intended change: `npx playwright test --project=phone e2e/charts-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
@@ -677,6 +678,80 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     expect(first.every((c) => c.timeframe === "5min" && c.lookback_days === 10)).toBe(true);
     expect(calls.ltpSymbols).toHaveLength(2);
   });
+
+  test("tab switches keep both tabs' bars: a hidden tab reads nothing, then refreshes once", async ({ page }) => {
+    const calls = await open(page, "light", { storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY BANK", "15min", null], ["NIFTY BANK", "15min", null]])) } });
+    await chartReady(page);
+    // Newest-bar reads only (a chart at its oldest bar also asks once for older history: `before`).
+    const chartTab = () => calls.candles.filter((c) => c.symbol === "NIFTY 50" && !c.before);
+    const cellsRead = () => calls.candles.filter((c) => c.symbol === "NIFTY BANK" && !c.before);
+    const bank = () => calls.ltpSymbols.filter((s) => s === "NIFTY BANK").length;
+    expect(chartTab().map((c) => c.lookback_days)).toEqual([10]);
+    await page.getByRole("tab", { name: "Multi-chart" }).click();
+    await cellsReady(page, 2);
+    expect(cellsRead().map((c) => c.lookback_days)).toEqual([20]);                         // one history read for two cells
+    // Two minutes on the Multi-chart tab: the Chart tab reads nothing.
+    await page.clock.runFor(125_000);
+    expect(chartTab()).toHaveLength(1);
+    // Back on the Chart tab: its bars are still there and one short refresh follows (no history read again).
+    const polls = bank();
+    await page.getByRole("tab", { name: "Chart", exact: true }).click();
+    await chartReady(page);
+    await expect.poll(() => chartTab().length).toBe(2);
+    expect(chartTab()[1].lookback_days).toBe(2);
+    // The hidden Multi-chart tab reads nothing either; switching back and forth reads no history again.
+    const cellReads = cellsRead().length;
+    await page.clock.runFor(125_000);
+    expect(cellsRead()).toHaveLength(cellReads);
+    expect(bank()).toBe(polls);
+    const chartReads = chartTab().length;                                                   // its own refreshes while shown
+    for (let i = 0; i < 3; i += 1) {
+      await page.getByRole("tab", { name: "Multi-chart" }).click();
+      await page.getByRole("tab", { name: "Chart", exact: true }).click();
+    }
+    await page.getByRole("tab", { name: "Multi-chart" }).click();
+    await cellsReady(page, 2);
+    await expect.poll(() => cellsRead().length).toBe(cellReads + 1);                       // one refresh for both cells
+    expect(cellsRead().filter((c) => c.lookback_days === 20)).toHaveLength(1);
+    expect(bank() - polls).toBeLessThanOrEqual(1);                                          // one price poll, not one per switch
+    expect(chartTab()).toHaveLength(chartReads);                                            // brief visits: no extra reads
+  });
+
+  test("an old link with a saved layout used last: an unsaved layout, so Save names a new one (POST)", async ({ page }) => {
+    const calls = await open(page, "light", { storage: { atp_workspace_last: "7" },
+      layouts: [{ id: 7, name: "Morning", layout: layoutOf([["NIFTY 50", "5min", null], ["NIFTY 50", "60min", null], ["NIFTY 50", "day", null], ["NIFTY 50", "week", null]]) }] });
+    await page.goto("/?workspace=1&chart=NIFTY%20BANK&tf=15min");
+    await expect(page).toHaveURL(/\/charts\?tab=multi$/);
+    await cellsReady(page, 2);
+    await expect(page.getByLabel("Saved layouts")).toHaveValue("");
+    await expect(page.getByLabel("Saved layouts").locator("option")).toHaveText(["Unsaved layout", "Morning"]);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByLabel("Name of the layout").fill("Banks");
+    await page.getByRole("button", { name: "Save layout" }).click();
+    await expect(page.getByText('Saved "Banks".')).toBeVisible();
+    expect(calls.layoutWrites.map((w) => w.method)).toEqual(["POST"]);
+    // Escape in the name field closes it and puts the focus back on Save.
+    await page.getByRole("button", { name: "Save as…" }).click();
+    await page.getByLabel("Name of the layout").press("Escape");
+    await expect(page.getByLabel("Name of the layout")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeFocused();
+  });
+
+  test("a layout changed in another window: Save says so, takes the newest version, and the next Save goes through", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/charts?tab=multi", storage: { atp_workspace_last: "7" },
+      layouts: [{ id: 7, name: "Morning", layout: layoutOf([["NIFTY 50", "5min", null], ["NIFTY BANK", "5min", null]]) }] });
+    await cellsReady(page, 2);
+    // Another window saves first (version 1 -> 2).
+    await page.evaluate(async (layout) => {
+      await fetch("/api/v1/charts/layouts/7", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: 1, layout }) });
+    }, layoutOf([["NIFTY 50", "5min", null]]));
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText(/changed in another window/)).toBeVisible();
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY BANK 5m"]);   // the screen stays
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText('Saved "Morning".')).toBeVisible();
+    expect(calls.layoutWrites.map((w) => [w.method, w.body?.version])).toEqual([["PUT", 1], ["PUT", 1], ["PUT", 2]]);
+  });
 });
 
 test.describe("old workspace links (UI2-4d)", () => {
@@ -688,6 +763,16 @@ test.describe("old workspace links (UI2-4d)", () => {
     await expect(page).toHaveURL(/\/charts\?tab=multi$/);
     await cellsReady(page, 2);
     expect(await cellNames(page)).toEqual(["Chart 1: NIFTY BANK 15m", "Chart 2: NIFTY BANK 15m"]);
+  });
+
+  test("under ui_v2 with chart_workspace off: the link's symbol on the Chart tab, with its exchange", async ({ page }) => {
+    const calls = await open(page, "light", { workspace: false });
+    await chartReady(page);
+    await page.goto("/?workspace=1&chart=SBIN&tf=15min&exchange=BSE");
+    await expect(page).toHaveURL(/\/charts\/SBIN\?exchange=BSE$/);
+    await chartReady(page);
+    await expect(page.locator("[data-multi-chart]")).toHaveCount(0);
+    expect(calls.candles.at(-1)?.symbol).toBe("SBIN");
   });
 
   test("with ui_v2 off ?workspace=1 is today's workspace, unchanged", async ({ page }) => {
@@ -760,8 +845,8 @@ test.describe("v2 Charts 390 phone", () => {
     expect(calls.drawingPosts[0]).toMatchObject({ timeframe: "5min" });
   });
 
-  test("UI2-4d: the Multi-chart tab - one or two charts, stacked, no sideways scroll, 44 px targets", async ({ page }) => {
-    await open(page, "light", { path: "/charts?tab=multi" });
+  for (const theme of THEMES) test(`UI2-4d: the Multi-chart tab - one or two charts, stacked, no sideways scroll, 44 px targets (${theme})`, async ({ page }) => {
+    await open(page, theme, { path: "/charts?tab=multi" });
     await cellsReady(page, 2);
     await expect(page.getByRole("group", { name: "Charts on screen" }).getByRole("button")).toHaveText(["1", "2"]);
     const [a, b] = await cells(page).evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, w: r.width })));
@@ -770,7 +855,7 @@ test.describe("v2 Charts 390 phone", () => {
     await expectPhoneLayout(page);
     await page.evaluate(() => window.scrollTo(0, 0));
     await page.mouse.move(0, 0);
-    await expect(page).toHaveScreenshot("charts-v2-multi-390-light.png", SHOT);
+    await expect(page).toHaveScreenshot(`charts-v2-multi-390-${theme}.png`, SHOT);
   });
 
   test("UI2-4d: an eight-chart layout on a phone shows its first two and says so", async ({ page }) => {
@@ -778,6 +863,26 @@ test.describe("v2 Charts 390 phone", () => {
       storage: { [DRAFT]: JSON.stringify(layoutOf(Array.from({ length: 8 }, (_, i) => [i % 2 ? "NIFTY BANK" : "NIFTY 50", "5min", null] as [string, string, null]))) } });
     await cellsReady(page, 2);
     await expect(page.getByText("This screen shows the first 2 of the layout's 8 charts.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "2 charts" })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+test.describe("v2 Charts 390x560 phone: off-screen cells (UI2-4d)", () => {
+  test.use({ viewport: { width: 390, height: 560 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("the second chart reads its candles only once it is scrolled into view", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/charts?tab=multi",
+      storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY 50", "5min", null], ["NIFTY BANK", "5min", null]])) } });
+    await expect(page.locator("[data-multi-chart] .tv-lightweight-charts")).toHaveCount(2);
+    await expect.poll(() => calls.candles.filter((c) => c.symbol === "NIFTY 50" && !c.before).length).toBe(1);
+    const below = await cells(page).nth(1).evaluate((e) => e.getBoundingClientRect().top - window.innerHeight);
+    expect(below).toBeGreaterThan(64);                                                       // off screen, past the margin
+    await page.clock.runFor(65_000);
+    expect(calls.candles.filter((c) => c.symbol === "NIFTY BANK")).toHaveLength(0);
+    expect(calls.ltpSymbols).not.toContain("NIFTY BANK");
+    await cells(page).nth(1).scrollIntoViewIfNeeded();
+    await expect.poll(() => calls.candles.filter((c) => c.symbol === "NIFTY BANK" && !c.before).length).toBe(1);
+    await cellsReady(page, 2);
   });
 });
 

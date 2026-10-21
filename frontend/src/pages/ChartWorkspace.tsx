@@ -51,9 +51,10 @@ export default function ChartWorkspace({ params }: { params: URLSearchParams }) 
   // UI2-0: from the app's single /system/features read; null until it is in.
   const features = useFeatures();
   const enabled: boolean | null = features.loaded ? features.on("chart_workspace") : null;
-  // UI2-4d: with `ui_v2` on, an old workspace link opens the Charts page's Multi-chart tab instead (flag off: as before).
+  // UI2-4d: with `ui_v2` on, an old workspace link opens the Charts page's Multi-chart tab instead (or, while
+  // `chart_workspace` is off, its symbol on the Chart tab). With `ui_v2` off: as before.
   const v2 = features.loaded && features.on("ui_v2");
-  useEffect(() => { if (v2) window.location.replace(workspaceRedirect(params)); }, [v2, params]);
+  useEffect(() => { if (v2) window.location.replace(workspaceRedirect(params, enabled === true)); }, [v2, params, enabled]);
 
   if (loading || v2) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the workspace again.</div>;

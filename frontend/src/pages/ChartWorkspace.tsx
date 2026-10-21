@@ -12,10 +12,11 @@ import type { IndicatorId } from "../utils/indicators";
 import { CrosshairLink } from "../charting/crosshairLink";
 import { SHORTCUTS, nextChartType, shortcutFor, type WorkspaceAction } from "../charting/shortcuts";
 import {
-  CHART_TYPES, GRIDS, GROUPS, GROUP_COLORS, LayoutConflict, TIMEFRAMES, defaultLayout, gridShape, layoutProblem, layoutsApi, linkedPeers, moveActive,
+  CH5_TIMEFRAMES, CHART_TYPES, GRIDS, GROUPS, GROUP_COLORS, LayoutConflict, ch5Cell, defaultLayout, gridShape, layoutProblem, layoutsApi, linkedPeers, moveActive,
   nextGroup, setActive, setChartType, setGrid, setGroup, setGroupSync, setSymbol, setTimeframe, stepTimeframe, syncOf,
   type CellV1, type ChartType, type Group, type LayoutV1, type StoredLayout, type Timeframe,
 } from "../charting/workspace";
+import { workspaceRedirect } from "../chart/multiChart";
 
 const DRAFT_KEY = "atp_workspace_draft";
 const LAST_KEY = "atp_workspace_last";
@@ -50,8 +51,12 @@ export default function ChartWorkspace({ params }: { params: URLSearchParams }) 
   // UI2-0: from the app's single /system/features read; null until it is in.
   const features = useFeatures();
   const enabled: boolean | null = features.loaded ? features.on("chart_workspace") : null;
+  // UI2-4d: with `ui_v2` on, an old workspace link opens the Charts page's Multi-chart tab instead (or, while
+  // `chart_workspace` is off, its symbol on the Chart tab). With `ui_v2` off: as before.
+  const v2 = features.loaded && features.on("ui_v2");
+  useEffect(() => { if (v2) window.location.replace(workspaceRedirect(params, enabled === true)); }, [v2, params, enabled]);
 
-  if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (loading || v2) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the workspace again.</div>;
   if (enabled === null) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!enabled) return <div className="p-6 text-sm text-fg">The multi-chart workspace is not enabled for your organisation yet. Single charts open from any chart&apos;s &quot;New tab&quot; button.</div>;
@@ -61,7 +66,7 @@ export default function ChartWorkspace({ params }: { params: URLSearchParams }) 
 function startLayout(params: URLSearchParams): LayoutV1 {
   const symbol = (params.get("chart") ?? "").trim();
   if (symbol) {
-    const tf = TIMEFRAMES.includes(params.get("tf") as Timeframe) ? (params.get("tf") as Timeframe) : "5min";
+    const tf = (CH5_TIMEFRAMES as readonly string[]).includes(params.get("tf") ?? "") ? (params.get("tf") as Timeframe) : "5min";
     return defaultLayout(symbol, params.get("exchange") ?? "NSE", tf);
   }
   return readDraft() ?? defaultLayout();
@@ -166,9 +171,9 @@ function Workspace({ params }: { params: URLSearchParams }) {
       switch (action.type) {
         case "grid": apply((x) => setGrid(x, action.grid)); setMaximized(false); break;
         case "focus": apply((x) => moveActive(x, action.delta)); break;
-        case "timeframe": apply((x) => setTimeframe(x, a, stepTimeframe(x.cells[a].timeframe, action.delta))); break;
+        case "timeframe": apply((x) => setTimeframe(x, a, stepTimeframe(ch5Cell(x.cells[a]).timeframe, action.delta, CH5_TIMEFRAMES))); break;
         case "cycleGroup": apply((x) => setGroup(x, a, nextGroup(x.cells[a].group))); break;
-        case "cycleChartType": apply((x) => setChartType(x, a, nextChartType(x.cells[a].chart_type))); break;
+        case "cycleChartType": apply((x) => setChartType(x, a, nextChartType(ch5Cell(x.cells[a]).chart_type))); break;
         case "maximize": setMaximized((m) => !m); break;
         case "symbol": symbolBoxes.current[a]?.focus(); symbolBoxes.current[a]?.select(); break;
         case "save": void save(false); break;
@@ -255,7 +260,8 @@ interface CellProps {
   onChartType: (t: ChartType) => void;
 }
 
-function WorkspaceCell({ index, cell: c, active, compact, height, maximized, link, ltpHub, symbolBox, onFocus, onSymbol, onTimeframe, onGroup, onMaximize, onChartType }: CellProps) {
+function WorkspaceCell({ index, cell, active, compact, height, maximized, link, ltpHub, symbolBox, onFocus, onSymbol, onTimeframe, onGroup, onMaximize, onChartType }: CellProps) {
+  const c = ch5Cell(cell);           // UI2-4d: a v2 cell's week / month / bars shows as day / candles here
   const chart = useBrokerChart({ enabled: true, symbol: c.symbol, timeframe: c.timeframe, exchange: c.exchange });
   const live = useSharedLtp(ltpHub, c.timeframe !== "day", c.symbol, c.exchange, active ? ACTIVE_LTP_MS : INACTIVE_LTP_MS);
   const [draft, setDraft] = useState(c.symbol);
@@ -284,7 +290,7 @@ function WorkspaceCell({ index, cell: c, active, compact, height, maximized, lin
         <button onClick={onMaximize} title={maximized ? "Back to the grid (Alt+Enter)" : "Full size (Alt+Enter)"} aria-label={maximized ? "Back to the grid" : "Full size"}
                 className="ml-auto rounded p-0.5 text-fg-muted hover:text-fg">{maximized ? <Minimize2 size={11} /> : <Maximize2 size={11} />}</button>
       </div>
-      <ProChart candles={chart.candles} symbol={c.symbol} timeframe={c.timeframe} timeframes={[...TIMEFRAMES]} onTimeframeChange={(tf) => onTimeframe(tf as Timeframe)}
+      <ProChart candles={chart.candles} symbol={c.symbol} timeframe={c.timeframe} timeframes={[...CH5_TIMEFRAMES]} onTimeframeChange={(tf) => onTimeframe(tf as Timeframe)}
                 live={c.timeframe === "day" ? null : live.ltp} liveError={live.error} exchange={c.exchange} height={height} compact={compact}
                 defaultIndicators={compact ? NO_INDICATORS : FULL_INDICATORS} drawingTools={active} chartType={c.chart_type} venueAxis
                 onLoadOlder={chart.loadOlder} loadingOlder={chart.loadingOlder} olderExhausted={chart.exhausted} onEngine={onEngine} />

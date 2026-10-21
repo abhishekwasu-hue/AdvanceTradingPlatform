@@ -12,6 +12,10 @@ import { expectPhoneLayout } from "./phoneLayout";
  * - UI2-4c: the watchlist (column `charts-v2-watchlist-1440-<theme>.png`, phone sheet `charts-v2-390-sheet-light.png`),
  *   versioned saves, the batch quotes, the drawing rail (a new drawing sends its timeframe; Delete all asks first) and
  *   the phone's drawing menu. The watchlist only with the `watchlists` flag on.
+ * - UI2-4d: the Multi-chart tab (`charts-v2-multi-1440-<theme>.png`, `charts-v2-multi-390-<theme>.png`) - only with
+ *   `chart_workspace` on, two charts for a new trader, grids, link groups, a saved layout's PUT read back, "Open in
+ *   Chart tab", old `?workspace=1` links, the shared reads (one per symbol and timeframe) and the reads a hidden tab or
+ *   an off-screen cell does not make.
  * Every reply is made-up data (e2e/chartsMocks.ts): no real account, price or id.
  * After an intended change: `npx playwright test --project=phone e2e/charts-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
@@ -24,6 +28,8 @@ interface Setup extends ChartsMocks {
   flag?: boolean; brokers?: unknown[]; path?: string; intro?: boolean;
   /** UI2-4c: the `watchlists` flag on as well. */
   watch?: boolean;
+  /** UI2-4d: the `chart_workspace` flag (default on). */
+  workspace?: boolean;
   /** More localStorage for the first load (e.g. this user's recent symbols). */
   storage?: Record<string, string>;
   /** More routes, registered after the mocks so they answer first. */
@@ -33,7 +39,7 @@ interface Setup extends ChartsMocks {
 }
 
 async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Promise<ChartsCalls> {
-  const { flag = true, brokers = CONNECTED, path = "/charts", intro = false, storage = {}, before, settle = true, watch = false, ...mocks } = setup;
+  const { flag = true, brokers = CONNECTED, path = "/charts", intro = false, storage = {}, before, settle = true, watch = false, workspace = true, ...mocks } = setup;
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript(([t, intro, storage]) => {
     try {
@@ -47,7 +53,7 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Pro
     } catch { /* storage unavailable */ }
   }, [theme, intro, storage] as const);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-  await mockApi(page, { features: flag ? { ui_v2: true, chart_workspace: true, ...(watch ? { watchlists: true } : {}) } : undefined, brokers });
+  await mockApi(page, { features: flag ? { ui_v2: true, chart_workspace: workspace, ...(watch ? { watchlists: true } : {}) } : undefined, brokers });
   const calls = await mockCharts(page, mocks);
   await before?.(page);
   await page.goto(path);
@@ -349,14 +355,6 @@ test.describe("v2 Charts 1440 desktop", () => {
     await page.mouse.move(0, 0);
     await expect(page).toHaveScreenshot("charts-v2-chartlight-on-dark-1440.png", SHOT);
   });
-
-  test("the Multi-chart tab opens the workspace in a new tab", async ({ page }) => {
-    await open(page, "light");
-    await page.getByRole("tab", { name: "Multi-chart" }).click();
-    await expect(page).toHaveURL(/\?tab=multi$/);
-    await expect(page.getByRole("link", { name: /Open the multi-chart workspace/ })).toHaveAttribute("href", /workspace=1&chart=NIFTY\+50/);
-    await expect(page.locator("canvas")).toHaveCount(0);
-  });
 });
 
 test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
@@ -533,6 +531,262 @@ test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
   });
 });
 
+// --- UI2-4d: the Multi-chart tab ---------------------------------------------------------------------------------------
+
+/** A made-up `layout/1` with the given cells (symbol, timeframe, group). */
+function layoutOf(cells: [string, string, string | null][], groups: Record<string, unknown> = {}) {
+  return { schema: "layout/1", grid: cells.length, active: 0, groups,
+           cells: cells.map(([symbol, timeframe, group]) => ({ symbol, exchange: "NSE", timeframe, chart_type: "candles", group })) };
+}
+const DRAFT = "atp_charts_multi_draft:2";                                       // the made-up user's id is 2
+const cells = (page: Page) => page.locator("[data-multi-chart] section[data-cell]");
+const cellNames = (page: Page) => cells(page).evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")));
+
+/** Every shown cell has drawn its chart. */
+async function cellsReady(page: Page, n: number) {
+  await expect(cells(page)).toHaveCount(n);
+  await expect(page.locator("[data-multi-chart] .tv-lightweight-charts")).toHaveCount(n);
+  await expect(page.getByText("Loading prices…")).toHaveCount(0);
+}
+
+test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const theme of THEMES) {
+    test(`a new trader's two charts look the same (${theme})`, async ({ page }) => {
+      await open(page, theme, { path: "/charts?tab=multi" });
+      await cellsReady(page, 2);
+      expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY 50 5m"]);
+      await expect(page.getByRole("tab", { name: "Multi-chart" })).toHaveAttribute("aria-selected", "true");
+      // One chart theme for every cell (CHP-11).
+      await expect(page.locator("[data-multi-chart] [data-chart-theme]")).toHaveCount(2);
+      for (const t of await page.locator("[data-multi-chart] [data-chart-theme]").evaluateAll((els) => els.map((e) => e.getAttribute("data-chart-theme")))) expect(t).toBe(theme);
+      await page.mouse.move(0, 0);
+      await expect(page).toHaveScreenshot(`charts-v2-multi-1440-${theme}.png`, SHOT);
+    });
+  }
+
+  test("the tab shows only while chart_workspace is on", async ({ page }) => {
+    await open(page, "light", { workspace: false, path: "/charts?tab=multi" });
+    await chartReady(page);
+    await expect(page.getByRole("tablist", { name: "Charts" })).toHaveCount(0);
+    await expect(page.locator("[data-multi-chart]")).toHaveCount(0);
+    await expect(page.getByText(/not enabled/)).toHaveCount(0);
+  });
+
+  test("the Chart tab reads nothing while the Multi-chart tab shows; grids 1, 2, 4, 6 and 8", async ({ page }) => {
+    const calls = await open(page, "light");
+    await chartReady(page);
+    await page.getByRole("tab", { name: "Multi-chart" }).click();
+    await expect(page).toHaveURL(/\?tab=multi$/);
+    await cellsReady(page, 2);
+    const grid = page.getByRole("group", { name: "Charts on screen" });
+    await expect(grid.getByRole("button")).toHaveText(["1", "2", "4", "6", "8"]);
+    await grid.getByRole("button", { name: "4 charts" }).click();
+    await cellsReady(page, 4);
+    await grid.getByRole("button", { name: "8 charts" }).click();
+    await cellsReady(page, 8);
+    // Eight charts of one symbol and timeframe: still one read of their history.
+    expect(calls.candles.filter((c) => !c.before && c.timeframe === "5min" && c.lookback_days === 10)).toHaveLength(2);   // the Chart tab's, then the cells' one
+    await grid.getByRole("button", { name: "1 chart" }).click();
+    await cellsReady(page, 1);
+  });
+
+  test("link groups: a symbol change reaches its own group only", async ({ page }) => {
+    await open(page, "light", { storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY 50", "5min", null], ["NIFTY 50", "5min", null], ["NIFTY 50", "5min", null], ["NIFTY 50", "15min", null]])) },
+                                path: "/charts?tab=multi" });
+    await cellsReady(page, 4);
+    await page.getByRole("button", { name: "Link group of chart 1: none" }).click();
+    await page.getByRole("button", { name: "Link group of chart 2: none" }).click();
+    await page.getByRole("button", { name: "Link group of chart 3: none" }).click();
+    await page.getByRole("button", { name: "Link group of chart 3: A" }).click();
+    await expect(page.getByRole("button", { name: "Link group of chart 3: B" })).toBeVisible();
+    await expect(page.getByRole("group", { name: "Link group A" }).getByRole("checkbox", { name: "Link symbol" })).toBeChecked();
+    await expect(page.getByRole("group", { name: "Link group A" }).getByRole("checkbox", { name: "Link timeframe" })).not.toBeChecked();
+    const box = page.getByRole("combobox", { name: "Symbol of chart 1" });
+    await box.fill("NIFTY BANK");
+    await box.press("Enter");
+    await expect.poll(() => cellNames(page)).toEqual(["Chart 1: NIFTY BANK 5m", "Chart 2: NIFTY BANK 5m", "Chart 3: NIFTY 50 5m", "Chart 4: NIFTY 50 15m"]);
+    // A linked timeframe: on for A, then chart 2 moves both of A's charts and no other.
+    await page.getByRole("group", { name: "Link group A" }).getByRole("checkbox", { name: "Link timeframe" }).check();
+    await page.getByLabel("Timeframe of chart 2").selectOption("week");
+    await expect.poll(() => cellNames(page)).toEqual(["Chart 1: NIFTY BANK W", "Chart 2: NIFTY BANK W", "Chart 3: NIFTY 50 5m", "Chart 4: NIFTY 50 15m"]);
+    await cellsReady(page, 4);
+  });
+
+  test("a saved layout: Save sends a PUT with its version, and it is read back after a reload", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/charts?tab=multi", storage: { atp_workspace_last: "7" },
+      layouts: [{ id: 7, name: "Morning", layout: layoutOf([["NIFTY 50", "5min", "A"], ["NIFTY 50", "60min", "A"], ["NIFTY BANK", "day", null], ["NIFTY BANK", "week", null]], { A: { symbol: true, interval: false, crosshair: true } }) }] });
+    await cellsReady(page, 4);
+    await expect(page.getByLabel("Saved layouts")).toHaveValue("7");
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY 50 1H", "Chart 3: NIFTY BANK D", "Chart 4: NIFTY BANK W"]);
+    await page.getByRole("group", { name: "Charts on screen" }).getByRole("button", { name: "2 charts" }).click();
+    await page.getByLabel("Chart type of chart 2").selectOption("bars");
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText('Saved "Morning".')).toBeVisible();
+    expect(calls.layoutWrites).toHaveLength(1);
+    expect(calls.layoutWrites[0]).toMatchObject({ method: "PUT", id: 7, body: { version: 1, layout: { grid: 2 } } });
+    expect((calls.layoutWrites[0].body?.layout as { cells: { chart_type: string }[] }).cells.map((c) => c.chart_type)).toEqual(["candles", "bars"]);
+    // Read back from the server: this browser's draft is cleared first.
+    await page.evaluate((k) => localStorage.removeItem(k), DRAFT);
+    await page.reload();
+    await cellsReady(page, 2);
+    await expect(page.getByLabel("Saved layouts")).toHaveValue("7");
+    await expect(page.getByLabel("Chart type of chart 2")).toHaveValue("bars");
+  });
+
+  test("Save as names a new layout (POST); Delete asks first", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/charts?tab=multi" });
+    await cellsReady(page, 2);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByLabel("Name of the layout").fill("Two of NIFTY");
+    await page.getByRole("button", { name: "Save layout" }).click();
+    await expect(page.getByText('Saved "Two of NIFTY".')).toBeVisible();
+    expect(calls.layoutWrites[0]).toMatchObject({ method: "POST", body: { name: "Two of NIFTY", layout: { schema: "layout/1", grid: 2 } } });
+    await page.getByRole("button", { name: "Delete this saved layout" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete layout" }).click();
+    await expect(page.getByText(/Deleted "Two of NIFTY"/)).toBeVisible();
+    expect(calls.layoutWrites.at(-1)).toMatchObject({ method: "DELETE" });
+    await expect(cells(page)).toHaveCount(2);
+  });
+
+  test("Open in Chart tab: the cell's symbol and timeframe on the Chart tab", async ({ page }) => {
+    await open(page, "light", { path: "/charts?tab=multi", storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY 50", "5min", null], ["NIFTY BANK", "15min", null]])) } });
+    await cellsReady(page, 2);
+    await page.getByRole("button", { name: "Open chart 2 in the Chart tab" }).click();
+    await expect(page).toHaveURL(/\/charts\/NIFTY%20BANK$/);
+    await expect(page.getByRole("tab", { name: "Chart", exact: true })).toHaveAttribute("aria-selected", "true");
+    await chartReady(page);
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("week and month in a cell only while the server lists them", async ({ page }) => {
+    await open(page, "light", { path: "/charts?tab=multi", timeframes: ["1min", "3min", "5min", "15min", "30min", "60min", "day"],
+                                storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY 50", "week", null], ["NIFTY 50", "day", null]])) } });
+    await cellsReady(page, 2);
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY 50 D"]);
+    await expect(page.getByLabel("Timeframe of chart 1").locator("option")).toHaveText(["1m", "3m", "5m", "15m", "30m", "1H", "D"]);
+  });
+
+  test("four charts on two symbols: one history read and one price poll per symbol", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/charts?tab=multi",
+      storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY 50", "5min", null], ["NIFTY 50", "5min", null], ["NIFTY BANK", "5min", null], ["NIFTY BANK", "5min", null]])) } });
+    await cellsReady(page, 4);
+    await expect.poll(() => [...new Set(calls.ltpSymbols)].sort()).toEqual(["NIFTY 50", "NIFTY BANK"]);
+    const first = calls.candles.filter((c) => !c.before);
+    expect(first.map((c) => c.symbol).sort()).toEqual(["NIFTY 50", "NIFTY BANK"]);
+    expect(first.every((c) => c.timeframe === "5min" && c.lookback_days === 10)).toBe(true);
+    expect(calls.ltpSymbols).toHaveLength(2);
+  });
+
+  test("tab switches keep both tabs' bars: a hidden tab reads nothing, then refreshes once", async ({ page }) => {
+    const calls = await open(page, "light", { storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY BANK", "15min", null], ["NIFTY BANK", "15min", null]])) } });
+    await chartReady(page);
+    // Newest-bar reads only (a chart at its oldest bar also asks once for older history: `before`).
+    const chartTab = () => calls.candles.filter((c) => c.symbol === "NIFTY 50" && !c.before);
+    const cellsRead = () => calls.candles.filter((c) => c.symbol === "NIFTY BANK" && !c.before);
+    const bank = () => calls.ltpSymbols.filter((s) => s === "NIFTY BANK").length;
+    expect(chartTab().map((c) => c.lookback_days)).toEqual([10]);
+    await page.getByRole("tab", { name: "Multi-chart" }).click();
+    await cellsReady(page, 2);
+    expect(cellsRead().map((c) => c.lookback_days)).toEqual([20]);                         // one history read for two cells
+    // Two minutes on the Multi-chart tab: the Chart tab reads nothing.
+    await page.clock.runFor(125_000);
+    expect(chartTab()).toHaveLength(1);
+    // Back on the Chart tab: its bars are still there and one short refresh follows (no history read again).
+    const polls = bank();
+    await page.getByRole("tab", { name: "Chart", exact: true }).click();
+    await chartReady(page);
+    await expect(page.locator("[data-multi-chart]")).toBeHidden();                         // kept mounted, never on screen
+    await expect.poll(() => chartTab().length).toBe(2);
+    expect(chartTab()[1].lookback_days).toBe(2);
+    // The hidden Multi-chart tab reads nothing either; switching back and forth reads no history again.
+    const cellReads = cellsRead().length;
+    await page.clock.runFor(125_000);
+    expect(cellsRead()).toHaveLength(cellReads);
+    expect(bank()).toBe(polls);
+    const chartReads = chartTab().length;                                                   // its own refreshes while shown
+    for (let i = 0; i < 3; i += 1) {
+      await page.getByRole("tab", { name: "Multi-chart" }).click();
+      await page.getByRole("tab", { name: "Chart", exact: true }).click();
+    }
+    await page.getByRole("tab", { name: "Multi-chart" }).click();
+    await cellsReady(page, 2);
+    await expect.poll(() => cellsRead().length).toBe(cellReads + 1);                       // one refresh for both cells
+    expect(cellsRead().filter((c) => c.lookback_days === 20)).toHaveLength(1);
+    expect(bank() - polls).toBeLessThanOrEqual(1);                                          // one price poll, not one per switch
+    expect(chartTab()).toHaveLength(chartReads);                                            // brief visits: no extra reads
+  });
+
+  test("an old link with a saved layout used last: an unsaved layout, so Save names a new one (POST)", async ({ page }) => {
+    const calls = await open(page, "light", { storage: { atp_workspace_last: "7" },
+      layouts: [{ id: 7, name: "Morning", layout: layoutOf([["NIFTY 50", "5min", null], ["NIFTY 50", "60min", null], ["NIFTY 50", "day", null], ["NIFTY 50", "week", null]]) }] });
+    await page.goto("/?workspace=1&chart=NIFTY%20BANK&tf=15min");
+    await expect(page).toHaveURL(/\/charts\?tab=multi$/);
+    await cellsReady(page, 2);
+    await expect(page.getByLabel("Saved layouts")).toHaveValue("");
+    await expect(page.getByLabel("Saved layouts").locator("option")).toHaveText(["Unsaved layout", "Morning"]);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await page.getByLabel("Name of the layout").fill("Banks");
+    await page.getByRole("button", { name: "Save layout" }).click();
+    await expect(page.getByText('Saved "Banks".')).toBeVisible();
+    expect(calls.layoutWrites.map((w) => w.method)).toEqual(["POST"]);
+    // Escape in the name field closes it and puts the focus back on Save.
+    await page.getByRole("button", { name: "Save as…" }).click();
+    await page.getByLabel("Name of the layout").press("Escape");
+    await expect(page.getByLabel("Name of the layout")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Save", exact: true })).toBeFocused();
+  });
+
+  test("a layout changed in another window: Save says so, takes the newest version, and the next Save goes through", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/charts?tab=multi", storage: { atp_workspace_last: "7" },
+      layouts: [{ id: 7, name: "Morning", layout: layoutOf([["NIFTY 50", "5min", null], ["NIFTY BANK", "5min", null]]) }] });
+    await cellsReady(page, 2);
+    // Another window saves first (version 1 -> 2).
+    await page.evaluate(async (layout) => {
+      await fetch("/api/v1/charts/layouts/7", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ version: 1, layout }) });
+    }, layoutOf([["NIFTY 50", "5min", null]]));
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText(/changed in another window/)).toBeVisible();
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY 50 5m", "Chart 2: NIFTY BANK 5m"]);   // the screen stays
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(page.getByText('Saved "Morning".')).toBeVisible();
+    expect(calls.layoutWrites.map((w) => [w.method, w.body?.version])).toEqual([["PUT", 1], ["PUT", 1], ["PUT", 2]]);
+  });
+});
+
+test.describe("old workspace links (UI2-4d)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  test("under ui_v2 ?workspace=1 opens the Multi-chart tab with its symbol and timeframe", async ({ page }) => {
+    await open(page, "light");
+    await page.goto("/?workspace=1&chart=NIFTY%20BANK&tf=15min");
+    await expect(page).toHaveURL(/\/charts\?tab=multi$/);
+    await cellsReady(page, 2);
+    expect(await cellNames(page)).toEqual(["Chart 1: NIFTY BANK 15m", "Chart 2: NIFTY BANK 15m"]);
+  });
+
+  test("under ui_v2 with chart_workspace off: the link's symbol on the Chart tab, with its exchange", async ({ page }) => {
+    const calls = await open(page, "light", { workspace: false });
+    await chartReady(page);
+    await page.goto("/?workspace=1&chart=SBIN&tf=15min&exchange=BSE");
+    await expect(page).toHaveURL(/\/charts\/SBIN\?exchange=BSE$/);
+    await chartReady(page);
+    await expect(page.locator("[data-multi-chart]")).toHaveCount(0);
+    expect(calls.candles.at(-1)?.symbol).toBe("SBIN");
+  });
+
+  test("with ui_v2 off ?workspace=1 is today's workspace, unchanged", async ({ page }) => {
+    await open(page, "dark", { flag: false, path: "/?workspace=1&chart=NIFTY%2050",
+      before: (p) => p.route(/\/api(?:\/v1)?\/system\/features$/, (r) => r.fulfill({ json: { chart_workspace: true } })) });
+    await expect(page.getByText("Workspace", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(/\/\?workspace=1&chart=NIFTY%2050$/);
+    await expect(page.locator("[data-page='charts-v2']")).toHaveCount(0);
+    await expect(page.getByRole("group", { name: "Charts on screen" }).getByRole("button")).toHaveText(["1", "2", "4", "6", "8"]);
+    await expect(page.getByLabel("Chart type of chart 1").locator("option")).toHaveCount(7);   // no "bars" on the CH5 page
+  });
+});
+
 test.describe("v2 Charts 390 phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
@@ -590,6 +844,46 @@ test.describe("v2 Charts 390 phone", () => {
     await page.mouse.click(box.x + box.width / 2, box.y + box.height / 4);
     await expect.poll(() => calls.drawingPosts.length).toBe(1);
     expect(calls.drawingPosts[0]).toMatchObject({ timeframe: "5min" });
+  });
+
+  for (const theme of THEMES) test(`UI2-4d: the Multi-chart tab - one or two charts, stacked, no sideways scroll, 44 px targets (${theme})`, async ({ page }) => {
+    await open(page, theme, { path: "/charts?tab=multi" });
+    await cellsReady(page, 2);
+    await expect(page.getByRole("group", { name: "Charts on screen" }).getByRole("button")).toHaveText(["1", "2"]);
+    const [a, b] = await cells(page).evaluateAll((els) => els.map((e) => e.getBoundingClientRect()).map((r) => ({ x: r.x, y: r.y, w: r.width })));
+    expect(b.y).toBeGreaterThan(a.y);                                                           // stacked
+    expect(b.x).toBe(a.x);
+    await expectPhoneLayout(page);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.mouse.move(0, 0);
+    await expect(page).toHaveScreenshot(`charts-v2-multi-390-${theme}.png`, SHOT);
+  });
+
+  test("UI2-4d: an eight-chart layout on a phone shows its first two and says so", async ({ page }) => {
+    await open(page, "light", { path: "/charts?tab=multi",
+      storage: { [DRAFT]: JSON.stringify(layoutOf(Array.from({ length: 8 }, (_, i) => [i % 2 ? "NIFTY BANK" : "NIFTY 50", "5min", null] as [string, string, null]))) } });
+    await cellsReady(page, 2);
+    await expect(page.getByText("This screen shows the first 2 of the layout's 8 charts.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "2 charts" })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
+test.describe("v2 Charts 390x560 phone: off-screen cells (UI2-4d)", () => {
+  test.use({ viewport: { width: 390, height: 560 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("the second chart reads its candles only once it is scrolled into view", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/charts?tab=multi",
+      storage: { [DRAFT]: JSON.stringify(layoutOf([["NIFTY 50", "5min", null], ["NIFTY BANK", "5min", null]])) } });
+    await expect(page.locator("[data-multi-chart] .tv-lightweight-charts")).toHaveCount(2);
+    await expect.poll(() => calls.candles.filter((c) => c.symbol === "NIFTY 50" && !c.before).length).toBe(1);
+    const below = await cells(page).nth(1).evaluate((e) => e.getBoundingClientRect().top - window.innerHeight);
+    expect(below).toBeGreaterThan(64);                                                       // off screen, past the margin
+    await page.clock.runFor(65_000);
+    expect(calls.candles.filter((c) => c.symbol === "NIFTY BANK")).toHaveLength(0);
+    expect(calls.ltpSymbols).not.toContain("NIFTY BANK");
+    await cells(page).nth(1).scrollIntoViewIfNeeded();
+    await expect.poll(() => calls.candles.filter((c) => c.symbol === "NIFTY BANK" && !c.before).length).toBe(1);
+    await cellsReady(page, 2);
   });
 });
 

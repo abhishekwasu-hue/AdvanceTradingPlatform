@@ -3,8 +3,8 @@ import type { Page } from "@playwright/test";
 /**
  * UI2-4b2: the v2 Charts page's API replies for e2e/charts-v2.e2e.ts - made-up candles, last price, chart settings,
  * candle sources and market sessions (no real account, price or id). UI2-4c: made-up watchlists (versioned), batch
- * quotes and stored drawings. Registered after mockApi() and before
- * page.goto(), so they answer first. The candles are a function of the request only (never of the clock), so a
+ * quotes and stored drawings. UI2-4d: made-up saved chart layouts (versioned, as `/charts/layouts` does).
+ * Registered after mockApi() and before page.goto(), so they answer first. The candles are a function of the request only (never of the clock), so a
  * screenshot is the same on every run.
  */
 export const api = (path: string) => new RegExp(`/api(?:/v1)?${path}`);
@@ -21,11 +21,15 @@ export interface ChartsMocks {
   /** UI2-4c: stored horizontal lines per symbol (`{ "NIFTY 50": [24100, 24300] }`); `locked` prices stay on Delete all. */
   drawings?: Record<string, number[]>;
   locked?: number[];
+  /** UI2-4d: the saved multi-chart layouts `GET /charts/layouts` starts from (`layout/1`, version 1 each). */
+  layouts?: { id: number; name: string; layout: Record<string, unknown> }[];
 }
+
+export interface LayoutWrite { method: string; id: number | null; body: Record<string, unknown> | null }
 
 export interface WatchlistWrite { method: string; id: number | null; body: Record<string, unknown> | null }
 
-export interface CandleCall { timeframe: string; lookback_days: number; before: string | null; forming?: boolean; volume_from_future?: boolean }
+export interface CandleCall { symbol?: string; timeframe: string; lookback_days: number; before: string | null; forming?: boolean; volume_from_future?: boolean }
 
 export interface ChartsCalls {
   candles: CandleCall[];
@@ -37,6 +41,9 @@ export interface ChartsCalls {
   quotes: { symbol: string; exchange: string }[][];
   drawingPosts: Record<string, unknown>[];
   deleteAll: string[];
+  /** UI2-4d: each last-price read's symbol, and the saved layouts' writes. */
+  ltpSymbols: string[];
+  layoutWrites: LayoutWrite[];
 }
 
 const ALL = ["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"];
@@ -88,8 +95,8 @@ function madeUpPrice(symbol: string): { ltp: number; change: number } {
   return { ltp, change };
 }
 
-export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, market = "open", watchlists = [], drawings = {}, locked = [] }: ChartsMocks = {}): Promise<ChartsCalls> {
-  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], quotes: [], drawingPosts: [], deleteAll: [] };
+export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, market = "open", watchlists = [], drawings = {}, locked = [], layouts = [] }: ChartsMocks = {}): Promise<ChartsCalls> {
+  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], quotes: [], drawingPosts: [], deleteAll: [], ltpSymbols: [], layoutWrites: [] };
   let stored: Record<string, unknown> = prefs;
   let version = 1;
   const sessions = market === "open"
@@ -103,7 +110,7 @@ export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, mar
   } }));
   await page.route(api("/market-data/candles$"), (r) => {
     const body = r.request().postDataJSON() as CandleCall & { symbols: string[] };
-    calls.candles.push({ timeframe: body.timeframe, lookback_days: body.lookback_days, before: body.before, forming: body.forming, volume_from_future: body.volume_from_future });
+    calls.candles.push({ symbol: body.symbols[0], timeframe: body.timeframe, lookback_days: body.lookback_days, before: body.before, forming: body.forming, volume_from_future: body.volume_from_future });
     const symbol = body.symbols[0];
     // Older pages: none (the broker has no older history), so the chart must ask only once.
     const bars = body.before ? [] : madeUpBars(body.timeframe);
@@ -118,6 +125,7 @@ export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, mar
   });
   await page.route(api("/market-data/ltp"), (r) => {
     calls.ltp += 1;
+    calls.ltpSymbols.push(new URL(r.request().url()).searchParams.get("symbol") ?? "");
     return r.fulfill({ json: { symbol: "NIFTY 50", exchange: "NSE", source_broker: "upstox", fetched_at: "2026-10-19T05:30:00Z", ltp: 24_420.5,
                                 timestamp: "2026-10-19T05:29:58Z", age_seconds: 2, stale: false, stale_reason: null, source: "tick", bid: null, ask: null, volume: null } });
   });
@@ -195,6 +203,27 @@ export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, mar
                  age_seconds: 2, stale: false, stale_reason: null, source: "tick", missing: false, error: null };
       }),
     } });
+  });
+  // Saved multi-chart layouts (UI2-4d): versioned as the backend does (a PUT naming a stale version gets 409).
+  const rows = layouts.map((l) => ({ ...l, version: 1, updated_at: null as string | null }));
+  let nextLayout = 200;
+  await page.route(api("/charts/layouts(/\\d+)?(\\?.*)?$"), (r) => {
+    const req = r.request();
+    const id = Number(new URL(req.url()).pathname.match(/\/(\d+)$/)?.[1] ?? NaN);
+    const body = req.method() === "GET" || req.method() === "DELETE" ? null : req.postDataJSON() as Record<string, unknown>;
+    if (req.method() === "GET") return r.fulfill({ json: rows });
+    calls.layoutWrites.push({ method: req.method(), id: Number.isNaN(id) ? null : id, body });
+    if (req.method() === "POST") {
+      const made = { id: nextLayout++, name: String(body?.name), layout: body?.layout as Record<string, unknown>, version: 1, updated_at: null };
+      rows.unshift(made);
+      return r.fulfill({ status: 201, json: made });
+    }
+    const at = rows.findIndex((l) => l.id === id);
+    if (at < 0) return r.fulfill({ status: 404, json: { detail: "Layout not found" } });
+    if (req.method() === "DELETE") { rows.splice(at, 1); return r.fulfill({ json: { deleted: id } }); }
+    if (body?.version !== rows[at].version) return r.fulfill({ status: 409, json: { detail: { message: "the layout changed since this edit was made", current: rows[at] } } });
+    rows[at] = { ...rows[at], layout: body?.layout as Record<string, unknown>, version: rows[at].version + 1 };
+    return r.fulfill({ json: rows[at] });
   });
   await page.route(api("/instrument-master/search"), (r) => {
     const type = new URL(r.request().url()).searchParams.get("type");

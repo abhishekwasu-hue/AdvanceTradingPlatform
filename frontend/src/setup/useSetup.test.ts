@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import { cleanStored, dismissChip, setupChip, shouldAutoOpen, skipStep, type SetupStored } from "./model";
-import { SetupStore, setupConflict } from "./useSetup";
+import { SetupStore, rememberAutoOpened, setupConflict, setupStore, wasAutoOpened } from "./useSetup";
 
 /** UI2-7: the setup progress store - the server's answer, the per-user cache, skip / dismiss saves with versions, 409. */
 
@@ -47,7 +47,33 @@ describe("UI2-7 setup progress store", () => {
     expect(s.calls.map((c) => c.path)).toEqual(["/me/setup"]);
     expect(store.get().fresh).toBe(true);
     expect(setupChip(store.get().view)?.label).toBe("Setup 2 of 4");
-    expect(shouldAutoOpen(store.get().view)).toBe(true);
+    expect(shouldAutoOpen(store.get().view)).toBe(false);                       // a step is done: already set up in part
+    const fresh = new SetupStore(2, server(() => answer(EMPTY, 0)).fetcher);
+    await fresh.loadOnce();
+    expect(shouldAutoOpen(fresh.get().view)).toBe(true);
+  });
+
+  it("the auto-open guard is per user and per browser, and survives blocked storage", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    expect(wasAutoOpened(3)).toBe(false);
+    rememberAutoOpened(3);
+    expect(wasAutoOpened(3)).toBe(true);
+    expect(wasAutoOpened(4)).toBe(false);
+    expect(wasAutoOpened(null)).toBe(false);
+    vi.stubGlobal("localStorage", { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } });
+    expect(() => rememberAutoOpened(5)).not.toThrow();
+    expect(wasAutoOpened(5)).toBe(false);
+  });
+
+  it("signing out or another user signing in drops the other users' stores", () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    const a = setupStore(11);
+    expect(setupStore(11)).toBe(a);
+    expect(setupStore(null)).toBeNull();
+    expect(setupStore(11)).not.toBe(a);                                          // a new store after the sign-out
+    const b = setupStore(11);
+    setupStore(12);
+    expect(setupStore(11)).not.toBe(b);
   });
 
   it("skip for now: shown at once, saved with the version read, the server's answer taken", async () => {

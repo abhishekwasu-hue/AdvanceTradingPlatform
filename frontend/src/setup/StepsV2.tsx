@@ -104,9 +104,10 @@ function NumberField({ field, value, error, prefix, suffix, onChange, onBlur }: 
 
 const asText = (n: number) => String(n);
 
-/** The form's starting values: the trader's saved limits when the step is done, else the spec's defaults (§11). */
-export function riskStart(status: PaperRiskStatus | null, done: boolean): RiskForm {
-  const capital = typeof status?.capital_basis === "number" && status.capital_basis > 0 ? status.capital_basis : RISK_DEFAULTS.capital;
+/** The form's starting values: the trader's saved limits when the step is done, else the spec's defaults (§11); the
+ * starting capital from the paper account (`GET /paper/account`), or ₹1,00,000 when it is not known. */
+export function riskStart(status: PaperRiskStatus | null, done: boolean, startingCapital: number | null): RiskForm {
+  const capital = startingCapital !== null && startingCapital > 0 ? startingCapital : RISK_DEFAULTS.capital;
   const saved = done ? status?.settings : undefined;
   return {
     capital: formatNumber(Math.round(capital)),             // "1,00,000"; the commas are read back (riskNumbers)
@@ -116,10 +117,15 @@ export function riskStart(status: PaperRiskStatus | null, done: boolean): RiskFo
   };
 }
 
-/** Step 2: three fields with defaults, the "most you can lose today" sentence, max trades under Advanced. Saved
- * through the existing `PUT /paper/risk` (and the paper capital through `PUT /paper/account` when it changed). */
+const notFound = (e: unknown) => e instanceof ApiError && e.status === 404;
+
+/** Step 2: three fields with defaults, the "most you can lose today" sentence, max trades under Advanced. The limits
+ * are saved through the existing `PUT /paper/risk`, then a changed starting capital through `PUT /paper/account`. With
+ * the paper account off (404) the capital field is not shown and nothing is sent for it. */
 export function RiskStepV2({ done, onChanged }: StepProps) {
   const [status, setStatus] = useState<PaperRiskStatus | null | "off">(null);
+  /** The paper account's starting capital, or "off" (no paper account) / null (not read): then no field. */
+  const [account, setAccount] = useState<number | "off" | null>(null);
   const [form, setForm] = useState<RiskForm | null>(null);
   const [touched, setTouched] = useState<Partial<Record<RiskField, boolean>>>({});
   const [busy, setBusy] = useState(false);
@@ -127,8 +133,14 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
 
   useEffect(() => {
     let alive = true;
-    api.paperRisk().then((s) => { if (alive) { setStatus(s); setForm(riskStart(s, done)); } })
-      .catch((e: unknown) => { if (alive) { setStatus(e instanceof ApiError && e.status === 404 ? "off" : null); setForm(riskStart(null, false)); } });
+    const risk = api.paperRisk().then((r) => r as PaperRiskStatus | "off").catch((e: unknown) => (notFound(e) ? "off" as const : null));
+    const capital = api.paperAccount().then((a) => a.starting_capital).catch((e: unknown) => (notFound(e) ? "off" as const : null));
+    void Promise.all([risk, capital]).then(([r, c]) => {
+      if (!alive) return;
+      setStatus(r);
+      setAccount(c);
+      setForm(riskStart(r && r !== "off" ? r : null, done, typeof c === "number" ? c : null));
+    });
     return () => { alive = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -143,11 +155,14 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
   }
   if (!form) return <div aria-busy="true" className="h-40 animate-pulse rounded-control bg-surface-2"><span className="sr-only">Loading</span></div>;
 
-  const errors = riskErrors(form);
+  const withCapital = typeof account === "number";            // unknown or off: no field, nothing sent for it
+  const errors = riskErrors(form, { capital: withCapital });
   const shown = (f: RiskField) => (touched[f] ? errors[f] : undefined);
   const n = riskNumbers(form);
-  const sentence = errors.capital || errors.dailyLossPct ? null : riskSentence(n.capital, n.dailyLossPct);
-  const perTrade = errors.capital || errors.riskPerTradePct ? null : perTradeText(n.capital, n.riskPerTradePct);
+  // Without the field, the limits are a share of the capital the server measures them from.
+  const basis = withCapital ? n.capital : status && typeof status === "object" ? status.capital_basis : RISK_DEFAULTS.capital;
+  const sentence = errors.capital || errors.dailyLossPct ? null : riskSentence(basis, n.dailyLossPct);
+  const perTrade = errors.capital || errors.riskPerTradePct ? null : perTradeText(basis, n.riskPerTradePct);
   const set = (f: RiskField) => (v: string) => { setForm({ ...form, [f]: v }); setNote(null); };
   const blur = (f: RiskField) => () => setTouched((t) => ({ ...t, [f]: true }));
 
@@ -155,37 +170,41 @@ export function RiskStepV2({ done, onChanged }: StepProps) {
     setTouched({ capital: true, riskPerTradePct: true, dailyLossPct: true, maxTradesPerDay: true });
     if (Object.keys(errors).length) return;
     setBusy(true); setNote(null);
+    let text: string;
     try {
-      const basis = status && typeof status === "object" ? status.capital_basis : null;
-      if (basis == null || Math.round(basis) !== n.capital) {
-        try {
-          await api.setPaperCapital(n.capital);
-        } catch (e) {
-          setNote({ tone: "problem", text: e instanceof ApiError && e.status === 409
-            ? "Your paper capital is fixed once your paper account has a trade. Put it back and save again."
-            : problemText(e, "Your capital could not be saved. Try again in a moment.") });
-          return;
-        }
-      }
       // The answer also says what waits: a loosening applies from the next day (backend paper/ticket.py save_settings).
       const saved = await api.setPaperRisk({ risk_per_trade_pct: n.riskPerTradePct, daily_loss_pct: n.dailyLossPct, max_trades_per_day: n.maxTradesPerDay }) as
         PaperRiskStatus & { change?: { deferred?: Record<string, number>; from?: string | null } };
       setStatus(saved);
       const from = saved.change?.from;
-      setNote({ tone: "ok", text: from && Object.keys(saved.change?.deferred ?? {}).length > 0
-        ? `Limits saved. Lower limits apply now; higher ones start on ${from}.` : "Limits saved. They apply to your paper trades from now on." });
+      text = from && Object.keys(saved.change?.deferred ?? {}).length > 0
+        ? `Limits saved. Lower limits apply now; higher ones start on ${from}.` : "Limits saved. They apply to your paper trades from now on.";
       onChanged();
     } catch (e) {
       setNote({ tone: "problem", text: e instanceof ApiError && e.status === 422 && e.detail ? `Not saved: ${e.detail}` : problemText(e, "Your limits could not be saved. Try again in a moment.") });
-    } finally {
       setBusy(false);
+      return;
     }
+    if (typeof account === "number" && Math.round(account) !== n.capital) {
+      try {
+        const a = await api.setPaperCapital(n.capital);
+        setAccount(a.starting_capital);
+      } catch (e) {
+        setNote({ tone: "problem", text: `${text} ${e instanceof ApiError && e.status === 409
+          ? "Your starting capital stays as it was: it is fixed once your paper account has a trade."
+          : notFound(e) ? "Your starting capital stays as it was." : problemText(e, "Your starting capital was not changed. Try again in a moment.")}` });
+        setBusy(false);
+        return;
+      }
+    }
+    setNote({ tone: "ok", text });
+    setBusy(false);
   }
 
   return (
     <form className="space-y-space-4" noValidate onSubmit={(e) => { e.preventDefault(); void save(); }}>
       <div className="grid grid-cols-1 gap-space-3 sm:grid-cols-3">
-        <NumberField field="capital" prefix="₹" value={form.capital} error={shown("capital")} onChange={set("capital")} onBlur={blur("capital")} />
+        {withCapital && <NumberField field="capital" prefix="₹" value={form.capital} error={shown("capital")} onChange={set("capital")} onBlur={blur("capital")} />}
         <NumberField field="riskPerTradePct" suffix="%" value={form.riskPerTradePct} error={shown("riskPerTradePct")} onChange={set("riskPerTradePct")} onBlur={blur("riskPerTradePct")} />
         <NumberField field="dailyLossPct" suffix="%" value={form.dailyLossPct} error={shown("dailyLossPct")} onChange={set("dailyLossPct")} onBlur={blur("dailyLossPct")} />
       </div>
@@ -247,7 +266,9 @@ function SuggestionCard({ s, info, source, onChanged }: { s: StrategySuggestion;
       onChanged();
     } catch (e) {
       setStart({ tone: "problem", text: e instanceof ApiError && e.status === 409
-        ? `This strategy already runs on paper for ${s.symbol}. You can see it in Autopilot.`
+        // 409: this strategy already runs on paper for this symbol in the organisation (perhaps a teammate's), so nothing
+        // new was started and this step is not done by it. Say so, and point to "Test it".
+        ? `Nothing new was started: this strategy already runs on paper for ${s.symbol} in your organisation. Use Test it to try it yourself, or pick another one.`
         : problemText(e, "It could not be started just now. Try again, or set it up in Autopilot.") });
     } finally {
       setBusy(null);

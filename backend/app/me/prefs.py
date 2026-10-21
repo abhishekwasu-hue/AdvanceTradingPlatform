@@ -15,11 +15,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, Literal, Optional, Tuple, Type
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Any, Dict, Literal, Optional, Tuple, Type
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -64,9 +64,26 @@ class ChartPrefs(_Prefs):
     reader_overlay: bool = Field(default=False, description="the 'Reader zones & lines' overlay")
 
 
+EARLIEST_MARK = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+
+def _mark_time(value: Optional[datetime]) -> Optional[datetime]:
+    """A setup mark's time: with a time zone, from 2020-01-01 to one day from now (a clock a little ahead is fine)."""
+    if value is None:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("the time needs a time zone")
+    if not EARLIEST_MARK <= value <= datetime.now(timezone.utc) + timedelta(days=1):
+        raise ValueError("the time must be between 2020-01-01 and tomorrow")
+    return value
+
+
+MarkTime = Annotated[Optional[datetime], AfterValidator(_mark_time)]
+
+
 class SetupStepMark(_Prefs):
     """One setup step's own mark. Only the skip is stored; "done" is worked out on every read (app/me/setup.py)."""
-    skipped_at: Optional[datetime] = Field(default=None, description="when 'Skip for now' was chosen; null = not skipped")
+    skipped_at: MarkTime = Field(default=None, description="when 'Skip for now' was chosen; null = not skipped")
 
 
 class SetupSteps(_Prefs):
@@ -79,8 +96,8 @@ class SetupSteps(_Prefs):
 class SetupPrefs(_Prefs):
     """`setup` (UI v2 §11, UI-8): the setup wizard's marks, so it resumes on any device. localStorage is only a cache."""
     steps: SetupSteps = Field(default_factory=SetupSteps)
-    opened_at: Optional[datetime] = Field(default=None, description="the wizard opened by itself (first sign-in); it does not again")
-    dismissed_at: Optional[datetime] = Field(default=None, description="the dashboard's Setup chip was closed")
+    opened_at: MarkTime = Field(default=None, description="the wizard opened by itself (first sign-in); it does not again")
+    dismissed_at: MarkTime = Field(default=None, description="the dashboard's Setup chip was closed")
 
 
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs}
@@ -113,7 +130,8 @@ def _own(tenant_id: int, user_id: int):
     return (UserPrefsRecord.tenant_id == tenant_id, UserPrefsRecord.user_id == user_id)
 
 
-async def _body(request: Request) -> bytes:
+async def read_body(request: Request) -> bytes:
+    """The request body, refused with 413 past MAX_BODY_BYTES (also used by `PUT /api/me/setup`)."""
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail=f"Preferences larger than {MAX_BODY_BYTES} bytes")
@@ -153,7 +171,7 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
     `version` (optional): the version the change was made on; a stale one is refused with 409 and the current value."""
     if namespace not in NAMESPACES:
         raise HTTPException(status_code=404, detail="Unknown preferences namespace")
-    value, saved_version = await save(namespace, await _body(request), version, user, session)
+    value, saved_version = await save(namespace, await read_body(request), version, user, session)
     return {"namespace": namespace, "value": value, "version": saved_version}
 
 
@@ -197,4 +215,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one"]
+__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

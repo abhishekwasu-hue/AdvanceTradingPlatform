@@ -5,7 +5,7 @@ import { toast } from "../components/Toast";
 import type { PageProps } from "../routes";
 import { SETUP_PATH, dismissChip, setupChip, shouldAutoOpen } from "../setup/model";
 import SetupChipV2 from "../setup/SetupChipV2";
-import { useSetup } from "../setup/useSetup";
+import { useSetup, wasAutoOpened } from "../setup/useSetup";
 import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } from "../ui/BrokerGate";
 import { useBrokerSession, type BrokerGateState } from "../ui/brokerSession";
 import { useFeatures } from "../ui/useFeatures";
@@ -24,7 +24,7 @@ import { dataOf, useDashboardData, type Loadable } from "./useDashboardData";
  * DashboardPage renders exactly as before.
  *
  * UI2-7: the Setup chip reads the stored setup progress (`GET /api/me/setup`, src/setup) and can be closed; on the first
- * sign-in under ui_v2 (progress never opened, not complete) the dashboard opens the setup wizard instead, once.
+ * sign-in under ui_v2 (never opened, nothing done yet, not a VIEWER) the dashboard opens the setup wizard instead, once.
  *
  * Order, top to bottom: greeting, Setup chip (until setup is done), market strip, Needs attention, Open positions, Active
  * signals, Today. Desktop: the strip runs full width, then Needs attention and Open positions on the left (2/3) and
@@ -93,7 +93,9 @@ export default function DashboardV2(_props: PageProps = {}) {
 
   if (!loading && !user) return <Navigate to={SIGN_IN_PATH} replace />;
   // The first sign-in under ui_v2: the wizard opens once (it records that it opened), only on the server's answer.
-  if (setup.fresh && shouldAutoOpen(setup.view)) return <Navigate to={SETUP_PATH} replace />;
+  if (setup.fresh && shouldAutoOpen(setup.view, { guarded: wasAutoOpened(user?.id ?? null), role: user?.role })) {
+    return <Navigate to={SETUP_PATH} replace />;
+  }
 
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="dashboard-v2">

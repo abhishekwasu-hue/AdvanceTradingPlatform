@@ -4,10 +4,10 @@ import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import { CARD, LINK_SECONDARY } from "../dashboard/CardV2";
 import {
-  SETUP_STEPS, STEP_TEXT, markOpened, openingStep, skipStep, stepAfter, withStored, type SetupStepKey, type SetupView,
+  SETUP_STEPS, STEP_TEXT, isComplete, markOpened, openingStep, skipStep, stepAfter, withStored, type SetupStepKey, type SetupView,
 } from "./model";
 import { ActionV2, AlertsStepV2, BrokerStepV2, RiskStepV2, StrategyStepV2 } from "./StepsV2";
-import { useSetup } from "./useSetup";
+import { rememberAutoOpened, useSetup } from "./useSetup";
 
 /**
  * UI2-7 (UI v2 proposal §11): the setup wizard - four steps, each skippable ("Skip for now") and resumable: the progress
@@ -49,9 +49,11 @@ export default function SetupWizardV2() {
 
   // Opens on the next open step (or "all set"), once the progress is known; a cached copy is good enough to start.
   useEffect(() => {
-    if (shown === null && view) setShown(view.steps.every((s) => s.done || s.skipped) ? "finished" : openingStep(view));
+    if (shown === null && view) setShown(openingStep(view) ?? "finished");
   }, [shown, view]);
-  // The first sign-in's automatic opening happens once: record that the wizard has been seen (server answer only).
+  // The first sign-in's automatic opening happens once: record that the wizard has been seen - in this browser at once
+  // (so a failed save cannot open it again on every reload) and on the server once its answer is in.
+  useEffect(() => { rememberAutoOpened(user?.id ?? null); }, [user?.id]);
   useEffect(() => {
     if (setup.fresh && view && view.stored.opened_at === null) setup.update((s) => markOpened(s, new Date().toISOString()));
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -99,11 +101,11 @@ export default function SetupWizardV2() {
         </>
       ) : (
         <div className="space-y-space-3" data-finished>
-          <h2 className="text-t18 font-semibold text-fg">{view.steps.every((s) => s.done) ? "Setup is complete." : "You are set up for now."}</h2>
+          <h2 className="text-t18 font-semibold text-fg">{isComplete(view) ? "Setup is complete." : "You are set up for now."}</h2>
           <p className="text-t14 text-fg-muted">
-            {view.steps.some((s) => s.skipped)
-              ? "Steps you skipped stay here, in Settings under Setup. Pick one above to finish it when you are ready."
-              : "Every step is done. You can change any of them above."}
+            {isComplete(view)
+              ? "You can change any step above at any time."
+              : "The steps you skipped are still open. The Setup reminder on Today stays until they are done, or until you close it."}
           </p>
           <Link to="/" className={LINK_SECONDARY}>Go to Today</Link>
         </div>

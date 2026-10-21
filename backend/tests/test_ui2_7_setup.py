@@ -1,10 +1,11 @@
 """UI2-7: the setup wizard's progress - the `setup` preferences namespace and `GET/PUT /api/me/setup` (the stored marks
 next to each step's "done", worked out from the caller's own rows): defaults, versions and 409, schema validation,
-isolation per user and per organisation, the steps' evidence (PAPER only), reads only, and no flag needed."""
+isolation per user and per organisation, bounded times, the steps' evidence (a verified broker, PAPER only, a channel
+that delivered since its last change), skips that only change the order, reads only, and no flag needed."""
 import asyncio
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, select
@@ -76,8 +77,11 @@ def test_skip_and_resume_with_versions():
     assert client.get("/api/me/prefs", headers=who["headers"]).json()["versions"]["setup"] == 1
     again = _put(who, _skipped("broker", "risk", "strategy", "alerts"), path="/api/me/prefs/setup", version=1)
     assert again.status_code == 200 and again.json()["version"] == 2
-    done = _get(who)
-    assert done["complete"] is True and done["next"] is None and done["version"] == 2
+    # a skip only changes the order (§11): every step skipped is not complete; the next is the first not done
+    got = _get(who)
+    assert got["complete"] is False and got["next"] == "risk" and got["version"] == 2
+    assert _put(who, _skipped("broker", "strategy"), version=2).json()["next"] == "risk"
+    assert _put(who, _skipped("broker", "risk"), version=3).json()["next"] == "strategy"   # not skipped goes first
 
 
 def test_stale_version_is_a_409_with_the_current_value():
@@ -98,6 +102,9 @@ def test_stale_version_is_a_409_with_the_current_value():
     {"steps": {"live": {"skipped_at": T}}},
     {"steps": {"broker": True}},
     {"opened_at": True},
+    {"opened_at": "2026-10-21T09:30:00"},              # no time zone
+    {"dismissed_at": "2019-12-31T23:59:00Z"},          # before 2020
+    {"steps": {"risk": {"skipped_at": "2099-01-01T00:00:00Z"}}},     # in the future
     {"dismissed": True},
     ["steps"],
     "not json",
@@ -152,8 +159,9 @@ def test_no_flag_needed_like_the_other_preferences():
 
 # --- steps worked out from the caller's own rows ----------------------------------------------------------------------
 
-def _broker(tenant_id: int, user_id: int) -> BrokerCredentialRecord:
-    return BrokerCredentialRecord(tenant_id=tenant_id, user_id=user_id, broker_name="upstox", account_label="primary", encrypted_payload="x")
+def _broker(tenant_id: int, user_id: int, verified: bool = True) -> BrokerCredentialRecord:
+    return BrokerCredentialRecord(tenant_id=tenant_id, user_id=user_id, broker_name="upstox", account_label="primary", encrypted_payload="x",
+                                  last_verified_at=datetime.now(timezone.utc) if verified else None)
 
 
 def _deployment(tenant_id: int, user_id: int, mode: str) -> StrategyDeploymentRecord:
@@ -168,12 +176,21 @@ def _done(who: dict) -> dict:
     return {s["key"]: s["done"] for s in _get(who)["steps"]}
 
 
-def test_broker_step_is_done_by_a_stored_credential_of_the_organisation():
+def test_broker_step_needs_a_verified_credential_of_the_organisation():
     owner, other_org = _who("setup-broker-a"), _who("setup-broker-b")
     member = _invite(owner, "USER")
     _add(_broker(other_org["tenant_id"], other_org["user_id"]))
     assert _done(owner)["broker"] is False
-    _add(_broker(owner["tenant_id"], owner["user_id"]))
+    unverified = _broker(owner["tenant_id"], owner["user_id"], verified=False)
+    _add(unverified)
+    assert _done(owner)["broker"] is False                                           # stored, never logged in or checked
+
+    async def verify():
+        async with _session_factory() as session:
+            row = await session.get(BrokerCredentialRecord, unverified.id)
+            row.last_verified_at = datetime.now(timezone.utc)
+            await session.commit()
+    _run(verify())
     assert _done(owner)["broker"] is True and _done(member)["broker"] is True       # the account belongs to the organisation
     got = _get(owner)
     assert got["next"] == "risk" and got["done_count"] == 1
@@ -217,20 +234,59 @@ def test_strategy_step_counts_only_the_traders_own_paper_deployment_or_backtest(
     assert _done(member)["strategy"] is True
 
 
-def test_alerts_step_needs_a_channel_that_delivered_or_the_traders_telegram_link():
+def test_alerts_step_needs_a_channel_that_delivered():
     owner = _who("setup-alerts")
     member = _invite(owner, "USER")
     now = datetime.now(timezone.utc)
     _add(_channel(owner["tenant_id"], channel_type="EMAIL", enabled=True))                                 # never sent
     _add(_channel(owner["tenant_id"], channel_type="WEBHOOK", enabled=False, last_delivered_at=now))       # switched off
     _add(_channel(owner["tenant_id"], channel_type="TELEGRAM", enabled=True, last_delivered_at=now, last_error="401 Unauthorized"))
-    assert _done(owner)["alerts"] is False
-    _add(NotificationLinkRecord(tenant_id=owner["tenant_id"], user_id=member["user_id"], status="pending"))
-    assert _done(member)["alerts"] is False
     _add(NotificationLinkRecord(tenant_id=owner["tenant_id"], user_id=member["user_id"], status="linked", linked_at=now))
-    assert _done(member)["alerts"] is True and _done(owner)["alerts"] is False
+    assert _done(owner)["alerts"] is False and _done(member)["alerts"] is False      # a linked chat alone proves no send
     _add(_channel(owner["tenant_id"], channel_type="PUSH", enabled=True, last_delivered_at=now))           # a test went through
-    assert _done(owner)["alerts"] is True
+    assert _done(owner)["alerts"] is True and _done(member)["alerts"] is True
+
+
+def test_a_changed_channel_must_deliver_again():
+    """Saving another destination clears the last good send (app/alerts/routes.py); saving the same settings keeps it."""
+    who = _who("setup-alerts-change")
+    url = "/api/alert-channels/telegram"
+    config = {"bot_token": "123456:SETUP-test-token", "chat_id": "1001"}
+    assert client.put(url, headers=who["headers"], json={"enabled": True, "config": config}).status_code == 200
+
+    async def delivered():
+        async with _session_factory() as session:
+            row = await session.scalar(select(AlertChannelRecord).where(AlertChannelRecord.tenant_id == who["tenant_id"]))
+            row.last_delivered_at = datetime.now(timezone.utc)
+            await session.commit()
+    _run(delivered())
+    assert _done(who)["alerts"] is True
+    same = client.put(url, headers=who["headers"], json={"enabled": True, "config": {"bot_token": "", "chat_id": "1001"}})
+    assert same.status_code == 200 and same.json()["last_delivered_at"] is not None and _done(who)["alerts"] is True
+    moved = client.put(url, headers=who["headers"], json={"enabled": True, "config": {"bot_token": "", "chat_id": "2002"}})
+    assert moved.status_code == 200 and moved.json()["last_delivered_at"] is None
+    assert _done(who)["alerts"] is False
+
+
+def test_a_skipped_broker_counts_as_done_and_completes_setup_with_the_other_steps():
+    who = _who("setup-paper-first")
+    now = datetime.now(timezone.utc)
+    _put(who, _skipped("broker"))
+    _add(RiskSettingsRecord(tenant_id=who["tenant_id"]), _deployment(who["tenant_id"], who["user_id"], "PAPER"),
+         _channel(who["tenant_id"], enabled=True, last_delivered_at=now))
+    got = _get(who)
+    assert got["complete"] is True and got["next"] is None and got["done_count"] == 3
+    _put(who, _skipped("broker", "alerts"))
+    assert _get(who)["complete"] is True                                             # alerts are done: the skip is moot
+
+
+def test_times_are_bounded():
+    assert prefs.SetupPrefs.model_validate_json(json.dumps({"opened_at": T})).opened_at is not None
+    soon = (datetime.now(timezone.utc) + timedelta(hours=20)).isoformat()
+    assert prefs.SetupPrefs.model_validate_json(json.dumps({"opened_at": soon})).opened_at is not None   # a clock a little ahead
+    for bad in ("2026-10-21T09:30:00", "2019-06-01T00:00:00Z", (datetime.now(timezone.utc) + timedelta(days=2)).isoformat()):
+        with pytest.raises(ValueError):
+            prefs.SetupPrefs.model_validate_json(json.dumps({"opened_at": bad}))
 
 
 def test_every_step_done_completes_setup_whatever_was_skipped():

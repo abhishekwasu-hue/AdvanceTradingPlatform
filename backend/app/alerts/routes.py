@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -139,6 +140,9 @@ async def upsert_alert_channel(
         session.add(record)
         event = "alert_channel_created"
     else:
+        if existing_raw != json.loads(config.model_dump_json()):
+            # UI2-7: another destination or credential - the last good send no longer proves this channel works.
+            record.last_delivered_at = None
         record.encrypted_config = encrypt_config(config, user.tenant_id)
         event = "alert_channel_updated"
     record.enabled = request.enabled

@@ -80,41 +80,54 @@ export function withStored(view: SetupView, stored: SetupStored): SetupView {
   return { ...view, stored, steps: stepsOf(stored, done) };
 }
 
-/** The first step that is neither done nor skipped, or null once setup is complete. */
+/**
+ * A step counts towards "complete" when done; the broker step also when skipped ("I'll trade on paper first", §11 step
+ * 1). Any other skip only changes the order: the step stays open, after the ones not skipped.
+ */
+export const countsAsDone = (s: SetupStepState): boolean => s.done || (s.key === "broker" && s.skipped);
+
+/** The next step: the first not done, preferring one not skipped; null once setup is complete. */
 export function nextStep(view: SetupView): SetupStepKey | null {
-  return view.steps.find((s) => !s.done && !s.skipped)?.key ?? null;
+  const open = view.steps.filter((s) => !countsAsDone(s));
+  return (open.find((s) => !s.skipped) ?? open[0])?.key ?? null;
 }
 
 export const isComplete = (view: SetupView): boolean => nextStep(view) === null;
 
 /**
  * The Setup chip (dashboard, and Settings until setup is complete): "Setup 2 of 4" and "Next: set your risk limits".
- * The number is the step the trader is on (steps done or skipped, plus one). Null once every step is done or skipped,
- * or (unless `ignoreDismissal`, Settings) after the trader closed the chip.
+ * The number is the step the trader is on (steps done, plus one). It stays until setup is complete (§11), or (unless
+ * `ignoreDismissal`, Settings) until the trader closes it.
  */
 export function setupChip(view: SetupView | null, opts: { ignoreDismissal?: boolean } = {}): { label: string; next: string; to: string } | null {
   if (!view) return null;
   const next = nextStep(view);
   if (!next) return null;
   if (view.stored.dismissed_at && !opts.ignoreDismissal) return null;
-  const settled = view.steps.filter((s) => s.done || s.skipped).length;
-  return { label: `Setup ${settled + 1} of ${SETUP_STEPS.length}`, next: `Next: ${STEP_TEXT[next].next}`, to: SETUP_PATH };
+  const done = view.steps.filter(countsAsDone).length;
+  return { label: `Setup ${done + 1} of ${SETUP_STEPS.length}`, next: `Next: ${STEP_TEXT[next].next}`, to: SETUP_PATH };
 }
 
-/** The wizard opens by itself once (the first sign-in under ui_v2), only while setup is not complete or dismissed. */
-export function shouldAutoOpen(view: SetupView | null): boolean {
-  return !!view && !isComplete(view) && view.stored.opened_at === null && view.stored.dismissed_at === null;
+/**
+ * The wizard opens by itself once, on the first sign-in under ui_v2: never opened (on the server, and - `guarded` - not
+ * in this browser, so a failed save cannot send the trader there on every reload), nothing done yet (a trader already
+ * set up is not sent there when the flag turns on), not dismissed, and never for a VIEWER (who cannot change most steps).
+ */
+export function shouldAutoOpen(view: SetupView | null, opts: { guarded?: boolean; role?: string | null } = {}): boolean {
+  if (!view || opts.guarded || opts.role === "VIEWER") return false;
+  return !isComplete(view) && view.steps.every((s) => !s.done) && view.stored.opened_at === null && view.stored.dismissed_at === null;
 }
 
-/** The step the wizard shows when it opens: the next open step, else the first. */
-export function openingStep(view: SetupView | null): SetupStepKey {
-  return (view && nextStep(view)) ?? SETUP_STEPS[0];
+/** The step the wizard shows when it opens: the next step (past skipped ones), or null when setup is complete. */
+export function openingStep(view: SetupView | null): SetupStepKey | null {
+  return view ? nextStep(view) : SETUP_STEPS[0];
 }
 
-/** The step after `key` that is still open, or null (then the wizard shows its "all set" card). */
+/** The step after `key` that is neither done nor skipped (wrapping round), or null (then the wizard shows its summary). */
 export function stepAfter(view: SetupView, key: SetupStepKey): SetupStepKey | null {
   const at = SETUP_STEPS.indexOf(key);
-  return view.steps.slice(at + 1).find((s) => !s.done && !s.skipped)?.key ?? view.steps.slice(0, at).find((s) => !s.done && !s.skipped)?.key ?? null;
+  const fresh = (s: SetupStepState) => !countsAsDone(s) && !s.skipped;
+  return view.steps.slice(at + 1).find(fresh)?.key ?? view.steps.slice(0, at).find(fresh)?.key ?? null;
 }
 
 export function skipStep(stored: SetupStored, key: SetupStepKey, nowIso: string): SetupStored {
@@ -138,7 +151,7 @@ export type RiskField = keyof typeof RISK_DEFAULTS;
 export type RiskForm = Record<RiskField, string>;
 
 export const RISK_LABELS: Record<RiskField, string> = {
-  capital: "Capital", riskPerTradePct: "Risk per trade", dailyLossPct: "Daily loss limit", maxTradesPerDay: "Max trades per day",
+  capital: "Starting capital", riskPerTradePct: "Risk per trade", dailyLossPct: "Daily loss limit", maxTradesPerDay: "Max trades per day",
 };
 
 const rupees = (v: number) => `₹${formatNumber(Math.round(v))}`;
@@ -155,10 +168,11 @@ export function perTradeText(capital: number, riskPct: number): string | null {
   return `At most ${rupees((capital * riskPct) / 100)} on one trade.`;
 }
 
-/** What is wrong with each field, in plain words (empty = all good). */
-export function riskErrors(form: RiskForm): Partial<Record<RiskField, string>> {
+/** What is wrong with each field, in plain words (empty = all good). `capital: false` = the field is not shown. */
+export function riskErrors(form: RiskForm, opts: { capital?: boolean } = {}): Partial<Record<RiskField, string>> {
   const out: Partial<Record<RiskField, string>> = {};
   for (const field of Object.keys(RISK_BOUNDS) as RiskField[]) {
+    if (field === "capital" && opts.capital === false) continue;
     const [low, high] = RISK_BOUNDS[field];
     const raw = form[field].trim().replace(/,/g, "");
     const v = Number(raw);

@@ -2,7 +2,7 @@ import ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { flagOffFallback, shellKeyFromPath, shellTitle } from "../shell/shellRoutes";
 import {
-  RISK_DEFAULTS, SETUP_PATH, SUGGESTIONS, cleanStored, cleanView, dismissChip, markOpened, nextStep, openingStep, paperDeployment,
+  RISK_DEFAULTS, SETUP_PATH, SUGGESTIONS, cleanStored, cleanView, dismissChip, isComplete, markOpened, nextStep, openingStep, paperDeployment,
   perTradeText, riskErrors, riskSentence, setupChip, shouldAutoOpen, skipStep, stepAfter, testSummary, withStored,
   type SetupStepKey, type SetupView,
 } from "./model";
@@ -30,12 +30,16 @@ describe("UI2-7 step state", () => {
     expect(cleanView({ steps: [], stored: {}, version: 0 })?.steps.map((s) => s.done)).toEqual([false, false, false, false]);
   });
 
-  it("a done step is never shown as skipped; the next step is the first neither done nor skipped", () => {
+  it("a done step is never shown as skipped; a skip only changes the order (the next step prefers one not skipped)", () => {
     const v = view(["broker"], ["broker", "risk"]);
     expect(v.steps.map((s) => [s.key, s.done, s.skipped])).toEqual([
       ["broker", true, false], ["risk", false, true], ["strategy", false, false], ["alerts", false, false]]);
     expect(nextStep(v)).toBe("strategy");
-    expect(nextStep(view(["broker", "risk"], ["strategy", "alerts"]))).toBeNull();
+    expect(nextStep(view(["broker", "risk"], ["strategy", "alerts"]))).toBe("strategy");   // skipped, still not done
+    expect(nextStep(view([], ["broker", "risk", "strategy", "alerts"]))).toBe("risk");      // a skipped broker counts as done
+    expect(isComplete(view([], ["broker", "risk", "strategy", "alerts"]))).toBe(false);
+    expect(isComplete(view(["risk", "strategy", "alerts"], ["broker"]))).toBe(true);        // "I'll trade on paper first"
+    expect(isComplete(view(["broker", "risk", "strategy"], ["alerts"]))).toBe(false);
   });
 
   it("skip for now, then resume where the trader left off (another device reads the same marks)", () => {
@@ -50,10 +54,19 @@ describe("UI2-7 step state", () => {
     expect(stepAfter(after, "broker")).toBe("risk");
     expect(stepAfter(view(["risk", "strategy", "alerts"]), "alerts")).toBe("broker");     // wraps to an earlier open step
     expect(stepAfter(view(["broker", "risk", "strategy"]), "alerts")).toBeNull();
+    expect(stepAfter(view(["broker"], ["strategy"]), "risk")).toBe("alerts");               // past a skipped step
+    expect(openingStep(view(["broker"], ["risk"]))).toBe("strategy");                        // opens past skipped steps
+    expect(openingStep(view(["broker"], ["risk", "strategy", "alerts"]))).toBe("risk");     // ...or on the first of them
+    expect(openingStep(view(["broker", "risk", "strategy", "alerts"]))).toBeNull();          // complete: the summary
   });
 
-  it("opens by itself once: never opened, not complete, not dismissed", () => {
+  it("opens by itself once: never opened (server and this browser), nothing done yet, not dismissed, never for a VIEWER", () => {
     expect(shouldAutoOpen(view())).toBe(true);
+    expect(shouldAutoOpen(view(), { role: "OWNER", guarded: false })).toBe(true);
+    expect(shouldAutoOpen(view(), { guarded: true })).toBe(false);                 // a failed save of opened_at: no loop
+    expect(shouldAutoOpen(view(), { role: "VIEWER" })).toBe(false);
+    expect(shouldAutoOpen(view(["alerts"]))).toBe(false);                          // already set up in part: not sent there
+    expect(shouldAutoOpen(view([], ["broker"]))).toBe(true);
     expect(shouldAutoOpen(withStored(view(), markOpened(EMPTY, T)))).toBe(false);
     expect(markOpened({ ...EMPTY, opened_at: "2026-01-01T00:00:00Z" }, T).opened_at).toBe("2026-01-01T00:00:00Z");
     expect(shouldAutoOpen(view(["broker", "risk", "strategy", "alerts"]))).toBe(false);
@@ -66,13 +79,17 @@ describe("UI2-7 the Setup chip", () => {
   it("says which step the trader is on and what is next (§11's example)", () => {
     expect(setupChip(view(["broker"]))).toEqual({ label: "Setup 2 of 4", next: "Next: set your risk limits", to: SETUP_PATH });
     expect(setupChip(view())).toEqual({ label: "Setup 1 of 4", next: "Next: connect your broker", to: "/settings/setup" });
-    expect(setupChip(view([], ["broker"]))?.label).toBe("Setup 2 of 4");                  // a skipped step counts as passed
+    expect(setupChip(view([], ["broker"]))?.label).toBe("Setup 2 of 4");                  // a skipped broker counts as done
+    expect(setupChip(view(["broker"], ["risk"]))).toMatchObject({ label: "Setup 2 of 4", next: "Next: pick your first strategy" });
     expect(setupChip(view(["broker", "risk", "strategy"]))).toMatchObject({ label: "Setup 4 of 4", next: "Next: choose your alerts" });
     expect(setupChip(view(["risk"], ["broker"]))?.next).toBe("Next: pick your first strategy");
   });
 
-  it("goes away once every step is done or skipped, or once closed (Settings still shows it until setup is complete)", () => {
-    expect(setupChip(view(["broker", "risk"], ["strategy", "alerts"]))).toBeNull();
+  it("stays until every step is done (§11) or it is closed; Settings still shows it until setup is complete", () => {
+    expect(setupChip(view(["broker", "risk"], ["strategy", "alerts"]))).toMatchObject({ label: "Setup 3 of 4", next: "Next: pick your first strategy" });
+    expect(setupChip(view([], ["broker", "risk", "strategy", "alerts"]))).toMatchObject({ label: "Setup 2 of 4", next: "Next: set your risk limits" });
+    expect(setupChip(view(["risk", "strategy", "alerts"], ["broker"]))).toBeNull();
+    expect(setupChip(view(["broker", "risk", "strategy", "alerts"]))).toBeNull();
     expect(setupChip(null)).toBeNull();
     const closed = withStored(view(["broker"]), dismissChip(EMPTY, T));
     expect(setupChip(closed)).toBeNull();
@@ -94,7 +111,8 @@ describe("UI2-7 risk limits", () => {
     const ok = { capital: "1,00,000", riskPerTradePct: "1", dailyLossPct: "3", maxTradesPerDay: "10" };
     expect(riskErrors(ok)).toEqual({});
     const bad = riskErrors({ capital: "5000", riskPerTradePct: "9", dailyLossPct: "", maxTradesPerDay: "2.5" });
-    expect(bad.capital).toBe("Capital must be between ₹10,000 and ₹1,00,00,00,000.");
+    expect(bad.capital).toBe("Starting capital must be between ₹10,000 and ₹1,00,00,00,000.");
+    expect(riskErrors({ ...ok, capital: "" }, { capital: false })).toEqual({});                // no field, nothing to check
     expect(bad.riskPerTradePct).toBe("Risk per trade must be between 0.05 and 5.");
     expect(bad.dailyLossPct).toBe("Enter a number for daily loss limit.");
     expect(bad.maxTradesPerDay).toBe("Enter a whole number for max trades per day.");

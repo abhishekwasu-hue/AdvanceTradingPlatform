@@ -128,10 +128,25 @@ export class SetupStore {
   }
 }
 
+const OPENED_PREFIX = "atp_setup_auto_opened:";
+
+/** True when the wizard already opened by itself in this browser for this user (the guard behind the server's mark). */
+export function wasAutoOpened(userKey: number | string | null): boolean {
+  if (userKey == null) return false;
+  try { return localStorage.getItem(OPENED_PREFIX + userKey) !== null; } catch { return false; }
+}
+
+/** Remembers in this browser that the wizard has been seen, so a failed save of `opened_at` never re-opens it. */
+export function rememberAutoOpened(userKey: number | string | null): void {
+  if (userKey == null) return;
+  try { localStorage.setItem(OPENED_PREFIX + userKey, "1"); } catch { /* storage unavailable: the server's mark still counts */ }
+}
+
 const stores = new Map<number | string, SetupStore>();
 
-/** The store of this user (one per user for the page's life), or null while signed out. */
+/** The store of this user, or null while signed out. Signing out, or another user signing in, drops the other stores. */
 export function setupStore(userKey: number | string | null): SetupStore | null {
+  for (const key of [...stores.keys()]) if (key !== userKey) stores.delete(key);
   if (userKey == null) return null;
   let store = stores.get(userKey);
   if (!store) {

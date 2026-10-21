@@ -33,8 +33,10 @@ function answer(s: Server) {
     const skippedAt = s.stored.steps[key].skipped_at;
     return { key, done: s.done[key], skipped: !s.done[key] && skippedAt !== null, skipped_at: skippedAt };
   });
-  const open = steps.filter((x) => !x.done && !x.skipped);
-  return { steps, done_count: steps.filter((x) => x.done).length, next: open[0]?.key ?? null, complete: !open.length, stored: s.stored, version: s.version };
+  // As the backend: a skip only changes the order; a skipped broker step counts as done (app/me/setup.py view()).
+  const open = steps.filter((x) => !(x.done || (x.key === "broker" && x.skipped)));
+  const next = (open.find((x) => !x.skipped) ?? open[0])?.key ?? null;
+  return { steps, done_count: steps.filter((x) => x.done).length, next, complete: !open.length, stored: s.stored, version: s.version };
 }
 
 interface Open {
@@ -44,6 +46,14 @@ interface Open {
   stored?: Partial<Stored>;
   /** Keep the same server across a reload (resume). */
   server?: Server;
+  /** Every PUT /me/setup fails (the server is down for saves). */
+  failSaves?: boolean;
+  /** The signed-in user's role (default the fixture's OWNER). */
+  role?: string;
+  /** GET /paper/account answers 404 (the paper account is off). */
+  noPaperAccount?: boolean;
+  /** POST /deployments answers 409 (already deployed in the organisation). */
+  deployConflict?: boolean;
 }
 
 async function open(page: Page, o: Open = {}): Promise<Server> {
@@ -59,6 +69,7 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: o.flag === false ? undefined : (F.features as Record<string, boolean>), brokers: F.token_status as unknown[] });
   await mockDashboard(page, { me: true });
+  if (o.role) await page.route(api("/auth/me$"), (route) => route.fulfill({ json: { ...(F.me as object), role: o.role } }));
   const reply = (json: unknown) => (route: Route) => route.fulfill({ json });
   const sent = (route: Route) => {
     const r = route.request();
@@ -70,6 +81,7 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
   await page.route(api("/me/setup(\\?|$)"), async (route) => {
     if (route.request().method() === "GET") return route.fulfill({ json: answer(server) });
     const body = sent(route) as Stored;
+    if (o.failSaves) return route.fulfill({ status: 503, json: { detail: "unavailable" } });
     const version = Number(new URL(route.request().url()).searchParams.get("version"));
     if (version !== server.version) {
       return route.fulfill({ status: 409, json: { detail: { message: "the preferences changed since this edit was made", version: server.version, current: server.stored } } });
@@ -85,6 +97,7 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
   await page.route(api("/deployments$"), (route) => {
     if (route.request().method() !== "POST") return route.fulfill({ json: F.deployments });
     const body = sent(route) as Record<string, unknown>;
+    if (o.deployConflict) return route.fulfill({ status: 409, json: { detail: "Deployment already exists" } });
     server.done.strategy = true;
     return route.fulfill({ json: { id: 91, status: "ACTIVE", ...body } });
   });
@@ -94,7 +107,12 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
     server.done.risk = true;
     return route.fulfill({ json: { ...(S.paper_risk as object), change: { applied: {}, deferred: {}, from: null } } });
   });
-  await page.route(api("/paper/account$"), (route) => { sent(route); return route.fulfill({ json: {} }); });
+  await page.route(api("/paper/account$"), (route) => {
+    if (o.noPaperAccount) return route.fulfill({ status: 404, json: { detail: "Not found" } });
+    if (route.request().method() === "GET") return route.fulfill({ json: { starting_capital: 100000 } });
+    const body = sent(route) as { starting_capital: number };
+    return route.fulfill({ json: { starting_capital: body.starting_capital } });
+  });
   await page.route(api("/alert-channels$"), reply(S.alert_channels));
   await page.route(api("/alert-channels/deliveries"), reply([]));
   await page.route(api("/alert-channels/\\w+/test$"), (route) => { sent(route); server.done.alerts = true; return route.fulfill({ json: { ok: true, detail: "Test message sent via TELEGRAM" } }); });
@@ -149,13 +167,15 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(stepTitle(page)).toHaveText("Pick your first strategy");
     await expect(wizard(page).locator("[data-step-state='skipped']")).toHaveCount(2);
     await page.getByRole("link", { name: "Home" }).click();
-    await expect(page.locator("[data-block='setup']")).toContainText("Setup 3 of 4");
+    // a skip only changes the order: the skipped risk step stays open; the skipped broker step counts (paper first)
+    await expect(page.locator("[data-block='setup']")).toContainText("Setup 2 of 4");
     await expect(page.locator("[data-block='setup']")).toContainText("Next: pick your first strategy");
   });
 
   test("the risk step: the spec's defaults, the sentence, max trades under Advanced, saved through /paper/risk", async ({ page }) => {
     const server = await open(page, { done: { broker: true } });
     const form = wizard(page);
+    await expect(form.getByLabel("Starting capital")).toHaveValue("1,00,000");                // from GET /paper/account
     await expect(form.locator("[data-field='capital']")).toHaveValue("1,00,000");
     await expect(form.locator("[data-field='riskPerTradePct']")).toHaveValue("1");
     await expect(form.locator("[data-field='dailyLossPct']")).toHaveValue("3");
@@ -175,6 +195,14 @@ test.describe("setup wizard 390 x 844", () => {
     const put = server.sent.find((c) => c.method === "PUT" && c.url === "/paper/risk");
     expect(put?.body).toEqual({ risk_per_trade_pct: 1, daily_loss_pct: 2, max_trades_per_day: 10 });
     expect(server.sent.some((c) => c.url === "/paper/account")).toBe(false);          // the capital did not change
+    // a changed starting capital is saved after the limits
+    await form.locator("[data-field='capital']").fill("2,00,000");
+    await form.locator("[data-field='capital']").blur();
+    await expect(form.locator("[data-risk-sentence]")).toContainText("is ₹4,000.");
+    await form.getByRole("button", { name: /Save/ }).click();
+    await expect.poll(() => server.sent.filter((c) => c.method === "PUT" && /^\/paper\/(risk|account)$/.test(c.url)).map((c) => c.url))
+      .toEqual(["/paper/risk", "/paper/risk", "/paper/account"]);
+    expect(server.sent.find((c) => c.url === "/paper/account")?.body).toEqual({ starting_capital: 200000 });
     await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(2);
     await wizard(page).getByRole("button", { name: "Next step" }).click();
     await expect(stepTitle(page)).toHaveText("Pick your first strategy");
@@ -194,6 +222,26 @@ test.describe("setup wizard 390 x 844", () => {
     expect(post?.body).not.toHaveProperty("broker_name");
     expect(server.sent.filter((c) => JSON.stringify(c.body ?? "").includes("LIVE"))).toEqual([]);
     await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(3);
+  });
+
+  test("the risk step without a paper account: no capital field, nothing sent for it", async ({ page }) => {
+    const server = await open(page, { done: { broker: true }, noPaperAccount: true });
+    const form = wizard(page);
+    await expect(form.locator("[data-field='dailyLossPct']")).toHaveValue("3");
+    await expect(form.locator("[data-field='capital']")).toHaveCount(0);
+    await expect(form.locator("[data-risk-sentence]")).toContainText("is ₹3,000.");            // of the server's capital basis
+    await form.getByRole("button", { name: "Save limits" }).click();
+    await expect(form).toContainText("Limits saved.");
+    expect(server.sent.filter((c) => c.url === "/paper/account")).toEqual([]);
+  });
+
+  test("the strategy step: already deployed in the organisation (409) says nothing new started and is not done", async ({ page }) => {
+    await open(page, { done: { broker: true, risk: true }, deployConflict: true });
+    const first = wizard(page).locator("[data-suggestion]").first();
+    await first.getByRole("button", { name: "Start on Paper Autopilot" }).click();
+    await expect(first).toContainText("Nothing new was started: this strategy already runs on paper for NIFTY 50 in your organisation. Use Test it");
+    await expect(first).not.toContainText("Started on Paper Autopilot");
+    await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(2);
   });
 
   test("the alerts step sends a test through the existing API and the step is done", async ({ page }) => {
@@ -245,6 +293,26 @@ test.describe("setup chip and first sign-in", () => {
     await page.getByRole("link", { name: "Home" }).click();
     await expect(page).toHaveURL(/\/$/);
     await expect(page.locator("[data-block='setup']")).toContainText("Setup 1 of 4");
+  });
+
+  test("a failed save of 'opened' does not send the trader to the wizard again on reload", async ({ page }) => {
+    await open(page, { path: "/", stored: { opened_at: null }, failSaves: true });
+    await expect(page).toHaveURL(/\/settings\/setup$/);
+    await expect(stepTitle(page)).toHaveText("Connect your broker");
+    await page.goto("/");
+    await page.waitForLoadState("networkidle");
+    await expect(page.locator("[data-block='strip']")).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+  });
+
+  test("no automatic opening for a VIEWER, or for a trader with a step already done", async ({ page }) => {
+    await open(page, { path: "/", stored: { opened_at: null }, role: "VIEWER" });
+    await expect(page.locator("[data-block='strip']")).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    const again = await page.context().newPage();
+    await open(again, { path: "/", stored: { opened_at: null }, done: { alerts: true } });
+    await expect(again.locator("[data-block='setup']")).toContainText("Setup 2 of 4");
+    await expect(again).toHaveURL(/\/$/);
   });
 });
 

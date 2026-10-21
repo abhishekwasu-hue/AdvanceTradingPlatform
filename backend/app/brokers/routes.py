@@ -1,3 +1,4 @@
+import ipaddress
 import json
 import logging
 from typing import Any, Dict, Optional
@@ -172,6 +173,40 @@ def _redirect_uri_mismatch(record: BrokerCredentialRecord, public_url: str) -> b
     """True when this row stores a Redirect URI that differs from the public callback URL (the OAuth start sends it)."""
     stored = _stored_redirect_uri(record)
     return stored is not None and stored != public_url
+
+
+def _is_stale_redirect_uri(stored: Optional[str], public_url: str) -> bool:
+    """D2 (owner order, Upstox UDAPI100068): with a valid `PUBLIC_BASE_URL`, a stored Redirect URI on an IP address (or
+    not https, or unreadable) is left over from before the domain - the OAuth start saved the address the API was reached
+    at - and is replaced by the public callback URL. A stored URI on a domain name is kept: it may be registered on
+    purpose. Without a valid `PUBLIC_BASE_URL` nothing is stale."""
+    value = (stored or "").strip()
+    if not value or value == public_url or _public_base() is None:
+        return False
+    try:
+        parts = urlparse(value)
+        host = parts.hostname
+    except ValueError:
+        return True
+    if parts.scheme != "https" or not host:
+        return True
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False                                          # a domain name
+    return True
+
+
+def _set_redirect_uri(record: BrokerCredentialRecord, redirect_uri: str) -> None:
+    """Re-encrypts the stored credentials with `redirect_uri` (the same encrypted save the OAuth start uses)."""
+    credentials = load_credentials(record)
+    credentials.redirect_uri = redirect_uri
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+
+
+def _client_id_tail(api_key: str) -> str:
+    """The client_id for a log line: its last 4 characters only (nothing for a short one)."""
+    return "\u2026" + (api_key[-4:] if len(api_key) >= 8 else "")
 
 
 def _callback_url(request: Request, broker_name: str) -> Optional[str]:
@@ -745,13 +780,21 @@ async def upstox_oauth_start(
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:
         raise HTTPException(status_code=400, detail="Upstox credentials need both api_key and api_secret for OAuth")
-    # A stored redirect URI wins: it must match what is registered on the Upstox app, and only the trader can change it
-    # there. A stored one that differs from the public callback URL is reported (GET /upstox/redirect-url), not rewritten.
-    redirect_uri = credentials.redirect_uri or public_callback_url(request)
-    if credentials.redirect_uri is None:
+    # A stored redirect URI on a domain name wins: it must match what is registered on the Upstox app, and only the
+    # trader can change it there (a differing one is reported by GET /upstox/redirect-url). One left over on an IP
+    # address or plain http is replaced by the public callback URL (owner order, D2).
+    public_url = public_callback_url(request)
+    stale = _is_stale_redirect_uri(credentials.redirect_uri, public_url)
+    redirect_uri = public_url if stale or not credentials.redirect_uri else credentials.redirect_uri
+    if credentials.redirect_uri != redirect_uri:
         # Remember the redirect URI we are about to use so the token exchange sends the same one.
         credentials.redirect_uri = redirect_uri
         record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+    if stale:
+        await write_audit_log(session, user.tenant_id, user.id, "broker_redirect_uri_replaced",
+                              f"upstox/{label}: the stored Redirect URI (an IP address or not https) is now the public callback URL")
+    logger.info("Upstox OAuth start: client_id=%s redirect_uri=%s account_label=%s",
+                _client_id_tail(credentials.api_key), redirect_uri, label)
 
     state = create_oauth_state(user.tenant_id, user.id, "upstox", account_label=label)
     await write_audit_log(session, user.tenant_id, user.id, "broker_oauth_started", f"upstox/{label}")
@@ -805,7 +848,10 @@ async def upstox_oauth_callback(
     credentials = load_credentials(record)
     credentials.access_token = None
     credentials.request_token = code
-    credentials.redirect_uri = credentials.redirect_uri or _callback_url(request, "upstox")
+    public_url = public_callback_url(request)
+    # The exchange sends the URI the OAuth start sent: the stored one, or the public one for none / a stale one (D2).
+    stale = _is_stale_redirect_uri(credentials.redirect_uri, public_url)
+    credentials.redirect_uri = public_url if stale or not credentials.redirect_uri else credentials.redirect_uri
     adapter = get_broker_adapter("upstox", credentials)
     try:
         await adapter.authenticate()
@@ -822,6 +868,8 @@ async def upstox_oauth_callback(
     if not new_token:
         return _frontend_redirect(broker="upstox", error="no_token_returned")
     store_access_token(record, new_token)
+    if stale:
+        _set_redirect_uri(record, public_url)       # written with the token, under the same unchanged-row check
     if not await _write_if_unchanged(session, record, expected_user, expected_payload):
         # BT1b (both flag states): the row was stored over during the code exchange - the fresh token is not written.
         await session.rollback()

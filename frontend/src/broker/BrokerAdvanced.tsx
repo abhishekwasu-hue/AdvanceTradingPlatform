@@ -1,8 +1,9 @@
 import { ChevronRight, LogIn, TriangleAlert } from "lucide-react";
-import { Suspense, lazy, useEffect, useId, useRef, useState, type ComponentType, type FormEvent, type ReactNode } from "react";
+import { useEffect, useId, useState, type FormEvent, type ReactNode } from "react";
 import { api } from "../api/client";
 import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import StaticIpCard from "../components/StaticIpCard";
+import UpstoxRedirectUrl from "../components/UpstoxRedirectUrl";
 import type { BrokerCatalogEntry, BrokerTokenInfo } from "../types";
 import { loginErrorText } from "../ui/brokerSession";
 import { ASK_OWNER } from "./brokerState";
@@ -17,30 +18,6 @@ import { BTN_PRIMARY, BTN_SECONDARY } from "./parts";
  * - the broker accounts (default account, enable / disable, balances, the read-only check).
  * Nothing here loads until "Advanced" is opened.
  */
-
-type RedirectProps = { selected: boolean; refreshKey?: number };
-
-/**
- * PR #319 adds src/components/UpstoxRedirectUrl.tsx (GET /api/broker/upstox/redirect-url, the deployment's public
- * address). The import is optional on purpose: `import.meta.glob` finds the file once #319 is merged and finds nothing
- * before - then the address the server reports in /broker/token-status is shown. It becomes a direct import after #319.
- */
-const OPTIONAL = import.meta.glob<{ default: ComponentType<RedirectProps> }>("../components/UpstoxRedirectUrl.tsx");
-const loadRedirect = Object.values(OPTIONAL)[0];
-export const HAS_UPSTOX_REDIRECT_COMPONENT = loadRedirect !== undefined;
-const UpstoxRedirectUrl = loadRedirect ? lazy(loadRedirect) : null;
-
-/** Copies `text`; when the clipboard is refused, selects the field so it can be copied by hand. Never throws. */
-export async function copyText(text: string, clipboard: Pick<Clipboard, "writeText"> | undefined, select: () => void): Promise<boolean> {
-  try {
-    if (!clipboard) throw new Error("no clipboard");
-    await clipboard.writeText(text);
-    return true;
-  } catch {
-    try { select(); } catch { /* the address is still on screen */ }
-    return false;
-  }
-}
 
 /** Account names the server accepts: letters, digits, dashes and underscores. */
 export function validAccountName(name: string): boolean {
@@ -86,7 +63,7 @@ export function AnotherAccount({ entries, canChange, onConnect }: {
 }
 
 /** The Upstox OAuth app: "Log in with Upstox" for each Upstox connection that can log in this way, and the redirect
- * URL (PR #319's component when present, else the one the server reports here). */
+ * URL (D2's UpstoxRedirectUrl: GET /api/broker/upstox/redirect-url, the deployment's public address, with Copy). */
 export function UpstoxOAuth({ canChange }: { canChange: boolean }) {
   const [rows, setRows] = useState<BrokerTokenInfo[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -97,7 +74,6 @@ export function UpstoxOAuth({ canChange }: { canChange: boolean }) {
     return () => { live = false; };
   }, []);
   const upstox = (rows ?? []).filter((r) => r.broker_name === "upstox" && r.oauth_supported);
-  const fallbackUrl = (rows ?? []).find((r) => r.broker_name === "upstox" && r.oauth_callback_url)?.oauth_callback_url ?? null;
 
   async function login(t: BrokerTokenInfo) {
     const label = t.account_label ?? "primary";
@@ -134,30 +110,7 @@ export function UpstoxOAuth({ canChange }: { canChange: boolean }) {
           <TriangleAlert size={16} aria-hidden className="mt-0.5 shrink-0" /><span>{error}</span>
         </p>
       )}
-      {UpstoxRedirectUrl ? (
-        <Suspense fallback={null}><UpstoxRedirectUrl selected /></Suspense>
-      ) : fallbackUrl ? <RedirectUrlField url={fallbackUrl} /> : rows !== null && (
-        <p className="text-t13 text-fg-muted">The Upstox redirect URL shows here once Upstox is connected.</p>
-      )}
-    </div>
-  );
-}
-
-/** Until #319: the redirect URL the server reports with the stored Upstox credential, with Copy. */
-export function RedirectUrlField({ url }: { url: string }) {
-  const [copied, setCopied] = useState(false);
-  const field = useRef<HTMLInputElement>(null);
-  const id = useId();
-  const copy = async () => setCopied(await copyText(url, navigator.clipboard, () => { field.current?.focus(); field.current?.select(); }));
-  return (
-    <div className="space-y-space-2">
-      <label htmlFor={id} className="block text-t13 font-medium text-fg">Redirect URL</label>
-      <div className="flex gap-space-2">
-        <input id={id} ref={field} readOnly value={url} onFocus={(e) => e.target.select()}
-          className="h-11 min-w-0 flex-1 rounded-control border border-border bg-surface-2 px-space-3 font-mono text-t13 text-fg" />
-        <button type="button" onClick={() => void copy()} className={BTN_SECONDARY}>{copied ? "Copied" : "Copy"}</button>
-      </div>
-      <p className="text-t13 text-fg-muted">Paste this address into the Redirect URL field of your app on the Upstox developer site.</p>
+      <UpstoxRedirectUrl selected />
     </div>
   );
 }

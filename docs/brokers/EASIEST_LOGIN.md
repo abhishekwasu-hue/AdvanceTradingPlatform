@@ -44,10 +44,15 @@ invented. Before relying on a detail marked *forum only*, open the official page
   1. Both kinds of token are JWTs. The token's own `exp` and `iat` claims are read, without trusting them for
      authentication. A lifetime of 7 days or more means an Analytics Token. A lifetime of 2 days or less means a daily
      token. A daily token lives at most about 27.5 hours. An `exp` that has already passed is refused as expired.
-  2. When the claims say nothing, two read-only GETs settle it. These cases are a non-JWT token, no `exp`, or a lifetime
-     between the two bounds. First, `/v2/user/profile` answers a daily token. Upstox refuses it to an Analytics Token
-     unless the token is used from a registered static IP. Then a quote GET answers an Analytics Token. If both refuse,
-     the token is rejected. If Upstox does not answer clearly, nothing is stored and the user is asked to try again.
+  2. When the claims say nothing, two read-only GETs settle it. These cases are a non-JWT token, no `exp` or no `iat`,
+     or a lifetime between the two bounds. Both `/v2/user/profile` and one quote GET are sent.
+     - A daily token reads both.
+     - Upstox refuses the profile to an Analytics Token unless the token is used from a registered static IP, but the
+       quote still works.
+     - Quote works and profile refused: an Analytics Token. Profile works and quote refused: a daily token.
+     - Both work: the box the token was pasted into decides, and the default box is the Analytics Token.
+     - Both refuse: the token is rejected. If Upstox does not answer clearly, nothing is stored and the user is asked to
+       try again.
   - Search did not find the exact claims Upstox puts in an Analytics Token, so no claim name is relied on. Only the
     standard `exp` and `iat` are used.
 - **Sources:** https://upstox.com/developer/api-documentation/analytics-token/ and
@@ -58,7 +63,9 @@ invented. Before relying on a detail marked *forum only*, open the official page
 - **Method.** On web.dhan.co, open My Profile, then Access DhanHQ APIs. Generate an access token and paste it with the
   Client ID. These are the two fields the adapter needs (`backend/app/brokers/dhan.py`).
 - **Validity.** 24 hours, as stated in the official docs and the Dhan support FAQ.
-- **Renewal.** Paste the new token. Renew takes the token only; the Client ID stays stored.
+- **Renewal.** Paste the new token. Renew takes the token only; the Client ID stays stored. When the pasted token is
+  a JWT with an `exp` claim, the stored session ends at that `exp` if it comes before the daily schedule. The claim is
+  read for the expiry only.
 - **Not used yet:** Dhan also documents a RenewToken call (it extends an active web token by another 24 hours) and an
   API key and secret consent flow. The existing adapter supports neither. Both are candidates for removing the daily
   paste later.
@@ -112,7 +119,8 @@ invented. Before relying on a detail marked *forum only*, open the official page
 - **Method.** Store the user ID, password, API key and TOTP secret once. Each login makes the current code from the
   secret and calls `QuickAuth` (`backend/app/brokers/shoonya.py`). The vendor code defaults to `<user ID>_API`, as the
   adapter documents, so it is not asked for.
-- **Daily renewal.** One click: renew sends no fields.
+- **Daily renewal.** One click: renew sends no fields. The session token (`susertoken`) a login returns is stored
+  encrypted and reused until the daily expiry, so other calls do not log in again.
 - **Why four fields.** Shoonya has no token to paste. Its login takes the user ID, the password, a TOTP and the app key.
 - **Sources:** https://www.shoonya.com/api-documentation and the official wrappers https://github.com/Shoonya-Dev/ShoonyaApi-py
   and https://github.com/Shoonya-Dev/ShoonyaApi-js. The API key is generated at prism.shoonya.com (third-party guide,

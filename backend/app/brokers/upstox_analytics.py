@@ -147,6 +147,7 @@ ANALYTICS_KIND = "analytics"
 DAILY_KIND = "daily"
 EXPIRED_KIND = "expired"
 REJECTED_KIND = "rejected"
+EITHER_KIND = "either"      # the probe could not tell: both the profile and a quote answered
 # An Upstox daily access token dies at the next 03:30 IST, so it lives at most ~27.5 hours from issue; an analytics token
 # lives a year. A lifetime past ANALYTICS_MIN_LIFETIME is an analytics token, one within DAILY_MAX_LIFETIME a daily one;
 # anything between (or a token with no readable `exp`) is settled by a probe instead.
@@ -157,7 +158,7 @@ ANALYTICS_MIN_LIFETIME = timedelta(days=7)
 def token_kind_from_claims(token: str, now: Optional[datetime] = None) -> Optional[str]:
     """P2a: which kind of Upstox token a pasted value is, from its JWT claims read without verifying the signature (a
     hint for where to store it, never trusted for auth): ANALYTICS_KIND, DAILY_KIND, EXPIRED_KIND (its `exp` has
-    passed), or None when the claims do not say (not a JWT, no `exp`, or a lifetime between the two bounds)."""
+    passed), or None when the claims do not say (not a JWT, no `exp` or `iat`, or a lifetime between the two bounds)."""
     now = now or _utcnow()
     try:
         claims = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
@@ -173,12 +174,12 @@ def token_kind_from_claims(token: str, now: Optional[datetime] = None) -> Option
     if expires <= now:
         return EXPIRED_KIND
     iat = claims.get("iat")
-    issued = now
-    if isinstance(iat, (int, float)) and not isinstance(iat, bool) and 0 < iat:
-        try:
-            issued = min(now, datetime.fromtimestamp(float(iat), tz=timezone.utc))
-        except (OverflowError, OSError, ValueError):
-            issued = now
+    if not isinstance(iat, (int, float)) or isinstance(iat, bool) or iat <= 0:
+        return None                  # no issue time: the time left says nothing about the kind - the probe decides
+    try:
+        issued = min(now, datetime.fromtimestamp(float(iat), tz=timezone.utc))
+    except (OverflowError, OSError, ValueError):
+        return None
     lifetime = expires - issued
     if lifetime >= ANALYTICS_MIN_LIFETIME:
         return ANALYTICS_KIND
@@ -188,30 +189,32 @@ def token_kind_from_claims(token: str, now: Optional[datetime] = None) -> Option
 
 
 async def probe_token_kind(token: str, *, client: Optional[httpx.AsyncClient] = None) -> Optional[str]:
-    """P2a: settle the kind of a token whose claims do not, with read-only GETs. The account profile answers a daily
-    login token; Upstox refuses it to an analytics token (outside a registered static IP), which still reads quotes.
-    Returns DAILY_KIND, ANALYTICS_KIND, REJECTED_KIND (refused by both: not a usable token) or None (Upstox did not
-    answer clearly - a network failure, 429 or 5xx). Never logs or returns the token."""
+    """P2a: settle the kind of a token whose claims do not, with two read-only GETs - the account profile and one quote.
+    A daily login token reads both. An analytics token reads quotes, and Upstox refuses it the profile unless it is used
+    from a registered static IP, so: quote works + profile refused -> ANALYTICS_KIND; profile works + quote refused ->
+    DAILY_KIND; both work -> EITHER_KIND (the caller lets the box it was pasted into decide); both refused ->
+    REJECTED_KIND; anything else (a network failure, 429, 5xx) -> None. Never logs or returns the token."""
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
     own = client is None
     http = client or _client()
+    path, params = probe_requests(_utcnow().date())[QUOTES]
     try:
         try:
             profile = await http.get("/v2/user/profile", headers=headers)
+            quote = outcome(await http.get(path, params=params, headers=headers), _utcnow())
         except Exception:  # noqa: BLE001 - unreachable: undecided
             return None
         if 200 <= profile.status_code < 300 and _body_ok(profile):
-            return DAILY_KIND
-        if profile.status_code not in (401, 403):
-            return None
-        path, params = probe_requests(_utcnow().date())[QUOTES]
-        try:
-            quote = outcome(await http.get(path, params=params, headers=headers), _utcnow())
-        except Exception:  # noqa: BLE001
+            profile_status = WORKS
+        elif profile.status_code in (401, 403):
+            profile_status = REFUSED
+        else:
             return None
         if quote["status"] == WORKS:
-            return ANALYTICS_KIND
-        return REJECTED_KIND if quote["status"] == REFUSED else None
+            return EITHER_KIND if profile_status == WORKS else ANALYTICS_KIND
+        if quote["status"] == REFUSED:
+            return DAILY_KIND if profile_status == WORKS else REJECTED_KIND
+        return None
     finally:
         if own:
             await http.aclose()

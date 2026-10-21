@@ -311,6 +311,8 @@ test.describe("desktop 1440", () => {
         return r.fulfill({ json: { authorization_url: "https://upstox.example/login" } });
       });
       await p.route("https://upstox.example/**", (r) => r.fulfill({ body: "upstox login" }));
+      await p.route(/\/api(?:\/v1)?\/broker\/upstox\/redirect-url$/, (r) => r.fulfill({ json: {
+        redirect_url: "https://atp.example.com/api/broker/upstox/oauth/callback", redirect_uri_mismatch: false, accounts: [] } }));
     } });
     await page.locator("[data-broker-advanced] summary").click();
     const another = page.locator("[data-another-account]");

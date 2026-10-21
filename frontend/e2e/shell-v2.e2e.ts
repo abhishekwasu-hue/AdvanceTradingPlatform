@@ -270,6 +270,14 @@ test.describe("v2 broker gate on data pages", () => {
       await expect(gate, path).toBeVisible();
       await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
       await expect(page.locator("main [data-broker-gate] ~ *")).toHaveCount(0);
+      if (path === "/positions") {
+        // UI2-9a: My positions shows the gate itself and, under it, only the trader's own open positions with their exits
+        // (ADR-0004) - never the summary, the closed trades or any price or P&L figure.
+        await expect(page.locator("[data-block='summary']")).toHaveCount(0);
+        await expect(page.locator("[data-block='history']")).toHaveCount(0);
+        await expect(page.locator("main [data-col]")).toHaveCount(0);
+        await expect(page.locator("main").getByText(/[+−]₹/)).toHaveCount(0);
+      }
     }
     await page.getByRole("link", { name: "Connect a broker" }).click();
     await expect(page).toHaveURL(/\/broker$/);                             // P2b: the Broker page

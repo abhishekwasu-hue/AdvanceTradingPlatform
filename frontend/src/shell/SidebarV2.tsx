@@ -127,7 +127,7 @@ export function SidebarV2View({ sections, current, memory, onToggle, user, accou
     <aside aria-label="Navigation"
       className="hidden w-60 shrink-0 flex-col border-r border-subtle bg-surface-1 md:sticky md:top-0 md:flex md:h-screen">
       <div className="flex h-14 shrink-0 items-center border-b border-subtle px-space-4">
-        <Link to="/" aria-label="Advance Trading - Dashboard" className="rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+        <Link to="/" aria-label="AiAlgoDesk - Dashboard" className="rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
           <Logo size={28} />
         </Link>
       </div>

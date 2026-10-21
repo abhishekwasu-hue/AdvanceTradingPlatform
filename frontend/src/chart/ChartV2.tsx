@@ -36,7 +36,8 @@ export interface ChartV2Props {
   volumeLabel?: string;
   /** Shown over an empty chart (no bars yet for this symbol and timeframe). */
   emptyText?: string;
-  /** The drawing tools (saved per user and symbol); on for a chart of a symbol. */
+  /** The drawing tools (saved per user and symbol); on for a chart of a symbol. Off: the drawings are not drawn at all
+   * (UI2-4c "Hide all"). A new drawing records this chart's timeframe (UI2-4a1). */
   drawingTools?: boolean;
   onEngine?: (engine: LightweightEngine | null) => void;
   onTools?: (tools: ReturnType<typeof useDrawingTools>) => void;
@@ -91,7 +92,7 @@ export default function ChartV2({
   // The chart type is not in the key: setType re-renders the same bars in place, so the trader's zoom stays.
   useEffect(() => { core?.setData(display, `${symbol ?? ""}|${exchange}|${timeframe}`); }, [core, display, symbol, exchange, timeframe]);
 
-  const tools = useDrawingTools(core?.engine ?? null, core ? plotRef.current : null, symbol, exchange, drawingTools);
+  const tools = useDrawingTools(core?.engine ?? null, core ? plotRef.current : null, symbol, exchange, drawingTools, timeframe);
   useEffect(() => { callbacks.current.onTools?.(tools); }, [tools.view, tools.controller]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   return (

@@ -1,11 +1,14 @@
-import { ExternalLink, Maximize2, Minimize2, Redo2, Undo2 } from "lucide-react";
+import { ExternalLink, ListTree, Maximize2, Minimize2, Redo2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import type { DrawingKind } from "../charting/drawings";
 import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
+import type { DrawingController } from "../charting/tools";
 import { useLiveLtp } from "../components/chartHelpers";
+import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
 import type { PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
@@ -13,9 +16,12 @@ import type { SystemStatus } from "../types";
 import { PageIntro } from "../ui/PageIntro";
 import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
+import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
 import { ChartSettingsPopover } from "./ChartSettingsPopover";
 import ChartV2 from "./ChartV2";
 import { CHART_TYPES_V2, CHART_TYPE_LABELS_V2, type ChartTypeV2 } from "./chartCore";
+import { DrawingMenu, DrawingRail } from "./DrawingRail";
+import { placeHint } from "./drawingRail";
 import {
   chartsSymbol, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, volumeLabelFor,
   type ChartsView,
@@ -27,6 +33,8 @@ import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useFullscreen } from "./useFullscreen";
 import { useTradesLayer } from "./useTradesLayer";
+import { WatchlistPanel } from "./WatchlistPanel";
+import type { WatchItem } from "./watchlistsV2";
 
 /**
  * UI2-4b2 (UI v2 proposal §6, Charts page plan §3): the Charts page at `/charts` and `/charts/:symbol`, v2 only.
@@ -36,6 +44,10 @@ import { useTradesLayer } from "./useTradesLayer";
  * The v2 shell puts the broker gate in front of this page (src/ui/dataPages.ts): signed out, with no broker or before
  * the day's broker login the trader sees the gate card, never candles or sample data. Candles, the live price and the
  * drawings all come from the trader's own broker session and account.
+ *
+ * UI2-4c: the drawing rail left of the chart (a "Draw" menu on a phone) and, while `watchlists` is on, the watchlist -
+ * a right column from 1024 px (it can be hidden), a bottom sheet below. A watchlist row opens its symbol and keeps the
+ * timeframe, chart type, indicators and whether the drawings are hidden.
  */
 type Tools = ReturnType<typeof useDrawingTools>;
 
@@ -69,6 +81,10 @@ export default function ChartsPageV2(_props: PageProps) {
   const symbol = chartsSymbol(fromPath?.trim() ? fromPath : null, readLastSymbol(userId));
   const exchange = (params.get("exchange") ?? "NSE").trim().toUpperCase() || "NSE";
   const multi = features.on("chart_workspace");
+  const watchOn = features.on("watchlists");
+  const wide = useMediaQuery("(min-width: 1024px)");
+  const phone = useMediaQuery(PHONE_QUERY);
+  const [sheet, setSheet] = useState(false);
   const tab = multi && params.get("tab") === "multi" ? "multi" : "chart";
   useEffect(() => { saveLastSymbol(userId, symbol); }, [userId, symbol]);
 
@@ -100,14 +116,37 @@ export default function ChartsPageV2(_props: PageProps) {
   const [tools, setTools] = useState<Tools | null>(null);
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
 
+  // CHP-2: a tool picked and not yet placed stays picked when the symbol (and so the drawing controller) changes.
+  const armed = useRef<{ kind: DrawingKind; text?: string; ctl: DrawingController } | null>(null);
+  useEffect(() => {
+    const ctl = tools?.controller;
+    if (view.drawings_hidden) { armed.current = null; return; }          // Hide all puts the tools down
+    if (!ctl || !tools?.view) return;
+    const last = armed.current;
+    if (last && last.ctl !== ctl) {
+      armed.current = { ...last, ctl };
+      if (!ctl.armed()) ctl.setTool(last.kind, last.text);
+      return;
+    }
+    const now = ctl.armed();
+    armed.current = now ? { ...now, ctl } : null;
+  }, [tools, view.drawings_hidden]);
+
   const root = useRef<HTMLDivElement>(null);
-  const busy = useCallback(() => !!tools?.controller?.view().tool || !!root.current?.querySelector("[role='dialog'], [role='listbox']"), [tools]);
+  const busy = useCallback(() => !!tools?.controller?.view().tool || !!root.current?.querySelector("[role='dialog'], [role='alertdialog'], [role='listbox']"), [tools]);
   const fs = useFullscreen(root, busy, tab === "chart");
 
   const pick = (p: PickedSymbol) => {
     const q = p.exchange && p.exchange !== "NSE" ? `?exchange=${encodeURIComponent(p.exchange)}` : "";
     if (p.symbol !== symbol || p.exchange !== exchange) navigate(`${chartsPath(p.symbol)}${q}`);
   };
+  const openItem = (item: WatchItem) => { setSheet(false); pick(item); };
+  const toggleWatchlist = () => (wide ? setView({ watchlist_open: !view.watchlist_open }) : setSheet(true));
+  const column = watchOn && wide && view.watchlist_open;
+  const watchlist = (touch: boolean, onClose?: () => void) => (
+    <WatchlistPanel symbol={symbol} exchange={exchange} onOpen={openItem} listId={view.watchlist_id} onListId={(id) => setView({ watchlist_id: id })}
+      storageKey={recentKeyFor(userId)} onClose={onClose} touch={touch} className="h-full" />
+  );
   const setTab = (t: "chart" | "multi") => setParams((prev) => {
     const next = new URLSearchParams(prev);
     if (t === "multi") next.set("tab", "multi"); else next.delete("tab");
@@ -120,7 +159,7 @@ export default function ChartsPageV2(_props: PageProps) {
     else setView(change);
   };
 
-  const drawingText = drawingNote(tools?.view?.message);
+  const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
   const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : `No prices for ${symbol} on this timeframe yet.`;
   const workspace = `/?${new URLSearchParams({ workspace: "1", chart: symbol, exchange }).toString()}`;
 
@@ -154,58 +193,82 @@ export default function ChartsPageV2(_props: PageProps) {
           </a>
         </section>
       ) : (
-        <section aria-label={`Chart of ${symbol}`} className={cx("flex min-h-0 flex-col rounded-panel border border-subtle bg-surface-1", fs.on && "flex-1")}>
-          <div role="toolbar" aria-label="Chart controls" data-chart-toolbar
-            className="flex flex-wrap items-center gap-x-space-2 gap-y-space-1 border-b border-subtle p-space-2">
-            {/* Phone: symbol and the icon buttons, then market state, type and Indicators, then the timeframes. */}
-            <SymbolPicker value={symbol} exchange={exchange} onPick={pick} storageKey={recentKeyFor(userId)} className="order-1 min-w-[8.5rem] flex-1 md:order-none md:w-44 md:flex-none" />
-            {chip && (
-              <span data-market={chip.open ? "open" : "closed"} className="order-3 inline-flex items-center gap-space-1 whitespace-nowrap rounded-pill border border-subtle px-space-2 py-space-1 text-t12 text-fg-muted md:order-none">
-                <span aria-hidden className={cx("h-2 w-2 rounded-pill", chip.open ? "bg-up" : "bg-fg-muted")} />
-                {chip.text}
-              </span>
-            )}
-            <div role="group" aria-label="Timeframe" className="order-6 flex w-full gap-space-1 overflow-x-auto md:order-none md:w-auto">
-              {offered.map((tf) => (
-                <button key={tf} type="button" aria-pressed={tf === timeframe} onClick={() => setView({ timeframe: tf })}
-                  className={cx("min-h-11 min-w-11 shrink-0 rounded-control px-space-2 text-t13 md:min-h-9 md:min-w-9", focus,
-                    tf === timeframe ? "bg-surface-3 font-semibold text-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg")}>
-                  {timeframeLabel(tf)}
+        <div className={cx("flex min-h-0 gap-space-3", fs.on && "flex-1")}>
+          <section aria-label={`Chart of ${symbol}`} className="flex min-h-0 min-w-0 flex-1 flex-col rounded-panel border border-subtle bg-surface-1">
+            <div role="toolbar" aria-label="Chart controls" data-chart-toolbar
+              className="relative flex flex-wrap items-center gap-x-space-2 gap-y-space-1 border-b border-subtle p-space-2">
+              {/* Phone: symbol and the icon buttons, then market state, type and Indicators, then the timeframes. */}
+              <SymbolPicker value={symbol} exchange={exchange} onPick={pick} storageKey={recentKeyFor(userId)} className="order-1 min-w-[8.5rem] flex-1 md:order-none md:w-44 md:flex-none" />
+              {chip && (
+                <span data-market={chip.open ? "open" : "closed"} className="order-3 inline-flex items-center gap-space-1 whitespace-nowrap rounded-pill border border-subtle px-space-2 py-space-1 text-t12 text-fg-muted md:order-none">
+                  <span aria-hidden className={cx("h-2 w-2 rounded-pill", chip.open ? "bg-up" : "bg-fg-muted")} />
+                  {chip.text}
+                </span>
+              )}
+              <div role="group" aria-label="Timeframe" className="order-6 flex w-full gap-space-1 overflow-x-auto md:order-none md:w-auto">
+                {offered.map((tf) => (
+                  <button key={tf} type="button" aria-pressed={tf === timeframe} onClick={() => setView({ timeframe: tf })}
+                    className={cx("min-h-11 min-w-11 shrink-0 rounded-control px-space-2 text-t13 md:min-h-9 md:min-w-9", focus,
+                      tf === timeframe ? "bg-surface-3 font-semibold text-fg" : "text-fg-muted hover:bg-surface-2 hover:text-fg")}>
+                    {timeframeLabel(tf)}
+                  </button>
+                ))}
+              </div>
+              <label className="sr-only" htmlFor="charts-type">Chart type</label>
+              <select id="charts-type" value={view.type} onChange={(e) => setView({ type: e.target.value as ChartTypeV2 })}
+                className={cx("order-4 h-11 w-[6.5rem] rounded-control border border-border bg-surface-2 px-space-2 text-t13 text-fg md:order-none md:h-9 md:w-auto", focus)}>
+                {CHART_TYPES_V2.map((t) => <option key={t} value={t}>{CHART_TYPE_LABELS_V2[t]}</option>)}
+              </select>
+              <div className="order-5 md:order-none"><IndicatorsMenu state={indicatorState} on={features.on} onToggle={onIndicator} /></div>
+              <span className="order-2 ml-auto inline-flex items-center md:order-none">
+                <DrawingMenu tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
+                <button type="button" aria-label="Undo drawing" title="Undo (Ctrl+Z)" className={iconBtn}
+                  disabled={!tools?.view?.canUndo} onClick={() => void tools?.controller?.undo()}><Undo2 size={16} aria-hidden /></button>
+                <button type="button" aria-label="Redo drawing" title="Redo (Ctrl+Y)" className={iconBtn}
+                  disabled={!tools?.view?.canRedo} onClick={() => void tools?.controller?.redo()}><Redo2 size={16} aria-hidden /></button>
+                <ChartSettingsPopover prefs={prefs.prefs} onChange={prefs.update} error={prefs.error} />
+                <button type="button" aria-label={fs.on ? "Leave full screen" : "Full screen"} title={fs.on ? "Leave full screen (Esc)" : "Full screen (F)"}
+                  aria-pressed={fs.on} className={iconBtn} onClick={fs.toggle}>
+                  {fs.on ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />}
                 </button>
-              ))}
+                {/* The sheet is laid over the document, which full screen does not show: no sheet button in full screen. */}
+                {watchOn && (wide || !fs.on) && (
+                  <button type="button" aria-label="Watchlist" title={wide ? (view.watchlist_open ? "Hide the watchlist" : "Show the watchlist") : "Open the watchlist"}
+                    aria-pressed={wide ? view.watchlist_open : undefined} aria-haspopup={wide ? undefined : "dialog"} className={iconBtn} onClick={toggleWatchlist}>
+                    <ListTree size={16} aria-hidden />
+                  </button>
+                )}
+              </span>
             </div>
-            <label className="sr-only" htmlFor="charts-type">Chart type</label>
-            <select id="charts-type" value={view.type} onChange={(e) => setView({ type: e.target.value as ChartTypeV2 })}
-              className={cx("order-4 h-11 w-[6.5rem] rounded-control border border-border bg-surface-2 px-space-2 text-t13 text-fg md:order-none md:h-9 md:w-auto", focus)}>
-              {CHART_TYPES_V2.map((t) => <option key={t} value={t}>{CHART_TYPE_LABELS_V2[t]}</option>)}
-            </select>
-            <div className="order-5 md:order-none"><IndicatorsMenu state={indicatorState} on={features.on} onToggle={onIndicator} /></div>
-            <span className="order-2 ml-auto inline-flex items-center md:order-none">
-              <button type="button" aria-label="Undo drawing" title="Undo (Ctrl+Z)" className={iconBtn}
-                disabled={!tools?.view?.canUndo} onClick={() => void tools?.controller?.undo()}><Undo2 size={16} aria-hidden /></button>
-              <button type="button" aria-label="Redo drawing" title="Redo (Ctrl+Y)" className={iconBtn}
-                disabled={!tools?.view?.canRedo} onClick={() => void tools?.controller?.redo()}><Redo2 size={16} aria-hidden /></button>
-              <ChartSettingsPopover prefs={prefs.prefs} onChange={prefs.update} error={prefs.error} />
-              <button type="button" aria-label={fs.on ? "Leave full screen" : "Full screen"} title={fs.on ? "Leave full screen (Esc)" : "Full screen (F)"}
-                aria-pressed={fs.on} className={iconBtn} onClick={fs.toggle}>
-                {fs.on ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />}
-              </button>
-            </span>
-          </div>
-          <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
-            prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} onLoadOlder={data.loadOlder}
-            volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools}
-            className={fs.on ? "min-h-[240px] flex-1" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]"} />
-          {(data.error || tradesNote || data.loadingOlder || drawingText) && (
-            <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
-              {data.error && <span className="text-fg">{data.error}</span>}
-              {data.error && <button type="button" onClick={data.retry} className={cx("min-h-11 font-semibold text-brand hover:underline md:min-h-9", focus)}>Try again</button>}
-              {data.loadingOlder && <span>Loading older bars…</span>}
-              {tradesNote && <span>{tradesNote}</span>}
-              {drawingText && <span>{drawingText}</span>}
+            <div className={cx("flex min-h-0", fs.on && "flex-1")}>
+              <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
+              <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
+                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
+                volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools}
+                className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
+            {(data.error || tradesNote || data.loadingOlder || drawingText) && (
+              <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
+                {data.error && <span className="text-fg">{data.error}</span>}
+                {data.error && <button type="button" onClick={data.retry} className={cx("min-h-11 font-semibold text-brand hover:underline md:min-h-9", focus)}>Try again</button>}
+                {data.loadingOlder && <span>Loading older bars…</span>}
+                {tradesNote && <span>{tradesNote}</span>}
+                {drawingText && <span>{drawingText}</span>}
+              </div>
+            )}
+          </section>
+          {column && (
+            // As tall as the chart's card (the inner box takes no height of its own); its rows scroll inside.
+            <aside aria-label="Watchlist column" className="relative w-[300px] shrink-0 rounded-panel border border-subtle bg-surface-1">
+              <div className="absolute inset-0 flex flex-col">{watchlist(false, () => setView({ watchlist_open: false }))}</div>
+            </aside>
           )}
-        </section>
+        </div>
+      )}
+      {watchOn && !wide && (
+        <Sheet side="bottom" open={sheet} onOpenChange={setSheet} title="Watchlist">
+          {watchlist(true)}
+        </Sheet>
       )}
     </div>
   );

@@ -9,6 +9,9 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   The old pages' baselines are untouched: with the flag off nothing changes (the last test, and mobile.e2e.ts).
  * - Every timeframe loads, full screen enters and leaves, no grid by default, the gate with no broker, the chart theme
  *   saved on the server and read back after a reload, and the chart built once (React wiring).
+ * - UI2-4c: the watchlist (column `charts-v2-watchlist-1440-<theme>.png`, phone sheet `charts-v2-390-sheet-light.png`),
+ *   versioned saves, the batch quotes, the drawing rail (a new drawing sends its timeframe; Delete all asks first) and
+ *   the phone's drawing menu. The watchlist only with the `watchlists` flag on.
  * Every reply is made-up data (e2e/chartsMocks.ts): no real account, price or id.
  * After an intended change: `npx playwright test --project=phone e2e/charts-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
@@ -19,6 +22,8 @@ const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_stat
 
 interface Setup extends ChartsMocks {
   flag?: boolean; brokers?: unknown[]; path?: string; intro?: boolean;
+  /** UI2-4c: the `watchlists` flag on as well. */
+  watch?: boolean;
   /** More localStorage for the first load (e.g. this user's recent symbols). */
   storage?: Record<string, string>;
   /** More routes, registered after the mocks so they answer first. */
@@ -28,7 +33,7 @@ interface Setup extends ChartsMocks {
 }
 
 async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Promise<ChartsCalls> {
-  const { flag = true, brokers = CONNECTED, path = "/charts", intro = false, storage = {}, before, settle = true, ...mocks } = setup;
+  const { flag = true, brokers = CONNECTED, path = "/charts", intro = false, storage = {}, before, settle = true, watch = false, ...mocks } = setup;
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
   await page.addInitScript(([t, intro, storage]) => {
     try {
@@ -42,7 +47,7 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Pro
     } catch { /* storage unavailable */ }
   }, [theme, intro, storage] as const);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
-  await mockApi(page, { features: flag ? { ui_v2: true, chart_workspace: true } : undefined, brokers });
+  await mockApi(page, { features: flag ? { ui_v2: true, chart_workspace: true, ...(watch ? { watchlists: true } : {}) } : undefined, brokers });
   const calls = await mockCharts(page, mocks);
   await before?.(page);
   await page.goto(path);
@@ -73,6 +78,17 @@ async function bandColours(page: Page): Promise<number> {
 }
 
 const THEMES = ["light", "dark"] as const;
+
+/** Made-up lists (UI2-4c): index names with spaces and their exchange, and a second list. */
+const LISTS = [
+  { id: 1, name: "Indices", items: [{ symbol: "NIFTY 50", exchange: "NSE" }, { symbol: "NIFTY BANK", exchange: "NSE" }, { symbol: "FINNIFTY", exchange: "NSE" }, { symbol: "SENSEX", exchange: "BSE" }] },
+  { id: 2, name: "Banks", items: [{ symbol: "HDFCBANK", exchange: "NSE" }, { symbol: "ICICIBANK", exchange: "NSE" }] },
+];
+const WATCH: Setup = { watch: true, watchlists: LISTS };
+const symbols = (body: Record<string, unknown> | null) => (body?.items as { symbol: string }[]).map((i) => i.symbol);
+
+/** The watchlist's rows, as shown. */
+const rows = (page: Page) => page.getByRole("list", { name: /^Symbols in / }).locator("[data-row]");
 const SHOT = { animations: "disabled" as const, maxDiffPixelRatio: 0.02, timeout: 15_000 };
 
 test.describe("v2 Charts 1440 desktop", () => {
@@ -343,6 +359,180 @@ test.describe("v2 Charts 1440 desktop", () => {
   });
 });
 
+test.describe("v2 Charts 1440: watchlist and drawing rail (UI2-4c)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+
+  for (const theme of THEMES) {
+    test(`the watchlist column looks the same (${theme})`, async ({ page }) => {
+      const calls = await open(page, theme, WATCH);
+      await chartReady(page);
+      await expect(rows(page)).toHaveCount(4);
+      await expect(rows(page).first()).toContainText(/\d/);                  // the batch quote came
+      expect(calls.quotes[0]).toEqual(LISTS[0].items);
+      await page.mouse.move(0, 0);
+      await expect(page).toHaveScreenshot(`charts-v2-watchlist-1440-${theme}.png`, SHOT);
+    });
+  }
+
+  test("a watchlist row opens its symbol; the timeframe and a picked drawing tool stay (CHP-2)", async ({ page }) => {
+    const calls = await open(page, "light", WATCH);
+    await chartReady(page);
+    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true }).click();
+    await chartReady(page);
+    const hline = page.getByRole("group", { name: "Drawing tools" }).getByRole("button", { name: "Horizontal line" });
+    await hline.click();
+    await expect(hline).toHaveAttribute("aria-pressed", "true");
+    await rows(page).filter({ hasText: "NIFTY BANK" }).getByRole("button", { name: /^NIFTY BANK/ }).click();
+    await expect(page).toHaveURL(/\/charts\/NIFTY%20BANK$/);
+    await chartReady(page);
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true })).toHaveAttribute("aria-pressed", "true");
+    await expect(rows(page).filter({ hasText: "NIFTY BANK" }).getByRole("button", { name: /^NIFTY BANK/ })).toHaveAttribute("aria-current", "true");
+    expect(calls.candles.at(-1)?.timeframe).toBe("15min");
+    await expect(hline).toHaveAttribute("aria-pressed", "true");                   // still picked on the new symbol
+    const plot = page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first();
+    const box = (await plot.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 4);
+    await expect.poll(() => calls.drawingPosts.map((d) => d.symbol)).toEqual(["NIFTY BANK"]);
+    // A BSE row opens on its exchange.
+    await rows(page).filter({ hasText: "SENSEX" }).getByRole("button", { name: /^SENSEX/ }).click();
+    await expect(page).toHaveURL(/\/charts\/SENSEX\?exchange=BSE$/);
+  });
+
+  test("add, remove and reorder: each PUT carries the version it was made on; two lists", async ({ page }) => {
+    const calls = await open(page, "light", WATCH);
+    await chartReady(page);
+    const add = page.getByRole("combobox", { name: "Add a symbol to Indices" });
+    await add.fill("bank");
+    await page.getByRole("listbox", { name: "Matching symbols" }).getByRole("option", { name: /BANKBEES/ }).click();
+    await expect(rows(page)).toHaveCount(5);
+    await expect(add).toHaveValue("");
+    await rows(page).filter({ hasText: "FINNIFTY" }).getByRole("button", { name: "Remove FINNIFTY" }).click();
+    await expect(rows(page)).toHaveCount(4);
+    await rows(page).filter({ hasText: "SENSEX" }).getByRole("button", { name: "Move SENSEX", exact: true }).press("ArrowUp");
+    await expect(rows(page).nth(1)).toContainText("SENSEX");
+    await rows(page).filter({ hasText: "BANKBEES" }).getByRole("button", { name: /^BANKBEES/ }).press("Alt+ArrowUp");
+    await expect.poll(() => calls.watchlistWrites.length).toBe(4);
+    expect(calls.watchlistWrites.map((w) => [w.method, w.id, w.body?.version])).toEqual([["PUT", 1, 1], ["PUT", 1, 2], ["PUT", 1, 3], ["PUT", 1, 4]]);
+    expect(symbols(calls.watchlistWrites[0].body)).toEqual(["NIFTY 50", "NIFTY BANK", "FINNIFTY", "SENSEX", "BANKBEES"]);
+    expect(symbols(calls.watchlistWrites[1].body)).toEqual(["NIFTY 50", "NIFTY BANK", "SENSEX", "BANKBEES"]);
+    expect(symbols(calls.watchlistWrites[2].body)).toEqual(["NIFTY 50", "SENSEX", "NIFTY BANK", "BANKBEES"]);
+    expect(symbols(calls.watchlistWrites[3].body)).toEqual(["NIFTY 50", "SENSEX", "BANKBEES", "NIFTY BANK"]);
+    // Review: the edits did not each ask for prices again (the route allows 30 a minute; one batch per 10 s).
+    expect(calls.quotes).toHaveLength(1);
+    // The other list.
+    await page.getByRole("combobox", { name: "Watchlist" }).selectOption({ label: "Banks (2)" });
+    await expect(rows(page)).toHaveText([/HDFCBANK/, /ICICIBANK/]);
+  });
+
+  test("a new list, renamed, then deleted after the question", async ({ page }) => {
+    const calls = await open(page, "light", WATCH);
+    await chartReady(page);
+    await page.getByRole("button", { name: "New list" }).click();
+    await page.getByRole("textbox", { name: "Name of the new list" }).fill("Swing ideas");
+    await page.getByRole("button", { name: "Create" }).click();
+    await expect(page.getByRole("combobox", { name: "Watchlist" })).toHaveValue("100");
+    await expect(page.getByText("This list is empty. Search a symbol above to add it.")).toBeVisible();
+    await page.getByRole("button", { name: "Rename list" }).click();
+    await page.getByRole("textbox", { name: "New name of the list" }).fill("Swing");
+    await page.getByRole("button", { name: "Save" }).click();
+    await page.getByRole("button", { name: "Delete list" }).click();
+    const ask = page.getByRole("alertdialog");
+    await expect(ask).toContainText('Delete the list "Swing"?');
+    // Review: Escape typed in the add search leaves the question; Escape in it cancels and gives the focus back.
+    await page.getByRole("combobox", { name: "Add a symbol to Swing" }).press("Escape");
+    await expect(ask).toBeVisible();
+    await ask.getByRole("button", { name: "Cancel" }).press("Escape");
+    await expect(ask).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Delete list" })).toBeFocused();
+    await page.getByRole("button", { name: "Delete list" }).click();
+    await expect(ask).toContainText("this cannot be undone");
+    await ask.getByRole("button", { name: "Delete list" }).click();
+    await expect.poll(() => calls.watchlistWrites.map((w) => w.method)).toEqual(["POST", "PUT", "DELETE"]);
+    expect(calls.watchlistWrites[1].body).toMatchObject({ name: "Swing", version: 1 });
+    await expect(page.getByRole("combobox", { name: "Watchlist" })).toHaveValue("1");
+  });
+
+  test("the watchlist is hidden while the watchlists flag is off: no column, no button, no request", async ({ page }) => {
+    const calls = await open(page, "light", { watchlists: LISTS });
+    await chartReady(page);
+    await expect(page.locator("[data-watchlist]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Watchlist" })).toHaveCount(0);
+    expect(calls.watchlistReads).toBe(0);
+    expect(calls.quotes).toEqual([]);
+  });
+
+  test("the column hides and comes back; it stays hidden after a reload", async ({ page }) => {
+    await open(page, "light", WATCH);
+    await chartReady(page);
+    await page.getByRole("button", { name: "Hide watchlist" }).click();
+    await expect(page.locator("[data-watchlist]")).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Watchlist" })).toHaveAttribute("aria-pressed", "false");
+    await page.reload();
+    await chartReady(page);
+    await expect(page.locator("[data-watchlist]")).toHaveCount(0);
+    await page.getByRole("button", { name: "Watchlist" }).click();
+    await expect(rows(page)).toHaveCount(4);
+  });
+
+  test("the rail: pick the horizontal line, click the chart: the POST carries the timeframe; More holds the other kinds", async ({ page }) => {
+    const calls = await open(page, "light");
+    await chartReady(page);
+    const rail = page.getByRole("group", { name: "Drawing tools" });
+    expect(await rail.getByRole("button").evaluateAll((els) => els.map((e) => e.getAttribute("aria-label")))).toEqual([
+      "Trend line", "Horizontal line", "Ray", "Rectangle", "Text", "Measure", "More drawing tools", "Hide all drawings", "Delete all drawings"]);
+    await page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true }).click();
+    await chartReady(page);
+    await rail.getByRole("button", { name: "Horizontal line" }).click();
+    await expect(rail.getByRole("button", { name: "Horizontal line" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByText("Click the chart to place the horizontal line. Press Esc to cancel.")).toBeVisible();
+    const plot = page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first();
+    const box = (await plot.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 4);
+    await expect.poll(() => calls.drawingPosts.length).toBe(1);
+    expect(calls.drawingPosts[0]).toMatchObject({ symbol: "NIFTY 50", exchange: "NSE", timeframe: "15min", drawing: { kind: "hline" } });
+    await expect(page.getByRole("button", { name: "Undo drawing" })).toBeEnabled();
+    await rail.getByRole("button", { name: "More drawing tools" }).click();
+    const more = page.getByRole("dialog", { name: "More drawing tools" });
+    await expect(more.getByRole("button")).toHaveText(["Fib retracement", "Fib extension", "Parallel channel", "Vertical line", "Long position", "Short position"]);
+    await more.getByRole("button", { name: "Vertical line" }).click();
+    await expect(more).toHaveCount(0);
+    await expect(rail.getByRole("button", { name: "More drawing tools" })).toHaveClass(/ring-brand/);
+  });
+
+  test("Delete all asks first, naming what goes; Cancel keeps them; then the existing endpoint with confirm=true", async ({ page }) => {
+    const calls = await open(page, "light", { drawings: { "NIFTY 50": [24_100, 24_250, 24_400] }, locked: [24_400] });
+    await chartReady(page);
+    const rail = page.getByRole("group", { name: "Drawing tools" });
+    await rail.getByRole("button", { name: "Delete all drawings" }).click();
+    const ask = page.getByRole("alertdialog");
+    await expect(ask).toContainText("Delete 2 drawings on NIFTY 50?");
+    await expect(ask).toContainText("every timeframe of NIFTY 50, and Undo cannot bring them back. 1 locked drawing stays.");
+    await expect(ask.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await ask.getByRole("button", { name: "Cancel" }).click();
+    await expect(ask).toHaveCount(0);
+    expect(calls.deleteAll).toEqual([]);
+    await rail.getByRole("button", { name: "Delete all drawings" }).click();
+    await page.getByRole("alertdialog").getByRole("button", { name: "Delete all" }).click();
+    await expect.poll(() => calls.deleteAll).toEqual(["?symbol=NIFTY%2050&exchange=NSE&confirm=true"]);
+    await expect(rail.getByRole("button", { name: "Delete all drawings" })).toBeDisabled();       // only the locked one is left
+  });
+
+  test("Hide all: the tools rest until shown again, and it is kept after a reload", async ({ page }) => {
+    await open(page, "light", { drawings: { "NIFTY 50": [24_100] } });
+    await chartReady(page);
+    const rail = page.getByRole("group", { name: "Drawing tools" });
+    await expect(rail.getByRole("button", { name: "Delete all drawings" })).toBeEnabled();
+    await rail.getByRole("button", { name: "Hide all drawings" }).click();
+    await expect(rail.getByRole("button", { name: "Hide all drawings" })).toHaveAttribute("aria-pressed", "true");
+    await expect(rail.getByRole("button", { name: "Trend line" })).toBeDisabled();
+    await page.reload();
+    await chartReady(page);
+    await expect(rail.getByRole("button", { name: "Hide all drawings" })).toHaveAttribute("aria-pressed", "true");
+    await rail.getByRole("button", { name: "Hide all drawings" }).click();
+    await expect(rail.getByRole("button", { name: "Trend line" })).toBeEnabled();
+  });
+});
+
 test.describe("v2 Charts 390 phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
@@ -358,6 +548,48 @@ test.describe("v2 Charts 390 phone", () => {
     await open(page, "dark", { intro: true });
     await chartReady(page);
     await expectPhoneLayout(page);
+  });
+
+  test("UI2-4c: the watchlist sheet - opens from the top bar, a row opens its symbol and closes the sheet", async ({ page }) => {
+    await open(page, "light", WATCH);
+    await chartReady(page);
+    await expect(page.locator("[data-drawing-rail]")).toBeHidden();             // the phone has the Draw menu instead
+    await expectPhoneLayout(page);
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await page.getByRole("button", { name: "Watchlist" }).click();
+    const sheet = page.getByRole("dialog", { name: "Watchlist" });
+    await expect(sheet).toBeVisible();
+    await expect(rows(page)).toHaveCount(4);
+    await expect(rows(page).first()).toContainText(/\d/);
+    const small = await sheet.locator("button, select, input").evaluateAll((els) => els
+      .filter((e) => e.getBoundingClientRect().height > 0 && e.getBoundingClientRect().height < 43.5 && !e.closest("[aria-label='Close']"))
+      .map((e) => e.getAttribute("aria-label") ?? e.textContent));
+    expect(small).toEqual([]);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await expect(page).toHaveScreenshot("charts-v2-390-sheet-light.png", SHOT);
+    await rows(page).filter({ hasText: "NIFTY BANK" }).getByRole("button", { name: /^NIFTY BANK/ }).click();
+    await expect(sheet).toHaveCount(0);
+    await expect(page).toHaveURL(/\/charts\/NIFTY%20BANK$/);
+  });
+
+  test("UI2-4c: the compact drawing menu - 44 px tools, picking one closes it and says how to place it", async ({ page }) => {
+    const calls = await open(page, "light");
+    await chartReady(page);
+    await page.getByRole("button", { name: "Drawing tools" }).click();
+    const menu = page.getByRole("dialog", { name: "Drawing tools" });
+    await expect(menu.getByRole("button")).toHaveText(["Trend line", "Horizontal line", "Ray", "Rectangle", "Text", "Measure",
+      "Fib retracement", "Fib extension", "Parallel channel", "Vertical line", "Long position", "Short position", "Hide all", "Delete all"]);
+    for (const h of await menu.getByRole("button").evaluateAll((els) => els.map((e) => e.getBoundingClientRect().height))) expect(h).toBeGreaterThanOrEqual(44);
+    const right = await menu.evaluate((e) => e.getBoundingClientRect().right);
+    expect(right).toBeLessThanOrEqual(390);
+    await menu.getByRole("button", { name: "Horizontal line" }).click();
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByText("Tap the chart to place the horizontal line.")).toBeVisible();
+    const plot = page.locator("[data-page='charts-v2'] .tv-lightweight-charts").first();
+    const box = (await plot.boundingBox())!;
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 4);
+    await expect.poll(() => calls.drawingPosts.length).toBe(1);
+    expect(calls.drawingPosts[0]).toMatchObject({ timeframe: "5min" });
   });
 });
 

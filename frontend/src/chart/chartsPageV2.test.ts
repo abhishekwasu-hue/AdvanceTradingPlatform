@@ -4,7 +4,7 @@ import appShellSource from "../shell/AppShellV2.tsx?raw";
 import type { CandlesResponse, SystemStatus } from "../types";
 import { enterChoice, listKeyFor, readRecent, recentKeyFor, rememberSymbol, withRecent } from "../ui/SymbolPicker";
 import pageSource from "./ChartsPageV2.tsx?raw";
-import { cleanView, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, sessionFamily, volumeLabelFor } from "./chartsPage";
+import { DEFAULT_VIEW, cleanView, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, sessionFamily, volumeLabelFor } from "./chartsPage";
 import { isOn, menuGroups, onCount, toggle, type IndicatorState } from "./indicatorsModel";
 import { CandleFeed, OLDER_RETRY_MS, OlderGuard, candleErrorText, refreshBars, refreshDaysFor, type FeedEvents } from "./useChartCandles";
 import { fullscreenKey, isTyping } from "./useFullscreen";
@@ -54,9 +54,13 @@ describe("UI2-4b2 timeframes the page offers", () => {
   });
 
   it("the stored view is cleaned: a wrong field takes its default, overlays keep the chart's order", () => {
-    expect(cleanView(null)).toEqual({ timeframe: "5min", type: "candles", overlays: [], layers: [] });
+    const ui24c = { drawings_hidden: false, watchlist_open: true, watchlist_id: null };
+    expect(cleanView(null)).toEqual({ timeframe: "5min", type: "candles", overlays: [], layers: [], ...ui24c });
     expect(cleanView({ timeframe: "week", type: "renko", overlays: ["sma", "x", "ema_fast"], layers: ["trades", "trades", 3] }))
-      .toEqual({ timeframe: "week", type: "candles", overlays: ["ema_fast", "sma"], layers: ["trades"] });
+      .toEqual({ timeframe: "week", type: "candles", overlays: ["ema_fast", "sma"], layers: ["trades"], ...ui24c });
+    // UI2-4c: hide all, the watchlist column and the list kept; a wrong value takes its default.
+    expect(cleanView({ drawings_hidden: true, watchlist_open: false, watchlist_id: 7 })).toMatchObject({ drawings_hidden: true, watchlist_open: false, watchlist_id: 7 });
+    expect(cleanView({ drawings_hidden: "yes", watchlist_open: 0, watchlist_id: "7" })).toMatchObject(ui24c);
   });
 });
 
@@ -347,7 +351,7 @@ describe("UI2-4b2 review: per-user storage on this browser", () => {
     vi.stubGlobal("localStorage", fake);
     try {
       saveLastSymbol(1, "TCS");
-      saveView(1, { timeframe: "15min", type: "bars", overlays: ["vwap"], layers: [] });
+      saveView(1, { ...DEFAULT_VIEW, timeframe: "15min", type: "bars", overlays: ["vwap"] });
       rememberSymbol(recentKeyFor(1), { symbol: "TCS", exchange: "NSE" });
       expect(readLastSymbol(1)).toBe("TCS");
       expect(readLastSymbol(2)).toBeNull();

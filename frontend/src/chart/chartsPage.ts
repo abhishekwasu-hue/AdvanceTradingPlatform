@@ -124,3 +124,30 @@ export function drawingNote(message: string | null | undefined): string | null {
   if (/needs (a )?(text|time|price)|anchor|< or >/.test(message)) return "That drawing was not finished. Pick the tool and place it again.";
   return "A drawing change could not be saved. Check your connection, then try again.";
 }
+
+// --- Addresses of the Chart tab (UI2-4e) -----------------------------------------------------------------------------
+
+/** A chart on the Chart tab with its timeframe: `/charts/NIFTY%2050?tf=15min` (`&exchange=BSE` off NSE). An embedded
+ * chart's "Open in Chart tab"; the Charts page takes the timeframe, then drops it from the address. */
+export function chartTabPath(symbol: string, exchange?: string | null, timeframe?: string | null): string {
+  const s = symbol.trim().toUpperCase();
+  const q = new URLSearchParams();
+  if (timeframe && isTimeframe(timeframe)) q.set("tf", timeframe);
+  const x = (exchange ?? "").trim().toUpperCase();
+  if (s && x && x !== "NSE") q.set("exchange", x);
+  const path = s ? `/charts/${encodeURIComponent(s)}` : "/charts";
+  const query = q.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+/** UI2-4e: an old single-chart window link (`/?chart=SYM&tf=15min&exchange=NSE&broker_name=..`) under `ui_v2` opens the
+ * Chart tab instead, with its timeframe and exchange. The broker name is dropped: v2 charts read the trader's session. */
+export function chartWindowRedirect(params: URLSearchParams): string {
+  return chartTabPath(params.get("chart") ?? "", params.get("exchange"), params.get("tf"));
+}
+
+/** The timeframe a Chart tab address asks for (`?tf=`), or null. Not with `symbol` (an old workspace link's start). */
+export function addressTimeframe(params: URLSearchParams): TimeframeId | null {
+  const tf = params.get("tf");
+  return !params.has("symbol") && isTimeframe(tf) ? tf : null;
+}

@@ -10,7 +10,7 @@
  */
 import {
   BarSeries, CandlestickSeries, HistogramSeries, LineSeries, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi,
-  type IPrimitivePaneRenderer, type IPrimitivePaneView, type ISeriesPrimitive, type LogicalRange, type SeriesDefinition, type SeriesPartialOptionsMap, type SeriesType, type Time, type UTCTimestamp,
+  type AutoscaleInfo, type IPrimitivePaneRenderer, type IPrimitivePaneView, type ISeriesPrimitive, type LogicalRange, type SeriesDefinition, type SeriesPartialOptionsMap, type SeriesType, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 import { chartView, formatTick } from "../charting/chartTypes";
 import { LightweightEngine, type LineSeriesLike } from "../charting/lightweight";
@@ -31,6 +31,10 @@ export const OVERLAY_LABELS_V2: Record<OverlayId, string> = {
 };
 
 export interface PaneChoice { volume: boolean; rsi: boolean }
+
+/** UI2-4e: a level the chart marks (a signal's entry, stop and target): dashed, labelled on the price axis, in the
+ * chart's up / down / text colour, and always kept in view. */
+export interface LevelLine { price: number; title: string; tone: "up" | "down" | "neutral" }
 
 export interface ChartCoreOptions {
   palette: ChartPalette;
@@ -110,6 +114,8 @@ export class ChartCore {
   private readonly volumeLabel = new PaneLabel("Volume", "");
   private readonly rsiLabel = new PaneLabel(`RSI ${DEFAULT_SETTINGS.rsiPeriod}`, "");
   private readonly studyLines = new Set<ISeriesApi<"Line">>();
+  private levels: LevelLine[] = [];
+  private levelLines: IPriceLine[] = [];
   private data: ChartBar[] = [];
   private key = "";
   private readonly unsubs: (() => void)[] = [];
@@ -132,7 +138,16 @@ export class ChartCore {
       kineticScroll: { touch: true, mouse: false },
     });
     const p = opts.palette;
-    this.candles = this.chart.addSeries(CandlestickSeries, candleOptions(p, this.candlesHidden()));
+    this.candles = this.chart.addSeries(CandlestickSeries, {
+      ...candleOptions(p, this.candlesHidden()),
+      // The price scale also takes in the level lines, so a stop or target away from the bars still shows.
+      autoscaleInfoProvider: (base: () => AutoscaleInfo | null) => {
+        const info = base();
+        if (!info?.priceRange || this.levels.length === 0) return info;
+        const prices = this.levels.map((l) => l.price);
+        return { ...info, priceRange: { minValue: Math.min(info.priceRange.minValue, ...prices), maxValue: Math.max(info.priceRange.maxValue, ...prices) } };
+      },
+    });
     this.bars = this.chart.addSeries(BarSeries, { upColor: p.up, downColor: p.down, thinBars: false, priceLineVisible: false });
     this.line = this.chart.addSeries(LineSeries, { color: p.drawing, lineWidth: 2 });
     this.overlays = OVERLAYS_V2.map((_, i) => this.chart.addSeries(LineSeries, {
@@ -188,6 +203,20 @@ export class ChartCore {
     this.chart.applyOptions({ timeScale: { timeVisible: !DAILY_OR_LONGER.has(timeframe) } });
   }
 
+  /** UI2-4e: the level lines (replaced as a whole; a price that is not a number is left out). */
+  setLevels(levels: readonly LevelLine[]): void {
+    for (const line of this.levelLines) this.candles.removePriceLine(line);
+    this.levels = levels.filter((l) => Number.isFinite(l.price));
+    this.levelLines = this.levels.map((l) => this.candles.createPriceLine({
+      price: l.price, color: this.levelColour(l.tone), lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: l.title,
+    }));
+  }
+
+  private levelColour(tone: LevelLine["tone"]): string {
+    const p = this.opts.palette;
+    return tone === "up" ? p.up : tone === "down" ? p.down : p.text;
+  }
+
   /** The volume pane's name: "Volume", or where an index's volume comes from ("Volume · NIFTY OCT FUT"). */
   setVolumeLabel(text: string): void {
     this.volumeLabel.set(text, this.opts.palette.text);
@@ -216,6 +245,7 @@ export class ChartCore {
     applyChartTheme(this.chart, { candles: this.candles, bars: this.bars, line: this.line, rsi: this.rsi ?? undefined,
                                   rsiBands: this.rsiBands, overlays: this.overlays }, palette, grid, this.candlesHidden());
     this.engine.setDefaultDrawingColor(palette.drawing);
+    this.levelLines.forEach((line, i) => line.applyOptions({ color: this.levelColour(this.levels[i].tone) }));
     this.paintLabels();
     this.paintVolume(this.data.map((b) => toTime(b.timestamp)));      // volume carries its colour per bar
   }

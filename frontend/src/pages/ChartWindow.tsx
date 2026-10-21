@@ -13,6 +13,7 @@ import { layerTf } from "../charting/priceAction";
 import { REPLAY_OFF, parseCandleTime, replayAt, visibleCandles, windowStart, type ReplayState } from "../charting/replay";
 import ExpectedMoveLayer from "../progression/ExpectedMoveLayer";
 import { useFeatures } from "../ui/useFeatures";
+import { chartWindowRedirect } from "../chart/chartsPage";
 
 const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
 
@@ -25,6 +26,14 @@ const TIMEFRAMES = ["1min", "5min", "15min", "30min", "60min", "day"];
  */
 export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const { user, loading } = useAuth();
+  // UI2-0: the flags come from the app's single /system/features read (useFeatures).
+  const features = useFeatures();
+  // UI2-4e: with `ui_v2` on, this window's link opens the Charts page's Chart tab instead (its timeframe and exchange),
+  // and nothing is read here (the reads wait for the flags). The Charts page has no `chart` parameter, so this cannot
+  // loop. With `ui_v2` off: as before.
+  const v2 = features.loaded && features.on("ui_v2");
+  const reads = features.loaded && !v2;
+  useEffect(() => { if (v2) window.location.replace(chartWindowRedirect(params)); }, [v2, params]);
   const symbol = (params.get("chart") ?? "").trim().toUpperCase();
   const exchange = (params.get("exchange") ?? "NSE").toUpperCase();
   const broker = params.get("broker_name") || undefined;
@@ -32,14 +41,12 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
 
   useEffect(() => { document.title = `${symbol} · ${timeframe} · Advance Trading`; }, [symbol, timeframe]);
 
-  const chart = useBrokerChart({ enabled: !!user && !!symbol, symbol, timeframe, exchange, broker });
+  const chart = useBrokerChart({ enabled: reads && !!user && !!symbol, symbol, timeframe, exchange, broker });
   const error = chart.error;
 
-  const live = useLiveLtp(!!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
+  const live = useLiveLtp(reads && !!user && !!symbol && timeframe !== "day", symbol, exchange, broker);
   const [engine, setEngine] = useState<ChartEngine | null>(null);
   // CH5: "Open in workspace" only while the multi-chart workspace is on for this organisation.
-  // UI2-0: the flags come from the app's single /system/features read (useFeatures).
-  const features = useFeatures();
   const workspaceOn = !!user && features.on("chart_workspace");
   // N4 CH3: bar replay - the chart shows the candles up to the replay bar, the layers are read as of that bar's end
   const [replay, setReplay] = useState<ReplayState>(REPLAY_OFF);
@@ -54,7 +61,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   // N2-4: the expected-move cone (flag decision_tools; the toggle shows only when the organisation has it)
   const decisionTools = !!user && features.on("decision_tools");
 
-  if (loading) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
+  if (loading || v2) return <div className="p-6 text-sm text-fg-muted">Loading…</div>;
   if (!user) return <div className="p-6 text-sm text-fg">Log in in the main tab first, then open the chart again.</div>;
   if (!symbol) return <div className="p-6 text-sm text-fg">No symbol given.</div>;
 

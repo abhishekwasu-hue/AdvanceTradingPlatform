@@ -1,7 +1,8 @@
 import { AlarmClock, Check, ChartCandlestick, Clock, Ellipsis, TriangleAlert } from "lucide-react";
-import { useId, useState } from "react";
+import { Suspense, lazy, useId, useState } from "react";
 import { Link } from "react-router";
 import { api } from "../api/client";
+import type { LevelLine } from "../chart/chartCore";
 import { ApiError } from "../api/errors";
 import StepUpDialog, { isStepUpError } from "../components/StepUpDialog";
 import { cx } from "../components/primitives";
@@ -17,7 +18,7 @@ import {
 
 /**
  * UI2-3 (UI v2 proposal §7, §8): the Signals inbox's building blocks - the status chip, Long / Short, the level tiles,
- * the levels chart, the six key figures, the risk sentences and the decision buttons. Colour carries meaning only:
+ * the levels chart (UI2-4e: the v2 chart with the levels marked), the six key figures, the risk sentences and the decision buttons. Colour carries meaning only:
  * green / red for Long / Short and the target / stop levels, brand for "Waiting" and the one primary action, neutral
  * outlines for every other status.
  */
@@ -90,7 +91,29 @@ export function LevelTiles({ item }: { item: SignalFeedItem }) {
   );
 }
 
-/** The level lines (Entry neutral, Stop red, Target green), drawn to scale - what the chart will mark. */
+// UI2-4e: the v2 chart, its own chunk (the chart library loads with it, not with the inbox).
+const EmbeddedChartV2 = lazy(() => import("../chart/EmbeddedChartV2"));
+
+/** The levels a signal's chart marks: Entry neutral, Stop red, Target green (as the levels drawing). Pure. */
+export function signalLevels(item: Pick<SignalFeedItem, "entry" | "stop" | "target">): LevelLine[] {
+  const all: [number | null, string, LevelLine["tone"]][] = [[item.target, "Target", "up"], [item.entry, "Entry", "neutral"], [item.stop, "Stop", "down"]];
+  return all.filter(([p]) => p !== null && Number.isFinite(p)).map(([price, title, tone]) => ({ price: price as number, title, tone }));
+}
+
+/** UI2-4e (Charts page plan §3, CHP-10): the signal's chart - the v2 chart of its symbol with Entry, Stop and Target
+ * marked, the trader's chart settings and "Open in Chart tab". While its code loads, the levels drawn to scale hold
+ * its place. */
+export function SignalChart({ item }: { item: SignalFeedItem }) {
+  return (
+    <div data-signal-chart={item.symbol}>
+      <Suspense fallback={<div aria-busy="true" className="flex min-h-[303px] items-center rounded-panel border border-subtle"><LevelsChart item={item} /></div>}>
+        <EmbeddedChartV2 symbol={item.symbol} exchange={item.exchange || "NSE"} levels={signalLevels(item)} />
+      </Suspense>
+    </div>
+  );
+}
+
+/** The level lines (Entry neutral, Stop red, Target green), drawn to scale - what the chart marks. */
 export function LevelsChart({ item }: { item: SignalFeedItem }) {
   const { entry, stop, target } = item;
   const levels = [entry, stop, target].filter((v): v is number => v !== null && Number.isFinite(v));
@@ -364,7 +387,7 @@ export function SignalDetail({ item, proposal, now, onDone, onError, compact = f
         {waiting && canTrade && <MoreButton item={item} open={moreOpen} controls={menuId} onToggle={() => setMoreOpen((o) => !o)} />}
       </div>
       {waiting && canTrade && moreOpen && <SnoozeMenu id={menuId} item={item} now={now} onDone={onDone} onError={onError} />}
-      <LevelsChart item={item} />
+      <SignalChart item={item} />
       {(item.entry !== null || item.stop !== null || item.target !== null) && <KeyFigures item={item} proposal={proposal} />}
       <Reasons item={item} />
       {waiting ? <RiskLines proposal={proposal} /> : <OutcomeLine item={item} now={now} />}

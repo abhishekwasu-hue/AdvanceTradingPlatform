@@ -1,7 +1,6 @@
 import { Bell, LifeBuoy, MessageSquarePlus, Search, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { api } from "../api/client";
+import { useMarketStatus } from "../chart/useMarketStatus";
 import { ThemeToggle } from "../components/AppearanceCard";
 import type { SystemStatus, UserResponse } from "../types";
 import { currentPlatform, shortcutLabel } from "./CommandBarV2";
@@ -43,13 +42,8 @@ export function topBarNotices(status: SystemStatus | null, user: UserResponse | 
 }
 
 export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback }: TopBarV2Props) {
-  const [status, setStatus] = useState<SystemStatus | null>(null);
-  useEffect(() => {
-    const load = () => api.systemStatus().then(setStatus).catch(() => {});
-    load();
-    const id = window.setInterval(load, 60_000);
-    return () => window.clearInterval(id);
-  }, []);
+  // UI2-4e: the one shared status read (the Charts page and the charts on other pages read the same).
+  const { status } = useMarketStatus();
   const notices = topBarNotices(status, user);
   const shortcut = shortcutLabel(currentPlatform());
 

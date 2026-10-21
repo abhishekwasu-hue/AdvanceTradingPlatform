@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
+import RenewBanner from "../broker/RenewBanner";
 import { useAuth } from "../auth/AuthContext";
 import { Card, signClass, signTone } from "../components/ui";
 import { Badge, Button, PageHeader } from "../components/primitives";
@@ -201,6 +202,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
           <Button icon={<Sparkles size={15} />} onClick={() => onNavigate("copilot")}>AI Copilot</Button>
         </>}
       />
+
+      {/* P2b: one "Renew" for a broker that needs today's login (opens the same Connect panel as the Broker page). */}
+      {user && <RenewBanner />}
 
       {error && (
         <div className="rounded-xl border border-down/40 bg-down/10 px-3 py-2 text-sm text-down">

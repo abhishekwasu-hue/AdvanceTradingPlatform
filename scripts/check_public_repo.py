@@ -154,6 +154,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/copilot_reply.json": "9d0013cced7fe29e99d3c2c25e231d96bee15cbd4960f169194abc1247d77bcd",
     # UI2-2: hand-written, made-up dashboard replies for the v2 dashboard screenshots (frontend/e2e/dashboard-v2.e2e.ts)
     "frontend/e2e/fixtures/dashboard_v2.json": "6e9629add17dd3b9801e2db91a4aebc984b2a00055c5e7b137e93653782a110f",
+    # P2b: P2a's broker catalog (static, public broker names and how-to steps; no account data).
+    "frontend/e2e/fixtures/broker_catalog.json": "075bd516ec146878bbca8bbfcfe3db046527510c7a080f44f71e58eb387eeb20",
     "frontend/e2e/fixtures/drafts.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "frontend/e2e/fixtures/interview_plan.json": "3b582f587c25dfe0f99ab25fafb34f77d458e1910cbaba5747c964997fbdb42c",
     "frontend/e2e/fixtures/interview_start.json": "b702f8734442fd26183eb52ae508de6e55edfc0df57ee406c75776cc1ecc4453",

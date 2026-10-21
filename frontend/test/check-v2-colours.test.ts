@@ -45,6 +45,9 @@ describe("check-v2-colours", () => {
     expect(isV2File("src/chart/chartTheme.ts")).toBe(true);
     expect(isV2File("/r/frontend/src/chart/chartCore.test.ts")).toBe(false);
     expect(isV2File("/r/frontend/src/charting/lightweight.ts")).toBe(false);     // the shared engine is not v2
+    expect(isV2File("/r/frontend/src/broker/BrokerPage.tsx")).toBe(true);       // P2b: the Broker page folder
+    expect(isV2File("src/broker/brokerState.ts")).toBe(true);
+    expect(isV2File("/r/frontend/src/broker/brokerState.test.ts")).toBe(false);
     expect(isV2File("/r/frontend/src/ui/brokerRows.fixture.ts")).toBe(false);
     expect(isV2File("/r/frontend/src/pages/DashboardPage.tsx")).toBe(false);
     expect(isV2File("/r/frontend/src/screener/ScreenerV2Panel.tsx")).toBe(false); // "V2" must end the name

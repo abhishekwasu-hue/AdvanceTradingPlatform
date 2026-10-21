@@ -5,7 +5,9 @@ import Logo from "../components/Logo";
 import { preloadPage } from "../routes";
 import type { Page } from "../components/Sidebar";
 import type { UserResponse } from "../types";
-import type { NavSectionV2, SectionId, ShellKey } from "./navModel";
+import { StatusDot } from "../broker/marks";
+import type { BrokerDot } from "../broker/brokerState";
+import { NAV_PINNED_V2, navDotFor, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
 
 /**
  * UI2-1 (UI v2 proposal §2, mockup nav-sidebar-1440): the desktop and tablet sidebar - five collapsible sections
@@ -98,9 +100,29 @@ export interface SidebarV2Props {
   user: UserResponse | null;
   /** Where the account footer goes (Settings -> Account while signed in, the sign-in page otherwise). */
   accountPath: string;
+  /** P2b: the entries above the sections (Broker), always shown. */
+  pinned?: readonly NavItemV2[];
+  /** P2b: the broker's status dot on the Broker entry (null: none). */
+  dot?: BrokerDot | null;
 }
 
-export function SidebarV2View({ sections, current, memory, onToggle, user, accountPath }: SidebarV2Props) {
+function NavLink({ item, current, dot }: { item: NavItemV2; current: ShellKey | null; dot: BrokerDot | null }) {
+  const Icon = item.icon;
+  const active = current === item.key;
+  const preload = item.key === "charts" ? undefined : () => preloadPage(item.key as Page);
+  return (
+    <Link to={item.path} aria-current={active ? "page" : undefined} onMouseEnter={preload} onFocus={preload}
+      className={`flex h-9 items-center gap-space-3 rounded-control [@media(pointer:coarse)]:h-11 px-space-2 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
+        active ? "bg-brand/10 font-semibold text-fg" : "font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
+      }`}>
+      <Icon size={16} aria-hidden className={active ? "text-brand" : "text-fg-muted"} />
+      <span className="truncate">{item.label}</span>
+      {dot && <StatusDot dot={dot} announce className="ml-auto" />}
+    </Link>
+  );
+}
+
+export function SidebarV2View({ sections, current, memory, onToggle, user, accountPath, pinned = NAV_PINNED_V2, dot = null }: SidebarV2Props) {
   return (
     <aside aria-label="Navigation"
       className="hidden w-60 shrink-0 flex-col border-r border-subtle bg-surface-1 md:sticky md:top-0 md:flex md:h-screen">
@@ -110,6 +132,11 @@ export function SidebarV2View({ sections, current, memory, onToggle, user, accou
         </Link>
       </div>
       <nav aria-label="Pages" className="flex-1 overflow-y-auto px-space-2 py-space-3">
+        {pinned.length > 0 && (
+          <ul className="mb-space-2 space-y-px" data-nav-pinned>
+            {pinned.map((item) => <li key={item.key}><NavLink item={item} current={current} dot={navDotFor(item.key, dot)} /></li>)}
+          </ul>
+        )}
         {sections.map((section) => {
           const open = isSectionOpen(memory, section.id);
           const listId = `nav-section-${section.id}`;
@@ -122,22 +149,9 @@ export function SidebarV2View({ sections, current, memory, onToggle, user, accou
               </button>
               {open && (
                 <ul id={listId} className="mb-space-2 mt-space-1 space-y-px">
-                  {section.items.map((item) => {
-                    const Icon = item.icon;
-                    const active = current === item.key;
-                    const preload = item.key === "charts" ? undefined : () => preloadPage(item.key as Page);
-                    return (
-                      <li key={item.key}>
-                        <Link to={item.path} aria-current={active ? "page" : undefined} onMouseEnter={preload} onFocus={preload}
-                          className={`flex h-9 items-center gap-space-3 rounded-control [@media(pointer:coarse)]:h-11 px-space-2 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${
-                            active ? "bg-brand/10 font-semibold text-fg" : "font-medium text-fg-muted hover:bg-surface-2 hover:text-fg"
-                          }`}>
-                          <Icon size={16} aria-hidden className={active ? "text-brand" : "text-fg-muted"} />
-                          <span className="truncate">{item.label}</span>
-                        </Link>
-                      </li>
-                    );
-                  })}
+                  {section.items.map((item) => (
+                    <li key={item.key}><NavLink item={item} current={current} dot={navDotFor(item.key, dot)} /></li>
+                  ))}
                 </ul>
               )}
             </div>

@@ -272,8 +272,8 @@ test.describe("v2 broker gate on data pages", () => {
       await expect(page.locator("main [data-broker-gate] ~ *")).toHaveCount(0);
     }
     await page.getByRole("link", { name: "Connect a broker" }).click();
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);       // Settings is not a data page
+    await expect(page).toHaveURL(/\/broker$/);                             // P2b: the Broker page
+    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);       // the Broker page is not a data page
   });
 
   test("percent-encoded and undecodable addresses are gated too (review M1)", async ({ page }) => {

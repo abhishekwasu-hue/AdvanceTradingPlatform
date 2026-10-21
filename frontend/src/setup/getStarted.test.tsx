@@ -17,6 +17,7 @@ import { paperOnlyFrom } from "./paperOnly";
 import { topBarNotices } from "../shell/TopBarV2";
 import appSource from "../App.tsx?raw";
 import shellSource from "../shell/AppShellV2.tsx?raw";
+import paperOnlySource from "./paperOnly.ts?raw";
 import { cleanStored, cleanView, withStored, type GetStartedKey, type SetupStored, type SetupView } from "./model";
 
 /** P3: the Dashboard's Get started card (states 0-3, hidden for good, back from Help), no LIVE on the front page in
@@ -150,6 +151,7 @@ describe("P3 nothing about LIVE on the front page in PAPER", () => {
     const user = { id: 1, email: "a@b.c", tenant_id: 1, role: "OWNER", email_verified: false } as never;
     expect(topBarNotices(status, user).map((n) => n.text)).toEqual(["Maintenance: new trades are paused", "Live trading is paused on upstox", "Verify your email"]);
     expect(topBarNotices(status, user, true).map((n) => n.text)).toEqual(["Maintenance: new trades are paused"]);
+    expect(paperOnlySource).toContain("api.listDeployments(true)");              // stopped LIVE deployments count
     expect(shellSource).toMatch(/usePaperOnly\(!!user && key === "dashboard"\)/);
     expect(appSource).toMatch(/usePaperOnly\(!!user && page === "dashboard"\)/);
     expect(appSource).toMatch(/email_verified === false && !paperOnly/);

@@ -11,14 +11,15 @@ export function paperOnlyFrom(deployments: unknown): boolean {
   return Array.isArray(deployments) && !deployments.some((d) => (d as { mode?: unknown } | null)?.mode === "LIVE");
 }
 
-/** True only on the front page (`active`), once `GET /deployments` answered with no LIVE deployment. */
+/** True only on the front page (`active`), once `GET /deployments?include_stopped=true` answered with no LIVE deployment
+ * (a stopped LIVE deployment still makes the trader a LIVE trader). */
 export function usePaperOnly(active: boolean): boolean {
   const [paperOnly, setPaperOnly] = useState(false);
   useEffect(() => {
     setPaperOnly(false);
     if (!active) return;
     let current = true;
-    api.listDeployments().then((d) => { if (current) setPaperOnly(paperOnlyFrom(d)); }, () => { if (current) setPaperOnly(false); });
+    api.listDeployments(true).then((d) => { if (current) setPaperOnly(paperOnlyFrom(d)); }, () => { if (current) setPaperOnly(false); });
     return () => { current = false; };
   }, [active]);
   return paperOnly;

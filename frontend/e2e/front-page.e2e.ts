@@ -83,8 +83,15 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
     await page.route(api("/system/status$"), reply({ maintenance_mode: false, maintenance_message: null, disabled_brokers: ["zerodha"] }));
   }
   await page.route(api("/positions$"), reply(paperOnly(F.positions)));
-  await page.route(api("/deployments(\\?|$)"), (route) => o.deployments === "fail" ? route.fulfill({ status: 503, json: { detail: "unavailable" } })
-    : route.fulfill({ json: o.deployments === "live" ? [...paperOnly(F.deployments), { ...(F.deployments as object[])[0], id: 99, mode: "LIVE", status: "STOPPED" }] : paperOnly(F.deployments) }));
+  // As the backend: stopped deployments only when `include_stopped=true` is asked. The "live" case has one LIVE deployment,
+  // and it is stopped, so only a read that includes stopped ones can see it.
+  await page.route(api("/deployments(\\?|$)"), (route) => {
+    if (o.deployments === "fail") return route.fulfill({ status: 503, json: { detail: "unavailable" } });
+    const rows = o.deployments === "live" ? [...paperOnly(F.deployments), { ...(F.deployments as object[])[0], id: 99, mode: "LIVE", status: "STOPPED" }]
+      : paperOnly(F.deployments);
+    const stopped = new URL(route.request().url()).searchParams.get("include_stopped") === "true";
+    return route.fulfill({ json: stopped ? rows : (rows as { status: string }[]).filter((d) => d.status !== "STOPPED") });
+  });
   await page.route(api("/strategies$"), reply(P.strategies));
   await page.route(api("/broker/available$"), reply(P.brokers));
   await page.route(api("/system/health$"), reply(P.health));
@@ -251,7 +258,7 @@ test.describe("top bar notices on the front page (P3 review)", () => {
     await expect(header(page)).toContainText("LIVE paused on zerodha");
   });
 
-  test("with a LIVE deployment, or when the deployments cannot be read, the front page keeps them", async ({ page }) => {
+  test("with a LIVE deployment (even a stopped one), or when the deployments cannot be read, the front page keeps them", async ({ page }) => {
     for (const deployments of ["live", "fail"] as const) {
       const p = deployments === "live" ? page : await page.context().newPage();
       await open(p, { liveNotices: true, deployments });

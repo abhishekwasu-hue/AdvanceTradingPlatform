@@ -216,12 +216,18 @@ describe("UI2-2 needs attention", () => {
 
   it("P3: in PAPER (no LIVE deployment) no LIVE rows: no 'Live trading is paused', no e-mail row", () => {
     const paper = { ...liveBot, mode: "PAPER" } as Deployment;
-    for (const deployments of [[], [paper], null]) {
+    for (const deployments of [[], [paper]]) {
       const rows = attentionRows({ ...base, deployments, emailVerified: false,
         status: { maintenance_mode: true, maintenance_message: null, disabled_brokers: ["angel_one"] } });
       expect(rows.map((r) => r.id)).toEqual(["maintenance"]);
       for (const r of rows) expect(`${r.title} ${r.detail}`).not.toMatch(/\blive\b|e-?mail|MFA|algo|SEBI/i);
     }
+  });
+
+  it("P3: a failed deployments read (null) never hides the LIVE rows", () => {
+    const rows = attentionRows({ ...base, deployments: null, emailVerified: false,
+      status: { maintenance_mode: false, maintenance_message: null, disabled_brokers: ["angel_one"] } });
+    expect(rows.map((r) => r.id)).toEqual(["live-paused", "email"]);
   });
 
   it("never shows developer wording", () => {

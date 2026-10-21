@@ -13,6 +13,10 @@ import {
   shouldHideForGood, showGetStarted,
 } from "./getStarted";
 import { goLiveView } from "./goLive";
+import { paperOnlyFrom } from "./paperOnly";
+import { topBarNotices } from "../shell/TopBarV2";
+import appSource from "../App.tsx?raw";
+import shellSource from "../shell/AppShellV2.tsx?raw";
 import { cleanStored, cleanView, withStored, type GetStartedKey, type SetupStored, type SetupView } from "./model";
 
 /** P3: the Dashboard's Get started card (states 0-3, hidden for good, back from Help), no LIVE on the front page in
@@ -134,6 +138,24 @@ describe("P3 nothing about LIVE on the front page in PAPER", () => {
     }
   });
 
+  it("PAPER is a deployments list that was read with no LIVE deployment; a failed or pending read is never PAPER", () => {
+    expect(paperOnlyFrom([])).toBe(true);
+    expect(paperOnlyFrom([{ mode: "PAPER" }])).toBe(true);
+    expect(paperOnlyFrom([{ mode: "PAPER" }, { mode: "LIVE" }])).toBe(false);
+    for (const unread of [null, undefined, { detail: "Not found" }, "error"]) expect(paperOnlyFrom(unread)).toBe(false);
+  });
+
+  it("the top bars leave out the LIVE-paused and e-mail notices on the front page in PAPER only", () => {
+    const status = { maintenance_mode: true, maintenance_message: null, disabled_brokers: ["upstox"] } as never;
+    const user = { id: 1, email: "a@b.c", tenant_id: 1, role: "OWNER", email_verified: false } as never;
+    expect(topBarNotices(status, user).map((n) => n.text)).toEqual(["Maintenance: new trades are paused", "Live trading is paused on upstox", "Verify your email"]);
+    expect(topBarNotices(status, user, true).map((n) => n.text)).toEqual(["Maintenance: new trades are paused"]);
+    expect(shellSource).toMatch(/usePaperOnly\(!!user && key === "dashboard"\)/);
+    expect(appSource).toMatch(/usePaperOnly\(!!user && page === "dashboard"\)/);
+    expect(appSource).toMatch(/email_verified === false && !paperOnly/);
+    expect(appSource).toMatch(/disabled_brokers\.length > 0 && !paperOnly/);
+  });
+
   it("neither dashboard shows the go-live checklist, the Setup chip or the wizard any more", () => {
     for (const src of [dashboardSource, dashboardV2Source]) {
       expect(src).not.toMatch(/import GoLiveChecklist|<GoLiveChecklist/);
@@ -180,7 +202,7 @@ describe("P3 Go-live checklist", () => {
     expect(v.ready).toBe(false);
     expect(v.headline).toBe("2 blockers and 1 warning");
     expect(v.open.map((r) => [r.key, r.status])).toEqual([["broker_session", "todo"], ["mfa", "todo"], ["alerts", "warn"]]);
-    expect(v.ok).toEqual(["Trading worker running", "Exchange holidays loaded", "No kill switch on", "Contract list loaded"]);
+    expect(v.ok).toEqual(["Automatic trading is running", "Exchange holidays loaded", "No kill switch on", "Contract list loaded"]);
     expect(v.optional).toEqual(["AI provider key"]);
     const out = html(<GoLiveListV2 view={v} onRecheck={() => undefined} />);
     expect(out).toContain("4 checks OK");
@@ -190,13 +212,16 @@ describe("P3 Go-live checklist", () => {
     expect((out.match(/data-row=/g) ?? []).length).toBe(3);
   });
 
-  it("each open row has one sentence and one button; broker rows say 'Connect your broker' and lead to the Broker page", () => {
+  it("each open row has one sentence and one button; the broker login row says 'Log in to your broker' and leads to the Broker page", () => {
     const v = goLiveView(data, "/broker");
     for (const r of v.open) {
       expect(r.sentence.split(/(?<=\.)\s+(?=[A-Z])/).length).toBeLessThanOrEqual(2);
       expect(r.action.label).toBeTruthy();
     }
-    expect(v.open[0].action).toEqual({ label: "Connect your broker", to: "/broker" });
+    expect(v.open[0].action).toEqual({ label: "Log in to your broker", to: "/broker" });
+    expect(goLiveView(checklist([item("broker_credentials", "todo")]), "/broker").open[0].action).toEqual({ label: "Connect your broker", to: "/broker" });
+    expect(goLiveView(checklist([item("worker", "todo")])).open[0]).toMatchObject({ title: "Automatic trading is running",
+      sentence: "Automatic trading is not running, so nothing trades by itself. Ask your platform admin." });
     expect(v.open[1]).toMatchObject({ title: "Two-step sign-in on", action: { label: "Open Account", to: "/account" } });
     expect(v.open[2].action).toEqual({ label: "Set up Telegram", to: "/settings#alerts" });
     const out = html(<GoLiveListV2 view={v} onRecheck={() => undefined} />);

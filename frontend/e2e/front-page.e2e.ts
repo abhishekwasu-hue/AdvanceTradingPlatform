@@ -43,7 +43,13 @@ function answer(s: Server) {
   };
 }
 
-interface Open { path?: string; theme?: "light" | "dark"; done?: Key[]; stored?: Partial<Stored>; role?: string }
+interface Open {
+  path?: string; theme?: "light" | "dark"; done?: Key[]; stored?: Partial<Stored>; role?: string;
+  /** The user's e-mail is not verified and LIVE is paused on a broker: both top-bar notices would show. */
+  liveNotices?: boolean;
+  /** GET /deployments answers with a LIVE deployment, or fails. */
+  deployments?: "live" | "fail";
+}
 
 async function open(page: Page, o: Open = {}): Promise<Server> {
   const server: Server = { stored: { ...blank(), ...o.stored }, version: 1, sent: [],
@@ -70,9 +76,15 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
   await mockDashboard(page, { me: true });
   const reply = (json: unknown) => (route: Route) => route.fulfill({ json });
   const paperOnly = (rows: unknown) => (rows as { mode: string }[]).filter((r) => r.mode !== "LIVE");
-  if (o.role) await page.route(api("/auth/me$"), reply({ ...(F.me as object), role: o.role }));
+  if (o.role || o.liveNotices) {
+    await page.route(api("/auth/me$"), reply({ ...(F.me as object), ...(o.role ? { role: o.role } : {}), ...(o.liveNotices ? { email_verified: false } : {}) }));
+  }
+  if (o.liveNotices) {
+    await page.route(api("/system/status$"), reply({ maintenance_mode: false, maintenance_message: null, disabled_brokers: ["zerodha"] }));
+  }
   await page.route(api("/positions$"), reply(paperOnly(F.positions)));
-  await page.route(api("/deployments(\\?|$)"), reply(paperOnly(F.deployments)));
+  await page.route(api("/deployments(\\?|$)"), (route) => o.deployments === "fail" ? route.fulfill({ status: 503, json: { detail: "unavailable" } })
+    : route.fulfill({ json: o.deployments === "live" ? [...paperOnly(F.deployments), { ...(F.deployments as object[])[0], id: 99, mode: "LIVE", status: "STOPPED" }] : paperOnly(F.deployments) }));
   await page.route(api("/strategies$"), reply(P.strategies));
   await page.route(api("/broker/available$"), reply(P.brokers));
   await page.route(api("/system/health$"), reply(P.health));
@@ -224,6 +236,31 @@ test.describe("Get started card 390", () => {
   });
 });
 
+test.describe("top bar notices on the front page (P3 review)", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  const header = (page: Page) => page.locator("header").first();
+
+  test("in PAPER: no 'Verify your email' and no 'LIVE paused' on the front page; other pages keep them", async ({ page }) => {
+    await open(page, { liveNotices: true });
+    await expect(card(page)).toBeVisible();
+    await expect(header(page)).not.toContainText("Verify your email");
+    await expect(header(page)).not.toContainText("LIVE paused");
+    await page.getByRole("link", { name: "Positions" }).first().click();
+    await expect(page).toHaveURL(/\/positions$/);
+    await expect(header(page)).toContainText("Verify your email");
+    await expect(header(page)).toContainText("LIVE paused on zerodha");
+  });
+
+  test("with a LIVE deployment, or when the deployments cannot be read, the front page keeps them", async ({ page }) => {
+    for (const deployments of ["live", "fail"] as const) {
+      const p = deployments === "live" ? page : await page.context().newPage();
+      await open(p, { liveNotices: true, deployments });
+      await expect(header(p), deployments).toContainText("Verify your email");
+      await expect(header(p), deployments).toContainText("LIVE paused on zerodha");
+    }
+  });
+});
+
 test.describe("Settings → Advanced: the Go-live checklist", () => {
   const SHOTS = [
     { name: "390-light", theme: "light" as const, viewport: { width: 390, height: 844 }, phone: true },
@@ -257,7 +294,7 @@ test.describe("Settings → Advanced: the Go-live checklist", () => {
       await expect(block.locator("[data-row][data-status='todo']")).toHaveCount(3);
       await expect(block.locator("[data-row][data-status='warn']")).toHaveCount(1);
       for (const row of await block.locator("[data-row]").all()) await expect(row.locator("a, button")).toHaveCount(1);
-      await expect(block.locator("[data-row='broker_session']").getByRole("link", { name: "Connect your broker" })).toHaveAttribute("href", BROKER_HREF);
+      await expect(block.locator("[data-row='broker_session']").getByRole("link", { name: "Log in to your broker" })).toHaveAttribute("href", BROKER_HREF);
       const ok = block.locator("[data-fold='ok']");
       await expect(ok.locator("summary")).toHaveText("9 checks OK");
       await expect(ok.locator("li").first()).toBeHidden();

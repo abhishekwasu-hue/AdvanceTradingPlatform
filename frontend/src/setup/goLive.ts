@@ -34,9 +34,9 @@ function plain(key: string, brokerPath: string): Plain | null {
   const broker = { label: "Connect your broker", to: brokerPath };
   switch (key) {
     case "broker_credentials": return { sentence: "Connect your broker so prices and orders can go through it.", ...broker };
-    case "broker_session": return { sentence: "Log in to your broker today; the login lasts one trading day.", ...broker };
+    case "broker_session": return { sentence: "Log in to your broker today; the login lasts one trading day.", label: "Log in to your broker", to: brokerPath };
     case "instrument_master": return { sentence: "Load the list of tradable contracts.", label: "Open Instruments", to: "/instruments" };
-    case "worker": return { sentence: "The trading worker is not running, so nothing trades by itself. Ask your platform admin.", label: "Check again" };
+    case "worker": return { sentence: "Automatic trading is not running, so nothing trades by itself. Ask your platform admin.", label: "Check again" };
     case "holidays": return { sentence: "This year's exchange holidays are not loaded yet. Ask your platform admin.", label: "Check again" };
     case "deployment": return { sentence: "Start a paper bot and let it run for a few sessions first.", label: "Open Autopilot", to: "/deployments" };
     case "deployment_errors": return { sentence: "A bot keeps hitting a problem. Open it to see why.", label: "Open Autopilot", to: "/deployments" };
@@ -55,7 +55,7 @@ function plain(key: string, brokerPath: string): Plain | null {
 /** Plain titles for the items the server knows today (its own titles name internals: "Instrument master synced"). */
 const TITLES: Record<string, string> = {
   broker_credentials: "Broker connected", broker_session: "Broker logged in today", instrument_master: "Contract list loaded",
-  worker: "Trading worker running", holidays: "Exchange holidays loaded", deployment: "A bot is running",
+  worker: "Automatic trading is running", holidays: "Exchange holidays loaded", deployment: "A bot is running",
   deployment_errors: "Bots running without problems", risk: "Risk limits set", alerts: "Alerts reach your phone",
   kill_switch: "No kill switch on", broker_uncertain: "Broker positions match", mfa: "Two-step sign-in on",
   email_verified: "Email verified", algo_id: "Algo ID set", static_ip: "Server IP registered with your broker",

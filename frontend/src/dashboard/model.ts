@@ -1,5 +1,6 @@
 import type { BrokerGateState } from "../ui/brokerSession";
 import { brokerDisplayName } from "../ui/brokerSession";
+import { paperOnlyFrom } from "../setup/paperOnly";
 import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
 import type { OiBannerResponse } from "../oi/types";
 import type {
@@ -415,8 +416,9 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     });
   }
   // P3: in PAPER (the trader has no LIVE deployment) nothing about LIVE shows on the front page: no "Live trading is
-  // paused" row and no "Verify your email" row (it is asked for live trading); both are in the Go-live checklist.
-  const paperOnly = !(input.deployments ?? []).some((d) => d.mode === "LIVE");
+  // paused" row and no "Verify your email" row (it is asked for live trading); both are in the Go-live checklist. Only a
+  // deployments list that was read can hide them: a failed read (null) keeps them (src/setup/paperOnly.ts).
+  const paperOnly = paperOnlyFrom(input.deployments);
   if (!paperOnly && input.status && input.status.disabled_brokers.length) {
     rows.push({ id: "live-paused", icon: "warning", tone: "warn", title: `Live trading is paused on ${input.status.disabled_brokers.map(brokerDisplayName).join(", ")}`,
       detail: "Paper trading carries on. Live orders wait until it is resumed." });

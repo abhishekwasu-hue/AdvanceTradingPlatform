@@ -7,7 +7,8 @@ import { useSetup } from "./useSetup";
 /**
  * P3: Help -> "Show Get started" - brings the Dashboard's Get started card back (src/setup/getStarted.ts showGetStarted)
  * and opens the Dashboard. In Settings → Help (both shells) and in the Help desk dialog. Nothing for a VIEWER, who does
- * not get the card.
+ * not get the card. Enabled only once the server answered (never on the cached copy), so "every step done" is the
+ * server's and a brought-back card is not hidden again by mistake.
  */
 export default function ShowGetStartedV2({ onDone, className = "" }: { onDone?: () => void; className?: string }) {
   const { user } = useAuth();
@@ -21,7 +22,7 @@ export default function ShowGetStartedV2({ onDone, className = "" }: { onDone?: 
     navigate("/");
   };
   return (
-    <button type="button" onClick={show} disabled={!setup.view} data-action="show-get-started" className={`${LINK_SECONDARY} disabled:opacity-50 ${className}`}>
+    <button type="button" onClick={show} disabled={!setup.fresh} data-action="show-get-started" className={`${LINK_SECONDARY} disabled:opacity-50 ${className}`}>
       Show Get started
     </button>
   );

@@ -143,7 +143,8 @@ describe("web app manifest", () => {
   const manifest = JSON.parse(readFileSync(join(PUBLIC, "manifest.webmanifest"), "utf8"));
 
   it("has what browsers need to offer installation", () => {
-    expect(manifest.name).toBe("Advance Trading Platform");
+    expect(manifest.name).toBe("AiAlgoDesk");
+    expect(manifest.short_name).toBe("AiAlgoDesk");
     expect(manifest.short_name.length).toBeLessThanOrEqual(12);
     expect(manifest.display).toBe("standalone");
     expect(manifest.start_url.startsWith("/")).toBe(true);

@@ -1,7 +1,9 @@
+import ipaddress
 import json
 import logging
+import re
 from typing import Any, Dict, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
@@ -34,6 +36,7 @@ from app.brokers.token_lifecycle import (
     store_access_token,
     token_is_usable,
 )
+from app.core import config as app_config
 from app.core.config import FRONTEND_URL
 from app.core.rate_limit import user_rate_limit
 from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType, UserRole
@@ -80,6 +83,13 @@ class BrokerTokenStatusResponse(AnalyticsTokenInfo):
     oauth_supported: bool
     # The exact redirect URI to register on the broker's developer console for that flow.
     oauth_callback_url: Optional[str]
+    # D2 (OAuth brokers only): True when this account stores a Redirect URI on a domain name that differs from
+    # `oauth_callback_url` - the login then sends the stored one, so the UI points to Settings instead of showing an
+    # address it will not use.
+    redirect_uri_mismatch: Optional[bool] = None
+    # D2 (OAuth brokers only): True when the stored Redirect URI is left over on an IP address or plain http - the next
+    # login sends `oauth_callback_url` instead and stores it.
+    redirect_uri_will_be_replaced: Optional[bool] = None
     # True when the platform can open the broker's hosted login page and take the pasted one-time
     # code (Fyers, Kite): GET /{name}/login-url, then POST /{name}/login-code.
     login_url_supported: bool = False
@@ -122,13 +132,106 @@ async def _probe_quietly(session: AsyncSession, record: BrokerCredentialRecord) 
         return None
 
 
+_REJECTED_PUBLIC_BASES: set[str] = set()
+
+
+def _public_base() -> Optional[str]:
+    """`PUBLIC_BASE_URL` when it is a bare origin - http(s), a host, no path, query or fragment (the deep-link guard in
+    app/alerts/deeplink.py, made strict because the OAuth start stores the derived URI in the credentials for good).
+    Anything else is ignored with a warning (once per value) and None is returned."""
+    raw = (getattr(app_config, "PUBLIC_BASE_URL", "") or "").strip()
+    base = raw.rstrip("/")
+    if not base:
+        return None
+    try:
+        parts = urlparse(base)
+        valid = (parts.scheme in ("https", "http") and bool(parts.hostname) and "@" not in parts.netloc
+                 and not parts.path and not parts.params and not parts.query and not parts.fragment)
+        _ = parts.port                                        # raises ValueError on a malformed port
+    except ValueError:
+        valid = False
+    if not valid:
+        if raw not in _REJECTED_PUBLIC_BASES:
+            _REJECTED_PUBLIC_BASES.add(raw)
+            logger.warning("PUBLIC_BASE_URL is not a bare http(s) origin (scheme://host[:port]); the Upstox callback "
+                           "URL falls back to the request address")
+        return None
+    return base
+
+
+def public_callback_url(request: Request) -> str:
+    """D2: the Upstox redirect URL to register on the Upstox developer app - the deployment's public origin
+    (`PUBLIC_BASE_URL`, e.g. https://<domain>) plus the callback path, so it never carries a server address. Without a
+    valid `PUBLIC_BASE_URL` (local runs, tests) it is the address this request reached the API at, as before."""
+    return (_public_base() or str(request.base_url).rstrip("/")) + UPSTOX_CALLBACK_PATH
+
+
+def _stored_redirect_uri(record: BrokerCredentialRecord) -> Optional[str]:
+    try:
+        value = load_credentials(record).redirect_uri
+    except Exception:  # noqa: BLE001 - an unreadable payload (e.g. a rotated key) simply has nothing to compare
+        return None
+    return (value or "").strip() or None
+
+
+def _redirect_uri_state(record: BrokerCredentialRecord, public_url: str) -> tuple[bool, bool, bool]:
+    """(set, mismatch, will_be_replaced) for this row's stored Redirect URI. A stale one (an IP address or plain http,
+    see _is_stale_redirect_uri) is not a mismatch: the next OAuth start replaces it by itself. A mismatch is a stored URI
+    on a domain name that differs from the public callback URL - the OAuth start keeps sending it."""
+    stored = _stored_redirect_uri(record)
+    will_be_replaced = _is_stale_redirect_uri(stored, public_url)
+    return stored is not None, stored is not None and stored != public_url and not will_be_replaced, will_be_replaced
+
+
+# A host made only of digits, dots and 0x-hex parts is an IPv4 address in one of its forms (no domain is all-numeric).
+_NUMERIC_HOST = re.compile(r"^(?:0x[0-9a-f]*|[0-9]+)(?:\.(?:0x[0-9a-f]*|[0-9]+))*\.?$", re.IGNORECASE)
+
+
+def _is_stale_redirect_uri(stored: Optional[str], public_url: str) -> bool:
+    """D2 (owner order, Upstox UDAPI100068): with a valid `PUBLIC_BASE_URL`, a stored Redirect URI on an IP address (or
+    not https, or unreadable) is left over from before the domain - the OAuth start saved the address the API was reached
+    at - and is replaced by the public callback URL. A stored URI on a domain name is kept: it may be registered on
+    purpose. Without a valid `PUBLIC_BASE_URL` nothing is stale."""
+    value = (stored or "").strip()
+    if not value or value == public_url or _public_base() is None:
+        return False
+    try:
+        parts = urlparse(value)
+        host = parts.hostname
+    except ValueError:
+        return True
+    if parts.scheme != "https" or not host:
+        return True
+    if _NUMERIC_HOST.match(host):
+        return True                                           # dotted, integer or hex IPv4 forms (3221226122, 0xc0.0.2.1)
+    try:
+        ipaddress.ip_address(host)
+    except ValueError:
+        return False                                          # a domain name
+    return True
+
+
+def _set_redirect_uri(record: BrokerCredentialRecord, redirect_uri: str) -> None:
+    """Re-encrypts the stored credentials with `redirect_uri` (the same encrypted save the OAuth start uses)."""
+    credentials = load_credentials(record)
+    credentials.redirect_uri = redirect_uri
+    record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+
+
+def _client_id_tail(api_key: str) -> str:
+    """The client_id for a log line: its last 4 characters only (nothing for a short one)."""
+    return "\u2026" + (api_key[-4:] if len(api_key) >= 8 else "")
+
+
 def _callback_url(request: Request, broker_name: str) -> Optional[str]:
     if broker_name not in OAUTH_BROKERS:
         return None
-    return str(request.base_url).rstrip("/") + UPSTOX_CALLBACK_PATH
+    return public_callback_url(request)
 
 
 def _token_status_response(record: BrokerCredentialRecord, request: Request) -> BrokerTokenStatusResponse:
+    callback_url = _callback_url(request, record.broker_name)
+    redirect_state = _redirect_uri_state(record, callback_url) if callback_url else None
     return BrokerTokenStatusResponse(
         broker_name=record.broker_name,
         account_label=record.account_label or "primary",
@@ -137,7 +240,9 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
         last_verified_at=record.last_verified_at.isoformat() if record.last_verified_at else None,
         needs_login=not token_is_usable(record),
         oauth_supported=record.broker_name in OAUTH_BROKERS,
-        oauth_callback_url=_callback_url(request, record.broker_name),
+        oauth_callback_url=callback_url,
+        redirect_uri_mismatch=redirect_state[1] if redirect_state else None,
+        redirect_uri_will_be_replaced=redirect_state[2] if redirect_state else None,
         login_url_supported=record.broker_name in LOGIN_URL_BROKERS,
         code_param=(LOGIN_URL_BROKERS.get(record.broker_name) or {}).get("code_param"),
         **upstox_analytics.record_view(record),
@@ -192,7 +297,18 @@ async def _ensure_holder_or_owner(session: AsyncSession, record: BrokerCredentia
 # Smoke-test steps whose detail carries market data (prices, chain, position marks).
 SMOKE_PRICE_STEPS = frozenset({"quote", "contract_quote", "option_chain", "positions"})
 
+REDIRECT_REPLACED = "upstox/{label}: the stored Redirect URI (an IP address or not https) is now the public callback URL"
+START_CHANGED = "Your broker details changed while signing in - try again."
 CHANGED_HANDS = "The broker connection changed while the login was in progress; nothing was stored. Log in again."
+
+
+async def _save_payload_if_unchanged(session: AsyncSession, record: BrokerCredentialRecord, new_payload: str) -> bool:
+    """D2: store `new_payload` on the credential row only if its payload is still the one this request loaded - a
+    conditional UPDATE on (id, encrypted_payload) with a rowcount check. False = changed meanwhile, nothing written."""
+    result = await session.execute(update(BrokerCredentialRecord).where(
+        BrokerCredentialRecord.id == record.id, BrokerCredentialRecord.encrypted_payload == record.encrypted_payload,
+    ).values(encrypted_payload=new_payload).execution_options(synchronize_session=False))
+    return int(getattr(result, "rowcount", 0) or 0) == 1
 
 
 async def _write_if_unchanged(session: AsyncSession, record: BrokerCredentialRecord, expected_user_id: int, expected_payload: str,
@@ -639,6 +755,47 @@ class OAuthStartResponse(BaseModel):
     authorization_url: str
 
 
+class UpstoxRedirectAccount(BaseModel):
+    """One stored Upstox account: whether it carries its own Redirect URI, whether that is on a domain name and differs
+    from the public callback URL (kept, so the trader changes it), and whether it is left over on an IP address or plain
+    http (the next login replaces it) - booleans only, never a credential value."""
+    account_label: str
+    redirect_uri_set: bool
+    redirect_uri_mismatch: bool
+    redirect_uri_will_be_replaced: bool = False
+
+
+class UpstoxRedirectInfo(BaseModel):
+    # The exact Redirect URL to register on the Upstox developer app (the public callback URL).
+    redirect_url: str
+    # True when any stored Upstox account below has a Redirect URI on a domain name that differs from `redirect_url`.
+    redirect_uri_mismatch: bool
+    accounts: list[UpstoxRedirectAccount]
+    # True when any stored Upstox account below has a left-over Redirect URI the next login replaces with `redirect_url`.
+    redirect_uri_will_be_replaced: bool = False
+
+
+@router.get("/upstox/redirect-url", response_model=UpstoxRedirectInfo)
+async def upstox_redirect_url(
+    request: Request, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> UpstoxRedirectInfo:
+    """D2: the Upstox Redirect URL for the Connect broker screen, shown before any key is stored. A stored Redirect URI on
+    a domain name that differs is flagged, not rewritten: the OAuth start keeps sending it (it must match the Upstox app),
+    so the trader changes it in the Upstox app and re-saves it here. One left over on an IP address or plain http is
+    reported as replaced by the next login."""
+    public_url = public_callback_url(request)
+    records = await session.scalars(select(BrokerCredentialRecord).where(
+        BrokerCredentialRecord.tenant_id == user.tenant_id, BrokerCredentialRecord.broker_name == "upstox"))
+    accounts = []
+    for record in records:
+        is_set, mismatch, will_be_replaced = _redirect_uri_state(record, public_url)
+        accounts.append(UpstoxRedirectAccount(account_label=record.account_label or "primary", redirect_uri_set=is_set,
+                                              redirect_uri_mismatch=mismatch, redirect_uri_will_be_replaced=will_be_replaced))
+    accounts.sort(key=lambda a: a.account_label)
+    return UpstoxRedirectInfo(redirect_url=public_url, redirect_uri_mismatch=any(a.redirect_uri_mismatch for a in accounts),
+                              accounts=accounts, redirect_uri_will_be_replaced=any(a.redirect_uri_will_be_replaced for a in accounts))
+
+
 @router.get("/upstox/oauth/start", response_model=OAuthStartResponse)
 async def upstox_oauth_start(
     request: Request, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
@@ -655,11 +812,24 @@ async def upstox_oauth_start(
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:
         raise HTTPException(status_code=400, detail="Upstox credentials need both api_key and api_secret for OAuth")
-    redirect_uri = credentials.redirect_uri or str(request.base_url).rstrip("/") + UPSTOX_CALLBACK_PATH
-    if credentials.redirect_uri is None:
-        # Remember the redirect URI we are about to use so the token exchange sends the same one.
+    # A stored redirect URI on a domain name wins: it must match what is registered on the Upstox app, and only the
+    # trader can change it there (a differing one is reported by GET /upstox/redirect-url). One left over on an IP
+    # address or plain http is replaced by the public callback URL (owner order, D2).
+    public_url = public_callback_url(request)
+    stale = _is_stale_redirect_uri(credentials.redirect_uri, public_url)
+    redirect_uri = public_url if stale or not credentials.redirect_uri else credentials.redirect_uri
+    if credentials.redirect_uri != redirect_uri:
+        # Remember the redirect URI we are about to use so the token exchange sends the same one - only if nobody stored
+        # over the row since it was read (a conditional UPDATE; the ORM row is left alone so nothing else is flushed).
         credentials.redirect_uri = redirect_uri
-        record.encrypted_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+        new_payload = encrypt_text(credentials.model_dump_json(), record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+        if not await _save_payload_if_unchanged(session, record, new_payload):
+            await session.rollback()
+            raise HTTPException(status_code=409, detail=START_CHANGED)
+    if stale:
+        await write_audit_log(session, user.tenant_id, user.id, "broker_redirect_uri_replaced", REDIRECT_REPLACED.format(label=label))
+    logger.info("Upstox OAuth start: client_id=%s redirect_uri=%s account_label=%s",
+                _client_id_tail(credentials.api_key), redirect_uri, label)
 
     state = create_oauth_state(user.tenant_id, user.id, "upstox", account_label=label)
     await write_audit_log(session, user.tenant_id, user.id, "broker_oauth_started", f"upstox/{label}")
@@ -713,7 +883,10 @@ async def upstox_oauth_callback(
     credentials = load_credentials(record)
     credentials.access_token = None
     credentials.request_token = code
-    credentials.redirect_uri = credentials.redirect_uri or _callback_url(request, "upstox")
+    public_url = public_callback_url(request)
+    # The exchange sends the URI the OAuth start sent: the stored one, or the public one for none / a stale one (D2).
+    stale = _is_stale_redirect_uri(credentials.redirect_uri, public_url)
+    credentials.redirect_uri = public_url if stale or not credentials.redirect_uri else credentials.redirect_uri
     adapter = get_broker_adapter("upstox", credentials)
     try:
         await adapter.authenticate()
@@ -730,12 +903,16 @@ async def upstox_oauth_callback(
     if not new_token:
         return _frontend_redirect(broker="upstox", error="no_token_returned")
     store_access_token(record, new_token)
+    if stale:
+        _set_redirect_uri(record, public_url)       # written with the token, under the same unchanged-row check
     if not await _write_if_unchanged(session, record, expected_user, expected_payload):
         # BT1b (both flag states): the row was stored over during the code exchange - the fresh token is not written.
         await session.rollback()
         await write_audit_log(session, tenant_id, user_id, "broker_oauth_failed", f"upstox/{label}: the connection changed during the login")
         await session.commit()
         return _frontend_redirect(broker="upstox", error="changed_during_login")
+    if stale:
+        await write_audit_log(session, tenant_id, user_id, "broker_redirect_uri_replaced", REDIRECT_REPLACED.format(label=label))
     await write_audit_log(session, tenant_id, user_id, "broker_authenticated", f"upstox/{label} (oauth)")
     await session.commit()
     return _frontend_redirect(broker="upstox", connected="1")

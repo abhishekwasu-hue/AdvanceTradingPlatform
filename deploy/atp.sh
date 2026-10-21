@@ -184,6 +184,23 @@ dc() {
     -f deploy/compose.release.yml -p "$PROJECT" "$@")
 }
 rdc() { printf '    + docker compose %s\n' "$*"; [ "$DRY_RUN" = "1" ] && return 0; dc "$@"; }
+# Caddy reads deploy/$CADDYFILE through a single-file bind mount: a checkout replaces the file (a new inode) and the
+# running container keeps the old one, and `up -d` does not recreate a service whose compose config is unchanged. So
+# the file Caddy actually runs is compared with the checkout's - not two releases' files, because the release that
+# brings a change is deployed by the previous release's atp.sh, and a run can stop between `up -d` and this step.
+# Certificates stay in the caddy_data volume; the edge is down for about a second.
+caddy_config_current() {
+  local want; want="$ATP_DIR/deploy/$(env_get CADDYFILE | grep . || echo Caddyfile)"
+  [ -f "$want" ] || return 0                       # nothing to compare with (compose itself would refuse to start)
+  dc exec -T caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - "$want"
+}
+refresh_edge() {
+  [ -n "$(dc ps -q caddy 2>/dev/null || true)" ] || return 0             # not running: `up -d` creates it from the file
+  if [ "$DRY_RUN" = "1" ]; then info "would compare caddy's running Caddyfile with deploy/$(env_get CADDYFILE | grep . || echo Caddyfile) and recreate caddy if they differ"; return 0; fi
+  if caddy_config_current; then return 0; fi
+  info "caddy runs an older Caddyfile than deploy/$(env_get CADDYFILE | grep . || echo Caddyfile) - recreating it so it reads this one"
+  rdc up -d --no-deps --no-build --force-recreate caddy
+}
 # dc with another release's image; RELEASE is restored afterwards.
 dc_as() { local keep="$RELEASE" rc=0; RELEASE="$1"; shift; dc "$@" || rc=$?; RELEASE="$keep"; return "$rc"; }
 
@@ -543,6 +560,10 @@ health_checks() {
   local domain code; domain="$(env_get DOMAIN)"
   code="$(curl -sk -o /dev/null -m 10 -w '%{http_code}' --resolve "$domain:443:127.0.0.1" "https://$domain/api/system/health" 2>/dev/null || true)"
   if [ "$code" = "200" ]; then ok "https://$domain/api/system/health -> 200"; else bad "https://$domain/api/system/health -> ${code:-no answer} (caddy logs: docker compose ... logs caddy)"; fi
+  if [ -n "$(dc ps -q caddy 2>/dev/null || true)" ] && ! caddy_config_current; then
+    bad "caddy runs an older Caddyfile than deploy/$(env_get CADDYFILE | grep . || echo Caddyfile) - run: $ATP_DIR/deploy/atp.sh deploy"
+  fi
+  if [ "$(env_get CADDYFILE)" != "Caddyfile.ip" ]; then public_domain_check "$domain"; fi
 
   step "release"
   local cur; cur="$(current_sha)"
@@ -576,6 +597,38 @@ health_checks() {
   if [ -n "$extra" ]; then bad "public TCP ports besides 22/80/443:$extra (Docker publishes past ufw)"; else ok "public TCP ports: ${ports:-none seen}"; fi
   local used; used="$(df -P "$ATP_DIR" | awk 'NR==2 {gsub("%","",$5); print $5}')"
   if [ "${used:-0}" -ge 95 ]; then bad "disk ${used}% used"; elif [ "${used:-0}" -ge 85 ]; then warn "disk ${used}% used"; else ok "disk ${used}% used"; fi
+}
+
+# With a real domain (CADDYFILE=Caddyfile). Through Caddy on this host (no DNS): the apex's security headers and the
+# www site's redirect - both come from this release's Caddyfile, so they FAIL. Through public DNS with the certificate
+# verified: the apex and www as the world reaches them - DNS, Let's Encrypt and the route back to this host's own
+# address are outside a release, so they only WARN (a deploy or rollback is never failed by them). GET requests only.
+public_domain_check() {
+  local domain="$1" code hdrs h missing="" want got
+  local here=(--resolve "$domain:443:127.0.0.1" --resolve "www.$domain:443:127.0.0.1")
+  hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
+  if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
+    bad "https://$domain/ through Caddy here gave no answer, so its security headers could not be checked"
+  else
+    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do
+      printf '%s\n' "$hdrs" | grep -q "^$h:" || missing="$missing $h"
+    done
+    if [ -z "$missing" ]; then ok "https://$domain/ sends HSTS, CSP, X-Frame-Options, X-Content-Type-Options and Referrer-Policy"
+    else bad "https://$domain/ is missing:$missing (deploy/Caddyfile)"; fi
+  fi
+  want="301 https://$domain/atp-health-probe?x=1"
+  got="$(curl -sk -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "${here[@]}" "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
+  case "$got" in
+    "$want") ok "www.$domain -> permanent redirect to https://$domain (path and query kept)" ;;
+    ""|000*) warn "www.$domain gave no answer through Caddy here - no certificate for it yet (its DNS record, or Let's Encrypt still issuing)" ;;
+    *) bad "www.$domain/atp-health-probe?x=1 -> '$got', expected '$want' (deploy/Caddyfile)" ;;
+  esac
+  code="$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "https://$domain/api/system/health" 2>/dev/null || true)"
+  if [ "$code" = "200" ]; then ok "https://$domain/api/system/health -> 200 over public DNS, certificate trusted"
+  else warn "https://$domain/api/system/health over public DNS -> ${code:-no answer} (DNS, the certificate, or no route back to this host's own address)"; fi
+  got="$(curl -sS -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
+  if [ "$got" = "$want" ]; then ok "https://www.$domain over public DNS -> 301 to https://$domain"
+  else warn "https://www.$domain over public DNS -> '${got:-no answer}', expected '$want' (www DNS record or its certificate)"; fi
 }
 
 check_key_live() {
@@ -801,6 +854,7 @@ cmd_deploy() {
   step "worker first, then frontend and the rest (exactly one worker)"
   start_workers
   rdc up -d --no-build
+  refresh_edge
   RESTORE_CHECKOUT=""
   if [ "$DRY_RUN" != "1" ]; then
     if [ "$prev" = "$sha" ]; then log_release converge "$sha" "$prev" "$backup_file" "${before:--}" "${after:--}"
@@ -1009,6 +1063,7 @@ cmd_rollback() {
   wait_api || die "the rolled-back API is not healthy - logs: docker compose ... logs backend; runbook 'Troubleshooting'" 1
   start_workers
   rdc up -d --no-build
+  refresh_edge
   RESTORE_CHECKOUT=""
   if [ "$DRY_RUN" = "1" ]; then info "would run every health check"; printf '\ndry-run: nothing changed\n'; return 0; fi
   if [ "$mode" = "failed" ]; then log_release restore "$target" "$cur" "$backup" "$rev_after" "$(db_revision)"

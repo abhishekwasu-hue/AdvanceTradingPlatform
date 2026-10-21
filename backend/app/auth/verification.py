@@ -73,8 +73,8 @@ async def send_link(session: AsyncSession, user: User, request: Optional[Request
     token, _ = await issue(session, user)
     link = verify_link(request, token)
     sent = await mailer.send(
-        user.email, "Verify your Advance Trading Platform email",
-        f"Welcome to Advance Trading Platform.\n\nConfirm that {user.email} is yours by opening this link within "
+        user.email, "Verify your AiAlgoDesk email",
+        f"Welcome to AiAlgoDesk.\n\nConfirm that {user.email} is yours by opening this link within "
         f"{VERIFY_TTL_HOURS} hours:\n{link}\n\nIf you did not create this account, ignore this email.",
     )
     if not sent:

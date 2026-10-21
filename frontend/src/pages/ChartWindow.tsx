@@ -50,7 +50,7 @@ export default function ChartWindow({ params }: { params: URLSearchParams }) {
   const broker = params.get("broker_name") || undefined;
   const [timeframe, setTimeframe] = useState(TIMEFRAMES.includes(params.get("tf") ?? "") ? (params.get("tf") as string) : "5min");
 
-  useEffect(() => { document.title = `${symbol} · ${timeframe} · Advance Trading`; }, [symbol, timeframe]);
+  useEffect(() => { document.title = `${symbol} · ${timeframe} · AiAlgoDesk`; }, [symbol, timeframe]);
 
   const chart = useBrokerChart({ enabled: reads && !!user && !!symbol, symbol, timeframe, exchange, broker });
   const error = chart.error;

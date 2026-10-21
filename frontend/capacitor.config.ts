@@ -37,7 +37,7 @@ if (existsSync(markerPath)) {
 
 const config: CapacitorConfig = {
   appId: APP_ID,
-  appName: "ATP",
+  appName: "AiAlgoDesk",
   webDir: "dist",
   // Capacitor's "debug" logs bridge calls only in a debuggable build; a build that can reach a server logs nothing.
   loggingBehavior: build.debuggable ? "debug" : "none",

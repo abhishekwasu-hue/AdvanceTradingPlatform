@@ -196,9 +196,11 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
   });
 
   it("gates percent-encoded and undecodable addresses too (review M1)", () => {
-    for (const path of ["/%70ositions", "/option%2Dchain", "/p%6Frtfolio", "/%63harts", "/%E0%A4"]) {
+    for (const path of ["/option%2Dchain", "/p%6Frtfolio", "/%63harts", "/%E0%A4"]) {
       expect(render(path), path).toContain('data-broker-gate="loading"');
     }
+    // UI2-9a: My positions shows the broker states itself (OWN_BROKER_STATES), at its encoded address too.
+    expect(render("/%70ositions")).not.toContain("data-broker-gate");
     expect(render("/%70ositions")).toContain("My positions");             // the title follows the router's reading
   });
 

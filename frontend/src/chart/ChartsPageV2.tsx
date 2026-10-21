@@ -182,8 +182,8 @@ export default function ChartsPageV2(_props: PageProps) {
   const stray = tab === "chart" && params.has("symbol");
   useEffect(() => { if (stray) clearStart(); }, [stray, clearStart]);
   // The Multi-chart tab's shared reads, for the page's life; the tab itself stays mounted (hidden) after its first visit.
-  const pool = useMemo(() => new CandlePool(api.marketDataCandles), []);
-  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e)), []);
+  const pool = useMemo(() => new CandlePool(api.marketDataCandles), [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const ltpHub = useMemo(() => new LtpHub((s, e) => api.marketDataLtp(s, e)), [userId]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => () => ltpHub.dispose(), [ltpHub]);
   const [multiSeen, setMultiSeen] = useState(tab === "multi");
   if (tab === "multi" && !multiSeen) setMultiSeen(true);

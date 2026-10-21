@@ -697,6 +697,7 @@ test.describe("v2 Charts 1440: Multi-chart tab (UI2-4d)", () => {
     const polls = bank();
     await page.getByRole("tab", { name: "Chart", exact: true }).click();
     await chartReady(page);
+    await expect(page.locator("[data-multi-chart]")).toBeHidden();                         // kept mounted, never on screen
     await expect.poll(() => chartTab().length).toBe(2);
     expect(chartTab()[1].lookback_days).toBe(2);
     // The hidden Multi-chart tab reads nothing either; switching back and forth reads no history again.

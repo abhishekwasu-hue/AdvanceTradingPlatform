@@ -205,15 +205,17 @@ export class CandlePool {
       job.started = true;
       this.running += 1;
       this.sent += 1;
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const late = new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("The read took too long.")), this.options.timeoutMs); });
-      Promise.race([Promise.resolve().then(() => this.fetch(...job.args)), late])
+      // A read with no answer after `timeoutMs` gives its place up so the queue moves on, but stays joinable: its late
+      // answer still reaches the charts waiting for it (and is kept), as on the Chart tab, which has no timeout.
+      let freed = false;
+      const free = () => { if (freed) return; freed = true; this.running -= 1; this.pump(); };
+      const timer = setTimeout(free, this.options.timeoutMs);
+      Promise.resolve().then(() => this.fetch(...job.args))
         .then((value) => { this.recent.set(job.key, { at: this.now(), value }); job.resolve(value); }, job.reject)
         .finally(() => {
           clearTimeout(timer);
           if (this.jobs.get(job.key) === job) this.jobs.delete(job.key);
-          this.running -= 1;
-          this.pump();
+          free();
         });
     }
   }

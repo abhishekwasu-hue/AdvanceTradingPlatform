@@ -215,21 +215,23 @@ describe("UI2-4d Multi-chart: shared reads", () => {
     expect(pool.sent).toBe(1);
   });
 
-  it("two reads with no answer give their places up after timeoutMs; the next ones go out", async () => {
+  it("two slow reads give their places up after timeoutMs; the next ones go out and the late answers still arrive", async () => {
     vi.useFakeTimers();
     try {
       const w = wire();
       const pool = new CandlePool(w.fetch, { maxInFlight: 2, freshMs: 30_000, timeoutMs: 30_000 });
-      const hung = [pool.fetchCandles(["A"], "5min", 10, "NSE"), pool.fetchCandles(["B"], "5min", 10, "NSE")];
-      for (const h of hung) h.catch(() => undefined);
+      const slow = [pool.fetchCandles(["A"], "5min", 10, "NSE"), pool.fetchCandles(["B"], "5min", 10, "NSE")];
       const next = pool.fetchCandles(["C"], "5min", 10, "NSE");
       await vi.advanceTimersByTimeAsync(0);
       expect(w.calls).toHaveLength(2);
       await vi.advanceTimersByTimeAsync(30_000);
-      await expect(hung[0]).rejects.toThrow("too long");
       expect(w.calls.map((x) => x[0][0])).toEqual(["A", "B", "C"]);
+      const again = pool.fetchCandles(["A"], "5min", 10, "NSE");              // joins the slow read, no new request
+      await w.settle(0);
+      await w.settle(1);
       await w.settle(2);
-      await next;
+      await Promise.all([...slow, next, again]);
+      expect(w.calls).toHaveLength(3);
     } finally {
       vi.useRealTimers();
     }

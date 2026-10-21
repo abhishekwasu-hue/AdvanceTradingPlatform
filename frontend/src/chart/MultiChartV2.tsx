@@ -206,7 +206,7 @@ export default function MultiChartV2({
   const active = Math.min(layout.active, count - 1);
 
   return (
-    <div data-multi-chart hidden={!shown} className="flex flex-col gap-space-2">
+    <div data-multi-chart hidden={!shown} className={cx("flex-col gap-space-2", shown ? "flex" : "hidden")}>
       <div role="group" aria-label="Multi-chart controls"
         className="flex flex-wrap items-center gap-space-2 rounded-panel border border-subtle bg-surface-1 p-space-2 text-t13 text-fg">
         <div role="group" aria-label="Charts on screen" className="flex gap-space-1 rounded-control bg-surface-2 p-space-1">

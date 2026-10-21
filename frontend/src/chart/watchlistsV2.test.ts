@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
 import {
-  CHANGED_ELSEWHERE, DELETED_ELSEWHERE, MERGED, QUOTE_POLL_MS, QUOTE_ROWS, WatchlistConflict, WatchlistsStore, applyEdit, direction, moveItem,
-  pollQuotes, quoteItems, watchlistError, type QuotesReply, type WatchItem, type WatchlistV2, type WatchlistsApi,
+  CHANGED_ELSEWHERE, DELETED_ELSEWHERE, MERGED, QUOTE_POLL_MS, QUOTE_ROWS, QuotePoller, SWITCHED_OFF, WatchlistConflict, WatchlistsStore, applyEdit,
+  conflictFrom, direction, moveItem, quoteItems, quoteKey, watchlistError, type QuotesReply, type WatchItem, type WatchlistV2, type WatchlistsApi,
 } from "./watchlistsV2";
 
 /** UI2-4c: the watchlist rows' order, the versioned saves and their 409 merge, and the batch quote poll. */
@@ -33,8 +33,12 @@ class Server implements WatchlistsApi {
     this.saves.push({ id: l.id, version: l.version, items: l.items.map((i) => i.symbol), name: l.name });
     if (this.fail) throw this.fail;
     const cur = this.lists.get(l.id);
-    if (!cur) throw new WatchlistConflict(null);
-    if (cur.version !== l.version) throw new WatchlistConflict(cur);
+    if (!cur) throw new WatchlistConflict("deleted");
+    if (cur.version !== l.version) {
+      // The server's real 409 body, as the API client keeps it: cut at 2000 characters (a long list no longer parses).
+      const body = JSON.stringify({ detail: { message: "the watchlist changed since this edit was made", current: cur } });
+      conflictFrom(new ApiError(409, "the watchlist changed since this edit was made", "the watchlist changed since this edit was made", body.slice(0, 2000)));
+    }
     const next = { ...l, version: cur.version + 1 };
     this.lists.set(l.id, next);
     return next;
@@ -104,13 +108,75 @@ describe("UI2-4c versioned saves and the 409 merge", () => {
     expect(store.getState().note).toBe(MERGED);
   });
 
-  it("409 where the other device already made the change: nothing more is saved, the latest list is shown", async () => {
+  it("409 where the other device already made the change: nothing more is saved, the latest list is shown and said so", async () => {
     const server = new Server(list(["NIFTY 50", "TCS"]));
     const store = await loaded(server);
     server.other(1, (l) => ({ ...l, items: [it_("NIFTY 50")] }));
     await store.edit(1, { kind: "remove", item: it_("TCS") });
     expect(server.saves).toHaveLength(1);
     expect(names(store.getState().lists[0])).toEqual(["NIFTY 50"]);
+    expect(store.getState().note).toBe(CHANGED_ELSEWHERE);                 // not "both changes are kept": nothing was saved
+  });
+
+  it("review: a 60-row list - the 409 body is cut and does not parse; the list is read again and the edit still lands", async () => {
+    const sixty = Array.from({ length: 60 }, (_, i) => `SYMBOL${i}`);
+    const server = new Server(list(sixty));
+    const store = await loaded(server);
+    const reads = vi.spyOn(server, "list");
+    server.other(1, (l) => ({ ...l, items: [...l.items, it_("HDFCBANK")] }));
+    await store.edit(1, { kind: "move", item: it_("SYMBOL59"), to: 0 });
+    expect(reads).toHaveBeenCalledTimes(1);                                 // the body could not say what the list is now
+    expect(server.saves.map((s) => s.version)).toEqual([1, 2]);
+    expect(names(store.getState().lists[0])?.slice(0, 2)).toEqual(["SYMBOL59", "SYMBOL0"]);
+    expect(names(store.getState().lists[0])?.[60]).toBe("HDFCBANK");
+    expect(store.getState().lists[0].version).toBe(3);
+    expect(store.getState().note).toBe(MERGED);
+    expect(store.getState().error).toBeNull();
+    await store.edit(1, { kind: "remove", item: it_("SYMBOL1") });          // the next edit is on the current version
+    expect(server.saves[server.saves.length - 1].version).toBe(3);
+  });
+
+  it("review: the 409 helper - a taken name stays an error, any other 409 is a conflict, a body that is cut gives no list", () => {
+    const taken = new ApiError(409, "x", "you already have a watchlist named 'A'");
+    expect(() => conflictFrom(taken)).toThrow(taken);
+    let thrown: unknown;
+    try { conflictFrom(new ApiError(409, "x", "the watchlist changed since this edit was made", '{"detail": {"current": {"id": 1, "items": [')); } catch (e) { thrown = e; }
+    expect(thrown).toBeInstanceOf(WatchlistConflict);
+    expect((thrown as WatchlistConflict).current).toBeNull();
+    try { conflictFrom(new ApiError(404, "x", "Watchlist not found")); } catch (e) { thrown = e; }
+    expect((thrown as WatchlistConflict).kind).toBe("deleted");
+    const off = new ApiError(404, "x", "Not found");
+    expect(() => conflictFrom(off)).toThrow(off);
+  });
+
+  it("review: a 404 while the feature is off keeps the lists and shows that state", async () => {
+    const server = new Server(list(["NIFTY 50"]));
+    const store = await loaded(server);
+    server.fail = new ApiError(404, "Not found", "Not found");
+    await store.edit(1, { kind: "add", item: it_("INFY") });
+    expect(store.getState().off).toBe(true);
+    expect(store.getState().lists.map((l) => l.id)).toEqual([1]);
+    expect(store.getState().error).toBeNull();
+    expect(watchlistError(server.fail, "save")).toBe(SWITCHED_OFF);
+    server.list = async () => { throw new ApiError(404, "Not found", "Not found"); };
+    await store.load();
+    expect(store.getState().off).toBe(true);
+  });
+
+  it("review: a load keeps the edits made after it was asked for", async () => {
+    const server = new Server(list(["NIFTY 50"]));
+    const store = await loaded(server);
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => { release = r; });
+    const read = server.list;
+    server.list = async () => { await held; return read(); };
+    const loading = store.load();
+    const editing = store.edit(1, { kind: "add", item: it_("INFY") });
+    release();
+    await loading;
+    expect(names(store.getState().lists[0])).toEqual(["NIFTY 50", "INFY"]);   // still shown after the load
+    await editing;
+    expect(names(server.lists.get(1))).toEqual(["NIFTY 50", "INFY"]);
   });
 
   it("a second 409 in a row shows the server's list and says so", async () => {
@@ -120,6 +186,7 @@ describe("UI2-4c versioned saves and the 409 merge", () => {
     server.save = async (l) => { server.other(1, (x) => ({ ...x, name: `${x.name}!` })); return save(l); };   // always one step ahead
     await store.edit(1, { kind: "add", item: it_("INFY") });
     expect(server.saves).toHaveLength(2);
+    expect(store.getState().note).not.toBe(MERGED);
     expect(store.getState().note).toBe(CHANGED_ELSEWHERE);
     expect(store.getState().lists[0].name).toBe("Indices!!");
     expect(names(store.getState().lists[0])).toEqual(["NIFTY 50", "TCS"]);
@@ -167,12 +234,15 @@ describe("UI2-4c versioned saves and the 409 merge", () => {
 describe("UI2-4c batch quote poll", () => {
   afterEach(() => { vi.useRealTimers(); });
   const reply: QuotesReply = { items: [] };
+  const poller = (load: (items: WatchItem[], signal: AbortSignal) => Promise<QuotesReply>, hidden = () => false, error = () => {}) =>
+    new QuotePoller(load, { data: () => {}, error }, hidden, () => Date.now());
 
-  it("one batch for the first 50 rows now, then every 10 s after each answer", async () => {
+  it("one batch for the first 50 rows now, then every 10 s after each answer; close stops it", async () => {
     vi.useFakeTimers();
     const items = Array.from({ length: 70 }, (_, i) => it_(`S${i}`));
-    const load = vi.fn(async (_: WatchItem[]) => reply);
-    const stop = pollQuotes(load, items, { data: () => {}, error: () => {} }, () => false);
+    const load = vi.fn(async (_: WatchItem[], __: AbortSignal) => reply);
+    const p = poller(load);
+    p.update(items);
     expect(load).toHaveBeenCalledTimes(1);
     expect(load.mock.calls[0][0]).toHaveLength(QUOTE_ROWS);
     expect(load.mock.calls[0][0][QUOTE_ROWS - 1].symbol).toBe("S49");
@@ -180,37 +250,72 @@ describe("UI2-4c batch quote poll", () => {
     expect(load).toHaveBeenCalledTimes(1);
     await vi.advanceTimersByTimeAsync(1);
     expect(load).toHaveBeenCalledTimes(2);
-    stop();
+    p.close();
     await vi.advanceTimersByTimeAsync(QUOTE_POLL_MS * 3);
     expect(load).toHaveBeenCalledTimes(2);
     expect(QUOTE_POLL_MS).toBe(10_000);
     expect(quoteItems(items)).toHaveLength(50);
   });
 
+  it("review: reordering asks for nothing; a burst of adds and removes waits out the 10 s and then asks once", async () => {
+    vi.useFakeTimers();
+    const load = vi.fn(async (_: WatchItem[], __: AbortSignal) => reply);
+    const p = poller(load);
+    const rows = ["A", "B", "C", "D"].map((s) => it_(s));
+    p.update(rows);
+    expect(load).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 20; i += 1) p.update(moveItem(rows, i % 4, (i + 1) % 4));         // key repeat on the reorder keys
+    expect(quoteKey(moveItem(rows, 0, 3))).toBe(quoteKey(rows));
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(load).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 10; i += 1) p.update(i % 2 ? rows : [...rows, it_("E")]);          // add, remove, add ...
+    await vi.advanceTimersByTimeAsync(QUOTE_POLL_MS - 2_001);
+    expect(load).toHaveBeenCalledTimes(1);                                                  // not before 10 s since the last
+    await vi.advanceTimersByTimeAsync(1);
+    expect(load).toHaveBeenCalledTimes(2);
+    expect(load.mock.calls[1][0].map((i) => i.symbol)).toEqual(["A", "B", "C", "D"]);      // the last update wins
+    // At most one request per 10 s over a minute of edits.
+    for (let t = 0; t < 60; t += 1) { p.update(t % 2 ? rows : [...rows, it_("F")]); await vi.advanceTimersByTimeAsync(1_000); }
+    expect(load.mock.calls.length).toBeLessThanOrEqual(2 + 6);
+    p.close();
+  });
+
+  it("review: a superseded request is aborted", async () => {
+    vi.useFakeTimers();
+    const signals: AbortSignal[] = [];
+    const p = poller(async (_items, signal) => { signals.push(signal); return new Promise<QuotesReply>(() => {}); });
+    p.update([it_("A")]);
+    p.update([it_("B")]);
+    expect(signals[0].aborted).toBe(true);
+    p.close();
+  });
+
   it("no request while the tab is hidden; the next turn after it shows again asks", async () => {
     vi.useFakeTimers();
     let hidden = true;
     const load = vi.fn(async () => reply);
-    const stop = pollQuotes(load, [it_("TCS")], { data: () => {}, error: () => {} }, () => hidden);
+    const p = poller(load, () => hidden);
+    p.update([it_("TCS")]);
     await vi.advanceTimersByTimeAsync(QUOTE_POLL_MS * 3);
     expect(load).not.toHaveBeenCalled();
     hidden = false;
     await vi.advanceTimersByTimeAsync(QUOTE_POLL_MS);
     expect(load).toHaveBeenCalledTimes(1);
-    stop();
+    p.close();
   });
 
   it("an empty list asks for nothing; a failure is reported and the poll goes on", async () => {
     vi.useFakeTimers();
     const load = vi.fn(async () => reply);
-    pollQuotes(load, [], { data: () => {}, error: () => {} }, () => false)();
+    poller(load).update([]);
     expect(load).not.toHaveBeenCalled();
     const failing = vi.fn(async () => { throw new Error("down"); });
     const error = vi.fn();
-    const stop = pollQuotes(failing, [it_("TCS")], { data: () => {}, error }, () => false);
+    const p = poller(failing, () => false, error);
+    p.update([it_("TCS")]);
     await vi.advanceTimersByTimeAsync(QUOTE_POLL_MS);
     expect(failing).toHaveBeenCalledTimes(2);
     expect(error).toHaveBeenCalled();
-    stop();
+    p.close();
   });
 });

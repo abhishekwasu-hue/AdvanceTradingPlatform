@@ -135,6 +135,17 @@ describe("UI2-4a1 timeframe on a new drawing", () => {
     expect(store.created.map((c) => c.timeframe)).toEqual(["15min", "day"]);
   });
 
+  it("CHP-2: the armed tool (with a text drawing's text) can be read, to pick it again on another symbol", () => {
+    const ctl = new DrawingController(new Store(), "NIFTY 50");
+    expect(ctl.armed()).toBeNull();
+    ctl.setTool("text", "Breakout");
+    expect(ctl.armed()).toEqual({ kind: "text", text: "Breakout" });
+    ctl.setTool("ray");
+    expect(ctl.armed()).toEqual({ kind: "ray" });
+    ctl.cancel();
+    expect(ctl.armed()).toBeNull();
+  });
+
   it("without a timeframe (the old pages) the store is called as before, with three arguments", async () => {
     const store = new Store();
     const ctl = new DrawingController(store, "TCS");

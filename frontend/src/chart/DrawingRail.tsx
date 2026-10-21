@@ -95,7 +95,7 @@ export function DrawingRail(props: DrawingToolsProps) {
   const { view, ready, deletable, pick, asking, setAsking, question, confirm } = useDrawingActions(props);
   const { hidden, onHidden } = props;
   return (
-    <div role="toolbar" aria-label="Drawing tools" aria-orientation="vertical" data-drawing-rail
+    <div role="group" aria-label="Drawing tools" data-drawing-rail
       className="relative hidden shrink-0 flex-col items-center gap-space-1 border-r border-subtle p-space-1 md:flex">
       {RAIL_TOOLS.map((t) => {
         const Icon = ICONS[t.kind] ?? PenLine;
@@ -135,7 +135,7 @@ export function DrawingMenu(props: DrawingToolsProps) {
   const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !asking) { setOpen(false); trigger.current?.focus(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !asking && !e.defaultPrevented) { setOpen(false); trigger.current?.focus(); } };
     const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onDown);

@@ -3,8 +3,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import type { DrawingKind } from "../charting/drawings";
 import type { useDrawingTools } from "../charting/DrawingToolbar";
 import type { LightweightEngine } from "../charting/lightweight";
+import type { DrawingController } from "../charting/tools";
 import { useLiveLtp } from "../components/chartHelpers";
 import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
@@ -113,6 +115,22 @@ export default function ChartsPageV2(_props: PageProps) {
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
   const [tools, setTools] = useState<Tools | null>(null);
   const tradesNote = useTradesLayer(engine, `${exchange}:${symbol}`, data.candles, view.layers.includes("trades") && features.on("chart_trades_layer"));
+
+  // CHP-2: a tool picked and not yet placed stays picked when the symbol (and so the drawing controller) changes.
+  const armed = useRef<{ kind: DrawingKind; text?: string; ctl: DrawingController } | null>(null);
+  useEffect(() => {
+    const ctl = tools?.controller;
+    if (view.drawings_hidden) { armed.current = null; return; }          // Hide all puts the tools down
+    if (!ctl || !tools?.view) return;
+    const last = armed.current;
+    if (last && last.ctl !== ctl) {
+      armed.current = { ...last, ctl };
+      if (!ctl.armed()) ctl.setTool(last.kind, last.text);
+      return;
+    }
+    const now = ctl.armed();
+    armed.current = now ? { ...now, ctl } : null;
+  }, [tools, view.drawings_hidden]);
 
   const root = useRef<HTMLDivElement>(null);
   const busy = useCallback(() => !!tools?.controller?.view().tool || !!root.current?.querySelector("[role='dialog'], [role='alertdialog'], [role='listbox']"), [tools]);

@@ -47,29 +47,41 @@ export const QUOTE_POLL_MS = 10_000;
 export const CHANGED_ELSEWHERE = "This list changed on another device. The latest version is shown.";
 export const MERGED = "This list also changed on another device. Both changes are kept.";
 export const DELETED_ELSEWHERE = "This list was deleted on another device.";
+export const SWITCHED_OFF = "Watchlists are switched off for your account just now. Your lists are kept; try again later.";
 
-/** A save refused because the list changed elsewhere: 409 with the current list, or 404 (deleted) with null. */
+/** A save refused because the list changed elsewhere: "changed" (409, a stale version) or "deleted" (404 on the list).
+ * `current` is the list the 409 carried when its body could be read; null otherwise (the store then reads the lists). */
 export class WatchlistConflict extends Error {
+  readonly kind: "changed" | "deleted";
   readonly current: WatchlistV2 | null;
 
-  constructor(current: WatchlistV2 | null) {
-    super(current ? CHANGED_ELSEWHERE : DELETED_ELSEWHERE);
+  constructor(kind: "changed" | "deleted", current: WatchlistV2 | null = null) {
+    super(kind === "changed" ? CHANGED_ELSEWHERE : DELETED_ELSEWHERE);
     this.name = "WatchlistConflict";
+    this.kind = kind;
     this.current = current;
   }
 }
 
-/** A 409 that carries `detail.current` is a version conflict; a 409 with a sentence (a taken name) stays an ApiError. */
-function conflictFrom(error: unknown): never {
-  if (error instanceof ApiError && error.status === 404) throw new WatchlistConflict(null);
-  if (error instanceof ApiError && error.status === 409) {
+/** The routes answer 404 "Not found" while the `watchlists` flag is off and 404 "Watchlist not found" for a list that
+ * is gone (the client keeps the detail, not the X-Feature-Disabled header). */
+export const isSwitchedOff = (error: unknown): boolean =>
+  error instanceof ApiError && error.status === 404 && !/watchlist not found/i.test(error.detail);
+
+const takenName = (error: unknown): boolean => error instanceof ApiError && error.status === 409 && /already have a watchlist/i.test(error.detail);
+
+/** Any 409 on a save except a taken name is a version conflict. The current list is read from the body when it can be
+ * (the client keeps only its first 2000 characters, so a long list's body does not parse). */
+export function conflictFrom(error: unknown): never {
+  if (error instanceof ApiError && error.status === 404 && !isSwitchedOff(error)) throw new WatchlistConflict("deleted");
+  if (error instanceof ApiError && error.status === 409 && !takenName(error)) {
     let current: WatchlistV2 | null = null;
     try {
       current = (JSON.parse(error.body) as { detail?: { current?: WatchlistV2 } }).detail?.current ?? null;
     } catch {
       current = null;
     }
-    if (current) throw new WatchlistConflict(current);
+    throw new WatchlistConflict("changed", current && Array.isArray(current.items) ? current : null);
   }
   throw error;
 }
@@ -83,8 +95,8 @@ export const watchlistsV2Api = {
     request<WatchlistV2>(`/watchlists/${list.id}`, { method: "PUT", body: JSON.stringify({ name: list.name, items: list.items, version: list.version }) })
       .catch(conflictFrom),
   remove: (id: number) => request<unknown>(`/watchlists/${id}`, { method: "DELETE" }),
-  quotes: (items: WatchItem[]) =>
-    request<QuotesReply>("/market-data/quotes", { method: "POST", body: JSON.stringify({ items: items.map(({ symbol, exchange }) => ({ symbol, exchange })) }) }),
+  quotes: (items: WatchItem[], signal?: AbortSignal) =>
+    request<QuotesReply>("/market-data/quotes", { method: "POST", signal, body: JSON.stringify({ items: items.map(({ symbol, exchange }) => ({ symbol, exchange })) }) }),
 };
 export type WatchlistsApi = Pick<typeof watchlistsV2Api, "list" | "create" | "save" | "remove">;
 
@@ -140,7 +152,8 @@ export function direction(row: Pick<QuoteRow, "change"> | undefined): "up" | "do
 export function watchlistError(error: unknown, doing: "load" | "create" | "rename" | "save" | "delete", name = ""): string {
   const status = error instanceof ApiError ? error.status : 0;
   const detail = error instanceof ApiError ? error.detail : "";
-  if (status === 409 && /already have a watchlist/.test(detail)) return `You already have a list named "${name}". Pick another name.`;
+  if (isSwitchedOff(error)) return SWITCHED_OFF;
+  if (takenName(error)) return `You already have a list named "${name}". Pick another name.`;
   if (status === 403 && detail) return detail;
   if ((status === 402 || status === 409) && detail) {
     return /delete/i.test(detail) ? detail : `${detail.replace(/\.?$/, ".")} Delete a list you no longer need to make room.`;
@@ -162,6 +175,8 @@ export interface WatchlistsState {
   error: string | null;
   /** A note about another device's change (409). */
   note: string | null;
+  /** The server says the feature is off (404 without a list): the lists are kept on the server, nothing is shown. */
+  off: boolean;
 }
 
 export class WatchlistsStore {
@@ -169,7 +184,7 @@ export class WatchlistsStore {
   private pending: { id: number; edit: ListEdit }[] = [];
   private queue: Promise<unknown> = Promise.resolve();
   private listeners = new Set<() => void>();
-  private state: WatchlistsState = { lists: [], loaded: false, error: null, note: null };
+  private state: WatchlistsState = { lists: [], loaded: false, error: null, note: null, off: false };
 
   constructor(private readonly api: WatchlistsApi = watchlistsV2Api) {}
 
@@ -203,16 +218,23 @@ export class WatchlistsStore {
     this.pending = this.pending.filter((p) => p.id !== id);
   }
 
+  /** Edits made before this load are done (or dropped) by the time it runs; edits made after it stay pending. */
   load(): Promise<void> {
+    const before = new Set(this.pending);
     return this.run(async () => {
       try {
         this.confirmed = await this.api.list();
-        this.pending = [];
-        this.emit({ loaded: true, error: null });
+        this.pending = this.pending.filter((p) => !before.has(p));
+        this.emit({ loaded: true, error: null, off: false });
       } catch (error) {
-        this.emit({ loaded: true, error: watchlistError(error, "load") });
+        this.emit({ loaded: true, error: isSwitchedOff(error) ? null : watchlistError(error, "load"), off: isSwitchedOff(error) });
       }
     });
+  }
+
+  /** The list as the server has it now (after a 409 whose body did not carry it); null when it is gone. */
+  private async fresh(id: number): Promise<WatchlistV2 | null> {
+    return (await this.api.list()).find((l) => l.id === id) ?? null;
   }
 
   /** Shown at once, saved in turn with the list's version; on a 409 the edit is applied to the current list once more. */
@@ -223,31 +245,41 @@ export class WatchlistsStore {
     return this.run(async () => {
       let note: string | null = null;
       let error: string | null = null;
+      let off = false;
       let base = this.confirmed.find((l) => l.id === id);
       for (let attempt = 0; base; attempt += 1) {
         const next = applyEdit(base, edit);
-        if (sameList(next, base)) break;                                  // nothing left to change on this version
+        if (sameList(next, base)) {                                       // nothing left to change on this version
+          if (attempt > 0) note = CHANGED_ELSEWHERE;                      // the other device's list already had it
+          break;
+        }
         try {
           this.put(await this.api.save(next));
+          if (attempt > 0) note = MERGED;                                 // saved on top of the other device's change
           break;
         } catch (e) {
-          if (e instanceof WatchlistConflict && e.current && attempt === 0) {
-            this.put(e.current);
-            base = e.current;
-            note = MERGED;
-            continue;
-          }
-          if (e instanceof WatchlistConflict) {
-            if (e.current) this.put(e.current); else this.drop(id);
-            note = e.message;
-          } else {
-            error = watchlistError(e, edit.kind === "rename" ? "rename" : "save", edit.kind === "rename" ? edit.name : "");
+          try {
+            if (e instanceof WatchlistConflict && e.kind === "changed") {
+              const current = e.current ?? await this.fresh(id);
+              if (!current) { this.drop(id); note = DELETED_ELSEWHERE; break; }
+              this.put(current);
+              note = CHANGED_ELSEWHERE;
+              if (attempt === 0) { base = current; continue; }
+            } else if (e instanceof WatchlistConflict) {
+              this.drop(id);
+              note = DELETED_ELSEWHERE;
+            } else {
+              off = isSwitchedOff(e);
+              error = off ? null : watchlistError(e, edit.kind === "rename" ? "rename" : "save", edit.kind === "rename" ? edit.name : "");
+            }
+          } catch (readError) {                                            // the lists could not be read again
+            error = watchlistError(readError, "save");
           }
           break;
         }
       }
       this.pending = this.pending.filter((p) => p !== job);
-      this.emit({ note, error });
+      this.emit({ note, error, ...(off ? { off } : {}) });
     });
   }
 
@@ -259,7 +291,7 @@ export class WatchlistsStore {
         this.emit({ error: null, note: null });
         return made;
       } catch (e) {
-        this.emit({ error: watchlistError(e, "create", name) });
+        this.emit(isSwitchedOff(e) ? { off: true } : { error: watchlistError(e, "create", name) });
         return null;
       }
     });
@@ -270,6 +302,7 @@ export class WatchlistsStore {
       try {
         await this.api.remove(id);
       } catch (e) {
+        if (isSwitchedOff(e)) { this.emit({ off: true }); return false; }
         if (!(e instanceof ApiError && e.status === 404)) {                  // already gone elsewhere: gone here too
           this.emit({ error: watchlistError(e, "delete") });
           return false;
@@ -286,11 +319,49 @@ export class WatchlistsStore {
 
 const tabHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
 
-/** One batch quote for the first QUOTE_ROWS rows now, then every QUOTE_POLL_MS after each answer; a turn while the tab
- * is hidden is skipped (no request). Nothing for an empty list. Returns `stop`. */
-export function pollQuotes(load: (items: WatchItem[]) => Promise<QuotesReply>, items: readonly WatchItem[],
-                           on: { data: (reply: QuotesReply) => void; error: () => void }, hidden: () => boolean = tabHidden): () => void {
-  const first = quoteItems(items);
-  if (first.length === 0) return () => undefined;
-  return startPolling<QuotesReply>({ load: () => load(first), delay: () => QUOTE_POLL_MS, hidden, onData: on.data, onError: on.error });
+/** The poll's identity: the set of rows that get a price (first QUOTE_ROWS), in any order - a reorder inside them asks
+ * for nothing new. */
+export const quoteKey = (items: readonly WatchItem[]): string => quoteItems(items).map(itemKey).sort().join("|");
+
+/**
+ * The batch quote poll for one panel: one request for the first QUOTE_ROWS rows, then one every QUOTE_POLL_MS after
+ * each answer; a turn while the tab is hidden is skipped (no request). `update(items)` restarts it only when the set of
+ * priced rows changes, and then not sooner than QUOTE_POLL_MS after the last request (the route allows 30 a minute per
+ * user), so adding, removing or reordering rows in a burst costs no extra requests. A superseded request is aborted.
+ */
+export class QuotePoller {
+  private key = "";
+  private lastAt = Number.NEGATIVE_INFINITY;
+  private halt: () => void = () => undefined;
+
+  constructor(private readonly load: (items: WatchItem[], signal: AbortSignal) => Promise<QuotesReply>,
+              private readonly on: { data: (reply: QuotesReply) => void; error: () => void },
+              private readonly hidden: () => boolean = tabHidden, private readonly now: () => number = () => Date.now()) {}
+
+  update(items: readonly WatchItem[]): void {
+    const key = quoteKey(items);
+    if (key === this.key) return;
+    this.halt();
+    this.key = key;
+    const first = quoteItems(items);
+    if (first.length === 0) { this.halt = () => undefined; return; }
+    const abort = new AbortController();
+    let stop: () => void = () => undefined;
+    const start = () => {
+      stop = startPolling<QuotesReply>({
+        load: () => { this.lastAt = this.now(); return this.load(first, abort.signal); },
+        delay: () => QUOTE_POLL_MS, hidden: this.hidden, onData: this.on.data, onError: this.on.error,
+      });
+    };
+    const wait = Math.max(0, this.lastAt + QUOTE_POLL_MS - this.now());
+    const timer = wait > 0 ? setTimeout(start, wait) : undefined;
+    if (timer === undefined) start();
+    this.halt = () => { if (timer !== undefined) clearTimeout(timer); stop(); abort.abort(); };
+  }
+
+  close(): void {
+    this.halt();
+    this.halt = () => undefined;
+    this.key = "";
+  }
 }

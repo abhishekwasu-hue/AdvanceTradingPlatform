@@ -5,7 +5,7 @@ import { EMPTY, formatPct, formatPrice } from "../ui/format";
 import { SymbolPicker } from "../ui/SymbolPicker";
 import { ConfirmBox } from "./ConfirmBox";
 import {
-  MAX_ITEMS, NAME_MAX, QUOTE_ROWS, WatchlistsStore, direction, itemKey, moveItem, pollQuotes, watchlistsV2Api,
+  MAX_ITEMS, NAME_MAX, QUOTE_ROWS, QuotePoller, SWITCHED_OFF, WatchlistsStore, direction, itemKey, moveItem, watchlistsV2Api,
   type QuoteRow, type WatchItem, type WatchlistV2,
 } from "./watchlistsV2";
 
@@ -39,15 +39,15 @@ export interface WatchlistPanelProps {
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 
+/** The prices of the first 50 rows (QuotePoller: a reorder asks for nothing new; a changed set waits out the 10 s). */
 function useQuotes(items: readonly WatchItem[]) {
   const [quotes, setQuotes] = useState<{ rows: Map<string, QuoteRow>; failed: boolean }>({ rows: new Map(), failed: false });
-  const key = items.slice(0, QUOTE_ROWS).map(itemKey).join("|");
-  const itemsRef = useRef(items);
-  itemsRef.current = items;
-  useEffect(() => pollQuotes(watchlistsV2Api.quotes, itemsRef.current, {
+  const poller = useMemo(() => new QuotePoller(watchlistsV2Api.quotes, {
     data: (reply) => setQuotes({ rows: new Map(reply.items.map((r) => [itemKey(r), r])), failed: false }),
     error: () => setQuotes((q) => ({ ...q, failed: true })),
-  }), [key]);
+  }), []);
+  useEffect(() => () => poller.close(), [poller]);
+  useEffect(() => { poller.update(items); }, [poller, items]);
   return quotes;
 }
 
@@ -67,7 +67,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sto
   const state = useSyncExternalStore(store.subscribe, store.getState);
   useEffect(() => { void store.load(); }, [store]);
   const list: WatchlistV2 | undefined = state.lists.find((l) => l.id === listId) ?? state.lists[0];
-  const items = useMemo(() => list?.items ?? [], [list]);
+  const items = useMemo(() => (state.off ? [] : list?.items ?? []), [list, state.off]);
   const quotes = useQuotes(items);
 
   const [naming, setNaming] = useState<null | "new" | "rename">(null);
@@ -134,7 +134,7 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sto
   return (
     <section aria-label="Watchlist" data-watchlist className={cx("flex min-h-0 flex-col text-t14 text-fg", className)}>
       <div className="flex items-center gap-space-1 border-b border-subtle p-space-2">
-        {state.lists.length > 0 ? (
+        {state.lists.length > 0 && !state.off ? (
           <>
             <label className="sr-only" htmlFor="watchlist-pick">Watchlist</label>
             <select id="watchlist-pick" value={list?.id ?? ""} onChange={(e) => onListId(Number(e.target.value))}
@@ -178,14 +178,16 @@ export function WatchlistPanel({ symbol, exchange, onOpen, listId, onListId, sto
 
       {!state.loaded && <p className="px-space-3 py-space-4 text-t13 text-fg-muted">Loading your watchlists…</p>}
 
-      {state.loaded && !state.error && state.lists.length === 0 && !naming && (
+      {state.off && <p role="status" className="px-space-3 py-space-4 text-t13 text-fg-muted">{SWITCHED_OFF}</p>}
+
+      {state.loaded && !state.off && !state.error && state.lists.length === 0 && !naming && (
         <div className="space-y-space-2 px-space-3 py-space-4 text-t13 text-fg-muted">
           <p>You have no watchlists yet. A list keeps the symbols you follow one tap away from the chart.</p>
           <button type="button" className={cx(textBtn, "bg-brand text-on-brand hover:bg-brand-strong")} onClick={() => startNaming("new")}>Create a list</button>
         </div>
       )}
 
-      {list && (
+      {list && !state.off && (
         <>
           <div className="p-space-2">
             <SymbolPicker key={picker} value="" exchange="NSE" onPick={add} storageKey={storageKey} label={`Add a symbol to ${list.name}`} className="w-full" />

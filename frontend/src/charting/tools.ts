@@ -275,6 +275,12 @@ export class DrawingController {
     this.emit();
   }
 
+  /** The tool picked and not yet placed (with a text drawing's text), so a page can pick it again on another symbol's
+   * controller (CHP-2); null when no tool is armed. */
+  armed(): { kind: DrawingKind; text?: string } | null {
+    return this.tool ? { kind: this.tool, ...(this.toolText !== undefined ? { text: this.toolText } : {}) } : null;
+  }
+
   /** Escape: drop the tool, the anchors placed so far and an unfinished drag. */
   cancel() {
     this.tool = null;

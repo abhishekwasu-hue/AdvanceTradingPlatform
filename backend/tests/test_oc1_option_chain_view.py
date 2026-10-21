@@ -149,6 +149,18 @@ def test_iv_keeps_the_reading_that_reprices_the_ltp():
     assert _one_leg(strike=110)["call"]["iv"] is None
 
 
+def test_iv_without_a_price_to_check_against():
+    # No LTP: under 3 could be a fraction (0.142) or a real low percentage (2.5) - no IV rather than a guess;
+    # 3 and up can only be a percentage.
+    assert _one_leg(strike=110, call_iv=2.5)["call"]["iv"] is None
+    assert _one_leg(strike=110, call_iv=0.142)["call"]["iv"] is None
+    assert _one_leg(strike=110, call_iv=14.2)["call"]["iv"] == pytest.approx(14.2)
+    # No spot either (nothing to reprice against even with an LTP): the same rule.
+    chain = OptionChain(underlying="NIFTY", expiry=EXPIRY.isoformat(), rows=[OptionChainRow(strike=110, call_iv=2.5, call_ltp=7.0, put_iv=13.0)])
+    leg = chain_view.build_view(chain, spot=None, future=None, expiry=EXPIRY, now=NOW, oi=chain_view.OiChange("none", None))["rows"][0]
+    assert leg["call"]["iv"] is None and leg["put"]["iv"] == pytest.approx(13.0)
+
+
 # ------------------------------------------------------------------------------------------------ expiries
 
 def test_default_expiry_nearest_and_the_expiry_day_rule():
@@ -363,3 +375,19 @@ def test_live_spends_one_chain_and_one_price_token_per_poll():
     route = next(r for r in oc_routes.router.routes if getattr(r, "path", "") == "/api/option-chain/{underlying}/live")
     deps = [d.dependency for d in route.dependencies]
     assert chains_rate_limit in deps and ltp_rate_limit in deps
+
+
+def test_live_refuses_a_past_expiry(monkeypatch, memory_cache):
+    headers, me = _v2_owner("oc1-past@example.com")
+    _store_credentials(me)
+    broker = _setup_routes(monkeypatch, _chain(change=True), today=date(2026, 10, 21))
+    res = client.get("/api/option-chain/NIFTY/live?expiry=2026-10-20", headers=headers)
+    assert res.status_code == 422 and res.json()["detail"] == "That expiry has passed. Pick today's or a later expiry."
+    assert broker.asked == []                                                   # the broker is not asked
+    assert client.get("/api/option-chain/NIFTY/live?expiry=2026-10-21", headers=headers).status_code == 200   # today is fine
+
+
+def test_cors_exposes_the_request_id_and_the_data_tier():
+    res = client.get("/api/option-chain/NIFTY/expiries", headers={"Origin": "https://app.example.com"})
+    exposed = {h.strip().lower() for h in res.headers.get("access-control-expose-headers", "").split(",")}
+    assert {"x-request-id", "x-data-tier"} <= exposed

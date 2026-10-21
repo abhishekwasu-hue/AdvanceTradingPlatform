@@ -78,6 +78,9 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null): Opti
   const [loading, setLoading] = useState(true);
   const [problem, setProblem] = useState<ChainProblem | null>(null);
   const lastRead = useRef(0);
+  // A page left open past an expiry: the server refuses the passed date (422) and the list is read again.
+  const [listRound, setListRound] = useState(0);
+  const retriedFor = useRef<string | null>(null);
 
   // 1. The expiry list for the symbol; the default expiry is chosen as soon as it answers.
   useEffect(() => {
@@ -96,7 +99,7 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null): Opti
       setListFor(symbol);
     });
     return () => { alive = false; };
-  }, [symbol]);
+  }, [symbol, listRound]);
 
   const expiryRef = useRef<string | null>(null);
   expiryRef.current = expiry;
@@ -131,7 +134,16 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null): Opti
         // Opened without a list (the broker's nearest expiry): the answer names it.
         if (!expiry && chain.expiry) setExpiryState(chain.expiry);
       },
-      onError: (e) => { setProblem(problemOf(e)); setLoading(false); },
+      onError: (e) => {
+        // Once per expiry, so a list that still names it shows "could not load" instead of reading in a loop.
+        if (e instanceof ApiError && e.status === 422 && expiry && retriedFor.current !== `${symbol}|${expiry}`) {
+          retriedFor.current = `${symbol}|${expiry}`;
+          setListRound((n) => n + 1);
+          return;
+        }
+        setProblem(problemOf(e));
+        setLoading(false);
+      },
     });
   }, [symbol, expiry, listReady, visible]);
 

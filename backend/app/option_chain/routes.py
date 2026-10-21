@@ -291,6 +291,8 @@ async def live(underlying: str, expiry: Optional[date] = Query(default=None), us
     name = _symbol(underlying)
     now = datetime.now(timezone.utc)
     today = chain_view.today_ist(now)
+    if expiry is not None and expiry < today:
+        raise HTTPException(status_code=422, detail="That expiry has passed. Pick today's or a later expiry.")
     if expiry is None:
         holidays = await family_holidays(session, _holiday_family(name))
         items, _ = await chain_view.expiry_list(session, name, today, holidays)

@@ -17,7 +17,8 @@ Nothing here places, changes or suggests an order.
   and the highest put OI (a tie takes the lower strike).
 * **IV.** `app.options_builder.chain.option_iv`: the broker's quote read both as a fraction and as a percentage and kept
   only if one reading reprices the option's last price (so a deep-ITM 2.5 % stays 2.5 %), else solved from that price;
-  shown in percent. Greeks are Black-Scholes on that IV (`greeks.black_scholes`).
+  shown in percent. With no price to check against (no LTP, spot or expiry), a quote of 3 or more is a percentage and
+  one under 3 gives no IV (it could be either reading). Greeks are Black-Scholes on that IV (`greeks.black_scholes`).
 * **OI change.** The broker's change in OI since the previous session where it sends one. Otherwise it is the change
   since this organisation's first reading of the day for that underlying and expiry (kept in the cache while the page
   is open): "building" until that reading is BUILD_MINUTES old, during market hours only.
@@ -45,6 +46,7 @@ from app.options_builder.chain import option_iv
 MAX_EXPIRIES = 10                 # the picker lists the next ten expiries at most
 BUILD_MINUTES = 5                 # OI change from the first reading shows once that reading is this old
 BASELINE_TTL_SECONDS = 3600       # the cache's cap; renewed on every read while the page is open
+NO_PRICE_PERCENT_FLOOR = 3.0      # without a price to reprice: a quoted IV from here up can only be a percentage
 MASTER_BROKER = master.UPSTOX_BROKER
 
 
@@ -196,11 +198,14 @@ def _leg(row: OptionChainRow, side: str, spot: Optional[float], years: Optional[
     quoted = _finite(getattr(row, p + "iv"))
     quoted = quoted if quoted is not None and quoted > 0 else None
     kind = OptionType.CALL if side == "call" else OptionType.PUT
-    if spot is not None and years is not None and years > 0:
+    if ltp is not None and ltp > 0 and spot is not None and years is not None and years > 0:
         sigma = option_iv(quoted, ltp, spot, row.strike, years, RISK_FREE_RATE, kind)
+    elif quoted is not None and quoted >= NO_PRICE_PERCENT_FLOOR:
+        # Nothing to reprice against: only a quote that can only be a percentage (3 and up) is shown; under 3 it could
+        # be a fraction (0.14) or a real low percentage (2.5), so no IV is shown rather than a guess.
+        sigma = quoted / 100.0
     else:
-        # No spot or no expiry: nothing to reprice against - the quote alone, read as option_iv reads it without a price.
-        sigma = option_iv(quoted, None, 0.0, row.strike, 0.0, RISK_FREE_RATE, kind)
+        sigma = None
     iv = sigma * 100.0 if sigma is not None else None
     greeks: Dict[str, Optional[float]] = {"delta": _finite(getattr(row, p + "delta")), "gamma": None, "theta": None, "vega": None}
     if iv is not None and spot is not None and years is not None:

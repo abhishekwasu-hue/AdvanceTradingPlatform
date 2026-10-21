@@ -91,6 +91,9 @@ describe("OC1 automatic symbol and expiry", () => {
     expect(hookSource).toContain("loadExpiryChoice(symbol, api.optionChainExpiries)");
     expect(hookSource).toContain("api.optionChainLive(symbol, expiry)");
     expect(hookSource).toContain("usePageVisible()");
+    // A passed expiry (the page left open overnight): the server's 422 reads the list again for today's default.
+    expect(hookSource).toContain("e.status === 422 && expiry && retriedFor.current !== `${symbol}|${expiry}`");
+    expect(hookSource).toContain("}, [symbol, listRound]);");
     expect(pageSource).not.toMatch(/Analy[sz]e|Refresh|Load chain|Show chain/);
     const html = view();
     expect(html).toMatch(/<option value="NIFTY" selected="">NIFTY<\/option>/);

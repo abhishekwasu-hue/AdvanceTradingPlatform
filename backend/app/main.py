@@ -217,6 +217,9 @@ app.add_middleware(
     allow_origins=ALLOWED_ORIGINS,
     allow_methods=["*"],
     allow_headers=["*"],
+    # OC1: a cross-origin page (the Android app) may read these response headers - the request id support asks for, and
+    # the data tier of a refused market-data read ("C": not live on this plan).
+    expose_headers=["X-Request-ID", "X-Data-Tier"],
 )
 
 

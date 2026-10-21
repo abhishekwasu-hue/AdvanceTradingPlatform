@@ -115,23 +115,33 @@ def _result(status: str, message: str) -> ConnectResult:
 
 # --- reading the pasted fields ----------------------------------------------------------------------
 
+def _label(entry: cat.BrokerEntry, key: str) -> str:
+    """A field's label inside a sentence: "Access token" reads "access token"; names and acronyms ("Analytics Token",
+    "API key", "Client ID", "PIN") stay as they are."""
+    text = entry.label_of(key)
+    return text[0].lower() + text[1:] if text[1:] == text[1:].lower() else text
+
+
 def _clean_fields(entry: cat.BrokerEntry, raw: Dict[str, Any], allowed: Tuple[str, ...]) -> Dict[str, str]:
     """The pasted values, trimmed, for the allowed keys only. A key the method does not use, a non-text value, or a
     value that is too long or spans lines is refused with a plain sentence (which never repeats the value)."""
     out: Dict[str, str] = {}
     for key, value in (raw or {}).items():
         if key not in allowed:
-            wanted = " and ".join(entry.label_of(k) for k in allowed) or "nothing"
+            if not allowed:
+                raise _Refusal(f"{entry.name} logs in with the details already saved; send the form empty and try again.")
+            shown = tuple(k for k in allowed if k in entry.field_keys() + entry.renew_keys()) or allowed
+            wanted = " and ".join(_label(entry, k) for k in shown)
             raise _Refusal(f"{entry.name} needs only the {wanted}; remove the other fields and try again.")
         if value is None:
             continue
         if not isinstance(value, str):
-            raise _Refusal(f"Paste the {entry.label_of(key)} as text and try again.")
+            raise _Refusal(f"Paste the {_label(entry, key)} as text and try again.")
         text = value.strip()
         if not text:
             continue
         if len(text) > MAX_FIELD_LENGTH or "\n" in text or "\r" in text:
-            raise _Refusal(f"That does not look like a {entry.label_of(key)}; copy it again as one line and paste it.")
+            raise _Refusal(f"That does not look like a valid {_label(entry, key)}; copy it again as one line and paste it.")
         out[key] = text
     return out
 
@@ -139,14 +149,14 @@ def _clean_fields(entry: cat.BrokerEntry, raw: Dict[str, Any], allowed: Tuple[st
 def _require(entry: cat.BrokerEntry, values: Dict[str, str], keys: Tuple[str, ...]) -> None:
     missing = [k for k in keys if not values.get(k)]
     if missing:
-        raise _Refusal(f"Paste your {' and '.join(entry.label_of(k) for k in missing)} and try again.")
+        raise _Refusal(f"Paste your {' and '.join(_label(entry, k) for k in missing)} and try again.")
 
 
 def _no_spaces(entry: cat.BrokerEntry, values: Dict[str, str], keys: Tuple[str, ...]) -> None:
     """Tokens, keys and codes never contain spaces; a password (Shoonya) may, so only these keys are checked."""
     for key in keys:
         if key in values and any(c.isspace() for c in values[key]):
-            raise _Refusal(f"That does not look like a {entry.label_of(key)}; copy it again as one line and paste it.")
+            raise _Refusal(f"That does not look like a valid {_label(entry, key)}; copy it again as one line and paste it.")
 
 
 # --- messages ---------------------------------------------------------------------------------------
@@ -409,6 +419,7 @@ async def _connect_upstox(entry: cat.BrokerEntry, body: ConnectBody, user: User,
     if len(token) > ua.MAX_TOKEN_LENGTH:
         raise _Refusal("That does not look like an Upstox token; copy it again as one line and paste it.")
 
+    await _holder_check(session, user, entry.broker, label, {}, login=False)    # before any call to Upstox
     kind = ua.token_kind_from_claims(token)
     if kind is None:
         kind = await ua.probe_token_kind(token)
@@ -419,7 +430,6 @@ async def _connect_upstox(entry: cat.BrokerEntry, body: ConnectBody, user: User,
     if kind == ua.REJECTED_KIND:
         raise _Refusal("Upstox did not accept this token; copy it again from Upstox Developer Apps and paste it here.")
 
-    await _holder_check(session, user, entry.broker, label, {}, login=False)
     if kind == ua.ANALYTICS_KIND:
         record, _ = await save_credentials(session, user, entry.broker, label, BrokerCredentials(analytics_token=token))
         if pasted_as != cat.ANALYTICS_TOKEN:

@@ -406,7 +406,7 @@ def test_trader_role_and_scope_are_required():
     owner = _org("roles")
     tenant_id = _tenant(owner)
     viewer = _member(f"p2a-viewer-{uuid.uuid4().hex[:6]}@example.com", tenant_id, "VIEWER")
-    denied = _member(f"p2a-denied-{uuid.uuid4().hex[:6]}@example.com", tenant_id, "TRADER", deny=("brokers:write",))
+    denied = _member(f"p2a-denied-{uuid.uuid4().hex[:6]}@example.com", tenant_id, "USER", deny=("brokers:write",))
     for headers in (viewer, denied):
         for path in ("/api/broker/upstox/connect", "/api/broker/dhan/renew"):
             response = client.post(path, headers=headers, json={"fields": {"analytics_token": ANALYTICS_JWT}})
@@ -415,6 +415,8 @@ def test_trader_role_and_scope_are_required():
         assert client.get("/api/broker/connections", headers=headers).status_code == 200
     assert client.post("/api/broker/upstox/connect", json={"fields": {}}).status_code == 401
     assert _row(tenant_id, "upstox") is None
+    trader = _member(f"p2a-trader-{uuid.uuid4().hex[:6]}@example.com", tenant_id, "USER")
+    assert _connect(trader, "upstox", {"analytics_token": ANALYTICS_JWT})["status"] == "connected"
 
 
 def test_another_organisation_sees_and_touches_nothing():
@@ -442,3 +444,26 @@ def test_removal_is_the_existing_delete_route():
     _connect(headers, "upstox", {"analytics_token": ANALYTICS_JWT})
     assert client.delete("/api/broker/upstox/credentials", headers=headers).status_code == 204
     assert _connections(headers) == []
+
+
+def test_bt1b_another_members_connection_is_not_stored_over_or_logged_in_to():
+    """With the bring-your-own-broker tier on (test tenant only), a connection is its holder's: another member's connect
+    without a full take-over and their renew are refused with a plain sentence, and the holder's row is unchanged."""
+    from tests.test_bt1_byob_data_tier import _flag
+    from tests.test_z10c_tenancy_fixes import _member
+    holder = _org("holder")
+    tenant_id = _tenant(holder)
+    other = _member(f"p2a-other-{uuid.uuid4().hex[:6]}@example.com", tenant_id, "USER")
+    _connect(holder, "upstox", {"analytics_token": ANALYTICS_JWT})
+    _connect(holder, "dhan", {"client_id": "1000001", "access_token": DHAN_TOKEN})
+    _flag(True, [tenant_id])
+    try:
+        for broker, fields, renew in [("upstox", {"analytics_token": OPAQUE_ANALYTICS}, False),
+                                      ("dhan", {"client_id": "2", "access_token": DHAN_TOKEN_2}, False),
+                                      ("dhan", {"access_token": DHAN_TOKEN_2}, True)]:
+            out = _connect(other, broker, fields, renew=renew)
+            assert out["status"] == "not_working" and "Another member" in out["message"], (broker, out)
+    finally:
+        _flag(False)
+    assert load_credentials(_row(tenant_id, "upstox")).analytics_token == ANALYTICS_JWT
+    assert load_credentials(_row(tenant_id, "dhan")).access_token == DHAN_TOKEN

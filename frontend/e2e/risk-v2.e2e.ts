@@ -115,6 +115,16 @@ test.describe("v2 risk 1440 desktop", () => {
     expect(writes.calls.filter((c) => c.url === "/risk-settings")).toHaveLength(0);
   });
 
+  test("with the pause turned off (0%), any halving level is fine: a lower daily loss limit saves", async ({ page }) => {
+    const writes = await open(page, "light", { riskSettings: { dd_level_1_pct: 5, dd_level_2_pct: 0 } });
+    await page.getByLabel("Daily loss limit (% of capital)").fill("2");
+    await page.getByRole("button", { name: "Save limits" }).click();
+    await expect(page.locator("[data-note='save']")).toHaveText("Saved. Every paper and live entry now uses these limits and guardian rules.");
+    await expect(page.locator("[data-field='dd_level_1_pct'] [role='alert']")).toHaveCount(0);
+    const put = writes.calls.find((c) => c.method === "PUT" && c.url === "/risk-settings");
+    expect(put?.body).toEqual({ ...(T.risk_settings as object), dd_level_1_pct: 5, dd_level_2_pct: 0, max_daily_loss_pct: 2 });
+  });
+
   test("removing an event: a neutral button, then a confirm that names what changes", async ({ page }) => {
     const writes = await open(page, "light");
     const row = page.locator("[data-event='32']");
@@ -128,6 +138,7 @@ test.describe("v2 risk 1440 desktop", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toContainText("Remove this market event?");
     await expect(dialog).toContainText("New entries in RELIANCE will no longer be blocked on 23 Oct 2026.");
+    await expect(dialog).toContainText("You can add it again later.");
     const described = await dialog.getAttribute("aria-describedby");
     await expect(page.locator(`[id="${described}"]`)).toContainText("will no longer be blocked");     // read with the title
     await dialog.getByRole("button", { name: "Cancel" }).click();

@@ -107,7 +107,8 @@ export default function PositionsV2(_props: PageProps = {}) {
         <PageTitleV2 title="My positions" subtitle="What you hold now and how it is doing." />
         <div>
           <BrokerGateView state={broker} onConnect={() => navigate(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)}
-            onLogin={login.login} onRetry={refreshBroker} busy={login.busy} error={login.error} codeStep={login.codeStep} onSubmitCode={login.submitCode} />
+            onLogin={login.login} onRetry={refreshBroker} busy={login.busy} error={login.error} codeStep={login.codeStep} onSubmitCode={login.submitCode}
+            positionsShown={signedIn} />
         </div>
         {signedIn && (
           // Shown whatever the broker state - even while the broker check is still running or never answers - so the

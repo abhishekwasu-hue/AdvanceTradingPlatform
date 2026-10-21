@@ -19,11 +19,13 @@ export interface TradingMocks {
   exposureFail?: boolean;
   /** Answer /paper/account and /paper/ladder (the paper account card with "Pause new PAPER entries"); left out: 404. */
   paperAccount?: boolean;
+  /** Replaces fields of the /risk-settings reply. */
+  riskSettings?: Record<string, number>;
 }
 
 export interface Writes { calls: { method: string; url: string; body: unknown }[] }
 
-export async function mockTrading(page: Page, { empty = false, positionsFail = false, exposureFail = false, paperAccount = false }: TradingMocks = {}): Promise<Writes> {
+export async function mockTrading(page: Page, { empty = false, positionsFail = false, exposureFail = false, paperAccount = false, riskSettings }: TradingMocks = {}): Promise<Writes> {
   const writes: Writes = { calls: [] };
   const exposure = empty
     ? { ...(T.exposure as object), open_positions: 0, gross_notional: 0, net_notional: 0, long_notional: 0, short_notional: 0, gross_pct_of_capital: 0,
@@ -35,7 +37,7 @@ export async function mockTrading(page: Page, { empty = false, positionsFail = f
     [api("/positions$"), () => (empty ? [] : T.positions)],
     [api("/trades$"), () => (empty ? [] : T.trades)],
     [api("/portfolio/exposure"), () => exposure],
-    [api("/risk-settings$"), () => T.risk_settings],
+    [api("/risk-settings$"), () => ({ ...(T.risk_settings as object), ...riskSettings })],
     [api("/risk-settings/ceilings$"), () => T.ceilings],
     [api("/risk-guardian/status$"), () => T.guardian],
     [api("/risk-guardian/events(\\?|$)"), () => events],

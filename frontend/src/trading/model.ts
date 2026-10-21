@@ -438,11 +438,12 @@ export function fieldProblem(raw: string, ceiling?: number | null, minimum?: num
   return null;
 }
 
-/** The drawdown ladder halves the size before it pauses entries: the first level may not be above the second. Only an
- * added check - it never lets through anything the server would refuse. */
+/** The drawdown ladder halves the size before it pauses entries: the first level may not be above the second while the
+ * pause is on. The server refuses exactly `dd_level_1 > dd_level_2 > 0`; a pause level of 0 turns the pause off, so any
+ * halving level is accepted then. Never stricter than the server, so no other change is ever held back by it. */
 export function drawdownOrderProblem(level1: string, level2: string): string | null {
   const a = Number(level1.trim());
   const b = Number(level2.trim());
-  if (level1.trim() === "" || level2.trim() === "" || !Number.isFinite(a) || !Number.isFinite(b) || a <= b) return null;
+  if (level1.trim() === "" || level2.trim() === "" || !Number.isFinite(a) || !Number.isFinite(b) || !(a > b && b > 0)) return null;
   return `Halve the size at a drawdown no larger than the one that pauses new entries (${formatNumber(b, Number.isInteger(b) ? 0 : 2)}%).`;
 }

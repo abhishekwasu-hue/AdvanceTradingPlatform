@@ -65,7 +65,8 @@ for (const size of PHONES) {
       test.skip(size.width !== 390, "one baseline of the gated state");
       await open(page, "light", { broker: "login", paperAccount: true });
       await expect(page.locator("[data-block='exits']")).toBeVisible();
-      await expect(page).toHaveScreenshot("positions-v2-login-390-light.png", { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
+      await expect(page.getByTestId("paper-account")).toBeVisible();
+      await expect(page).toHaveScreenshot("positions-v2-login-390-light.png", { animations: "disabled", fullPage: true, maxDiffPixelRatio: 0.02, timeout: 15_000 });
     });
 
     for (const state of [{ name: "connected" }, { name: "empty", empty: true }, { name: "login", broker: "login" as const, paperAccount: true }]) {
@@ -169,7 +170,10 @@ test.describe("v2 positions 1440 desktop", () => {
 
   test("before the day's broker login: 'Log in to Upstox', and the paper exits still work", async ({ page }) => {
     const writes = await open(page, "light", { broker: "login" });
-    await expect(page.locator("[data-broker-gate='login-needed']").getByRole("button", { name: "Log in to Upstox" })).toBeVisible();
+    const gate = page.locator("[data-broker-gate='login-needed']");
+    await expect(gate.getByRole("button", { name: "Log in to Upstox" })).toBeVisible();
+    await expect(gate).toContainText("Your Upstox session has ended. Log in to see live prices.");
+    await expect(gate).not.toContainText("your positions");                     // they are listed right below
     const card = page.locator("[data-block='exits']");
     await expect(card).toContainText("You can still exit a paper position here.");
     await expect(card.locator("[data-position]")).toHaveCount(3);

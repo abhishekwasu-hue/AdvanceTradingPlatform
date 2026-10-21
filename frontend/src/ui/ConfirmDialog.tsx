@@ -38,6 +38,9 @@ export function ConfirmDialog({ open, onOpenChange, title, consequence, confirmL
             {confirmLabel}
           </button>
         </>
-      )} />
+      )}>
+      {/* A short body line, so the dialog has no empty padded box; the shared Dialog is left as it is for every other use. */}
+      <p className="text-t13 text-fg-muted">You can add it again later.</p>
+    </Dialog>
   );
 }

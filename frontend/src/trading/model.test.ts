@@ -159,11 +159,14 @@ describe("Risk limits", () => {
     expect(fieldProblem("5", null, 0)).toBeNull();
   });
 
-  it("the drawdown ladder halves the size before it pauses entries (an added check only)", () => {
+  it("the drawdown ladder halves the size before it pauses entries (the server's own rule, never stricter)", () => {
     expect(drawdownOrderProblem("12", "10")).toBe("Halve the size at a drawdown no larger than the one that pauses new entries (10%).");
     expect(drawdownOrderProblem("10", "10")).toBeNull();
     expect(drawdownOrderProblem("5", "10")).toBeNull();
     expect(drawdownOrderProblem("", "10")).toBeNull();                  // the blank field has its own message
+    // A pause level of 0 turns the pause off; the server then accepts any halving level, and so does the page.
+    expect(drawdownOrderProblem("5", "0")).toBeNull();
+    expect(drawdownOrderProblem("12", "0")).toBeNull();
   });
 });
 

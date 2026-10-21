@@ -73,6 +73,9 @@ export function UpstoxRedirectUrlView({ info, copyState = "idle", onCopy, inputR
         {copyState === "selected" && "The address is selected: copy it with your keyboard or the browser menu. "}
         Paste this address into the Redirect URL field of your app in the Upstox developer portal.
       </p>
+      {info.redirect_uri_will_be_replaced && (
+        <p data-redirect-replaced className="text-xs text-fg-muted">The next login uses this address.</p>
+      )}
       {info.redirect_uri_mismatch && (
         <p role="status" data-redirect-mismatch className="flex items-start gap-2 rounded bg-warn-tint px-3 py-2 text-xs text-warn">
           <TriangleAlert size={14} aria-hidden className="mt-0.5 shrink-0" />

@@ -10,6 +10,7 @@ describe("D2 BrokerTokenBanner: the Upstox redirect line", () => {
     const html = renderToStaticMarkup(<RedirectUriNote t={{ ...tokenRow("upstox"), oauth_callback_url: PUBLIC, redirect_uri_mismatch: false }} />);
     expect(html).toContain(PUBLIC);
     expect(html).not.toContain("data-redirect-mismatch");
+    expect(html).not.toContain("The next login uses this address.");
   });
 
   it("points to Settings instead of an address the login will not use when the saved one differs", () => {
@@ -18,6 +19,14 @@ describe("D2 BrokerTokenBanner: the Upstox redirect line", () => {
     expect(html).toContain("The saved Redirect URI differs from this site&#x27;s address - see Settings");
     expect(html).not.toContain(PUBLIC);
     expect(html).not.toMatch(/text-down|bg-down/);                          // neutral, not an error
+  });
+
+  it("a saved URI the next login replaces: the public address, and that the next login uses it", () => {
+    const html = renderToStaticMarkup(<RedirectUriNote t={{ ...tokenRow("upstox"), oauth_callback_url: PUBLIC, redirect_uri_mismatch: false,
+      redirect_uri_will_be_replaced: true }} />);
+    expect(html).toContain(PUBLIC);
+    expect(html).toContain("The next login uses this address.");
+    expect(html).not.toContain("data-redirect-mismatch");
   });
 
   it("shows nothing for a broker without the OAuth redirect", () => {

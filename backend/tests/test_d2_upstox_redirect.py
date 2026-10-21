@@ -46,7 +46,8 @@ def test_without_public_base_url_the_request_address_is_used(monkeypatch):
     monkeypatch.setattr(app_config, "PUBLIC_BASE_URL", "")
     headers = _auth("d2-nobase@example.com")
     body = client.get("/api/broker/upstox/redirect-url", headers=headers).json()
-    assert body == {"redirect_url": "http://testserver" + PATH, "redirect_uri_mismatch": False, "accounts": []}
+    assert body == {"redirect_url": "http://testserver" + PATH, "redirect_uri_mismatch": False, "accounts": [],
+                    "redirect_uri_will_be_replaced": False}
     _store(headers)
     assert _start_redirect(headers) == "http://testserver" + PATH
 
@@ -54,14 +55,15 @@ def test_without_public_base_url_the_request_address_is_used(monkeypatch):
 def test_with_public_base_url_every_derivation_uses_it(public_base):
     headers = _auth("d2-base@example.com")
     body = client.get("/api/broker/upstox/redirect-url", headers=headers).json()
-    assert body == {"redirect_url": public_base, "redirect_uri_mismatch": False, "accounts": []}
+    assert body == {"redirect_url": public_base, "redirect_uri_mismatch": False, "accounts": [], "redirect_uri_will_be_replaced": False}
     _store(headers)
     status = {r["broker_name"]: r for r in client.get("/api/broker/token-status", headers=headers).json()}["upstox"]
     assert status["oauth_callback_url"] == public_base
     # No stored Redirect URI: the start sends the public one and remembers it, so the exchange sends the same.
     assert _start_redirect(headers) == public_base
     body = client.get("/api/broker/upstox/redirect-url", headers=headers).json()
-    assert body["accounts"] == [{"account_label": "primary", "redirect_uri_set": True, "redirect_uri_mismatch": False}]
+    assert body["accounts"] == [{"account_label": "primary", "redirect_uri_set": True, "redirect_uri_mismatch": False,
+                                 "redirect_uri_will_be_replaced": False}]
     assert body["redirect_uri_mismatch"] is False
 
 
@@ -75,8 +77,8 @@ def test_a_stored_redirect_uri_on_a_domain_that_differs_is_flagged_not_rewritten
     assert body["redirect_url"] == public_base
     assert body["redirect_uri_mismatch"] is True
     assert body["accounts"] == [
-        {"account_label": "primary", "redirect_uri_set": True, "redirect_uri_mismatch": True},
-        {"account_label": "second", "redirect_uri_set": True, "redirect_uri_mismatch": False},
+        {"account_label": "primary", "redirect_uri_set": True, "redirect_uri_mismatch": True, "redirect_uri_will_be_replaced": False},
+        {"account_label": "second", "redirect_uri_set": True, "redirect_uri_mismatch": False, "redirect_uri_will_be_replaced": False},
     ]
     # Booleans and the public URL only: no stored value, no other credential field.
     for secret in (OTHER, "other.example.org", "client-d2", "secret-d2"):
@@ -117,11 +119,13 @@ def test_the_callback_exchange_uses_the_public_url_when_nothing_is_stored(public
 def test_redirect_url_needs_a_login_and_shows_only_the_callers_organisation(public_base):
     assert client.get("/api/broker/upstox/redirect-url").status_code in (401, 403)
     owner_a = _auth("d2-tenant-a@example.com")
-    _store(owner_a, redirect_uri=OLD)
-    assert client.get("/api/broker/upstox/redirect-url", headers=owner_a).json()["redirect_uri_mismatch"] is True
+    _store(owner_a, redirect_uri=OTHER)
+    _store(owner_a, label="old", redirect_uri=OLD)
+    body_a = client.get("/api/broker/upstox/redirect-url", headers=owner_a).json()
+    assert body_a["redirect_uri_mismatch"] is True and body_a["redirect_uri_will_be_replaced"] is True
     owner_b = _auth("d2-tenant-b@example.com")
     body = client.get("/api/broker/upstox/redirect-url", headers=owner_b).json()
-    assert body == {"redirect_url": public_base, "redirect_uri_mismatch": False, "accounts": []}
+    assert body == {"redirect_url": public_base, "redirect_uri_mismatch": False, "accounts": [], "redirect_uri_will_be_replaced": False}
 
 
 def test_other_brokers_are_not_listed(public_base):
@@ -173,39 +177,53 @@ def test_a_request_through_another_host_still_gets_the_public_url(public_base):
 
 def test_token_status_flags_the_account_whose_stored_redirect_uri_differs(public_base):
     headers = _auth("d2-status@example.com")
-    _store(headers, redirect_uri=OLD)
+    _store(headers, redirect_uri=OTHER)
     _store(headers, label="second", redirect_uri=public_base)
     _store(headers, label="third")
+    _store(headers, label="old", redirect_uri=OLD)
     client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
     response = client.get("/api/broker/token-status", headers=headers)
     rows = {(r["broker_name"], r["account_label"]): r for r in response.json()}
-    assert rows[("upstox", "primary")]["redirect_uri_mismatch"] is True
-    assert rows[("upstox", "second")]["redirect_uri_mismatch"] is False
-    assert rows[("upstox", "third")]["redirect_uri_mismatch"] is False
-    assert rows[("zerodha", "primary")]["redirect_uri_mismatch"] is None
-    assert OLD not in response.text and "192.0.2.10" not in response.text
+    flags = {key: (row["redirect_uri_mismatch"], row["redirect_uri_will_be_replaced"]) for key, row in rows.items()}
+    assert flags == {
+        ("upstox", "primary"): (True, False),       # a domain name: kept, the trader changes it
+        ("upstox", "second"): (False, False),
+        ("upstox", "third"): (False, False),
+        ("upstox", "old"): (False, True),           # an IP address over http: the next login replaces it
+        ("zerodha", "primary"): (None, None),
+    }
+    for value in (OLD, "192.0.2.10", OTHER, "other.example.org"):
+        assert value not in response.text
 
 
 # --- owner order: a stored Redirect URI left over on an IP address or plain http is replaced (Upstox UDAPI100068) -----
 
-def _stored_uri(headers: dict, label: str = "primary") -> str:
-    """The stored Redirect URI of one Upstox account, read from the database (the API never returns it)."""
+def _stored_record(headers: dict, label: str = "primary"):
+    """One Upstox account's credential row, read from the database (the API never returns its values)."""
     import asyncio
 
     from sqlalchemy import select
 
-    from app.brokers.token_lifecycle import load_credentials
     from app.db.models import BrokerCredentialRecord
     from tests.test_auth_api import _session_factory
     tenant_id = client.get("/api/auth/me", headers=headers).json()["tenant_id"]
 
-    async def read() -> str:
+    async def read():
         async with _session_factory() as session:
             record = await session.scalar(select(BrokerCredentialRecord).where(
                 BrokerCredentialRecord.tenant_id == tenant_id, BrokerCredentialRecord.broker_name == "upstox",
                 BrokerCredentialRecord.account_label == label))
-            return load_credentials(record).redirect_uri
+            return record
     return asyncio.run(read())
+
+
+def _stored_credentials(headers: dict, label: str = "primary"):
+    from app.brokers.token_lifecycle import load_credentials
+    return load_credentials(_stored_record(headers, label))
+
+
+def _stored_uri(headers: dict, label: str = "primary") -> str:
+    return _stored_credentials(headers, label).redirect_uri
 
 
 @pytest.mark.parametrize("stale", [
@@ -213,14 +231,27 @@ def _stored_uri(headers: dict, label: str = "primary") -> str:
     "https://192.0.2.10" + PATH,               # an IP address over https
     "https://[2001:db8::1]" + PATH,            # an IPv6 address
     "http://atp.example.org" + PATH,           # a domain name, but plain http
+    "https://3221226122" + PATH,               # an IPv4 address as one integer
+    "https://0xc0.0x0.0x2.0xa" + PATH,         # an IPv4 address in hex parts
+    "https://0xc000020a" + PATH,               # an IPv4 address as one hex number
 ])
 def test_oauth_start_replaces_a_stale_stored_redirect_uri_with_the_public_one(public_base, stale):
     headers = _auth(f"d2-stale-{abs(hash(stale))}@example.com")
-    _store(headers, redirect_uri=stale)
-    assert client.get("/api/broker/upstox/redirect-url", headers=headers).json()["redirect_uri_mismatch"] is True
+    _store(headers, redirect_uri=stale, access_token="d2-access")
+    before = _stored_credentials(headers)
+    body = client.get("/api/broker/upstox/redirect-url", headers=headers).json()
+    # Not a mismatch for the trader to fix: the next login replaces it by itself.
+    assert body["redirect_uri_mismatch"] is False and body["redirect_uri_will_be_replaced"] is True
+    assert body["accounts"][0]["redirect_uri_will_be_replaced"] is True
     assert _start_redirect(headers) == public_base
-    assert _stored_uri(headers) == public_base                                      # re-saved, encrypted
-    assert client.get("/api/broker/upstox/redirect-url", headers=headers).json()["redirect_uri_mismatch"] is False
+    after = _stored_credentials(headers)
+    assert after.redirect_uri == public_base                                        # re-saved, encrypted
+    # Only the Redirect URI changed.
+    for field in ("api_key", "api_secret", "access_token", "request_token", "client_id"):
+        assert getattr(after, field) == getattr(before, field), field
+    assert before.access_token == "d2-access"
+    body = client.get("/api/broker/upstox/redirect-url", headers=headers).json()
+    assert body["redirect_uri_mismatch"] is False and body["redirect_uri_will_be_replaced"] is False
     logs = client.get("/api/audit-logs", headers=headers).json()
     replaced = [entry for entry in logs if entry["event"] == "broker_redirect_uri_replaced"]
     assert len(replaced) == 1 and "192.0.2" not in replaced[0]["detail"] and "2001:db8" not in replaced[0]["detail"]
@@ -270,6 +301,9 @@ def test_the_callback_exchange_replaces_a_stale_stored_redirect_uri(public_base,
     assert parse_qs(urlparse(response.headers["location"]).query) == {"broker": ["upstox"], "connected": ["1"]}
     assert seen["redirect_uri"] == public_base
     assert _stored_uri(headers) == public_base
+    logs = client.get("/api/audit-logs", headers=headers).json()
+    replaced = [entry for entry in logs if entry["event"] == "broker_redirect_uri_replaced"]
+    assert len(replaced) == 1 and "192.0.2" not in replaced[0]["detail"]
 
 
 def test_the_callback_exchange_keeps_a_stored_redirect_uri_on_a_domain_name(public_base, monkeypatch):
@@ -295,3 +329,58 @@ def test_oauth_start_logs_the_client_id_tail_the_redirect_uri_and_the_label_and_
     assert lines == [f"Upstox OAuth start: client_id=…ABCD redirect_uri={public_base} account_label=desk"]
     text = "\n".join(r.getMessage() for r in caplog.records)
     assert client_id not in text and "d2-very-secret-value" not in text
+
+
+def test_a_failed_exchange_with_a_stale_uri_leaves_the_stored_row_byte_identical(public_base, monkeypatch):
+    headers = _auth("d2-cb-fail@example.com")
+    _store(headers, redirect_uri=OLD)
+    before = _stored_record(headers).encrypted_payload
+    me = client.get("/api/auth/me", headers=headers).json()
+
+    class _Refusing:
+        def __init__(self, creds):
+            pass
+
+        async def authenticate(self):
+            raise RuntimeError("UDAPI100068")
+
+    monkeypatch.setattr("app.brokers.routes.get_broker_adapter", lambda name, creds: _Refusing(creds))
+    response = client.get(PATH, params={"code": "c", "state": tl.create_oauth_state(me["tenant_id"], me["id"], "upstox")},
+                          follow_redirects=False)
+    assert parse_qs(urlparse(response.headers["location"]).query)["error"] == ["exchange_failed"]
+    assert _stored_record(headers).encrypted_payload == before
+    assert not any(e["event"] == "broker_redirect_uri_replaced" for e in client.get("/api/audit-logs", headers=headers).json())
+
+
+@pytest.mark.parametrize("stored", [None, OLD])
+def test_oauth_start_refuses_when_the_row_changed_since_it_was_read(public_base, monkeypatch, caplog, stored):
+    """The start's save (the replaced URI, or the first one when none is stored) is conditional on the payload it read:
+    a row stored over meanwhile gets a 409 and keeps what the other request wrote."""
+    from app.brokers import routes
+    from app.brokers.models import BrokerCredentials
+    from app.secrets_store.encryption import encrypt_text
+    from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
+    headers = _auth(f"d2-race-{'none' if stored is None else 'old'}@example.com")
+    _store(headers, **({"redirect_uri": stored} if stored else {}))
+    before = _stored_record(headers).encrypted_payload
+    real = routes.get_credential_record
+
+    async def read_then_changed(session, tenant_id, name, label="primary"):
+        record = await real(session, tenant_id, name, label)
+        # What this request read is no longer what is stored: the row it holds carries an older payload (detached, so
+        # the ORM never writes it back).
+        session.expunge(record)
+        record.encrypted_payload = encrypt_text(BrokerCredentials(api_key="client-d2", api_secret="secret-d2", redirect_uri=stored).model_dump_json(),
+                                                record.tenant_id, PURPOSE_BROKER_CREDENTIAL)
+        return record
+
+    monkeypatch.setattr(routes, "get_credential_record", read_then_changed)
+    with caplog.at_level("INFO", logger="app.brokers.routes"):
+        response = client.get("/api/broker/upstox/oauth/start", headers=headers)
+    assert not any("Upstox OAuth start" in r.getMessage() for r in caplog.records)
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Your broker details changed while signing in - try again."
+    monkeypatch.setattr(routes, "get_credential_record", real)
+    assert _stored_record(headers).encrypted_payload == before
+    events = [e["event"] for e in client.get("/api/audit-logs", headers=headers).json()]
+    assert "broker_oauth_started" not in events and "broker_redirect_uri_replaced" not in events

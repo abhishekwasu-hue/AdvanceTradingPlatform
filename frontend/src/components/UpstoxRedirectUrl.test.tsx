@@ -54,6 +54,19 @@ describe("D2 Upstox Redirect URL: the copy button", () => {
   });
 });
 
+describe("D2 Upstox Redirect URL: a saved URI the next login replaces", () => {
+  it("says the next login uses this address, without the mismatch warning", () => {
+    const replaced: UpstoxRedirectInfo = {
+      redirect_url: URL_, redirect_uri_mismatch: false, redirect_uri_will_be_replaced: true,
+      accounts: [{ account_label: "primary", redirect_uri_set: true, redirect_uri_mismatch: false, redirect_uri_will_be_replaced: true }],
+    };
+    const html = render(replaced);
+    expect(html).toContain("The next login uses this address.");
+    expect(html).not.toContain("data-redirect-mismatch");
+    expect(render(clean)).not.toContain("The next login uses this address.");
+  });
+});
+
 describe("D2 Upstox Redirect URL: the mismatch warning", () => {
   it("is absent when no stored Redirect URI differs", () => {
     const html = render(clean);

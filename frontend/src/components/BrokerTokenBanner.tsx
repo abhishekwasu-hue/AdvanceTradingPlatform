@@ -11,8 +11,9 @@ import type { BrokerTokenInfo } from "../types";
  * registered on the broker's console instead, so the banner opens their login page and takes the
  * pasted one-time code (or the whole redirected address) and finishes the login in one step.
  */
-/** The OAuth row's redirect line. D2: when the account's saved Redirect URI differs from the public one, the login
- * sends the saved one, so a neutral pointer to Settings replaces an address that would not be used. */
+/** The OAuth row's redirect line. D2: when the account's saved Redirect URI (on a domain name) differs from the public
+ * one, the login sends the saved one, so a neutral pointer to Settings replaces an address that would not be used. A
+ * saved one left over on an IP address or plain http is replaced by the next login, which the line says. */
 export function RedirectUriNote({ t }: { t: BrokerTokenInfo }) {
   if (!t.oauth_callback_url) return null;
   if (t.redirect_uri_mismatch) {
@@ -25,6 +26,7 @@ export function RedirectUriNote({ t }: { t: BrokerTokenInfo }) {
   return (
     <span className="text-fg-muted hidden md:inline" title="Register this exact redirect URI on the Upstox developer console">
       redirect URI: <code className="font-mono">{t.oauth_callback_url}</code>
+      {t.redirect_uri_will_be_replaced && <span data-redirect-replaced> The next login uses this address.</span>}
     </span>
   );
 }

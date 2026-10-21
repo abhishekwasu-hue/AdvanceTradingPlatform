@@ -13,7 +13,8 @@
   `GET /api/option-chain/{underlying}/expiries` the next expiries (IST) and the default one (the next on an expiry day);
   `GET /api/option-chain/{underlying}/live?expiry=` the broker's chain through the caller's own session (the same read as
   `POST /api/market-data/option-chains`), the spot and near-month future prices, the summary (ATM, PCR, max pain,
-  ATM IV, days to expiry, highest OI strikes), IV and Greeks per leg and the OI-change state. Reads only.
+  ATM IV, days to expiry, highest OI strikes), IV and Greeks per leg and the OI-change state. Reads only. Both are
+  behind the `ui_v2` flag (404 while it is off), like the other v2-only reads (app/signals_feed/routes.py).
 
 Every reading is recomputed from the stored strikes with the caller's tenant settings (app/option_chain/snapshots.py).
 Nothing here places, changes or suggests an order (ADR-0006).
@@ -33,7 +34,8 @@ from app.db.models import OIAlertLogRecord, OIBannerSettingRecord, User
 from app.db.session import get_session
 from app.brokers.models import OptionChain
 from app.market_data.calendar import family_holidays, market_session_status
-from app.market_data.candles_routes import chains_rate_limit
+from app.market_data.candles_routes import chains_rate_limit, ltp_rate_limit
+from app.platform.controls import flag_enabled
 from app.option_chain import chain_view, oi_regime, snapshots
 from app.option_chain.snapshots import IST
 
@@ -236,6 +238,15 @@ def _symbol(underlying: str) -> str:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+UI_V2_FLAG = "ui_v2"
+
+
+async def _v2_only(session: AsyncSession, user: User) -> None:
+    """OC1: the v2 page's reads exist only while `ui_v2` is on for the organisation (404 otherwise)."""
+    if not await flag_enabled(session, UI_V2_FLAG, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": UI_V2_FLAG})
+
+
 def _holiday_family(underlying: str) -> str:
     """The holiday calendar of the exchange the underlying's options trade on (BSE for SENSEX, else NSE)."""
     return chain_view.spot_instrument(underlying)[1]
@@ -244,6 +255,7 @@ def _holiday_family(underlying: str) -> str:
 @router.get("/{underlying}/expiries")
 async def expiries(underlying: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """OC1: the underlying's next expiries (IST dates) and the one the page opens on."""
+    await _v2_only(session, user)
     name = _symbol(underlying)
     today = chain_view.today_ist()
     holidays = await family_holidays(session, _holiday_family(name))
@@ -267,12 +279,15 @@ async def _last_price(symbol: str, exchange: str, source: Dict[str, Any], user: 
     return float(value) if isinstance(value, (int, float)) and value > 0 else None
 
 
-@router.get("/{underlying}/live", dependencies=[Depends(chains_rate_limit)])
+# Rate limits: one chain read (`market_data_chains`) and one `market_data_ltp` token per poll - the spot and the future
+# are two price reads of the same poll, each also drawing from the broker session's own API budget (api_budget).
+@router.get("/{underlying}/live", dependencies=[Depends(chains_rate_limit), Depends(ltp_rate_limit)])
 async def live(underlying: str, expiry: Optional[date] = Query(default=None), user: User = Depends(get_current_user),
                session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """OC1: one chain ready to show. The chain comes through `POST /api/market-data/option-chains` (the caller's own
     broker session, its entitlement and budget); 409 when no broker session can serve it."""
     from app.market_data.candles_routes import ChainsBody, option_chains
+    await _v2_only(session, user)
     name = _symbol(underlying)
     now = datetime.now(timezone.utc)
     today = chain_view.today_ist(now)

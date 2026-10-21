@@ -39,16 +39,18 @@ export const TEXT = {
   closed: "Market closed — showing the last session's chain",
   loadFailed: "We could not load the option chain. We will try again in a moment.",
   noSession: "Log in to your broker to see the option chain.",
+  plan: "This symbol is not available live on your plan.",
   empty: "Your broker sent no strikes for this expiry.",
 } as const;
 
 export type Note = { key: "closed" | "building" | "since"; text: string };
 
-/** The notes above the chain: market closed (from the market status), OI change still building, or since when the
- * OI change counts (when it is counted from the first reading of the day, not from the broker). */
+/** The notes above the chain: market closed (the server's answer for the underlying's exchange; the system status
+ * until the first answer), OI change still building, or since when the OI change counts (when it is counted from the
+ * first reading of the day, not from the broker). */
 export function chainNotes(live: LiveChain | null, marketOpen: boolean | null, sinceText: (iso: string) => string): Note[] {
   const notes: Note[] = [];
-  const open = marketOpen ?? live?.market_open ?? null;
+  const open = live?.market_open ?? marketOpen;
   if (open === false) notes.push({ key: "closed", text: TEXT.closed });
   if (live && live.oi_change.status === "building" && open !== false) notes.push({ key: "building", text: TEXT.building });
   if (live && live.oi_change.status === "ready" && live.oi_change.source === "first_reading" && live.oi_change.since) {

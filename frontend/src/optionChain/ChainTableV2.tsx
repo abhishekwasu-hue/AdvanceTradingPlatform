@@ -15,6 +15,7 @@ import type { ChainLeg, ChainRow, LiveChain } from "./types";
  *   refresh: a trader who scrolled keeps the place). In-the-money cells are shaded (calls below the spot, puts above).
  * - A bar inside each OI cell shows its share of the side's highest OI; the strikes with the highest call OI and the
  *   highest put OI are marked "Max".
+ * - OI change is neutral text with its sign only (+ / −): the up / down colours are for prices and P&L.
  * - A row opens its full details (`onPick`): a tap, a click, or Enter / Space on the focused row (each row is a tab
  *   stop, not a button: the table stays one control for the phone layout rules).
  */
@@ -27,11 +28,6 @@ function cellText(key: ColumnDef["key"], leg: ChainLeg): string {
     case "ltp": case "bid": case "ask": return formatPrice(leg[key]);
     default: return formatGreek(key, leg[key]);
   }
-}
-
-function changeTone(v: number | null): string {
-  if (typeof v !== "number" || v === 0) return "text-fg";
-  return v > 0 ? "text-up" : "text-down";
 }
 
 const SHOWN_CLASS = { all: "", desktop: "hidden md:table-cell", none: "hidden" } as const;
@@ -87,7 +83,7 @@ export default function ChainTableV2({ live, prefs, centreKey, onPick }: {
         );
       }
       return (
-        <td key={c.key} className={cx(base, c.key === "oi_change" ? changeTone(leg.oi_change) : "text-fg")} data-itm={itm || undefined}>
+        <td key={c.key} className={cx(base, "text-fg")} data-itm={itm || undefined}>
           {cellText(c.key, leg)}
         </td>
       );

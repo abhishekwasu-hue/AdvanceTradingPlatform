@@ -14,7 +14,7 @@ import type { ChainExpiries, LiveChain } from "./types";
  *    when its last answer is older than one interval.
  * A new symbol or expiry drops the old chain, so its numbers are never shown under the new name.
  */
-export type ChainProblem = "no-session" | "failed";
+export type ChainProblem = "no-session" | "plan" | "failed";
 
 /** Step 1, pure: the list and the expiry it selects. A failed read selects nothing (the broker's nearest is read). */
 export async function loadExpiryChoice(symbol: string, read: (symbol: string) => Promise<ChainExpiries>):
@@ -49,8 +49,11 @@ export function startChainPolling(o: {
   return () => { alive = false; if (timer !== undefined) clearTimeout(timer); };
 }
 
+/** A 409 with `X-Data-Tier` is the bring-your-own-broker plan refusing a live read of this symbol; a plain 409 is no
+ * usable broker session; anything else failed. */
 export function problemOf(e: unknown): ChainProblem {
-  return e instanceof ApiError && e.status === 409 ? "no-session" : "failed";
+  if (!(e instanceof ApiError) || e.status !== 409) return "failed";
+  return e.dataTier ? "plan" : "no-session";
 }
 
 export interface OptionChainData {
@@ -108,7 +111,8 @@ export function useOptionChain(symbol: string, marketOpen: boolean | null): Opti
 
   // 2. The chain, now and then on a timer while the tab is shown. The interval follows the market's state at each read.
   const openRef = useRef<boolean | null>(marketOpen);
-  openRef.current = marketOpen ?? live?.market_open ?? null;
+  // The server's own answer first (its exchange's session), the system status until the first answer.
+  openRef.current = live?.market_open ?? marketOpen;
   const hasLive = useRef(false);
   hasLive.current = live !== null;
   useEffect(() => {

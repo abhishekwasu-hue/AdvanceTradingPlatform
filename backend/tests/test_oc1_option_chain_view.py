@@ -16,13 +16,17 @@ from datetime import date, datetime, timedelta, timezone
 import pytest
 
 from app.brokers.models import OptionChain, OptionChainRow, Quote
+from app.core.config import RISK_FREE_RATE
 from app.cache import client as cache_client
 from app.instruments import expiry_data
 from app.market_data import api_budget, candles_routes
 from app.market_data.calendar import SessionStatus
 from app.market_data.stream import tick_cache
 from app.option_chain import chain_view, routes as oc_routes
+from app.option_chain.greeks import BSInputs, black_scholes, time_to_expiry_years
+from app.option_chain.models import OptionType
 from app.option_chain.snapshots import IST
+from tests.test_amw2_watchlists import _set_flag
 from tests.test_auth_api import client
 from tests.test_phase_aa_market_data_api import _Broker, _store_credentials
 from tests.test_phase_k_commercial import _owner
@@ -32,12 +36,19 @@ NOW = datetime(2026, 10, 21, 11, 0, tzinfo=IST)          # a Wednesday, during t
 EXPIRY = date(2026, 10, 27)
 
 
+def _price(spot, strike, sigma, kind):
+    """The Black-Scholes price at NOW for a made-up IV, so a quoted IV reprices its LTP (as a real quote does)."""
+    return black_scholes(BSInputs(spot, strike, time_to_expiry_years(EXPIRY, NOW), RISK_FREE_RATE, sigma, kind)).theoretical_price
+
+
 def _rows(change: bool = False):
-    """Four strikes; worked out by hand below."""
+    """Four strikes; worked out by hand below. At 110 the quotes are IV 14.0 (percent) and 0.16 (a fraction), each with
+    the LTP that IV gives at spot 114."""
     return [
         OptionChainRow(strike=100, call_oi=10, put_oi=60, call_ltp=15.0, put_ltp=0.5,
                        call_change_oi=2 if change else None, put_change_oi=-5 if change else None),
-        OptionChainRow(strike=110, call_oi=20, put_oi=40, call_ltp=7.0, put_ltp=2.5, call_iv=14.0, put_iv=0.16,
+        OptionChainRow(strike=110, call_oi=20, put_oi=40, call_ltp=_price(114.0, 110, 0.14, OptionType.CALL),
+                       put_ltp=_price(114.0, 110, 0.16, OptionType.PUT), call_iv=14.0, put_iv=0.16,
                        call_volume=300, put_volume=200, call_bid=6.9, call_ask=7.1),
         OptionChainRow(strike=120, call_oi=50, put_oi=30, call_ltp=2.0, put_ltp=7.5),
         OptionChainRow(strike=130, call_oi=40, put_oi=10, call_ltp=0.5, put_ltp=16.0),
@@ -93,7 +104,7 @@ def test_rows_carry_both_legs_with_iv_greeks_and_broker_oi_change():
     rows = {r["strike"]: r for r in view["rows"]}
     assert [r["strike"] for r in view["rows"]] == [100, 110, 120, 130]
     atm = rows[110]
-    assert atm["call"]["iv"] == 14.0 and atm["put"]["iv"] == pytest.approx(16.0)
+    assert atm["call"]["iv"] == pytest.approx(14.0) and atm["put"]["iv"] == pytest.approx(16.0)
     assert atm["call"]["volume"] == 300 and atm["call"]["bid"] == 6.9 and atm["call"]["ask"] == 7.1
     assert 0 < atm["call"]["delta"] < 1 and -1 < atm["put"]["delta"] < 0 and atm["call"]["gamma"] > 0
     assert rows[100]["call"]["oi_change"] == 2 and rows[100]["put"]["oi_change"] == -5
@@ -118,10 +129,24 @@ def test_ties_and_missing_values():
     assert view["summary"]["days_to_expiry"] is None and view["summary"]["atm_iv"] is None
 
 
-def test_iv_units():
-    assert chain_view.iv_percent(13.2) == 13.2
-    assert chain_view.iv_percent(0.132) == pytest.approx(13.2)
-    assert chain_view.iv_percent(0) is None and chain_view.iv_percent(None) is None and chain_view.iv_percent("x") is None
+def _one_leg(**row):
+    chain = OptionChain(underlying="NIFTY", expiry=EXPIRY.isoformat(), underlying_ltp=114.0, rows=[OptionChainRow(**row)])
+    return chain_view.build_view(chain, spot=114.0, future=None, expiry=EXPIRY, now=NOW, oi=chain_view.OiChange("none", None))["rows"][0]
+
+
+def test_iv_keeps_the_reading_that_reprices_the_ltp():
+    # A deep-ITM call quoted at IV 2.5 (percent): 2.5 as a fraction (250 %) does not reprice its LTP, 2.5 % does.
+    deep = _one_leg(strike=80, call_iv=2.5, call_ltp=_price(114.0, 80, 0.025, OptionType.CALL))
+    assert deep["call"]["iv"] == pytest.approx(2.5)
+    # The same quote as a fraction (0.142) and as a percentage (14.2) both read 14.2 %.
+    for quote in (0.142, 14.2):
+        leg = _one_leg(strike=110, call_iv=quote, call_ltp=_price(114.0, 110, 0.142, OptionType.CALL))["call"]
+        assert leg["iv"] == pytest.approx(14.2)
+    # A quote that reprices nothing: solved from the LTP instead.
+    solved = _one_leg(strike=110, call_iv=40.0, call_ltp=_price(114.0, 110, 0.2, OptionType.CALL))["call"]
+    assert solved["iv"] == pytest.approx(20.0, abs=0.01)
+    # No quote and no price: no IV, never a guess.
+    assert _one_leg(strike=110)["call"]["iv"] is None
 
 
 # ------------------------------------------------------------------------------------------------ expiries
@@ -136,18 +161,41 @@ def test_default_expiry_nearest_and_the_expiry_day_rule():
     assert chain_view.default_expiry([date(2026, 10, 1)], date(2026, 10, 21)) is None
 
 
-def test_expiry_file_list_and_kinds(monkeypatch):
+def _expiry_file(monkeypatch, end: date):
     rows = [(date(2026, 10, 13), "weekly", date(2026, 9, 1)), (date(2026, 10, 27), "monthly", date(2026, 8, 3)),
             (date(2026, 11, 3), "weekly", date(2026, 9, 28)), (date(2026, 11, 24), "monthly", date(2026, 8, 31))]
-    monkeypatch.setattr(expiry_data, "listed", lambda symbol: rows if symbol == "NIFTY" else [])
+    monkeypatch.setattr(expiry_data, "_load", lambda: ({"NIFTY": rows}, {"coverage_start": "2016-01-01", "coverage_end": end.isoformat()}))
+
+
+def test_expiry_file_list_and_kinds(monkeypatch):
+    _expiry_file(monkeypatch, end=date(2026, 10, 18))
     items = chain_view.from_expiry_file("NIFTY", date(2026, 10, 21))
     assert [(i.day, i.kind) for i in items] == [(date(2026, 10, 27), "monthly"), (date(2026, 11, 3), "weekly"), (date(2026, 11, 24), "monthly")]
     assert chain_view.default_expiry([i.day for i in items], date(2026, 10, 27)) == date(2026, 11, 3)
+    assert chain_view.from_expiry_file("BANKNIFTY", date(2026, 10, 21)) == []          # not in the file
+
+
+def test_a_stale_expiry_file_is_not_used(monkeypatch, memory_cache):
+    # Read through 1 Oct: usable up to 1 Oct + STALE_GRACE_DAYS, not a day later.
+    end = date(2026, 10, 1)
+    _expiry_file(monkeypatch, end=end)
+    last_good = end + timedelta(days=expiry_data.STALE_GRACE_DAYS)
+    assert chain_view.from_expiry_file("NIFTY", last_good)
+    assert chain_view.from_expiry_file("NIFTY", last_good + timedelta(days=1)) == []
+
+    async def no_master(session, underlying, day):
+        return []
+
+    monkeypatch.setattr(chain_view, "master_expiries", no_master)
+    items, source = run(chain_view.expiry_list(None, "NIFTY", last_good + timedelta(days=1)))
+    assert (items, source) == ([], "none")
 
 
 def test_the_repo_expiry_file_answers_in_order():
-    items = chain_view.from_expiry_file("NIFTY", date(2026, 10, 21))
-    assert items and all(i.day >= date(2026, 10, 21) for i in items) and [i.day for i in items] == sorted(i.day for i in items)
+    start, end = expiry_data.coverage()
+    day = end - timedelta(days=3)
+    items = chain_view.from_expiry_file("NIFTY", day)
+    assert items and all(i.day >= day for i in items) and [i.day for i in items] == sorted(i.day for i in items)
     assert {i.kind for i in items} <= {"weekly", "monthly"} and len(items) <= chain_view.MAX_EXPIRIES
 
 
@@ -238,16 +286,26 @@ def _setup_routes(monkeypatch, chain, market_open=True, today=date(2026, 10, 21)
     return broker
 
 
-def test_routes_need_a_login_and_a_broker():
+def _v2_owner(email):
+    headers, me = _owner(email)
+    _set_flag("ui_v2", me["tenant_id"], on=True)
+    return headers, me
+
+
+def test_routes_need_a_login_ui_v2_and_a_broker():
     assert client.get("/api/option-chain/NIFTY/expiries").status_code == 401
     assert client.get("/api/option-chain/NIFTY/live").status_code == 401
-    headers, _ = _owner("oc1-nobroker@example.com")
+    headers, me = _owner("oc1-nobroker@example.com")
+    for path in ("/api/option-chain/NIFTY/expiries", "/api/option-chain/NIFTY/live"):        # ui_v2 off: no such page
+        res = client.get(path, headers=headers)
+        assert res.status_code == 404 and res.headers.get("X-Feature-Disabled") == "ui_v2"
+    _set_flag("ui_v2", me["tenant_id"], on=True)
     res = client.get("/api/option-chain/NIFTY/live", headers=headers)
     assert res.status_code == 409
 
 
 def test_expiries_route_defaults_and_the_expiry_day(monkeypatch):
-    headers, me = _owner("oc1-expiries@example.com")
+    headers, me = _v2_owner("oc1-expiries@example.com")
     _setup_routes(monkeypatch, _chain(change=True), today=date(2026, 10, 20))
     body = client.get("/api/option-chain/nifty/expiries", headers=headers).json()
     assert body["underlying"] == "NIFTY" and body["source"] == "master" and body["default"] == "2026-10-21"
@@ -259,7 +317,7 @@ def test_expiries_route_defaults_and_the_expiry_day(monkeypatch):
 
 
 def test_live_route_reads_the_chain_spot_and_future_through_the_broker(monkeypatch, memory_cache):
-    headers, me = _owner("oc1-live@example.com")
+    headers, me = _v2_owner("oc1-live@example.com")
     _store_credentials(me)
     broker = _setup_routes(monkeypatch, _chain(change=True, spot=None))
     res = client.get("/api/option-chain/NIFTY/live?expiry=2026-10-27", headers=headers)
@@ -277,7 +335,7 @@ def test_live_route_reads_the_chain_spot_and_future_through_the_broker(monkeypat
 
 
 def test_live_route_oi_change_building_without_broker_change(monkeypatch, memory_cache):
-    headers, me = _owner("oc1-building@example.com")
+    headers, me = _v2_owner("oc1-building@example.com")
     _store_credentials(me)
     _setup_routes(monkeypatch, _chain(change=False))
     body = client.get("/api/option-chain/NIFTY/live?expiry=2026-10-27", headers=headers).json()
@@ -293,8 +351,15 @@ def test_live_route_oi_change_building_without_broker_change(monkeypatch, memory
 
 
 def test_live_route_market_closed_shows_the_last_chain_without_oi_change(monkeypatch, memory_cache):
-    headers, me = _owner("oc1-closed@example.com")
+    headers, me = _v2_owner("oc1-closed@example.com")
     _store_credentials(me)
     _setup_routes(monkeypatch, _chain(change=False), market_open=False)
     body = client.get("/api/option-chain/NIFTY/live?expiry=2026-10-27", headers=headers).json()
     assert body["market_open"] is False and body["oi_change"]["status"] == "none" and len(body["rows"]) == 4
+
+
+def test_live_spends_one_chain_and_one_price_token_per_poll():
+    from app.market_data.candles_routes import chains_rate_limit, ltp_rate_limit
+    route = next(r for r in oc_routes.router.routes if getattr(r, "path", "") == "/api/option-chain/{underlying}/live")
+    deps = [d.dependency for d in route.dependencies]
+    assert chains_rate_limit in deps and ltp_rate_limit in deps

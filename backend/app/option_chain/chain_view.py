@@ -6,16 +6,18 @@ NSE expiry file and the platform's instrument master. A value that cannot be com
 Nothing here places, changes or suggests an order.
 
 * **Expiries.** The platform's instrument master (the broker's own listing, synced daily) when it has the underlying;
-  otherwise the NSE expiry file (`app.instruments.expiry_data`, its listed contracts); otherwise, for SENSEX, the rule
-  calendar (`app.instruments.expiry_calendar`, BSE holidays). Dates are IST. The default is the nearest expiry on or
+  otherwise the NSE expiry file (`app.instruments.expiry_data.expiries`) while it is current (up to its
+  STALE_GRACE_DAYS after the last day it read; a stale or missing file is not used); otherwise, for SENSEX, the rule
+  calendar (`app.instruments.expiry_calendar`, BSE holidays). With none of them the list is empty and the chain is read
+  for the broker's own nearest expiry. Dates are IST. The default is the nearest expiry on or
   after today; **on the expiry day itself it is the next one** (the next weekly for an index with weeklies).
 * **Summary.** ATM strike = the strike nearest the spot (a tie takes the lower strike); PCR (OI) = total put OI /
   total call OI; max pain = `analysis.compute_max_pain`; ATM IV = the mean of the call and put IV at the ATM strike
   (in percent); days to expiry = calendar days from today (IST) to the expiry; the strikes with the highest call OI
   and the highest put OI (a tie takes the lower strike).
-* **IV.** The broker's IV where it sends one (brokers send percent, e.g. 13.2; a value of 3 or less is read as a
-  fraction, 0.132), else solved from the option's own last price (`greeks.implied_volatility`); Greeks are
-  Black-Scholes on that IV (`greeks.black_scholes`).
+* **IV.** `app.options_builder.chain.option_iv`: the broker's quote read both as a fraction and as a percentage and kept
+  only if one reading reprices the option's last price (so a deep-ITM 2.5 % stays 2.5 %), else solved from that price;
+  shown in percent. Greeks are Black-Scholes on that IV (`greeks.black_scholes`).
 * **OI change.** The broker's change in OI since the previous session where it sends one. Otherwise it is the change
   since this organisation's first reading of the day for that underlying and expiry (kept in the cache while the page
   is open): "building" until that reading is BUILD_MINUTES old, during market hours only.
@@ -35,9 +37,10 @@ from app.cache.client import cache_get, cache_set
 from app.core.config import RISK_FREE_RATE
 from app.instruments import expiry_calendar, expiry_data, master
 from app.option_chain.analysis import compute_max_pain
-from app.option_chain.greeks import BSInputs, black_scholes, implied_volatility, time_to_expiry_years
+from app.option_chain.greeks import BSInputs, black_scholes, time_to_expiry_years
 from app.option_chain.models import OptionType
 from app.option_chain.snapshots import IST, normalise_underlying
+from app.options_builder.chain import option_iv
 
 MAX_EXPIRIES = 10                 # the picker lists the next ten expiries at most
 BUILD_MINUTES = 5                 # OI change from the first reading shows once that reading is this old
@@ -96,12 +99,15 @@ def from_master(days: Iterable[date], today: date) -> List[ExpiryItem]:
 
 
 def from_expiry_file(underlying: str, today: date) -> List[ExpiryItem]:
-    """The NSE expiry file's contracts on or after today (its own weekly / monthly kind)."""
-    rows = [(e, kind) for e, kind, _ in expiry_data.listed(underlying) if e >= today]
-    seen: Dict[date, str] = {}
-    for e, kind in rows:
-        seen[e] = "monthly" if kind == "monthly" or seen.get(e) == "monthly" else "weekly"
-    return [ExpiryItem(e, k) for e, k in sorted(seen.items())][:MAX_EXPIRIES]
+    """The NSE expiry file's contracts on or after today, listed by today (`expiry_data.expiries`, with its own weekly /
+    monthly kind). Empty when the file has no data for the underlying or is stale (more than STALE_GRACE_DAYS after the
+    last day it read) - never an expiry the exchange did not list."""
+    try:
+        days = expiry_data.expiries(underlying, today, count=MAX_EXPIRIES)
+    except expiry_data.ExpiryDataMissing:                  # ExpiryDataStale is one too
+        return []
+    monthly = {e for e, kind, _ in expiry_data.listed(underlying) if kind == "monthly"}
+    return [ExpiryItem(e, "monthly" if e in monthly else "weekly") for e in days]
 
 
 def from_rules(underlying: str, today: date, holidays: Iterable[date]) -> List[ExpiryItem]:
@@ -161,14 +167,6 @@ def _finite(v: Any) -> Optional[float]:
     return f if math.isfinite(f) else None
 
 
-def iv_percent(raw: Any) -> Optional[float]:
-    """A broker's IV in percent: 13.2 stays 13.2, 0.132 becomes 13.2; zero, negative or missing is None."""
-    v = _finite(raw)
-    if v is None or v <= 0:
-        return None
-    return v * 100.0 if v <= 3.0 else v
-
-
 def atm_strike(strikes: Sequence[float], spot: Optional[float]) -> Optional[float]:
     if spot is None or not strikes:
         return None
@@ -195,11 +193,15 @@ def highest_oi_strike(rows: Sequence[OptionChainRow], side: str) -> Optional[flo
 def _leg(row: OptionChainRow, side: str, spot: Optional[float], years: Optional[float], change: Optional[float]) -> Dict[str, Optional[float]]:
     p = "call_" if side == "call" else "put_"
     ltp = _finite(getattr(row, p + "ltp"))
-    iv = iv_percent(getattr(row, p + "iv"))
+    quoted = _finite(getattr(row, p + "iv"))
+    quoted = quoted if quoted is not None and quoted > 0 else None
     kind = OptionType.CALL if side == "call" else OptionType.PUT
-    if iv is None and ltp is not None and ltp > 0 and spot is not None and years is not None:
-        sigma = implied_volatility(ltp, spot, row.strike, years, RISK_FREE_RATE, kind)
-        iv = sigma * 100.0 if sigma is not None else None
+    if spot is not None and years is not None and years > 0:
+        sigma = option_iv(quoted, ltp, spot, row.strike, years, RISK_FREE_RATE, kind)
+    else:
+        # No spot or no expiry: nothing to reprice against - the quote alone, read as option_iv reads it without a price.
+        sigma = option_iv(quoted, None, 0.0, row.strike, 0.0, RISK_FREE_RATE, kind)
+    iv = sigma * 100.0 if sigma is not None else None
     greeks: Dict[str, Optional[float]] = {"delta": _finite(getattr(row, p + "delta")), "gamma": None, "theta": None, "vega": None}
     if iv is not None and spot is not None and years is not None:
         try:

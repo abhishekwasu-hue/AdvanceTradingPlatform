@@ -19,11 +19,17 @@ const BIAS_COLOR: Record<string, string> = {
   NEUTRAL: "text-fg-muted",
 };
 
-/** OC1: what the page says when the chain cannot be read - plain words, never the server's own text. */
-export function chainProblemText(e: unknown): string {
-  if (e instanceof ApiError && e.status === 401) return "Sign in to see the option chain.";
-  if (e instanceof ApiError && e.status === 409) return "Connect your broker under Settings to see the option chain.";
-  return "We could not load the option chain. Try again in a moment.";
+/** Where "the Broker page" is: Settings -> Brokers until the Broker page's own `/broker` route ships (a literal, as
+ * the broker gate's CONNECT_BROKER_PATH; that change moves both). */
+export const BROKER_PAGE_PATH = "/settings";
+
+/** OC1: what the page says when the chain cannot be read - plain words, never the server's own text. `connect`: the
+ * words end with a link to the Broker page. */
+export function chainProblem(e: unknown): { text: string; connect: boolean } {
+  if (e instanceof ApiError && e.status === 401) return { text: "Sign in to see the option chain.", connect: false };
+  if (e instanceof ApiError && e.status === 409 && e.dataTier) return { text: "This symbol is not available live on your plan.", connect: false };
+  if (e instanceof ApiError && e.status === 409) return { text: "Connect your broker on the", connect: true };
+  return { text: "We could not load the option chain. Try again in a moment.", connect: false };
 }
 
 /**
@@ -35,7 +41,7 @@ export default function OptionChainPage() {
   // A deep link (?underlying=, e.g. from an OI alert) opens that underlying; otherwise the page default.
   const [underlying, setUnderlying] = useState(() => new URLSearchParams(window.location.search).get("underlying")?.trim() || "NIFTY");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<{ text: string; connect: boolean } | null>(null);
   const [analysis, setAnalysis] = useState<OptionChainAnalysis | null>(null);
   // OI Banner (O3): the collector's view of the underlying last analysed (stored 5-minute snapshots, not this fetch).
   const [oiUnderlying, setOiUnderlying] = useState(underlying.trim().toUpperCase());
@@ -57,7 +63,7 @@ export default function OptionChainPage() {
       setLinkChain((await contractsAvailable(chain.underlying)) ? { underlying: chain.underlying, expiry: chain.expiry } : null);
     } catch (e) {
       setAnalysis(null);
-      setError(chainProblemText(e));
+      setError(chainProblem(e));
     } finally {
       setLoading(false);
     }
@@ -97,7 +103,12 @@ export default function OptionChainPage() {
         </form>
       </Card>
 
-      {error && <div className="text-sm text-down">{error}</div>}
+      {error && (
+        <p className="text-sm text-fg-muted" role="status">
+          {error.text}
+          {error.connect && <> <a href={BROKER_PAGE_PATH} className="text-brand underline">Broker page</a>.</>}
+        </p>
+      )}
 
       {getToken() && oiUnderlying && (
         <>

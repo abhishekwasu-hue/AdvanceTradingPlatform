@@ -10,14 +10,17 @@ export class ApiError extends Error {
   /** The raw response body (trimmed), for code that matches on a machine code inside it. */
   readonly body: string;
   readonly requestId: string | null;
+  /** BT1: the `X-Data-Tier` header of a refused market-data read ("C": end-of-day data only on this plan), else null. */
+  readonly dataTier: string | null;
 
-  constructor(status: number, message: string, detail = "", body = "", requestId: string | null = null) {
+  constructor(status: number, message: string, detail = "", body = "", requestId: string | null = null, dataTier: string | null = null) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.detail = detail;
     this.body = body;
     this.requestId = requestId;
+    this.dataTier = dataTier;
   }
 
   override toString(): string {
@@ -91,7 +94,7 @@ export async function apiErrorFrom(response: Response): Promise<ApiError> {
   }
   // Every server error carries the reference support needs to find the log line, readable detail or not.
   if (status >= 500 && requestId) message += `${/[.!?]$/.test(message) ? "" : "."} Reference: ${requestId}.`;
-  return new ApiError(status, message, detail, body.slice(0, 2000), requestId);
+  return new ApiError(status, message, detail, body.slice(0, 2000), requestId, response.headers.get("x-data-tier"));
 }
 
 /** The message to show for any thrown value: an ApiError's sentence, a network failure as plain words, otherwise the

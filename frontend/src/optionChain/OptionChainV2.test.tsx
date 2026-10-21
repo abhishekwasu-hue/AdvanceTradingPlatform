@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/errors";
 import { AuthProvider } from "../auth/AuthContext";
-import OptionChainPage from "../pages/OptionChainPage";
+import OptionChainPage, { BROKER_PAGE_PATH, chainProblem } from "../pages/OptionChainPage";
 import flagOffSource from "../pages/OptionChainPage.tsx?raw";
 import { PAGE_COMPONENTS_V2 } from "../shell/pagesV2";
 import { isDataPath } from "../ui/dataPages";
@@ -170,6 +170,16 @@ describe("OC1 ATM row in the middle", () => {
     expect(isItm("call", 24400, null)).toBe(false);
   });
 
+  it("OI change is neutral text with its sign only (up / down colours are for prices and P&L)", () => {
+    const html = table();
+    for (const k of [24200, 24800]) {
+      const change = rowCells(html, k)[1];                                    // the call side's OI change
+      expect(change).toMatch(/[+−]\d/);
+      expect(change).not.toMatch(/text-up|text-down/);
+    }
+    expect(tableSource).not.toMatch(/text-up|text-down/);
+  });
+
   it("OI bars in the cells; the highest call OI and put OI strikes are marked", () => {
     const html = table();
     expect(rowCells(html, 24800)[0]).toContain('data-max-oi="call"');
@@ -222,12 +232,16 @@ describe("OC1 plain-word states", () => {
   });
 
   it("market closed: the last session's chain, and no 'building' note", () => {
-    const building = liveChain({ oi_change: { status: "building", source: "first_reading", since: null } });
+    const building = liveChain({ market_open: false, oi_change: { status: "building", source: "first_reading", since: null } });
     const words = text(view({ live: building }, { marketOpen: false }));
     expect(words).toContain("Market closed — showing the last session's chain");
     expect(words).not.toContain(TEXT.building);
-    // The market status not known yet: the chain's own answer decides.
+    // The chain's own answer (its exchange's session) wins over the system status, which serves until it answers.
     expect(chainNotes(liveChain({ market_open: false }), null, String).map((n) => n.key)).toEqual(["closed"]);
+    expect(chainNotes(liveChain({ market_open: false }), true, String).map((n) => n.key)).toEqual(["closed"]);
+    expect(chainNotes(liveChain({ market_open: true }), false, String)).toEqual([]);
+    expect(chainNotes(null, false, String).map((n) => n.key)).toEqual(["closed"]);
+    expect(hookSource).toContain("openRef.current = live?.market_open ?? marketOpen;");
   });
 
   it("OI change counted from the first reading says since when", () => {
@@ -243,7 +257,9 @@ describe("OC1 plain-word states", () => {
     expect(loading).toContain('aria-busy="true"');
     expect(text(loading)).not.toMatch(/\d{2},\d{3}/);                       // no figure before the broker's answer
     expect(problemOf(new ApiError(409, "x", "x", "x"))).toBe("no-session");
+    expect(problemOf(new ApiError(409, "x", "x", "x", null, "C"))).toBe("plan");               // BYOB plan: X-Data-Tier
     expect(problemOf(new Error("x"))).toBe("failed");
+    expect(text(view({ live: null, problem: "plan" }))).toContain("This symbol is not available live on your plan.");
   });
 
   it("the broker gate stands in front of the page (no broker: only 'Connect your broker')", () => {
@@ -281,6 +297,13 @@ describe("OC1 no sample data and no developer controls", () => {
     }
     expect(words).toContain("Show chain");
     expect(words).not.toMatch(DEV);
+    // A 409: plain words and the Broker page; a plan refusal says so; the error is muted text, never red.
+    expect(chainProblem(new ApiError(409, "x"))).toEqual({ text: "Connect your broker on the", connect: true });
+    expect(chainProblem(new ApiError(409, "x", "", "", null, "C")).text).toBe("This symbol is not available live on your plan.");
+    expect(chainProblem(new Error("boom")).text).toBe("We could not load the option chain. Try again in a moment.");
+    expect(BROKER_PAGE_PATH).toBe("/settings");
+    expect(flagOffSource).toContain('<p className="text-sm text-fg-muted" role="status">');
+    expect(flagOffSource).not.toContain("text-down\">{error");
   });
 
   it("the v2 page's words: no developer text, no advice and no buy / sell words", () => {

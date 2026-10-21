@@ -56,7 +56,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
   symbol: string;
   onSymbol: (symbol: string) => void;
   chain: OptionChainData;
-  /** The NSE session from the system status (null while not known). */
+  /** The NSE session from the system status (null while not known); the chain's own `market_open` wins once it answers. */
   marketOpen: boolean | null;
   prefs: ColumnPrefs;
   onPrefs: (prefs: ColumnPrefs) => void;
@@ -119,7 +119,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
       <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} />
 
       <section aria-label="Chain" data-block="chain">
-        {chain.problem && !live && <Note tone="warn">{chain.problem === "no-session" ? TEXT.noSession : TEXT.loadFailed}</Note>}
+        {chain.problem && !live && <Note tone="warn">{chain.problem === "no-session" ? TEXT.noSession : chain.problem === "plan" ? TEXT.plan : TEXT.loadFailed}</Note>}
         {chain.loading && !live && !chain.problem && (
           <div aria-busy="true" className="space-y-space-2 rounded-panel border border-subtle bg-surface-1 p-space-4">
             <span className="sr-only">Loading the option chain</span>

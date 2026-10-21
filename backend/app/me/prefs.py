@@ -5,8 +5,9 @@
 * `PUT /api/me/prefs/{namespace}` replaces one namespace with the JSON body, validated against that namespace's schema
   (unknown keys and wrong types are refused) and capped at MAX_BODY_BYTES. An optional `?version=` makes it a
   compare-and-set: a stale version gets 409 with the current value; without it the save simply replaces.
-* Namespaces are an allow-list (NAMESPACES). `chart` is the first; UI-8 (setup wizard progress, "What is this page?"
-  dismissals) adds its own by adding a model here.
+* Namespaces are an allow-list (NAMESPACES). `chart` is the first; `setup` (UI2-7, UI-8) holds the setup wizard's own
+  marks - skips, the chip's dismissal, the first automatic opening. Whether a step is done is never stored: app/me/setup.py
+  works it out on every read from the rows that prove it.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -14,11 +15,11 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
-from typing import Any, Dict, Literal, Optional, Type
+from datetime import datetime, timedelta, timezone
+from typing import Annotated, Any, Dict, Literal, Optional, Tuple, Type
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, ValidationError, model_validator
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -63,7 +64,43 @@ class ChartPrefs(_Prefs):
     reader_overlay: bool = Field(default=False, description="the 'Reader zones & lines' overlay")
 
 
-NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs}
+EARLIEST_MARK = datetime(2020, 1, 1, tzinfo=timezone.utc)
+
+
+def _mark_time(value: Optional[datetime]) -> Optional[datetime]:
+    """A setup mark's time: with a time zone, from 2020-01-01 to one day from now (a clock a little ahead is fine)."""
+    if value is None:
+        return None
+    if value.tzinfo is None or value.utcoffset() is None:
+        raise ValueError("the time needs a time zone")
+    if not EARLIEST_MARK <= value <= datetime.now(timezone.utc) + timedelta(days=1):
+        raise ValueError("the time must be between 2020-01-01 and tomorrow")
+    return value
+
+
+MarkTime = Annotated[Optional[datetime], AfterValidator(_mark_time)]
+
+
+class SetupStepMark(_Prefs):
+    """One setup step's own mark. Only the skip is stored; "done" is worked out on every read (app/me/setup.py)."""
+    skipped_at: MarkTime = Field(default=None, description="when 'Skip for now' was chosen; null = not skipped")
+
+
+class SetupSteps(_Prefs):
+    broker: SetupStepMark = Field(default_factory=SetupStepMark)
+    risk: SetupStepMark = Field(default_factory=SetupStepMark)
+    strategy: SetupStepMark = Field(default_factory=SetupStepMark)
+    alerts: SetupStepMark = Field(default_factory=SetupStepMark)
+
+
+class SetupPrefs(_Prefs):
+    """`setup` (UI v2 §11, UI-8): the setup wizard's marks, so it resumes on any device. localStorage is only a cache."""
+    steps: SetupSteps = Field(default_factory=SetupSteps)
+    opened_at: MarkTime = Field(default=None, description="the wizard opened by itself (first sign-in); it does not again")
+    dismissed_at: MarkTime = Field(default=None, description="the dashboard's Setup chip was closed")
+
+
+NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -72,9 +109,23 @@ def defaults(namespace: str) -> Dict[str, Any]:
     return NAMESPACES[namespace]().model_dump(mode="json")
 
 
+def _drop_at(data: Dict[str, Any], loc: Tuple[Any, ...]) -> bool:
+    """Removes the value at `loc` (or the nearest enclosing key that exists) so its default applies; False if none."""
+    for size in range(len(loc), 0, -1):
+        node: Any = data
+        for key in loc[:size - 1]:
+            node = node.get(key) if isinstance(node, dict) else None
+        if isinstance(node, dict) and loc[size - 1] in node:
+            del node[loc[size - 1]]
+            return True
+    return False
+
+
 def stored_value(namespace: str, raw: Optional[str]) -> Dict[str, Any]:
     """A stored value as the current schema reads it: keys this release does not know (a newer release saved them) are
-    dropped; anything else that no longer validates falls back to the defaults, so a read never fails."""
+    dropped, and so is each value that no longer validates (that field takes its default, the rest is kept - one bad
+    setup mark never loses the others); a value that still cannot be read falls back to the defaults, so a read never
+    fails."""
     model = NAMESPACES[namespace]
     try:
         data = json.loads(raw or "{}")
@@ -83,17 +134,22 @@ def stored_value(namespace: str, raw: Optional[str]) -> Dict[str, Any]:
     if not isinstance(data, dict):
         return defaults(namespace)
     known = {k: v for k, v in data.items() if k in model.model_fields}
-    try:
-        return model.model_validate_json(json.dumps(known)).model_dump(mode="json")
-    except ValidationError:
-        return defaults(namespace)
+    for _ in range(16):                                  # each pass drops at least one bad value, so this ends
+        try:
+            return model.model_validate_json(json.dumps(known)).model_dump(mode="json")
+        except ValidationError as exc:
+            dropped = [_drop_at(known, tuple(e.get("loc", ()))) for e in exc.errors(include_input=False, include_url=False)]
+            if not any(dropped):
+                break
+    return defaults(namespace)
 
 
 def _own(tenant_id: int, user_id: int):
     return (UserPrefsRecord.tenant_id == tenant_id, UserPrefsRecord.user_id == user_id)
 
 
-async def _body(request: Request) -> bytes:
+async def read_body(request: Request) -> bytes:
+    """The request body, refused with 413 past MAX_BODY_BYTES (also used by `PUT /api/me/setup`)."""
     declared = request.headers.get("content-length", "")
     if declared.isdigit() and int(declared) > MAX_BODY_BYTES:
         raise HTTPException(status_code=413, detail=f"Preferences larger than {MAX_BODY_BYTES} bytes")
@@ -133,11 +189,19 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
     `version` (optional): the version the change was made on; a stale one is refused with 409 and the current value."""
     if namespace not in NAMESPACES:
         raise HTTPException(status_code=404, detail="Unknown preferences namespace")
-    value = _validate(namespace, await _body(request))
+    value, saved_version = await save(namespace, await read_body(request), version, user, session)
+    return {"namespace": namespace, "value": value, "version": saved_version}
+
+
+async def save(namespace: str, raw: bytes, version: Optional[int], user: User, session: AsyncSession) -> Tuple[Dict[str, Any], int]:
+    """Validates `raw` against the namespace and stores it for the caller (the compare-and-set described above). Also
+    the body of `PUT /api/me/setup` (app/me/setup.py). Returns the stored value and its new version."""
+    value = _validate(namespace, raw)
     tenant_id, user_id = user.tenant_id, user.id        # read once: a rollback below expires the `user` object
     # Two attempts: when two devices save a namespace's FIRST value at the same moment, one insert loses on the unique
     # constraint. Without a version that save simply goes again, now as an update of the row the other one made; with a
     # version it is a 409 like any other stale edit.
+    saved = 0
     for attempt in (1, 2):
         row = await session.scalar(select(UserPrefsRecord).where(*_own(tenant_id, user_id), UserPrefsRecord.namespace == namespace)
                                    .with_for_update())
@@ -152,6 +216,7 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
             session.add(row)
         else:
             row.value_json, row.version, row.updated_at = json.dumps(value), row.version + 1, now
+        saved = row.version
         try:
             await session.commit()
             break
@@ -159,7 +224,13 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
             await session.rollback()
             if version is not None or attempt == 2:
                 raise HTTPException(status_code=409, detail={"message": "the preferences changed since this edit was made"}) from None
-    return {"namespace": namespace, "value": value, "version": row.version}
+    return value, saved
 
 
-__all__ = ["router", "NAMESPACES", "ChartPrefs", "MAX_BODY_BYTES", "defaults", "stored_value"]
+async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[Dict[str, Any], int]:
+    """One namespace of the caller's own preferences (defaults filled in) and its version (0 = never saved)."""
+    row = await session.scalar(select(UserPrefsRecord).where(*_own(user.tenant_id, user.id), UserPrefsRecord.namespace == namespace))
+    return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
+
+
+__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

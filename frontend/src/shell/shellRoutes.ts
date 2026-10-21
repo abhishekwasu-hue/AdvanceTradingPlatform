@@ -1,5 +1,5 @@
 import { pageFromPath } from "../routes";
-import { V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
+import { SETUP_ADDRESS, V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
 import { navItemFor, type ShellKey } from "./navModel";
 
 export { V2_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
@@ -47,9 +47,11 @@ export function chartTabPath(symbol: string, exchange?: string | null, timeframe
   return query ? `${chartsPath(s)}?${query}` : chartsPath(s);
 }
 
-/** What the v2 shell shows at `pathname`: the Charts page, a merged page's new address, or today's page id. */
+/** What the v2 shell shows at `pathname`: the Charts page, Settings → Setup, a merged page's new address, or today's
+ * page id. */
 export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (chartsSymbolFromPath(pathname) !== undefined) return "charts";
+  if (clean(pathname) === SETUP_ADDRESS) return "setup";
   const alias = V2_ALIASES.find((a) => a.path === clean(pathname));
   if (alias) return alias.page;
   return pageFromPath(pathname);

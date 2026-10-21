@@ -14,6 +14,7 @@ import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } 
 import MoreSheetV2 from "./MoreSheetV2";
 import { sectionOf, visibleSections, type NavContext } from "./navModel";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
+import { SETUP_ADDRESS } from "./aliases";
 import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
@@ -98,6 +99,8 @@ export default function AppShellV2() {
 
   // UI2-4b2: the Charts page (v2 only, so not one of PAGES) comes from the same registry as the other v2 pages.
   const ChartsPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.charts ?? NotFound;
+  // UI2-7: Settings → Setup (v2 only), the same way.
+  const SetupPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.setup ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -111,6 +114,7 @@ export default function AppShellV2() {
               : <Route key={p} path={pathFor(p)} caseSensitive element={element} />;
           })}
           <Route path="/charts/:symbol?" caseSensitive element={<ChartsPage onNavigate={go} />} />
+          <Route path={SETUP_ADDRESS} caseSensitive element={<SetupPage onNavigate={go} />} />
           {V2_ALIASES.map(({ path, page }) => {
             const PageComponent = PAGE_COMPONENTS[page];
             return <Route key={path} path={path} caseSensitive element={<PageComponent onNavigate={go} />} />;

@@ -3,7 +3,7 @@ import type { BrokerGateState } from "../ui/brokerSession";
 import type { AiAction, Deployment, NotificationEntry, PortfolioExposure, TradeRecord } from "../types";
 import {
   attentionRows, brokerChip, greeting, greetingName, indexCaption, istDay, marketLabel, oiLines, partlyConnected, positionRows,
-  setupProgress, signTone, signalsToday, symbolPrices, todayPnl, todayTiles, vixNote, type AttentionInput,
+  signTone, signalsToday, symbolPrices, todayPnl, todayTiles, vixNote, type AttentionInput,
 } from "./model";
 import type { StripIndex, StripMarket } from "./types";
 
@@ -218,7 +218,7 @@ describe("UI2-2 needs attention", () => {
   });
 });
 
-describe("UI2-2 today tiles and the setup chip", () => {
+describe("UI2-2 today tiles", () => {
   it("four tiles from the existing answers", () => {
     const t = todayTiles(exposure({ realised_today: 2540 }), { closed_trades: 41, win_rate: 58 } as never,
       { today: { used: 0.385, limit: 10000 } } as never, { rows: [], count: 3, waiting: 2, taken: 1 });
@@ -227,14 +227,6 @@ describe("UI2-2 today tiles and the setup chip", () => {
     expect(t.riskUsed).toBeCloseTo(3850, 6);
     const none = todayTiles(null, { closed_trades: 0, win_rate: 0 } as never, null, { rows: [], count: 0, waiting: 0, taken: 0 });
     expect(none).toMatchObject({ booked: null, winRate: null, riskUsedPct: null, riskLimit: null });
-  });
-
-  it("the Setup chip names the next step until every step is done", () => {
-    expect(setupProgress({ brokerStored: true, strategyDeployed: false, alertsOn: false })).toEqual({ label: "Setup 2 of 3", next: "Next: pick your first strategy", to: "/strategies" });
-    expect(setupProgress({ brokerStored: true, strategyDeployed: true, alertsOn: false })).toEqual({ label: "Setup 3 of 3", next: "Next: choose your alerts", to: "/settings" });
-    expect(setupProgress({ brokerStored: false, strategyDeployed: true, alertsOn: true })?.next).toBe("Next: connect your broker");
-    expect(setupProgress({ brokerStored: true, strategyDeployed: true, alertsOn: true })).toBeNull();
-    expect(setupProgress(null)).toBeNull();
   });
 
   it("days are IST days", () => {

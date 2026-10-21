@@ -71,7 +71,7 @@ describe("UI2-2 strip timing and data", () => {
     expect(hookSource).toContain('api.aiActions("PROPOSED")');            // pending approvals: their own read
     expect(hookSource).toContain("api.getAnalyticsSummary(WIN_RATE_DAYS)"); // the Today win rate: 30 days, not all time
     expect(new Set(calls)).toEqual(new Set(["marketStrip", "oiBanners", "portfolioExposure", "listPositions", "aiActions", "listDeployments",
-      "paperRisk", "listNotifications", "systemStatus", "getAnalyticsSummary", "listAlertChannels"]));
+      "paperRisk", "listNotifications", "systemStatus", "getAnalyticsSummary"]));
   });
 });
 

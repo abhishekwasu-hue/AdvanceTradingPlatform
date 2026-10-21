@@ -19,6 +19,17 @@ export interface DashboardMocks {
   me?: boolean;
 }
 
+/** UI2-7: GET /api/me/setup as the server works it out for these replies (the wizard already seen once). */
+export function setupAnswer(state: DashboardMocks["state"] = "connected") {
+  const done: Record<string, boolean> = { broker: state !== "none", risk: true, strategy: state === "connected" || state === "login", alerts: false };
+  const steps = ["broker", "risk", "strategy", "alerts"].map((key) => ({ key, done: done[key], skipped: false, skipped_at: null }));
+  return {
+    steps, done_count: steps.filter((s) => s.done).length, next: steps.find((s) => !s.done)?.key ?? null, complete: false,
+    stored: { steps: Object.fromEntries(steps.map((s) => [s.key, { skipped_at: null }])), opened_at: "2026-10-12T09:00:00Z", dismissed_at: null },
+    version: 1,
+  };
+}
+
 export async function mockDashboard(page: Page, { state = "connected", strip, me = false }: DashboardMocks = {}): Promise<void> {
   const empty = state === "empty" || state === "none";
   const replies: [RegExp, unknown][] = [
@@ -33,6 +44,7 @@ export async function mockDashboard(page: Page, { state = "connected", strip, me
     [api("/notifications\\?unread_only=true$"), empty ? [] : F.notifications_unread],
     [api("/analytics/summary(\\?|$)"), F.analytics_summary],
     [api("/alert-channels$"), F.alert_channels],
+    [api("/me/setup(\\?|$)"), setupAnswer(state)],
   ];
   for (const [re, json] of replies) await page.route(re, (route) => route.fulfill({ json }));
 }

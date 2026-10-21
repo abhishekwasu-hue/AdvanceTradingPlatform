@@ -1,6 +1,6 @@
 // Mobile B1 (MA-6, ADR-0028 decision 10): refuse the builds the rules forbid, however the build was started. The same
 // rules run in Node before Gradle (frontend/scripts/mobile-rules.mjs, check-mobile-config.mjs); this is the last stop.
-// - A release build never uses the temporary, never-published package id.
+// - A release build never uses the temporary, never-published package id (the final id is tech.aialgodesk.app).
 // - The bundled web files must come from `npm run build:android` for the same build kind: a debuggable APK never
 //   carries a bundle that points at a real server, and a release never carries a debug bundle.
 def TEMPORARY_APP_ID = "dev.atp.unpublished"

@@ -1,4 +1,4 @@
-package dev.atp.unpublished;
+package tech.aialgodesk.app;
 
 import com.getcapacitor.BridgeActivity;
 

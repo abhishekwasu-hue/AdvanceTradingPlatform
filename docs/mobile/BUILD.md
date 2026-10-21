@@ -26,18 +26,27 @@ One set of rules (`frontend/scripts/mobile-rules.mjs`) is read by `capacitor.con
 `frontend/scripts/check-mobile-config.mjs`; Gradle has its own copy as a last stop
 (`frontend/android/app/atp-build-rules.gradle`). The build kind comes from `ATP_ANDROID_BUILD`.
 
-| Kind | Debuggable | API origin (`VITE_API_BASE_URL`) | Bridge logging / WebView debugging | Package id |
+| Kind | Debuggable | API origin | Bridge logging / WebView debugging | Package id |
 | --- | --- | --- | --- | --- |
-| `debug` (default) | yes | must be unset: the placeholder `https://atp-not-configured.invalid`, which never resolves | on | `dev.atp.unpublished.debug` |
-| `internal` (sign-in PR) | no | `https://<ATP_APP_DOMAIN>`, required | off (`loggingBehavior: "none"`, `webContentsDebuggingEnabled: false`) | `dev.atp.unpublished` |
-| `release` (B4) | no | `https://<ATP_APP_DOMAIN>`, required | off | the final `com.<domain>.app`; the temporary id is refused |
+| `debug` (default) | yes | the placeholder `https://atp-not-configured.invalid`, which never resolves (`VITE_API_BASE_URL` must be unset; `ATP_APP_DOMAIN` is ignored) | on | `tech.aialgodesk.app.debug` |
+| `internal` (sign-in PR) | no | `VITE_API_BASE_URL` if set, else `https://<ATP_APP_DOMAIN>` if set, else `https://aialgodesk.tech` | off (`loggingBehavior: "none"`, `webContentsDebuggingEnabled: false`) | `tech.aialgodesk.app` |
+| `release` (B4) | no | as `internal` | off | `tech.aialgodesk.app` (MA-6); the old temporary id is refused |
+
+The default production origin is `PRODUCTION_API_ORIGIN` in `frontend/scripts/mobile-rules.mjs` (MA-6, owner
+2026-10-21). The CI job passes the repository variable `ATP_APP_DOMAIN` (`aialgodesk.tech`) to every step.
 
 Refused everywhere: an API base that is not `https://`, an IP address (any spelling), `localhost`, or anything with a
-path; a debuggable build pointed at a real server (ADR-0028 decision 10); a release build with the temporary package
-id `dev.atp.unpublished` (MA-6); a web bundle in `dist/` made for another build kind (it carries
-`atp-native-build.json`); any `"/api/..."` literal in `frontend/src` outside `src/api/base.ts`; any IP address in
+path; an `ATP_APP_DOMAIN` that is not a plain host name; a debuggable build pointed at a real server (ADR-0028
+decision 10); a release build with the old temporary package id `dev.atp.unpublished` (MA-6); a web bundle in
+`dist/` made for another build kind (it carries `atp-native-build.json`); any `"/api/..."` literal in `frontend/src` outside `src/api/base.ts`; any IP address in
 `frontend/src`, `capacitor.config.ts` or `frontend/android` (the production IP nowhere at all); a keystore,
-`google-services.json` or `local.properties` in `frontend/android`.
+`google-services.json` or `local.properties` in `frontend/android`; a package id in `build.gradle` (`namespace`,
+`applicationId`), `strings.xml` or the `MainActivity` package that differs from `APP_ID`.
+
+The Android project allows no plain-http traffic (`usesCleartextTraffic="false"` and
+`res/xml/network_security_config.xml`) and trusts only the system's certificate authorities: no user-added or
+self-signed certificates, so the old bare-IP setup with Caddy's internal certificate cannot be reached, by design.
+`capacitor.config.ts` sets no `server.url`, `server.cleartext` or `allowNavigation`.
 
 `ATP_ANDROID_BUILD` and `VITE_API_BASE_URL` are read from the **process environment only** (not from `.env` files),
 so `npm run build:android` and `npx cap sync android` always see the same values.
@@ -73,7 +82,7 @@ and on demand (Actions → Android → Run workflow). It uses no secrets:
 1. validates the committed Gradle wrapper; sets up Node 22 and Temurin 21 (the runner image has the Android SDK);
 2. `npm ci`, the mobile lint (also checks the `ATP_APP_DOMAIN` repository variable when it is set: a host name, never
    an IP), `npm run build:android` (debug, placeholder), `npx cap sync android`, the lint again with `--bundle`;
-3. `./gradlew assembleDebug`, then checks the APK: package `dev.atp.unpublished.debug`, debuggable, and the bundled
+3. `./gradlew assembleDebug`, then checks the APK: package `tech.aialgodesk.app.debug`, debuggable, and the bundled
    `atp-native-build.json` names the placeholder origin;
 4. uploads `atp-debug-<version>.apk` as the artifact **`atp-android-debug-apk`** (kept 7 days) and writes a run summary.
 
@@ -103,16 +112,20 @@ first, because the signatures differ.
 (safe areas on edge-to-edge Android), the keyboard does not cover fields, the Android back button goes back through
 pages, and text and touch targets are readable at your phone's font size.
 
-## Changing the package id later (MA-6)
+## The package id (MA-6)
 
-When the domain (MA-1) and company name are settled, the final id is `com.<domain>.app`, permanent once on Play:
+The id is `tech.aialgodesk.app` (owner, 2026-10-21), the reverse of the production domain. It is permanent once on
+Play. It lives in:
 
-1. `APP_ID` in `frontend/scripts/mobile-rules.mjs`;
-2. `applicationId` (and optionally `namespace`) in `frontend/android/app/build.gradle`, and `package_name` /
-   `custom_url_scheme` in `frontend/android/app/src/main/res/values/strings.xml`;
-3. `TEMPORARY_APP_ID` stays as it is (it is what release builds refuse). The lint checks that steps 1 and 2 agree.
+1. `APP_ID` in `frontend/scripts/mobile-rules.mjs` (read by `capacitor.config.ts`);
+2. `namespace` and `applicationId` in `frontend/android/app/build.gradle`, `package_name` / `custom_url_scheme` in
+   `frontend/android/app/src/main/res/values/strings.xml`, and `MainActivity` in
+   `frontend/android/app/src/main/java/tech/aialgodesk/app/`;
+3. `TEMPORARY_APP_ID` (`dev.atp.unpublished`, the first builds' id) stays as it is: release builds refuse it. The lint
+   checks that steps 1 and 2 agree.
 
-Phones need a fresh install (a new id is a new app), and Firebase needs a second registration (MA-2).
+A phone with a build of the old temporary id needs a fresh install (a new id is a new app), and Firebase needs this id
+registered (MA-2).
 
 ## iOS later (Phase C)
 

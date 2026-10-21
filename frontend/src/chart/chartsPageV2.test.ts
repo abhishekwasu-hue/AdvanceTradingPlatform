@@ -331,6 +331,12 @@ describe("UI2-4b2 review: the symbol picker never takes a row left from earlier 
     expect(enterChoice({ ...base, open: false, text: "tcs" })).toEqual({ symbol: "TCS", exchange: "NSE" });
     expect(enterChoice({ ...base, rowsFor: "X", text: "" })).toBeNull();
   });
+
+  it("Enter on the unchanged field (recent list shown, no arrow key yet) opens nothing", () => {
+    expect(enterChoice({ ...base, text: "NIFTY 50", active: -1 })).toBeNull();
+    expect(enterChoice({ ...base, text: "", active: -1 })).toBeNull();
+    expect(enterChoice({ ...base, open: false, text: "nifty 50" })).toBeNull();
+  });
 });
 
 describe("UI2-4b2 review: per-user storage on this browser", () => {

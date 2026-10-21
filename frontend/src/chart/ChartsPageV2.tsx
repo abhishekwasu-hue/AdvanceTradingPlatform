@@ -75,6 +75,9 @@ export default function ChartsPageV2(_props: PageProps) {
   const { status, timeframes, now } = useChartsContext();
   const offered = useMemo(() => offeredTimeframes(timeframes), [timeframes]);
   const [view, setViewState] = useState<ChartsView>(() => readView(userId));
+  // Another user without a remount: that user's own view, so nothing is saved under the wrong key.
+  const [viewUser, setViewUser] = useState(userId);
+  if (viewUser !== userId) { setViewUser(userId); setViewState(readView(userId)); }
   const setView = useCallback((patch: Partial<ChartsView>) => setViewState((v) => {
     const next = { ...v, ...patch };
     saveView(userId, next);

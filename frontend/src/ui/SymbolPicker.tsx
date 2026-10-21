@@ -47,12 +47,15 @@ export function listKeyFor(text: string, value: string): string {
   return !q || q === value.toUpperCase() ? "" : q;
 }
 
-/** What Enter opens: the highlighted row when the rows answer the text as typed now, else that text itself. Pure. */
+/** What Enter opens: the highlighted row when the rows answer the text as typed now, else the text typed. The recent
+ * list has no row highlighted until an arrow key is pressed (`active` -1), so Enter on the unchanged field opens
+ * nothing new. Pure. */
 export function enterChoice(s: { open: boolean; rows: readonly PickedSymbol[]; rowsFor: string | null; active: number; text: string;
                                  value: string; exchange: string }): PickedSymbol | null {
   const fresh = s.open && s.rowsFor === listKeyFor(s.text, s.value);
-  const row = fresh ? s.rows[s.active] : undefined;
+  const row = fresh && s.active >= 0 ? s.rows[s.active] : undefined;
   if (row) return row;
+  if (!listKeyFor(s.text, s.value)) return null;                     // the field still shows the symbol on screen (or nothing)
   const q = s.text.trim().toUpperCase();
   return q ? { symbol: q, exchange: s.exchange } : null;
 }
@@ -83,7 +86,7 @@ export function SymbolPicker({ value, exchange, onPick, storageKey, label = "Sym
   const listKey = listKeyFor(text, value);
   useEffect(() => {
     if (!open) return undefined;
-    if (!listKey) { setRows(readRecent(storageKey)); setRowsFor(""); setActive(0); return undefined; }
+    if (!listKey) { setRows(readRecent(storageKey)); setRowsFor(""); setActive(-1); return undefined; }
     let live = true;
     const t = window.setTimeout(() => {
       void searchSymbols(listKey).then((r) => { if (live) { setRows(r); setRowsFor(listKey); setActive(0); } });
@@ -111,7 +114,8 @@ export function SymbolPicker({ value, exchange, onPick, storageKey, label = "Sym
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       setOpen(true);
-      if (rows.length) setActive((a) => (a + (e.key === "ArrowDown" ? 1 : -1) + rows.length) % rows.length);
+      const n = rows.length;
+      if (n) setActive((a) => (e.key === "ArrowDown" ? (a + 1) % n : a <= 0 ? n - 1 : a - 1));
     } else if (e.key === "Enter") {
       e.preventDefault();
       const choice = enterChoice({ open, rows, rowsFor, active, text, value, exchange });
@@ -131,7 +135,7 @@ export function SymbolPicker({ value, exchange, onPick, storageKey, label = "Sym
       <label htmlFor={`${id}-input`} className="sr-only">{label}</label>
       <Search size={14} aria-hidden className="pointer-events-none absolute left-space-3 top-1/2 -translate-y-1/2 text-fg-muted" />
       <input id={`${id}-input`} role="combobox" aria-expanded={showList} aria-controls={`${id}-list`} aria-autocomplete="list"
-        aria-activedescendant={showList ? `${id}-opt-${active}` : undefined}
+        aria-activedescendant={showList && active >= 0 ? `${id}-opt-${active}` : undefined}
         value={text} onChange={(e) => { setText(e.target.value); setOpen(true); }} onFocus={(e) => { e.target.select(); setOpen(true); }} onBlur={onBlur} onKeyDown={onKey}
         autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Search a symbol"
         className="h-11 w-full rounded-control border border-border bg-surface-2 pl-space-8 pr-space-3 text-t14 font-semibold text-fg placeholder:font-normal placeholder:text-fg-muted focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9" />

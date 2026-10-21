@@ -269,15 +269,28 @@ test.describe("v2 Charts 1440 desktop", () => {
   });
 
   test("review: Enter right after typing opens the typed symbol, never a recent or earlier row", async ({ page }) => {
-    await open(page, "light", { storage: { "atp_recent_symbols:2": JSON.stringify([{ symbol: "TCS", exchange: "NSE" }]) } });
+    // The search is held until after Enter, so Enter lands before any answer however slow the runner is.
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => { release = r; });
+    await open(page, "light", {
+      storage: { "atp_recent_symbols:2": JSON.stringify([{ symbol: "TCS", exchange: "NSE" }]) },
+      before: (p) => p.route(/\/api(?:\/v1)?\/instrument-master\/search/, async (r) => {
+        await held;
+        await r.fulfill({ json: [{ tradingsymbol: "NIFTY BANK", exchange: "NSE", name: "Nifty Bank", instrument_type: "INDEX" }] });
+      }),
+    });
     await chartReady(page);
     const field = page.getByRole("combobox", { name: "Symbol" });
     await field.click();
     await expect(page.getByRole("listbox", { name: "Recent symbols" }).getByRole("option")).toHaveText([/TCS/]);
+    await field.press("Enter");                                                // unchanged field: stays on NIFTY 50
+    await expect(page).toHaveURL(/\/charts$/);
+    await field.click();
     await field.fill("reliance");
     await expect(page.getByRole("listbox")).toHaveCount(0);                    // the recent rows are not shown as matches
     await field.press("Enter");                                                // before the search answers
     await expect(page).toHaveURL(/\/charts\/RELIANCE$/);
+    release();
   });
 
   test("review: leaving the symbol field closes its list, so F works again", async ({ page }) => {

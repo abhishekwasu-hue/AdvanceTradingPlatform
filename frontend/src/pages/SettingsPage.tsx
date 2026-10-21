@@ -2,6 +2,7 @@ import { ChevronRight, Plug } from "lucide-react";
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { useAuth } from "../auth/AuthContext";
+import { BROKER_PATH } from "../broker/paths";
 import AlertChannelsCard from "../components/AlertChannelsCard";
 import AiProviderCard from "../components/AiProviderCard";
 import ApiKeysCard from "../components/ApiKeysCard";
@@ -20,7 +21,7 @@ import { useFeatures } from "../ui/useFeatures";
  * and the static IP, the Upstox redirect URL and the broker accounts to "Advanced" on the Broker page.
  */
 
-export const BROKER_PAGE_PATH = "/broker";
+export const BROKER_PAGE_PATH = BROKER_PATH;
 
 function Section({ id, title, children }: { id: string; title: string; children: ReactNode }) {
   return (

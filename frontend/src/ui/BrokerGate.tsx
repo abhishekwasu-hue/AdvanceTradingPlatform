@@ -2,6 +2,7 @@ import { ExternalLink, KeyRound, LogIn, Plug, TriangleAlert, UserCircle2 } from 
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
+import { BROKER_PATH } from "../broker/paths";
 import { Button } from "../components/primitives";
 import type { BrokerTokenInfo } from "../types";
 import {
@@ -32,7 +33,7 @@ import {
 
 /** The Connect flow: the Broker page (P2b). (A literal, not routes.ts, so this component does not pull every page
  * loader into its chunk; the unit test pins it to pathFor("broker").) */
-export const CONNECT_BROKER_PATH = "/broker";
+export const CONNECT_BROKER_PATH = BROKER_PATH;
 /** The sign-in page for a signed-out visitor (UI-14); pinned to pathFor("account") by the unit test. */
 export const SIGN_IN_PATH = "/account";
 

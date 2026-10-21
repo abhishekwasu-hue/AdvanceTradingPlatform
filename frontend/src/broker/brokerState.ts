@@ -86,3 +86,24 @@ export function monogram(name: string): string {
   if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
   return (words[0]?.[0] ?? "?").toUpperCase();
 }
+
+/** True when this user may connect, renew or remove brokers (the `brokers:write` scope the server checks). A profile
+ * without a scope list (an older server) is left to the server to decide. */
+export function canChangeBrokers(user: { scopes?: string[] } | null | undefined): boolean {
+  if (!user) return false;
+  return !Array.isArray(user.scopes) || user.scopes.includes("brokers:write");
+}
+
+/** The one line a member without that permission sees instead of the actions. */
+export const ASK_OWNER = "Ask the owner of your organisation to connect a broker.";
+
+/** The broker ids the app knows (the catalog's), for anything read from an address - never echo an unknown one. */
+export const KNOWN_BROKERS: Readonly<Record<string, string>> = {
+  upstox: "Upstox", zerodha: "Zerodha", fyers: "Fyers", angel_one: "Angel One", shoonya: "Shoonya", dhan: "Dhan", coindcx: "CoinDCX",
+};
+
+/** A row that cannot fix itself with Renew: not working, or needs a login it cannot renew - "Connect again" instead. */
+export function needsReconnect(c: Pick<BrokerConnection, "status" | "data_only" | "renew">): boolean {
+  const s = shownStatus(c);
+  return s === "not_working" || (s === "needs_login" && !c.renew);
+}

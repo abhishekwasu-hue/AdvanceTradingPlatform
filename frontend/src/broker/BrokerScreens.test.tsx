@@ -7,10 +7,12 @@ import { BrokerLinkCard } from "../pages/SettingsPage";
 import { legacyTarget } from "../shell/common";
 import type { BrokerCatalogEntry, BrokerConnection } from "../types";
 import { BrokerTile, ConnectionRow, RemoveDialog, loginOutcome } from "./BrokerPage";
+import { AnotherAccount, validAccountName } from "./BrokerAdvanced";
 import { BrokerPromptView, promptTitle } from "./BrokerPrompt";
 import { ConnectPanelView, HOW_TO_IMAGES, complete, failureText, stepFor, type ConnectPanelViewProps } from "./ConnectPanel";
 import { RenewBannerView } from "./RenewBanner";
 import { ApiError } from "../api/errors";
+import { canChangeBrokers } from "./brokerState";
 
 const CATALOG = catalogJson as BrokerCatalogEntry[];
 const conn = (over: Partial<BrokerConnection> = {}): BrokerConnection => ({
@@ -81,8 +83,18 @@ describe("P2b Connect panel: only the catalog's fields", () => {
     expect(bad).toContain('role="alert"');
     expect(bad).toMatch(/text-warn/);
     expect(bad).not.toMatch(/text-down|bg-down/);                               // red is only for a 'not working' dot
-    expect(failureText(new ApiError(404, "Not found.", "This broker cannot be connected here."))).toBe("This broker cannot be connected here.");
-    expect(failureText(new ApiError(502, "The server had a problem. Try again."))).toBe("The server had a problem. Try again.");
+    // A failed call (not a P2a answer) is one fixed sentence per status: the server's own text is never shown.
+    const leak = "Traceback: KeyError at app/brokers/connect.py line 1";
+    expect(failureText(new ApiError(404, "Not found.", leak), "Dhan")).toBe("Dhan cannot be connected here.");
+    expect(failureText(new ApiError(502, "x", leak), "Dhan")).toBe("That did not go through. Try again in a moment.");
+    expect(failureText(new ApiError(429, "x", leak))).toBe("Too many attempts. Wait a minute, then try again.");
+    expect(failureText(new ApiError(401, "x", leak))).toBe("Your sign-in has ended. Sign in again, then try again.");
+    expect(failureText(new ApiError(403, "x", "Storing broker credentials requires a fresh two-factor check"))).toContain("two-factor");
+    expect(failureText(new ApiError(403, "x", "Storing broker credentials requires a verified email"))).toContain("Verify your email");
+    expect(failureText(new ApiError(403, "x", leak))).toContain("Ask the owner of your organisation");
+    expect(failureText(new ApiError(404, "x", leak), "Dhan", "remove")).toBe("Dhan is no longer connected.");
+    expect(failureText(new TypeError("Failed to fetch"))).toBe("Cannot reach the server. Check your connection and try again.");
+    for (const st of [400, 401, 403, 404, 409, 422, 429, 500, 502]) expect(failureText(new ApiError(st, "x", leak))).not.toContain("Traceback");
   });
 });
 
@@ -238,6 +250,9 @@ describe("P2b Broker page", () => {
     expect(loginOutcome("?broker=upstox&error=exchange_failed")?.text).toBe("Upstox login did not finish: the broker did not accept the login code. Log in again.");
     expect(loginOutcome("?broker=upstox&error=invalid_state")?.text).toContain("from the Broker page");
     expect(loginOutcome("?foo=1")).toBeNull();
+    // Only known broker ids are named; anything else in the address is never echoed (review L7).
+    expect(loginOutcome("?broker=%3Cb%3Eevil&connected=1")?.text).toBe("Your broker: Connected ✓");
+    expect(loginOutcome("?broker=upstox&error=%3Cscript%3E")?.text).toBe("Upstox login did not finish: the login did not finish. Start it again from the Broker page.");
   });
 });
 
@@ -252,5 +267,55 @@ describe("P2b navigation (today's shell) and Settings", () => {
     expect(html.match(/<(input|select|button)/g)).toBeNull();
     expect(html).not.toMatch(TECHNICAL);
     expect(html).not.toMatch(ADVICE);
+  });
+});
+
+describe("P2b review fixes: rows that need connecting again, permissions, another account", () => {
+  const row = (c: BrokerConnection, canChange = true) => renderToStaticMarkup(<ul><ConnectionRow c={c} canChange={canChange} /></ul>);
+
+  it("a not-working row shows the server's sentence as a second line and 'Connect again' (no Renew)", () => {
+    const html = row(conn({ broker: "dhan", name: "Dhan", status: "not_working", renew: true, message: "Dhan did not accept this token; generate a new one and paste it here." }));
+    expect(html).toContain("data-row-message");
+    expect(html).toContain("Dhan did not accept this token; generate a new one and paste it here.");
+    expect(html).toContain(">Connect again</button>");
+    expect(html).not.toContain(">Renew<");
+  });
+
+  it("a needs-login row that cannot be renewed also offers 'Connect again'; a renewable one does not", () => {
+    const stuck = row(conn({ broker: "coindcx", name: "CoinDCX", status: "needs_login", renew: false, message: "CoinDCX has not confirmed these details yet; press Connect to check them." }));
+    expect(stuck).toContain(">Connect again</button>");
+    expect(stuck).toContain("press Connect to check them");
+    const renewable = row(conn({ status: "needs_login", message: "Upstox needs a login." }));
+    expect(renewable).not.toContain("Connect again");
+    expect(renewable).not.toContain("data-row-message");
+  });
+
+  it("without the brokers:write permission: every action is off", () => {
+    const html = row(conn({ status: "needs_login" }), false);
+    expect(html.match(/<button[^>]*disabled=""/g)).toHaveLength(2);                  // Renew and Remove
+    expect(renderToStaticMarkup(<BrokerTile entry={CATALOG[0]} onPick={noop} canChange={false} />)).toContain('disabled=""');
+    const banner = renderToStaticMarkup(<RenewBannerView connection={conn({ status: "needs_login" })} canChange={false} />);
+    expect(banner).not.toContain("<button");
+    expect(banner).toContain("Ask the owner of your organisation to connect a broker.");
+  });
+
+  it("Connect another account: a broker and an account name; only valid names open the panel", () => {
+    expect(validAccountName("family")).toBe(true);
+    expect(validAccountName("second_2")).toBe(true);
+    expect(validAccountName("two words")).toBe(false);
+    expect(validAccountName("")).toBe(false);
+    const html = renderToStaticMarkup(<AnotherAccount entries={CATALOG} canChange onConnect={noop} />);
+    expect(html).toContain(">Account name</label>");
+    expect(html.match(/<option/g)).toHaveLength(CATALOG.length);
+    expect(html).toMatch(/<button[^>]*type="submit"[^>]*disabled=""/);             // no name yet
+    const viewer = renderToStaticMarkup(<AnotherAccount entries={CATALOG} canChange={false} onConnect={noop} />);
+    expect(viewer).toContain("Ask the owner of your organisation to connect a broker.");
+  });
+
+  it("canChangeBrokers: brokers:write decides; a profile without a scope list is left to the server", () => {
+    expect(canChangeBrokers({ scopes: ["brokers:write"] })).toBe(true);
+    expect(canChangeBrokers({ scopes: ["analytics:read"] })).toBe(false);
+    expect(canChangeBrokers({})).toBe(true);
+    expect(canChangeBrokers(null)).toBe(false);
   });
 });

@@ -17,7 +17,7 @@ let storage: MemoryStorage;
 
 beforeEach(() => {
   storage = new MemoryStorage();
-  g.window = { sessionStorage: storage };
+  g.window = { localStorage: storage };
   resetSignInMemoryForTests();
 });
 afterEach(() => {
@@ -55,11 +55,17 @@ describe("P2b sign-in prompt: 'Later'", () => {
     expect(promptToShow(8, "/", NONE)).toEqual({ kind: "connect" });
   });
 
-  it("is stored in sessionStorage per user, keyed to the sign-in", () => {
+  it("is stored in localStorage per user, keyed to the sign-in (shared by every tab, like the session cookie)", () => {
     markSignIn(7);
     dismissForThisSignIn(7);
     expect(storage.getItem("atp_broker_prompt_later:7")).toBe(signInId(7));
     expect(JSON.parse(storage.getItem("atp_sign_in")!)).toMatchObject({ userId: 7, isNew: false });
+  });
+
+  it("never for a member without the brokers:write permission (review L5)", () => {
+    markSignIn(7);
+    expect(promptToShow(7, "/", NONE, false)).toBeNull();
+    expect(promptToShow(7, "/", NONE, true)).toEqual({ kind: "connect" });
   });
 
   it("never on the Broker page, signed out, or before the connections are known", () => {
@@ -70,15 +76,36 @@ describe("P2b sign-in prompt: 'Later'", () => {
     expect(promptToShow(7, "/", null)).toBeNull();
   });
 
-  it("a session restored in a new tab counts as a sign-in of its own", () => {
-    expect(storage.getItem("atp_sign_in")).toBeNull();
+  it("a new tab or a reload is the same sign-in: Later still holds there (review M1)", () => {
+    markSignIn(7);
     const id = signInId(7);
-    expect(signInId(7)).toBe(id);                                    // stable for the tab
+    dismissForThisSignIn(7);
+    resetSignInMemoryForTests();                                      // another tab: only the shared storage is left
+    expect(signInId(7)).toBe(id);
+    expect(promptToShow(7, "/", NONE)).toBeNull();
+  });
+
+  it("only a real sign-in makes an id: a restored session without a record reads as one fixed sign-in", () => {
+    expect(storage.getItem("atp_sign_in")).toBeNull();
+    expect(signInId(7)).toBe("restored:7");
+    expect(storage.getItem("atp_sign_in")).toBeNull();                // nothing written by a read
+    expect(promptToShow(7, "/", NONE)).toEqual({ kind: "connect" });
+    dismissForThisSignIn(7);
+    expect(promptToShow(7, "/", NONE)).toBeNull();                    // Later holds across tabs and reloads
+    markSignIn(7);                                                    // the next real sign-in
     expect(promptToShow(7, "/", NONE)).toEqual({ kind: "connect" });
   });
 
+  it("signing out clears the record and that user's Later", () => {
+    markSignIn(7);
+    dismissForThisSignIn(7);
+    clearSignIn();
+    expect(storage.getItem("atp_sign_in")).toBeNull();
+    expect(storage.getItem("atp_broker_prompt_later:7")).toBeNull();
+  });
+
   it("works without storage (blocked): kept in memory for this page load, no error", () => {
-    g.window = { get sessionStorage(): Storage { throw new Error("blocked"); } };
+    g.window = { get localStorage(): Storage { throw new Error("blocked"); } };
     markSignIn(9);
     expect(promptToShow(9, "/", NONE)).toEqual({ kind: "connect" });
     dismissForThisSignIn(9);

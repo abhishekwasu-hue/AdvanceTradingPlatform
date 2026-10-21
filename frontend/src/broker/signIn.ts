@@ -1,14 +1,16 @@
 /**
- * P2b: "this sign-in" for the broker prompt. Kept in sessionStorage (this tab, until it closes), per user, and every
- * read and write is wrapped: with storage blocked (a private window, a strict browser) a copy in memory keeps the
- * behaviour for this page load.
+ * P2b: "this sign-in" for the broker prompt. The session is an HttpOnly cookie shared by every tab of this browser, so
+ * the sign-in record lives in localStorage too (shared by those tabs; review M1): a new tab or a reload is the same
+ * sign-in, and "Later" holds there as well. Every read and write is wrapped: with storage blocked (a private window, a
+ * strict browser) a copy in memory keeps the behaviour for this page load.
  *
- * - AuthContext calls `markSignIn` after each real sign-in (password, two-factor, invite, reset, new account), which
- *   gives the sign-in a new id. A session restored in a new tab gets its own id the first time it is read here.
+ * - Only `markSignIn` makes a sign-in id - AuthContext calls it after each real sign-in (password, two-factor, invite,
+ *   reset, new account). A restored session reuses the stored id; with none stored (storage cleared, or a session from
+ *   before this change) it reads as one fixed "restored" sign-in per user, until the next real one.
  * - "Later" on the prompt stores the current sign-in's id under the user (`dismissForThisSignIn`); the prompt stays
  *   away until the id changes - the next sign-in.
  * - A new account is flagged once (`takeNewAccount`): the shell then opens the Broker page first.
- * - Signing out clears the sign-in (`clearSignIn`).
+ * - Signing out clears the record and that user's "Later" (`clearSignIn`).
  */
 
 const SIGN_IN_KEY = "atp_sign_in";
@@ -20,7 +22,7 @@ const memory = new Map<string, string>();
 
 function read(key: string): string | null {
   try {
-    const v = window.sessionStorage.getItem(key);
+    const v = window.localStorage.getItem(key);
     if (v !== null) return v;
   } catch { /* storage unavailable: memory below */ }
   return memory.get(key) ?? null;
@@ -29,7 +31,7 @@ function read(key: string): string | null {
 function write(key: string, value: string | null): void {
   if (value === null) memory.delete(key); else memory.set(key, value);
   try {
-    if (value === null) window.sessionStorage.removeItem(key); else window.sessionStorage.setItem(key, value);
+    if (value === null) window.localStorage.removeItem(key); else window.localStorage.setItem(key, value);
   } catch { /* storage unavailable: memory only */ }
 }
 
@@ -45,25 +47,22 @@ function parse(raw: string | null): SignIn | null {
   try {
     const v = JSON.parse(raw) as Partial<SignIn>;
     if (typeof v.userId === "number" && typeof v.id === "string" && v.id) return { userId: v.userId, id: v.id, isNew: v.isNew === true };
-  } catch { /* unreadable: a new sign-in */ }
+  } catch { /* unreadable: no record */ }
   return null;
 }
 
-/** A real sign-in just happened for `userId` (`isNew`: the account was just created). */
+/** A real sign-in just happened for `userId` (`isNew`: the account was just created). The only place an id is made. */
 export function markSignIn(userId: number, isNew = false): void {
   write(SIGN_IN_KEY, JSON.stringify({ userId, id: newId(), isNew }));
 }
 
-/** The current sign-in's id for `userId`; one is made the first time a restored session is seen in this tab. */
+/** The current sign-in's id for `userId`: the stored one, or a fixed "restored" id when none is stored for this user. */
 export function signInId(userId: number): string {
   const current = parse(read(SIGN_IN_KEY));
-  if (current && current.userId === userId) return current.id;
-  const made: SignIn = { userId, id: newId(), isNew: false };
-  write(SIGN_IN_KEY, JSON.stringify(made));
-  return made.id;
+  return current && current.userId === userId ? current.id : `restored:${userId}`;
 }
 
-/** True once, right after `userId` created the account in this tab. */
+/** True once, right after `userId` created the account. */
 export function takeNewAccount(userId: number): boolean {
   const current = parse(read(SIGN_IN_KEY));
   if (!current || current.userId !== userId || !current.isNew) return false;
@@ -73,6 +72,8 @@ export function takeNewAccount(userId: number): boolean {
 
 /** Signed out: the next sign-in starts fresh (the prompt may show again). */
 export function clearSignIn(): void {
+  const current = parse(read(SIGN_IN_KEY));
+  if (current) write(`${LATER_PREFIX}${current.userId}`, null);
   write(SIGN_IN_KEY, null);
 }
 

@@ -223,7 +223,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         <KpiTile icon={Bot} tone="sky" label="Deployments" value={user ? `${live + paper}` : "…"}
                  sub={user ? <><span className="font-semibold text-fg">{live} LIVE</span> · <span className="text-fg-muted">{paper} PAPER</span>{paused ? <> · <span className="text-warn">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
         <KpiTile icon={Wallet} tone="orange" label="Broker funds" value={user ? (accounts.length ? money(balance) : "-") : "…"}
-                 sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · ${brokers.length} adapters`} onClick={onNavigate && (() => onNavigate("settings"))} />
+                 sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · ${brokers.length} adapters`} onClick={onNavigate && (() => onNavigate("broker"))} />
         <KpiTile icon={GitMerge} tone="fuchsia" label="Strategies" value={strategies.length || "…"}
                  sub={`${mtf} multi-timeframe · ${indicator} indicator`} onClick={onNavigate && (() => onNavigate("strategies"))} />
       </div>

@@ -4,6 +4,7 @@ import {
   Sigma, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, type LucideIcon,
 } from "lucide-react";
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
+import { BROKER_PATH } from "../broker/paths";
 import type { Page } from "../components/Sidebar";
 
 /**
@@ -106,7 +107,7 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
  * the caption search results show.
  */
 export const NAV_PINNED_V2: readonly (NavItemV2 & { section: SectionId })[] = [
-  { ...item("broker", "Broker", "Broker", "/broker", Plug, { keywords: ["brokers", "connect broker", "renew", "login", "upstox", "zerodha"] }), section: "account" },
+  { ...item("broker", "Broker", "Broker", BROKER_PATH, Plug, { keywords: ["brokers", "connect broker", "renew", "login", "upstox", "zerodha"] }), section: "account" },
 ];
 
 /** The pinned entries this trader may see. */

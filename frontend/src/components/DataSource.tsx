@@ -151,7 +151,7 @@ export function DataSourceBar({ source, note }: { source: CandleSourceState; not
       <span className="text-fg-muted">
         {brokerMode
           ? "Real candles through your own broker session (history + today, cached 60 s). The backend computes on them exactly as on sample data."
-          : `Deterministic sample OHLCV; the backend computes everything for real on it. Switch to broker candles once a broker is logged in under Settings.${note ? " " + note : ""}`}
+          : `Deterministic sample OHLCV; the backend computes everything for real on it. Switch to broker candles once a broker is logged in on the Broker page.${note ? " " + note : ""}`}
       </span>
     </div>
   );

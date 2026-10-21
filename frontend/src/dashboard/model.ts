@@ -1,3 +1,4 @@
+import { BROKER_PATH } from "../broker/paths";
 import type { BrokerGateState } from "../ui/brokerSession";
 import { brokerDisplayName } from "../ui/brokerSession";
 import { EMPTY, formatDateIST, formatLots, formatPrice, formatTimeIST } from "../ui/format";
@@ -354,7 +355,7 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
     });
   } else {
     const partly = partlyConnected(input.brokerRows);
-    if (partly) rows.push({ id: "login", icon: "login", tone: "warn", title: partly, detail: "Log in to each broker you trade through today.", action: { label: "Brokers", to: "/settings" } });
+    if (partly) rows.push({ id: "login", icon: "login", tone: "warn", title: partly, detail: "Log in to each broker you trade through today.", action: { label: "Brokers", to: BROKER_PATH } });
   }
   if (entries.length) {
     const named = entries.slice(0, 2).map((a) => {

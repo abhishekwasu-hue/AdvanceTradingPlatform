@@ -30,7 +30,7 @@ const PHONE = { width: 390, height: 844 };
 interface OpenOptions {
   theme?: "light" | "dark";
   mocks?: MockOptions;
-  /** sessionStorage set before the app starts (e.g. a sign-in already marked "Later"). */
+  /** localStorage set before the app first starts (e.g. a sign-in already marked "Later"); kept as the app changes it. */
   session?: Record<string, string>;
   /** Extra routes, registered after mockApi so they answer first. */
   before?: (page: Page) => Promise<void>;
@@ -43,7 +43,7 @@ async function open(page: Page, path: string, { theme = "light", mocks = { conne
       localStorage.setItem("atp_appearance", JSON.stringify({ theme: t }));
       localStorage.setItem("atp_install_dismissed", "1");          // PW1's install offer: not part of these shots
       localStorage.setItem("atp_push_dismissed", "1");
-      for (const [k, v] of Object.entries(s ?? {})) sessionStorage.setItem(k, v);
+      for (const [k, v] of Object.entries(s ?? {})) if (localStorage.getItem(k) === null) localStorage.setItem(k, v);
     } catch { /* storage unavailable */ }
     // Pin what differs between Chromium builds (CI vs local): no install prompt, notifications neither granted nor asked.
     try { Object.defineProperty(Notification, "permission", { get: () => "denied" }); } catch { /* no Notification API */ }
@@ -163,9 +163,16 @@ test.describe("desktop 1440", () => {
     await page.goto("/positions");
     await page.waitForLoadState("networkidle");
     await expect(page.locator("[data-broker-dialog='prompt']")).toHaveCount(0);   // the rest of this sign-in
-    expect(await page.evaluate(() => sessionStorage.getItem("atp_broker_prompt_later:2"))).toBeTruthy();
-    // A new sign-in (signing out clears it; a new tab starts its own): the prompt is back.
-    await page.evaluate(() => sessionStorage.removeItem("atp_sign_in"));
+    expect(await page.evaluate(() => localStorage.getItem("atp_broker_prompt_later:2"))).toBeTruthy();
+    // A new tab of the same sign-in (the session cookie is shared by every tab): still no prompt (review M1).
+    const tab = await page.context().newPage();
+    await tab.goto("/");
+    await tab.waitForLoadState("networkidle");
+    await expect(tab.locator("main")).toBeVisible();
+    await expect(tab.locator("[data-broker-dialog='prompt']")).toHaveCount(0);
+    await tab.close();
+    // A new sign-in (AuthContext writes a new id; here the record is replaced by hand): the prompt is back.
+    await page.evaluate(() => localStorage.setItem("atp_sign_in", JSON.stringify({ userId: 2, id: "next-sign-in", isNew: false })));
     await page.reload();
     await page.waitForLoadState("networkidle");
     await expect(page.locator("[data-broker-dialog='prompt']")).toBeVisible();
@@ -191,6 +198,7 @@ test.describe("desktop 1440", () => {
     await expect(page.locator("[data-broker-dialog='prompt']")).toHaveCount(0);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
+    await expect(page).toHaveURL(/\/$/);                                          // only the first time
     await expect(page.locator("[data-broker-dialog='prompt']")).toHaveCount(0);   // that was this sign-in's prompt
   });
 
@@ -275,6 +283,52 @@ test.describe("desktop 1440", () => {
     await expect(page.getByText("Broker session health")).toHaveCount(0);
     await expect(page.locator("#integrations").getByText("TradingView webhook")).toBeVisible();
     await expect(page.locator("#ai").getByText("Vision with your own AI key", { exact: true })).toBeVisible();
+  });
+
+  test("a member without brokers:write: no prompt, the actions are off, one line to ask the owner", async ({ page }) => {
+    await open(page, "/broker", { mocks: { connections: [ZERODHA_LOGIN] }, before: async (p) => {
+      await p.route(/\/api(?:\/v1)?\/auth\/me$/, (r) => r.fulfill({ json: { id: 3, email: "viewer@example.com", tenant_id: 2, role: "VIEWER", email_verified: true, scopes: ["analytics:read"] } }));
+    } });
+    await expect(page.locator("[data-broker-dialog='prompt']")).toHaveCount(0);
+    await expect(page.locator("[data-ask-owner]")).toHaveText("Ask the owner of your organisation to connect a broker.");
+    await expect(page.locator("[data-broker-tile='dhan']")).toBeDisabled();
+    const row = page.locator("[data-connection='zerodha']");
+    await expect(row.getByRole("button", { name: "Renew" })).toBeDisabled();
+    await expect(row.getByRole("button", { name: "Remove" })).toBeDisabled();
+  });
+
+  test("Advanced: Connect another account opens the panel for that account; Log in with Upstox", async ({ page }) => {
+    const sent: unknown[] = [];
+    let oauthLabel = "";
+    await open(page, "/broker", { session: LATER, mocks: {
+      connections: [UPSTOX_DATA],
+      brokers: [{ broker_name: "upstox", account_label: "primary", token_status: "EXPIRED", token_expires_at: null, last_verified_at: null,
+        needs_login: true, oauth_supported: true, oauth_callback_url: "https://atp.example.com/api/broker/upstox/oauth/callback" }],
+    }, before: async (p) => {
+      await p.route(/\/api(?:\/v1)?\/broker\/dhan\/connect$/, (r) => { sent.push(r.request().postDataJSON()); return r.fulfill({ json: { status: "connected", message: "Connected." } }); });
+      await p.route(/\/api(?:\/v1)?\/broker\/upstox\/oauth\/start/, (r) => {
+        oauthLabel = new URL(r.request().url()).searchParams.get("account_label") ?? "";
+        return r.fulfill({ json: { authorization_url: "https://upstox.example/login" } });
+      });
+      await p.route("https://upstox.example/**", (r) => r.fulfill({ body: "upstox login" }));
+    } });
+    await page.locator("[data-broker-advanced] summary").click();
+    const another = page.locator("[data-another-account]");
+    await another.getByLabel("Broker").selectOption("dhan");
+    await another.getByLabel("Account name").fill("family");
+    await another.getByRole("button", { name: "Connect" }).click();
+    const panel = page.locator("[data-broker-dialog='connect']");
+    await panel.getByLabel("Client ID").fill("1000000002");
+    await panel.getByLabel("Access token").fill("e2e-made-up-value");
+    await panel.getByRole("button", { name: "Connect", exact: true }).click();
+    await expect(panel.getByText("Connected ✓")).toBeVisible();
+    expect(sent).toEqual([{ fields: { client_id: "1000000002", access_token: "e2e-made-up-value" }, account_label: "family" }]);
+    await panel.getByRole("button", { name: "Done" }).click();
+    await expect(page.locator("[data-broker-advanced]").getByRole("textbox", { name: "Redirect URL" }))
+      .toHaveValue("https://atp.example.com/api/broker/upstox/oauth/callback");
+    await page.locator("[data-upstox-oauth='primary']").click();
+    await expect(page).toHaveURL("https://upstox.example/login");
+    expect(oauthLabel).toBe("primary");
   });
 
   test("the v2 shell shows the same Broker page, with Broker first in its sidebar", async ({ page }) => {

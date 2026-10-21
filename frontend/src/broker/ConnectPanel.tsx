@@ -1,7 +1,8 @@
 import { ExternalLink, TriangleAlert } from "lucide-react";
 import { useEffect, useId, useState, type FormEvent } from "react";
 import { api } from "../api/client";
-import { ApiError } from "../api/errors";
+import { ApiError, NETWORK_MESSAGE } from "../api/errors";
+import { loginErrorText } from "../ui/brokerSession";
 import type { BrokerCatalogEntry, BrokerCatalogField } from "../types";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog } from "./parts";
 import { entryFor, useBrokerCatalog } from "./useBrokerCatalog";
@@ -51,10 +52,30 @@ export function stepFor(entry: Pick<BrokerCatalogEntry, "method" | "fields" | "r
 
 export type PanelResult = { ok: true } | { ok: false; text: string };
 
-/** The plain sentence for a failed request: the server's own when it sent one, else the client's friendly one. */
-export function failureText(e: unknown): string {
-  if (e instanceof ApiError) return e.detail || e.message;
-  return String(e instanceof Error ? e.message : e);
+/**
+ * A failed request (the call itself, not a P2a answer) as one fixed sentence per status (review M4, like
+ * brokerSession.loginErrorText): the server's own text is never shown here, as it may name internals. A connect or
+ * renew that the server answered (HTTP 200) shows its `message`, which P2a writes for display.
+ */
+export function failureText(e: unknown, brokerName = "the broker", action: "connect" | "remove" = "connect"): string {
+  if (e instanceof ApiError) {
+    if (e.status === 0 || e.message === NETWORK_MESSAGE) return NETWORK_MESSAGE;
+    switch (e.status) {
+      case 401: return "Your sign-in has ended. Sign in again, then try again.";
+      case 403:
+        if (/two-factor|step-up|authenticator/i.test(`${e.detail} ${e.body}`)) {
+          return "This needs a fresh two-factor check. Confirm it with your authenticator app, then try again.";
+        }
+        if (/verif/i.test(`${e.detail} ${e.body}`)) return "Verify your email address first (Account page), then try again.";
+        return "You do not have permission to change brokers. Ask the owner of your organisation.";
+      case 404: return action === "remove" ? `${brokerName} is no longer connected.` : `${brokerName} cannot be connected here.`;
+      case 409: return "This connection changed at the same moment somewhere else. Try again.";
+      case 429: return "Too many attempts. Wait a minute, then try again.";
+      default: return action === "remove" ? `${brokerName} could not be removed. Try again in a moment.` : "That did not go through. Try again in a moment.";
+    }
+  }
+  if (e instanceof TypeError) return NETWORK_MESSAGE;
+  return "That did not go through. Try again in a moment.";
 }
 
 /** True when every field has a value (spaces alone do not count). No fields: nothing to fill in (one click). */
@@ -215,7 +236,7 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
         setAfterSave(r.message || `Saved. Now press Log in, sign in to ${entry.name} and paste the address you land on.`);
       } else setResult({ ok: false, text: r.message || "Not connected yet. Check the details and try again." });
     } catch (e) {
-      setResult({ ok: false, text: failureText(e) });
+      setResult({ ok: false, text: failureText(e, entry.name) });
     } finally {
       setBusy(false);
     }
@@ -234,7 +255,7 @@ export default function ConnectPanel({ broker, mode, accountLabel, open, onOpenC
         if (tab) tab.location.href = authorization_url;
         setLoginOpened({ link: authorization_url, opened: !!tab });
       })
-      .catch((e: unknown) => { tab?.close(); setResult({ ok: false, text: failureText(e) }); })
+      .catch((e: unknown) => { tab?.close(); setResult({ ok: false, text: loginErrorText(e, entry.broker) }); })
       .finally(() => setLoginBusy(false));
   }
 

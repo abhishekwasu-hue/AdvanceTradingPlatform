@@ -70,7 +70,7 @@ export default function WebhookCard() {
               </button>
             </div>
           )}
-          <button onClick={rotate} disabled={busy} className="text-xs text-down hover:underline disabled:opacity-50">
+          <button onClick={rotate} disabled={busy} className="text-xs text-fg-muted hover:text-fg hover:underline disabled:opacity-50">
             {webhook.webhook_url ? "Rotate URL (invalidates the old one)" : "Rotate: issue a new webhook URL (owner)"}
           </button>
         </div>

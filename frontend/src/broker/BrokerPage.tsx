@@ -6,7 +6,8 @@ import { useAuth } from "../auth/AuthContext";
 import type { BrokerCatalogEntry, BrokerConnection } from "../types";
 import { oauthErrorText } from "../utils/oauthErrors";
 import BrokerAdvanced from "./BrokerAdvanced";
-import { connectionTitle, shownStatus, statusText } from "./brokerState";
+import { ASK_OWNER, KNOWN_BROKERS, canChangeBrokers, connectionTitle, needsReconnect, shownStatus, statusText } from "./brokerState";
+import { SIGN_IN_PAGE_PATH } from "./paths";
 import ConnectPanel, { failureText, type PanelMode } from "./ConnectPanel";
 import { BTN_PRIMARY, BTN_SECONDARY, BrokerLogo, ResponsiveDialog, StatusDot } from "./parts";
 import { useBrokerCatalog } from "./useBrokerCatalog";
@@ -17,7 +18,10 @@ import { useBrokerConnections } from "./useBrokerConnections";
  * - "Connect your broker" and a grid of broker tiles from the catalog; a tile opens the Connect panel.
  * - Your brokers, one line each: tile, name, status, "Renew" (only for a broker with a daily login), "Remove" (a
  *   neutral confirm that names what happens). Nothing else.
- * - "Advanced", collapsed: the Upstox redirect URL, the static IP, the broker accounts.
+ * - "Advanced", collapsed: another account at the same broker, the Upstox login and redirect URL, the static IP, the
+ *   broker accounts.
+ * A member without the `brokers:write` permission sees the same page with the actions off and one line to ask the
+ * owner (the server refuses the calls anyway).
  * No token expiry times, no credential form, no developer text here. Places no orders.
  */
 
@@ -26,44 +30,47 @@ import { useBrokerConnections } from "./useBrokerConnections";
 export function loginOutcome(search: string): { ok: boolean; text: string } | null {
   const params = new URLSearchParams(search);
   if (!params.has("broker")) return null;
-  const name = brokerName(params.get("broker") ?? "");
+  const name = KNOWN_BROKERS[(params.get("broker") ?? "").toLowerCase()] ?? "Your broker";   // never echo the address
   if (params.get("connected") === "1") return { ok: true, text: `${name}: Connected ✓` };
   const error = params.get("error");
   if (error) return { ok: false, text: `${name} login did not finish: ${oauthErrorText(error)}` };
   return null;
 }
 
-function brokerName(id: string): string {
-  if (!id) return "Your broker";
-  return id.split(/[_\s-]+/).filter(Boolean).map((w) => w[0].toUpperCase() + w.slice(1)).join(" ");
-}
-
-export function ConnectionRow({ c, onRenew, onRemove }: { c: BrokerConnection; onRenew?: () => void; onRemove?: () => void }) {
+export function ConnectionRow({ c, canChange = true, onRenew, onRemove, onReconnect }: {
+  c: BrokerConnection; canChange?: boolean; onRenew?: () => void; onRemove?: () => void; onReconnect?: () => void;
+}) {
   const status = shownStatus(c);
+  const reconnect = needsReconnect(c);
   return (
     <li data-connection={c.broker} data-status={status} className="flex flex-wrap items-center gap-x-space-3 gap-y-space-2 py-space-3">
       <BrokerLogo name={c.name} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-t14 font-semibold text-fg">{connectionTitle(c)}</div>
-        <div className="flex items-center gap-space-2 text-t13 text-fg-muted" title={status === "connected" ? undefined : c.message || undefined}>
+        <div className="flex items-center gap-space-2 text-t13 text-fg-muted">
           <StatusDot dot={status} />
           <span className="truncate">{statusText(c)}{status === "connected" ? " ✓" : ""}</span>
         </div>
+        {/* What is wrong, in the server's own sentence, when Renew cannot fix it. */}
+        {reconnect && c.message && <p data-row-message className="mt-space-1 text-t13 text-fg-muted">{c.message}</p>}
       </div>
       {/* On a phone the buttons take a line of their own, so the name and status are never cut short. */}
       <div className="flex w-full justify-end gap-space-2 sm:w-auto">
-        {c.renew && !c.data_only && (
-          <button type="button" onClick={onRenew} className={status === "needs_login" ? BTN_PRIMARY : BTN_SECONDARY}>Renew</button>
+        {c.renew && !c.data_only && status !== "not_working" && (
+          <button type="button" onClick={onRenew} disabled={!canChange} className={status === "needs_login" ? BTN_PRIMARY : BTN_SECONDARY}>Renew</button>
         )}
-        <button type="button" onClick={onRemove} className={BTN_SECONDARY}>Remove</button>
+        {reconnect && (
+          <button type="button" onClick={onReconnect} disabled={!canChange} className={BTN_PRIMARY}>Connect again</button>
+        )}
+        <button type="button" onClick={onRemove} disabled={!canChange} className={BTN_SECONDARY}>Remove</button>
       </div>
     </li>
   );
 }
 
-export function BrokerTile({ entry, onPick }: { entry: BrokerCatalogEntry; onPick: () => void }) {
+export function BrokerTile({ entry, onPick, canChange = true }: { entry: BrokerCatalogEntry; onPick: () => void; canChange?: boolean }) {
   return (
-    <button type="button" onClick={onPick} disabled={!entry.available} data-broker-tile={entry.broker}
+    <button type="button" onClick={onPick} disabled={!entry.available || !canChange} data-broker-tile={entry.broker}
       className="flex min-h-[96px] flex-col items-center justify-center gap-space-2 rounded-panel border border-subtle bg-surface-1 p-space-3 text-t14 font-medium text-fg hover:border-border hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand disabled:cursor-not-allowed disabled:opacity-60">
       <BrokerLogo name={entry.name} size="lg" />
       <span className="text-center leading-tight">{entry.name}</span>
@@ -133,7 +140,7 @@ export default function BrokerPage() {
       setRemoving(null);
       refresh();
     } catch (e) {
-      setRemoveError(failureText(e));
+      setRemoveError(failureText(e, removing.name, "remove"));
     } finally {
       setRemoveBusy(false);
     }
@@ -144,13 +151,14 @@ export default function BrokerPage() {
     return (
       <section className="mx-auto max-w-xl space-y-space-3 rounded-panel border border-subtle bg-surface-1 p-space-5 text-center">
         <h2 className="text-t18 font-semibold text-fg">Sign in to connect your broker</h2>
-        <Link to="/account" className={`${BTN_PRIMARY} w-full sm:w-auto`}>Sign in</Link>
+        <Link to={SIGN_IN_PAGE_PATH} className={`${BTN_PRIMARY} w-full sm:w-auto`}>Sign in</Link>
       </section>
     );
   }
 
   const entries = catalog.entries ?? [];
   const connected = rows ?? [];
+  const canChange = canChangeBrokers(user);
   return (
     <div className="mx-auto max-w-3xl space-y-space-6" data-broker-page>
       {outcome && (
@@ -165,8 +173,9 @@ export default function BrokerPage() {
           <h2 id="your-brokers" className="pt-space-4 text-t15 font-semibold text-fg">Your brokers</h2>
           <ul className="divide-y divide-border-subtle">
             {connected.map((c) => (
-              <ConnectionRow key={`${c.broker}/${c.account_label}`} c={c}
+              <ConnectionRow key={`${c.broker}/${c.account_label}`} c={c} canChange={canChange}
                 onRenew={() => openPanel(c.broker, "renew", c.account_label)}
+                onReconnect={() => openPanel(c.broker, "connect", c.account_label)}
                 onRemove={() => { setRemoveError(null); setRemoving(c); }} />
             ))}
           </ul>
@@ -183,6 +192,7 @@ export default function BrokerPage() {
         <div>
           <h2 id="connect-broker" className="text-t20 font-semibold text-fg">Connect your broker</h2>
           <p className="mt-space-1 text-t14 text-fg-muted">See live charts and start paper trading.</p>
+          {!canChange && <p data-ask-owner className="mt-space-2 text-t14 text-fg">{ASK_OWNER}</p>}
         </div>
         {catalog.entries === null && !catalog.failed ? (
           <div aria-busy="true" className="grid grid-cols-2 gap-space-3 sm:grid-cols-3 md:grid-cols-4">
@@ -196,12 +206,13 @@ export default function BrokerPage() {
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-space-3 sm:grid-cols-3 md:grid-cols-4">
-            {entries.map((e) => <BrokerTile key={e.broker} entry={e} onPick={() => openPanel(e.broker, "connect")} />)}
+            {entries.map((e) => <BrokerTile key={e.broker} entry={e} canChange={canChange} onPick={() => openPanel(e.broker, "connect")} />)}
           </div>
         )}
       </section>
 
-      <BrokerAdvanced />
+      <BrokerAdvanced entries={entries} canChange={canChange}
+        onConnectAccount={(broker, label) => openPanel(broker, "connect", label)} />
 
       <ConnectPanel broker={panel?.broker ?? null} mode={panel?.mode ?? "connect"} accountLabel={panel?.label}
         open={panelOpen} onOpenChange={setPanelOpen} onChanged={refresh} />

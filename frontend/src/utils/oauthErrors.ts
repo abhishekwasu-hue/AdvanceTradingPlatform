@@ -1,5 +1,5 @@
 /** The Upstox OAuth callback returns to the app with `?broker=upstox&error=<code>`; these are the words shown for each code.
- * Unknown codes are shown as they are. */
+ * An unknown code gets one generic sentence: text from the address is never shown (P2b review). */
 const MESSAGES: Record<string, string> = {
   not_holder:
     "this broker connection was linked by another member of your organisation. With the bring-your-own-broker data tier on, only they can log in to it - ask them to log in, or ask an owner to remove it before you link your own account.",
@@ -11,6 +11,8 @@ const MESSAGES: Record<string, string> = {
   no_token_returned: "the broker returned no session token. Log in again.",
 };
 
+export const UNKNOWN_ERROR = "the login did not finish. Start it again from the Broker page.";
+
 export function oauthErrorText(code: string): string {
-  return MESSAGES[code] ?? code;
+  return Object.prototype.hasOwnProperty.call(MESSAGES, code) ? MESSAGES[code] : UNKNOWN_ERROR;
 }

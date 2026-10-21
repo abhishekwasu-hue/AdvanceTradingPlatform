@@ -2,12 +2,12 @@ import { Suspense, lazy, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
 import type { BrokerConnection } from "../types";
-import { promptFor, type BrokerPrompt } from "./brokerState";
+import { canChangeBrokers, promptFor, type BrokerPrompt } from "./brokerState";
+import { BROKER_PATH } from "./paths";
 import { dismissForThisSignIn, dismissedThisSignIn, takeNewAccount } from "./signIn";
 import { useBrokerConnections } from "./useBrokerConnections";
 
-/** The Broker page's address in both shells. */
-export const BROKER_PATH = "/broker";
+export { BROKER_PATH };
 
 const BrokerPromptDialog = lazy(() => import("./BrokerPrompt"));
 
@@ -18,8 +18,10 @@ export function isBrokerPath(pathname: string): boolean {
 
 /** The prompt this user should see now, or null: signed in, not on the Broker page, "Later" not chosen during this
  * sign-in, and no broker connected (see promptFor). */
-export function promptToShow(userId: number | null, pathname: string, rows: readonly BrokerConnection[] | null): BrokerPrompt | null {
-  if (userId === null || isBrokerPath(pathname) || dismissedThisSignIn(userId)) return null;
+export function promptToShow(userId: number | null, pathname: string, rows: readonly BrokerConnection[] | null,
+  canChange = true): BrokerPrompt | null {
+  // A member who may not connect brokers (no `brokers:write`, e.g. a viewer) is never asked to.
+  if (userId === null || !canChange || isBrokerPath(pathname) || dismissedThisSignIn(userId)) return null;
   return promptFor(rows);
 }
 
@@ -41,12 +43,12 @@ export default function BrokerPromptHost() {
 
   // A new account: straight to the Broker page; that counts as this sign-in's prompt.
   useEffect(() => {
-    if (userId === null || !takeNewAccount(userId)) return;
+    if (userId === null || !canChangeBrokers(user) || !takeNewAccount(userId)) return;
     dismissForThisSignIn(userId);
     if (!onBrokerPage) navigate(BROKER_PATH);
   }, [userId]);                                            // once per user (the flag is taken once)
 
-  const wanted = promptToShow(userId, pathname, rows);
+  const wanted = promptToShow(userId, pathname, rows, canChangeBrokers(user));
   useEffect(() => {
     if (userId === null) { setShown(null); return; }
     // Checked again here: the new-account step above may have just used this sign-in's prompt.

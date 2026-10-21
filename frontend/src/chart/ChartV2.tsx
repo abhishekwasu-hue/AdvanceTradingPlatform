@@ -4,7 +4,8 @@ import { venueZone } from "../charting/chartTypes";
 import type { LightweightEngine } from "../charting/lightweight";
 import { THEME_EVENT, useAppearance } from "../theme";
 import type { LtpResponse } from "../types";
-import { ChartCore, OVERLAYS_V2, OVERLAY_LABELS_V2, type ChartTypeV2, type OverlayId } from "./chartCore";
+import { ChartCore, OVERLAYS_V2, OVERLAY_LABELS_V2, type ChartTypeV2, type LevelLine, type OverlayId } from "./chartCore";
+import { LiveChip } from "./LiveChip";
 import { readChartPalette, resolveChartTheme } from "./chartTheme";
 import { foldLive, type ChartBar, type TimeframeId } from "./timeframes";
 import { DEFAULT_CHART_PREFS, type ChartPrefs } from "./useChartPrefs";
@@ -29,7 +30,12 @@ export interface ChartV2Props {
   prefs?: ChartPrefs;
   overlays?: readonly OverlayId[];
   /** The last price: the forming bar moves (day / week / month: only a bar the server marked forming). */
-  live?: Pick<LtpResponse, "ltp" | "timestamp" | "fetched_at"> | null;
+  live?: (Pick<LtpResponse, "ltp" | "timestamp" | "fetched_at"> & Partial<Pick<LtpResponse, "stale" | "age_seconds">>) | null;
+  /** UI2-4e: the market state of this chart's venue (null: not known). Given, the chart shows the "Live" / "Price
+   * delayed" chip while it has a live price and the market is not closed; left out, no chip. */
+  marketOpen?: boolean | null;
+  /** UI2-4e: levels to mark (a signal's entry, stop and target). */
+  levels?: readonly LevelLine[];
   /** Scrolled back to the oldest bars: load the page before them. */
   onLoadOlder?: () => void;
   /** The volume pane's name (UI2-4b2: where an index's volume comes from). */
@@ -45,10 +51,11 @@ export interface ChartV2Props {
 }
 
 const NO_OVERLAYS: readonly OverlayId[] = [];
+const NO_LEVELS: readonly LevelLine[] = [];
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  onLoadOlder, volumeLabel = "Volume", emptyText = "No bars for this timeframe yet.", drawingTools = true, onEngine, onTools, className = "h-[480px]",
+  marketOpen, levels = NO_LEVELS, onLoadOlder, volumeLabel = "Volume", emptyText = "No prices for this timeframe yet.", drawingTools = true, onEngine, onTools, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -89,6 +96,8 @@ export default function ChartV2({
   useEffect(() => { core?.setVolumeLabel(volumeLabel); }, [core, volumeLabel]);
   const overlayKey = overlays.join(",");
   useEffect(() => { core?.setOverlays(overlays); }, [core, overlayKey]);  // eslint-disable-line react-hooks/exhaustive-deps
+  const levelKey = levels.map((l) => `${l.price}|${l.title}|${l.tone}`).join(",");
+  useEffect(() => { core?.setLevels(levels); }, [core, levelKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   // The chart type is not in the key: setType re-renders the same bars in place, so the trader's zoom stays.
   useEffect(() => { core?.setData(display, `${symbol ?? ""}|${exchange}|${timeframe}`); }, [core, display, symbol, exchange, timeframe]);
 
@@ -99,17 +108,21 @@ export default function ChartV2({
     <div ref={rootRef} data-chart-theme={theme} data-chart-grid={prefs.grid ? "on" : "off"} className={`relative w-full ${className}`}
          style={{ backgroundColor: "rgb(var(--chart-bg))" }}>
       <div ref={plotRef} className="h-full w-full" />
-      {overlays.length > 0 && (
-        // The price lines' legend (UI2-4b2), in their chart colours; the lower panes name themselves on the canvas.
-        <ul aria-label="Price lines" data-chart-legend className="pointer-events-none absolute left-space-2 top-space-2 z-10 flex flex-wrap gap-x-space-3 text-t12"
-            style={{ color: "rgb(var(--chart-text))" }}>
-          {OVERLAYS_V2.map((id, i) => overlays.includes(id) && (
-            <li key={id} className="flex items-center gap-space-1">
-              <span aria-hidden className="inline-block h-0.5 w-3 rounded-pill" style={{ backgroundColor: `rgb(var(--chart-ov-${i + 1}))` }} />
-              {OVERLAY_LABELS_V2[id]}
-            </li>
-          ))}
-        </ul>
+      {(overlays.length > 0 || (marketOpen !== undefined && !!live)) && (
+        <div className="pointer-events-none absolute left-space-2 top-space-2 z-10 flex flex-wrap items-center gap-x-space-3 gap-y-space-1">
+          {marketOpen !== undefined && <span className="pointer-events-auto empty:hidden"><LiveChip live={live} marketOpen={marketOpen} /></span>}
+          {overlays.length > 0 && (
+            // The price lines' legend (UI2-4b2), in their chart colours; the lower panes name themselves on the canvas.
+            <ul aria-label="Price lines" data-chart-legend className="flex flex-wrap gap-x-space-3 text-t12" style={{ color: "rgb(var(--chart-text))" }}>
+              {OVERLAYS_V2.map((id, i) => overlays.includes(id) && (
+                <li key={id} className="flex items-center gap-space-1">
+                  <span aria-hidden className="inline-block h-0.5 w-3 rounded-pill" style={{ backgroundColor: `rgb(var(--chart-ov-${i + 1}))` }} />
+                  {OVERLAY_LABELS_V2[id]}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       )}
       {candles.length === 0 && (
         <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-space-4 text-center text-t13" style={{ color: "rgb(var(--chart-text))" }}>

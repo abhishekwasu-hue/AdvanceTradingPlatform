@@ -9,7 +9,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   (`dashboard-<width>-<theme>.png`, mobile.e2e.ts) are untouched: with the flag off it renders as before.
  * - On a phone: the PW2 layout rules (no sideways scroll, 44 px targets, nothing behind the bottom bar), one column in
  *   the §5 order, and the same in the "log in" and empty states.
- * - The blocks' data, the broker states, the friendly empty states, one primary button, and the removals.
+ * - The blocks' data, the broker states, the friendly empty states, one primary button, and the removals (UI2-4e: no
+ *   chart on this page; the v2 chart is on Charts and in the Signals detail).
  * Every reply is hand-written, made-up data (e2e/fixtures/dashboard_v2.json): no real account, price or id.
  * After an intended change: `npx playwright test --project=phone e2e/dashboard-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
@@ -187,6 +188,15 @@ test.describe("v2 dashboard 1440 desktop", () => {
       "Go-live", "Broker funds", "Net P&L", "registry", "adapter", "flag", "503", "sample"]) {
       await expect(main.getByText(gone, { exact: false }), gone).toHaveCount(0);
     }
+  });
+
+  test("UI2-4e: no chart here - Market pulse lives on Charts, so nothing draws a chart or reads candles", async ({ page }) => {
+    const candles: string[] = [];
+    page.on("request", (r) => { if (/\/market-data\/candles/.test(r.url())) candles.push(r.url()); });
+    await open(page, "light");
+    await expect(page.locator("[data-page='dashboard-v2']")).toBeVisible();
+    await expect(page.locator(".tv-lightweight-charts, [data-embedded-chart], [data-live-chip]")).toHaveCount(0);
+    expect(candles).toEqual([]);
   });
 
   test("a glossary '?' explains a term", async ({ page }) => {

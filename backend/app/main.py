@@ -34,6 +34,7 @@ from app.backtest.routes import BacktestBody, BacktestRunner, ExitRulesBody, Opt
 from app.brokers.models import OptionChain
 from app.brokers.registry import available_brokers
 from app.brokers.routes import router as broker_router
+from app.brokers.connect import router as broker_connect_router
 from app.live.routes import router as live_router
 from app.cache.client import cache_get, cache_set
 from app.custom_strategies.resolver import custom_strategy_info, resolve_strategy
@@ -221,6 +222,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(broker_router)
+app.include_router(broker_connect_router)   # P2a: simple broker connect (catalog, connections, connect, renew)
 app.include_router(strategy_chart_router)  # Phase AO: strategies drawn on the chart
 app.include_router(trading_router)
 app.include_router(journal_router)  # Z6 / P1-e: journal, behaviour tags, discipline score (flag discipline_engine, off)

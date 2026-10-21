@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -212,23 +212,12 @@ async def _write_if_unchanged(session: AsyncSession, record: BrokerCredentialRec
     return int(getattr(result, "rowcount", 0) or 0) == 1
 
 
-@router.post("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
-async def store_broker_credentials(
-    name: str, credentials: BrokerCredentials,
-    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
-    session_id: Optional[int] = Depends(current_session_id), account_label: str = "primary",
-) -> None:
-    from app.auth.scopes import has_scope, scope_denied
-    from app.auth.verification import ensure_verified
-    if not has_scope(user, "brokers:write"):
-        raise scope_denied(user, "brokers:write")
-    ensure_verified(user, "Storing broker credentials")
-    await ensure_live_step_up(session, user, session_id, "Storing broker credentials")
-    """Encrypts and stores this tenant's credentials for one broker. Nothing is ever stored in
-    plaintext; the ciphertext is only decrypted in memory, on demand, when /authenticate runs.
-    Storing resets the token status to UNKNOWN - a pasted access token is unproven until
-    /authenticate (or the OAuth callback) succeeds against the broker.
-    """
+async def save_credentials(session: AsyncSession, user: User, name: str, account_label: str,
+                           credentials: BrokerCredentials) -> Tuple[BrokerCredentialRecord, bool]:
+    """Encrypt and store this tenant's credentials for one broker account; the shared core of POST /{name}/credentials
+    and P2a's POST /{name}/connect. The caller has already run the scope, verification and step-up checks. Returns the
+    row and whether a new analytics token was saved (the caller probes it after the commit). Raises HTTPException
+    (400 / 409) when nothing could be stored."""
     _ensure_known_broker(name)
     account_label = _clean_label(account_label)
     analytics_token = _clean_analytics_token(name, credentials.analytics_token)
@@ -283,6 +272,27 @@ async def store_broker_credentials(
     await write_audit_log(session, user.tenant_id, user.id, "broker_credentials_stored",
                           f"{name}/{account_label}" + (" (analytics token saved)" if new_analytics else ""))
     await session.commit()
+    return record, new_analytics
+
+
+@router.post("/{name}/credentials", status_code=status.HTTP_204_NO_CONTENT)
+async def store_broker_credentials(
+    name: str, credentials: BrokerCredentials,
+    user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
+    session_id: Optional[int] = Depends(current_session_id), account_label: str = "primary",
+) -> None:
+    """Encrypts and stores this tenant's credentials for one broker. Nothing is ever stored in
+    plaintext; the ciphertext is only decrypted in memory, on demand, when /authenticate runs.
+    Storing resets the token status to UNKNOWN - a pasted access token is unproven until
+    /authenticate (or the OAuth callback) succeeds against the broker.
+    """
+    from app.auth.scopes import has_scope, scope_denied
+    from app.auth.verification import ensure_verified
+    if not has_scope(user, "brokers:write"):
+        raise scope_denied(user, "brokers:write")
+    ensure_verified(user, "Storing broker credentials")
+    await ensure_live_step_up(session, user, session_id, "Storing broker credentials")
+    record, new_analytics = await save_credentials(session, user, name, account_label, credentials)
     if new_analytics:
         # The real-call check: one read-only GET per market-data class; the token is used only where it works.
         await _probe_quietly(session, record)
@@ -391,6 +401,45 @@ async def smoke_test_broker(
     return out
 
 
+async def run_authentication(session: AsyncSession, user: User, record: BrokerCredentialRecord, label: str,
+                             ) -> Tuple[Optional[BrokerProfile], Optional[Exception]]:
+    """A real login against the broker with this row's stored (encrypted) credentials; the shared core of
+    /authenticate and P2a's /connect and /renew. Success marks the token VALID until the broker's next daily expiry
+    (persisting a newly exchanged access token, if the login produced one) and commits; returns (profile, None). A
+    failure is audited, a token-related one marks the row EXPIRED, and it is returned as (None, exc) - never raised.
+    Raises HTTPException 409 when the row changed hands during the broker round-trip (nothing written)."""
+    name = record.broker_name
+    expected_user, expected_payload = record.user_id, record.encrypted_payload
+    credentials = load_credentials(record)
+    adapter = get_broker_adapter(name, credentials)
+    try:
+        profile = await adapter.authenticate()
+    except Exception as exc:
+        # Broker-side errors (BrokerError) and raw network failures (DNS, timeout, TLS, ...)
+        # both mean the same thing to the caller: authentication did not succeed. Either way
+        # this must come back as a clean error, never an unhandled 500, and always be audited.
+        await write_audit_log(session, user.tenant_id, user.id, "broker_authentication_failed", f"{name}/{label}: {exc}")
+        # A heuristic, not a certainty: real broker APIs (Kite, Upstox) return distinguishable
+        # error text for an expired/invalid token vs. other failures, but there's no structured
+        # error code to key off across three different broker error formats.
+        if "token" in str(exc).lower():
+            mark_expired(record)
+        await session.commit()
+        return None, exc
+
+    new_token = getattr(adapter, "access_token", None)
+    if new_token and new_token != credentials.access_token:
+        store_access_token(record, new_token)
+    else:
+        mark_verified(record)
+    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
+        await session.rollback()
+        raise HTTPException(status_code=409, detail=CHANGED_HANDS)
+    await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", f"{name}/{label}")
+    await session.commit()
+    return profile, None
+
+
 @router.post("/{name}/authenticate", response_model=BrokerProfile, dependencies=[Depends(require_scope("brokers:write"))])
 async def authenticate_broker(
     name: str, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session), account_label: str = "primary",
@@ -406,25 +455,9 @@ async def authenticate_broker(
     if record is None:
         raise HTTPException(status_code=404, detail=f"No stored credentials for broker '{name}' ({label})")
     await _ensure_holder(session, record, user)
-    expected_user, expected_payload = record.user_id, record.encrypted_payload
-
-    credentials = load_credentials(record)
-    adapter = get_broker_adapter(name, credentials)
-
-    try:
-        profile = await adapter.authenticate()
-    except Exception as exc:
-        # Broker-side errors (BrokerError) and raw network failures (DNS, timeout, TLS, ...)
-        # both mean the same thing to the caller: authentication did not succeed. Either way
-        # this must come back as a clean error, never an unhandled 500, and always be audited.
-        await write_audit_log(session, user.tenant_id, user.id, "broker_authentication_failed", f"{name}/{label}: {exc}")
-        # A heuristic, not a certainty: real broker APIs (Kite, Upstox) return distinguishable
-        # error text for an expired/invalid token vs. other failures, but there's no structured
-        # error code to key off across three different broker error formats.
+    profile, exc = await run_authentication(session, user, record, label)
+    if exc is not None or profile is None:
         is_token_issue = "token" in str(exc).lower()
-        if is_token_issue:
-            mark_expired(record)
-        await session.commit()
         await notify(
             session, user.tenant_id,
             NotificationType.TOKEN_EXPIRED if is_token_issue else NotificationType.BROKER_DISCONNECT,
@@ -432,17 +465,6 @@ async def authenticate_broker(
             severity=NotificationSeverity.CRITICAL, user_id=user.id,
         )
         raise HTTPException(status_code=502, detail=f"Broker authentication failed: {exc}") from exc
-
-    new_token = getattr(adapter, "access_token", None)
-    if new_token and new_token != credentials.access_token:
-        store_access_token(record, new_token)
-    else:
-        mark_verified(record)
-    if not await _write_if_unchanged(session, record, expected_user, expected_payload):
-        await session.rollback()
-        raise HTTPException(status_code=409, detail=CHANGED_HANDS)
-    await write_audit_log(session, user.tenant_id, user.id, "broker_authenticated", f"{name}/{label}")
-    await session.commit()
     return profile
 
 

@@ -173,7 +173,7 @@ refresh path, the app CSP meta tag, the non-debuggable internal build type with 
 back-button "Leave ATP?" prompt and the Settings → About versions. How to build and install: `docs/mobile/BUILD.md`.
 
 - **`frontend/capacitor.config.ts`**
-  - `appId` from MA-6: the temporary, never-published `dev.atp.unpublished` until the domain and company name are settled, then `com.<domain>.app` (permanent once on Play). A build check refuses a release (signed) build with the temporary id.
+  - `appId` from MA-6: `tech.aialgodesk.app` (owner, 2026-10-21; permanent once on Play). The first builds used the temporary, never-published `dev.atp.unpublished`; a build check still refuses a release (signed) build with it. Internal and release builds talk to `https://aialgodesk.tech` by default (D3).
   - `appName` "ATP"; `webDir` "dist"; `android.allowMixedContent: false`.
   - No `server.url`: the app runs its bundled files and never loads the live site into the shell. Capacitor
     documents `server.url` for live reload during development. Loading the live site would also expose the native

@@ -1,17 +1,19 @@
-import { ChevronRight } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, Navigate, useNavigate } from "react-router";
+import { Navigate, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
+import { toast } from "../components/Toast";
 import type { PageProps } from "../routes";
+import { SETUP_PATH, dismissChip, setupChip, shouldAutoOpen } from "../setup/model";
+import SetupChipV2 from "../setup/SetupChipV2";
+import { useSetup, wasAutoOpened } from "../setup/useSetup";
 import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } from "../ui/BrokerGate";
 import { useBrokerSession, type BrokerGateState } from "../ui/brokerSession";
 import { useFeatures } from "../ui/useFeatures";
 import { ActiveSignalsV2, OpenPositionsV2, TodaySummaryV2, type Rows } from "./BlocksV2";
-import { CARD } from "./CardV2";
 import MarketStripV2 from "./MarketStripV2";
 import {
-  attentionRows, brokerChip, greeting, marketLabel, oiLines, positionRows, setupProgress, signalsToday, todayPnl, todayTiles,
-  type PositionRow, type SetupSignals, type SignalRow,
+  attentionRows, brokerChip, greeting, marketLabel, oiLines, positionRows, signalsToday, todayPnl, todayTiles,
+  type PositionRow, type SignalRow,
 } from "./model";
 import NeedsAttentionV2 from "./NeedsAttentionV2";
 import { dataOf, useDashboardData, type Loadable } from "./useDashboardData";
@@ -20,6 +22,9 @@ import { dataOf, useDashboardData, type Loadable } from "./useDashboardData";
  * UI2-2 (UI v2 proposal §5, §8, §9; MOBILE_APP_PLAN Phase A): the v2 dashboard, "Today" - "What needs me right now?".
  * Shown only while `ui_v2` is on (the v2 shell picks it for `/`, src/shell/pagesV2.ts); with the flag off today's
  * DashboardPage renders exactly as before.
+ *
+ * UI2-7: the Setup chip reads the stored setup progress (`GET /api/me/setup`, src/setup) and can be closed; on the first
+ * sign-in under ui_v2 (never opened, nothing done yet, not a VIEWER) the dashboard opens the setup wizard instead, once.
  *
  * Order, top to bottom: greeting, Setup chip (until setup is done), market strip, Needs attention, Open positions, Active
  * signals, Today. Desktop: the strip runs full width, then Needs attention and Open positions on the left (2/3) and
@@ -54,17 +59,6 @@ function rowsOf<T, R>(l: Loadable<T>, map: (data: T) => { rows: R[]; total: numb
   return { status: "ok", ...map(l.data) };
 }
 
-function SetupChipV2({ label, next, to }: { label: string; next: string; to: string }) {
-  return (
-    <Link to={to} data-block="setup"
-      className={`${CARD} flex min-h-12 items-center gap-space-3 px-space-4 py-space-2 transition-colors duration-fast hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:px-space-5`}>
-      <span className="inline-flex h-7 shrink-0 items-center rounded-pill bg-brand/10 px-space-3 text-t13 font-semibold text-brand">{label}</span>
-      <span className="min-w-0 flex-1 text-t14 text-fg">{next}</span>
-      <ChevronRight size={18} aria-hidden className="shrink-0 text-fg-muted" />
-    </Link>
-  );
-}
-
 export default function DashboardV2(_props: PageProps = {}) {
   const { user, loading } = useAuth();
   const features = useFeatures();
@@ -87,16 +81,21 @@ export default function DashboardV2(_props: PageProps = {}) {
     nowMs: now, broker, brokerRows, pending: dataOf(data.pending), deployments, risk: dataOf(data.risk), exposure, unread: dataOf(data.unread),
     status: dataOf(data.status), emailVerified: user?.email_verified, approvalsPath,
   }) : null;
-  const channels = dataOf(data.channels);
-  const setupSignals: SetupSignals | null = brokerRows && deployments && channels
-    ? { brokerStored: brokerRows.length > 0, strategyDeployed: deployments.length > 0, alertsOn: channels.some((c) => c.enabled) }
-    : null;
-  const setup = setupProgress(setupSignals);
+  const setup = useSetup(user?.id ?? null);
+  const chip = setupChip(setup.view);
+  const hideChip = () => {
+    setup.update((stored) => dismissChip(stored, new Date().toISOString()));
+    toast.info("Setup reminder hidden. You can finish setup at any time in Settings, under Setup.");
+  };
   const positions: Rows<PositionRow> = rowsOf(data.positions, (p) => ({ rows: positionRows(p, exposure), total: p.length }));
   const signalRows: Rows<SignalRow> = rowsOf(data.actions, () => ({ rows: signals.rows, total: signals.count }));
   const tilesLoading = data.exposure.status === "loading" && data.summary.status === "loading";
 
   if (!loading && !user) return <Navigate to={SIGN_IN_PATH} replace />;
+  // The first sign-in under ui_v2: the wizard opens once (it records that it opened), only on the server's answer.
+  if (setup.fresh && shouldAutoOpen(setup.view, { guarded: wasAutoOpened(user?.id ?? null), role: user?.role })) {
+    return <Navigate to={SETUP_PATH} replace />;
+  }
 
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="dashboard-v2">
@@ -111,7 +110,7 @@ export default function DashboardV2(_props: PageProps = {}) {
         <BrokerGateView state={broker} onConnect={() => navigate(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)} onRetry={refreshBroker} />
       ) : (
         <>
-          {setup && <SetupChipV2 {...setup} />}
+          {chip && <SetupChipV2 {...chip} onDismiss={hideChip} />}
           <MarketStripV2 strip={data.strip} oi={oiLines(dataOf(data.oi))} marketText={strip ? marketLabel(strip.market, now) : null}
             broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} />
           <div className="grid grid-cols-1 gap-space-4 lg:grid-cols-3 lg:items-start lg:gap-space-6">

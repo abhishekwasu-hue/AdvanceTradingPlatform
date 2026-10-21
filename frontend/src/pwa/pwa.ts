@@ -14,9 +14,8 @@ interface BeforeInstallPromptEvent extends Event {
 export interface PwaState {
   /** A new version is installed and waiting; `applyUpdate()` switches to it and reloads. */
   updateReady: boolean;
-  /** "prompt": the browser can install (button). "ios": show the Add to Home Screen guide. "unavailable": install is
-   * impossible on this address (see `blocked`) - say so instead of failing silently. null: nothing to offer. */
-  install: "prompt" | "ios" | "unavailable" | null;
+  /** "prompt": the browser can install (button). "ios": show the Add to Home Screen guide. null: nothing to offer. */
+  install: "prompt" | "ios" | null;
   /** Why this browser cannot install the app here, when known (see installBlockReason). */
   blocked: InstallBlock | null;
   /** True while the browser's own install prompt is waiting to be shown (`beforeinstallprompt` arrived). */
@@ -24,18 +23,17 @@ export interface PwaState {
 }
 
 /**
- * Why the app cannot be installed from this page (owner mobile brief, Phase A):
- * - "insecure": the page is not a secure context (plain http on a bare IP or a domain without a certificate);
- * - "certificate": the address is https, but the browser did not trust its certificate (a bare IP with Caddy's internal
- *   certificate) - the service worker that installing needs was refused;
+ * Why the app cannot be installed from this page, when the page can tell before trying (the More sheet's "Install the
+ * app" entry says so; no banner):
+ * - "insecure": the page is not a secure context (opened over plain http);
  * - "no-service-worker": this browser has no service workers (an old browser, some private windows).
- * The first two need the owner (a domain with a trusted certificate); the last needs another browser.
+ * D3: the app is served on its domain with a trusted certificate, so a refused service-worker registration is an
+ * ordinary failure (logged, nothing shown), not a reason to send anyone to the owner.
  */
-export type InstallBlock = "insecure" | "certificate" | "no-service-worker";
+export type InstallBlock = "insecure" | "no-service-worker";
 
-/** The plain message for an address that cannot install the app (owner brief, word for word). */
-export const INSTALL_NEEDS_DOMAIN =
-  "Install needs the app's web address (domain) with a trusted certificate. Ask the owner to set up the domain.";
+export const INSTALL_NEEDS_HTTPS =
+  "Install works only on the app's secure address. Open this page with https:// and try again.";
 export const INSTALL_NEEDS_BROWSER =
   "This browser cannot install the app. Open this page in Chrome, Edge or Safari to install it.";
 export const INSTALL_NOT_OFFERED =
@@ -51,63 +49,27 @@ export function installBlockReason(win: Pick<Window, "isSecureContext" | "naviga
   return null;
 }
 
-/** True when a failed service-worker registration was refused because the certificate is not trusted (Chrome's
- * wording names SSL / the certificate). */
-export function isCertificateError(error: unknown): boolean {
-  const text = error instanceof Error ? `${error.name} ${error.message}` : String(error ?? "");
-  return /\b(SSL|TLS|certificate)\b/i.test(text);
-}
-
-/** True for a DOMException / Error named SecurityError (every browser's name for a refused registration). */
-export function isSecurityError(error: unknown): boolean {
-  if (error && typeof error === "object" && "name" in error && (error as { name: unknown }).name === "SecurityError") return true;
-  return /^SecurityError\b/.test(String(error ?? ""));
-}
-
-/** A bare IPv4 / IPv6 host, loopback excluded (127.x, ::1 and localhost are trusted origins: installing works there). */
-export function isBareIpHost(hostname: string): boolean {
-  const h = hostname.replace(/^\[|\]$/g, "");
-  if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) return !h.startsWith("127.");
-  if (h.includes(":")) return h !== "::1";
-  return false;
-}
-
-/**
- * Whether a failed service-worker registration means "this address can never install the app" (review M5): the
- * certificate named in the error (Chrome), any SecurityError on https (Firefox and Safari word it differently), or any
- * failure at all on a bare IP (no trusted certificate is issued for one). Anything else (a 404, offline) is not.
- */
-export function registrationBlocksInstall(error: unknown, where: { protocol: string; hostname: string }): boolean {
-  if (isCertificateError(error)) return true;
-  if (where.protocol === "https:" && isSecurityError(error)) return true;
-  return isBareIpHost(where.hostname);
-}
-
 /** The install entry's answer (More sheet "Install the app"): prompt when the browser offers it, otherwise the plain
  * reason - never nothing. */
 export type InstallHelp = { kind: "prompt" } | { kind: "message"; text: string };
 
 export function installHelp(s: { blocked: InstallBlock | null; canPrompt: boolean; ios: boolean; standalone: boolean }): InstallHelp {
   if (s.standalone) return { kind: "message", text: INSTALL_DONE };
-  if (s.blocked === "insecure" || s.blocked === "certificate") return { kind: "message", text: INSTALL_NEEDS_DOMAIN };
+  if (s.blocked === "insecure") return { kind: "message", text: INSTALL_NEEDS_HTTPS };
   if (s.canPrompt) return { kind: "prompt" };
   if (s.ios) return { kind: "message", text: INSTALL_IOS };
   if (s.blocked === "no-service-worker") return { kind: "message", text: INSTALL_NEEDS_BROWSER };
   return { kind: "message", text: INSTALL_NOT_OFFERED };
 }
 
-/** The banner state at start-up: an address that can never install says so (once, dismissable) instead of staying
- * silent; otherwise the iPhone guide as before. A browser without service workers is not nagged (the entry explains). */
-export function initialInstall(s: { blocked: InstallBlock | null; dismissed: boolean; domainDismissed: boolean; standalone: boolean; ios: boolean }): PwaState["install"] {
-  if (s.standalone) return null;
-  if (s.blocked === "insecure" || s.blocked === "certificate") return s.domainDismissed ? null : "unavailable";
-  if (s.dismissed) return null;
+/** The banner state at start-up: the iPhone guide (Safari has no install prompt), unless closed before or already
+ * installed. Android / desktop wait for the browser's `beforeinstallprompt`. */
+export function initialInstall(s: { dismissed: boolean; standalone: boolean; ios: boolean }): PwaState["install"] {
+  if (s.standalone || s.dismissed) return null;
   return s.ios ? "ios" : null;
 }
 
 const DISMISS_KEY = "atp_install_dismissed";
-/** Its own key (review M5): closing the PW1 install offer before must not hide the "needs a domain" explanation. */
-const DOMAIN_DISMISS_KEY = "atp_install_domain_dismissed";
 const UPDATE_CHECK_MS = 30 * 60_000;
 
 let state: PwaState = { updateReady: false, install: null, blocked: null, canPrompt: false };
@@ -133,14 +95,13 @@ export function isIosSafari(ua: string, maxTouchPoints = 0): boolean {
   return ios && /safari/i.test(ua) && !/crios|fxios|edgios|opios/i.test(ua);
 }
 
-function dismissed(key = DISMISS_KEY): boolean {
-  try { return localStorage.getItem(key) === "1"; } catch { return false; }
+function dismissed(): boolean {
+  try { return localStorage.getItem(DISMISS_KEY) === "1"; } catch { return false; }
 }
 
-/** Closes the banner on screen; the "needs a domain" explanation is remembered under its own key. */
+/** Closes the banner on screen and remembers it. */
 export function dismissInstall(): void {
-  const key = state.install === "unavailable" ? DOMAIN_DISMISS_KEY : DISMISS_KEY;
-  try { localStorage.setItem(key, "1"); } catch { /* storage unavailable: hidden for this visit only */ }
+  try { localStorage.setItem(DISMISS_KEY, "1"); } catch { /* storage unavailable: hidden for this visit only */ }
   set({ install: null });
 }
 
@@ -192,7 +153,7 @@ export function initPwa(): void {
   window.addEventListener("appinstalled", () => { deferredPrompt = null; set({ install: null, canPrompt: false }); });
   const blocked = installBlockReason(window);
   if (blocked) set({ blocked });
-  const first = initialInstall({ blocked, dismissed: dismissed(), domainDismissed: dismissed(DOMAIN_DISMISS_KEY), standalone: isStandalone(),
+  const first = initialInstall({ dismissed: dismissed(), standalone: isStandalone(),
     ios: isIosSafari(navigator.userAgent, navigator.maxTouchPoints) });
   if (first) set({ install: first });
 
@@ -205,10 +166,9 @@ export function initPwa(): void {
   });
   window.addEventListener("load", () => {
     navigator.serviceWorker.register("/sw.js").then(watchRegistration).catch((e: unknown) => {
-      // A bare IP / an untrusted (internal) certificate: the worker is refused, so the app can never install here.
-      if (state.canPrompt || !registrationBlocksInstall(e, window.location)) return;
-      set({ blocked: "certificate" });
-      if (!dismissed(DOMAIN_DISMISS_KEY) && !isStandalone() && state.install !== "prompt") set({ install: "unavailable" });
+      // An ordinary failure (offline, a deploy in progress, a private window): the app keeps working without the
+      // worker and the next visit tries again. Logged for whoever looks at the console; nothing on screen.
+      console.info("Service worker registration failed:", e instanceof Error ? e.message : String(e));
     });
   });
 }

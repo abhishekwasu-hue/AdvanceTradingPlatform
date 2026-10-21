@@ -443,6 +443,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     # UI2-4a1: the caller's own UI preferences (chart theme, grid, colours), per tenant and user
     ("GET", "/api/me/prefs"): "member: the caller's own preferences only (tenant and user)",
     ("PUT", "/api/me/prefs/{namespace}"): S_OWN_PREFS,
+    # UI2-7: the caller's own setup wizard progress (the `setup` preferences plus steps worked out from their own rows)
+    ("GET", "/api/me/setup"): "member: the caller's own setup progress only (tenant and user)",
+    ("PUT", "/api/me/setup"): S_OWN_PREFS,
     ("GET", "/api/news-events"): P_NEWS_EVENTS,
     ("POST", "/api/news-events"): "trader",
     ("DELETE", "/api/news-events/{event_id}"): "trader",

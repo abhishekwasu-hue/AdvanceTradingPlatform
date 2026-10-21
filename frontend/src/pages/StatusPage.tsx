@@ -8,7 +8,7 @@ export default function StatusPage() {
   const [load, setLoad] = useState<StatusLoad>({ kind: "loading" });
 
   useEffect(() => {
-    document.title = "Status · Advance Trading";
+    document.title = "Status · AiAlgoDesk";
     let alive = true;
     const run = () => loadPublicStatus().then((next) => { if (alive) setLoad(next); });
     void run();

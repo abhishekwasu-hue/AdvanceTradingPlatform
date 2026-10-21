@@ -29,7 +29,7 @@ describe("capacitor.config.ts", () => {
   it("bundles the web files with the final MA-6 id and no live-site server.url", async () => {
     const config = await loadConfig();
     expect(config.appId).toBe("tech.aialgodesk.app");
-    expect(config.appName).toBe("ATP");
+    expect(config.appName).toBe("AiAlgoDesk");
     expect(config.webDir).toBe("dist");
     expect(config.server?.url).toBeUndefined();
     expect(config.server?.androidScheme).toBe("https");

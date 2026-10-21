@@ -1,7 +1,7 @@
 import json
 import logging
 from typing import Any, Dict, Optional
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
@@ -81,6 +81,9 @@ class BrokerTokenStatusResponse(AnalyticsTokenInfo):
     oauth_supported: bool
     # The exact redirect URI to register on the broker's developer console for that flow.
     oauth_callback_url: Optional[str]
+    # D2 (OAuth brokers only): True when this account stores a Redirect URI that differs from `oauth_callback_url` -
+    # the login then sends the stored one, so the UI points to Settings instead of showing an address it will not use.
+    redirect_uri_mismatch: Optional[bool] = None
     # True when the platform can open the broker's hosted login page and take the pasted one-time
     # code (Fyers, Kite): GET /{name}/login-url, then POST /{name}/login-code.
     login_url_supported: bool = False
@@ -123,12 +126,52 @@ async def _probe_quietly(session: AsyncSession, record: BrokerCredentialRecord) 
         return None
 
 
+_REJECTED_PUBLIC_BASES: set[str] = set()
+
+
+def _public_base() -> Optional[str]:
+    """`PUBLIC_BASE_URL` when it is a bare origin - http(s), a host, no path, query or fragment (the deep-link guard in
+    app/alerts/deeplink.py, made strict because the OAuth start stores the derived URI in the credentials for good).
+    Anything else is ignored with a warning (once per value) and None is returned."""
+    raw = (getattr(app_config, "PUBLIC_BASE_URL", "") or "").strip()
+    base = raw.rstrip("/")
+    if not base:
+        return None
+    try:
+        parts = urlparse(base)
+        valid = (parts.scheme in ("https", "http") and bool(parts.hostname) and "@" not in parts.netloc
+                 and not parts.path and not parts.params and not parts.query and not parts.fragment)
+        _ = parts.port                                        # raises ValueError on a malformed port
+    except ValueError:
+        valid = False
+    if not valid:
+        if raw not in _REJECTED_PUBLIC_BASES:
+            _REJECTED_PUBLIC_BASES.add(raw)
+            logger.warning("PUBLIC_BASE_URL is not a bare http(s) origin (scheme://host[:port]); the Upstox callback "
+                           "URL falls back to the request address")
+        return None
+    return base
+
+
 def public_callback_url(request: Request) -> str:
     """D2: the Upstox redirect URL to register on the Upstox developer app - the deployment's public origin
-    (`PUBLIC_BASE_URL`, e.g. https://<domain>) plus the callback path, so it never carries a server address. Without
-    `PUBLIC_BASE_URL` (local runs, tests) it is the address this request reached the API at, as before."""
-    base = (getattr(app_config, "PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
-    return (base or str(request.base_url).rstrip("/")) + UPSTOX_CALLBACK_PATH
+    (`PUBLIC_BASE_URL`, e.g. https://<domain>) plus the callback path, so it never carries a server address. Without a
+    valid `PUBLIC_BASE_URL` (local runs, tests) it is the address this request reached the API at, as before."""
+    return (_public_base() or str(request.base_url).rstrip("/")) + UPSTOX_CALLBACK_PATH
+
+
+def _stored_redirect_uri(record: BrokerCredentialRecord) -> Optional[str]:
+    try:
+        value = load_credentials(record).redirect_uri
+    except Exception:  # noqa: BLE001 - an unreadable payload (e.g. a rotated key) simply has nothing to compare
+        return None
+    return (value or "").strip() or None
+
+
+def _redirect_uri_mismatch(record: BrokerCredentialRecord, public_url: str) -> bool:
+    """True when this row stores a Redirect URI that differs from the public callback URL (the OAuth start sends it)."""
+    stored = _stored_redirect_uri(record)
+    return stored is not None and stored != public_url
 
 
 def _callback_url(request: Request, broker_name: str) -> Optional[str]:
@@ -138,6 +181,7 @@ def _callback_url(request: Request, broker_name: str) -> Optional[str]:
 
 
 def _token_status_response(record: BrokerCredentialRecord, request: Request) -> BrokerTokenStatusResponse:
+    callback_url = _callback_url(request, record.broker_name)
     return BrokerTokenStatusResponse(
         broker_name=record.broker_name,
         account_label=record.account_label or "primary",
@@ -146,7 +190,8 @@ def _token_status_response(record: BrokerCredentialRecord, request: Request) -> 
         last_verified_at=record.last_verified_at.isoformat() if record.last_verified_at else None,
         needs_login=not token_is_usable(record),
         oauth_supported=record.broker_name in OAUTH_BROKERS,
-        oauth_callback_url=_callback_url(request, record.broker_name),
+        oauth_callback_url=callback_url,
+        redirect_uri_mismatch=_redirect_uri_mismatch(record, callback_url) if callback_url else None,
         login_url_supported=record.broker_name in LOGIN_URL_BROKERS,
         code_param=(LOGIN_URL_BROKERS.get(record.broker_name) or {}).get("code_param"),
         **upstox_analytics.record_view(record),
@@ -662,14 +707,6 @@ class UpstoxRedirectInfo(BaseModel):
     # True when any stored Upstox account below has a Redirect URI that differs from `redirect_url`.
     redirect_uri_mismatch: bool
     accounts: list[UpstoxRedirectAccount]
-
-
-def _stored_redirect_uri(record: BrokerCredentialRecord) -> Optional[str]:
-    try:
-        value = load_credentials(record).redirect_uri
-    except Exception:  # noqa: BLE001 - an unreadable payload (e.g. a rotated key) simply has nothing to compare
-        return None
-    return (value or "").strip() or None
 
 
 @router.get("/upstox/redirect-url", response_model=UpstoxRedirectInfo)

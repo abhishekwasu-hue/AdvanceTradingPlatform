@@ -32,6 +32,12 @@ export function mismatchedAccounts(info: UpstoxRedirectInfo): string[] {
   return info.accounts.filter((a) => a.redirect_uri_mismatch).map((a) => a.account_label);
 }
 
+/** Shown while Upstox is the selected broker, and whenever a stored Upstox Redirect URI differs (so the note is not
+ * hidden behind another broker). Nothing until the address is known. */
+export function showRedirectBlock(info: UpstoxRedirectInfo | null, selected: boolean): info is UpstoxRedirectInfo {
+  return info !== null && (selected || info.redirect_uri_mismatch);
+}
+
 export function UpstoxRedirectUrlView({ info, copyState = "idle", onCopy, inputRef }: {
   info: UpstoxRedirectInfo;
   copyState?: CopyState;
@@ -40,7 +46,8 @@ export function UpstoxRedirectUrlView({ info, copyState = "idle", onCopy, inputR
 }) {
   const fieldId = useId();
   const mismatched = mismatchedAccounts(info);
-  const accounts = mismatched.length ? ` (${mismatched.map((l) => `"${l}"`).join(", ")})` : "";
+  const accounts = mismatched.length
+    ? ` (${mismatched.length === 1 ? "account" : "accounts"} ${mismatched.map((l) => `"${l}"`).join(", ")})` : "";
   return (
     <div data-upstox-redirect className="rounded-lg border border-border bg-surface-2/40 p-3 space-y-2">
       <label htmlFor={fieldId} className="block text-xs font-medium text-fg">Redirect URL</label>
@@ -70,8 +77,8 @@ export function UpstoxRedirectUrlView({ info, copyState = "idle", onCopy, inputR
         <p role="status" data-redirect-mismatch className="flex items-start gap-2 rounded bg-warn-tint px-3 py-2 text-xs text-warn">
           <TriangleAlert size={14} aria-hidden className="mt-0.5 shrink-0" />
           <span>
-            The Redirect URI stored for Upstox{accounts} differs from this address. Update it in your Upstox developer
-            app, then store the Upstox credentials here again with this address in the Redirect URI field.
+            The Redirect URI saved for Upstox{accounts} differs from this address. Update the Redirect URL in your
+            Upstox app and store the credentials here again with this address in the Redirect URI field.
           </span>
         </p>
       )}
@@ -79,8 +86,7 @@ export function UpstoxRedirectUrlView({ info, copyState = "idle", onCopy, inputR
   );
 }
 
-/** Shown while Upstox is the selected broker, and whenever a stored Upstox Redirect URI differs (so the note is not
- * hidden behind another broker). `refreshKey` changes after credentials are stored or removed. */
+/** The block on Settings (see showRedirectBlock). `refreshKey` changes after credentials are stored or removed. */
 export default function UpstoxRedirectUrl({ selected, refreshKey = 0 }: { selected: boolean; refreshKey?: number }) {
   const [info, setInfo] = useState<UpstoxRedirectInfo | null>(null);
   const [copyState, setCopyState] = useState<CopyState>("idle");
@@ -95,7 +101,7 @@ export default function UpstoxRedirectUrl({ selected, refreshKey = 0 }: { select
 
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
 
-  if (!info || (!selected && !info.redirect_uri_mismatch)) return null;
+  if (!showRedirectBlock(info, selected)) return null;
 
   async function handleCopy() {
     if (!info) return;

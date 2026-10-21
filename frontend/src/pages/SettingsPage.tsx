@@ -176,7 +176,7 @@ export default function SettingsPage() {
           page; paste the code the broker returns (or the whole redirected address) and the session is
           stored for the day. Fyers needs the app's Redirect URL stored once (field below).
         </p>
-        <BrokerTokenBanner key={stored.length} />
+        <BrokerTokenBanner key={`${stored.length}/${savedCount}`} />
       </Card>
 
       <Card title={`Connected brokers (${stored.length})`}>

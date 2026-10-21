@@ -1165,6 +1165,8 @@ export interface BrokerTokenInfo {
   needs_login: boolean;
   oauth_supported: boolean;
   oauth_callback_url: string | null;
+  // D2 (Upstox): the account's saved Redirect URI differs from oauth_callback_url (the login sends the saved one).
+  redirect_uri_mismatch?: boolean | null;
   // Fyers / Kite: the platform opens the broker's login page and takes the pasted one-time code.
   login_url_supported?: boolean;
   code_param?: string | null;

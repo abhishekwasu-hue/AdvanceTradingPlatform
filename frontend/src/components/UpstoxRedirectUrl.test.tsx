@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it, vi } from "vitest";
 import type { UpstoxRedirectInfo } from "../types";
-import { copyRedirectUrl, mismatchedAccounts, UpstoxRedirectUrlView, type CopyState } from "./UpstoxRedirectUrl";
+import { copyRedirectUrl, mismatchedAccounts, showRedirectBlock, UpstoxRedirectUrlView, type CopyState } from "./UpstoxRedirectUrl";
 
 const URL_ = "https://atp.example.com/api/broker/upstox/oauth/callback";
 const clean: UpstoxRedirectInfo = { redirect_url: URL_, redirect_uri_mismatch: false, accounts: [] };
@@ -65,10 +65,19 @@ describe("D2 Upstox Redirect URL: the mismatch warning", () => {
     expect(mismatchedAccounts(mismatch)).toEqual(["primary"]);
     const html = render(mismatch);
     expect(html).toContain("data-redirect-mismatch");
-    expect(html).toContain("The Redirect URI stored for Upstox (&quot;primary&quot;) differs from this address.");
-    expect(html).toContain("Update it in your Upstox developer app");
-    expect(html).toContain("store the Upstox credentials here again");
+    expect(html).toContain("The Redirect URI saved for Upstox (account &quot;primary&quot;) differs from this address.");
+    expect(html).toContain("Update the Redirect URL in your Upstox app and store the credentials here again");
     expect(html).not.toContain("second");
+    const both = { ...mismatch, accounts: mismatch.accounts.map((a) => ({ ...a, redirect_uri_mismatch: true })) };
+    expect(render(both)).toContain("(accounts &quot;primary&quot;, &quot;second&quot;)");
+  });
+
+  it("shows while another broker is selected when a mismatch exists, and not otherwise", () => {
+    expect(showRedirectBlock(mismatch, false)).toBe(true);
+    expect(showRedirectBlock(mismatch, true)).toBe(true);
+    expect(showRedirectBlock(clean, true)).toBe(true);
+    expect(showRedirectBlock(clean, false)).toBe(false);
+    expect(showRedirectBlock(null, true)).toBe(false);
   });
 
   it("uses the warning tokens, not a raw colour, and gives no advice", () => {

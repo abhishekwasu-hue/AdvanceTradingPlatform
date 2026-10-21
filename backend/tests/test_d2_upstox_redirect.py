@@ -127,3 +127,59 @@ def test_other_brokers_are_not_listed(public_base):
     headers = _auth("d2-other@example.com")
     client.post("/api/broker/fyers/credentials", headers=headers, json={"api_key": "k", "redirect_uri": OLD})
     assert client.get("/api/broker/upstox/redirect-url", headers=headers).json()["accounts"] == []
+
+
+@pytest.mark.parametrize("value", [
+    "atp.example.com",                       # no scheme
+    "https://atp.example.com/app",           # a path
+    "https://atp.example.com?x=1",           # a query
+    "https://atp.example.com#top",           # a fragment
+    "ftp://atp.example.com",                 # not http(s)
+    "https://",                              # no host
+    "https://user@atp.example.com",          # credentials in the address
+    "https://atp.example.com:notaport",      # a malformed port
+])
+def test_a_public_base_url_that_is_not_a_bare_origin_is_not_used(monkeypatch, caplog, value):
+    from app.brokers import routes
+    monkeypatch.setattr(app_config, "PUBLIC_BASE_URL", value)
+    monkeypatch.setattr(routes, "_REJECTED_PUBLIC_BASES", set())
+    headers = _auth(f"d2-bad-{abs(hash(value))}@example.com")
+    with caplog.at_level("WARNING", logger="app.brokers.routes"):
+        body = client.get("/api/broker/upstox/redirect-url", headers=headers).json()
+    assert body["redirect_url"] == "http://testserver" + PATH
+    assert any("PUBLIC_BASE_URL" in r.getMessage() for r in caplog.records)
+    _store(headers)
+    assert _start_redirect(headers) == "http://testserver" + PATH      # never stored into the credentials
+
+
+@pytest.mark.parametrize("value", ["https://atp.example.com", "https://atp.example.com/", "http://localhost:8080"])
+def test_a_bare_origin_is_used(monkeypatch, value):
+    monkeypatch.setattr(app_config, "PUBLIC_BASE_URL", value)
+    body = client.get("/api/broker/upstox/redirect-url", headers=_auth(f"d2-good-{abs(hash(value))}@example.com")).json()
+    assert body["redirect_url"] == value.rstrip("/") + PATH
+
+
+def test_a_request_through_another_host_still_gets_the_public_url(public_base):
+    """The API reached by its server address (a Host header that is not the domain): every derivation is the public URL."""
+    headers = {**_auth("d2-host@example.com"), "Host": "203.0.113.5:8000"}
+    _store(headers)
+    assert client.get("/api/broker/upstox/redirect-url", headers=headers).json()["redirect_url"] == public_base
+    status = {r["broker_name"]: r for r in client.get("/api/broker/token-status", headers=headers).json()}["upstox"]
+    assert status["oauth_callback_url"] == public_base
+    assert _start_redirect(headers) == public_base
+    assert "203.0.113.5" not in client.get("/api/broker/token-status", headers=headers).text
+
+
+def test_token_status_flags_the_account_whose_stored_redirect_uri_differs(public_base):
+    headers = _auth("d2-status@example.com")
+    _store(headers, redirect_uri=OLD)
+    _store(headers, label="second", redirect_uri=public_base)
+    _store(headers, label="third")
+    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
+    response = client.get("/api/broker/token-status", headers=headers)
+    rows = {(r["broker_name"], r["account_label"]): r for r in response.json()}
+    assert rows[("upstox", "primary")]["redirect_uri_mismatch"] is True
+    assert rows[("upstox", "second")]["redirect_uri_mismatch"] is False
+    assert rows[("upstox", "third")]["redirect_uri_mismatch"] is False
+    assert rows[("zerodha", "primary")]["redirect_uri_mismatch"] is None
+    assert OLD not in response.text and "192.0.2.10" not in response.text

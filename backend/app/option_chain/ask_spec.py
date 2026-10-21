@@ -75,8 +75,12 @@ KEYWORDS = ("and", "or")
 COMPARISONS = ("<", "<=", ">", ">=", "==", "!=")
 
 # Words a label or a title may not use: a buy / sell instruction, advice or a promise (ATP shows no advice anywhere).
-_ADVICE = re.compile(r"\b(?:buy\w*|bought|sell\w*|sold|recommend\w*|advi[cs]e\w*|guarantee\w*|assured|sure[- ]?shot|risk[- ]?free|"
-                     r"profit\w*|target\w*|stop[- ]?loss\w*|entry|entries|exit\w*|best|should|must)\b", re.I)
+_ADVICE = re.compile(r"\b(?:buy\w*|bought|sell\w*|sold|recommend\w*|advi[cs]e\w*|guarantee\w*|assured|sure|sure[- ]?shot|risk[- ]?free|"
+                     r"profit\w*|target\w*|stop[- ]?loss\w*|entry|entries|enter\w*|exit\w*|best|should|must|safe\w*|hold\w*|"
+                     r"accumulat\w*|avoid\w*|add more|book\w*|jackpot\w*|winner\w*|winning|tips?|will|bullish|bearish|trapped|"
+                     r"write|take (?:a )?positions?|(?:go|going) (?:long|short)|"
+                     r"(?:long|short) (?:ce|pe|calls?|puts?|straddles?|strangles?|futures?|\d[\d,.]*))\b", re.I)
+_LINK = re.compile(r"://|\bwww\.", re.I)
 
 
 class SpecError(ValueError):
@@ -131,7 +135,7 @@ Node = Union[Num, Ref, Neg, Bin, Cmp, Logic, Call]
 
 _TOKEN = re.compile(r"(?P<ws>\s+)|(?P<num>\d{1,12}(?:\.\d{1,6})?)(?![\w.@])|(?P<name>[a-z_][a-z0-9_]{0,31})(?![\w])|"
                     r"(?P<at>@(?:open|-\d{1,3}m))(?![\w@])|(?P<op><=|>=|==|!=|[-+*/<>(),])")
-_ALLOWED_CHARS = re.compile(r"^[A-Za-z0-9_ .@()+\-*/<>=!,]*$")
+_ALLOWED_CHARS = re.compile(r"[A-Za-z0-9_ .@()+\-*/<>=!,]*")          # used with fullmatch: no "$" before a final newline
 
 
 def _tokens(text: str) -> List[Tuple[str, str, int]]:
@@ -139,8 +143,8 @@ def _tokens(text: str) -> List[Tuple[str, str, int]]:
         raise SpecError(f"an expression is longer than {MAX_EXPR_CHARS} characters")
     if not text.strip():
         raise SpecError("an expression is empty")
-    if not _ALLOWED_CHARS.match(text):
-        bad = next(i for i, ch in enumerate(text) if not _ALLOWED_CHARS.match(ch))
+    if not _ALLOWED_CHARS.fullmatch(text):
+        bad = next((i for i, ch in enumerate(text) if not _ALLOWED_CHARS.fullmatch(ch)), 0)
         raise SpecError(f"a character that is not allowed at position {bad + 1}")
     lowered = text.lower()
     out: List[Tuple[str, str, int]] = []
@@ -373,9 +377,13 @@ def _bool_expr(text: str) -> str:
 
 
 def _clean_words(text: str) -> str:
-    """A label or title: no buy / sell, advice or promise words (also the platform's banned-word list)."""
-    from app.ai import wording
-    if _ADVICE.search(text) or wording.banned_terms(text):
+    """A label or title only names what is shown: no buy / sell, advice, forecast or promise words (also the platform's
+    banned-word list and the H-C1 c output filter: a blocked text or a specific call is refused) and no links."""
+    from app.ai import output_filter, wording
+    if _LINK.search(text) or _ADVICE.search(text) or wording.banned_terms(text):
+        raise SpecError("a label or title may only name what is shown - no buy / sell, advice or promise words")
+    screened = output_filter.screen(text, "en", where="option_chain_spec")
+    if not screened.ok or screened.framed or output_filter.is_specific_call(text):
         raise SpecError("a label or title may only name what is shown - no buy / sell, advice or promise words")
     return text
 
@@ -401,10 +409,13 @@ class Sort(_Strict):
     order: Literal["asc", "desc"] = "desc"
 
 
+ChartRef = Annotated[str, StringConstraints(pattern=LABEL_PATTERN, max_length=32)]
+
+
 class Chart(_Strict):
     type: Literal["bar", "line"]
-    x: str = Field(min_length=1, max_length=32, description='"strike" or a column label')
-    y: List[str] = Field(min_length=1, max_length=2, description="one or two column labels")
+    x: ChartRef = Field(description='"strike" or a column label')
+    y: List[ChartRef] = Field(min_length=1, max_length=2, description="one or two column labels")
 
 
 class AnalysisSpec(_Strict):
@@ -678,7 +689,8 @@ def _ref_words(node: Ref) -> str:
     if node.at == "open":
         return f"{base} at the session's first stored snapshot"
     minutes = int(node.at[1:-1])
-    return f"{base} {minutes} minute{'s' if minutes != 1 else ''} ago (the latest stored snapshot at or before then)"
+    return (f"{base} {minutes} minute{'s' if minutes != 1 else ''} ago (the latest stored snapshot at or before then, "
+            f"no more than {HISTORY_TOLERANCE_MINUTES} minutes older)")
 
 
 _OP_WORDS = {"+": "plus", "-": "minus", "*": "times", "/": "divided by"}
@@ -742,8 +754,9 @@ def describe(spec: AnalysisSpec) -> List[str]:
         lines.append("Earlier values come from the option chain snapshots stored during this session for the same expiry; "
                      "a value with no such snapshot is missing.")
     if spec.chart is not None:
-        ys = " and ".join(f"\"{y}\"" for y in spec.chart.y)
-        x = "strike" if spec.chart.x.strip().lower() == "strike" else f"\"{spec.chart.x}\""
+        own = {c.label.strip().lower(): c.label for c in spec.columns}           # the column's own label, as the table shows it
+        ys = " and ".join(f"\"{own[y.strip().lower()]}\"" for y in spec.chart.y)
+        x = "strike" if spec.chart.x.strip().lower() == "strike" else f"\"{own[spec.chart.x.strip().lower()]}\""
         lines.append(f"Chart: a {spec.chart.type} chart of {ys} by {x}.")
     return lines
 

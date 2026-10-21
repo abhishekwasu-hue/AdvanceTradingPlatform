@@ -21,6 +21,7 @@ but the usage counts, the AI call log and one audit row per question; nothing pl
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, datetime, timezone
 from typing import Any, Dict, Optional
 
@@ -37,6 +38,7 @@ from app.market_data.candles_routes import chains_rate_limit
 from app.option_chain import ask_adapter, ask_ai, ask_spec, snapshots
 from app.option_chain.ask_spec import AnalysisSpec
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/option-chain", tags=["option-chain"])
 FLAG = "ui_v2"
 AI_FLAG = "ai_copilot"
@@ -65,6 +67,12 @@ async def _flag(session: AsyncSession, user: User) -> None:
     from app.platform.controls import flag_enabled
     if not await flag_enabled(session, FLAG, user.tenant_id):
         raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": FLAG})
+
+
+async def require_ui_v2(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
+    """The routes' FIRST dependency: while `ui_v2` is off a request is a 404 before any rate-limit unit is spent and
+    before the Copilot acknowledgement is asked for (428)."""
+    await _flag(session, user)
 
 
 def _underlying(symbol: str) -> str:
@@ -102,7 +110,7 @@ async def _ai_off_message(session: AsyncSession, tenant: Tenant, provider: Any) 
     return "ai_off", NO_PROVIDER
 
 
-@router.post("/ask", dependencies=[Depends(ai_rate_limit), Depends(chains_rate_limit)])
+@router.post("/ask", dependencies=[Depends(require_ui_v2), Depends(ai_rate_limit), Depends(chains_rate_limit)])
 async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """The question -> a validated analysis spec -> its table (and chart) on the caller's own chain, with "How this was
     calculated" and the educational disclaimer. An unsupported request gets one plain sentence and the closest analysis."""
@@ -126,17 +134,28 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
     read = await ask_adapter.read(session, user, underlying, body.expiry, now)
     if read.state != "ok":
         return _base(underlying, read.expiry, read.state, read.message)  # no chain: the AI is not asked
-    found = await ask_ai.translate(provider, body.question)
-    await ai_settings.mark_used(session, user.tenant_id, error="Ask AI: the provider did not answer" if found.state == "error" else None)
-    await write_audit_log(session, user.tenant_id, user.id, "option_chain_ask",
-                          f"{getattr(provider, 'name', 'ai')}: {found.state} after {found.attempts} call(s); {underlying}; "
-                          f"question {len(body.question)} chars")
-    await session.commit()
+    async def budget_left() -> bool:                       # asked before the repair turn: a second call needs budget too
+        return not await metering.budget_exhausted(session, tenant)
+
+    found = ask_ai.Translation("error")
+    try:
+        found = await ask_ai.translate(provider, body.question, may_retry=budget_left)
+    except Exception as exc:  # noqa: BLE001 - after a paid call the answer is a plain state, never a 500 (class name only)
+        logger.warning("OC3 ask: translation failed (%s)", type(exc).__name__)
+    finally:
+        # the call was paid for: the provider's last use, the audit row and the metered usage are always kept
+        await ai_settings.mark_used(session, user.tenant_id, error="Ask AI: the provider did not answer" if found.state == "error" else None)
+        await write_audit_log(session, user.tenant_id, user.id, "option_chain_ask",
+                              f"{getattr(provider, 'name', 'ai')}: {found.state} after {found.attempts} call(s); {underlying}; "
+                              f"question {len(body.question)} chars")
+        await session.commit()
     out = _base(underlying, read.expiry, found.state, None)
     out.update(data=_data(read, now), provider=getattr(provider, "name", None), model=getattr(provider, "model", None),
                prompt_version=ask_ai.PROMPT_VERSION, usage=metering.spent_by(provider))
     if found.state == "spec" and found.spec is not None:
         out.update(state="ok", **_evaluated(found.spec, read, now))
+    elif found.state == "quota":
+        out.update(message=QUOTA)
     elif found.state in ("unsupported", "cannot"):
         out["message"] = found.reason or ask_ai.CANNOT
         if found.closest is not None:
@@ -146,7 +165,7 @@ async def ask(body: AskBody, user: User = Depends(require_ai_acknowledged), sess
     return out
 
 
-@router.post("/eval", dependencies=[Depends(chains_rate_limit)])
+@router.post("/eval", dependencies=[Depends(require_ui_v2), Depends(chains_rate_limit)])
 async def eval_spec(body: EvalBody, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """A spec the caller already has (a saved analysis), evaluated on the current chain. No AI: nothing is metered
     against the AI budget, so a saved analysis keeps updating when the AI quota is used up."""

@@ -461,7 +461,7 @@ def test_the_ai_rate_limit_answers_with_a_plain_sentence(monkeypatch):
     _broker(monkeypatch, _chain())
     _provider(monkeypatch, _LLM([{"spec": OWNER_ONE}, {"spec": OWNER_ONE}]))
     monkeypatch.delitem(app.dependency_overrides, rate_limit.ai_rate_limit, raising=False)   # the suite turns it off
-    monkeypatch.setattr(rate_limit, "limits_for", lambda plan: {"user": 1, "tenant": 0})
+    monkeypatch.setattr(rate_limit, "limits_for", lambda plan: {"user": 2, "tenant": 0})    # one question = 2 units
     core_rl.reset("ai_u")
     core_rl.reset("ai_t")
     assert _ask(t).status_code == 200
@@ -609,3 +609,155 @@ def test_a_stored_analysis_that_no_longer_validates_is_dropped_alone():
     bad = {"name": "Old", "spec": {**OWNER_ONE, "columns": [{"label": "X", "expr": "retired_column"}]}}
     out = P.stored_value("oc_analyses", json.dumps({"items": {"good0001": good, "bad00001": bad}}))
     assert list(out["items"]) == ["good0001"] and out["items"]["good0001"]["name"] == "Good"
+
+
+# --- security review of 3f69204 ----------------------------------------------------------------------------------------
+
+def _audit_rows(tenant_id):
+    from sqlalchemy import select
+
+    from app.db.models import AuditLogRecord
+
+    async def go():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(AuditLogRecord).where(AuditLogRecord.tenant_id == tenant_id,
+                                                                            AuditLogRecord.event == "option_chain_ask")))
+    return _run(go())
+
+
+@pytest.mark.parametrize("expr", ["ce_oi\n", "ce_oi\n\n", "\nce_oi", "ce_oi\r\n", "ce_oi\t"])
+def test_a_newline_in_an_expression_is_refused_never_a_crash(expr, monkeypatch):
+    """HIGH 1: "$" matched before a final newline and the position search raised StopIteration (a 500)."""
+    with pytest.raises(A.SpecError):
+        A._tokens(expr)
+    _refused(columns=[{"label": "X", "expr": expr}])
+    # /eval
+    t = _org("nl-eval")
+    chains = _broker(monkeypatch, _chain())
+    r = client.post("/api/option-chain/eval", headers=t["headers"], json={"symbol": "NIFTY", "spec": {**OWNER_ONE, "columns": [{"label": "X", "expr": expr}]}})
+    assert r.status_code == 422 and chains.reads == 0
+    # PUT /api/me/prefs/oc_analyses
+    assert _put_saved(t, {"items": {"abcd1234": {"name": "X", "spec": {**OWNER_ONE, "columns": [{"label": "X", "expr": expr}]}}}}).status_code == 422
+    # /ask: the model's spec with the newline is refused and repaired, never a 500
+    fake = _LLM([{"spec": {**OWNER_ONE, "columns": [{"label": "CE OI", "expr": expr}], "chart": None}}, {"spec": OWNER_ONE}])
+    _provider(monkeypatch, fake)
+    r = _ask(t)
+    assert r.status_code == 200 and r.json()["state"] == "ok" and len(fake.calls) == 2
+
+
+@pytest.mark.parametrize("reply", [
+    '{"spec":' + "[" * 5000 + "]" * 5000 + "}",                                  # too deep for json.loads (RecursionError)
+    '{"spec": {"title": "T", "window": 5, "columns": [{"label": "A", "expr": "ce_oi"}]}' + " " * ask_ai.MAX_REPLY_CHARS + "}",
+    '{"spec": {"title": "T", "window": 5, "columns": [{"label": "A", "expr": "ce_oi"}], "filters": [["x"]]}}',
+])
+def test_an_unreadable_answer_takes_the_repair_turn_never_a_500(reply, monkeypatch):
+    """HIGH 2: a deeply nested or oversized reply is an invalid answer (repair turn), and the audit row is written."""
+    fake = _LLM([reply, reply])
+    assert _run(ask_ai.translate(fake, "show oi")).state == "cannot" and len(fake.calls) == 2
+    t = _org("deep")
+    _broker(monkeypatch, _chain())
+    fake = _LLM([reply, {"spec": OWNER_ONE}])
+    _provider(monkeypatch, fake)
+    r = _ask(t)
+    assert r.status_code == 200 and r.json()["state"] == "ok" and len(fake.calls) == 2
+    assert len(_audit_rows(t["tenant_id"])) == 1
+
+
+def test_a_failure_after_the_paid_call_still_writes_the_audit_row(monkeypatch):
+    t = _org("finally")
+    _broker(monkeypatch, _chain())
+    _provider(monkeypatch, _LLM([]))
+
+    async def broken(*_a, **_k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(ask_ai, "translate", broken)
+    r = _ask(t)
+    assert r.status_code == 200 and r.json()["state"] == "ai_error" and r.json()["message"] == ask_routes.AI_ERROR
+    assert len(_audit_rows(t["tenant_id"])) == 1 and "error" in _audit_rows(t["tenant_id"])[0].detail
+
+
+@pytest.mark.parametrize("text", [
+    "Go long above 22000", "Hold 22000 CE", "Nifty will hit 25000", "100% safe", "http://evil.example/x", "www.example.com",
+    "See https://x.y", "Short 22000 CE now", "Accumulate PE", "Avoid PE", "Add more CE", "Go short", "Enter here",
+    "Take position at ATM", "Safe trade", "Jackpot strike", "Winner strike", "Tip: CE 22000", "Short straddle at ATM",
+    "Write 22500 CE", "Book profits", "Bullish setup", "Call writers trapped", "Long CE", "Go long", "Accumulate", "Sure profit",
+])
+def test_titles_and_labels_refuse_advice_forecasts_and_links(text):
+    """MEDIUM 3: the reviewer's examples - refused as a title and as a label."""
+    _refused(title=text)
+    _refused(columns=[{"label": text[:32], "expr": "ce_oi"}])
+
+
+def test_ordinary_titles_and_labels_still_pass():
+    for text in ("CE-PE OI near ATM", "OI up more than 20% today", "CE OI chg %", "PCR by strike", "Call OI share %",
+                 "Short build-up strikes", "Long build-up", "IV smile", "Rank of PE OI", "Strike distance from spot"):
+        _spec(title=text, columns=[{"label": text[:32], "expr": "ce_oi"}])
+
+
+def test_a_number_the_question_does_not_carry_in_a_title_or_label_is_repaired(monkeypatch):
+    spec = AnalysisSpec.model_validate({**OWNER_ONE, "title": "OI near 25000"})
+    assert ask_ai.ungrounded(spec, "show OI near the money") and not ask_ai.ungrounded(spec, "show OI near 25000")
+    labelled = AnalysisSpec.model_validate({**OWNER_ONE, "columns": [{"label": "CE OI x 3", "expr": "ce_oi * 3"}], "chart": None})
+    assert ask_ai.ungrounded(labelled, "call OI near ATM")[0].startswith("columns.0.label")
+    t = _org("ground")
+    _broker(monkeypatch, _chain())
+    fake = _LLM([{"spec": {**OWNER_ONE, "title": "Nifty near 25000"}}, {"spec": OWNER_ONE}])
+    _provider(monkeypatch, fake)
+    out = _ask(t, question="show the CE-PE OI difference near the money").json()
+    assert out["state"] == "ok" and out["spec"]["title"] == OWNER_ONE["title"] and "number that the request" in fake.calls[1][1]
+
+
+def test_flag_off_is_a_404_before_the_acknowledgement_and_before_any_rate_limit_unit(monkeypatch):
+    """LOW-MED 4: require_ui_v2 is the first dependency on both routes."""
+    from app.ai import rate_limit
+    from app.core import rate_limit as core_rl
+    from app.main import app
+    from tests.test_auth_api import _register
+    token = _register(f"oc3-noack-{uuid.uuid4().hex[:6]}@example.com", ai_terms=False)
+    headers = {"Authorization": f"Bearer {token}"}
+    body = {"symbol": "NIFTY", "question": "show call OI near the money"}
+    r = client.post("/api/option-chain/ask", headers=headers, json=body)
+    assert r.status_code == 404 and r.headers.get("X-Feature-Disabled") == "ui_v2"              # not 428
+    assert client.post("/api/option-chain/eval", headers=headers, json={"symbol": "NIFTY", "spec": OWNER_ONE}).status_code == 404
+    t = _org("flagunits", flags=())
+    _broker(monkeypatch, _chain())
+    _provider(monkeypatch, _LLM([{"spec": OWNER_ONE}]))
+    monkeypatch.delitem(app.dependency_overrides, rate_limit.ai_rate_limit, raising=False)
+    monkeypatch.setattr(rate_limit, "limits_for", lambda plan: {"user": 2, "tenant": 0})
+    core_rl.reset("ai_u")
+    core_rl.reset("ai_t")
+    for _ in range(3):
+        assert _ask(t).status_code == 404                                                       # spends no unit
+    _flag("ui_v2", t["tenant_id"])
+    assert _ask(t).status_code == 200                                                          # the 2 units are all still there
+
+
+def test_ask_costs_two_rate_units_and_the_repair_turn_rechecks_the_budget(monkeypatch):
+    """LOW 5: a question may make two AI calls."""
+    from app.core import config
+    assert config.AI_RATE_WEIGHTS["POST /api/option-chain/ask"] == 2
+    fake = _LLM([{"spec": {**OWNER_ONE, "window": 50}}, {"spec": OWNER_ONE}])
+
+    async def spent():
+        return False
+    out = _run(ask_ai.translate(fake, "show oi", may_retry=spent))
+    assert out.state == "quota" and len(fake.calls) == 1
+    from app.ai import metering
+    t = _org("recheck")
+    _broker(monkeypatch, _chain())
+    fake = _LLM([{"spec": {**OWNER_ONE, "window": 50}}, {"spec": OWNER_ONE}])
+    _provider(monkeypatch, fake)
+    monkeypatch.setattr(metering, "budget_exhausted", _async(True))
+    r = _ask(t).json()
+    assert r["state"] == "quota" and r["message"] == ask_routes.QUOTA and len(fake.calls) == 1
+
+
+def test_chart_refs_follow_the_label_pattern_and_describe_prints_the_columns_own_label():
+    """LOW 6 / LOW 7."""
+    for bad in ({"type": "bar", "x": "strike\n", "y": ["CE OI"]}, {"type": "bar", "x": "strike", "y": ["<b>"]},
+                {"type": "bar", "x": "strike", "y": ["x" * 33]}):
+        _refused(chart=bad)
+    spec = _spec(columns=[{"label": "CE OI", "expr": "ce_oi@-15m"}], chart={"type": "bar", "x": "STRIKE", "y": ["ce oi"]})
+    lines = A.describe(spec)
+    assert "Chart: a bar chart of \"CE OI\" by strike." in lines
+    assert any("15 minutes ago (the latest stored snapshot at or before then, no more than 10 minutes older)" in line for line in lines)

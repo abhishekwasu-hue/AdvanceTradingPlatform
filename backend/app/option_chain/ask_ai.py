@@ -18,7 +18,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 from pydantic import ValidationError
 
@@ -32,6 +32,7 @@ logger = logging.getLogger(__name__)
 TASK = "option_chain_ask"           # the AI task (fast tier, app/ai/providers.py TASK_TIERS) and the metering feature
 MAX_TOKENS = 1500
 MAX_REASON_CHARS = 240
+MAX_REPLY_CHARS = 20000             # a longer reply is refused unread (a spec is far smaller; keeps parsing bounded)
 
 CANNOT = "This request cannot be expressed as an option chain analysis here."
 CLOSEST_NOTE = "The closest analysis that can be expressed is shown below; it uses no AI to run."
@@ -88,7 +89,10 @@ def user_prompt(question: str) -> str:
 
 
 def parse_reply(raw: str) -> Dict[str, Any]:
-    """The model's JSON object (code fences and text around it ignored). ValueError when there is none."""
+    """The model's JSON object (code fences and text around it ignored). ValueError when there is none or the reply is
+    longer than MAX_REPLY_CHARS."""
+    if len(raw or "") > MAX_REPLY_CHARS:
+        raise ValueError("the answer is too long")
     body = re.sub(r"^```(?:json)?\s*|\s*```$", "", (raw or "").strip(), flags=re.S)
     start, end = body.find("{"), body.rfind("}")
     if start < 0 or end < start:
@@ -134,12 +138,24 @@ def shown_reason(reason: Any, question: str) -> str:
 
 @dataclass
 class Translation:
-    state: str                                          # spec | unsupported | cannot | error
+    state: str                                          # spec | unsupported | cannot | error | quota
     spec: Optional[AnalysisSpec] = None
     reason: Optional[str] = None
     closest: Optional[AnalysisSpec] = None
     attempts: int = 0
     problems: List[str] = field(default_factory=list)
+
+
+def ungrounded(spec: AnalysisSpec, question: str) -> List[str]:
+    """Repair problems for a title or label carrying a number the question does not (labels name what is shown; a level
+    or a forecast the trader never wrote is the model's own)."""
+    allowed = grounding.allowed_from_text(question or "")
+    out = []
+    for where, text in [("title", spec.title)] + [(f"columns.{i}.label", c.label) for i, c in enumerate(spec.columns)]:
+        ok, _bad = grounding.check_numbers(text, allowed)
+        if not ok:
+            out.append(f"{where}: a number that the request does not contain; labels only name what is shown")
+    return out
 
 
 def _read(data: Dict[str, Any], question: str) -> Tuple[Optional[Translation], List[str]]:
@@ -154,18 +170,24 @@ def _read(data: Dict[str, Any], question: str) -> Tuple[Optional[Translation], L
                 closest = _spec(data["closest"])
             except (ValidationError, ValueError) as exc:
                 return None, [f"closest.{p}" for p in problems_of(exc)]
+            bad = ungrounded(closest, question)
+            if bad:
+                return None, [f"closest.{p}" for p in bad]
         return Translation("unsupported", reason=shown_reason(data.get("reason"), question), closest=closest), []
     if set(data) != {"spec"}:
         return None, ["answer with {\"spec\": {...}} or {\"unsupported\": true, \"reason\": ..., \"closest\": ...} only"]
     try:
-        return Translation("spec", spec=_spec(data["spec"])), []
+        spec = _spec(data["spec"])
     except (ValidationError, ValueError) as exc:
         return None, problems_of(exc)
+    bad = ungrounded(spec, question)
+    return (None, bad) if bad else (Translation("spec", spec=spec), [])
 
 
-async def translate(provider: Any, question: str) -> Translation:
+async def translate(provider: Any, question: str, *, may_retry: Optional[Callable[[], Awaitable[bool]]] = None) -> Translation:
     """The question -> a validated spec, an "unsupported" answer, or (after one repair turn) "cannot". A provider error
-    is `error` (the route shows a plain sentence; the error text is never shown or logged)."""
+    is `error` (the route shows a plain sentence; the error text is never shown or logged). `may_retry` is asked before
+    the repair turn (the route checks the AI budget again); False -> `quota`, no second call."""
     stamp(provider, PROMPT_VERSION)
     system, prompt = system_prompt(), user_prompt(question)
     problems: List[str] = []
@@ -177,11 +199,14 @@ async def translate(provider: Any, question: str) -> Translation:
             return Translation("error", attempts=attempt, problems=["provider error"])
         try:
             found, problems = _read(parse_reply(raw), question)
-        except (ValueError, json.JSONDecodeError):
-            found, problems = None, ["the answer was not one JSON object"]
+        except Exception as exc:  # noqa: BLE001 - any unreadable answer (bad JSON, too deep, too long) is an invalid answer
+            logger.info("OC3 ask: the AI answer could not be read (%s)", type(exc).__name__)
+            found, problems = None, ["the answer was not one readable JSON object of the shape asked for"]
         if found is not None:
             found.attempts = attempt
             return found
+        if attempt == 1 and may_retry is not None and not await may_retry():
+            return Translation("quota", attempts=1, problems=problems)
         prompt = (user_prompt(question) + "\n\nYour previous answer was refused by the validator: " + "; ".join(problems)[:900]
                   + "\nAnswer again with ONE corrected JSON object of the same shape.")
     closest = AnalysisSpec.model_validate(CLOSEST_FALLBACK)

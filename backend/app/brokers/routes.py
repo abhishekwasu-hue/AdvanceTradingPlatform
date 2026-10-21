@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
 
@@ -25,6 +26,7 @@ from app.brokers.token_lifecycle import (
     OAUTH_BROKERS,
     build_login_url,
     build_upstox_authorization_url,
+    cap_expiry_at_token_exp,
     create_oauth_state,
     get_credential_record,
     load_credentials,
@@ -401,6 +403,25 @@ async def smoke_test_broker(
     return out
 
 
+_TOKEN_LIKE = re.compile(r"[A-Za-z0-9_\-.+/=:|]{16,}")
+AUDIT_ERROR_MAX = 120
+
+
+def audit_error_text(exc: BaseException, credentials: Optional[BrokerCredentials] = None) -> str:
+    """What an audit row may say about a failed broker login: the exception's class and a short, scrubbed message.
+    Every stored credential value and any long token-like run (16+ characters of key / token alphabet) is replaced,
+    so neither the raw broker or SDK text nor a secret echoed in it is ever written."""
+    text = " ".join(str(exc).split())
+    if credentials is not None:
+        for value in credentials.model_dump(exclude_none=True).values():
+            if isinstance(value, str) and len(value) >= 4:
+                text = text.replace(value, "[redacted]")
+    text = _TOKEN_LIKE.sub("[redacted]", text)
+    if len(text) > AUDIT_ERROR_MAX:
+        text = text[:AUDIT_ERROR_MAX].rstrip() + "..."
+    return f"{type(exc).__name__}: {text}" if text else type(exc).__name__
+
+
 async def run_authentication(session: AsyncSession, user: User, record: BrokerCredentialRecord, label: str,
                              ) -> Tuple[Optional[BrokerProfile], Optional[Exception]]:
     """A real login against the broker with this row's stored (encrypted) credentials; the shared core of
@@ -418,7 +439,8 @@ async def run_authentication(session: AsyncSession, user: User, record: BrokerCr
         # Broker-side errors (BrokerError) and raw network failures (DNS, timeout, TLS, ...)
         # both mean the same thing to the caller: authentication did not succeed. Either way
         # this must come back as a clean error, never an unhandled 500, and always be audited.
-        await write_audit_log(session, user.tenant_id, user.id, "broker_authentication_failed", f"{name}/{label}: {exc}")
+        await write_audit_log(session, user.tenant_id, user.id, "broker_authentication_failed",
+                              f"{name}/{label}: {audit_error_text(exc, credentials)}")
         # A heuristic, not a certainty: real broker APIs (Kite, Upstox) return distinguishable
         # error text for an expired/invalid token vs. other failures, but there's no structured
         # error code to key off across three different broker error formats.
@@ -432,6 +454,8 @@ async def run_authentication(session: AsyncSession, user: User, record: BrokerCr
         store_access_token(record, new_token)
     else:
         mark_verified(record)
+    # A session token that carries its own `exp` (Dhan's and Angel One's JWTs) is not used past it.
+    cap_expiry_at_token_exp(record, new_token or credentials.access_token)
     if not await _write_if_unchanged(session, record, expected_user, expected_payload):
         await session.rollback()
         raise HTTPException(status_code=409, detail=CHANGED_HANDS)

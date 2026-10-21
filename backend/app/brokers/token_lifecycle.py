@@ -175,6 +175,25 @@ def mark_verified(record: BrokerCredentialRecord, now: Optional[datetime] = None
         record.token_expires_at = default_token_expiry(record.broker_name, now)
 
 
+def cap_expiry_at_token_exp(record: BrokerCredentialRecord, token: Optional[str]) -> None:
+    """P2a: when the session token is a JWT with an `exp` claim earlier than the stored expiry, the stored expiry becomes
+    that `exp`. The claim is read without verifying the signature - for the expiry only, never for authentication - and
+    it can only shorten the session, never lengthen it."""
+    if not token or record.token_status != BrokerTokenStatus.VALID.value:
+        return
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False, "verify_exp": False})
+        exp = claims.get("exp") if isinstance(claims, dict) else None
+        if not isinstance(exp, (int, float)) or isinstance(exp, bool) or exp <= 0:
+            return
+        token_exp = datetime.fromtimestamp(float(exp), tz=timezone.utc)
+    except Exception:  # noqa: BLE001 - not a JWT (Kite, Shoonya, Fyers): the daily schedule stands
+        return
+    current = _as_utc(record.token_expires_at)
+    if current is None or token_exp < current:
+        record.token_expires_at = token_exp
+
+
 def mark_expired(record: BrokerCredentialRecord) -> None:
     record.token_status = BrokerTokenStatus.EXPIRED.value
 

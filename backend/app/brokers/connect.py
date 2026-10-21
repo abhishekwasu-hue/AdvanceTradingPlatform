@@ -51,8 +51,8 @@ NEEDS_LOGIN = "needs_login"
 NOT_WORKING = "not_working"
 
 # Each connect sends the broker a login or a handful of read-only GETs with the user's credentials; like the analytics
-# check (6/min), a few per minute is plenty. Connect and renew share the window.
-connect_rate_limit = user_rate_limit("broker_connect", limit=10, window_seconds=60)
+# check, six a minute is plenty. Connect and renew share the window.
+connect_rate_limit = user_rate_limit("broker_connect", limit=6, window_seconds=60)
 
 MAX_FIELD_LENGTH = 4096
 
@@ -360,7 +360,7 @@ async def _verify(entry: cat.BrokerEntry, session: AsyncSession, user: User, rec
         raise
     except Exception as construct_exc:  # noqa: BLE001 - the adapter refused the stored fields before any call
         logger.info("Broker %s login could not start for tenant %s: %s", entry.broker, user.tenant_id, type(construct_exc).__name__)
-        return NOT_WORKING, f"Some {entry.name} details are missing; paste all the fields and try again."
+        return NOT_WORKING, "Something went wrong on our side; try again in a minute."
     if exc is None:
         return CONNECTED, "Connected."
     logger.info("Broker %s login failed for tenant %s: %s", entry.broker, user.tenant_id, type(exc).__name__)
@@ -393,9 +393,13 @@ async def _connect_other(entry: cat.BrokerEntry, body: ConnectBody, user: User, 
         if stored is None or not stored.api_key or not stored.api_secret:
             raise _Refusal(f"Connect {entry.name} with its key and secret first, then log in.")
         spec = LOGIN_URL_BROKERS.get(entry.broker) or {}
-        code = _code_from_paste(values["request_token"], spec.get("code_param", "code"))
-        if not code or any(c.isspace() for c in code) or len(code) > MAX_FIELD_LENGTH:
-            raise _Refusal(f"Paste the whole address you land on after signing in to {entry.name}.")
+        pasted = values["request_token"]
+        code = _code_from_paste(pasted, spec.get("code_param", "code"))
+        # An address without the code (a wrong page, a cancelled login) must never be saved as the code: it would
+        # replace a working session with nothing.
+        address_without_code = any(t in pasted for t in ("://", "?", "=")) and code == pasted.strip()
+        if address_without_code or not code or any(c.isspace() for c in code) or len(code) > MAX_FIELD_LENGTH:
+            raise _Refusal("Paste the whole address you land on after logging in.")
         values = {"request_token": code}      # replaces yesterday's access token (save_credentials drops it)
     if values:
         record, _ = await save_credentials(session, user, entry.broker, label, BrokerCredentials.model_validate(values))
@@ -425,6 +429,10 @@ async def _connect_upstox(entry: cat.BrokerEntry, body: ConnectBody, user: User,
         kind = await ua.probe_token_kind(token)
         if kind is None:
             raise _Refusal("Could not reach Upstox to check this token; nothing was saved, so try again in a minute.")
+        if kind == ua.EITHER_KIND:
+            # Both reads answered (an analytics token used from a registered static IP does that too): the box decides,
+            # and the default box is the Analytics Token.
+            kind = ua.DAILY_KIND if pasted_as == cat.ACCESS_TOKEN else ua.ANALYTICS_KIND
     if kind == ua.EXPIRED_KIND:
         raise _Refusal("This Upstox token has already expired; generate a new one and paste it here.")
     if kind == ua.REJECTED_KIND:

@@ -70,12 +70,24 @@ class ShoonyaBroker(BrokerInterface):
             )
         self.credentials = credentials
         self._client = client or httpx.AsyncClient(base_url=self.BASE_URL, timeout=15.0)
-        self._session_token: Optional[str] = None
+        # The session (`susertoken`) lives in `_access_token`, the BrokerInterface convention, so a login's token is read
+        # back by token_lifecycle, stored encrypted and handed to the next adapter as `credentials.access_token` (P2a).
+        self._access_token: Optional[str] = credentials.access_token or None
         self._profile: Optional[BrokerProfile] = None
-        self._actid: Optional[str] = None
+        # Shoonya's account id is the user id for a retail account; a login replaces it with the `actid` it returns.
+        self._actid: Optional[str] = self._uid if self._access_token else None
         # UI2-4a2-pre review: symbol -> token lookups shared by the process when built without a client (master_cache)
         self._shared_master = client is None
         self._tokens: Dict[str, Tuple[str, str]] = {}
+
+    @property
+    def _session_token(self) -> Optional[str]:
+        """The NorenApi `jKey` (kept as `_access_token`); the old attribute name still reads and writes it."""
+        return self._access_token
+
+    @_session_token.setter
+    def _session_token(self, value: Optional[str]) -> None:
+        self._access_token = value
 
     @property
     def _uid(self) -> str:
@@ -133,7 +145,11 @@ class ShoonyaBroker(BrokerInterface):
 
     async def get_profile(self) -> BrokerProfile:
         if self._profile is None:
-            raise BrokerAuthenticationError("Not authenticated - call authenticate() first")
+            if not self._access_token:
+                raise BrokerAuthenticationError("Not authenticated - call authenticate() first")
+            # A stored session: one authenticated read (`/Limits`) proves it is still alive before it is reported.
+            await self._post("/Limits", {"uid": self._uid, "actid": self._actid or self._uid})
+            self._profile = BrokerProfile(broker=self.name, user_id=self._uid)
         return self._profile
 
     async def get_instruments(self, exchange: Optional[str] = None) -> List[Instrument]:

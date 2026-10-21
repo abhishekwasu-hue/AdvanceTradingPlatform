@@ -47,6 +47,9 @@ ANGEL_SEED = _sentinel("angel-seed")
 ANGEL_SESSION = _sentinel("angel-session")
 OPAQUE_ANALYTICS = _sentinel("opaque-analytics")
 OPAQUE_BAD = _sentinel("opaque-bad")
+SHOONYA_PASS = "pass phrase " + "w" * 3
+SHOONYA_SEED = _sentinel("shoonya-seed")
+SHOONYA_SESSION = _sentinel("shoonya-session")
 NOW = datetime.now(timezone.utc)
 
 
@@ -61,6 +64,8 @@ DAILY_JWT = _upstox_jwt(timedelta(hours=20))
 # Upstox's view of each token: what the fake answers for it.
 UPSTOX_TOKENS: Dict[str, str] = {}
 DOWN_HOSTS: set = set()
+DHAN_GOOD: set = set()
+SHOONYA_CALLS: List[str] = []
 
 
 def _reply(status: int, body: dict) -> httpx.Response:
@@ -84,9 +89,10 @@ async def _fake_transport(self, request: httpx.Request) -> httpx.Response:
             return _reply(200, {"status": "success", "data": data})
         return _reply(401, {"status": "error", "errors": [{"errorCode": "UDAPI100050", "message": "Invalid token"}]})
     if host == "api.dhan.co" and path == "/v2/profile":
-        if request.headers.get("access-token") in (DHAN_A, DHAN_B):
+        if request.headers.get("access-token") in (DHAN_A, DHAN_B, *DHAN_GOOD):
             return _reply(200, {"dhanClientId": "1000001", "name": "Abhi"})
-        return _reply(401, {"errorCode": "DH-901", "errorMessage": "Invalid access token"})
+        # A broker that echoes what it was sent: the audit row must not keep it.
+        return _reply(401, {"errorCode": "DH-901", "errorMessage": "Invalid access token " + request.headers.get("access-token", "")})
     if host == "api.kite.trade":
         if path == "/session/token":
             if f"request_token={KITE_CODE}" in request.content.decode():
@@ -103,6 +109,18 @@ async def _fake_transport(self, request: httpx.Request) -> httpx.Response:
             return _reply(200, {"status": False, "message": "Invalid totp", "errorcode": "AB1050"})
         if path.endswith("/getProfile") and request.headers.get("Authorization") == f"Bearer {ANGEL_SESSION}":
             return _reply(200, {"status": True, "data": {"clientcode": "A1", "name": "Abhi"}})
+    if host == "api.shoonya.com":
+        from urllib.parse import parse_qs
+        form = parse_qs(request.content.decode())
+        SHOONYA_CALLS.append(path.rsplit("/", 1)[-1])
+        if path.endswith("/QuickAuth"):
+            sent = json.loads(form["jData"][0])
+            if len(sent.get("factor2", "")) == 6 and sent.get("uid") == "FA1":
+                return _reply(200, {"stat": "Ok", "susertoken": SHOONYA_SESSION, "actid": "FA1", "uname": "Abhi"})
+            return _reply(200, {"stat": "Not_Ok", "emsg": "Invalid Input : Wrong Password"})
+        if form.get("jKey", [""])[0] == SHOONYA_SESSION:
+            return _reply(200, {"stat": "Ok", "cash": "1000"})
+        return _reply(200, {"stat": "Not_Ok", "emsg": "Session Expired :  Invalid Session Key"})
     return _reply(404, {"status": "error"})
 
 
@@ -122,13 +140,15 @@ def fake_brokers(monkeypatch):
     UPSTOX_TOKENS.clear()
     UPSTOX_TOKENS.update({ANALYTICS_JWT: "analytics", DAILY_JWT: "daily", OPAQUE_ANALYTICS: "analytics"})
     DOWN_HOSTS.clear()
+    DHAN_GOOD.clear()
+    SHOONYA_CALLS.clear()
     rate_limit.reset("broker_connect")
     yield
     rate_limit.reset("broker_connect")
 
 
 SECRETS = (DHAN_A, DHAN_B, DHAN_X, KITE_S, KITE_CODE, KITE_SESSION, ANGEL_SEED, ANGEL_SESSION, OPAQUE_ANALYTICS,
-           OPAQUE_BAD)
+           OPAQUE_BAD, SHOONYA_SEED, SHOONYA_SESSION)
 
 
 def _assert_no_secret(text: str) -> None:
@@ -160,6 +180,8 @@ def _tenant(headers) -> int:
 
 
 def _connect(headers, broker: str, fields: dict, renew: bool = False, label=None) -> dict:
+    from app.core import rate_limit
+    rate_limit.reset("broker_connect")          # the limit has its own test; flows here make more than six calls
     body: dict = {"fields": fields}
     if label is not None:
         body["account_label"] = label
@@ -249,13 +271,18 @@ def test_token_kind_from_claims():
     assert ua.token_kind_from_claims(_upstox_jwt(timedelta(days=4))) is None          # between the bounds: probe
     assert ua.token_kind_from_claims("not-a-jwt") is None
     assert ua.token_kind_from_claims(jwt.encode({"sub": "U1"}, "k" * 32, algorithm="HS256")) is None
+    # No `iat`: the time left says nothing (a year-long token can have two days left) - the probe decides.
+    no_iat = jwt.encode({"sub": "U1", "exp": int((NOW + timedelta(days=300)).timestamp())}, "k" * 32, algorithm="HS256")
+    assert ua.token_kind_from_claims(no_iat) is None
+    short_no_iat = jwt.encode({"sub": "U1", "exp": int((NOW + timedelta(hours=5)).timestamp())}, "k" * 32, algorithm="HS256")
+    assert ua.token_kind_from_claims(short_no_iat) is None
 
 
 def test_probe_token_kind_settles_an_opaque_token():
     UPSTOX_TOKENS[OPAQUE_BAD] = "bad"
     UPSTOX_TOKENS["opaque-daily"] = "daily"
     assert asyncio.run(ua.probe_token_kind(OPAQUE_ANALYTICS)) == ua.ANALYTICS_KIND
-    assert asyncio.run(ua.probe_token_kind("opaque-daily")) == ua.DAILY_KIND
+    assert asyncio.run(ua.probe_token_kind("opaque-daily")) == ua.EITHER_KIND      # both reads answer: the box decides
     assert asyncio.run(ua.probe_token_kind(OPAQUE_BAD)) == ua.REJECTED_KIND
     DOWN_HOSTS.add("api.upstox.com")
     assert asyncio.run(ua.probe_token_kind(OPAQUE_ANALYTICS)) is None
@@ -445,8 +472,8 @@ def test_another_organisation_sees_and_touches_nothing():
 
 def test_connect_is_rate_limited_per_user():
     headers = _org("rate")
-    codes = [client.post("/api/broker/dhan/connect", headers=headers, json={"fields": {}}).status_code for _ in range(11)]
-    assert codes[:10] == [200] * 10 and codes[10] == 429
+    codes = [client.post("/api/broker/dhan/connect", headers=headers, json={"fields": {}}).status_code for _ in range(7)]
+    assert codes[:6] == [200] * 6 and codes[6] == 429
 
 
 def test_removal_is_the_existing_delete_route():
@@ -477,3 +504,90 @@ def test_bt1b_another_members_connection_is_not_stored_over_or_logged_in_to():
         _flag(False)
     assert load_credentials(_row(tenant_id, "upstox")).analytics_token == ANALYTICS_JWT
     assert load_credentials(_row(tenant_id, "dhan")).access_token == DHAN_A
+
+
+# --- review fixes -----------------------------------------------------------------------------------------------
+
+def test_an_opaque_token_both_reads_accept_is_stored_as_the_box_says():
+    UPSTOX_TOKENS["opaque-both"] = "daily"                 # the profile and a quote both answer
+    a, b = _org("box-a"), _org("box-b")
+    assert _connect(a, "upstox", {"analytics_token": "opaque-both"})["status"] == "connected"
+    creds = load_credentials(_row(_tenant(a), "upstox"))
+    assert creds.analytics_token == "opaque-both" and creds.access_token is None
+    assert _connect(b, "upstox", {"access_token": "opaque-both"})["status"] == "connected"
+    creds = load_credentials(_row(_tenant(b), "upstox"))
+    assert creds.access_token == "opaque-both" and creds.analytics_token is None
+
+
+def test_shoonya_session_is_stored_and_reused_without_a_new_login(caplog):
+    caplog.set_level(logging.DEBUG)
+    from app.brokers.token_lifecycle import build_adapter
+    headers = _org("shoonya")
+    fields = {"client_id": "FA1", "api_secret": SHOONYA_PASS, "api_key": "vendorkey" + "z" * 3, "totp_secret": SHOONYA_SEED}
+    assert _connect(headers, "shoonya", fields) == {"status": "connected", "message": "Connected."}
+    row = _row(_tenant(headers), "shoonya")
+    assert row.token_status == "VALID" and load_credentials(row).access_token == SHOONYA_SESSION
+    assert SHOONYA_CALLS == ["QuickAuth"]
+
+    adapter = build_adapter(row)
+    assert adapter.access_token == SHOONYA_SESSION
+    profile = asyncio.run(adapter.get_profile())             # the stored session, proven with one read - no new login
+    assert profile.user_id == "FA1" and SHOONYA_CALLS == ["QuickAuth", "Limits"]
+    assert _connect(headers, "shoonya", {}, renew=True) == {"status": "connected", "message": "Connected."}
+    assert SHOONYA_CALLS[-1] == "QuickAuth"
+    _assert_no_secret(caplog.text)
+
+
+def test_a_login_address_without_the_code_never_replaces_the_session():
+    headers = _org("nocode")
+    tenant_id = _tenant(headers)
+    _connect(headers, "zerodha", {"api_key": KITE_APP, "api_secret": KITE_S})
+    good = f"https://example.com/cb?action=login&status=success&request_token={KITE_CODE}"
+    assert _connect(headers, "zerodha", {"request_token": good}, renew=True)["status"] == "connected"
+    for paste in ("https://example.com/cb?action=login&status=cancelled", "status=success", "https://example.com/cb"):
+        out = _connect(headers, "zerodha", {"request_token": paste}, renew=True)
+        assert out == {"status": "not_working", "message": "Paste the whole address you land on after logging in."}, paste
+    row = _row(tenant_id, "zerodha")
+    creds = load_credentials(row)
+    assert row.token_status == "VALID" and creds.access_token == KITE_SESSION and creds.request_token is None
+
+
+def test_dhan_session_ends_at_the_tokens_own_exp():
+    headers = _org("dhanexp")
+    exp = NOW + timedelta(hours=3)
+    pasted = jwt.encode({"sub": "1000001", "exp": int(exp.timestamp())}, "dhan-side-signing-key-for-tests-only", algorithm="HS256")
+    DHAN_GOOD.add(pasted)
+    assert _connect(headers, "dhan", {"client_id": "1000001", "access_token": pasted})["status"] == "connected"
+    row = _row(_tenant(headers), "dhan")
+    stored = row.token_expires_at if row.token_expires_at.tzinfo else row.token_expires_at.replace(tzinfo=timezone.utc)
+    assert stored == datetime.fromtimestamp(int(exp.timestamp()), tz=timezone.utc)
+    # A token that outlives the daily schedule never lengthens it.
+    later = jwt.encode({"sub": "1000001", "exp": int((NOW + timedelta(days=30)).timestamp())}, "dhan-side-signing-key-for-tests-only",
+                       algorithm="HS256")
+    DHAN_GOOD.add(later)
+    assert _connect(headers, "dhan", {"access_token": later}, renew=True)["status"] == "connected"
+    row = _row(_tenant(headers), "dhan")
+    stored = row.token_expires_at if row.token_expires_at.tzinfo else row.token_expires_at.replace(tzinfo=timezone.utc)
+    assert stored < NOW + timedelta(days=2)
+
+
+def test_failed_login_audit_keeps_no_broker_text_or_secret():
+    from app.brokers.routes import audit_error_text
+    from app.db.models import AuditLogRecord
+    headers = _org("audit")
+    tenant_id = _tenant(headers)
+    out = _connect(headers, "dhan", {"client_id": "1000001", "access_token": DHAN_X})
+    assert out["status"] == "not_working"
+
+    async def details():
+        async with _session_factory() as session:
+            return list(await session.scalars(select(AuditLogRecord.detail).where(
+                AuditLogRecord.tenant_id == tenant_id, AuditLogRecord.event == "broker_authentication_failed")))
+    [detail] = asyncio.run(details())
+    assert detail.startswith("dhan/primary: BrokerAuthenticationError: ") and "[redacted]" in detail
+    _assert_no_secret(detail)
+
+    secretish = "sk_live_" + "Q" * 30
+    text = audit_error_text(RuntimeError(f"upstream said: bad key {secretish} and pin 98765 " + "x " * 200),
+                            BrokerCredentials(pin="98765"))
+    assert secretish not in text and "98765" not in text and text.startswith("RuntimeError: ") and len(text) < 160

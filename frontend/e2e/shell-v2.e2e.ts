@@ -145,15 +145,15 @@ test.describe("v2 shell 390, More sheet", () => {
     });
   }
 
-  test("an address without a trusted certificate says why the app cannot be installed", async ({ page }) => {
+  test("a page opened over plain http says in the install entry why it cannot install - no banner, no domain advice", async ({ page }) => {
     await page.addInitScript(() => { Object.defineProperty(window, "isSecureContext", { value: false }); });
-    await open(page, "/", "dark", V2);                    // PW1's install offer was closed before: its own key
+    await open(page, "/", "dark", V2);
 
-    const message = "Install needs the app's web address (domain) with a trusted certificate. Ask the owner to set up the domain.";
-    await expect(page.locator("[data-install='unavailable']")).toHaveText(message);
+    await expect(page.locator("[data-install='unavailable']")).toHaveCount(0);
     await page.getByRole("button", { name: "More pages" }).click();
     await page.getByRole("button", { name: "Install the app" }).click();
-    await expect(page.locator("[data-install-message]")).toHaveText(message);
+    await expect(page.locator("[data-install-message]")).toHaveText(
+      "Install works only on the app's secure address. Open this page with https:// and try again.");
   });
 });
 

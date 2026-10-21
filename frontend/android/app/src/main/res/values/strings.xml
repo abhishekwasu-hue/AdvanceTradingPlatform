@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">ATP</string>
     <string name="title_activity_main">ATP</string>
-    <string name="package_name">dev.atp.unpublished</string>
-    <string name="custom_url_scheme">dev.atp.unpublished</string>
+    <string name="package_name">tech.aialgodesk.app</string>
+    <string name="custom_url_scheme">tech.aialgodesk.app</string>
 </resources>

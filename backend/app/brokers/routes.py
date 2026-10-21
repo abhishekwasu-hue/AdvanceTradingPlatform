@@ -34,6 +34,7 @@ from app.brokers.token_lifecycle import (
     store_access_token,
     token_is_usable,
 )
+from app.core import config as app_config
 from app.core.config import FRONTEND_URL
 from app.core.rate_limit import user_rate_limit
 from app.core.enums import BrokerTokenStatus, NotificationSeverity, NotificationType, UserRole
@@ -122,10 +123,18 @@ async def _probe_quietly(session: AsyncSession, record: BrokerCredentialRecord) 
         return None
 
 
+def public_callback_url(request: Request) -> str:
+    """D2: the Upstox redirect URL to register on the Upstox developer app - the deployment's public origin
+    (`PUBLIC_BASE_URL`, e.g. https://<domain>) plus the callback path, so it never carries a server address. Without
+    `PUBLIC_BASE_URL` (local runs, tests) it is the address this request reached the API at, as before."""
+    base = (getattr(app_config, "PUBLIC_BASE_URL", "") or "").strip().rstrip("/")
+    return (base or str(request.base_url).rstrip("/")) + UPSTOX_CALLBACK_PATH
+
+
 def _callback_url(request: Request, broker_name: str) -> Optional[str]:
     if broker_name not in OAUTH_BROKERS:
         return None
-    return str(request.base_url).rstrip("/") + UPSTOX_CALLBACK_PATH
+    return public_callback_url(request)
 
 
 def _token_status_response(record: BrokerCredentialRecord, request: Request) -> BrokerTokenStatusResponse:
@@ -639,6 +648,50 @@ class OAuthStartResponse(BaseModel):
     authorization_url: str
 
 
+class UpstoxRedirectAccount(BaseModel):
+    """One stored Upstox account: whether it carries its own Redirect URI and whether that differs from the public
+    callback URL - booleans only, never a credential value."""
+    account_label: str
+    redirect_uri_set: bool
+    redirect_uri_mismatch: bool
+
+
+class UpstoxRedirectInfo(BaseModel):
+    # The exact Redirect URL to register on the Upstox developer app (the public callback URL).
+    redirect_url: str
+    # True when any stored Upstox account below has a Redirect URI that differs from `redirect_url`.
+    redirect_uri_mismatch: bool
+    accounts: list[UpstoxRedirectAccount]
+
+
+def _stored_redirect_uri(record: BrokerCredentialRecord) -> Optional[str]:
+    try:
+        value = load_credentials(record).redirect_uri
+    except Exception:  # noqa: BLE001 - an unreadable payload (e.g. a rotated key) simply has nothing to compare
+        return None
+    return (value or "").strip() or None
+
+
+@router.get("/upstox/redirect-url", response_model=UpstoxRedirectInfo)
+async def upstox_redirect_url(
+    request: Request, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+) -> UpstoxRedirectInfo:
+    """D2: the Upstox Redirect URL for the Connect broker screen, shown before any key is stored. A stored Redirect URI
+    that differs is flagged, not rewritten: the OAuth start keeps sending the stored one (it must match the Upstox app),
+    so the trader changes it in the Upstox app and re-saves it here."""
+    public_url = public_callback_url(request)
+    records = await session.scalars(select(BrokerCredentialRecord).where(
+        BrokerCredentialRecord.tenant_id == user.tenant_id, BrokerCredentialRecord.broker_name == "upstox"))
+    accounts = []
+    for record in records:
+        stored = _stored_redirect_uri(record)
+        accounts.append(UpstoxRedirectAccount(account_label=record.account_label or "primary", redirect_uri_set=stored is not None,
+                                              redirect_uri_mismatch=stored is not None and stored != public_url))
+    accounts.sort(key=lambda a: a.account_label)
+    return UpstoxRedirectInfo(redirect_url=public_url, redirect_uri_mismatch=any(a.redirect_uri_mismatch for a in accounts),
+                              accounts=accounts)
+
+
 @router.get("/upstox/oauth/start", response_model=OAuthStartResponse)
 async def upstox_oauth_start(
     request: Request, user: User = Depends(require_trader), session: AsyncSession = Depends(get_session),
@@ -655,7 +708,9 @@ async def upstox_oauth_start(
     credentials = load_credentials(record)
     if not credentials.api_key or not credentials.api_secret:
         raise HTTPException(status_code=400, detail="Upstox credentials need both api_key and api_secret for OAuth")
-    redirect_uri = credentials.redirect_uri or str(request.base_url).rstrip("/") + UPSTOX_CALLBACK_PATH
+    # A stored redirect URI wins: it must match what is registered on the Upstox app, and only the trader can change it
+    # there. A stored one that differs from the public callback URL is reported (GET /upstox/redirect-url), not rewritten.
+    redirect_uri = credentials.redirect_uri or public_callback_url(request)
     if credentials.redirect_uri is None:
         # Remember the redirect URI we are about to use so the token exchange sends the same one.
         credentials.redirect_uri = redirect_uri

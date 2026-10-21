@@ -1171,6 +1171,20 @@ export interface BrokerTokenInfo {
   account_label?: string;
 }
 
+/** D2: GET /broker/upstox/redirect-url - the Redirect URL to register on the Upstox developer app, and a flag for each
+ * stored Upstox account whose stored Redirect URI differs from it (booleans only, never a stored value). */
+export interface UpstoxRedirectAccount {
+  account_label: string;
+  redirect_uri_set: boolean;
+  redirect_uri_mismatch: boolean;
+}
+
+export interface UpstoxRedirectInfo {
+  redirect_url: string;
+  redirect_uri_mismatch: boolean;
+  accounts: UpstoxRedirectAccount[];
+}
+
 export interface BrokerLoginUrl {
   broker_name: string;
   authorization_url: string;

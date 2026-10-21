@@ -10,6 +10,7 @@ import BrokerAccountsCard from "../components/BrokerAccountsCard";
 import BrokerTokenBanner from "../components/BrokerTokenBanner";
 import StaticIpCard from "../components/StaticIpCard";
 import StoredBrokerList from "../components/StoredBrokerList";
+import UpstoxRedirectUrl from "../components/UpstoxRedirectUrl";
 import VisionByokCard from "../components/VisionByokCard";
 import { Card } from "../components/ui";
 import AppearanceCard from "../components/AppearanceCard";
@@ -40,6 +41,8 @@ export default function SettingsPage() {
   const [webhook, setWebhook] = useState<WebhookTokenResponse | null>(null);
   const [webhookCopied, setWebhookCopied] = useState(false);
   const [oauthOutcome, setOauthOutcome] = useState<{ ok: boolean; text: string } | null>(null);
+  // D2: bumped after credentials are stored or removed, so the Upstox Redirect URL check reads them again.
+  const [savedCount, setSavedCount] = useState(0);
 
   function refreshStored() {
     api.listStoredBrokerCredentials().then(setStored).catch((e) => setError(String(e)));
@@ -109,6 +112,7 @@ export default function SettingsPage() {
       await api.storeBrokerCredentials(selectedBroker, credentials, accountLabel || "primary");
       setMessage(`Credentials for ${selectedBroker} (${accountLabel || "primary"}) stored (encrypted at rest).`);
       setCredentials({});
+      setSavedCount((n) => n + 1);
       refreshStored();
     } catch (e) {
       setError(String(e));
@@ -133,6 +137,7 @@ export default function SettingsPage() {
 
   async function handleDelete(name: string, label = "primary") {
     await api.deleteBrokerCredentials(name, label);
+    setSavedCount((n) => n + 1);
     refreshStored();
   }
 
@@ -192,6 +197,8 @@ export default function SettingsPage() {
               ))}
             </select>
           </div>
+
+          <UpstoxRedirectUrl selected={selectedBroker === "upstox"} refreshKey={savedCount} />
 
           <div>
             <label className="block text-xs text-fg-muted mb-1">Account label <span className="text-fg-muted">(a second account at the same broker gets its own label)</span></label>

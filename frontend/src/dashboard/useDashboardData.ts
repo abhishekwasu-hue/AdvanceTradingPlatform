@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api/client";
 import type { OiBannerResponse } from "../oi/types";
 import type {
-  AiAction, AlertChannel, AnalyticsSummary, Deployment, NotificationEntry, PaperRiskStatus, PortfolioExposure, SystemStatus, TradeRecord,
+  AiAction, AnalyticsSummary, Deployment, NotificationEntry, PaperRiskStatus, PortfolioExposure, SystemStatus, TradeRecord,
 } from "../types";
 import { WIN_RATE_DAYS } from "./model";
 import type { MarketStrip } from "./types";
@@ -12,8 +12,8 @@ import type { MarketStrip } from "./types";
  * plus the new GET /api/market/strip. Nothing here writes or places an order.
  *
  * Refresh: positions, P&L and Needs attention every 30 s (as today); the strip at the interval the server names
- * (15 s while the market is open, 5 min outside it); the OI lines every minute; the setup signals once. A tab in the
- * background skips its turns and reads again when it is shown.
+ * (15 s while the market is open, 5 min outside it); the OI lines every minute. A tab in the background skips its turns
+ * and reads again when it is shown. (UI2-7: the Setup chip reads the stored setup progress, src/setup/useSetup.ts.)
  */
 
 export type Loadable<T> = { status: "loading" } | { status: "ok"; data: T } | { status: "error" };
@@ -103,13 +103,11 @@ export interface DashboardData {
   unread: Loadable<NotificationEntry[]>;
   status: Loadable<SystemStatus>;
   summary: Loadable<AnalyticsSummary>;
-  channels: Loadable<AlertChannel[]>;
   /** Reads everything again now (after a broker login, or "Try again"). */
   reload: () => void;
 }
 
 const every = (ms: number) => () => ms;
-const once = () => 24 * 60 * 60 * 1000;
 /** Risk by default answers 404 while its flag is off: no limits to show, not a failure. */
 const winRateSummary = () => api.getAnalyticsSummary(WIN_RATE_DAYS);
 const riskOrNone = () => api.paperRisk().catch((e: unknown) => {
@@ -130,8 +128,7 @@ export function useDashboardData(enabled: boolean): DashboardData {
   const [unread, r8] = usePolled(() => api.listNotifications(true), every(REFRESH_MS), enabled);
   const [status, r9] = usePolled(api.systemStatus, every(REFRESH_MS), enabled);
   const [summary, r10] = usePolled(winRateSummary, every(REFRESH_MS), enabled);
-  const [channels, r11] = usePolled(api.listAlertChannels, once, enabled);
-  const reload = useCallback(() => { for (const r of [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12]) r(); },
-    [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r11, r12]);
-  return { strip, oi, exposure, positions, actions, pending, deployments, risk, unread, status, summary, channels, reload };
+  const reload = useCallback(() => { for (const r of [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r12]) r(); },
+    [r1, r2, r3, r4, r5, r6, r7, r8, r9, r10, r12]);
+  return { strip, oi, exposure, positions, actions, pending, deployments, risk, unread, status, summary, reload };
 }

@@ -455,39 +455,3 @@ export function todayTiles(exposure: PortfolioExposure | null, summary: Analytic
     signals,
   };
 }
-
-// --- Setup chip -------------------------------------------------------------------------------------------------------
-
-/**
- * The Setup chip (§5 block 2, §11). The setup wizard and its stored progress (`GET /api/me/setup`) arrive in UI2-7;
- * until then the chip reads simple signals that already exist. UI2-7 replaces `SetupSignals` with the stored progress
- * and adds the risk step - the chip itself does not change.
- */
-export interface SetupSignals {
-  /** A broker credential is stored (GET /broker/token-status has a row). */
-  brokerStored: boolean;
-  /** A strategy has been put on Autopilot, Paper or Live (GET /deployments has a row). */
-  strategyDeployed: boolean;
-  /** An alert channel is switched on (GET /alert-channels). */
-  alertsOn: boolean;
-}
-
-export interface SetupStep { key: "broker" | "strategy" | "alerts"; next: string; to: string; done: boolean }
-
-export function setupSteps(s: SetupSignals): SetupStep[] {
-  return [
-    { key: "broker", next: "connect your broker", to: "/settings", done: s.brokerStored },
-    { key: "strategy", next: "pick your first strategy", to: "/strategies", done: s.strategyDeployed },
-    { key: "alerts", next: "choose your alerts", to: "/settings", done: s.alertsOn },
-  ];
-}
-
-/** "Setup 2 of 3" and the next step, or null once every step is done (the chip goes away). */
-export function setupProgress(s: SetupSignals | null): { label: string; next: string; to: string } | null {
-  if (!s) return null;
-  const steps = setupSteps(s);
-  const next = steps.find((x) => !x.done);
-  if (!next) return null;
-  const done = steps.filter((x) => x.done).length;
-  return { label: `Setup ${done + 1} of ${steps.length}`, next: `Next: ${next.next}`, to: next.to };
-}

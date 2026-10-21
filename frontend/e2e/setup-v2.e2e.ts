@@ -65,6 +65,16 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
       localStorage.setItem("atp_appearance", JSON.stringify({ theme: "light" }));
       localStorage.setItem("atp_install_dismissed", "1");
     } catch { /* storage unavailable */ }
+    // The alerts step shows "Turn on here" only where the browser has the Push API and has not decided on notifications
+    // (src/alerts/push.ts pushReadiness). Chromium builds differ (CI's headless build answered otherwise, moving the
+    // whole step), so every run gets the same browser: push supported, permission not asked yet. Nothing here is asked
+    // or subscribed: the tests never press "Turn on here".
+    const w = window as unknown as Record<string, unknown>;
+    if (!("PushManager" in window)) w.PushManager = function PushManager() { /* stub */ };
+    if (!("serviceWorker" in navigator)) {
+      Object.defineProperty(Navigator.prototype, "serviceWorker", { configurable: true, get: () => ({ register: () => Promise.reject(new Error("not in tests")) }) });
+    }
+    w.Notification = class { static permission = "default"; static requestPermission() { return Promise.resolve("default"); } };
   });
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: o.flag === false ? undefined : (F.features as Record<string, boolean>), brokers: F.token_status as unknown[] });
@@ -140,6 +150,7 @@ test.describe("setup wizard 390 x 844", () => {
       await open(page, o);
       await expect(stepTitle(page)).toHaveText(title);
       await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
+      if (n === 4) await expect(wizard(page).locator("[data-channel='PUSH']").getByRole("button", { name: "Turn on here" })).toBeVisible();
       await expect(page).toHaveScreenshot(`setup-v2-step${n}-390-light.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
     });
   }

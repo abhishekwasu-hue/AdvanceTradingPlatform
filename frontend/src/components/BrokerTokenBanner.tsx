@@ -11,6 +11,26 @@ import type { BrokerTokenInfo } from "../types";
  * registered on the broker's console instead, so the banner opens their login page and takes the
  * pasted one-time code (or the whole redirected address) and finishes the login in one step.
  */
+/** The OAuth row's redirect line. D2: when the account's saved Redirect URI (on a domain name) differs from the public
+ * one, the login sends the saved one, so a neutral pointer to Settings replaces an address that would not be used. A
+ * saved one left over on an IP address or plain http is replaced by the next login, which the line says. */
+export function RedirectUriNote({ t }: { t: BrokerTokenInfo }) {
+  if (!t.oauth_callback_url) return null;
+  if (t.redirect_uri_mismatch) {
+    return (
+      <span data-redirect-mismatch className="text-fg-muted">
+        The saved Redirect URI differs from this site&apos;s address - see Settings, Add / update broker credentials.
+      </span>
+    );
+  }
+  return (
+    <span className="text-fg-muted hidden md:inline" title="Register this exact redirect URI on the Upstox developer console">
+      redirect URI: <code className="font-mono">{t.oauth_callback_url}</code>
+      {t.redirect_uri_will_be_replaced && <span data-redirect-replaced> The next login uses this address.</span>}
+    </span>
+  );
+}
+
 export default function BrokerTokenBanner({ compact = false }: { compact?: boolean }) {
   const [tokens, setTokens] = useState<BrokerTokenInfo[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -116,11 +136,7 @@ export default function BrokerTokenBanner({ compact = false }: { compact?: boole
                   <LogIn size={12} /> {busy ? "Redirecting…" : ok ? "Re-login to Upstox" : "Login to Upstox"}
                 </button>
               )}
-              {!compact && t.oauth_callback_url && (
-                <span className="text-fg-muted hidden md:inline" title="Register this exact redirect URI on the Upstox developer console">
-                  redirect URI: <code className="font-mono">{t.oauth_callback_url}</code>
-                </span>
-              )}
+              {!compact && <RedirectUriNote t={t} />}
               {t.login_url_supported && (
                 <button
                   onClick={() => void openLogin(t)}

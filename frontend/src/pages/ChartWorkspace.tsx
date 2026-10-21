@@ -92,7 +92,7 @@ function Workspace({ params }: { params: URLSearchParams }) {
   }, []);
   useEffect(() => {
     const a = layout.cells[layout.active];
-    document.title = `Workspace · ${a?.symbol ?? ""} · Advance Trading`;
+    document.title = `Workspace · ${a?.symbol ?? ""} · AiAlgoDesk`;
   }, [layout]);
 
   // Saved layouts: the list, and the one used last (unless the URL asked for a symbol).

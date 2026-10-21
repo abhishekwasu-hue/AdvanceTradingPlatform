@@ -145,15 +145,15 @@ test.describe("v2 shell 390, More sheet", () => {
     });
   }
 
-  test("an address without a trusted certificate says why the app cannot be installed", async ({ page }) => {
+  test("a page opened over plain http says in the install entry why it cannot install - no banner, no domain advice", async ({ page }) => {
     await page.addInitScript(() => { Object.defineProperty(window, "isSecureContext", { value: false }); });
-    await open(page, "/", "dark", V2);                    // PW1's install offer was closed before: its own key
+    await open(page, "/", "dark", V2);
 
-    const message = "Install needs the app's web address (domain) with a trusted certificate. Ask the owner to set up the domain.";
-    await expect(page.locator("[data-install='unavailable']")).toHaveText(message);
+    await expect(page.locator("[data-install='unavailable']")).toHaveCount(0);
     await page.getByRole("button", { name: "More pages" }).click();
     await page.getByRole("button", { name: "Install the app" }).click();
-    await expect(page.locator("[data-install-message]")).toHaveText(message);
+    await expect(page.locator("[data-install-message]")).toHaveText(
+      "Install works only on the app's secure address. Open this page with https:// and try again.");
   });
 });
 
@@ -270,6 +270,14 @@ test.describe("v2 broker gate on data pages", () => {
       await expect(gate, path).toBeVisible();
       await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
       await expect(page.locator("main [data-broker-gate] ~ *")).toHaveCount(0);
+      if (path === "/positions") {
+        // UI2-9a: My positions shows the gate itself and, under it, only the trader's own open positions with their exits
+        // (ADR-0004) - never the summary, the closed trades or any price or P&L figure.
+        await expect(page.locator("[data-block='summary']")).toHaveCount(0);
+        await expect(page.locator("[data-block='history']")).toHaveCount(0);
+        await expect(page.locator("main [data-col]")).toHaveCount(0);
+        await expect(page.locator("main").getByText(/[+−]₹/)).toHaveCount(0);
+      }
     }
     await page.getByRole("link", { name: "Connect a broker" }).click();
     await expect(page).toHaveURL(/\/settings$/);

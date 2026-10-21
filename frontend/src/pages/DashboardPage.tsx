@@ -4,6 +4,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { api } from "../api/client";
+import RenewBanner from "../broker/RenewBanner";
 import { useAuth } from "../auth/AuthContext";
 import { Card, signClass, signTone } from "../components/ui";
 import { Badge, Button, PageHeader } from "../components/primitives";
@@ -202,6 +203,9 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         </>}
       />
 
+      {/* P2b: one "Renew" for a broker that needs today's login (opens the same Connect panel as the Broker page). */}
+      {user && <RenewBanner />}
+
       {error && (
         <div className="rounded-xl border border-down/40 bg-down/10 px-3 py-2 text-sm text-down">
           Some dashboard data could not be loaded: {error}
@@ -219,7 +223,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         <KpiTile icon={Bot} tone="sky" label="Deployments" value={user ? `${live + paper}` : "…"}
                  sub={user ? <><span className="font-semibold text-fg">{live} LIVE</span> · <span className="text-fg-muted">{paper} PAPER</span>{paused ? <> · <span className="text-warn">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
         <KpiTile icon={Wallet} tone="orange" label="Broker funds" value={user ? (accounts.length ? money(balance) : "-") : "…"}
-                 sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · ${brokers.length} adapters`} onClick={onNavigate && (() => onNavigate("settings"))} />
+                 sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · ${brokers.length} adapters`} onClick={onNavigate && (() => onNavigate("broker"))} />
         <KpiTile icon={GitMerge} tone="fuchsia" label="Strategies" value={strategies.length || "…"}
                  sub={`${mtf} multi-timeframe · ${indicator} indicator`} onClick={onNavigate && (() => onNavigate("strategies"))} />
       </div>

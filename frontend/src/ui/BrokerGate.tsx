@@ -2,6 +2,7 @@ import { ExternalLink, KeyRound, LogIn, Plug, TriangleAlert, UserCircle2 } from 
 import { useId, useState, type FormEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import { api } from "../api/client";
+import { BROKER_PATH } from "../broker/paths";
 import { Button } from "../components/primitives";
 import type { BrokerTokenInfo } from "../types";
 import {
@@ -20,7 +21,7 @@ import {
  * candles, a seeded chain or example positions "until the broker connects".
  *
  * States:
- * - no broker stored  -> "Connect your broker", one primary action to the Connect flow (Settings -> Brokers for now);
+ * - no broker stored  -> "Connect your broker", one primary action to the Connect flow (the Broker page, P2b);
  * - stored, no usable session today -> "Log in to <Broker>", which runs that broker's existing login path:
  *   Upstox OAuth start, the login link for Zerodha / Fyers (then paste the code it returns), authenticate for others;
  * - connected -> the children, unchanged.
@@ -30,9 +31,9 @@ import {
  * Shown only on v2 pages (flag `ui_v2`); UI2-1 wraps the pages in src/ui/dataPages.ts with it. Places no orders.
  */
 
-/** The Connect flow: Settings -> Brokers until UI2-6 ships the guided flow. (A literal, not routes.ts, so this
- * component does not pull every page loader into its chunk; the unit test pins it to pathFor("settings").) */
-export const CONNECT_BROKER_PATH = "/settings";
+/** The Connect flow: the Broker page (P2b). (A literal, not routes.ts, so this component does not pull every page
+ * loader into its chunk; the unit test pins it to pathFor("broker").) */
+export const CONNECT_BROKER_PATH = BROKER_PATH;
 /** The sign-in page for a signed-out visitor (UI-14); pinned to pathFor("account") by the unit test. */
 export const SIGN_IN_PATH = "/account";
 

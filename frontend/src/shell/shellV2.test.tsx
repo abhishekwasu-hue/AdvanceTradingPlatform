@@ -94,6 +94,9 @@ describe("UI2-1 More sheet", () => {
     expect(html).not.toContain('href="/admin"');
     expect(html).not.toContain('href="/journal"');                       // flag off
     expect(html.match(/min-h-11/g)?.length).toBeGreaterThanOrEqual(15);  // every tile is a 44 px target
+    // P2b: Broker is the first tile, above the sections.
+    expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
+    expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf(">Markets</h3>"));
   });
 
   it("searches every visible page, the bar's included, and says when nothing matches", () => {
@@ -137,6 +140,24 @@ describe("UI2-1 sidebar", () => {
     expect(html).toContain("Owner");
     expect(html).toContain(">Paper<");
     expect(html).not.toContain("PAPER MODE");
+    // P2b: Broker first, above the sections, before any section header.
+    expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
+    expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf("aria-expanded"));
+    expect(html).not.toContain("data-broker-dot");                       // no status known: no dot
+  });
+
+  it("P2b: the Broker entry carries the status dot (red only for 'not working')", () => {
+    const at = (dot: "connected" | "needs_login" | "not_working") => renderToStaticMarkup(
+      <MemoryRouter>
+        <SidebarV2View sections={visibleSections(trader)} current="dashboard" memory={{}} onToggle={noop} dot={dot}
+          user={{ id: 1, email: "abhi.wasu@example.com", tenant_id: 1, role: "OWNER" }} accountPath="/settings/account" />
+      </MemoryRouter>,
+    );
+    expect(at("connected")).toMatch(/href="\/broker"[^]*?data-broker-dot="connected"[^>]*bg-up/);
+    expect(at("needs_login")).toMatch(/data-broker-dot="needs_login"[^>]*bg-warn/);
+    expect(at("not_working")).toMatch(/data-broker-dot="not_working"[^>]*bg-down/);
+    expect(at("needs_login")).toContain(", needs login");                // the words, for screen readers
+    expect(at("connected").match(/data-broker-dot/g)).toHaveLength(1);
   });
 
   it("labels roles and initials plainly", () => {

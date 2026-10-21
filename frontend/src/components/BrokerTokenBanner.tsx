@@ -19,7 +19,7 @@ export function RedirectUriNote({ t }: { t: BrokerTokenInfo }) {
   if (t.redirect_uri_mismatch) {
     return (
       <span data-redirect-mismatch className="text-fg-muted">
-        The saved Redirect URI differs from this site&apos;s address - see Settings, Add / update broker credentials.
+        The saved Redirect URI differs from this site&apos;s address - see Advanced on the Broker page.
       </span>
     );
   }

@@ -51,7 +51,7 @@ export function loginNote(t: Pick<BrokerTokenInfo, "broker_name" | "oauth_suppor
   if (t.broker_name === "angel_one") return `We log in to ${name} for you with the PIN and TOTP secret you stored, encrypted.`;
   if (t.broker_name === "shoonya") return `We log in to ${name} for you with the password and TOTP secret you stored, encrypted.`;
   if (TOTP_BROKERS.has(t.broker_name)) return `We log in to ${name} for you with the details you stored, encrypted.`;
-  if (t.broker_name === "dhan") return `We log in with the access token you stored. If ${name} has ended it, paste a new one in Settings.`;
+  if (t.broker_name === "dhan") return `We log in with the access token you stored. If ${name} has ended it, renew it on the Broker page.`;
   if (t.broker_name === "coindcx") return `We log in with the API key you stored. ${name} needs no daily login.`;
   if (loginMethodFor(t) === "authenticate") return `We log in to ${name} with the keys you stored, encrypted.`;
   return NEVER_STORE_PASSWORD;
@@ -157,16 +157,16 @@ export function loginErrorText(error: unknown, brokerName: string): string {
   if (error instanceof ApiError) {
     if (error.status === 0 || error.message === NETWORK_MESSAGE) return NETWORK_MESSAGE;
     switch (error.status) {
-      case 400: return `Your ${name} keys are incomplete. Check them in Settings, then try again.`;
+      case 400: return `Your ${name} keys are incomplete. Check them on the Broker page, then try again.`;
       case 401: return `Your sign-in has ended. Sign in again, then log in to ${name}.`;
       case 403:
         return /two-factor|step-up|authenticator/i.test(`${error.detail} ${error.body}`)
           ? `Logging in to ${name} needs a fresh two-factor check. Confirm it with your authenticator app, then try again.`
           : `You do not have permission to log in to ${name}. Ask the owner of your organisation.`;
-      case 404: return `Your ${name} keys are no longer stored. Connect ${name} again in Settings.`;
+      case 404: return `Your ${name} keys are no longer stored. Connect ${name} again on the Broker page.`;
       case 409: return `Your ${name} connection changed while you were logging in. Try again.`;
       case 429: return "Too many attempts. Wait a minute, then try again.";
-      case 502: return `${name} did not accept the login. Try again; if it repeats, check your ${name} keys in Settings.`;
+      case 502: return `${name} did not accept the login. Try again; if it repeats, check your ${name} keys on the Broker page.`;
       default: return `The ${name} login did not finish. Try again in a moment.`;
     }
   }

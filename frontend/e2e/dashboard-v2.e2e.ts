@@ -228,7 +228,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
     await expect(page.locator("[data-block]")).toHaveCount(0);
     await gate.getByRole("link", { name: "Connect a broker" }).click();
-    await expect(page).toHaveURL(/\/settings$/);
+    await expect(page).toHaveURL(/\/broker$/);                             // P2b: the Broker page
   });
 
   test("nothing yet: the friendly empty states, each with one action", async ({ page }) => {

@@ -41,7 +41,7 @@ export function TryOnSymbolBody({ strategy }: { strategy: StrategyInfo }) {
     setBusy(true); setError(null); setExecuteMsg(null);
     const useSample = sample;
     try {
-      if (!useSample && !source.usable) throw new Error("Log in to your broker under Settings to use real candles, or turn on sample data under Advanced.");
+      if (!useSample && !source.usable) throw new Error("Log in to your broker on the Broker page to use real candles, or turn on sample data under Advanced.");
       // Strategies read every timeframe off one-minute bars (as the old page did).
       const broker = source.sources.find((s) => s.usable)?.broker;
       const fetched = useSample

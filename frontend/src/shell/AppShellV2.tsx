@@ -1,6 +1,9 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
+import BrokerPromptHost from "../broker/BrokerPromptHost";
+import { brokerDot } from "../broker/brokerState";
+import { useBrokerConnections } from "../broker/useBrokerConnections";
 import ErrorBoundary from "../components/ErrorBoundary";
 import type { Page } from "../components/Sidebar";
 import LegalAcceptanceBanner from "../legal/LegalAcceptanceBanner";
@@ -12,7 +15,7 @@ import BottomNavV2 from "./BottomNavV2";
 import CommandBarV2, { currentPlatform, isApplePlatform, isCommandShortcut, otherDialogOpen } from "./CommandBarV2";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./common";
 import MoreSheetV2 from "./MoreSheetV2";
-import { sectionOf, visibleSections, type NavContext } from "./navModel";
+import { sectionOf, visiblePinned, visibleSections, type NavContext } from "./navModel";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
 import { SETUP_ADDRESS } from "./aliases";
 import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
@@ -48,6 +51,9 @@ export default function AppShellV2() {
   const role = user?.role ?? null;
   const ctx = useMemo<NavContext>(() => ({ on: features.on, role }), [features.on, role]);
   const sections = useMemo(() => visibleSections(ctx), [ctx]);
+  const pinned = useMemo(() => visiblePinned(ctx), [ctx]);
+  // P2b: the broker's status dot on the Broker entry (and on More while it needs attention).
+  const dot = brokerDot(useBrokerConnections().rows);
   const accountPath = user ? "/settings/account" : pathFor("account");
   const go = useCallback((p: Page) => navigate(pathFor(p)), [navigate]);
 
@@ -141,7 +147,7 @@ export default function AppShellV2() {
         className="sr-only focus:not-sr-only focus:fixed focus:left-space-2 focus:top-space-2 focus:z-[70] focus:rounded-control focus:bg-surface-1 focus:px-space-3 focus:py-space-2 focus:text-t14 focus:text-fg focus:shadow-raised">
         Skip to content
       </a>
-      <SidebarV2 sections={sections} current={key} currentSection={sectionOf(key)} user={user} accountPath={accountPath} />
+      <SidebarV2 sections={sections} pinned={pinned} dot={dot} current={key} currentSection={sectionOf(key)} user={user} accountPath={accountPath} />
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBarV2 title={title} user={user} accountPath={accountPath}
           notificationsActive={key === "notifications"} accountActive={key === "account"}
@@ -154,9 +160,10 @@ export default function AppShellV2() {
           {content}
         </main>
       </div>
-      <BottomNavV2 current={key} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
-      <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key}
+      <BottomNavV2 current={key} dot={dot} moreOpen={moreOpen} onMore={() => setMoreOpen((o) => !o)} onPick={() => setMoreOpen(false)} />
+      <MoreSheetV2 open={moreOpen} onOpenChange={setMoreOpen} ctx={ctx} current={key} dot={dot}
         onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
+      <BrokerPromptHost />
       <CommandBarV2 open={commandOpen} onOpenChange={setCommandOpen} ctx={ctx} onGo={(path) => navigate(path)} />
       {supportOn && supportLoaded && (
         <Suspense fallback={null}>

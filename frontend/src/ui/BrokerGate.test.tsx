@@ -121,7 +121,7 @@ describe("UI2-0 BrokerGate: details", () => {
   });
 
   it("keeps the Connect and Sign-in paths on today's routes", () => {
-    expect(CONNECT_BROKER_PATH).toBe(pathFor("settings"));
+    expect(CONNECT_BROKER_PATH).toBe(pathFor("broker"));      // P2b: the Broker page
     expect(SIGN_IN_PATH).toBe(pathFor("account"));
   });
 });

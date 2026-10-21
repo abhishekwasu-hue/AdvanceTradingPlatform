@@ -202,14 +202,32 @@ describe("UI2-2 needs attention", () => {
     expect(rows[3]).toMatchObject({ title: "New trades are paused for today", detail: "Today's loss reached your limit." });
   });
 
-  it("names unseen alerts, LIVE paused by the operator, maintenance and an unverified e-mail", () => {
+  const liveBot = { strategy_id: "orb", symbol: "NIFTY 50", mode: "LIVE", status: "STOPPED", last_error: null } as Deployment;
+
+  it("names unseen alerts, LIVE paused by the operator, maintenance and an unverified e-mail (with a LIVE deployment)", () => {
     const rows = attentionRows({ ...base, unread: [{ id: 1, title: "A", created_at: "2026-10-19T05:11:00" }, { id: 2, title: "B", created_at: "2026-10-19T05:15:00" }] as NotificationEntry[],
       status: { maintenance_mode: true, maintenance_message: null, disabled_brokers: ["angel_one"] }, emailVerified: false,
-      brokerRows: [upstox, { ...upstox, broker_name: "zerodha", needs_login: true }] });
+      brokerRows: [upstox, { ...upstox, broker_name: "zerodha", needs_login: true }], deployments: [liveBot] });
     expect(rows.map((r) => r.title)).toEqual(["2 brokers · 1 needs login", "2 alerts you have not seen", "Live trading is paused on Angel One",
       "Maintenance: new trades are paused", "Verify your email"]);
     expect(rows[1].detail).toBe("Newest: B");
     expect(rows[2].action).toBeUndefined();
+  });
+
+  it("P3: in PAPER (no LIVE deployment) no LIVE rows: no 'Live trading is paused', no e-mail row", () => {
+    const paper = { ...liveBot, mode: "PAPER" } as Deployment;
+    for (const deployments of [[], [paper]]) {
+      const rows = attentionRows({ ...base, deployments, emailVerified: false,
+        status: { maintenance_mode: true, maintenance_message: null, disabled_brokers: ["angel_one"] } });
+      expect(rows.map((r) => r.id)).toEqual(["maintenance"]);
+      for (const r of rows) expect(`${r.title} ${r.detail}`).not.toMatch(/\blive\b|e-?mail|MFA|algo|SEBI/i);
+    }
+  });
+
+  it("P3: a failed deployments read (null) never hides the LIVE rows", () => {
+    const rows = attentionRows({ ...base, deployments: null, emailVerified: false,
+      status: { maintenance_mode: false, maintenance_message: null, disabled_brokers: ["angel_one"] } });
+    expect(rows.map((r) => r.id)).toEqual(["live-paused", "email"]);
   });
 
   it("never shows developer wording", () => {

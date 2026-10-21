@@ -7,7 +7,7 @@ import {
   SETUP_STEPS, STEP_TEXT, isComplete, markOpened, openingStep, skipStep, stepAfter, withStored, type SetupStepKey, type SetupView,
 } from "./model";
 import { ActionV2, AlertsStepV2, BrokerStepV2, RiskStepV2, StrategyStepV2 } from "./StepsV2";
-import { rememberAutoOpened, useSetup } from "./useSetup";
+import { useSetup } from "./useSetup";
 
 /**
  * UI2-7 (UI v2 proposal §11): the setup wizard - four steps, each skippable ("Skip for now") and resumable: the progress
@@ -51,9 +51,7 @@ export default function SetupWizardV2() {
   useEffect(() => {
     if (shown === null && view) setShown(openingStep(view) ?? "finished");
   }, [shown, view]);
-  // The first sign-in's automatic opening happens once: record that the wizard has been seen - in this browser at once
-  // (so a failed save cannot open it again on every reload) and on the server once its answer is in.
-  useEffect(() => { rememberAutoOpened(user?.id ?? null); }, [user?.id]);
+  // Record on the server that the wizard has been seen (P3: nothing opens it by itself any more; the mark is kept).
   useEffect(() => {
     if (setup.fresh && view && view.stored.opened_at === null) setup.update((s) => markOpened(s, new Date().toISOString()));
     // eslint-disable-next-line react-hooks/exhaustive-deps

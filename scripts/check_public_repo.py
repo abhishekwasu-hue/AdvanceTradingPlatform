@@ -168,6 +168,8 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/options_builder.json": "bf6df3ea9f5caddb5e3acc1d2f8360875a3cd72550f194156b21266fd550e1f0",
     "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
     "frontend/e2e/fixtures/setup_v2.json": "cff0561b071bfa9bfb79e7e4b85029ddc0cbb3f395a64cd7d0c209aebdd419e7",
+    # P3: hand-written, made-up replies for the front page and the go-live checklist (no real account, broker or token)
+    "frontend/e2e/fixtures/front_page.json": "a2a51de38eec31a2a2735557596a4599d3a1efd73c4bd39d929ca822447d850d",
     "frontend/e2e/fixtures/signals_v2.json": "8a8c59c855e923dd02db351c5f8753d26851310cd5af5e2f405b9c78339338a8",
     "frontend/e2e/fixtures/system_status.json": "1e6eb9fa4f6aadbabc6128522a423a6697471cb4f71dd6c548c0b4bbe788bb91",
     "frontend/e2e/fixtures/thesis.json": "fafc2234d7b94bb57a0a860e95d3d3cf8052796ef9d9011db2d12cf486b3bac7",

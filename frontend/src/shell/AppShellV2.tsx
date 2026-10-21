@@ -21,6 +21,7 @@ import { SETUP_ADDRESS } from "./aliases";
 import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2RedirectFor } from "./shellRoutes";
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
+import { usePaperOnly } from "../setup/paperOnly";
 
 type FeedbackDialogProps = { open: boolean; onOpenChange: (open: boolean) => void; pathname: string; initialText?: string };
 const FeedbackDialog = lazy<ComponentType<FeedbackDialogProps>>(
@@ -47,6 +48,8 @@ export default function AppShellV2() {
   // path the router sees, and the gate fails closed on an address that cannot be decoded (review M1).
   const path = routerPath(location.pathname).path;
   const key = shellKeyFromPath(path);
+  // P3: on the front page in PAPER the top bar shows no LIVE or e-mail notice (only after the deployments were read).
+  const frontPaperOnly = usePaperOnly(!!user && key === "dashboard");
   const title = shellTitle(key);
   const role = user?.role ?? null;
   const ctx = useMemo<NavContext>(() => ({ on: features.on, role }), [features.on, role]);
@@ -151,7 +154,8 @@ export default function AppShellV2() {
       <div className="flex min-w-0 flex-1 flex-col">
         <TopBarV2 title={title} user={user} accountPath={accountPath}
           notificationsActive={key === "notifications"} accountActive={key === "account"}
-          onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined} />
+          onSearch={() => setCommandOpen(true)} onHelp={supportOn ? openHelp : undefined} onFeedback={user ? () => openFeedback() : undefined}
+          paperOnly={frontPaperOnly} />
         <PwaBanners />
         <LegalAcceptanceBanner />
         {/* The window scrolls, not <main> (as in today's shell); the Copilot's sticky tab bar needs overflow-x-clip. */}

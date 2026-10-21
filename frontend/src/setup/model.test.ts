@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { flagOffFallback, shellKeyFromPath, shellTitle } from "../shell/shellRoutes";
 import {
   RISK_DEFAULTS, SETUP_PATH, SUGGESTIONS, cleanStored, cleanView, dismissChip, isComplete, markOpened, nextStep, openingStep, paperDeployment,
-  perTradeText, riskErrors, riskSentence, setupChip, shouldAutoOpen, skipStep, stepAfter, testSummary, withStored,
+  perTradeText, riskErrors, riskSentence, setupChip, skipStep, stepAfter, testSummary, withStored,
   type SetupStepKey, type SetupView,
 } from "./model";
 
@@ -23,7 +23,7 @@ function view(done: SetupStepKey[] = [], skipped: SetupStepKey[] = [], extra: Re
 describe("UI2-7 step state", () => {
   it("reads the server's answer; anything malformed is unset, and a non-answer is no view", () => {
     expect(EMPTY).toEqual({ steps: { broker: { skipped_at: null }, risk: { skipped_at: null }, strategy: { skipped_at: null }, alerts: { skipped_at: null } },
-      opened_at: null, dismissed_at: null });
+      opened_at: null, dismissed_at: null, get_started_hidden_at: null, get_started_shown_at: null });
     expect(cleanStored({ steps: { broker: { skipped_at: "soon" }, live: { skipped_at: T } }, opened_at: 5 })).toEqual(EMPTY);
     expect(cleanView(null)).toBeNull();
     expect(cleanView({ steps: "x", version: 1 })).toBeNull();
@@ -60,18 +60,10 @@ describe("UI2-7 step state", () => {
     expect(openingStep(view(["broker", "risk", "strategy", "alerts"]))).toBeNull();          // complete: the summary
   });
 
-  it("opens by itself once: never opened (server and this browser), nothing done yet, not dismissed, never for a VIEWER", () => {
-    expect(shouldAutoOpen(view())).toBe(true);
-    expect(shouldAutoOpen(view(), { role: "OWNER", guarded: false })).toBe(true);
-    expect(shouldAutoOpen(view(), { guarded: true })).toBe(false);                 // a failed save of opened_at: no loop
-    expect(shouldAutoOpen(view(), { role: "VIEWER" })).toBe(false);
-    expect(shouldAutoOpen(view(["alerts"]))).toBe(false);                          // already set up in part: not sent there
-    expect(shouldAutoOpen(view([], ["broker"]))).toBe(true);
-    expect(shouldAutoOpen(withStored(view(), markOpened(EMPTY, T)))).toBe(false);
+  it("records the wizard's first opening once (P3: nothing opens it by itself)", () => {
+    expect(markOpened(EMPTY, T).opened_at).toBe(T);
     expect(markOpened({ ...EMPTY, opened_at: "2026-01-01T00:00:00Z" }, T).opened_at).toBe("2026-01-01T00:00:00Z");
-    expect(shouldAutoOpen(view(["broker", "risk", "strategy", "alerts"]))).toBe(false);
-    expect(shouldAutoOpen(withStored(view(), dismissChip(EMPTY, T)))).toBe(false);
-    expect(shouldAutoOpen(null)).toBe(false);
+    expect(withStored(view(), markOpened(EMPTY, T)).stored.opened_at).toBe(T);
   });
 });
 

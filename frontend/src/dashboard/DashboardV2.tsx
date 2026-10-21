@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { Navigate, useNavigate } from "react-router";
 import { useAuth } from "../auth/AuthContext";
-import { toast } from "../components/Toast";
 import type { PageProps } from "../routes";
-import { SETUP_PATH, dismissChip, setupChip, shouldAutoOpen } from "../setup/model";
-import SetupChipV2 from "../setup/SetupChipV2";
-import { useSetup, wasAutoOpened } from "../setup/useSetup";
+import GetStartedCardV2 from "../setup/GetStartedCardV2";
+import { getStartedCard } from "../setup/getStarted";
+import { useSetup } from "../setup/useSetup";
 import { BrokerGateView, CONNECT_BROKER_PATH, SIGN_IN_PATH, useBrokerLogin } from "../ui/BrokerGate";
 import { useBrokerSession, type BrokerGateState } from "../ui/brokerSession";
 import { useFeatures } from "../ui/useFeatures";
@@ -23,11 +22,13 @@ import { dataOf, useDashboardData, type Loadable } from "./useDashboardData";
  * Shown only while `ui_v2` is on (the v2 shell picks it for `/`, src/shell/pagesV2.ts); with the flag off today's
  * DashboardPage renders exactly as before.
  *
- * UI2-7: the Setup chip reads the stored setup progress (`GET /api/me/setup`, src/setup) and can be closed; on the first
- * sign-in under ui_v2 (never opened, nothing done yet, not a VIEWER) the dashboard opens the setup wizard instead, once.
+ * P3 (the owner's "simple front page"): the Get started card (three steps: broker, paper bot, Telegram; src/setup) replaces
+ * UI2-7's Setup chip, the same card as today's dashboard. Nothing here opens the four-step setup wizard any more (it stays
+ * at Settings → Setup). With no broker stored and the card showing, the card takes the gate's place (its first step is
+ * "Connect your broker"), so the trader sees one card, not two.
  *
- * Order, top to bottom: greeting, Setup chip (until setup is done), market strip, Needs attention, Open positions, Active
- * signals, Today. Desktop: the strip runs full width, then Needs attention and Open positions on the left (2/3) and
+ * Order, top to bottom: greeting, Get started (until its steps are done), market strip, Needs attention, Open positions,
+ * Active signals, Today. Desktop: the strip runs full width, then Needs attention and Open positions on the left (2/3) and
  * Active signals and Today on the right (1/3). Phone: one column in that order.
  *
  * Broker states (the dashboard handles them itself, so the strip still works before the day's broker login, UI-3):
@@ -82,20 +83,12 @@ export default function DashboardV2(_props: PageProps = {}) {
     status: dataOf(data.status), emailVerified: user?.email_verified, approvalsPath,
   }) : null;
   const setup = useSetup(user?.id ?? null);
-  const chip = setupChip(setup.view);
-  const hideChip = () => {
-    setup.update((stored) => dismissChip(stored, new Date().toISOString()));
-    toast.info("Setup reminder hidden. You can finish setup at any time in Settings, under Setup.");
-  };
+  const card = getStartedCard(setup.view, { role: user?.role });
   const positions: Rows<PositionRow> = rowsOf(data.positions, (p) => ({ rows: positionRows(p, exposure), total: p.length }));
   const signalRows: Rows<SignalRow> = rowsOf(data.actions, () => ({ rows: signals.rows, total: signals.count }));
   const tilesLoading = data.exposure.status === "loading" && data.summary.status === "loading";
 
   if (!loading && !user) return <Navigate to={SIGN_IN_PATH} replace />;
-  // The first sign-in under ui_v2: the wizard opens once (it records that it opened), only on the server's answer.
-  if (setup.fresh && shouldAutoOpen(setup.view, { guarded: wasAutoOpened(user?.id ?? null), role: user?.role })) {
-    return <Navigate to={SETUP_PATH} replace />;
-  }
 
   return (
     <div className="mx-auto w-full space-y-space-4 md:space-y-space-6" data-page="dashboard-v2">
@@ -106,11 +99,13 @@ export default function DashboardV2(_props: PageProps = {}) {
         <h1 className="mt-px text-t20 font-semibold tracking-tight text-fg md:text-t24">{hello.hello}</h1>
       </header>
 
-      {BLOCKING.has(broker.kind) ? (
+      {broker.kind === "no-broker" && card ? (
+        <GetStartedCardV2 />
+      ) : BLOCKING.has(broker.kind) ? (
         <BrokerGateView state={broker} onConnect={() => navigate(CONNECT_BROKER_PATH)} onSignIn={() => navigate(SIGN_IN_PATH)} onRetry={refreshBroker} />
       ) : (
         <>
-          {chip && <SetupChipV2 {...chip} onDismiss={hideChip} />}
+          <GetStartedCardV2 primaryNext={false} />
           <MarketStripV2 strip={data.strip} oi={oiLines(dataOf(data.oi))} marketText={strip ? marketLabel(strip.market, now) : null}
             broker={brokerChip(broker, brokerRows)} pnl={todayPnl(exposure)} nowMs={now} />
           <div className="grid grid-cols-1 gap-space-4 lg:grid-cols-3 lg:items-start lg:gap-space-6">

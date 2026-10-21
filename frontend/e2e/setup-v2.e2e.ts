@@ -5,12 +5,13 @@ import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
 /**
- * UI2-7 (UI v2 proposal §11, §12, §13 UI-8): the setup wizard at Settings → Setup and the dashboard's Setup chip, with
- * the `ui_v2` flag on. The progress is the server's (`GET/PUT /api/me/setup`), mocked here as a small server that keeps
+ * UI2-7 (UI v2 proposal §11, §12, §13 UI-8): the setup wizard at Settings → Setup and the Setup chip in Settings, with
+ * the `ui_v2` flag on. P3: the dashboard shows the Get started card instead of the chip and never opens the wizard; the
+ * go-live checklist moved to Settings → Advanced ("Prepare for LIVE", e2e/front-page.e2e.ts). The progress is the server's (`GET/PUT /api/me/setup`), mocked here as a small server that keeps
  * what was saved and works out "done" from what the page did (a PAPER deployment, saved limits, a test alert).
  * - Baselines `setup-v2-step{1..4}-390-light.png`.
- * - Skip for now, resume after a reload, the chip's words and its close button, the first-sign-in opening, PAPER only,
- *   and the flag off (no setup page; today's dashboard keeps its go-live checklist).
+ * - Skip for now, resume after a reload, the chip's words in Settings, no automatic opening from the dashboard, PAPER
+ *   only, and the flag off (no setup page; today's dashboard shows the Get started card, not the go-live checklist).
  * Every reply is hand-written, made-up data (e2e/fixtures/setup_v2.json, dashboard_v2.json): no real account or id.
  * After an intended change: `npx playwright test --project=phone e2e/setup-v2.e2e.ts --update-snapshots`, check the new
  * images, commit.
@@ -19,11 +20,12 @@ import { expectPhoneLayout } from "./phoneLayout";
 const S = JSON.parse(readFileSync(new URL("./fixtures/setup_v2.json", import.meta.url), "utf8")) as Record<string, unknown>;
 const KEYS = ["broker", "risk", "strategy", "alerts"] as const;
 type Key = typeof KEYS[number];
-type Stored = { steps: Record<Key, { skipped_at: string | null }>; opened_at: string | null; dismissed_at: string | null };
+type Stored = { steps: Record<Key, { skipped_at: string | null }>; opened_at: string | null; dismissed_at: string | null;
+  get_started_hidden_at: string | null; get_started_shown_at: string | null };
 
 const SEEN = "2026-10-12T09:00:00Z";
 const blank = (): Stored => ({ steps: { broker: { skipped_at: null }, risk: { skipped_at: null }, strategy: { skipped_at: null }, alerts: { skipped_at: null } },
-  opened_at: SEEN, dismissed_at: null });
+  opened_at: SEEN, dismissed_at: null, get_started_hidden_at: null, get_started_shown_at: null });
 
 /** The mocked server's state, and what the page sent. */
 interface Server { stored: Stored; version: number; done: Record<Key, boolean>; sent: { method: string; url: string; body: unknown }[] }
@@ -36,7 +38,12 @@ function answer(s: Server) {
   // As the backend: a skip only changes the order; a skipped broker step counts as done (app/me/setup.py view()).
   const open = steps.filter((x) => !(x.done || (x.key === "broker" && x.skipped)));
   const next = (open.find((x) => !x.skipped) ?? open[0])?.key ?? null;
-  return { steps, done_count: steps.filter((x) => x.done).length, next, complete: !open.length, stored: s.stored, version: s.version };
+  // P3: the Get started card's three steps (its paper bot and Telegram steps read as the strategy and alerts steps here).
+  const card = [{ key: "broker", done: s.done.broker }, { key: "paper_bot", done: s.done.strategy }, { key: "telegram", done: s.done.alerts }];
+  const cardDone = card.every((c) => c.done);
+  const get_started = { steps: card, done_count: card.filter((c) => c.done).length, complete: cardDone, hidden_at: s.stored.get_started_hidden_at,
+    shown_at: s.stored.get_started_shown_at, visible: s.stored.get_started_hidden_at === null && (!cardDone || s.stored.get_started_shown_at !== null) };
+  return { steps, done_count: steps.filter((x) => x.done).length, next, complete: !open.length, get_started, stored: s.stored, version: s.version };
 }
 
 interface Open {
@@ -163,7 +170,7 @@ test.describe("setup wizard 390 x 844", () => {
     });
   }
 
-  test("skip for now, then resume after a reload on the next open step; the chip follows", async ({ page }) => {
+  test("skip for now, then resume after a reload on the next open step; the Settings chip follows", async ({ page }) => {
     const server = await open(page);
     await wizard(page).getByRole("button", { name: "I'll trade on paper first" }).click();
     await expect(stepTitle(page)).toHaveText("Set your risk limits");
@@ -178,7 +185,11 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(stepTitle(page)).toHaveText("Pick your first strategy");
     await expect(wizard(page).locator("[data-step-state='skipped']")).toHaveCount(2);
     await page.getByRole("link", { name: "Home" }).click();
+    // P3: the dashboard shows the Get started card, not the Setup chip
+    await expect(page.locator("[data-block='get-started']")).toBeVisible();
+    await expect(page.locator("[data-block='setup']")).toHaveCount(0);
     // a skip only changes the order: the skipped risk step stays open; the skipped broker step counts (paper first)
+    await page.goto("/settings");
     await expect(page.locator("[data-block='setup']")).toContainText("Setup 2 of 4");
     await expect(page.locator("[data-block='setup']")).toContainText("Next: pick your first strategy");
   });
@@ -266,78 +277,59 @@ test.describe("setup wizard 390 x 844", () => {
     await expect(wizard(page)).toContainText("Setup is complete.");
   });
 
-  test("Settings → Setup also holds the go-live checklist", async ({ page }) => {
+  test("Settings → Setup links to the go-live checklist, now under Settings → Advanced", async ({ page }) => {
     await open(page);
+    await expect(page.locator("[data-block='go-live']")).toHaveCount(0);
+    await page.locator("[data-block='prepare-live']").click();
+    await expect(page).toHaveURL(/\/settings#go-live$/);
     await expect(page.locator("[data-block='go-live']")).toContainText("Go-live checklist");
-    await expect(page.locator("[data-block='go-live']")).toContainText("Risk limits");
+    await expect(page.locator("[data-block='go-live'] [data-row='risk']")).toContainText("Risk limits set");
   });
 });
 
-test.describe("setup chip and first sign-in", () => {
+test.describe("the dashboard and the wizard (P3)", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
-  test("the dashboard chip reads the stored progress, opens the wizard on that step, and can be closed", async ({ page }) => {
-    const server = await open(page, { path: "/", done: { broker: true } });
+  test("the dashboard shows the Get started card, not the Setup chip; Settings keeps the chip, which opens the wizard", async ({ page }) => {
+    await open(page, { path: "/", done: { broker: true } });
+    const card = page.locator("[data-block='get-started']");
+    await expect(card).toContainText("1 of 3 done");
+    await expect(page.locator("[data-block='setup']")).toHaveCount(0);
+    await page.goto("/settings");
     const chip = page.locator("[data-block='setup']");
     await expect(chip).toContainText("Setup 2 of 4");
     await expect(chip).toContainText("Next: set your risk limits");
     await chip.getByRole("link").click();
     await expect(page).toHaveURL(/\/settings\/setup$/);
     await expect(stepTitle(page)).toHaveText("Set your risk limits");
-    await page.getByRole("link", { name: "Home" }).click();
-    await page.getByRole("button", { name: "Hide the setup reminder" }).click();
-    await expect(page.locator("[data-block='setup']")).toHaveCount(0);
-    await expect.poll(() => server.stored.dismissed_at).not.toBeNull();
-    await page.reload();
-    await expect(page.locator("[data-block='strip']")).toBeVisible();
-    await expect(page.locator("[data-block='setup']")).toHaveCount(0);
-    // Settings still lists Setup until it is complete
-    await page.goto("/settings");
-    await expect(page.locator("[data-block='setup']")).toContainText("Setup 2 of 4");
   });
 
-  test("first sign-in under ui_v2: the dashboard opens the wizard once", async ({ page }) => {
+  test("the dashboard never opens the wizard, not even on the first sign-in", async ({ page }) => {
     const server = await open(page, { path: "/", stored: { opened_at: null } });
-    await expect(page).toHaveURL(/\/settings\/setup$/);
+    await expect(page.locator("[data-block='strip']")).toBeVisible();
+    await expect(page).toHaveURL(/\/$/);
+    await expect(page.locator("[data-block='get-started']")).toContainText("0 of 3 done");
+    await expect(page.locator("[data-block='wizard']")).toHaveCount(0);
+    expect(server.stored.opened_at).toBeNull();
+    // the wizard's own address still works, and records its first opening there
+    await page.goto("/settings/setup");
     await expect(stepTitle(page)).toHaveText("Connect your broker");
     await expect.poll(() => server.stored.opened_at).not.toBeNull();
-    await page.getByRole("link", { name: "Home" }).click();
-    await expect(page).toHaveURL(/\/$/);
-    await expect(page.locator("[data-block='setup']")).toContainText("Setup 1 of 4");
-  });
-
-  test("a failed save of 'opened' does not send the trader to the wizard again on reload", async ({ page }) => {
-    await open(page, { path: "/", stored: { opened_at: null }, failSaves: true });
-    await expect(page).toHaveURL(/\/settings\/setup$/);
-    await expect(stepTitle(page)).toHaveText("Connect your broker");
-    await page.goto("/");
-    await page.waitForLoadState("networkidle");
-    await expect(page.locator("[data-block='strip']")).toBeVisible();
-    await expect(page).toHaveURL(/\/$/);
-  });
-
-  test("no automatic opening for a VIEWER, or for a trader with a step already done", async ({ page }) => {
-    await open(page, { path: "/", stored: { opened_at: null }, role: "VIEWER" });
-    await expect(page.locator("[data-block='strip']")).toBeVisible();
-    await expect(page).toHaveURL(/\/$/);
-    const again = await page.context().newPage();
-    await open(again, { path: "/", stored: { opened_at: null }, done: { alerts: true } });
-    await expect(again.locator("[data-block='setup']")).toContainText("Setup 2 of 4");
-    await expect(again).toHaveURL(/\/$/);
   });
 });
 
 test.describe("flag off", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
-  test("no setup page and no wizard; today's dashboard keeps its go-live checklist", async ({ page }) => {
+  test("no setup page and no wizard; today's dashboard shows the Get started card, not the go-live checklist", async ({ page }) => {
     const server = await open(page, { flag: false, path: "/settings/setup", stored: { opened_at: null } });
     await expect(page).toHaveURL(/\/settings$/);
     await expect(page.locator("[data-shell='v2']")).toHaveCount(0);
     await expect(page.locator("[data-block='wizard'], [data-block='setup']")).toHaveCount(0);
     await page.goto("/");
     await page.waitForLoadState("networkidle");
-    await expect(page.getByText("Go-live checklist")).toBeVisible();
-    expect(server.sent.filter((c) => c.url.startsWith("/me/setup"))).toEqual([]);
+    await expect(page.locator("[data-block='get-started']")).toContainText("0 of 3 done");
+    await expect(page.getByText("Go-live checklist")).toHaveCount(0);
+    expect(server.sent.filter((c) => c.url.startsWith("/me/setup"))).toEqual([]);         // nothing saved; the wizard never opened
   });
 });

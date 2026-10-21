@@ -1,0 +1,330 @@
+{
+ "_note": "P3 e2e: hand-written, made-up replies for the front page and the Go-live checklist (no real account, broker, token or id).",
+ "readiness_live": {
+  "target": "LIVE",
+  "ready": false,
+  "summary": {
+   "ok": 9,
+   "todo": 3,
+   "warn": 1,
+   "info": 1
+  },
+  "items": [
+   {
+    "key": "broker_session",
+    "title": "Broker session token valid today",
+    "status": "todo",
+    "detail": "No stored broker has a VALID token",
+    "fix": "Log in to the broker under Settings > Brokers (Upstox: OAuth). Tokens expire every trading day.",
+    "link": "settings",
+    "scope": "PAPER"
+   },
+   {
+    "key": "broker_credentials",
+    "title": "Broker API key stored",
+    "status": "ok",
+    "detail": "1 account(s): upstox",
+    "fix": "",
+    "link": "settings",
+    "scope": "PAPER"
+   },
+   {
+    "key": "instrument_master",
+    "title": "Instrument master synced",
+    "status": "ok",
+    "detail": "upstox/NSE: 48211 rows",
+    "fix": "",
+    "link": "instruments",
+    "scope": "PAPER"
+   },
+   {
+    "key": "worker",
+    "title": "Trading worker running",
+    "status": "ok",
+    "detail": "heartbeat 12s ago",
+    "fix": "",
+    "link": "dashboard",
+    "scope": "PAPER"
+   },
+   {
+    "key": "holidays",
+    "title": "Exchange holiday calendar loaded",
+    "status": "ok",
+    "detail": "14 holiday(s) from 2026 onwards",
+    "fix": "",
+    "link": "admin",
+    "scope": "PAPER"
+   },
+   {
+    "key": "deployment",
+    "title": "A deployment is active",
+    "status": "ok",
+    "detail": "1 active (PAPER 1, LIVE 0)",
+    "fix": "",
+    "link": "deployments",
+    "scope": "PAPER"
+   },
+   {
+    "key": "risk",
+    "title": "Risk limits set",
+    "status": "ok",
+    "detail": "capital 100,000, 1.0% per trade, 3.0% daily loss cap",
+    "fix": "",
+    "link": "risk-management",
+    "scope": "PAPER"
+   },
+   {
+    "key": "kill_switch",
+    "title": "No kill switch engaged",
+    "status": "ok",
+    "detail": "none engaged",
+    "fix": "",
+    "link": "risk-management",
+    "scope": "PAPER"
+   },
+   {
+    "key": "broker_uncertain",
+    "title": "Broker state reconciled",
+    "status": "ok",
+    "detail": "no reconciliation block",
+    "fix": "",
+    "link": "positions",
+    "scope": "PAPER"
+   },
+   {
+    "key": "alerts",
+    "title": "Out-of-app alert channel",
+    "status": "warn",
+    "detail": "TELEGRAM; last error on TELEGRAM: 401 Unauthorized",
+    "fix": "Fix the failing channel under Settings > Alerts.",
+    "link": "settings",
+    "scope": "PAPER"
+   },
+   {
+    "key": "mfa",
+    "title": "MFA enabled on your account",
+    "status": "todo",
+    "detail": "not enabled",
+    "fix": "Enable TOTP MFA on the Account page; LIVE deployments and broker credential changes require a step-up.",
+    "link": "account",
+    "scope": "LIVE"
+   },
+   {
+    "key": "email_verified",
+    "title": "Email verified",
+    "status": "ok",
+    "detail": "verified",
+    "fix": "",
+    "link": "account",
+    "scope": "LIVE"
+   },
+   {
+    "key": "algo_id",
+    "title": "SEBI algo id set for order tagging",
+    "status": "todo",
+    "detail": "not set",
+    "fix": "Set the exchange-registered algo id on the Team page (organisation settings); every LIVE order is tagged with it.",
+    "link": "team",
+    "scope": "LIVE"
+   },
+   {
+    "key": "ai_provider",
+    "title": "AI provider key (optional)",
+    "status": "info",
+    "detail": "rule-based fallback in use",
+    "fix": "Add a provider key under Settings > AI to enable the LLM features; everything works without it.",
+    "link": "settings",
+    "scope": "OPTIONAL"
+   }
+  ],
+  "checked_at": "2026-10-21T04:30:00Z",
+  "note": "Computed from the platform's own state; nothing here changes anything. 'todo' blocks the target, 'warn' is allowed but unwise, 'info' is optional."
+ },
+ "readiness_paper": {
+  "target": "PAPER",
+  "ready": false,
+  "summary": {
+   "ok": 9,
+   "todo": 1,
+   "warn": 1,
+   "info": 3
+  },
+  "items": [
+   {
+    "key": "broker_session",
+    "title": "Broker session token valid today",
+    "status": "todo",
+    "detail": "No stored broker has a VALID token",
+    "fix": "Log in to the broker under Settings > Brokers (Upstox: OAuth). Tokens expire every trading day.",
+    "link": "settings",
+    "scope": "PAPER"
+   },
+   {
+    "key": "broker_credentials",
+    "title": "Broker API key stored",
+    "status": "ok",
+    "detail": "1 account(s): upstox",
+    "fix": "",
+    "link": "settings",
+    "scope": "PAPER"
+   },
+   {
+    "key": "instrument_master",
+    "title": "Instrument master synced",
+    "status": "ok",
+    "detail": "upstox/NSE: 48211 rows",
+    "fix": "",
+    "link": "instruments",
+    "scope": "PAPER"
+   },
+   {
+    "key": "worker",
+    "title": "Trading worker running",
+    "status": "ok",
+    "detail": "heartbeat 12s ago",
+    "fix": "",
+    "link": "dashboard",
+    "scope": "PAPER"
+   },
+   {
+    "key": "holidays",
+    "title": "Exchange holiday calendar loaded",
+    "status": "ok",
+    "detail": "14 holiday(s) from 2026 onwards",
+    "fix": "",
+    "link": "admin",
+    "scope": "PAPER"
+   },
+   {
+    "key": "deployment",
+    "title": "A deployment is active",
+    "status": "ok",
+    "detail": "1 active (PAPER 1, LIVE 0)",
+    "fix": "",
+    "link": "deployments",
+    "scope": "PAPER"
+   },
+   {
+    "key": "risk",
+    "title": "Risk limits set",
+    "status": "ok",
+    "detail": "capital 100,000, 1.0% per trade, 3.0% daily loss cap",
+    "fix": "",
+    "link": "risk-management",
+    "scope": "PAPER"
+   },
+   {
+    "key": "kill_switch",
+    "title": "No kill switch engaged",
+    "status": "ok",
+    "detail": "none engaged",
+    "fix": "",
+    "link": "risk-management",
+    "scope": "PAPER"
+   },
+   {
+    "key": "broker_uncertain",
+    "title": "Broker state reconciled",
+    "status": "ok",
+    "detail": "no reconciliation block",
+    "fix": "",
+    "link": "positions",
+    "scope": "PAPER"
+   },
+   {
+    "key": "alerts",
+    "title": "Out-of-app alert channel",
+    "status": "warn",
+    "detail": "TELEGRAM; last error on TELEGRAM: 401 Unauthorized",
+    "fix": "Fix the failing channel under Settings > Alerts.",
+    "link": "settings",
+    "scope": "PAPER"
+   },
+   {
+    "key": "mfa",
+    "title": "MFA enabled on your account",
+    "status": "info",
+    "detail": "not enabled",
+    "fix": "Enable TOTP MFA on the Account page; LIVE deployments and broker credential changes require a step-up.",
+    "link": "account",
+    "scope": "LIVE"
+   },
+   {
+    "key": "email_verified",
+    "title": "Email verified",
+    "status": "ok",
+    "detail": "verified",
+    "fix": "",
+    "link": "account",
+    "scope": "LIVE"
+   },
+   {
+    "key": "algo_id",
+    "title": "SEBI algo id set for order tagging",
+    "status": "info",
+    "detail": "not set",
+    "fix": "Set the exchange-registered algo id on the Team page (organisation settings); every LIVE order is tagged with it.",
+    "link": "team",
+    "scope": "LIVE"
+   },
+   {
+    "key": "ai_provider",
+    "title": "AI provider key (optional)",
+    "status": "info",
+    "detail": "rule-based fallback in use",
+    "fix": "Add a provider key under Settings > AI to enable the LLM features; everything works without it.",
+    "link": "settings",
+    "scope": "OPTIONAL"
+   }
+  ],
+  "checked_at": "2026-10-21T04:30:00Z",
+  "note": "Computed from the platform's own state; nothing here changes anything. 'todo' blocks the target, 'warn' is allowed but unwise, 'info' is optional."
+ },
+ "strategies": [
+  {
+   "id": "vwap_supertrend_5m",
+   "name": "VWAP Supertrend",
+   "category": "multi_timeframe",
+   "description": "Made-up test strategy.",
+   "timeframes": [
+    "5min"
+   ],
+   "default_params": {}
+  },
+  {
+   "id": "orb_15m_5m",
+   "name": "Opening range breakout",
+   "category": "indicator_based",
+   "description": "Made-up test strategy.",
+   "timeframes": [
+    "5min"
+   ],
+   "default_params": {}
+  }
+ ],
+ "brokers": {
+  "brokers": [
+   "upstox",
+   "zerodha",
+   "fyers"
+  ]
+ },
+ "health": {
+  "status": "ok"
+ },
+ "worker": {
+  "worker_name": "worker-1",
+  "running": true,
+  "healthy": true,
+  "last_seen_at": "2026-10-21T04:59:48Z",
+  "seconds_since_heartbeat": 12,
+  "cycle_count": 340,
+  "last_cycle_ms": 820,
+  "last_error": null,
+  "cycle_seconds": 60,
+  "market_open": true,
+  "market_status": "OPEN",
+  "next_market_open": null
+ },
+ "accounts": []
+}

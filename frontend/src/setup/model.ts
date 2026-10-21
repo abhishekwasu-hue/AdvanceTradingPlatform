@@ -5,7 +5,8 @@ import type { ContractRules, DeploymentCreateRequest } from "../types";
 /**
  * UI2-7 (UI v2 proposal §11, §13 UI-8): the setup wizard's model - the four steps, the server's answer
  * (`GET /api/me/setup`: each step "done" worked out from the trader's own rows, next to the stored skips and the chip's
- * dismissal), the dashboard chip's words, the risk step's defaults and sentence, and the strategy step's three
+ * dismissal), the Setup chip's words (Settings; P3 moved the dashboard to the Get started card, src/setup/getStarted.ts),
+ * the Get started card's marks, the risk step's defaults and sentence, and the strategy step's three
  * suggestions. Pure functions only, so every rule here is unit-tested.
  */
 
@@ -27,12 +28,21 @@ export interface SetupStored {
   steps: Record<SetupStepKey, { skipped_at: string | null }>;
   opened_at: string | null;
   dismissed_at: string | null;
+  /** P3: the Dashboard's Get started card was hidden for good (all done, or hidden by the trader). */
+  get_started_hidden_at: string | null;
+  /** P3: the card was brought back from Help with every step done (it shows its ticks until hidden again). */
+  get_started_shown_at: string | null;
 }
+
+/** P3: the Get started card's three steps (backend `app/me/setup.py` GET_STARTED). */
+export type GetStartedKey = "broker" | "paper_bot" | "telegram";
+export const GET_STARTED_STEPS: readonly GetStartedKey[] = ["broker", "paper_bot", "telegram"];
 
 export interface SetupStepState { key: SetupStepKey; done: boolean; skipped: boolean; skipped_at: string | null }
 
-/** `GET /api/me/setup` (the fields this app reads). */
-export interface SetupView { steps: SetupStepState[]; stored: SetupStored; version: number }
+/** `GET /api/me/setup` (the fields this app reads). `getStarted`: each card step done (worked out by the server); null
+ * when the answer has none (an older cache), and then no card is shown rather than a guess. */
+export interface SetupView { steps: SetupStepState[]; stored: SetupStored; version: number; getStarted: Record<GetStartedKey, boolean> | null }
 
 const isoOrNull = (v: unknown): string | null => (typeof v === "string" && v && !Number.isNaN(Date.parse(v)) ? v : null);
 
@@ -48,7 +58,21 @@ export function cleanStored(raw: unknown): SetupStored {
     steps: { broker: mark("broker"), risk: mark("risk"), strategy: mark("strategy"), alerts: mark("alerts") },
     opened_at: isoOrNull(v.opened_at),
     dismissed_at: isoOrNull(v.dismissed_at),
+    get_started_hidden_at: isoOrNull(v.get_started_hidden_at),
+    get_started_shown_at: isoOrNull(v.get_started_shown_at),
   };
+}
+
+/** The server's `get_started.steps` as done per step, or null when absent or not a list. */
+function cleanGetStarted(raw: unknown): Record<GetStartedKey, boolean> | null {
+  const g = (raw && typeof raw === "object" ? raw : null) as Record<string, unknown> | null;
+  if (!g || !Array.isArray(g.steps)) return null;
+  const done: Record<GetStartedKey, boolean> = { broker: false, paper_bot: false, telegram: false };
+  for (const s of g.steps as unknown[]) {
+    const step = (s && typeof s === "object" ? s : {}) as Record<string, unknown>;
+    if (GET_STARTED_STEPS.includes(step.key as GetStartedKey)) done[step.key as GetStartedKey] = step.done === true;
+  }
+  return done;
 }
 
 /** The steps from stored marks and "done" per step: a done step is never also skipped. */
@@ -71,7 +95,7 @@ export function cleanView(raw: unknown): SetupView | null {
     if (SETUP_STEPS.includes(step.key as SetupStepKey)) done[step.key as SetupStepKey] = step.done === true;
   }
   const stored = cleanStored(v.stored);
-  return { steps: stepsOf(stored, done), stored, version: v.version };
+  return { steps: stepsOf(stored, done), stored, version: v.version, getStarted: cleanGetStarted(v.get_started) };
 }
 
 /** The same view after a local change to the marks (before the server answers). */
@@ -95,7 +119,7 @@ export function nextStep(view: SetupView): SetupStepKey | null {
 export const isComplete = (view: SetupView): boolean => nextStep(view) === null;
 
 /**
- * The Setup chip (dashboard, and Settings until setup is complete): "Setup 2 of 4" and "Next: set your risk limits".
+ * The Setup chip (Settings, until setup is complete): "Setup 2 of 4" and "Next: set your risk limits".
  * The number is the step the trader is on (steps done, plus one). It stays until setup is complete (§11), or (unless
  * `ignoreDismissal`, Settings) until the trader closes it.
  */
@@ -106,16 +130,6 @@ export function setupChip(view: SetupView | null, opts: { ignoreDismissal?: bool
   if (view.stored.dismissed_at && !opts.ignoreDismissal) return null;
   const done = view.steps.filter(countsAsDone).length;
   return { label: `Setup ${done + 1} of ${SETUP_STEPS.length}`, next: `Next: ${STEP_TEXT[next].next}`, to: SETUP_PATH };
-}
-
-/**
- * The wizard opens by itself once, on the first sign-in under ui_v2: never opened (on the server, and - `guarded` - not
- * in this browser, so a failed save cannot send the trader there on every reload), nothing done yet (a trader already
- * set up is not sent there when the flag turns on), not dismissed, and never for a VIEWER (who cannot change most steps).
- */
-export function shouldAutoOpen(view: SetupView | null, opts: { guarded?: boolean; role?: string | null } = {}): boolean {
-  if (!view || opts.guarded || opts.role === "VIEWER") return false;
-  return !isComplete(view) && view.steps.every((s) => !s.done) && view.stored.opened_at === null && view.stored.dismissed_at === null;
 }
 
 /** The step the wizard shows when it opens: the next step (past skipped ones), or null when setup is complete. */

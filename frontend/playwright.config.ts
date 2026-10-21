@@ -23,13 +23,15 @@ export default defineConfig({
                      ...(process.env.PW_CHROMIUM ? { executablePath: process.env.PW_CHROMIUM } : {}) },
   },
   // PW2: phone layout and visual regression (e2e/mobile.e2e.ts) run once, in their own project with their own sizes.
-  // UI2-1: the v2 shell's phone and 1440 desktop checks and baselines (e2e/shell-v2.e2e.ts, `*-v2-*.png`) run there too.
+  // UI2-1: the v2 shell's phone and 1440 desktop checks and baselines (e2e/shell-v2.e2e.ts, `*-v2-*.png`) run there too,
+  // and so do P3's front page and go-live checklist (e2e/front-page.e2e.ts), which set their own sizes.
   snapshotPathTemplate: "{testDir}/__screenshots__/{arg}{ext}",
   projects: [
-    { name: "desktop", testIgnore: ["**/mobile.e2e.ts", "**/*-v2.e2e.ts", "**/broker.e2e.ts"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
-    { name: "mobile", testIgnore: ["**/mobile.e2e.ts", "**/*-v2.e2e.ts", "**/broker.e2e.ts"], use: { ...devices["Pixel 7"] } },
-    // P2b: the Broker page (e2e/broker.e2e.ts) sets its own sizes (1440 and 390) and baselines, so it runs here too.
-    { name: "phone", testMatch: ["**/mobile.e2e.ts", "**/*-v2.e2e.ts", "**/broker.e2e.ts"], use: { ...devices["Desktop Chrome"] } },
+    { name: "desktop", testIgnore: ["**/mobile.e2e.ts", "**/*-v2.e2e.ts", "**/broker.e2e.ts", "**/front-page.e2e.ts"], use: { ...devices["Desktop Chrome"], viewport: { width: 1440, height: 900 } } },
+    { name: "mobile", testIgnore: ["**/mobile.e2e.ts", "**/*-v2.e2e.ts", "**/broker.e2e.ts", "**/front-page.e2e.ts"], use: { ...devices["Pixel 7"] } },
+    // P2b: the Broker page (e2e/broker.e2e.ts) sets its own sizes (1440 and 390) and baselines, so it runs here too; so
+    // does P3's front page (e2e/front-page.e2e.ts).
+    { name: "phone", testMatch: ["**/mobile.e2e.ts", "**/*-v2.e2e.ts", "**/broker.e2e.ts", "**/front-page.e2e.ts"], use: { ...devices["Desktop Chrome"] } },
   ],
   // --host 127.0.0.1: on the CI runner "localhost" resolves to ::1 and the url below would never answer.
   webServer: { command: "npm run preview -- --host 127.0.0.1 --port 4173 --strictPort", url: "http://127.0.0.1:4173", reuseExistingServer: !process.env.CI, timeout: 60_000 },

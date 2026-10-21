@@ -2,7 +2,8 @@ import type { Page } from "@playwright/test";
 
 /**
  * UI2-4b2: the v2 Charts page's API replies for e2e/charts-v2.e2e.ts - made-up candles, last price, chart settings,
- * candle sources and market sessions (no real account, price or id). Registered after mockApi() and before
+ * candle sources and market sessions (no real account, price or id). UI2-4c: made-up watchlists (versioned), batch
+ * quotes and stored drawings. Registered after mockApi() and before
  * page.goto(), so they answer first. The candles are a function of the request only (never of the clock), so a
  * screenshot is the same on every run.
  */
@@ -15,7 +16,14 @@ export interface ChartsMocks {
   prefs?: Record<string, unknown>;
   /** NSE open (default) or closed until the next morning. */
   market?: "open" | "closed";
+  /** UI2-4c: the stored watchlists `GET /watchlists` starts from (version 1 each). */
+  watchlists?: { id: number; name: string; items: { symbol: string; exchange: string }[] }[];
+  /** UI2-4c: stored horizontal lines per symbol (`{ "NIFTY 50": [24100, 24300] }`); `locked` prices stay on Delete all. */
+  drawings?: Record<string, number[]>;
+  locked?: number[];
 }
+
+export interface WatchlistWrite { method: string; id: number | null; body: Record<string, unknown> | null }
 
 export interface CandleCall { timeframe: string; lookback_days: number; before: string | null; forming?: boolean; volume_from_future?: boolean }
 
@@ -23,6 +31,12 @@ export interface ChartsCalls {
   candles: CandleCall[];
   prefsPuts: { version: string | null; body: Record<string, unknown> }[];
   ltp: number;
+  /** UI2-4c */
+  watchlistReads: number;
+  watchlistWrites: WatchlistWrite[];
+  quotes: { symbol: string; exchange: string }[][];
+  drawingPosts: Record<string, unknown>[];
+  deleteAll: string[];
 }
 
 const ALL = ["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"];
@@ -65,8 +79,17 @@ export function madeUpBars(timeframe: string): { timestamp: string; open: number
   });
 }
 
-export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, market = "open" }: ChartsMocks = {}): Promise<ChartsCalls> {
-  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0 };
+/** A made-up price for a symbol: the same every time, between 100 and 50,000. */
+function madeUpPrice(symbol: string): { ltp: number; change: number } {
+  let h = 7;
+  for (const c of symbol) h = (h * 31 + c.charCodeAt(0)) % 100_003;
+  const ltp = Math.round((100 + (h % 49_900)) * 20) / 20;
+  const change = Math.round(((h % 7) - 3) * ltp * 0.004 * 20) / 20;
+  return { ltp, change };
+}
+
+export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, market = "open", watchlists = [], drawings = {}, locked = [] }: ChartsMocks = {}): Promise<ChartsCalls> {
+  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], quotes: [], drawingPosts: [], deleteAll: [] };
   let stored: Record<string, unknown> = prefs;
   let version = 1;
   const sessions = market === "open"
@@ -108,7 +131,71 @@ export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, mar
     }
     return r.fulfill({ json: { prefs: { chart: stored }, versions: { chart: version } } });
   });
-  await page.route(api("/charts/drawings"), (r) => r.fulfill({ json: [] }));
+  // Drawings: stored per symbol, with the backend's Delete all rule (unlocked only, confirm=true).
+  type Row = { id: number; symbol: string; exchange: string; kind: string; drawing: unknown; version: number; locked: boolean; updated_at: null; timeframe: string | null };
+  let nextDrawing = 1;
+  const saved: Row[] = Object.entries(drawings).flatMap(([symbol, prices]) => prices.map((p) => ({
+    id: nextDrawing++, symbol, exchange: "NSE", kind: "hline", drawing: { schema: "drawing/1", kind: "hline", anchors: [{ p }] }, version: 1,
+    locked: locked.includes(p), updated_at: null, timeframe: null,
+  })));
+  await page.route(api("/charts/drawings(/\\d+)?(\\?.*)?$"), (r) => {
+    const req = r.request();
+    const url = new URL(req.url());
+    const symbol = url.searchParams.get("symbol");
+    if (req.method() === "POST") {
+      const body = req.postDataJSON() as { symbol: string; exchange: string; drawing: { kind: string }; timeframe?: string };
+      calls.drawingPosts.push(body);
+      const row: Row = { id: nextDrawing++, symbol: body.symbol, exchange: body.exchange, kind: body.drawing.kind, drawing: body.drawing, version: 1,
+                         locked: false, updated_at: null, timeframe: body.timeframe ?? null };
+      saved.push(row);
+      return r.fulfill({ status: 201, json: row });
+    }
+    if (req.method() === "DELETE" && !/\/\d+$/.test(url.pathname)) {
+      calls.deleteAll.push(url.search);
+      if (url.searchParams.get("confirm") !== "true") return r.fulfill({ status: 400, json: { detail: "needs confirm=true" } });
+      const gone = saved.filter((d) => d.symbol === symbol && !d.locked);
+      for (const d of gone) saved.splice(saved.indexOf(d), 1);
+      return r.fulfill({ json: { deleted: gone.length, kept_locked: saved.filter((d) => d.symbol === symbol).length, ids: gone.map((d) => d.id) } });
+    }
+    return r.fulfill({ json: saved.filter((d) => d.symbol === symbol) });
+  });
+
+  // Watchlists: versioned as the backend does (a PUT naming a stale version gets 409 with the current list).
+  const lists = watchlists.map((w) => ({ ...w, items: [...w.items], version: 1 }));
+  let nextList = 100;
+  await page.route(api("/watchlists(/\\d+)?$"), (r) => {
+    const req = r.request();
+    const id = Number(new URL(req.url()).pathname.match(/\/(\d+)$/)?.[1] ?? NaN);
+    const body = req.method() === "GET" || req.method() === "DELETE" ? null : req.postDataJSON() as Record<string, unknown>;
+    if (req.method() === "GET") { calls.watchlistReads += 1; return r.fulfill({ json: lists }); }
+    calls.watchlistWrites.push({ method: req.method(), id: Number.isNaN(id) ? null : id, body });
+    if (req.method() === "POST") {
+      const made = { id: nextList++, name: String(body?.name), items: (body?.items as typeof lists[0]["items"]) ?? [], version: 1 };
+      lists.push(made);
+      return r.fulfill({ status: 201, json: made });
+    }
+    const at = lists.findIndex((l) => l.id === id);
+    if (at < 0) return r.fulfill({ status: 404, json: { detail: "Watchlist not found" } });
+    if (req.method() === "DELETE") { lists.splice(at, 1); return r.fulfill({ json: { deleted: id } }); }
+    if (body?.version !== undefined && body.version !== lists[at].version) {
+      return r.fulfill({ status: 409, json: { detail: { message: "the watchlist changed since this edit was made", current: lists[at] } } });
+    }
+    lists[at] = { ...lists[at], name: String(body?.name), items: body?.items as typeof lists[0]["items"], version: lists[at].version + 1 };
+    return r.fulfill({ json: lists[at] });
+  });
+  await page.route(api("/market-data/quotes$"), (r) => {
+    const items = (r.request().postDataJSON() as { items: { symbol: string; exchange: string }[] }).items;
+    calls.quotes.push(items);
+    return r.fulfill({ json: {
+      source: { broker: "upstox", account_label: "primary" }, fetched_at: "2026-10-19T05:30:00Z", broker_calls: 1, missing: 0, warnings: [],
+      items: items.map(({ symbol, exchange }) => {
+        const { ltp, change } = madeUpPrice(symbol);
+        const prev = ltp - change;
+        return { symbol, exchange, ltp, prev_close: prev, change, change_pct: Math.round((change / prev) * 10_000) / 100, timestamp: "2026-10-19T05:29:58Z",
+                 age_seconds: 2, stale: false, stale_reason: null, source: "tick", missing: false, error: null };
+      }),
+    } });
+  });
   await page.route(api("/instrument-master/search"), (r) => {
     const type = new URL(r.request().url()).searchParams.get("type");
     return r.fulfill({ json: type === "INDEX"

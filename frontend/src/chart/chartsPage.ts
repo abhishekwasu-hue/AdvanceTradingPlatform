@@ -1,6 +1,7 @@
 /**
  * UI2-4b2 (Charts page plan §3): the Charts page's rules without React - the symbol it opens on, the timeframes it
- * offers, the market state chip and the trader's view (timeframe, chart type, price lines, layers) kept per browser.
+ * offers, the market state chip and the trader's view (timeframe, chart type, price lines, layers; UI2-4c: drawings
+ * hidden, the watchlist column and list) kept per browser.
  */
 import type { CandleVolumeSource, SystemStatus } from "../types";
 import { formatDateIST, formatTimeIST } from "../ui/format";
@@ -78,10 +79,18 @@ export interface ChartsView {
   overlays: OverlayId[];
   /** Layers turned on (each still needs its flag). */
   layers: string[];
+  /** UI2-4c "Hide all": the drawings are not drawn (and the tools are off) until shown again. */
+  drawings_hidden: boolean;
+  /** UI2-4c: the watchlist column is open (wide screens; a phone opens it as a sheet). */
+  watchlist_open: boolean;
+  /** UI2-4c: the watchlist last shown (null: the first one). */
+  watchlist_id: number | null;
 }
 
 export const VIEW_KEY = "atp_charts_view";
-export const DEFAULT_VIEW: ChartsView = { timeframe: DEFAULT_TIMEFRAME, type: "candles", overlays: [], layers: [] };
+export const DEFAULT_VIEW: ChartsView = {
+  timeframe: DEFAULT_TIMEFRAME, type: "candles", overlays: [], layers: [], drawings_hidden: false, watchlist_open: true, watchlist_id: null,
+};
 
 /** Any stored value as a valid view: a field that is missing or wrong takes its default. */
 export function cleanView(raw: unknown): ChartsView {
@@ -92,6 +101,9 @@ export function cleanView(raw: unknown): ChartsView {
     type: (CHART_TYPES_V2 as readonly unknown[]).includes(v.type) ? (v.type as ChartTypeV2) : DEFAULT_VIEW.type,
     overlays: OVERLAYS_V2.filter((o) => list(v.overlays).includes(o)),
     layers: [...new Set(list(v.layers))].slice(0, 10),
+    drawings_hidden: v.drawings_hidden === true,
+    watchlist_open: v.watchlist_open !== false,
+    watchlist_id: typeof v.watchlist_id === "number" && Number.isInteger(v.watchlist_id) ? v.watchlist_id : null,
   };
 }
 

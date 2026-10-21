@@ -25,14 +25,17 @@ export const TOOLBAR_KINDS: { kind: DrawingKind; label: string; title: string }[
   { kind: "text", label: "Text", title: "Text: one click" },
 ];
 
-/** Binds the drawing tools to a chart while `enabled`; returns the controller and its latest view. */
+/** Binds the drawing tools to a chart while `enabled`; returns the controller and its latest view. `timeframe`
+ * (UI2-4a1, optional): recorded on each new drawing; a change does not reload the drawings. */
 export function useDrawingTools(engine: LightweightEngine | null, element: HTMLElement | null, symbol: string | undefined,
-                                exchange: string, enabled: boolean) {
+                                exchange: string, enabled: boolean, timeframe?: string) {
   const [view, setView] = useState<ToolView | null>(null);
   const ctlRef = useRef<DrawingController | null>(null);
+  const timeframeRef = useRef(timeframe);
+  timeframeRef.current = timeframe;
   useEffect(() => {
     if (!enabled || !engine || !element || !symbol) return undefined;
-    const ctl = new DrawingController(drawingsApi, symbol, exchange);
+    const ctl = new DrawingController(drawingsApi, symbol, exchange, timeframeRef.current);
     ctlRef.current = ctl;
     const unbind = bindTools(engine, ctl, element, window);
     const unsubscribe = ctl.subscribe(setView);
@@ -48,6 +51,7 @@ export function useDrawingTools(engine: LightweightEngine | null, element: HTMLE
       setView(null);
     };
   }, [engine, element, symbol, exchange, enabled]);
+  useEffect(() => { ctlRef.current?.setTimeframe(timeframe); }, [timeframe]);
   return { view, controller: ctlRef.current };
 }
 

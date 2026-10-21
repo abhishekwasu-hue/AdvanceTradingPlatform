@@ -53,6 +53,9 @@ export interface BrokerGateViewProps {
   error?: string | null;
   codeStep?: CodeStep | null;
   onSubmitCode?: (code: string) => void;
+  /** UI2-9a: the page lists the trader's own positions under the gate itself (My positions), so the gate's sentences
+   * say only what the broker adds - live prices - and not "your positions". Left out: every other page's wording. */
+  positionsShown?: boolean;
 }
 
 const keyOf = (t: BrokerTokenInfo) => `${t.broker_name}/${t.account_label ?? "primary"}`;
@@ -127,7 +130,7 @@ export function CodeForm({ step, onSubmit, busy }: { step: CodeStep; onSubmit?: 
 }
 
 /** The gate's look for each state - no data fetching, so stories and tests render it directly. */
-export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, onRetry, busy = null, error = null, codeStep = null, onSubmitCode }: BrokerGateViewProps) {
+export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, onRetry, busy = null, error = null, codeStep = null, onSubmitCode, positionsShown = false }: BrokerGateViewProps) {
   switch (state.kind) {
     case "connected":
       return <>{children}</>;
@@ -163,7 +166,7 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
     case "no-broker":
       return (
         <GateCard state={state.kind} icon={<Plug size={22} />} title="Connect your broker">
-          <p>Connect your broker to see live prices, charts and your positions.</p>
+          <p>{positionsShown ? "Connect your broker to see live prices and charts." : "Connect your broker to see live prices, charts and your positions."}</p>
           <a href={CONNECT_BROKER_PATH} onClick={(e) => { if (onConnect) { e.preventDefault(); onConnect(); } }}
             className="inline-flex h-11 w-full items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto">
             Connect a broker
@@ -183,8 +186,8 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
         <GateCard state={state.kind} tone="warn" icon={<KeyRound size={22} />} title={`Log in to ${name}`}>
           <p>
             {state.expired
-              ? `Your ${name} session${account} has ended. Log in to see live prices and your positions.`
-              : `Log in to ${name}${account} to see live prices and your positions.`}
+              ? `Your ${name} session${account} has ended. Log in to see live prices${positionsShown ? "" : " and your positions"}.`
+              : `Log in to ${name}${account} to see live prices${positionsShown ? "" : " and your positions"}.`}
           </p>
           {step ? (
             <div data-code-step={keyOf(t)}><CodeForm step={step} onSubmit={onSubmitCode} busy={busy === keyOf(t)} /></div>

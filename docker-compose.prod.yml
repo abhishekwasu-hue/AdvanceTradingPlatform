@@ -35,6 +35,9 @@ services:
       ENVIRONMENT: production
       ALLOWED_ORIGINS: https://${DOMAIN:?set DOMAIN in .env}
       FRONTEND_URL: https://${DOMAIN}
+      # Absolute links that leave the app (e-mail unsubscribe, Telegram buttons): always the public name, never an IP
+      # or the address a request happened to arrive on.
+      PUBLIC_BASE_URL: https://${DOMAIN}
       # Only Caddy (a container on this compose network) reaches backend:8000, so its X-Forwarded-For is the
       # client IP the rate limiter and login protection see (P0.2 / S1).
       FORWARDED_ALLOW_IPS: "*"
@@ -44,6 +47,9 @@ services:
   worker:
     environment:
       ENVIRONMENT: production
+      # The worker sends the alerts, so it builds the same absolute links as the API.
+      FRONTEND_URL: https://${DOMAIN}
+      PUBLIC_BASE_URL: https://${DOMAIN}
 
   frontend:
     ports: !override []

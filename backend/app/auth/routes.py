@@ -536,7 +536,7 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
     if channel is None:
         from app.notifications import mailer
         return await mailer.send(
-            user.email, "Reset your Advance Trading Platform password",
+            user.email, "Reset your AiAlgoDesk password",
             f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
             f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
             "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",
@@ -544,7 +544,7 @@ async def _email_reset_link(session: AsyncSession, user: User, link: str) -> boo
     try:
         config = decrypt_config(channel).model_copy(update={"to_addresses": [user.email]})
         await send_email(
-            config, "Reset your Advance Trading Platform password",
+            config, "Reset your AiAlgoDesk password",
             f"Someone (hopefully you) asked to reset the password for {user.email}.\n\n"
             f"Open this link within {RESET_TTL_MINUTES} minutes to choose a new password:\n{link}\n\n"
             "If you did not ask for this, ignore this email - the link works only once and your password is unchanged.",

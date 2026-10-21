@@ -88,7 +88,7 @@ export default function AppShellV2() {
     return () => wide.removeEventListener?.("change", onChange);
   }, []);
   useEffect(() => {
-    document.title = title ? `${title} · Advance Trading` : "Advance Trading";
+    document.title = title ? `${title} · AiAlgoDesk` : "AiAlgoDesk";
     if (first.current) { first.current = false; return; }
     window.scrollTo(0, 0);
     mainRef.current?.focus({ preventScroll: true });

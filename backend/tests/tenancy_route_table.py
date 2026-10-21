@@ -458,6 +458,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/notifications/read-all"): S_READ_MARKS,
     ("POST", "/api/notifications/{notification_id}/read"): S_READ_MARKS,
     ("POST", "/api/option-chain/analyze"): S_COMPUTE,
+    ("GET", "/api/option-chain/analyses"): ("member: the six option chain analyses from the organisation's broker session (or, with "
+                                            "the own-broker tier on, the caller's own) plus shared collector snapshots; stores only the "
+                                            "usage count (OC2, flag ui_v2)"),
     ("GET", "/api/option-chain/banners"): "member",
     ("POST", "/api/option-chain/greeks"): S_COMPUTE,
     ("GET", "/api/option-chain/{underlying}/alerts"): "member",

@@ -186,13 +186,16 @@ dc() {
 rdc() { printf '    + docker compose %s\n' "$*"; [ "$DRY_RUN" = "1" ] && return 0; dc "$@"; }
 # Caddy reads deploy/$CADDYFILE through a single-file bind mount: a checkout replaces the file (a new inode) and the
 # running container keeps the old one, and `up -d` does not recreate a service whose compose config is unchanged. So
-# when the Caddyfiles differ between the release that ran and the one starting, Caddy is recreated (certificates stay
-# in the caddy_data volume; the edge is down for about a second).
+# the file Caddy actually runs is compared with the checkout's - not two releases' files, because the release that
+# brings a change is deployed by the previous release's atp.sh, and a run can stop between `up -d` and this step.
+# Certificates stay in the caddy_data volume; the edge is down for about a second.
+caddy_config_current() {
+  dc exec -T caddy cat /etc/caddy/Caddyfile 2>/dev/null | cmp -s - "$ATP_DIR/deploy/$(env_get CADDYFILE | grep . || echo Caddyfile)"
+}
 refresh_edge() {
-  local from="$1" to="$2"
-  [ -n "$from" ] && [ "$from" != "$to" ] || return 0
-  if git -C "$ATP_DIR" diff --quiet "$from" "$to" -- deploy/Caddyfile deploy/Caddyfile.ip 2>/dev/null; then return 0; fi
-  info "the Caddyfile changed between ${from:0:12} and ${to:0:12} - recreating caddy so it reads the new one"
+  [ -n "$(dc ps -q caddy 2>/dev/null || true)" ] || return 0             # not running: `up -d` creates it from the file
+  if [ "$DRY_RUN" != "1" ] && caddy_config_current; then return 0; fi
+  info "caddy runs an older Caddyfile than deploy/$(env_get CADDYFILE | grep . || echo Caddyfile) - recreating it so it reads this one"
   rdc up -d --no-deps --no-build --force-recreate caddy
 }
 # dc with another release's image; RELEASE is restored afterwards.
@@ -554,6 +557,9 @@ health_checks() {
   local domain code; domain="$(env_get DOMAIN)"
   code="$(curl -sk -o /dev/null -m 10 -w '%{http_code}' --resolve "$domain:443:127.0.0.1" "https://$domain/api/system/health" 2>/dev/null || true)"
   if [ "$code" = "200" ]; then ok "https://$domain/api/system/health -> 200"; else bad "https://$domain/api/system/health -> ${code:-no answer} (caddy logs: docker compose ... logs caddy)"; fi
+  if [ -n "$(dc ps -q caddy 2>/dev/null || true)" ] && ! caddy_config_current; then
+    bad "caddy runs an older Caddyfile than deploy/$(env_get CADDYFILE | grep . || echo Caddyfile) - run: $ATP_DIR/deploy/atp.sh deploy"
+  fi
   if [ "$(env_get CADDYFILE)" != "Caddyfile.ip" ]; then public_domain_check "$domain"; fi
 
   step "release"
@@ -845,7 +851,7 @@ cmd_deploy() {
   step "worker first, then frontend and the rest (exactly one worker)"
   start_workers
   rdc up -d --no-build
-  refresh_edge "$prev" "$sha"
+  refresh_edge
   RESTORE_CHECKOUT=""
   if [ "$DRY_RUN" != "1" ]; then
     if [ "$prev" = "$sha" ]; then log_release converge "$sha" "$prev" "$backup_file" "${before:--}" "${after:--}"
@@ -1054,7 +1060,7 @@ cmd_rollback() {
   wait_api || die "the rolled-back API is not healthy - logs: docker compose ... logs backend; runbook 'Troubleshooting'" 1
   start_workers
   rdc up -d --no-build
-  refresh_edge "$cur" "$target"
+  refresh_edge
   RESTORE_CHECKOUT=""
   if [ "$DRY_RUN" = "1" ]; then info "would run every health check"; printf '\ndry-run: nothing changed\n'; return 0; fi
   if [ "$mode" = "failed" ]; then log_release restore "$target" "$cur" "$backup" "$rev_after" "$(db_revision)"

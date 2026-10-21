@@ -126,6 +126,11 @@ if sub == "up":
         if svc in APP and f"{APP[svc]}:{rel}" not in st["images"]:
             print(f"pull access denied for {APP[svc]}", file=sys.stderr); rc = 1; finish()
     for svc in targets:
+        if svc == "caddy" and ("caddy" not in st["running"] or "--force-recreate" in flags):
+            # Caddy reads the Caddyfile only when its container is created (a single-file bind mount)
+            env = dict(l.split("=", 1) for l in open(".env").read().splitlines() if "=" in l and not l.startswith("#"))
+            path = os.path.join("deploy", env.get("CADDYFILE") or "Caddyfile")
+            st["caddy_conf"] = open(path).read() if os.path.exists(path) else ""
         st["running"][svc] = {"release": rel if svc in APP else "infra", "ahead": os.environ.get("MIGRATION_ALLOW_DB_AHEAD", "")}
     if "backend" in targets and st.get("seed_on_boot") and os.environ.get("ATP_DEPLOYMENT_PHASE") == "phase0":
         # the API's own Phase 0 first boot (app/platform/deployment_phase.py): absent entries only
@@ -218,6 +223,10 @@ if sub == "exec":
                 finish()
         run_sql(target, sqls)
         finish()
+    if svc == "caddy" and cmd == ["cat", "/etc/caddy/Caddyfile"]:
+        if "caddy" not in st["running"]:
+            rc = 1; finish()
+        sys.stdout.write(st.get("caddy_conf", "")); finish()
     if svc == "backup" and cmd[:2] == ["cat", "/backups/LAST_BACKUP_OK"]:
         if st["last_backup_ok"]:
             out.append(st["last_backup_ok"])
@@ -834,27 +843,36 @@ def test_health_checks_the_public_domain_its_headers_and_the_www_redirect(host):
     assert "is missing" not in res.stdout
 
 
-def test_a_changed_caddyfile_recreates_caddy_on_deploy_and_rollback(host):
-    """D1 review: Caddy reads deploy/$CADDYFILE through a single-file bind mount, so a release that changes it must
-    recreate the container; a release that does not leaves Caddy alone."""
+def test_caddy_is_recreated_whenever_it_runs_another_caddyfile_than_the_checkout(host):
+    """D1 review: Caddy reads deploy/$CADDYFILE through a single-file bind mount, so the file it runs is compared with
+    the checkout's on every deploy and rollback (not two releases' files: the release that brings a change is deployed
+    by the previous atp.sh). Unchanged: Caddy is left alone. Stale - even on a converge - it is recreated, and until
+    then health fails."""
+    def recreations(since):
+        return [c["argv"] for c in host.state["calls"][since:] if "--force-recreate" in c["argv"]]
     assert host.run("deploy", host.sha_a).returncode == 0
     before = len(host.state["calls"])
-    assert host.run("deploy", host.sha_b).returncode == 0                                 # B: README only
-    assert not [c for c in host.state["calls"][before:] if "--force-recreate" in c["argv"]]
+    assert host.run("deploy", host.sha_b).returncode == 0                                 # same Caddyfile: left alone
+    assert recreations(before) == []
     _git(host.work, "checkout", "-q", "main")
-    (host.work / "deploy" / "Caddyfile").write_text("www.{$DOMAIN} {\n\tredir https://{$DOMAIN}{uri} permanent\n}\n")
+    (host.work / "deploy" / "Caddyfile.ip").write_text("www.{$DOMAIN} {\n\tredir https://{$DOMAIN}{uri} permanent\n}\n")
     _git(host.work, "add", "-A"); _git(host.work, "commit", "-q", "-m", "release C: www")
     sha_c = _git(host.work, "rev-parse", "HEAD"); _git(host.work, "push", "-q", "origin", "main")
     host.state["heads"][sha_c[:12]] = "rev1"; host.save()
     before = len(host.state["calls"])
     res = host.run("deploy", sha_c)
     assert res.returncode == 0, res.all
-    recreated = [c["argv"] for c in host.state["calls"][before:] if "--force-recreate" in c["argv"]]
-    assert recreated and recreated[0][-1] == "caddy" and "recreating caddy" in res.stdout
+    assert recreations(before) and recreations(before)[0][-1] == "caddy" and "recreating it so it reads this one" in res.stdout
+    host.state["caddy_conf"] = "an older file\n"; host.save()                           # e.g. deployed by an older atp.sh
+    res = host.run("health")
+    assert res.returncode == 1 and "caddy runs an older Caddyfile than deploy/Caddyfile.ip" in res.stdout
     before = len(host.state["calls"])
-    res = host.run("rollback")                                                       # back to B
-    assert res.returncode == 0, res.all
-    assert [c for c in host.state["calls"][before:] if "--force-recreate" in c["argv"]]
+    res = host.run("deploy", sha_c)                                                      # a converge repairs it
+    assert res.returncode == 0 and recreations(before), res.all
+    assert host.run("health").returncode == 0
+    before = len(host.state["calls"])
+    res = host.run("rollback")                                                           # back to B: the old file again
+    assert res.returncode == 0 and recreations(before), res.all
 
 
 def test_health_on_the_ip_caddyfile_skips_the_public_domain_checks(host):

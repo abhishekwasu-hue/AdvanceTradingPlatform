@@ -328,6 +328,40 @@ again after any migration marked `ROLLBACK_SAFE = False`. Write the results in t
 It prints `health: OK` (exit 0), `health: FAILED` (exit 1), or `OWNER ACTION NEEDED` (exit 10). The status page
 (Z10 G7) will read the same endpoints.
 
+## 10a. PWA install on Android (manual check, D3)
+
+The automated test (`frontend/e2e/pwa.e2e.ts`) proves the manifest, the service worker and Chromium's installability
+check on localhost. Only a real phone proves the install on the production domain. Do this once after the domain
+deploy, and again after any change to `frontend/public/manifest.webmanifest`, `frontend/public/sw.js` or the TLS setup.
+
+You need an Android phone with Chrome, and a PAPER account you can sign in to.
+
+1. **Open the site.** In Chrome on the phone, open `https://aialgodesk.tech`. The padlock must show with no warning.
+   Sign in.
+2. **Install.** Either tap **Install app** in the banner at the top of the page, or open Chrome's menu (the three dots
+   at the top right) and tap **Install app** (older Chrome: **Add to Home screen**, then **Install**). Confirm.
+   - Expected: Chrome says the app is installed, and an **ATP** icon appears on the home screen (or in the app
+     drawer).
+   - If the menu shows only **Add to Home screen** with no **Install** step, the browser did not see an installable
+     app. Open `chrome://serviceworker-internals` on the phone to check that a worker for `https://aialgodesk.tech/`
+     is listed and running, then report what it shows.
+3. **Open it from the home screen.** Tap the **ATP** icon.
+   - Expected: the app opens in its own window with no Chrome address bar, on the dashboard. The Android recent-apps
+     view shows it as **ATP**, separate from Chrome.
+   - Optional, new layout (ui_v2) only: the More menu no longer shows **Install the app** inside the installed app.
+4. **Turn on notifications.** In the installed app: **Settings → Alert delivery → Push notifications → Enable on this
+   device**, read the explanation, press **Continue**, then tap **Allow** when Android asks.
+   - Expected: the section lists this device. If Android shows "Notifications are blocked", open the phone's
+     **Settings → Apps → ATP → Notifications** (or Chrome's site settings for `aialgodesk.tech`) and allow them.
+5. **Send a test alert.** In the same section press **Send test**.
+   - Expected: within a few seconds a system notification from ATP arrives, even with the app in the background.
+     Tapping it opens the app. The **Last push deliveries** list shows the test as delivered.
+6. **Write down** the phone model, Android version, Chrome version (Chrome menu → Settings → About Chrome) and the
+   result of each step, and send them to the team.
+
+To uninstall: long-press the ATP icon → **Uninstall** (or App info → Uninstall). It removes only the installed
+window; the account and its alert settings stay on the server.
+
 ## 11. Backups and how they are verified
 
 | What | When | Where |

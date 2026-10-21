@@ -13,6 +13,7 @@ beforeEach(() => {
   vi.spyOn(process, "cwd").mockReturnValue(cwd);
   vi.stubEnv("ATP_ANDROID_BUILD", "");
   vi.stubEnv("VITE_API_BASE_URL", "");
+  vi.stubEnv("ATP_APP_DOMAIN", "");
   vi.resetModules();
 });
 
@@ -25,14 +26,16 @@ afterEach(() => {
 const loadConfig = async () => (await import("../capacitor.config")).default;
 
 describe("capacitor.config.ts", () => {
-  it("bundles the web files with the temporary id and no live-site server.url", async () => {
+  it("bundles the web files with the final MA-6 id and no live-site server.url", async () => {
     const config = await loadConfig();
-    expect(config.appId).toBe("dev.atp.unpublished");
+    expect(config.appId).toBe("tech.aialgodesk.app");
     expect(config.appName).toBe("ATP");
     expect(config.webDir).toBe("dist");
     expect(config.server?.url).toBeUndefined();
     expect(config.server?.androidScheme).toBe("https");
     expect(config.server?.cleartext).toBeUndefined();
+    expect(config.server?.allowNavigation).toBeUndefined();          // the WebView never navigates off the bundle
+    expect(config.server?.hostname).toBeUndefined();                 // the app origin stays https://localhost
     expect(config.android?.allowMixedContent).toBe(false);
   });
 
@@ -50,10 +53,12 @@ describe("capacitor.config.ts", () => {
     expect(config.android?.webContentsDebuggingEnabled).toBe(false);
   });
 
-  it("refuses a release build with the temporary id", async () => {
+  it("a release build with the final id is accepted and logs nothing", async () => {
     vi.stubEnv("ATP_ANDROID_BUILD", "release");
-    vi.stubEnv("VITE_API_BASE_URL", "https://atp.example.com");
-    await expect(loadConfig()).rejects.toThrow(/temporary package id/);
+    const config = await loadConfig();
+    expect(config.appId).toBe("tech.aialgodesk.app");
+    expect(config.loggingBehavior).toBe("none");
+    expect(config.android?.webContentsDebuggingEnabled).toBe(false);
   });
 
   it("refuses an IP or plain-http API base", async () => {
@@ -65,7 +70,7 @@ describe("capacitor.config.ts", () => {
   it("refuses a dist/ built for another build kind", async () => {
     mkdirSync(join(cwd, "dist"));
     writeFileSync(join(cwd, "dist", "atp-native-build.json"),
-      JSON.stringify({ kind: "internal", apiOrigin: "https://atp.example.com", appId: "dev.atp.unpublished" }));
+      JSON.stringify({ kind: "internal", apiOrigin: "https://atp.example.com", appId: "tech.aialgodesk.app" }));
     await expect(loadConfig()).rejects.toThrow(/dist\/ was built for a internal build/);
   });
 });
@@ -91,6 +96,24 @@ describe("vite.config.ts build modes", () => {
     expect(app.define.__ATP_NATIVE__).toBe("true");
     expect(app.define.__ATP_API_ORIGIN__).toBe(`"https://atp-not-configured.invalid"`);
     expect(names(app)).toContain("atp-native-build-marker");
+  });
+
+  it("MA-6: an internal or release Android build talks to https://aialgodesk.tech unless VITE_API_BASE_URL overrides it", async () => {
+    vi.stubEnv("ATP_ANDROID_BUILD", "internal");
+    expect((await resolve("android")).define.__ATP_API_ORIGIN__).toBe(`"https://aialgodesk.tech"`);
+    vi.stubEnv("ATP_ANDROID_BUILD", "release");
+    vi.resetModules();
+    expect((await resolve("android")).define.__ATP_API_ORIGIN__).toBe(`"https://aialgodesk.tech"`);
+    vi.stubEnv("VITE_API_BASE_URL", "https://staging.example.com");
+    vi.resetModules();
+    expect((await resolve("android")).define.__ATP_API_ORIGIN__).toBe(`"https://staging.example.com"`);
+    vi.stubEnv("VITE_API_BASE_URL", "");
+    vi.stubEnv("ATP_APP_DOMAIN", "staging.example.com");             // the repository variable, when set
+    vi.resetModules();
+    expect((await resolve("android")).define.__ATP_API_ORIGIN__).toBe(`"https://staging.example.com"`);
+    // the web build ignores all of them and stays same-origin /api
+    vi.resetModules();
+    expect((await resolve("production")).define.__ATP_API_ORIGIN__).toBe(`""`);
   });
 
   it("the Android build refuses an IP address", async () => {

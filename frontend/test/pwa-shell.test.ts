@@ -144,6 +144,7 @@ describe("web app manifest", () => {
 
   it("has what browsers need to offer installation", () => {
     expect(manifest.name).toBe("AiAlgoDesk");
+    expect(manifest.short_name).toBe("AiAlgoDesk");
     expect(manifest.short_name.length).toBeLessThanOrEqual(12);
     expect(manifest.display).toBe("standalone");
     expect(manifest.start_url.startsWith("/")).toBe(true);

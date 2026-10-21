@@ -65,7 +65,7 @@ test.describe("PWA installability (D3)", () => {
     expect(res.status()).toBe(200);
     const manifest = await res.json() as Record<string, unknown> & { icons: Icon[] };
     expect(manifest).toMatchObject({
-      id: "/", name: "Advance Trading Platform", short_name: "ATP", scope: "/", display: "standalone",
+      id: "/", name: "AiAlgoDesk", short_name: "ATP", scope: "/", display: "standalone",
       background_color: expect.stringMatching(/^#[0-9a-f]{6}$/i), theme_color: expect.stringMatching(/^#[0-9a-f]{6}$/i),
     });
     expect(String(manifest.start_url)).toMatch(/^\/(\?|$)/);       // inside the scope

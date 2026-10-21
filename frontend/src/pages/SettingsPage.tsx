@@ -14,6 +14,8 @@ import VisionByokCard from "../components/VisionByokCard";
 import { Card } from "../components/ui";
 import AppearanceCard from "../components/AppearanceCard";
 import { PageHeader } from "../components/primitives";
+import { SetupLinkV2 } from "../setup/SetupChipV2";
+import { useFeatures } from "../ui/useFeatures";
 import type { BrokerCredentialsInput, StoredBrokerInfo, WebhookTokenResponse } from "../types";
 
 const CRED_FIELDS: { key: keyof BrokerCredentialsInput; label: string }[] = [
@@ -28,6 +30,7 @@ const CRED_FIELDS: { key: keyof BrokerCredentialsInput; label: string }[] = [
 ];
 
 export default function SettingsPage() {
+  const v2 = useFeatures().on("ui_v2");
   const { user, loading: authLoading } = useAuth();
   const [brokers, setBrokers] = useState<string[]>([]);
   const [stored, setStored] = useState<StoredBrokerInfo[]>([]);
@@ -154,6 +157,8 @@ export default function SettingsPage() {
     <div className="space-y-4">
       <PageHeader title="Settings"
         description="Broker credentials are encrypted at rest and only ever decrypted in memory when you authenticate - never logged, never returned in plaintext by any API response." />
+      {/* UI2-7: Settings → Setup (the wizard and the go-live checklist), only while ui_v2 is on; off, nothing renders. */}
+      {v2 && <SetupLinkV2 />}
       <AppearanceCard />
 
       {oauthOutcome && (

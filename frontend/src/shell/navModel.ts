@@ -1,6 +1,6 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
-  LayoutDashboard, Link2, ListChecks, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
+  LayoutDashboard, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
   Sigma, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, type LucideIcon,
 } from "lucide-react";
 import type { Page } from "../components/Sidebar";
@@ -14,8 +14,9 @@ import type { Page } from "../components/Sidebar";
  * Pages whose feature is off are hidden, never shown disabled (§9 rule 9).
  */
 
-/** A v2 shell location: every routed page, plus the new Charts page (`/charts`, `/charts/:symbol`). */
-export type ShellKey = Page | "charts";
+/** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
+ * Settings → Setup (`/settings/setup`, UI2-7). */
+export type ShellKey = Page | "charts" | "setup";
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more";
 
@@ -109,6 +110,8 @@ export const NAV_EXTRAS_V2: readonly (NavItemV2 & { section: SectionId })[] = [
     { flag: "options_builder", keywords: ["options builder", "payoff", "strategy"] }), section: "markets" },
   { ...item("coach", "Coach and guide", "Coach and guide", "/coach", GraduationCap, { keywords: ["trade coach", "guide", "learn"] }), section: "insights" },
   { ...item("account", "Account", "Account", "/settings/account", UserCircle2, { keywords: ["profile", "password", "two-factor", "sessions", "email"] }), section: "account" },
+  // UI2-7: Settings → Setup, the setup wizard and the go-live checklist (§11); Settings v2 groups arrive with UI2-6.
+  { ...item("setup", "Setup", "Setup", "/settings/setup", ListTodo, { keywords: ["set up your account", "setup wizard", "get started", "go-live checklist", "readiness"] }), section: "account" },
 ];
 
 /** The phone bottom bar (§4): Home, Charts, Signals, Positions - and More, which opens the sheet. */

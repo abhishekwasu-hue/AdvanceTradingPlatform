@@ -139,6 +139,14 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
   it("the merged pages' extras live at their new addresses", () => {
     expect(NAV_EXTRAS_V2.map((e) => [e.key, e.path])).toEqual([
       ["scanner", "/screener/custom"], ["options-builder", "/option-chain/plan"], ["coach", "/coach"], ["account", "/settings/account"],
+      ["setup", "/settings/setup"],
     ]);
+  });
+
+  it("UI2-7: Settings → Setup is found by search, not listed in the sidebar or the More sheet", () => {
+    const ctx = { on: () => true, role: "OWNER" };
+    expect(searchPages("setup", ctx)[0]).toMatchObject({ key: "setup", title: "Setup", section: "account" });
+    expect(searchPages("go-live", ctx).map((i) => i.key)).toContain("setup");
+    expect(moreSheetSections(ctx).flatMap((s) => s.items).map((i) => i.key)).not.toContain("setup");
   });
 });

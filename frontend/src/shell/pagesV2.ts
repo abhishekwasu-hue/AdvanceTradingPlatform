@@ -18,6 +18,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   positions: lazy(() => import("../trading/PositionsV2")),
   portfolio: lazy(() => import("../trading/PortfolioV2")),
   "risk-management": lazy(() => import("../trading/RiskV2")),
+  // UI2-7: Settings → Setup (§11, src/setup) at /settings/setup - the setup wizard and the go-live checklist, v2 only.
+  setup: lazy(() => import("../setup/SetupPageV2")),
 };
 
 /**

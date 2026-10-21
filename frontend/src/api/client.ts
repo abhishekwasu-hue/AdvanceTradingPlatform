@@ -650,8 +650,11 @@ export const api = {
   marketDataLtp: (symbol: string, exchange = "NSE", broker?: string) =>
     request<LtpResponse>(`/market-data/ltp?symbol=${encodeURIComponent(symbol)}&exchange=${encodeURIComponent(exchange)}${broker ? `&broker=${encodeURIComponent(broker)}` : ""}`),
   /** `before` (YYYY-MM-DD, IST): older history ending the day before it - a chart scrolled back past its oldest bar. */
-  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string, before?: string) =>
-    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null, before: before ?? null }) }),
+  /** UI2-4a2 `v2` (the v2 chart only): `forming` adds today's day / week / month bar, `volume_from_future` an index's
+   * volume from its near-month future. Left out, the request is exactly as before. */
+  marketDataCandles: (symbols: string[], timeframe: string, lookbackDays: number, exchange = "NSE", broker?: string, before?: string,
+                      v2?: { forming: boolean; volume_from_future: boolean }) =>
+    request<CandlesResponse>("/market-data/candles", { method: "POST", body: JSON.stringify({ symbols, timeframe, lookback_days: lookbackDays, exchange, broker: broker ?? null, before: before ?? null, ...v2 }) }),
   // Phase Z: factor and risk models.
   quantFactors: (symbols: QuantSymbolInput[], weights?: Record<string, number>, useFundamentals = true) =>
     request<FactorTable>("/quant/factors", { method: "POST", body: JSON.stringify({ symbols, weights: weights ?? null, use_fundamentals: useFundamentals }) }),

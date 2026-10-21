@@ -1872,6 +1872,8 @@ export interface SystemStatus {
   maintenance_mode: boolean;
   maintenance_message: string | null;
   disabled_brokers: string[];
+  /** Phase O2: the regular session of each exchange family (NSE, MCX, CDS, CRYPTO); `next_open` in IST, null while open. */
+  sessions?: Record<string, { is_open: boolean; reason: string; next_open: string | null }>;
 }
 
 // ---- Phase N: scopes, email verification, feature flags, encryption status ------------------------
@@ -2040,9 +2042,12 @@ export interface DataTierResponse {
   enabled: boolean; badge?: DataTierBadgeInfo; market_wide?: DataTierBadgeInfo; eod_date?: string | null; sessions?: DataTierSession[];
 }
 export interface CandleSourcesResponse { sources: CandleSource[]; usable: boolean; timeframes: string[]; max_symbols: number; intraday_max_lookback_days: number; daily_max_lookback_days: number }
+export interface CandleVolumeSource { symbol: string; expiry: string; exchange: string; underlying: string; from: string | null; label: string }
 export interface CandlesResponse {
   source: { broker: string; account_label: string }; exchange: string; timeframe: string; base_interval: string; lookback_days: number; before?: string | null; fetched_at: string;
-  symbols: Record<string, { bars: OHLCVBar[]; count: number; first: string | null; last: string | null; error: string | null; data_tier?: DataTierBadgeInfo | null }>; warnings: string[]; note: string;
+  symbols: Record<string, { bars: (OHLCVBar & { forming?: boolean })[]; count: number; first: string | null; last: string | null; error: string | null; data_tier?: DataTierBadgeInfo | null;
+    /** UI2-4a2: an index's volume from its near-month future (asked for with `volume_from_future`). */
+    volume_source?: CandleVolumeSource | null }>; warnings: string[]; note: string;
   data_tier?: DataTierBadgeInfo;
 }
 

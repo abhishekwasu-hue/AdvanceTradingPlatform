@@ -1,6 +1,6 @@
 {
   "id": "/",
-  "name": "Advance Trading Platform",
+  "name": "AiAlgoDesk",
   "short_name": "ATP",
   "description": "Analysis, alerts and paper trading for Indian markets.",
   "start_url": "/?source=pwa",

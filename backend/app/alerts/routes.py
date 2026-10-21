@@ -176,7 +176,7 @@ async def test_alert_channel(
         raise HTTPException(status_code=404, detail=f"No {kind} channel configured")
     probe = NotificationRecord(
         tenant_id=user.tenant_id, user_id=user.id, event_type=NotificationType.SYSTEM_FAILURE.value,
-        severity=NotificationSeverity.INFO.value, title="Test alert from Advance Trading Platform",
+        severity=NotificationSeverity.INFO.value, title="Test alert from AiAlgoDesk",
         message=f"If you can read this, {kind.lower()} alerts for your account are working. Sent by {user.email}.",
         created_at=datetime.now(timezone.utc),
     )

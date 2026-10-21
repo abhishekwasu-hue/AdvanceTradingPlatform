@@ -58,7 +58,7 @@ export default function WebPushSection({ channel, deliveries, busy, run, test }:
       {readiness === "ios-install-first" && (
         <p className="rounded border border-warn/40 bg-warn/10 p-2 text-xs text-fg" data-testid="push-ios">
           On iPhone and iPad, notifications work only in the installed app: in Safari tap <b>Share</b>, then <b>Add to Home
-          Screen</b>, open Advance Trading Platform from the Home Screen and come back here. (iOS 16.4 or later.)
+          Screen</b>, open AiAlgoDesk from the Home Screen and come back here. (iOS 16.4 or later.)
         </p>
       )}
       {readiness === "unsupported" && <p className="text-xs text-fg-muted">This browser cannot receive push notifications. Telegram or email still work.</p>}

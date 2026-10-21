@@ -21,7 +21,7 @@ export default function PwaBanners() {
       {install === "prompt" && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg">
           <Download size={16} className="shrink-0 text-brand" aria-hidden />
-          <span className="min-w-0 flex-1">Install Advance Trading Platform on this device for one-tap access and alerts.</span>
+          <span className="min-w-0 flex-1">Install AiAlgoDesk on this device for one-tap access and alerts.</span>
           <Button variant="primary" className="h-11 md:h-9" onClick={() => { void promptInstall(); }}>Install app</Button>
           <Button variant="ghost" className="h-11 w-11 px-0 md:h-9 md:w-9" aria-label="Not now" onClick={dismissInstall} icon={<X size={16} />} />
         </div>

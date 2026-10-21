@@ -20,11 +20,14 @@ export function isTyping(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || !!el.isContentEditable;
 }
 
-export interface KeyLike { key: string; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; target: EventTarget | null; defaultPrevented?: boolean }
+export interface KeyLike {
+  key: string; ctrlKey?: boolean; metaKey?: boolean; altKey?: boolean; repeat?: boolean; target: EventTarget | null; defaultPrevented?: boolean;
+}
 
-/** What a key press does to full screen. `busy`: a drawing tool is placing, or a menu is open. */
+/** What a key press does to full screen. `busy`: a drawing tool is placing, or a menu is open. A held key (auto-repeat)
+ * does nothing more, so holding F does not flicker in and out. */
 export function fullscreenKey(e: KeyLike, state: { on: boolean; busy: boolean }): "toggle" | "exit" | null {
-  if (e.defaultPrevented || state.busy) return null;
+  if (e.defaultPrevented || e.repeat || state.busy) return null;
   if (e.key === "Escape") return state.on ? "exit" : null;
   if ((e.key === "f" || e.key === "F") && !e.ctrlKey && !e.metaKey && !e.altKey && !isTyping(e.target)) return "toggle";
   return null;
@@ -40,8 +43,9 @@ export interface Fullscreen {
 
 const nativeOf = (el: HTMLElement | null) => !!el && typeof document !== "undefined" && document.fullscreenElement === el;
 
-/** `busy()`: a drawing tool is placing or a menu is open (read at the moment of the key press). */
-export function useFullscreen(root: RefObject<HTMLElement | null>, busy: () => boolean): Fullscreen {
+/** `busy()`: a drawing tool is placing or a menu is open (read at the moment of the key press). `keys`: F and Escape
+ * are listened to (off while the page shows something other than the chart, e.g. the Multi-chart tab). */
+export function useFullscreen(root: RefObject<HTMLElement | null>, busy: () => boolean, keys = true): Fullscreen {
   const [native, setNative] = useState(false);
   const [fallback, setFallback] = useState(false);
   const busyRef = useRef(busy);
@@ -74,6 +78,7 @@ export function useFullscreen(root: RefObject<HTMLElement | null>, busy: () => b
   const toggle = useCallback(() => { if (onRef.current) exit(); else enter(); }, [enter, exit]);
 
   useEffect(() => {
+    if (!keys) return undefined;
     const onKey = (e: KeyboardEvent) => {
       const action = fullscreenKey(e, { on: onRef.current, busy: busyRef.current() });
       if (!action) return;
@@ -82,7 +87,7 @@ export function useFullscreen(root: RefObject<HTMLElement | null>, busy: () => b
     };
     window.addEventListener("keydown", onKey, true);               // capture: before the drawing tools' own keys
     return () => window.removeEventListener("keydown", onKey, true);
-  }, [exit, toggle]);
+  }, [exit, toggle, keys]);
 
   // Leaving the page while full screen: the browser's full screen ends with it.
   useEffect(() => () => { if (document.fullscreenElement && document.fullscreenElement === root.current) void document.exitFullscreen().catch(() => undefined); }, [root]);

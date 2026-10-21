@@ -17,12 +17,20 @@ import { expectPhoneLayout } from "./phoneLayout";
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
 
-interface Setup extends ChartsMocks { flag?: boolean; brokers?: unknown[]; path?: string; intro?: boolean }
+interface Setup extends ChartsMocks {
+  flag?: boolean; brokers?: unknown[]; path?: string; intro?: boolean;
+  /** More localStorage for the first load (e.g. this user's recent symbols). */
+  storage?: Record<string, string>;
+  /** More routes, registered after the mocks so they answer first. */
+  before?: (page: Page) => Promise<void>;
+  /** Wait for the network to settle after loading (off when a test holds a reply). */
+  settle?: boolean;
+}
 
 async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Promise<ChartsCalls> {
-  const { flag = true, brokers = CONNECTED, path = "/charts", intro = false, ...mocks } = setup;
+  const { flag = true, brokers = CONNECTED, path = "/charts", intro = false, storage = {}, before, settle = true, ...mocks } = setup;
   await page.clock.install({ time: new Date("2026-10-19T11:00:00+05:30") });
-  await page.addInitScript(([t, intro]) => {
+  await page.addInitScript(([t, intro, storage]) => {
     try {
       // Only on the first load of a test: a reload keeps what the page itself stored.
       if (sessionStorage.getItem("e2e_seeded")) return;
@@ -30,14 +38,16 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}): Pro
       localStorage.setItem("atp_appearance", JSON.stringify({ theme: t }));
       localStorage.setItem("atp_install_dismissed", "1");
       if (!intro) localStorage.setItem("atp_page_intro_dismissed:2", JSON.stringify(["charts"]));
+      for (const [k, v] of Object.entries(storage)) localStorage.setItem(k, v);
     } catch { /* storage unavailable */ }
-  }, [theme, intro] as const);
+  }, [theme, intro, storage] as const);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: flag ? { ui_v2: true, chart_workspace: true } : undefined, brokers });
   const calls = await mockCharts(page, mocks);
+  await before?.(page);
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
-  await page.waitForLoadState("networkidle");
+  if (settle) await page.waitForLoadState("networkidle");
   return calls;
 }
 
@@ -124,9 +134,15 @@ test.describe("v2 Charts 1440 desktop", () => {
       await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3);
       await page.mouse.wheel(0, 400);                                          // zoom out: the oldest bars come near
     }
-    await expect.poll(() => calls.candles.filter((c) => c.before).length).toBeGreaterThan(0);
-    await page.waitForTimeout(500);
-    expect(calls.candles.filter((c) => c.timeframe === "5min" && c.before)).toHaveLength(1);
+    const older = () => calls.candles.filter((c) => c.before).length;
+    await expect.poll(older).toBe(1);
+    const status = page.getByText("Loading older bars…");
+    await expect(status).toHaveCount(0);                                       // answered: the broker has nothing older
+    for (let i = 0; i < 4; i += 1) await page.mouse.wheel(0, 400);              // still at the oldest bar, still asking
+    // Two frames: the chart has handled the scroll; a request let out would show "Loading older bars…" at once.
+    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(null)))));
+    await expect(status).toHaveCount(0);
+    expect(older()).toBe(1);
   });
 
   test("full screen: the button and F enter, Escape leaves; F in the symbol field types an F", async ({ page }) => {
@@ -226,6 +242,13 @@ test.describe("v2 Charts 1440 desktop", () => {
     await menu.getByRole("switch", { name: "Volume" }).click();
     await expect(menu.getByRole("switch", { name: "Volume" })).toHaveAttribute("aria-checked", "false");
     await expect.poll(() => calls.prefsPuts.at(-1)?.body).toMatchObject({ indicators: { volume: false, rsi: true } });
+    await page.keyboard.press("Escape");                                       // closes, focus back on the button
+    await expect(menu).toHaveCount(0);
+    await expect(page.getByRole("button", { name: /^Indicators/ })).toBeFocused();
+    await expect(page.getByRole("button", { name: /^Indicators/ })).toHaveAttribute("aria-haspopup", "dialog");
+    await page.getByRole("button", { name: "Chart settings" }).click();
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button", { name: "Chart settings" })).toBeFocused();
     await page.reload();
     await chartReady(page);
     await page.getByRole("button", { name: /^Indicators/ }).click();
@@ -243,6 +266,59 @@ test.describe("v2 Charts 1440 desktop", () => {
     await list.getByRole("option", { name: /NIFTY BANK/ }).click();
     await expect(page).toHaveURL(/\/charts\/NIFTY%20BANK$/);
     await chartReady(page);
+  });
+
+  test("review: Enter right after typing opens the typed symbol, never a recent or earlier row", async ({ page }) => {
+    await open(page, "light", { storage: { "atp_recent_symbols:2": JSON.stringify([{ symbol: "TCS", exchange: "NSE" }]) } });
+    await chartReady(page);
+    const field = page.getByRole("combobox", { name: "Symbol" });
+    await field.click();
+    await expect(page.getByRole("listbox", { name: "Recent symbols" }).getByRole("option")).toHaveText([/TCS/]);
+    await field.fill("reliance");
+    await expect(page.getByRole("listbox")).toHaveCount(0);                    // the recent rows are not shown as matches
+    await field.press("Enter");                                                // before the search answers
+    await expect(page).toHaveURL(/\/charts\/RELIANCE$/);
+  });
+
+  test("review: leaving the symbol field closes its list, so F works again", async ({ page }) => {
+    await open(page, "light");
+    await chartReady(page);
+    await page.getByRole("combobox", { name: "Symbol" }).click();
+    await expect(page.getByRole("listbox")).toHaveCount(0);                    // no recent symbols yet for this user
+    await page.getByRole("combobox", { name: "Symbol" }).fill("bank");
+    await expect(page.getByRole("listbox", { name: "Matching symbols" })).toBeVisible();
+    await page.keyboard.press("Tab");
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+    await expect(page.getByRole("combobox", { name: "Symbol" })).toHaveValue("NIFTY 50");
+    await page.keyboard.press("f");
+    await expect(page.locator("[data-page='charts-v2']")).toHaveAttribute("data-fullscreen", "on");
+  });
+
+  test("review: a stored week waits for the server's timeframes instead of loading 5m first", async ({ page }) => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => { release = r; });
+    const calls = await open(page, "light", {
+      storage: { "atp_charts_view:2": JSON.stringify({ timeframe: "week", type: "candles", overlays: [], layers: [] }) },
+      settle: false,
+      before: (p) => p.route(/\/api(?:\/v1)?\/market-data\/sources$/, async (r) => {
+        await held;
+        await r.fulfill({ json: { sources: [], usable: true, timeframes: ["1min", "3min", "5min", "15min", "30min", "60min", "day", "week", "month"] } });
+      }),
+    });
+    await expect(page.getByText("Loading prices…")).toBeVisible();
+    expect(calls.candles).toEqual([]);
+    release();
+    await chartReady(page);
+    expect(calls.candles.filter((c) => !c.before).map((c) => c.timeframe)).toEqual(["week"]);
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "W", exact: true })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("the chart theme light on a dark app", async ({ page }) => {
+    await open(page, "dark", { prefs: { theme: "light" } });
+    await chartReady(page);
+    await expect(page.locator("[data-chart-theme]")).toHaveAttribute("data-chart-theme", "light");
+    await page.mouse.move(0, 0);
+    await expect(page).toHaveScreenshot("charts-v2-chartlight-on-dark-1440.png", SHOT);
   });
 
   test("the Multi-chart tab opens the workspace in a new tab", async ({ page }) => {

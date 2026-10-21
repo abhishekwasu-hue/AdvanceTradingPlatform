@@ -10,37 +10,43 @@
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
-import type { CandleVolumeSource, OHLCVBar } from "../types";
+import type { CandleVolumeSource, CandlesResponse, OHLCVBar } from "../types";
 import { mergeBars, istDate } from "../components/chartHistory";
 import { DAILY_OR_LONGER, historyDaysFor, olderPageDaysFor, type ChartBar, type TimeframeId } from "./timeframes";
 
 /** After a failed "older" request, the next one waits this long (the chart keeps asking while it sits at the edge). */
 export const OLDER_RETRY_MS = 30_000;
 
-/** One "older history" request at a time per chart key; none after the broker had nothing older. Pure. */
+/** One "older history" request at a time per chart; none after the broker had nothing older. Each `reset` (a new
+ * symbol or timeframe, a retry, or switching back to an earlier symbol) starts a new generation, and an answer is taken
+ * only by the generation that asked for it. Pure. */
 export class OlderGuard {
-  private key = "";
+  private gen = 0;
   private busy = false;
   private done = false;
   private waitUntil = 0;
 
   constructor(private readonly now: () => number = () => Date.now()) {}
 
-  /** A new symbol / timeframe: everything starts again. */
-  reset(key: string): void { this.key = key; this.busy = false; this.done = false; this.waitUntil = 0; }
+  /** A new chart (or the same one loaded again): everything starts again; answers to earlier requests are dropped. */
+  reset(): void { this.gen += 1; this.busy = false; this.done = false; this.waitUntil = 0; }
 
   get exhausted(): boolean { return this.done; }
 
-  /** True when a request may go out now for `key` (and marks it in flight). */
-  begin(key: string, haveBars: boolean): boolean {
-    if (key !== this.key || !haveBars || this.busy || this.done || this.now() < this.waitUntil) return false;
+  /** A ticket when a request may go out now (it is then in flight), else null. */
+  begin(haveBars: boolean): number | null {
+    if (!haveBars || this.busy || this.done || this.now() < this.waitUntil) return null;
     this.busy = true;
-    return true;
+    return this.gen;
   }
 
-  /** The answer for `key`: how many older bars came (0 = the broker has none), or null when the request failed. */
-  end(key: string, added: number | null): void {
-    if (key !== this.key) return;                       // an answer for the previous symbol or timeframe
+  /** True while `ticket` belongs to the current chart (its answer may be shown). */
+  current(ticket: number): boolean { return ticket === this.gen; }
+
+  /** The answer for `ticket`: how many older bars came (0 = the broker has none older), or null when the request
+   * failed or the broker could not answer this time (it is asked again after a pause). */
+  end(ticket: number, added: number | null): void {
+    if (ticket !== this.gen) return;                     // an answer for an earlier chart
     this.busy = false;
     if (added === null) this.waitUntil = this.now() + OLDER_RETRY_MS;
     else if (added === 0) this.done = true;
@@ -70,6 +76,53 @@ export function candleErrorText(error: unknown, symbol: string): string {
   return "Prices could not be loaded from your broker. Check your connection, then try again.";
 }
 
+type CandleEntry = CandlesResponse["symbols"][string];
+
+export interface FeedEvents {
+  loading: (on: boolean) => void;
+  /** The first answer: the whole history (replaces what is shown). */
+  replace: (bars: ChartBar[], volume: CandleVolumeSource | null) => void;
+  /** A refresh: the newest bars, merged into what is shown. */
+  merge: (bars: ChartBar[], volume: CandleVolumeSource | null) => void;
+  error: (text: string | null) => void;
+}
+
+/** One chart's reads: the timeframe's whole history until one read succeeds (a failed first read is retried whole on
+ * the next tick, never as a short refresh), then the newest days. After `stop` no answer is used, so a late answer
+ * never lands on another chart - even one with the same symbol and timeframe (a retry, or switching back). Pure. */
+export class CandleFeed {
+  private loaded = false;
+  private stopped = false;
+  private inFlight = false;
+
+  constructor(private readonly fetchDays: (days: number) => Promise<CandlesResponse>, private readonly symbol: string,
+              private readonly timeframe: TimeframeId, private readonly on: FeedEvents) {}
+
+  async tick(): Promise<void> {
+    if (this.stopped || this.inFlight) return;
+    this.inFlight = true;
+    const first = !this.loaded;
+    if (first) this.on.loading(true);
+    try {
+      const r = await this.fetchDays(first ? historyDaysFor(this.timeframe) : refreshDaysFor(this.timeframe));
+      if (this.stopped) return;
+      const entry: CandleEntry | undefined = r.symbols[this.symbol];
+      if (!entry || entry.error) throw new Error(entry?.error === "budget used" ? "budget used" : "no bars");
+      if (first) this.on.replace(entry.bars, entry.volume_source ?? null);
+      else this.on.merge(refreshBars(entry.bars, this.timeframe), entry.volume_source ?? null);
+      this.loaded = true;
+      this.on.error(null);
+    } catch (e) {
+      if (!this.stopped && first) this.on.error(candleErrorText(e, this.symbol));     // a failed refresh keeps the chart
+    } finally {
+      this.inFlight = false;
+      if (!this.stopped && first) this.on.loading(false);
+    }
+  }
+
+  stop(): void { this.stopped = true; }
+}
+
 export interface ChartCandles {
   candles: ChartBar[];
   loading: boolean;
@@ -92,59 +145,44 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
   const [volumeSource, setVolumeSource] = useState<CandleVolumeSource | null>(null);
   const [nonce, setNonce] = useState(0);
   const sym = symbol.trim().toUpperCase();
-  const key = `${sym}|${exchange}|${timeframe}`;
-  const keyRef = useRef(key);
   const candlesRef = useRef<ChartBar[]>([]);
   candlesRef.current = candles;
   const guard = useRef(new OlderGuard());
-  const v2 = { forming: DAILY_OR_LONGER.has(timeframe), volume_from_future: true };
 
   useEffect(() => {
-    keyRef.current = key;
-    guard.current.reset(key);
+    guard.current.reset();
     setCandles([]); setError(null); setExhausted(false); setLoadingOlder(false); setVolumeSource(null);
     if (!enabled || !sym) return undefined;
-    let first = true;
-    const load = async () => {
-      if (first) setLoading(true);
-      try {
-        const r = await api.marketDataCandles([sym], timeframe, first ? historyDaysFor(timeframe) : refreshDaysFor(timeframe), exchange,
-                                              undefined, undefined, v2);
-        if (keyRef.current !== key) return;
-        const entry = r.symbols[sym];
-        if (!entry || entry.error) throw new Error(entry?.error === "budget used" ? "budget used" : "no bars");
-        setCandles((prev) => (first ? entry.bars : mergeBars(prev, refreshBars(entry.bars, timeframe))));
-        setVolumeSource(entry.volume_source ?? null);
-        setError(null);
-      } catch (e) {
-        if (keyRef.current === key && first) setError(candleErrorText(e, sym));      // a failed refresh keeps the chart
-      } finally {
-        if (keyRef.current === key && first) setLoading(false);
-        first = false;
-      }
-    };
-    void load();
-    const id = window.setInterval(load, refreshMs);
-    return () => window.clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled, key, refreshMs, nonce]);
+    const v2 = { forming: DAILY_OR_LONGER.has(timeframe), volume_from_future: true };
+    const feed = new CandleFeed((days) => api.marketDataCandles([sym], timeframe, days, exchange, undefined, undefined, v2), sym, timeframe, {
+      loading: setLoading,
+      replace: (bars, volume) => { setCandles(bars); setVolumeSource(volume); },
+      merge: (bars, volume) => { setCandles((prev) => mergeBars(prev, bars)); setVolumeSource(volume); },
+      error: setError,
+    });
+    void feed.tick();
+    const id = window.setInterval(() => void feed.tick(), refreshMs);
+    return () => { feed.stop(); window.clearInterval(id); setLoading(false); };
+  }, [enabled, sym, exchange, timeframe, refreshMs, nonce]);
 
   const loadOlder = useCallback(() => {
     const bars = candlesRef.current;
-    if (!enabled || !guard.current.begin(key, bars.length > 0)) return;
+    const ticket = enabled ? guard.current.begin(bars.length > 0) : null;
+    if (ticket === null) return;
     const oldest = Date.parse(bars[0].timestamp);
     setLoadingOlder(true);
     api.marketDataCandles([sym], timeframe, olderPageDaysFor(timeframe), exchange, undefined, istDate(bars[0]),
                           { forming: false, volume_from_future: true })
       .then((r) => {
         const entry = r.symbols[sym];
+        // Only a good answer with nothing older ends the paging; a per-symbol error (budget, a broker hiccup) is retried.
         const older = entry && !entry.error ? entry.bars.filter((b) => Date.parse(b.timestamp) < oldest) : null;
-        guard.current.end(key, older ? older.length : entry?.error === "budget used" ? null : 0);
-        if (keyRef.current === key && older?.length) setCandles((prev) => mergeBars(older, prev));
+        guard.current.end(ticket, older ? older.length : null);
+        if (guard.current.current(ticket) && older?.length) setCandles((prev) => mergeBars(older, prev));
       })
-      .catch(() => guard.current.end(key, null))
-      .finally(() => { if (keyRef.current === key) { setLoadingOlder(false); setExhausted(guard.current.exhausted); } });
-  }, [enabled, key, sym, timeframe, exchange]);
+      .catch(() => guard.current.end(ticket, null))
+      .finally(() => { if (guard.current.current(ticket)) { setLoadingOlder(false); setExhausted(guard.current.exhausted); } });
+  }, [enabled, sym, timeframe, exchange]);
 
   const retry = useCallback(() => setNonce((n) => n + 1), []);
   return { candles, loading, error, loadingOlder, exhausted, volumeSource, loadOlder, retry };

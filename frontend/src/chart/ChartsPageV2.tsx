@@ -11,13 +11,14 @@ import type { PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
 import type { SystemStatus } from "../types";
 import { PageIntro } from "../ui/PageIntro";
-import { SymbolPicker, type PickedSymbol } from "../ui/SymbolPicker";
+import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
 import { ChartSettingsPopover } from "./ChartSettingsPopover";
 import ChartV2 from "./ChartV2";
 import { CHART_TYPES_V2, CHART_TYPE_LABELS_V2, type ChartTypeV2 } from "./chartCore";
 import {
-  LAST_SYMBOL_KEY, chartsSymbol, drawingNote, marketChip, offeredTimeframes, readView, saveView, volumeLabelFor, type ChartsView,
+  chartsSymbol, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, volumeLabelFor,
+  type ChartsView,
 } from "./chartsPage";
 import { IndicatorsMenu } from "./IndicatorsMenu";
 import { toggle as toggleIndicator } from "./indicatorsModel";
@@ -41,11 +42,8 @@ type Tools = ReturnType<typeof useDrawingTools>;
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 const iconBtn = cx("inline-flex min-h-11 min-w-11 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent md:min-h-9 md:min-w-9", focus);
 
-function readLast(): string | null {
-  try { return localStorage.getItem(LAST_SYMBOL_KEY); } catch { return null; }
-}
-
-/** The market sessions (public status, re-read every minute) and the server's timeframes (read once). */
+/** The market sessions (public status, re-read every minute) and the server's timeframes (read once; a failed read
+ * offers the timeframes every server has, so the page never waits on it). */
 function useChartsContext() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [timeframes, setTimeframes] = useState<string[] | null>(null);
@@ -54,7 +52,7 @@ function useChartsContext() {
     let live = true;
     const load = () => api.systemStatus().then((s) => { if (live) { setStatus(s); setNow(Date.now()); } }).catch(() => undefined);
     void load();
-    api.marketDataSources().then((s) => { if (live) setTimeframes(Array.isArray(s.timeframes) ? s.timeframes : []); }).catch(() => undefined);
+    api.marketDataSources().then((s) => { if (live) setTimeframes(Array.isArray(s.timeframes) ? s.timeframes : []); }).catch(() => { if (live) setTimeframes([]); });
     const id = window.setInterval(load, 60_000);
     return () => { live = false; window.clearInterval(id); };
   }, []);
@@ -66,22 +64,29 @@ export default function ChartsPageV2(_props: PageProps) {
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const userId = user?.id ?? null;
   const features = useFeatures();
-  const symbol = chartsSymbol(fromPath?.trim() ? fromPath : null, readLast());
+  const symbol = chartsSymbol(fromPath?.trim() ? fromPath : null, readLastSymbol(userId));
   const exchange = (params.get("exchange") ?? "NSE").trim().toUpperCase() || "NSE";
   const multi = features.on("chart_workspace");
   const tab = multi && params.get("tab") === "multi" ? "multi" : "chart";
-  useEffect(() => { try { localStorage.setItem(LAST_SYMBOL_KEY, symbol); } catch { /* storage unavailable */ } }, [symbol]);
+  useEffect(() => { saveLastSymbol(userId, symbol); }, [userId, symbol]);
 
   const { status, timeframes, now } = useChartsContext();
   const offered = useMemo(() => offeredTimeframes(timeframes), [timeframes]);
-  const [view, setViewState] = useState<ChartsView>(readView);
-  const setView = useCallback((patch: Partial<ChartsView>) => setViewState((v) => { const next = { ...v, ...patch }; saveView(next); return next; }), []);
-  const timeframe: TimeframeId = offered.includes(view.timeframe) ? view.timeframe : DEFAULT_TIMEFRAME;
+  const [view, setViewState] = useState<ChartsView>(() => readView(userId));
+  const setView = useCallback((patch: Partial<ChartsView>) => setViewState((v) => {
+    const next = { ...v, ...patch };
+    saveView(userId, next);
+    return next;
+  }), [userId]);
+  // A stored week or month waits for the server's timeframes (it may not offer them) instead of loading 5m first.
+  const waiting = timeframes === null && (view.timeframe === "week" || view.timeframe === "month");
+  const timeframe: TimeframeId = waiting || offered.includes(view.timeframe) ? view.timeframe : DEFAULT_TIMEFRAME;
   const chip = marketChip(status, exchange, now);
 
-  const prefs = useChartPrefs(user?.id ?? null);
-  const data = useChartCandles({ enabled: true, symbol, exchange, timeframe });
+  const prefs = useChartPrefs(userId);
+  const data = useChartCandles({ enabled: !waiting, symbol, exchange, timeframe });
   const last = data.candles[data.candles.length - 1];
   // The live price moves the newest bar: intraday while the market is open (or its state is not known), day / week /
   // month only while the server marks that bar as forming.
@@ -94,7 +99,7 @@ export default function ChartsPageV2(_props: PageProps) {
 
   const root = useRef<HTMLDivElement>(null);
   const busy = useCallback(() => !!tools?.controller?.view().tool || !!root.current?.querySelector("[role='dialog'], [role='listbox']"), [tools]);
-  const fs = useFullscreen(root, busy);
+  const fs = useFullscreen(root, busy, tab === "chart");
 
   const pick = (p: PickedSymbol) => {
     const q = p.exchange && p.exchange !== "NSE" ? `?exchange=${encodeURIComponent(p.exchange)}` : "";
@@ -113,7 +118,7 @@ export default function ChartsPageV2(_props: PageProps) {
   };
 
   const drawingText = drawingNote(tools?.view?.message);
-  const emptyText = data.loading ? "Loading prices…" : data.error ? "" : `No prices for ${symbol} on this timeframe yet.`;
+  const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : `No prices for ${symbol} on this timeframe yet.`;
   const workspace = `/?${new URLSearchParams({ workspace: "1", chart: symbol, exchange }).toString()}`;
 
   return (
@@ -150,7 +155,7 @@ export default function ChartsPageV2(_props: PageProps) {
           <div role="toolbar" aria-label="Chart controls" data-chart-toolbar
             className="flex flex-wrap items-center gap-x-space-2 gap-y-space-1 border-b border-subtle p-space-2">
             {/* Phone: symbol and the icon buttons, then market state, type and Indicators, then the timeframes. */}
-            <SymbolPicker value={symbol} exchange={exchange} onPick={pick} className="order-1 min-w-[8.5rem] flex-1 md:order-none md:w-44 md:flex-none" />
+            <SymbolPicker value={symbol} exchange={exchange} onPick={pick} storageKey={recentKeyFor(userId)} className="order-1 min-w-[8.5rem] flex-1 md:order-none md:w-44 md:flex-none" />
             {chip && (
               <span data-market={chip.open ? "open" : "closed"} className="order-3 inline-flex items-center gap-space-1 whitespace-nowrap rounded-pill border border-subtle px-space-2 py-space-1 text-t12 text-fg-muted md:order-none">
                 <span aria-hidden className={cx("h-2 w-2 rounded-pill", chip.open ? "bg-up" : "bg-fg-muted")} />

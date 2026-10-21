@@ -17,9 +17,11 @@ export function IndicatorsMenu({ state, on, onToggle }: {
   const [query, setQuery] = useState("");
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return undefined;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    // Escape closes and gives the focus back to the button (WAI-ARIA dialog pattern).
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); trigger.current?.focus(); } };
     const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onDown);
@@ -31,7 +33,7 @@ export function IndicatorsMenu({ state, on, onToggle }: {
   const count = onCount(state, on);
   return (
     <div ref={ref} className="relative inline-flex">
-      <button type="button" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen((o) => !o)}
+      <button ref={trigger} type="button" aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen((o) => !o)}
         className="inline-flex min-h-11 items-center gap-space-1 rounded-control px-space-2 text-t14 font-medium text-fg hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:min-h-9">
         <Activity size={16} aria-hidden className="text-fg-muted" />
         Indicators{count > 0 && <span className="hidden text-fg-muted sm:inline">· {count}</span>}

@@ -7,8 +7,24 @@ import { formatDateIST, formatTimeIST } from "../ui/format";
 import { CHART_TYPES_V2, OVERLAYS_V2, type ChartTypeV2, type OverlayId } from "./chartCore";
 import { DEFAULT_TIMEFRAME, TIMEFRAMES, isTimeframe, type TimeframeId } from "./timeframes";
 
-/** The last symbol viewed on Charts (per browser): Charts opens on it, NIFTY 50 on first use (§6 default state). */
+/** The last symbol viewed on Charts (per user, on this browser): Charts opens on it, NIFTY 50 on first use (§6). */
 export const LAST_SYMBOL_KEY = "atp_charts_last_symbol";
+type UserId = number | string | null | undefined;
+
+/** Reads a per-user value; nothing while signed out or when storage is blocked. */
+function readFor(base: string, user: UserId): string | null {
+  if (user == null) return null;
+  try { return localStorage.getItem(`${base}:${user}`); } catch { return null; }
+}
+
+/** Keeps a per-user value; nothing while signed out (storage blocked: it lasts this visit only). */
+function writeFor(base: string, user: UserId, value: string): void {
+  if (user == null) return;
+  try { localStorage.setItem(`${base}:${user}`, value); } catch { /* storage unavailable */ }
+}
+
+export const readLastSymbol = (user: UserId): string | null => readFor(LAST_SYMBOL_KEY, user);
+export const saveLastSymbol = (user: UserId, symbol: string): void => writeFor(LAST_SYMBOL_KEY, user, symbol);
 export const DEFAULT_SYMBOL = "NIFTY 50";
 
 /** The symbol Charts shows: the one in the address, else the last one viewed, else NIFTY 50. */
@@ -54,7 +70,7 @@ export function marketChip(status: SystemStatus | null | undefined, exchange: st
 
 // --- The trader's view, per browser ------------------------------------------------------------------------------------
 
-/** What the trader last chose on this browser. The panes (volume, RSI) and the theme are in the server prefs
+/** What the trader last chose on this browser (per user). The panes (volume, RSI) and the theme are in the server prefs
  * (`useChartPrefs`); the prefs schema has no place for the rest yet, so it stays on this device. */
 export interface ChartsView {
   timeframe: TimeframeId;
@@ -79,12 +95,12 @@ export function cleanView(raw: unknown): ChartsView {
   };
 }
 
-export function readView(): ChartsView {
-  try { return cleanView(JSON.parse(localStorage.getItem(VIEW_KEY) ?? "null")); } catch { return DEFAULT_VIEW; }
+export function readView(user: UserId): ChartsView {
+  try { return cleanView(JSON.parse(readFor(VIEW_KEY, user) ?? "null")); } catch { return DEFAULT_VIEW; }
 }
 
-export function saveView(view: ChartsView): void {
-  try { localStorage.setItem(VIEW_KEY, JSON.stringify(view)); } catch { /* storage unavailable: the choice lasts this visit */ }
+export function saveView(user: UserId, view: ChartsView): void {
+  writeFor(VIEW_KEY, user, JSON.stringify(view));
 }
 
 /** The drawing tools' message in plain words: the plain ones as they are, anything else (a raw error) as what happened

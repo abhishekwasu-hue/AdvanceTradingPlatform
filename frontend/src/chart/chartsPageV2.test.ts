@@ -1,12 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
 import appShellSource from "../shell/AppShellV2.tsx?raw";
-import type { SystemStatus } from "../types";
-import { withRecent } from "../ui/SymbolPicker";
+import type { CandlesResponse, SystemStatus } from "../types";
+import { enterChoice, listKeyFor, readRecent, recentKeyFor, rememberSymbol, withRecent } from "../ui/SymbolPicker";
 import pageSource from "./ChartsPageV2.tsx?raw";
-import { cleanView, drawingNote, marketChip, offeredTimeframes, sessionFamily, volumeLabelFor } from "./chartsPage";
+import { cleanView, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, sessionFamily, volumeLabelFor } from "./chartsPage";
 import { isOn, menuGroups, onCount, toggle, type IndicatorState } from "./indicatorsModel";
-import { OLDER_RETRY_MS, OlderGuard, candleErrorText, refreshBars, refreshDaysFor } from "./useChartCandles";
+import { CandleFeed, OLDER_RETRY_MS, OlderGuard, candleErrorText, refreshBars, refreshDaysFor, type FeedEvents } from "./useChartCandles";
 import { fullscreenKey, isTyping } from "./useFullscreen";
 
 vi.mock("lightweight-charts", () => import("./lightweightFake.fixture"));
@@ -125,44 +125,39 @@ describe("UI2-4b2 Indicators menu", () => {
 describe("UI2-4b2 older history: one request at a time, none past the end", () => {
   it("lets one request out; the chart's repeated asks while it is in flight do nothing", () => {
     const g = new OlderGuard();
-    g.reset("A");
-    expect(g.begin("A", true)).toBe(true);
-    expect(g.begin("A", true)).toBe(false);
-    g.end("A", 120);
-    expect(g.begin("A", true)).toBe(true);
+    const t = g.begin(true);
+    expect(t).not.toBeNull();
+    expect(g.begin(true)).toBeNull();
+    g.end(t!, 120);
+    expect(g.begin(true)).not.toBeNull();
   });
 
-  it("stops for good when the broker has nothing older", () => {
+  it("stops for good when the broker answered with nothing older", () => {
     const g = new OlderGuard();
-    g.reset("A");
-    g.begin("A", true);
-    g.end("A", 0);
+    g.end(g.begin(true)!, 0);
     expect(g.exhausted).toBe(true);
-    expect(g.begin("A", true)).toBe(false);
+    expect(g.begin(true)).toBeNull();
   });
 
-  it("waits after a failed request, then tries again", () => {
-    let t = 1_000;
-    const g = new OlderGuard(() => t);
-    g.reset("A");
-    g.begin("A", true);
-    g.end("A", null);
+  it("waits after a failed request or a per-symbol error (null), then tries again", () => {
+    let now = 1_000;
+    const g = new OlderGuard(() => now);
+    g.end(g.begin(true)!, null);
     expect(g.exhausted).toBe(false);
-    expect(g.begin("A", true)).toBe(false);
-    t += OLDER_RETRY_MS;
-    expect(g.begin("A", true)).toBe(true);
+    expect(g.begin(true)).toBeNull();
+    now += OLDER_RETRY_MS;
+    expect(g.begin(true)).not.toBeNull();
   });
 
-  it("no bars yet, another chart key, or a late answer for the previous symbol: nothing changes", () => {
+  it("no bars yet: nothing; a late answer after a reset (new symbol, a retry, back to the same symbol) is dropped", () => {
     const g = new OlderGuard();
-    g.reset("A");
-    expect(g.begin("A", false)).toBe(false);
-    expect(g.begin("B", true)).toBe(false);
-    g.begin("A", true);
-    g.reset("B");                                        // the trader switched symbol while A's request was out
-    g.end("A", 0);
+    expect(g.begin(false)).toBeNull();
+    const a = g.begin(true)!;
+    g.reset();                                           // the trader switched away (or back to the same symbol)
+    expect(g.current(a)).toBe(false);
+    g.end(a, 0);
     expect(g.exhausted).toBe(false);
-    expect(g.begin("B", true)).toBe(true);
+    expect(g.begin(true)).not.toBeNull();
   });
 
   it("a refresh reads a few recent days; week and month drop their first, possibly cut, bar", () => {
@@ -248,5 +243,125 @@ describe("UI2-4b2 wiring and the symbol picker", () => {
     expect(out).toHaveLength(8);
     expect(withRecent(list, { symbol: "NEW", exchange: "NSE" }).map((r) => r.symbol)).toEqual(["NEW", ...list.slice(0, 7).map((r) => r.symbol)]);
     expect(withRecent(list, { symbol: "S0", exchange: "BSE" })).toHaveLength(8);
+  });
+});
+
+describe("UI2-4b2 review: the first load is retried whole, late answers are dropped", () => {
+  const answer = (bars: number, error: string | null = null): CandlesResponse => ({
+    source: { broker: "upstox", account_label: "primary" }, exchange: "NSE", timeframe: "5min", base_interval: "1min", lookback_days: 10,
+    fetched_at: "", warnings: [], note: "",
+    symbols: { "NIFTY 50": { bars: Array.from({ length: bars }, (_, i) => ({ timestamp: `2026-10-0${i + 1}T04:00:00Z`, open: 1, high: 1, low: 1, close: 1, volume: 0 })),
+                             count: bars, first: null, last: null, error } },
+  });
+  const events = () => {
+    const log: string[] = [];
+    const on: FeedEvents = {
+      loading: (v) => log.push(`loading:${v}`), replace: (b) => log.push(`replace:${b.length}`), merge: (b) => log.push(`merge:${b.length}`),
+      error: (t) => log.push(t ? "error" : "ok"),
+    };
+    return { log, on };
+  };
+
+  it("a failed first read: the next tick asks for the whole history again, not a short refresh", async () => {
+    const asked: number[] = [];
+    const replies = [Promise.reject(new TypeError("Failed to fetch")), Promise.resolve(answer(3)), Promise.resolve(answer(2))];
+    const { log, on } = events();
+    const feed = new CandleFeed((days) => { asked.push(days); return replies.shift()!; }, "NIFTY 50", "5min", on);
+    await feed.tick();
+    await feed.tick();
+    await feed.tick();
+    expect(asked).toEqual([10, 10, 2]);
+    expect(log).toEqual(["loading:true", "error", "loading:false", "loading:true", "replace:3", "ok", "loading:false", "merge:2", "ok"]);
+  });
+
+  it("a per-symbol error on the first read is an error, and the first read is retried", async () => {
+    const asked: number[] = [];
+    const { log, on } = events();
+    const feed = new CandleFeed(async (days) => { asked.push(days); return answer(0, "budget used"); }, "NIFTY 50", "day", on);
+    await feed.tick();
+    await feed.tick();
+    expect(asked).toEqual([730, 730]);
+    expect(log.filter((l) => l === "error")).toHaveLength(2);
+  });
+
+  it("after stop (a new symbol, a retry, back to the same symbol) a late answer changes nothing", async () => {
+    let release: (r: CandlesResponse) => void = () => undefined;
+    const { log, on } = events();
+    const feed = new CandleFeed(() => new Promise((r) => { release = r; }), "NIFTY 50", "5min", on);
+    const pending = feed.tick();
+    feed.stop();
+    release(answer(5));
+    await pending;
+    expect(log).toEqual(["loading:true"]);
+    await feed.tick();
+    expect(log).toEqual(["loading:true"]);
+  });
+
+  it("one read at a time: a tick while one is out does nothing", async () => {
+    let calls = 0;
+    const { on } = events();
+    const feed = new CandleFeed(() => { calls += 1; return new Promise(() => undefined); }, "NIFTY 50", "5min", on);
+    void feed.tick();
+    void feed.tick();
+    expect(calls).toBe(1);
+  });
+});
+
+describe("UI2-4b2 review: the symbol picker never takes a row left from earlier text", () => {
+  const recent = [{ symbol: "TCS", exchange: "NSE" }, { symbol: "INFY", exchange: "NSE" }];
+  const base = { open: true, rows: recent, rowsFor: "", active: 0, value: "NIFTY 50", exchange: "NSE" };
+
+  it("the list key: the recent list for an empty field or the symbol on screen, else the text", () => {
+    expect(listKeyFor("", "NIFTY 50")).toBe("");
+    expect(listKeyFor(" nifty 50 ", "NIFTY 50")).toBe("");
+    expect(listKeyFor("relia", "NIFTY 50")).toBe("RELIA");
+  });
+
+  it("typing 'reliance' over the recent list and pressing Enter before the search answers opens RELIANCE", () => {
+    expect(enterChoice({ ...base, text: "reliance" })).toEqual({ symbol: "RELIANCE", exchange: "NSE" });
+    // ... and the answer for an earlier text is not taken either
+    expect(enterChoice({ ...base, rows: [{ symbol: "RELAXO", exchange: "NSE" }], rowsFor: "RELA", text: "reliance" }))
+      .toEqual({ symbol: "RELIANCE", exchange: "NSE" });
+  });
+
+  it("rows that answer the text as typed now are taken; a closed list or an empty field takes nothing stale", () => {
+    expect(enterChoice({ ...base, rows: [{ symbol: "RELIANCE", exchange: "BSE" }], rowsFor: "RELIANCE", text: "reliance" }))
+      .toEqual({ symbol: "RELIANCE", exchange: "BSE" });
+    expect(enterChoice({ ...base, text: "NIFTY 50", active: 1 })).toEqual({ symbol: "INFY", exchange: "NSE" });
+    expect(enterChoice({ ...base, open: false, text: "tcs" })).toEqual({ symbol: "TCS", exchange: "NSE" });
+    expect(enterChoice({ ...base, rowsFor: "X", text: "" })).toBeNull();
+  });
+});
+
+describe("UI2-4b2 review: per-user storage on this browser", () => {
+  const store = new Map<string, string>();
+  const fake = { getItem: (k: string) => store.get(k) ?? null, setItem: (k: string, v: string) => { store.set(k, v); }, removeItem: (k: string) => { store.delete(k); } };
+
+  it("each user has their own last symbol, view and recent symbols; signed out reads and writes nothing", () => {
+    vi.stubGlobal("localStorage", fake);
+    try {
+      saveLastSymbol(1, "TCS");
+      saveView(1, { timeframe: "15min", type: "bars", overlays: ["vwap"], layers: [] });
+      rememberSymbol(recentKeyFor(1), { symbol: "TCS", exchange: "NSE" });
+      expect(readLastSymbol(1)).toBe("TCS");
+      expect(readLastSymbol(2)).toBeNull();
+      expect(readView(1).timeframe).toBe("15min");
+      expect(readView(2).timeframe).toBe("5min");
+      expect(readRecent(recentKeyFor(1))).toEqual([{ symbol: "TCS", exchange: "NSE" }]);
+      expect(readRecent(recentKeyFor(2))).toEqual([]);
+      const before = store.size;
+      saveLastSymbol(null, "X");
+      saveView(null, readView(1));
+      rememberSymbol(recentKeyFor(null), { symbol: "X", exchange: "NSE" });
+      expect(store.size).toBe(before);
+      expect(readLastSymbol(null)).toBeNull();
+      expect([...store.keys()].every((k) => /:1$/.test(k))).toBe(true);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("a held F key does not toggle again", () => {
+    expect(fullscreenKey({ key: "f", repeat: true, target: el("DIV") }, { on: false, busy: false })).toBeNull();
   });
 });

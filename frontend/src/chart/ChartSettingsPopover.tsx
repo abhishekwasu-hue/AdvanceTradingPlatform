@@ -47,9 +47,11 @@ export function ChartSettingsPopover({ prefs, onChange, error, defaultOpen = fal
   const [open, setOpen] = useState(defaultOpen);
   const id = useId();
   const ref = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
   useEffect(() => {
     if (!open) return;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    // Escape closes and gives the focus back to the button (WAI-ARIA dialog pattern).
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setOpen(false); trigger.current?.focus(); } };
     const onDown = (e: PointerEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false); };
     window.addEventListener("keydown", onKey);
     window.addEventListener("pointerdown", onDown);
@@ -60,7 +62,7 @@ export function ChartSettingsPopover({ prefs, onChange, error, defaultOpen = fal
 
   return (
     <div ref={ref} className="relative inline-flex">
-      <button type="button" aria-label="Chart settings" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen((o) => !o)}
+      <button ref={trigger} type="button" aria-haspopup="dialog" aria-label="Chart settings" aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen((o) => !o)}
         className={cx("inline-flex min-h-11 min-w-11 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg md:min-h-9 md:min-w-9", focus)}>
         <Settings2 size={16} aria-hidden />
       </button>

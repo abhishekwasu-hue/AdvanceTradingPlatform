@@ -8,10 +8,9 @@
  * holds the bars (drawings and layers are anchored to it); for Bars and Line it is made transparent and another series
  * draws the price. Theme, grid, chart type, panes and overlays change in place: the chart is built once.
  */
-import type { CanvasRenderingTarget2D } from "fancy-canvas";
 import {
   BarSeries, CandlestickSeries, HistogramSeries, LineSeries, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi,
-  type IPrimitivePaneView, type ISeriesPrimitive, type LogicalRange, type SeriesDefinition, type SeriesPartialOptionsMap, type SeriesType, type Time, type UTCTimestamp,
+  type IPrimitivePaneRenderer, type IPrimitivePaneView, type ISeriesPrimitive, type LogicalRange, type SeriesDefinition, type SeriesPartialOptionsMap, type SeriesType, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 import { chartView, formatTick } from "../charting/chartTypes";
 import { LightweightEngine, type LineSeriesLike } from "../charting/lightweight";
@@ -62,6 +61,9 @@ export function crosshairTimeLabel(sec: number, zone: string, tf: TimeframeId = 
   return d.toLocaleString("en-IN", { timeZone: zone, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
 }
 
+/** The canvas target a primitive draws on, as the library types it (no direct dependency on its canvas package). */
+type DrawTarget = Parameters<IPrimitivePaneRenderer["draw"]>[0];
+
 /** The name of a lower pane ("Volume", "RSI 14"), drawn at its top left in the axis text colour. */
 export class PaneLabel implements ISeriesPrimitive<Time> {
   private requestUpdate: (() => void) | null = null;
@@ -69,7 +71,7 @@ export class PaneLabel implements ISeriesPrimitive<Time> {
 
   constructor(public text: string, public color: string) {
     this.views = [{ zOrder: () => "top", renderer: () => ({
-      draw: (target: CanvasRenderingTarget2D) => target.useMediaCoordinateSpace(({ context }) => {
+      draw: (target: DrawTarget) => target.useMediaCoordinateSpace(({ context }) => {
         context.font = "11px 'JetBrains Mono', ui-monospace, monospace";
         context.fillStyle = this.color;
         context.textBaseline = "top";

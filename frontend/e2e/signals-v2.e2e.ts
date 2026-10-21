@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFileSync } from "node:fs";
+import { mockCharts, type ChartsCalls } from "./chartsMocks";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -11,6 +12,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   to the existing /api/ai/actions/{id}/approve|reject|snooze and the list follows.
  * - The phone layout rules, the desktop list + detail (from 1440 px, every column whole; 1280 / 1366 get the stacked
  *   cards), `?proposal=<id>`, M6 (Library drawer) and M7 (Watchtower link).
+ * - UI2-4e: the desktop detail's chart is the v2 chart (made-up candles, e2e/chartsMocks.ts) with the levels marked,
+ *   "Open chart" carrying its timeframe, and the "Live" / "Price delayed" chip; the 1440 baselines show it.
  * After an intended change: `npx playwright test --project=phone e2e/signals-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
  */
@@ -28,7 +31,7 @@ const STRATEGIES = [{ id: "demo_orb", name: "Demo opening range", description: "
 /** Another member's waiting entry proposal (made up): not in this user's Signals, so it stays on the Watchtower. */
 const THEIRS: Proposal = { ...DATA.proposals[0], id: 950, owner_user_id: 99, reason: "Made-up entry proposal: LONG DEMO OTHER", evidence: { ...(DATA.proposals[0].evidence as object), symbol: "DEMO OTHER" } };
 
-interface Inbox { decisions: { id: number; kind: string; body: unknown }[] }
+interface Inbox { decisions: { id: number; kind: string; body: unknown }[]; charts?: ChartsCalls }
 
 /** The inbox's server side, from the fixture: GET /signals/feed per tab and filter, GET /ai/actions?status=PROPOSED (the
  * risk pre-check) and the three decision endpoints, as the backend answers them. `expireOnApprove`: that proposal
@@ -97,7 +100,10 @@ async function open(page: Page, path: string, theme: "dark" | "light", options: 
   }, [theme, !!opts.intro] as const);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, options);
+  // UI2-4e: the detail's chart reads made-up candles, last price, chart settings and market sessions (e2e/chartsMocks.ts).
+  const charts = await mockCharts(page);
   const inbox = await mockInbox(page, opts);
+  inbox.charts = charts;
   if (opts.role) {
     const me = JSON.parse(readFileSync(new URL("./fixtures/me.json", import.meta.url), "utf8")) as Record<string, unknown>;
     await page.route(/\/api(?:\/v1)?\/auth\/me$/, (route) => route.fulfill({ json: { ...me, role: opts.role } }));
@@ -129,6 +135,12 @@ async function expectWholeTable(page: Page) {
 }
 
 const THEMES = ["dark", "light"] as const;
+
+/** UI2-4e: the detail's v2 chart is drawn (the library's canvas, the bars in). */
+async function chartReady(page: Page) {
+  await expect(page.locator("[data-signal-chart] .tv-lightweight-charts canvas").first()).toBeVisible();
+  await expect(page.locator("[data-signal-chart]").getByText("Loading prices…")).toHaveCount(0);
+}
 const PHONES = [{ width: 360, height: 800 }, { width: 390, height: 844 }];
 
 for (const size of PHONES) {
@@ -169,6 +181,7 @@ test.describe("Signals v2 decisions at 360 px", () => {
     await expect(first.getByText("Fits your risk limits · most you can lose ₹5,250.00")).toBeVisible();
     for (const name of ["Approve", "Skip", "Open chart for NIFTY 50", "More for NIFTY 50"]) await expect(first.getByRole(name.startsWith("Open") ? "link" : "button", { name })).toBeVisible();
     await expect(page.locator("[data-signal-card='action:902']").getByRole("button", { name: "Review" })).toBeVisible();
+    await expect(page.locator("[data-signal-chart]")).toHaveCount(0);                      // UI2-4e: the chart is the desktop panel's
     await expect(page.getByText("That's all for now. New signals also arrive as a notification.")).toBeVisible();
   });
 
@@ -246,9 +259,10 @@ test.describe("Signals v2 1440 desktop", () => {
 
   for (const theme of THEMES) {
     test(`Signals looks the same (${theme})`, async ({ page }) => {
-      await page.setViewportSize({ width: 1440, height: 1180 });             // the whole detail panel, as in the mockup
+      await page.setViewportSize({ width: 1440, height: 1330 });             // the whole detail panel (UI2-4e: with its chart)
       await open(page, "/signals", theme);
       await expect(page.locator("[data-signal-detail='action:901']")).toBeVisible();
+      await chartReady(page);
       await expect(page).toHaveScreenshot(`signals-v2-1440-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
     });
   }
@@ -264,11 +278,43 @@ test.describe("Signals v2 1440 desktop", () => {
     for (const label of ["Entry", "Stop", "Target", "Size", "Max loss", "Reward : risk"]) await expect(detail.locator("[data-key-figures]")).toContainText(label);
     await expect(detail.getByText("1 lot (75)")).toBeVisible();
     await expect(detail.getByRole("button", { name: "Approve paper trade" })).toBeVisible();
-    await expect(detail.getByRole("link", { name: "Open chart" })).toHaveAttribute("href", "/charts/NIFTY%2050");
+    await expect(detail.getByRole("link", { name: "Open chart" })).toHaveAttribute("href", "/charts/NIFTY%2050?tf=5min");
     await table.getByRole("button", { name: "AXISBANK" }).click();
     await expect(detail).toHaveAttribute("data-signal-detail", "action:860");
     await expect(detail.getByText("This signal expired before anyone decided. Nothing was placed.")).toBeVisible();
     await expect(detail.getByRole("button", { name: /Approve/ })).toHaveCount(0);
+  });
+
+  test("UI2-4e: the detail's chart is the v2 chart of the signal, with the trader's settings; Open chart keeps its timeframe", async ({ page }) => {
+    const { charts } = await open(page, "/signals", "light");
+    const chart = page.locator("[data-signal-chart='NIFTY 50']");
+    await chartReady(page);
+    await expect(page.locator("[data-levels-chart]")).toHaveCount(0);                      // the chart marks the levels now
+    expect(charts!.candles.filter((c) => !c.before).map((c) => `${c.symbol} ${c.timeframe}`)).toEqual(["NIFTY 50 5min"]);
+    const tfs = chart.getByRole("group", { name: "Timeframe" });
+    await expect(tfs.getByRole("button")).toHaveText(["1m", "3m", "5m", "15m", "30m", "1H", "D"]);
+    await expect(chart.getByRole("button", { name: "Chart settings" })).toBeVisible();
+    await tfs.getByRole("button", { name: "15m", exact: true }).click();
+    await expect.poll(() => charts!.candles.some((c) => c.symbol === "NIFTY 50" && c.timeframe === "15min")).toBe(true);
+    // One link to the Chart tab (the detail's "Open chart"), carrying the chart's timeframe.
+    await expect(chart.getByRole("link", { name: "Open in Chart tab" })).toHaveCount(0);
+    const openChart = page.locator("[data-signal-detail]").getByRole("link", { name: "Open chart" });
+    await expect(openChart).toHaveAttribute("href", "/charts/NIFTY%2050?tf=15min");
+    await openChart.click();
+    await expect(page).toHaveURL(/\/charts\/NIFTY%2050$/);
+    await expect(page.locator("[data-page='charts-v2']")).toBeVisible();
+    await expect(page.locator("[data-page='charts-v2']").getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true }))
+      .toHaveAttribute("aria-pressed", "true");
+  });
+
+  test("UI2-4e: the detail's chart says Live, then Price delayed with its age when the price stops coming", async ({ page }) => {
+    await open(page, "/signals", "light");
+    await chartReady(page);
+    const chip = page.locator("[data-signal-chart] [data-live-chip]");
+    await expect(chip).toHaveText("Live");
+    await page.route(/\/api(?:\/v1)?\/market-data\/ltp/, (r) => r.fulfill({ status: 503, json: { detail: "unavailable" } }));
+    await page.clock.runFor(190_000);
+    await expect(chip).toHaveText("Price delayed · 3 min");
   });
 
   test("every column is fully visible at 1440 - Today, History, and a row with long prices", async ({ page }) => {
@@ -400,6 +446,7 @@ test.describe("Signals with the flag off", () => {
     const inbox = await open(page, "/signals", "dark", { brokers: CONNECTED });
     await expect(page.getByLabel("Sample data seed")).toBeVisible();
     await expect(page.locator("[data-page='signals-v2']")).toHaveCount(0);
+    await expect(page.locator("[data-embedded-chart], [data-live-chip]")).toHaveCount(0);   // UI2-4e: no v2 chart either
     expect(inbox.decisions).toEqual([]);
   });
 

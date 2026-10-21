@@ -16,6 +16,8 @@ import { expectPhoneLayout } from "./phoneLayout";
  *   `chart_workspace` on, two charts for a new trader, grids, link groups, a saved layout's PUT read back, "Open in
  *   Chart tab", old `?workspace=1` links, the shared reads (one per symbol and timeframe) and the reads a hidden tab or
  *   an off-screen cell does not make.
+ * - UI2-4e: an old `?chart=` window link opens the Chart tab under `ui_v2` (its timeframe and exchange; unchanged with
+ *   the flag off), and the "Live" / "Price delayed" chip on the Chart tab and the Multi-chart cells (page.clock).
  * Every reply is made-up data (e2e/chartsMocks.ts): no real account, price or id.
  * After an intended change: `npx playwright test --project=phone e2e/charts-v2.e2e.ts --update-snapshots`, check the
  * new images, commit.
@@ -787,6 +789,78 @@ test.describe("old workspace links (UI2-4d)", () => {
   });
 });
 
+test.describe("UI2-4e: old chart window links and the live chip", () => {
+  test.use({ viewport: { width: 1440, height: 900 } });
+  const chip = (page: Page) => page.locator("[data-page='charts-v2'] [data-live-chip]");
+
+  test("under ui_v2 ?chart=NIFTY%2050&tf=15min opens the Chart tab on NIFTY 50 with 15m, and reads nothing first", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/?chart=NIFTY%2050&tf=15min" });
+    await expect(page).toHaveURL(/\/charts\/NIFTY%2050$/);                               // the timeframe is taken, then leaves the address
+    await chartReady(page);
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "15m", exact: true })).toHaveAttribute("aria-pressed", "true");
+    expect(calls.candles.filter((c) => !c.before).map((c) => `${c.symbol} ${c.timeframe}`)).toEqual(["NIFTY 50 15min"]);
+    await expect(page.getByText(/refreshes every minute|candles via/)).toHaveCount(0);
+  });
+
+  test("an old link's exchange stays; its broker name goes", async ({ page }) => {
+    const calls = await open(page, "light", { path: "/?chart=SBIN&tf=day&exchange=BSE&broker_name=upstox" });
+    await expect(page).toHaveURL(/\/charts\/SBIN\?exchange=BSE$/);
+    await chartReady(page);
+    await expect(page.getByRole("group", { name: "Timeframe" }).getByRole("button", { name: "D", exact: true })).toHaveAttribute("aria-pressed", "true");
+    expect(calls.candles.at(-1)?.symbol).toBe("SBIN");
+  });
+
+  test("Live while the price is fresh; Price delayed with its age once it is older than the staleness rule", async ({ page }) => {
+    await open(page, "light");
+    await chartReady(page);
+    await expect(chip(page)).toHaveText("Live");
+    await expect(chip(page)).toHaveAttribute("title", /^Updated (just now|\d+ s ago)$/);
+    // The broker stops answering: after the server's two-minute rule the same price reads as delayed.
+    await page.route(/\/api(?:\/v1)?\/market-data\/ltp/, (r) => r.fulfill({ status: 503, json: { detail: "unavailable" } }));
+    await page.clock.runFor(130_000);
+    await expect(chip(page)).toHaveText(/^Price delayed · 2 min$/);
+    await expect(chip(page)).toHaveAttribute("data-live-chip", "delayed");
+  });
+
+  test("a quote the server marks stale reads Price delayed at once, with its age", async ({ page }) => {
+    await open(page, "light", { before: (p) => p.route(/\/api(?:\/v1)?\/market-data\/ltp/, (r) => r.fulfill({ json: {
+      symbol: "NIFTY 50", exchange: "NSE", source_broker: "upstox", fetched_at: "2026-10-19T05:30:00Z", ltp: 24_420.5, timestamp: "2026-10-19T05:25:00Z",
+      age_seconds: 300, stale: true, stale_reason: "quote stale", source: "quote", bid: null, ask: null, volume: null } })) });
+    await chartReady(page);
+    await expect(chip(page)).toHaveText("Price delayed · 5 min");
+  });
+
+  test("the market closed: no chip, and no price poll", async ({ page }) => {
+    const calls = await open(page, "light", { market: "closed" });
+    await chartReady(page);
+    await page.clock.runFor(10_000);
+    await expect(chip(page)).toHaveCount(0);
+    expect(calls.ltp).toBe(0);
+  });
+
+  test("a hidden tab stops the chip's clock: shown again it is still Live, then delayed only after two shown minutes", async ({ page }) => {
+    await open(page, "light");
+    await chartReady(page);
+    await expect(chip(page)).toHaveText("Live");
+    await page.route(/\/api(?:\/v1)?\/market-data\/ltp/, (r) => r.fulfill({ status: 503, json: { detail: "unavailable" } }));
+    const show = (state: "hidden" | "visible") => page.evaluate((v) => {
+      Object.defineProperty(document, "visibilityState", { configurable: true, get: () => v });
+      document.dispatchEvent(new Event("visibilitychange"));
+    }, state);
+    await show("hidden");
+    await page.clock.runFor(150_000);
+    await show("visible");
+    await expect(chip(page)).toHaveText("Live");
+    await page.clock.runFor(125_000);
+    await expect(chip(page)).toHaveText("Price delayed · 2 min");
+  });
+
+  test("a Multi-chart cell shows the chip too", async ({ page }) => {
+    await open(page, "light", { path: "/charts?tab=multi" });
+    await expect(page.locator("[data-cell] [data-live-chip]").first()).toHaveText("Live");
+  });
+});
+
 test.describe("v2 Charts 390 phone", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
@@ -890,11 +964,52 @@ test.describe("v2 Charts 390x560 phone: off-screen cells (UI2-4d)", () => {
 test.describe("flag off", () => {
   test.use({ viewport: { width: 1440, height: 900 } });
 
+  /** Records whether the old chart's "No candles yet ... session token has expired" line ever showed, and whether it did
+   * before the first candle read went out (while the window waited for the flags) - UI2-4e review. */
+  async function watchEmptyText(page: Page): Promise<{ beforeRead: () => boolean | null }> {
+    await page.addInitScript(() => {
+      const w = window as unknown as { __emptySeen?: boolean };
+      new MutationObserver(() => { if (document.body?.textContent?.includes("No candles yet")) w.__emptySeen = true; })
+        .observe(document, { subtree: true, childList: true, characterData: true });
+    });
+    let seen: boolean | null = null;
+    await page.route(/\/api(?:\/v1)?\/market-data\/candles$/, async (r) => {
+      if (seen === null) seen = await page.evaluate(() => !!(window as unknown as { __emptySeen?: boolean }).__emptySeen);
+      return r.fallback();
+    });
+    return { beforeRead: () => seen };
+  }
+
+  for (const [name, answer] of [["answers 500", "500"], ["never answers", "never"]] as const) {
+    test(`the flags read ${name}: the old chart window loads (no redirect), with "Loading…" while it waits`, async ({ page }) => {
+      const t0 = Date.now();
+      let empty: Awaited<ReturnType<typeof watchEmptyText>> | null = null;
+      const calls = await open(page, "dark", { flag: false, path: "/?chart=NIFTY%2050&tf=15min", settle: false, before: async (p) => {
+        empty = await watchEmptyText(p);
+        await p.route(/\/api(?:\/v1)?\/system\/features$/, (r) => (answer === "500" ? r.fulfill({ status: 500, json: { detail: "error" } }) : new Promise<void>(() => undefined)));
+      } });
+      if (answer === "never") await expect(page.getByText("Loading…")).toBeVisible();
+      await expect(page.getByText("refreshes every minute · live price every 5 s · scroll left for older history")).toBeVisible({ timeout: 6_000 });
+      expect(Date.now() - t0, "the shell's 3 s cap, not the 10 s fetch timeout").toBeLessThan(9_000);
+      await expect.poll(() => calls.candles.some((c) => c.symbol === "NIFTY 50" && c.timeframe === "15min")).toBe(true);
+      expect(empty!.beforeRead(), "the empty-chart line showed while the flags were read").toBe(false);
+      await expect(page.getByText(/No candles yet/)).toHaveCount(0);
+      expect(await page.evaluate(() => !!(window as unknown as { __emptySeen?: boolean }).__emptySeen), "the empty-chart line showed at all").toBe(false);
+      await expect(page).toHaveURL(/\/\?chart=NIFTY%2050&tf=15min$/);
+      await expect(page.locator("[data-page='charts-v2']")).toHaveCount(0);
+    });
+  }
+
   test("today's pages: no /charts page, and the ?chart= window as before", async ({ page }) => {
-    await open(page, "dark", { flag: false, path: "/?chart=NIFTY%2050&tf=5min" });
+    const calls = await open(page, "dark", { flag: false, path: "/?chart=NIFTY%2050&tf=15min" });
     await expect(page.locator("[data-shell='v2']")).toHaveCount(0);
     await expect(page.locator("[data-page='charts-v2']")).toHaveCount(0);
     await expect(page.getByText("NIFTY 50").first()).toBeVisible();
+    // UI2-4e: no redirect with the flag off - the window stays, with its own words and timeframe.
+    await expect(page).toHaveURL(/\/\?chart=NIFTY%2050&tf=15min$/);
+    await expect(page.getByText("refreshes every minute · live price every 5 s · scroll left for older history")).toBeVisible();
+    await expect.poll(() => calls.candles.some((c) => c.timeframe === "15min")).toBe(true);
+    await expect(page.locator("[data-live-chip]")).toHaveCount(0);
     await page.goto("/charts");
     await expect(page.locator("[data-page='charts-v2']")).toHaveCount(0);
   });

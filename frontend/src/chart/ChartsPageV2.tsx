@@ -13,7 +13,6 @@ import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
 import type { PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
-import type { SystemStatus } from "../types";
 import { PageIntro } from "../ui/PageIntro";
 import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
 import { useFeatures } from "../ui/useFeatures";
@@ -24,7 +23,7 @@ import { CHART_TYPES_V2, CHART_TYPE_LABELS_V2, type ChartTypeV2 } from "./chartC
 import { DrawingMenu, DrawingRail } from "./DrawingRail";
 import { placeHint } from "./drawingRail";
 import {
-  chartsSymbol, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, volumeLabelFor,
+  addressTimeframe, chartsSymbol, drawingNote, marketChip, offeredTimeframes, readLastSymbol, readView, saveLastSymbol, saveView, volumeLabelFor,
   type ChartsView,
 } from "./chartsPage";
 import { IndicatorsMenu } from "./IndicatorsMenu";
@@ -35,6 +34,7 @@ import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } 
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
 import { useFullscreen } from "./useFullscreen";
+import { useMarketStatus } from "./useMarketStatus";
 import { useTradesLayer } from "./useTradesLayer";
 import { WatchlistPanel } from "./WatchlistPanel";
 import type { WatchItem } from "./watchlistsV2";
@@ -59,21 +59,17 @@ type Tools = ReturnType<typeof useDrawingTools>;
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 const iconBtn = cx("inline-flex min-h-11 min-w-11 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent md:min-h-9 md:min-w-9", focus);
 
-/** The market sessions (public status, re-read every minute) and the server's timeframes (read once; a failed read
- * offers the timeframes every server has, so the page never waits on it). */
+/** The market sessions (the app's one shared status read, every minute; UI2-4e) and the server's timeframes (read
+ * once; a failed read offers the timeframes every server has, so the page never waits on it). */
 function useChartsContext() {
-  const [status, setStatus] = useState<SystemStatus | null>(null);
+  const { status, at } = useMarketStatus();
   const [timeframes, setTimeframes] = useState<string[] | null>(null);
-  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     let live = true;
-    const load = () => api.systemStatus().then((s) => { if (live) { setStatus(s); setNow(Date.now()); } }).catch(() => undefined);
-    void load();
     api.marketDataSources().then((s) => { if (live) setTimeframes(Array.isArray(s.timeframes) ? s.timeframes : []); }).catch(() => { if (live) setTimeframes([]); });
-    const id = window.setInterval(load, 60_000);
-    return () => { live = false; window.clearInterval(id); };
+    return () => { live = false; };
   }, []);
-  return { status, timeframes, now };
+  return { status, timeframes, now: at || Date.now() };
 }
 
 export default function ChartsPageV2(_props: PageProps) {
@@ -104,6 +100,13 @@ export default function ChartsPageV2(_props: PageProps) {
     saveView(userId, next);
     return next;
   }), [userId]);
+  // UI2-4e: a timeframe in the address (an embedded chart's "Open in Chart tab", an old chart window link) is taken
+  // before anything is read, then leaves the address.
+  const fromAddress = tab === "chart" ? addressTimeframe(params) : null;
+  if (fromAddress && fromAddress !== view.timeframe) setView({ timeframe: fromAddress });
+  useEffect(() => {
+    if (fromAddress) setParams((prev) => { const next = new URLSearchParams(prev); next.delete("tf"); return next; }, { replace: true });
+  }, [fromAddress, setParams]);
   // A stored week or month waits for the server's timeframes (it may not offer them) instead of loading 5m first.
   const waiting = timeframes === null && (view.timeframe === "week" || view.timeframe === "month");
   const timeframe: TimeframeId = waiting || offered.includes(view.timeframe) ? view.timeframe : DEFAULT_TIMEFRAME;
@@ -259,7 +262,7 @@ export default function ChartsPageV2(_props: PageProps) {
             <div className={cx("flex min-h-0", fs.on && "flex-1")}>
               <DrawingRail tools={tools} symbol={symbol} hidden={view.drawings_hidden} onHidden={(h) => setView({ drawings_hidden: h })} />
               <ChartV2 candles={data.candles} timeframe={timeframe} symbol={symbol} exchange={exchange} chartType={view.type}
-                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
+                prefs={prefs.prefs} overlays={view.overlays} live={live.ltp} marketOpen={chip ? chip.open : null} onLoadOlder={data.loadOlder} drawingTools={!view.drawings_hidden}
                 volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText} onEngine={setEngine} onTools={setTools}
                 className={cx("min-w-0 flex-1", fs.on ? "min-h-[240px]" : "h-[60vh] min-h-[320px] md:h-[calc(100vh-17rem)] md:min-h-[420px]")} />
             </div>
@@ -267,7 +270,7 @@ export default function ChartsPageV2(_props: PageProps) {
               <div role="status" className="flex flex-wrap items-center gap-x-space-3 gap-y-space-1 border-t border-subtle px-space-3 py-space-2 text-t13 text-fg-muted">
                 {data.error && <span className="text-fg">{data.error}</span>}
                 {data.error && <button type="button" onClick={data.retry} className={cx("min-h-11 font-semibold text-brand hover:underline md:min-h-9", focus)}>Try again</button>}
-                {data.loadingOlder && <span>Loading older bars…</span>}
+                {data.loadingOlder && <span>Loading older history…</span>}
                 {tradesNote && <span>{tradesNote}</span>}
                 {drawingText && <span>{drawingText}</span>}
               </div>

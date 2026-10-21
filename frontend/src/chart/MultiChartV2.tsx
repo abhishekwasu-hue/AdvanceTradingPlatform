@@ -10,6 +10,7 @@ import {
 import { cx } from "../components/primitives/cx";
 import { SymbolPicker, recentKeyFor } from "../ui/SymbolPicker";
 import { PHONE_QUERY, useMediaQuery } from "../utils/useMediaQuery";
+import { usePageVisible } from "../utils/usePageVisible";
 import ChartV2 from "./ChartV2";
 import { CHART_TYPES_V2, CHART_TYPE_LABELS_V2 } from "./chartCore";
 import { volumeLabelFor } from "./chartsPage";
@@ -63,17 +64,6 @@ const iconBtn = cx("inline-flex min-h-11 min-w-11 items-center justify-center ro
 const field = cx("h-11 rounded-control border border-border bg-surface-2 px-space-2 text-t13 text-fg md:h-9", focus);
 const SYNC_LABELS: Record<keyof GroupSync, string> = { symbol: "Link symbol", interval: "Link timeframe", crosshair: "Link crosshair" };
 const groupColour = (g: Group) => `rgb(var(--chart-ov-${GROUPS.indexOf(g) + 1}))`;
-
-/** False while the browser tab is hidden. */
-function usePageVisible(): boolean {
-  const [visible, setVisible] = useState(() => typeof document === "undefined" || document.visibilityState !== "hidden");
-  useEffect(() => {
-    const on = () => setVisible(document.visibilityState !== "hidden");
-    document.addEventListener("visibilitychange", on);
-    return () => document.removeEventListener("visibilitychange", on);
-  }, []);
-  return visible;
-}
 
 /** True while the element is on screen (or near it); false until the browser first says so. */
 function useOnScreen(ref: RefObject<HTMLElement | null>): boolean {
@@ -339,7 +329,7 @@ function Cell({
         </button>
       </div>
       <ChartV2 candles={data.candles} timeframe={shownTf} symbol={c.symbol} exchange={c.exchange} chartType={cellChartType(c.chart_type)} prefs={prefs}
-        live={live.ltp} onLoadOlder={data.loadOlder} drawingTools={active && !drawingsHidden} volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText}
+        live={live.ltp} marketOpen={marketOpen(c.exchange)} onLoadOlder={data.loadOlder} drawingTools={active && !drawingsHidden} volumeLabel={volumeLabelFor(data.volumeSource)} emptyText={emptyText}
         onEngine={onEngine} className={phone ? "h-[46vh] min-h-[240px]" : "min-h-0 flex-1"} />
       {data.error && (
         <p role="status" className="flex flex-wrap items-center gap-x-space-2 border-t border-subtle px-space-2 py-space-1 text-t12 text-fg">

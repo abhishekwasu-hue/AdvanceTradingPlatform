@@ -414,14 +414,17 @@ export function attentionRows(input: AttentionInput, max = MAX_ATTENTION): Atten
       action: { label: "Open", to: "/notifications" },
     });
   }
-  if (input.status && input.status.disabled_brokers.length) {
+  // P3: in PAPER (the trader has no LIVE deployment) nothing about LIVE shows on the front page: no "Live trading is
+  // paused" row and no "Verify your email" row (it is asked for live trading); both are in the Go-live checklist.
+  const paperOnly = !(input.deployments ?? []).some((d) => d.mode === "LIVE");
+  if (!paperOnly && input.status && input.status.disabled_brokers.length) {
     rows.push({ id: "live-paused", icon: "warning", tone: "warn", title: `Live trading is paused on ${input.status.disabled_brokers.map(brokerDisplayName).join(", ")}`,
       detail: "Paper trading carries on. Live orders wait until it is resumed." });
   }
   if (input.status?.maintenance_mode) {
     rows.push({ id: "maintenance", icon: "warning", tone: "warn", title: "Maintenance: new trades are paused", detail: input.status.maintenance_message || "Open positions are still watched." });
   }
-  if (input.emailVerified === false) {
+  if (!paperOnly && input.emailVerified === false) {
     rows.push({ id: "email", icon: "account", tone: "neutral", title: "Verify your email", detail: "Live trading needs a verified address.", action: { label: "Verify", to: "/settings/account" } });
   }
   return rows.slice(0, max);

@@ -20,7 +20,8 @@ from tests.test_ui2_4a1_prefs import _invite, _who
 
 BASE = "/api/me/setup"
 NO_MARK = {"skipped_at": None}
-SETUP_DEFAULTS = {"steps": {k: NO_MARK for k in ("broker", "risk", "strategy", "alerts")}, "opened_at": None, "dismissed_at": None}
+SETUP_DEFAULTS = {"steps": {k: NO_MARK for k in ("broker", "risk", "strategy", "alerts")}, "opened_at": None, "dismissed_at": None,
+                  "get_started_hidden_at": None, "get_started_shown_at": None}
 T = "2026-10-21T09:30:00Z"
 
 
@@ -57,6 +58,8 @@ def test_defaults_before_anything_is_saved():
     assert got == {
         "steps": [{"key": k, "done": False, "skipped": False, "skipped_at": None} for k in ("broker", "risk", "strategy", "alerts")],
         "done_count": 0, "next": "broker", "complete": False, "stored": SETUP_DEFAULTS, "version": 0,
+        "get_started": {"steps": [{"key": k, "done": False} for k in ("broker", "paper_bot", "telegram")], "done_count": 0,
+                        "complete": False, "hidden_at": None, "shown_at": None, "visible": True},
     }
     # the same namespace through the generic preferences
     all_prefs = client.get("/api/me/prefs", headers=who["headers"]).json()

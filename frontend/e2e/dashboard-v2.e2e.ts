@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import { F, api, mockDashboard } from "./dashboardMocks";
+import { F, api, mockDashboard, setupAnswer } from "./dashboardMocks";
 import { mockApi } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -24,10 +24,12 @@ interface Setup {
   flag?: boolean;
   /** Replaces the strip's reply. */
   strip?: unknown;
+  /** Replaces the setup progress reply (GET /api/me/setup). */
+  setup?: unknown;
 }
 
 async function open(page: Page, theme: "dark" | "light", setup: Setup = {}) {
-  const { state = "connected", time = "2026-10-19T11:00:00+05:30", flag = true, strip } = setup;
+  const { state = "connected", time = "2026-10-19T11:00:00+05:30", flag = true, strip, setup: setupReply } = setup;
   await page.clock.install({ time: new Date(time) });
   await page.addInitScript((t) => {
     try {
@@ -39,6 +41,7 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}) {
   const brokers = state === "none" ? [] : state === "login" ? F.token_status_login : F.token_status;
   await mockApi(page, { features: flag ? (F.features as Record<string, boolean>) : undefined, brokers: brokers as unknown[] });
   await mockDashboard(page, { state, strip, me: true });
+  if (setupReply) await page.route(api("/me/setup(\\?|$)"), (route) => route.fulfill({ json: setupReply }));
   await page.goto("/");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
@@ -48,7 +51,7 @@ async function open(page: Page, theme: "dark" | "light", setup: Setup = {}) {
 
 const THEMES = ["dark", "light"] as const;
 const PHONES = [{ width: 360, height: 800 }, { width: 390, height: 844 }];
-const ORDER = ["setup", "strip", "attention", "positions", "signals", "today"];
+const ORDER = ["get-started", "strip", "attention", "positions", "signals", "today"];
 
 for (const size of PHONES) {
   test.describe(`v2 dashboard ${size.width} x ${size.height}`, () => {
@@ -168,8 +171,12 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(today).toContainText("41 closed trades in 30 days");
     await expect(today).toContainText("39%");
     await expect(today).toContainText("2 waiting · 1 taken");
-    await expect(page.locator("[data-block='setup']")).toContainText("Setup 4 of 4");
-    await expect(page.locator("[data-block='setup']")).toContainText("Next: choose your alerts");
+    // P3: the Get started card (the same as today's dashboard) replaced the Setup chip
+    const card = page.locator("[data-block='get-started']");
+    await expect(card).toContainText("2 of 3 done");
+    await expect(card.locator("[data-done='true']")).toHaveCount(2);
+    await expect(card.getByRole("link", { name: "Set up Telegram" })).toHaveAttribute("href", "/settings#alerts");
+    await expect(page.locator("[data-block='setup']")).toHaveCount(0);
   });
 
   test("one primary button: the first Needs attention action", async ({ page }) => {
@@ -221,8 +228,20 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(first.getByRole("button", { name: "Log in" })).toHaveClass(/bg-brand/);
   });
 
-  test("no broker stored: 'Connect your broker' and nothing else", async ({ page }) => {
+  test("no broker stored: the Get started card and nothing else, 'Connect your broker' first", async ({ page }) => {
     await open(page, "light", { state: "none" });
+    const card = page.locator("[data-block='get-started']");
+    await expect(card).toContainText("0 of 3 done");
+    await expect(page.locator("[data-block]")).toHaveCount(1);
+    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);
+    const connect = card.getByRole("link", { name: "Connect your broker" });
+    await expect(connect).toHaveClass(/bg-brand/);                                      // the one primary button here
+    await expect(connect).toHaveAttribute("href", /^\/(broker|settings)$/);       // /broker once the Broker page exists
+  });
+
+  test("no broker stored and Get started hidden: the broker gate's 'Connect your broker' and nothing else", async ({ page }) => {
+    const a = setupAnswer("none");
+    await open(page, "light", { state: "none", setup: { ...a, stored: { ...a.stored, get_started_hidden_at: "2026-10-18T09:00:00Z" } } });
     const gate = page.locator("[data-broker-gate='no-broker']");
     await expect(gate).toBeVisible();
     await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();

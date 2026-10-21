@@ -4,11 +4,11 @@ import { cleanStored, cleanView, withStored, type SetupStored, type SetupView } 
 
 /**
  * UI2-7 (UI v2 proposal §11, §13 UI-8): the trader's setup progress, stored on the server per user (`GET/PUT
- * /api/me/setup`) so it resumes on any device. One store per signed-in user, shared by the dashboard chip, Settings and
- * the wizard.
+ * /api/me/setup`) so it resumes on any device. One store per signed-in user, shared by the Get started card (P3, both
+ * dashboards), Settings and the wizard.
  *
  * - A localStorage copy per user is only a cache: it paints the last known progress before the server answers (every
- *   access in try/catch). The automatic opening of the wizard waits for the server's answer, never the cache.
+ *   access in try/catch). The Get started card's "for good" mark waits for the server's answer, never the cache.
  * - A change (skip, dismiss, opened) shows at once and is saved as a compare-and-set on the version. On 409 (another
  *   device saved first) the change is applied again on the server's marks once; a second conflict keeps the server's.
  * - Signed out, nothing is read or sent.
@@ -126,20 +126,6 @@ export class SetupStore {
       this.set({ error: "Your setup was changed on another device. That progress is shown now." });
     }
   }
-}
-
-const OPENED_PREFIX = "atp_setup_auto_opened:";
-
-/** True when the wizard already opened by itself in this browser for this user (the guard behind the server's mark). */
-export function wasAutoOpened(userKey: number | string | null): boolean {
-  if (userKey == null) return false;
-  try { return localStorage.getItem(OPENED_PREFIX + userKey) !== null; } catch { return false; }
-}
-
-/** Remembers in this browser that the wizard has been seen, so a failed save of `opened_at` never re-opens it. */
-export function rememberAutoOpened(userKey: number | string | null): void {
-  if (userKey == null) return;
-  try { localStorage.setItem(OPENED_PREFIX + userKey, "1"); } catch { /* storage unavailable: the server's mark still counts */ }
 }
 
 const stores = new Map<number | string, SetupStore>();

@@ -6,8 +6,8 @@
   (unknown keys and wrong types are refused) and capped at MAX_BODY_BYTES. An optional `?version=` makes it a
   compare-and-set: a stale version gets 409 with the current value; without it the save simply replaces.
 * Namespaces are an allow-list (NAMESPACES). `chart` is the first; `setup` (UI2-7, UI-8) holds the setup wizard's own
-  marks - skips, the chip's dismissal, the first automatic opening. Whether a step is done is never stored: app/me/setup.py
-  works it out on every read from the rows that prove it.
+  marks - skips, the chip's dismissal, the first automatic opening - and (P3) the Dashboard's Get started card's marks.
+  Whether a step is done is never stored: app/me/setup.py works it out on every read from the rows that prove it.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -96,8 +96,13 @@ class SetupSteps(_Prefs):
 class SetupPrefs(_Prefs):
     """`setup` (UI v2 §11, UI-8): the setup wizard's marks, so it resumes on any device. localStorage is only a cache."""
     steps: SetupSteps = Field(default_factory=SetupSteps)
-    opened_at: MarkTime = Field(default=None, description="the wizard opened by itself (first sign-in); it does not again")
+    opened_at: MarkTime = Field(default=None, description="the wizard was first opened (P3: nothing opens it by itself any more)")
     dismissed_at: MarkTime = Field(default=None, description="the dashboard's Setup chip was closed")
+    # P3: the Dashboard's "Get started" card (app/me/setup.py get_started_view). Hidden for good once its three steps are
+    # done or the trader hides it; Help -> "Show Get started" clears the mark (and sets `get_started_shown_at` when every
+    # step is already done, so the card shows its three ticks until it is hidden again).
+    get_started_hidden_at: MarkTime = Field(default=None, description="the Get started card was hidden for good")
+    get_started_shown_at: MarkTime = Field(default=None, description="the Get started card was brought back from Help with every step done")
 
 
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs}

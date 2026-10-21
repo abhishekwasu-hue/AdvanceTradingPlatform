@@ -19,13 +19,17 @@ export interface DashboardMocks {
   me?: boolean;
 }
 
-/** UI2-7: GET /api/me/setup as the server works it out for these replies (the wizard already seen once). */
+/** UI2-7: GET /api/me/setup as the server works it out for these replies (the wizard already seen once). P3: with the
+ * Get started card's three steps (broker, paper bot, Telegram), none of its marks set. */
 export function setupAnswer(state: DashboardMocks["state"] = "connected") {
   const done: Record<string, boolean> = { broker: state !== "none", risk: true, strategy: state === "connected" || state === "login", alerts: false };
   const steps = ["broker", "risk", "strategy", "alerts"].map((key) => ({ key, done: done[key], skipped: false, skipped_at: null }));
+  const card = [{ key: "broker", done: done.broker }, { key: "paper_bot", done: done.strategy }, { key: "telegram", done: false }];
   return {
     steps, done_count: steps.filter((s) => s.done).length, next: steps.find((s) => !s.done)?.key ?? null, complete: false,
-    stored: { steps: Object.fromEntries(steps.map((s) => [s.key, { skipped_at: null }])), opened_at: "2026-10-12T09:00:00Z", dismissed_at: null },
+    get_started: { steps: card, done_count: card.filter((s) => s.done).length, complete: false, hidden_at: null, shown_at: null, visible: true },
+    stored: { steps: Object.fromEntries(steps.map((s) => [s.key, { skipped_at: null }])), opened_at: "2026-10-12T09:00:00Z", dismissed_at: null,
+      get_started_hidden_at: null, get_started_shown_at: null },
     version: 1,
   };
 }

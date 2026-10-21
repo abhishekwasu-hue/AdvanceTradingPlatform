@@ -7,10 +7,10 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { Card, signClass, signTone } from "../components/ui";
 import { Badge, Button, PageHeader } from "../components/primitives";
-import GoLiveChecklist from "../components/GoLiveChecklist";
 import MarketPulseCard from "../components/MarketPulseCard";
 import ContextPanelCard from "../progression/ContextPanelCard";
 import OiBannersCard from "../components/OiBannersCard";
+import GetStartedCardV2 from "../setup/GetStartedCardV2";
 import type { Page } from "../components/Sidebar";
 import type {
   AnalyticsSummary, BrokerAccount, Deployment, NotificationEntry, PortfolioExposure, StrategyInfo, TradeRecord, WorkerStatus,
@@ -22,6 +22,10 @@ import type {
  * emerald = money made / healthy, rose = money lost / stopped, sky = market & win rate, violet = open
  * risk, amber = automation, orange = brokers, fuchsia = strategies, teal = data. Every number is the
  * backend's; nothing here is decorative data.
+ *
+ * P3 (the owner's "simple front page"): the Get started card sits at the top while setup is not done (three steps,
+ * src/setup/GetStartedCardV2.tsx); the full go-live checklist moved to Settings → Advanced ("Prepare for LIVE"), and
+ * nothing about LIVE shows here while the trader has no LIVE deployment.
  */
 
 type Tone = "emerald" | "rose" | "sky" | "violet" | "amber" | "orange" | "fuchsia" | "teal" | "indigo" | "lime";
@@ -174,6 +178,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
   const live = deployments.filter((d) => d.mode === "LIVE" && d.status === "ACTIVE").length;
   const paper = deployments.filter((d) => d.mode === "PAPER" && d.status === "ACTIVE").length;
   const paused = deployments.filter((d) => d.status === "PAUSED").length;
+  // P3: in PAPER (no LIVE deployment at all) the front page says nothing about LIVE.
+  const anyLive = deployments.some((d) => d.mode === "LIVE");
   const balance = accounts.reduce((a, b) => a + (b.available_balance ?? 0), 0);
   const netPnl = summary?.net_pnl ?? null;
   const unread = alerts.filter((a) => !a.read).length;
@@ -202,6 +208,8 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         </>}
       />
 
+      {user && <GetStartedCardV2 />}
+
       {error && (
         <div className="rounded-xl border border-down/40 bg-down/10 px-3 py-2 text-sm text-down">
           Some dashboard data could not be loaded: {error}
@@ -217,7 +225,7 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
         <KpiTile icon={Briefcase} tone="violet" label="Open positions" value={user ? positions.length : "…"}
                  sub={exposure ? `${money(exposure.gross_notional)} gross · ${pct(exposure.risk_pct_of_capital)} at stops` : "across every account"} onClick={onNavigate && (() => onNavigate("positions"))} />
         <KpiTile icon={Bot} tone="sky" label="Deployments" value={user ? `${live + paper}` : "…"}
-                 sub={user ? <><span className="font-semibold text-fg">{live} LIVE</span> · <span className="text-fg-muted">{paper} PAPER</span>{paused ? <> · <span className="text-warn">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
+                 sub={user ? <>{anyLive && <><span className="font-semibold text-fg">{live} LIVE</span> · </>}<span className="text-fg-muted">{paper} PAPER</span>{paused ? <> · <span className="text-warn">{paused} paused</span></> : null}</> : "active strategies"} onClick={onNavigate && (() => onNavigate("deployments"))} />
         <KpiTile icon={Wallet} tone="orange" label="Broker funds" value={user ? (accounts.length ? money(balance) : "-") : "…"}
                  sub={`${accounts.length} account${accounts.length === 1 ? "" : "s"} · ${brokers.length} adapters`} onClick={onNavigate && (() => onNavigate("settings"))} />
         <KpiTile icon={GitMerge} tone="fuchsia" label="Strategies" value={strategies.length || "…"}
@@ -335,8 +343,6 @@ export default function DashboardPage({ onNavigate }: { onNavigate?: (page: Page
           </div>
         </div>
       )}
-
-      {user && <GoLiveChecklist kind="tenant" onNavigate={onNavigate} />}
 
       <Card title="Engines behind this console">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">

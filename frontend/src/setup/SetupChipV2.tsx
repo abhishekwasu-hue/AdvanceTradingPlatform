@@ -8,7 +8,8 @@ import { useSetup } from "./useSetup";
 /**
  * UI2-7 (UI v2 proposal §5 block 2, §11): the Setup chip - "Setup 2 of 4 · Next: set your risk limits" - linking to
  * Settings → Setup, where the wizard opens on that step. The words come from the stored progress (setup/model.ts
- * setupChip). On the dashboard it has a close button; Settings shows it without one until setup is complete.
+ * setupChip). P3: the dashboard shows the Get started card instead (GetStartedCardV2); the chip stays in Settings
+ * (v2 only) until setup is complete.
  */
 export default function SetupChipV2({ label, next, to, onDismiss }: { label: string; next: string; to: string; onDismiss?: () => void }) {
   return (
@@ -31,11 +32,12 @@ export default function SetupChipV2({ label, next, to, onDismiss }: { label: str
 
 /**
  * Settings → Setup from today's Settings page while `ui_v2` is on (until UI2-6 brings the Settings v2 groups): the chip
- * until setup is complete (a closed dashboard chip still shows here), then a plain link to the go-live checklist.
+ * until setup is complete (a closed dashboard chip still shows here), then a plain link to the wizard. The go-live
+ * checklist is under Settings → Advanced (P3).
  */
 export function SetupLinkV2() {
   const { user } = useAuth();
   const { view } = useSetup(user?.id ?? null);
   const chip = setupChip(view, { ignoreDismissal: true });
-  return chip ? <SetupChipV2 {...chip} /> : <SetupChipV2 label="Setup" next="Your setup steps and the go-live checklist" to={SETUP_PATH} />;
+  return chip ? <SetupChipV2 {...chip} /> : <SetupChipV2 label="Setup" next="Your setup steps" to={SETUP_PATH} />;
 }

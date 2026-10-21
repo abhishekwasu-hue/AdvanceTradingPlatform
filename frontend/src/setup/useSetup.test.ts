@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "../api/client";
-import { cleanStored, dismissChip, setupChip, shouldAutoOpen, skipStep, type SetupStored } from "./model";
-import { SetupStore, rememberAutoOpened, setupConflict, setupStore, wasAutoOpened } from "./useSetup";
+import { cleanStored, dismissChip, setupChip, skipStep, type SetupStored } from "./model";
+import { SetupStore, setupConflict, setupStore } from "./useSetup";
 
 /** UI2-7: the setup progress store - the server's answer, the per-user cache, skip / dismiss saves with versions, 409. */
 
@@ -37,7 +37,7 @@ const conflict = (version: number, current: SetupStored) =>
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("UI2-7 setup progress store", () => {
-  it("reads the server's progress; only then is it fresh (the automatic opening waits for it)", async () => {
+  it("reads the server's progress; only then is it fresh (the Get started card's 'for good' mark waits for it)", async () => {
     vi.stubGlobal("localStorage", memoryStorage());
     const s = server(() => answer(EMPTY, 0, ["broker"]));
     const store = new SetupStore(1, s.fetcher);
@@ -47,22 +47,6 @@ describe("UI2-7 setup progress store", () => {
     expect(s.calls.map((c) => c.path)).toEqual(["/me/setup"]);
     expect(store.get().fresh).toBe(true);
     expect(setupChip(store.get().view)?.label).toBe("Setup 2 of 4");
-    expect(shouldAutoOpen(store.get().view)).toBe(false);                       // a step is done: already set up in part
-    const fresh = new SetupStore(2, server(() => answer(EMPTY, 0)).fetcher);
-    await fresh.loadOnce();
-    expect(shouldAutoOpen(fresh.get().view)).toBe(true);
-  });
-
-  it("the auto-open guard is per user and per browser, and survives blocked storage", () => {
-    vi.stubGlobal("localStorage", memoryStorage());
-    expect(wasAutoOpened(3)).toBe(false);
-    rememberAutoOpened(3);
-    expect(wasAutoOpened(3)).toBe(true);
-    expect(wasAutoOpened(4)).toBe(false);
-    expect(wasAutoOpened(null)).toBe(false);
-    vi.stubGlobal("localStorage", { getItem: () => { throw new Error("blocked"); }, setItem: () => { throw new Error("blocked"); } });
-    expect(() => rememberAutoOpened(5)).not.toThrow();
-    expect(wasAutoOpened(5)).toBe(false);
   });
 
   it("signing out or another user signing in drops the other users' stores", () => {

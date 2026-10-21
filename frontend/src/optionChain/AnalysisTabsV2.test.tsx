@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  TABS, analysesQuery, analysisFor, fetchAnalyses, formatCell, markerPixel, provenance, stateMessage, xPixel, xValues, yScale, yTick,
+  TABS, analysesQuery, analysisFor, fetchAnalyses, nextTab, formatCell, markerPixel, provenance, stateMessage, xPixel, xValues, yScale, yTick,
   type AnalysesResponse, type AnalysisKey,
 } from "./analyses";
 import analysesSource from "./analyses.ts?raw";
@@ -41,6 +41,25 @@ describe("OC2 analysis tabs", () => {
     for (const t of TABS) expect(words).toContain(t.label);
     expect(words).toContain("Analyses · DEMO · expiry 2026-10-27");
     expect(words).toContain("Data as of 10:00 IST · 1 earlier snapshot since 09:20 IST");
+  });
+
+  it("each tab is named and only the selected one is in the Tab order; the panel takes focus", () => {
+    const html = view("pcr");
+    for (const t of TABS) expect(html).toContain(`aria-label="${t.label}"`);
+    expect(html.match(/role="tab"[^>]*tabindex="0"/g)).toHaveLength(1);
+    expect(html).toMatch(/id="oc-tab-pcr"[^>]*tabindex="0"/);
+    expect(html.match(/role="tab"[^>]*tabindex="-1"/g)).toHaveLength(5);
+    expect(html).toMatch(/role="tabpanel"[^>]*tabindex="0"/);
+  });
+
+  it("Left / Right move and wrap, Home / End jump, other keys do nothing", () => {
+    expect(nextTab("pcr", "ArrowRight")).toBe("max_pain");
+    expect(nextTab("pcr", "ArrowLeft")).toBe("build_up");
+    expect(nextTab("iv_skew", "ArrowRight")).toBe("support_resistance");
+    expect(nextTab("support_resistance", "ArrowLeft")).toBe("iv_skew");
+    expect(nextTab("pcr", "Home")).toBe("support_resistance");
+    expect(nextTab("pcr", "End")).toBe("iv_skew");
+    expect(nextTab("pcr", "Enter")).toBeNull();
   });
 
   it.each(TABS.map((t) => t.key))("the %s tab has its sentences, a small chart and a table", (key) => {

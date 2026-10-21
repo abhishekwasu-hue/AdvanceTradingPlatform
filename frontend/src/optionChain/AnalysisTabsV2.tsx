@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { cx } from "../components/primitives/cx";
 import { TermHint } from "../ui/TermHint";
 import {
-  CHART, TABS, analysisFor, fetchAnalyses, formatCell, isFigure, markerPixel, provenance, stateMessage, toneClasses, xLabel, xPixel,
+  CHART, TABS, analysisFor, nextTab, fetchAnalyses, formatCell, isFigure, markerPixel, provenance, stateMessage, toneClasses, xLabel, xPixel,
   xValues, yPixel, yScale, yTick, type Analysis, type AnalysesResponse, type AnalysisChart, type AnalysisKey, type AnalysisTable,
 } from "./analyses";
 
@@ -83,12 +83,20 @@ export function AnalysisTabsView({ data, error, loading, tab, onTab }: {
       {data.session?.note && <p className="text-t12 text-fg-muted">{data.session.note}</p>}
       {error && <p className="text-t12 text-fg-muted">{error}</p>}
 
-      <div role="tablist" aria-label="Analyses" className="flex gap-space-1 overflow-x-auto rounded-panel bg-surface-2 p-space-1">
+      <div role="tablist" aria-label="Analyses" className="flex gap-space-1 overflow-x-auto rounded-panel bg-surface-2 p-space-1"
+        onKeyDown={(e) => {
+          const next = nextTab(tab, e.key);
+          if (!next) return;
+          e.preventDefault();
+          onTab(next);
+          e.currentTarget.querySelector<HTMLButtonElement>(`#oc-tab-${next}`)?.focus();
+        }}>
         {TABS.map((t) => {
           const on = t.key === tab;
           return (
-            <button key={t.key} type="button" role="tab" id={`oc-tab-${t.key}`} aria-selected={on} aria-controls={`oc-panel-${t.key}`}
-              onClick={() => onTab(t.key)}
+            // Roving focus: only the selected tab is in the Tab order; the arrow keys, Home and End move between tabs.
+            <button key={t.key} type="button" role="tab" id={`oc-tab-${t.key}`} aria-label={t.label} aria-selected={on}
+              aria-controls={`oc-panel-${t.key}`} tabIndex={on ? 0 : -1} onClick={() => onTab(t.key)}
               className={cx("min-h-11 shrink-0 rounded-control px-space-3 text-t14 transition-colors duration-fast focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand",
                 on ? "bg-surface-1 font-semibold text-fg shadow-card" : "text-fg-muted hover:text-fg")}>
               <span className="md:hidden">{t.short}</span>
@@ -98,7 +106,8 @@ export function AnalysisTabsView({ data, error, loading, tab, onTab }: {
         })}
       </div>
 
-      <div role="tabpanel" id={`oc-panel-${tab}`} aria-labelledby={`oc-tab-${tab}`}>
+      <div role="tabpanel" id={`oc-panel-${tab}`} aria-labelledby={`oc-tab-${tab}`} tabIndex={0}
+        className="rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
         {current ? <AnalysisPanel analysis={current} /> : <p className="text-t14 text-fg-muted">This analysis is not available.</p>}
       </div>
     </section>

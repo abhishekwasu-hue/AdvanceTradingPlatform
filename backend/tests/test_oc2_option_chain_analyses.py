@@ -122,7 +122,20 @@ def test_support_resistance_shift_through_the_session_over_the_strikes_in_every_
     # 09:20: put OI 50 40 30 10 5 -> 100; call OI 10 20 40 60 30 -> 130.  10:00: put 50 45 60 10 3 -> 120; call 15 30 35 50 40 -> 130
     assert [(r["support"], r["resistance"]) for r in path["rows"]] == [(100, 130), (120, 130)]
     assert [r["time"] for r in path["rows"]] == [REF_AT.isoformat(), NOW.isoformat()]
-    assert out["sentences"][2] == "Since 09:20 IST, the highest put OI strike moved from 100 to 120 and the highest call OI strike stayed at 130."
+    assert out["sentences"][2] == ("Among the 5 strikes stored in every snapshot since 09:20 IST, the highest put OI strike moved from 100 to 120 "
+                                   "and the highest call OI strike stayed at 130.")
+
+
+def test_support_resistance_headline_and_session_shift_never_contradict():
+    # Review case: the chain now has a 90 strike with the highest put OI, but the collector never stored 90. The headline
+    # (whole chain) says 90; the shift (strikes in every snapshot) says 100 -> 120, and names the set it is read over.
+    now_chain = chain([row(90, 1, 999)] + CURRENT.rows, 118.0)
+    out = A.support_resistance(now_chain, [A.Snapshot(REF_AT, REFERENCE)], NOW)
+    assert out["values"]["support"] == 90
+    assert out["sentences"][0].startswith("The highest put OI is at 90 (999)")
+    assert [r["support"] for r in out["tables"][1]["rows"]] == [100, 120]
+    assert out["sentences"][2].startswith("Among the 5 strikes stored in every snapshot since 09:20 IST, the highest put OI strike moved from 100 to 120")
+    assert "over every strike of the chain now" in out["method"]
 
 
 # ---------------------------------------------------------------- 2. build-up
@@ -183,13 +196,16 @@ def test_pcr_overall_and_near_atm_windows():
     assert out["values"]["atm"] == 170 and out["values"]["window"] == list(range(120, 230, 10))
     now_rows = out["tables"][0]["rows"]
     assert now_rows[0] == {"scope": "Overall (15 strikes)", "put_oi": 510, "call_oi": 150, "pcr": 3.4}
-    assert now_rows[1] == {"scope": "Near ATM: 170 and 5 strikes each side (120 to 220)", "put_oi": 110, "call_oi": 110, "pcr": 1.0}
+    assert now_rows[1] == {"scope": "Near ATM: the 11 strikes from 120 to 220 around ATM 170", "put_oi": 110, "call_oi": 110, "pcr": 1.0}
     assert out["sentences"][:2] == [
         "Overall PCR is 3.40: put OI 510 against call OI 150 across 15 strikes.",
-        "Near the money (ATM 170 and 5 strikes each side) PCR is 1.00, so put OI and call OI are equal there.",
+        "Near the money (the 11 strikes from 120 to 220 around ATM 170) PCR is 1.00, so put OI and call OI are equal there.",
     ]
-    # At the low end: ATM 100, window 100..150 -> puts 100 + 100 + 4 x 10 = 240, calls 60 -> 4.00
-    assert A.pcr(chain(rows, 101.0), [], NOW)["values"]["near_atm"] == 4.0
+    # At the low end: ATM 100, window 100..150 -> puts 100 + 100 + 4 x 10 = 240, calls 60 -> 4.00; the label says the real window
+    low = A.pcr(chain(rows, 101.0), [], NOW)
+    assert low["values"]["near_atm"] == 4.0
+    assert low["tables"][0]["rows"][1]["scope"] == "Near ATM: the 6 strikes from 100 to 150 around ATM 100"
+    assert low["sentences"][1] == "Near the money (the 6 strikes from 100 to 150 around ATM 100) PCR is 4.00, so put OI is larger than call OI there."
 
 
 def test_pcr_path_through_the_session():
@@ -315,7 +331,9 @@ def test_iv_is_solved_from_the_price_when_none_is_quoted():
 
 def test_no_analysis_text_holds_advice_or_buy_sell_words():
     histories = [[], [A.Snapshot(REF_AT, REFERENCE)]]
-    results = [r for h in histories for c in (FIVE, CURRENT, SMILE, chain([row(100), row(110)], 105.0), chain([], None)) for r in A.compute_all(c, h, NOW)]
+    chains = (FIVE, CURRENT, SMILE, chain([row(100), row(110)], 105.0), chain([], None), chain(CURRENT.rows, 0.0))
+    results = [r for h in histories for c in chains for r in A.compute_all(c, h, NOW)]
+    results += [r for c in chains for r in A.compute_all(c, [], NOW, history_off=True)]
     assert {r["key"] for r in results} == set(A.KEYS)
     for result in results:
         assert 1 <= len(result["sentences"]) <= 3, result["key"]
@@ -324,8 +342,41 @@ def test_no_analysis_text_holds_advice_or_buy_sell_words():
             assert not has_advice(line), (result["key"], line)
             assert line.isascii(), (result["key"], line)
     from app.option_chain import analyses_routes as R
-    for line in (R.NO_BROKER, R.UNAVAILABLE, R.NO_CHAIN, R.NO_HISTORY_BYOB, A.NO_HISTORY):
+    for line in (R.NO_BROKER, R.UNAVAILABLE, R.NOT_OFFERED, R.NO_CHAIN, R.NO_HISTORY_BYOB, A.NO_HISTORY, A.HISTORY_OFF, A.BU_HISTORY_OFF,
+                 A.UNREADABLE):
         assert advice_words(line) == [] and not has_advice(line), line
+
+
+@pytest.mark.parametrize("spot", [0.0, -5.0, float("nan"), float("inf")])
+def test_a_spot_of_zero_or_not_a_number_is_missing_never_a_failure(spot):
+    # Review case: some brokers send 0.0 for "no price"; the expected move divided by it. Now it is a missing spot.
+    straddle_rows = [r.model_copy(update={"call_ltp": 7.0, "put_ltp": 4.0}) for r in CURRENT.rows]
+    out = {r["key"]: r for r in A.compute_all(chain(straddle_rows, spot), [A.Snapshot(REF_AT, chain(REFERENCE.rows, spot))], NOW)}
+    assert [k for k in out] == list(A.KEYS)
+    assert out["expected_move"]["state"] == "no_data"
+    assert out["build_up"]["state"] == "no_data" and out["iv_skew"]["state"] == "no_data"
+    assert out["max_pain"]["state"] == "ok" and out["max_pain"]["values"]["spot"] is None and len(out["max_pain"]["sentences"]) == 1
+    assert out["pcr"]["values"]["overall"] == 0.9882 and out["pcr"]["values"]["near_atm"] is None
+    assert out["support_resistance"]["sentences"][-1] == A.NO_HISTORY      # the 0-spot snapshot is not part of the session
+
+
+def test_one_failing_analysis_becomes_that_tab_no_data_logged_by_type_only(monkeypatch, caplog):
+    def broken(chain_, history, now, *, history_off=False):
+        raise ValueError("secret detail 12345")
+    monkeypatch.setattr(A, "ANALYSES", tuple((k, broken if k == "pcr" else fn) for k, fn in A.ANALYSES))
+    with caplog.at_level("WARNING", logger="app.option_chain.analyses"):
+        out = {r["key"]: r for r in A.compute_all(FIVE, [], NOW)}
+    assert out["pcr"]["state"] == "no_data" and out["pcr"]["sentences"] == [A.UNREADABLE] and out["pcr"]["title"] == "PCR"
+    assert all(out[k]["state"] == "ok" for k in ("support_resistance", "max_pain"))
+    assert "ValueError" in caplog.text and "secret detail" not in caplog.text
+
+
+def test_history_off_says_so_instead_of_none_stored_yet():
+    # The caller passes no snapshots under the own-broker setting; with history_off the tabs give that reason.
+    out = {r["key"]: r for r in A.compute_all(CURRENT, [], NOW, history_off=True)}
+    assert out["build_up"]["state"] == "no_data" and out["build_up"]["sentences"] == [A.BU_HISTORY_OFF]
+    for key in ("support_resistance", "pcr"):
+        assert out[key]["sentences"][-1] == A.HISTORY_OFF and A.NO_HISTORY not in out[key]["sentences"]
 
 
 def test_compute_all_is_six_tabs_in_order_and_never_invents_numbers():
@@ -419,15 +470,56 @@ def test_no_broker_is_a_plain_state_without_numbers(monkeypatch):
 
 
 def test_unavailable_and_empty_chains_are_plain_states(monkeypatch):
-    broker = _ChainBroker({"FAILS": RuntimeError("upstream"), "EMPTY": chain([], 100.0)})
+    from app.option_chain import analyses_routes as R
+    broker = _ChainBroker({"FAILS": RuntimeError("upstream"), "NOPE": NotImplementedError("no chain"), "EMPTY": chain([], 100.0)})
     _install(monkeypatch, broker)
     headers, me = _v2_owner("states")
     _store_credentials(me)
     failed = client.get(URL, headers=headers, params={"symbol": "FAILS"}).json()
-    assert failed["state"] == "unavailable" and failed["analyses"] == [] and "upstream" not in failed["message"]
+    assert failed["state"] == "unavailable" and failed["analyses"] == [] and failed["message"] == R.UNAVAILABLE
+    nope = client.get(URL, headers=headers, params={"symbol": "NOPE"}).json()
+    assert nope["state"] == "unavailable" and nope["message"] == "Your broker's option chain is not available here."
+    assert _usage(me["tenant_id"]) == 0                     # no chain came back, nothing is counted
     empty = client.get(URL, headers=headers, params={"symbol": "EMPTY"}).json()
     assert empty["state"] == "no_data" and empty["analyses"] == []
-    assert _usage(me["tenant_id"]) == 0                     # nothing was read, nothing is counted
+    assert _usage(me["tenant_id"]) == 1                     # an empty chain is a read, counted as POST /option-chains counts it
+
+
+def test_an_adapter_that_cannot_be_built_is_a_plain_state(monkeypatch):
+    def build(record):
+        raise ValueError("bad stored credential")
+    monkeypatch.setattr(candles_routes, "build_adapter", build)
+    headers, me = _v2_owner("adapter")
+    _store_credentials(me)
+    body = client.get(URL, headers=headers, params={"symbol": "NIFTY"}).json()
+    assert body["state"] == "unavailable" and "credential" not in body["message"]
+
+
+def test_a_spot_of_zero_from_the_broker_is_a_200_with_the_spot_missing(monkeypatch):
+    name = _name()
+    rows = [r.model_copy(update={"call_ltp": 7.0, "put_ltp": 4.0}) for r in FIVE.rows]
+    _install(monkeypatch, _ChainBroker({name: OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=0.0, rows=rows)}))
+    headers, me = _v2_owner("zero")
+    _store_credentials(me)
+    res = client.get(URL, headers=headers, params={"symbol": name})
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["state"] == "ok" and body["spot"] is None
+    states = {a["key"]: a["state"] for a in body["analyses"]}
+    assert states["expected_move"] == "no_data" and states["max_pain"] == "ok" and states["pcr"] == "ok"
+
+
+def test_a_switched_off_page_spends_no_rate_limit_budget(monkeypatch):
+    from app.core.rate_limit import reset
+    reset("market_data_chains")
+    name = _name()
+    _install(monkeypatch, _ChainBroker({name: OptionChain(underlying=name, expiry=EXPIRY, underlying_ltp=118.0, rows=FIVE.rows)}))
+    headers, me = _owner(f"oc2-budget-{uuid.uuid4().hex[:8]}@example.com")
+    _store_credentials(me)
+    for _ in range(35):                                     # the limit is 30 a minute per user
+        assert client.get(URL, headers=headers, params={"symbol": name}).status_code == 404
+    _set_flag("ui_v2", me["tenant_id"], on=True)
+    assert client.get(URL, headers=headers, params={"symbol": name}).status_code == 200
 
 
 def test_ok_returns_the_six_analyses_with_the_session_history(monkeypatch):
@@ -510,6 +602,7 @@ def test_own_broker_tier_reads_no_shared_history(monkeypatch):
         body = client.get(URL, headers=headers, params={"symbol": name}).json()
         assert body["state"] == "ok" and used == [me["tenant_id"]]
         assert body["session"]["snapshots"] == 0 and "own-broker" in body["session"]["note"]
-        assert {a["key"]: a["state"] for a in body["analyses"]}["build_up"] == "no_data"     # the shared collector is not read
+        build = {a["key"]: a for a in body["analyses"]}["build_up"]
+        assert build["state"] == "no_data" and build["sentences"] == [A.BU_HISTORY_OFF]       # the shared collector is not read
     finally:
         _set_flag("byob_data_tier", me["tenant_id"], on=False)

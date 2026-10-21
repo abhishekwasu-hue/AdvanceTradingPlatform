@@ -16,13 +16,14 @@ Read-only: it stores nothing but the usage count, and no order path is reached (
 """
 import logging
 from datetime import date, datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.billing.service import meter
+from app.brokers.models import OptionChain
 from app.db.models import BrokerCredentialRecord, User
 from app.db.session import get_session
 from app.market_data import candles_routes, entitlement
@@ -38,6 +39,7 @@ EXCHANGE = "NFO"            # an option chain is read in the F&O segment (as the
 
 NO_BROKER = "Connect your broker and log in to it today to see these analyses. They use your own broker's option chain."
 UNAVAILABLE = "Your broker did not return the option chain just now. Try again in a moment."
+NOT_OFFERED = "Your broker's option chain is not available here."
 NO_CHAIN = "Your broker returned no strikes for this symbol and expiry."
 NO_HISTORY_BYOB = ("Earlier snapshots of the session are not used while your own-broker data setting is on, so the analyses "
                    "show the latest reading only.")
@@ -67,15 +69,19 @@ def _state(base: Dict[str, Any], state: str, message: str) -> Dict[str, Any]:
     return {**base, "state": state, "message": message, "analyses": []}
 
 
-# The same per-user budget as POST /api/market-data/option-chains: each call here is one broker chain read.
-@router.get("/analyses", dependencies=[Depends(candles_routes.chains_rate_limit)])
+async def _require_flag(user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> None:
+    """404 while `ui_v2` is off. Listed before the rate limit, so a request to a switched-off page spends no budget."""
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, FLAG, user.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": FLAG})
+
+
+# The flag first, then the same per-user budget as POST /api/market-data/option-chains (each call is one broker chain read).
+@router.get("/analyses", dependencies=[Depends(_require_flag), Depends(candles_routes.chains_rate_limit)])
 async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_length=30), expiry: Optional[date] = Query(default=None),
                                 user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
     """Support / resistance from OI, OI build-up per strike, PCR, max pain, the expected move and the IV skew for one
     underlying and expiry (the broker's nearest expiry when none is given)."""
-    from app.platform.controls import flag_enabled
-    if not await flag_enabled(session, FLAG, user.tenant_id):
-        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": FLAG})
     try:
         underlying = snapshots.normalise_underlying(symbol)
     except ValueError as exc:
@@ -86,15 +92,17 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
     record, byob, refusal = await _record(session, user, underlying)
     if record is None:
         return _state(base, "no_broker", refusal or NO_BROKER)
-    chain = await _read_chain(record, underlying, expiry)
+    chain, failure = await _read_chain(record, underlying, expiry)
     if chain is None:
-        return _state(base, "unavailable", UNAVAILABLE)
+        return _state(base, "unavailable", failure or UNAVAILABLE)
     base["expiry"] = (chain.expiry or "")[:10] or base["expiry"]
-    if not chain.rows:
-        return _state(base, "no_data", NO_CHAIN)
+    # Counted like POST /api/market-data/option-chains: every chain the broker returned, an empty one too.
     await meter(session, user.tenant_id, "market_data_chains", quantity=1, source="api",
                 metadata={"broker": record.broker_name, "expiry": base["expiry"], "use": "option_chain_analyses"}, commit=True)
+    if not chain.rows:
+        return _state(base, "no_data", NO_CHAIN)
 
+    chain = analyses.clean_spot(chain)                       # a spot of 0 (some brokers' "no price") is missing, not a number
     history = [] if byob else await _history(session, underlying, now)
     kept = analyses.session_history(chain, history)
     return {**base, "state": "ok", "message": None, "spot": chain.underlying_ltp, "data_as_of": now.isoformat(),
@@ -102,13 +110,16 @@ async def option_chain_analyses(symbol: str = Query(..., min_length=1, max_lengt
             "session": {"snapshots": len(kept), "since": kept[0].at.isoformat() if kept else None,
                         "note": NO_HISTORY_BYOB if byob else None},
             "near_atm_strikes": analyses.NEAR_ATM_STRIKES,
-            "analyses": analyses.compute_all(chain, history, now)}
+            "analyses": analyses.compute_all(chain, history, now, history_off=byob)}
 
 
-async def _read_chain(record: BrokerCredentialRecord, underlying: str, expiry: Optional[date]):
-    adapter = candles_routes.build_adapter(record)
+async def _read_chain(record: BrokerCredentialRecord, underlying: str, expiry: Optional[date]) -> Tuple[Optional[OptionChain], Optional[str]]:
+    """(chain, None) or (None, the plain sentence). Building the adapter is inside the guard too (a bad stored credential)."""
     try:
-        return await adapter.get_option_chain(underlying, expiry)
+        adapter = candles_routes.build_adapter(record)
+        return await adapter.get_option_chain(underlying, expiry), None
+    except NotImplementedError:
+        return None, NOT_OFFERED
     except Exception as exc:  # noqa: BLE001 - any broker failure is the same plain state for the page
         logger.info("Option chain analyses: chain read failed for %s via %s: %s", underlying, record.broker_name, type(exc).__name__)
-        return None
+        return None, UNAVAILABLE

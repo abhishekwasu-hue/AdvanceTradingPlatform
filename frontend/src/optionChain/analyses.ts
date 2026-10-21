@@ -61,6 +61,14 @@ export const TABS: readonly { key: AnalysisKey; label: string; short: string; te
   { key: "iv_skew", label: "IV smile / skew", short: "IV skew", term: "iv" },
 ];
 
+/** The tab a key moves to (ARIA tabs pattern): Left / Right wrap around, Home / End jump to the ends; null for any other key. */
+export function nextTab(current: AnalysisKey, key: string): AnalysisKey | null {
+  const i = Math.max(0, TABS.findIndex((t) => t.key === current));
+  const n = TABS.length;
+  const to = key === "ArrowRight" ? (i + 1) % n : key === "ArrowLeft" ? (i - 1 + n) % n : key === "Home" ? 0 : key === "End" ? n - 1 : null;
+  return to === null ? null : TABS[to].key;
+}
+
 export function analysesQuery(symbol: string, expiry?: string | null): string {
   const q = new URLSearchParams({ symbol: symbol.trim().toUpperCase() });
   if (expiry) q.set("expiry", expiry);

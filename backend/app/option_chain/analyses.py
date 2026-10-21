@@ -3,7 +3,7 @@
 Six pure functions over ONE chain snapshot (the caller's own broker read) plus the session's EARLIER snapshots of the
 same underlying and expiry (`oi_snapshots` / `strike_oi_snapshots`, app/option_chain/snapshots.py). Each returns one
 analysis: tables, a small chart's series and 2-3 sentences built from the numbers with fixed templates (no AI). The
-sentences describe the situation only - never advice and never a trade instruction (tests/test_oc2_analyses.py checks
+sentences describe the situation only - never advice and never a trade instruction (tests/test_oc2_option_chain_analyses.py checks
 them against the platform's advice-word lists).
 
 Definitions (fixed here and stated in each analysis's `method` line):
@@ -21,8 +21,9 @@ Definitions (fixed here and stated in each analysis's `method` line):
   Distance = max pain - spot, in points and in % of spot.
 * Expected move: spot +/- the ATM straddle price (call + put last price at the ATM strike), with no adjustment factor.
   Under Black-Scholes an ATM straddle is about 0.8 of a one-standard-deviation move to expiry.
-* IV smile / skew: call and put IV per strike over the near-ATM window (the broker's quoted IV, read as a fraction or a
-  percentage, or solved from the last price - app/options_builder/chain.py `option_iv`). Skew = the mean, over k = 1..5,
+* IV smile / skew: call and put IV per strike over the near-ATM window: the broker's quoted IV (read as a fraction or a
+  percentage) when it reprices the last price, otherwise solved from the last price; the quote alone when there is no
+  last price (app/options_builder/chain.py `option_iv`). Skew = the mean, over k = 1..5,
   of (put IV at the k-th strike below ATM - call IV at the k-th strike above ATM), in volatility points; within
   +/-0.5 points it reads "about the same".
 
@@ -30,6 +31,8 @@ Nothing here reads a database, a clock or the network: the route passes the snap
 """
 from __future__ import annotations
 
+import logging
+import math
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -37,6 +40,8 @@ from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from app.brokers.models import OptionChain, OptionChainRow
 from app.core.config import RISK_FREE_RATE
 from app.option_chain.models import OptionType
+
+logger = logging.getLogger(__name__)
 
 try:
     from zoneinfo import ZoneInfo
@@ -64,6 +69,12 @@ BUILD_UP_LABELS: Dict[str, str] = {
 _BUILD_UP_ORDER = (LONG_BUILDUP, SHORT_BUILDUP, SHORT_COVERING, LONG_UNWINDING, NO_CLEAR_CHANGE, NOT_AVAILABLE)
 
 NO_HISTORY = "No earlier snapshot of this session is stored for this expiry yet, so the path through the session starts now."
+# With the own-broker data setting on, the route passes no earlier snapshots on purpose (they come from a shared collector).
+HISTORY_OFF = ("Earlier snapshots of the session are not used while your own-broker data setting is on, so the path through "
+               "the session is not shown.")
+BU_HISTORY_OFF = ("Build-up compares each strike with an earlier snapshot of this session, and earlier snapshots are not used "
+                  "while your own-broker data setting is on.")
+UNREADABLE = "This analysis could not be worked out from this chain."
 
 
 @dataclass(frozen=True)
@@ -158,9 +169,13 @@ def _same_expiry(a: str, b: str) -> bool:
     return (a or "")[:10] == (b or "")[:10]
 
 
+def _usable_spot(spot: Optional[float]) -> bool:
+    return isinstance(spot, (int, float)) and math.isfinite(spot) and spot > 0
+
+
 def session_history(chain: OptionChain, history: Sequence[Snapshot]) -> List[Snapshot]:
     """The earlier snapshots that belong to this chain: same expiry, with a spot and strikes, oldest first."""
-    kept = [s for s in history if _same_expiry(s.chain.expiry, chain.expiry) and s.chain.underlying_ltp and s.chain.rows]
+    kept = [s for s in history if _same_expiry(s.chain.expiry, chain.expiry) and _usable_spot(s.chain.underlying_ltp) and s.chain.rows]
     return sorted(kept, key=lambda s: s.at)
 
 
@@ -204,10 +219,11 @@ def _points_word(value: float) -> str:
 
 SR_TITLE = "Support / Resistance from OI"
 SR_METHOD = ("Support is the strike with the highest put OI and resistance the strike with the highest call OI (a tie goes to the lower "
-             "strike). The session path uses only the strikes present in every snapshot.")
+             "strike), over every strike of the chain now. The session path uses only the strikes stored in every snapshot, so its "
+             "highest strikes can differ from the whole chain's.")
 
 
-def support_resistance(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> Dict[str, Any]:
+def support_resistance(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> Dict[str, Any]:
     rows = sorted_rows(chain)
     spot = chain.underlying_ltp
     support, resistance = _argmax_strike(rows, "put"), _argmax_strike(rows, "call")
@@ -250,10 +266,13 @@ def support_resistance(chain: OptionChain, history: Sequence[Snapshot], now: dat
                              [_column("time", "Time", "time"), _column("spot", "Spot", "price"), _column("support", "Highest put OI", "strike"),
                               _column("support_oi", "Put OI", "oi"), _column("resistance", "Highest call OI", "strike"),
                               _column("resistance_oi", "Call OI", "oi")], path))
-        sentences.append(f"Since {fmt_time(past[0].at)} IST, {_shift('the highest put OI strike', path[0]['support'], path[-1]['support'])} "
+        # The path is read over the strikes stored in every snapshot (the collector keeps a window around the money), which
+        # may leave out the whole chain's highest strike above - so the sentence names that set rather than contradict it.
+        sentences.append(f"Among the {len(common)} {'strike' if len(common) == 1 else 'strikes'} stored in every snapshot since "
+                         f"{fmt_time(past[0].at)} IST, {_shift('the highest put OI strike', path[0]['support'], path[-1]['support'])} "
                          f"and {_shift('the highest call OI strike', path[0]['resistance'], path[-1]['resistance'])}.")
     else:
-        sentences.append(NO_HISTORY)
+        sentences.append(HISTORY_OFF if history_off else NO_HISTORY)
 
     chart_rows = sorted({r.strike: r for r in near_atm(rows, spot) + [x for x in (support, resistance) if x is not None]}.values(),
                         key=lambda r: r.strike) if spot is not None else rows
@@ -309,12 +328,14 @@ def _diff(now: Optional[float], then: Optional[float]) -> Optional[float]:
     return None if now is None or then is None else float(now) - float(then)
 
 
-def build_up(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> Dict[str, Any]:
+def build_up(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> Dict[str, Any]:
     rows = sorted_rows(chain)
     window = near_atm(rows, chain.underlying_ltp)
     if not window:
         return _no_data("build_up", BU_TITLE, BU_METHOD, "The chain has no underlying price, so the strikes around the money cannot be found.")
     past = session_history(chain, history)
+    if not past and history_off:
+        return _no_data("build_up", BU_TITLE, BU_METHOD, BU_HISTORY_OFF)
     if not past:
         return _no_data("build_up", BU_TITLE, BU_METHOD,
                         "Build-up compares each strike with an earlier snapshot of this session, and none is stored for this expiry yet.",
@@ -391,7 +412,7 @@ def pcr_of(rows: Sequence[OptionChainRow]) -> Tuple[float, float, Optional[float
     return puts, calls, (puts / calls if calls else None)
 
 
-def pcr(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> Dict[str, Any]:
+def pcr(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> Dict[str, Any]:
     rows = sorted_rows(chain)
     puts, calls, overall = pcr_of(rows)
     window = near_atm(rows, chain.underlying_ltp)
@@ -400,14 +421,14 @@ def pcr(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> Dict[
         return _no_data("pcr", PCR_TITLE, PCR_METHOD, "The chain has no call open interest, so the put-call ratio cannot be formed.")
     atm = rows[atm_index(rows, chain.underlying_ltp)].strike if window else None   # type: ignore[index]
     now_rows = [{"scope": f"Overall ({len(rows)} strikes)", "put_oi": puts, "call_oi": calls, "pcr": _r(overall)}]
+    span = _window_words(window, atm) if window else ""
     if window:
-        now_rows.append({"scope": f"Near ATM: {fmt_strike(atm)} and 5 strikes each side ({fmt_strike(window[0].strike)} to "  # type: ignore[arg-type]
-                                  f"{fmt_strike(window[-1].strike)})", "put_oi": n_puts, "call_oi": n_calls, "pcr": _r(near)})
+        now_rows.append({"scope": f"Near ATM: {span}", "put_oi": n_puts, "call_oi": n_calls, "pcr": _r(near)})
     tables = [_table("Now", [_column("scope", "Strikes", "text"), _column("put_oi", "Put OI", "oi"), _column("call_oi", "Call OI", "oi"),
                              _column("pcr", "PCR", "ratio")], now_rows)]
     sentences = [f"Overall PCR is {overall:.2f}: put OI {fmt_number(puts)} against call OI {fmt_number(calls)} across {len(rows)} strikes."]
     if near is not None:
-        sentences.append(f"Near the money (ATM {fmt_strike(atm)} and 5 strikes each side) PCR is {near:.2f}, so {_larger(n_puts, n_calls)} there.")  # type: ignore[arg-type]
+        sentences.append(f"Near the money ({span}) PCR is {near:.2f}, so {_larger(n_puts, n_calls)} there.")
 
     past = session_history(chain, history)
     path: List[Dict[str, Any]] = []
@@ -428,10 +449,16 @@ def pcr(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> Dict[
         else:
             sentences.append(f"Since {fmt_time(past[0].at)} IST the near-ATM PCR moved from {first:.2f} to {last:.2f}.")
     else:
-        sentences.append(NO_HISTORY)
+        sentences.append(HISTORY_OFF if history_off else NO_HISTORY)
     chart = _chart("line", "time", "Time", "PCR", [_series("pcr_near", "Near-ATM PCR", "brand", [(p["time"], p["pcr"]) for p in path])])
     return _result("pcr", PCR_TITLE, PCR_METHOD, tables=tables, chart=chart, sentences=sentences,
                    values={"overall": _r(overall, 4), "near_atm": _r(near, 4), "atm": atm, "window": [w.strike for w in window]})
+
+
+def _window_words(window: Sequence[OptionChainRow], atm: Optional[float]) -> str:
+    """The window as it really is, also when the chain's end clips it: "the 11 strikes from 120 to 220 around ATM 170"."""
+    return (f"the {len(window)} {'strike' if len(window) == 1 else 'strikes'} from {fmt_strike(window[0].strike)} to "
+            f"{fmt_strike(window[-1].strike)} around ATM {fmt_strike(atm) if atm is not None else '-'}")
 
 
 def _larger(puts: float, calls: float) -> str:
@@ -460,7 +487,7 @@ def expiry_values(rows: Sequence[OptionChainRow]) -> List[Tuple[float, float, fl
     return out
 
 
-def max_pain(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> Dict[str, Any]:
+def max_pain(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> Dict[str, Any]:
     rows = sorted_rows(chain)
     if not rows or not any(_oi(r.call_oi) or _oi(r.put_oi) for r in rows):
         return _no_data("max_pain", MP_TITLE, MP_METHOD, "The chain has no open interest yet, so max pain cannot be found.")
@@ -510,7 +537,7 @@ def straddle_of(chain: OptionChain) -> Optional[Tuple[float, float, float]]:
     return r.strike, float(r.call_ltp), float(r.put_ltp)
 
 
-def expected_move(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> Dict[str, Any]:
+def expected_move(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> Dict[str, Any]:
     spot = chain.underlying_ltp
     found = straddle_of(chain)
     if spot is None or found is None:
@@ -551,7 +578,7 @@ def expected_move(chain: OptionChain, history: Sequence[Snapshot], now: datetime
         else:
             sentences.append(f"Since {since_at} IST the straddle moved from {fmt_number(first['straddle'], 2)} to {fmt_number(straddle, 2)}.")
     else:
-        sentences.append(NO_HISTORY)
+        sentences.append(HISTORY_OFF if history_off else NO_HISTORY)
     chart = _chart("line", "time", "Time", "Price", [
         _series("upper", "Upper", "muted", [(x["time"], x["upper"]) for x in path]),
         _series("spot", "Spot", "brand", [(x["time"], x["spot"]) for x in path]),
@@ -577,9 +604,10 @@ def _dte(expiry: str, now: datetime) -> Optional[int]:
 # ---------------------------------------------------------------- 6. IV smile / skew
 
 IV_TITLE = "IV smile / skew"
-IV_METHOD = ("Call and put implied volatility per strike for ATM and 5 strikes each side: the broker's quoted IV, or solved from the last "
-             "price when none is quoted. Skew is the average, over the 5 strike pairs either side of ATM, of the put IV k strikes below "
-             "ATM minus the call IV k strikes above it, in IV points; within 0.5 points it reads about the same.")
+IV_METHOD = ("Call and put implied volatility per strike for ATM and 5 strikes each side: the broker's quoted IV when it reprices the "
+             "last price, otherwise solved from the last price (the quote alone when there is no last price). Skew is the average, "
+             "over the 5 strike pairs either side of ATM, of the put IV k strikes below ATM minus the call IV k strikes above it, in IV "
+             "points; within 0.5 points it reads about the same.")
 PERCENT_CUTOFF = 3.0     # a quoted IV below this is a fraction (0.142), above it a percentage (14.2) - as options_builder reads it
 
 
@@ -605,7 +633,7 @@ def _years(expiry: str, now: datetime) -> Optional[float]:
     return years_left(day, now if now.tzinfo else now.replace(tzinfo=timezone.utc))
 
 
-def iv_skew(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> Dict[str, Any]:
+def iv_skew(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> Dict[str, Any]:
     rows = sorted_rows(chain)
     spot = chain.underlying_ltp
     window = near_atm(rows, spot)
@@ -670,18 +698,43 @@ def _pct_or_dash(value: Optional[float]) -> str:
 
 # ---------------------------------------------------------------- all six
 
-ANALYSES: Tuple[Tuple[str, Callable[[OptionChain, Sequence[Snapshot], datetime], Dict[str, Any]]], ...] = (
+ANALYSES: Tuple[Tuple[str, Callable[..., Dict[str, Any]]], ...] = (
     ("support_resistance", support_resistance), ("build_up", build_up), ("pcr", pcr),
     ("max_pain", max_pain), ("expected_move", expected_move), ("iv_skew", iv_skew),
 )
 
 
-def compute_all(chain: OptionChain, history: Sequence[Snapshot], now: datetime) -> List[Dict[str, Any]]:
+def clean_spot(chain: OptionChain) -> OptionChain:
+    """The chain with a spot that is not a finite number above 0 read as missing (some brokers send 0.0 for "no price")."""
+    if chain.underlying_ltp is None or _usable_spot(chain.underlying_ltp):
+        return chain
+    return chain.model_copy(update={"underlying_ltp": None})
+
+
+_TITLES: Dict[str, Tuple[str, str]] = {
+    "support_resistance": (SR_TITLE, SR_METHOD), "build_up": (BU_TITLE, BU_METHOD), "pcr": (PCR_TITLE, PCR_METHOD),
+    "max_pain": (MP_TITLE, MP_METHOD), "expected_move": (EM_TITLE, EM_METHOD), "iv_skew": (IV_TITLE, IV_METHOD),
+}
+
+
+def compute_all(chain: OptionChain, history: Sequence[Snapshot], now: datetime, *, history_off: bool = False) -> List[Dict[str, Any]]:
     """The six analyses in tab order. `history` may hold other expiries or empty slots; each analysis keeps only the
-    earlier snapshots of this chain's expiry (`session_history`)."""
-    return [fn(chain, history, now) for _, fn in ANALYSES]
+    earlier snapshots of this chain's expiry (`session_history`). A spot of 0 or not a number is treated as missing, and
+    one analysis that fails on an odd chain becomes that tab's `no_data` (logged by type only) - never a failed response.
+    `history_off`: the caller left the earlier snapshots out on purpose (the own-broker data setting); the tabs say so."""
+    chain = clean_spot(chain)
+    history = [Snapshot(s.at, clean_spot(s.chain)) for s in history]
+    out: List[Dict[str, Any]] = []
+    for key, fn in ANALYSES:
+        try:
+            out.append(fn(chain, history, now, history_off=history_off))
+        except Exception as exc:  # noqa: BLE001 - one tab's failure must not take the other five down
+            logger.warning("Option chain analysis %s failed: %s", key, type(exc).__name__)
+            title, method = _TITLES[key]
+            out.append(_no_data(key, title, method, UNREADABLE))
+    return out
 
 
 __all__ = ["Snapshot", "compute_all", "support_resistance", "build_up", "pcr", "max_pain", "expected_move", "iv_skew",
-           "classify_build_up", "near_atm", "atm_index", "pcr_of", "expiry_values", "straddle_of", "session_history",
-           "BUILD_UP_LABELS", "NEAR_ATM_STRIKES", "KEYS", "fmt_number", "fmt_strike"]
+           "classify_build_up", "near_atm", "atm_index", "pcr_of", "expiry_values", "straddle_of", "session_history", "clean_spot",
+           "BUILD_UP_LABELS", "NEAR_ATM_STRIKES", "KEYS", "HISTORY_OFF", "BU_HISTORY_OFF", "fmt_number", "fmt_strike"]

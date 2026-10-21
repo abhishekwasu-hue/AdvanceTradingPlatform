@@ -112,16 +112,18 @@ describe("UI2-2 blocks", () => {
 
 describe("UI2-2 router wiring (UI v2 §12: PageV2 ?? Page)", () => {
   it("the v2 shell has a v2 dashboard; today's router and App do not load it", () => {
-    expect(Object.keys(PAGE_COMPONENTS_V2)).toEqual(["dashboard", "signals", "charts", "setup"]);
+    expect(Object.keys(PAGE_COMPONENTS_V2)).toEqual(["dashboard", "signals", "charts", "positions", "portfolio", "risk-management", "setup"]);
     expect(routesSource).not.toMatch(/DashboardV2|pagesV2/);
     expect(appSource).not.toMatch(/DashboardV2|pagesV2/);
   });
 
   it("the dashboard shows its own broker states; every other data page keeps the gate; a broken address stays gated", () => {
-    expect(OWN_BROKER_STATES).toEqual(["/"]);
+    // UI2-9a: My positions shows the broker states itself too, so exits stay reachable (src/trading/PositionsV2.tsx).
+    expect(OWN_BROKER_STATES).toEqual(["/", "/positions"]);
     expect(isGatedPath("/")).toBe(true);                         // still a data page (the waiting screen and the gate rule)
-    expect(shellGates("/", OWN_BROKER_STATES)).toBe(false);
-    for (const p of ["/positions", "/charts/NIFTY", "/option-chain", "/%70ositions", "/%E0%A4"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(true);
+    expect(isGatedPath("/positions")).toBe(true);
+    for (const p of ["/", "/positions", "/%70ositions"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(false);
+    for (const p of ["/portfolio", "/charts/NIFTY", "/option-chain", "/positions/x", "/%E0%A4"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(true);
     for (const p of ["/settings", "/orders"]) expect(shellGates(p, OWN_BROKER_STATES), p).toBe(false);
   });
 

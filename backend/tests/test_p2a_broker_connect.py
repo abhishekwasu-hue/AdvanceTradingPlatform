@@ -591,3 +591,83 @@ def test_failed_login_audit_keeps_no_broker_text_or_secret():
     text = audit_error_text(RuntimeError(f"upstream said: bad key {secretish} and pin 98765 " + "x " * 200),
                             BrokerCredentials(pin="98765"))
     assert secretish not in text and "98765" not in text and text.startswith("RuntimeError: ") and len(text) < 160
+
+
+# --- re-review fixes ------------------------------------------------------------------------------------------------
+
+def test_a_fyers_error_address_is_never_taken_for_the_login_code():
+    from app.brokers.routes import _code_from_paste
+    from app.brokers.token_lifecycle import store_access_token
+    error_address = "https://example.com/fyers/cb?s=error&code=-413&message=Invalid%20request"
+    assert _code_from_paste(error_address, "auth_code") == error_address          # no auth_code: no code at all
+    assert _code_from_paste("https://example.com/cb?s=ok&code=200&auth_code=abcde", "auth_code") == "abcde"
+    assert _code_from_paste("https://example.com/cb?code=xyz", "code") == "xyz"     # a broker whose parameter is `code`
+
+    headers = _org("fyers")
+    tenant_id = _tenant(headers)
+    fields = {"api_key": "ABCD1234-100", "api_secret": _sentinel("fyers-s"), "redirect_uri": "https://example.com/fyers/cb"}
+    assert _connect(headers, "fyers", fields)["status"] == "needs_login"
+    working = _sentinel("fyers-session")
+
+    async def give_a_working_session():
+        async with _session_factory() as session:
+            row = await session.scalar(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id))
+            store_access_token(row, working)
+            await session.commit()
+    asyncio.run(give_a_working_session())
+    out = _connect(headers, "fyers", {"request_token": error_address}, renew=True)
+    assert out == {"status": "not_working", "message": "Paste the whole address you land on after logging in."}
+    row = _row(tenant_id, "fyers")
+    creds = load_credentials(row)
+    assert row.token_status == "VALID" and creds.access_token == working and creds.request_token is None
+
+
+def test_expiry_cap_ignores_a_past_exp_and_never_lengthens():
+    from app.brokers.token_lifecycle import cap_expiry_at_token_exp
+    scheduled = NOW + timedelta(hours=10)
+
+    def row() -> BrokerCredentialRecord:
+        return BrokerCredentialRecord(tenant_id=1, user_id=1, broker_name="dhan", token_status="VALID", token_expires_at=scheduled)
+
+    def token(exp: datetime) -> str:
+        return jwt.encode({"sub": "1", "exp": int(exp.timestamp())}, "k" * 32, algorithm="HS256")
+    past = row()
+    cap_expiry_at_token_exp(past, token(NOW - timedelta(minutes=5)))      # the broker just accepted it: not believed
+    assert past.token_expires_at == scheduled
+    later = row()
+    cap_expiry_at_token_exp(later, token(NOW + timedelta(days=3)))
+    assert later.token_expires_at == scheduled
+    sooner = row()
+    cap_expiry_at_token_exp(sooner, token(NOW + timedelta(hours=2)))
+    assert sooner.token_expires_at == datetime.fromtimestamp(int((NOW + timedelta(hours=2)).timestamp()), tz=timezone.utc)
+    opaque = row()
+    cap_expiry_at_token_exp(opaque, "not-a-jwt")
+    assert opaque.token_expires_at == scheduled
+
+
+def test_a_dead_stored_shoonya_session_is_marked_expired():
+    from app.brokers.exceptions import BrokerAPIError
+    from app.brokers.token_lifecycle import _is_auth_failure, build_adapter, verify_token
+    headers = _org("shoonya-dead")
+    tenant_id = _tenant(headers)
+    fields = {"client_id": "FA1", "api_secret": SHOONYA_PASS, "api_key": "vendorkey" + "z" * 3, "totp_secret": SHOONYA_SEED}
+    assert _connect(headers, "shoonya", fields)["status"] == "connected"
+
+    async def kill_and_verify():
+        async with _session_factory() as session:
+            row = await session.scalar(select(BrokerCredentialRecord).where(BrokerCredentialRecord.tenant_id == tenant_id))
+            from app.secrets_store.encryption import encrypt_text
+            from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
+            creds = load_credentials(row)
+            creds.access_token = _sentinel("shoonya-dead-session")      # a session Shoonya no longer knows
+            row.encrypted_payload = encrypt_text(creds.model_dump_json(), tenant_id, PURPOSE_BROKER_CREDENTIAL)
+            with pytest.raises(BrokerAPIError) as dead:                # HTTP 200, `stat: Not_Ok`, "Session Expired"
+                await build_adapter(row).get_profile()
+            assert _is_auth_failure(dead.value)
+            ok, _ = await verify_token(session, row)
+            await session.commit()
+            return ok, row.token_status
+    ok, token_status = asyncio.run(kill_and_verify())
+    assert ok is False and token_status == "EXPIRED"
+    [conn] = _connections(headers)
+    assert conn["status"] == "needs_login" and conn["renew"] is True

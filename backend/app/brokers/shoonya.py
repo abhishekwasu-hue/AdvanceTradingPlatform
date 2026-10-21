@@ -107,7 +107,7 @@ class ShoonyaBroker(BrokerInterface):
 
         data = {"jData": json.dumps(payload)}
         if authenticated:
-            data["jKey"] = self._session_token
+            data["jKey"] = self._access_token or ""      # set: checked just above
 
         response = await self._client.post(path, data=data)
         try:

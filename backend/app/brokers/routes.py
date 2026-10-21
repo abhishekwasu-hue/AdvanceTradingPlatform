@@ -695,7 +695,10 @@ def _code_from_paste(raw: str, code_param: str) -> str:
             return text
         parts = [parsed.query, parsed.fragment] if parsed is not None else [text.lstrip("?#")]
         for part in parts:
-            values = parse_qs(part).get(code_param) or parse_qs(part).get("code") or []
+            query = parse_qs(part)
+            # Only a broker whose parameter IS `code` may read `code`: a Fyers error address carries `code=-413` (an
+            # error number) and no `auth_code`, and that number must never be taken for the login code.
+            values = query.get(code_param) or (query.get("code") if code_param == "code" else None) or []
             if values and values[0].strip():
                 return values[0].strip()
     return text

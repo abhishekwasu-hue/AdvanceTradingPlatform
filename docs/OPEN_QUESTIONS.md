@@ -516,6 +516,8 @@ interview is the one trilingual exception. Built in `claude/english-only-cleanup
 | AMW-L2 | The name "Strategy Lab" is already a Copilot tab label (AMW-Q2). | **Parked for Abhi.** Meanwhile the port plan's default stands: the new page is "Strategy Lab", the Copilot tab becomes "AI Drafts". | AMW-19 | parked |
 | AMW-L3 | FYERS minute-data terms need written consent (AMW-Q5). | **Parked for Abhi.** `fyers_minute_feed` stays off; `set_flag` refuses it until the terms file says `allowed`. | AMW-17 | parked |
 | AMW-L4 | PDF export needs a new dependency (AMW-Q4). | **Parked for Abhi.** JSON, CSV, PNG and a standard-library XLSX ship first; PDF waits for his OK on the dependency. | AMW-14 | parked |
+| UI4C-1 | A default "Indices" watchlist on a user's first open (Charts page plan CHP-7). | **Not built.** Neither the backend nor the frontend creates a first-open list, so the watchlist panel's empty state offers "Create a list". If wanted, a backend first-open default (one list: NIFTY 50, NIFTY BANK, FINNIFTY, SENSEX) is a small follow-up. | UI2-4c (#313) | open |
+| UI4C-2 | Where the Charts page keeps "hide all drawings", the watchlist column state, the chosen list, and the Chart tab's EMA / SMA / VWAP, timeframe and chart type. | **Per user, in this browser** (the `atp_charts_view` entry), because the server's chart prefs (`ChartPrefs`) accept only theme, grid, candle colours, Volume / RSI and the reader overlay. Moving them to the server needs new, additive `ChartPrefs` fields. | UI2-4b2 (#311), UI2-4c (#313) | open |
 
 ## Mobile app - what Abhi must provide (owner, 20 Oct)
 

@@ -1,0 +1,217 @@
+import { SETUP_ADDRESS } from "../shell/aliases";
+import { formatNumber } from "../ui/format";
+import type { ContractRules, DeploymentCreateRequest } from "../types";
+
+/**
+ * UI2-7 (UI v2 proposal §11, §13 UI-8): the setup wizard's model - the four steps, the server's answer
+ * (`GET /api/me/setup`: each step "done" worked out from the trader's own rows, next to the stored skips and the chip's
+ * dismissal), the dashboard chip's words, the risk step's defaults and sentence, and the strategy step's three
+ * suggestions. Pure functions only, so every rule here is unit-tested.
+ */
+
+export type SetupStepKey = "broker" | "risk" | "strategy" | "alerts";
+export const SETUP_STEPS: readonly SetupStepKey[] = ["broker", "risk", "strategy", "alerts"];
+
+/** Where the wizard lives: Settings → Setup (a v2-only address). */
+export const SETUP_PATH = SETUP_ADDRESS;
+
+export const STEP_TEXT: Record<SetupStepKey, { title: string; next: string }> = {
+  broker: { title: "Connect your broker", next: "connect your broker" },
+  risk: { title: "Set your risk limits", next: "set your risk limits" },
+  strategy: { title: "Pick your first strategy", next: "pick your first strategy" },
+  alerts: { title: "Choose your alerts", next: "choose your alerts" },
+};
+
+/** The trader's own marks (backend `app/me/prefs.py` SetupPrefs). "Done" is never stored. */
+export interface SetupStored {
+  steps: Record<SetupStepKey, { skipped_at: string | null }>;
+  opened_at: string | null;
+  dismissed_at: string | null;
+}
+
+export interface SetupStepState { key: SetupStepKey; done: boolean; skipped: boolean; skipped_at: string | null }
+
+/** `GET /api/me/setup` (the fields this app reads). */
+export interface SetupView { steps: SetupStepState[]; stored: SetupStored; version: number }
+
+const isoOrNull = (v: unknown): string | null => (typeof v === "string" && v && !Number.isNaN(Date.parse(v)) ? v : null);
+
+/** Any value (the server's, the cache's, a 409's `current`) as valid stored marks: what is missing or wrong is unset. */
+export function cleanStored(raw: unknown): SetupStored {
+  const v = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+  const steps = (v.steps && typeof v.steps === "object" ? v.steps : {}) as Record<string, unknown>;
+  const mark = (k: SetupStepKey) => {
+    const m = (steps[k] && typeof steps[k] === "object" ? steps[k] : {}) as Record<string, unknown>;
+    return { skipped_at: isoOrNull(m.skipped_at) };
+  };
+  return {
+    steps: { broker: mark("broker"), risk: mark("risk"), strategy: mark("strategy"), alerts: mark("alerts") },
+    opened_at: isoOrNull(v.opened_at),
+    dismissed_at: isoOrNull(v.dismissed_at),
+  };
+}
+
+/** The steps from stored marks and "done" per step: a done step is never also skipped. */
+export function stepsOf(stored: SetupStored, done: Partial<Record<SetupStepKey, boolean>>): SetupStepState[] {
+  return SETUP_STEPS.map((key) => {
+    const isDone = !!done[key];
+    const skippedAt = stored.steps[key].skipped_at;
+    return { key, done: isDone, skipped: !isDone && skippedAt !== null, skipped_at: skippedAt };
+  });
+}
+
+/** The server's answer as a view, or null when it is not one (then nothing is shown rather than a guess). */
+export function cleanView(raw: unknown): SetupView | null {
+  if (!raw || typeof raw !== "object") return null;
+  const v = raw as Record<string, unknown>;
+  if (!Array.isArray(v.steps) || typeof v.version !== "number") return null;
+  const done: Partial<Record<SetupStepKey, boolean>> = {};
+  for (const s of v.steps as unknown[]) {
+    const step = (s && typeof s === "object" ? s : {}) as Record<string, unknown>;
+    if (SETUP_STEPS.includes(step.key as SetupStepKey)) done[step.key as SetupStepKey] = step.done === true;
+  }
+  const stored = cleanStored(v.stored);
+  return { steps: stepsOf(stored, done), stored, version: v.version };
+}
+
+/** The same view after a local change to the marks (before the server answers). */
+export function withStored(view: SetupView, stored: SetupStored): SetupView {
+  const done = Object.fromEntries(view.steps.map((s) => [s.key, s.done]));
+  return { ...view, stored, steps: stepsOf(stored, done) };
+}
+
+/** The first step that is neither done nor skipped, or null once setup is complete. */
+export function nextStep(view: SetupView): SetupStepKey | null {
+  return view.steps.find((s) => !s.done && !s.skipped)?.key ?? null;
+}
+
+export const isComplete = (view: SetupView): boolean => nextStep(view) === null;
+
+/**
+ * The Setup chip (dashboard, and Settings until setup is complete): "Setup 2 of 4" and "Next: set your risk limits".
+ * The number is the step the trader is on (steps done or skipped, plus one). Null once every step is done or skipped,
+ * or (unless `ignoreDismissal`, Settings) after the trader closed the chip.
+ */
+export function setupChip(view: SetupView | null, opts: { ignoreDismissal?: boolean } = {}): { label: string; next: string; to: string } | null {
+  if (!view) return null;
+  const next = nextStep(view);
+  if (!next) return null;
+  if (view.stored.dismissed_at && !opts.ignoreDismissal) return null;
+  const settled = view.steps.filter((s) => s.done || s.skipped).length;
+  return { label: `Setup ${settled + 1} of ${SETUP_STEPS.length}`, next: `Next: ${STEP_TEXT[next].next}`, to: SETUP_PATH };
+}
+
+/** The wizard opens by itself once (the first sign-in under ui_v2), only while setup is not complete or dismissed. */
+export function shouldAutoOpen(view: SetupView | null): boolean {
+  return !!view && !isComplete(view) && view.stored.opened_at === null && view.stored.dismissed_at === null;
+}
+
+/** The step the wizard shows when it opens: the next open step, else the first. */
+export function openingStep(view: SetupView | null): SetupStepKey {
+  return (view && nextStep(view)) ?? SETUP_STEPS[0];
+}
+
+/** The step after `key` that is still open, or null (then the wizard shows its "all set" card). */
+export function stepAfter(view: SetupView, key: SetupStepKey): SetupStepKey | null {
+  const at = SETUP_STEPS.indexOf(key);
+  return view.steps.slice(at + 1).find((s) => !s.done && !s.skipped)?.key ?? view.steps.slice(0, at).find((s) => !s.done && !s.skipped)?.key ?? null;
+}
+
+export function skipStep(stored: SetupStored, key: SetupStepKey, nowIso: string): SetupStored {
+  return { ...stored, steps: { ...stored.steps, [key]: { skipped_at: nowIso } } };
+}
+
+export const markOpened = (stored: SetupStored, nowIso: string): SetupStored => ({ ...stored, opened_at: stored.opened_at ?? nowIso });
+export const dismissChip = (stored: SetupStored, nowIso: string): SetupStored => ({ ...stored, dismissed_at: nowIso });
+
+// --- Step 2: risk limits ------------------------------------------------------------------------------------------------
+
+/** The spec's defaults (§11): risk per trade 1%, daily loss limit 3% of capital; capital ₹1,00,000. */
+export const RISK_DEFAULTS = { capital: 100_000, riskPerTradePct: 1, dailyLossPct: 3, maxTradesPerDay: 10 } as const;
+
+/** The server's bounds (backend `risk_engine/by_default.py` BOUNDS); the paper capital's own (PAPER_MIN / MAX_CAPITAL). */
+export const RISK_BOUNDS = {
+  capital: [10_000, 1_000_000_000], riskPerTradePct: [0.05, 5], dailyLossPct: [0.1, 20], maxTradesPerDay: [0, 500],
+} as const;
+
+export type RiskField = keyof typeof RISK_DEFAULTS;
+export type RiskForm = Record<RiskField, string>;
+
+export const RISK_LABELS: Record<RiskField, string> = {
+  capital: "Capital", riskPerTradePct: "Risk per trade", dailyLossPct: "Daily loss limit", maxTradesPerDay: "Max trades per day",
+};
+
+const rupees = (v: number) => `₹${formatNumber(Math.round(v))}`;
+
+/** "With these limits the most you can lose today is ₹3,000." - or null while a figure is not a valid number. */
+export function riskSentence(capital: number, dailyLossPct: number): string | null {
+  if (!Number.isFinite(capital) || !Number.isFinite(dailyLossPct) || capital <= 0 || dailyLossPct <= 0) return null;
+  return `With these limits the most you can lose today is ${rupees((capital * dailyLossPct) / 100)}.`;
+}
+
+/** The most one trade may lose: "₹1,000 a trade". */
+export function perTradeText(capital: number, riskPct: number): string | null {
+  if (!Number.isFinite(capital) || !Number.isFinite(riskPct) || capital <= 0 || riskPct <= 0) return null;
+  return `At most ${rupees((capital * riskPct) / 100)} on one trade.`;
+}
+
+/** What is wrong with each field, in plain words (empty = all good). */
+export function riskErrors(form: RiskForm): Partial<Record<RiskField, string>> {
+  const out: Partial<Record<RiskField, string>> = {};
+  for (const field of Object.keys(RISK_BOUNDS) as RiskField[]) {
+    const [low, high] = RISK_BOUNDS[field];
+    const raw = form[field].trim().replace(/,/g, "");
+    const v = Number(raw);
+    const whole = field === "maxTradesPerDay" || field === "capital";
+    const show = (n: number) => (field === "capital" ? rupees(n) : String(n));
+    if (!raw || !Number.isFinite(v)) out[field] = `Enter a number for ${RISK_LABELS[field].toLowerCase()}.`;
+    else if (whole && !Number.isInteger(v)) out[field] = `Enter a whole number for ${RISK_LABELS[field].toLowerCase()}.`;
+    else if (v < low || v > high) out[field] = `${RISK_LABELS[field]} must be between ${show(low)} and ${show(high)}.`;
+  }
+  return out;
+}
+
+export const riskNumbers = (form: RiskForm): Record<RiskField, number> =>
+  Object.fromEntries((Object.keys(form) as RiskField[]).map((k) => [k, Number(form[k].trim().replace(/,/g, ""))])) as Record<RiskField, number>;
+
+// --- Step 3: three suggested Library strategies, PAPER only ------------------------------------------------------------
+
+export interface StrategySuggestion {
+  style: "Intraday" | "Swing" | "Options";
+  strategyId: string;
+  symbol: string;
+  /** The base candles the Autopilot reads ("day" = daily, held overnight). */
+  timeframe: string;
+  line: string;
+  /** Traded as an option of the symbol instead of the symbol itself. */
+  option?: true;
+}
+
+/** One per style (§11). Ids are the Library's built-in strategies; one missing from the Library is not shown. */
+export const SUGGESTIONS: readonly StrategySuggestion[] = [
+  { style: "Intraday", strategyId: "vwap_supertrend_5m", symbol: "NIFTY 50", timeframe: "1min",
+    line: "Trades NIFTY 50 during the day and closes before the market does." },
+  { style: "Swing", strategyId: "swing_ema_pullback_d", symbol: "RELIANCE", timeframe: "day",
+    line: "Buys RELIANCE on a pullback in an uptrend and holds for days." },
+  { style: "Options", strategyId: "orb_15m_5m", symbol: "NIFTY 50", timeframe: "1min", option: true,
+    line: "Buys a NIFTY 50 option at the nearest expiry when the first 15 minutes' range breaks." },
+];
+
+/** The deployment "Start on Paper Autopilot" creates. Always PAPER: this screen never offers LIVE. */
+export function paperDeployment(s: StrategySuggestion): DeploymentCreateRequest & { mode: "PAPER" } {
+  const contract: ContractRules = s.option
+    ? { instrument_kind: "OPTION", option_position: "BUY", expiry_rule: "NEAREST", strike_rule: "ATM", strike_offset: 0 }
+    : { instrument_kind: "UNDERLYING" };
+  return {
+    strategy_id: s.strategyId, symbol: s.symbol, exchange: "NSE", timeframe: s.timeframe, mode: "PAPER",
+    holding: s.timeframe === "day" ? "SWING" : "INTRADAY", ...contract,
+  };
+}
+
+/** A quick test's result in one line: "12 trades · 58% won · +₹4,250 on 30 days of NIFTY 50 prices". */
+export function testSummary(r: { total_trades: number; win_rate: number; net_pnl: number }, days: number, symbol: string): string {
+  if (!r.total_trades) return `No trades on the last ${days} days of ${symbol} prices.`;
+  const sign = r.net_pnl > 0 ? "+" : r.net_pnl < 0 ? "−" : "";
+  const won = Math.round(r.win_rate);                  // the engine's win rate is a percentage
+  return `${r.total_trades} trade${r.total_trades === 1 ? "" : "s"} · ${won}% won · ${sign}${rupees(Math.abs(r.net_pnl))} on the last ${days} days of ${symbol} prices.`;
+}

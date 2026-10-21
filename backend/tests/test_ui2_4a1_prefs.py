@@ -48,7 +48,7 @@ def test_defaults_before_anything_is_saved():
     who = _who("defaults")
     got = client.get(BASE, headers=who["headers"])
     assert got.status_code == 200, got.text
-    assert got.json() == {"prefs": {"chart": CHART_DEFAULTS}, "versions": {"chart": 0}}
+    assert got.json()["prefs"]["chart"] == CHART_DEFAULTS and got.json()["versions"]["chart"] == 0
     assert prefs.defaults("chart") == CHART_DEFAULTS                    # no grid by default; volume and RSI on
 
 
@@ -61,7 +61,7 @@ def test_round_trip_fills_defaults_and_bumps_the_version():
     again = _put(who, {"theme": "light", "grid": True, "indicators": {"volume": True, "rsi": False}, "reader_overlay": True})
     assert again.status_code == 200 and again.json()["version"] == 2
     got = client.get(BASE, headers=who["headers"]).json()
-    assert got["versions"] == {"chart": 2}
+    assert got["versions"]["chart"] == 2
     # a PUT replaces the namespace: the colours left out are back to the theme's own
     assert got["prefs"]["chart"] == {"theme": "light", "grid": True, "candle_colors": None,
                                      "indicators": {"volume": True, "rsi": False}, "reader_overlay": True}
@@ -96,7 +96,7 @@ def test_schema_validation(body):
     who = _who("bad")
     response = _put(who, body)
     assert response.status_code == 422, response.text
-    assert client.get(BASE, headers=who["headers"]).json()["versions"] == {"chart": 0}
+    assert client.get(BASE, headers=who["headers"]).json()["versions"]["chart"] == 0
 
 
 def test_the_rejected_input_is_not_echoed():
@@ -107,7 +107,7 @@ def test_the_rejected_input_is_not_echoed():
 
 def test_unknown_namespace_is_404():
     who = _who("ns")
-    assert _put(who, {}, namespace="setup").status_code == 404
+    assert _put(who, {}, namespace="wizard").status_code == 404
     assert _put(who, {}, namespace="..").status_code == 404
 
 
@@ -116,7 +116,7 @@ def test_size_cap():
     big = json.dumps({"theme": "dark"}) + " " * prefs.MAX_BODY_BYTES
     response = _put(who, big)
     assert response.status_code == 413 and str(prefs.MAX_BODY_BYTES) in response.json()["detail"]
-    assert client.get(BASE, headers=who["headers"]).json()["versions"] == {"chart": 0}
+    assert client.get(BASE, headers=who["headers"]).json()["versions"]["chart"] == 0
 
 
 def test_anonymous_is_refused():
@@ -130,12 +130,12 @@ def test_per_user_and_per_organisation():
     assert _put(owner, {"theme": "dark", "grid": True}).status_code == 200
     for who in (member, other_org):
         got = client.get(BASE, headers=who["headers"]).json()
-        assert got == {"prefs": {"chart": CHART_DEFAULTS}, "versions": {"chart": 0}}, who
+        assert got["prefs"]["chart"] == CHART_DEFAULTS and got["versions"]["chart"] == 0, who
     # their own saves never touch the owner's
     assert _put(member, {"theme": "light"}).json()["version"] == 1
     assert _put(other_org, {"theme": "light"}).json()["version"] == 1
     mine = client.get(BASE, headers=owner["headers"]).json()
-    assert mine["prefs"]["chart"]["theme"] == "dark" and mine["versions"] == {"chart": 1}
+    assert mine["prefs"]["chart"]["theme"] == "dark" and mine["versions"]["chart"] == 1
 
 
 def test_a_row_of_the_same_user_id_under_another_tenant_is_never_read():
@@ -148,8 +148,8 @@ def test_a_row_of_the_same_user_id_under_another_tenant_is_never_read():
             await session.commit()
     _run(plant())
     got = client.get(BASE, headers=a["headers"]).json()
-    assert got["versions"] == {"chart": 0} and got["prefs"]["chart"]["theme"] == "app"
-    assert client.get(BASE, headers=b["headers"]).json()["versions"] == {"chart": 0}
+    assert got["versions"]["chart"] == 0 and got["prefs"]["chart"]["theme"] == "app"
+    assert client.get(BASE, headers=b["headers"]).json()["versions"]["chart"] == 0
 
 
 def test_a_viewer_may_change_their_own():

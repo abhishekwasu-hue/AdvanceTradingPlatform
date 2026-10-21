@@ -5,8 +5,9 @@
 * `PUT /api/me/prefs/{namespace}` replaces one namespace with the JSON body, validated against that namespace's schema
   (unknown keys and wrong types are refused) and capped at MAX_BODY_BYTES. An optional `?version=` makes it a
   compare-and-set: a stale version gets 409 with the current value; without it the save simply replaces.
-* Namespaces are an allow-list (NAMESPACES). `chart` is the first; UI-8 (setup wizard progress, "What is this page?"
-  dismissals) adds its own by adding a model here.
+* Namespaces are an allow-list (NAMESPACES). `chart` is the first; `setup` (UI2-7, UI-8) holds the setup wizard's own
+  marks - skips, the chip's dismissal, the first automatic opening. Whether a step is done is never stored: app/me/setup.py
+  works it out on every read from the rows that prove it.
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -15,7 +16,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, Literal, Optional, Type
+from typing import Any, Dict, Literal, Optional, Tuple, Type
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -63,7 +64,26 @@ class ChartPrefs(_Prefs):
     reader_overlay: bool = Field(default=False, description="the 'Reader zones & lines' overlay")
 
 
-NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs}
+class SetupStepMark(_Prefs):
+    """One setup step's own mark. Only the skip is stored; "done" is worked out on every read (app/me/setup.py)."""
+    skipped_at: Optional[datetime] = Field(default=None, description="when 'Skip for now' was chosen; null = not skipped")
+
+
+class SetupSteps(_Prefs):
+    broker: SetupStepMark = Field(default_factory=SetupStepMark)
+    risk: SetupStepMark = Field(default_factory=SetupStepMark)
+    strategy: SetupStepMark = Field(default_factory=SetupStepMark)
+    alerts: SetupStepMark = Field(default_factory=SetupStepMark)
+
+
+class SetupPrefs(_Prefs):
+    """`setup` (UI v2 §11, UI-8): the setup wizard's marks, so it resumes on any device. localStorage is only a cache."""
+    steps: SetupSteps = Field(default_factory=SetupSteps)
+    opened_at: Optional[datetime] = Field(default=None, description="the wizard opened by itself (first sign-in); it does not again")
+    dismissed_at: Optional[datetime] = Field(default=None, description="the dashboard's Setup chip was closed")
+
+
+NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -133,11 +153,19 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
     `version` (optional): the version the change was made on; a stale one is refused with 409 and the current value."""
     if namespace not in NAMESPACES:
         raise HTTPException(status_code=404, detail="Unknown preferences namespace")
-    value = _validate(namespace, await _body(request))
+    value, saved_version = await save(namespace, await _body(request), version, user, session)
+    return {"namespace": namespace, "value": value, "version": saved_version}
+
+
+async def save(namespace: str, raw: bytes, version: Optional[int], user: User, session: AsyncSession) -> Tuple[Dict[str, Any], int]:
+    """Validates `raw` against the namespace and stores it for the caller (the compare-and-set described above). Also
+    the body of `PUT /api/me/setup` (app/me/setup.py). Returns the stored value and its new version."""
+    value = _validate(namespace, raw)
     tenant_id, user_id = user.tenant_id, user.id        # read once: a rollback below expires the `user` object
     # Two attempts: when two devices save a namespace's FIRST value at the same moment, one insert loses on the unique
     # constraint. Without a version that save simply goes again, now as an update of the row the other one made; with a
     # version it is a 409 like any other stale edit.
+    saved = 0
     for attempt in (1, 2):
         row = await session.scalar(select(UserPrefsRecord).where(*_own(tenant_id, user_id), UserPrefsRecord.namespace == namespace)
                                    .with_for_update())
@@ -152,6 +180,7 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
             session.add(row)
         else:
             row.value_json, row.version, row.updated_at = json.dumps(value), row.version + 1, now
+        saved = row.version
         try:
             await session.commit()
             break
@@ -159,7 +188,13 @@ async def put_prefs(namespace: str, request: Request, version: Optional[int] = N
             await session.rollback()
             if version is not None or attempt == 2:
                 raise HTTPException(status_code=409, detail={"message": "the preferences changed since this edit was made"}) from None
-    return {"namespace": namespace, "value": value, "version": row.version}
+    return value, saved
 
 
-__all__ = ["router", "NAMESPACES", "ChartPrefs", "MAX_BODY_BYTES", "defaults", "stored_value"]
+async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[Dict[str, Any], int]:
+    """One namespace of the caller's own preferences (defaults filled in) and its version (0 = never saved)."""
+    row = await session.scalar(select(UserPrefsRecord).where(*_own(user.tenant_id, user.id), UserPrefsRecord.namespace == namespace))
+    return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
+
+
+__all__ = ["router", "NAMESPACES", "ChartPrefs", "SetupPrefs", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one"]

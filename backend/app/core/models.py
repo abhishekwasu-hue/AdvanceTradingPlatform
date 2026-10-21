@@ -1,3 +1,4 @@
+import math
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
@@ -51,6 +52,21 @@ def bars_to_dataframe(bars: List[OHLCVBar]) -> pd.DataFrame:
                       index=_timestamp_index([b.timestamp for b in bars]))
     df.index.name = "timestamp"
     return df.sort_index()[["open", "high", "low", "close", "volume"]]
+
+
+# The signal intake routes (TradingView webhook, public API) refuse a level at or over this (#309 review). Not the
+# PAPER ticket's 1e7: BTCINR trades above Rs 1 crore. It keeps every level well inside the trade columns' Numeric(18, 4).
+MAX_SIGNAL_PRICE = 1e10
+
+
+def unset_if_not_finite(value: Any) -> Any:
+    """For an optional level of an intake payload: Pine Script renders an `na` plot as NaN, so a NaN (or infinite) value
+    there means "not set" (None), not a refusal of the whole alert. Required levels are not passed through this."""
+    if isinstance(value, str) and value.strip().lower().lstrip("+-") in ("nan", "inf", "infinity"):
+        return None
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
 
 
 class Signal(BaseModel):

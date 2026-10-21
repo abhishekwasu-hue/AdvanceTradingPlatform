@@ -50,7 +50,7 @@ from app.instruments.expiry_data import ExpiryDataMissing, ExpiryDataStale
 from app.instruments.models import ContractSpec
 from app.instruments.spreads import CustomLeg, PlannedLeg, ResolvedLeg, ResolvedStructure, plan_structure, structure_metrics
 from app.market_data.calendar import IST
-from app.risk_engine.risk_manager import RiskManager, TradingDayState
+from app.risk_engine.risk_manager import RiskManager, TradingDayState, nonfinite_levels
 from app.strategy_engine.base import BaseStrategy
 from app.trading.exit_logic import underlying_exit
 from app.trading.exit_rules import ExitRules
@@ -587,6 +587,9 @@ def _open_single(signal: Signal, rules: ContractRules, config: OptionBacktestCon
                  broker: PaperBroker) -> _Open:
     if signal.entry is None or signal.stop_loss is None:
         raise _Skip("signal has no entry/stop to derive option levels from")
+    bad = nonfinite_levels(signal)
+    if bad:
+        raise _Skip(f"signal {bad} is not a finite number")
     position = rules.position or OptionPosition.BUY
     right = option_right(signal.direction, position)
     strike = select_strike(ladder, spot, right, rules.strike_rule, rules.strike_offset)

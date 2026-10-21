@@ -7,6 +7,10 @@
  * The chart asks for older history on every scroll step while it is near its oldest bar, so `OlderGuard` lets one
  * request out at a time, stops for good when the broker has nothing older, and waits a little after a failed request.
  * Errors are plain: what happened, then what to do.
+ *
+ * UI2-4d (the Multi-chart tab): `paused` holds a chart's reads while it is off screen or the browser tab is hidden
+ * (`FeedGate`), and `fetchCandles` lets the tab's cells share one `CandlePool` (chart/multiChart.ts). Left out, the
+ * chart reads exactly as before.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ApiError, api } from "../api/client";
@@ -87,6 +91,30 @@ export interface FeedEvents {
   error: (text: string | null) => void;
 }
 
+/** UI2-4d: when a chart's reads may go out. Running, each refresh tick reads; paused (off screen, a hidden tab), nothing
+ * is sent and a tick that falls due - the first load included - waits until the chart runs again, once. Pure. */
+export class FeedGate {
+  private due = false;
+
+  constructor(private readonly tick: () => void, private paused = false) {
+    if (paused) this.due = true;
+    else tick();
+  }
+
+  /** The refresh timer fired. */
+  timer(): void {
+    if (this.paused) this.due = true;
+    else this.tick();
+  }
+
+  setPaused(paused: boolean): void {
+    this.paused = paused;
+    if (!paused && this.due) { this.due = false; this.tick(); }
+  }
+}
+
+export type FetchCandles = typeof api.marketDataCandles;
+
 /** One chart's reads: the timeframe's whole history until one read succeeds (a failed first read is retried whole on
  * the next tick, never as a short refresh), then the newest days. After `stop` no answer is used, so a late answer
  * never lands on another chart - even one with the same symbol and timeframe (a retry, or switching back). Pure. */
@@ -134,8 +162,12 @@ export interface ChartCandles {
   retry: () => void;
 }
 
-export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshMs = 60_000 }: {
+export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshMs = 60_000, paused = false, fetchCandles = api.marketDataCandles }: {
   enabled: boolean; symbol: string; exchange: string; timeframe: TimeframeId; refreshMs?: number;
+  /** UI2-4d: nothing is read while true (the chart is off screen or its tab hidden); a missed read follows on resume. */
+  paused?: boolean;
+  /** UI2-4d: the candle read (a Multi-chart cell passes its tab's shared pool). */
+  fetchCandles?: FetchCandles;
 }): ChartCandles {
   const [candles, setCandles] = useState<ChartBar[]>([]);
   const [loading, setLoading] = useState(false);
@@ -148,22 +180,29 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
   const candlesRef = useRef<ChartBar[]>([]);
   candlesRef.current = candles;
   const guard = useRef(new OlderGuard());
+  const fetchRef = useRef(fetchCandles);
+  fetchRef.current = fetchCandles;
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
+  const gate = useRef<FeedGate | null>(null);
 
   useEffect(() => {
     guard.current.reset();
     setCandles([]); setError(null); setExhausted(false); setLoadingOlder(false); setVolumeSource(null);
     if (!enabled || !sym) return undefined;
     const v2 = { forming: DAILY_OR_LONGER.has(timeframe), volume_from_future: true };
-    const feed = new CandleFeed((days) => api.marketDataCandles([sym], timeframe, days, exchange, undefined, undefined, v2), sym, timeframe, {
+    const feed = new CandleFeed((days) => fetchRef.current([sym], timeframe, days, exchange, undefined, undefined, v2), sym, timeframe, {
       loading: setLoading,
       replace: (bars, volume) => { setCandles(bars); setVolumeSource(volume); },
       merge: (bars, volume) => { setCandles((prev) => mergeBars(prev, bars)); setVolumeSource(volume); },
       error: setError,
     });
-    void feed.tick();
-    const id = window.setInterval(() => void feed.tick(), refreshMs);
-    return () => { feed.stop(); window.clearInterval(id); setLoading(false); };
+    const g = new FeedGate(() => void feed.tick(), pausedRef.current);
+    gate.current = g;
+    const id = window.setInterval(() => g.timer(), refreshMs);
+    return () => { feed.stop(); window.clearInterval(id); setLoading(false); if (gate.current === g) gate.current = null; };
   }, [enabled, sym, exchange, timeframe, refreshMs, nonce]);
+  useEffect(() => { gate.current?.setPaused(paused); }, [paused]);
 
   const loadOlder = useCallback(() => {
     const bars = candlesRef.current;
@@ -171,7 +210,7 @@ export function useChartCandles({ enabled, symbol, exchange, timeframe, refreshM
     if (ticket === null) return;
     const oldest = Date.parse(bars[0].timestamp);
     setLoadingOlder(true);
-    api.marketDataCandles([sym], timeframe, olderPageDaysFor(timeframe), exchange, undefined, istDate(bars[0]),
+    fetchRef.current([sym], timeframe, olderPageDaysFor(timeframe), exchange, undefined, istDate(bars[0]),
                           { forming: false, volume_from_future: true })
       .then((r) => {
         const entry = r.symbols[sym];

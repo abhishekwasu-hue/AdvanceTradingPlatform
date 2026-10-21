@@ -1,4 +1,4 @@
-import { ExternalLink, ListTree, Maximize2, Minimize2, Redo2, Undo2 } from "lucide-react";
+import { ListTree, Maximize2, Minimize2, Redo2, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
@@ -28,6 +28,8 @@ import {
 } from "./chartsPage";
 import { IndicatorsMenu } from "./IndicatorsMenu";
 import { toggle as toggleIndicator } from "./indicatorsModel";
+import { START_PARAMS, startChartFrom } from "./multiChart";
+import MultiChartV2 from "./MultiChartV2";
 import { DAILY_OR_LONGER, DEFAULT_TIMEFRAME, timeframeLabel, type TimeframeId } from "./timeframes";
 import { useChartCandles } from "./useChartCandles";
 import { useChartPrefs } from "./useChartPrefs";
@@ -40,7 +42,8 @@ import type { WatchItem } from "./watchlistsV2";
  * UI2-4b2 (UI v2 proposal §6, Charts page plan §3): the Charts page at `/charts` and `/charts/:symbol`, v2 only.
  * - Tab "Chart" (default): one large v2 chart (ChartV2) and one top bar - symbol, market state, timeframe, chart type,
  *   Indicators, undo / redo for drawings, chart settings, full screen (button, F, Escape).
- * - Tab "Multi-chart" (only while `chart_workspace` is on): the existing workspace, in its own tab, until UI2-4d.
+ * - Tab "Multi-chart" (only while `chart_workspace` is on): UI2-4d, the CH5 workspace with a v2 chart per cell
+ *   (MultiChartV2). The Chart tab reads nothing while it is not shown.
  * The v2 shell puts the broker gate in front of this page (src/ui/dataPages.ts): signed out, with no broker or before
  * the day's broker login the trader sees the gate card, never candles or sample data. Candles, the live price and the
  * drawings all come from the trader's own broker session and account.
@@ -105,12 +108,12 @@ export default function ChartsPageV2(_props: PageProps) {
   const chip = marketChip(status, exchange, now);
 
   const prefs = useChartPrefs(userId);
-  const data = useChartCandles({ enabled: !waiting, symbol, exchange, timeframe });
+  const data = useChartCandles({ enabled: !waiting && tab === "chart", symbol, exchange, timeframe });
   const last = data.candles[data.candles.length - 1];
   // The live price moves the newest bar: intraday while the market is open (or its state is not known), day / week /
   // month only while the server marks that bar as forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : chip?.open !== false;
-  const live = useLiveLtp(liveOn && data.candles.length > 0, symbol, exchange);
+  const live = useLiveLtp(liveOn && data.candles.length > 0 && tab === "chart", symbol, exchange);
 
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
   const [tools, setTools] = useState<Tools | null>(null);
@@ -161,7 +164,17 @@ export default function ChartsPageV2(_props: PageProps) {
 
   const drawingText = drawingNote(tools?.view?.message) ?? placeHint(tools?.view?.tool, phone);
   const emptyText = data.loading || waiting ? "Loading prices…" : data.error ? "" : `No prices for ${symbol} on this timeframe yet.`;
-  const workspace = `/?${new URLSearchParams({ workspace: "1", chart: symbol, exchange }).toString()}`;
+  // UI2-4d: a cell's "Open in Chart tab" - its symbol on the Chart tab, with its timeframe.
+  const openChart = (sym: string, exch: string, tf: TimeframeId) => {
+    setView({ timeframe: tf });
+    navigate(`${chartsPath(sym)}${exch && exch !== "NSE" ? `?exchange=${encodeURIComponent(exch)}` : ""}`);
+  };
+  // An old workspace link (`/?workspace=1&chart=..`, redirected under v2): its symbol starts the tab, then leaves the address.
+  const clearStart = useCallback(() => setParams((prev) => {
+    const next = new URLSearchParams(prev);
+    for (const k of START_PARAMS) next.delete(k);
+    return next;
+  }, { replace: true }), [setParams]);
 
   return (
     <div ref={root} data-page="charts-v2" data-fullscreen={fs.on ? "on" : "off"}
@@ -184,14 +197,9 @@ export default function ChartsPageV2(_props: PageProps) {
       )}
 
       {tab === "multi" ? (
-        <section className="space-y-space-3 rounded-panel border border-subtle bg-surface-1 p-space-5 text-t14 text-fg">
-          <h2 className="text-t15 font-semibold">Several charts side by side</h2>
-          <p className="text-fg-muted">The multi-chart workspace shows up to eight charts with linked symbols and timeframes. It opens in a new tab with {symbol}.</p>
-          <a href={workspace} target="_blank" rel="noopener noreferrer"
-            className={cx("inline-flex min-h-11 items-center gap-space-1 rounded-control bg-brand px-space-4 font-semibold text-on-brand hover:bg-brand-strong md:min-h-9", focus)}>
-            Open the multi-chart workspace <ExternalLink size={14} aria-hidden />
-          </a>
-        </section>
+        <MultiChartV2 key={String(userId)} symbol={symbol} exchange={exchange} userId={userId} offered={offered} timeframesKnown={timeframes !== null}
+          prefs={prefs.prefs} drawingsHidden={view.drawings_hidden} marketOpen={(ex) => marketChip(status, ex, now)?.open ?? null}
+          start={startChartFrom(params)} onStarted={clearStart} onOpenChart={openChart} />
       ) : (
         <div className={cx("flex min-h-0 gap-space-3", fs.on && "flex-1")}>
           <section aria-label={`Chart of ${symbol}`} className="flex min-h-0 min-w-0 flex-1 flex-col rounded-panel border border-subtle bg-surface-1">

@@ -13,7 +13,7 @@ export default function OiHistoryTable({ underlying, date }: { underlying: strin
   useEffect(() => {
     let alive = true;
     api.oiHistory(underlying, interval, date).then((d) => { if (alive) { setData(d); setError(null); } })
-      .catch((e) => { if (alive) setError(String(e?.message ?? e)); });
+      .catch(() => { if (alive) setError("The OI history is not available right now."); });
     return () => { alive = false; };
   }, [underlying, interval, date]);
   return (
@@ -25,7 +25,7 @@ export default function OiHistoryTable({ underlying, date }: { underlying: strin
                   className={`rounded px-2 py-0.5 border ${interval === m ? "border-brand text-fg" : "border-border text-fg-muted"}`}>{m} min</button>
         ))}
       </div>
-      {error && <div className="text-xs text-down">{error}</div>}
+      {error && <div className="text-xs text-fg-muted">{error}</div>}
       {data && data.rows.length === 0 && <div className="text-xs text-fg-muted">No snapshots for {data.date} yet.</div>}
       {data && data.rows.length > 0 && (
         <div className="overflow-x-auto">

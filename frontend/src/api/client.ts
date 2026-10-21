@@ -168,6 +168,7 @@ import { ApiError, NETWORK_MESSAGE, apiErrorFrom } from "./errors";
 import type { LegalAckBody, LegalAcceptanceStatus, LegalDocument, LegalSlug, LegalSummary } from "../legal/legal";
 import type { SupportReply } from "../support/support";
 import type { MarketStrip } from "../dashboard/types";
+import type { ChainExpiries, LiveChain } from "../optionChain/types";
 
 export { ApiError, friendlyError } from "./errors";
 
@@ -412,6 +413,11 @@ export const api = {
   oiSettings: (underlying: string) => request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`),
   saveOiSettings: (underlying: string, body: { enabled?: boolean; exchange?: string; overrides?: Record<string, unknown> }) =>
     request<OiSettingsResponse>(`/option-chain/${encodeURIComponent(underlying)}/settings`, { method: "PUT", body: JSON.stringify(body) }),
+
+  // OC1: the automatic Option chain page (v2): the expiry list with its default, and one chain ready to show.
+  optionChainExpiries: (underlying: string) => request<ChainExpiries>(`/option-chain/${encodeURIComponent(underlying)}/expiries`),
+  optionChainLive: (underlying: string, expiry?: string | null) =>
+    request<LiveChain>(`/option-chain/${encodeURIComponent(underlying)}/live${expiry ? `?expiry=${encodeURIComponent(expiry)}` : ""}`),
 
   analyzeOptionChain: (chain: OptionChain) =>
     request<OptionChainAnalysis>("/option-chain/analyze", {

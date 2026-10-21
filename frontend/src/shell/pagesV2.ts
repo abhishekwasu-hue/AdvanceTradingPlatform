@@ -14,6 +14,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   signals: lazy(() => import("../signals/SignalsV2")),
   // UI2-4b2: the Charts page (§6, src/chart) at /charts and /charts/:symbol - a v2-only page (no today's page to replace).
   charts: lazy(() => import("../chart/ChartsPageV2")),
+  // OC1: the automatic Option chain page (src/optionChain) at /option-chain - symbol and expiry only, no sample data.
+  "option-chain": lazy(() => import("../optionChain/OptionChainPageV2")),
   // UI2-9a: the page sweep's first three (src/trading): My positions, My portfolio, Risk limits.
   positions: lazy(() => import("../trading/PositionsV2")),
   portfolio: lazy(() => import("../trading/PortfolioV2")),

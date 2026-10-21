@@ -40,20 +40,35 @@ export interface BannerLines {
   tone: ReturnType<typeof tone>;
 }
 
-/** The banner's text, line by line, exactly as the spec lays it out. */
+/** OC1: the first readings of the day, in plain words (the server says "Insufficient data - history builds ..."). */
+export const OI_BUILDING_TEXT = "OI change will show after the first few minutes";
+
+/** A server message in plain words: the "Insufficient data" wording becomes OI_BUILDING_TEXT; others are kept. */
+export function plainOiText(text: string | null | undefined): string {
+  if (!text || /^insufficient data/i.test(text.trim())) return OI_BUILDING_TEXT;
+  return text;
+}
+
+/** OC1: a chip that says the readings are late (shown in the warning colour). */
+export function isLateChip(chip: string): boolean {
+  return chip.startsWith("Last update") || chip === "No reading yet today";
+}
+
+/** The banner's text, line by line, exactly as the spec lays it out (OC1: no "Stale" / "Insufficient data" labels -
+ * a late reading says how old it is, the first readings of the day say when the change shows). */
 export function bannerLines(data: OiBannerResponse): BannerLines {
   const chips: string[] = [];
   if (!data.market_open) chips.push("Market closed");
-  else if (data.stale) chips.push(data.age_minutes !== null ? `Stale · ${Math.round(data.age_minutes)} min old` : "Stale · no data yet");
+  else if (data.stale) chips.push(data.age_minutes !== null ? `Last update ${Math.round(data.age_minutes)} min ago` : "No reading yet today");
   const b = data.banner;
   if (!b) {
-    return { headline: data.message ?? "Insufficient data — history builds through the session", classes: null, pcr: null, chips, tone: tone("NEUTRAL") };
+    return { headline: plainOiText(data.message), classes: null, pcr: null, chips, tone: tone("NEUTRAL") };
   }
   if (b.dte !== null) chips.unshift(b.dte === 0 ? "Expiry today" : b.dte === 1 ? "Expiry tomorrow" : `DTE ${b.dte}`);
   if (b.max_pain !== null) chips.push(`Max pain ${formatOi(b.max_pain)}`);
   chips.push(`Data as of ${slotTime(b.slot)}`);
   return {
-    headline: b.message,
+    headline: plainOiText(b.message),
     classes: b.first_of_day ? null : `Put: ${b.put_class} · Call: ${b.call_class}`,
     pcr: b.pcr === null ? "PCR — (no call OI)" : `PCR ${b.pcr.toFixed(2)} — ${b.pcr_label}`,
     chips,

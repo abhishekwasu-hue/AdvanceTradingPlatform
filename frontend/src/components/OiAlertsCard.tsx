@@ -6,7 +6,7 @@ import { slotTime } from "../oi/format";
 const LABEL: Record<string, string> = {
   DIRECTION_CHANGE: "Banner direction change", STABLE_FLIP: "Confirmed trend flip", STRENGTH_CHANGE: "Strong ↔ Weakening",
   PCR_BAND: "PCR band change", MAX_PAIN_MOVE: "Max pain move", OI_WALL: "OI wall formed / broken", DTE: "Expiry tomorrow / today",
-  COLLECTOR_STALE: "Collector stale (ops)",
+  COLLECTOR_STALE: "Readings are late",
 };
 
 /** OI Banner (O4b): which banner changes notify, how often, quiet hours and the daily digest (owner saves; the server
@@ -16,11 +16,11 @@ export default function OiAlertsCard({ underlying }: { underlying: string }) {
   const [log, setLog] = useState<OiAlertLogResponse | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const load = () => {
-    api.oiSettings(underlying).then(setSettings).catch((e) => setNote(String(e?.message ?? e)));
+    api.oiSettings(underlying).then(setSettings).catch(() => setNote("The OI alerts are not available right now."));
     api.oiAlerts(underlying).then(setLog).catch(() => setLog(null));
   };
   useEffect(load, [underlying]);
-  if (!settings) return note ? <div className="text-xs text-down">{note}</div> : null;
+  if (!settings) return note ? <div className="text-xs text-fg-muted">{note}</div> : null;
   const alerts = (settings.effective.alerts ?? {}) as OiAlertSettings;
 
   async function save(patch: Partial<OiAlertSettings>) {

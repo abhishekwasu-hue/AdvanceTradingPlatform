@@ -175,14 +175,20 @@ resolved to the safe values only because of the mode.
   permanent (301) redirect, path and query kept. Its DNS record may be an `A` record to the server or a `CNAME` to the
   apex; both work. `docker-compose.prod.yml` derives `ALLOWED_ORIGINS`, `FRONTEND_URL` and `PUBLIC_BASE_URL` from
   `DOMAIN`, so no address is written anywhere else. The Upstox redirect URL is
-  `https://aialgodesk.tech/api/broker/upstox/oauth/callback`.
+  `https://aialgodesk.tech/api/broker/upstox/oauth/callback`: set it in the Upstox developer app, and if Upstox was
+  connected while the server answered on its IP, store the Upstox credentials again with this Redirect URI (the one
+  saved then still wins).
+- A deploy or rollback whose Caddyfiles differ from the running release's recreates the `caddy` container (about a
+  second without the edge; certificates are kept), because Caddy reads the file through a single-file mount.
 - **Recovery without DNS:** `CADDYFILE=Caddyfile.ip` with `DOMAIN=<SERVER_IP>` still works exactly as before (internal
   certificate, no www site). Switch back to `CADDYFILE=Caddyfile` and `DOMAIN=aialgodesk.tech` when DNS is back.
 - `health` checks `https://$DOMAIN/api/system/health` through Caddy on the server itself, so it does not depend on
-  DNS from outside. With `CADDYFILE=Caddyfile` it also checks, as the world sees it:
-  - the apex through public DNS with the certificate verified;
-  - the apex's security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy);
-  - `https://www.$DOMAIN/...` answers 301 to `https://$DOMAIN/...` with the path and query kept.
+  DNS from outside. With `CADDYFILE=Caddyfile` it also checks:
+  - through Caddy on the server (a FAIL if wrong, since it comes from the release's Caddyfile): the apex's security
+    headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy), and that `www.$DOMAIN/...` answers
+    301 to `https://$DOMAIN/...` with the path and query kept;
+  - through public DNS with the certificate verified (a WARN only - DNS and certificates are not part of a release, so
+    they never fail a deploy or a rollback): the apex health address and the www redirect.
 
 ## 6. R2 off-site backups (owner blocker)
 

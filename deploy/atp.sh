@@ -184,6 +184,17 @@ dc() {
     -f deploy/compose.release.yml -p "$PROJECT" "$@")
 }
 rdc() { printf '    + docker compose %s\n' "$*"; [ "$DRY_RUN" = "1" ] && return 0; dc "$@"; }
+# Caddy reads deploy/$CADDYFILE through a single-file bind mount: a checkout replaces the file (a new inode) and the
+# running container keeps the old one, and `up -d` does not recreate a service whose compose config is unchanged. So
+# when the Caddyfiles differ between the release that ran and the one starting, Caddy is recreated (certificates stay
+# in the caddy_data volume; the edge is down for about a second).
+refresh_edge() {
+  local from="$1" to="$2"
+  [ -n "$from" ] && [ "$from" != "$to" ] || return 0
+  if git -C "$ATP_DIR" diff --quiet "$from" "$to" -- deploy/Caddyfile deploy/Caddyfile.ip 2>/dev/null; then return 0; fi
+  info "the Caddyfile changed between ${from:0:12} and ${to:0:12} - recreating caddy so it reads the new one"
+  rdc up -d --no-deps --no-build --force-recreate caddy
+}
 # dc with another release's image; RELEASE is restored afterwards.
 dc_as() { local keep="$RELEASE" rc=0; RELEASE="$1"; shift; dc "$@" || rc=$?; RELEASE="$keep"; return "$rc"; }
 
@@ -579,23 +590,36 @@ health_checks() {
   if [ "${used:-0}" -ge 95 ]; then bad "disk ${used}% used"; elif [ "${used:-0}" -ge 85 ]; then warn "disk ${used}% used"; else ok "disk ${used}% used"; fi
 }
 
-# With a real domain (CADDYFILE=Caddyfile): the name as the world sees it - public DNS and the certificate verified (no
-# -k), the security headers on the apex, and www answering with a permanent redirect to the apex. GET requests only.
+# With a real domain (CADDYFILE=Caddyfile). Through Caddy on this host (no DNS): the apex's security headers and the
+# www site's redirect - both come from this release's Caddyfile, so they FAIL. Through public DNS with the certificate
+# verified: the apex and www as the world reaches them - DNS, Let's Encrypt and the route back to this host's own
+# address are outside a release, so they only WARN (a deploy or rollback is never failed by them). GET requests only.
 public_domain_check() {
   local domain="$1" code hdrs h missing="" want got
+  local here=(--resolve "$domain:443:127.0.0.1" --resolve "www.$domain:443:127.0.0.1")
+  hdrs="$(curl -sk -m 10 -D - -o /dev/null "${here[@]}" "https://$domain/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
+  if ! printf '%s\n' "$hdrs" | grep -q '^http/'; then
+    bad "https://$domain/ through Caddy here gave no answer, so its security headers could not be checked"
+  else
+    for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do
+      printf '%s\n' "$hdrs" | grep -q "^$h:" || missing="$missing $h"
+    done
+    if [ -z "$missing" ]; then ok "https://$domain/ sends HSTS, CSP, X-Frame-Options, X-Content-Type-Options and Referrer-Policy"
+    else bad "https://$domain/ is missing:$missing (deploy/Caddyfile)"; fi
+  fi
+  want="301 https://$domain/atp-health-probe?x=1"
+  got="$(curl -sk -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "${here[@]}" "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
+  case "$got" in
+    "$want") ok "www.$domain -> permanent redirect to https://$domain (path and query kept)" ;;
+    ""|000*) warn "www.$domain gave no answer through Caddy here - no certificate for it yet (its DNS record, or Let's Encrypt still issuing)" ;;
+    *) bad "www.$domain/atp-health-probe?x=1 -> '$got', expected '$want' (deploy/Caddyfile)" ;;
+  esac
   code="$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "https://$domain/api/system/health" 2>/dev/null || true)"
   if [ "$code" = "200" ]; then ok "https://$domain/api/system/health -> 200 over public DNS, certificate trusted"
-  else bad "https://$domain/api/system/health over public DNS -> ${code:-no answer} (DNS, port 443 or the certificate: caddy logs)"; fi
-  hdrs="$(curl -sS -m 10 -D - -o /dev/null "https://$domain/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
-  for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do
-    printf '%s\n' "$hdrs" | grep -q "^$h:" || missing="$missing $h"
-  done
-  if [ -z "$missing" ]; then ok "https://$domain/ sends HSTS, CSP, X-Frame-Options, X-Content-Type-Options and Referrer-Policy"
-  else bad "https://$domain/ is missing:$missing"; fi
-  want="301 https://$domain/atp-health-probe?x=1"
+  else warn "https://$domain/api/system/health over public DNS -> ${code:-no answer} (DNS, the certificate, or no route back to this host's own address)"; fi
   got="$(curl -sS -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
-  if [ "$got" = "$want" ]; then ok "https://www.$domain -> permanent redirect to https://$domain (path and query kept)"
-  else bad "https://www.$domain/atp-health-probe?x=1 -> '${got:-no answer}', expected '$want' (www DNS, or a release without the www redirect)"; fi
+  if [ "$got" = "$want" ]; then ok "https://www.$domain over public DNS -> 301 to https://$domain"
+  else warn "https://www.$domain over public DNS -> '${got:-no answer}', expected '$want' (www DNS record or its certificate)"; fi
 }
 
 check_key_live() {
@@ -821,6 +845,7 @@ cmd_deploy() {
   step "worker first, then frontend and the rest (exactly one worker)"
   start_workers
   rdc up -d --no-build
+  refresh_edge "$prev" "$sha"
   RESTORE_CHECKOUT=""
   if [ "$DRY_RUN" != "1" ]; then
     if [ "$prev" = "$sha" ]; then log_release converge "$sha" "$prev" "$backup_file" "${before:--}" "${after:--}"
@@ -1029,6 +1054,7 @@ cmd_rollback() {
   wait_api || die "the rolled-back API is not healthy - logs: docker compose ... logs backend; runbook 'Troubleshooting'" 1
   start_workers
   rdc up -d --no-build
+  refresh_edge "$cur" "$target"
   RESTORE_CHECKOUT=""
   if [ "$DRY_RUN" = "1" ]; then info "would run every health check"; printf '\ndry-run: nothing changed\n'; return 0; fi
   if [ "$mode" = "failed" ]; then log_release restore "$target" "$cur" "$backup" "$rev_after" "$(db_revision)"

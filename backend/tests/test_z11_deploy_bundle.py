@@ -380,10 +380,13 @@ if up:
     if db_rev not in (head, "-") and backend["ahead"] != db_rev:
         up = False          # an older image on a newer database starts only when told that exact revision
 pub = st.get("public")
-if pub is not None and url.startswith("https://") and "--resolve" not in args:      # the name through public DNS (D1)
+local = "--resolve" in args                          # through Caddy on the host; otherwise through public DNS (D1)
+if pub is not None and url.startswith("https://") and not (local and url.endswith("/api/system/health")):
     if "-D" in args:
-        print("\r\n".join(["HTTP/2 200", *pub["headers"]]) + "\r\n"); sys.exit(0)
-    print(pub["www"] if "://www." in url else pub["health"], end=""); sys.exit(0)
+        print("\r\n".join(["HTTP/2 200", *pub["headers"]]) + "\r\n" if pub["headers"] is not None else "", end=""); sys.exit(0)
+    if "://www." in url:
+        print(pub["www_local"] if local else pub["www"], end=""); sys.exit(0)
+    print(pub["health"], end=""); sys.exit(0)
 if "-w" in args:
     print("200" if up and "caddy" in st["running"] else "000", end="")
     sys.exit(0)
@@ -805,23 +808,53 @@ _EDGE_HEADERS = ["Strict-Transport-Security: max-age=31536000; includeSubDomains
 
 
 def test_health_checks_the_public_domain_its_headers_and_the_www_redirect(host):
-    """D1: with a real domain (CADDYFILE=Caddyfile) health also asks for the name through public DNS with the certificate
-    verified, checks the apex's security headers, and checks www answers 301 to the apex with path and query kept."""
+    """D1: with a real domain (CADDYFILE=Caddyfile) health checks, through Caddy here, the apex's security headers and the
+    www redirect (FAIL: they come from the release's Caddyfile), and through public DNS the apex and www (WARN only:
+    DNS and certificates are not part of a release, so they never fail a deploy or a rollback)."""
+    good = "301 https://atp.example.com/atp-health-probe?x=1"
     host.write_env(extra={"DOMAIN": "atp.example.com", "CADDYFILE": "Caddyfile"})
-    host.state["public"] = {"health": "200", "headers": _EDGE_HEADERS, "www": "301 https://atp.example.com/atp-health-probe?x=1"}
+    host.state["public"] = {"health": "200", "headers": _EDGE_HEADERS, "www": good, "www_local": good}
     host.save()
     assert host.run("deploy").returncode == 0
     res = host.run("health")
-    assert res.returncode == 0, res.all
+    assert res.returncode == 0 and "WARN" not in res.stdout.split("==> public HTTPS")[1].split("==>")[0], res.all
     assert "https://atp.example.com/api/system/health -> 200 over public DNS, certificate trusted" in res.stdout
-    assert "sends HSTS, CSP" in res.stdout and "https://www.atp.example.com -> permanent redirect to https://atp.example.com" in res.stdout
-    host.state["public"]["www"] = "000 "; host.save()                               # www has no certificate / no answer
+    assert "sends HSTS, CSP" in res.stdout and "www.atp.example.com -> permanent redirect to https://atp.example.com" in res.stdout
+    host.state["public"].update(www="000 ", www_local="000 ", health="000"); host.save()   # no www certificate, no hairpin
+    res = host.run("health")
+    assert res.returncode == 0, res.all                                                    # warnings, never a failed gate
+    assert "no certificate for it yet" in res.stdout and "over public DNS -> 000" in res.stdout
+    host.state["public"].update(www_local="200 ", headers=_EDGE_HEADERS[1:]); host.save()  # the release's Caddyfile is wrong
     res = host.run("health")
     assert res.returncode == 1 and "expected '301 https://atp.example.com/atp-health-probe?x=1'" in res.stdout
-    host.state["public"].update(www="301 https://atp.example.com/atp-health-probe?x=1", headers=_EDGE_HEADERS[1:], health="000")
-    host.save()
+    assert "is missing: strict-transport-security" in res.stdout
+    host.state["public"].update(www_local=good, headers=None); host.save()                 # no answer: one clear failure
     res = host.run("health")
-    assert res.returncode == 1 and "is missing: strict-transport-security" in res.stdout and "over public DNS -> 000" in res.stdout
+    assert res.returncode == 1 and "gave no answer, so its security headers could not be checked" in res.stdout
+    assert "is missing" not in res.stdout
+
+
+def test_a_changed_caddyfile_recreates_caddy_on_deploy_and_rollback(host):
+    """D1 review: Caddy reads deploy/$CADDYFILE through a single-file bind mount, so a release that changes it must
+    recreate the container; a release that does not leaves Caddy alone."""
+    assert host.run("deploy", host.sha_a).returncode == 0
+    before = len(host.state["calls"])
+    assert host.run("deploy", host.sha_b).returncode == 0                                 # B: README only
+    assert not [c for c in host.state["calls"][before:] if "--force-recreate" in c["argv"]]
+    _git(host.work, "checkout", "-q", "main")
+    (host.work / "deploy" / "Caddyfile").write_text("www.{$DOMAIN} {\n\tredir https://{$DOMAIN}{uri} permanent\n}\n")
+    _git(host.work, "add", "-A"); _git(host.work, "commit", "-q", "-m", "release C: www")
+    sha_c = _git(host.work, "rev-parse", "HEAD"); _git(host.work, "push", "-q", "origin", "main")
+    host.state["heads"][sha_c[:12]] = "rev1"; host.save()
+    before = len(host.state["calls"])
+    res = host.run("deploy", sha_c)
+    assert res.returncode == 0, res.all
+    recreated = [c["argv"] for c in host.state["calls"][before:] if "--force-recreate" in c["argv"]]
+    assert recreated and recreated[0][-1] == "caddy" and "recreating caddy" in res.stdout
+    before = len(host.state["calls"])
+    res = host.run("rollback")                                                       # back to B
+    assert res.returncode == 0, res.all
+    assert [c for c in host.state["calls"][before:] if "--force-recreate" in c["argv"]]
 
 
 def test_health_on_the_ip_caddyfile_skips_the_public_domain_checks(host):

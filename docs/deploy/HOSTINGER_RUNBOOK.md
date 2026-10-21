@@ -178,8 +178,10 @@ resolved to the safe values only because of the mode.
   `https://aialgodesk.tech/api/broker/upstox/oauth/callback`: set it in the Upstox developer app, and if Upstox was
   connected while the server answered on its IP, store the Upstox credentials again with this Redirect URI (the one
   saved then still wins).
-- A deploy or rollback whose Caddyfiles differ from the running release's recreates the `caddy` container (about a
+- A deploy or rollback recreates the `caddy` container when the Caddyfile it runs differs from the checkout's (about a
   second without the edge; certificates are kept), because Caddy reads the file through a single-file mount.
+  **Once, for the release that brings this:** it is deployed by the previous `atp.sh`, which does not do that yet - run
+  `atp.sh deploy` a second time right after (outside sessions with open positions), then `atp.sh health`.
 - **Recovery without DNS:** `CADDYFILE=Caddyfile.ip` with `DOMAIN=<SERVER_IP>` still works exactly as before (internal
   certificate, no www site). Switch back to `CADDYFILE=Caddyfile` and `DOMAIN=aialgodesk.tech` when DNS is back.
 - `health` checks `https://$DOMAIN/api/system/health` through Caddy on the server itself, so it does not depend on

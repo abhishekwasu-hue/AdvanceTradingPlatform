@@ -196,7 +196,8 @@ caddy_config_current() {
 }
 refresh_edge() {
   [ -n "$(dc ps -q caddy 2>/dev/null || true)" ] || return 0             # not running: `up -d` creates it from the file
-  if [ "$DRY_RUN" != "1" ] && caddy_config_current; then return 0; fi
+  if [ "$DRY_RUN" = "1" ]; then info "would compare caddy's running Caddyfile with deploy/$(env_get CADDYFILE | grep . || echo Caddyfile) and recreate caddy if they differ"; return 0; fi
+  if caddy_config_current; then return 0; fi
   info "caddy runs an older Caddyfile than deploy/$(env_get CADDYFILE | grep . || echo Caddyfile) - recreating it so it reads this one"
   rdc up -d --no-deps --no-build --force-recreate caddy
 }

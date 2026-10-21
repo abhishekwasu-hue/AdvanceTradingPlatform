@@ -90,6 +90,20 @@ def test_ip_caddyfile_routes_like_the_domain_one_over_https():
         assert route in domain and route in ip, route
 
 
+def test_domain_caddyfile_sends_www_to_the_apex_and_the_ip_one_stays_as_it_was():
+    """D1: www.{$DOMAIN} gets its own certificate and only redirects (301, path and query kept) to the apex; the apex site
+    keeps every route and header. The IP-only recovery file has no www site (no name to get a certificate for)."""
+    domain = (ROOT / "deploy/Caddyfile").read_text()
+    www = domain.split("www.{$DOMAIN} {", 1)[1].split("\n}\n", 1)[0]
+    assert "redir https://{$DOMAIN}{uri} permanent" in www and "Strict-Transport-Security" in www
+    assert "reverse_proxy" not in www and "tls internal" not in www
+    apex = domain.split("\n{$DOMAIN} {", 1)[1]
+    assert "reverse_proxy backend:8000" in apex and "Content-Security-Policy" in apex
+    assert "www." not in (ROOT / "deploy/Caddyfile.ip").read_text()
+    prod = (ROOT / "docker-compose.prod.yml").read_text()
+    assert prod.count("PUBLIC_BASE_URL: https://${DOMAIN}") == 2 and prod.count("FRONTEND_URL: https://${DOMAIN}") == 2
+
+
 def test_deploy_sh_takes_the_host_overlay():
     text = (ROOT / "scripts/deploy.sh").read_text()
     assert 'FILES="$FILES ${COMPOSE_OVERLAYS:-}"' in text

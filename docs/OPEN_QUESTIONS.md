@@ -531,7 +531,7 @@ interview is the one trilingual exception. Built in `claude/english-only-cleanup
 
 | # | What Abhi provides or decides | Why / used by | Where it goes (names the build or server reads) | Status |
 |---|---|---|---|---|
-| MA-1 | A domain, and a DNS `A` record for the app host pointing to the server's IP (`<server-ip>`, in Abhi's own notes; never in this public repo). | Browsers install the app and run web push and service workers only with a trusted HTTPS certificate. Caddy's internal certificate on the bare IP is not trusted, and Let's Encrypt gives none for the IP in our setup. Also needed for App Links (B2) and every Android build that signs in. | `/opt/atp/.env`: `DOMAIN`, `ACME_EMAIL`, `CADDYFILE=Caddyfile`. GitHub repository **variable** (not a secret): `ATP_APP_DOMAIN`. | open (owner blocker; Abhi is choosing the name and the account it is bought on) |
+| MA-1 | A domain, and a DNS `A` record for the app host pointing to the server's IP (`<server-ip>`, in Abhi's own notes; never in this public repo). | Browsers install the app and run web push and service workers only with a trusted HTTPS certificate. Caddy's internal certificate on the bare IP is not trusted, and Let's Encrypt gives none for the IP in our setup. Also needed for App Links (B2) and every Android build that signs in. | `/opt/atp/.env`: `DOMAIN`, `ACME_EMAIL`, `CADDYFILE=Caddyfile`. GitHub repository **variable** (not a secret): `ATP_APP_DOMAIN`. | **closed 2026-10-21 (owner):** `aialgodesk.tech` is live (apex `A` record; `www` redirects to the apex). `.env` has `DOMAIN=aialgodesk.tech` and `CADDYFILE=Caddyfile`. Still for Abhi: the `ATP_APP_DOMAIN` GitHub variable = `aialgodesk.tech`. |
 | MA-2 | A Firebase project with the Android app registered; its `google-services.json`; and a service account key for the server. | FCM push to the phone (B2). The Android WebView has no web push. | GitHub secret (environment `android-release`): `ANDROID_GOOGLE_SERVICES_JSON_BASE64`. Server `/opt/atp/.env`: `FCM_PROJECT_ID`, `FCM_SERVICE_ACCOUNT_FILE` (a path to the key file on the server, never in CI or git). | open (a test registration can use the temporary MA-6 id; the final one waits for the final id) |
 | MA-3 | An upload keystore for signing Android releases, with two offline backups. | Signed APK / AAB (B4). Its SHA-256 fingerprint also goes into `assetlinks.json` (B2). | GitHub secrets (environment `android-release`): `ANDROID_UPLOAD_KEYSTORE_BASE64`, `ANDROID_UPLOAD_KEYSTORE_PASSWORD`, `ANDROID_UPLOAD_KEY_ALIAS`, `ANDROID_UPLOAD_KEY_PASSWORD`. | open (before B4) |
 | MA-4 | A Google Play Console account. | Internal testing track and, later, the store listing (BT7). | None in CI yet. The Play app-signing SHA-256 fingerprint goes into `assetlinks.json`. | later: after company registration |
@@ -542,6 +542,10 @@ interview is the one trilingual exception. Built in `claude/english-only-cleanup
 | MA-9 | Where Abhi gets a new sideloaded APK, and where "Update available" links to before Play exists. | B4 update prompt. | Server `/opt/atp/.env`: `ANDROID_APP_LATEST_VERSION_CODE`, `ANDROID_APP_LATEST_VERSION_NAME`, `ANDROID_APP_MIN_SUPPORTED_VERSION_CODE` (0 = no prompt), `ANDROID_APP_DOWNLOAD_URL`. | **answered 2026-10-20 (owner):** the `android-release` workflow run's downloads (artifacts) on GitHub (Abhi signed in); no public download link. |
 
 ### MA-1: domain and DNS, then a trusted certificate
+
+**Done 2026-10-21.** The production name is the apex `aialgodesk.tech` (not `atp.<domain>` as below), with `www`
+redirecting to it (`deploy/Caddyfile`). The steps below are kept for a future move; `atp.sh health` now checks the
+public name, its headers and the www redirect (`docs/deploy/HOSTINGER_RUNBOOK.md` section 5).
 
 1. **Buy a domain** at any registrar. The app host is `atp.<domain>`, the name `docs/DEPLOY_HOSTINGER.md` already
    uses.

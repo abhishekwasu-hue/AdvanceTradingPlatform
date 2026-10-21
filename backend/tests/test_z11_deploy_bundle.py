@@ -379,6 +379,11 @@ if up:
     head = st["heads"].get(backend["release"])
     if db_rev not in (head, "-") and backend["ahead"] != db_rev:
         up = False          # an older image on a newer database starts only when told that exact revision
+pub = st.get("public")
+if pub is not None and url.startswith("https://") and "--resolve" not in args:      # the name through public DNS (D1)
+    if "-D" in args:
+        print("\r\n".join(["HTTP/2 200", *pub["headers"]]) + "\r\n"); sys.exit(0)
+    print(pub["www"] if "://www." in url else pub["health"], end=""); sys.exit(0)
 if "-w" in args:
     print("200" if up and "caddy" in st["running"] else "000", end="")
     sys.exit(0)
@@ -793,6 +798,38 @@ def test_a_seed_shaped_change_to_an_existing_entry_still_fails_the_deploy(host):
     (host.bin / "docker").write_text(fake)
     res = host.run("deploy")
     assert res.returncode == 1 and "feature flags CHANGED during the deploy" in res.stdout
+
+
+_EDGE_HEADERS = ["Strict-Transport-Security: max-age=31536000; includeSubDomains", "X-Content-Type-Options: nosniff",
+                 "X-Frame-Options: DENY", "Content-Security-Policy: default-src 'self'", "Referrer-Policy: no-referrer"]
+
+
+def test_health_checks_the_public_domain_its_headers_and_the_www_redirect(host):
+    """D1: with a real domain (CADDYFILE=Caddyfile) health also asks for the name through public DNS with the certificate
+    verified, checks the apex's security headers, and checks www answers 301 to the apex with path and query kept."""
+    host.write_env(extra={"DOMAIN": "atp.example.com", "CADDYFILE": "Caddyfile"})
+    host.state["public"] = {"health": "200", "headers": _EDGE_HEADERS, "www": "301 https://atp.example.com/atp-health-probe?x=1"}
+    host.save()
+    assert host.run("deploy").returncode == 0
+    res = host.run("health")
+    assert res.returncode == 0, res.all
+    assert "https://atp.example.com/api/system/health -> 200 over public DNS, certificate trusted" in res.stdout
+    assert "sends HSTS, CSP" in res.stdout and "https://www.atp.example.com -> permanent redirect to https://atp.example.com" in res.stdout
+    host.state["public"]["www"] = "000 "; host.save()                               # www has no certificate / no answer
+    res = host.run("health")
+    assert res.returncode == 1 and "expected '301 https://atp.example.com/atp-health-probe?x=1'" in res.stdout
+    host.state["public"].update(www="301 https://atp.example.com/atp-health-probe?x=1", headers=_EDGE_HEADERS[1:], health="000")
+    host.save()
+    res = host.run("health")
+    assert res.returncode == 1 and "is missing: strict-transport-security" in res.stdout and "over public DNS -> 000" in res.stdout
+
+
+def test_health_on_the_ip_caddyfile_skips_the_public_domain_checks(host):
+    """Recovery path: with CADDYFILE=Caddyfile.ip there is no public name to ask, so none of the D1 checks run."""
+    assert host.run("deploy").returncode == 0
+    res = host.run("health")
+    assert res.returncode == 0, res.all
+    assert "over public DNS" not in res.stdout and "www." not in res.stdout
 
 
 def test_health_passes_on_a_phase0_install_with_nothing_for_the_owner_to_set(host):

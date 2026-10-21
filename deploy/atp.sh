@@ -543,6 +543,7 @@ health_checks() {
   local domain code; domain="$(env_get DOMAIN)"
   code="$(curl -sk -o /dev/null -m 10 -w '%{http_code}' --resolve "$domain:443:127.0.0.1" "https://$domain/api/system/health" 2>/dev/null || true)"
   if [ "$code" = "200" ]; then ok "https://$domain/api/system/health -> 200"; else bad "https://$domain/api/system/health -> ${code:-no answer} (caddy logs: docker compose ... logs caddy)"; fi
+  if [ "$(env_get CADDYFILE)" != "Caddyfile.ip" ]; then public_domain_check "$domain"; fi
 
   step "release"
   local cur; cur="$(current_sha)"
@@ -576,6 +577,25 @@ health_checks() {
   if [ -n "$extra" ]; then bad "public TCP ports besides 22/80/443:$extra (Docker publishes past ufw)"; else ok "public TCP ports: ${ports:-none seen}"; fi
   local used; used="$(df -P "$ATP_DIR" | awk 'NR==2 {gsub("%","",$5); print $5}')"
   if [ "${used:-0}" -ge 95 ]; then bad "disk ${used}% used"; elif [ "${used:-0}" -ge 85 ]; then warn "disk ${used}% used"; else ok "disk ${used}% used"; fi
+}
+
+# With a real domain (CADDYFILE=Caddyfile): the name as the world sees it - public DNS and the certificate verified (no
+# -k), the security headers on the apex, and www answering with a permanent redirect to the apex. GET requests only.
+public_domain_check() {
+  local domain="$1" code hdrs h missing="" want got
+  code="$(curl -sS -o /dev/null -m 10 -w '%{http_code}' "https://$domain/api/system/health" 2>/dev/null || true)"
+  if [ "$code" = "200" ]; then ok "https://$domain/api/system/health -> 200 over public DNS, certificate trusted"
+  else bad "https://$domain/api/system/health over public DNS -> ${code:-no answer} (DNS, port 443 or the certificate: caddy logs)"; fi
+  hdrs="$(curl -sS -m 10 -D - -o /dev/null "https://$domain/" 2>/dev/null | tr -d '\r' | tr '[:upper:]' '[:lower:]' || true)"
+  for h in strict-transport-security x-content-type-options x-frame-options content-security-policy referrer-policy; do
+    printf '%s\n' "$hdrs" | grep -q "^$h:" || missing="$missing $h"
+  done
+  if [ -z "$missing" ]; then ok "https://$domain/ sends HSTS, CSP, X-Frame-Options, X-Content-Type-Options and Referrer-Policy"
+  else bad "https://$domain/ is missing:$missing"; fi
+  want="301 https://$domain/atp-health-probe?x=1"
+  got="$(curl -sS -o /dev/null -m 10 -w '%{http_code} %{redirect_url}' "https://www.$domain/atp-health-probe?x=1" 2>/dev/null || true)"
+  if [ "$got" = "$want" ]; then ok "https://www.$domain -> permanent redirect to https://$domain (path and query kept)"
+  else bad "https://www.$domain/atp-health-probe?x=1 -> '${got:-no answer}', expected '$want' (www DNS, or a release without the www redirect)"; fi
 }
 
 check_key_live() {

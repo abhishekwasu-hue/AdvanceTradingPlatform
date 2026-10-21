@@ -170,8 +170,19 @@ resolved to the safe values only because of the mode.
   `dig +short atp.<your-domain>` shows the IP, set `DOMAIN=atp.<your-domain>`, `ACME_EMAIL=<your email>` and
   `CADDYFILE=Caddyfile`, then run `/opt/atp/deploy/atp.sh deploy`. Caddy gets a Let's Encrypt certificate over
   ports 80/443 and renews it itself.
+- **Production (done 2026-10-21):** the platform runs at **https://aialgodesk.tech** (`DOMAIN=aialgodesk.tech`,
+  `CADDYFILE=Caddyfile`). `www.aialgodesk.tech` gets its own certificate and only sends visitors to the apex with a
+  permanent (301) redirect, path and query kept. Its DNS record may be an `A` record to the server or a `CNAME` to the
+  apex; both work. `docker-compose.prod.yml` derives `ALLOWED_ORIGINS`, `FRONTEND_URL` and `PUBLIC_BASE_URL` from
+  `DOMAIN`, so no address is written anywhere else. The Upstox redirect URL is
+  `https://aialgodesk.tech/api/broker/upstox/oauth/callback`.
+- **Recovery without DNS:** `CADDYFILE=Caddyfile.ip` with `DOMAIN=<SERVER_IP>` still works exactly as before (internal
+  certificate, no www site). Switch back to `CADDYFILE=Caddyfile` and `DOMAIN=aialgodesk.tech` when DNS is back.
 - `health` checks `https://$DOMAIN/api/system/health` through Caddy on the server itself, so it does not depend on
-  DNS from outside.
+  DNS from outside. With `CADDYFILE=Caddyfile` it also checks, as the world sees it:
+  - the apex through public DNS with the certificate verified;
+  - the apex's security headers (HSTS, CSP, X-Frame-Options, X-Content-Type-Options, Referrer-Policy);
+  - `https://www.$DOMAIN/...` answers 301 to `https://$DOMAIN/...` with the path and query kept.
 
 ## 6. R2 off-site backups (owner blocker)
 

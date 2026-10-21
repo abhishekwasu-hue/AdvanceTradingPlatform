@@ -5,7 +5,7 @@ import ErrorBoundary from "../components/ErrorBoundary";
 import type { Page } from "../components/Sidebar";
 import LegalAcceptanceBanner from "../legal/LegalAcceptanceBanner";
 import PwaBanners from "../pwa/PwaBanners";
-import { PAGES, PAGE_COMPONENTS, pathFor } from "../routes";
+import { PAGES, PAGE_COMPONENTS, pathFor, type PageProps } from "../routes";
 import { BrokerGate } from "../ui/BrokerGate";
 import { useFeatures } from "../ui/useFeatures";
 import BottomNavV2 from "./BottomNavV2";
@@ -18,7 +18,6 @@ import { V2_ALIASES, routerPath, shellGates, shellKeyFromPath, shellTitle, v2Red
 import SidebarV2 from "./SidebarV2";
 import TopBarV2 from "./TopBarV2";
 
-const ChartsPageV2 = lazy(() => import("./ChartsPageV2"));
 type FeedbackDialogProps = { open: boolean; onOpenChange: (open: boolean) => void; pathname: string; initialText?: string };
 const FeedbackDialog = lazy<ComponentType<FeedbackDialogProps>>(
   () => import("../feedback/FeedbackDialog").catch(() => ({ default: () => null })),
@@ -97,6 +96,8 @@ export default function AppShellV2() {
   const legacy = location.pathname === "/" ? legacyTarget(location.search) : null;
   const redirect = legacy ? null : v2RedirectFor(path, location.search, { signedIn: !!user, on: features.on });
 
+  // UI2-4b2: the Charts page (v2 only, so not one of PAGES) comes from the same registry as the other v2 pages.
+  const ChartsPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.charts ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -109,7 +110,7 @@ export default function AppShellV2() {
               ? <Route key={p} path="/copilot/:tab?" caseSensitive element={element} />
               : <Route key={p} path={pathFor(p)} caseSensitive element={element} />;
           })}
-          <Route path="/charts/:symbol?" caseSensitive element={<ChartsPageV2 />} />
+          <Route path="/charts/:symbol?" caseSensitive element={<ChartsPage onNavigate={go} />} />
           {V2_ALIASES.map(({ path, page }) => {
             const PageComponent = PAGE_COMPONENTS[page];
             return <Route key={path} path={path} caseSensitive element={<PageComponent onNavigate={go} />} />;

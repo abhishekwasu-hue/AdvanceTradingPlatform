@@ -10,13 +10,13 @@
  */
 import {
   BarSeries, CandlestickSeries, HistogramSeries, LineSeries, LineStyle, createChart, type IChartApi, type IPriceLine, type ISeriesApi,
-  type LogicalRange, type SeriesDefinition, type SeriesPartialOptionsMap, type SeriesType, type Time, type UTCTimestamp,
+  type IPrimitivePaneRenderer, type IPrimitivePaneView, type ISeriesPrimitive, type LogicalRange, type SeriesDefinition, type SeriesPartialOptionsMap, type SeriesType, type Time, type UTCTimestamp,
 } from "lightweight-charts";
 import { chartView, formatTick } from "../charting/chartTypes";
 import { LightweightEngine, type LineSeriesLike } from "../charting/lightweight";
 import { DEFAULT_SETTINGS, closes, ema, rsi, sma, vwap, type Series } from "../utils/indicators";
 import { applyChartTheme, candleOptions, chartThemeOptions, type ChartPalette } from "./chartTheme";
-import type { ChartBar } from "./timeframes";
+import { DAILY_OR_LONGER, type ChartBar, type TimeframeId } from "./timeframes";
 
 /** The brief's chart types; Renko, range and the others stay in the Multi-chart workspace (CH5-b). */
 export const CHART_TYPES_V2 = ["candles", "bars", "heikin_ashi", "line"] as const;
@@ -26,6 +26,9 @@ export const CHART_TYPE_LABELS_V2: Record<ChartTypeV2, string> = { candles: "Can
 /** Price overlays, in the order of their colour tokens (chart-ov-1..4). */
 export const OVERLAYS_V2 = ["ema_fast", "ema_slow", "vwap", "sma"] as const;
 export type OverlayId = (typeof OVERLAYS_V2)[number];
+export const OVERLAY_LABELS_V2: Record<OverlayId, string> = {
+  ema_fast: `EMA ${DEFAULT_SETTINGS.emaFast}`, ema_slow: `EMA ${DEFAULT_SETTINGS.emaSlow}`, vwap: "VWAP", sma: `SMA ${DEFAULT_SETTINGS.smaPeriod}`,
+};
 
 export interface PaneChoice { volume: boolean; rsi: boolean }
 
@@ -37,6 +40,8 @@ export interface ChartCoreOptions {
   overlays: readonly OverlayId[];
   /** The zone of the time axis (IST for Indian venues, UTC for 24x7 crypto: `chartTypes.venueZone`). */
   zone: string;
+  /** Day, week and month bars show dates without a time of day (crosshair label, time axis). Default 5m. */
+  timeframe?: TimeframeId;
   /** Called when the chart is scrolled back to within 10 bars of its oldest bar. */
   onLoadOlder?: () => void;
 }
@@ -46,6 +51,46 @@ const LOWER_PANE_STRETCH = 0.25;
 const RSI_LEVELS = [DEFAULT_SETTINGS.rsiHigh, DEFAULT_SETTINGS.rsiMid, DEFAULT_SETTINGS.rsiLow];
 
 const toTime = (iso: string) => Math.floor(Date.parse(iso) / 1000) as UTCTimestamp;
+
+/** The crosshair's time label: "02 Mar 10:15" intraday; "Mon, 02 Mar 2026" for a day or a week (its first day);
+ * "Mar 2026" for a month - a daily bar has no time of day worth showing. */
+export function crosshairTimeLabel(sec: number, zone: string, tf: TimeframeId = "5min"): string {
+  const d = new Date(sec * 1000);
+  if (tf === "month") return d.toLocaleDateString("en-IN", { timeZone: zone, month: "short", year: "numeric" });
+  if (DAILY_OR_LONGER.has(tf)) return d.toLocaleDateString("en-IN", { timeZone: zone, weekday: "short", day: "2-digit", month: "short", year: "numeric" });
+  return d.toLocaleString("en-IN", { timeZone: zone, day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
+/** The canvas target a primitive draws on, as the library types it (no direct dependency on its canvas package). */
+type DrawTarget = Parameters<IPrimitivePaneRenderer["draw"]>[0];
+
+/** The name of a lower pane ("Volume", "RSI 14"), drawn at its top left in the axis text colour. */
+export class PaneLabel implements ISeriesPrimitive<Time> {
+  private requestUpdate: (() => void) | null = null;
+  private readonly views: readonly IPrimitivePaneView[];
+
+  constructor(public text: string, public color: string) {
+    this.views = [{ zOrder: () => "top", renderer: () => ({
+      draw: (target: DrawTarget) => target.useMediaCoordinateSpace(({ context }) => {
+        context.font = "11px 'JetBrains Mono', ui-monospace, monospace";
+        context.fillStyle = this.color;
+        context.textBaseline = "top";
+        context.fillText(this.text, 8, 6);
+      }),
+    }) }];
+  }
+
+  attached({ requestUpdate }: { requestUpdate: () => void }) { this.requestUpdate = requestUpdate; }
+  detached() { this.requestUpdate = null; }
+  paneViews() { return this.views; }
+
+  set(text: string, color: string) {
+    if (text === this.text && color === this.color) return;
+    this.text = text;
+    this.color = color;
+    this.requestUpdate?.();
+  }
+}
 
 function lineData(times: UTCTimestamp[], s: Series | null) {
   if (!s) return [];
@@ -62,6 +107,8 @@ export class ChartCore {
   private volume: ISeriesApi<"Histogram"> | null = null;
   private rsi: ISeriesApi<"Line"> | null = null;
   private rsiBands: IPriceLine[] = [];
+  private readonly volumeLabel = new PaneLabel("Volume", "");
+  private readonly rsiLabel = new PaneLabel(`RSI ${DEFAULT_SETTINGS.rsiPeriod}`, "");
   private readonly studyLines = new Set<ISeriesApi<"Line">>();
   private data: ChartBar[] = [];
   private key = "";
@@ -69,17 +116,16 @@ export class ChartCore {
 
   constructor(element: HTMLElement, private opts: ChartCoreOptions) {
     const theme = chartThemeOptions(opts.palette, opts.grid);
-    const time = (t: number) => new Date(t * 1000).toLocaleString("en-IN", { timeZone: opts.zone, day: "2-digit", month: "short",
-                                                                                hour: "2-digit", minute: "2-digit", hour12: false });
+    const daily = DAILY_OR_LONGER.has(opts.timeframe ?? "5min");
     this.chart = createChart(element, {
       ...theme,
       autoSize: true,
       // The TradingView attribution logo stays (the library's licence asks for it once per chart).
       layout: { ...theme.layout, fontFamily: "'JetBrains Mono', ui-monospace, monospace", fontSize: 11, attributionLogo: true },
       rightPriceScale: { ...theme.rightPriceScale, minimumWidth: 72 },
-      timeScale: { ...theme.timeScale, timeVisible: true, secondsVisible: false, rightOffset: 4,
+      timeScale: { ...theme.timeScale, timeVisible: !daily, secondsVisible: false, rightOffset: 4,
                    tickMarkFormatter: (t: Time, type: number) => formatTick(t as number, type, opts.zone) },
-      localization: { timeFormatter: (t: Time) => time(t as number) },
+      localization: { timeFormatter: (t: Time) => crosshairTimeLabel(t as number, this.opts.zone, this.opts.timeframe) },
       // Touch as on ProChart (PW2): pinch to zoom, a one-finger drag pans while a vertical swipe still scrolls the page.
       handleScroll: { mouseWheel: true, pressedMouseMove: true, horzTouchDrag: true, vertTouchDrag: false },
       handleScale: { mouseWheel: true, pinch: true, axisPressedMouseMove: true, axisDoubleClickReset: true },
@@ -122,14 +168,34 @@ export class ChartCore {
     this.volume = panes.volume
       ? this.addLowerPane(HistogramSeries, { priceFormat: { type: "volume" }, priceLineVisible: false, lastValueVisible: false }, 1) : null;
     this.rsi = panes.rsi
-      ? this.addLowerPane(LineSeries, { color: p.rsi, lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false,
-                                        title: `RSI ${DEFAULT_SETTINGS.rsiPeriod}` }, panes.volume ? 2 : 1) : null;
+      ? this.addLowerPane(LineSeries, { color: p.rsi, lineWidth: 2, priceLineVisible: false, crosshairMarkerVisible: false },
+                                        panes.volume ? 2 : 1) : null;
+    this.volume?.attachPrimitive(this.volumeLabel);
+    this.rsi?.attachPrimitive(this.rsiLabel);
+    this.paintLabels();
     this.rsiBands = this.rsi ? RSI_LEVELS.map((price) => (this.rsi as ISeriesApi<"Line">).createPriceLine({
       price, color: p.rsiBand, lineWidth: 1, lineStyle: price === DEFAULT_SETTINGS.rsiMid ? LineStyle.Dotted : LineStyle.Dashed,
       axisLabelVisible: false, title: "",
     })) : [];
     this.opts = { ...this.opts, panes };
     this.render();
+  }
+
+  /** A new timeframe: day / week / month labels lose the time of day (the bars come with the next setData). */
+  setTimeframe(timeframe: TimeframeId): void {
+    if (timeframe === this.opts.timeframe) return;
+    this.opts = { ...this.opts, timeframe };
+    this.chart.applyOptions({ timeScale: { timeVisible: !DAILY_OR_LONGER.has(timeframe) } });
+  }
+
+  /** The volume pane's name: "Volume", or where an index's volume comes from ("Volume · NIFTY OCT FUT"). */
+  setVolumeLabel(text: string): void {
+    this.volumeLabel.set(text, this.opts.palette.text);
+  }
+
+  private paintLabels(): void {
+    this.volumeLabel.set(this.volumeLabel.text, this.opts.palette.text);
+    this.rsiLabel.set(this.rsiLabel.text, this.opts.palette.text);
   }
 
   setType(type: ChartTypeV2): void {
@@ -150,6 +216,7 @@ export class ChartCore {
     applyChartTheme(this.chart, { candles: this.candles, bars: this.bars, line: this.line, rsi: this.rsi ?? undefined,
                                   rsiBands: this.rsiBands, overlays: this.overlays }, palette, grid, this.candlesHidden());
     this.engine.setDefaultDrawingColor(palette.drawing);
+    this.paintLabels();
     this.paintVolume(this.data.map((b) => toTime(b.timestamp)));      // volume carries its colour per bar
   }
 

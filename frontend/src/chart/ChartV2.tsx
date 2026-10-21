@@ -4,7 +4,7 @@ import { venueZone } from "../charting/chartTypes";
 import type { LightweightEngine } from "../charting/lightweight";
 import { THEME_EVENT, useAppearance } from "../theme";
 import type { LtpResponse } from "../types";
-import { ChartCore, type ChartTypeV2, type OverlayId } from "./chartCore";
+import { ChartCore, OVERLAYS_V2, OVERLAY_LABELS_V2, type ChartTypeV2, type OverlayId } from "./chartCore";
 import { readChartPalette, resolveChartTheme } from "./chartTheme";
 import { foldLive, type ChartBar, type TimeframeId } from "./timeframes";
 import { DEFAULT_CHART_PREFS, type ChartPrefs } from "./useChartPrefs";
@@ -32,6 +32,10 @@ export interface ChartV2Props {
   live?: Pick<LtpResponse, "ltp" | "timestamp" | "fetched_at"> | null;
   /** Scrolled back to the oldest bars: load the page before them. */
   onLoadOlder?: () => void;
+  /** The volume pane's name (UI2-4b2: where an index's volume comes from). */
+  volumeLabel?: string;
+  /** Shown over an empty chart (no bars yet for this symbol and timeframe). */
+  emptyText?: string;
   /** The drawing tools (saved per user and symbol); on for a chart of a symbol. */
   drawingTools?: boolean;
   onEngine?: (engine: LightweightEngine | null) => void;
@@ -43,7 +47,7 @@ const NO_OVERLAYS: readonly OverlayId[] = [];
 
 export default function ChartV2({
   candles, timeframe, symbol, exchange = "NSE", chartType = "candles", prefs = DEFAULT_CHART_PREFS, overlays = NO_OVERLAYS, live,
-  onLoadOlder, drawingTools = true, onEngine, onTools, className = "h-[480px]",
+  onLoadOlder, volumeLabel = "Volume", emptyText = "No bars for this timeframe yet.", drawingTools = true, onEngine, onTools, className = "h-[480px]",
 }: ChartV2Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const plotRef = useRef<HTMLDivElement>(null);
@@ -59,7 +63,7 @@ export default function ChartV2({
     if (!plotRef.current) return undefined;
     const c = new ChartCore(plotRef.current, {
       palette: readChartPalette(rootRef.current, prefs.candle_colors), grid: prefs.grid, panes: prefs.indicators, type: chartType,
-      overlays, zone: venueZone(exchange), onLoadOlder: () => callbacks.current.onLoadOlder?.(),
+      overlays, zone: venueZone(exchange), timeframe, onLoadOlder: () => callbacks.current.onLoadOlder?.(),
     });
     setCore(c);
     callbacks.current.onEngine?.(c.engine);
@@ -80,6 +84,8 @@ export default function ChartV2({
   const { volume, rsi } = prefs.indicators;
   useEffect(() => { core?.setPanes({ volume, rsi }); }, [core, volume, rsi]);
   useEffect(() => { core?.setType(chartType); }, [core, chartType]);
+  useEffect(() => { core?.setTimeframe(timeframe); }, [core, timeframe]);
+  useEffect(() => { core?.setVolumeLabel(volumeLabel); }, [core, volumeLabel]);
   const overlayKey = overlays.join(",");
   useEffect(() => { core?.setOverlays(overlays); }, [core, overlayKey]);  // eslint-disable-line react-hooks/exhaustive-deps
   // The chart type is not in the key: setType re-renders the same bars in place, so the trader's zoom stays.
@@ -92,9 +98,21 @@ export default function ChartV2({
     <div ref={rootRef} data-chart-theme={theme} data-chart-grid={prefs.grid ? "on" : "off"} className={`relative w-full ${className}`}
          style={{ backgroundColor: "rgb(var(--chart-bg))" }}>
       <div ref={plotRef} className="h-full w-full" />
+      {overlays.length > 0 && (
+        // The price lines' legend (UI2-4b2), in their chart colours; the lower panes name themselves on the canvas.
+        <ul aria-label="Price lines" data-chart-legend className="pointer-events-none absolute left-space-2 top-space-2 z-10 flex flex-wrap gap-x-space-3 text-t12"
+            style={{ color: "rgb(var(--chart-text))" }}>
+          {OVERLAYS_V2.map((id, i) => overlays.includes(id) && (
+            <li key={id} className="flex items-center gap-space-1">
+              <span aria-hidden className="inline-block h-0.5 w-3 rounded-pill" style={{ backgroundColor: `rgb(var(--chart-ov-${i + 1}))` }} />
+              {OVERLAY_LABELS_V2[id]}
+            </li>
+          ))}
+        </ul>
+      )}
       {candles.length === 0 && (
-        <p className="pointer-events-none absolute inset-0 flex items-center justify-center text-t13" style={{ color: "rgb(var(--chart-text))" }}>
-          No bars for this timeframe yet.
+        <p className="pointer-events-none absolute inset-0 flex items-center justify-center px-space-4 text-center text-t13" style={{ color: "rgb(var(--chart-text))" }}>
+          {emptyText}
         </p>
       )}
     </div>

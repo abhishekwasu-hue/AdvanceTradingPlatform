@@ -1165,10 +1165,32 @@ export interface BrokerTokenInfo {
   needs_login: boolean;
   oauth_supported: boolean;
   oauth_callback_url: string | null;
+  // D2 (Upstox): the account's saved Redirect URI differs from oauth_callback_url (the login sends the saved one).
+  redirect_uri_mismatch?: boolean | null;
+  // D2 (Upstox): the saved Redirect URI is left over on an IP address or plain http; the next login uses
+  // oauth_callback_url instead and saves it.
+  redirect_uri_will_be_replaced?: boolean | null;
   // Fyers / Kite: the platform opens the broker's login page and takes the pasted one-time code.
   login_url_supported?: boolean;
   code_param?: string | null;
   account_label?: string;
+}
+
+/** D2: GET /broker/upstox/redirect-url - the Redirect URL to register on the Upstox developer app, and a flag for each
+ * stored Upstox account whose stored Redirect URI differs from it (booleans only, never a stored value). */
+export interface UpstoxRedirectAccount {
+  account_label: string;
+  redirect_uri_set: boolean;
+  redirect_uri_mismatch: boolean;
+  /** Left over on an IP address or plain http: the next login uses `redirect_url` and saves it (not a mismatch). */
+  redirect_uri_will_be_replaced?: boolean;
+}
+
+export interface UpstoxRedirectInfo {
+  redirect_url: string;
+  redirect_uri_mismatch: boolean;
+  accounts: UpstoxRedirectAccount[];
+  redirect_uri_will_be_replaced?: boolean;
 }
 
 export interface BrokerLoginUrl {

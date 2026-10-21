@@ -163,7 +163,7 @@ function AppShell() {
   const first = useRef(true);
   useEffect(() => {
     const label = page === null ? "Not found" : page === "account" ? "Account" : NAV.find((n) => n.id === page)?.label ?? "";
-    document.title = label ? `${label} · Advance Trading` : "Advance Trading";
+    document.title = label ? `${label} · AiAlgoDesk` : "AiAlgoDesk";
     if (first.current) { first.current = false; return; }
     window.scrollTo(0, 0);                       // the window scrolls (the shell is min-h-screen), not <main>
     mainRef.current?.focus({ preventScroll: true });

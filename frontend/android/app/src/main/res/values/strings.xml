@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">ATP</string>
-    <string name="title_activity_main">ATP</string>
+    <string name="app_name">AiAlgoDesk</string>
+    <string name="title_activity_main">AiAlgoDesk</string>
     <string name="package_name">tech.aialgodesk.app</string>
     <string name="custom_url_scheme">tech.aialgodesk.app</string>
 </resources>

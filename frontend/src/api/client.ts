@@ -31,6 +31,7 @@ import type {
   BacktestResult,
   BrokerCredentialsInput,
   BrokerTokenInfo,
+  UpstoxRedirectInfo,
   ChartRunResponse,
   Deployment,
   DeploymentCreateRequest,
@@ -706,6 +707,7 @@ export const api = {
 
   brokerTokenStatus: () => request<BrokerTokenInfo[]>("/broker/token-status"),
 
+  upstoxRedirectUrl: () => request<UpstoxRedirectInfo>("/broker/upstox/redirect-url"),
   upstoxOAuthStart: (accountLabel = "primary") =>
     request<{ authorization_url: string }>(`/broker/upstox/oauth/start?account_label=${encodeURIComponent(accountLabel)}`),
   // Paste-the-code daily login (Fyers, Kite): open the broker's page, then exchange the pasted code.

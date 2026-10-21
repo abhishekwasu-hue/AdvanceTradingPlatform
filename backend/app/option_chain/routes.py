@@ -9,6 +9,11 @@
   `POST .../alerts/test` sends one test alert through the organisation's channels
 * `GET /api/option-chain/{underlying}/settings` and `PUT` (owner) - the tenant's settings for the underlying; "*" is
   the tenant default for every underlying. `enabled` asks the collector to follow the underlying.
+* OC1 (the automatic Option chain page, app/option_chain/chain_view.py):
+  `GET /api/option-chain/{underlying}/expiries` the next expiries (IST) and the default one (the next on an expiry day);
+  `GET /api/option-chain/{underlying}/live?expiry=` the broker's chain through the caller's own session (the same read as
+  `POST /api/market-data/option-chains`), the spot and near-month future prices, the summary (ATM, PCR, max pain,
+  ATM IV, days to expiry, highest OI strikes), IV and Greeks per leg and the OI-change state. Reads only.
 
 Every reading is recomputed from the stored strikes with the caller's tenant settings (app/option_chain/snapshots.py).
 Nothing here places, changes or suggests an order (ADR-0006).
@@ -26,8 +31,10 @@ from app.auth.dependencies import get_current_user, require_role
 from app.core.enums import UserRole
 from app.db.models import OIAlertLogRecord, OIBannerSettingRecord, User
 from app.db.session import get_session
-from app.market_data.calendar import market_session_status
-from app.option_chain import oi_regime, snapshots
+from app.brokers.models import OptionChain
+from app.market_data.calendar import family_holidays, market_session_status
+from app.market_data.candles_routes import chains_rate_limit
+from app.option_chain import chain_view, oi_regime, snapshots
 from app.option_chain.snapshots import IST
 
 router = APIRouter(prefix="/api/option-chain", tags=["option-chain"])
@@ -218,3 +225,76 @@ async def test_alert(underlying: str, user: User = Depends(_member), session: As
     from app.option_chain import oi_alerts
     record = await oi_alerts.send_test(session, user.tenant_id, _underlying(underlying))
     return {"notification_id": record.id}
+
+
+# ---------------------------------------------------------------------------------------------------- OC1
+
+def _symbol(underlying: str) -> str:
+    try:
+        return chain_view.underlying_name(underlying)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _holiday_family(underlying: str) -> str:
+    """The holiday calendar of the exchange the underlying's options trade on (BSE for SENSEX, else NSE)."""
+    return chain_view.spot_instrument(underlying)[1]
+
+
+@router.get("/{underlying}/expiries")
+async def expiries(underlying: str, user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """OC1: the underlying's next expiries (IST dates) and the one the page opens on."""
+    name = _symbol(underlying)
+    today = chain_view.today_ist()
+    holidays = await family_holidays(session, _holiday_family(name))
+    items, source = await chain_view.expiry_list(session, name, today, holidays)
+    default = chain_view.default_expiry([i.day for i in items], today)
+    return {"underlying": name, "today": today.isoformat(), "expiries": [i.as_json() for i in items],
+            "default": default.isoformat() if default else None, "source": source}
+
+
+async def _last_price(symbol: str, exchange: str, source: Dict[str, Any], user: User, session: AsyncSession) -> Optional[float]:
+    """The broker's last price through the same session as the chain; None when it cannot be read (never a guess)."""
+    from app.market_data.candles_routes import ltp as ltp_read
+    try:
+        body = await ltp_read(symbol=symbol, exchange=exchange, broker=source.get("broker"),
+                              account_label=source.get("account_label") or "primary", user=user, session=session)
+    except HTTPException:
+        return None
+    except Exception:  # noqa: BLE001 - a missing price leaves its card empty; the chain still shows
+        return None
+    value = body.get("ltp") if isinstance(body, dict) else None
+    return float(value) if isinstance(value, (int, float)) and value > 0 else None
+
+
+@router.get("/{underlying}/live", dependencies=[Depends(chains_rate_limit)])
+async def live(underlying: str, expiry: Optional[date] = Query(default=None), user: User = Depends(get_current_user),
+               session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """OC1: one chain ready to show. The chain comes through `POST /api/market-data/option-chains` (the caller's own
+    broker session, its entitlement and budget); 409 when no broker session can serve it."""
+    from app.market_data.candles_routes import ChainsBody, option_chains
+    name = _symbol(underlying)
+    now = datetime.now(timezone.utc)
+    today = chain_view.today_ist(now)
+    if expiry is None:
+        holidays = await family_holidays(session, _holiday_family(name))
+        items, _ = await chain_view.expiry_list(session, name, today, holidays)
+        expiry = chain_view.default_expiry([i.day for i in items], today)
+    fetched = await option_chains(ChainsBody(underlyings=[name], expiry=expiry), user=user, session=session)
+    entry = fetched["symbols"].get(name) or {}
+    if not entry.get("chain"):
+        raise HTTPException(status_code=502, detail=f"Your broker sent no option chain for {name}.")
+    chain = OptionChain.model_validate(entry["chain"])
+    source = fetched.get("source") or {}
+    spot_symbol, spot_exchange = chain_view.spot_instrument(name)
+    spot = chain.underlying_ltp if chain.underlying_ltp and chain.underlying_ltp > 0 else await _last_price(spot_symbol, spot_exchange, source, user, session)
+    contract = await chain_view.near_future(session, name, today)
+    future = None
+    if contract is not None:
+        future = {"symbol": contract.symbol, "expiry": contract.expiry.isoformat(),
+                  "ltp": await _last_price(contract.symbol, contract.exchange, source, user, session)}
+    status = await market_session_status(session, now, spot_exchange)
+    oi = await chain_view.oi_change_state(chain, tenant_id=user.tenant_id, underlying=name, now=now, market_open=status.is_open)
+    view = chain_view.build_view(chain, spot=spot, future=future, expiry=expiry or chain_view.parse_expiry(chain.expiry), now=now, oi=oi)
+    view["market_open"] = status.is_open
+    return view

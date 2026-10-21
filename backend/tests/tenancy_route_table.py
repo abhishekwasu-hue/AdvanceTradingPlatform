@@ -466,6 +466,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/option-chain/{underlying}/alerts/snooze"): "trader",
     ("POST", "/api/option-chain/{underlying}/alerts/test"): "trader",
     ("GET", "/api/option-chain/{underlying}/banner"): "member",
+    ("GET", "/api/option-chain/{underlying}/expiries"): "member",
+    ("GET", "/api/option-chain/{underlying}/live"): "member",
     ("GET", "/api/option-chain/{underlying}/history"): "member",
     ("GET", "/api/option-chain/{underlying}/settings"): "member",
     ("PUT", "/api/option-chain/{underlying}/settings"): "owner",

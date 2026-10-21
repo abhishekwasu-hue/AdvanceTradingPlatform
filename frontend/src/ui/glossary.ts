@@ -23,7 +23,7 @@ export const GLOSSARY = {
   lot: { term: "Lot", definition: "The fixed number of units in one futures or options contract. You trade in whole lots." },
   ltp: { term: "LTP", definition: "Last traded price: the price of the most recent trade." },
   "max-loss": { term: "Max loss", definition: "The most this trade can lose if the price reaches your stop, including costs." },
-  "max-pain": { term: "Max pain", definition: "The strike at which option buyers as a whole would lose the most at expiry. Some traders watch it near expiry." },
+  "max-pain": { term: "Max pain", definition: "The strike at which option holders as a whole would lose the most at expiry. Some traders watch it near expiry." },
   mis: { term: "MIS", definition: "Intraday trade: your broker closes it before the market closes on the same day." },
   nrml: { term: "NRML", definition: "A futures or options position you can hold overnight until expiry." },
   oi: { term: "OI", definition: "Open interest: the number of futures or options contracts still open. Rising OI means new positions are being added." },

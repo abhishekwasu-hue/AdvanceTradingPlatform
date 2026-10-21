@@ -14,6 +14,8 @@ export const PAGE_COMPONENTS_V2: Partial<Record<ShellKey, LazyExoticComponent<Co
   signals: lazy(() => import("../signals/SignalsV2")),
   // UI2-4b2: the Charts page (§6, src/chart) at /charts and /charts/:symbol - a v2-only page (no today's page to replace).
   charts: lazy(() => import("../chart/ChartsPageV2")),
+  // OC1: the automatic Option chain page (src/optionChain) at /option-chain - symbol and expiry only, no sample data.
+  "option-chain": lazy(() => import("../optionChain/OptionChainPageV2")),
   // UI2-7: Settings → Setup (§11, src/setup) at /settings/setup - the setup wizard and the go-live checklist, v2 only.
   setup: lazy(() => import("../setup/SetupPageV2")),
 };

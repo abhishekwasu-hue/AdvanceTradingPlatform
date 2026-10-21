@@ -1,11 +1,9 @@
-import { Download, Info, RefreshCw, Share, X } from "lucide-react";
+import { Download, RefreshCw, Share, X } from "lucide-react";
 import { Button } from "../components/primitives";
-import { INSTALL_NEEDS_DOMAIN, applyUpdate, dismissInstall, promptInstall, usePwa } from "./pwa";
+import { applyUpdate, dismissInstall, promptInstall, usePwa } from "./pwa";
 
 /** PW1: the two app-level notices - a waiting new version ("Reload") and the install offer. Both sit above the page
- * content, never cover it, and are announced politely to screen readers. Touch targets are 44 px on phones.
- * Owner mobile brief (Phase A): on an address that can never install the app (no trusted HTTPS - a bare IP with
- * Caddy's internal certificate), the install offer says why once, instead of never appearing. */
+ * content, never cover it, and are announced politely to screen readers. Touch targets are 44 px on phones. */
 export default function PwaBanners() {
   const { updateReady, install } = usePwa();
   if (!updateReady && !install) return null;
@@ -24,13 +22,6 @@ export default function PwaBanners() {
           <span className="min-w-0 flex-1">Install AiAlgoDesk on this device for one-tap access and alerts.</span>
           <Button variant="primary" className="h-11 md:h-9" onClick={() => { void promptInstall(); }}>Install app</Button>
           <Button variant="ghost" className="h-11 w-11 px-0 md:h-9 md:w-9" aria-label="Not now" onClick={dismissInstall} icon={<X size={16} />} />
-        </div>
-      )}
-      {install === "unavailable" && (
-        <div className="flex items-start gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg" data-install="unavailable">
-          <Info size={16} className="mt-0.5 shrink-0 text-fg-muted" aria-hidden />
-          <span className="min-w-0 flex-1">{INSTALL_NEEDS_DOMAIN}</span>
-          <Button variant="ghost" className="h-11 w-11 px-0 md:h-9 md:w-9" aria-label="Dismiss" onClick={dismissInstall} icon={<X size={16} />} />
         </div>
       )}
       {install === "ios" && (

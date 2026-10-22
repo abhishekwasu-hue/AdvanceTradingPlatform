@@ -38,7 +38,7 @@ function useLoad<T>(load: () => Promise<T>, key: string): [Load<T>, () => void] 
     load().then((data) => { if (live) setState({ status: "ok", data }); }, () => { if (live) setState({ status: "error" }); });
     return () => { live = false; };
     // `key` names what `load` reads; `nonce` is "Try again".
-  }, [key, nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [key, nonce]);
   return [state, useCallback(() => setNonce((n) => n + 1), [])];
 }
 

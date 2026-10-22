@@ -45,7 +45,7 @@ export const BANNED_UI_WORDS: readonly BannedWord[] = [
  */
 export const USER_PAGE_ROOTS: readonly string[] = [
   "broker", "dashboard", "signals", "optionChain", "setup", "paperbot", "trading", "settings", "shell", "ui", "fno",
-  "chartAnalyze", "tours", "aiKeys",
+  "chartAnalyze", "tours", "aiKeys", "markets",
   "chart/ChartsPageV2.tsx",
 ];
 

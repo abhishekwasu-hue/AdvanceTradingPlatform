@@ -35,7 +35,7 @@ export default function ChainDishV2({ symbol, expiry, refreshKey, load = fetchAn
       .catch(() => { if (live) setDish(null); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
-  }, [asked, refreshKey]);   // eslint-disable-line react-hooks/exhaustive-deps
+  }, [asked, refreshKey]);   // `asked` stands for the symbol and the expiry
 
   return <ChainDishView dish={dish} loading={loading} />;
 }

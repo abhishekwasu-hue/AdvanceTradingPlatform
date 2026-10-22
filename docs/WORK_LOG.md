@@ -2645,3 +2645,30 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Migrations: none for W1-W4 and G1-G11; WAVE_PROJECTION waits for the templates spec section 5 (migration + owner
   approval).
 - Owner questions WAVE-1..WAVE-16 in docs/OPEN_QUESTIONS.md; README row 14 updated. Build next, in the review's order.
+
+## 22 Oct - MO4 slice 2: the Sector & index view and the Option chain dish (behind ui_v2 + markets_view)
+
+- Branch `claude/mo4-sector-index-view`. No migration. New flag `markets_view` (OFF; controls.py + flag_catalog.py, needs
+  `ui_v2`). Owner questions MO4-11..20 (OPEN_QUESTIONS); README row 9 updated.
+- Backend: `app/markets/service.py` + `routes.py` (`GET /api/markets/overview`, `GET /api/markets/lists/{key}`; 404 with
+  the flag that is off). Every index of the "Indices" system list (its own closes, `NSE_INDEX:<code>`) and every
+  "Sectors" list (the average of its stocks' moves): day / week / month (1 / 5 / 21 sessions of the NIFTY 50's stored
+  days), breadth, strongest / weakest three, the move against the NIFTY 50; a missing close is null ("I don't know").
+  Shared reference data only (no tenant rows, no broker), cached five minutes. `app/option_chain/dish.py`: "What the
+  chain shows" (PCR zone on the OI banner's band edges in neutral words, OI walls, max pain against the spot, ATM IV
+  change since the session's first stored snapshot, the expected move) from the six analyses; the analyses answer
+  carries `dish` only with `markets_view` on. mypy gate: `app/markets`, `app/option_chain/dish.py`; the merge also
+  repairs main's `mypy.ini` files list (three copies of the last line without commas -> one line with `app/signals`,
+  `app/rhythm`, `app/idea_library`; mypy clean on 258 files).
+- Frontend: `src/markets/` (MarketsPageV2 at `/markets`, model, fixture): the dish in words, leaders / laggards, a heat
+  map (md and up) and a list (phone), indices grouped by family, `?view=&period=&list=` in the address, a sector's /
+  index's stocks with Charts links, "I don't know" for missing numbers. Nav: Markets -> "Sectors & indices" (flag
+  `markets_view`, PAGE_FLAGS -> Coming soon when off), not behind the broker gate (shared end-of-day data), flag-off
+  fallback to `/`. `src/optionChain/ChainDishV2.tsx` above the summary cards; `fetchAnalysesShared` (5 s) so the
+  summary and the tabs cost one chain read. The banned-words guard now reads `src/markets`.
+- Tests: backend `tests/test_mo4_markets.py` (pure rules, overview / list from seeded lists and closes, flags, login,
+  unknown list, dish lines and edges, analyses answer with / without the flag, advice words) + tenancy table; vitest
+  `src/markets/markets.test.tsx`, `src/optionChain/chainDish.test.tsx`, updated navModel / DashboardV2 counts; e2e
+  `markets-v2.e2e.ts` with new baselines `markets-v2-{360,390,1440}-{light,dark}`, `markets-v2-indices-1440-*`,
+  `markets-v2-list-{390,1440}-*`, `chain-dish-v2-{390,1440}-*` (block only; the option chain's own baselines unchanged).
+

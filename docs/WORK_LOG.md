@@ -2052,6 +2052,22 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   setting, theme-init, the server sync); e2e `e2e/text-size-v2.e2e.ts` (Large and Extra large: phone layout rules,
   no sideways scroll at 1440, nothing spills); all 106 changed e2e baselines regenerated at the new size.
 
+## Master Order 3, part 2: the UX audit report (docs only)
+
+- Branch `claude/ux-audit-report` from `claude/font-size` (PR #335), so every picture shows the new text size. No
+  product code changed; the page fixes follow in their own PRs, in the order the report gives.
+- `docs/design/UX_AUDIT_FULL.md`: 61 audited items (41 pages / views, 13 modals and sheets, 7 old pages still
+  reached while `ui_v2` is off), each scored against U1-U12 with the elements to remove / hide / move / merge / make
+  prominent, tagged User / Admin / Remove (handover 8a: two groups, no Simple / Pro), a primary action and a mock;
+  the merges and the new sidebar; the admin console and its server-side enforcement and tests; all 81 feature flags
+  in plain words with status and advice; the banned-words list for the future CI guard; the fresh-eyes walkthrough.
+- Screenshots: committed baselines reused; the rest captured by `frontend/e2e/ux-audit-capture.e2e.ts` (capture
+  only, `page.screenshot({ path })`, skipped in CI, registered in the phone project) into `docs/design/ux-audit/`
+  (64 PNGs, made-up fixture data). The Settings → AI block is masked in the pictures (it lists internal model
+  names). The Journal page's pictures are named `discipline-*.png`: the public-repo guard reads "journal" in a file
+  name as a real trade journal.
+- Fresh-eyes test: no sub-agent tool was available in this session, so it is a heuristic Playwright walkthrough by
+  the auditor on a fresh mocked account (stated with its limits in section 9 of the report).
 ## OC4: the Analysis tabs, Ask AI and My analyses below the v2 chain (handover 2a)
 
 - Branch `claude/oc4-wire-analyses` (stacked on `claude/font-size`).

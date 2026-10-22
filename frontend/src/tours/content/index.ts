@@ -2,6 +2,7 @@ import type { TourId } from "../pages";
 import type { PageTour } from "../types";
 import { BROKER_TOUR } from "./broker";
 import { CHARTS_TOUR } from "./charts";
+import { COPILOT_TOUR } from "./copilot";
 import { DASHBOARD_TOUR } from "./dashboard";
 import { OPTION_CHAIN_TOUR } from "./optionChain";
 import { PORTFOLIO_TOUR } from "./portfolio";
@@ -23,4 +24,5 @@ export const PAGE_TOURS: Record<TourId, PageTour> = {
   portfolio: PORTFOLIO_TOUR,
   risk: RISK_TOUR,
   settings: SETTINGS_TOUR,
+  copilot: COPILOT_TOUR,
 };

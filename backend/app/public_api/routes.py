@@ -94,7 +94,7 @@ async def revoke_key(key_id: int, user: User = Depends(require_owner), session: 
 @public_router.get("/docs")
 async def docs() -> dict:
     return {
-        "version": "v1", "auth": "X-API-Key header; keys are created by an OWNER under Settings > API keys and shown once",
+        "version": "v1", "auth": "X-API-Key header; keys are created by an OWNER under Settings > Advanced > Personal API keys and shown once",
         "base_url": "/api/public/v1", "scopes": SCOPES, "error_codes": ERROR_CODES,
         "rate_limits": "per key per minute (set at creation, max 600) plus the plan's daily allowance",
         "idempotency": "POST /signals takes idempotency_key; the same key replays the original outcome instead of re-executing",
@@ -111,7 +111,7 @@ async def docs() -> dict:
             {"method": "GET", "path": "/risk/limits", "scope": "read:risk"},
             {"method": "GET", "path": "/risk/events?limit=", "scope": "read:risk"},
         ],
-        "webhooks": "Configure a WEBHOOK alert channel under Settings to receive HMAC-signed notifications (X-ATP-Signature = hex(HMAC-SHA256(secret, body))).",
+        "webhooks": "Configure a WEBHOOK alert channel under Settings > Alerts to receive HMAC-signed notifications (X-ATP-Signature = hex(HMAC-SHA256(secret, body))).",
         "changelog": [{"version": "v1", "date": "2026-09-26", "notes": "Initial public surface (Phase K3)."}],
         "disclaimer": "Signals, scores and backtests are decision support, not investment advice. You remain responsible for every order placed from your account.",
     }

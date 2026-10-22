@@ -153,7 +153,7 @@ async def _teammates_linked(session: AsyncSession, user: User) -> bool:
 def _no_session_reason(records: Sequence[BrokerCredentialRecord], now: datetime, broker: Optional[str], teammates: bool) -> str:
     if not records:
         base = (f"No {terms_for(broker).display_name} account linked by you" if broker else "No broker linked to your login") + \
-               ": EOD data only. Link Upstox or Dhan under Settings > Brokers for live prices."
+               ": EOD data only. Link Upstox or Dhan on the Broker page for live prices."
         if teammates:
             base += " A broker linked by a teammate is theirs: its live data is shown only to that person."
         return base
@@ -167,7 +167,7 @@ def _no_session_reason(records: Sequence[BrokerCredentialRecord], now: datetime,
         elif terms.status is DataTermsStatus.PENDING:
             reasons.append(f"Live {name} data in ATP waits for the broker's written confirmation. EOD data until then.")
         elif not token_is_usable(record, now):
-            reasons.append(f"Your {name} session has no valid token today. Log in to {name} under Settings > Brokers for live data.")
+            reasons.append(f"Your {name} session has no valid token today. Log in to {name} on the Broker page for live data.")
     # Prefer the actionable reason (log in) over the terms ones.
     reasons.sort(key=lambda r: 0 if "Log in" in r else 1)
     return reasons[0] if reasons else "No live session available: EOD data only."

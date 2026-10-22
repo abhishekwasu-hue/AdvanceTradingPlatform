@@ -67,7 +67,7 @@ def test_sources_and_409_without_a_usable_session(monkeypatch):
     res = client.get("/api/market-data/sources", headers=headers)
     assert res.status_code == 200 and res.json()["sources"] == [] and res.json()["usable"] is False
     res = client.post("/api/market-data/candles", headers=headers, json={"symbols": ["NIFTY"]})
-    assert res.status_code == 409 and "Settings > Brokers" in res.json()["detail"]
+    assert res.status_code == 409 and "Broker page" in res.json()["detail"]
     _store_credentials(me, status=BrokerTokenStatus.EXPIRED.value)
     src = client.get("/api/market-data/sources", headers=headers).json()
     assert src["sources"][0]["broker"] == "upstox" and src["sources"][0]["usable"] is False and src["usable"] is False

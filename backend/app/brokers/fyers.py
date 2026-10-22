@@ -6,7 +6,7 @@ history, option chain). Every authenticated call carries `Authorization: <app_id
 Responses are `{"s": "ok"|"error", "code": ..., "message": ..., ...}`.
 
 Login is an auth-code exchange like Zerodha's: the user completes the Fyers login page once a day
-and pastes the returned code into Settings as `request_token`; `authenticate()` exchanges it with
+and pastes the returned code on the Broker page as `request_token`; `authenticate()` exchanges it with
 `validate-authcode` (`appIdHash = sha256("<app_id>:<secret>")`) for the day's access token, which the
 platform stores encrypted and re-uses. Credentials: `api_key` (App ID, e.g. `ABCD1234-100`),
 `api_secret` (secret key), `request_token` (auth code) or `access_token`.

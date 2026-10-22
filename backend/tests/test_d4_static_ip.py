@@ -117,7 +117,7 @@ def test_readiness_lists_the_static_ip_item_for_live(monkeypatch):
     headers, _ = _owner("d4-ready@example.com")
     items = {i["key"]: i for i in client.get("/api/readiness?target=live", headers=headers).json()["items"]}
     assert items["static_ip"]["status"] == "todo" and items["static_ip"]["scope"] == "LIVE"
-    assert "Settings > Static IP" in items["static_ip"]["fix"]
+    assert "the Broker page, under Static IP" in items["static_ip"]["fix"]
 
 
 def test_only_registry_broker_names_are_accepted(monkeypatch):

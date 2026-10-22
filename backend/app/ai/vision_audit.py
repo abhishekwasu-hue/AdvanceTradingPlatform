@@ -90,10 +90,10 @@ HEADINGS: Tuple[Tuple[str, str], ...] = (("zones", "Zones"), ("structure", "Stru
 EMOJI = {"ok": "✅", "caution": "⚠️", "bad": "❌"}
 EMOJI_SET = frozenset(EMOJI.values())
 COMMENT_ONLY = "Comment only - Vision never approves, rejects or changes anything."
-VISION_OFF_SWITCH = "Vision off - turn it on in Settings"
-VISION_OFF_SCOPE = "Vision off for proposals - turn it on in Settings"
-VISION_OFF_SCOPE_KIND = {KIND_SCAN: "Vision off for scan alerts - turn it on in Settings",
-                         KIND_DAILY: "Vision daily review off - turn it on in Settings"}
+VISION_OFF_SWITCH = "Vision off - turn it on under Settings > Advanced"
+VISION_OFF_SCOPE = "Vision off for proposals - turn it on under Settings > Advanced"
+VISION_OFF_SCOPE_KIND = {KIND_SCAN: "Vision off for scan alerts - turn it on under Settings > Advanced",
+                         KIND_DAILY: "Vision daily review off - turn it on under Settings > Advanced"}
 V3_NOT_ENABLED = "Vision for scan alerts and the daily review is not enabled for your organisation"
 SCAN_LIMIT_REASON = "scan audit limit"      # the skipped row's reason prefix (one such row per user per rolling hour)
 NOT_CREATOR = "Vision reviews proposals on deployments you created"

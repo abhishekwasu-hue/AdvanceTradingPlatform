@@ -1133,7 +1133,7 @@ class ApiKeyRecord(Base):
 
 
 class AiProviderConfigRecord(Base):
-    """Phase L1: one LLM provider per tenant. The API key is entered on the Settings page only,
+    """Phase L1: one LLM provider per tenant. The API key is entered under Settings > AI only,
     stored Fernet-encrypted (like broker credentials) and never returned by the API."""
 
     __tablename__ = "ai_provider_configs"

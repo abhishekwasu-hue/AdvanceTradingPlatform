@@ -55,21 +55,21 @@ When you sign up, the platform sends a verification link to your email. Open it 
 
 ## How do I connect my broker?
 keywords: broker, connect broker, link broker, zerodha, upstox, dhan, angel, credentials, api key, login to broker, session
-page: /settings
+page: /broker
 
-Open Settings and use "Add / update broker credentials" to store the API credentials your broker issued. Then log in to the broker from "Connected brokers" when the broker asks for a daily login. "Broker session health" shows whether the session is working. The credentials are encrypted with your organisation's own key.
+Open the Broker page and use "Connect your broker": pick your broker, store the API credentials it issued and log in. "Your brokers" shows whether each session is working, and "Connect again" appears there when the broker asks for a daily login. The credentials are encrypted with your organisation's own key.
 
 ## Why does my broker need a login every day?
 keywords: daily login, token expired, session expired, broker logged out, reconnect
-page: /settings
+page: /broker
 
-Indian brokers end API sessions every day, so the broker session has to be renewed once a day. Settings shows when a session has expired; log in again from "Connected brokers". The platform reminds you before the market opens when your alert channel is set up.
+Indian brokers end API sessions every day, so the broker session has to be renewed once a day. The Broker page shows when a session has expired; use "Connect again" there. The platform reminds you before the market opens when your alert channel is set up.
 
 ## How do I get alerts on Telegram, email or push?
 keywords: alerts, notifications, telegram, email alerts, push, sms, webhook, alert channel, bot token, chat id
-page: /settings
+page: /settings/alerts
 
-Open Settings and use "Alert delivery (Telegram / email / webhook / push / SMS)". For Telegram, enter the bot token from @BotFather and your chat id, save, and use "Send test" to check it. Each channel has a severity floor: only messages at or above it are sent there.
+Open Settings > Alerts. "Alerts on your phone" links your Telegram in a few taps; "Send a test" checks it. "More ways to get alerts" adds email, app notifications, SMS and others. Each channel has a severity floor: only messages at or above it are sent there.
 
 ## Where do I see my notifications?
 keywords: notifications, bell, messages, alerts list, inbox
@@ -121,9 +121,9 @@ Open Screener to filter symbols by rules on closed bars, or Market Scanner to fi
 
 ## How do I use my own AI key?
 keywords: ai key, api key, own key, byok, openai, anthropic, gemini, vision, ai provider, spend cap
-page: /settings
+page: /settings/ai
 
-Open Settings. The organisation owner sets the organisation's AI provider in "AI provider" (it needs the data-sharing consent first). Where your organisation has it enabled, "Vision with your own AI key" lets you store your own provider API key, test it and set daily and monthly spend caps. A key is used only on your own or your organisation's requests, never for another user, and it is never shown again after you save it.
+Open Settings > AI. The organisation owner sets the organisation's AI provider there (it needs the data-sharing consent first). Where your organisation has it enabled, you can also store your own provider API key there, test it and set daily and monthly spend caps. A key is used only on your own or your organisation's requests, never for another user, and it is never shown again after you save it.
 
 ## How do I install the app on my phone or computer?
 keywords: install, app, mobile, android, iphone, ipad, home screen, pwa, desktop app
@@ -133,9 +133,9 @@ On Android, or in Chrome or Edge on a computer, use the "Install app" button whe
 
 ## How do I switch between dark and light mode?
 keywords: theme, dark mode, light mode, appearance, colour, color blind
-page: /settings
+page: /settings/appearance
 
-Use the theme button in the top bar, or the Appearance card in Settings, which also has a colour-blind friendly option.
+Use the theme button in the top bar, or Settings > Appearance, which also has a colour-blind friendly option.
 
 ## How do I send feedback or report a problem?
 keywords: feedback, bug, report problem, contact support, human, help, complaint, issue

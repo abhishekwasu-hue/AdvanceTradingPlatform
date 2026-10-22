@@ -199,8 +199,8 @@ class AppearancePrefs(_Prefs):
 
 # MO2 part C: the pages that have a page tour (frontend src/tours/pages.ts TOUR_IDS, kept equal by a test). An allow-list,
 # so a stored mark is always one of these and the namespace stays small.
-TOUR_IDS: Tuple[str, ...] = ("dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings")
-TourId = Literal["dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings"]
+TOUR_IDS: Tuple[str, ...] = ("dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot")
+TourId = Literal["dashboard", "broker", "charts", "option-chain", "signals", "positions", "portfolio", "risk", "settings", "copilot"]
 
 
 def _required_mark(value: datetime) -> datetime:

@@ -137,5 +137,5 @@ async def live_entry_problem(session: AsyncSession, tenant_id: int, broker_name:
     ips = {r.ip for r in await registered(session, tenant_id) if canonical_broker(r.broker_name) == canonical_broker(broker_name)}
     if server_ip not in ips:
         return (f"This server's IP {server_ip} is not registered for {broker_name} ({RULE}) - register it with the broker "
-                "and on Settings > Static IP; LIVE entries paused, exits continue")
+                "and on the Broker page under Static IP; LIVE entries paused, exits continue")
     return None

@@ -420,7 +420,7 @@ async def fetch_frames(session: AsyncSession, tenant_id: int, symbols: List[str]
                        user_id: Optional[int] = None, tier_out: Optional[Dict[str, Any]] = None,
                        release: bool = False) -> Tuple[List[SymbolData], Dict[str, str], str]:
     """Server bars through the organisation's broker session -> (universe, per-symbol fetch problems, data source).
-    A missing session raises 409 (the fix is under Settings > Brokers); never a fallback to client data.
+    A missing session raises 409 (the fix is on the Broker page); never a fallback to client data.
     `include_forming` keeps the bar still forming (S4b-2 intrabar alerts only; screens decide on closed bars).
 
     BT1b (flag `byob_data_tier`): the bars come only through the session of the user the run / alert rule belongs to

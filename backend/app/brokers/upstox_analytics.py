@@ -546,7 +546,7 @@ def _warning_for(label: str, expiry: datetime, estimated: bool, today: date) -> 
     if days_left < 0 or days_left > WARN_DAYS:
         return None
     note = " (estimated from the save date)" if estimated else ""
-    how = ("Generate a new one in Upstox Developer Apps → Analytics and save it under Settings > Brokers > Upstox. "
+    how = ("Generate a new one in Upstox Developer Apps → Analytics and save it on the Broker page, under Upstox. "
            "After it expires, charts, the scanner and the option chain use the daily Upstox login again.")
     if days_left == 0:
         return f"{TITLE_PREFIX} ({label}) expires today ({exp_day.isoformat()})", f"Your Upstox analytics token expires today{note}. {how}"

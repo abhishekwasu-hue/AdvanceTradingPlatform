@@ -25,6 +25,7 @@ const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_stat
 const OC = JSON.parse(readFileSync(new URL("./fixtures/option_chain_v2.json", import.meta.url), "utf8")) as {
   expiries: Record<string, unknown>; live: Record<string, unknown>;
 };
+const COPILOT = JSON.parse(readFileSync(new URL("./fixtures/copilot_chat_v2.json", import.meta.url), "utf8")) as { home: Record<string, unknown> };
 const WHEN = "2026-10-19T05:00:00Z";
 const DESKTOP = { width: 1440, height: 900 };
 const PHONE = { width: 390, height: 844 };
@@ -80,6 +81,10 @@ const PAGES: Record<TourId, { path: string; mocks: (page: Page) => Promise<void>
   portfolio: { path: "/portfolio", mocks: async (page) => { await tradingPage(page); } },
   risk: { path: "/risk-management", mocks: async (page) => { await tradingPage(page); } },
   settings: { path: "/settings", mocks: async (page) => { await mockApi(page, { features: { ui_v2: true }, brokers: CONNECTED }); } },
+  copilot: { path: "/copilot", mocks: async (page) => {
+    await mockApi(page, { features: { ui_v2: true, ai_copilot: true }, brokers: CONNECTED });
+    await page.route(/\/api(?:\/v1)?\/ai\/chat\/home$/, (route) => route.fulfill({ json: COPILOT.home }));
+  } },
 };
 
 async function tradingPage(page: Page) {

@@ -237,12 +237,25 @@ describe("MO2 tours: one content file per page", () => {
     }
   });
 
-  it("the shell maps its pages to tours; the Copilot's v2 page has no tour yet (MO2-2)", () => {
+  it("the shell maps its pages to tours; the Copilot's tips belong to its chat-first page only (MO2-2)", () => {
     expect(tourIdFor("risk-management")).toBe("risk");
     expect(tourIdFor("settings")).toBe("settings");
-    expect(tourIdFor("copilot")).toBeNull();
+    expect(tourIdFor("copilot")).toBe("copilot");
+    expect(tourIdFor("copilot", "/copilot")).toBe("copilot");
+    expect(tourIdFor("copilot", "/copilot/")).toBe("copilot");
+    expect(tourIdFor("copilot", "/copilot/watchtower")).toBeNull();          // the older tool pages have no tips
+    expect(tourIdFor("risk-management", "/risk-management")).toBe("risk");
     expect(tourIdFor(null)).toBeNull();
     expect(pagesV2Source).toMatch(/copilot:\s*lazy/);
+    expect(shellSource).toContain("tourIdFor(key, path)");
+  });
+
+  it("the Copilot's tips point at stable ids on its chat page, with a phone step for the question box", async () => {
+    const chat = (await import("../copilot/chat/CopilotChatV2.tsx?raw")).default;
+    for (const s of PAGE_TOURS.copilot.steps) if (s.target) expect(chat).toContain(`data-tour="${s.target}"`);
+    expect(stepsFor(PAGE_TOURS.copilot, "phone").map((s) => s.id)).toContain("ask-phone");
+    expect(stepsFor(PAGE_TOURS.copilot, "desktop").map((s) => s.id)).toContain("ask");
+    expect(PAGE_TOURS.copilot.steps.map((s) => s.body).join(" ")).toMatch(/never places, changes or cancels an order/);
   });
 });
 

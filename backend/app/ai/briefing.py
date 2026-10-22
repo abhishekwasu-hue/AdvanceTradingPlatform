@@ -268,7 +268,7 @@ async def build(session: AsyncSession, user: User, lang: str = "en", now: Option
     budget_mode = "LIVE" if day["LIVE"]["active"] else "PAPER"
     checklist = [
         {"id": "broker", "ok": broker_ok, "text": "Broker session logged in today" if broker_ok
-         else "No usable broker session - log in under Settings > Brokers (needed for real candles and LIVE)"},
+         else "No usable broker session - log in on the Broker page (needed for real candles and LIVE)"},
         {"id": "risk", "ok": cfg_saved is not None, "text": "Your own risk settings are saved" if cfg_saved is not None
          else "Risk settings are still the defaults - set capital and daily loss limit (Risk Management)"},
         {"id": "worker", "ok": worker_ok, "text": "Autopilot worker is running" if worker_ok

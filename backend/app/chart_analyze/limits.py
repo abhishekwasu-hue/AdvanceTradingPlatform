@@ -115,4 +115,4 @@ async def check_cost(session: AsyncSession, user: User, tenant: Tenant, settings
     reserved = max(1, await running_count(session, user, settings, now)) * max(0.0, estimate_usd)
     if cap <= 0 or used["cost_used_usd"] >= cap or used["cost_used_usd"] + reserved > cap:
         raise LimitReached("Limit reached: this month's AI budget for chart analyses on your plan is used up. "
-                           "It resets on the 1st (UTC), or add your own AI key in Settings.")
+                           "It resets on the 1st (UTC), or add your own AI key under Settings > AI.")

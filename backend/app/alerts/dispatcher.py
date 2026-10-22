@@ -363,7 +363,7 @@ async def send_push(config: PushConfig, notification: NotificationRecord, client
     if delivered == 0 and (errors or not gone):
         raise RuntimeError("Web Push: " + ("; ".join(errors) if errors else "no reachable device"))
     if delivered == 0 and gone and not errors:
-        raise RuntimeError("Web Push: every registered device has unsubscribed - enable push again from Settings")
+        raise RuntimeError("Web Push: every registered device has unsubscribed - enable push again under Settings > Alerts")
     return gone
 
 

@@ -1,5 +1,5 @@
 """Phase L1: per-tenant provider configuration - the only place an AI API key enters the
-system (Settings page -> this API -> Fernet-encrypted column). Never returned once stored."""
+system (Settings > AI -> this API -> Fernet-encrypted column). Never returned once stored."""
 from datetime import datetime, timezone
 from typing import Optional
 

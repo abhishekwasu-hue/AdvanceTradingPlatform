@@ -2,7 +2,7 @@
 
 Replaces the structural stub. Dhan is JSON REST at one host; every call carries `access-token` and
 `client-id` headers. There is no exchange flow: the user generates the access token on the Dhan web
-console and stores it with the client id under Settings (`access_token`, `client_id`); the platform
+console and stores it with the client id on the Broker page (`access_token`, `client_id`); the platform
 keeps it encrypted and re-uses it until its daily expiry.
 
 Identifiers: every order, quote and candle needs the numeric `securityId` plus an `exchangeSegment`

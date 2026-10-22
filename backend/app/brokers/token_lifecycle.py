@@ -68,7 +68,7 @@ OAUTH_BROKERS = {"upstox"}
 
 # Brokers whose daily login is a hosted page the platform can only *open*: the broker sends the
 # browser to the redirect URL registered on its developer console (not to the platform), and the
-# operator copies the one-time code out of that address bar into Settings. `code_param` names the
+# operator copies the one-time code out of that address bar into the Broker page. `code_param` names the
 # query parameter that carries it. Fyers: `generate-authcode` -> `?auth_code=...`; Kite: `?request_token=...`.
 FYERS_AUTHORIZE_URL = "https://api-t1.fyers.in/api/v3/generate-authcode"
 KITE_AUTHORIZE_URL = "https://kite.zerodha.com/connect/login"
@@ -239,7 +239,7 @@ async def verify_token(
                     session, record.tenant_id, NotificationType.TOKEN_EXPIRED,
                     title=f"{record.broker_name} session expired",
                     message=f"Broker rejected the stored token: {exc}. Log in to {record.broker_name} again "
-                            "from Settings - LIVE deployments are paused until then.",
+                            "on the Broker page - LIVE deployments are paused until then.",
                     severity=NotificationSeverity.CRITICAL, user_id=user_id,
                 )
             logger.warning("Broker token rejected for tenant %s / %s: %s", record.tenant_id, record.broker_name, exc)

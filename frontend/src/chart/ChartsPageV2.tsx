@@ -1,6 +1,6 @@
-import { ListTree, Maximize2, Minimize2, Redo2, Undo2 } from "lucide-react";
+import { ListTree, Maximize2, Minimize2, Redo2, ScanSearch, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { DrawingKind } from "../charting/drawings";
@@ -11,7 +11,7 @@ import { LtpHub } from "../charting/ltpHub";
 import { useLiveLtp } from "../components/chartHelpers";
 import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
-import type { PageProps } from "../routes";
+import { pathFor, type PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
 import { SymbolPicker, recentKeyFor, type PickedSymbol } from "../ui/SymbolPicker";
@@ -245,6 +245,12 @@ export default function ChartsPageV2(_props: PageProps) {
                   disabled={!tools?.view?.canUndo} onClick={() => void tools?.controller?.undo()}><Undo2 size={16} aria-hidden /></button>
                 <button type="button" aria-label="Redo drawing" title="Redo (Ctrl+Y)" className={iconBtn}
                   disabled={!tools?.view?.canRedo} onClick={() => void tools?.controller?.redo()}><Redo2 size={16} aria-hidden /></button>
+                {/* Analyze a chart (flag chart_analyze, off by default): a short way from the chart to the reading page. */}
+                {features.on("chart_analyze") && !fs.on && (
+                  <Link to={pathFor("chart-analyze")} aria-label="Analyze a chart" title="Analyze a chart" className={iconBtn}>
+                    <ScanSearch size={16} aria-hidden />
+                  </Link>
+                )}
                 <ChartSettingsPopover prefs={prefs.prefs} onChange={prefs.update} error={prefs.error} />
                 <button type="button" aria-label={fs.on ? "Leave full screen" : "Full screen"} title={fs.on ? "Leave full screen (Esc)" : "Full screen (F)"}
                   aria-pressed={fs.on} className={iconBtn} onClick={fs.toggle}>

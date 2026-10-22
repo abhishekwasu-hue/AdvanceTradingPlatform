@@ -337,7 +337,9 @@ def test_migration_is_additive_rollback_safe_and_the_only_head():
     assert not [p for p in lint() if p.startswith(path.name)]
     assert callable(module.downgrade)
     script = ScriptDirectory.from_config(Config(str(root / "alembic.ini")))
-    assert script.get_heads() == ["a7c9e1f3b5d8"]
+    heads = script.get_heads()
+    assert len(heads) == 1                                                     # one head, with OC5 on its chain
+    assert "a7c9e1f3b5d8" in {rev.revision for rev in script.walk_revisions("base", heads[0])}
 
 
 # ---------------------------------------------------------------- the endpoint

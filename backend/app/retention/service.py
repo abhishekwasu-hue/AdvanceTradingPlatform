@@ -137,6 +137,13 @@ async def run_retention(session: AsyncSession, now: Optional[datetime] = None, p
         logger.exception("Retention failed for market_zone_runs")
         report.errors.append(f"market_zone_runs: {exc}")
         report.deleted["market_zone_runs"] = 0
+    try:                                            # Analyze a chart: images and results past their retention (admin setting)
+        from app.chart_analyze.service import purge_expired
+        report.deleted["chart_analyses"] = await purge_expired(session, now)
+    except Exception as exc:  # noqa: BLE001 - one table's problem must not stop the others
+        logger.exception("Retention failed for chart_analyses")
+        report.errors.append(f"chart_analyses: {exc}")
+        report.deleted["chart_analyses"] = 0
     if policy.llm_text_days > 0:                    # H-C1 e: scrub old LLM texts; the rows themselves are never deleted
         try:
             report.deleted["llm_calls_text_scrubbed"] = await scrub_llm_text(session, LlmCallRecord.created_at < _cutoff(now, policy.llm_text_days),
@@ -188,6 +195,9 @@ async def erase_user(session: AsyncSession, user: User, *, actor_id: Optional[in
                                                               UserVisionPrefsRecord.tenant_id == user.tenant_id))
     # BYOK-V2: their Vision reports (text and chart hash; no image is ever stored).
     await session.execute(delete(VisionReportRecord).where(VisionReportRecord.user_id == user.id, VisionReportRecord.tenant_id == user.tenant_id))
+    # Analyze a chart: their chart images (files) and analyses go with the account.
+    from app.chart_analyze.service import erase_user as erase_chart_analyses
+    await erase_chart_analyses(session, user)
     # PW6: the "Send feedback" messages they wrote (free text) go with the account too.
     await session.execute(delete(FeedbackRecord).where(FeedbackRecord.user_id == user.id, FeedbackRecord.tenant_id == user.tenant_id))
     await write_audit_log(session, user.tenant_id, actor_id, "user_erased", f"user #{user.id}{(': ' + reason) if reason else ''}")

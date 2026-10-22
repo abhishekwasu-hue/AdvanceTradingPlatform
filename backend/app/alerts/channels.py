@@ -36,8 +36,12 @@ class TelegramConfig(BaseModel):
     """A bot created with @BotFather and the chat (a user or a group the bot is in) to post to.
     Find the chat id by messaging the bot and reading /getUpdates, or via @userinfobot."""
 
-    bot_token: str = Field(min_length=10, max_length=200)
+    # UX2 fix 5: `platform_bot` = the platform's own bot (ATP_TELEGRAM_BOT_TOKEN, app/alerts/platform_bot.py) linked by
+    # "Connect Telegram"; its token is never stored here (it is filled in from the server's setting when the channel is
+    # read), so `bot_token` stays empty for it and a rotated platform token needs no re-encryption.
+    bot_token: str = Field(default="", max_length=200)
     chat_id: str = Field(min_length=1, max_length=64)
+    platform_bot: bool = False
     # Phase BE: inbound commands and approve/reject buttons from whitelisted chats. Off by default;
     # `inbound_secret` is the value Telegram echoes in X-Telegram-Bot-Api-Secret-Token (set by the
     # platform when inbound is enabled, never typed by a person, never returned by the API).
@@ -51,9 +55,16 @@ class TelegramConfig(BaseModel):
     @field_validator("bot_token")
     @classmethod
     def _token_shape(cls, value: str) -> str:
-        if ":" not in value:
+        value = value.strip()
+        if value and (":" not in value or len(value) < 10):
             raise ValueError("Telegram bot token looks wrong - expected the '123456:ABC-...' form from @BotFather")
-        return value.strip()
+        return value
+
+    @model_validator(mode="after")
+    def _token_or_platform(self) -> "TelegramConfig":
+        if not self.platform_bot and not self.bot_token:
+            raise ValueError("Telegram bot token looks wrong - expected the '123456:ABC-...' form from @BotFather")
+        return self
 
 
 class EmailConfig(BaseModel):
@@ -413,11 +424,17 @@ def secret_destination_changed(channel_type: str, incoming: Dict[str, Any], exis
 
 
 def encrypt_config(config: ChannelConfig, tenant_id: Optional[int] = None) -> str:
+    if isinstance(config, TelegramConfig) and config.platform_bot:
+        config = config.model_copy(update={"bot_token": ""})          # UX2 fix 5: the platform token is never stored per tenant
     return encrypt_text(config.model_dump_json(), tenant_id, PURPOSE_ALERT_CHANNEL)
 
 
 def decrypt_config(record: AlertChannelRecord) -> ChannelConfig:
-    return parse_config(record.channel_type, json.loads(decrypt_text(record.encrypted_config, PURPOSE_ALERT_CHANNEL, record.tenant_id)))
+    config = parse_config(record.channel_type, json.loads(decrypt_text(record.encrypted_config, PURPOSE_ALERT_CHANNEL, record.tenant_id)))
+    if isinstance(config, TelegramConfig) and config.platform_bot:
+        from app.alerts import platform_bot
+        config = config.model_copy(update={"bot_token": platform_bot.bot_token()})   # "" while the server has none
+    return config
 
 
 def decrypt_raw(record: AlertChannelRecord) -> Dict[str, Any]:
@@ -431,6 +448,8 @@ def masked_summary(record: AlertChannelRecord) -> Dict[str, Any]:
     except ValueError:
         return {"error": "stored config cannot be decrypted (encryption key rotated?)"}
     if record.channel_type == AlertChannelType.TELEGRAM.value:
+        if raw.get("platform_bot"):
+            return {"chat_id": raw.get("chat_id"), "platform_bot": True, "bot_token_hint": "ATP bot"}
         token = raw.get("bot_token", "")
         return {"chat_id": raw.get("chat_id"), "bot_token_hint": f"{token[:4]}…{token[-3:]}" if len(token) > 8 else "set"}
     if record.channel_type == AlertChannelType.WEBHOOK.value:

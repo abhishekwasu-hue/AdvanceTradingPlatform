@@ -1,5 +1,6 @@
 import { ImagePlus, Link2, TriangleAlert, Upload } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from "react";
+import { useSearchParams } from "react-router";
 import { friendlyError } from "../api/errors";
 import { Button, Dialog } from "../components/primitives";
 import { PageIntro } from "../ui/PageIntro";
@@ -9,6 +10,8 @@ import { chartAnalyzeApi, errorCode, isFeatureOff } from "./api";
 import { renderResultPng, shareOrDownload } from "./exportImage";
 import { printResult, printTitle } from "./printResult";
 import ResultViewV2 from "./ResultViewV2";
+import ShareDialogV2 from "./ShareDialogV2";
+import SharedAnalysisV2 from "./SharedAnalysisV2";
 import { resultShapes } from "./shapes";
 import { guardResult } from "./signalLanguage";
 import type { StrikesState } from "./StrikesSectionV2";
@@ -24,11 +27,26 @@ import type { AnalysisItem, AnalyzeStatus } from "./types";
 export const FLAG = "chart_analyze";
 /** The "Option strikes · from your settings" block has its own flag on top (owner's tenant first). */
 export const STRIKES_FLAG = "chart_analyze_strikes";
+/** "Share with my organisation" (PR-A4): its own flag on top; a link opens `?shared=<link>` on this page. */
+export const SHARE_FLAG = "chart_analyze_share";
 const ACCEPT = "image/png,image/jpeg";
 const card = "rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5";
 
 export const IMAGE_GONE = "The chart image is no longer stored (it is kept for a limited time), so the result image cannot be made.";
 const SETUP_SHORT = { formed: "Formed", forming: "Forming", none: "No setup" } as const;
+
+/** History filters (PR-A4): the user's own analyses by what the method saw. */
+export type HistoryFilter = "all" | "formed" | "forming" | "none" | "open";
+export const HISTORY_FILTERS: { id: HistoryFilter; label: string }[] = [
+  { id: "all", label: "All" }, { id: "formed", label: "Formed" }, { id: "forming", label: "Forming" }, { id: "none", label: "No setup" },
+  { id: "open", label: "Not analysed" },
+];
+
+export function filterHistory(items: AnalysisItem[], filter: HistoryFilter): AnalysisItem[] {
+  if (filter === "all") return items;
+  if (filter === "open") return items.filter((h) => h.status !== "done" || !h.summary);
+  return items.filter((h) => h.status === "done" && h.summary?.setup_status === filter);
+}
 
 type Phase = "idle" | "adding" | "analysing";
 interface Problem { message: string; reason?: string; code: string }
@@ -58,6 +76,11 @@ export default function ChartAnalyzePageV2() {
   const features = useFeatures();
   const on = features.on(FLAG);
   const strikesOn = on && features.on(STRIKES_FLAG);
+  const shareOn = on && features.on(SHARE_FLAG);
+  const [params, setParams] = useSearchParams();
+  const sharedToken = params.get("shared");
+  const [sharing, setSharing] = useState(false);
+  const [filter, setFilter] = useState<HistoryFilter>("all");
   const [status, setStatus] = useState<AnalyzeStatus | null>(null);
   const [off, setOff] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -254,6 +277,13 @@ export default function ChartAnalyzePageV2() {
     }
   };
 
+  const shareChanged = (item: AnalysisItem) => {
+    setCurrent((c) => (c && c.id === item.id ? { ...c, share: item.share ?? null } : c));
+    setHistory((h) => h.map((x) => (x.id === item.id ? { ...x, share: item.share ?? null } : x)));
+  };
+
+  const shown = useMemo(() => filterHistory(history, filter), [history, filter]);
+
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setDragging(false);
@@ -268,6 +298,10 @@ export default function ChartAnalyzePageV2() {
         <p className="mt-space-1 text-t14 text-fg-muted">This page is not available for your organisation.</p>
       </div>
     );
+  }
+
+  if (sharedToken) {
+    return <SharedAnalysisV2 token={sharedToken} onBack={() => { params.delete("shared"); setParams(params, { replace: true }); }} />;
   }
 
   const engineMissing = status?.engine.installed === false;
@@ -365,6 +399,7 @@ export default function ChartAnalyzePageV2() {
         <ResultViewV2 result={current.result} itemLabel={current.label} itemDisclaimer={current.disclaimer} imageNote={imageNote}
           imageSrc={imageSrc} onAlert={setAlertTarget} onExport={exportImage} onDelete={() => setConfirmDelete(true)} onPdf={() => void pdf()}
           strikes={strikes} onStrikesSymbol={(symbol) => void loadStrikes(current.id, symbol)}
+          onShare={shareOn ? () => setSharing(true) : undefined} shareLive={Boolean(current.share)}
           exporting={busy === "export"} deleting={busy === "delete"} />
       )}
       {current && !current.result && (
@@ -382,29 +417,49 @@ export default function ChartAnalyzePageV2() {
         {history.length === 0 ? (
           <p className="mt-space-2 text-t14 text-fg-muted">Nothing yet. Your past analyses appear here, only for you.</p>
         ) : (
-          <ul className="mt-space-2 divide-y divide-subtle">
-            {history.map((h) => (
-              <li key={h.id}>
-                <button type="button" onClick={() => void open(h.id)}
-                  className="flex min-h-12 w-full items-center justify-between gap-space-3 py-space-2 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
-                  <span className="min-w-0">
-                    <span className="block truncate text-t14 font-medium text-fg">{h.summary?.symbol ?? (h.source === "link" ? h.source_host ?? "Linked chart" : "Uploaded chart")}</span>
-                    <span className="block text-t12 text-fg-muted">{when(h.created_at)} · Image only</span>
-                  </span>
-                  <span className="shrink-0 rounded-pill bg-surface-2 px-space-2 py-0.5 text-t12 text-fg-muted">
-                    {h.status === "done" && h.summary ? SETUP_SHORT[h.summary.setup_status]
-                      : h.status === "failed" ? "Failed" : h.status === "running" ? "Running" : "Not analysed"}
-                  </span>
-                </button>
-              </li>
-            ))}
-          </ul>
+          <>
+            <p className="mt-space-1 text-t12 text-fg-muted">Only you see these{status ? `. Each is kept for ${status.retention_days} days` : ""}.</p>
+            <div role="group" aria-label="Show" className="-mx-space-1 mt-space-3 flex gap-space-2 overflow-x-auto px-space-1 pb-space-1" data-testid="history-filters">
+              {HISTORY_FILTERS.map((f) => {
+                const count = filterHistory(history, f.id).length;
+                return (
+                  <button key={f.id} type="button" aria-pressed={filter === f.id} onClick={() => setFilter(f.id)}
+                    className={`inline-flex h-11 shrink-0 items-center gap-space-1 rounded-pill border px-space-3 text-t12 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-8 ${
+                      filter === f.id ? "border-brand bg-surface-2 text-fg" : "border-subtle text-fg-muted hover:text-fg"}`}>
+                    {f.label}<span className="font-tabular text-fg-muted">{count}</span>
+                  </button>
+                );
+              })}
+            </div>
+            {shown.length === 0 ? (
+              <p className="mt-space-2 text-t14 text-fg-muted">None of your analyses match this filter.</p>
+            ) : (
+              <ul className="mt-space-2 divide-y divide-subtle">
+                {shown.map((h) => (
+                  <li key={h.id}>
+                    <button type="button" onClick={() => void open(h.id)} aria-current={current?.id === h.id || undefined}
+                      className="flex min-h-12 w-full items-center justify-between gap-space-3 py-space-2 text-left hover:bg-surface-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand">
+                      <span className="min-w-0">
+                        <span className="block truncate text-t14 font-medium text-fg">{h.summary?.symbol ?? (h.source === "link" ? h.source_host ?? "Linked chart" : "Uploaded chart")}</span>
+                        <span className="block text-t12 text-fg-muted">{when(h.created_at)} · Image only{h.share ? " · Shared" : ""}</span>
+                      </span>
+                      <span className="shrink-0 rounded-pill bg-surface-2 px-space-2 py-0.5 text-t12 text-fg-muted">
+                        {h.status === "done" && h.summary ? SETUP_SHORT[h.summary.setup_status]
+                          : h.status === "failed" ? "Failed" : h.status === "running" ? "Running" : "Not analysed"}
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </section>
 
       <AlertDialogV2 target={alertTarget} onClose={() => setAlertTarget(null)} onCreated={setNotice} />
+      {sharing && shareOn && current && <ShareDialogV2 item={current} onClose={() => setSharing(false)} onChanged={shareChanged} />}
       <Dialog open={confirmDelete} onOpenChange={setConfirmDelete} title="Delete this analysis?"
-        description="The chart image and its analysis are deleted now and cannot be brought back."
+        description={`The chart image and its analysis are deleted now and cannot be brought back.${current?.share ? " Its share link stops working." : ""}`}
         footer={<>
           <Button className="h-11 md:h-9" onClick={() => setConfirmDelete(false)}>Keep it</Button>
           <Button variant="danger" className="h-11 md:h-9" loading={busy === "delete"} onClick={remove}>Delete</Button>

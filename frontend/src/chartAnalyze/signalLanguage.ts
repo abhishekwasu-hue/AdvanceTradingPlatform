@@ -1,4 +1,5 @@
 import type { AnalysisResult, StrikesAnswer } from "./types";
+import { CALL_WORDS, SL_WORD } from "../signals/language";
 
 /**
  * Analyze a chart: the signal-language check on everything the result screen shows (CLAUDE.md §3). Result text uses
@@ -8,8 +9,9 @@ import type { AnalysisResult, StrikesAnswer } from "./types";
  * only are matched.
  */
 
-const WORDS = /\b(?:buy|buys|buying|bought|sell|sells|selling|sold|targets?|targeted|targeting|stops?|stop[\s-]?loss(?:es)?|stoploss(?:es)?)\b/i;
-const SL = /\bSL\b/;
+// Handover 11l: the list lives in the one shared signal-language module (src/signals/language.ts); the same answers.
+const WORDS = CALL_WORDS;
+const SL = SL_WORD;
 
 export const WITHHELD = "(This text was withheld: it read as advice rather than a description.)";
 

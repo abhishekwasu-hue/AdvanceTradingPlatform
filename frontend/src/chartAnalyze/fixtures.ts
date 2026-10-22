@@ -93,3 +93,23 @@ export function fixtureStrikes(): StrikesAnswer {
     message: null,
   };
 }
+
+/** The structure-only copy a share link opens (backend share.py, PR-A4): the made-up forming result without the name, the
+ * prices, the dates, the timeframes and the alert. */
+export function fixtureSharedResult(): AnalysisResult {
+  const PRICE_KEYS = new Set(["price", "price_low", "price_high", "low", "high"]);
+  const strip = (value: unknown): unknown => {
+    if (Array.isArray(value)) return value.map(strip);
+    if (value && typeof value === "object") {
+      return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, PRICE_KEYS.has(k) || k === "alert" ? null : strip(v)]));
+    }
+    return value;
+  };
+  const base = strip(fixtureResult("forming")) as AnalysisResult;
+  return {
+    ...base, approximate_prices: false, shared: true,
+    shared_note: "Shared by a member of your organisation. The chart's name, its prices, its dates and the picture are left out: this copy shows the structure only.",
+    recognised: { symbol: null, exchange: null, timeframe: null, first_bar: null, last_bar: null },
+    htf_context: base.htf_context.map((h) => ({ ...h, timeframe: null })),
+  };
+}

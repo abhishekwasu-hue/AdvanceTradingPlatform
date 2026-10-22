@@ -9,6 +9,7 @@ import VisionByokCard from "../components/VisionByokCard";
 import WebhookCard from "../components/WebhookCard";
 import { Card } from "../components/ui";
 import TelegramConnectV2 from "../alerts/TelegramConnectV2";
+import RhythmTelegramV2 from "../rhythm/RhythmTelegramV2";
 import ConnectAiPanelV2 from "../aiKeys/ConnectAiPanelV2";
 import KeyGuidesV2 from "../aiKeys/KeyGuidesV2";
 import { useAuth } from "../auth/AuthContext";
@@ -82,11 +83,19 @@ function AiSection() {
 }
 
 function AlertsSection() {
+  const rhythm = useFeatures().on("daily_rhythm");
+  const [telegramChanged, setTelegramChanged] = useState(0);
   return (
     <div id="alerts" className="space-y-space-4">
       <div id="telegram" className="scroll-mt-20">
-        <Card title="Alerts on your phone"><TelegramConnectV2 /></Card>
+        <Card title="Alerts on your phone"><TelegramConnectV2 onChanged={() => setTelegramChanged((n) => n + 1)} /></Card>
       </div>
+      {/* MO4: the daily briefs on the user's own Telegram (default off); read again after Telegram is connected above. */}
+      {rhythm && (
+        <div id="daily-briefs" className="scroll-mt-20">
+          <Card title="Daily briefs on Telegram"><RhythmTelegramV2 key={telegramChanged} /></Card>
+        </div>
+      )}
       <Fold id="channels" title="More ways to get alerts" line="Email, app notifications, SMS and others">
         <AlertChannelsCard ownBotOnly part="channels" />
       </Fold>

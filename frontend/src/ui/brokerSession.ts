@@ -48,8 +48,8 @@ export const NEVER_STORE_PASSWORD =
 /** The one line beside "Log in to <Broker>" (§10 "Daily login, renamed"). */
 export function loginNote(t: Pick<BrokerTokenInfo, "broker_name" | "oauth_supported" | "login_url_supported">): string {
   const name = brokerDisplayName(t.broker_name);
-  if (t.broker_name === "angel_one") return `We log in to ${name} for you with the PIN and TOTP secret you stored, encrypted.`;
-  if (t.broker_name === "shoonya") return `We log in to ${name} for you with the password and TOTP secret you stored, encrypted.`;
+  if (t.broker_name === "angel_one") return `We log in to ${name} for you with the PIN and authenticator key you stored, encrypted.`;
+  if (t.broker_name === "shoonya") return `We log in to ${name} for you with the password and authenticator key you stored, encrypted.`;
   if (TOTP_BROKERS.has(t.broker_name)) return `We log in to ${name} for you with the details you stored, encrypted.`;
   if (t.broker_name === "dhan") return `We log in with the access token you stored. If ${name} has ended it, renew it on the Broker page.`;
   if (t.broker_name === "coindcx") return `We log in with the API key you stored. ${name} needs no daily login.`;

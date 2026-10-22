@@ -162,7 +162,7 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await expect(signals.locator("li")).toHaveCount(3);
     await expect(signals.locator("li").first()).toContainText("10:42");
     await expect(signals.locator("li").first()).toContainText("Waiting for you");
-    await expect(signals.locator("li").first()).toContainText("Entry 24,790.00 · Stop 24,720.00 · Target 24,930.00");
+    await expect(signals.locator("li").first()).not.toContainText(/24,790|Entry|Stop|Target/);            // UX3 fix 10: structure words only
     await expect(signals.locator("li").nth(2)).toContainText("Taken");
 
     const today = page.locator("[data-block='today']");
@@ -254,10 +254,10 @@ test.describe("v2 dashboard 1440 desktop", () => {
     await open(page, "light", { state: "empty" });
     await expect(page.locator("[data-block='attention']")).toHaveText("All clear. Nothing needs you right now.");
     const positions = page.locator("[data-block='positions']");
-    await expect(positions).toContainText("No open positions. Find a setup or let Autopilot trade for you.");
+    await expect(positions).toContainText("No open positions. Find a setup or let a paper bot trade for you.");
     await expect(positions.getByRole("link", { name: "Find setups" })).toHaveAttribute("href", "/screener");
     const signals = page.locator("[data-block='signals']");
-    await expect(signals).toContainText("No signals yet today. Your scans and Autopilot strategies post them here.");
+    await expect(signals).toContainText("No signals yet today. Your scans and paper bots post them here.");
     await expect(signals.getByRole("link", { name: "Set up a scan" })).toHaveAttribute("href", "/screener/custom");
     await expect(page.locator("main .bg-brand:is(a, button)")).toHaveCount(0);
   });

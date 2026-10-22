@@ -111,7 +111,7 @@ describe("UI2-4e level lines on the v2 chart", () => {
     const { c, candles } = core();
     c.setLevels(signalLevels(feedItem()));
     expect(candles.priceLines.map((l) => [l.options.title, l.options.price, l.options.color, l.options.lineStyle, l.options.axisLabelVisible]))
-      .toEqual([["Target", 104, palette.up, 2, true], ["Entry", 100, palette.text, 2, true], ["Stop", 98, palette.down, 2, true]]);
+      .toEqual([["Exit at profit", 104, palette.up, 2, true], ["Entry", 100, palette.text, 2, true], ["Exit if wrong", 98, palette.down, 2, true]]);   // UX3 labels
     c.applyTheme({ ...palette, up: "rgb(1, 2, 3)" }, false);
     expect(candles.priceLines[0].options.color).toBe("rgb(1, 2, 3)");
     // Beside levels the last-price line is neutral and dotted, never the red dashed Stop look.

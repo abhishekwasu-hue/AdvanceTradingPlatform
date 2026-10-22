@@ -128,6 +128,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # user's own key, else the organisation's, else the rules / `ai_not_connected`). OFF: every AI call and page behaves
     # exactly as before and /api/ai/byok/connect* answers 404. Background jobs stay on the organisation's key. No orders.
     "ai_one_key": "One AI key for every AI feature: the Connect AI panel and the user's own key first for Copilot, chart analysis and the other AI tools",
+    # Master Order 4 slice 1 (app/rhythm; needs `ui_v2`): the daily rhythm - the pre-market brief, the mid-session pulse,
+    # the closing wrap and the weekly review as a card on the Dashboard, and on the user's own Telegram when the user
+    # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;
+    # structure words only, no buy / sell / target / stop wording. OFF: /api/rhythm/* answers 404 and nothing is sent.
+    "daily_rhythm": "Daily rhythm: the pre-market brief, mid-session pulse, closing wrap and weekly review on the Dashboard and, by choice, on Telegram",
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",
@@ -190,6 +195,16 @@ FEATURE_FLAGS: Dict[str, str] = {
     # The Pine text is parsed, never executed (a host mode: no runner, ADR-0027). OFF: /api/lab/pine/* answers 404 and the
     # Screener shows no Pine button. Places no orders.
     "strategy_lab_pine": "Pine Script subset: paste a TradingView Pine script, see what translates, and run its signal condition as a screen (never executed; places no orders)",
+    # Handover 11l (docs/OPEN_QUESTIONS.md LAB-11..): the one signal language (app/signals/language.py) on the texts users
+    # read - the Signals inbox's "why" lines, scan alert / Telegram texts, the brief's day headline and the Copilot
+    # teacher's "on your chart" lines: structure words, no buy / sell / target / stop wording, no single price (the
+    # user's own area as a range only). OFF: every one of these texts is exactly as before. Text only - places no orders.
+    "signal_language_v2": "Signal language v2: structure words only on signals, alerts, the brief and the teacher (no buy / sell / target / stop wording, no single prices)",
+    # Idea library slice 1 (owner order ATP_SESSION_IDEA_LIBRARY.md, T1-T8): the Ideas page (v2 shell) - generic method
+    # ideas as white-box cards (plain words, structure words, the user's own settings, honest provenance; education, no
+    # performance claims) with "Try as a scan" built from the ScreenQL registry. OFF: /api/ideas answers 404 and the page
+    # and its navigation entry are hidden. Places no orders.
+    "idea_library": "Idea library: well-known chart-reading methods as plain-words cards, each with a ready scan to try (education only, places no orders)",
     # Z10-b (G5, docs/design/Z10_LAUNCH_HARDENING.md): stale data -> zero alerts. The bar-close engine, the rule flush and
     # the dispatcher hold back a screen / instrument alert whose bars are no longer current. Trade, exit, risk and
     # system notifications are never held back. OFF: unchanged.
@@ -324,6 +339,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Acts only while chart_analyze is on too; owner's tenant first. OFF: GET /api/chart-analyze/items/{id}/strikes answers
     # 503 and the block is hidden. Reads only - places no orders.
     "chart_analyze_strikes": "Analyze a chart: option strikes worked out from your own deployment settings at the setup's trigger level (reads only, places no orders)",
+    # Analyze a chart PR-A4 (PR-D's share link, CA-5): a private link to the owner's own analysis that only logged-in
+    # members of the same organisation can open, expiring (admin setting share_expiry_days) and revocable. The shared
+    # copy carries NO security name, NO price, NO date and NOT the chart picture (CLAUDE.md, SEBI): the structure only.
+    # Acts only while chart_analyze is on too. OFF: the share routes answer 503 and the Share button is hidden.
+    "chart_analyze_share": "Analyze a chart: share a structure-only copy of your analysis with your organisation (no names, no prices; places no orders)",
     # N4 CH6 (docs/design/CHARTING.md): ScreenQL expressions drawn as chart studies, computed by the screener's own runtime
     # from the shared lake bars as of a time (lines for numbers, marks for conditions). OFF: GET /api/charts/studies
     # answers 503 and the chart shows no study panel. Reference only - places no orders.

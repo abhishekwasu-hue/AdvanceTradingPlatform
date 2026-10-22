@@ -23,6 +23,9 @@
   defaults" and changeable there. Only existing deployment / ExitRules / ticket fields, with the same limits; every field
   is empty (None) by default. The server never reads it to trade: no order path, worker or risk check imports it. Never
   here: the mode (PAPER / LIVE), broker routing, the LIVE order style, or any LIVE field.
+  `daily_rhythm` (Master Order 4) holds whether the daily digests also go to the user's own Telegram chat (OFF by
+  default) and which of the four; the worker's "already sent" marks live in the internal row `daily_rhythm_sent`, which
+  is not a namespace here (no route reads or writes it).
 * Per user and tenant: every read and write filters on both, and nothing in the URL names another user, so another
   member or organisation can neither read nor change it. Any role (a VIEWER too) may change their own. Not behind a
   flag: these are the user's own display settings, nothing is computed from them, and they place nothing.
@@ -257,9 +260,20 @@ class TradingDefaultsPrefs(_Prefs):
     ticket: Optional[TicketDefaults] = None
 
 
+class DailyRhythmPrefs(_Prefs):
+    """`daily_rhythm` (Master Order 4, app/rhythm): whether the user's daily digests also go to his Telegram, and which.
+    Telegram is OFF until the user turns it on; the mid-session pulse is optional and off by default. The digests on the
+    Dashboard do not depend on this. Read by the worker only to decide what to send to the user's own chat."""
+    telegram: bool = False
+    pre_market: bool = True
+    mid_session: bool = False
+    closing: bool = True
+    weekly: bool = True
+
+
 NAMESPACES: Dict[str, Type[_Prefs]] = {"chart": ChartPrefs, "setup": SetupPrefs, "oc_analyses": OcAnalysesPrefs,
                                        "fno_baskets": FnoBasketsPrefs, "appearance": AppearancePrefs, "tours": ToursPrefs,
-                                       "trading_defaults": TradingDefaultsPrefs}
+                                       "trading_defaults": TradingDefaultsPrefs, "daily_rhythm": DailyRhythmPrefs}
 
 router = APIRouter(prefix="/api/me", tags=["me"])
 
@@ -392,4 +406,4 @@ async def read_one(namespace: str, user: User, session: AsyncSession) -> Tuple[D
     return stored_value(namespace, row.value_json if row else None), (row.version if row else 0)
 
 
-__all__ = ["router", "NAMESPACES", "TOUR_IDS", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]
+__all__ = ["router", "NAMESPACES", "TOUR_IDS", "DailyRhythmPrefs", "TradingDefaultsPrefs", "ExitDefaults", "TicketDefaults", "ToursPrefs", "AppearancePrefs", "ChartPrefs", "SetupPrefs", "OcAnalysesPrefs", "SavedAnalysis", "MAX_SAVED_ANALYSES", "FnoBasketsPrefs", "MAX_SAVED_BASKETS", "MAX_BASKET_LEGS", "MAX_BODY_BYTES", "defaults", "stored_value", "save", "read_one", "read_body"]

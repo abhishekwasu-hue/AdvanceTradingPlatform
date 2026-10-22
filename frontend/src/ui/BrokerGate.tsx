@@ -172,7 +172,7 @@ export function BrokerGateView({ state, children, onConnect, onSignIn, onLogin, 
             className="inline-flex h-11 w-full items-center justify-center rounded-control bg-brand px-space-5 text-t14 font-semibold text-on-brand hover:bg-brand-strong focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand focus-visible:ring-offset-2 focus-visible:ring-offset-surface sm:w-auto">
             Connect a broker
           </a>
-          <p className="text-t12">You will need the keys from your broker&apos;s developer console.</p>
+          <p className="text-t12">It takes about 2 minutes.</p>
         </GateCard>
       );
 

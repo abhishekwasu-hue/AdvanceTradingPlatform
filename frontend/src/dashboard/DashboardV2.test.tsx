@@ -51,7 +51,7 @@ describe("UI2-2 Needs attention", () => {
     const out = html(<NeedsAttentionV2 rows={[{ id: "login", icon: "login", tone: "warn", title: "Log in to Angel One", detail: "", action: { label: "Log in", login: true } }]}
       loginBroker={{ ...broker }} login={{ ...idle, error: "Angel One did not accept the login." }} />);
     expect(out).toMatch(/<button[^>]*class="[^"]*bg-brand[^"]*"[^>]*>.*Log in<\/button>/);
-    expect(out).toContain("We log in to Angel One for you with the PIN and TOTP secret you stored, encrypted.");
+    expect(out).toContain("We log in to Angel One for you with the PIN and authenticator key you stored, encrypted.");
     expect(out).not.toContain("never see or store");                  // never for a TOTP broker (UI-6)
     expect(out).toContain('role="alert"');
   });
@@ -60,10 +60,10 @@ describe("UI2-2 Needs attention", () => {
 describe("UI2-2 blocks", () => {
   it("friendly empty states with one action each", () => {
     const pos = html(<OpenPositionsV2 data={{ status: "ok", rows: [], total: 0 }} />);
-    expect(pos).toContain("No open positions. Find a setup or let Autopilot trade for you.");
+    expect(pos).toContain("No open positions. Find a setup or let a paper bot trade for you.");
     expect(pos).toContain('href="/screener"');
     const sig = html(<ActiveSignalsV2 data={{ status: "ok", rows: [], total: 0 }} />);
-    expect(sig).toContain("No signals yet today. Your scans and Autopilot strategies post them here.");
+    expect(sig).toContain("No signals yet today. Your scans and paper bots post them here.");
     expect(sig).toContain('href="/screener/custom"');
     expect(html(<OpenPositionsV2 data={{ status: "error" }} />)).toContain("We could not load your positions. We will try again in a moment.");
   });

@@ -237,7 +237,7 @@ function PasteHelper({ guide, byokOn, onSwitch }: { guide: KeyGuide; byokOn: boo
         )}
         {check.ok && !outcome && <p className="text-t13 text-fg-muted" data-key-detected>This looks like a {guide.name} key.</p>}
         {byokOn === false && (
-          <p className="text-t13 text-fg-muted" data-byok-off>Saving your own AI key is not turned on for your organisation yet. You can still create the key now.</p>
+          <p className="text-t13 text-fg-muted" data-byok-off>Saving your own AI key is not available on your account yet. You can still create the key now.</p>
         )}
         {outcome?.ok && <p role="status" className="inline-flex items-center gap-space-1 text-t13 font-semibold text-up"><CheckCircle2 size={14} aria-hidden /> {outcome.text}</p>}
         {outcome && !outcome.ok && (

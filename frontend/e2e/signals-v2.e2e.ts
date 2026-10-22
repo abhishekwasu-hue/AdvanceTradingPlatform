@@ -20,6 +20,7 @@ import { expectPhoneLayout } from "./phoneLayout";
 
 type Row = { id: string; status: string; action_id: number | null; symbol: string; source: { kind: string }; outcome: string | null; snoozed_until: string | null } & Record<string, unknown>;
 type Proposal = { id: number } & Record<string, unknown>;
+const ME = JSON.parse(readFileSync(new URL("./fixtures/me.json", import.meta.url), "utf8")) as Record<string, unknown>;
 const DATA = JSON.parse(readFileSync(new URL("./fixtures/signals_v2.json", import.meta.url), "utf8")) as { today: Row[]; earlier: Row[]; proposals: Proposal[] };
 
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
@@ -272,10 +273,16 @@ test.describe("Signals v2 1440 desktop", () => {
     await expect(page.getByRole("tab", { name: /Today/ })).toHaveAttribute("aria-selected", "true");
     const table = page.getByRole("table", { name: "Signals list" });
     await expect(table.locator("tbody tr")).toHaveCount(7);
-    await expect(table.getByRole("columnheader")).toHaveText(["Time", "Symbol", "Setup", "Entry", "Stop", "Target", "Status"]);
+    await expect(table.getByRole("columnheader")).toHaveText(["Time", "Symbol", "Setup", "Status"]);      // UX3: no price columns
     const detail = page.locator("[data-signal-detail]");
     await expect(detail).toHaveAttribute("data-signal-detail", "action:901");
-    for (const label of ["Entry", "Stop", "Target", "Size", "Max loss", "Reward : risk"]) await expect(detail.locator("[data-key-figures]")).toContainText(label);
+    for (const label of ["Size", "Max loss", "Reward : risk"]) await expect(detail.locator("[data-key-figures]")).toContainText(label);
+    // UX3 fix 10: the user's own levels are one tap away, under neutral names.
+    const levels = detail.locator("details[data-your-levels]");
+    await expect(levels.getByText("Exit if wrong")).toBeHidden();
+    await levels.getByText("Your levels").click();
+    for (const label of ["Entry", "Exit if wrong", "Exit at profit"]) await expect(levels.getByText(label, { exact: true })).toBeVisible();
+    await expect(detail).not.toContainText(/\b(?:Stop|Target)\b/);
     await expect(detail.getByText("1 lot (75)")).toBeVisible();
     await expect(detail.getByRole("button", { name: "Approve paper trade" })).toBeVisible();
     await expect(detail.getByRole("link", { name: "Open chart" })).toHaveAttribute("href", "/charts/NIFTY%2050?tf=5min");
@@ -319,7 +326,8 @@ test.describe("Signals v2 1440 desktop", () => {
 
   test("every column is fully visible at 1440 - Today, History, and a row with long prices", async ({ page }) => {
     await open(page, "/signals", "light", V2, { edit: (today) => Object.assign(today[0], { entry: 135000, stop: 134250.5, target: 136500 }) });
-    await expect(page.locator("[data-row='action:901']")).toContainText("1,35,000.00");
+    await expect(page.locator("[data-row='action:901']")).toBeVisible();
+    await expect(page.locator("[data-row='action:901']")).not.toContainText("1,35,000");                 // UX3: no price in the list
     await expectWholeTable(page);
     await page.getByRole("tab", { name: "History" }).click();
     await expect(page.getByRole("table", { name: "Signals list" }).locator("tbody tr")).toHaveCount(9);
@@ -330,7 +338,7 @@ test.describe("Signals v2 1440 desktop", () => {
     // UI2-3 review note: headless Chromium hides scrollbars, so 17 px of padding stands in for a classic one.
     await open(page, "/signals", "light", V2, { edit: (today) => Object.assign(today[0], { entry: 135000, stop: 134250.5, target: 136500 }) });
     await page.addStyleTag({ content: "html { padding-right: 17px !important; }" });
-    await expect(page.locator("[data-row='action:901']")).toContainText("1,36,500.00");
+    await expect(page.locator("[data-row='action:901']")).not.toContainText("1,36,500");
     await expectWholeTable(page);
   });
 
@@ -383,9 +391,16 @@ test.describe("Signals v2 1440 desktop", () => {
   test("M6: the Library's strategy drawer has 'Try it on a symbol', sample data only under Advanced", async ({ page }) => {
     await open(page, "/strategies", "light");
     await page.getByRole("button", { name: "Try it on a symbol" }).click();
-    const drawer = page.getByRole("dialog", { name: "Demo opening range" });
+    let drawer = page.getByRole("dialog", { name: "Demo opening range" });
     await expect(drawer).toBeVisible();
     await expect(drawer.getByLabel("Symbol")).toHaveValue("NIFTY 50");
+    // UX3 fix 7: a trader has no sample data at all; only the platform admin keeps it, under Advanced.
+    await expect(drawer.getByText("Advanced")).toHaveCount(0);
+    await expect(drawer.getByText(/sample/i)).toHaveCount(0);
+    await page.route(/\/api(?:\/v1)?\/auth\/me$/, (r) => r.fulfill({ json: { ...ME, role: "SUPER_ADMIN" } }));
+    await page.reload();
+    await page.getByRole("button", { name: "Try it on a symbol" }).click();
+    drawer = page.getByRole("dialog", { name: "Demo opening range" });
     await expect(drawer.getByText("Sample data seed")).toHaveCount(0);
     await drawer.getByText("Advanced").click();
     await drawer.getByLabel("Use sample data instead of your broker's candles").check();

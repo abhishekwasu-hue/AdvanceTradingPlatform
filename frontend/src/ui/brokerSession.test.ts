@@ -63,12 +63,12 @@ describe("UI2-0 broker names and login methods (§10)", () => {
       const note = loginNote(tokenRow(b));
       expect(note, b).not.toMatch(/never .*store/i);
       expect(note, b).not.toMatch(/password\b.*never/i);
-      expect(note, b).toMatch(/TOTP secret you stored, encrypted/);
+      expect(note, b).toMatch(/authenticator key you stored, encrypted/);
     }
     // ...even if a server row claimed a hosted login for one.
     expect(loginNote(tokenRow("angel_one", { login_url_supported: true }))).not.toBe(NEVER_STORE_PASSWORD);
-    expect(loginNote(tokenRow("shoonya"))).toMatch(/password and TOTP secret/);
-    expect(loginNote(tokenRow("angel_one"))).toMatch(/PIN and TOTP secret/);
+    expect(loginNote(tokenRow("shoonya"))).toMatch(/password and authenticator key/);
+    expect(loginNote(tokenRow("angel_one"))).toMatch(/PIN and authenticator key/);
   });
 
   it("uses the 'never store your password' line for OAuth and login-link brokers", () => {

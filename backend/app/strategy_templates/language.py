@@ -80,6 +80,16 @@ TOKENS: Dict[str, str] = {
     "closed_beyond_end_of_wave_a": "the market closed beyond the end of wave A",
     "broken_wave_line_held_on_retest": "the market came back to the broken wave line and held",
     "end_of_wave_a_held_on_retest": "the market came back to the end of wave A and held",
+    # Build step 6 (the templates G1, G3, G8): one sentence per template, whatever trigger style the user picked
+    "wave_two_pullback_may_be_over": "the wave two pullback on the {wave_timeframe} chart may be over",
+    "upward_wave_three_may_start": "an upward wave three may be starting",
+    "downward_wave_three_may_start": "a downward wave three may be starting",
+    "wave_b_pullback_may_be_over": "the wave B pullback on the {wave_timeframe} chart may be over",
+    "upward_wave_c_may_start": "an upward wave C may be starting",
+    "downward_wave_c_may_start": "a downward wave C may be starting",
+    "void_beyond_a_start_or_b_end": "the count is void beyond the start of wave A, or beyond the end of wave B if B went past it",
+    "larger_trend_may_resume_up": "the larger upward trend may be resuming",
+    "larger_trend_may_resume_down": "the larger downward trend may be resuming",
 }
 
 # Wave labels, types and clarity in words (the counter's values: app/price_action/waves/counter.py)

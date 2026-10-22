@@ -16,10 +16,11 @@ export interface Idea {
   adopt: IdeaAdopt;
 }
 /** Slice 2 (IDEA-1): an idea mapped honestly onto a strategy template the organisation can adopt now; otherwise only
- * `available: false` ("comes later"). The settings are the Paper bot form's pre-fill. */
+ * `available: false` ("comes later"). The settings are the Paper bot form's pre-fill. Slice 3: `note` says, in plain
+ * words, where the paper strategy still reads less than the card. */
 export type IdeaAdopt =
   | { available: false }
-  | { available: true; template: string; timeframe: string | null; params: Record<string, number | string | boolean> };
+  | { available: true; template: string; timeframe: string | null; params: Record<string, number | string | boolean>; note?: string | null };
 export interface IdeaGroup { id: string; name: string }
 export interface BeginnerOption { id: string; label: string; ideas: string[] }
 export interface BeginnerQuestion { id: string; text: string; options: BeginnerOption[] }

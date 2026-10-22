@@ -39,6 +39,8 @@ export interface ChatAnswer {
   ai?: AiState; note?: string;
   /** Job 6: the draft paper strategy the Paper bot page's review card shows (never saved by the Copilot). */
   draft?: StrategyDraft | null;
+  /** Job 6 follow-up (CP6-2): a next question the page offers as one button, e.g. "Test it on past data" for a complete draft. */
+  followup?: { label: string; question: string } | null;
 }
 /** Job 6 added: the trader's own settings, a promise of returns, someone else's strategy. */
 export type RefusalKind = "order" | "advice" | "tip" | "settings" | "promise" | "copy";

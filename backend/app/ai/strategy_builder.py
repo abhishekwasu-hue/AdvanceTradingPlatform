@@ -40,8 +40,12 @@ OPERATOR_WORDS = {"GT": "is above", "LT": "is below", "GTE": "is at or above", "
 
 HOW_I_BUILD = ("I use only ATP's own building blocks (the same ones as Build a strategy). I don't add a stop, an objective, a size "
                "or any rule you did not state: every number is your setting. Nothing is saved or started until you do it yourself.")
-NO_BACKTEST = ("I don't know how this idea did in the past: a test on past data is not part of this draft yet. After you save it, "
-               "test it on the Backtesting page, then watch it on paper.")
+NO_BACKTEST = ("I don't know how this idea did in the past: I can test the draft on past data once every value is yours (say them in "
+               "your idea and ask me to test it), or test it on the Backtesting page after you save it.")
+NOT_TESTED = ("I don't know how this idea did in the past: I have not tested it yet. Press \"Test it on past data\" and I will run it "
+              "through ATP's backtest engine.")
+TEST_LABEL = "Test it on past data"
+TEST_SUFFIX = " Test it on past data."
 EXAMPLE = ("Turn my idea into a strategy: on the 15-minute chart, go long when the 20 EMA crosses above the 50 EMA and RSI 14 is "
            "above 50. Stop 1.5 x ATR 14, objective 2R.")
 LEFT_OUT = "The draft leaves these parts out, so it is not your whole idea yet: decide whether it still fits."
@@ -512,6 +516,31 @@ def _side_of(sentence: str) -> Optional[str]:
     return "long" if long and not short else "short" if short and not long else None
 
 
+# CP6-2: the trader asks for the honest test of his draft ("... and test it", "backtest my idea: ...", "how did it do in the past").
+_TEST_LEAD = re.compile(r"^(?:please\s+|pls\s+|now\s+|can you\s+|could you\s+)?(?:back-?test|test)\s+(?:this|my|the)?\s*"
+                        r"(?:idea|strategy|draft|rules|setup)?(?:\s+on (?:the )?past data)?\s*[:,\-]\s*")
+_TEST_PHRASE = re.compile(r"[,;]?\s*(?:\band\s+)?(?:\bthen\s+)?(?:\bplease\s+)?\b(?:back-?test|test)\s+(?:it|this|that|the draft|my draft|"
+                          r"the idea|my idea|the strategy|my strategy|the rules|my rules)\b(?:\s+on (?:the )?past (?:data|candles|charts?))?"
+                          r"(?:\s+for me)?\s*[.!]?|[,;]?\s*(?:\band\s+)?\bhow (?:did|does|would) (?:it|this|that|my idea|my strategy|my draft|the draft)(?: idea| strategy)? "
+                          r"(?:do|have done|perform|have performed)(?: in the past| on past data)?\s*\??|[,;]?\s*(?:\band\s+)?\bbacktest\b\s*[.!]?",
+                          re.IGNORECASE)
+
+
+def test_asked(message: str) -> bool:
+    """Whether the trader asks for the test on past data (a backtest of his draft)."""
+    low = (message or "").lower().replace("’", "'")
+    return bool(_TEST_LEAD.match(low.strip()) or _TEST_PHRASE.search(low))
+
+
+def without_test_ask(message: str) -> str:
+    """His words without the ask for a test, so "and test it" is never read as a part of the idea."""
+    text = (message or "").strip()
+    m = _TEST_LEAD.match(text.lower())
+    if m:
+        text = text[m.end():]
+    return re.sub(r"\s+", " ", _TEST_PHRASE.sub(" ", text)).strip()
+
+
 def strip_preamble(message: str) -> str:
     text = re.sub(r"\s+", " ", (message or "").replace("’", "'").replace("–", "-").replace("—", "-")).strip()
     low = text.lower()
@@ -524,7 +553,7 @@ def strip_preamble(message: str) -> str:
 
 def build(message: str, symbol: Optional[str] = None, own_min_rr: Optional[float] = None) -> Draft:
     """The draft for the trader's words. `own_min_rr` is his OWN saved minimum reward to risk (risk limits), or None."""
-    idea = strip_preamble(message)
+    idea = strip_preamble(without_test_ask(message))
     d = Draft(idea=idea, symbol=symbol)
     text = idea.lower()
     if not re.search(r"[a-z]", text):
@@ -679,6 +708,37 @@ def _read_clause(d: Draft, clause: str, side: Optional[str], tokens: Sequence[Tu
         d.rules.append(r)
 
 
+# --- the draft as the engine's strategy (CP6-2) --------------------------------------------------------------------------
+
+def _operand(op: Dict[str, Any]) -> Dict[str, Any]:
+    """A draft operand as the engine's `Operand`: fields its building block does not use keep the engine's neutral values
+    (they are never read for it), exactly as the review card saves it (frontend `strategyDraft.ts` `operandFor`)."""
+    out: Dict[str, Any] = {"type": op["type"], "value": 0.0, "indicator": op.get("indicator") or "CLOSE", "period": 14, "multiplier": 3.0,
+                           "timeframe": op.get("timeframe")}
+    if op["type"] == "value":
+        out["value"] = op.get("value")
+    if op.get("period") is not None:
+        out["period"] = op["period"]
+    if op.get("multiplier") is not None:
+        out["multiplier"] = op["multiplier"]
+    return out
+
+
+def config_of(d: Draft) -> Any:
+    """The draft as a `CustomStrategyConfig`, or None while any value is still his to decide - the engine's own defaults
+    (a stop, an objective, a reward to risk) are never used in place of a value he did not give."""
+    from app.strategy_engine.declarative import CustomStrategyConfig
+    if not d.rules or d.asks() or d.timeframe is None or None in (d.stop_loss_atr_mult, d.atr_period, d.target_rr, d.min_rr):
+        return None
+    longs = [{"left": _operand(r.left), "operator": r.operator, "right": _operand(r.right)} for r in d.rules if r.side == "long"]
+    shorts = [{"left": _operand(r.left), "operator": r.operator, "right": _operand(r.right)} for r in d.rules if r.side == "short"]
+    if not longs and not shorts:
+        return None
+    return CustomStrategyConfig.model_validate({
+        "name": draft_name(d), "timeframe": d.timeframe, "long_conditions": longs, "short_conditions": shorts,
+        "stop_loss_atr_mult": d.stop_loss_atr_mult, "atr_period": d.atr_period, "target_rr": list(d.target_rr or ()), "min_rr": d.min_rr})
+
+
 # --- the answer's lines -------------------------------------------------------------------------------------------------
 
 def side_title(side: Optional[str], timeframe: Optional[str]) -> str:
@@ -709,4 +769,5 @@ def settings_lines(d: Draft) -> List[str]:
 
 
 __all__ = ["Draft", "Rule", "build", "strip_preamble", "parse_clause", "parse_operand", "operand_text", "rule_text", "side_title",
-           "settings_lines", "draft_name", "HOW_I_BUILD", "NO_BACKTEST", "EXAMPLE", "LEFT_OUT", "TIMEFRAMES", "TIMEFRAMES_TEXT"]
+           "settings_lines", "draft_name", "config_of", "test_asked", "without_test_ask", "HOW_I_BUILD", "NO_BACKTEST", "NOT_TESTED",
+           "TEST_LABEL", "TEST_SUFFIX", "EXAMPLE", "LEFT_OUT", "TIMEFRAMES", "TIMEFRAMES_TEXT"]

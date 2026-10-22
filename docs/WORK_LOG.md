@@ -3023,6 +3023,37 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   removed, both sides' text kept.
 - Tests: `tests/test_tpl7_e2_packs_v2.py`, `tests/test_tpl6_family_f.py` (reads version 2), runtime fixture, causal
   cases (lookahead job), history sweep. Questions TPL-Q50..TPL-Q57.
+## 22 Oct - Copilot job 6 follow-up CP6-2: the honest test of the draft on past data (behind ui_v2 + ai_copilot, PAPER only)
+
+- Branch `claude/copilot-cp6-backtest`. No migration, no new flag, no new route.
+- `app/ai/draft_backtest.py`: the draft (exactly as built from his words) through ATP's existing backtest engine on the
+  server's candles: the whole window (trades, wins / losses, net result after the engine's dated charges and slippage,
+  the costs, the deepest drop and its share of capital), "too few trades" below 30, the earlier part and the last 30%,
+  the walk-forward windows, the deflated Sharpe as one try (shown only with enough trades, capped at 99.9%); the sealed
+  holdout is never used.
+- Tool `backtest_draft` (read, `ai_copilot`, `agent=False`: only the chat's rules call it; the agent loop neither offers
+  nor runs it). `strategy_builder.config_of` (None while any value is open: the engine's defaults are never used for his
+  values), `test_asked` / `without_test_ask` ("and test it" is never read as a part of the idea).
+- Chat: on his ask a complete draft with a symbol is tested ("Your draft on past data", "Is it enough to judge?", "Did it
+  hold over time?", "How I tested it"); otherwise the missing value / symbol is said. Without the ask, a complete draft
+  offers "Test it on past data" (the answer's `followup`, one secondary button that only asks). New "settings" refusal
+  for tuning the values on past data; the job 6 order refusal also covers "can you test it and deploy it".
+- Evals: +9 job cases (recorded results made by the real engine on synthetic candles), +12 safety cases (9 refusals, 3
+  controls), `expect_followup`; hashes re-pinned. Tests `tests/test_copilot_v2_cp6_backtest.py`, vitest for the button.
+- Found: the engine's losses-in-a-row counter never resets within a run (CP6-15). Questions CP6-10..CP6-16.
+
+## 22 Oct - F&O workspace 8b slice 4: the risk line's events / liquidity / margin, the F&O desk, the journal chart
+- Branch `claude/fno8b-slice-4`. No migration, no new flag (behind `ui_v2` + the PAPER account); no order path changed.
+- 8b-d: `GET /api/paper/fno/event-risk` (the market events + the company's calendar from today to the expiry, his own
+  event rule per day, "the calendar is empty" said plainly); the risk budget carries the PAPER balance (read only, no
+  account created). The ticket's and the basket's confirm steps show one "Before you place (information only)" box:
+  events, liquidity (bid-ask / OI / volume compared with the chain on screen) and the margin beside the PAPER balance.
+- 8b-i: My positions shows the cockpit as a desk: chart of the underlying with his strikes, the chain near his strikes and
+  his basket beside the cockpit card from 1024 px; a quick switch on a phone. Read only.
+- 8b-k: the journal draft's "Show the chart" redraws the underlying's candles around the trade with "Opened" / "Closed"
+  marked (client side, one read, nothing stored).
+- Tests: `backend/tests/test_fno8b4_risk_parts.py`, `frontend/src/fno/slice4.test.tsx`, `frontend/e2e/fno8b-slice4-v2.e2e.ts`
+  (new baselines). Questions FNO-8B-27..31.
 ## 22 Oct - Wave templates (family G): the volume, zone-edge and divergence companions, G1-G11 version 2 (behind strategy_templates + screener_waves, PAPER only)
 
 - Branch `claude/waves-companions`. No migration (templates are JSON in the repository; no new flag).
@@ -3093,3 +3124,18 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   Pause / Turn back on).
 - Tests: `tests/test_idea_edits.py`; vitest `src/screener/scanEdits.test.tsx`; e2e `e2e/screener-idea-v2.e2e.ts` (edit,
   versions, alert flows; the 1440 baselines refreshed). Screenshots `docs/screenshots/lab11j/`. Questions LAB-18..LAB-22.
+
+## 22 Oct - Idea library slice 3: T7 scans, the second adopt review (behind ui_v2 + idea_library, + strategy_templates for adopt)
+
+- Branch `claude/idea-library-3`. No migration, no new flag, no new route.
+- T7 "Try as a scan": the double top / bottom at an area from existing registry functions only (DowTrend, ReversalAt at
+  the last confirmed swing high / low, NearZone); settings swing size and area tolerance. Head and shoulders and the
+  neckline retest come later (IDEA-14). T6 keeps "comes later": no function reads the trend-side channel line (IDEA-12).
+- Adopt review against families A-G: T2 -> A2, T5 -> A5 (T5 pre-filled with the breakout defaults its scan uses); each
+  mapping carries a guarded `note` shown on the card; T1 / T3 / T4 / T6 / T7 / T8 keep their reasons in `ADOPT_REVIEW`
+  (IDEA-13). T5's card now says that "a swing formed beyond" is not checked.
+- Tests: `tests/test_idea_library.py` (A2 / A5 signals equal the ideas' scans bar by bar, the mappings start from the
+  ideas' settings, the route offers T2 / T5 only with their functions on and the template adopt route accepts the
+  pre-fill as PAPER, T7 must fire / must not fire, no look-ahead, flags); vitest `src/ideas/ideas.test.tsx`; e2e
+  `e2e/idea-library-v2.e2e.ts` (the idea library baselines updated: T7 scans, T5 note, the adopt card on A5). The
+  fixture `e2e/fixtures/ideas_v2.json` is now the payload with strategy templates on; its pin is updated.

@@ -213,6 +213,8 @@ def test_a_closed_trade_without_a_signal_is_a_draft_with_facts_only(condor):  # 
     [draft] = _drafts(t)
     assert draft["kind"] == "trade" and draft["trade_ids"] == [trade_id] and draft["signal"] is None
     assert draft["placed_by"] == "you" and draft["strategy"] is None and draft["status"] == "draft"
+    # 8b slice 4: the snapshot's candles are the underlying's own chart (drawn on the page; nothing is stored).
+    assert (draft["spot_symbol"], draft["spot_exchange"]) == ("NIFTY 50", "NSE")
     [leg] = draft["legs"]
     assert leg["side"] == "long" and leg["exit_at"] is not None and leg["pnl"] is not None
 

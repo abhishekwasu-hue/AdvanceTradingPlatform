@@ -233,6 +233,10 @@ def run_copilot_jobs(cases: List[Dict[str, Any]]) -> SetScore:
         if ans.diagnostics.get("dropped_lines"):
             problems.append(f"ungrounded rule lines: {ans.diagnostics['dropped_lines'][:2]}")
         problems += _draft_problems(case, ans.draft)
+        if "expect_followup" in case and bool(ans.followup) != case["expect_followup"]:
+            problems.append(f"follow-up {ans.followup!r} (expected {'one' if case['expect_followup'] else 'none'})")
+        if ans.followup and ans.followup.get("question") and chat.refusal_kind(ans.followup["question"]):
+            problems.append("the offered follow-up question would be refused")
         if findings(text):
             problems.append(f"advice words: {findings(text)[:3]}")
         out.record(case["id"], not problems, "; ".join(problems))

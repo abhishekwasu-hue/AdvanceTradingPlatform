@@ -1,0 +1,43 @@
+{
+  "schema": "atp.template/1",
+  "id": "B5",
+  "version": 1,
+  "name": "Donchian breakout",
+  "family": "B",
+  "idea": "A signal on the first close beyond the highest high or the lowest low of the last bars (the Donchian channel); the idea has ended when the close goes beyond the opposite side of a shorter channel.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "n", "label": "Channel bars", "help": "How many bars before the break make the channel.", "type": "int", "default": 20, "min": 2, "max": 500, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the channel the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level that says the breakout failed: the middle of the channel, or the latest confirmed swing on the other side. When it is not on the losing side of the close, there is no signal.", "type": "enum", "default": "stop_midpoint", "choices": ["stop_midpoint", "swing"], "choice_labels": ["The middle of the channel", "The latest confirmed opposite swing"]},
+    {"key": "swing_degree", "label": "Swing size", "help": "Which swings count: 0 is the smallest, 3 the largest. Larger swings need more history.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1},
+    {"key": "exit_n", "label": "Exit channel bars", "help": "The idea has ended when the close goes beyond the opposite side of a channel of this many bars.", "type": "int", "default": 10, "min": 2, "max": 500, "step": 1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "DonchianBreakout(\"up\", $n, $k)",
+    "short": "DonchianBreakout(\"down\", $n, $k)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "variants": {
+      "stop_midpoint": {"long": "DonchianBreakoutRef(\"stop_midpoint\", \"up\", $n, $k)", "short": "DonchianBreakoutRef(\"stop_midpoint\", \"down\", $n, $k)"},
+      "swing": {"long": "SwingLow($swing_degree)", "short": "SwingHigh($swing_degree)"}
+    },
+    "by": "invalidation"
+  },
+  "exit_signal": {
+    "long": "close < Min(low, $exit_n)[1]",
+    "short": "close > Max(high, $exit_n)[1]"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "donchian_broken_upward"}],
+    "short": [{"token": "donchian_broken_downward"}]
+  }
+}

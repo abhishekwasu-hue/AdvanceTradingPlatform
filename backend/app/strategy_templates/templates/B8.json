@@ -1,0 +1,35 @@
+{
+  "schema": "atp.template/1",
+  "id": "B8",
+  "version": 1,
+  "name": "Inside bar / narrow-range breakout",
+  "family": "B",
+  "idea": "A signal on the first close beyond a quiet bar: an inside bar, or the narrowest bar of the last few. The idea is wrong beyond the other side of the mother bar.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "nr_setup", "label": "The quiet bar", "help": "Which bar the break comes out of.", "type": "enum", "default": "nr7", "choices": ["inside", "nr4", "nr7"], "choice_labels": ["An inside bar", "The narrowest of the last four bars", "The narrowest of the last seven bars"]},
+    {"key": "vol_mult", "label": "Volume expansion", "help": "The breakout bar's volume must be at least this many times the average (0 means no volume condition; indices have no volume).", "type": "float", "default": 0.0, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the quiet bar the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "NRBreakout(\"up\", $nr_setup, $vol_mult, $k)",
+    "short": "NRBreakout(\"down\", $nr_setup, $vol_mult, $k)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "NRBreakoutRef(\"fail_level\", \"up\", $nr_setup, $vol_mult, $k)",
+    "short": "NRBreakoutRef(\"fail_level\", \"down\", $nr_setup, $vol_mult, $k)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "quiet_bar_broken_upward"}],
+    "short": [{"token": "quiet_bar_broken_downward"}]
+  }
+}

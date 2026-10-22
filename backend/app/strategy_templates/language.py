@@ -46,6 +46,43 @@ TOKENS: Dict[str, str] = {
     # A5 structure flip retest (idea library T5)
     "resistance_flip_retested": "former resistance on the {timeframe} chart was broken and is being retested from above; rejection formed",
     "support_flip_retested": "former support on the {timeframe} chart was broken and is being retested from below; rejection formed",
+    # Step 4 (TPL-4): B2 swing-level, B4 trendline, B5 Donchian, B7 squeeze, B6 pattern, B8 quiet bar, B9 volume, B11 contraction breakouts
+    "swing_high_broken_with_trend": "the close broke above the latest swing high in the direction of the {timeframe} structure",
+    "swing_low_broken_with_trend": "the close broke below the latest swing low in the direction of the {timeframe} structure",
+    "trendline_broken_upward": "the close broke out above a falling trendline on the {timeframe} chart",
+    "trendline_broken_downward": "the close broke down below a rising trendline on the {timeframe} chart",
+    "donchian_broken_upward": "the close broke out above the top of the Donchian channel on the {timeframe} chart",
+    "donchian_broken_downward": "the close broke down below the bottom of the Donchian channel on the {timeframe} chart",
+    "squeeze_broken_upward": "a volatility squeeze ended with a close beyond the upper side on the {timeframe} chart",
+    "squeeze_broken_downward": "a volatility squeeze ended with a close beyond the lower side on the {timeframe} chart",
+    "pattern_broken_upward": "the close broke out above a flag, pennant or triangle on the {timeframe} chart",
+    "pattern_broken_downward": "the close broke down below a flag, pennant or triangle on the {timeframe} chart",
+    "quiet_bar_broken_upward": "the close broke above the high of a quiet bar (an inside or narrow-range bar) on the {timeframe} chart",
+    "quiet_bar_broken_downward": "the close broke below the low of a quiet bar (an inside or narrow-range bar) on the {timeframe} chart",
+    "volume_surge_at_range_top": "a volume surge drove the close to the top of the recent range on the {timeframe} chart",
+    "volume_surge_at_range_bottom": "a volume surge drove the close to the bottom of the recent range on the {timeframe} chart",
+    "contraction_base_broken_upward": "the close broke out above the pivot of a tightening base on the {timeframe} chart",
+    "contraction_base_broken_downward": "the close broke down below the pivot of a tightening base on the {timeframe} chart",
+    # C5 Donchian breakout and retest
+    "donchian_retest_held_from_above": ("the close broke out above the top of the Donchian channel on the {timeframe} chart and the retest"
+                                        " from above held"),
+    "donchian_retest_held_from_below": ("the close broke down below the bottom of the Donchian channel on the {timeframe} chart and the"
+                                        " retest from below held"),
+    # D4 moving-average breakout, D5 ADX / DI, D6 MACD, D7 parabolic SAR, E4 stochastic
+    "average_broken_upward": "the close broke above a flat or rising moving average after a quiet spell around it on the {timeframe} chart",
+    "average_broken_downward": "the close broke below a flat or falling moving average after a quiet spell around it on the {timeframe} chart",
+    "plus_di_leads_adx_rising": "the plus directional line leads and ADX is above its threshold and rising on the {timeframe} chart",
+    "minus_di_leads_adx_rising": "the minus directional line leads and ADX is above its threshold and rising on the {timeframe} chart",
+    "macd_crossed_above_signal": "the MACD line crossed above its signal line on the {timeframe} chart",
+    "macd_crossed_below_signal": "the MACD line crossed below its signal line on the {timeframe} chart",
+    "macd_above_zero": "the MACD line is above zero",
+    "macd_below_zero": "the MACD line is below zero",
+    "sar_flipped_below_bars": "the parabolic SAR flipped below the bars on the {timeframe} chart",
+    "sar_flipped_above_bars": "the parabolic SAR flipped above the bars on the {timeframe} chart",
+    "stochastic_up_from_oversold": "the stochastic turned up out of the oversold zone on the {timeframe} chart",
+    "stochastic_down_from_overbought": "the stochastic turned down out of the overbought zone on the {timeframe} chart",
+    "ctx_close_above_trend_average": "the {context_timeframe} close is above its trend average",
+    "ctx_close_below_trend_average": "the {context_timeframe} close is below its trend average",
     # Family G (wave templates): structure words only - wave labels in words, no number, no price
     "wave_two_pullback_ended": "the wave two pullback ended at an area on the {wave_timeframe} chart",
     "wave_four_pullback_ended": "the wave four pullback ended at an area on the {wave_timeframe} chart",

@@ -409,6 +409,26 @@ class _Eval:
             "LineBreakoutRef": lambda: _breakout_ref(f, "B5", _text(0, "level"), str(self.ev(args[1], tf)), {
                 "tl_mode": _text(2, _bkd("tl_mode")), "tl_min_touches": num(3, _bkd("tl_min_touches")),
                 "min_break_atr": num(4, _bkd("min_break_atr"))}, num(5, _bkd("stop_atr_mult"))),
+            # Strategy templates step 4 (R2 for the other breakout families): the same _breakout_ref on each family's screen
+            "SwingBreakoutRef": lambda: _breakout_ref(f, "B2", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "swing_degree": int(num(2, _bkd("swing_degree"))), "min_break_atr": num(3, _bkd("min_break_atr"))}, num(4, _bkd("stop_atr_mult"))),
+            "NRBreakoutRef": lambda: _breakout_ref(f, "B4", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "nr_setup": _text(2, _bkd("nr_setup")), "vol_mult": num(3, _bkd("vol_mult")), "min_break_atr": num(4, _bkd("min_break_atr"))},
+                num(5, _bkd("stop_atr_mult"))),
+            "VolumeBreakoutRef": lambda: _breakout_ref(f, "B14", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "shock_mult": num(2, _bkd("shock_mult")), "range_n": win(3, _bkd("range_n"))}, num(4, _bkd("stop_atr_mult"))),
+            "DonchianBreakoutRef": lambda: _breakout_ref(f, "B10", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "donchian_n": win(2, _bkd("donchian_n")), "min_break_atr": num(3, _bkd("min_break_atr"))}, num(4, _bkd("stop_atr_mult"))),
+            "MABreakoutRef": lambda: _breakout_ref(f, "B12", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "ma_n": win(2, _bkd("ma_n")), "ma_type": _text(3, _bkd("ma_type")), "min_break_atr": num(4, _bkd("min_break_atr"))},
+                num(5, _bkd("stop_atr_mult"))),
+            "PatternBreakoutRef": lambda: _breakout_ref(f, "B6", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "pattern": _text(2, _bkd("pattern")), "vol_mult": num(3, _bkd("vol_mult")), "min_break_atr": num(4, _bkd("min_break_atr"))},
+                num(5, _bkd("stop_atr_mult"))),
+            "VCPBreakoutRef": lambda: _breakout_ref(f, "B3", _text(0, "level"), str(self.ev(args[1], tf)), {
+                "vcp_min_contractions": num(2, _bkd("vcp_min_contractions")), "vcp_ratio": num(3, _bkd("vcp_ratio")),
+                "vol_mult": num(4, _bkd("vol_mult")), "min_break_atr": num(5, _bkd("min_break_atr")), "tt_filter": _bool(6, _bkd("tt_filter")),
+                "vcp_vol_dryup": _bool(7, _bkd("vcp_vol_dryup"))}, num(8, _bkd("stop_atr_mult"))),
             "RelVolume": lambda: _rel_volume(f, win(0, 20)),
             "ATRPercentile": lambda: _atr_percentile(f, win(0, 14), win(1, 100)),
             "DowTrend": lambda: _dow_trend(f, int(num(0, 0))),

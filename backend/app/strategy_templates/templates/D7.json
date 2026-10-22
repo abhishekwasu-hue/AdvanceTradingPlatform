@@ -1,0 +1,41 @@
+{
+  "schema": "atp.template/1",
+  "id": "D7",
+  "version": 1,
+  "name": "Parabolic SAR flip",
+  "family": "D",
+  "idea": "A signal when the parabolic SAR flips to the other side of the bars on a closed bar; the idea is wrong beyond the SAR and has ended on the opposite flip.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "start", "label": "Starting step", "help": "The acceleration the SAR starts with after a flip.", "type": "float", "default": 0.02, "min": 0.001, "max": 1.0, "step": 0.001},
+    {"key": "step", "label": "Step increase", "help": "How much the acceleration grows on each new extreme.", "type": "float", "default": 0.02, "min": 0.001, "max": 1.0, "step": 0.001},
+    {"key": "max_step", "label": "Largest step", "help": "The acceleration never grows beyond this.", "type": "float", "default": 0.2, "min": 0.001, "max": 1.0, "step": 0.01}
+  ],
+  "constraints": [
+    {"left": "start", "op": "<=", "right": "max_step", "message": "The starting step must not be larger than the largest step."},
+    {"left": "step", "op": "<=", "right": "max_step", "message": "The step increase must not be larger than the largest step."}
+  ],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "PSARDir($start, $step, $max_step) == 1 AND PSARDir($start, $step, $max_step)[1] == -1",
+    "short": "PSARDir($start, $step, $max_step) == -1 AND PSARDir($start, $step, $max_step)[1] == 1",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "PSAR($start, $step, $max_step)",
+    "short": "PSAR($start, $step, $max_step)"
+  },
+  "exit_signal": {
+    "long": "PSARDir($start, $step, $max_step) == -1 AND PSARDir($start, $step, $max_step)[1] == 1",
+    "short": "PSARDir($start, $step, $max_step) == 1 AND PSARDir($start, $step, $max_step)[1] == -1"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "sar_flipped_below_bars"}],
+    "short": [{"token": "sar_flipped_above_bars"}]
+  }
+}

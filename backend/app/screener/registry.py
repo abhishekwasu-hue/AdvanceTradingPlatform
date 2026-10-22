@@ -404,6 +404,36 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
          cost=4.0, min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc="B5 trendline / channel breakout's prices (base_high: the broken edge; base_low: the line's other side)"
              + _REF_DOC.format(fn="TrendlineBreakout")),
+    # Strategy templates step 4 (owner order R2 for the other breakout families, TPL-Q13): the level companions of B2 swing,
+    # B4 inside / NR, B14 volume, B10 Donchian, B12 moving-average, B6 pattern and B3 VCP breakouts - the same breakout with
+    # the same arguments and bounds, its prices on its signal bars only (one function per family, as RangeBreakoutRef)
+    Spec("SwingBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _DEGREE1, _K, _STOP_MULT), cost=4.0, min_bars=SWING_MIN_BARS,
+         degree_min_bars=SWING_DEGREE_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B2 swing breakout's prices (level: the broken swing; base_low: the lowest low since that swing)"
+             + _REF_DOC.format(fn="SwingBreakout")),
+    Spec("NRBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("nr_setup", "setup", STR), _bk("vol_mult", "v", NUM), _K, _STOP_MULT),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B4 inside / NR breakout's prices (level: the setup bar's high; fail_level and base_low: the mother bar's opposite"
+             " extreme)" + _REF_DOC.format(fn="NRBreakout")),
+    Spec("VolumeBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("shock_mult", "v", NUM), _bk("range_n", "n", "window"), _STOP_MULT),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG,
+         doc="B14 volume breakout's prices (level: the n-bar edge when the close went through it, else the shock bar's own low)"
+             + _REF_DOC.format(fn="VolumeBreakout")),
+    Spec("DonchianBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("donchian_n", "n", "window"), _K, _STOP_MULT), cost=3.0,
+         min_bars=BREAKOUT_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B10 Donchian breakout's prices (base_high / base_low: the channel of the n bars before; stop_midpoint: its middle)"
+             + _REF_DOC.format(fn="DonchianBreakout")),
+    Spec("MABreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("ma_n", "n", "window"), _bk("ma_type", "type", STR), _K, _STOP_MULT),
+         cost=3.0, min_bars=BREAKOUT_MIN_BARS, extra_bars=MA_EXTRA_BARS, flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B12 moving-average breakout's prices (level: the average on the signal bar)" + _REF_DOC.format(fn="MABreakout")),
+    Spec("PatternBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("pattern", "pattern", STR), _bk("vol_mult", "v", NUM), _K, _STOP_MULT),
+         cost=4.0, min_bars=LINE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B6 flag / pennant / triangle breakout's prices (base_low: the low of the flag, or the triangle's support at the signal"
+             " bar)" + _REF_DOC.format(fn="PatternBreakout")),
+    Spec("VCPBreakoutRef", "factor", NUM, "price", (_WHAT, _SIDE, _bk("vcp_min_contractions", "contractions", NUM), _bk("vcp_ratio", "ratio", NUM),
+                                                    _bk("vol_mult", "v", NUM), _K, _TT_ARG, _DRY_ARG, _STOP_MULT),
+         cost=4.0, min_bars=VCP_MIN_BARS, timeframes=("1d",), flag=BREAKOUT_FLAG, also_flags=_BK3,
+         doc="B3 VCP breakout's prices (level: the pivot; base_low: the last contraction's low)" + _REF_DOC.format(fn="VCPBreakout")),
     Spec("RelVolume", "factor", NUM, "ratio", (_bk("vol_avg_n", "n", "window"),), extra_bars=1, flag=BREAKOUT_FLAG,
          doc="volume / the mean volume of the n bars before this one"),
     Spec("ATRPercentile", "factor", NUM, "pct", (_bk("atr_n", "n", "window"), _bk("atr_pct_lookback", "lookback", "window")), cost=2.0,

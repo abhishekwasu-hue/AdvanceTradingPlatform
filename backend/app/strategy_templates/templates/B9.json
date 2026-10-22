@@ -1,0 +1,35 @@
+{
+  "schema": "atp.template/1",
+  "id": "B9",
+  "version": 1,
+  "name": "Volume breakout",
+  "family": "B",
+  "idea": "A signal when a volume surge drives the close to or through the top or bottom of the recent range; the idea is wrong just beyond the level that must hold.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "vol_mult", "label": "Volume surge", "help": "The bar's volume must be at least this many times the average (this template needs volume: indices have none).", "type": "float", "default": 2.0, "min": 0.5, "max": 50.0, "step": 0.1},
+    {"key": "range_n", "label": "Range bars", "help": "How many bars before the surge make the recent range.", "type": "int", "default": 20, "min": 2, "max": 500, "step": 1},
+    {"key": "stop_mult", "label": "Level buffer", "help": "How many average true ranges beyond the level that must hold (the range edge, or the surge bar's own extreme when the close did not clear the edge).", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "VolumeBreakout(\"up\", $vol_mult, $range_n)",
+    "short": "VolumeBreakout(\"down\", $vol_mult, $range_n)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "VolumeBreakoutRef(\"stop_level_atr\", \"up\", $vol_mult, $range_n, $stop_mult)",
+    "short": "VolumeBreakoutRef(\"stop_level_atr\", \"down\", $vol_mult, $range_n, $stop_mult)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "volume_surge_at_range_top"}],
+    "short": [{"token": "volume_surge_at_range_bottom"}]
+  }
+}

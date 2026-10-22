@@ -83,16 +83,61 @@ the ids round trip and fit, the adapter's signal. The companion and the forwarde
 (`test_s1b_screen_runtime.py`), the no-look-ahead cases (`app/quality/causal_cases.py`, lookahead job) and the history
 sweep. No frontend change: the Paper bot form lists the templates from the API.
 
+## Step 4 (TPL-4): R2 for the other breakout families, and the next B / C / D / E templates
+
+Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-Q26..TPL-Q40.
+
+| Part | Where | Status |
+|---|---|---|
+| R2 for the other breakout families (TPL-Q13, TPL-Q26): `SwingBreakoutRef`, `NRBreakoutRef`, `VolumeBreakoutRef`, `DonchianBreakoutRef`, `MABreakoutRef`, `PatternBreakoutRef`, `VCPBreakoutRef` (Daily) - the breakout screens B2, B4, B14, B10, B12, B6, B3 of `screener/breakouts` - one function per family with the breakout's own arguments, defaults, bounds and flags, the same `_breakout_ref` (the screen's own columns on its signal bars, `held_level` forward, the stop references of `quality.stop_reference`); sparse in the engine | `screener/registry.py`, `runtime.py`, `strategy_templates/engine.py` | done |
+| B2 swing-level breakout: a break of structure (`SwingBreakType == "BOS"`), invalidation the latest confirmed opposite swing (or just beyond the broken swing), exit the opposite CHoCH (TPL-Q27) | `templates/B2.json` | done |
+| B4 trendline breakout: `TrendlineBreakout(line)`, invalidation just beyond the line / the far end of the move along it, exit a close back across the line as of the breakout (TPL-Q28) | `templates/B4.json` | done |
+| B5 Donchian breakout: invalidation the channel's middle or the latest confirmed opposite swing, exit a close beyond the opposite side of a shorter channel (TPL-Q29) | `templates/B5.json` | done |
+| B6 pattern breakout (flag / pennant / triangle): invalidation the pattern's far side (or the edge / middle), exit a close back inside (TPL-Q30) | `templates/B6.json` | done |
+| B7 squeeze breakout (Bollinger / TTM, `SqueezeBreakout` as it exists): invalidation the bands' middle, exit `exit_bars` closes in a row back inside the squeeze's own bands (TPL-Q31) | `templates/B7.json` | done |
+| B8 inside bar / NR breakout: invalidation the other side of the mother bar (the screen's fail level), no exit (TPL-Q32) | `templates/B8.json` | done |
+| B9 volume breakout: invalidation just beyond the level that must hold (the range edge, or the surge bar's own extreme), no exit (TPL-Q32) | `templates/B9.json` | done |
+| B11 volatility contraction breakout (Daily): the platform's VCP rules as settings, invalidation the last contraction (or just beyond the pivot) (TPL-Q33) | `templates/B11.json` | done |
+| C5 Donchian breakout and retest: B5's channel settings forwarded to `RetestEntry(of = "donchian")` (R7), the retest / invalidation / exit choices of C1 (TPL-Q34) | `templates/C5.json` | done |
+| D4 moving-average breakout (`MABreakout`), invalidation the average less a buffer (TPL-Q35) | `templates/D4.json` | done |
+| D5 ADX / DI trend: the DI cross with ADX above its threshold and rising, or ADX rising through it with the leading line; exit the opposite cross or ADX below the threshold (TPL-Q36) | `templates/D5.json` | done |
+| D6 MACD crossover, optional zero-line filter (TPL-Q37); D7 parabolic SAR flip, invalidation the SAR (TPL-Q38); E4 stochastic cross out of the oversold / overbought zone, optional higher-timeframe trend average (TPL-Q39) | `templates/D6.json`, `D7.json`, `E4.json` | done |
+| Signal text: structure / indicator words per template (no prices, no values, no buy / sell / target / stop words) | `language.py` | done |
+
+Tests: `tests/test_tpl4_templates.py` - the companions against each breakout screen's own columns and the stop reference
+(both sides, `held_level` forward), their arguments equal to the breakout's; per template: "fires exactly on" its breakout /
+indicator event on random data, long and short, with the invalidation by value, S5 conflicts and S6 geometry checked on
+every event bar; the must-not near misses (a change of character or a plain break for B2, a larger break distance, the
+volume asked for on an index without volume, ADX weak or not rising, a stochastic cross in the middle, a steady rise with
+no SAR flip, every VCP rule on the BK3 fixture); every invalidation choice; the exits by value; the warm-up; the shared
+gate for all fourteen - the mirror test (whole-tick prices so a tie stays a tie; around zero for the two templates that
+read a percentage of the price), the truncation test over many t, scan = backtest = options backtest = worker on one
+trailing window (the TPL-1 harness; B11 on the Daily VCP fixture), property tests on random valid settings (no signal
+without its trigger, S6), the language guard, "no number written into a rule" (only a direction value, the zero line
+and the bar before), the ids round trip and fit, the adapter's signal, provenance and flags. The companions are in the
+runtime fixtures (`test_s1b_screen_runtime.py`), the no-look-ahead cases (`app/quality/causal_cases.py`, lookahead job),
+the history sweep and the breakout families' registry tests. No frontend change: the Paper bot form lists the templates
+from the API. No idea-library card gains an honest match (the T ideas read areas, rejections, divergences and sweeps;
+none of these templates does), so no `adopt` entry is added.
+
+Not built in step 4 (TPL-Q40): B10 gap and go (a gap companion on the session clock), C2 swing breakout + retest
+(RetestEntry's `degree` is the wave degree: the swing degree is not forwarded yet), C4 trendline breakout + retest (the
+projected trendline retest, TPL-Q18, waits for the owner), D3 MA pullback, E1 RSI pullback, E3 Bollinger mean reversion and
+E5 VWAP reclaim (each invalidation is "the extreme since the setup": an engine piece the state machine does not have yet;
+E5 also needs "the same session" for the cross-under), E2 RSI divergence (RsiDivergence reads a fixed RSI 14 and its
+extreme has no companion), and family F.
+
 ## Not in this PR (next PRs)
 
 - Family A's area templates A1, A8, A3, A4 (an area companion + zone timelines in the template engine, TPL-Q23), A6 / A7
-  (their functions); then the rest of B / C / D / E in section 10 order (B2 / C2 swing, B4 / C4 trendline with the projected
-  retest TPL-Q18, B5 / C5 Donchian, D3-D7, E1-E5), then F.
+  (their functions); then the rest of B / C / D / E (TPL-Q40: an engine "extreme since the setup" invalidation for D3, E1,
+  E3, E5; the gap companion for B10; the swing degree forwarded for C2; C4 after TPL-Q18; E2 after an RSI period and an
+  extreme companion), then F.
 - Section 5 "exits as settings" (stop_source / target_rule on the deployment's exit settings): needs a migration and
   the owner's approval. Until then the adapter's Signal carries only the invalidation as its stop.
 - R4 rest: the stop_source rule per instrument_kind and the precedence table with tests (comes with section 5).
 - R5: the TEMPLATE_EXIT plumbing (both backtest engines and the position monitor read `TemplateStrategy.exit_signal`
   on each bar close of an open trade; reason "Template exit").
-- R2 for the other breakout families (swing, Donchian, pattern, ...), with their templates.
+- R2 for the gap family (B10), with its template.
 - R7 rest: the projected trendline retest (TPL-Q18) and forwarding the swing degree (C2); R10 (NEXT_AREA target).
 - The stored copy in "My strategies" with provenance (a table: migration), the settings form, Templates page, compare (step 3).

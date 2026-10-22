@@ -38,7 +38,12 @@ def test_the_bk3_functions_take_the_parameter_defaults_and_need_both_flags():
             "DonchianBreakout": {"n": "donchian_n", "k": "min_break_atr"},
             "SqueezeBreakout": {"mode": "squeeze_mode", "n": "bb_n", "lookback": "squeeze_lookback", "v": "vol_mult"},
             "MABreakout": {"n": "ma_n", "type": "ma_type", "k": "min_break_atr"},
-            "RegimeBreakout": {"band": "rsi_band", "n": "regime_n", "adx": "adx_low", "k": "min_break_atr"}}
+            "RegimeBreakout": {"band": "rsi_band", "n": "regime_n", "adx": "adx_low", "k": "min_break_atr"},
+            # strategy templates step 4 (R2): the Donchian, moving-average and VCP breakouts' level companions
+            "DonchianBreakoutRef": {"n": "donchian_n", "k": "min_break_atr", "stop_mult": "stop_atr_mult"},
+            "MABreakoutRef": {"n": "ma_n", "type": "ma_type", "k": "min_break_atr", "stop_mult": "stop_atr_mult"},
+            "VCPBreakoutRef": {"contractions": "vcp_min_contractions", "ratio": "vcp_ratio", "v": "vol_mult", "k": "min_break_atr",
+                               "template": "tt_filter", "dryup": "vcp_vol_dryup", "stop_mult": "stop_atr_mult"}}
     assert set(want) == set(BREAKOUT_BK3_FUNCTIONS)
     for fn, args in want.items():
         spec = FUNCTIONS[fn]

@@ -1,0 +1,50 @@
+{
+  "schema": "atp.template/1",
+  "id": "E4",
+  "version": 1,
+  "name": "Stochastic cross",
+  "family": "E",
+  "idea": "A signal when the stochastic K line crosses its D line coming out of the oversold zone (bullish) or the overbought zone (bearish); optionally only with the trend average on a higher timeframe.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "k_period", "label": "Stochastic period", "help": "Bars the stochastic looks back over.", "type": "int", "default": 14, "min": 2, "max": 200, "step": 1},
+    {"key": "smooth", "label": "K smoothing", "help": "Bars that smooth the K line.", "type": "int", "default": 3, "min": 1, "max": 50, "step": 1},
+    {"key": "d_period", "label": "D line", "help": "Bars in the average of the K line that makes the D line.", "type": "int", "default": 3, "min": 1, "max": 50, "step": 1},
+    {"key": "oversold", "label": "Oversold level", "help": "A bullish cross counts when the K line was below this level on the bar before.", "type": "float", "default": 20.0, "min": 1.0, "max": 49.0, "step": 1.0},
+    {"key": "overbought", "label": "Overbought level", "help": "A bearish cross counts when the K line was above this level on the bar before.", "type": "float", "default": 80.0, "min": 51.0, "max": 99.0, "step": 1.0},
+    {"key": "use_trend", "label": "Trend filter", "help": "Only signal when the close on the higher timeframe is on the same side of its trend average.", "type": "bool", "default": false},
+    {"key": "ma_type", "label": "Trend average type", "help": "How the trend average is calculated.", "type": "ma_type", "default": "EMA", "choices": ["EMA", "SMA", "WMA", "HMA"], "choice_labels": ["Exponential", "Simple", "Weighted", "Hull"]},
+    {"key": "trend_period", "label": "Trend average", "help": "Bars in the trend average.", "type": "int", "default": 50, "min": 2, "max": 500, "step": 1},
+    {"key": "context_timeframe", "label": "Trend timeframe", "help": "The higher timeframe the trend filter reads (closed bars only).", "type": "timeframe", "default": "1d", "choices": ["15m", "30m", "1h", "1d", "1w"]},
+    {"key": "swing_degree", "label": "Swing size", "help": "Which swings count: 0 is the smallest, 3 the largest. Larger swings need more history.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1}
+  ],
+  "constraints": [
+    {"left": "context_timeframe", "op": ">", "right": "signal_timeframe", "when": "use_trend", "message": "The trend timeframe must be higher than the signal timeframe."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "long": "close > MA(close, $trend_period, $ma_type)",
+    "short": "close < MA(close, $trend_period, $ma_type)",
+    "timeframe_param": "context_timeframe",
+    "enabled_by": "use_trend"
+  },
+  "setup": {
+    "kind": "event",
+    "long": "CrossAbove(StochK($k_period, $smooth), StochD($k_period, $smooth, $d_period)) AND StochK($k_period, $smooth)[1] < $oversold",
+    "short": "CrossBelow(StochK($k_period, $smooth), StochD($k_period, $smooth, $d_period)) AND StochK($k_period, $smooth)[1] > $overbought",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "SwingLow($swing_degree)",
+    "short": "SwingHigh($swing_degree)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "stochastic_up_from_oversold"}, {"token": "ctx_close_above_trend_average", "when": "use_trend"}],
+    "short": [{"token": "stochastic_down_from_overbought"}, {"token": "ctx_close_below_trend_average", "when": "use_trend"}]
+  }
+}

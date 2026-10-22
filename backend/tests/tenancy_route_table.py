@@ -363,6 +363,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/contract-notes"): "trader",
     ("GET", "/api/contract-notes/{note_id}"): "member",
     ("GET", "/api/context/panel"): "member",
+    ("GET", "/api/markets/overview"): "member: shared index and sector moves from the system lists and the shared end-of-day history; no tenant rows",
+    ("GET", "/api/markets/lists/{key}"): "member: one shared system list's stocks with their end-of-day moves; no tenant rows",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,

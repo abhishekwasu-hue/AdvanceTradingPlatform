@@ -1,6 +1,6 @@
 import {
   BarChart3, Bell, BookOpen, Bot, Box, Building2, ChartCandlestick, ClipboardList, Filter, GraduationCap, History, Layers,
-  LayoutDashboard, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
+  LayoutDashboard, LayoutGrid, Link2, ListChecks, ListTodo, Newspaper, Pencil, PieChart, Radar, ScrollText, Settings, Shield, ShieldEllipsis,
   ScanSearch, Sigma, SlidersHorizontal, Sparkles, Store, UserCircle2, Users, Zap, ChartSpline, Plug, Palette, LifeBuoy, Wrench, type LucideIcon,
 } from "lucide-react";
 import { needsAttention, type BrokerDot } from "../broker/brokerState";
@@ -20,7 +20,7 @@ import { SETTINGS_PATH, type SettingsSectionKey } from "../settings/paths";
 
 /** A v2 shell location: every routed page, plus the v2-only pages: Charts (`/charts`, `/charts/:symbol`) and
  * Settings → Setup (`/settings/setup`, UI2-7), My trading defaults (`/settings/trading-defaults`, part C) and the Settings section pages (`/settings/ai` ..., Settings redesign B). */
-export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | SettingsSectionKey;
+export type ShellKey = Page | "charts" | "setup" | "trading-defaults" | "markets" | SettingsSectionKey;
 
 export type SectionId = "markets" | "strategies" | "trading" | "insights" | "account" | "more";
 
@@ -56,6 +56,9 @@ export const NAV_SECTIONS_V2: readonly NavSectionV2[] = [
       item("dashboard", "Dashboard", "Today", "/", LayoutDashboard, { keywords: ["home", "overview", "today"] }),
       item("charts", "Charts", "Charts", "/charts", ChartCandlestick, { keywords: ["chart", "candles", "price"] }),
       item("option-chain", "Option chain", "Option chain", "/option-chain", Link2, { keywords: ["options", "oi", "pcr", "max pain"] }),
+      // MO4 slice 2: the Sector & index view (v2 only, flag `markets_view`).
+      item("markets", "Sectors & indices", "Sectors & indices", "/markets", LayoutGrid,
+        { flag: PAGE_FLAGS.markets, keywords: ["sectors", "indices", "heat map", "heatmap", "sector rotation", "breadth", "market"] }),
       item("screener", "Find setups", "Find setups", "/screener", Filter, { flag: PAGE_FLAGS.screener, keywords: ["screener", "screens", "scan"] }),
     ],
   },

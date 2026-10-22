@@ -18,7 +18,7 @@ import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } 
 import MoreSheetV2 from "./MoreSheetV2";
 import { sectionOf, visiblePinned, visibleSections, type NavContext } from "./navModel";
 import { OWN_BROKER_STATES, PAGE_COMPONENTS_V2 } from "./pagesV2";
-import { SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
+import { MARKETS_ADDRESS, SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS } from "./aliases";
 import { SETTINGS_SECTIONS } from "../settings/paths";
 import { closedFlag } from "./pageFlags";
 import { ComingSoon } from "../ui/ComingSoon";
@@ -123,6 +123,8 @@ export default function AppShellV2() {
   const SetupPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.setup ?? NotFound;
   // Settings part C: Settings → My trading defaults (v2 only), the same way.
   const TradingDefaultsPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2["trading-defaults"] ?? NotFound;
+  // MO4 slice 2: the Sector & index view (v2 only), the same way.
+  const MarketsPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2.markets ?? NotFound;
   const routes = (
     <ErrorBoundary key={key ?? "not-found"} title={key ? title : undefined}>
       <Suspense fallback={<PageLoading />}>
@@ -138,6 +140,7 @@ export default function AppShellV2() {
           <Route path="/charts/:symbol?" caseSensitive element={<ChartsPage onNavigate={go} />} />
           <Route path={SETUP_ADDRESS} caseSensitive element={<SetupPage onNavigate={go} />} />
           <Route path={TRADING_DEFAULTS_ADDRESS} caseSensitive element={<TradingDefaultsPage onNavigate={go} />} />
+          <Route path={MARKETS_ADDRESS} caseSensitive element={<MarketsPage onNavigate={go} />} />
           {SETTINGS_SECTIONS.map(({ key: k, path: p }) => {
             const SectionPage: ComponentType<PageProps> = PAGE_COMPONENTS_V2[k] ?? NotFound;
             return <Route key={p} path={p} caseSensitive element={<SectionPage onNavigate={go} />} />;

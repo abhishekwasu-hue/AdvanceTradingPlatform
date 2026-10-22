@@ -239,6 +239,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # Z7a-3: also the chart layer (<= 6 bands) and the ScreenQL zone functions (NearZone, ZoneRole, ZoneState,
     # ZoneStrength). OFF: the layer answers 503, the functions are hidden and refused, zone alert rules pause.
     "market_zones": "Market zones: nightly demand / supply, order-block, S/R and gap zones with lifecycle and level memory, the chart layer and the ScreenQL zone functions (read-only, places no orders)",
+    # MO4 slice 2 (ATP_SESSION_GROWTH_MASTER.md PART 2 items 4 and 6; needs `ui_v2`): the Sector & index view at /markets
+    # (every index and sector of the system watchlists with its day / week / month move, breadth, strongest and weakest
+    # stocks and the move against the NIFTY 50, from the shared end-of-day history; app/markets) and the Option chain
+    # page's "What the chain shows" summary (app/option_chain/dish.py). OFF: /api/markets/* answers 404, the page is not
+    # in the navigation and the option chain shows no summary. Information only, places no orders.
+    "markets_view": "Sector & index view (index and sector moves, breadth, strongest and weakest stocks) and the option chain's plain-words summary (information only)",
     # U7 LG1 (docs/specs/ATP_LEGENDS_SCREENS_ADDENDUM.md): the Legends cards - publicly described methods with a screen
     # modelled on each. OFF: /api/screener/legends answers 503 and the Legends screens are hidden from the taxonomy.
     # Educational only - never a recommendation, never an endorsement.

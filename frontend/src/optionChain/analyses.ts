@@ -36,6 +36,10 @@ export interface Analysis {
   sentences: string[];
   values: Record<string, unknown>;
 }
+/** MO4 slice 2: "What the chain shows" - five plain lines from the same six analyses (backend app/option_chain/dish.py),
+ * sent only while `markets_view` is on. A line whose number is missing is `unknown` and starts "I don't know". */
+export interface ChainDishPoint { key: "pcr_zone" | "oi_walls" | "max_pain" | "iv_change" | "expected_move"; label: string; text: string; state: "ok" | "unknown" }
+export interface ChainDish { title: string; points: ChainDishPoint[]; note: string }
 export type AnalysesState = "ok" | "no_broker" | "unavailable" | "no_data";
 export interface AnalysesResponse {
   symbol: string;
@@ -49,6 +53,7 @@ export interface AnalysesResponse {
   source?: { broker: string; account_label: string };
   session?: { snapshots: number; since: string | null; note: string | null };
   near_atm_strikes?: number;
+  dish?: ChainDish;
 }
 
 /** The tabs, in the server's order, with a short label for narrow screens and the glossary term behind each. */
@@ -78,6 +83,26 @@ export function analysesQuery(symbol: string, expiry?: string | null): string {
 /** One read of the six analyses (GET; the server reads the chain through the user's own broker session). */
 export function fetchAnalyses(symbol: string, expiry?: string | null): Promise<AnalysesResponse> {
   return request<AnalysesResponse>(`/option-chain/analyses?${analysesQuery(symbol, expiry)}`);
+}
+
+/** MO4 slice 2: how long one read is shared between the page's readers (the summary on top and the tabs below). */
+export const SHARE_MS = 5_000;
+const shared = new Map<string, { at: number; answer: Promise<AnalysesResponse> }>();
+
+/**
+ * `fetchAnalyses`, shared: readers asking for the same symbol and expiry within SHARE_MS get the same answer, so the
+ * summary on top of the page and the tabs below cost one broker chain read, not two. A failed read is not kept.
+ */
+export function fetchAnalysesShared(symbol: string, expiry?: string | null, now: () => number = Date.now): Promise<AnalysesResponse> {
+  const key = analysesQuery(symbol, expiry);
+  const at = now();
+  for (const [k, v] of shared) if (at - v.at >= SHARE_MS) shared.delete(k);
+  const hit = shared.get(key);
+  if (hit) return hit.answer;
+  const answer = fetchAnalyses(symbol, expiry);
+  shared.set(key, { at, answer });
+  answer.catch(() => { if (shared.get(key)?.answer === answer) shared.delete(key); });
+  return answer;
 }
 
 /** The analysis for a tab, or null when the server did not send it. */

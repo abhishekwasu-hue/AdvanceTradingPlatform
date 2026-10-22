@@ -9,7 +9,9 @@ import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
 import { formatDateIST, formatTimeIST } from "../ui/format";
 import { PageIntro } from "../ui/PageIntro";
+import { useFeatures } from "../ui/useFeatures";
 import AnalysisSlotV2 from "./AnalysisSlotV2";
+import ChainDishV2 from "./ChainDishV2";
 import ChainTableV2 from "./ChainTableV2";
 import ChainCharts from "./ChartsViewV2";
 import ColumnsMenuV2 from "./ColumnsMenuV2";
@@ -37,6 +39,7 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  *   show "P", and a bottom strip holds the key figures (src/fno/ChainTradingV2.tsx). The page itself places nothing.
  * - FNO-3: the symbol hub's tab row on top (Chart | Option chain | Futures | Overview, src/fno/SymbolHubTabsV2.tsx). The
  *   address keeps the symbol and the expiry (`?underlying=&expiry=`, and the chart's `tf`), so the tabs carry them.
+ * - MO4 slice 2: with `markets_view` on, "What the chain shows" on top (ChainDishV2): five plain lines from the analyses.
  * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
 const SELECT = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
@@ -124,6 +127,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const pickedRow: ChainRow | null = live?.rows.find((r) => r.strike === picked) ?? null;
   const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions });
+  const dishOn = useFeatures().on("markets_view");
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
@@ -167,6 +171,8 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
           {notes.map((n) => <Note key={n.key} tone="neutral">{n.text}</Note>)}
         </div>
       )}
+
+      {dishOn && <ChainDishV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />}
 
       <SummaryStripV2 summary={live?.summary ?? null} expiry={live?.expiry ?? chain.expiry} loading={chain.loading && !live} />
 

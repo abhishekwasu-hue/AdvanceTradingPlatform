@@ -332,7 +332,7 @@ def test_migration_is_additive_rollback_safe_and_the_only_head():
     spec = importlib.util.spec_from_file_location("oc5_migration", path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    assert module.ROLLBACK_SAFE is True and module.revision == "a7c9e1f3b5d8" and module.down_revision == "d9f1b3c5e7a2"
+    assert module.ROLLBACK_SAFE is True and module.revision == "a7c9e1f3b5d8" and module.down_revision == "e6b8d0f2a4c7"
     assert risky_operations(path.read_text(encoding="utf-8")) == [] and not hasattr(module, "ROLLBACK_SAFE_REASON")
     assert not [p for p in lint() if p.startswith(path.name)]
     assert callable(module.downgrade)

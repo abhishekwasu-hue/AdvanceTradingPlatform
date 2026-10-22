@@ -2,7 +2,7 @@
 `oi_snapshots.future_oi`), for the Option chain "Charts" view (futures price vs futures OI through the session).
 
 Revision ID: a7c9e1f3b5d8
-Revises: d9f1b3c5e7a2 (UI2-4a1 - main's head; whichever migration merges second re-chains)
+Revises: e6b8d0f2a4c7 (EO-4 - drops users.ai_language; main's head when OC5 merged)
 Create Date: 2026-10-22 10:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'a7c9e1f3b5d8'
-down_revision: Union[str, Sequence[str], None] = 'd9f1b3c5e7a2'
+down_revision: Union[str, Sequence[str], None] = 'e6b8d0f2a4c7'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - two nullable columns on an existing table. The previous release never reads them and its

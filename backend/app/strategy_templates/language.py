@@ -83,6 +83,22 @@ TOKENS: Dict[str, str] = {
     "stochastic_down_from_overbought": "the stochastic turned down out of the overbought zone on the {timeframe} chart",
     "ctx_close_above_trend_average": "the {context_timeframe} close is above its trend average",
     "ctx_close_below_trend_average": "the {context_timeframe} close is below its trend average",
+    # Step 5 (TPL-5): C2 swing breakout and retest, D3 moving-average pullback, E1 RSI pullback, E3 Bollinger mean reversion,
+    # E5 session VWAP reclaim / reject
+    "swing_retest_held_from_above": "the close broke above the latest swing high on the {timeframe} chart and the retest from above held",
+    "swing_retest_held_from_below": "the close broke below the latest swing low on the {timeframe} chart and the retest from below held",
+    "pullback_to_fast_ma_reversed_up": ("in a rising trend on the {timeframe} chart the pullback reached the fast moving average and"
+                                        " a bullish reversal formed there"),
+    "rally_to_fast_ma_reversed_down": ("in a falling trend on the {timeframe} chart the rally reached the fast moving average and"
+                                       " a bearish reversal formed there"),
+    "rsi_back_up_from_oversold": "the RSI turned back up out of the oversold zone on the {timeframe} chart",
+    "rsi_back_down_from_overbought": "the RSI turned back down out of the overbought zone on the {timeframe} chart",
+    "ctx_trend_filter_agrees": "the {context_timeframe} trend filter agrees",
+    "back_inside_from_lower_band": "the close came back inside the Bollinger bands from below the lower band on the {timeframe} chart",
+    "back_inside_from_upper_band": "the close came back inside the Bollinger bands from above the upper band on the {timeframe} chart",
+    "range_regime": "the market is in a range regime",
+    "vwap_reclaimed_in_session": "the close moved back above the session VWAP after trading below it in the same session on the {timeframe} chart",
+    "vwap_lost_in_session": "the close moved back below the session VWAP after trading above it in the same session on the {timeframe} chart",
     # Family G (wave templates): structure words only - wave labels in words, no number, no price
     "wave_two_pullback_ended": "the wave two pullback ended at an area on the {wave_timeframe} chart",
     "wave_four_pullback_ended": "the wave four pullback ended at an area on the {wave_timeframe} chart",

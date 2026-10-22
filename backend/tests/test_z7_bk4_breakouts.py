@@ -45,7 +45,8 @@ def test_the_bk4_functions_take_the_parameter_defaults_and_need_both_flags():
             # strategy templates step 4 (R2): the pattern breakout's level companion
             "PatternBreakoutRef": {"pattern": "pattern", "v": "vol_mult", "k": "min_break_atr", "stop_mult": "stop_atr_mult"}}
     # R7: the named arguments RetestEntry / RetestEntryRef forward to the base breakout take its parameters' defaults too
-    forward = {"k": "min_break_atr", "n": "range_n", "v": "vol_mult", "mode": "range_mode", "touches": "tl_min_touches"}
+    forward = {"k": "min_break_atr", "n": "range_n", "v": "vol_mult", "mode": "range_mode", "touches": "tl_min_touches",
+               "swing": "swing_degree"}                                        # step 5 (C2): the swing breakout's degree
     for fn in ("RetestEntry", "RetestEntryRef"):
         named = {a.name: a for a in FUNCTIONS[fn].kwargs}
         assert set(named) == set(forward)

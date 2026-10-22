@@ -1,0 +1,132 @@
+{
+  "schema": "atp.template/1",
+  "id": "C2",
+  "version": 1,
+  "name": "Swing breakout and retest",
+  "family": "C",
+  "idea": "After a close beyond the latest confirmed swing (the swing breakout's own settings), wait for the market to come back to the broken swing level and hold it; the idea has ended when the close is back through that level.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": [
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "1d"
+  ],
+  "params": [
+    {
+      "key": "swing_degree",
+      "label": "Swing size",
+      "help": "Which swings count: 0 is the smallest, 3 the largest. Larger swings need more history.",
+      "type": "int",
+      "default": 1,
+      "min": 0,
+      "max": 3,
+      "step": 1
+    },
+    {
+      "key": "k",
+      "label": "Break distance",
+      "help": "How far beyond the swing the close must be, in average true ranges (0 means any close beyond).",
+      "type": "float",
+      "default": 0.2,
+      "min": 0.0,
+      "max": 5.0,
+      "step": 0.05
+    },
+    {
+      "key": "retest_max_bars",
+      "label": "Retest within (bars)",
+      "help": "The return to the broken edge must come within this many bars after the breakout; a later return is a new base, not a retest.",
+      "type": "int",
+      "default": 10,
+      "min": 1,
+      "max": 100,
+      "step": 1
+    },
+    {
+      "key": "retest_reversal",
+      "label": "Wait for a reversal at the level",
+      "help": "On: the retest must show a reversal at the broken edge. Off: a touch of the edge with the close held beyond it is enough.",
+      "type": "bool",
+      "default": true
+    },
+    {
+      "key": "invalidation",
+      "label": "The idea is wrong beyond",
+      "help": "Where the retest idea is wrong: beyond the pullback to the level, just beyond the broken swing, beyond whichever of the two is farther, or beyond the latest confirmed opposite swing.",
+      "type": "enum",
+      "default": "lower_of_both",
+      "choices": [
+        "retest_low",
+        "level_minus_stop_ref",
+        "lower_of_both",
+        "swing"
+      ],
+      "choice_labels": [
+        "The pullback to the level",
+        "Just beyond the broken swing",
+        "Whichever of the two is farther",
+        "The latest confirmed opposite swing"
+      ]
+    },
+    {
+      "key": "stop_mult",
+      "label": "Edge buffer",
+      "help": "For 'just beyond the broken swing': how many average true ranges beyond it.",
+      "type": "float",
+      "default": 1.0,
+      "min": 0.0,
+      "max": 10.0,
+      "step": 0.1
+    }
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "RetestEntry(\"up\", \"swing\", $retest_max_bars, $retest_reversal, k=$k, swing=$swing_degree)",
+    "short": "RetestEntry(\"down\", \"swing\", $retest_max_bars, $retest_reversal, k=$k, swing=$swing_degree)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "variants": {
+      "retest_low": {
+        "long": "RetestEntryRef(\"retest_low\", \"up\", \"swing\", $retest_max_bars, $retest_reversal, k=$k, swing=$swing_degree)",
+        "short": "RetestEntryRef(\"retest_low\", \"down\", \"swing\", $retest_max_bars, $retest_reversal, k=$k, swing=$swing_degree)"
+      },
+      "level_minus_stop_ref": {
+        "long": "RetestEntryRef(\"stop_level_atr\", \"up\", \"swing\", $retest_max_bars, $retest_reversal, $stop_mult, k=$k, swing=$swing_degree)",
+        "short": "RetestEntryRef(\"stop_level_atr\", \"down\", \"swing\", $retest_max_bars, $retest_reversal, $stop_mult, k=$k, swing=$swing_degree)"
+      },
+      "lower_of_both": {
+        "long": "Least(RetestEntryRef(\"retest_low\", \"up\", \"swing\", $retest_max_bars, $retest_reversal, k=$k, swing=$swing_degree), RetestEntryRef(\"stop_level_atr\", \"up\", \"swing\", $retest_max_bars, $retest_reversal, $stop_mult, k=$k, swing=$swing_degree))",
+        "short": "Greatest(RetestEntryRef(\"retest_low\", \"down\", \"swing\", $retest_max_bars, $retest_reversal, k=$k, swing=$swing_degree), RetestEntryRef(\"stop_level_atr\", \"down\", \"swing\", $retest_max_bars, $retest_reversal, $stop_mult, k=$k, swing=$swing_degree))"
+      },
+      "swing": {
+        "long": "SwingLow($swing_degree)",
+        "short": "SwingHigh($swing_degree)"
+      }
+    },
+    "by": "invalidation"
+  },
+  "exit_signal": {
+    "long": "close < RetestEntryRef(\"held_level\", \"up\", \"swing\", $retest_max_bars, $retest_reversal, k=$k, swing=$swing_degree)",
+    "short": "close > RetestEntryRef(\"held_level\", \"down\", \"swing\", $retest_max_bars, $retest_reversal, k=$k, swing=$swing_degree)"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "swing_retest_held_from_above"
+      }
+    ],
+    "short": [
+      {
+        "token": "swing_retest_held_from_below"
+      }
+    ]
+  }
+}

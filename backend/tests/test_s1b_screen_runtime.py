@@ -403,6 +403,9 @@ def test_tpl3_retest_companion_and_the_forwarded_breakout_settings():
     assert ev('RetestEntryRef("retest_low", "up", "range", 10, TRUE)').iloc[-1] == pytest.approx(f["low"].iloc[41:].min())
     assert ev('RetestEntryRef("held_level", "up", "range", 10, TRUE)').iloc[-1] == pytest.approx(level.iloc[-1])
     assert ev('RetestEntryRef("level", "down", "range", 10, TRUE)').isna().all()
+    # step 5 (C2): swing= is the swing breakout's degree (the default 1 named = left out; another base ignores it)
+    assert ev('RetestEntry("up", "swing", 10, TRUE, swing=1)').equals(ev('RetestEntry("up", "swing", 10, TRUE)'))
+    assert ev('RetestEntry("up", "range", 10, TRUE, swing=0)').equals(fired)
 
 
 def test_tpl4_breakout_family_companions():

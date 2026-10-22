@@ -15,6 +15,10 @@ bars, context values aligned by close time - S1, R9) and then walks the bars onc
 * Both sides triggering on one bar: no signal for either, both instances consumed, reason "conflict" (S5, R8).
 * The invalidation is read on the trigger bar and must be on the losing side of the close (long: below; short: above),
   else no signal, reason "invalid_geometry"; a missing level gives "no_invalidation" (S6). Both consume the instance.
+* Step 5 (TPL-5): an invalidation may be the extreme SINCE THE SETUP BAR (`SetupExtreme`): the lowest low (long) / the
+  highest high (short) from the instance's setup bar to the trigger bar, both included, kept while the bars are walked
+  and restarted by a newer setup. A setup may be bound to its session (`session_bound`, E5): the first bar of another
+  session voids the instance; the session is the exchange calendar's for each bar's own timestamp.
 * Warm-up (S3): no signal until every series the recipe reads has had a value and the validator's bars of history are
   there, on the signal timeframe and on every context timeframe; reason "warmup".
 
@@ -182,6 +186,11 @@ def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S") 
     evidence: Dict[int, Tuple[str, ...]] = {}
     armed: Dict[Side, int] = {side: -1 for side in sides}
     level: Dict[Side, float] = {side: np.nan for side in sides}
+    # step 5 (TPL-5): the extreme since the setup bar per side (long: the lowest low, short: the highest high), kept from
+    # the bar an instance arms through the current bar; a newer setup restarts it
+    extreme: Dict[Side, float] = {side: np.nan for side in sides}
+    # step 5 (TPL-5, E5): the session of every bar from its own timestamp on the exchange calendar (-1: outside a session)
+    session = np.asarray(ev.session_bars(tf).sessions().session) if setup_t.session_bound else None
     for t in range(size):
         if not ready[t]:
             reason[t] = REASON_WARMUP
@@ -193,19 +202,24 @@ def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S") 
             # a state arms only on a rising edge seen after the warm-up (one already true when the history starts has no
             # known start, and a trailing window would arm it on a different bar than the full history)
             starts = raw if setup_t.kind == "event" else raw and t > 0 and bool(ready[t - 1]) and not d["setup"][t - 1]
-            if starts:
+            if starts and session is not None and session[t] < 0:
+                armed[side] = -1                              # a setup outside every session starts nothing
+            elif starts:
                 armed[side], level[side] = t, float(d["arm_level"][t])
+                extreme[side] = low[t] if side == "long" else high[t]
             elif armed[side] >= 0:
                 s0 = armed[side]
                 lv = level[side]
                 expired = recipe.expiry_bars is not None and t - s0 > recipe.expiry_bars
-                ended = setup_t.kind == "state" and not raw
+                ended = (setup_t.kind == "state" and not raw) or (session is not None and session[t] != session[s0])
                 if setup_t.breach_on == "wick":
                     breached = np.isfinite(lv) and (low[t] < lv if side == "long" else high[t] > lv)
                 else:
                     breached = np.isfinite(lv) and (close[t] < lv if side == "long" else close[t] > lv)
                 if expired or ended or breached:
                     armed[side] = -1
+                else:
+                    extreme[side] = min(extreme[side], low[t]) if side == "long" else max(extreme[side], high[t])
             s0 = armed[side]
             if s0 < 0 or (t == s0 and not setup_t.same_bar):
                 continue
@@ -221,7 +235,7 @@ def compute(recipe: Recipe, frames: Dict[str, pd.DataFrame], symbol: str = "S") 
             continue
         side, s0 = next(iter(fired.items()))
         armed[side] = -1                                      # one signal per instance, whatever the outcome below
-        inv = float(data[side]["invalidation"][t])
+        inv = float(extreme[side]) if recipe.invalidation_since_setup else float(data[side]["invalidation"][t])
         if not np.isfinite(inv):
             reason[t] = REASON_NO_LEVEL
             continue

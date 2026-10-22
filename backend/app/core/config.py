@@ -61,7 +61,8 @@ DB_POOL_SIZE = max(1, int(os.environ.get("DB_POOL_SIZE", "5")))
 DB_MAX_OVERFLOW = max(0, int(os.environ.get("DB_MAX_OVERFLOW", "10")))
 DB_POOL_TIMEOUT_SECONDS = max(1.0, float(os.environ.get("DB_POOL_TIMEOUT_SECONDS", "30")))
 # LD-7: how many API processes uvicorn runs (scripts/serve_api.sh reads the same variable). Sizes per-process limits
-# that are meant to be per host, such as the bcrypt thread limit (app/auth/security.py).
+# that are meant to be per host, such as the broker API budget (app/market_data/api_budget.py); not the bcrypt threads
+# (LD-9: those follow the CPUs, app/auth/security.py).
 API_WORKERS = max(1, int(os.environ.get("API_WORKERS", "1") or "1"))
 
 _INSECURE_DEFAULT_JWT_SECRET = "dev-only-insecure-secret-change-me"

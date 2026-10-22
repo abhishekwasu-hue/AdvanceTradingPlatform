@@ -74,6 +74,8 @@ async function open(page: Page, theme: "light" | "dark", opts: { options?: MockO
     if (url.pathname.endsWith("/held")) { seen.held += 1; return route.fulfill({ json: held }); }
     // 8b-d: the risk line's budget (not set up here: the line is left out, the ticket is unchanged).
     if (url.pathname.endsWith("/risk-budget")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
+    // 8b slice 4: the events calendar (not set up here: the line says it could not be read).
+    if (url.pathname.endsWith("/event-risk")) return route.fulfill({ status: 404, json: { detail: "Not found" } });
     const body = request.postDataJSON() as Record<string, unknown>;
     seen.posts.push({ url: url.pathname, method: request.method(), body });
     if (url.pathname.endsWith("/order/preview")) return route.fulfill({ json: preview(body) });

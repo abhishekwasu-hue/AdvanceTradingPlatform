@@ -2051,3 +2051,12 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - Tests: backend `tests/test_appearance_prefs.py`; vitest `src/textSize.test.ts` (scale in rem, 14 px floor, the
   setting, theme-init, the server sync); e2e `e2e/text-size-v2.e2e.ts` (Large and Extra large: phone layout rules,
   no sideways scroll at 1440, nothing spills); all 106 changed e2e baselines regenerated at the new size.
+
+## OC4: the Analysis tabs, Ask AI and My analyses below the v2 chain (handover 2a)
+
+- Branch `claude/oc4-wire-analyses` (stacked on `claude/font-size`).
+- `AnalysisSlotV2` now mounts the built pieces for the symbol and expiry on screen, in order: the Analysis tabs (OC2),
+  Ask AI (OC3) and My analyses (OC3); each refreshes with the chain's own answer (`fetched_at`). Behind `ui_v2` like
+  the page and the routes. Information only; nothing places an order.
+- Tests: vitest (the order below the chain, no developer words); e2e `option-chain-v2.e2e.ts` OC4 cases with new
+  baselines `option-chain-v2-analyses-{1440,390}-{light,dark}.png`, phone layout rules at 390.

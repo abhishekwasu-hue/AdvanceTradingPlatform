@@ -21,6 +21,8 @@ const thesis = fixture("thesis");
 const thesisHistory = fixture("thesis_history");
 const thesisReport = fixture("thesis_report");
 const interviewPlan = fixture("interview_plan");
+// P2b: P2a's broker catalog (generated from backend/app/brokers/catalog.py).
+const brokerCatalog = fixture("broker_catalog");
 
 type Action = { id: number; status: string; decision_note: string | null; decided_at: string | null } & Record<string, unknown>;
 
@@ -33,6 +35,9 @@ export interface MockOptions {
   features?: Record<string, boolean>;
   /** UI2-1: GET /broker/token-status answers these rows (the broker gate's input). Left out: 404, as before. */
   brokers?: unknown[];
+  /** P2b: GET /broker/connections answers these rows (the Broker page, the nav dot, the sign-in prompt). Left out:
+   * 404, which the app reads as "not known" - no dot, no prompt, no banner (so every older spec is unchanged). */
+  connections?: unknown[];
 }
 
 /** What the page sent - the tests assert on it. */
@@ -50,6 +55,8 @@ export async function mockApi(page: Page, overrides: MockOptions = {}): Promise<
   const table: [RegExp, unknown][] = [
     ...(overrides.features ? [[/\/system\/features$/, overrides.features] as [RegExp, unknown]] : []),
     ...(overrides.brokers ? [[/\/broker\/token-status$/, overrides.brokers] as [RegExp, unknown]] : []),
+    ...(overrides.connections ? [[/\/broker\/connections$/, overrides.connections] as [RegExp, unknown]] : []),
+    [/\/broker\/catalog$/, brokerCatalog],
     [/\/auth\/refresh$/, { access_token: "e2e-token", token_type: "bearer" }],
     [/\/auth\/me$/, me],
     [/\/system\/status$/, systemStatus],

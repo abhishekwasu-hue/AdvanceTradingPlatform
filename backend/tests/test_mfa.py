@@ -49,7 +49,7 @@ def test_enrol_confirm_and_two_step_login():
     assert status == {**status, "enabled": False, "session_verified": False, "pending_enrolment": False}
 
     enrolled = client.post("/api/auth/mfa/enrol", headers=headers).json()
-    assert enrolled["otpauth_uri"].startswith("otpauth://totp/Advance%20Trading%20Platform:mfa-basic%40example.com")
+    assert enrolled["otpauth_uri"].startswith("otpauth://totp/AiAlgoDesk:mfa-basic%40example.com")
     assert client.get("/api/auth/mfa/status", headers=headers).json()["pending_enrolment"] is True
     assert client.post("/api/auth/mfa/confirm", headers=headers, json={"code": "000000"}).status_code == 400
     enrol_code = _code(enrolled["secret"])

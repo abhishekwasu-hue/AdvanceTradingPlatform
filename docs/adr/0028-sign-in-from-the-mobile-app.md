@@ -1,5 +1,7 @@
 # ADR-0028: Sign-in from the mobile app - an origin-selected refresh token in the body, held natively behind an unlock
 
+**Amended 2026-10-21: MA-6 is tech.aialgodesk.app.**
+
 **Date:** 2026-10-20 · **Status:** proposed (mobile B1, with B3 for storage; revised after two security review rounds of
 PR #290) · **Phase:** mobile Phase B
 

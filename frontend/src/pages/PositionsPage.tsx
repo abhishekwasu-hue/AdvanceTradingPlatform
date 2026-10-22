@@ -147,7 +147,7 @@ export default function PositionsPage() {
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
-                  <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+                  <thead className="text-fg-muted uppercase text-xs tracking-wide">
                     <tr className="text-left"><th className="py-1 pr-3">Leg</th><th className="py-1 pr-3">Qty</th><th className="py-1 pr-3">Premium</th><th className="py-1 pr-3">IV</th><th className="py-1 pr-3">Δ</th><th className="py-1 pr-3">Γ</th><th className="py-1 pr-3">Θ</th><th className="py-1 pr-3">V</th><th className="py-1 pr-3">Position Δ</th></tr>
                   </thead>
                   <tbody>
@@ -182,7 +182,7 @@ export default function PositionsPage() {
                   <span className="font-medium text-fg">{p.symbol}</span>
                   <DirectionBadge direction={p.direction as "LONG" | "SHORT"} />
                   {p.leg_group_id && (
-                    <span className="rounded border border-border bg-surface-2 px-1.5 py-0.5 text-[10px] font-semibold text-fg-muted" title={`group ${p.leg_group_id}`}>
+                    <span className="rounded border border-border bg-surface-2 px-1.5 py-0.5 text-xs font-semibold text-fg-muted" title={`group ${p.leg_group_id}`}>
                       {(p.option_strategy ?? "STRUCTURE").replace(/_/g, " ").toLowerCase()} · {p.leg_role?.toLowerCase()} leg
                       {p.group_meta ? ` · credit ${p.group_meta.net_credit} · max loss ${p.group_meta.max_loss}/unit · exit ≤${p.group_meta.target_value} / ≥${p.group_meta.stop_value}` : ""}
                     </span>
@@ -252,7 +252,7 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-xs">
-        <thead className="text-fg-muted uppercase text-[10px] tracking-wide">
+        <thead className="text-fg-muted uppercase text-xs tracking-wide">
           <tr className="text-left">
             <th className="py-1 pr-3">Symbol</th>
             <th className="py-1 pr-3">Strategy</th>
@@ -270,7 +270,7 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
         <tbody>
           {rows.map((r) => (
             <tr key={r.id} className="border-t border-border">
-              <td className="py-1 pr-3 font-medium text-fg">{r.symbol}{r.instrument_kind && r.instrument_kind !== "UNDERLYING" && <div className="text-[10px] text-fg-muted">{r.option_position === "WRITE" ? "written" : r.instrument_kind.toLowerCase()} · lot {r.lot_size ?? "?"} · on {r.underlying_symbol}</div>}</td>
+              <td className="py-1 pr-3 font-medium text-fg">{r.symbol}{r.instrument_kind && r.instrument_kind !== "UNDERLYING" && <div className="text-xs text-fg-muted">{r.option_position === "WRITE" ? "written" : r.instrument_kind.toLowerCase()} · lot {r.lot_size ?? "?"} · on {r.underlying_symbol}</div>}</td>
               <td className="py-1 pr-3 text-fg-muted">{r.strategy_id}</td>
               <td className="py-1 pr-3">
                 <DirectionBadge direction={r.direction as "LONG" | "SHORT"} />
@@ -284,12 +284,12 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
                 {r.pnl?.toFixed(2) ?? "-"}
               </td>
               <td className="py-1 pr-3 text-fg-muted" title={r.charges_source === "CONTRACT_NOTE" ? "Broker's actual charges from an uploaded contract note" : "Platform estimate (NSE cost model)"}>
-                {r.charges.toFixed(2)} <span className={`text-[10px] uppercase ${r.charges_source === "CONTRACT_NOTE" ? "font-semibold text-fg" : "text-fg-muted"}`}>{r.charges_source === "CONTRACT_NOTE" ? "actual" : "est."}</span>
+                {r.charges.toFixed(2)} <span className={`text-xs uppercase ${r.charges_source === "CONTRACT_NOTE" ? "font-semibold text-fg" : "text-fg-muted"}`}>{r.charges_source === "CONTRACT_NOTE" ? "actual" : "est."}</span>
               </td>
               <td className="py-1 pr-3 text-fg-muted">
-                {r.regime_at_entry && <div className="text-[10px] uppercase">{r.regime_at_entry.replace("_", " ").toLowerCase()}</div>}
-                {(r.tags ?? []).map((t) => <span key={t} className="inline-block rounded border border-border px-1 mr-1 text-[10px]">{t}</span>)}
-                {r.notes && <div className="text-[10px] italic truncate max-w-[180px]" title={r.notes}>{r.notes}</div>}
+                {r.regime_at_entry && <div className="text-xs uppercase">{r.regime_at_entry.replace("_", " ").toLowerCase()}</div>}
+                {(r.tags ?? []).map((t) => <span key={t} className="inline-block rounded border border-border px-1 mr-1 text-xs">{t}</span>)}
+                {r.notes && <div className="text-xs italic truncate max-w-[180px]" title={r.notes}>{r.notes}</div>}
                 <button
                   onClick={() => {
                     const notes = window.prompt("Journal notes", r.notes ?? "");
@@ -297,7 +297,7 @@ function TradeTable({ rows, emptyMessage }: { rows: TradeRecord[]; emptyMessage:
                     const tags = window.prompt("Tags (comma separated)", (r.tags ?? []).join(", "));
                     void api.updateTradeJournal(r.id, { notes, tags: (tags ?? "").split(",").map((t) => t.trim()).filter(Boolean) }).then(() => window.location.reload());
                   }}
-                  className="text-[10px] text-brand hover:underline"
+                  className="text-xs text-brand hover:underline"
                 >journal</button>
               </td>
             </tr>

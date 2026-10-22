@@ -17,7 +17,7 @@ export function DataTierBadge({ badge, className = "" }: { badge: DataTierBadgeI
   if (!badge) return null;
   const tone = tierTone(badge);
   return (
-    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${TONES[tone]} ${className}`}
+    <span className={`inline-flex items-center gap-1 whitespace-nowrap rounded-md border px-1.5 py-0.5 text-xs font-semibold ${TONES[tone]} ${className}`}
           title={tierTitle(badge)} data-tier={badge.tier} aria-label={`Data tier: ${tierText(badge)}`}>
       <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${tone === "live" ? "bg-up" : tone === "stale" ? "bg-warn" : "bg-fg-muted"}`} />
       {tierText(badge)}

@@ -8,7 +8,9 @@
  * back as `DrawingConflict` and the latest version is shown instead. Undo/redo are client-side over those saves.
  * Nothing here touches an order.
  */
-import { ANCHOR_RULES, DrawingConflict, drawingProblem, type Anchor, type DrawingKind, type DrawingV1, type StoredDrawing } from "./drawings";
+import {
+  ANCHOR_RULES, DrawingConflict, drawingProblem, type Anchor, type DeleteAllResult, type DrawingKind, type DrawingV1, type StoredDrawing,
+} from "./drawings";
 import { shapes, timeToLogical, type Converters, type Shape } from "./geometry";
 
 /** A pointer position in data space: time in epoch seconds (UTC), price. */
@@ -158,10 +160,12 @@ export function hitTest(items: readonly { key: string; drawing: DrawingV1 }[], c
 /** The slice of `drawingsApi` the controller uses (a fake in tests). */
 export interface DrawingsStore {
   list(symbol: string, exchange?: string): Promise<StoredDrawing[]>;
-  create(symbol: string, drawing: DrawingV1, exchange?: string): Promise<StoredDrawing>;
+  create(symbol: string, drawing: DrawingV1, exchange?: string, timeframe?: string): Promise<StoredDrawing>;
   update(stored: StoredDrawing, drawing: DrawingV1): Promise<StoredDrawing>;
   lock(stored: StoredDrawing, locked: boolean): Promise<StoredDrawing>;
   remove(stored: StoredDrawing): Promise<{ deleted: number }>;
+  /** UI2-4a1 "Delete all" (optional: a store without it has no such action). */
+  removeAll?(symbol: string, exchange?: string): Promise<DeleteAllResult>;
 }
 
 /** One undoable edit: `before` null = it was created, `after` null = it was deleted. */
@@ -198,7 +202,18 @@ export class DrawingController {
   private listeners = new Set<(view: ToolView) => void>();
   private queue: Promise<unknown> = Promise.resolve();
 
-  constructor(private readonly api: DrawingsStore, readonly symbol: string, readonly exchange = "NSE") {}
+  /** `timeframe` (UI2-4a1): the chart's timeframe, recorded on each new drawing; it changes with `setTimeframe`
+   * without reloading, because every timeframe shows the same drawings (CHP-1). */
+  constructor(private readonly api: DrawingsStore, readonly symbol: string, readonly exchange = "NSE", private timeframe?: string) {}
+
+  setTimeframe(timeframe: string | undefined) {
+    this.timeframe = timeframe;
+  }
+
+  /** A new drawing on the server, with the chart's timeframe when it has one. */
+  private create(drawing: DrawingV1): Promise<StoredDrawing> {
+    return this.timeframe ? this.api.create(this.symbol, drawing, this.exchange, this.timeframe) : this.api.create(this.symbol, drawing, this.exchange);
+  }
 
   subscribe(listener: (view: ToolView) => void): () => void {
     this.listeners.add(listener);
@@ -260,6 +275,12 @@ export class DrawingController {
     this.emit();
   }
 
+  /** The tool picked and not yet placed (with a text drawing's text), so a page can pick it again on another symbol's
+   * controller (CHP-2); null when no tool is armed. */
+  armed(): { kind: DrawingKind; text?: string } | null {
+    return this.tool ? { kind: this.tool, ...(this.toolText !== undefined ? { text: this.toolText } : {}) } : null;
+  }
+
   /** Escape: drop the tool, the anchors placed so far and an unfinished drag. */
   cancel() {
     this.tool = null;
@@ -293,7 +314,7 @@ export class DrawingController {
       return Promise.resolve();
     }
     return this.run(async () => {
-      const stored = await this.guard(() => this.api.create(this.symbol, drawing, this.exchange));
+      const stored = await this.guard(() => this.create(drawing));
       if (stored) {
         const key = String(stored.id);
         this.items.set(key, stored);
@@ -377,6 +398,26 @@ export class DrawingController {
     });
   }
 
+  /** "Delete all" (UI2-4a1): every unlocked drawing of this symbol, on every timeframe, in one request; the locked
+   * ones stay. Not undoable: the caller confirms first. The deleted drawings' undo steps are forgotten. */
+  deleteAll(): Promise<void> {
+    const removeAll = this.api.removeAll?.bind(this.api);
+    if (!removeAll) return Promise.resolve();
+    return this.run(async () => {
+      this.tool = null;
+      this.placed = [];
+      const done = await this.guard(() => removeAll(this.symbol, this.exchange));
+      for (const id of done?.ids ?? []) {
+        const key = String(id);
+        this.items.delete(key);
+        this.pending.delete(key);
+        this.forget(key);
+        if (this.selected === key) this.selected = null;
+      }
+      this.emit();
+    });
+  }
+
   toggleLock(): Promise<void> {
     const key = this.selected;
     if (!key || !this.items.has(key)) return Promise.resolve();
@@ -411,7 +452,7 @@ export class DrawingController {
     if (target === null) {
       ok = await this.erase(edit.key);
     } else if (!stored) {
-      const created = await this.guard(() => this.api.create(this.symbol, target, this.exchange));
+      const created = await this.guard(() => this.create(target));
       ok = created != null;
       if (created) {
         const key = String(created.id);

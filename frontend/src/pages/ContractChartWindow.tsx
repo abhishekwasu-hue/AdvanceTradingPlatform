@@ -49,7 +49,7 @@ export default function ContractChartWindow({ params }: { params: URLSearchParam
   const [series, setSeries] = useState<ContractSeries | null>(null);
   const [error, setError] = useState<string | null>(null);
   const title = series ? series.legs.map(legName).join("  ") : legs.join("  ");
-  useEffect(() => { document.title = `${title} · Advance Trading`; }, [title]);
+  useEffect(() => { document.title = `${title} · AiAlgoDesk`; }, [title]);
   useEffect(() => {
     if (!user || !legs.length) return;
     let live = true;

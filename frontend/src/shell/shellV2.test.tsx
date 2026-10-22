@@ -5,6 +5,7 @@ import { AuthProvider } from "../auth/AuthContext";
 import { DATA_PAGES } from "../ui/dataPages";
 import { FeaturesProvider } from "../ui/useFeatures";
 import AppShellV2 from "./AppShellV2";
+import { OWN_BROKER_STATES } from "./pagesV2";
 import { CommandList, isApplePlatform, isCommandShortcut, moveActive, otherDialogOpen, shortcutLabel } from "./CommandBarV2";
 import { MoreSheetContent, moreSheetResults } from "./MoreSheetV2";
 import { searchPages, visibleSections, type NavContext } from "./navModel";
@@ -93,6 +94,9 @@ describe("UI2-1 More sheet", () => {
     expect(html).not.toContain('href="/admin"');
     expect(html).not.toContain('href="/journal"');                       // flag off
     expect(html.match(/min-h-11/g)?.length).toBeGreaterThanOrEqual(15);  // every tile is a 44 px target
+    // P2b: Broker is the first tile, above the sections.
+    expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
+    expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf(">Markets</h3>"));
   });
 
   it("searches every visible page, the bar's included, and says when nothing matches", () => {
@@ -136,6 +140,24 @@ describe("UI2-1 sidebar", () => {
     expect(html).toContain("Owner");
     expect(html).toContain(">Paper<");
     expect(html).not.toContain("PAPER MODE");
+    // P2b: Broker first, above the sections, before any section header.
+    expect(html.indexOf('href="/broker"')).toBeGreaterThan(-1);
+    expect(html.indexOf('href="/broker"')).toBeLessThan(html.indexOf("aria-expanded"));
+    expect(html).not.toContain("data-broker-dot");                       // no status known: no dot
+  });
+
+  it("P2b: the Broker entry carries the status dot (red only for 'not working')", () => {
+    const at = (dot: "connected" | "needs_login" | "not_working") => renderToStaticMarkup(
+      <MemoryRouter>
+        <SidebarV2View sections={visibleSections(trader)} current="dashboard" memory={{}} onToggle={noop} dot={dot}
+          user={{ id: 1, email: "abhi.wasu@example.com", tenant_id: 1, role: "OWNER" }} accountPath="/settings/account" />
+      </MemoryRouter>,
+    );
+    expect(at("connected")).toMatch(/href="\/broker"[^]*?data-broker-dot="connected"[^>]*bg-up/);
+    expect(at("needs_login")).toMatch(/data-broker-dot="needs_login"[^>]*bg-warn/);
+    expect(at("not_working")).toMatch(/data-broker-dot="not_working"[^>]*bg-down/);
+    expect(at("needs_login")).toContain(", needs login");                // the words, for screen readers
+    expect(at("connected").match(/data-broker-dot/g)).toHaveLength(1);
   });
 
   it("labels roles and initials plainly", () => {
@@ -176,8 +198,11 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
   it("gates every data page and its v2 sub-addresses", () => {
     // An old address that forwards (/scanner, /options-builder) is checked at the address it forwards to.
     const at = (p: string) => v2RedirectFor(p, "", { signedIn: true, on: flags() }) ?? p;
-    const paths = [...DATA_PAGES.map((p) => at(p.path === "/copilot" ? "/copilot/market-pulse" : p.path)), "/charts/RELIANCE", "/screener/custom", "/option-chain/plan"];
+    // UI2-2: the v2 dashboard (`/`) shows the broker states itself (src/shell/pagesV2.ts OWN_BROKER_STATES) - see below.
+    const paths = [...DATA_PAGES.filter((p) => !OWN_BROKER_STATES.includes(p.path)).map((p) => at(p.path === "/copilot" ? "/copilot/market-pulse" : p.path)),
+      "/charts/RELIANCE", "/screener/custom", "/option-chain/plan"];
     expect(paths).toContain("/charts");
+    expect(paths).not.toContain("/");
     for (const path of paths) {
       const html = render(path);
       expect(html, path).toContain('data-broker-gate="loading"');
@@ -185,10 +210,18 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
     }
   });
 
+  it("UI2-2: the dashboard is not wrapped by the shell - its v2 page shows the gate's states itself", () => {
+    const html = render("/");
+    expect(html).not.toContain("data-broker-gate");
+    expect(html).toContain("Loading page");                               // the v2 dashboard's own chunk
+  });
+
   it("gates percent-encoded and undecodable addresses too (review M1)", () => {
-    for (const path of ["/%70ositions", "/option%2Dchain", "/p%6Frtfolio", "/%63harts", "/%E0%A4"]) {
+    for (const path of ["/option%2Dchain", "/p%6Frtfolio", "/%63harts", "/%E0%A4"]) {
       expect(render(path), path).toContain('data-broker-gate="loading"');
     }
+    // UI2-9a: My positions shows the broker states itself (OWN_BROKER_STATES), at its encoded address too.
+    expect(render("/%70ositions")).not.toContain("data-broker-gate");
     expect(render("/%70ositions")).toContain("My positions");             // the title follows the router's reading
   });
 

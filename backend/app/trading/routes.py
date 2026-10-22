@@ -1,9 +1,10 @@
 import json
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.log import verify_audit_chain
@@ -129,7 +130,6 @@ class PositionGreeksResponse(BaseModel):
 async def open_position_greeks(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
 ) -> PositionGreeksResponse:
-    from datetime import datetime, timezone
     from app.brokers.token_lifecycle import build_adapter, token_is_usable
     from app.db.models import BrokerCredentialRecord
     from app.execution.contract_execution import ContractExecutionError
@@ -396,11 +396,19 @@ async def analytics_degradation(user: User = Depends(get_current_user), session:
 @router.get("/analytics/summary", response_model=AnalyticsSummary)
 async def analytics_summary(
     user: User = Depends(get_current_user), session: AsyncSession = Depends(get_session),
+    days: Optional[int] = Query(None, ge=1, le=3650),
 ) -> AnalyticsSummary:
     """Win rate / P&L breakdown by strategy and symbol, computed from this tenant's full trade
     history (GET /api/trades) - closed trades only for win-rate/profit-factor purposes.
+
+    `days` (UI2-2, the dashboard's "Win rate (30 days)" tile) keeps only the trades closed in the
+    last `days` days; open trades are always counted, so `open_trades` does not change with it.
     """
-    rows = list(await session.scalars(select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id)))
+    query = select(TradeRecord).where(TradeRecord.tenant_id == user.tenant_id)
+    if days is not None:
+        since = datetime.now(timezone.utc) - timedelta(days=days)
+        query = query.where(or_(TradeRecord.exit_time.is_(None), TradeRecord.exit_time >= since))
+    rows = list(await session.scalars(query))
     return build_analytics_summary(rows)
 
 

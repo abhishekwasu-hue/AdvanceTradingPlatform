@@ -221,6 +221,8 @@ BROKER_FIELD_SPECS: Dict[str, BrokerSpec] = {
             FieldSpec("imei", "Device ID", KIND_TEXT, pattern=r"^[\x21-\x7E]{1,128}$",
                       format_hint="1 to 128 letters, digits or symbols with no spaces", max_length=128, advanced=True,
                       help="Leave empty to use ATP's default."),
+            # P2a: the session a login returns is stored and handed to the next adapter (app/brokers/shoonya.py).
+            _access_token("Session token", by=BY_LOGIN, legacy=False),
         ),
     ),
     "dhan": BrokerSpec(

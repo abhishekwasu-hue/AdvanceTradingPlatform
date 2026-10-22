@@ -67,7 +67,7 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
           {preview.warnings.map((w) => <div key={w} className="text-warn">{w}</div>)}
           {preview.trades_updated.length > 0 && (
             <table className="w-full text-xs">
-              <thead className="text-fg-muted uppercase text-[10px] tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Trade</th><th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Legs</th><th className="py-1 pr-3">Charges est. → actual</th><th className="py-1 pr-3">P&amp;L est. → actual</th></tr></thead>
+              <thead className="text-fg-muted uppercase text-xs tracking-wide"><tr className="text-left"><th className="py-1 pr-3">Trade</th><th className="py-1 pr-3">Symbol</th><th className="py-1 pr-3">Legs</th><th className="py-1 pr-3">Charges est. → actual</th><th className="py-1 pr-3">P&amp;L est. → actual</th></tr></thead>
               <tbody>
                 {preview.trades_updated.map((u) => (
                   <tr key={u.trade_id} className="border-t border-border">
@@ -88,7 +88,7 @@ export default function ContractNoteCard({ onApplied }: { onApplied?: () => void
       )}
       {notes.length > 0 && (
         <div className="mt-3">
-          <div className="text-[10px] uppercase tracking-wide text-fg-muted mb-1">Uploaded</div>
+          <div className="text-xs uppercase tracking-wide text-fg-muted mb-1">Uploaded</div>
           <ul className="text-xs text-fg-muted space-y-0.5">
             {notes.slice(0, 8).map((n) => (
               <li key={n.id}>{n.note_date ?? "?"} · {n.filename}{n.broker_name ? ` (${n.broker_name})` : ""} · {n.matched_lines}/{n.line_count} legs matched · {n.trades_updated} trade(s) · charges {n.total_charges.toFixed(2)}</li>

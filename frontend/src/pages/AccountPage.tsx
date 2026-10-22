@@ -9,6 +9,8 @@ import { Card } from "../components/ui";
 import { LogoMark } from "../components/Logo";
 import LegalConsentField from "../legal/LegalConsentField";
 import { acceptanceFor, type LegalSummary } from "../legal/legal";
+import GoogleSignInButton from "../auth/GoogleSignInButton";
+import { takeGoogleReturn } from "../auth/google";
 
 export default function AccountPage() {
   const { user, login, completeMfaLogin, register, acceptInvite, resetPassword, logout, refreshUser } = useAuth();
@@ -57,6 +59,15 @@ export default function AccountPage() {
   // Arriving via an owner's invite link (?invite=<token>): show who invited you, ask only for a
   // password, and join their organisation instead of creating a new one.
   useEffect(() => {
+    // GS-1: back from Google - the authenticator step, or why it did not work, in plain words.
+    const google = takeGoogleReturn();
+    if (google?.kind === "mfa") {
+      setMfaToken(google.mfaToken);
+      setMode("mfa");
+      setNotice("Google confirmed your e-mail. Enter your authenticator code to finish signing in.");
+    } else if (google?.kind === "error") {
+      setError(google.message);
+    }
     try {
       const verify = new URLSearchParams(window.location.search).get("verify");
       if (verify) {
@@ -132,9 +143,9 @@ export default function AccountPage() {
         {user.scopes && user.scopes.length > 0 && (
           <Card title="Your permissions">
             <div className="flex flex-wrap gap-1.5">
-              {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-surface-2 px-2 py-0.5 text-[11px] font-mono text-fg-muted">{s}</span>)}
+              {user.scopes.map((s) => <span key={s} className="rounded-md border border-border bg-surface-2 px-2 py-0.5 text-xs font-mono text-fg-muted">{s}</span>)}
             </div>
-            <p className="mt-2 text-[11px] text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
+            <p className="mt-2 text-xs text-fg-muted">Derived from your role; your organisation's owner can deny or grant individual permissions from the Team tab.</p>
           </Card>
         )}
         <MfaCard status={mfaStatus} onChange={() => api.mfaStatus().then(setMfaStatus).catch(() => {})} />
@@ -335,6 +346,7 @@ export default function AccountPage() {
             {loading ? "Please wait…" : mode === "login" ? "Log in" : mode === "mfa" ? "Verify" : mode === "invite" ? "Join team" : mode === "forgot" ? "Send reset link" : mode === "reset" ? "Set new password" : "Create account"}
           </button>
         </form>
+        {mode === "login" && <GoogleSignInButton />}
         <div className="mt-3 flex flex-wrap gap-3">
           <button
             onClick={() => { setNotice(null); setMode(mode === "login" ? "register" : "login"); }}

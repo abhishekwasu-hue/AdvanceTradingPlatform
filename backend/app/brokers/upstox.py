@@ -124,8 +124,9 @@ class UpstoxBroker(BrokerInterface):
         return BrokerCapabilities(stop_market_on_options=not config.LIVE_UPSTOX_OPTION_STOP_LIMIT)
 
     def __init__(self, credentials: BrokerCredentials, client: Optional[httpx.AsyncClient] = None) -> None:
-        if not credentials.api_key and not credentials.analytics_token:
-            # A row holding only the analytics token can still read market data; logins and orders need the API key.
+        if not credentials.api_key and not credentials.analytics_token and not credentials.access_token:
+            # A row holding only the analytics token can still read market data, and one holding only a pasted daily
+            # access token (P2a connect) can use it until it expires; the OAuth login needs the API key.
             raise BrokerAuthenticationError("Upstox adapter requires credentials.api_key (client_id)")
         self.credentials = credentials
         self._access_token = credentials.access_token

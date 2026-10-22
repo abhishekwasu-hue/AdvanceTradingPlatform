@@ -1,7 +1,6 @@
 import { Bell, LifeBuoy, MessageSquarePlus, Search, TriangleAlert } from "lucide-react";
-import { useEffect, useState } from "react";
 import { Link } from "react-router";
-import { api } from "../api/client";
+import { useMarketStatus } from "../chart/useMarketStatus";
 import { ThemeToggle } from "../components/AppearanceCard";
 import type { SystemStatus, UserResponse } from "../types";
 import { currentPlatform, shortcutLabel } from "./CommandBarV2";
@@ -14,7 +13,8 @@ import { initialsOf } from "./SidebarV2";
  * - Phone: the app mark and the page title, then search, notifications and the avatar (44 px each); help, feedback
  *   and the theme move to the More sheet.
  * Notices sit in one row under the bar, in plain words (§3 R18): maintenance and LIVE paused are warnings (amber,
- * with an icon); "Verify your email" is a neutral link.
+ * with an icon); "Verify your email" is a neutral link. P3: on the front page in PAPER (`paperOnly`) the LIVE-paused and
+ * e-mail notices are left out; every other page keeps them.
  */
 
 const iconButton = "flex h-11 w-11 items-center justify-center rounded-control text-fg-muted transition-colors duration-fast hover:bg-surface-2 hover:text-fg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:h-9 md:w-9";
@@ -29,34 +29,32 @@ export interface TopBarV2Props {
   /** Present while Help is on for this organisation (flag `support_bot`). */
   onHelp?: () => void;
   onFeedback?: () => void;
+  /** P3: the front page in PAPER (no LIVE deployment, src/setup/paperOnly.ts): no LIVE or e-mail notice. */
+  paperOnly?: boolean;
 }
 
-/** The notices under the top bar, in plain words. */
-export function topBarNotices(status: SystemStatus | null, user: UserResponse | null): { kind: "warn" | "link"; text: string; title?: string }[] {
+/** The notices under the top bar, in plain words. `paperOnly` (the front page in PAPER) leaves out the LIVE ones. */
+export function topBarNotices(status: SystemStatus | null, user: UserResponse | null, paperOnly = false): { kind: "warn" | "link"; text: string; title?: string }[] {
   const out: { kind: "warn" | "link"; text: string; title?: string }[] = [];
   if (status?.maintenance_mode) {
     out.push({ kind: "warn", text: `Maintenance: new trades are paused${status.maintenance_message ? `. ${status.maintenance_message}` : ""}` });
   }
+  if (paperOnly) return out;
   if (status && status.disabled_brokers.length > 0) out.push({ kind: "warn", text: `Live trading is paused on ${status.disabled_brokers.join(", ")}` });
   if (user && user.email_verified === false) out.push({ kind: "link", text: "Verify your email", title: "Live trading and broker keys may need a verified address" });
   return out;
 }
 
-export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback }: TopBarV2Props) {
-  const [status, setStatus] = useState<SystemStatus | null>(null);
-  useEffect(() => {
-    const load = () => api.systemStatus().then(setStatus).catch(() => {});
-    load();
-    const id = window.setInterval(load, 60_000);
-    return () => window.clearInterval(id);
-  }, []);
-  const notices = topBarNotices(status, user);
+export default function TopBarV2({ title, user, notificationsActive, accountActive, accountPath, onSearch, onHelp, onFeedback, paperOnly = false }: TopBarV2Props) {
+  // UI2-4e: the one shared status read (the Charts page and the charts on other pages read the same).
+  const { status } = useMarketStatus();
+  const notices = topBarNotices(status, user, paperOnly);
   const shortcut = shortcutLabel(currentPlatform());
 
   return (
     <header className="shrink-0 border-b border-subtle bg-surface-1 pt-[env(safe-area-inset-top)]">
       <div className="flex h-14 items-center gap-space-3 pl-[max(1rem,env(safe-area-inset-left))] pr-[max(0.5rem,env(safe-area-inset-right))] md:px-space-8">
-        <Link to="/" aria-label="Advance Trading - Dashboard" className="shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden">
+        <Link to="/" aria-label="AiAlgoDesk - Dashboard" className="shrink-0 rounded-control focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand md:hidden">
           {/* A text monogram, not the logo SVG: the sidebar's (hidden on phones) owns the logo's gradient id. */}
           <span aria-hidden className="flex h-7 w-7 items-center justify-center rounded-control bg-fg text-t12 font-bold text-surface">AT</span>
         </Link>

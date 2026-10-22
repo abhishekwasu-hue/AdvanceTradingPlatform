@@ -8,7 +8,8 @@
 //  - ATP_ANDROID_BUILD / VITE_API_BASE_URL that break the build rules (scripts/mobile-rules.mjs): an IP or non-https
 //    API base, a real server in a debuggable build, a release with the temporary package id;
 //  - ATP_APP_DOMAIN (the GitHub variable, MA-1), when set, that is not a plain host name or is an IP address;
-//  - the package id in android/app/build.gradle differing from capacitor.config.ts (scripts/mobile-rules.mjs APP_ID);
+//  - the package id in android/app/build.gradle (namespace, applicationId), res/values/strings.xml or the MainActivity
+//    package differing from capacitor.config.ts (scripts/mobile-rules.mjs APP_ID);
 //  - a keystore, google-services.json or local.properties inside android/ (secrets never live in git);
 //  - with --bundle: dist/ not built by `npm run build:android` for the same build kind and API origin.
 import { execFileSync } from "node:child_process";
@@ -72,14 +73,48 @@ export function gradleApplicationId(gradleText) {
   return m ? m[1] : null;
 }
 
+/** The `namespace` an app/build.gradle declares, or null. */
+export function gradleNamespace(gradleText) {
+  const m = /^\s*namespace\s*=?\s*["']([^"']+)["']/m.exec(gradleText);
+  return m ? m[1] : null;
+}
+
 /** Problems with the Android project's package id (empty list = fine). */
 export function appIdProblems(gradleText, appId = APP_ID) {
   const found = gradleApplicationId(gradleText);
   if (found === null) return ["android/app/build.gradle declares no applicationId."];
+  const problems = [];
   if (found !== appId) {
-    return [`android/app/build.gradle applicationId "${found}" differs from capacitor.config.ts appId "${appId}" (scripts/mobile-rules.mjs APP_ID).`];
+    problems.push(`android/app/build.gradle applicationId "${found}" differs from capacitor.config.ts appId "${appId}" (scripts/mobile-rules.mjs APP_ID).`);
   }
-  return [];
+  const namespace = gradleNamespace(gradleText);
+  if (namespace !== null && namespace !== appId) {
+    problems.push(`android/app/build.gradle namespace "${namespace}" differs from the package id "${appId}".`);
+  }
+  return problems;
+}
+
+/** Problems with res/values/strings.xml: `package_name` and `custom_url_scheme` are the package id. */
+export function stringsProblems(xml, appId = APP_ID) {
+  const problems = [];
+  for (const name of ["package_name", "custom_url_scheme"]) {
+    const m = new RegExp(`<string name="${name}">([^<]*)</string>`).exec(xml);
+    if (!m) problems.push(`android/app/src/main/res/values/strings.xml has no ${name}.`);
+    else if (m[1].trim() !== appId) problems.push(`strings.xml ${name} "${m[1].trim()}" differs from the package id "${appId}".`);
+  }
+  return problems;
+}
+
+/** Problems with the MainActivity source files (paths relative to android/app/src/main/java, with their text): exactly
+ * one, in the package id's directory, declaring that package. */
+export function activityProblems(files, appId = APP_ID) {
+  const want = `${appId.split(".").join("/")}/MainActivity.java`;
+  const found = files.filter((f) => /(^|\/)MainActivity\.(java|kt)$/.test(f.path));
+  if (found.length !== 1 || found[0].path !== want) {
+    return [`MainActivity must be exactly android/app/src/main/java/${want}; found: ${found.map((f) => f.path).join(", ") || "none"}.`];
+  }
+  const pkg = /^\s*package\s+([\w.]+)\s*;?/m.exec(found[0].text);
+  return pkg && pkg[1] === appId ? [] : [`${want} declares package "${pkg ? pkg[1] : "(none)"}", not "${appId}".`];
 }
 
 /** True for a file that must never be in the Android project (secrets and machine-local settings). */
@@ -174,6 +209,12 @@ function main() {
   const gradlePath = join(androidRoot, "app", "build.gradle");
   if (existsSync(gradlePath)) problems.push(...appIdProblems(readFileSync(gradlePath, "utf8")));
   else problems.push("android/app/build.gradle is missing (npx cap add android).");
+  const mainDir = join(androidRoot, "app", "src", "main");
+  const stringsPath = join(mainDir, "res", "values", "strings.xml");
+  if (existsSync(stringsPath)) problems.push(...stringsProblems(readFileSync(stringsPath, "utf8")));
+  const javaDir = join(mainDir, "java");
+  const sources = walk(javaDir).map((f) => ({ path: relative(javaDir, f).split(sep).join("/"), text: readFileSync(f, "utf8") }));
+  if (existsSync(javaDir)) problems.push(...activityProblems(sources));
   for (const f of committable(root, "android")) {
     if (isForbiddenAndroidFile(f)) problems.push(`${f}: keystores, google-services.json and local.properties never live in the repository`);
   }

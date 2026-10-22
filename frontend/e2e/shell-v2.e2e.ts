@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { mockDashboard } from "./dashboardMocks";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
 
@@ -18,8 +19,10 @@ const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_stat
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
 const V2: MockOptions = { features: { ui_v2: true }, brokers: CONNECTED };
 
-async function open(page: Page, path: string, theme: "dark" | "light", options: MockOptions = V2, storage: Record<string, string> = {}) {
-  await page.clock.install({ time: new Date("2026-10-08T10:30:00+05:30") });
+/** `time` and `before` (more routes, registered after mockApi so they answer first) are for the 1440 shot only. */
+async function open(page: Page, path: string, theme: "dark" | "light", options: MockOptions = V2, storage: Record<string, string> = {},
+  extra: { time?: string; before?: (page: Page) => Promise<void> } = {}) {
+  await page.clock.install({ time: new Date(extra.time ?? "2026-10-08T10:30:00+05:30") });
   await page.addInitScript(([t, extra]) => {
     try {
       localStorage.setItem("atp_appearance", JSON.stringify({ theme: t }));
@@ -29,6 +32,7 @@ async function open(page: Page, path: string, theme: "dark" | "light", options: 
   }, [theme, storage] as const);
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, options);
+  await extra.before?.(page);
   await page.goto(path);
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
@@ -141,15 +145,15 @@ test.describe("v2 shell 390, More sheet", () => {
     });
   }
 
-  test("an address without a trusted certificate says why the app cannot be installed", async ({ page }) => {
+  test("a page opened over plain http says in the install entry why it cannot install - no banner, no domain advice", async ({ page }) => {
     await page.addInitScript(() => { Object.defineProperty(window, "isSecureContext", { value: false }); });
-    await open(page, "/", "dark", V2);                    // PW1's install offer was closed before: its own key
+    await open(page, "/", "dark", V2);
 
-    const message = "Install needs the app's web address (domain) with a trusted certificate. Ask the owner to set up the domain.";
-    await expect(page.locator("[data-install='unavailable']")).toHaveText(message);
+    await expect(page.locator("[data-install='unavailable']")).toHaveCount(0);
     await page.getByRole("button", { name: "More pages" }).click();
     await page.getByRole("button", { name: "Install the app" }).click();
-    await expect(page.locator("[data-install-message]")).toHaveText(message);
+    await expect(page.locator("[data-install-message]")).toHaveText(
+      "Install works only on the app's secure address. Open this page with https:// and try again.");
   });
 });
 
@@ -158,8 +162,12 @@ test.describe("v2 shell 1440 desktop", () => {
 
   for (const theme of THEMES) {
     test(`shell looks the same (${theme})`, async ({ page }) => {
-      await open(page, "/", theme);
+      // UI2-2: `/` is the v2 dashboard, whose lower blocks show at 1440. Every read it makes is answered (the dashboard
+      // spec's made-up replies, at its date) and the shot waits for its blocks, so it never captures 404 / error states.
+      await open(page, "/", theme, V2, {}, { time: "2026-10-19T11:00:00+05:30", before: (p) => mockDashboard(p) });
       await expect(page.getByRole("complementary", { name: "Navigation" })).toBeVisible();
+      await expect(page.locator("[data-block='today']")).toBeVisible();
+      await expect(page.locator("[aria-busy='true']")).toHaveCount(0, { timeout: 15_000 });
       await expect(page).toHaveScreenshot(`shell-v2-1440-${theme}.png`, { animations: "disabled", maxDiffPixelRatio: 0.02, timeout: 15_000 });
     });
   }
@@ -238,12 +246,13 @@ test.describe("v2 shell 1440 desktop", () => {
 
   test("the Charts page opens on NIFTY 50 and on the symbol in the address", async ({ page }) => {
     await open(page, "/charts", "light");
-    await expect(page.getByLabel("Symbol")).toHaveValue("NIFTY 50");
+    await expect(page.getByRole("combobox", { name: "Symbol" })).toHaveValue("NIFTY 50");
     await expect(page.getByRole("heading", { name: "What is this page?" })).toBeVisible();
     await page.getByRole("button", { name: "Close this explanation" }).click();
     await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);
-    await page.getByLabel("Symbol").fill("reliance");
-    await page.getByRole("button", { name: "Open", exact: true }).click();
+    // UI2-4b2: the shared symbol picker; with no match, Enter opens the symbol as typed.
+    await page.getByRole("combobox", { name: "Symbol" }).fill("reliance");
+    await page.getByRole("combobox", { name: "Symbol" }).press("Enter");
     await expect(page).toHaveURL(/\/charts\/RELIANCE$/);
     await page.reload();
     await expect(page.getByRole("heading", { name: "What is this page?" })).toHaveCount(0);   // closed stays closed
@@ -261,10 +270,18 @@ test.describe("v2 broker gate on data pages", () => {
       await expect(gate, path).toBeVisible();
       await expect(gate.getByRole("heading", { name: "Connect your broker" })).toBeVisible();
       await expect(page.locator("main [data-broker-gate] ~ *")).toHaveCount(0);
+      if (path === "/positions") {
+        // UI2-9a: My positions shows the gate itself and, under it, only the trader's own open positions with their exits
+        // (ADR-0004) - never the summary, the closed trades or any price or P&L figure.
+        await expect(page.locator("[data-block='summary']")).toHaveCount(0);
+        await expect(page.locator("[data-block='history']")).toHaveCount(0);
+        await expect(page.locator("main [data-col]")).toHaveCount(0);
+        await expect(page.locator("main").getByText(/[+−]₹/)).toHaveCount(0);
+      }
     }
     await page.getByRole("link", { name: "Connect a broker" }).click();
-    await expect(page).toHaveURL(/\/settings$/);
-    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);       // Settings is not a data page
+    await expect(page).toHaveURL(/\/broker$/);                             // P2b: the Broker page
+    await expect(page.locator("[data-broker-gate]")).toHaveCount(0);       // the Broker page is not a data page
   });
 
   test("percent-encoded and undecodable addresses are gated too (review M1)", async ({ page }) => {

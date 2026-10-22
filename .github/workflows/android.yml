@@ -34,6 +34,10 @@ jobs:
       # The Android build rules (frontend/scripts/mobile-rules.mjs): a debug build, no API base -> the placeholder.
       ATP_ANDROID_BUILD: debug
       VITE_API_BASE_URL: ""
+      # MA-1 / MA-6: the repository variable (aialgodesk.tech). Internal and release builds take their API origin from
+      # it (https://<ATP_APP_DOMAIN>; https://aialgodesk.tech when unset); a debug build ignores it and keeps the
+      # placeholder (ADR-0028 decision 10). Checked by the lint either way: a host name, never an IP.
+      ATP_APP_DOMAIN: ${{ vars.ATP_APP_DOMAIN }}
     defaults:
       run:
         working-directory: frontend
@@ -65,8 +69,6 @@ jobs:
 
       # ATP_APP_DOMAIN is checked when set (a host name, never an IP), but this debug build does not use it.
       - name: Mobile config lint (API URLs, no IP addresses, build rules, package id, no secrets in android/)
-        env:
-          ATP_APP_DOMAIN: ${{ vars.ATP_APP_DOMAIN }}
         run: npm run check:mobile
 
       - name: Build the app's web bundle (vite --mode android)
@@ -87,13 +89,13 @@ jobs:
           ./gradlew assembleDebug --no-daemon --stacktrace \
             -PatpVersionCode="${{ github.run_number }}" -PatpVersionName="$name"
 
-      # Belt and braces: the APK really is the temporary debug id, debuggable, with the placeholder bundle inside.
+      # Belt and braces: the APK really is the debug id (MA-6 + ".debug"), debuggable, with the placeholder bundle inside.
       - name: Check the APK (package id, debuggable, bundled origin)
         run: |
           apk=android/app/build/outputs/apk/debug/app-debug.apk
           aapt2="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)/aapt2"
           "$aapt2" dump badging "$apk" | tee "$RUNNER_TEMP/badging.txt" | head -5
-          grep -q "package: name='dev.atp.unpublished.debug'" "$RUNNER_TEMP/badging.txt"
+          grep -q "package: name='tech.aialgodesk.app.debug'" "$RUNNER_TEMP/badging.txt"
           grep -q "application-debuggable" "$RUNNER_TEMP/badging.txt"
           unzip -p "$apk" assets/public/atp-native-build.json | tee "$RUNNER_TEMP/marker.json"
           grep -q '"apiOrigin": "https://atp-not-configured.invalid"' "$RUNNER_TEMP/marker.json"
@@ -116,8 +118,8 @@ jobs:
           {
             echo "## Android debug APK"
             echo
-            echo "- Package: \`dev.atp.unpublished.debug\` (temporary id, MA-6; never published). Version \`${VERSION_NAME:-?}-debug\`, build ${{ github.run_number }}."
+            echo "- Package: \`tech.aialgodesk.app.debug\` (MA-6 id plus the debug suffix; never published). Version \`${VERSION_NAME:-?}-debug\`, build ${{ github.run_number }}."
             echo "- **Layout smoke test only.** Built against the placeholder \`https://atp-not-configured.invalid\`: it cannot reach any server or sign in (a debuggable APK never points at production, ADR-0028 decision 10)."
-            echo "- ATP_APP_DOMAIN variable set: ${DOMAIN_SET} (not used by debug builds)."
+            echo "- ATP_APP_DOMAIN variable set: ${DOMAIN_SET} (internal and release builds use it, default https://aialgodesk.tech; debug builds never do)."
             echo "- Install: download the \`atp-android-debug-apk\` artifact below, unzip it, open the APK on the phone (docs/mobile/BUILD.md)."
           } >> "$GITHUB_STEP_SUMMARY"

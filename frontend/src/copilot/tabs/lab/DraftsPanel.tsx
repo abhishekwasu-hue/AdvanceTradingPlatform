@@ -105,7 +105,7 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
           </div>
           <AiProgress state={task.state} onCancel={task.cancel} />
           <div className="pt-2">
-            <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-fg-muted">{t("lab.drafts.recent")}</div>
+            <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-fg-muted">{t("lab.drafts.recent")}</div>
             {drafts.length === 0 ? <p className="text-xs text-fg-muted">{t("lab.drafts.none")}</p> : (
               <ul className="divide-y divide-border/60 text-xs">
                 {drafts.slice(0, 10).map((d) => (
@@ -138,7 +138,7 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
               {selected.warnings.length > 0 && <ul className="list-disc pl-4 text-xs text-warn">{selected.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>}
               {selected.config && (
                 <div className="rounded-xl border border-ai/25 bg-ai/5 p-3" data-testid="rules-in-words">
-                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-wider text-ai">{t("lab.candidate.rulesInWords")}</div>
+                  <div className="mb-1 text-xs font-semibold uppercase tracking-wider text-ai">{t("lab.candidate.rulesInWords")}</div>
                   {(["long_conditions", "short_conditions"] as const).map((side) => selected.config![side].length > 0 && (
                     <div key={side} className="mb-1">
                       <div className="text-xs font-semibold text-fg">{t(side === "long_conditions" ? "lab.candidate.when.long" : "lab.candidate.when.short")}</div>
@@ -182,7 +182,7 @@ export default function DraftsPanel({ source, symbol }: { source: CandleSourceSt
                 )}
               </div>
               {selected.strategy_id && <p className="text-xs text-up">{t("lab.drafts.savedAs", { id: selected.strategy_id })}</p>}
-              <p className="text-[11px] text-fg-muted">{selected.disclaimer}</p>
+              <p className="text-xs text-fg-muted">{selected.disclaimer}</p>
             </div>
           )}
           {message && <p className="mt-2 rounded-lg border border-ai/30 bg-ai/5 px-3 py-2 text-xs text-fg" role="status">{message}</p>}

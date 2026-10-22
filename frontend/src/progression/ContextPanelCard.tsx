@@ -50,12 +50,12 @@ export function ContextPanelView({ panel, busy, onRefresh }: { panel: ContextPan
                 {tile.status === "na"
                   ? <p className="text-fg-muted">{t("context.na", { reason: tile.reason ?? "" })}</p>
                   : <ul className="space-y-0.5 text-fg">{lines.map((line, i) => <li key={i}>{line}</li>)}</ul>}
-                <p className="text-[11px] text-fg-muted">{t("context.source", { source: tile.source })}</p>
+                <p className="text-xs text-fg-muted">{t("context.source", { source: tile.source })}</p>
               </section>
             );
           })}
         </div>
-        <p className="text-[11px] text-fg-muted">{panel.note}</p>
+        <p className="text-xs text-fg-muted">{panel.note}</p>
       </div>
     </Card>
   );

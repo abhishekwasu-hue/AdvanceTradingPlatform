@@ -693,9 +693,16 @@ def test_production_wants_an_https_redirect_base_url(monkeypatch, caplog):
     monkeypatch.setattr(app_config, "METRICS_TOKEN", "m-" + uuid.uuid4().hex)
     monkeypatch.delenv("EMAIL_VERIFICATION_REQUIRED", raising=False)
     monkeypatch.setattr(app_config, "BROKER_OAUTH_REDIRECT_BASE_URL", "")
+    monkeypatch.setattr(app_config, "PUBLIC_BASE_URL", "")
     with caplog.at_level(logging.WARNING, logger="app.core.config"):
         app_config.validate_production_config()
     assert "CONFIGURATION ACTION NEEDED: BROKER_OAUTH_REDIRECT_BASE_URL is not set" in caplog.text
+    # D2's PUBLIC_BASE_URL is the fallback: with it set, the override may stay empty without a warning.
+    caplog.clear()
+    monkeypatch.setattr(app_config, "PUBLIC_BASE_URL", "https://atp.example.com")
+    with caplog.at_level(logging.WARNING, logger="app.core.config"):
+        app_config.validate_production_config()
+    assert "BROKER_OAUTH_REDIRECT_BASE_URL is not set" not in caplog.text
     monkeypatch.setattr(app_config, "BROKER_OAUTH_REDIRECT_BASE_URL", "http://atp.example.com")
     with pytest.raises(RuntimeError, match="BROKER_OAUTH_REDIRECT_BASE_URL must start with https://"):
         app_config.validate_production_config()

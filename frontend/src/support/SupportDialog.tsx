@@ -4,13 +4,15 @@ import { Link } from "react-router";
 import { api } from "../api/client";
 import { Button } from "../components/primitives/Button";
 import { Dialog } from "../components/primitives/Dialog";
+import ShowGetStartedV2 from "../setup/ShowGetStartedV2";
 import { QUESTION_MAX_CHARS, SUGGESTED_QUESTIONS, safeLinks, sourceLabel, supportQuestion, type SupportReply } from "./support";
 
 interface Turn { q: string; reply?: SupportReply; error?: string }
 
 /** Z10-f: the help desk. How-to answers from the help and legal pages; it never reads positions or orders and never
  * places, changes or cancels anything. When it cannot answer, "Send feedback" opens the feedback form with the
- * question filled in. Shown only while the `support_bot` flag is on for the organisation. */
+ * question filled in. Shown only while the `support_bot` flag is on for the organisation. P3: it also offers "Show Get
+ * started" (the Dashboard's three setup steps), as Settings → Help does. */
 export default function SupportDialog({ open, onOpenChange, onFeedback }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -47,6 +49,7 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
       description="How-to answers from the help pages and the legal pages. The help desk cannot see your account, give trading advice or touch orders."
     >
       <div className="space-y-3">
+        <ShowGetStartedV2 onDone={() => onOpenChange(false)} />
         {turns.length === 0 && (
           <ul className="flex flex-wrap gap-1.5" aria-label="Suggested questions">
             {SUGGESTED_QUESTIONS.map((q) => (
@@ -64,7 +67,7 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
               {t.reply && (
                 <div className="max-w-[95%] rounded-lg bg-surface-2 px-3 py-2 text-sm text-fg">
                   <p className="whitespace-pre-wrap leading-relaxed">{t.reply.answer}</p>
-                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-fg-muted">
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
                     <span>{sourceLabel(t.reply)}</span>
                     {safeLinks(t.reply.links).map((l) => (
                       <Link key={l.url} to={l.url} onClick={() => onOpenChange(false)}
@@ -91,7 +94,7 @@ export default function SupportDialog({ open, onOpenChange, onFeedback }: {
             <Send size={13} aria-hidden="true" />
           </Button>
         </form>
-        <p className="text-[11px] text-fg-muted">For how-to questions only - never advice on what to buy or sell.</p>
+        <p className="text-xs text-fg-muted">For how-to questions only - never advice on what to buy or sell.</p>
       </div>
     </Dialog>
   );

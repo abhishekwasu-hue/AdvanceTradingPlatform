@@ -1,0 +1,116 @@
+{
+  "schema": "atp.template/1",
+  "id": "G7",
+  "version": 1,
+  "name": "Expanded flat: the sweep beyond the start of wave A",
+  "family": "G",
+  "idea": "A signal when wave B of a flat goes beyond the start of wave A and the market comes back, by the trigger style you pick; wave C may run against the higher trend.",
+  "difficulty": "Advanced",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "wave_tf", "label": "Wave timeframe", "help": "The chart where the waves are counted (the minor trend). Not finer than your signal timeframe.", "type": "timeframe", "default": "1h", "choices": ["15m", "30m", "1h", "1d"]},
+    {"key": "higher_tf", "label": "Higher timeframe", "help": "The chart of the main trend. Not finer than the wave timeframe.", "type": "timeframe", "default": "1d", "choices": ["1h", "1d", "1w"]},
+    {"key": "wave_degree", "label": "Wave size", "help": "Which swings count as waves: 1 is the smallest, 3 the largest. Larger waves need more history.", "type": "int", "default": 1, "min": 1, "max": 3, "step": 1},
+    {"key": "area_degree", "label": "Smaller swing size", "help": "The smaller swings inside a wave: they mark the turn of the smaller structure and the last smaller swing. Smaller than the wave size.", "type": "int", "default": 0, "min": 0, "max": 2, "step": 1},
+    {"key": "trend_relation", "label": "Higher trend", "help": "Wave C may run against the higher trend, so this template allows it by default; pick the first choice to keep only moves with the higher trend.", "type": "enum", "default": "counter", "choices": ["with", "counter"], "choice_labels": ["Only with the higher trend", "Also against the higher trend (a counter-trend wave C)"]},
+    {"key": "trend_degree", "label": "Higher trend swing size", "help": "Which swings on the higher timeframe decide its trend: 0 is the smallest, 3 the largest.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1},
+    {"key": "entry_style", "label": "Trigger style", "help": "What turns the sweep into a signal: the close back on the near side of the start of wave A, a reversal candle at it, or the smaller structure turning on your chart.", "type": "enum", "default": "reclaim", "choices": ["reclaim", "candle", "choch"], "choice_labels": ["A close back beyond the start of wave A", "A reversal candle at the start of wave A", "The smaller structure turns on your chart"]},
+    {"key": "min_clarity", "label": "Count clarity", "help": "An unclear count never gives a signal. Optionally also skip a count whose alternate reading points the other way.", "type": "enum", "default": "any", "choices": ["any", "agree"], "choice_labels": ["Any count that is not unclear", "Not when the alternate count points the other way"]},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the level a close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "atr_n", "label": "Average true range length", "help": "The bars of the wave chart the average true range of the break distance is measured over.", "type": "int", "default": 14, "min": 2, "max": 100, "step": 1},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The extreme of the sweep (wave B), or the last smaller swing.", "type": "enum", "default": "b_extreme", "choices": ["b_extreme", "last_swing"], "choice_labels": ["The extreme of wave B", "The last smaller swing"]},
+    {"key": "exit_signal", "label": "Exit signal", "help": "Optional: when the idea has ended. It is not acted on yet; your own exit settings always apply.", "type": "enum", "default": "none", "choices": ["none", "choch", "leaves"], "choice_labels": ["None", "The wave structure turns against the idea", "The count leaves waves B and C"]}
+  ],
+  "constraints": [
+    {"left": "wave_tf", "op": ">=", "right": "signal_timeframe", "message": "The wave timeframe must not be finer than your signal timeframe."},
+    {"left": "higher_tf", "op": ">=", "right": "wave_tf", "message": "The higher timeframe must not be finer than the wave timeframe."},
+    {"left": "area_degree", "op": "<", "right": "wave_degree", "message": "The smaller swings must be smaller than the waves."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "by": "trend_relation",
+    "variants": {
+      "counter": null,
+      "with": {
+        "long": "DowTrend($trend_degree)@{higher_tf} == \"UP\"",
+        "short": "DowTrend($trend_degree)@{higher_tf} == \"DOWN\""
+      }
+    }
+  },
+  "setup": {
+    "kind": "state",
+    "long": "WaveState($wave_degree)@{wave_tf} == \"COR_B\" AND WaveType($wave_degree)@{wave_tf} == \"FLAT\" AND WaveBeyondOrigin($wave_degree)@{wave_tf} AND WaveEnd($wave_degree, \"A\")@{wave_tf} > WaveOrigin($wave_degree)@{wave_tf} AND (WaveClarity($wave_degree)@{wave_tf} != \"UNCLEAR\" AND ($min_clarity == \"any\" OR WaveClarity($wave_degree)@{wave_tf} != \"ALT_DISAGREES\"))",
+    "short": "WaveState($wave_degree)@{wave_tf} == \"COR_B\" AND WaveType($wave_degree)@{wave_tf} == \"FLAT\" AND WaveBeyondOrigin($wave_degree)@{wave_tf} AND WaveEnd($wave_degree, \"A\")@{wave_tf} < WaveOrigin($wave_degree)@{wave_tf} AND (WaveClarity($wave_degree)@{wave_tf} != \"UNCLEAR\" AND ($min_clarity == \"any\" OR WaveClarity($wave_degree)@{wave_tf} != \"ALT_DISAGREES\"))",
+    "same_bar": true
+  },
+  "trigger": {
+    "by": "entry_style",
+    "variants": {
+      "reclaim": {
+        "long": "close@{wave_tf} > WaveOrigin($wave_degree)@{wave_tf} + $k * Lag(ATR($atr_n), 1)@{wave_tf}",
+        "short": "close@{wave_tf} < WaveOrigin($wave_degree)@{wave_tf} - $k * Lag(ATR($atr_n), 1)@{wave_tf}"
+      },
+      "candle": {
+        "long": "ReversalAt(WaveOrigin($wave_degree)@{wave_tf}, \"bullish\")",
+        "short": "ReversalAt(WaveOrigin($wave_degree)@{wave_tf}, \"bearish\")"
+      },
+      "choch": {
+        "long": "SwingBreakType(\"up\", $area_degree, $k) == \"CHOCH\"",
+        "short": "SwingBreakType(\"down\", $area_degree, $k) == \"CHOCH\""
+      }
+    }
+  },
+  "invalidation": {
+    "by": "invalidation",
+    "variants": {
+      "b_extreme": {
+        "long": "WaveEnd($wave_degree, \"current\")@{wave_tf}",
+        "short": "WaveEnd($wave_degree, \"current\")@{wave_tf}"
+      },
+      "last_swing": {
+        "long": "SwingLow($area_degree)@{wave_tf}",
+        "short": "SwingHigh($area_degree)@{wave_tf}"
+      }
+    }
+  },
+  "exit_signal": {
+    "by": "exit_signal",
+    "variants": {
+      "none": null,
+      "choch": {
+        "long": "SwingBreakType(\"down\", $wave_degree, $k)@{wave_tf} == \"CHOCH\"",
+        "short": "SwingBreakType(\"up\", $wave_degree, $k)@{wave_tf} == \"CHOCH\""
+      },
+      "leaves": {
+        "long": "WaveState($wave_degree)@{wave_tf} != \"COR_B\" AND WaveState($wave_degree)@{wave_tf} != \"COR_C\"",
+        "short": "WaveState($wave_degree)@{wave_tf} != \"COR_B\" AND WaveState($wave_degree)@{wave_tf} != \"COR_C\""
+      }
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [
+      {
+        "token": "flat_b_swept_start_of_wave_a"
+      },
+      {
+        "token": "upward_wave_c_may_start"
+      },
+      {
+        "token": "void_beyond_extreme_of_wave_b"
+      }
+    ],
+    "short": [
+      {
+        "token": "flat_b_swept_start_of_wave_a"
+      },
+      {
+        "token": "downward_wave_c_may_start"
+      },
+      {
+        "token": "void_beyond_extreme_of_wave_b"
+      }
+    ]
+  }
+}

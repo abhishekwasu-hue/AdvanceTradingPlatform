@@ -90,6 +90,28 @@ TOKENS: Dict[str, str] = {
     "void_beyond_a_start_or_b_end": "the count is void beyond the start of wave A, or beyond the end of wave B if B went past it",
     "larger_trend_may_resume_up": "the larger upward trend may be resuming",
     "larger_trend_may_resume_down": "the larger downward trend may be resuming",
+    # Build step 7, second part (the templates G2, G4-G7, G9-G11): one sentence per template, whatever trigger style
+    "wave_b_channel_broke_on_chart": "the channel of wave B on the {wave_timeframe} chart broke in the direction of wave C",
+    "triangle_may_be_complete": "the triangle on the {wave_timeframe} chart may be complete",
+    "upward_thrust_may_start": "an upward thrust out of the triangle may be starting",
+    "downward_thrust_may_start": "a downward thrust out of the triangle may be starting",
+    "void_beyond_far_end_of_triangle": "the count is void beyond the far end of the triangle",
+    "wave_c_passed_end_of_wave_a": "wave C on the {wave_timeframe} chart closed beyond the end of wave A",
+    "upward_wave_c_under_way": "an upward wave C is under way",
+    "downward_wave_c_under_way": "a downward wave C is under way",
+    "flat_b_swept_start_of_wave_a": "wave B of a flat on the {wave_timeframe} chart went beyond the start of wave A and came back",
+    "void_beyond_extreme_of_wave_b": "the count is void beyond the extreme of wave B",
+    "wave_four_pullback_may_be_over": "the wave four pullback on the {wave_timeframe} chart may be over",
+    "upward_fifth_wave_may_start": "an upward fifth wave may be starting",
+    "downward_fifth_wave_may_start": "a downward fifth wave may be starting",
+    "diagonal_may_be_complete": "the ending diagonal on the {wave_timeframe} chart may be complete",
+    "upward_turn_may_start": "the market may be turning up",
+    "downward_turn_may_start": "the market may be turning down",
+    "void_beyond_fifth_wave_extreme": "the count is void beyond the extreme of the fifth wave",
+    "wave_x_pullback_may_be_over": "the wave X pullback of a double three on the {wave_timeframe} chart may be over",
+    "upward_wave_y_may_start": "an upward wave Y may be starting",
+    "downward_wave_y_may_start": "a downward wave Y may be starting",
+    "void_beyond_end_of_wave_x": "the count is void beyond the end of wave X",
 }
 
 # Wave labels, types and clarity in words (the counter's values: app/price_action/waves/counter.py)

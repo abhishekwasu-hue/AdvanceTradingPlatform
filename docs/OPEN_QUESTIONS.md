@@ -1053,6 +1053,21 @@ From docs/design/WAVE_TEMPLATES_IMPL.md. Each has a provisional default the buil
 | WAVE-36 | Fibonacci zone defaults (off by default)? | G1: wave two 0.5-0.786 of wave one. G3: wave B 0.382-0.786 of wave A. G8: wave C 0.618-1.618 times wave A (a triangle is not measured). | G templates | open |
 | WAVE-37 | G8 includes a double three's last wave (Y) while G11 is "the same as G3 / G8 with type DOUBLE": keep both? | Yes: G8 reads any correction type the spec lists (zigzag, flat, triangle, double); G3 excludes a double three's X (that is G11's wave B). | G3, G8, G11 | open |
 
+## Wave / correction templates (family G), build step 7 second part: G4-G7, G2, G9-G11 (WAVE, 22 Oct)
+
+From docs/design/WAVE_TEMPLATES_IMPL.md. Each has a provisional default the build uses until the owner answers.
+
+| # | Question | Provisional default | Where | Status |
+|---|---|---|---|---|
+| WAVE-38 | G5 "B is a triangle": the counter reads a triangle as its own count at the wave size (A-B-C-D-E). Which larger wave it is (B, four, X) is one size up. | G5 reads any triangle whose wave E may be complete; the thrust runs against the triangle's first wave, through its B-D side. | `templates/G5.json` | open |
+| WAVE-39 | The triangle's B-D side and the 2-4 line belong to the count: once the end of wave E (or of the fifth wave) is confirmed, the count moves on and the line is gone. A break after that is not read. | As built: the break must come while the count still shows wave E / the fifth wave (a retest of a break already made is read within the watch); G9's CHoCH style covers a later turn. A "last known line" series can be added if you want later breaks read. | G5, G9, G10, `waves/levels.py` | open |
+| WAVE-40 | G6 / G7: how far beyond the end of wave A (the start of wave A) must the close be? | k x the wave chart's average true range of the bars before (`atr_n`, default 14 as the breakout screens), on the wave chart's close (as the wave lines break). | G6, G7 | open |
+| WAVE-41 | G7's trigger styles? | The close back beyond the start of wave A (default), a reversal candle at it, the smaller structure's CHoCH - only while wave B runs; no "first touch" (a sweep needs the close back). | `templates/G7.json` | open |
+| WAVE-42 | G9 and G10 overlap on a diagonal's fifth wave. G9's optional RSI divergence? | G9 reads both motive types (impulse and diagonal), G10 only the diagonal. The RSI divergence filter waits for RsiDivergence `kind` and its own flag in recipes (WAVE-14, WAVE-29). | G9, G10 | open |
+| WAVE-43 | G11 "X is treated like B": X is the main count only once it is finished (WB8), so a touch / candle at the end of a running X cannot be read. | G11's window is early wave Y (before it passed the end of W); styles CHoCH (default), the channel of X's break, its retest; Fibonacci zone on X's depth of W 0.236-0.618 (off). | `templates/G11.json` | open |
+| WAVE-44 | G2's settings: the Fibonacci zone, the invalidation and the arm level? | Zone on wave four's depth of wave three 0.236-0.5 (off); invalidation the end of wave one (also in the early fifth wave); arm level the end of wave one (wick). The fifth-wave cap (WaveCap) is not in the text yet (WAVE-35). | `templates/G2.json` | open |
+| WAVE-45 | "Every pullback inside the wave" (window) and the trigger styles per template? | The window only in G2 (as G1 / G3 / G8: its touch and candle styles); the break templates G4-G7, G9-G11 take one opportunity per wave (a line breaks once). G4 / G6 / G10 offer the breakout and its retest (the spec's styles); G3 keeps all five styles for wave C. | G templates | open |
+
 ## Copilot job 6: the strategy builder (CP6, 22 Oct)
 
 Each has a provisional default the build uses until the owner answers.

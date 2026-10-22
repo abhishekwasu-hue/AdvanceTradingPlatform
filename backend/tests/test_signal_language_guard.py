@@ -47,7 +47,8 @@ def test_every_strategy_template_signal_text_is_in_the_signal_language():
     from app.strategy_templates import language as tl
     from app.strategy_templates import library
     for phrase in tl.TOKENS.values():
-        _clean(phrase.format(timeframe="15-minute", context_timeframe="Daily", wave_timeframe="Hourly", higher_timeframe="Daily"), "signal_public")
+        _clean(phrase.format(timeframe="15-minute", context_timeframe="Daily", wave_timeframe="1-hour", higher_timeframe="Daily"),
+               "signal_public")
     for t in library.templates():
         for tf in t.allowed_timeframes:
             for side in ("long", "short"):

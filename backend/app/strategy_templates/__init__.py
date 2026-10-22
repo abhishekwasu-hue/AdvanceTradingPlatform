@@ -6,6 +6,7 @@ engine   - the pure, causal setup / trigger state machine over a whole series (S
 adapter  - a template as a BaseStrategy that reads that series (not wired to deployments yet)
 language - the signal text tokens and their guard (policy 11l)
 parity   - the scan = backtest = live harness (section 8) and the history to fetch (R6)
+wave_parity - the same for the wave templates (family G): the wave / higher timeframe frames from the one window
 library  - the built-in templates (templates/<id>.json)
 
 Templates only generate signals. Nothing here places, sizes or exits an order.

@@ -2905,7 +2905,7 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   setting with a default; signal text in structure / indicator words; no target, size or order anywhere.
 - Not built (TPL-Q40): B10, C2, C4, D3, E1, E2, E3, E5 (gap companion, the swing degree for the retest, the projected
   trendline retest, the "extreme since the setup" invalidation, the divergence's RSI period and extreme), family F.
-- Also fixes main: the Copilot screen-draft template for the validator's "argument given twice" (named arguments, #391).
+- Also fixes main: the Copilot screen-draft template for the validator's "argument given twice" (named arguments, #391), and the idea-library test's "unknown template" id (G9 exists since #396; now G99).
 - Tests: `tests/test_tpl4_templates.py` (section 8 gate for the fourteen templates + the companions), runtime fixture,
   causal cases (lookahead job), history sweep, the breakout families' registry tests. Questions TPL-Q26..TPL-Q40.
 ## 22 Oct - Wave templates (family G): G4-G7, G2, G9-G11 (behind strategy_templates + screener_waves)

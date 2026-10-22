@@ -16,12 +16,12 @@ that changes an item. Never delete a row; mark it done / superseded with the PR.
 | 8 | Master Order 3: full UX audit + additions | ATP_SESSION_UX_AUDIT_MASTER.md + ATP_HANDOVER_PACK.md §8 | pending (USER / ADMIN only; no Simple / Pro) |
 | 9 | Master Order 4: the ready-made dish, the daily rhythm, plans | ATP_SESSION_GROWTH_MASTER.md | pending |
 | 10 | Analyze a chart | ATP_HANDOVER_PACK.md §10 (#304 / #305 drafts) | drafts open |
-| 11 | Strategy Lab (Pine + Python), idea → code / scan, idea library, compliance, signal language | ATP_HANDOVER_PACK.md §11 (a–l) | pending |
+| 11 | Strategy Lab (Pine + Python), idea → code / scan, idea library, compliance, signal language | ATP_HANDOVER_PACK.md §11 (a–l) | in progress: 11a AMW port audit + 11b ADR-0027 approval in #334 (18 ported / 25 partial / 42 missing); signal language rule in CLAUDE.md |
 | 12 | Idea library templates T1–T8 | ATP_SESSION_IDEA_LIBRARY.md | pending |
 | 13 | Strategy template library (independently reviewed; section 0 corrections are binding) | ATP_SESSION_STRATEGY_TEMPLATES.md | pending |
 
 | — | Login error message + `atp.sh reset-password` | ATP_HANDOVER_PACK.md §8d | PR #332 (draft) |
-| — | Google sign-in | ATP_HANDOVER_PACK.md (also open) | waiting on the owner's OAuth credentials (OPEN_QUESTIONS GS-1); button hidden |
+| — | Google sign-in | ATP_HANDOVER_PACK.md (also open) | in progress: `claude/google-signin` (inert, button hidden until the owner's OAuth credentials, OPEN_QUESTIONS GS-1) |
 | — | Upstox OAuth redirect from PUBLIC_BASE_URL | ATP_HANDOVER_PACK.md (also open) | done: #319 / #321 |
 
 Other files here: INBOX.md (every new instruction, verbatim), DECISIONS.md (owner decisions).

@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from "@playwright/test";
 import { deflateSync } from "node:zlib";
-import { fixtureItem, fixtureStatus } from "../src/chartAnalyze/fixtures";
+import { fixtureItem, fixtureStatus, fixtureStrikes } from "../src/chartAnalyze/fixtures";
 import type { SetupStatus } from "../src/chartAnalyze/types";
 import { mockApi, type MockOptions } from "./mockApi";
 import { expectPhoneLayout } from "./phoneLayout";
@@ -18,7 +18,7 @@ import { expectPhoneLayout } from "./phoneLayout";
 
 const CONNECTED = [{ broker_name: "upstox", account_label: "primary", token_status: "VALID", token_expires_at: null, last_verified_at: null,
   needs_login: false, oauth_supported: true, oauth_callback_url: null, login_url_supported: false, code_param: null }];
-const ON: MockOptions = { features: { ui_v2: true, chart_analyze: true }, brokers: CONNECTED };
+const ON: MockOptions = { features: { ui_v2: true, chart_analyze: true, chart_analyze_strikes: true }, brokers: CONNECTED };
 const OFF: MockOptions = { features: { ui_v2: true }, brokers: CONNECTED };
 
 // --- a drawn placeholder PNG (no real chart) ---------------------------------------------------------------------------
@@ -78,6 +78,11 @@ async function mockChartAnalyze(page: Page, setup: SetupStatus, { history = true
     if (/^\/items\/\d+\/image$/.test(path)) {
       if (imageGone) return route.fulfill({ status: 410, json: { detail: { message: "The chart image is no longer stored.", code: "image_gone" } } });
       return route.fulfill({ body: PNG, contentType: "image/png" });
+    }
+    if (/^\/items\/\d+\/strikes$/.test(path)) {
+      const typed = url.searchParams.get("symbol");
+      if (setup === "none") return route.fulfill({ json: { ...fixtureStrikes(), side: "none", items: [], message: "No setup is formed or forming, so there are no strikes to work out." } });
+      return route.fulfill({ json: typed ? { ...fixtureStrikes(), symbol: typed.toUpperCase() } : fixtureStrikes() });
     }
     if (path === "/items/8/analyze") { calls.analyzes += 1; return route.fulfill({ json: fixtureItem(8, setup) }); }
     const one = /^\/items\/(\d+)$/.exec(path);
@@ -231,6 +236,60 @@ test.describe("Analyze a chart: the flow", () => {
     }, bytes.toString("base64"));
     expect(size.width).toBe(640);
     expect(size.height).toBeGreaterThan(360);                         // the image plus the label and disclaimer band
+  });
+
+  test("option strikes: flagged 'From your settings', worked out from the user's own setting", async ({ page }) => {
+    await open(page, "/chart-analyze", "light");
+    await mockChartAnalyze(page, "forming");
+    await page.goto("/chart-analyze");
+    await analyzeUpload(page);
+    const block = page.getByRole("region", { name: /Option strikes/ });
+    await expect(block.getByTestId("from-settings")).toHaveText("From your settings");
+    await expect(block).toContainText("The analysis does not pick strikes");
+    await expect(block.getByTestId("strikes-item")).toContainText("Bull put spread · main strike 1 strike out of the money");
+    await expect(block.getByRole("cell", { name: "≈ 115" })).toBeVisible();
+    await expect(block.getByRole("button", { name: /buy|sell|order|trade/i })).toHaveCount(0);
+  });
+
+  test("option strikes: hidden, and never asked for, while chart_analyze_strikes is off", async ({ page }) => {
+    await open(page, "/chart-analyze", "light", { ...ON, features: { ui_v2: true, chart_analyze: true } });
+    const asked: string[] = [];
+    page.on("request", (r) => { if (new URL(r.url()).pathname.endsWith("/strikes")) asked.push(r.url()); });
+    await mockChartAnalyze(page, "forming");
+    await page.goto("/chart-analyze");
+    await analyzeUpload(page);
+    await expect(page.getByTestId("analysis-result")).toBeVisible();
+    await expect(page.getByRole("region", { name: /Option strikes/ })).toHaveCount(0);
+    expect(asked).toEqual([]);
+  });
+
+  test("Download PDF prints the result alone: the blocks, the label and the disclaimer, without the buttons", async ({ page }) => {
+    await open(page, "/chart-analyze", "light");
+    await mockChartAnalyze(page, "formed");
+    await page.goto("/chart-analyze");
+    await analyzeUpload(page);
+    // Catch the print frame as it is added and record what it would print instead of opening the dialog.
+    await page.evaluate(() => {
+      const w = window as unknown as { printed?: { text: string; theme: string; title: string } };
+      new MutationObserver((records) => {
+        for (const r of records) for (const n of Array.from(r.addedNodes)) {
+          if (!(n instanceof HTMLIFrameElement) || !n.contentWindow) continue;
+          const frame = n;
+          (frame.contentWindow as Window).print = () => {
+            const doc = frame.contentDocument as Document;
+            w.printed = { text: doc.body.innerText, theme: doc.documentElement.dataset.theme ?? "", title: doc.title };
+          };
+        }
+      }).observe(document.body, { childList: true });
+    });
+    await page.getByRole("button", { name: "Download PDF" }).click();
+    const printed = await page.waitForFunction(() => (window as unknown as { printed?: unknown }).printed).then((h) => h.jsonValue()) as
+      { text: string; theme: string; title: string };
+    expect(printed.theme).toBe("light");
+    expect(printed.title).toMatch(/^Chart analysis - DEMO 15m - /);
+    for (const text of ["What the method sees", "Evidence", "Scenarios", "Key levels", "Option strikes", "From your settings", "not investment advice",
+      "Image-only analysis"]) expect(printed.text, text).toContain(text);
+    for (const text of ["Download PDF", "Download / share the result image", "Set an alert on this area"]) expect(printed.text, text).not.toContain(text);
   });
 
   test("a chart whose stored image is gone (410) says so, also on Download", async ({ page }) => {

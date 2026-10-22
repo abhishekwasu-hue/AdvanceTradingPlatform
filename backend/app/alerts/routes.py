@@ -126,6 +126,12 @@ async def upsert_alert_channel(
             incoming.pop(field, None)
             if existing_raw and existing_raw.get(field) is not None:
                 incoming[field] = existing_raw[field]
+        # UX2 fix 5: only "Connect Telegram" (the chat that pressed Start) makes a platform-bot channel. Here the flag is
+        # never taken from the request, and a platform channel keeps its chat unless an own bot token replaces it, so
+        # nobody can point the platform's bot at another chat.
+        incoming.pop("platform_bot", None)
+        if existing_raw and existing_raw.get("platform_bot") and not str(incoming.get("bot_token") or "").strip():
+            incoming["platform_bot"], incoming["chat_id"], incoming["bot_token"] = True, existing_raw.get("chat_id"), ""
     try:
         merged = merge_push(incoming, existing_raw) if kind == AlertChannelType.PUSH.value else merge_secrets(kind, incoming, existing_raw)
         config = parse_config(kind, merged)

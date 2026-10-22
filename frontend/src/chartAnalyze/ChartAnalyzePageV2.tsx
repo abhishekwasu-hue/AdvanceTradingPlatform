@@ -7,8 +7,11 @@ import { useFeatures } from "../ui/useFeatures";
 import AlertDialogV2, { type AlertTarget } from "./AlertDialogV2";
 import { chartAnalyzeApi, errorCode, isFeatureOff } from "./api";
 import { renderResultPng, shareOrDownload } from "./exportImage";
+import { printResult, printTitle } from "./printResult";
 import ResultViewV2 from "./ResultViewV2";
 import { resultShapes } from "./shapes";
+import { guardResult } from "./signalLanguage";
+import type { StrikesState } from "./StrikesSectionV2";
 import type { AnalysisItem, AnalyzeStatus } from "./types";
 
 /**
@@ -19,6 +22,8 @@ import type { AnalysisItem, AnalyzeStatus } from "./types";
  */
 
 export const FLAG = "chart_analyze";
+/** The "Option strikes · from your settings" block has its own flag on top (owner's tenant first). */
+export const STRIKES_FLAG = "chart_analyze_strikes";
 const ACCEPT = "image/png,image/jpeg";
 const card = "rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5";
 
@@ -52,6 +57,7 @@ export function firstImage(files: FileList | File[] | null | undefined): File | 
 export default function ChartAnalyzePageV2() {
   const features = useFeatures();
   const on = features.on(FLAG);
+  const strikesOn = on && features.on(STRIKES_FLAG);
   const [status, setStatus] = useState<AnalyzeStatus | null>(null);
   const [off, setOff] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -68,6 +74,8 @@ export default function ChartAnalyzePageV2() {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState<"export" | "delete" | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [strikes, setStrikes] = useState<StrikesState | null>(null);
+  const strikesFor = useRef<number | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const linkId = useId();
   const imageUrlRef = useRef<string | null>(null);
@@ -119,6 +127,36 @@ export default function ChartAnalyzePageV2() {
       setImageNote(errorCode(e) === "image_gone" ? IMAGE_GONE : "The chart image could not be loaded. Try again later.");
     }
   }, []);
+
+  // "Option strikes · from your settings": loaded for the analysis on screen (the symbol read from the picture, or the
+  // one the user types when it was not read). A late answer for another analysis is dropped.
+  const loadStrikes = useCallback(async (id: number, symbol?: string) => {
+    strikesFor.current = id;
+    setStrikes({ status: "loading" });
+    try {
+      const data = await chartAnalyzeApi.strikes(id, symbol);
+      if (strikesFor.current === id) setStrikes({ status: "ready", data });
+    } catch (e) {
+      if (strikesFor.current === id) setStrikes({ status: "error", message: friendlyError(e) });
+    }
+  }, []);
+
+  const shownId = current?.result && strikesOn ? current.id : null;
+  useEffect(() => {
+    if (shownId == null) { strikesFor.current = null; setStrikes(null); return; }
+    void loadStrikes(shownId);
+  }, [shownId, loadStrikes]);
+
+  const pdf = async () => {
+    const node = document.querySelector<HTMLElement>('[data-testid="analysis-result"]');
+    const rec = current?.result?.recognised;
+    if (!node) return;
+    try {
+      await printResult(node, printTitle(rec?.symbol ?? null, rec?.timeframe ?? null));
+    } catch (e) {
+      setProblem(problemFrom(e));
+    }
+  };
 
   const analyze = async () => {
     setProblem(null);
@@ -188,7 +226,7 @@ export default function ChartAnalyzePageV2() {
       const img = new Image();
       img.src = imageSrc;
       await img.decode();
-      const blob = await renderResultPng({ image: img, width: result.image.width, height: result.image.height, shapes: resultShapes(result),
+      const blob = await renderResultPng({ image: img, width: result.image.width, height: result.image.height, shapes: resultShapes(guardResult(result)),
         label: result.label, disclaimer: result.disclaimer });
       const how = await shareOrDownload(blob, `chart-analysis-${current.id}.png`);
       setNotice(how === "shared" ? "Result image shared." : "Result image downloaded.");
@@ -325,7 +363,8 @@ export default function ChartAnalyzePageV2() {
 
       {current && current.result && (
         <ResultViewV2 result={current.result} itemLabel={current.label} itemDisclaimer={current.disclaimer} imageNote={imageNote}
-          imageSrc={imageSrc} onAlert={setAlertTarget} onExport={exportImage} onDelete={() => setConfirmDelete(true)}
+          imageSrc={imageSrc} onAlert={setAlertTarget} onExport={exportImage} onDelete={() => setConfirmDelete(true)} onPdf={() => void pdf()}
+          strikes={strikes} onStrikesSymbol={(symbol) => void loadStrikes(current.id, symbol)}
           exporting={busy === "export"} deleting={busy === "delete"} />
       )}
       {current && !current.result && (

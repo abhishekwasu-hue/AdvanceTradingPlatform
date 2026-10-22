@@ -12,9 +12,9 @@
   each (app/option_chain/ask_spec.py), at most MAX_SAVED_ANALYSES, sized so the most a user can save stays inside
   MAX_BODY_BYTES (no table, no migration).
   `fno_baskets` (FNO-2) holds the user's saved F&O baskets (Save / Load on the basket panel): a name, the underlying,
-  MIS / NRML and the legs (expiry, strike, CE / PE, Buy / Sell, lots, the planning price and a sold leg's stop), at most
-  MAX_SAVED_BASKETS of at most MAX_BASKET_LEGS legs, sized so the most a user can save stays inside MAX_BODY_BYTES. A
-  saved basket is a plan: loading it places nothing.
+  MIS / NRML and the legs (expiry, strike, CE / PE - or FUT with no strike, FNO-3 - Buy / Sell, lots, the planning price and
+  a sold leg's or a future's stop), at most MAX_SAVED_BASKETS of at most MAX_BASKET_LEGS legs, sized so the most a user
+  can save stays inside MAX_BODY_BYTES. A saved basket is a plan: loading it places nothing.
   `appearance` holds the text size (Normal / Large / Extra large) applied to every page.
   `tours` (MO2 part C) holds the first-time guidance marks: the welcome tour finished, the pages whose tips were seen and
   "Skip all tips". Only marks: what a tour says lives in the frontend (src/tours/content/).
@@ -150,12 +150,18 @@ MAX_PRICE = 1e7
 
 class SavedBasketLeg(_Prefs):
     expiry: date
-    strike: float = Field(gt=0, lt=MAX_PRICE, allow_inf_nan=False)
-    right: Literal["CE", "PE"]
+    strike: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)   # None for a future (FNO-3)
+    right: Literal["CE", "PE", "FUT"]
     side: Literal["BUY", "SELL"]
     lots: int = Field(ge=1, le=500)
     price: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
     stop_loss: Optional[float] = Field(default=None, gt=0, lt=MAX_PRICE, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _strike_for_options_only(self) -> "SavedBasketLeg":
+        if (self.right == "FUT") != (self.strike is None):
+            raise ValueError("an option needs its strike; a future has none")
+        return self
 
 
 class SavedBasket(_Prefs):

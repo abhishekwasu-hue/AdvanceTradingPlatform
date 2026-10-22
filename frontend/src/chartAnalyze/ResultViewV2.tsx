@@ -1,15 +1,20 @@
-import { Bell, Check, Download, Trash2, X } from "lucide-react";
+import { Bell, Check, Download, FileDown, Trash2, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { Button } from "../components/primitives";
 import { CANNOT_ALERT, alertCondition } from "./alerts";
 import AnnotatedChartV2 from "./AnnotatedChartV2";
 import type { AlertTarget } from "./AlertDialogV2";
+import { PRINT_HIDE } from "./printResult";
+import { guardResult } from "./signalLanguage";
+import StrikesSectionV2, { type StrikesState } from "./StrikesSectionV2";
 import type { AnalysisResult, PriceRef } from "./types";
 
 /**
  * Analyze a chart: the result screen (owner brief, blocks 1-8). "What the method sees and the conditions" - educational,
  * never a buy / sell call; there is no order button anywhere on it, and the disclaimer closes every result.
  * Image only: the label sits at the top, and every price carries "≈" (read from the picture).
+ * Every text the engine wrote passes the signal-language check (signalLanguage.ts) before it is shown. The option
+ * strikes block shows the user's own settings only, flagged "From your settings". PDF: the browser's print dialog.
  */
 
 const card = "rounded-panel border border-subtle bg-surface-1 p-space-4 shadow-card md:p-space-5";
@@ -69,11 +74,18 @@ export interface ResultViewProps {
   onAlert: (target: AlertTarget) => void;
   onExport: () => void;
   onDelete: () => void;
+  /** "Download PDF": the browser's print dialog on the result block (printResult.ts). */
+  onPdf?: () => void;
+  /** The "Option strikes · from your settings" block (null: not shown). */
+  strikes?: StrikesState | null;
+  onStrikesSymbol?: (symbol: string) => void;
   exporting?: boolean;
   deleting?: boolean;
 }
 
-export default function ResultViewV2({ result, itemLabel, itemDisclaimer, imageNote, imageSrc, onAlert, onExport, onDelete, exporting, deleting }: ResultViewProps) {
+export default function ResultViewV2({ result: raw, itemLabel, itemDisclaimer, imageNote, imageSrc, onAlert, onExport, onDelete, onPdf, strikes,
+  onStrikesSymbol, exporting, deleting }: ResultViewProps) {
+  const result = guardResult(raw);
   const approx = result.approximate_prices;
   const label = result.label || itemLabel || null;
   const disclaimer = result.disclaimer || itemDisclaimer || FALLBACK_DISCLAIMER;
@@ -92,12 +104,13 @@ export default function ResultViewV2({ result, itemLabel, itemDisclaimer, imageN
         <h2 className="text-t20 font-semibold text-fg md:text-t24">{title}</h2>
         {(rec.first_bar || rec.last_bar) && <p className="mt-space-1 text-t12 text-fg-muted">Visible range: {rec.first_bar ?? "?"} to {rec.last_bar ?? "?"}</p>}
         <p className="mt-space-2 text-t14 text-fg-muted">The situation and the possibilities, as the method reads this chart. Educational, not advice.</p>
-        <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row sm:flex-wrap">
+        <div className="mt-space-3 flex flex-col gap-space-2 sm:flex-row sm:flex-wrap" {...{ [PRINT_HIDE]: "" }}>
           <Button className="h-11 md:h-9" icon={<Bell size={16} aria-hidden />} disabled={!firstArea}
             onClick={() => firstArea && onAlert(areaTarget(firstArea.price_low, firstArea.price_high, `${firstArea.side} area`))}>
             Set an alert on this area
           </Button>
           <Button className="h-11 md:h-9" icon={<Download size={16} aria-hidden />} loading={exporting} onClick={onExport}>Download / share the result image</Button>
+          {onPdf && <Button className="h-11 md:h-9" icon={<FileDown size={16} aria-hidden />} onClick={onPdf}>Download PDF</Button>}
           <Button className="h-11 md:h-9" variant="ghost" icon={<Trash2 size={16} aria-hidden />} loading={deleting} onClick={onDelete}>Delete</Button>
         </div>
       </div>
@@ -169,7 +182,7 @@ export default function ResultViewV2({ result, itemLabel, itemDisclaimer, imageN
         <Section title="What to wait for" id="ca-wait">
           <p className="text-t14 text-fg">{result.what_to_wait_for.condition}</p>
           {waitCondition ? (
-            <Button className="mt-space-3 h-11 md:h-9" icon={<Bell size={16} aria-hidden />}
+            <Button className="mt-space-3 h-11 md:h-9" icon={<Bell size={16} aria-hidden />} {...{ [PRINT_HIDE]: "" }}
               onClick={() => onAlert({ title: "Alert me when this happens", symbol: rec.symbol, timeframe: rec.timeframe, condition: waitCondition, approximate: approx })}>
               Alert me when this happens
             </Button>
@@ -196,7 +209,7 @@ export default function ResultViewV2({ result, itemLabel, itemDisclaimer, imageN
         <Section title="Key levels" id="ca-levels">
           <table className="hidden w-full text-left text-t14 md:table">
             <thead><tr className="text-t12 text-fg-muted"><th className="py-space-2 font-medium">Level</th><th className="font-medium">Kind</th>
-              <th className="pr-space-6 text-right font-medium">Price</th><th className="font-medium">State</th><th className="sr-only">Alert</th></tr></thead>
+              <th className="pr-space-6 text-right font-medium">Price</th><th className="font-medium">State</th><th className="sr-only" {...{ [PRINT_HIDE]: "" }}>Alert</th></tr></thead>
             <tbody>
               {result.key_levels.map((lv, i) => (
                 <tr key={i} className="border-t border-subtle">
@@ -204,7 +217,7 @@ export default function ResultViewV2({ result, itemLabel, itemDisclaimer, imageN
                   <td className="text-fg-muted">{lv.kind === "area" ? `${lv.side === "seller" ? "Seller" : "Buyer"} area` : "Line"}</td>
                   <td className="pr-space-6 text-right font-tabular text-fg">{band(lv.price_low, lv.price_high, approx)}</td>
                   <td className="text-fg-muted">{lv.state ?? "-"}</td>
-                  <td className="text-right"><Button size="sm" variant="ghost" onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))}>Set an alert</Button></td>
+                  <td className="text-right" {...{ [PRINT_HIDE]: "" }}><Button size="sm" variant="ghost" onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))}>Set an alert</Button></td>
                 </tr>
               ))}
             </tbody>
@@ -216,13 +229,15 @@ export default function ResultViewV2({ result, itemLabel, itemDisclaimer, imageN
                   <p className="text-t14 font-medium text-fg">{lv.name || (lv.kind === "area" ? "Area" : "Line")}</p>
                   <p className="text-t12 text-fg-muted">{band(lv.price_low, lv.price_high, approx)}{lv.state ? ` · ${lv.state}` : ""}</p>
                 </div>
-                <Button className="h-11" variant="ghost" aria-label={`Set an alert on ${lv.name || "this level"}`} icon={<Bell size={16} aria-hidden />}
+                <Button className="h-11" variant="ghost" {...{ [PRINT_HIDE]: "" }} aria-label={`Set an alert on ${lv.name || "this level"}`} icon={<Bell size={16} aria-hidden />}
                   onClick={() => onAlert(areaTarget(lv.price_low, lv.price_high, lv.name || "this level"))} />
               </li>
             ))}
           </ul>
         </Section>
       )}
+
+      {strikes && <StrikesSectionV2 state={strikes} onSymbol={onStrikesSymbol} />}
 
       <p className="rounded-panel border border-subtle bg-surface-2 p-space-4 text-t12 text-fg-muted" data-testid="disclaimer" role="note">{disclaimer}</p>
     </div>

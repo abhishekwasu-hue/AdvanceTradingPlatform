@@ -7,14 +7,16 @@
  * storage), and the basket still works in memory without it.
  */
 import { useSyncExternalStore } from "react";
-import type { Right, Side } from "./api";
+import type { ContractRight, Side } from "./api";
 
 export interface BasketLeg {
   id: string;
   underlying: string;
   expiry: string;
+  /** FNO-3: 0 for a future (it has no strike). */
   strike: number;
-  right: Right;
+  /** CE / PE, or FUT for a future (FNO-3: "Add to basket" on the futures chain). */
+  right: ContractRight;
   side: Side;
   lots: number;
   /** The price the panel plans with: the chain's when the leg was added, or the user's own. Placing uses the live price. */

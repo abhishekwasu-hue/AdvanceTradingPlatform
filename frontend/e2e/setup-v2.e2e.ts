@@ -28,7 +28,9 @@ const blank = (): Stored => ({ steps: { broker: { skipped_at: null }, risk: { sk
   opened_at: SEEN, dismissed_at: null, get_started_hidden_at: null, get_started_shown_at: null });
 
 /** The mocked server's state, and what the page sent. */
-interface Server { stored: Stored; version: number; done: Record<Key, boolean>; sent: { method: string; url: string; body: unknown }[] }
+interface Server { stored: Stored; version: number; done: Record<Key, boolean>; sent: { method: string; url: string; body: unknown }[];
+  /** UX2 fix 5: GET /alerts/telegram/connect. */
+  telegram?: { available: boolean; connected: boolean; own_bot: boolean; working: boolean } }
 
 function answer(s: Server) {
   const steps = KEYS.map((key) => {
@@ -61,6 +63,8 @@ interface Open {
   noPaperAccount?: boolean;
   /** POST /deployments answers 409 (already deployed in the organisation). */
   deployConflict?: boolean;
+  /** UX2 fix 5: no Telegram channel yet, and this server has the platform's bot (Connect Telegram in one tap). */
+  telegramConnect?: boolean;
 }
 
 async function open(page: Page, o: Open = {}): Promise<Server> {
@@ -130,7 +134,16 @@ async function open(page: Page, o: Open = {}): Promise<Server> {
     const body = sent(route) as { starting_capital: number };
     return route.fulfill({ json: { starting_capital: body.starting_capital } });
   });
-  await page.route(api("/alert-channels$"), reply(S.alert_channels));
+  // UX2 fix 5: the fixture's channel is the organisation's own bot; `telegramConnect` starts with none and the platform bot.
+  server.telegram ??= o.telegramConnect ? { available: true, connected: false, own_bot: false, working: false }
+    : { available: true, connected: false, own_bot: true, working: false };
+  await page.route(api("/alert-channels$"), (route) => route.fulfill({ json: server.telegram?.own_bot ? S.alert_channels
+    : server.telegram?.connected ? [{ ...(S.alert_channels as object[])[0], config: { chat_id: "masked", platform_bot: true } }] : [] }));
+  await page.route(api("/alerts/telegram/connect$"), (route) => {
+    if (route.request().method() !== "POST") return route.fulfill({ json: server.telegram });
+    sent(route);
+    return route.fulfill({ json: { url: "https://t.me/ExampleAlertsBot?start=AbCdEfGhIjKlMnOp", expires_at: "2026-10-21T04:45:00Z" } });
+  });
   await page.route(api("/alert-channels/deliveries"), reply([]));
   await page.route(api("/alert-channels/\\w+/test$"), (route) => { sent(route); server.done.alerts = true; return route.fulfill({ json: { ok: true, detail: "Test message sent via TELEGRAM" } }); });
   await page.route(api("/readiness"), reply(S.readiness));
@@ -269,12 +282,36 @@ test.describe("setup wizard 390 x 844", () => {
   test("the alerts step sends a test through the existing API and the step is done", async ({ page }) => {
     const server = await open(page, { done: { broker: true, risk: true, strategy: true } });
     const telegram = wizard(page).locator("[data-channel='TELEGRAM']");
+    await expect(telegram).toContainText("Your organisation's own Telegram bot sends your alerts.");
+    await expect(telegram.getByRole("button", { name: "Link my Telegram" })).toBeVisible();
     await telegram.getByRole("button", { name: "Send a test" }).click();
-    await expect(telegram).toContainText("Test sent. Check that it arrived.");
+    await expect(telegram).toContainText("Test sent. Check your Telegram chat.");
     expect(server.sent.some((c) => c.method === "POST" && c.url === "/alert-channels/telegram/test")).toBe(true);
     await expect(wizard(page).locator("[data-step-state='done']")).toHaveCount(4);
     await wizard(page).getByRole("button", { name: "Finish" }).click();
     await expect(wizard(page)).toContainText("Setup is complete.");
+  });
+
+  test("UX2 fix 5: Connect Telegram in one tap - the link opens, Start in Telegram, the row turns Connected with Send a test", async ({ page }) => {
+    await page.context().route(/t\.me\//, (route) => route.fulfill({ body: "<title>Telegram</title>", contentType: "text/html" }));
+    const server = await open(page, { done: { broker: true, risk: true, strategy: true }, telegramConnect: true });
+    const telegram = wizard(page).locator("[data-channel='TELEGRAM']");
+    await expect(telegram).toContainText("Get alerts on your phone in Telegram. One tap, then press Start.");
+    await expect(telegram).not.toContainText(/token|chat id|BotFather/i);
+    const popup = page.waitForEvent("popup");
+    await telegram.getByRole("button", { name: "Connect Telegram" }).click();
+    await expect.poll(async () => (await popup).url()).toContain("https://t.me/ExampleAlertsBot?start=");
+    await expect(telegram).toContainText("Press Start there, then come back.");
+    await expect(telegram.getByRole("link", { name: "Open Telegram" })).toHaveAttribute("href", "https://t.me/ExampleAlertsBot?start=AbCdEfGhIjKlMnOp");
+    expect(server.sent.some((c) => c.method === "POST" && c.url === "/alerts/telegram/connect")).toBe(true);
+    server.telegram = { available: true, connected: true, own_bot: false, working: true };       // Start was pressed in Telegram
+    await page.clock.runFor(3500);
+    await expect(telegram).toContainText("Connected");
+    await expect(telegram).toContainText("Telegram is connected. A welcome message is in your chat.");
+    await expect(telegram.getByRole("button", { name: "Send a test" })).toBeVisible();
+    await expect(telegram.getByRole("button", { name: "Link my Telegram" })).toHaveCount(0);
+    await telegram.evaluate((el) => el.scrollIntoView({ block: "center" }));        // clear of the bottom navigation
+    await expect(telegram).toHaveScreenshot("setup-v2-telegram-connected-390-light.png", { animations: "disabled", maxDiffPixelRatio: 0.02 });
   });
 
   test("Settings → Setup links to the go-live checklist, now under Settings → Advanced", async ({ page }) => {

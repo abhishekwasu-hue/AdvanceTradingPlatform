@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { ApiError, NETWORK_MESSAGE, apiErrorFrom, friendlyError, readableDetail } from "./errors";
+import {
+  ApiError, COMING_SOON_MESSAGE, NETWORK_MESSAGE, NOT_AVAILABLE_MESSAGE, SERVER_ERROR_MESSAGE, apiErrorFrom, friendlyError,
+  readableDetail,
+} from "./errors";
 
 function response(status: number, body: string, headers: Record<string, string> = {}) {
   return new Response(body, { status, headers });
@@ -21,16 +24,34 @@ describe("apiErrorFrom", () => {
 
   it("hides HTML error pages and unhandled 500s behind a sentence with the request id", async () => {
     const e = await apiErrorFrom(response(502, "<html><body>502 Bad Gateway</body></html>", { "x-request-id": "abc123" }));
-    expect(e.message).toBe("The server could not complete this request (error 502). Try again in a moment. Reference: abc123.");
+    expect(e.message).toBe(`${SERVER_ERROR_MESSAGE} Reference: abc123.`);
     expect(e.message).not.toMatch(/<html|uvicorn|Traceback/);
     const plain = await apiErrorFrom(response(500, "Internal Server Error"));
-    expect(plain.message).toMatch(/^The server could not complete this request \(error 500\)/);
+    expect(plain.message).toBe(SERVER_ERROR_MESSAGE);
+    expect(plain.message).not.toMatch(/500|error \d/);
   });
 
   it("keeps the raw body for code that matches a machine code", async () => {
     const e = await apiErrorFrom(response(503, JSON.stringify({ detail: "The 'market_thesis' feature is currently disabled by the platform operator" })));
     expect(e.status).toBe(503);
     expect(e.body).toContain("market_thesis");
+  });
+
+  it("UX1: a switched-off feature says 'coming soon' - never the flag name, never a reference id", async () => {
+    const body = JSON.stringify({ detail: "The 'market_thesis' feature is currently disabled by the platform operator" });
+    const e = await apiErrorFrom(response(503, body, { "x-request-id": "rq-1", "x-feature-disabled": "market_thesis" }));
+    expect(e.message).toBe(COMING_SOON_MESSAGE);
+    expect(e.message).not.toMatch(/market_thesis|rq-1|Reference/);
+    const headerOnly = await apiErrorFrom(response(503, "", { "x-feature-disabled": "screener_v2" }));
+    expect(headerOnly.message).toBe(COMING_SOON_MESSAGE);
+  });
+
+  it("UX1: the server's bare 'Not found' never reaches the trader; a 404 with its own sentence keeps it", async () => {
+    for (const bare of ["Not found", "Not Found", "not found."]) {
+      expect((await apiErrorFrom(response(404, JSON.stringify({ detail: bare })))).message).toBe(NOT_AVAILABLE_MESSAGE);
+    }
+    expect((await apiErrorFrom(response(404, ""))).message).toBe(NOT_AVAILABLE_MESSAGE);
+    expect((await apiErrorFrom(response(404, JSON.stringify({ detail: "No such proposal" })))).message).toBe("No such proposal");
   });
 
   it("falls back to a plain sentence per status when there is no detail", async () => {

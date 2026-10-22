@@ -1966,10 +1966,22 @@ export interface VerificationSendResult {
   already_verified: boolean;
 }
 
+export type FlagStatus = "ready" | "behind_the_scenes" | "unfinished" | "decision";
+
 export interface FeatureFlag {
   on: boolean;
   tenants: number[];
   description: string;
+  /** UX1 (audit section 7): the admin list's plain fields (backend app/platform/flag_catalog.py). */
+  plain?: string;
+  area?: string;
+  area_label?: string;
+  turns_on?: string;
+  depends_on?: string[];
+  needs?: string;
+  status?: FlagStatus;
+  status_label?: string;
+  default_on?: boolean;
 }
 
 export type FeatureFlags = Record<string, FeatureFlag>;

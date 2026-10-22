@@ -1,4 +1,4 @@
-import type { AnalysisItem, AnalysisResult, AnalyzeStatus, SetupStatus } from "./types";
+import type { AnalysisItem, AnalysisResult, AnalyzeStatus, SetupStatus, StrikesAnswer } from "./types";
 
 /**
  * Analyze a chart: made-up results for the unit and browser tests (public repository: no real chart, no real data, no
@@ -76,5 +76,20 @@ export function fixtureStatus(over: Partial<AnalyzeStatus> = {}): AnalyzeStatus 
     upload: { types: ["image/png", "image/jpeg"], max_bytes: 5 * 1024 * 1024, max_width: 4096, max_height: 4096 },
     retention_days: 30, label: IMAGE_ONLY_LABEL, disclaimer: DISCLAIMER, link_message: "Please upload a screenshot instead",
     ...over,
+  };
+}
+
+/** A made-up "Option strikes · from your settings" answer: one made-up bull put spread setting on the made-up symbol,
+ * worked out at the fixture's trigger (120.5) on a made-up ladder (steps of 5). */
+export function fixtureStrikes(): StrikesAnswer {
+  return {
+    source: "your_settings", side: "bull_put", symbol: "DEMO",
+    reference: { text: "the trigger level", price: 120.5, approximate: true },
+    approximate_note: "Worked out from a price read from the picture, so they are approximate. Check them on the option chain.",
+    items: [{
+      id: 7, mode: "Paper", symbol: "DEMO", settings: "Bull put spread · main strike 1 strike out of the money · wing 2 strikes away · nearest expiry",
+      expiry: "2026-10-27", legs: [{ label: "Main strike", right: "PE", strike: 115, ratio: 1 }, { label: "Wing", right: "PE", strike: 105, ratio: 1 }], note: null,
+    }],
+    message: null,
   };
 }

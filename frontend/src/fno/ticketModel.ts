@@ -4,15 +4,16 @@
  * figure the confirm step shows (backend app/paper/fno_ticket.py); nothing here makes one up.
  */
 import { formatINR, formatNumber, formatPrice } from "../ui/format";
-import type { HeldLeg, OrderAsk, OrderResult, OrderType, Product, Right, Side } from "./api";
+import type { ContractRight, HeldLeg, OrderAsk, OrderResult, OrderType, Product, Right, Side } from "./api";
 
-/** What the ticket is for: one contract of the chain on screen, with the chain's own prices (the price helper). */
+/** What the ticket is for: one contract of the chain on screen, with the chain's own prices (the price helper).
+ * FNO-3: or a future of the futures chain (`right` "FUT", `strike` null). */
 export interface TicketTarget {
   underlying: string;
   expiry: string;
-  strike: number;
-  right: Right;
-  /** "NIFTY 28 OCT 22800 CE" once the contract is read; null before. */
+  strike: number | null;
+  right: ContractRight;
+  /** "NIFTY 28 OCT 22800 CE" (a future "NIFTY 28 OCT FUT") once the contract is read; null before. */
   label: string | null;
   lotSize: number | null;
   ltp: number | null;
@@ -70,13 +71,20 @@ const num = (text: string): number | null => {
   return text.trim() !== "" && Number.isFinite(v) && v > 0 ? v : null;
 };
 
+/** The stop-loss field's own words: needed for a sold option and for a future (either side), optional otherwise. */
+export function stopHint(side: Side, right: ContractRight = "CE"): string {
+  if (right === "FUT") return "(needed for a future)";
+  return side === "SELL" ? "(needed for a sold option)" : "(optional)";
+}
+
 /** What is missing before the ticket can be reviewed (the server checks everything else). */
-export function draftProblems(d: Draft): string[] {
+export function draftProblems(d: Draft, right: ContractRight = "CE"): string[] {
   const out: string[] = [];
   const n = needs(d.orderType);
   if (n.price && num(d.price) === null) out.push("Enter the limit price");
   if (n.trigger && num(d.trigger) === null) out.push("Enter the trigger price");
-  if (d.side === "SELL" && num(d.stopLoss) === null) out.push("A sold option needs a stop-loss");
+  if (right === "FUT" && num(d.stopLoss) === null) out.push("A future needs a stop-loss");
+  else if (d.side === "SELL" && num(d.stopLoss) === null) out.push("A sold option needs a stop-loss");
   if (d.stopLoss.trim() !== "" && num(d.stopLoss) === null) out.push("The stop-loss is not a price");
   return out;
 }
@@ -84,7 +92,7 @@ export function draftProblems(d: Draft): string[] {
 export function askOf(target: TicketTarget, d: Draft, clientRef: string): OrderAsk {
   const n = needs(d.orderType);
   return {
-    underlying: target.underlying, expiry: target.expiry, strike: target.strike, right: target.right, side: d.side,
+    underlying: target.underlying, expiry: target.expiry, strike: target.right === "FUT" ? null : target.strike, right: target.right, side: d.side,
     lots: clampLots(d.lots), order_type: d.orderType, product: d.product,
     price: n.price ? num(d.price) : null, trigger_price: n.trigger ? num(d.trigger) : null, stop_loss: num(d.stopLoss),
     chain_ltp: target.ltp && target.ltp > 0 ? target.ltp : null, client_ref: clientRef,

@@ -163,6 +163,7 @@ import type {
   StaticIpOverview,
 } from "../types";
 import type { AlertEventRow, AlertRule, AlertRuleInput, DeadLetter, EmailOptOut, NotificationPolicy, TelegramLinkCode } from "../alerts/rules";
+import type { TelegramConnectState } from "../alerts/telegramConnect";
 import type { ThenBody, ThenIntent, ThenTemplate } from "../screener/then/model";
 import type { BetaCohort } from "../beta/rollout";
 
@@ -481,6 +482,9 @@ export const api = {
 
   mfaDisable: (password: string, code: string) =>
     request<void>("/auth/mfa/disable", { method: "POST", body: JSON.stringify({ password, code }) }),
+
+  /** UX1: whether the sign-in screen offers "Create an account" (public; the platform's `self_signup` switch). */
+  signUpOpen: () => request<{ open: boolean }>("/auth/sign-up-open"),
 
   forgotPassword: (email: string) =>
     request<{ detail: string }>("/auth/password/forgot", { method: "POST", body: JSON.stringify({ email }) }),
@@ -1016,6 +1020,9 @@ export const api = {
   retryDelivery: (id: number) => request<{ id: number; status: string }>(`/alerts/deliveries/${id}/retry`, { method: "POST" }),
   telegramLinkStatus: () => request<{ linked: boolean; linked_at: string | null }>("/alerts/telegram/link"),
   telegramLinkCode: () => request<TelegramLinkCode>("/alerts/telegram/link-code", { method: "POST" }),
+  // UX2 fix 5: Connect Telegram with the platform's bot (app/alerts/platform_bot_routes.py).
+  telegramConnectState: () => request<TelegramConnectState>("/alerts/telegram/connect"),
+  telegramConnectStart: () => request<{ url: string; expires_at: string }>("/alerts/telegram/connect", { method: "POST" }),
   telegramUnlink: () => request<{ linked: boolean }>("/alerts/telegram/link", { method: "DELETE" }),
   listEmailOptOuts: () => request<EmailOptOut[]>("/alerts/email-opt-outs"),
   removeEmailOptOut: (id: number) => request<{ removed: number }>(`/alerts/email-opt-outs/${id}`, { method: "DELETE" }),

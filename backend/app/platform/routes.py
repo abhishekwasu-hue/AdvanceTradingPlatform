@@ -129,20 +129,22 @@ async def put_marketplace_terms(body: RiskCeilingsBody, user: User = Depends(req
 
 @admin_router.get("/flags")
 async def get_flags(session: AsyncSession = Depends(get_session)) -> dict:
-    return await controls.feature_flags(session)
+    """Every flag's state, plus (UX1, audit section 7) its plain description, area, what turns on, what it needs,
+    its default and status - for the admin Feature flags list (SUPER_ADMIN + two-factor, the router's dependencies)."""
+    return await controls.flag_listing(session)
 
 
 @admin_router.put("/flags/{name}")
 async def put_flag(name: str, body: FlagBody, user: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> dict:
     try:
-        flags = await controls.set_flag(session, user, name, on=body.on, tenants=body.tenants,
-                                        override_open_placeholders=body.override_open_placeholders)
+        await controls.set_flag(session, user, name, on=body.on, tenants=body.tenants,
+                                override_open_placeholders=body.override_open_placeholders)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if name == "public_status_page":                                     # Z10-e: the public page follows at once
         from app.observability.status_page import reset_cache
         reset_cache()
-    return flags
+    return await controls.flag_listing(session)                         # UX1: the same fields as the list
 
 
 @status_router.get("/features")

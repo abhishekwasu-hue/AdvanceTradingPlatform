@@ -1,5 +1,5 @@
 import { Bell, LifeBuoy, Menu, MessageSquarePlus, UserCircle2 } from "lucide-react";
-import { Suspense, lazy, useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState, type ComponentType, type ReactNode } from "react";
 import { BrowserRouter, Link, Navigate, Route, Routes, useLocation, useNavigate } from "react-router";
 import { AuthProvider, useAuth } from "./auth/AuthContext";
 import { ThemeToggle } from "./components/AppearanceCard";
@@ -13,6 +13,9 @@ import { ToastProvider } from "./components/Toast";
 import { api } from "./api/client";
 import { PAGES, PAGE_COMPONENTS, isStatusPath, pageFromPath, pathFor } from "./routes";
 import { flagOffFallback, shellMode } from "./shell/aliases";
+import { closedFlag } from "./shell/pageFlags";
+import { ComingSoon } from "./ui/ComingSoon";
+import { landingAfterSignIn } from "./auth/landing";
 import ShellWaitingV2 from "./shell/ShellWaitingV2";
 import { useWaitCap } from "./shell/shellWait";
 import { LegacyCopilot, NotFound, PageLoading, legacyTarget, withoutPageParam } from "./shell/common";
@@ -44,6 +47,8 @@ const LegalPage = lazy(() => import("./legal/LegalPage"));
 // UI2-1: the v2 shell (sidebar sections, bottom bar + More sheet, command bar, /charts, broker gate on data pages) -
 // its own chunk, loaded only while `ui_v2` is on for the organisation.
 const AppShellV2 = lazy(() => import("./shell/AppShellV2"));
+// UX1: the sign-in screen a signed-out visitor gets at any address - its own small chunk.
+const SignInScreen = lazy(() => import("./auth/SignInScreen"));
 
 function TopBar({ page, onMenu }: { page: Page | null; onMenu: () => void }) {
   const { user } = useAuth();
@@ -175,6 +180,8 @@ function AppShell() {
   }, [page]);
 
   const legacy = location.pathname === "/" ? legacyTarget(location.search) : null;
+  // UX1 (handover 8b): a page whose feature flag is off shows "Coming soon" (and is left out of the sidebar).
+  const closed = closedFlag(page, useFeatures());
 
   return (
     <div className="min-h-screen flex">
@@ -190,7 +197,7 @@ function AppShell() {
           {/* Keyed by page: an error on one page is forgotten when the trader moves to another. */}
           <ErrorBoundary key={page ?? "not-found"} title={page ? NAV.find((n) => n.id === page)?.label : undefined}>
             <Suspense fallback={<PageLoading />}>
-              {legacy ? <Navigate to={`${pathFor(legacy)}${withoutPageParam(location.search)}`} replace /> : (
+              {legacy ? <Navigate to={`${pathFor(legacy)}${withoutPageParam(location.search)}`} replace /> : closed ? <ComingSoon flag={closed} /> : (
                 <Routes>
                   {PAGES.map((p) => {
                     const PageComponent = PAGE_COMPONENTS[p];
@@ -212,6 +219,31 @@ function AppShell() {
       <BrokerPromptHost />
     </div>
   );
+}
+
+/**
+ * UX1 (audit problem 2): a signed-out visitor at any address gets the sign-in screen - no sidebar, no phone bar, no
+ * page that would fail its reads ("Backend offline", "Not found"). The address stays as it was asked for, so after
+ * signing in the visitor is on that page; only the sign-in addresses themselves (`/account`, `/settings/account`)
+ * move on to Today (auth/landing.ts). There is no "next" parameter, so nothing here can send anyone off the site.
+ * A brand-new account still opens the Broker page first (BrokerPromptHost, after this step).
+ */
+function SignInGate({ children }: { children: ReactNode }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const before = useRef({ signedIn: !!user, loading });
+  // A layout effect: it runs before the shell's own effects, so the Broker page step for a new account comes after it.
+  useLayoutEffect(() => {
+    const was = before.current;
+    before.current = { signedIn: !!user, loading };
+    if (!user || was.signedIn || was.loading) return;    // only the moment the sign-in screen gives way
+    const to = landingAfterSignIn(location.pathname);
+    if (to) navigate(to, { replace: true });
+  }, [user, loading]);                                     // the address is read as it is now
+  if (loading) return <ShellWaitingV2 />;
+  if (!user) return <Suspense fallback={<ShellWaitingV2 />}><SignInScreen /></Suspense>;
+  return <>{children}</>;
 }
 
 /** UI2-1: the v2 shell while `ui_v2` is known and on; today's shell, exactly as before, otherwise. While it is not
@@ -290,34 +322,35 @@ export default function App() {
   // `?chart=SYMBOL` is a chart opened in its own browser tab (a chart's "New tab" button): just the chart, no shell.
   // `?workspace=1` (CH5) is the multi-chart workspace, also on its own.
   const params = new URLSearchParams(window.location.search);
+  const standalone = params.has("basis") ? (
+      <ErrorBoundary title="The futures basis chart">
+        <Suspense fallback={null}><FuturesBasisWindow params={params} /></Suspense>
+      </ErrorBoundary>
+    ) : params.has("contract") ? (
+      <ErrorBoundary title="The contract chart">
+        <Suspense fallback={null}><ContractChartWindow params={params} /></Suspense>
+      </ErrorBoundary>
+    ) : params.has("workspace") ? (
+      <ErrorBoundary title="The chart workspace">
+        <Suspense fallback={null}><ChartWorkspace params={params} /></Suspense>
+      </ErrorBoundary>
+    ) : params.has("chart") ? (
+      <ErrorBoundary title="The chart">
+        <Suspense fallback={null}><ChartWindow params={params} /></Suspense>
+      </ErrorBoundary>
+  ) : null;
   return (
     <BrowserRouter>
       <AuthProvider>
         <ShellFeatures>
         <ToastProvider>
-          {params.has("basis") ? (
-            <ErrorBoundary title="The futures basis chart">
-              <Suspense fallback={null}><FuturesBasisWindow params={params} /></Suspense>
-            </ErrorBoundary>
-          ) : params.has("contract") ? (
-            <ErrorBoundary title="The contract chart">
-              <Suspense fallback={null}><ContractChartWindow params={params} /></Suspense>
-            </ErrorBoundary>
-          ) : params.has("workspace") ? (
-            <ErrorBoundary title="The chart workspace">
-              <Suspense fallback={null}><ChartWorkspace params={params} /></Suspense>
-            </ErrorBoundary>
-          ) : params.has("chart") ? (
-            <ErrorBoundary title="The chart">
-              <Suspense fallback={null}><ChartWindow params={params} /></Suspense>
-            </ErrorBoundary>
-          ) : (
+          {standalone ? <SignInGate>{standalone}</SignInGate> : (
             <Routes>
               {/* Z10-f: the legal pages are public and stand alone (no shell, no sign-in) - the sign-up form links here. */}
               <Route path="/legal/:slug" caseSensitive element={
                 <ErrorBoundary title="The legal page"><Suspense fallback={null}><LegalPage /></Suspense></ErrorBoundary>
               } />
-              <Route path="*" element={<Shell />} />
+              <Route path="*" element={<SignInGate><Shell /></SignInGate>} />
             </Routes>
           )}
         </ToastProvider>

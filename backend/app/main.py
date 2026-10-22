@@ -117,6 +117,7 @@ from app.market_lake.import_routes import intraday_router as history_intraday_ad
 from app.market_lake.import_routes import router as history_import_admin_router
 from app.market_lake.routes import router as market_lake_router
 from app.option_chain.routes import router as oi_banner_router
+from app.option_chain.futures_routes import router as fno_hub_router
 from app.option_chain.analyses_routes import router as oc_analyses_router
 from app.option_chain.charts_routes import router as oc_charts_router
 from app.platform.readiness_routes import router as readiness_router
@@ -144,6 +145,7 @@ from app.lab.pine.routes import router as lab_pine_router
 from app.alerts.rules_routes import router as alert_rules_router
 from app.screener.then.routes import router as scan_then_router
 from app.alerts.links_routes import router as alert_links_router
+from app.alerts.platform_bot_routes import router as telegram_connect_router
 from app.alerts.outbox_admin import router as alert_outbox_admin_router
 from app.compliance.routes import router as compliance_router
 from app.charts.drawings import router as chart_drawings_router
@@ -288,6 +290,7 @@ app.include_router(history_import_admin_router)  # HB0: R2 history import progre
 app.include_router(history_backfill_admin_router)  # HB1: bhavcopy backfill progress + manual uploads (SUPER_ADMIN, flag)
 app.include_router(history_intraday_admin_router)  # HB2: owner intraday history progress (SUPER_ADMIN, read-only)
 app.include_router(oi_banner_router)       # OI Banner O2: snapshot history and settings
+app.include_router(fno_hub_router)         # FNO-3: the symbol hub's F&O facts and the futures chain (flag ui_v2)
 app.include_router(oc_analyses_router)     # OC2: the built-in option chain analyses, read-only (flag ui_v2, off)
 app.include_router(oc_charts_router)       # OC5: the Option chain "Charts" series, read-only (flag ui_v2)
 app.include_router(readiness_router)       # Phase AB: go-live checklist
@@ -311,6 +314,7 @@ app.include_router(screener_etf_router)  # S10 J: the ETF screen on the shared E
 app.include_router(alert_rules_router)
 app.include_router(scan_then_router)
 app.include_router(alert_links_router)
+app.include_router(telegram_connect_router)  # UX2 fix 5: Connect Telegram with the platform bot
 app.include_router(alert_outbox_admin_router)  # Z10-b: alert outbox state, dead letters and replay (SUPER_ADMIN)
 app.include_router(compliance_router)
 app.include_router(chart_drawings_router)

@@ -6,7 +6,7 @@ import { formatPrice } from "../ui/format";
 import { fnoApi, type FnoApi, type OrderPreview, type OrderResult, type Side } from "./api";
 import {
   MAX_LOTS, ORDER_TYPES, PRACTICE_TEXT, PRACTICE_TITLE, PRODUCTS, askOf, clampLots, draftProblems, moneyText, needs, newClientRef,
-  newDraft, resultText, shortcutSide, sideWord, unitsText, type Draft, type TicketTarget,
+  newDraft, resultText, shortcutSide, sideWord, stopHint, unitsText, type Draft, type TicketTarget,
 } from "./ticketModel";
 
 /**
@@ -92,7 +92,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
   if (!target) return null;
 
   async function review() {
-    const missing = draftProblems(draft);
+    const missing = draftProblems(draft, target?.right);
     if (!target || missing.length) { setProblem(missing[0] ?? null); return; }
     setBusy(true);
     try {
@@ -118,7 +118,7 @@ export default function OrderTicketV2({ open, target, side, onClose, onPlaced, a
     }
   }
 
-  const label = target.label ?? `${target.underlying} ${target.strike} ${target.right}`;
+  const label = target.label ?? (target.right === "FUT" ? `${target.underlying} ${target.expiry} FUT` : `${target.underlying} ${target.strike} ${target.right}`);
   return (
     <RD.Root open={open} onOpenChange={(o) => { if (!o) onClose(); }}>
       <RD.Portal>
@@ -218,7 +218,7 @@ export function TicketBody({ target, draft, step, busy, problem, idPrefix, onDra
             )}
             <div>
               <label htmlFor={ids.stop} className="mb-space-1 block text-t12 font-medium text-fg-muted">
-                Stop-loss for the position {draft.side === "SELL" ? "(needed for a sold option)" : "(optional)"}
+                Stop-loss for the position {stopHint(draft.side, target.right)}
               </label>
               <input id={ids.stop} inputMode="decimal" value={draft.stopLoss} onChange={(e) => onDraft({ stopLoss: e.target.value })} className={FIELD} data-ticket="stop" />
             </div>
@@ -279,6 +279,7 @@ export function Review({ preview: p }: { preview: OrderPreview }) {
         <Line label="Margin required" testId="margin">
           {moneyText(p.margin?.value)}
           {p.margin && <span className="block max-w-[14rem] text-t12 text-fg-muted">{p.margin.value !== null ? "Estimate. " : ""}{p.margin.basis}</span>}
+          {p.margin?.note && <span className="block max-w-[14rem] text-t12 text-fg-muted" data-line="margin-note">{p.margin.note}</span>}
         </Line>
         <Line label="Max loss" testId="max-loss">
           {moneyText(p.max_loss?.value)}

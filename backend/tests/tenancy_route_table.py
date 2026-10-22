@@ -262,6 +262,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/auth/providers"): P_SIGN_IN_PROVIDERS,
     ("POST", "/api/auth/refresh"): P_SIGN_IN,
     ("POST", "/api/auth/register"): P_SIGN_IN,
+    ("GET", "/api/auth/sign-up-open"): P_SIGN_IN,
     ("GET", "/api/auth/scopes"): "member",
     ("GET", "/api/auth/sessions"): "member",
     ("DELETE", "/api/auth/sessions/{target_id}"): S_OWN_ACCOUNT,
@@ -314,6 +315,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/chart-analyze/items/{item_id}"): "member: the caller's own chart analysis only (tenant and user)",
     ("GET", "/api/chart-analyze/items/{item_id}/image"): "member: the caller's own chart image only (tenant and user)",
     ("POST", "/api/chart-analyze/items/{item_id}/analyze"): S_OWN_CHART_ANALYSES,
+    ("GET", "/api/chart-analyze/items/{item_id}/strikes"): "member: the caller's own analysis + the caller's organisation's deployment settings (reads only)",
     ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,
     ("GET", "/api/charts/drawings"): "member",
     ("POST", "/api/charts/drawings"): S_OWN_DRAWINGS,
@@ -508,6 +510,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/option-chain/{underlying}/alerts/test"): "trader",
     ("GET", "/api/option-chain/{underlying}/banner"): "member",
     ("GET", "/api/option-chain/{underlying}/expiries"): "member",
+    ("GET", "/api/option-chain/{underlying}/hub"): "member",      # FNO-3: the instrument master's F&O facts (platform-wide data)
+    ("GET", "/api/option-chain/{underlying}/futures"): "member",  # FNO-3: futures quotes through the organisation's / the user's own (BT1) broker session
     ("GET", "/api/option-chain/{underlying}/live"): "member",
     ("GET", "/api/option-chain/{underlying}/history"): "member",
     ("GET", "/api/option-chain/{underlying}/settings"): "member",

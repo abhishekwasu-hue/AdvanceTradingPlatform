@@ -1,8 +1,9 @@
 # Analyze a chart
 
-Status: **PR-A built** (behind the flag `chart_analyze`, off). PR-B to PR-E are planned below. Owner brief: 2026-10-20
+Status: **PR-A built, PR-A3 built** (behind the flag `chart_analyze`, off; the strikes block also behind
+`chart_analyze_strikes`, off). PR-B to PR-D are planned below. Owner brief: 2026-10-20
 (the feature brief, then the result-screen addition). Open questions: `docs/OPEN_QUESTIONS.md`, section "Analyze a chart
-(20 Oct)", CA-1 to CA-7.
+(20 Oct)", CA-1 to CA-10.
 
 The same working rules apply as everywhere in ATP: draft PRs, self-review, tests, PAPER only, LIVE untouched, English
 only, tenant-safe, settings-driven, behind a feature flag. This page **places no order and has no order button**; the
@@ -99,12 +100,15 @@ approximate prices; hybrid coordinates are time and price.
 | 6. What to wait for | `what_to_wait_for` {condition, alert: above / below / between prices, or none} - only when the setup is not formed |
 | 7. Higher timeframes | `htf_context[]` {timeframe, trend, nearest areas} - when the engine returns it |
 | 8. Key levels | `key_levels[]` {kind area / line, name, side, state, price range} - a table on desktop, cards on a phone |
+| 9. Option strikes | not from the engine: `GET .../items/{id}/strikes` (PR-A3) - what the organisation's own option deployment settings on the symbol work out to at the setup's trigger level, flagged **"From your settings"** (section 4a) |
 
 Validation, whatever the engine returns: every text goes through the AI output filter (`app.ai.output_filter`); a text
 that reads as a call, advice or a guarantee - blocked, or one the filter would only frame as a specific call - is
 **withheld** and replaced by a neutral line. Enums, lengths, list sizes
 and coordinates are bounded; a point outside the image is dropped. Unknown keys (an `order`, a `score`, a confidence)
-are dropped. A missing story, trend, setup or scenario makes the analysis **failed** - nothing partial is shown.
+are dropped. Then the **signal-language check** (`signal_language.py`, PR-A3): a text with any trade-call word (buy /
+sell / target / stop / stop-loss / SL, whole words; "buyer" / "seller" area sides pass) is withheld as well; the
+frontend runs the same list over everything it renders (`signalLanguage.ts`), so a result stored earlier is guarded too. A missing story, trend, setup or scenario makes the analysis **failed** - nothing partial is shown.
 
 **Buttons.** *Set an alert on this area* and *Alert me when this happens* create an ordinary alert rule through ATP's
 existing alert creation (`POST /api/alerts/rules`, an instrument rule with a ScreenQL price condition: `close > p`,
@@ -113,7 +117,18 @@ in image-only). A condition that is not a price ("a lower-timeframe change of ch
 alert on this condition yet". Alerts need the alert feature (`screener_v2`) as everywhere. *Download / share the
 result image* renders the annotated image client-side to a PNG (the user's own image plus the overlay and the label)
 and shares it through the Web Share API where available, else downloads it. *Delete* asks first and names the
-consequence. No order button anywhere; no "Trade" link.
+consequence. *Download PDF* (PR-A3) opens the browser's own print dialog ("Save as PDF") on the result block alone -
+copied into a hidden same-origin frame in the light theme, without the buttons (`printResult.ts`); no PDF library, nothing
+leaves the browser (CA-10). No order button anywhere; no "Trade" link.
+
+### 4a. Option strikes from your settings (PR-A3)
+
+The analysis never picks a strike (`strikes.py`). For a formed or forming setup, the block lists the organisation's
+OPTION deployments (ACTIVE / PAUSED, at most 10) on the chart's underlying whose structure fits the setup side (CA-8;
+neutral structures are not listed, CA-9), each described in structure words ("Bull put spread · main strike 1 strike
+out of the money · wing 2 strikes away · nearest expiry") with the strikes its own rules give at the trigger price,
+from ATP's instrument master (no broker call). Image only: approximate, and it says so. No symbol read: the user types
+it. No SL, target or lots, and no order button.
 
 ## 5. The API (PR-A)
 
@@ -125,6 +140,7 @@ consequence. No order button anywhere; no "Trade" link.
 | `GET /api/chart-analyze/items/{id}` | one item with its result |
 | `GET /api/chart-analyze/items/{id}/image` | the cleaned image (410 when retention removed the file) |
 | `POST /api/chart-analyze/items/{id}/analyze` | runs Image only (hybrid: 409 "coming soon"); a done item is returned, not re-run |
+| `GET /api/chart-analyze/items/{id}/strikes?symbol=` | PR-A3, flag `chart_analyze_strikes` too: the strikes block (409 `not_analysed` before a result) |
 | `DELETE /api/chart-analyze/items/{id}` | deletes the image and the result |
 | `GET / PUT /api/admin/chart-analyze/settings` | SUPER_ADMIN with MFA |
 
@@ -233,8 +249,8 @@ Counting is serialised per user. The defaults are provisional (CA-7).
 `chart_analyze` is registered in `FEATURE_FLAGS` and off by default (computed). The owner turns it on for **beta
 tenants only** through the flag's tenant allow-list (Admin > Controls > Flags), never globally, until CA-2 (the SEBI
 research-analyst position, compliance pack BT7) is answered. Off: every route answers the standard feature-off 503,
-and the page, its navigation entry and the Charts-page button are hidden. PR-E's strikes block has its own flag,
-`chart_analyze_strikes`, owner's tenant first.
+and the page, its navigation entry and the Charts-page button are hidden. The strikes block (PR-A3) has its own flag,
+`chart_analyze_strikes` (off), owner's tenant first; it acts only while `chart_analyze` is on too.
 
 ## 11. The PRs
 
@@ -243,8 +259,9 @@ and the page, its navigation entry and the Charts-page button are hidden. PR-E's
 | **PR-A** (this) | The page, upload / paste / drag-drop / link, Image-only mode, limits and the cost cap, private storage and retention, the provider boundary, the result screen blocks 1-8 for Image only (the annotated overlay next to the original; story; setup; evidence; scenarios; what to wait for with "Alert me when this happens"; the higher-timeframe strip when returned; key levels), set an alert on an area, the annotated PNG export, history, delete. Split into **PR-A1** (backend, this design note, the open questions) and **PR-A2** (frontend) |
 | **PR-B** | Hybrid: recognise, the editable fields, the data load (broker first; stored data under CA-1), the rebuild with volume (near-month FUT for indices, labelled) and RSI panes, the match check, "Open in Chart tab"; hybrid annotations drawn on the rebuilt chart |
 | **PR-C** | Hybrid analysis: the AI on the rebuilt chart plus real-bar facts, then each reader layer plugged in as it is ported (same contract); the reader's zones and lines on the rebuilt chart; "the checklist matches the reader evidence" tests |
+| **PR-A3** | The result screen's remaining items (owner order 10): "Option strikes · from your settings" (section 4a, flag `chart_analyze_strikes`), "Download PDF" (browser print), the signal-language check on the server and on render. No migration |
 | **PR-D** | The PDF report and the share link. Proposal: a link is private by default - a signed token (HMAC of item id, owner, tenant and expiry), expiring after an admin setting (propose 7 days), revocable (a per-item token version), and it opens only for a logged-in member of the same organisation; making a link public is a later owner decision (CA-5). The PDF is rendered server-side from the stored result, never with account data |
-| **PR-E** | Option strikes behind `chart_analyze_strikes` (owner's tenant first): spread strikes for the setup side, with SL / target / lots taken only from the user's own dashboard settings; no rule added by the app; PAPER only; no order button |
+| **PR-E** | Folded into PR-A3 (the strikes block). Left for later: showing the user's own SL / target / lots settings next to it, if the owner wants them (CA-8) |
 
 ## 12. Tests
 
@@ -261,5 +278,9 @@ and the page, its navigation entry and the Charts-page button are hidden. PR-E's
 - **PR-A2 (frontend)**: vitest for the result blocks (formed / forming / no setup), the alert conditions, the overlay
   geometry and the error states; Playwright with drawn placeholder images: the flow, the unreadable-link message, the
   annotated PNG export decoded in the test, and phone layout baselines `chart-analyze-{390,360,1440}-{light,dark}`.
+- **PR-A3**: the strikes block (side fit, other symbols / organisations / stopped / neutral not listed, the empty states, the
+  symbol typed or read, 409 / 404 / 422, both flags), structure words only, the signal-language check (call words found,
+  structure words pass, contract withholds); vitest for every result block and the guard; Playwright for the strikes
+  block, the flag off, and the PDF print (what the frame would print); the baselines updated.
 - **PR-B / PR-C**: field correction; match succeeds / fails; no broker and no stored data gives the right prompt; the
   checklist matches the reader evidence.

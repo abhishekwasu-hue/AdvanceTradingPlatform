@@ -1,19 +1,20 @@
 import { pageFromPath } from "../routes";
-import { MARKETS_ADDRESS, SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, needsBrokerGate, routerPath } from "./aliases";
+import { MARKETS_ADDRESS, SETUP_ADDRESS, TRADING_DEFAULTS_ADDRESS, V2_ALIASES, V2_RETIRED_ALIASES, needsBrokerGate, routerPath } from "./aliases";
 import { navItemFor, type ShellKey } from "./navModel";
 import { settingsSectionAt } from "../settings/paths";
 import { IDEAS_ADDRESS } from "../ideas/model";
 
-export { V2_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
+export { V2_ALIASES, V2_RETIRED_ALIASES, flagOffFallback, needsBrokerGate, routerPath } from "./aliases";
 
 /**
  * UI2-1 (UI v2 proposal §2 "Standalone and special routes", §12 UI2-1): the v2 shell's addresses. All of this applies
  * only while `ui_v2` is on; with the flag off the app keeps today's router untouched.
  *
  * - `/charts` and `/charts/:symbol`: the new Charts page (it wraps today's chart for now; UI2-4 rebuilds it).
- * - The merged pages' new addresses (§3 M1, M2, M3, M4) show today's page until UI2-8 adds the tabs:
- *   `/screener/custom` (Market scanner), `/option-chain/plan` (Options builder), `/journal/coach` (Coach and guide),
- *   `/settings/account` (Account, signed in).
+ * - The merged pages' new addresses (§3 M1, M2, M4) show today's page: `/screener/custom` (Market scanner),
+ *   `/option-chain/plan` (Options builder), `/settings/account` (Account, signed in).
+ * - UX3-9 (UX audit section 5): the tabs of My trades (`/positions/orders`, `/positions/money`), Strategies
+ *   (`/strategies/build`, `/strategies/test`) and Performance (`/analytics/journal`, `/analytics/coach`).
  * - The old addresses forward there (§2: "Redirect to their new tabs while ui_v2 is on").
  */
 
@@ -62,6 +63,8 @@ export function shellKeyFromPath(pathname: string): ShellKey | null {
   if (section) return section.key;
   const alias = V2_ALIASES.find((a) => a.path === clean(pathname));
   if (alias) return alias.page;
+  const retired = V2_RETIRED_ALIASES.find((a) => a.path === clean(pathname));
+  if (retired) return shellKeyFromPath(retired.now);
   return pageFromPath(pathname);
 }
 
@@ -79,15 +82,16 @@ export interface RedirectContext {
 
 /**
  * Where an old address forwards while `ui_v2` is on (the query string is kept), or null to stay. Never called with
- * the flag off. `/coach` moves under Journal only while Journal exists (flag `discipline_engine`); `/account` moves to
- * Settings only for a signed-in trader, and never with a verify / reset / invite link (that page handles those).
+ * the flag off. `/account` moves to Settings only for a signed-in trader, and never with a verify / reset / invite link
+ * (that page handles those). UX3-9: the merged pages' old addresses go to their tabs (`/orders` -> My trades › Orders);
+ * a tab whose feature is off says "Coming soon" there, as its old address did.
  */
 export function v2RedirectFor(pathname: string, search: string, ctx: RedirectContext): string | null {
   const p = clean(pathname);
   const keep = search && search !== "?" ? (search.startsWith("?") ? search : `?${search}`) : "";
-  if (p === "/scanner") return `/screener/custom${keep}`;
-  if (p === "/options-builder") return `/option-chain/plan${keep}`;
-  if (p === "/coach" && ctx.on("discipline_engine")) return `/journal/coach${keep}`;
+  const merged = V2_ALIASES.find((a) => a.old === p && a.page !== "account")
+    ?? V2_RETIRED_ALIASES.find((a) => a.path === p);
+  if (merged) return `${"now" in merged ? merged.now : merged.path}${keep}`;
   if (p === "/account" && ctx.signedIn) {
     const params = new URLSearchParams(search);
     if (params.has("invite") || params.has("reset") || params.has("verify")) return null;
@@ -98,7 +102,8 @@ export function v2RedirectFor(pathname: string, search: string, ctx: RedirectCon
 
 /** True when the v2 shell puts the broker gate in front of this address (src/ui/dataPages.ts, owner brief: no sample
  * data). `/charts/<symbol>`, `/screener/custom` and `/option-chain/plan` are sub-paths of data pages, so they are gated
- * too; `/journal/coach` and `/settings/account` are not data pages. */
+ * too, and so are `/positions/money` (the portfolio) and `/strategies/test` (backtests); `/positions/orders`,
+ * `/strategies/build`, `/analytics/*` and `/settings/account` are not data pages. */
 export function isGatedPath(pathname: string): boolean {
   return needsBrokerGate(pathname);
 }

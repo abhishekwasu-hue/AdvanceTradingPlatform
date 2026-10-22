@@ -78,7 +78,7 @@ const PAGES: Record<TourId, { path: string; mocks: (page: Page) => Promise<void>
     await mockCharts(page);
   } },
   positions: { path: "/positions", mocks: async (page) => { await tradingPage(page); } },
-  portfolio: { path: "/portfolio", mocks: async (page) => { await tradingPage(page); } },
+  portfolio: { path: "/positions/money", mocks: async (page) => { await tradingPage(page); } },
   risk: { path: "/risk-management", mocks: async (page) => { await tradingPage(page); } },
   settings: { path: "/settings", mocks: async (page) => { await mockApi(page, { features: { ui_v2: true }, brokers: CONNECTED }); } },
   copilot: { path: "/copilot", mocks: async (page) => {

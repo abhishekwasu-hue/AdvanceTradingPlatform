@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { PAGES } from "../routes";
 import {
   BOTTOM_BAR_V2, NAV_EXTRAS_V2, NAV_PINNED_V2, NAV_SECTIONS_V2, allNavItems, isItemVisible, moreButtonDot, moreSheetPinned,
-  moreSheetSections, navDotFor, navItemFor, searchPages, sectionOf, visibleSections, visiblePinned, type NavContext,
+  moreSheetSections, navDotFor, navEntryFor, navItemFor, searchPages, sectionOf, visibleSections, visiblePinned, type NavContext,
 } from "./navModel";
 import { brokerDot } from "../broker/brokerState";
 import type { BrokerConnection } from "../types";
@@ -15,24 +15,36 @@ const everything: NavContext = { on: flags("ai_copilot", "discipline_engine", "m
 const withScreener: NavContext = { on: flags("screener_v2"), role: "OWNER" };
 const labels = (ctx: NavContext) => visibleSections(ctx).map((s) => [s.title, s.items.map((i) => i.label)]);
 
-describe("UI2-1 navigation model: sections (proposal §2)", () => {
-  // Ideas: idea library slice 1; MO4 slice 2: Markets holds "Sectors & indices" too (shown only while `markets_view` is on).
-  it("has the five sections plus More, in order, with 5 / 6 / 5 / 4 / 3 items - 23 primary items", () => {
-    expect(NAV_SECTIONS_V2.map((s) => s.title)).toEqual(["Markets", "Strategies", "Trading", "Insights", "Account", "More"]);
-    expect(NAV_SECTIONS_V2.slice(0, 5).map((s) => s.items.length)).toEqual([5, 6, 5, 4, 3]);
-    expect(NAV_SECTIONS_V2.slice(0, 5).flatMap((s) => s.items)).toHaveLength(23);
-    expect(NAV_SECTIONS_V2[5].items.map((i) => i.label)).toEqual(["Factor Lab", "Contract specs", "Marketplace", "Activity log", "Admin console"]);
+describe("UX3-9 navigation model: the 13-entry sidebar (UX audit section 5)", () => {
+  const entries = (ctx: NavContext) => [...visiblePinned(ctx), ...visibleSections(ctx).flatMap((s) => s.items)].map((i) => i.label);
+
+  it("lists the audit's 13 entries in task order, Broker first", () => {
+    expect(entries({ on: flags("ai_copilot", "screener_v2"), role: "OWNER" })).toEqual([
+      "Broker", "Today", "Charts", "Option chain", "Find setups", "Signals", "Paper bot", "My trades", "Performance",
+      "Strategies", "AI Copilot", "News & events", "Settings",
+    ]);
   });
 
-  it("uses the plain-language labels (§3 renames) and puts Signals in Trading (UI-2)", () => {
+  it("groups them for the More sheet and search captions; the admin area is its own group", () => {
     expect(labels(everything)).toEqual([
-      ["Markets", ["Dashboard", "Charts", "Option chain", "Find setups"]],
-      ["Strategies", ["Library", "Build a strategy", "Test a strategy", "AI Copilot", "Paper bot"]],
-      ["Trading", ["Signals", "My positions", "Orders", "Portfolio", "Risk"]],
-      ["Insights", ["Performance", "Journal", "News & events", "Company research"]],
-      ["Account", ["Settings", "Team", "Notifications"]],
-      ["More", ["Factor Lab", "Contract specs", "Marketplace", "Activity log", "Admin console"]],
+      ["Markets", ["Today", "Charts", "Option chain", "Find setups"]],
+      ["Trading", ["Signals", "Paper bot", "My trades"]],
+      ["Insights", ["Performance", "Strategies", "AI Copilot", "News & events"]],
+      ["Account", ["Settings"]],
+      ["Admin", ["Admin console"]],
     ]);
+    // MO4 slice 2: Sectors & indices sits with the markets pages while `markets_view` is on.
+    expect(entries({ on: flags("markets_view"), role: "OWNER" }).slice(0, 5)).toEqual(["Broker", "Today", "Charts", "Option chain", "Sectors & indices"]);
+  });
+
+  it("a trader with no feature on sees 10 entries; nothing technical", () => {
+    expect(entries(trader)).toEqual([
+      "Broker", "Today", "Charts", "Option chain", "Signals", "Paper bot", "My trades", "Performance", "Strategies",
+      "News & events", "Settings",
+    ].filter(Boolean));
+    for (const gone of ["Factor Lab", "Contract specs", "Activity log", "Company research", "Team", "Notifications", "Risk", "Orders", "Portfolio"]) {
+      expect(entries(everything), gone).not.toContain(gone);
+    }
   });
 
   it("leaves no page unreachable: every routed page is a sidebar item or a searchable extra", () => {
@@ -45,30 +57,47 @@ describe("UI2-1 navigation model: sections (proposal §2)", () => {
   it("every entry's address opens that entry in the v2 shell", () => {
     for (const it of allNavItems()) {
       const key = shellKeyFromPath(it.path);
-      // /coach is Coach and guide; /copilot opens the Copilot's default tab.
       expect(key, it.path).toBe(it.key);
     }
   });
 
-  it("finds the section of the page on screen", () => {
+  it("finds the group of the page on screen", () => {
     expect(sectionOf("dashboard")).toBe("markets");
     expect(sectionOf("charts")).toBe("markets");
     expect(sectionOf("signals")).toBe("trading");
-    expect(sectionOf("admin")).toBe("more");
-    expect(sectionOf("scanner")).toBe("markets");          // an extra keeps its future section
+    expect(sectionOf("admin")).toBe("admin");
+    expect(sectionOf("scanner")).toBe("markets");          // an extra keeps its caption
+    expect(sectionOf("backtest")).toBe("strategies");
     expect(sectionOf(null)).toBeNull();
     expect(navItemFor("analytics")?.title).toBe("How am I doing?");
+  });
+
+  it("a merged page's tabs and Settings' sub-pages belong to their entry", () => {
+    expect(["orders", "portfolio", "positions"].map((k) => navEntryFor(k as never))).toEqual(["positions", "positions", "positions"]);
+    expect(["ideas", "strategy-builder", "backtest"].map((k) => navEntryFor(k as never))).toEqual(["strategies", "strategies", "strategies"]);
+    expect(["journal", "coach"].map((k) => navEntryFor(k as never))).toEqual(["analytics", "analytics"]);
+    expect(["risk-management", "team", "account", "setup", "settings-alerts"].map((k) => navEntryFor(k as never))).toEqual(
+      ["settings", "settings", "settings", "settings", "settings"]);
+    expect(navEntryFor("signals")).toBe("signals");
+    expect(navEntryFor(null)).toBeNull();
+    // Every entry they point at is a sidebar entry.
+    const sidebar = new Set(NAV_SECTIONS_V2.flatMap((s) => s.items.map((i) => i.key)));
+    for (const it of allNavItems()) expect(it.key === "broker" || sidebar.has(navEntryFor(it.key)!) || NAV_EXTRAS_V2.includes(it as never), it.key).toBe(true);
+    // One title per merged page: the tab bar names the tab.
+    expect(["positions", "orders", "portfolio"].map((k) => navItemFor(k as never)?.title)).toEqual(["My trades", "My trades", "My trades"]);
+    expect(["strategies", "ideas", "strategy-builder", "backtest"].map((k) => navItemFor(k as never)?.title)).toEqual(Array(4).fill("Strategies"));
+    expect(["analytics", "journal", "coach"].map((k) => navItemFor(k as never)?.title)).toEqual(Array(3).fill("How am I doing?"));
   });
 });
 
 describe("UI2-1 navigation model: what a trader may see", () => {
   it("hides a page while its feature flag is off (fail closed: unknown is off)", () => {
-    const shown = visibleSections(trader).flatMap((s) => s.items.map((i) => i.label));
-    for (const hidden of ["AI Copilot", "Journal", "Marketplace"]) expect(shown, hidden).not.toContain(hidden);
-    for (const always of ["Dashboard", "Charts", "Signals", "My positions", "Factor Lab", "Contract specs", "Activity log", "Team"]) {
+    const shown = allNavItems().filter((i) => isItemVisible(i, trader)).map((i) => i.label);
+    for (const hidden of ["AI Copilot", "Journal", "Marketplace", "Find setups", "Sectors & indices", "Ideas"]) expect(shown, hidden).not.toContain(hidden);
+    for (const always of ["Today", "Charts", "Signals", "My trades", "Factor Lab", "Contract specs", "Activity log", "Team"]) {
       expect(shown, always).toContain(always);
     }
-    const withJournal = visibleSections({ ...trader, on: flags("discipline_engine") }).flatMap((s) => s.items.map((i) => i.label));
+    const withJournal = allNavItems().filter((i) => isItemVisible(i, { ...trader, on: flags("discipline_engine") })).map((i) => i.label);
     expect(withJournal).toContain("Journal");
     expect(withJournal).not.toContain("AI Copilot");
   });
@@ -83,28 +112,30 @@ describe("UI2-1 navigation model: what a trader may see", () => {
   });
 
   it("drops a section left empty", () => {
-    const sections = visibleSections(trader, [{ id: "more", title: "More", items: [NAV_SECTIONS_V2[5].items[4]] }]);
-    expect(sections).toEqual([]);
+    const admin = NAV_SECTIONS_V2.find((s) => s.id === "admin")!;
+    expect(visibleSections(trader, [admin])).toEqual([]);
   });
 });
 
-describe("UI2-1 bottom bar and More sheet (proposal §4)", () => {
-  it("the bar is Home, Charts, Signals, Positions (More is the fifth button)", () => {
-    expect(BOTTOM_BAR_V2.map((b) => b.label)).toEqual(["Home", "Charts", "Signals", "Positions"]);
+describe("UX3-9 bottom bar and More sheet (UX audit section 5)", () => {
+  it("the bar is Today, Charts, Signals, My trades (More is the fifth button)", () => {
+    expect(BOTTOM_BAR_V2.map((b) => b.label)).toEqual(["Today", "Charts", "Signals", "My trades"]);
     expect(BOTTOM_BAR_V2.map((b) => navItemFor(b.key)?.path)).toEqual(["/", "/charts", "/signals", "/positions"]);
   });
 
-  it("the sheet lists every other visible page, grouped by section, Markets first and More last", () => {
+  it("the sheet lists every other sidebar entry, grouped, Markets first and Admin last", () => {
     const sheet = moreSheetSections(trader);
-    expect(sheet.map((s) => s.title)).toEqual(["Markets", "Strategies", "Trading", "Insights", "Account", "More"]);
+    expect(sheet.map((s) => s.title)).toEqual(["Markets", "Trading", "Insights", "Account"]);
     expect(sheet[0].items.map((i) => i.label)).toEqual(["Option chain"]);                    // screener_v2 off
     expect(moreSheetSections(withScreener)[0].items.map((i) => i.label)).toEqual(["Option chain", "Find setups"]);
-    expect(sheet[2].items.map((i) => i.label)).toEqual(["Orders", "Portfolio", "Risk"]);
+    expect(sheet[1].items.map((i) => i.label)).toEqual(["Paper bot"]);
+    expect(sheet[2].items.map((i) => i.label)).toEqual(["Performance", "Strategies", "News & events"]);
     const all = sheet.flatMap((s) => s.items.map((i) => i.key));
     for (const inBar of BOTTOM_BAR_V2) expect(all).not.toContain(inBar.key);
     expect(all).not.toContain("admin");
     const withOperator = moreSheetSections(everything);
-    expect(withOperator[withOperator.length - 1].items.map((i) => i.label)).toContain("Admin console");
+    expect(withOperator[withOperator.length - 1]).toMatchObject({ title: "Admin" });
+    expect(withOperator[withOperator.length - 1].items.map((i) => i.label)).toEqual(["Admin console"]);
   });
 });
 
@@ -115,8 +146,10 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
     expect(find("find", withScreener)[0]).toBe("Find setups");
     expect(find("screener", withScreener)[0]).toBe("Find setups");    // today's name
     expect(find("find setups")).not.toContain("Find setups");          // UX1: hidden while screener_v2 is off
-    expect(find("backtesting")).toEqual(["Test a strategy"]);
-    expect(find("how am i")).toEqual(["Performance"]);                 // the page title
+    expect(find("backtesting")).toEqual(["Test a strategy"]);       // a merged page's tab is still found by its old name
+    expect(find("portfolio")).toEqual(["Money"]);
+    expect(find("orders")[0]).toBe("Orders");
+    expect(find("how am i")).toEqual(["Performance", "Coach"]);        // the page title (Performance and its tabs)
     expect(find("market scanner")).toEqual(["Custom scan"]);           // an extra (merged page)
     expect(find("option chain")[0]).toBe("Option chain");
     expect(find("  OPTION   chain ")[0]).toBe("Option chain");
@@ -125,9 +158,10 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
 
   it("ranks a label that starts with the query first", () => {
     const p = find("p");
-    expect(p.indexOf("Portfolio")).toBeLessThan(p.indexOf("My positions"));   // label start before a later word
-    expect(find("port")[0]).toBe("Portfolio");
-    expect(find("risk")[0]).toBe("Risk");
+    expect(p.indexOf("Paper bot")).toBeLessThan(p.indexOf("My trades"));      // label start before a keyword
+    expect(p.indexOf("Performance")).toBeLessThan(p.indexOf("Money"));        // label start before a keyword
+    expect(find("my t")[0]).toBe("My trades");
+    expect(find("risk")[0]).toBe("Risk limits");
   });
 
   it("never offers a hidden page", () => {
@@ -145,11 +179,17 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
 
   it("the merged pages' extras live at their new addresses", () => {
     expect(NAV_EXTRAS_V2.map((e) => [e.key, e.path])).toEqual([
-      ["scanner", "/screener/custom"], ["options-builder", "/option-chain/plan"], ["chart-analyze", "/chart-analyze"], ["coach", "/coach"],
+      ["scanner", "/screener/custom"], ["options-builder", "/option-chain/plan"], ["chart-analyze", "/chart-analyze"],
+      // UX3-9: the merged pages' tabs.
+      ["orders", "/positions/orders"], ["portfolio", "/positions/money"], ["ideas", "/ideas"], ["strategy-builder", "/strategies/build"],
+      ["backtest", "/strategies/test"], ["journal", "/analytics/journal"], ["coach", "/analytics/coach"], ["fundamentals", "/fundamentals"],
+      ["risk-management", "/risk-management"], ["team", "/team"], ["notifications", "/notifications"],
       ["account", "/settings/account"], ["setup", "/settings/setup"], ["trading-defaults", "/settings/trading-defaults"],
       // Settings redesign B: the Settings section pages.
       ["settings-ai", "/settings/ai"], ["settings-alerts", "/settings/alerts"], ["settings-appearance", "/settings/appearance"],
       ["settings-help", "/settings/help"], ["settings-advanced", "/settings/advanced"],
+      // UX audit section 5 "Drop from the user navigation": found by search.
+      ["quant", "/quant"], ["instruments", "/instruments"], ["marketplace", "/marketplace"], ["system-logs", "/system-logs"],
     ]);
   });
 

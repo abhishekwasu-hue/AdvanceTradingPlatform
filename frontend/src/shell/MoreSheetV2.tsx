@@ -8,11 +8,12 @@ import { MORE_SHEET_ID } from "./BottomNavV2";
 import { useReturnFocus } from "./returnFocus";
 import { StatusDot } from "../broker/marks";
 import type { BrokerDot } from "../broker/brokerState";
-import { moreSheetPinned, moreSheetSections, navDotFor, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
+import { moreSheetPinned, moreSheetSections, navDotFor, navEntryFor, searchPages, sectionTitle, type NavContext, type NavItemV2, type NavSectionV2, type SectionId, type ShellKey } from "./navModel";
 
 /**
  * UI2-1 (UI v2 proposal §4, mockup nav-bottom-mobile "More opens a sheet"): the phone's More sheet. A search box, then
- * every page that is not in the bottom bar, grouped by the same sections as the sidebar (Markets first, More last).
+ * every sidebar entry that is not in the bottom bar, grouped (Markets first, Admin last; the sidebar shows the same
+ * entries as one flat list).
  * Typing searches every page the trader may see, today's names included ("Screener" finds Find setups). Tiles are
  * 44 px tall at least. Below the pages: install the app (always says why when it cannot), help, feedback and the theme.
  */
@@ -37,7 +38,8 @@ export function moreSheetResults(ctx: NavContext, query: string):
 
 function Tile({ item, current, onPick, caption, dot = null }: { item: NavItemV2; current: ShellKey | null; onPick: () => void; caption?: string; dot?: BrokerDot | null }) {
   const Icon = item.icon;
-  const active = current === item.key;
+  // UX3-9: a Settings sub-page lights up Settings, a merged page's tab its entry (navEntryFor).
+  const active = current === item.key || navEntryFor(current) === item.key;
   return (
     <Link to={item.path} onClick={onPick} aria-current={active ? "page" : undefined}
       className={`flex min-h-11 items-center gap-space-2 rounded-control px-space-3 py-space-2 text-t14 font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand ${

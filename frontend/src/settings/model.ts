@@ -14,7 +14,7 @@ import { SETTINGS_PATH } from "./paths";
  * settings.test.tsx); the page is SettingsIndexV2.tsx.
  */
 
-export type RowId = "account" | "broker" | "ai" | "alerts" | "defaults" | "appearance" | "help" | "setup" | "advanced";
+export type RowId = "account" | "team" | "broker" | "ai" | "alerts" | "defaults" | "risk" | "appearance" | "help" | "setup" | "advanced";
 
 export interface SettingsRow {
   id: RowId;
@@ -29,11 +29,14 @@ export interface SettingsRow {
 
 export const SETTINGS_ROWS: readonly SettingsRow[] = [
   { id: "account", name: "Account & plan", to: "/settings/account", keywords: ["profile", "email", "password", "two-factor", "sessions", "plan", "billing", "subscription", "invoice"] },
+  // UX3-9 (UX audit section 5): Team and Risk limits left the sidebar; Settings holds them (same pages, same addresses).
+  { id: "team", name: "Team", to: "/team", keywords: ["members", "invite", "roles"] },
   { id: "broker", name: "Broker", to: BROKER_PATH, keywords: ["upstox", "zerodha", "connect broker", "renew", "login", "token"] },
   { id: "ai", name: "AI", to: SETTINGS_PATH.ai, tour: "settings-ai", keywords: ["ai key", "api key", "connect ai", "claude", "openai", "gemini", "copilot", "ai limits", "spend"] },
   { id: "alerts", name: "Alerts", to: SETTINGS_PATH.alerts, tour: "settings-alerts", keywords: ["telegram", "notifications", "email", "sms", "whatsapp", "push", "phone"] },
   // Part C: the user's own starting values for new paper bots and chain tickets (a pre-fill, never a rule).
   { id: "defaults", name: "My trading defaults", to: "/settings/trading-defaults", keywords: ["defaults", "lots", "exits", "presets"] },
+  { id: "risk", name: "Risk limits", to: "/risk-management", keywords: ["risk", "daily loss", "loss limit", "limits", "max positions"] },
   { id: "appearance", name: "Appearance", to: SETTINGS_PATH.appearance, tour: "settings-appearance", keywords: ["theme", "dark", "light", "text size", "font", "colour-blind", "color blind", "reduce motion"] },
   { id: "help", name: "Help & tips", to: SETTINGS_PATH.help, tour: "settings-help", keywords: ["tips", "tours", "get started", "guide"] },
   { id: "setup", name: "Set up your account", to: "/settings/setup", keywords: ["setup", "setup wizard", "steps"] },

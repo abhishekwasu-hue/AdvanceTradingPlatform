@@ -92,17 +92,21 @@ export const TABS: readonly { id: FeedTab; label: string; short: string }[] = [
 
 export const SOURCES: readonly { id: FeedSource; label: string }[] = [
   { id: "all", label: "All sources" },
-  { id: "autopilot", label: "Autopilot" },
+  { id: "autopilot", label: "Paper bots" },
   { id: "scan", label: "Scans" },
   { id: "copilot", label: "Copilot" },
 ];
 
-const KIND_LABEL: Record<SignalKind, string> = { autopilot: "Autopilot", scan: "Scan", copilot: "Copilot", library: "Signal generator" };
+const KIND_LABEL: Record<SignalKind, string> = { autopilot: "Paper bot", scan: "Scan", copilot: "Copilot", library: "Signal generator" };
 
-/** "Autopilot · Deployment #4", "Scan · Gap scan", "Signal generator" - the caption under the setup. */
+/** An internal bot number ("Deployment #4"): never shown (UX audit P09); the setup line already names the strategy. */
+const INTERNAL_NAME = /^deployment\s*#?\s*\d+$/i;
+
+/** "Paper bot", "Scan · Gap scan", "Signal generator" - the caption under the setup. */
 export function sourceCaption(item: Pick<SignalFeedItem, "source">): string {
   const kind = KIND_LABEL[item.source.kind] ?? item.source.kind;
-  const name = item.source.name?.trim();
+  const raw = item.source.name?.trim();
+  const name = raw && INTERNAL_NAME.test(raw) ? "" : raw;
   // "Scan setup" under Scan says nothing new: the kind alone.
   return name && !name.toLowerCase().startsWith(kind.toLowerCase()) ? `${kind} · ${name}` : kind;
 }

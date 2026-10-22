@@ -360,10 +360,15 @@ describe("OC1 phone layout", () => {
     }
   });
 
-  it("the summary is a strip that swipes sideways on a phone and a grid from md", () => {
+  it("UX3: the summary is two rows of two on a phone (the rest under More), never sideways; one row from md", () => {
     const html = renderToStaticMarkup(<SummaryStripV2 summary={liveChain().summary} expiry="2026-11-03" loading={false} />);
-    expect(html).toMatch(/class="[^"]*flex snap-x snap-mandatory[^"]*overflow-x-auto[^"]*md:grid/);
-    expect(html.match(/snap-start/g)).toHaveLength(7);
+    expect(html).toMatch(/aria-label="Summary"[^>]*class="grid grid-cols-2[^"]*md:grid-cols-4[^"]*xl:grid-cols-7"/);
+    expect(html).not.toMatch(/overflow-x-auto|snap-x/);
+    const order = [...html.matchAll(/data-summary="([a-z-]+)"/g)].map((m) => m[1]);
+    expect(order.slice(0, 4)).toEqual(["spot", "atm", "pcr", "max-pain"]);
+    for (const key of ["futures", "atm-iv", "dte"]) expect(html).toMatch(new RegExp(`data-summary="${key}"[^>]*class="[^"]*hidden md:block`));
+    expect(html).toMatch(/data-summary="futures"[^>]*md:order-2/);                       // the server's order from md
+    expect(html).toContain("More: futures, IV, days to expiry");
     expect(stripSource).toContain("<TermHint term={c.term} floating");      // a hint inside the strip is not cut off
   });
 });

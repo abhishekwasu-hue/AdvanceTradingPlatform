@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import { Database, FlaskConical } from "lucide-react";
+import { Link } from "react-router";
+import { Database, FlaskConical, Plug } from "lucide-react";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import type { CandleSource, DataTierBadgeInfo, OHLCVBar, OptionChain } from "../types";
 import { DataTierBadge } from "./DataTierBadge";
+import { useFeatures } from "../ui/useFeatures";
 import { generateSampleCandles } from "../utils/sampleData";
 
 /** Phase AA: one switch for every research page - deterministic sample candles, or the tenant's
@@ -11,6 +13,19 @@ import { generateSampleCandles } from "../utils/sampleData";
  * choice and does the fetching; the bar renders it. Sample mode never touches the network. */
 
 export type CandleMode = "sample" | "broker";
+
+/**
+ * UX3 fix 7 (UX audit §1 problem 6, U4 "no sample data"): with `ui_v2` on, sample candles are a testing tool for the
+ * platform admin only. Everyone else runs on their broker's prices: the bar shows no Sample switch and no developer
+ * text, the broker is picked by itself, and without a usable broker a run stops with this one sentence (the bar says
+ * the same, with a link to the Broker page). With the flag off nothing changes.
+ */
+export const NEEDS_BROKER_FOR_DATA = "Connect your broker on the Broker page to run this on real prices.";
+
+/** True when this user must not get sample data: `ui_v2` on and not the platform admin. */
+export function sampleHiddenFor(uiV2: boolean, role: string | null | undefined): boolean {
+  return uiV2 && role !== "SUPER_ADMIN";
+}
 
 export interface FetchedCandles {
   candles: Record<string, OHLCVBar[]>;
@@ -33,6 +48,8 @@ export interface CandleSourceState {
   fetch: (symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (symbol: string) => number; seedFor?: (symbol: string) => number; daily?: boolean }) => Promise<FetchedCandles>;
   /** BT1 (flag byob_data_tier): the data tier of the last broker fetch; undefined with the flag off or in sample mode. */
   dataTier?: DataTierBadgeInfo;
+  /** UX3 fix 7: no sample data for this user (sampleHiddenFor). */
+  sampleHidden?: boolean;
   /** Phase AD: the broker's live option chains in broker mode; `sampleFor` builds the sample chain otherwise. */
   fetchChains: (underlyings: string[], sampleFor: (symbol: string) => OptionChain, expiry?: string) => Promise<{ chains: Record<string, OptionChain>; warnings: string[] }>;
 }
@@ -45,6 +62,8 @@ export function hashSymbol(symbol: string): number {
 
 export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
   const { user } = useAuth();
+  const features = useFeatures();
+  const sampleHidden = sampleHiddenFor(features.on("ui_v2"), user?.role);
   const [mode, setMode] = useState<CandleMode>("sample");
   const [broker, setBroker] = useState("");
   const [lookbackDays, setLookbackDays] = useState(defaultLookbackDays);
@@ -69,10 +88,13 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
   }, [user]);
 
   const usable = sources.some((s) => s.usable);
+  // UX3 fix 7: a user without sample data runs on the broker as soon as one is usable.
+  useEffect(() => { if (sampleHidden && usable && mode === "sample") setMode("broker"); }, [sampleHidden, usable, mode]);
   const label = mode === "broker" ? `broker:${broker || "auto"}` : "sample";
 
   async function fetch(symbols: string[], timeframe: string, sample?: { count?: number; startPriceFor?: (s: string) => number; seedFor?: (s: string) => number; daily?: boolean }): Promise<FetchedCandles> {
     const clean = Array.from(new Set(symbols.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+    if (mode === "sample" && sampleHidden) throw new Error(NEEDS_BROKER_FOR_DATA);
     if (mode === "sample") {
       const candles: Record<string, OHLCVBar[]> = {};
       for (const s of clean) {
@@ -101,6 +123,7 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
 
   async function fetchChains(underlyings: string[], sampleFor: (symbol: string) => OptionChain, expiry?: string) {
     const clean = Array.from(new Set(underlyings.map((s) => s.trim().toUpperCase()).filter(Boolean)));
+    if (mode === "sample" && sampleHidden) throw new Error(NEEDS_BROKER_FOR_DATA);
     if (mode === "sample") {
       return { chains: Object.fromEntries(clean.map((s) => [s, sampleFor(s)])), warnings: [] as string[] };
     }
@@ -120,12 +143,46 @@ export function useCandleSource(defaultLookbackDays = 5): CandleSourceState {
     }
   }
 
-  return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch, fetchChains,
+  return { mode, setMode, broker, setBroker, lookbackDays, setLookbackDays, sources, usable, loading, label, fetch, fetchChains, sampleHidden,
            dataTier: mode === "broker" ? dataTier : undefined };
+}
+
+/** UX3 fix 7: the bar a user without sample data sees - where the prices come from, in plain words. */
+export function PlainDataSourceBar({ source }: { source: CandleSourceState }) {
+  const usable = source.sources.filter((s) => s.usable);
+  if (!source.usable) {
+    return (
+      <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg" data-plain-data-source="no-broker">
+        <Plug size={16} aria-hidden className="shrink-0 text-fg-muted" />
+        <span className="min-w-0 flex-1">{NEEDS_BROKER_FOR_DATA}</span>
+        <Link to="/broker" className="inline-flex min-h-11 items-center font-semibold text-brand hover:underline md:min-h-0">Open Broker</Link>
+      </div>
+    );
+  }
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-border bg-surface-1 px-3 py-2 text-sm text-fg" data-plain-data-source="broker">
+      <Database size={16} aria-hidden className="shrink-0 text-fg-muted" />
+      <span>Prices from your broker</span>
+      {usable.length > 1 && (
+        <label className="flex items-center gap-1 text-fg-muted">
+          <span className="sr-only">Broker</span>
+          <select value={source.broker} onChange={(e) => source.setBroker(e.target.value)} className="rounded border border-border bg-surface-2 px-2 py-0.5 text-fg">
+            {usable.map((s) => <option key={`${s.broker}:${s.account_label}`} value={s.broker}>{s.broker} ({s.account_label})</option>)}
+          </select>
+        </label>
+      )}
+      <label className="flex items-center gap-1 text-fg-muted">History
+        <input type="number" min={1} max={730} value={source.lookbackDays} onChange={(e) => source.setLookbackDays(Math.max(1, Number(e.target.value) || 1))}
+          className="w-16 rounded border border-border bg-surface-2 px-1 py-0.5 text-fg" /> days
+      </label>
+      {source.loading && <span className="text-fg-muted">Loading prices…</span>}
+    </div>
+  );
 }
 
 export function DataSourceBar({ source, note }: { source: CandleSourceState; note?: string }) {
   const { user } = useAuth();
+  if (source.sampleHidden) return <PlainDataSourceBar source={source} />;
   const brokerMode = source.mode === "broker";
   return (
     <div className={`mb-4 flex flex-wrap items-center gap-3 rounded-lg border px-3 py-2 text-xs ${brokerMode ? "border-info/30 bg-info/[0.06] text-info" : "border-warn/30 bg-warn/[0.07] text-warn"}`}>

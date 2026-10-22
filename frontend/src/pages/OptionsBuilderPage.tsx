@@ -26,6 +26,7 @@ import {
 import { PayoffCanvas } from "../optionsBuilder/PayoffCanvas";
 import { SaveDialog, savedAvailability, type SavedState } from "../optionsBuilder/SaveDialog";
 import { TemplateGallery } from "../optionsBuilder/TemplateGallery";
+import { takeHandoff } from "../fno/basketModel";
 import { useMediaQuery } from "../utils/useMediaQuery";
 
 /** Desktop layout (legs left, numbers right) from Tailwind's lg breakpoint. */
@@ -95,6 +96,19 @@ export default function OptionsBuilderPage(_props: PageProps) {
   const ready = spot != null && step != null && lotSize != null && width != null && iv != null && !!nearExpiry;
   const nearest = legs.length ? legs.map((l) => l.expiry).sort()[0] : nearExpiry;
   const maxDays = nearest ? daysBetween(asOf, nearest) : 0;
+
+  // FNO-2: "Open in Options Builder" on the basket panel hands its legs over once (src/fno/basketModel.ts).
+  useEffect(() => {
+    const h = takeHandoff();
+    if (!h) return;
+    setUnderlying(h.underlying);
+    setSpotText(String(h.spot));
+    if (h.step) setStepText(String(h.step));
+    setLotText(String(h.lot_size));
+    setNearExpiry(h.near_expiry);
+    setNextExpiry(h.next_expiry ?? "");
+    setLegs(h.legs.map((l) => ({ ...l, id: legId(), premium_source: "manual" as const })));
+  }, []);
 
   useEffect(() => {
     builderApi.catalog().then(setCatalog).catch((e: unknown) => setProblem(errorText(e)));

@@ -56,6 +56,7 @@ class Part:
     reads: str
     assumptions: List[str] = field(default_factory=list)
     span: Tuple[int, int] = (0, 0)
+    tf: str = ""                       # the chart the phrase named ("" = the scan's own timeframe)
 
     def as_dict(self) -> Dict[str, object]:
         return {"rule": self.rule, "phrase": self.phrase, "condition": self.condition, "reads": self.reads, "assumptions": list(self.assumptions)}
@@ -350,7 +351,7 @@ def read_idea(text: str, base_tf: str = "1d") -> Draft:
             taken.append(span)
             if any(p.condition == condition for p in parts):
                 continue
-            parts.append(Part(rule, re.sub(r"\s+", " ", m.group(0)).strip(), condition, reads, assumptions, span))
+            parts.append(Part(rule, re.sub(r"\s+", " ", m.group(0)).strip(), condition, reads, assumptions, span, tf or ""))
     parts.sort(key=lambda p: p.span[0])
     return Draft(parts, _leftovers(text, taken))
 

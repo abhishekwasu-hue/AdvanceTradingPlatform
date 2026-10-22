@@ -30,10 +30,24 @@ export interface IdeaPart {
   rule: string; phrase: string; condition: string; reads: string; assumptions: string[]; ok: boolean;
   problems: { kind: string; message: string; pos: number | null }[];
 }
+/** Handover 11j step 6: the plain feedback on one edit by chat ("drop the volume condition"). */
+export interface IdeaEdit {
+  edit: string; kind: "removed" | "added" | "replaced" | "timeframe" | "unchanged"; message: string; changed: boolean;
+  removed: string[]; added: string[];
+}
 export interface IdeaResponse {
   ok: boolean; text: string | null; base_tf: string; stages: StagesResponse["stages"]; parts: IdeaPart[];
   not_supported: { phrase: string; why: string }[]; disclaimer: string;
+  /** The feedback on each edit sent, in order (absent from servers before 11j step 6). */
+  edits?: IdeaEdit[];
 }
+
+/** S3a alert rules (POST /api/alerts/rules) as the Screener's "Tell me when it matches" reads them: screen rules only. */
+export interface ScanAlertRule {
+  id: number; name: string; kind: "screen" | "instrument"; screen_id: number | null; base_tf: string; status: "active" | "paused";
+  symbols?: string[]; fire_on?: "bar_close" | "intrabar";
+}
+export interface ScanAlertInput { name: string; screen_id: number; symbols: string[]; fire_on: "bar_close" | "intrabar" }
 
 export const screenerApi = {
   registry: () => request<{ version: string; timeframes: string[]; entries: Registry }>("/screener/registry"),
@@ -61,9 +75,20 @@ export const screenerApi = {
   /** S10 J (flag `screener_etf`; 503 while off - the page then shows no ETF button). */
   etf: (query: string) => request<EtfResponse>(`/screener/etf?${query}`),
   /** Handover 11j (flag `screener_copilot`; 404 / 503 while off): a plain idea -> a draft scan, part by part, as blocks. */
-  idea: (text: string, baseTf: string) =>
-    request<IdeaResponse>("/screener/copilot/idea", { method: "POST", body: JSON.stringify({ text, base_tf: baseTf }) }),
+  idea: (text: string, baseTf: string, edits: string[] = []) =>
+    request<IdeaResponse>("/screener/copilot/idea", { method: "POST",
+      body: JSON.stringify(edits.length ? { text, base_tf: baseTf, edits } : { text, base_tf: baseTf }) }),
   save: (name: string, source: string, baseTf: string, id?: number) =>
     request<SavedScreen>(id ? `/screener/screens/${id}` : "/screener/screens",
       { method: id ? "PUT" : "POST", body: JSON.stringify({ name, source, base_tf: baseTf }) }),
+};
+
+/** 11j step 7 "Tell me when it matches": the existing alert rules (S3a / S4a bar-close engine), screen rules only.
+ * A rule only notifies; it never places or changes an order. */
+export const scanAlertsApi = {
+  rules: () => request<ScanAlertRule[]>("/alerts/rules"),
+  create: (body: ScanAlertInput) =>
+    request<ScanAlertRule>("/alerts/rules", { method: "POST", body: JSON.stringify({
+      name: body.name, kind: "screen", screen_id: body.screen_id, symbols: body.symbols, fire_on: body.fire_on, mode: "instant", priority: "normal" }) }),
+  setStatus: (id: number, action: "pause" | "resume") => request<ScanAlertRule>(`/alerts/rules/${id}/${action}`, { method: "POST" }),
 };

@@ -16,7 +16,7 @@ import json
 import math
 import time
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 from fastapi import APIRouter, Depends, HTTPException
@@ -776,6 +776,9 @@ async def natural_language(body: NLBody, user: User = Depends(require_trader), s
 class IdeaBody(BaseModel):
     text: str = Field(min_length=3, max_length=1000, description="The scan idea in plain words")
     base_tf: str = Field(default="1d", pattern=r"^(1m|3m|5m|15m|30m|1h|1d|1w|1M)$")
+    # 11j step 6: the edits the user made by chat, in order ("drop the volume condition", "also RSI above 50"). The
+    # idea is replayed with them from the start, so a version is the idea plus its first n edits; nothing is stored.
+    edits: List[Annotated[str, Field(min_length=1, max_length=300)]] = Field(default_factory=list, max_length=20)
 
 
 @router.post("/copilot/idea")
@@ -786,14 +789,14 @@ async def idea_to_scan(body: IdeaBody, user: User = Depends(require_trader), ses
     The draft opens as editable blocks (`stages`, the shape of POST /stages). Nothing runs, nothing is stored. Flag
     `screener_copilot` (the plain-language screen box) on top of `screener_v2`."""
     from app.audit.log import write_audit_log
-    from app.screener import idea, nl
+    from app.screener import idea, idea_edits, nl
     from app.screener import stages as st
     await _flag(session, user)
     await require_flag(session, nl.FLAG, user.tenant_id)
-    draft = idea.read_idea(body.text.strip(), body.base_tf)
+    draft, base_tf, feedback = idea_edits.replay(body.text.strip(), body.base_tf, [e.strip() for e in body.edits])
     parts: List[Dict[str, Any]] = []
     for part in draft.parts:
-        ast, validated = _compiled(part.condition, body.base_tf, {})
+        ast, validated = _compiled(part.condition, base_tf, {})
         await _gate(session, user, ast, validated, {})
         problems = [nl.shown_problem(p) for p in validated.problems] if ast is None or not validated.ok else []
         parts.append({**part.as_dict(), "condition": nodes.to_text(ast) if ast is not None and not problems else part.condition,
@@ -802,7 +805,7 @@ async def idea_to_scan(body: IdeaBody, user: User = Depends(require_trader), ses
     text: Optional[str] = None
     stages: List[Dict[str, Any]] = []
     if usable:
-        ast, validated = _compiled(idea.joined(usable), body.base_tf, {})
+        ast, validated = _compiled(idea.joined(usable), base_tf, {})
         await _gate(session, user, ast, validated, {})
         if ast is not None and validated.ok:
             text, stages = nodes.to_text(ast), st.split(ast)
@@ -813,10 +816,10 @@ async def idea_to_scan(body: IdeaBody, user: User = Depends(require_trader), ses
                         {"kind": "unusable", "message": nl.UNUSABLE, "pos": None}]
     await write_audit_log(session, user.tenant_id, user.id, "screener_idea_drafted",
                           f"{sum(1 for p in parts if p['ok'])} of {len(parts)} parts usable, {len(draft.unsupported)} not supported, "
-                          f"from {len(body.text)} chars")
+                          f"from {len(body.text)} chars, {len(feedback)} edits ({sum(1 for f in feedback if f.changed)} changed it)")
     await session.commit()
-    return {"ok": text is not None, "text": text, "base_tf": body.base_tf, "stages": stages, "parts": parts,
-            "not_supported": draft.unsupported, "disclaimer": idea.DISCLAIMER}
+    return {"ok": text is not None, "text": text, "base_tf": base_tf, "stages": stages, "parts": parts,
+            "not_supported": draft.unsupported, "edits": [f.as_dict() for f in feedback], "disclaimer": idea.DISCLAIMER}
 
 
 @router.get("/runs/{run_id}")

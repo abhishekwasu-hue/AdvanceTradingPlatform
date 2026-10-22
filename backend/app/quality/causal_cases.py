@@ -205,7 +205,7 @@ SCREENQL_SERIES: Dict[str, List[str]] = {
     "GapType": ['GapType("down", "prev_day", 15)', 'GapType("up", "prev_day", 30)@15m'],
     # strategy templates TPL-8 (R2 for the gap family): the gap's prices on its signal bars (held_level forward)
     "GapBreakoutRef": ['GapBreakoutRef("level", "down", "prev_day", 15)', 'GapBreakoutRef("stop_level_atr", "down", "prev_day", 5, 1)',
-                       'GapBreakoutRef("held_level", "up", "prev_day", 30)@15m'],
+                       'GapBreakoutRef("held_level", "down", "prev_day", 15)@15m'],
     "RetestEntry": ['RetestEntry("down", "trendline", 20, FALSE)', 'RetestEntry("down", "donchian", 20, FALSE)', 'RetestEntry("up", "trendline", 20, TRUE)',
                     # wave templates R7: the retest of a broken wave line / wave end
                     'RetestEntry("up", "wave_line", 20, FALSE, 1, "channel_current", "A", 0)',

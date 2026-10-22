@@ -1,6 +1,7 @@
 import { CalendarDays, ChartColumn, Info, Table2, TriangleAlert } from "lucide-react";
 import { useId, useMemo, useState } from "react";
 import { useMarketStatus } from "../chart/useMarketStatus";
+import { useChainTrading } from "../fno/ChainTradingV2";
 import type { PageProps } from "../routes";
 import { cx } from "../components/primitives/cx";
 import { formatDateIST, formatTimeIST } from "../ui/format";
@@ -29,7 +30,9 @@ import { useOptionChain, type OptionChainData } from "./useOptionChain";
  * - "Chain | Charts" (OC5): the Charts view shows the chain's OI, PCR, max pain, straddle, IV and futures charts in
  *   place of the chain (ChartsViewV2.tsx), for the same symbol and expiry, refreshed with the chain.
  * - Below the chain: the Analysis tabs, Ask AI and My analyses (AnalysisSlotV2).
- * Shown only while `ui_v2` is on (src/shell/pagesV2.ts). Read-only: nothing here places an order.
+ * - FNO-1: with the PAPER account on, a call or put cell opens its actions and the PAPER order ticket, held contracts
+ *   show "P", and a bottom strip holds the key figures (src/fno/ChainTradingV2.tsx). The page itself places nothing.
+ * Shown only while `ui_v2` is on (src/shell/pagesV2.ts).
  */
 const SELECT = "h-11 w-full rounded-control border border-border bg-surface-2 px-space-3 text-t14 font-semibold text-fg focus:border-brand focus:outline-none focus:ring-1 focus:ring-brand md:h-9";
 
@@ -99,6 +102,7 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
     ? chain.expiries.expiries
     : chain.expiry ? [{ date: chain.expiry, kind: "weekly" as const }] : [];
   const pickedRow: ChainRow | null = live?.rows.find((r) => r.strike === picked) ?? null;
+  const trading = useChainTrading({ symbol, live, prefs, onPrefs, expiries: expiryOptions });
 
   return (
     <div className="space-y-space-4" data-page="option-chain-v2">
@@ -169,11 +173,14 @@ export function OptionChainView({ symbol, onSymbol, chain, marketOpen, prefs, on
               <span>Calls</span><span>Puts</span>
             </div>
             <ViewToggle view={view} onView={setView} className="absolute -top-space-5 left-1/2 z-10 -translate-x-1/2 md:-top-space-4" />
-            <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}`} onPick={(row) => setPicked(row.strike)} />
+            <ChainTableV2 live={live} prefs={prefs} centreKey={`${symbol}|${live.expiry ?? ""}${trading.centreSuffix}`} onPick={(row) => setPicked(row.strike)}
+              onPickLeg={trading.onPickLeg} held={trading.held} />
             {chain.problem && <p className="mt-space-2 text-t12 text-fg-muted">{TEXT.loadFailed}</p>}
           </>
         )}
+        {trading.strip}
       </section>}
+      {trading.layer}
 
       {/* OC4: the Analysis tabs, Ask AI and My analyses for the chain on screen. */}
       <AnalysisSlotV2 symbol={symbol} expiry={live?.expiry ?? chain.expiry} refreshKey={live?.fetched_at ?? null} />

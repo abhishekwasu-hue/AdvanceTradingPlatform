@@ -65,7 +65,8 @@ export function useChainTrading({ symbol, live, prefs, onPrefs, fno = fnoApi, ex
   const [note, setNote] = useState<Note>(null);
   const [recentre, setRecentre] = useState(0);
   const [round, setRound] = useState(0);
-  const [basketOpen, setBasketOpen] = useState(false);
+  // FNO-3: the futures chain's basket badge links here with `?basket=open`, so the legs it added open at once.
+  const [basketOpen, setBasketOpen] = useState(() => typeof window !== "undefined" && new URLSearchParams(window.location.search).get("basket") === "open");
   const legs = useBasket();
 
   const reloadHeld = useCallback(() => setRound((r) => r + 1), []);

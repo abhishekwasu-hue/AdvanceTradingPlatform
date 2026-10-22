@@ -1,5 +1,7 @@
 """FNO-2 (owner order ATP_SESSION_FNO_WORKSPACE.md, section 5): the basket of option legs - its numbers, its confirm
-step and "Execute basket" - PAPER only (Phase 0).
+step and "Execute basket" - PAPER only (Phase 0). FNO-3: a leg may also be a future (`right` FUT, no strike), added from
+the futures chain; the builder's engine values it linearly, its margin is the broker's (never invented) and, as on the
+ticket, it needs a stop-loss on either side.
 
 * **evaluate** - the combined payoff (at expiry and today / T+0), max profit and loss, breakevens, PoP, net premium and
   the Greeks of the whole basket, from the Options Builder's engine (`app.options_builder.routes._evaluate`, the same
@@ -46,12 +48,12 @@ NEUTRAL_STOP_PCT = 50.0             # the platform's default stop for a written 
 class LegAsk:
     underlying: str
     expiry: date
-    strike: float
-    right: str                       # CE | PE
+    strike: Optional[float]          # None for a future (FNO-3)
+    right: str                       # CE | PE | FUT
     side: str                        # BUY | SELL
     lots: int
     price: Optional[float] = None    # the price the panel plans with (the chain's, or the user's own); placing uses the live one
-    stop_loss: Optional[float] = None    # a sold leg's stop (premium), required as on the ticket
+    stop_loss: Optional[float] = None    # a sold leg's stop (premium) or a future's stop (either side), required as on the ticket
     iv: Optional[float] = None       # fraction (0.14); solved from the price when absent
 
 
@@ -68,7 +70,9 @@ def label(leg: LegAsk) -> str:
 # --- the numbers ---------------------------------------------------------------------------------------------------
 
 def _builder_leg(leg: LegAsk, lot_size: int, premium: float) -> Dict[str, Any]:
-    return {"direction": leg.side, "option_type": leg.right, "strike": float(leg.strike), "premium": float(premium),
+    # A future has no strike: the builder takes its entry price as the reference (its payoff is linear, no kink there).
+    strike = float(premium) if leg.right == fno_ticket.FUTURE or leg.strike is None else float(leg.strike)
+    return {"direction": leg.side, "option_type": leg.right, "strike": strike, "premium": float(premium),
             "lots": int(leg.lots), "lot_size": int(lot_size), "expiry": leg.expiry.isoformat(), "iv": leg.iv}
 
 
@@ -106,7 +110,7 @@ async def _contracts(session: AsyncSession, legs: Sequence[LegAsk]) -> Tuple[Lis
 
 def range_pct(spot: float, builder_legs: Sequence[Dict[str, Any]], low: float = 4.0) -> float:
     """The chart's half-width in % of spot: every strike inside with a margin (as the builder page's `rangePctFor`)."""
-    far = max((abs(float(leg["strike"]) - spot) / spot for leg in builder_legs), default=0.0)
+    far = max((abs(float(leg["strike"]) - spot) / spot for leg in builder_legs if leg["option_type"] != fno_ticket.FUTURE), default=0.0)
     return float(min(60.0, max(low, -(-(far * 100 * 1.25 + 2) // 1))))
 
 
@@ -302,9 +306,11 @@ async def broker_link(session: AsyncSession, user: User, legs: Sequence[LegAsk])
     orders: List[Dict[str, Any]] = []
     for _, leg in hedge_first(legs):
         name = master.underlying_of(leg.underlying)
-        row = await session.scalar(select(InstrumentRecord).where(
-            InstrumentRecord.broker == "zerodha", InstrumentRecord.underlying == name, InstrumentRecord.expiry == leg.expiry,
-            InstrumentRecord.instrument_type == leg.right, InstrumentRecord.strike == float(leg.strike)).limit(1))
+        where = [InstrumentRecord.broker == "zerodha", InstrumentRecord.underlying == name, InstrumentRecord.expiry == leg.expiry,
+                 InstrumentRecord.instrument_type == leg.right]
+        if leg.right != fno_ticket.FUTURE:
+            where.append(InstrumentRecord.strike == float(leg.strike or 0.0))
+        row = await session.scalar(select(InstrumentRecord).where(*where).limit(1))
         if row is None or not row.lot_size:
             return {"available": False, "why": f"Kite's symbol for {label(leg)} is not in the instrument list yet. Try again after it updates."}
         orders.append({"tradingsymbol": row.tradingsymbol, "exchange": row.exchange or master.derivatives_exchange(name),

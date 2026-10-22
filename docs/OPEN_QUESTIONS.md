@@ -798,6 +798,22 @@ defaults below contradicts them.
 | FNO-2-8 | "Trade in your broker app" for a basket. | Kite only (the only documented basket link, docs/BROKER_DATA_TERMS.md), with `broker_app_links` on, the organisation's broker Zerodha and Kite's own contract symbols in the instrument master; otherwise the panel says why. Other brokers: not verified, no link guessed. | `fno_basket.broker_link`, `brokerLinks.kiteFnoBasketLink` | open |
 | FNO-2-9 | The ready strategies' spread width / lots: which of the user's settings? | The user's own options deployment (`created_by` the user, or organisation-wide), on this underlying first, else their latest: `spread_width` (strike steps), `max_lots`, `premium_stop_pct`. A teammate's deployment is never used. No settings: 2 strikes, 1 lot, said so. A dedicated "options defaults" setting can replace this later. | `fno_basket.settings` | open |
 | FNO-2-10 | Strategy comparison (8b-j) side by side. | Not in this slice (the order allowed it "if small"); saved baskets are the input it will compare. | basket panel | open |
+
+## F&O workspace, third slice: the symbol hub tabs and the futures chain (FNO-3, 22 Oct)
+
+Checked against CLAUDE.md (PAPER only, exits never blocked, AI never places orders, no advice wording), the order file
+`docs/owner-orders/ATP_SESSION_FNO_WORKSPACE.md` (sections 1, 4, 5, 9) and DECISIONS.md: none of the defaults below
+contradicts them.
+
+| # | Question | Provisional decision + reason | Applies to | Status |
+|---|----------|-------------------------------|------------|--------|
+| FNO-3-1 | Where do the hub tabs live? | One tab row on the Charts page and the Option chain page (v2). Chart, Futures (`?hub=futures`) and Overview (`?hub=overview`) are views of the Charts page; Option chain stays its own page. Every tab link carries the symbol, the expiry and the timeframe. No new route or page. | `SymbolHubTabsV2`, `hubModel.hubHref` | open |
+| FNO-3-2 | "Option chain and Futures appear only when the symbol has F&O": from where? | The platform's instrument master (synced daily): futures rows for Futures; option rows, the NSE expiry file or the rule calendar (as the chain page lists expiries) for Option chain. No broker call. While the facts are unknown or cannot be read, no tab row (the page looks as before). | `GET /api/option-chain/{symbol}/hub` | open |
+| FNO-3-3 | OI change on the futures chain: the broker's quote has none. | The change since this organisation's first reading of the day (kept in the cache while the page is open), "building" for the first minutes, market hours only - the option chain's own rule. | `futures_chain.oi_change_state` | open |
+| FNO-3-4 | "Rollover (near -> next)": which number? | `oi_regime.compute_rollover_proxy` on the two futures: the next month's share of the near + next OI, and the spread next - near. One caption with the two numbers only, no reading of direction. True rollover (positions carried over) needs the exchange's end-of-day data. | `futures_chain.rollover_of` | open |
+| FNO-3-5 | A future on the one order ticket: the stop-loss and the margin. | A future needs a stop-loss on both sides (its loss has no limit without one), max loss = to the stop. Margin: the broker's SPAN + exposure margin, which PAPER does not have: shown as "needs your broker's margin" with the contract value, never estimated. | `fno_ticket.ask_errors`, `future_margin` | open |
+| FNO-3-6 | A future in the basket. | Allowed (Add to basket on the futures chain): no strike, valued linearly by the Options Builder's engine at its entry price, left out of the net premium, a stop-loss needed on either side, saved / loaded with no strike. The basket panel stays on the option chain page; the futures chain's badge opens it there (`?basket=open`). The hedge-first order is unchanged (every Buy leg first). | `fno_basket`, `basketModel` | open |
+| FNO-3-7 | Overview tab: what is in it? | Last price and change (the watchlist's batch quote), the day range, the 52-week range only when the daily bars cover a year, F&O yes / no, lot size and the next option / futures expiries. A figure without data is left out. Company facts (sector, results date) are not in ATP yet. | `OverviewV2` | open |
 ## Owner answers to the session plan (22 Oct)
 
 | # | Question | Provisional decision + reason | Applies to | Status |

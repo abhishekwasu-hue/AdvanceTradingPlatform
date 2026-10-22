@@ -510,6 +510,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/option-chain/{underlying}/alerts/test"): "trader",
     ("GET", "/api/option-chain/{underlying}/banner"): "member",
     ("GET", "/api/option-chain/{underlying}/expiries"): "member",
+    ("GET", "/api/option-chain/{underlying}/hub"): "member",      # FNO-3: the instrument master's F&O facts (platform-wide data)
+    ("GET", "/api/option-chain/{underlying}/futures"): "member",  # FNO-3: futures quotes through the organisation's / the user's own (BT1) broker session
     ("GET", "/api/option-chain/{underlying}/live"): "member",
     ("GET", "/api/option-chain/{underlying}/history"): "member",
     ("GET", "/api/option-chain/{underlying}/settings"): "member",

@@ -88,7 +88,7 @@ describe("OC1 automatic symbol and expiry", () => {
   });
 
   it("reads the list and then the chain on its own, with no button to press", () => {
-    expect(hookSource).toContain("loadExpiryChoice(symbol, api.optionChainExpiries)");
+    expect(hookSource).toContain("loadExpiryChoice(symbol, api.optionChainExpiries, carried)");      // FNO-3: the hub carries the expiry
     expect(hookSource).toContain("api.optionChainLive(symbol, expiry)");
     expect(hookSource).toContain("usePageVisible()");
     // A passed expiry (the page left open overnight): the server's 422 reads the list again for today's default.

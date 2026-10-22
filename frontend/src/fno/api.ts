@@ -8,6 +8,8 @@ import type { Evaluation } from "../optionsBuilder/model";
 
 export type Side = "BUY" | "SELL";
 export type Right = "CE" | "PE";
+/** FNO-3: what the ticket and the basket take - an option's right, or "FUT" for a future (which has no strike). */
+export type ContractRight = Right | "FUT";
 export type OrderType = "MARKET" | "LIMIT" | "SL" | "SL-M";
 export type Product = "MIS" | "NRML";
 
@@ -17,11 +19,12 @@ export interface FnoContract {
   exchange: string;
   instrument_key: string;
   expiry: string;
-  strike: number;
-  right: Right;
+  /** null for a future */
+  strike: number | null;
+  right: ContractRight;
   lot_size: number;
   tick_size: number;
-  /** "NIFTY 28 OCT 22800 CE" */
+  /** "NIFTY 28 OCT 22800 CE", a future "NIFTY 28 OCT FUT" */
   label: string;
   /** Not in the instrument master yet (null). */
   freeze_quantity: number | null;
@@ -46,8 +49,9 @@ export interface HeldLeg {
 export interface OrderAsk {
   underlying: string;
   expiry: string;
-  strike: number;
-  right: Right;
+  /** null for a future */
+  strike: number | null;
+  right: ContractRight;
   side: Side;
   lots: number;
   order_type: OrderType;
@@ -97,11 +101,13 @@ export interface OrderResult extends OrderPreview {
   filled: { price: number; quantity: number; lots: number } | null;
 }
 
-const q = (params: Record<string, string | number>) => new URLSearchParams(Object.entries(params).map(([k, v]) => [k, String(v)])).toString();
+const q = (params: Record<string, string | number | null>) =>
+  new URLSearchParams(Object.entries(params).filter(([, v]) => v !== null).map(([k, v]) => [k, String(v)])).toString();
 
 export const fnoApi = {
-  contract: (underlying: string, expiry: string, strike: number, right: Right) =>
-    request<FnoContract>(`/paper/fno/contract?${q({ underlying, expiry, strike, right })}`),
+  /** An option (`right` CE / PE with its strike) or a future (`right` FUT, strike null). */
+  contract: (underlying: string, expiry: string, strike: number | null, right: ContractRight) =>
+    request<FnoContract>(`/paper/fno/contract?${q({ underlying, expiry, strike: right === "FUT" ? null : strike, right })}`),
   held: (underlying: string, expiry: string) => request<HeldLeg[]>(`/paper/fno/held?${q({ underlying, expiry })}`),
   preview: (ask: OrderAsk) => request<OrderPreview>("/paper/fno/order/preview", { method: "POST", body: JSON.stringify(ask) }),
   place: (ask: OrderAsk) => request<OrderResult>("/paper/fno/order", { method: "POST", body: JSON.stringify(ask) }),
@@ -114,8 +120,9 @@ export type FnoApi = typeof fnoApi;
 export interface BasketLegAsk {
   underlying: string;
   expiry: string;
-  strike: number;
-  right: Right;
+  /** null for a future (FNO-3) */
+  strike: number | null;
+  right: ContractRight;
   side: Side;
   lots: number;
   price?: number | null;

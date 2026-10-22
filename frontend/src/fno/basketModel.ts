@@ -11,14 +11,15 @@ import { ApiError } from "../api/errors";
 import { formatNumber, RUPEE } from "../ui/format";
 import type { ChainRow } from "../optionChain/types";
 import type { Evaluation } from "../optionsBuilder/model";
-import type { BasketAsk, BasketLegAsk, BasketResult, BasketSettings, LegStatus, Product, Right, Side } from "./api";
+import type { BasketAsk, BasketLegAsk, BasketResult, BasketSettings, ContractRight, LegStatus, Product, Right, Side } from "./api";
 import type { BasketLeg, NewLeg } from "./basket";
 
 const MONTHS = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"];
 
-/** "NIFTY 28 OCT 22800 CE", as the server writes it (fno_ticket.contract_label). */
-export function contractLabel(underlying: string, expiry: string, strike: number, right: Right): string {
+/** "NIFTY 28 OCT 22800 CE" (a future "NIFTY 28 OCT FUT"), as the server writes it (fno_ticket.contract_label). */
+export function contractLabel(underlying: string, expiry: string, strike: number, right: ContractRight): string {
   const [, m, d] = expiry.split("-").map(Number);
+  if (right === "FUT") return `${underlying} ${String(d).padStart(2, "0")} ${MONTHS[(m || 1) - 1]} FUT`;
   const k = Number.isInteger(strike) ? String(strike) : String(Math.round(strike * 100) / 100);
   return `${underlying} ${String(d).padStart(2, "0")} ${MONTHS[(m || 1) - 1]} ${k} ${right}`;
 }
@@ -107,10 +108,13 @@ export function readyStrategy(name: StrategyName, inp: StrategyInputs): { legs: 
 
 // --- the request ---------------------------------------------------------------------------------------------------
 
+/** A leg whose stop-loss is needed: a sold option, or a future on either side (FNO-3, as on the ticket). */
+export const needsStop = (l: Pick<NewLeg, "side" | "right">): boolean => l.right === "FUT" || l.side === "SELL";
+
 export function legAsk(l: NewLeg): BasketLegAsk {
-  return { underlying: l.underlying, expiry: l.expiry, strike: l.strike, right: l.right, side: l.side, lots: l.lots,
+  return { underlying: l.underlying, expiry: l.expiry, strike: l.right === "FUT" ? null : l.strike, right: l.right, side: l.side, lots: l.lots,
     price: typeof l.price === "number" && l.price > 0 ? l.price : null,
-    stop_loss: l.side === "SELL" && typeof l.stopLoss === "number" && l.stopLoss > 0 ? l.stopLoss : null,
+    stop_loss: needsStop(l) && typeof l.stopLoss === "number" && l.stopLoss > 0 ? l.stopLoss : null,
     iv: typeof l.iv === "number" && l.iv > 0 && l.iv < 500 ? l.iv / 100 : null };
 }
 
@@ -124,7 +128,10 @@ export function basketProblems(legs: readonly NewLeg[]): string[] {
   if (!legs.length) out.push("Add a leg first.");
   if (new Set(legs.map((l) => l.underlying)).size > 1) out.push("A basket holds one underlying. Remove the legs of the other.");
   for (const l of legs) {
-    if (l.side === "SELL" && !(typeof l.stopLoss === "number" && l.stopLoss > 0)) out.push(`${legLabel(l)}: a sold leg needs a stop-loss.`);
+    if (!(typeof l.stopLoss === "number" && l.stopLoss > 0)) {
+      if (l.right === "FUT") out.push(`${legLabel(l)}: a future needs a stop-loss.`);
+      else if (l.side === "SELL") out.push(`${legLabel(l)}: a sold leg needs a stop-loss.`);
+    }
   }
   return out;
 }
@@ -196,7 +203,8 @@ export function remainingLegs<T>(sent: readonly T[], r: BasketResult): T[] {
 
 // --- saved baskets: the user's own preferences namespace `fno_baskets` ------------------------------------------------
 
-export interface SavedLeg { expiry: string; strike: number; right: Right; side: Side; lots: number; price?: number | null; stop_loss?: number | null }
+/** `strike` is null for a future (FNO-3). */
+export interface SavedLeg { expiry: string; strike: number | null; right: ContractRight; side: Side; lots: number; price?: number | null; stop_loss?: number | null }
 export interface SavedBasket { name: string; underlying: string; product: Product; legs: SavedLeg[]; saved_at?: string | null }
 export type SavedBaskets = Record<string, SavedBasket>;
 export interface SavedState { items: SavedBaskets; version: number }
@@ -210,14 +218,14 @@ export function nameProblem(name: string): string | null {
 export function savedOf(legs: readonly NewLeg[], name: string, product: Product, now = new Date()): SavedBasket {
   return {
     name: name.trim(), underlying: legs[0]?.underlying ?? "", product, saved_at: now.toISOString(),
-    legs: legs.map((l) => ({ expiry: l.expiry, strike: l.strike, right: l.right, side: l.side, lots: l.lots,
+    legs: legs.map((l) => ({ expiry: l.expiry, strike: l.right === "FUT" ? null : l.strike, right: l.right, side: l.side, lots: l.lots,
       ...(typeof l.price === "number" && l.price > 0 ? { price: l.price } : {}),
-      ...(l.side === "SELL" && typeof l.stopLoss === "number" && l.stopLoss > 0 ? { stop_loss: l.stopLoss } : {}) })),
+      ...(needsStop(l) && typeof l.stopLoss === "number" && l.stopLoss > 0 ? { stop_loss: l.stopLoss } : {}) })),
   };
 }
 
 export function legsOf(s: SavedBasket): NewLeg[] {
-  return s.legs.map((l) => ({ underlying: s.underlying, expiry: l.expiry, strike: l.strike, right: l.right, side: l.side, lots: l.lots,
+  return s.legs.map((l) => ({ underlying: s.underlying, expiry: l.expiry, strike: l.strike ?? 0, right: l.right, side: l.side, lots: l.lots,
     price: l.price ?? null, stopLoss: l.stop_loss ?? null, label: null, iv: null }));
 }
 
@@ -269,7 +277,7 @@ export interface BuilderHandoff {
   lot_size: number;
   near_expiry: string;
   next_expiry: string | null;
-  legs: { direction: Side; option_type: Right; strike: number; premium: number; lots: number; lot_size: number; expiry: string; iv: number | null }[];
+  legs: { direction: Side; option_type: ContractRight; strike: number; premium: number; lots: number; lot_size: number; expiry: string; iv: number | null }[];
 }
 
 /** The basket as the Options Builder reads it once on opening (every leg needs its price and lot size). */
@@ -278,7 +286,8 @@ export function builderHandoff(legs: readonly NewLeg[], lotSizes: readonly (numb
   const expiries = [...new Set(legs.map((l) => l.expiry))].sort();
   return {
     underlying: legs[0].underlying, spot, step, lot_size: lotSizes[0] as number, near_expiry: expiries[0], next_expiry: expiries[1] ?? null,
-    legs: legs.map((l, i) => ({ direction: l.side, option_type: l.right, strike: l.strike, premium: l.price as number, lots: l.lots,
+    // A future has no strike: the builder takes its entry price as the reference (its payoff is linear).
+    legs: legs.map((l, i) => ({ direction: l.side, option_type: l.right, strike: l.right === "FUT" ? l.price as number : l.strike, premium: l.price as number, lots: l.lots,
       lot_size: lotSizes[i] as number, expiry: l.expiry, iv: typeof l.iv === "number" && l.iv > 0 ? l.iv / 100 : null })),
   };
 }

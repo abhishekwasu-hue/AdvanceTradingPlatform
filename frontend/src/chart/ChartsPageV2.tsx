@@ -1,5 +1,5 @@
 import { ListTree, Maximize2, Minimize2, Redo2, ScanSearch, Undo2 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
@@ -11,6 +11,8 @@ import { LtpHub } from "../charting/ltpHub";
 import { useLiveLtp } from "../components/chartHelpers";
 import { Sheet } from "../components/primitives/Dialog";
 import { cx } from "../components/primitives/cx";
+import { hubViewOf, readCarry } from "../fno/hubModel";
+import { HubTabsView, useHubInfo } from "../fno/SymbolHubTabsV2";
 import { pathFor, type PageProps } from "../routes";
 import { chartsPath } from "../shell/shellRoutes";
 import { PageIntro } from "../ui/PageIntro";
@@ -53,8 +55,16 @@ import type { WatchItem } from "./watchlistsV2";
  * UI2-4c: the drawing rail left of the chart (a "Draw" menu on a phone) and, while `watchlists` is on, the watchlist -
  * a right column from 1024 px (it can be hidden), a bottom sheet below. A watchlist row opens its symbol and keeps the
  * timeframe, chart type, indicators and whether the drawings are hidden.
+ *
+ * FNO-3: the symbol hub's tab row "Chart | Option chain | Futures | Overview" on top (src/fno/SymbolHubTabsV2.tsx;
+ * Option chain and Futures only when the symbol has F&O). Futures (`?hub=futures`) and Overview (`?hub=overview`) show
+ * here in place of the chart, which then reads nothing; the expiry and the timeframe carry across the tabs.
  */
 type Tools = ReturnType<typeof useDrawingTools>;
+
+// FNO-3: the symbol hub's Futures and Overview tabs, each its own lazy chunk (read only when one is opened).
+const FuturesChainV2 = lazy(() => import("../fno/FuturesChainV2"));
+const OverviewV2 = lazy(() => import("../fno/OverviewV2"));
 
 const focus = "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand";
 const iconBtn = cx("inline-flex min-h-11 min-w-11 items-center justify-center rounded-control text-fg-muted hover:bg-surface-2 hover:text-fg disabled:opacity-40 disabled:hover:bg-transparent md:min-h-9 md:min-w-9", focus);
@@ -86,7 +96,9 @@ export default function ChartsPageV2(_props: PageProps) {
   const wide = useMediaQuery("(min-width: 1024px)");
   const phone = useMediaQuery(PHONE_QUERY);
   const [sheet, setSheet] = useState(false);
-  const tab = multi && params.get("tab") === "multi" ? "multi" : "chart";
+  const hubView = hubViewOf(params);
+  const hubInfo = useHubInfo(symbol);
+  const tab = multi && !hubView && params.get("tab") === "multi" ? "multi" : "chart";
   useEffect(() => { saveLastSymbol(userId, symbol); }, [userId, symbol]);
 
   const { status, timeframes, now } = useChartsContext();
@@ -114,12 +126,12 @@ export default function ChartsPageV2(_props: PageProps) {
 
   const prefs = useChartPrefs(userId);
   // While the Multi-chart tab shows, the Chart tab keeps its bars and reads nothing (one refresh when it shows again).
-  const data = useChartCandles({ enabled: !waiting, paused: tab !== "chart", symbol, exchange, timeframe });
+  const data = useChartCandles({ enabled: !waiting, paused: tab !== "chart" || hubView !== null, symbol, exchange, timeframe });
   const last = data.candles[data.candles.length - 1];
   // The live price moves the newest bar: intraday while the market is open (or its state is not known), day / week /
   // month only while the server marks that bar as forming.
   const liveOn = DAILY_OR_LONGER.has(timeframe) ? !!last?.forming : chip?.open !== false;
-  const live = useLiveLtp(liveOn && data.candles.length > 0 && tab === "chart", symbol, exchange);
+  const live = useLiveLtp(liveOn && data.candles.length > 0 && tab === "chart" && !hubView, symbol, exchange);
 
   const [engine, setEngine] = useState<LightweightEngine | null>(null);
   const [tools, setTools] = useState<Tools | null>(null);
@@ -200,7 +212,17 @@ export default function ChartsPageV2(_props: PageProps) {
         "Search a symbol at the top left. Scroll the chart left for older history; press F for full screen.",
       ]} />}
 
-      {multi && !fs.on && (
+      {!fs.on && <HubTabsView info={hubInfo} current={hubView ?? "chart"} carry={{ expiry: readCarry(params).expiry, timeframe }} />}
+
+      {hubView && (
+        <Suspense fallback={<div aria-busy="true" className="h-40 animate-pulse rounded-panel bg-surface-2" />}>
+          {hubView === "futures"
+            ? <FuturesChainV2 symbol={hubInfo?.underlying ?? symbol} timeframe={timeframe} />
+            : <OverviewV2 symbol={symbol} exchange={exchange} info={hubInfo} />}
+        </Suspense>
+      )}
+
+      {multi && !fs.on && !hubView && (
         <div role="tablist" aria-label="Charts" className="flex gap-space-1 rounded-panel bg-surface-2 p-space-1 sm:w-fit">
           {(["chart", "multi"] as const).map((t) => (
             <button key={t} type="button" role="tab" aria-selected={tab === t} onClick={() => setTab(t)}
@@ -212,7 +234,7 @@ export default function ChartsPageV2(_props: PageProps) {
         </div>
       )}
 
-      {tab === "chart" && (
+      {tab === "chart" && !hubView && (
         <div className={cx("flex min-h-0 gap-space-3", fs.on && "flex-1")}>
           <section aria-label={`Chart of ${symbol}`} className="flex min-h-0 min-w-0 flex-1 flex-col rounded-panel border border-subtle bg-surface-1">
             <div role="toolbar" aria-label="Chart controls" data-chart-toolbar data-tour="charts-toolbar"

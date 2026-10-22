@@ -117,6 +117,33 @@ def _weekly_review() -> Dict[str, Any]:
     return json.loads(json.dumps(data, default=str))
 
 
+# CP6-2: the draft test's recorded results come from ATP's real backtest engine (app/ai/draft_backtest.py) on made-up,
+# deterministic candles: a wave the draft's averages follow (enough trades) and a choppy one (too few trades).
+DRAFT_IDEA = ("on the 15-minute chart, go long when the 20 EMA crosses above the 50 EMA, go short when the 20 EMA crosses below the 50 EMA. "
+              "Stop 1.5 x ATR 14, objective 2R.")
+
+
+def _wave_candles(period: float, amplitude: float, wiggle: float):
+    import numpy as np
+    import pandas as pd
+    days = pd.bdate_range("2026-07-01", periods=60)
+    starts = [t for d in days for t in pd.date_range(d + pd.Timedelta("3h45min"), periods=25, freq="15min")]
+    i = np.arange(len(starts)).astype(float)
+    base = 24000 + amplitude * np.sin(i / period) + wiggle * np.sin(i / 2.3) + i * 0.3
+    return pd.DataFrame({"open": base - 3, "high": base + 12, "low": base - 12, "close": base, "volume": 1000.0},
+                        index=pd.DatetimeIndex(starts, tz="UTC"))
+
+
+def _draft_test(symbol: str, period: float, wiggle: float, risk: Dict[str, Any]) -> Dict[str, Any]:
+    from app.ai import draft_backtest, strategy_builder
+    from app.core.models import RiskConfig
+    config = strategy_builder.config_of(strategy_builder.build(DRAFT_IDEA, symbol, 1.5))
+    rc = RiskConfig(capital=risk["capital"], risk_per_trade_pct=risk["risk_per_trade_pct"], max_consecutive_losses=risk["max_consecutive_losses"])
+    data = draft_backtest.honest_test(config, _wave_candles(period, 150.0, wiggle), symbol, "15min", rc, holdout=None)
+    data["exchange"] = "NSE"
+    return data
+
+
 def ok(data: Any, source: str) -> Dict[str, Any]:
     return {"ok": True, "data": data, "as_of": AS_OF, "source": source}
 
@@ -154,6 +181,8 @@ def build() -> Dict[str, Any]:
             "get_my_positions": ok(_positions(), "trades"),
             "get_my_last_trade": ok(_last_trade(), "trades"),
             "get_weekly_review": ok(_weekly_review(), "journal"),
+            "backtest_draft:NIFTY": ok(_draft_test("NIFTY", 9.0, 10.0, risk), "broker:paper"),
+            "backtest_draft:SBIN": ok(_draft_test("SBIN", 5.0, 10.0, risk), "broker:paper"),
         },
         "no_data": {
             "get_market_context": {"ok": False, "error": "get_market_context is not enabled for this organisation (flag context_panel)"},
@@ -165,6 +194,8 @@ def build() -> Dict[str, Any]:
                                     "bullish": 0, "bearish": 0, "neutral": 0, "realised_today": 0.0, "closed_today": 0, "read_at": AS_OF}, "trades"),
             "get_my_last_trade": ok({"trade": None, "reason": "you have no closed trade yet"}, "trades"),
             "get_weekly_review": {"ok": False, "error": "get_weekly_review is not enabled for this organisation (flag discipline_engine)"},
+            "backtest_draft:NIFTY": {"ok": False, "error": "No broker session with a valid token. Add the broker's API key on the Broker page "
+                                                           "(it is stored encrypted, never in the environment) and log in to it, then try again."},
         },
     }
 

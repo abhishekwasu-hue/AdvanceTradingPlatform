@@ -1,6 +1,186 @@
 {
  "_note": "Synthetic, hand-made tool results for the Copilot chat evals (backend/evals/build_copilot_fixtures.py). Not market data.",
  "default": {
+  "backtest_draft:NIFTY": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "bars": 1500,
+    "capital": 200000.0,
+    "costs_included": "brokerage and statutory charges at their dated rates, and slippage on every fill",
+    "days_requested": 60,
+    "deflated": {
+     "chance_above_zero_pct": 99.9,
+     "sharpe_per_trade": 0.793,
+     "tries": 1
+    },
+    "earlier": {
+     "bars": 1050,
+     "costs": 16573.66,
+     "expectancy": 2052.85,
+     "from": "2026-07-01T03:45:00+00:00",
+     "from_day": "1 Jul 2026",
+     "losses": 7,
+     "max_drawdown": 2765.33,
+     "max_drawdown_pct": 1.38,
+     "net_pnl": 71849.58,
+     "profit_factor": 4.79,
+     "to": "2026-08-27T09:45:00+00:00",
+     "to_day": "27 Aug 2026",
+     "trades": 35,
+     "win_rate": 80.0,
+     "wins": 28
+    },
+    "exchange": "NSE",
+    "from": "2026-07-01T03:45:00+00:00",
+    "from_day": "1 Jul 2026",
+    "later": {
+     "bars": 450,
+     "costs": 6193.12,
+     "expectancy": 2325.67,
+     "from": "2026-08-28T03:45:00+00:00",
+     "from_day": "28 Aug 2026",
+     "losses": 2,
+     "max_drawdown": 2716.03,
+     "max_drawdown_pct": 1.36,
+     "net_pnl": 30233.69,
+     "profit_factor": 6.6,
+     "to": "2026-09-22T09:45:00+00:00",
+     "to_day": "22 Sep 2026",
+     "trades": 13,
+     "win_rate": 84.62,
+     "wins": 11
+    },
+    "later_share_pct": 30,
+    "min_trades_for_statistics": 30,
+    "note": "Past simulated results on this window only; not a forecast.",
+    "sample": "ok",
+    "sealed_holdout_bars": 0,
+    "slippage_pct_per_fill": 0.02,
+    "symbol": "NIFTY",
+    "timeframe": "15min",
+    "to": "2026-09-22T09:45:00+00:00",
+    "to_day": "22 Sep 2026",
+    "tries": 1,
+    "tuned_on_this_data": false,
+    "walk_forward": {
+     "profitable_windows": 4,
+     "window_trades": [
+      12,
+      11,
+      11,
+      11
+     ],
+     "windows": 4
+    },
+    "whole": {
+     "bars": 1500,
+     "costs": 24184.76,
+     "expectancy": 1959.2,
+     "from": "2026-07-01T03:45:00+00:00",
+     "from_day": "1 Jul 2026",
+     "losses": 11,
+     "max_drawdown": 2765.33,
+     "max_drawdown_pct": 1.38,
+     "net_pnl": 99919.16,
+     "profit_factor": 4.36,
+     "to": "2026-09-22T09:45:00+00:00",
+     "to_day": "22 Sep 2026",
+     "trades": 51,
+     "win_rate": 78.43,
+     "wins": 40
+    }
+   },
+   "ok": true,
+   "source": "broker:paper"
+  },
+  "backtest_draft:SBIN": {
+   "as_of": "2026-10-21T03:30:00+00:00",
+   "data": {
+    "bars": 1500,
+    "capital": 200000.0,
+    "costs_included": "brokerage and statutory charges at their dated rates, and slippage on every fill",
+    "days_requested": 60,
+    "deflated": null,
+    "earlier": {
+     "bars": 1050,
+     "costs": 1130.21,
+     "expectancy": -2753.51,
+     "from": "2026-07-01T03:45:00+00:00",
+     "from_day": "1 Jul 2026",
+     "losses": 3,
+     "max_drawdown": 8260.52,
+     "max_drawdown_pct": 4.13,
+     "net_pnl": -8260.52,
+     "profit_factor": 0.0,
+     "to": "2026-08-27T09:45:00+00:00",
+     "to_day": "27 Aug 2026",
+     "trades": 3,
+     "win_rate": 0.0,
+     "wins": 0
+    },
+    "exchange": "NSE",
+    "from": "2026-07-01T03:45:00+00:00",
+    "from_day": "1 Jul 2026",
+    "later": {
+     "bars": 450,
+     "costs": 1132.24,
+     "expectancy": -2585.29,
+     "from": "2026-08-28T03:45:00+00:00",
+     "from_day": "28 Aug 2026",
+     "losses": 3,
+     "max_drawdown": 7755.86,
+     "max_drawdown_pct": 3.88,
+     "net_pnl": -7755.86,
+     "profit_factor": 0.0,
+     "to": "2026-09-22T09:45:00+00:00",
+     "to_day": "22 Sep 2026",
+     "trades": 3,
+     "win_rate": 0.0,
+     "wins": 0
+    },
+    "later_share_pct": 30,
+    "min_trades_for_statistics": 30,
+    "note": "Past simulated results on this window only; not a forecast.",
+    "sample": "too_few",
+    "sealed_holdout_bars": 0,
+    "slippage_pct_per_fill": 0.02,
+    "symbol": "SBIN",
+    "timeframe": "15min",
+    "to": "2026-09-22T09:45:00+00:00",
+    "to_day": "22 Sep 2026",
+    "tries": 1,
+    "tuned_on_this_data": false,
+    "walk_forward": {
+     "profitable_windows": 0,
+     "window_trades": [
+      3,
+      3,
+      3,
+      3
+     ],
+     "windows": 4
+    },
+    "whole": {
+     "bars": 1500,
+     "costs": 1130.21,
+     "expectancy": -2753.51,
+     "from": "2026-07-01T03:45:00+00:00",
+     "from_day": "1 Jul 2026",
+     "losses": 3,
+     "max_drawdown": 8260.52,
+     "max_drawdown_pct": 4.13,
+     "net_pnl": -8260.52,
+     "profit_factor": 0.0,
+     "to": "2026-09-22T09:45:00+00:00",
+     "to_day": "22 Sep 2026",
+     "trades": 3,
+     "win_rate": 0.0,
+     "wins": 0
+    }
+   },
+   "ok": true,
+   "source": "broker:paper"
+  },
   "get_chart_structure:BANKNIFTY": {
    "as_of": "2026-10-21T03:30:00+00:00",
    "data": {
@@ -1440,6 +1620,10 @@
   }
  },
  "no_data": {
+  "backtest_draft:NIFTY": {
+   "error": "No broker session with a valid token. Add the broker's API key on the Broker page (it is stored encrypted, never in the environment) and log in to it, then try again.",
+   "ok": false
+  },
   "get_chart_structure:BANKNIFTY": {
    "error": "no lake bars for this instrument and timeframe in the window",
    "ok": false

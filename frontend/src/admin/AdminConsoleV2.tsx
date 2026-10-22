@@ -6,7 +6,8 @@ import { Sheet } from "../components/primitives";
 import AdminPage from "../pages/AdminPage";
 import type { PageProps } from "../routes";
 import { NotFound } from "../shell/common";
-import { AiCostPanel, BUTTON, FOCUS, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
+import { useFeatures } from "../ui/useFeatures";
+import { ActivationPanel, AiCostPanel, BUTTON, FOCUS, Phase0Notice, Pill, SupportPanel, SystemPanels, TestingToolsPanel, UsersPanel } from "./AdminSectionsV2";
 import { ADMIN_SECTIONS, ago, consoleApi, isAdminSection, type AdminSection, type ConsoleDiagnostics } from "./consoleApi";
 
 /**
@@ -23,6 +24,7 @@ export default function AdminConsoleV2(_props: PageProps) {
   const { user, loading } = useAuth();
   const [params, setParams] = useSearchParams();
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
+  const growth = useFeatures().on("growth_v2");     // MO4 slice 3: the activation events in Users & business
   const raw = params.get("section");
   const section: AdminSection = isAdminSection(raw) ? raw : "system";
   const userParam = parseInt(params.get("user") ?? "", 10);
@@ -61,7 +63,7 @@ export default function AdminConsoleV2(_props: PageProps) {
 
       {section === "system" && <SystemPanels />}
       {section === "controls" && <Phase0Notice />}
-      {section === "users" && <><UsersPanel /><AiCostPanel /></>}
+      {section === "users" && <><UsersPanel />{growth && <ActivationPanel />}<AiCostPanel /></>}
       {section === "testing" && <TestingToolsPanel />}
       {section === "support" && (
         <SupportPanel userId={supportUser} onUser={(id) => setParams(id == null ? { section: "support" } : { section: "support", user: String(id) })} />

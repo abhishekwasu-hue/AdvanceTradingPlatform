@@ -107,6 +107,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/admin/console/support/users/{user_id}"): "admin",
     ("GET", "/api/admin/console/system"): "admin",
     ("GET", "/api/admin/console/users"): "admin",
+    ("GET", "/api/admin/console/activation"): "admin",
     ("GET", "/api/admin/controls"): "admin",
     ("PUT", "/api/admin/controls/brokers"): "admin",
     ("GET", "/api/admin/controls/flags"): "admin",
@@ -369,6 +370,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/context/panel"): "member",
     ("GET", "/api/markets/overview"): "member: shared index and sector moves from the system lists and the shared end-of-day history; no tenant rows",
     ("GET", "/api/markets/lists/{key}"): "member: one shared system list's stocks with their end-of-day moves; no tenant rows",
+    # MO4 slice 3: the caller's own plan page + usage meter and his own discipline share card (flags ui_v2 + growth_v2)
+    ("GET", "/api/growth/plan"): "member: the caller's own plan and usage (his own watchlists, scans, AI requests and analyses; the organisation's paper bots and backtests)",
+    ("GET", "/api/growth/share/discipline-week"): "member: the caller's own discipline facts from his own PAPER trades; no names, no prices",
     ("GET", "/api/custom-strategies"): "member",
     ("POST", "/api/custom-strategies"): "trader",
     ("POST", "/api/custom-strategies/parse"): P_PARSE_ONLY,

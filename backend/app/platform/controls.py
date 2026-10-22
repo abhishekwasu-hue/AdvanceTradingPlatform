@@ -133,6 +133,12 @@ FEATURE_FLAGS: Dict[str, str] = {
     # turns it on (Settings > Alerts, OFF by default). Built from the user's own data and the market data ATP holds;
     # structure words only, no buy / sell / target / stop wording. OFF: /api/rhythm/* answers 404 and nothing is sent.
     "daily_rhythm": "Daily rhythm: the pre-market brief, mid-session pulse, closing wrap and weekly review on the Dashboard and, by choice, on Telegram",
+    # Master Order 4 slice 3 (app/growth; needs `ui_v2`): the plan page with a usage meter (what the user's plan includes
+    # and how much of it he used, from the existing limits and counters), the "my discipline this week" share card (his
+    # own discipline facts only: no security names, no prices, no call words) and the admin Business view's activation
+    # events (read-only). OFF: /api/growth/* and /api/admin/console/activation answer 404 and nothing new is shown. No
+    # price, trial, reminder or referral is built; nothing places an order.
+    "growth_v2": "Plans and growth: the plan page with a usage meter, the discipline share card and the admin activation events (read-only)",
     # PW6 (beta spec 4a, Phase 0): the closed-beta gate. ON: sign-up needs a SUPER_ADMIN-issued invite code and stops at
     # BETA_COHORT_CAP accounts. OFF: registration is exactly as before (self_signup still decides). OFF by default.
     "beta_cohort_gate": "Closed beta: sign-up needs an invite code and stops at the cohort cap (BETA_COHORT_CAP, default 500)",

@@ -2,6 +2,8 @@ import { Activity, Database, Lock, Search, Users } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
 import { CARD } from "../dashboard/CardV2";
+import { growthApi } from "../growth/api";
+import type { Activation } from "../growth/types";
 import { useFeatures } from "../ui/useFeatures";
 import {
   ago, consoleApi, maskEmail, shortDate,
@@ -196,6 +198,57 @@ export function UsersPanel() {
             </tbody>
           </table>
         </Scroll>
+      )}
+    </Panel>
+  );
+}
+
+/** MO4 slice 3 (`growth_v2`): who reached the first steps after signing up - read-only, from rows that already exist. */
+export function ActivationPanel() {
+  const [days, setDays] = useState(90);
+  const { data, error } = useRead<Activation>(() => growthApi.activation(days), [days]);
+  const signedUp = data?.funnel.find((f) => f.key === "signed_up")?.count ?? 0;
+  const when = (iso: string | null) => (iso ? shortDate(iso) : "-");
+  return (
+    <Panel title="Activation" id="activation"
+      note={"The first steps after signing up: a broker connected, a first paper bot and a first journal entry. Activated = all three. Platform operators are not counted."}>
+      <div className="mb-space-3 flex flex-wrap items-center gap-space-2" role="group" aria-label="Signed up in the last">
+        {[30, 90, 365].map((d) => (
+          <button key={d} type="button" aria-pressed={days === d} onClick={() => setDays(d)}
+            className={`${BUTTON} ${days === d ? "border-brand text-brand" : ""}`}>{d} days</button>
+        ))}
+        {data && <span className="text-t14 text-fg-muted">Median time to activation: <strong className="text-fg">
+          {data.median_hours_to_activation === null ? "-" : data.median_hours_to_activation < 48 ? `${data.median_hours_to_activation} hours` : `${Math.round(data.median_hours_to_activation / 24)} days`}</strong></span>}
+      </div>
+      {!data ? <Loading error={error} /> : (
+        <>
+          <dl className="mb-space-3 grid grid-cols-2 gap-space-3 md:grid-cols-5">
+            {data.funnel.map((f) => (
+              <Stat key={f.key} icon={f.key === "signed_up" ? Users : Activity} label={f.label} value={String(f.count)}
+                sub={f.key === "signed_up" || signedUp === 0 ? undefined : `${Math.round((100 * f.count) / signedUp)}% of sign-ups`} />
+            ))}
+          </dl>
+          {data.people.length === 0 ? <p className="text-t12 text-fg-muted">Nobody signed up in this period.</p> : (
+            <Scroll>
+              <table className="w-full text-t12">
+                <thead><tr><th className={TH}>Person</th><th className={TH}>Plan</th><th className={TH}>Signed up</th><th className={TH}>Broker</th><th className={TH}>Paper bot</th><th className={TH}>Journal</th><th className={TH}>Activated</th></tr></thead>
+                <tbody>
+                  {data.people.map((p) => (
+                    <tr key={p.id} data-activation-user={p.id} className="border-t border-subtle">
+                      <td className={TD}><div className="font-medium text-fg">{p.email}</div><div className="text-fg-muted">{p.tenant}</div></td>
+                      <td className={`${TD} text-fg-muted`}>{p.plan}</td>
+                      <td className={`${TD} whitespace-nowrap text-fg-muted`}>{when(p.signed_up_at)}</td>
+                      <td className={`${TD} whitespace-nowrap`}>{when(p.broker_at)}</td>
+                      <td className={`${TD} whitespace-nowrap`}>{when(p.paper_bot_at)}</td>
+                      <td className={`${TD} whitespace-nowrap`}>{when(p.journal_at)}</td>
+                      <td className={TD}>{p.activated_at ? <Pill tone="ok">{shortDate(p.activated_at)}</Pill> : <Pill tone="off">not yet</Pill>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Scroll>
+          )}
+        </>
       )}
     </Panel>
   );

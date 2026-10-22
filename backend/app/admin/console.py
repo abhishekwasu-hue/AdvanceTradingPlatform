@@ -18,8 +18,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import require_mfa_session, require_role
 from app.core.config import WORKER_CYCLE_SECONDS
 from app.db.models import (
-    AlertDeliveryRecord, BrokerCredentialRecord, DataQualityEventRecord, InstrumentRecord, LlmCallRecord, LoginEventRecord,
-    MarketSnapshotRecord, StrategyDeploymentRecord, Tenant, User, UserSessionRecord, WorkerHeartbeatRecord,
+    AlertDeliveryRecord, BrokerCredentialRecord, DataQualityEventRecord, InstrumentRecord, JournalEntryRecord, LlmCallRecord,
+    LoginEventRecord, MarketSnapshotRecord, StrategyDeploymentRecord, Tenant, User, UserSessionRecord, WorkerHeartbeatRecord,
 )
 from app.db.session import get_session
 from app.plans.registry import get_plan
@@ -167,6 +167,73 @@ async def users(q: Optional[str] = None, limit: int = Query(200, ge=1, le=500),
             "email_verified": u.email_verified_at is not None, "tenant_id": t.id, "tenant": org_name(t.name),
             "plan": get_plan(t.plan).name, "tenant_status": t.status, "signed_up_at": _iso(u.created_at), "last_seen_at": _iso(seen),
         } for u, t, seen in rows],
+    }
+
+
+# MO4 slice 3 (flag `growth_v2`): the activation events, from rows that already exist - no tracker, no new table.
+ACTIVATION_STEPS = (
+    ("broker", "Connected a broker"),
+    ("paper_bot", "Started a first paper bot"),
+    ("journal", "First journal entry"),
+)
+
+
+def _median(values: List[float]) -> Optional[float]:
+    if not values:
+        return None
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+@router.get("/activation")
+async def activation(days: int = Query(90, ge=1, le=365), limit: int = Query(200, ge=1, le=500),
+                     admin: User = Depends(require_role()), session: AsyncSession = Depends(get_session)) -> Dict[str, Any]:
+    """Who reached which first step after signing up: a broker connected (the first broker credential they added), a
+    first paper bot (the first PAPER deployment they created) and a first journal entry (their first auto-captured
+    journal row). "Activated" = all three. Read-only; masked e-mail addresses; behind `growth_v2`."""
+    from app.platform.controls import flag_enabled
+    if not await flag_enabled(session, "growth_v2", admin.tenant_id):
+        raise HTTPException(status_code=404, detail="Not found", headers={"X-Feature-Disabled": "growth_v2"})
+    now = datetime.now(timezone.utc)
+    since = now - timedelta(days=days)
+    broker = (select(BrokerCredentialRecord.user_id.label("uid"), func.min(BrokerCredentialRecord.created_at).label("at"))
+              .group_by(BrokerCredentialRecord.user_id).subquery())
+    bot = (select(StrategyDeploymentRecord.created_by.label("uid"), func.min(StrategyDeploymentRecord.created_at).label("at"))
+           .where(StrategyDeploymentRecord.mode == "PAPER", StrategyDeploymentRecord.created_by.is_not(None))
+           .group_by(StrategyDeploymentRecord.created_by).subquery())
+    journal = (select(JournalEntryRecord.user_id.label("uid"), func.min(JournalEntryRecord.captured_at).label("at"))
+               .group_by(JournalEntryRecord.user_id).subquery())
+    rows = (await session.execute(
+        select(User, Tenant, broker.c.at, bot.c.at, journal.c.at).join(Tenant, Tenant.id == User.tenant_id)
+        .join(broker, broker.c.uid == User.id, isouter=True).join(bot, bot.c.uid == User.id, isouter=True)
+        .join(journal, journal.c.uid == User.id, isouter=True)
+        .where(User.created_at >= since, User.role != "SUPER_ADMIN").order_by(User.id.desc()))).all()
+    reached = {key: 0 for key, _ in ACTIVATION_STEPS}
+    hours: List[float] = []
+    people: List[Dict[str, Any]] = []
+    for u, t, broker_at, bot_at, journal_at in rows:
+        steps = {"broker": _aware(broker_at), "paper_bot": _aware(bot_at), "journal": _aware(journal_at)}
+        for key, at in steps.items():
+            reached[key] += at is not None
+        signed_up = _aware(u.created_at)
+        present = [at for at in steps.values() if at is not None]
+        activated_at = max(present) if len(present) == len(steps) else None
+        if activated_at is not None and signed_up is not None:
+            hours.append(max(0.0, (activated_at - signed_up).total_seconds() / 3600))
+        if len(people) < limit:
+            people.append({"id": u.id, "email": mask_email(u.email), "tenant": org_name(t.name), "plan": get_plan(t.plan).name,
+                           "signed_up_at": _iso(signed_up), **{f"{k}_at": _iso(v) for k, v in steps.items()},
+                           "activated_at": _iso(activated_at)})
+    total = len(rows)
+    median = _median(hours)
+    return {
+        "days": days, "since": since.isoformat(),
+        "funnel": [{"key": "signed_up", "label": "Signed up", "count": total}]
+                  + [{"key": key, "label": label, "count": reached[key]} for key, label in ACTIVATION_STEPS]
+                  + [{"key": "activated", "label": "All three (activated)", "count": len(hours)}],
+        "median_hours_to_activation": round(median, 1) if median is not None else None,
+        "people": people,
     }
 
 

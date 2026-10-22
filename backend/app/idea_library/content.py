@@ -351,16 +351,20 @@ def scan_payload(idea: Idea, scan: Scan, flags_on: Set[str]) -> Dict[str, Any]:
 # --------------------------------------------------------------------------------------- adopt as a paper strategy
 # IDEA-1 review (22 Oct, the templates on main: D1 Supertrend flip, D2 moving-average crossover, B1 range breakout, B3
 # channel breakout). An idea is adoptable only through a template with the SAME structure; otherwise its reason is here.
-# The honest home of T1-T8 is the templates spec's family A (same ids), which is not built yet.
+# The honest home of T1-T8 is the templates spec's family A (same ids): A2 / A5 are built in step 3, their mappings wait for
+# the owner's answers (TPL-Q21 / TPL-Q22); the others are not built yet (TPL-Q23).
 ADOPT_REVIEW: Dict[str, str] = {
     "T1": "A pullback into a demand / supply area with a reaction there; no template reads an area or a pullback "
           "(D1 / D2 signal on an indicator flip, B1 / B3 on a breakout).",
-    "T2": "A rejection at a range edge (a fade back into the range); B1 signals the opposite, a close beyond the range.",
+    "T2": "A rejection at a range edge (a fade back into the range); B1 signals the opposite, a close beyond the range. "
+          "Template A2 (range edges, step 3) carries this structure; the mapping is switched on once the owner confirms "
+          "its edge / invalidation reading (TPL-Q21).",
     "T3": "RSI divergence into an area; no template reads divergence or an area.",
     "T4": "A sweep beyond an obvious high / low and a close back inside; B1's 'close back inside' is its exit, not a "
           "signal, and no template reads the sweep.",
-    "T5": "A break, then the retest of the broken level; B1 / B3 signal on the break itself, without the retest. The "
-          "honest match is C1 / C3 (breakout + retest), which wait for R7 (TPL-Q8).",
+    "T5": "A break, then the retest of the broken level; B1 / B3 signal on the break itself, without the retest. "
+          "Template A5 (structure flip retest, step 3; C1 / C3 for the range / channel breakouts) carries it, but 'a swing "
+          "formed beyond' is not checked yet; the mapping waits for the owner's answer (TPL-Q22).",
     "T6": "A rejection at the channel line in the trend's favour; B3 signals the opposite, a close beyond the far edge.",
     "T7": "Double top / bottom or head and shoulders at an area; no template reads swing patterns (IDEA-3).",
     "T8": "T1 and T2 reduced to direction; adoptable only once T1 / T2 are.",

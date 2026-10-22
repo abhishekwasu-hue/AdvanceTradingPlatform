@@ -1,0 +1,38 @@
+{
+  "schema": "atp.template/1",
+  "id": "A2",
+  "version": 1,
+  "name": "Range edges",
+  "family": "A",
+  "idea": "When the market moves sideways between two edges, a signal on a rejection at the lower edge (bullish) or the upper edge (bearish); the idea is wrong beyond the edge.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "swing_degree", "label": "Swing size", "help": "How big a swing must be to count when the range and its edges are read. Bigger swings give wider, slower ranges.",
+     "type": "int", "default": 1, "min": 0, "max": 3, "step": 1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "context": {
+    "long": "DowTrend($swing_degree) == \"RANGE\"",
+    "short": "DowTrend($swing_degree) == \"RANGE\""
+  },
+  "setup": {
+    "kind": "event",
+    "long": "ReversalAt(SwingLow($swing_degree), \"bullish\")",
+    "short": "ReversalAt(SwingHigh($swing_degree), \"bearish\")",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "SwingLow($swing_degree)",
+    "short": "SwingHigh($swing_degree)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "range_on_chart"}, {"token": "lower_edge_rejection_formed"}],
+    "short": [{"token": "range_on_chart"}, {"token": "upper_edge_rejection_formed"}]
+  }
+}

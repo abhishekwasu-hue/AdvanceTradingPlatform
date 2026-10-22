@@ -386,6 +386,25 @@ def test_tpl2_moving_average_and_breakout_companions():
         assert np.allclose(stop[fired], level[fired])                  # no buffer: the broken edge itself
 
 
+def test_tpl3_retest_companion_and_the_forwarded_breakout_settings():
+    """Strategy templates step 3 (R7): RetestEntryRef gives the B9 retest's prices on its retest bars only; RetestEntry and
+    RetestEntryRef take the base breakout's own settings as named arguments (left out: the defaults, as before)."""
+    from tests.breakout_bk4_fixtures import retest_rows, rows_frame
+    f = rows_frame(retest_rows())
+    data = SymbolData("S", {"1d": f})
+    ev = lambda text: evaluate(parse(text), data, base_tf="1d")  # noqa: E731
+    COVERED.update({"RetestEntry", "RetestEntryRef"})
+    fired = ev('RetestEntry("up", "range", 10, TRUE)')
+    assert fired.tolist()[-1] and fired.sum() == 1
+    assert ev('RetestEntry("up", "range", 10, TRUE, k=0.2, n=20, v=1.5, mode="fixed")').equals(fired)   # the defaults, named
+    assert not ev('RetestEntry("up", "range", 10, TRUE, v=5)').any()                                     # the breakout's own volume rule
+    level = ev('RetestEntryRef("level", "up", "range", 10, TRUE)')
+    assert level.notna().sum() == 1 and level.iloc[-1] == pytest.approx(f["high"].iloc[:40].iloc[-20:].max())
+    assert ev('RetestEntryRef("retest_low", "up", "range", 10, TRUE)').iloc[-1] == pytest.approx(f["low"].iloc[41:].min())
+    assert ev('RetestEntryRef("held_level", "up", "range", 10, TRUE)').iloc[-1] == pytest.approx(level.iloc[-1])
+    assert ev('RetestEntryRef("level", "down", "range", 10, TRUE)').isna().all()
+
+
 def test_every_registry_entry_has_a_runtime_test():
     # runs last in this module (pytest keeps file order): every field and function was exercised above
     missing = (set(FUNCTIONS) | set(FIELDS)) - COVERED

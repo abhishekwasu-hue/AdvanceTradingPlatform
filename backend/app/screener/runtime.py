@@ -286,11 +286,38 @@ class _Eval:
         def _bool(i: int, default: bool) -> bool:
             return bool(_last(self.ev(args[i], tf))) if len(args) > i else default
 
+        def kw(name: str) -> Optional[Any]:
+            """A named argument's value (None when it is left out): one value for the whole series, as `num` / `_text`."""
+            node_ = node.kwargs.get(name)
+            return None if node_ is None else _last(self.ev(node_, tf))
+
+        def retest_forward(of: str, k_at: Optional[int]) -> Dict[str, Any]:
+            """Strategy templates R7: the base breakout's own settings given to RetestEntry / RetestEntryRef as named
+            arguments (k= also positional at `k_at`); each one left out keeps the breakout parameter's default, exactly as
+            before R7."""
+            out: Dict[str, Any] = {}
+            k = kw("k")
+            if k is None and k_at is not None and len(args) > k_at:
+                k = num(k_at, _bkd("min_break_atr"))
+            if k is not None:
+                out["min_break_atr"] = float(k)
+            given = {name: kw(name) for name in ("n", "v", "mode", "touches")}
+            if given["n"] is not None and of in ("range", "donchian"):
+                out["range_n" if of == "range" else "donchian_n"] = int(given["n"])
+            if of == "range":
+                if given["v"] is not None:
+                    out["vol_mult"] = float(given["v"])
+                if given["mode"] is not None:
+                    out["range_mode"] = str(given["mode"])
+            if given["touches"] is not None and of in ("trendline", "channel"):
+                out["tl_min_touches"] = float(given["touches"])
+            return out
+
         def retest_entry() -> pd.Series:
             side, of = str(self.ev(args[0], tf)), _text(1, _bkd("retest_of"))
-            if of not in RETEST_WAVE_OF:                     # range / swing / donchian / trendline: the B9 path, unchanged
+            if of not in RETEST_WAVE_OF:                     # range / swing / donchian / trendline / channel: the B9 path
                 return _breakout(f, "B9", side, {"retest_of": of, "retest_max_bars": num(2, _bkd("retest_max_bars")),
-                                                 "retest_reversal": _bool(3, _bkd("retest_reversal"))})
+                                                 "retest_reversal": _bool(3, _bkd("retest_reversal")), **retest_forward(of, 7)})
             # R7 (wave templates): the retest of a broken wave line / wave end (app/screener/breakouts/wave_breaks.py)
             return _wave_retest(f, side, of, int(num(2, _bkd("retest_max_bars"))), _bool(3, _bkd("retest_reversal")), int(num(4, 1)),
                                 _text(5, "channel_B"), _text(6, "A"), num(7, _bkd("min_break_atr")))
@@ -427,6 +454,11 @@ class _Eval:
             "GapType": lambda: _breakout(f, "B8", str(self.ev(args[0], tf)), {
                 "gap_level": _text(1, _bkd("gap_level")), "gap_hold_min": num(2, _bkd("gap_hold_min"))}, "class", tf=tf, bars=self._gap_bars(tf)),
             "RetestEntry": lambda: retest_entry(),
+            # Strategy templates R7 / R2: the retest's prices (the same B9 retests as RetestEntry with the same settings)
+            "RetestEntryRef": lambda: _retest_ref(f, _text(0, "level"), str(self.ev(args[1], tf)), {
+                "retest_of": _text(2, _bkd("retest_of")), "retest_max_bars": num(3, _bkd("retest_max_bars")),
+                "retest_reversal": _bool(4, _bkd("retest_reversal")), **retest_forward(_text(2, _bkd("retest_of")), None)},
+                num(5, _bkd("stop_atr_mult"))),
             # Z7a-3: market zones - the stored snapshot as of each bar's close (app/screener/zones.py)
             "NearZone": lambda: _zone(self.data, f, tf, "near", _text(0, "any"), num(1, 0.5), _text(2, "all")),
             "ZoneRole": lambda: _zone(self.data, f, tf, "role", "any", num(0, 0.5), _text(1, "all")),
@@ -909,6 +941,50 @@ def _breakout_ref(f: pd.DataFrame, screen: str, what: str, side: str, overrides:
             res[j] = stop_reference(level[j], low[j], high[j], float(b.atr_prev[j]), side, what.removeprefix("stop_"), stop_mult)
     else:
         raise ScreenRuntimeError(f"unknown breakout reference {what!r}")
+    return pd.Series(res, index=f.index)
+
+
+def _retest_ref(f: pd.DataFrame, what: str, side: str, overrides: Dict[str, Any], stop_mult: float) -> pd.Series:
+    """Strategy templates R7 / R2: a B9 retest's prices as a series - read from the same retests the B9 screen finds
+    (app/screener/breakouts/retest.py `retest_events`), on the retest bars only (NaN elsewhere); `held_level` holds the
+    latest retest's level (a channel edge projected along its line) until the next retest. Real prices (the down side's
+    mirrored orientation turned back), as RangeBreakoutRef / LineBreakoutRef."""
+    from app.screener.breakouts.quality import stop_reference
+    from app.screener.breakouts.retest import retest_events
+    from app.screener.breakouts.screens import Bars
+    if side not in ("up", "down"):
+        raise ScreenRuntimeError(f"unknown breakout side {side!r}")
+    p = _breakout_params(overrides)
+    b = Bars(f, p)
+    s = b.side(1 if side == "up" else -1)
+    try:
+        events = retest_events(b, s, p)
+    except ValueError as exc:
+        raise ScreenRuntimeError(str(exc)) from exc
+    res = np.full(len(f), np.nan)
+    # in retest-bar order (the retests of two breakouts can interleave); on a bar with two, the later breakout's - as B9
+    events = sorted(events, key=lambda e: e.bar)
+    for k, r in enumerate(events):
+        j = r.bar
+        level = float(s.back(r.level))
+        # the base in real prices: the down side's high / low swap back (as evaluate_screen does)
+        base_high, base_low = (float(s.back(r.base_high)), float(s.back(r.base_low))) if s.sign > 0 else \
+            (float(s.back(r.base_low)), float(s.back(r.base_high)))
+        if what == "level":
+            res[j] = level
+        elif what == "retest_low":
+            res[j] = float(s.back(np.min(s.l[r.breakout + 1:j + 1])))
+        elif what == "base_high":
+            res[j] = base_high
+        elif what == "base_low":
+            res[j] = base_low
+        elif what == "held_level":
+            end = next((e.bar for e in events[k + 1:] if e.bar > j), len(f))
+            res[j:end] = [float(s.back(r.level_at(x))) for x in range(j, end)]
+        elif what in ("stop_level_atr", "stop_base", "stop_midpoint"):
+            res[j] = stop_reference(level, base_low, base_high, float(b.atr_prev[j]), side, what.removeprefix("stop_"), stop_mult)
+        else:
+            raise ScreenRuntimeError(f"unknown retest reference {what!r}")
     return pd.Series(res, index=f.index)
 
 

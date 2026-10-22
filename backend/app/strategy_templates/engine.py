@@ -42,8 +42,8 @@ from app.strategy_templates.compile import SIDES, Recipe, Side
 WAVE_SPARSE_SERIES: Tuple[str, ...] = ("WaveAlt", "WaveOrigin", "WaveEnd", "WaveInvalidation", "WaveCap", "WaveRetrace",
                                        "WaveProjection", "WaveRatio", "WaveLineLevel")
 # Strategy templates step 2 (R2): the breakout level companions are prices on their signal bars only (held_level: from the
-# first signal on), so they never hold the warm-up back either.
-BREAKOUT_SPARSE_SERIES: Tuple[str, ...] = ("RangeBreakoutRef", "LineBreakoutRef")
+# first signal on), so they never hold the warm-up back either; so are the retest's (R7, RetestEntryRef).
+BREAKOUT_SPARSE_SERIES: Tuple[str, ...] = ("RangeBreakoutRef", "LineBreakoutRef", "RetestEntryRef")
 SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"
@@ -99,9 +99,15 @@ def _leaves(ast: Any) -> List[Any]:
             out.append(node)
         elif isinstance(node, n.Call):
             spec = FUNCTIONS.get(node.name)
-            if spec is not None and spec.returns != BOOL and node.name not in SPARSE_SERIES:
+            if spec is not None and spec.returns != BOOL and not _reads_sparse(node):
                 out.append(node)
     return out
+
+
+def _reads_sparse(node: n.Call) -> bool:
+    """A sparse series, or a number function of one (step 3: C1 / C3's `Least(RetestEntryRef(...), RetestEntryRef(...))`
+    is missing off the retest bars like its inputs, so it never holds the warm-up back either)."""
+    return any(isinstance(inner, n.Call) and inner.name in SPARSE_SERIES for inner in n.walk(node))
 
 
 def _closed_count(ev: _Eval, tf: str, base_tf: str) -> np.ndarray:

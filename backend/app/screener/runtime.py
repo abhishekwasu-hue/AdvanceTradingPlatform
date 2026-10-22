@@ -301,7 +301,7 @@ class _Eval:
                 k = num(k_at, _bkd("min_break_atr"))
             if k is not None:
                 out["min_break_atr"] = float(k)
-            given = {name: kw(name) for name in ("n", "v", "mode", "touches")}
+            given = {name: kw(name) for name in ("n", "v", "mode", "touches", "swing")}
             if given["n"] is not None and of in ("range", "donchian"):
                 out["range_n" if of == "range" else "donchian_n"] = int(given["n"])
             if of == "range":
@@ -311,6 +311,8 @@ class _Eval:
                     out["range_mode"] = str(given["mode"])
             if given["touches"] is not None and of in ("trendline", "channel"):
                 out["tl_min_touches"] = float(given["touches"])
+            if given["swing"] is not None and of == "swing":      # step 5 (C2): the swing breakout's own swing degree
+                out["swing_degree"] = int(given["swing"])
             return out
 
         def retest_entry() -> pd.Series:

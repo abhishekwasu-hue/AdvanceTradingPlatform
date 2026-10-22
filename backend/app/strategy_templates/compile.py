@@ -13,7 +13,9 @@ Binding rules (owner order section 0 R1, section 1):
   `$name` - it reaches one only as `@{name}` (family G, WB3), replaced by its value (`@1h`) before parsing and then
   validated like a written timeframe. A yes / no setting may be read where the registry takes a yes / no argument
   (step 3, R7: RetestEntry's `reversal` - "wait for a reversal at the level"); the validator checks its type there;
-* a part with `variants` compiles only the expression of the chosen enum value (family G, WB3).
+* a part with `variants` compiles only the expression of the chosen enum value (family G, WB3);
+* step 5: an invalidation that is the extreme since the setup bar (`SetupExtreme`) compiles no expression - the engine
+  keeps it while it walks the bars (`Recipe.invalidation_since_setup`).
 """
 from __future__ import annotations
 
@@ -22,14 +24,15 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, Optional, Set, Tuple, Union
 
 from app.screener import nodes as n
 from app.screener.parser import ScreenQLSyntaxError, parse
 from app.screener.registry import FUNCTIONS, LAST_BAR_ONLY, NUM, BOOL
 from app.screener.validator import validate_study
 from app.strategy_templates import language
-from app.strategy_templates.schema import SIGNAL_TIMEFRAME, ContextSwitch, Setup, SetupSwitch, Sided, Switch, Template
+from app.strategy_templates.schema import (SIGNAL_TIMEFRAME, ContextSwitch, Setup, SetupExtreme, SetupSwitch, Sided, Switch,
+                                           Template)
 
 Side = Literal["long", "short"]
 SIDES: Tuple[Side, ...] = ("long", "short")
@@ -78,6 +81,8 @@ class Recipe:
     params_hash: str = ""
     setup: Optional[Setup] = None               # the setup in force (a SetupSwitch's chosen variant); see `chosen_setup`
     has_trigger: bool = True                    # False: the setup event itself is the signal
+    # step 5 (TPL-5): the invalidation is the extreme since the setup bar (the engine keeps it; no expression is compiled)
+    invalidation_since_setup: bool = False
 
     @property
     def chosen_setup(self) -> Setup:
@@ -261,7 +266,7 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
     ctx_sided: Optional[Sided] = chosen(ctx, settings) if ctx is not None else None
     setup: Setup = chosen(template.setup, settings)
     trigger: Optional[Sided] = chosen(template.trigger, settings)
-    invalidation: Sided = chosen(template.invalidation, settings)
+    invalidation: Union[Sided, SetupExtreme] = chosen(template.invalidation, settings)
     exit_signal: Optional[Sided] = chosen(template.exit_signal, settings)
     if trigger is None and not (setup.kind == "event" and setup.same_bar):
         problems.append("without a trigger the setup event is the signal: kind event with same_bar true")
@@ -285,7 +290,9 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
     add("setup", None, "bool", long_text=setup.long, short_text=setup.short)
     if trigger is not None:
         add("trigger", trigger, "bool")
-    add("invalidation", invalidation, "num")
+    since_setup = isinstance(invalidation, SetupExtreme)
+    if isinstance(invalidation, Sided):
+        add("invalidation", invalidation, "num")
     if setup.arm_level is not None:
         add("arm_level", setup.arm_level, "num")
     if exit_signal is not None:
@@ -316,7 +323,7 @@ def compile_recipe(template: Template, settings: Settings) -> Recipe:
             spec = FUNCTIONS[call.name]
             flags.update(f for f in (spec.flag, *spec.also_flags) if f)
     recipe = Recipe(template, settings, context_tf if context_on else None, context_on, parts, expiry, lookback, flags,
-                    setup=setup, has_trigger=trigger is not None)
+                    setup=setup, has_trigger=trigger is not None, invalidation_since_setup=since_setup)
     recipe.params_hash = params_hash(template, settings)
     return recipe
 

@@ -127,17 +127,99 @@ E5 VWAP reclaim (each invalidation is "the extreme since the setup": an engine p
 E5 also needs "the same session" for the cross-under), E2 RSI divergence (RsiDivergence reads a fixed RSI 14 and its
 extreme has no companion), and family F.
 
+<<<<<<< HEAD
+## Step 5 (TPL-5): the extreme since the setup bar, a session-bound setup, the swing degree for the retest; C2, D3, E1, E3, E5
+
+Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-Q41..TPL-Q49.
+
+| Part | Where | Status |
+|---|---|---|
+| The engine piece "the extreme since the setup bar" (TPL-Q41): an invalidation `{"extreme": "since_setup"}` (alone or as one choice of an invalidation switch) is the lowest low (long) / highest high (short) from the setup instance's bar to the trigger bar, kept while the state machine walks the bars and restarted by a newer setup; for an invalidation only; every earlier template unchanged (engine version 1, the same params hash) | `strategy_templates/schema.py` (`SetupExtreme`, `InvalidationSwitch`), `compile.py`, `engine.py` | done |
+| A setup bound to its session (TPL-Q42, E5): `session_bound` voids the instance on the first bar of another session; the session is the exchange calendar's for each bar's own timestamp (the runtime's session map, as SessionVWAP) - no time-of-day rule; intraday timeframes only | `schema.py`, `engine.py` | done |
+| R7 for C2 (TPL-Q43): RetestEntry / RetestEntryRef take `swing=` - the swing breakout's degree (`degree` stays the wave degree); left out = the default, so older calls are byte-identical; validated like the other named arguments, and a larger degree asks for its history (`Spec.kwarg_degree_bars`) | `screener/registry.py`, `runtime.py`, `validator.py` | done |
+| C2 swing breakout and retest: B2's swing size and break distance forwarded, retest within, wait for a reversal (or a touch), invalidation {the pullback, just beyond the broken swing, whichever is farther - default, the latest confirmed opposite swing}, exit a close back through the level | `templates/C2.json` | done |
+| D3 moving-average pullback in trend (TPL-Q44): the first bar of the pullback to the fast average in a rising (falling) slow average, the reversal at the fast average with the close back beyond it within `pullback_max_bars`, invalidation the pullback's extreme, same bar a choice, exit a close back across the slow average (or none) | `templates/D3.json` | done |
+| E1 RSI pullback in trend (TPL-Q45): the RSI back out of the oversold (overbought) zone after a dip into it, with the higher-timeframe trend filter (an average or the Supertrend), invalidation the dip's extreme, exit the opposite zone or the opposite signal | `templates/E1.json` | done |
+| E3 Bollinger mean reversion in a range (TPL-Q46): the first close back inside after a close beyond the lower (upper) band, in a range regime (ADX below its threshold, or the swing structure a range), invalidation the excursion's extreme, exit a touch of the middle or the opposite band | `templates/E3.json` | done |
+| E5 session VWAP reclaim / reject (TPL-Q47, "Intraday (session-based)"): the close back above (below) the session VWAP after a cross the other way in the same session, optional higher-timeframe trend average (on by default), invalidation the session's extreme since the cross or VWAP with an ATR buffer, exit a close back across VWAP | `templates/E5.json` | done |
+| Signal text: structure / indicator words per template | `language.py` | done |
+
+Tests: `tests/test_tpl5_templates.py` - the engine piece on hand-made bars (the setup bar and the trigger bar included,
+an earlier bar and a later bar not, a newer setup restarts it, same bar, S6, a conflict), its definition and no look-ahead
+on random marks (property test), the schema allows it for an invalidation only and every earlier template still compiles
+without it; the session-bound setup across two sessions and refused on Daily; `swing=` against the B9 screen's own retest
+events per degree, left out = the older call, ignored by another base, validated, the history by degree; per template
+"fires exactly" against an independent walk of S4 / S5 / S6 / R8 over series written in the test (long and short, the
+invalidation and the setup bar by value), the must-not cases (late, against the trend, a trending market, a cross from
+the previous session, an index without volume, a stricter retest), the exits by value, the settings' constraints; the
+shared gate for all five - the mirror test (whole ticks; the Supertrend filter from the bar its seeded direction mirrors;
+the swing-structure regime left out: its labels break ties one way), the truncation test over many t, scan = backtest =
+options backtest = worker on one trailing window (the TPL-1 harness), property tests on random valid settings, the
+language guard, "no number written into a rule", the ids round trip and fit, the adapter's signal, provenance and flags.
+`swing=` is in the runtime fixtures (`test_s1b_screen_runtime.py`) and the no-look-ahead cases (`app/quality/causal_cases.py`,
+lookahead job). No frontend change: the Paper bot form lists the templates from the API. No idea-library card gains an
+honest match (TPL-Q48).
+
+Not built in step 5 (TPL-Q49): E2 RSI divergence (an RSI period on RsiDivergence, an extreme companion and the
+lower-degree trigger: its own PR), B10 gap and go, C4 trendline breakout + retest (TPL-Q18), family F.
+=======
+## Family F (TPL-6): the option seller packs F1, F2
+
+Same flag `strategy_templates` (OFF), PAPER only, signals only, no migration. Owner questions TPL-F1..TPL-F8.
+
+A pack is not a new recipe: it is an ordinary `atp.template/1` template whose setting `source` (a `variants` switch, as
+family G) picks a MEMBER template, and every part of each variant is the member's own expression with the member's own
+settings (same keys, labels, defaults, bounds, constraints and timeframes). So a pack signals on exactly the member's bars,
+with the member's invalidation and exit; only the words differ - the signal text adds the pack's reading of the side for
+the option structure the user set up. The mapping is `app/strategy_templates/packs.py` (`MEMBERS`); the tests hold every
+variant equal to its member part by part and series by series, so editing one without the other fails. The option
+structure (bull put spread on the bullish side, bear call spread on the bearish one, an iron condor on either), its
+strikes, width, expiry, lots and exits stay the deployment's own settings (DECISIONS: options construction stays in the
+user's settings); a pack has no field for any of them and the adopt pre-fill carries none (a note says where they come from).
+
+| Part | Where | Status |
+|---|---|---|
+| F1 directional seller pack: `source` = Supertrend flip (D1: its period, multiplier and higher-timeframe filter), read as "a bullish / bearish continuation for the option structure in your own settings"; invalidation the Supertrend line, exit the opposite flip (inert until R5) | `templates/F1.json` | done (member D1) |
+| F2 range seller pack: `source` = range edges (A2: its swing size), read as "the lower / upper edge of the range ..."; invalidation the edge, no exit (A2 has none) | `templates/F2.json` | done (member A2) |
+| The pack mapping (pack -> source -> member), the adopt note | `packs.py`; `routes.py` (`_notes`, one line) | done |
+| Signal text: four tokens (structure words; no buy / sell / target / stop words, no numbers) | `language.py` | done |
+| F1's other members A1 (areas, TPL-Q23) and D3 (the "extreme since the setup" piece), F2's member E3 (the same piece) | - | next: new `source` choices in a new pack version once those templates are in the library (TPL-F1, TPL-F2) |
+| G12 (the wave seller pack, labels over G1-G11) | - | not built: G1-G11 already switch their parts on their own settings (trigger style, window) and share setting keys with different defaults / choices, so one pack template cannot hold them with today's one-level `variants`; needs a pack composition (TPL-F7, WAVE-10) |
+
+Tests: `tests/test_tpl6_family_f.py` - every pack variant compiles to its member's own parts (every allowed timeframe, the
+filter on), the pack's settings are the member's, the pack's series equals the member's (direction, invalidation, exits,
+reasons, warm-up, instances) on random data and in property tests on random valid settings; F1 must fire on the turn on
+both sides with the line and the opposite flip, must not in a steady trend or on noise, the higher-timeframe filter, the
+warm-up and the refusals; F2 only at a range edge inside a range, never outside one, no exit, S6; for both: the mirror
+test (F1 from the bar the Supertrend directions mirror each other, as D1; F2 on mirror-exact fixtures, TPL-F6), the
+truncation test over many t, scan = backtest = options backtest (bull put, bear call and iron condor configurations: the
+same signals for each) = worker on one trailing window; the user's structure decides the legs (bull put spreads only on
+bullish signals, bear call spreads only on bearish ones, condors on either with four legs), the width and the lots come
+from the configuration; no pack field, setting or rule names a strike, premium, expiry, lot, spread or order; the language
+guard, "no number written into a rule", the ids, the adapter's signal (no target, risk_reward None), provenance and flags;
+the API: the cards ("Option seller packs"), adopt as a pre-fill with the note and no option field, an OPTION bull put
+deployment on PAPER from the pre-fill keeping the user's width, LIVE refused. No frontend change: the Paper bot form lists
+the templates from the API.
+>>>>>>> origin/main
+
 ## Not in this PR (next PRs)
 
 - Family A's area templates A1, A8, A3, A4 (an area companion + zone timelines in the template engine, TPL-Q23), A6 / A7
   (their functions); then the rest of B / C / D / E (TPL-Q40: an engine "extreme since the setup" invalidation for D3, E1,
+<<<<<<< HEAD
+  E3, E5 and the swing degree for C2: done in step 5; the gap companion for B10; C4 after TPL-Q18; E2 after an RSI period
+  and an extreme companion, TPL-Q49), then F.
+=======
   E3, E5; the gap companion for B10; the swing degree forwarded for C2; C4 after TPL-Q18; E2 after an RSI period and an
-  extreme companion), then F.
+  extreme companion). Family F: F1 / F2 built (TPL-6 above); their further members (A1, D3, E3) and G12 next
+  (TPL-F1, TPL-F2, TPL-F7).
+>>>>>>> origin/main
 - Section 5 "exits as settings" (stop_source / target_rule on the deployment's exit settings): needs a migration and
   the owner's approval. Until then the adapter's Signal carries only the invalidation as its stop.
 - R4 rest: the stop_source rule per instrument_kind and the precedence table with tests (comes with section 5).
 - R5: the TEMPLATE_EXIT plumbing (both backtest engines and the position monitor read `TemplateStrategy.exit_signal`
   on each bar close of an open trade; reason "Template exit").
 - R2 for the gap family (B10), with its template.
-- R7 rest: the projected trendline retest (TPL-Q18) and forwarding the swing degree (C2); R10 (NEXT_AREA target).
+- R7 rest: the projected trendline retest (TPL-Q18); R10 (NEXT_AREA target). (Forwarding the swing degree for C2: done
+  in step 5.)
 - The stored copy in "My strategies" with provenance (a table: migration), the settings form, Templates page, compare (step 3).

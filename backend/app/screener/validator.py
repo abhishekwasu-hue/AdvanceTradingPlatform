@@ -453,6 +453,11 @@ class _Checker:
                      node)
         if spec.degree_min_bars:                                      # S5-A4: more history for a larger swing degree
             min_bars = max(min_bars, self.degree_bars(node, spec))
+        for kw_name, table in spec.kwarg_degree_bars:                 # strategy templates step 5 (C2): a named swing degree
+            if kw_name in node.kwargs:
+                value = self._value(node.kwargs[kw_name])
+                if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= int(value) < len(table):
+                    min_bars = max(min_bars, table[int(value)])
         for name in spec.tf_multiple_args:                            # U6 BK2: e.g. a 30-minute range on 15m bars, not on 45m ones
             pos = next(i for i, a in enumerate(spec.args) if a.name == name)
             arg = node.args[pos] if pos < len(node.args) else None

@@ -63,6 +63,9 @@ class Spec:
     # TPL-1: argument pairs (a, b) where a must be below b (MACD fast < slow; PSAR start <= max is ("start", "max", True))
     # - checked at validation on the literal / parameter / default values; the third item allows equality
     ordered_args: Tuple[Tuple[str, str, bool], ...] = ()
+    # Strategy templates step 5 (C2): (named argument, bars by its swing degree) - a named swing degree needs that history
+    # too (RetestEntry's own `degree` is the wave degree; `swing=` is the swing breakout's degree)
+    kwarg_degree_bars: Tuple[Tuple[str, Tuple[int, ...]], ...] = ()
 
 
 def _wave_values(name: str) -> Tuple[str, ...]:
@@ -162,9 +165,10 @@ RETEST_OF_CHOICES: Tuple[str, ...] = ("range", "swing", "donchian", "trendline",
 RETEST_FORWARD_DOC = ("; channel: the far edge of a rising (up) / falling (down) channel, read along the line at each bar after the"
                       " breakout. Named arguments (the base breakout's own settings): k= the break distance in ATRs (or the"
                       " eighth positional argument), n= range bars (range) / channel bars (donchian), v= / mode= the"
-                      " range breakout's volume expansion and range mode, touches= the trendline / channel touches")
+                      " range breakout's volume expansion and range mode, touches= the trendline / channel touches, swing= the"
+                      " swing breakout's swing degree (swing; the `degree` argument stays the wave degree)")
 _RETEST_FORWARD = (_K, _bk("range_n", "n", "window"), _bk("vol_mult", "v", NUM), _bk("range_mode", "mode", STR),
-                   _bk("tl_min_touches", "touches", NUM))
+                   _bk("tl_min_touches", "touches", NUM), _bk("swing_degree", "swing", NUM))
 RETEST_REF_OF: Tuple[str, ...] = ("range", "swing", "donchian", "trendline", "channel")
 RETEST_REF_WHATS: Tuple[str, ...] = ("level", "retest_low", "base_high", "base_low", "held_level", "stop_level_atr", "stop_base",
                                      "stop_midpoint")
@@ -525,15 +529,16 @@ FUNCTIONS: Dict[str, Spec] = {s.name: s for s in (
                                                _bk("retest_reversal", "reversal", BOOL), _WDEGREE,
                                                Arg("line", STR, "channel_B", False, choices=_wave_choices("LINES")),
                                                Arg("wave", STR, "A", False, choices=_wave_choices("FIXED_END_CHOICES")), _K),
-         kwargs=_RETEST_FORWARD,
+         kwargs=_RETEST_FORWARD, kwarg_degree_bars=(("swing", SWING_DEGREE_MIN_BARS),),
          cost=4.0, min_bars=RETEST_MIN_BARS, degree_min_bars=SWING_DEGREE_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
          doc=RETEST_DOC + RETEST_WAVE_DOC + RETEST_FORWARD_DOC),
     # Strategy templates R7 / R2: the retest's prices as a series (the same retest as RetestEntry with the same settings)
     Spec("RetestEntryRef", "factor", NUM, "price", (Arg("what", STR, choices=RETEST_REF_WHATS), _SIDE,
                                                     _bk("retest_of", "of", STR, choices=RETEST_REF_OF), _bk("retest_max_bars", "bars", NUM),
                                                     _bk("retest_reversal", "reversal", BOOL), _STOP_MULT),
-         kwargs=_RETEST_FORWARD, cost=4.0, min_bars=RETEST_MIN_BARS, flag=BREAKOUT_FLAG, also_flags=_BK4,
-         doc="B9 retest's prices - the same retest as RetestEntry with the same arguments (named: k=, n=, v=, mode=, touches=),"
+         kwargs=_RETEST_FORWARD, kwarg_degree_bars=(("swing", SWING_DEGREE_MIN_BARS),), cost=4.0, min_bars=RETEST_MIN_BARS,
+         flag=BREAKOUT_FLAG, also_flags=_BK4,
+         doc="B9 retest's prices - the same retest as RetestEntry with the same arguments (named: k=, n=, v=, mode=, touches=, swing=),"
              " on its retest bars (missing elsewhere):"
              " level (the broken level at the retest bar; a channel edge projected there), retest_low (the low of the pullback"
              " from the bar after the breakout to the retest bar; the high for the down side), base_high / base_low (the"

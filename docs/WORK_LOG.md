@@ -2976,3 +2976,33 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   baselines `growth-plan-v2-*`, `growth-share-v2-*` at 360 / 390 / 1440 and `growth-activation-v2-*` at 390 / 1440, light
   + dark; `e2e/adminMocks.ts` gains a `routes` hook). The banned-words guard reads `src/growth`.
 - Questions MO4-21..33 (OPEN_QUESTIONS); owner-orders README row 9 updated.
+## 22 Oct - Strategy templates step 5 (TPL-5): the extreme since the setup bar, C2, D3, E1, E3, E5 (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl5-setup-extreme`. No migration (templates are JSON in the repository; no new flag).
+- Engine: an invalidation may be "the extreme since the setup bar" (`{"extreme": "since_setup"}`: the lowest low / highest
+  high from the setup instance's bar to the trigger bar, restarted by a newer setup; causal, truncation-tested); a setup
+  may be bound to its session (the exchange calendar's session of each bar's own timestamp; no time-of-day rule). Every
+  earlier template runs and hashes as before.
+- R7 for C2: RetestEntry / RetestEntryRef take `swing=` (the swing breakout's degree; `degree` stays the wave degree; left
+  out = the older call, byte-identical; a larger degree asks for its history).
+- Templates: C2 swing breakout and retest, D3 moving-average pullback in trend, E1 RSI pullback in trend, E3 Bollinger mean
+  reversion in a range, E5 session VWAP reclaim / reject (Intraday, session-based). Every number a setting with a default;
+  signal text in structure / indicator words; no target, size or order anywhere.
+- Not built (TPL-Q49): E2 (its own PR: an RSI period on RsiDivergence, an extreme companion, the lower-degree trigger),
+  B10, C4, family F.
+- Tests: `tests/test_tpl5_templates.py` (the engine piece, `swing=`, the section 8 gate for the five templates), runtime
+  fixture, causal cases (lookahead job). Questions TPL-Q41..TPL-Q49.
+## 22 Oct - Strategy templates family F: the option seller packs F1, F2 (behind strategy_templates, PAPER only)
+
+- Branch `claude/tpl6-family-f`. No migration (templates are JSON in the repository; no new flag).
+- F1 directional seller pack (member D1, the Supertrend flip: "read as a bullish / bearish continuation for the option
+  structure in your own settings") and F2 range seller pack (member A2, range edges: "read as the lower / upper edge of
+  the range ..."). A pack is its member part for part (a `source` switch, the member's own settings and invalidation);
+  only the words differ. `app/strategy_templates/packs.py` holds the mapping; the adopt notes say the option structure,
+  strikes, width, expiry and lots come from the user's own bot settings. Shared files touched: `language.py` (four
+  tokens), `routes.py` (one note line).
+- Tests: `tests/test_tpl6_family_f.py` (the pack equals its member, must fire / must not, mirror, truncation, scan =
+  backtest = options backtest with bull put / bear call / iron condor = worker, legs / width / lots from the configuration,
+  property tests, words, ids, adapter, the API with an OPTION paper bot).
+- Not built: F1's members A1 / D3 and F2's E3 (not in the library yet), G12 (needs a pack composition). Found: A2's
+  DowTrend / reversal check is not exactly mirror-symmetric on some synthetic series (pre-existing). Questions TPL-F1..F8.

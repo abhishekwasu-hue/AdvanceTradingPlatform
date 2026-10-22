@@ -1,0 +1,58 @@
+{
+  "schema": "atp.template/1",
+  "id": "E1",
+  "version": 1,
+  "name": "RSI pullback in trend",
+  "family": "E",
+  "idea": "While the higher-timeframe trend filter agrees, a signal when the RSI turns back out of the oversold zone (bullish) or the overbought zone (bearish) after a dip into it; the idea is wrong beyond the dip's extreme.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "rsi_period", "label": "RSI period", "help": "Bars the RSI is calculated over.", "type": "int", "default": 14, "min": 2, "max": 100, "step": 1},
+    {"key": "oversold", "label": "Oversold level", "help": "The dip starts when the RSI goes below this level; the signal comes when it is back above.", "type": "float", "default": 30.0, "min": 1.0, "max": 49.0, "step": 1.0},
+    {"key": "overbought", "label": "Overbought level", "help": "The rally starts when the RSI goes above this level; the signal comes when it is back below.", "type": "float", "default": 70.0, "min": 51.0, "max": 99.0, "step": 1.0},
+    {"key": "trend_filter", "label": "Trend filter", "help": "What tells the trend on the higher timeframe: the close against its trend average, or the Supertrend direction.", "type": "enum", "default": "average", "choices": ["average", "supertrend"], "choice_labels": ["The close against a trend average", "The Supertrend direction"]},
+    {"key": "context_timeframe", "label": "Trend timeframe", "help": "The higher timeframe the trend filter reads (closed bars only).", "type": "timeframe", "default": "1d", "choices": ["15m", "30m", "1h", "1d", "1w"]},
+    {"key": "ma_type", "label": "Trend average type", "help": "How the trend average is calculated.", "type": "ma_type", "default": "EMA", "choices": ["EMA", "SMA", "WMA", "HMA"], "choice_labels": ["Exponential", "Simple", "Weighted", "Hull"]},
+    {"key": "trend_period", "label": "Trend average", "help": "Bars in the trend average.", "type": "int", "default": 50, "min": 2, "max": 500, "step": 1},
+    {"key": "st_period", "label": "Supertrend period", "help": "Bars of the average true range behind the Supertrend line.", "type": "int", "default": 10, "min": 1, "max": 100, "step": 1},
+    {"key": "st_mult", "label": "Supertrend multiplier", "help": "How many average true ranges the line keeps from the middle of the bar.", "type": "float", "default": 3.0, "min": 0.5, "max": 10.0, "step": 0.1},
+    {"key": "exit_rule", "label": "The idea has ended", "help": "When the RSI reaches the opposite zone, or on the opposite signal (the RSI turning back out of that zone).", "type": "enum", "default": "opposite_zone", "choices": ["opposite_zone", "opposite_trigger"], "choice_labels": ["The RSI reaches the opposite zone", "The opposite signal"]}
+  ],
+  "constraints": [
+    {"left": "context_timeframe", "op": ">", "right": "signal_timeframe", "message": "The trend timeframe must be higher than the signal timeframe."}
+  ],
+  "sides_default": "both",
+  "context": {
+    "by": "trend_filter",
+    "variants": {
+      "average": {"long": "close > MA(close, $trend_period, $ma_type)", "short": "close < MA(close, $trend_period, $ma_type)"},
+      "supertrend": {"long": "SupertrendDir($st_period, $st_mult) == 1", "short": "SupertrendDir($st_period, $st_mult) == -1"}
+    },
+    "timeframe_param": "context_timeframe"
+  },
+  "setup": {
+    "kind": "event",
+    "long": "CrossBelow(RSI($rsi_period), $oversold)",
+    "short": "CrossAbove(RSI($rsi_period), $overbought)",
+    "same_bar": false
+  },
+  "trigger": {
+    "long": "CrossAbove(RSI($rsi_period), $oversold)",
+    "short": "CrossBelow(RSI($rsi_period), $overbought)"
+  },
+  "invalidation": {"extreme": "since_setup"},
+  "exit_signal": {
+    "by": "exit_rule",
+    "variants": {
+      "opposite_zone": {"long": "RSI($rsi_period) >= $overbought", "short": "RSI($rsi_period) <= $oversold"},
+      "opposite_trigger": {"long": "CrossBelow(RSI($rsi_period), $overbought)", "short": "CrossAbove(RSI($rsi_period), $oversold)"}
+    }
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "rsi_back_up_from_oversold"}, {"token": "ctx_trend_filter_agrees"}],
+    "short": [{"token": "rsi_back_down_from_overbought"}, {"token": "ctx_trend_filter_agrees"}]
+  }
+}

@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth.dependencies import get_current_user
 from app.db.models import User
 from app.db.session import get_session
-from app.strategy_templates import ids, language, library
+from app.strategy_templates import ids, language, library, packs
 from app.strategy_templates.adapter import ENGINE_LABEL, TemplateStrategy
 from app.strategy_templates.compile import TemplateError, compile_recipe, resolve_settings
 from app.strategy_templates.schema import Template
@@ -99,6 +99,8 @@ def _card(template: Template, available: bool) -> Dict[str, Any]:
 def _notes(template: Template, strategy: TemplateStrategy) -> List[str]:
     notes = ["Signals only: what to trade, how much and when to get out stay your own choices.",
              "Paper money only. Nothing starts until you confirm it."]
+    if packs.is_pack(template):
+        notes.append(packs.STRUCTURE_NOTE)
     degrees = [v for k, v in strategy.settings.params.items() if k.endswith("degree") and isinstance(v, int)]
     if any(d >= FETCH_DEPENDENT_DEGREE for d in degrees):
         notes.append("Larger swings depend on how much history is loaded, so an early signal can differ from a longer chart.")

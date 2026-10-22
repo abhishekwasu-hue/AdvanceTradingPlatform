@@ -138,13 +138,23 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/universe/ind_testindexlist.csv": "544401c201de5479761f00ecc1ddc0e5605aeada400ee74db1db56ace85a9ee3",
     "backend/tests/fixtures/universe/symbolchange.csv": "625b27594c67da488945466f9d9ae4b96847b3fb69316ef04ce565a56dd00a5c",
     "backend/tests/fixtures/universe/symbolchange_noheader.csv": "5a9f35b030909aa202976eb08e24fcf3d488a37e1629d03768d68fee9ecb6c39",
+    # WL1: hand-made system-watchlist fixtures (made-up companies, symbols and ISINs; README in the folder).
+    "backend/tests/fixtures/universe/wl1/EQUITY_L.csv": "61124b9e2aea1417babff011c1b81fa007729f198e16df5b0b4a167f5bf1e798",
+    "backend/tests/fixtures/universe/wl1/classification_full.csv": "ecc32fb6eaf34ca177445dde1be87b524a5873400e2c5054d985c6eca1699f5e",
+    "backend/tests/fixtures/universe/wl1/fo_mktlots.csv": "950221cfbc4059acef8576e12439fbbb7d2d2e7e1330d0556c3eea88c9b0f6c3",
+    "backend/tests/fixtures/universe/wl1/ind_test500list.csv": "09f92b92f6aa77001068e7a7a29b4296115ebc39256ac85ce74899f97011dc55",
+    "backend/tests/fixtures/universe/wl1/ind_test50list.csv": "a1564c2f18c6deb0f7f3e02c32db0749ff73c432374fa9aa5e5ca421071e247e",
+    "backend/tests/fixtures/universe/wl1/ind_testbanklist.csv": "7a539735c461e361fca0ce83f46b28015a4814f3d14fb764d9a4a6c6dd5764e6",
     # the private fixtures manifest: paths and sha256 only, no data (backend/tests/private_fixtures.py, owner decision PR-2)
     "backend/tests/private_fixtures_manifest.json": "2aeb33e870fec47b0caa3f317d68e221267a7220c96dec102239e712198b3472",
     # the AI eval sets and their baselines (backend/evals/runner.py)
-    "backend/evals/baselines.json": "73ca7f7ea5476ac64ce41055b9cc454dcc5c756792becdc22e2f348f1fe27411",
+    "backend/evals/baselines.json": "3c28c69e5964aab11c234bd6cf7608f66c9d327f1dfeacdb64d7f42f2b109a09",
     "backend/evals/sets/injection.jsonl": "8a7ffa3eb5e012784e7b06687b74cdd3f45d32ee4d3ec5537353d5aba6198fd7",
     "backend/evals/sets/qa.jsonl": "845e5902cbc904864ec1f24bbf589194428ec462e164e388ab04b9734469338e",
     "backend/evals/sets/tool_args.jsonl": "becccbea044cd67e582bde3593bb500bccac3ba1132d1cd2ab38edc60818befa",
+    "backend/evals/sets/copilot_jobs.jsonl": "e8b3f299aca8ebdba4e4377604a2c03137f668ce7544a3d3c558e6f2be31a3f4",
+    "backend/evals/sets/copilot_safety.jsonl": "52f604c07e032fe8364764149d2fc83926a5a5c9c204361fd6bd39b97965c11f",
+    "backend/evals/sets/copilot_tools.json": "5cd0d7c4d33c47629ef6b2cf0dfb254ecf57d6695718cfc776f5d258a1fdb729",
     # hand-written API replies for the Playwright tests
     "frontend/e2e/fixtures/ack.json": "42357f9971519912aa2ac0bab5a4498de677bae7aea2270e9e854057b4b11361",
     "frontend/e2e/fixtures/actions.json": "49e8cbfacbd96f95bc73a90691ae343bd487140c7ba30b5954031a1a2d96e547",
@@ -165,6 +175,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/news_status.json": "be5ac693f289f43bc2bfeb790c22a9390a985a0715f8193670de81c64245e7bd",
     "frontend/e2e/fixtures/notifications.json": "be5ded0116ca5c0f8f71caa2170c75eba590783ad737fdd99d14db74c4af4faa",
     "frontend/e2e/fixtures/option_chain_v2.json": "c37438deaa26205fcc03016050fae76b6e181a2f9911587e4ac51d81e2a98848",
+    "frontend/e2e/fixtures/option_chain_charts.json": "26645da956042b696609fa5515bb62ca052a83ec4d6f6f41576790fedb1aaa25",
     "frontend/e2e/fixtures/options_builder.json": "bf6df3ea9f5caddb5e3acc1d2f8360875a3cd72550f194156b21266fd550e1f0",
     "frontend/e2e/fixtures/provider.json": "6aabdd6f537fd8ce0a735b8ec21ed11e8f590ea3718263cc470f0916e53c7b32",
     "frontend/e2e/fixtures/setup_v2.json": "cff0561b071bfa9bfb79e7e4b85029ddc0cbb3f395a64cd7d0c209aebdd419e7",
@@ -176,6 +187,7 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "frontend/e2e/fixtures/thesis_history.json": "f3226989acc68ddf2bbfa69ff8a5353011a90a480befc57c0bfa0c988ccd5a6c",
     "frontend/e2e/fixtures/thesis_report.json": "e85180cb3f957bf048f9bffe63e3237bb760333376e255f1ae76f6d9df2e287d",
     "frontend/e2e/fixtures/trading_v2.json": "46bc6543f0f50524ef77c82ee261b19afe100722ee8c49d5a6a3fb6cda207265",
+    "frontend/e2e/fixtures/copilot_chat_v2.json": "e8b6aa29d31b13f65cff65e2f2e9f20caa345a305311c9a46d346cba6e7359d0",
 }
 
 # Public data rebuilt by automation, allowed by path (no hash: it changes on every refresh). Each entry says its source.

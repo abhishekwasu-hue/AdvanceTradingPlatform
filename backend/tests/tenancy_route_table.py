@@ -62,6 +62,8 @@ S_BACKTEST = "self: a backtest computed for the caller; stores nothing another m
 S_OWN_DRAWINGS = "self: the caller's own chart drawings (per user)"
 S_OWN_LAYOUTS = "self: the caller's own saved chart workspace layouts (per user)"
 S_OWN_WATCHLISTS = "self: the caller's own watchlists (tenant and user); another member's or organisation's list is a 404"
+S_OWN_CHART_ANALYSES = ("self: the caller's own chart images and analyses (tenant and user); another member's or organisation's "
+                        "item is a 404 (rate limited, plan limits)")
 S_OWN_PREFS = "self: the caller's own UI preferences (tenant and user); no route names another user"
 S_OWN_JOURNAL = "self: the caller's own journal settings and tags on their own trades"
 S_READ_MARKS = "self: read marks are per user"
@@ -97,6 +99,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/admin/beta/invite-codes/{code_id}/revoke"): "admin",
     ("GET", "/api/admin/billing/{tenant_id}"): "admin",
     ("POST", "/api/admin/billing/{tenant_id}/payment"): "admin",
+    ("GET", "/api/admin/chart-analyze/settings"): "admin",   # Analyze a chart: sizes, retention, plan limits, cost caps
+    ("PUT", "/api/admin/chart-analyze/settings"): "admin",
     ("GET", "/api/admin/controls"): "admin",
     ("PUT", "/api/admin/controls/brokers"): "admin",
     ("GET", "/api/admin/controls/flags"): "admin",
@@ -151,6 +155,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/analyze"): S_COPILOT,
     ("POST", "/api/ai/ask"): S_COPILOT,
     ("GET", "/api/ai/brief"): "member",
+    ("POST", "/api/ai/chat"): S_COPILOT,
+    ("GET", "/api/ai/chat/home"): "member",
     ("PUT", "/api/ai/byok/key"): S_OWN_AI_KEY,
     ("DELETE", "/api/ai/byok/key/{provider}"): S_OWN_AI_KEY,
     ("PUT", "/api/ai/byok/prefs"): S_OWN_AI_KEY,
@@ -284,8 +290,13 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/broker/{broker}/renew"): "trader",
     ("GET", "/api/broker/credentials"): "member",
     ("GET", "/api/broker/token-status"): "member",
+    ("GET", "/api/broker/specs"): "member",
     ("GET", "/api/broker/upstox/oauth/callback"): P_OAUTH_CALLBACK,
     ("GET", "/api/broker/upstox/oauth/start"): "member",
+    ("GET", "/api/broker/zerodha/oauth/callback"): P_OAUTH_CALLBACK,
+    ("GET", "/api/broker/zerodha/oauth/start"): "member",
+    ("GET", "/api/broker/fyers/oauth/callback"): P_OAUTH_CALLBACK,
+    ("GET", "/api/broker/fyers/oauth/start"): "member",
     ("GET", "/api/broker/upstox/redirect-url"): "member",
     ("POST", "/api/broker/{name}/analytics-token/check"): "trader",
     ("DELETE", "/api/broker/{name}/analytics-token"): "trader",
@@ -296,6 +307,14 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/broker/{name}/login-code"): "trader",
     ("GET", "/api/broker/{name}/login-url"): "member",
     ("POST", "/api/broker/{name}/smoke-test"): "trader",
+    # Analyze a chart (flag chart_analyze): the caller's own chart images and analyses only (tenant and user)
+    ("GET", "/api/chart-analyze/status"): "member: the caller's own usage against the plan limits and the upload rules",
+    ("GET", "/api/chart-analyze/items"): "member: the caller's own chart analyses only (tenant and user, BT1b)",
+    ("POST", "/api/chart-analyze/items"): S_OWN_CHART_ANALYSES,
+    ("GET", "/api/chart-analyze/items/{item_id}"): "member: the caller's own chart analysis only (tenant and user)",
+    ("GET", "/api/chart-analyze/items/{item_id}/image"): "member: the caller's own chart image only (tenant and user)",
+    ("POST", "/api/chart-analyze/items/{item_id}/analyze"): S_OWN_CHART_ANALYSES,
+    ("DELETE", "/api/chart-analyze/items/{item_id}"): S_OWN_CHART_ANALYSES,
     ("GET", "/api/charts/drawings"): "member",
     ("POST", "/api/charts/drawings"): S_OWN_DRAWINGS,
     ("GET", "/api/charts/drawings/export"): "member",
@@ -472,6 +491,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/option-chain/analyses"): ("member: the six option chain analyses from the organisation's broker session (or, with "
                                             "the own-broker tier on, the caller's own) plus shared collector snapshots; stores only the "
                                             "usage count (OC2, flag ui_v2)"),
+    ("GET", "/api/option-chain/charts"): ("member: the Option chain chart series from the organisation's broker session (or, with the "
+                                          "own-broker tier on, the caller's own) plus shared collector snapshots; stores only the usage "
+                                          "count (OC5, flag ui_v2)"),
     # OC3 (flag ui_v2): the caller's question -> an analysis spec evaluated on the option chain read through a broker session
     ("POST", "/api/option-chain/ask"): ("self: an Ask AI read for the caller - the AI writes an analysis spec, the server evaluates it on "
                                         "the option chain; stores only the metered AI call and an audit row; no order (rate limited)"),
@@ -602,6 +624,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
+    # handover 11c-1 (flag strategy_lab_pine): the Pine subset - translation computes over the body; a run is a screener run
+    ("GET", "/api/lab/pine/templates"): "member",
+    ("POST", "/api/lab/pine/translate"): S_COMPUTE,
+    ("POST", "/api/lab/pine/run"): "trader",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),
@@ -656,6 +682,14 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("PUT", "/api/watchlists/order"): S_OWN_WATCHLISTS,
     ("PUT", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
     ("DELETE", "/api/watchlists/{watchlist_id}"): S_OWN_WATCHLISTS,
+    # WL1 (handover item 4): the read-only system lists (platform reference data, no tenant rows) and copying one
+    ("GET", "/api/watchlists/system"): "member: the shared read-only system lists (indices, index stocks, sectors, F&O); no tenant rows",
+    ("GET", "/api/watchlists/system/{key}"): "member: one shared read-only system list; no tenant rows",
+    ("PUT", "/api/watchlists/system/{key}"): "self: always refused (403) - system lists are read-only; nothing is written",
+    ("DELETE", "/api/watchlists/system/{key}"): "self: always refused (403) - system lists are read-only; nothing is written",
+    ("POST", "/api/watchlists/system/{key}/copy"): S_OWN_WATCHLISTS,
+    ("GET", "/api/admin/system-watchlists"): "admin",
+    ("POST", "/api/admin/system-watchlists/refresh"): "admin",
     ("GET", "/api/webhooks/tradingview/token"): "member",
     ("POST", "/api/webhooks/tradingview/token/rotate"): "owner",
     ("POST", "/api/webhooks/tradingview/{webhook_token}"): P_TV_WEBHOOK,

@@ -2029,6 +2029,134 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
 
+## UI2-5 Broker field map (backend only, no UI change)
+
+- Branch `claude/ui2-5-broker-field-map` (from main). No migration, no new flag.
+- `app/brokers/field_specs.py`: `BROKER_FIELD_SPECS`, one entry per registered broker (label, kind text / secret /
+  totp-secret / pin / code, who supplies it, pattern, required / required unless, help, advanced), derived from the
+  adapters; absorbs the Upstox analytics token entry (`upstox_analytics.FIELD_SPEC` removed).
+- `GET /api/broker/specs` (any member, read-only): the map plus the Redirect URL of ATP's callback, the server's
+  egress IP and the daily expiry; never a stored value.
+- `POST /api/broker/{name}/credentials` validates with the same map: unknown fields, a token ATP fills in itself where
+  nothing ever pasted it, bad formats and missing required fields are a 422 with English sentences that never repeat a
+  value. Tokens and codes the old Settings form can still paste stay accepted (`legacy_paste`) until UI2-6.
+- Zerodha (Kite) and Fyers OAuth callbacks: `GET /api/broker/{zerodha|fyers}/oauth/start` and `.../oauth/callback`.
+  The state is the signed broker-OAuth token plus a single-use nonce whose SHA-256 waits (10 minutes, per user) in the
+  credential's encrypted payload (`oauth_pending`, server-written only); the callback claims it with a conditional
+  write before exchanging the code with the adapter's own code, then stores the session as the paste flow does.
+  New setting `BROKER_OAUTH_REDIRECT_BASE_URL` (empty = the request's address). Callback query strings are redacted in
+  the access log (`app/core/logging_config.py`).
+- Shoonya's TOTP code: already fixed on main (#279, `app/brokers/totp.py`); a new test generates a made-up base32 secret.
+- Tests: `tests/test_ui2_5_broker_field_map.py` (spec coverage both ways, specs route, validation, both callbacks with
+  the real adapters against a mocked broker transport); tests that stored one-letter stand-in keys now use
+  `tests/broker_fakes.py`. Routes added to `tests/tenancy_route_table.py`.
+- Security review follow-ups: key and ID patterns now check only length and no spaces (a wrong pattern would lock a
+  real user out; PIN digits, base32 TOTP secrets, IP / MAC and the redirect URL keep their formats); the Upstox, Kite
+  and Fyers callbacks are counted per client IP (20 per 5 minutes, then a redirect with `too_many_attempts`), check
+  before the exchange that the person who started the login is still active with a trading role and `brokers:write`
+  (`not_allowed`), and audit `no_token_returned`; Upstox uses the same single-use nonce; the log redaction covers a
+  trailing slash and any path prefix; production and staging refuse a non-https `BROKER_OAUTH_REDIRECT_BASE_URL` and
+  warn loudly when it is unset (operator step in docs/OPERATIONS.md).
+
+## WL1: default watchlists - indices, index stocks and sectors as separate read-only lists (handover item 4, 22 Oct)
+
+- Branch `claude/wl1-system-lists` (from main). Overrides OPEN_QUESTIONS UI4C-1 (marked superseded). Status before
+  building: not started (UI4C-1 was open; the U1 universe tables, the instrument master and the watchlist panel existed).
+- **Migration: yes** (`a4c6e8f0b2d4`, additive, ROLLBACK_SAFE): `system_watchlists` (one row per list, platform
+  reference data, no tenant) and `system_watchlist_refreshes` (the run log). Apply after 15:30 IST.
+- `app/watchlists/system.py`: builds four groups from the tables the universe sync fills - **Indices** (the catalogue's
+  indices plus SENSEX / BANKEX where the instrument master has them; the derivative indices first), **Index stocks**
+  ("<INDEX> stocks (<count>)", by published weight else symbol), **Sectors** (NSE classification, named by
+  `app/universe/data/sectors.json`: "Banking", "IT", "Automobile", "Pharma", ...; an unnamed sector keeps NSE's name)
+  and **F&O stocks (<count>)** (F&O workspace §2). Every symbol is mapped to the instrument master (NSE equity by
+  symbol; an index by its upstox key, name, candle symbol or `master_names`); what does not map is left out and
+  recorded with the reason, never guessed.
+- Refresh: per list the symbols added / removed (the reconstitution diff), lists created / dropped, with the time;
+  gates: no NSE equity in the master -> nothing changes; a list that would shrink below `UNIVERSE_MIN_ROWS_RATIO`, or
+  map to nothing while its source still has members, is held as it was; the last 90 runs are kept. Worker: once per
+  IST day after `UNIVERSE_SYNC_HOUR_IST`, NSE closed, whether or not the sync is on (it downloads nothing).
+- `app/universe/classification.py`: the optional full NSE classification file (`UNIVERSE_FILE_URLS` key
+  `classification`, no default URL - WL1-1), four levels, the same range rules; a constituent file's sector-only value no
+  longer overwrites a company that has the finer levels.
+- Catalogue: twelve thematic / strategy indices added (file names unverified from the sandbox - WL1-5) and
+  `master_names` for the brokers' spellings.
+- Routes (`app/watchlists/system_routes.py`, behind the `watchlists` flag): `GET /api/watchlists/system`,
+  `GET /api/watchlists/system/{key}`, `POST /api/watchlists/system/{key}/copy` (the caller's own list, same limits as a
+  create, the first 500 rows of a longer list with `truncated`), `PUT` / `DELETE /api/watchlists/system/{key}` always
+  403. Admin (SUPER_ADMIN): `GET /api/admin/system-watchlists`, `POST /api/admin/system-watchlists/refresh`. All seven
+  classified in `tests/tenancy_route_table.py`.
+- Frontend (Charts page watchlist panel): with system lists, a list chooser shows every list by group (Indices, Index
+  stocks, Sectors, F&O, then My lists), each group collapsible, a "Find a list" search; system lists carry a lock and
+  "Read-only list", a search on symbol or company, a sort (list order, A to Z, top gainers, top losers, price) and
+  "Copy to my list". A first open with no list of one's own shows "Indices". Without system lists (the route answers
+  404) the panel is unchanged, so the UI2-4c baselines are untouched. The page remembers the system list shown
+  (`watchlist_system` in `atp_charts_view`).
+- `docker-compose.yml` passes `UNIVERSE_SYNC_ENABLED`, `UNIVERSE_SYNC_HOUR_IST`, `UNIVERSE_FILE_URLS` to the worker (and
+  the first two to the API): before this the worker never saw them (WL1-4).
+- Tests: `tests/test_wl1_system_watchlists.py` (hand-made fixtures in `tests/fixtures/universe/wl1/`, no network),
+  `frontend/src/chart/systemLists.test.tsx`, two new e2e cases at 1440 and one on the phone in `e2e/charts-v2.e2e.ts`
+  with two NEW baselines (`charts-v2-watchlist-system-1440-light.png`, `charts-v2-390-sheet-system-light.png`); no
+  existing baseline changed. `app/watchlists` joins the mypy gate.
+- Owner questions: WL1-1 (the full classification source), WL1-2 (refresh schedule), WL1-3 (terms), WL1-4 (production
+  settings), WL1-5 to WL1-8 in docs/OPEN_QUESTIONS.md.
+- Admin console: a "System watchlists" card (`components/SystemListsCard.tsx`): last refresh, lists per group, the
+  changes per list with the symbols added / removed, the unmapped symbols with the reason, the recent runs and
+  "Refresh now" (WL1-8 answered). The worker also rebuilds the lists once when it starts with NSE closed (a deploy);
+  that run is not the day's, so the evening run still follows the universe sync (`system.refresh_due`, tested).
+- After merging main (the rem text scale): the list chooser no longer shows a count twice for names that carry it
+  ("NIFTY 50 stocks (50)"); the read-only note keeps one line above "Copy to my list" in the side panel; the 1440 WL1
+  baseline regenerated at the new text size.
+## OC5: Option chain "Charts" view + the remaining analyses (handover 2b + 2c, under ui_v2)
+
+- Branch `claude/oc5-chain-charts` (from main). **Migration: yes** (`a7c9e1f3b5d8_oc5_oi_snapshot_futures`: two nullable
+  columns `oi_snapshots.future_price` / `future_oi`, ROLLBACK_SAFE, reversible) - deploy after 15:30 IST.
+- 2b parity: every item of the order's list was already in `app/option_chain/oi_regime.py` (hysteresis OI diff,
+  rotation, walls, OI + price matrix, PCR zone label, max pain, rollover proxy, DTE, IV change, 5 / 10 / 15-minute
+  aggregation). What was not shown anywhere is now in the Charts view's facts: PCR zone (the organisation's bands), days
+  to expiry, the IV change against the last sessions' closing ATM IV (plus the Trade sideways baseline), and the
+  5 / 10 / 15-minute views of every session chart. Information only; no gate, no buy / sell wording.
+- 2c backend: `app/option_chain/charts.py` (pure) + `charts_routes.py`: `GET /api/option-chain/charts?symbol=&expiry=
+  &strikes=10&interval=5` (flag `ui_v2`, 404 off; the chains rate limit; usage metered; plain states; own-broker tier
+  reads no shared rows). Ten charts; "Builds through the session" before two readings, never sample data. The collector
+  also stores the near-month future's price / OI (`_oi_future_quote`, never blocks the slot).
+- 2c frontend: `ChartsViewV2.tsx` + `charts.ts`; "Chain | Charts" toggle on `OptionChainPageV2.tsx` (it sits in the
+  gap above the chain, so the chain baselines are unchanged); strike range ATM ± 5/10/15/20 (default 10), 5/10/15 min,
+  refresh with the chain; phone: one chart at a time (scroll snap + arrows). AnalysisSlotV2 untouched.
+- Tests: `backend/tests/test_oc5_option_chain_charts.py`, `frontend/src/optionChain/ChartsViewV2.test.tsx`, OC5 cases in
+  `e2e/option-chain-v2.e2e.ts` with 4 new baselines `option-chain-charts-v2-{1440,390}-{light,dark}.png`.
+- Questions: OC5-1..4 in OPEN_QUESTIONS.
+## Item 5 (owner's handover): the AI Copilot as a trader's brain, first slice (flag `ui_v2`, off)
+- Order: `docs/owner-orders/ATP_HANDOVER_PACK.md` section 5 (A-E), first step of E: the chat-first page + jobs 1, 2, 7, 8.
+- Backend: `app/ai/copilot_chat.py` (routing to the eight jobs, the refusal set, the rule answers, the fail-closed number
+  check, optional AI wording with the Copilot's checks), `app/ai/chat_routes.py` (`GET /api/ai/chat/home`,
+  `POST /api/ai/chat`: `ui_v2` 404 + `ai_copilot` 503, acknowledgement 428, AI rate limit, `POST chat` weighs 4),
+  `app/ai/tools/copilot.py` (four read tools over the context panel, the price-action layer, the market-zones layer and
+  the OC2 option chain analyses, each behind its own flag). Jobs 3-6 answer "coming in a later step" and link today's
+  page. Indicator regime and raw tool errors only in `diagnostics` for a SUPER_ADMIN.
+- Regime (handover 5 C): `regime_blocks` always answers None; the worker logs `regime_note` (what the old filter would
+  have said) and enters anyway. Exits were never involved. The deployment form, the interview, the briefing and the
+  concept library no longer say the regime filter keeps entries out.
+- Evals (handover 5 D): `evals/sets/copilot_jobs.jsonl` (17 cases: job, tool calls in order, facts, scripted model
+  wording shown / rejected) and `copilot_safety.jsonl` (20 cases: 15 refusals of a buy call / an order / a tip, 5
+  controls) on `evals/sets/copilot_tools.json` (synthetic, built by `evals/build_copilot_fixtures.py`); both gated in
+  `evals/baselines.json` at 1.0 and run by `tests/test_hc10_evals.py`.
+- Frontend: `src/copilot/chat/` (the page, the answer, the model), registered in `src/shell/pagesV2.ts`; `/copilot/<tab>`
+  keeps the seven-tab Copilot; `/copilot` added to `OWN_BROKER_STATES` (the chat says itself what a missing broker
+  hides). Strings in `src/copilot/locales/en.ts` (`chat`). New e2e `e2e/copilot-chat-v2.e2e.ts` with four new baselines.
+- Provisional decisions: OPEN_QUESTIONS "Item 5 Copilot" (CP5-1..CP5-5).
+## Handover 11c-1: Pine Script subset -> ScreenQL, never executed (flag `strategy_lab_pine`, off)
+
+- Branch `claude/lab1-pine-subset` (from main). No migration. Host mode (ADR-0027): no runner, nothing executed.
+- `backend/app/lab/pine/`: `tokens.py` (single-pass scanner, size / line / token limits), `parser.py` (recursive descent,
+  Pine precedence, nesting and operator limits, per-line recovery), `translate.py` (Pine tree -> ScreenQL nodes from a
+  fixed table; inputs -> `$params` with bounds; signal conditions from `strategy.entry / close` in `if` or `when=`,
+  `alertcondition`, `plotshape / plotchar`; sizing and stops reported and ignored; look-ahead refused for the whole
+  script; every condition validated by `compile_screen`), `words.py` (plain words), `templates.py` (5 templates),
+  `routes.py` (`/api/lab/pine/templates`, `/translate`, `/run` through the Screener's run path).
+- Frontend: `src/lab/pine/` (PinePanel, lazy, in a "Pine Script" dialog on the Screener when the flag is on).
+- Docs: `docs/design/PINE_SUBSET.md` (the subset); questions PINE-1..PINE-7 in `docs/OPEN_QUESTIONS.md`.
+- Tests: `tests/test_lab_pine_{translate,parity,fuzz,routes}.py`, `src/lab/pine/PinePanel.test.tsx`; routes classified in
+  `tests/tenancy_route_table.py`; `app/lab` added to the mypy gate.
 ## FNO-1: option chain trading + the one order ticket, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 3, 6, 8b-l, 9)
 
 - Branch `claude/fno1-chain-ticket` (from main). Behind `ui_v2` + `paper_account` (OPEN_QUESTIONS FNO-1-1). No
@@ -2156,3 +2284,46 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
   note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
 - CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).
+## 2026-10-22 - UI2-5 brought up to main (P2a / P2b broker pages, D2 redirect URL, GS-1)
+
+- Merge of origin/main into `claude/ui2-5-broker-field-map`. Kept both sides:
+  - Credentials save: main's shared `save_credentials` (P2a connect uses it too) now normalises with the field map;
+    the field-map validation (422) runs only for `POST /api/broker/{name}/credentials` (`validate=True`). P2a's
+    connect keeps its own catalogue checks.
+  - Callback address: one helper, `oauth_callback_url` = `BROKER_OAUTH_REDIRECT_BASE_URL` (optional override) else
+    D2's `PUBLIC_BASE_URL` else the request address; the startup warning fires only when both are empty.
+  - Upstox OAuth start: D2's stale-URI replacement and log line, plus UI2-5's single-use nonce, saved in one
+    conditional write (409 "Your broker details changed while signing in"). The shared callback keeps D2's stale-URI
+    handling and audit entry for Upstox.
+  - Logging: GS-1's `code=` / `state=` access-log redaction and UI2-5's callback-query redaction both installed.
+  - Shoonya field spec lists the stored session token (P2a: the adapter now reads `access_token`), filled by ATP's login.
+  - D2 tests plant the single-use nonce before a callback; the Kite row in the token-status test has a key in format.
+- No migration, no flag, no UI change.
+## 2026-10-22 - Strategy templates step 1: recipe core + indicators (owner order 13, TPL-1)
+
+- Branch `claude/tpl1-core-indicators`. No migration. Status table: `docs/design/STRATEGY_TEMPLATES_IMPL.md`.
+- `backend/app/strategy_templates/`: the strict template schema, binding to the ScreenQL registry (LAST_BAR_ONLY
+  refused, R1), the causal setup / trigger state machine as a pure function of bars (R3, S1-S7, R8), the adapter to
+  BaseStrategy (no build_signal, no targets), the signal-text tokens and guard, the parity harness (scan = both
+  backtest engines = the worker's call on one trailing window; the fetch size, R6) and the proof template D1.
+- Indicators: SupertrendDir, MACD (line / signal / histogram), WMA, HMA, Stochastic (%K / %D), Parabolic SAR (level /
+  direction) in `app/indicators` and the ScreenQL registry / runtime / validator, with reference-implementation tests and
+  no-look-ahead cases. `determine_exit_price` accepts a missing target (R4).
+- Not in this PR: exits as settings (needs a migration + owner approval), R2 / R5 / R7 / R10. Questions TPL-Q1..Q7.
+## 2026-10-22 - MO2 parts C (page tours) and B (AI key guides), behind ui_v2
+
+- Branch `claude/mo2-tours-keyguides` (merged with main after #335 text size and the F&O baskets).
+- Part C: a welcome tour (4 cards, ends on "Connect your broker") and first-visit tips on every v2 USER page
+  (Dashboard, Broker, Charts, Option chain, Signals, Positions, Portfolio, Risk, Settings), one English content file per
+  page in `frontend/src/tours/content/`, phone-specific steps, a "?" next to the page title to replay, Settings → Help
+  "Show all tips again" / "Skip all tips". Never blocking (no modal, no focus trap; Esc or a tap outside closes).
+  State on the server: new strict prefs namespace `tours` (welcome_done_at, skip_all_at, seen per allow-listed page id),
+  compare-and-set like the others; localStorage is only a paint cache; nothing opens until the server answered.
+  The engine is a lazy chunk. Existing e2e mocks do not return `tours`, so no tip and no "?" appear in older baselines.
+- Part B: Settings → AI "Get an AI key": the explainer line, "Start with free Google Gemini", a guide per provider
+  (key page button, numbered steps with marked screenshot placeholders, what the key looks like, "Is it free?", common
+  problems, last-checked date; a vitest fails 120 days after a guide's check date), a paste helper (trim, detect,
+  wrong-provider warning with a one-tap switch) and "Save and test" on the existing BYOK save + test endpoints.
+- Tests: backend `test_tours_prefs.py` (+ the prefs allow-list), vitest `tours.test.tsx`, `aiKeys.test.tsx`; e2e
+  `tours-v2.e2e.ts` (the CI check: every step's target visible on 1440 and 390, every step played) and
+  `key-guides-v2.e2e.ts`, baselines `tour-welcome-v2-*`, `tour-step-v2-*`, `key-guide-v2-*`. No migration.

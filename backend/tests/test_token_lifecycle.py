@@ -11,6 +11,7 @@ from app.brokers.models import BrokerProfile
 from app.brokers import token_lifecycle as tl
 from app.db.models import BrokerCredentialRecord, NotificationRecord
 from app.secrets_store.encryption import encrypt_text
+from tests.broker_fakes import KITE_KEY, UPSTOX_KEY, UPSTOX_KEY_2, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -175,8 +176,8 @@ def _auth(email: str):
 
 def test_token_status_lists_each_stored_broker_with_login_hint():
     headers = _auth("status@example.com")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s"})
-    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET})
+    client.post("/api/broker/zerodha/credentials", headers=headers, json={"api_key": KITE_KEY, "access_token": "t"})
 
     response = client.get("/api/broker/token-status", headers=headers)
     assert response.status_code == 200
@@ -195,7 +196,7 @@ def test_token_status_requires_auth():
 
 def test_authenticate_success_marks_token_valid_and_persists_new_token(monkeypatch):
     headers = _auth("auth-valid@example.com")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "request_token": "code1", "redirect_uri": "https://x/cb"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "request_token": "code1", "redirect_uri": "https://x/cb"})
 
     class _Exchanging:
         _access_token = None
@@ -228,7 +229,7 @@ def test_authenticate_success_marks_token_valid_and_persists_new_token(monkeypat
 
 def test_authenticate_token_failure_marks_expired(monkeypatch):
     headers = _auth("auth-expired@example.com")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "access_token": "old"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "access_token": "old"})
 
     class _Rejecting:
         async def authenticate(self):
@@ -242,7 +243,7 @@ def test_authenticate_token_failure_marks_expired(monkeypatch):
 
 def test_restoring_credentials_resets_token_status_to_unknown(monkeypatch):
     headers = _auth("restore@example.com")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "access_token": "t"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "access_token": "t"})
 
     class _Ok:
         async def authenticate(self):
@@ -252,7 +253,7 @@ def test_restoring_credentials_resets_token_status_to_unknown(monkeypatch):
     client.post("/api/broker/upstox/authenticate", headers=headers)
     assert {r["broker_name"]: r for r in client.get("/api/broker/token-status", headers=headers).json()}["upstox"]["token_status"] == "VALID"
 
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k2", "access_token": "t2"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY_2, "access_token": "t2"})
     assert {r["broker_name"]: r for r in client.get("/api/broker/token-status", headers=headers).json()}["upstox"]["token_status"] == "UNKNOWN"
 
 
@@ -263,18 +264,19 @@ def test_oauth_start_requires_stored_upstox_credentials():
 
 def test_oauth_start_requires_api_secret():
     headers = _auth("oauth-nosecret@example.com")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k"})
+    # A pasted access token makes the secret optional for the save (UI2-5 field map), but OAuth still needs it.
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "access_token": "t"}).status_code == 204
     assert client.get("/api/broker/upstox/oauth/start", headers=headers).status_code == 400
 
 
 def test_oauth_start_returns_upstox_dialog_url_bound_to_tenant():
     headers = _auth("oauth-start@example.com")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "client-9", "api_secret": "s"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET})
 
     response = client.get("/api/broker/upstox/oauth/start", headers=headers)
     assert response.status_code == 200
     q = parse_qs(urlparse(response.json()["authorization_url"]).query)
-    assert q["client_id"] == ["client-9"]
+    assert q["client_id"] == [UPSTOX_KEY]
     assert q["redirect_uri"][0].endswith("/api/broker/upstox/oauth/callback")
     claims = tl.parse_oauth_state(q["state"][0])
     me = client.get("/api/auth/me", headers=headers).json()
@@ -284,7 +286,7 @@ def test_oauth_start_returns_upstox_dialog_url_bound_to_tenant():
 
 def test_oauth_callback_exchanges_code_stores_token_and_redirects(monkeypatch):
     headers = _auth("oauth-cb@example.com")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "client-9", "api_secret": "s"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET})
     state = parse_qs(urlparse(client.get("/api/broker/upstox/oauth/start", headers=headers).json()["authorization_url"]).query)["state"][0]
 
     seen = {}
@@ -342,7 +344,7 @@ def test_oauth_callback_relays_broker_side_denial():
 
 def test_oauth_callback_exchange_failure_redirects_with_error(monkeypatch):
     headers = _auth("oauth-fail@example.com")
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "client-9", "api_secret": "s"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET})
     state = parse_qs(urlparse(client.get("/api/broker/upstox/oauth/start", headers=headers).json()["authorization_url"]).query)["state"][0]
 
     class _Failing:
@@ -360,7 +362,7 @@ def test_restoring_with_blank_fields_keeps_stored_values():
     """Pasting today's access token alone must not wipe the API key/secret stored earlier (OAuth
     then fails with 'needs both api_key and api_secret'); pasted values are trimmed."""
     headers = _auth("merge-store@example.com")
-    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k1", "api_secret": "s1"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET}).status_code == 204
     assert client.post("/api/broker/upstox/credentials", headers=headers,
                        json={"api_key": "", "api_secret": None, "access_token": "  tok-today \n"}).status_code == 204
 
@@ -373,5 +375,5 @@ def test_restoring_with_blank_fields_keeps_stored_values():
             return tl.load_credentials(record)
 
     creds = asyncio.run(stored())
-    assert (creds.api_key, creds.api_secret, creds.access_token) == ("k1", "s1", "tok-today")
+    assert (creds.api_key, creds.api_secret, creds.access_token) == (UPSTOX_KEY, UPSTOX_SECRET, "tok-today")
     assert client.get("/api/broker/upstox/oauth/start", headers=headers).status_code == 200

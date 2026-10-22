@@ -2,6 +2,7 @@ import asyncio
 
 from app.auth.security import decode_access_token, hash_password
 from app.db.models import User
+from tests.broker_fakes import KITE_KEY, KITE_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 
 
@@ -129,7 +130,7 @@ def test_broker_credentials_shared_within_tenant_not_across():
 
     stored = client.post(
         "/api/broker/zerodha/credentials", headers=headers1,
-        json={"api_key": "k", "api_secret": "s", "access_token": "t"},
+        json={"api_key": KITE_KEY, "api_secret": KITE_SECRET, "access_token": "t"},
     )
     assert stored.status_code == 204, stored.text
 

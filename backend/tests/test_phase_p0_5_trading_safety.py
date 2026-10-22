@@ -17,6 +17,7 @@ from app.market_data.calendar import IST, trading_day_start
 from app.risk_engine.risk_manager import TradingDayState
 from app.trading.persistence import build_trading_day_state, open_unrealised_pnl
 from app.trading.position_monitor import monitor_open_positions
+from tests.broker_fakes import UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _register, _session_factory, client
 from tests.test_live_execution import _LiveBroker, _router, _signal
 
@@ -215,7 +216,7 @@ def test_emergency_exit_cancels_live_orders_at_the_broker_and_closes_shorts_firs
     from app.kill_switch import routes as ks
     headers = _headers(_register("p05-emergency@example.com"))
     me = client.get("/api/auth/me", headers=headers).json()
-    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": "k", "api_secret": "s", "access_token": "t"})
+    client.post("/api/broker/upstox/credentials", headers=headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET, "access_token": "t"})
 
     class _Cancelling(BrokerInterface):
         name = "upstox"

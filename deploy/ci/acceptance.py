@@ -232,7 +232,8 @@ def signups(flow: Flow) -> str:
 def connect_upstox(flow: Flow) -> str:
     u = flow.ctx["users"]["A"]
     api: Api = u["api"]
-    ok(api.post("/api/broker/upstox/credentials", {"api_key": "ci-upstox-app", "api_secret": "ci-upstox-secret"}), 204)
+    # Fake values in the formats the broker field map checks (app/brokers/field_specs.py, UI2-5).
+    ok(api.post("/api/broker/upstox/credentials", {"api_key": "ci000000-0000-0000-0000-000000000001", "api_secret": "ci-upstox-secret"}), 204)
     url = ok(api.get("/api/broker/upstox/oauth/start"))["authorization_url"]
     check(urlsplit(url).hostname == "api.upstox.com", f"authorization URL {url}")
     # The browser: Upstox's login page (the fake broker inside the stack) sends it back to ATP's callback with a code.
@@ -251,7 +252,7 @@ def connect_upstox(flow: Flow) -> str:
 def connect_dhan(flow: Flow) -> str:
     u = flow.ctx["users"]["B"]
     api: Api = u["api"]
-    ok(api.post("/api/broker/dhan/credentials", {"client_id": "CIDHAN01", "access_token": "ci-dhan-access-token"}), 204)
+    ok(api.post("/api/broker/dhan/credentials", {"client_id": "100001", "access_token": "ci-dhan.access.token"}), 204)
     profile = ok(api.post("/api/broker/dhan/authenticate"))
     check(profile.get("broker") == "dhan", f"profile {profile}")
     status = ok(api.get("/api/broker/token-status"))

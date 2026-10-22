@@ -23,6 +23,9 @@ export interface ChartsMocks {
   locked?: number[];
   /** UI2-4d: the saved multi-chart layouts `GET /charts/layouts` starts from (`layout/1`, version 1 each). */
   layouts?: { id: number; name: string; layout: Record<string, unknown> }[];
+  /** WL1: the read-only system lists `GET /watchlists/system` answers (left out: 404, so the panel is as before) and
+   * each list's rows by key. */
+  systemLists?: { groups: { group: string; label: string; lists: Record<string, unknown>[] }[]; lists: Record<string, Record<string, unknown>> };
 }
 
 export interface LayoutWrite { method: string; id: number | null; body: Record<string, unknown> | null }
@@ -38,6 +41,8 @@ export interface ChartsCalls {
   /** UI2-4c */
   watchlistReads: number;
   watchlistWrites: WatchlistWrite[];
+  /** WL1: each request to a system list, as "METHOD key[/copy]". */
+  systemCalls: string[];
   quotes: { symbol: string; exchange: string }[][];
   drawingPosts: Record<string, unknown>[];
   deleteAll: string[];
@@ -95,8 +100,8 @@ function madeUpPrice(symbol: string): { ltp: number; change: number } {
   return { ltp, change };
 }
 
-export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, market = "open", watchlists = [], drawings = {}, locked = [], layouts = [] }: ChartsMocks = {}): Promise<ChartsCalls> {
-  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], quotes: [], drawingPosts: [], deleteAll: [], ltpSymbols: [], layoutWrites: [] };
+export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, market = "open", watchlists = [], drawings = {}, locked = [], layouts = [], systemLists }: ChartsMocks = {}): Promise<ChartsCalls> {
+  const calls: ChartsCalls = { candles: [], prefsPuts: [], ltp: 0, watchlistReads: 0, watchlistWrites: [], systemCalls: [], quotes: [], drawingPosts: [], deleteAll: [], ltpSymbols: [], layoutWrites: [] };
   let stored: Record<string, unknown> = prefs;
   let version = 1;
   const sessions = market === "open"
@@ -191,6 +196,25 @@ export async function mockCharts(page: Page, { timeframes = ALL, prefs = {}, mar
     lists[at] = { ...lists[at], name: String(body?.name), items: body?.items as typeof lists[0]["items"], version: lists[at].version + 1 };
     return r.fulfill({ json: lists[at] });
   });
+  // WL1: the system lists - read-only (PUT / DELETE answer 403 as the backend does); a copy becomes one of the user's lists.
+  if (systemLists) {
+    await page.route(api("/watchlists/system(/[a-z0-9-]+)?(/copy)?$"), (r) => {
+      const req = r.request();
+      const [, key = "", copy = ""] = new URL(req.url()).pathname.match(/\/watchlists\/system(?:\/([a-z0-9-]+))?(\/copy)?$/) ?? [];
+      calls.systemCalls.push(`${req.method()} ${key}${copy}`.trim());
+      if (!key) return r.fulfill({ json: { groups: systemLists.groups, refreshed_at: "2026-10-18T13:00:00Z" } });
+      const one = systemLists.lists[key];
+      if (!one) return r.fulfill({ status: 404, json: { detail: "Watchlist not found" } });
+      if (req.method() === "GET") return r.fulfill({ json: one });
+      if (req.method() === "POST" && copy) {
+        const items = (one.items as { symbol: string; exchange: string }[]).map(({ symbol, exchange }) => ({ symbol, exchange }));
+        const made = { id: nextList++, name: String(one.name).replace(/ \(\d+\)$/, ""), items, version: 1 };
+        lists.push(made);
+        return r.fulfill({ status: 201, json: { ...made, copied_from: key, truncated: false, source_count: items.length } });
+      }
+      return r.fulfill({ status: 403, json: { detail: 'System lists are read-only. Use "Copy to my list" to make your own copy you can change.' } });
+    });
+  }
   await page.route(api("/market-data/quotes$"), (r) => {
     const items = (r.request().postDataJSON() as { items: { symbol: string; exchange: string }[] }).items;
     calls.quotes.push(items);

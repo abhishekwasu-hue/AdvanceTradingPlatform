@@ -4,7 +4,7 @@ from app.db.models import TradeRecord
 
 
 def determine_exit_price(
-    direction: str, stop_loss: float, target1: float, target2: Optional[float], low: float, high: float,
+    direction: str, stop_loss: float, target1: Optional[float], target2: Optional[float], low: float, high: float,
     open_price: Optional[float] = None,
 ) -> Optional[Tuple[str, float]]:
     """The single source of truth for exit priority (stop loss, then target2 - the more
@@ -15,6 +15,9 @@ def determine_exit_price(
     written copy of this exact priority order - a comment claimed it "matched" this function, but
     nothing enforced that, so a future change to one could silently drift from the other. Kept as
     one function so that's no longer possible.
+
+    A missing target (None) is never hit: a strategy-template signal carries only its invalidation (the stop) unless
+    the user chose a target (owner order STRATEGY_TEMPLATES R4).
     """
     is_long = direction == "LONG"
 
@@ -35,14 +38,14 @@ def determine_exit_price(
             return "Stop Loss", fill(stop_loss, stop=True)
         if target2 is not None and high >= target2:
             return "Target 2", fill(target2, stop=False)
-        if high >= target1:
+        if target1 is not None and high >= target1:
             return "Target 1", fill(target1, stop=False)
     else:
         if high >= stop_loss:
             return "Stop Loss", fill(stop_loss, stop=True)
         if target2 is not None and low <= target2:
             return "Target 2", fill(target2, stop=False)
-        if low <= target1:
+        if target1 is not None and low <= target1:
             return "Target 1", fill(target1, stop=False)
 
     return None

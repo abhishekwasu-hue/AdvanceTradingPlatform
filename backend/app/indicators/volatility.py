@@ -68,6 +68,15 @@ def supertrend(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> p
 
 
 @prefix_cached
+def supertrend_dir(df: pd.DataFrame, period: int = 10, multiplier: float = 3.0) -> pd.Series:
+    """The Supertrend's direction as a series: +1 while the line is below price (bullish), -1 while it is above
+    (bearish), NaN while the line has no value (warm-up). The same computation as `supertrend` (its `trend` column), so
+    a direction change is exactly the bar the line switches sides - never the close touching the line without a flip."""
+    st = supertrend(df, period, multiplier)
+    return st["trend"].astype(float).where(st["supertrend"].notna()).rename("supertrend_dir")
+
+
+@prefix_cached
 def bollinger(close: pd.Series, period: int = 20, k: float = 2.0) -> pd.DataFrame:
     """Bollinger bands: SMA mid with upper/lower at k sample standard deviations."""
     mid = close.rolling(window=period, min_periods=period).mean()

@@ -197,7 +197,7 @@ test.describe("setup wizard 390 x 844", () => {
     await page.reload();
     await expect(stepTitle(page)).toHaveText("Pick your first strategy");
     await expect(wizard(page).locator("[data-step-state='skipped']")).toHaveCount(2);
-    await page.getByRole("link", { name: "Home" }).click();
+    await page.getByRole("link", { name: "Today", exact: true }).click();
     // P3: the dashboard shows the Get started card, not the Setup chip
     await expect(page.locator("[data-block='get-started']")).toBeVisible();
     await expect(page.locator("[data-block='setup']")).toHaveCount(0);

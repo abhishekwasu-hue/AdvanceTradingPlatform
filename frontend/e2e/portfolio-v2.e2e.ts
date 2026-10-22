@@ -24,7 +24,7 @@ async function open(page: Page, theme: "dark" | "light", setup: TradingMocks & {
   await page.route(/fonts\.(googleapis|gstatic)\.com/, (r) => r.abort());
   await mockApi(page, { features: flag ? (T.features as Record<string, boolean>) : undefined, brokers: T.token_status as unknown[] });
   await mockTrading(page, mocks);
-  await page.goto("/portfolio");
+  await page.goto(flag ? "/positions/money" : "/portfolio");
   await page.addStyleTag({ content: "*, *::before, *::after { font-family: 'DejaVu Sans', sans-serif !important; caret-color: transparent !important; }" });
   await page.waitForLoadState("networkidle");
   await expect(page.locator("main")).toBeVisible();
@@ -69,7 +69,8 @@ test.describe("v2 portfolio 1440 desktop", () => {
 
   test("the tiles, where the money is by symbol, and the booked P&L over time", async ({ page }) => {
     await open(page, "light");
-    await expect(page.locator("[data-shell='v2'] header").first()).toContainText("My portfolio");
+    await expect(page.locator("[data-shell='v2'] header").first()).toContainText("My trades");      // UX3-9: My trades › Money
+    await expect(page.getByRole("navigation", { name: "My trades" }).getByRole("link", { name: "Money" })).toHaveAttribute("aria-current", "page");
     const tiles = page.locator("[data-block='summary']");
     await expect(tiles.locator("[data-tile='invested']")).toContainText("₹1.62 L");
     await expect(tiles.locator("[data-tile='invested']")).toContainText("32% of capital");

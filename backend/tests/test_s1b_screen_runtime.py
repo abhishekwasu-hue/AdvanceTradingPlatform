@@ -298,6 +298,19 @@ def test_wave_count_functions_w1():
     assert set(alt.dropna()) <= set(wc.STATES) and set(clarity.dropna()) <= set(wc.CLARITY)
 
 
+def test_wave_levels_lines_and_retest_w2_w4():
+    # deeper checks (per count type, causality, mirror, the flag, RetestEntry identity) are in tests/test_wave3_levels_lines.py
+    walk = _sym(list(100 + np.cumsum(np.random.default_rng(4).normal(0, 1, 600))))
+    for text in ("WaveOrigin(1)", 'WaveEnd(1, "current")', "WaveInvalidation(1)", "WaveRetrace(1, 0.5)", 'WaveProjection(1, "previous", 1)',
+                 "WaveRatio(1)", 'WaveLineLevel(1, "channel_current")'):
+        v = _ev(text, walk)
+        assert v.dtype == float and v.notna().any(), text
+    assert _ev("WaveCap(1)", walk).dtype == float
+    for text in ("WaveBeyondOrigin(1)", 'WaveLineBreak(1, "channel_current", "up", 0)',
+                 'RetestEntry("up", "wave_line", 20, FALSE, 1, "channel_current", "A", 0)'):
+        assert _ev(text, walk).dtype == bool, text
+
+
 def test_rankscore_n3_s7a():
     # deeper checks (scoring, no look-ahead against cut bars, the routes) are in tests/test_n3_s7a_rankings.py
     from app.screener import ranking as RK

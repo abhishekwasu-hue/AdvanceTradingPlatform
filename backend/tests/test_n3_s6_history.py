@@ -318,6 +318,9 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "WaveState": 'WaveState(1) != "UNCLEAR"',                                  # waves W1: missing before the first count
     "WaveAlt": 'WaveAlt(1) != "IMP_1"',
     "WaveClarity": 'WaveClarity(1) == "UNCLEAR"',
+    "WaveOrigin": "close > WaveOrigin(1)",                                     # waves W2: a level, flat for a whole count
+    "WaveInvalidation": "close > WaveInvalidation(1)",
+    "WaveCap": "close > WaveCap(1) OR close > WaveOrigin(1)",                   # no fifth wave with a short third on the fixture
 }
 SWEEP_DENSE = {"RangeBreakout", "SwingBreakType", "SwingBreakout", "RangeExpansion", "ReversalAt",   # rare events: every date
                "DonchianBreakout", "MABreakout", "RegimeBreakout"}

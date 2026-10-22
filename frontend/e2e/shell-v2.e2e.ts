@@ -263,7 +263,9 @@ test.describe("v2 broker gate on data pages", () => {
   test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
 
   test("no broker stored: every data page shows 'Connect your broker' and none of its content", async ({ page }) => {
-    await open(page, "/", "light", { features: { ui_v2: true }, brokers: [] });
+    // UX1: Find setups and the Copilot open only while their flags are on (off, the address says "Coming soon" - tested
+    // below); `ai_copilot` is ON by default on the server.
+    await open(page, "/", "light", { features: { ui_v2: true, screener_v2: true, ai_copilot: true }, brokers: [] });
     for (const path of ["/", "/charts", "/option-chain", "/screener", "/signals", "/positions", "/portfolio", "/copilot/market-pulse"]) {
       await page.goto(path);
       const gate = page.locator("[data-broker-gate='no-broker']");
@@ -378,5 +380,33 @@ test.describe("flag off", () => {
     // A v2 page's new address (a bookmark, or Settings -> Account after signing out) goes back to today's address.
     await page.goto("/screener/custom?preset=gap");
     await expect(page).toHaveURL(/\/scanner\?preset=gap$/);
+  });
+});
+
+test.describe("UX1 sign-in screen and Coming soon", () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, deviceScaleFactor: 1 });
+
+  test("a page whose flag is off says 'Coming soon' at its address and is not in the navigation", async ({ page }) => {
+    await open(page, "/screener", "light", { features: { ui_v2: true }, brokers: CONNECTED });
+    await expect(page.locator("[data-state='coming-soon']")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Coming soon" })).toBeVisible();
+    await expect(page.locator("main")).not.toContainText(/screener_v2|not turned on|Not found/);
+    await page.getByRole("button", { name: "More pages" }).click();
+    await expect(page.locator("#more-sheet").getByRole("link", { name: "Find setups" })).toHaveCount(0);
+  });
+
+  test("signed out: one sign-in card at any address - no navigation, no page data", async ({ page }) => {
+    await open(page, "/charts", "light", { features: { ui_v2: true }, brokers: CONNECTED }, {}, {
+      before: (p) => p.route(/\/api(?:\/v1)?\/auth\/(refresh|me)$/, (r) => r.fulfill({ status: 401, json: { detail: "Not authenticated" } })),
+    });
+    await expect(page.locator("[data-screen='sign-in']")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-shell='v2'], nav[aria-label='Quick navigation']")).toHaveCount(0);
+    await expect(page.getByText("Create an account")).toHaveCount(0);          // sign-up closed (the read 404s here)
+    await expect(page.getByText("Continue with Google")).toHaveCount(0);       // GS-1: hidden until set up
+    await expect(page).toHaveURL(/\/charts$/);                                 // the address stays as asked
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);   // no sideways scroll
   });
 });

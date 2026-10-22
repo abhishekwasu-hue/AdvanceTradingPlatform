@@ -103,7 +103,7 @@ describe("UI2-1 More sheet", () => {
     expect(moreSheetResults(trader, "").kind).toBe("sections");
     const r = moreSheetResults(trader, "positions");
     expect(r.kind === "matches" && r.items[0].label).toBe("My positions");
-    const html = render("screener");
+    const html = render("screener", { ...trader, on: flags("screener_v2") });       // UX1: Find setups needs screener_v2
     expect(html).toContain('href="/screener"');
     expect(html).toContain("Markets");                                  // the section as a caption
     expect(render("nothing-like-this")).toContain("No page matches &quot;nothing-like-this&quot;.");
@@ -185,10 +185,11 @@ describe("UI2-1 top bar notices", () => {
 describe("UI2-1 the v2 shell puts the broker gate in front of every data page", () => {
   // Rendered once on the server: the auth check has not answered yet, so a gated page shows the gate's
   // "checking" state - never the page - while a page outside DATA_PAGES goes straight to its (lazy) content.
-  const render = (path: string) => renderToStaticMarkup(
+  // UX1: the pages behind a flag are on here (a page whose flag is off shows "Coming soon", tested below).
+  const render = (path: string, value: Record<string, boolean> = { ui_v2: true, screener_v2: true, discipline_engine: true, options_builder: true, ai_copilot: true }) => renderToStaticMarkup(
     <MemoryRouter initialEntries={[path]}>
       <AuthProvider>
-        <FeaturesProvider userKey={1} value={{ ui_v2: true }}>
+        <FeaturesProvider userKey={1} value={value}>
           <AppShellV2 />
         </FeaturesProvider>
       </AuthProvider>
@@ -223,6 +224,17 @@ describe("UI2-1 the v2 shell puts the broker gate in front of every data page", 
     // UI2-9a: My positions shows the broker states itself (OWN_BROKER_STATES), at its encoded address too.
     expect(render("/%70ositions")).not.toContain("data-broker-gate");
     expect(render("/%70ositions")).toContain("My positions");             // the title follows the router's reading
+  });
+
+  it("UX1: a page whose flag is off says 'Coming soon' at its address - no flag name, no gate, no page", () => {
+    for (const path of ["/screener", "/journal", "/marketplace"]) {
+      const html = render(path, { ui_v2: true });
+      expect(html, path).toContain('data-state="coming-soon"');
+      expect(html, path).toContain("Coming soon");
+      expect(html, path).not.toMatch(/screener_v2|discipline_engine|>marketplace</);
+      expect(html, path).not.toContain("data-broker-gate");
+    }
+    expect(render("/charts", { ui_v2: true })).not.toContain('data-state="coming-soon"');
   });
 
   it("does not gate Settings, Orders, Journal, Account or Team", () => {

@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
-import accountSource from "../pages/AccountPage.tsx?raw";
+import accountSource from "./SignInScreen.tsx?raw";
 import { GoogleButton } from "./GoogleSignInButton";
 import { googleEnabled, googleErrorMessage, googleStartUrl, parseGoogleReturn, stripGoogleParams } from "./google";
 
@@ -25,7 +25,7 @@ describe("Google sign-in button (GS-1)", () => {
   });
 
   it("shows on the login form only", () => {
-    expect(accountSource).toContain('{mode === "login" && <GoogleSignInButton />}');
+    expect(accountSource).toContain('{mode === "signin" && <GoogleSignInButton />}');      // UX1: the sign-in screen
   });
 });
 

@@ -10,7 +10,9 @@ import { shellKeyFromPath } from "./shellRoutes";
 
 const flags = (...on: string[]) => (f: string) => on.includes(f);
 const trader: NavContext = { on: flags(), role: "OWNER" };
-const everything: NavContext = { on: flags("ai_copilot", "discipline_engine", "marketplace", "options_builder"), role: "SUPER_ADMIN" };
+const everything: NavContext = { on: flags("ai_copilot", "discipline_engine", "marketplace", "options_builder", "screener_v2"), role: "SUPER_ADMIN" };
+// UX1 (audit P06): Find setups is in the navigation only while `screener_v2` is on.
+const withScreener: NavContext = { on: flags("screener_v2"), role: "OWNER" };
 const labels = (ctx: NavContext) => visibleSections(ctx).map((s) => [s.title, s.items.map((i) => i.label)]);
 
 describe("UI2-1 navigation model: sections (proposal §2)", () => {
@@ -94,7 +96,8 @@ describe("UI2-1 bottom bar and More sheet (proposal §4)", () => {
   it("the sheet lists every other visible page, grouped by section, Markets first and More last", () => {
     const sheet = moreSheetSections(trader);
     expect(sheet.map((s) => s.title)).toEqual(["Markets", "Strategies", "Trading", "Insights", "Account", "More"]);
-    expect(sheet[0].items.map((i) => i.label)).toEqual(["Option chain", "Find setups"]);
+    expect(sheet[0].items.map((i) => i.label)).toEqual(["Option chain"]);                    // screener_v2 off
+    expect(moreSheetSections(withScreener)[0].items.map((i) => i.label)).toEqual(["Option chain", "Find setups"]);
     expect(sheet[2].items.map((i) => i.label)).toEqual(["Orders", "Portfolio", "Risk"]);
     const all = sheet.flatMap((s) => s.items.map((i) => i.key));
     for (const inBar of BOTTOM_BAR_V2) expect(all).not.toContain(inBar.key);
@@ -108,8 +111,9 @@ describe("UI2-1 page search (More sheet and command bar)", () => {
   const find = (q: string, ctx = trader) => searchPages(q, ctx).map((i) => i.label);
 
   it("finds pages by their label, title, today's name or section", () => {
-    expect(find("find")[0]).toBe("Find setups");
-    expect(find("screener")[0]).toBe("Find setups");                  // today's name
+    expect(find("find", withScreener)[0]).toBe("Find setups");
+    expect(find("screener", withScreener)[0]).toBe("Find setups");    // today's name
+    expect(find("find setups")).not.toContain("Find setups");          // UX1: hidden while screener_v2 is off
     expect(find("backtesting")).toEqual(["Test a strategy"]);
     expect(find("how am i")).toEqual(["Performance"]);                 // the page title
     expect(find("market scanner")).toEqual(["Custom scan"]);           // an extra (merged page)

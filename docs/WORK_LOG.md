@@ -2029,6 +2029,54 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
 
+## WL1: default watchlists - indices, index stocks and sectors as separate read-only lists (handover item 4, 22 Oct)
+
+- Branch `claude/wl1-system-lists` (from main). Overrides OPEN_QUESTIONS UI4C-1 (marked superseded). Status before
+  building: not started (UI4C-1 was open; the U1 universe tables, the instrument master and the watchlist panel existed).
+- **Migration: yes** (`a4c6e8f0b2d4`, additive, ROLLBACK_SAFE): `system_watchlists` (one row per list, platform
+  reference data, no tenant) and `system_watchlist_refreshes` (the run log). Apply after 15:30 IST.
+- `app/watchlists/system.py`: builds four groups from the tables the universe sync fills - **Indices** (the catalogue's
+  indices plus SENSEX / BANKEX where the instrument master has them; the derivative indices first), **Index stocks**
+  ("<INDEX> stocks (<count>)", by published weight else symbol), **Sectors** (NSE classification, named by
+  `app/universe/data/sectors.json`: "Banking", "IT", "Automobile", "Pharma", ...; an unnamed sector keeps NSE's name)
+  and **F&O stocks (<count>)** (F&O workspace §2). Every symbol is mapped to the instrument master (NSE equity by
+  symbol; an index by its upstox key, name, candle symbol or `master_names`); what does not map is left out and
+  recorded with the reason, never guessed.
+- Refresh: per list the symbols added / removed (the reconstitution diff), lists created / dropped, with the time;
+  gates: no NSE equity in the master -> nothing changes; a list that would shrink below `UNIVERSE_MIN_ROWS_RATIO`, or
+  map to nothing while its source still has members, is held as it was; the last 90 runs are kept. Worker: once per
+  IST day after `UNIVERSE_SYNC_HOUR_IST`, NSE closed, whether or not the sync is on (it downloads nothing).
+- `app/universe/classification.py`: the optional full NSE classification file (`UNIVERSE_FILE_URLS` key
+  `classification`, no default URL - WL1-1), four levels, the same range rules; a constituent file's sector-only value no
+  longer overwrites a company that has the finer levels.
+- Catalogue: twelve thematic / strategy indices added (file names unverified from the sandbox - WL1-5) and
+  `master_names` for the brokers' spellings.
+- Routes (`app/watchlists/system_routes.py`, behind the `watchlists` flag): `GET /api/watchlists/system`,
+  `GET /api/watchlists/system/{key}`, `POST /api/watchlists/system/{key}/copy` (the caller's own list, same limits as a
+  create, the first 500 rows of a longer list with `truncated`), `PUT` / `DELETE /api/watchlists/system/{key}` always
+  403. Admin (SUPER_ADMIN): `GET /api/admin/system-watchlists`, `POST /api/admin/system-watchlists/refresh`. All seven
+  classified in `tests/tenancy_route_table.py`.
+- Frontend (Charts page watchlist panel): with system lists, a list chooser shows every list by group (Indices, Index
+  stocks, Sectors, F&O, then My lists), each group collapsible, a "Find a list" search; system lists carry a lock and
+  "Read-only list", a search on symbol or company, a sort (list order, A to Z, top gainers, top losers, price) and
+  "Copy to my list". A first open with no list of one's own shows "Indices". Without system lists (the route answers
+  404) the panel is unchanged, so the UI2-4c baselines are untouched. The page remembers the system list shown
+  (`watchlist_system` in `atp_charts_view`).
+- `docker-compose.yml` passes `UNIVERSE_SYNC_ENABLED`, `UNIVERSE_SYNC_HOUR_IST`, `UNIVERSE_FILE_URLS` to the worker (and
+  the first two to the API): before this the worker never saw them (WL1-4).
+- Tests: `tests/test_wl1_system_watchlists.py` (hand-made fixtures in `tests/fixtures/universe/wl1/`, no network),
+  `frontend/src/chart/systemLists.test.tsx`, two new e2e cases at 1440 and one on the phone in `e2e/charts-v2.e2e.ts`
+  with two NEW baselines (`charts-v2-watchlist-system-1440-light.png`, `charts-v2-390-sheet-system-light.png`); no
+  existing baseline changed. `app/watchlists` joins the mypy gate.
+- Owner questions: WL1-1 (the full classification source), WL1-2 (refresh schedule), WL1-3 (terms), WL1-4 (production
+  settings), WL1-5 to WL1-8 in docs/OPEN_QUESTIONS.md.
+- Admin console: a "System watchlists" card (`components/SystemListsCard.tsx`): last refresh, lists per group, the
+  changes per list with the symbols added / removed, the unmapped symbols with the reason, the recent runs and
+  "Refresh now" (WL1-8 answered). The worker also rebuilds the lists once when it starts with NSE closed (a deploy);
+  that run is not the day's, so the evening run still follows the universe sync (`system.refresh_due`, tested).
+- After merging main (the rem text scale): the list chooser no longer shows a count twice for names that carry it
+  ("NIFTY 50 stocks (50)"); the read-only note keeps one line above "Copy to my list" in the side panel; the 1440 WL1
+  baseline regenerated at the new text size.
 ## OC5: Option chain "Charts" view + the remaining analyses (handover 2b + 2c, under ui_v2)
 
 - Branch `claude/oc5-chain-charts` (from main). **Migration: yes** (`a7c9e1f3b5d8_oc5_oi_snapshot_futures`: two nullable

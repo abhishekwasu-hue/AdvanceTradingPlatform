@@ -138,6 +138,13 @@ ALLOWED_TEST_DATA: Dict[str, str] = {
     "backend/tests/fixtures/universe/ind_testindexlist.csv": "544401c201de5479761f00ecc1ddc0e5605aeada400ee74db1db56ace85a9ee3",
     "backend/tests/fixtures/universe/symbolchange.csv": "625b27594c67da488945466f9d9ae4b96847b3fb69316ef04ce565a56dd00a5c",
     "backend/tests/fixtures/universe/symbolchange_noheader.csv": "5a9f35b030909aa202976eb08e24fcf3d488a37e1629d03768d68fee9ecb6c39",
+    # WL1: hand-made system-watchlist fixtures (made-up companies, symbols and ISINs; README in the folder).
+    "backend/tests/fixtures/universe/wl1/EQUITY_L.csv": "61124b9e2aea1417babff011c1b81fa007729f198e16df5b0b4a167f5bf1e798",
+    "backend/tests/fixtures/universe/wl1/classification_full.csv": "ecc32fb6eaf34ca177445dde1be87b524a5873400e2c5054d985c6eca1699f5e",
+    "backend/tests/fixtures/universe/wl1/fo_mktlots.csv": "950221cfbc4059acef8576e12439fbbb7d2d2e7e1330d0556c3eea88c9b0f6c3",
+    "backend/tests/fixtures/universe/wl1/ind_test500list.csv": "09f92b92f6aa77001068e7a7a29b4296115ebc39256ac85ce74899f97011dc55",
+    "backend/tests/fixtures/universe/wl1/ind_test50list.csv": "a1564c2f18c6deb0f7f3e02c32db0749ff73c432374fa9aa5e5ca421071e247e",
+    "backend/tests/fixtures/universe/wl1/ind_testbanklist.csv": "7a539735c461e361fca0ce83f46b28015a4814f3d14fb764d9a4a6c6dd5764e6",
     # the private fixtures manifest: paths and sha256 only, no data (backend/tests/private_fixtures.py, owner decision PR-2)
     "backend/tests/private_fixtures_manifest.json": "2aeb33e870fec47b0caa3f317d68e221267a7220c96dec102239e712198b3472",
     # the AI eval sets and their baselines (backend/evals/runner.py)

@@ -83,6 +83,8 @@ from app.trading.persistence import persist_signal_history
 from app.paper.routes import router as paper_router
 from app.decision_tools.routes import router as decision_tools_router
 from app.watchlists.routes import router as watchlists_router
+from app.watchlists.system_routes import admin_router as system_watchlists_admin_router
+from app.watchlists.system_routes import router as system_watchlists_router
 from app.chart_analyze.routes import admin_router as chart_analyze_admin_router, router as chart_analyze_router
 from app.signals_feed.routes import router as signals_feed_router
 from app.me.prefs import router as me_prefs_router
@@ -325,7 +327,9 @@ app.include_router(pwa_router)             # PW6: PWA install/update events (cou
 app.include_router(feedback_router)        # PW6: "Send feedback"
 app.include_router(paper_router)           # Z3-b: the per-user PAPER account and progression ladder (flag paper_account)
 app.include_router(decision_tools_router)  # N2-3: risk-of-ruin calculator and position what-if (flag decision_tools)
+app.include_router(system_watchlists_router)  # WL1: read-only system lists (indices, index stocks, sectors, F&O); before /{id}
 app.include_router(watchlists_router)  # AMW-2: the caller's own named watchlists (flag watchlists, off)
+app.include_router(system_watchlists_admin_router)  # WL1: the admin's view of the system lists' refresh (SUPER_ADMIN)
 app.include_router(chart_analyze_router)  # Analyze a chart: upload / link a chart image, educational reading (flag chart_analyze, off)
 app.include_router(chart_analyze_admin_router)  # Analyze a chart: admin settings (SUPER_ADMIN)
 app.include_router(signals_feed_router)  # UI2-3: the Signals inbox feed, read-only (flag ui_v2, off)

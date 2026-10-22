@@ -106,6 +106,9 @@ services:
       # The platform administrators (app/admin/bootstrap.py): promoted to SUPER_ADMIN at startup and when they register.
       # Without it nobody can open Admin -> Controls (the Phase 0 flags, invite codes) on a compose host.
       SUPER_ADMIN_EMAILS: ${SUPER_ADMIN_EMAILS:-}
+      # U1 / WL1: shown on the admin's system-watchlists view (the worker runs the sync itself).
+      UNIVERSE_SYNC_ENABLED: ${UNIVERSE_SYNC_ENABLED:-false}
+      UNIVERSE_SYNC_HOUR_IST: ${UNIVERSE_SYNC_HOUR_IST:-18}
     # Analyze a chart: users' chart images, private to the backend and the worker (never served by Caddy, never in git;
     # retention and delete are the app's - docs/design/CHART_ANALYZE.md section 3).
     volumes:
@@ -142,6 +145,12 @@ services:
       RETENTION_SESSIONS_DAYS: ${RETENTION_SESSIONS_DAYS:-30}
       WORKER_METRICS_PORT: ${WORKER_METRICS_PORT:-9102}
       INSTRUMENT_SYNC_EXCHANGES: ${INSTRUMENT_SYNC_EXCHANGES:-NSE}
+      # U1 / WL1: the NSE reference-data sync (off until the owner has checked the files' terms, docs/DATA_SOURCES.md)
+      # and its IST hour; the read-only system watchlists are rebuilt after it each day. UNIVERSE_FILE_URLS (JSON)
+      # overrides a file's URL or adds one (e.g. "classification", the full NSE industry classification).
+      UNIVERSE_SYNC_ENABLED: ${UNIVERSE_SYNC_ENABLED:-false}
+      UNIVERSE_SYNC_HOUR_IST: ${UNIVERSE_SYNC_HOUR_IST:-18}
+      UNIVERSE_FILE_URLS: ${UNIVERSE_FILE_URLS:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:ops@example.com}
       STREAMING_QUOTES_ENABLED: ${STREAMING_QUOTES_ENABLED:-false}

@@ -13,6 +13,7 @@ from app.brokers import routes as broker_routes
 from app.brokers import token_lifecycle as tl
 from app.brokers.models import BrokerProfile
 from app.db.models import BrokerCredentialRecord
+from tests.broker_fakes import KITE_KEY, KITE_KEY_2, KITE_KEY_3, UPSTOX_KEY, UPSTOX_KEY_2
 from tests.test_auth_api import _session_factory, client
 from tests.test_bt1b_guard_all_reads import _byob, _flags, _member
 from tests.test_phase_k_commercial import _owner
@@ -48,6 +49,19 @@ def _fake_broker(monkeypatch) -> list:
     return seen
 
 
+# UI2-5: stored keys must have each broker's format (app/brokers/field_specs.py) - one fake key per broker and account.
+_KEYS = {"upstox": {"primary": UPSTOX_KEY, "second": UPSTOX_KEY_2},
+         "zerodha": {"primary": KITE_KEY, "second": KITE_KEY_2, "backup": KITE_KEY_3}}
+
+
+def _key(broker: str, label: str) -> str:
+    return _KEYS[broker][label]
+
+
+def _secret(label: str) -> str:
+    return f"fake-secret-{label}-000000"
+
+
 def _store(headers, broker: str, label: str, **fields) -> None:
     res = client.post(f"/api/broker/{broker}/credentials?account_label={label}", headers=headers, json=fields)
     assert res.status_code == 204, res.text
@@ -64,8 +78,8 @@ def _rows(tenant_id: int, broker: str) -> dict:
 
 def _two_accounts(tag: str, broker: str = "upstox"):
     headers, me = _owner(_email(tag))
-    _store(headers, broker, "primary", api_key="k-primary", api_secret="s-primary")
-    _store(headers, broker, "second", api_key="k-second", api_secret="s-second")
+    _store(headers, broker, "primary", api_key=_key(broker, "primary"), api_secret=_secret("primary"))
+    _store(headers, broker, "second", api_key=_key(broker, "second"), api_secret=_secret("second"))
     return headers, me
 
 
@@ -76,22 +90,22 @@ def test_authenticating_the_second_account_uses_the_second_credential(monkeypatc
     seen = _fake_broker(monkeypatch)
     res = client.post("/api/broker/upstox/authenticate?account_label=second", headers=headers)
     assert res.status_code == 200, res.text
-    assert [c.api_key for c in seen] == ["k-second"]
+    assert [c.api_key for c in seen] == [_key("upstox", "second")]
     rows = _rows(me["tenant_id"], "upstox")
-    assert rows["second"][0] == "VALID" and rows["second"][1].access_token == "token-for-k-second"
+    assert rows["second"][0] == "VALID" and rows["second"][1].access_token == f"token-for-{_key('upstox', 'second')}"
     assert rows["primary"][0] == "UNKNOWN" and rows["primary"][1].access_token is None    # the primary is untouched
     # No secret in the response or the audit trail.
-    assert "s-second" not in res.text and "token-for" not in res.text
+    assert _secret("second") not in res.text and "token-for" not in res.text
     logs = client.get("/api/audit-logs", headers=headers).json()
     assert any(entry["event"] == "broker_authenticated" and entry["detail"] == "upstox/second" for entry in logs)
-    assert not any("s-second" in (entry["detail"] or "") or "token-for" in (entry["detail"] or "") for entry in logs)
+    assert not any(_secret("second") in (entry["detail"] or "") or "token-for" in (entry["detail"] or "") for entry in logs)
 
 
 def test_authenticate_without_a_label_still_means_the_primary(monkeypatch):
     headers, me = _two_accounts("auth1")
     seen = _fake_broker(monkeypatch)
     assert client.post("/api/broker/upstox/authenticate", headers=headers).status_code == 200
-    assert [c.api_key for c in seen] == ["k-primary"]
+    assert [c.api_key for c in seen] == [_key("upstox", "primary")]
     rows = _rows(me["tenant_id"], "upstox")
     assert rows["primary"][0] == "VALID" and rows["second"][0] == "UNKNOWN"
 
@@ -135,26 +149,26 @@ def test_upstox_oauth_for_the_second_account_updates_the_second_row(monkeypatch)
     res = client.get("/api/broker/upstox/oauth/start?account_label=second", headers=headers)
     assert res.status_code == 200, res.text
     q = parse_qs(urlparse(res.json()["authorization_url"]).query)
-    assert q["client_id"] == ["k-second"]
+    assert q["client_id"] == [_key("upstox", "second")]
     assert tl.parse_oauth_state(q["state"][0])["account_label"] == "second"
 
     seen = _fake_broker(monkeypatch)
     cb = client.get("/api/broker/upstox/oauth/callback", params={"code": "the-code", "state": q["state"][0]}, follow_redirects=False)
     assert cb.status_code == 302 and "connected=1" in cb.headers["location"]
-    assert [(c.api_key, c.request_token) for c in seen] == [("k-second", "the-code")]
+    assert [(c.api_key, c.request_token) for c in seen] == [(_key("upstox", "second"), "the-code")]
     rows = _rows(me["tenant_id"], "upstox")
-    assert rows["second"][0] == "VALID" and rows["second"][1].access_token == "token-for-k-second"
+    assert rows["second"][0] == "VALID" and rows["second"][1].access_token == f"token-for-{_key('upstox', 'second')}"
     assert rows["primary"][0] == "UNKNOWN" and rows["primary"][1].access_token is None
 
 
 def test_upstox_oauth_state_without_a_label_means_the_primary(monkeypatch):
     headers, me = _two_accounts("oauth1")
     q = parse_qs(urlparse(client.get("/api/broker/upstox/oauth/start", headers=headers).json()["authorization_url"]).query)
-    assert q["client_id"] == ["k-primary"]
+    assert q["client_id"] == [_key("upstox", "primary")]
     seen = _fake_broker(monkeypatch)
     cb = client.get("/api/broker/upstox/oauth/callback", params={"code": "c", "state": q["state"][0]}, follow_redirects=False)
     assert cb.status_code == 302 and "connected=1" in cb.headers["location"]
-    assert [c.api_key for c in seen] == ["k-primary"]
+    assert [c.api_key for c in seen] == [_key("upstox", "primary")]
     assert _rows(me["tenant_id"], "upstox")["second"][0] == "UNKNOWN"
 
 
@@ -172,12 +186,12 @@ def test_upstox_oauth_callback_rejects_a_malformed_label_in_the_state(monkeypatc
 def test_login_url_and_code_for_the_second_kite_account(monkeypatch):
     headers, me = _two_accounts("kite2", broker="zerodha")
     res = client.get("/api/broker/zerodha/login-url?account_label=second", headers=headers)
-    assert res.status_code == 200 and "api_key=k-second" in res.json()["authorization_url"]
+    assert res.status_code == 200 and f"api_key={_key('zerodha', 'second')}" in res.json()["authorization_url"]
     seen = _fake_broker(monkeypatch)
     res = client.post("/api/broker/zerodha/login-code?account_label=second", headers=headers, json={"code": "request_token=abc"})
     assert res.status_code == 200, res.text
     assert res.json()["account_label"] == "second"
-    assert [c.api_key for c in seen] == ["k-second"]
+    assert [c.api_key for c in seen] == [_key("zerodha", "second")]
     rows = _rows(me["tenant_id"], "zerodha")
     assert rows["second"][0] == "VALID" and rows["primary"][0] == "UNKNOWN"
 
@@ -186,20 +200,20 @@ def test_login_url_and_code_for_the_second_kite_account(monkeypatch):
 
 def test_authenticate_on_zerodha_backup_marks_only_the_backup_row(monkeypatch):
     headers, me = _owner(_email("zbackup"))
-    _store(headers, "zerodha", "primary", api_key="k-primary", api_secret="s-primary")
-    _store(headers, "zerodha", "backup", api_key="k-backup", api_secret="s-backup")
+    _store(headers, "zerodha", "primary", api_key=_key("zerodha", "primary"), api_secret=_secret("primary"))
+    _store(headers, "zerodha", "backup", api_key=_key("zerodha", "backup"), api_secret=_secret("backup"))
     seen = _fake_broker(monkeypatch)
     res = client.post("/api/broker/zerodha/authenticate?account_label=backup", headers=headers)
     assert res.status_code == 200, res.text
-    assert [c.api_key for c in seen] == ["k-backup"]
+    assert [c.api_key for c in seen] == [_key("zerodha", "backup")]
     rows = _rows(me["tenant_id"], "zerodha")
-    assert rows["backup"][0] == "VALID" and rows["backup"][1].access_token == "token-for-k-backup"
+    assert rows["backup"][0] == "VALID" and rows["backup"][1].access_token == f"token-for-{_key('zerodha', 'backup')}"
     assert rows["primary"][0] == "UNKNOWN" and rows["primary"][1].access_token is None
     # Token status reports each account on its own: only the backup is usable.
     status = {(t["broker_name"], t["account_label"]): t for t in client.get("/api/broker/token-status", headers=headers).json()}
     assert status[("zerodha", "backup")]["token_status"] == "VALID" and status[("zerodha", "backup")]["needs_login"] is False
     assert status[("zerodha", "primary")]["token_status"] == "UNKNOWN" and status[("zerodha", "primary")]["needs_login"] is True
-    assert "s-backup" not in res.text and "token-for" not in res.text
+    assert _secret("backup") not in res.text and "token-for" not in res.text
 
 
 class _Probe:
@@ -213,8 +227,8 @@ class _Probe:
 
 def test_smoke_test_and_disconnect_act_on_the_backup_row_only(monkeypatch):
     headers, me = _owner(_email("zsmoke"))
-    _store(headers, "zerodha", "primary", api_key="k-primary", api_secret="s-primary", access_token="t-primary")
-    _store(headers, "zerodha", "backup", api_key="k-backup", api_secret="s-backup", access_token="t-backup")
+    _store(headers, "zerodha", "primary", api_key=_key("zerodha", "primary"), api_secret=_secret("primary"), access_token="t-primary")
+    _store(headers, "zerodha", "backup", api_key=_key("zerodha", "backup"), api_secret=_secret("backup"), access_token="t-backup")
     seen: list = []
     monkeypatch.setattr(broker_routes, "build_adapter", lambda record: _Probe(seen, tl.load_credentials(record)))
 
@@ -232,10 +246,10 @@ def test_smoke_test_and_disconnect_act_on_the_backup_row_only(monkeypatch):
 
     monkeypatch.setattr(broker_routes, "run_smoke", fake_smoke)
     assert client.post("/api/broker/zerodha/smoke-test?account_label=backup", headers=headers).status_code == 200
-    assert smoked == [("k-backup", "backup")]
+    assert smoked == [(_key("zerodha", "backup"), "backup")]
 
     assert client.post("/api/broker/zerodha/disconnect?account_label=backup", headers=headers).status_code == 204
-    assert seen == ["k-backup", "k-backup"]
+    assert seen == [_key("zerodha", "backup"), _key("zerodha", "backup")]
     rows = _rows(me["tenant_id"], "zerodha")
     assert rows["backup"][0] == "EXPIRED" and rows["backup"][1].access_token is None
     assert rows["primary"][1].access_token == "t-primary" and rows["primary"][0] != "EXPIRED"
@@ -252,7 +266,7 @@ def test_smoke_test_and_disconnect_act_on_the_backup_row_only(monkeypatch):
 @pytest.mark.parametrize("bad", ["../primary", "bad label!", "x" * 51])
 def test_a_malformed_label_is_a_422_on_every_per_account_route(monkeypatch, method, path, bad):
     headers, _me = _owner(_email("bad422"))
-    _store(headers, "zerodha", "primary", api_key="k-primary", api_secret="s-primary")
+    _store(headers, "zerodha", "primary", api_key=_key("zerodha", "primary"), api_secret=_secret("primary"))
     seen = _fake_broker(monkeypatch)
     res = getattr(client, method)(path, params={"account_label": bad}, headers=headers)
     assert res.status_code == 422, (path, bad, res.text)
@@ -264,7 +278,7 @@ def test_a_malformed_label_on_store_and_login_code_is_a_422(monkeypatch):
     seen = _fake_broker(monkeypatch)
     res = client.post("/api/broker/zerodha/credentials", params={"account_label": "a/b"}, headers=headers, json={"api_key": "k"})
     assert res.status_code == 422
-    _store(headers, "zerodha", "primary", api_key="k-primary", api_secret="s-primary")
+    _store(headers, "zerodha", "primary", api_key=_key("zerodha", "primary"), api_secret=_secret("primary"))
     res = client.post("/api/broker/zerodha/login-code", params={"account_label": "a b"}, headers=headers, json={"code": "abc"})
     assert res.status_code == 422
     assert seen == [] and set(_rows(me["tenant_id"], "zerodha")) == {"primary"}

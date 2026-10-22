@@ -385,10 +385,31 @@ def validate_production_config() -> None:
         email_verification_required=os.environ.get("EMAIL_VERIFICATION_REQUIRED", "").strip().lower() in {"1", "true", "yes"},
         smtp_host=os.environ.get("PLATFORM_SMTP_HOST", "").strip(),
     )
+    problems += broker_oauth_redirect_problems(ENVIRONMENT, BROKER_OAUTH_REDIRECT_BASE_URL)
     if problems:
         raise RuntimeError(
             f"Refusing to start with ENVIRONMENT={ENVIRONMENT} and insecure configuration:\n- " + "\n- ".join(problems)
         )
+    for warning in broker_oauth_redirect_warnings(ENVIRONMENT, BROKER_OAUTH_REDIRECT_BASE_URL or PUBLIC_BASE_URL):
+        logging.getLogger(__name__).warning("CONFIGURATION ACTION NEEDED: %s", warning)
+
+
+def broker_oauth_redirect_problems(environment: str, base_url: str) -> List[str]:
+    """UI2-5 review: in production and staging a BROKER_OAUTH_REDIRECT_BASE_URL that is set must be https - brokers send
+    the one-time login code to it. (A new setting, so no running deployment has a non-https value to break.)"""
+    if environment in HARDENED_ENVIRONMENTS and base_url and not base_url.lower().startswith("https://"):
+        return ["BROKER_OAUTH_REDIRECT_BASE_URL must start with https:// - brokers send the one-time login code to it."]
+    return []
+
+
+def broker_oauth_redirect_warnings(environment: str, base_url: str) -> List[str]:
+    """Unset in production or staging (and no PUBLIC_BASE_URL to fall back to, D2): the broker callback address (stored as
+    an app's redirect_uri) is taken from the request's Host header. A loud warning for now, not a refusal to start, because existing deployments' .env files do
+    not have the setting yet (docs/OPERATIONS.md, operator step)."""
+    if environment in HARDENED_ENVIRONMENTS and not base_url:
+        return ["BROKER_OAUTH_REDIRECT_BASE_URL is not set (nor PUBLIC_BASE_URL) - broker OAuth callback addresses come from the request's Host "
+                "header. Set it to this deployment's public https origin (docs/OPERATIONS.md)."]
+    return []
 
 # --- Platform mailer + email verification (Phase N3) --------------------------------------------
 # The platform's own SMTP account, used for account emails (verification links, and password
@@ -504,6 +525,10 @@ SCREENER_COST_CAP = float(os.environ.get("SCREENER_COST_CAP", "200"))
 # S3b-2: the public https origin of this deployment (e.g. https://atp.example.com), used for the unsubscribe link in
 # screen-alert emails. Empty = no link is added (the mails still go).
 PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "").strip().rstrip("/")
+# UI2-5: an optional override of the https origin at which brokers reach this API's OAuth callbacks (e.g.
+# https://atp.example.com); the Redirect URL to register on the Upstox, Kite and Fyers developer consoles is this plus
+# /api/broker/<broker>/oauth/callback. Empty = PUBLIC_BASE_URL (D2), else the address the request came in on.
+BROKER_OAUTH_REDIRECT_BASE_URL = os.environ.get("BROKER_OAUTH_REDIRECT_BASE_URL", "").strip().rstrip("/")
 # GS-1: Google sign-in (OpenID Connect). Both empty (the default) = the feature does not exist: GET /api/auth/providers says
 # google: false, the sign-in page shows no Google button and the /api/auth/google/* routes answer 404. The redirect URI
 # registered at Google is PUBLIC_BASE_URL + "/api/auth/google/callback". The secret is never returned or logged.

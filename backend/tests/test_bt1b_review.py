@@ -8,6 +8,7 @@ import json
 import uuid
 from datetime import date, datetime, timedelta, timezone
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from sqlalchemy import select
@@ -21,6 +22,7 @@ from app.notifications.service import notify
 from app.core.enums import NotificationType
 from app.secrets_store.encryption import encrypt_text
 from app.secrets_store.envelope import PURPOSE_BROKER_CREDENTIAL
+from tests.broker_fakes import KITE_KEY, KITE_SECRET, UPSTOX_KEY, UPSTOX_SECRET
 from tests.test_auth_api import _session_factory, client
 from tests.test_bt1b_guard_all_reads import _Feed, _byob, _flags, _member, _route
 from tests.test_phase_aa_market_data_api import _store_credentials
@@ -103,8 +105,11 @@ def test_oauth_callback_never_writes_a_fresh_token_onto_a_row_that_changed_hands
     if flag_on:
         _byob(owner["tenant_id"])
     monkeypatch.setattr(broker_routes, "get_broker_adapter", lambda name, creds: _Login(during=_take_over_row(owner["tenant_id"], member["id"])))
-    state = token_lifecycle.create_oauth_state(owner["tenant_id"], owner["id"], "upstox")
-    r = client.get(f"/api/broker/upstox/oauth/callback?code=abc&state={state}", follow_redirects=False)
+    # UI2-5 review: the Upstox callback needs the single-use nonce the start route records, so the login starts there.
+    start = client.get("/api/broker/upstox/oauth/start", headers=owner_headers)
+    assert start.status_code == 200, start.text
+    state = parse_qs(urlparse(start.json()["authorization_url"]).query)["state"][0]
+    r = client.get("/api/broker/upstox/oauth/callback", params={"code": "abc", "state": state}, follow_redirects=False)
     assert r.status_code == 302 and "error=changed_during_login" in r.headers["location"]
     holder, creds, status = _row(owner["tenant_id"])
     assert holder == member["id"] and creds.access_token is None and status == "UNKNOWN"     # the member's store stands, no token
@@ -188,7 +193,7 @@ def test_login_url_delete_and_disconnect_are_for_the_holder_or_an_owner_with_the
     assert client.delete("/api/broker/zerodha/credentials", headers=member_headers).status_code == 403
     assert _row(owner["tenant_id"], "zerodha")[0] == owner["id"]
     # The member's own connection: an owner may remove it.
-    assert client.post("/api/broker/upstox/credentials", headers=member_headers, json={"api_key": "mk", "api_secret": "ms"}).status_code == 204
+    assert client.post("/api/broker/upstox/credentials", headers=member_headers, json={"api_key": UPSTOX_KEY, "api_secret": UPSTOX_SECRET}).status_code == 204
     assert client.delete("/api/broker/upstox/credentials", headers=owner_headers).status_code == 204
 
 
@@ -310,7 +315,7 @@ class _FakeStream:
 def _zerodha_tenant(email):
     from tests.test_trading_worker import _tenant
     t = _tenant(email, with_credentials=False)
-    client.post("/api/broker/zerodha/credentials", headers=t["headers"], json={"api_key": "k", "api_secret": "s", "access_token": "t"})
+    client.post("/api/broker/zerodha/credentials", headers=t["headers"], json={"api_key": KITE_KEY, "api_secret": KITE_SECRET, "access_token": "t"})
 
     async def mark():
         async with _session_factory() as session:

@@ -10,12 +10,16 @@ the token it holds is still good before it fires a live order. This module is th
 * `store_access_token(...)` - persists a freshly exchanged token (re-encrypted) with its expiry.
 * `verify_token(...)` - a real round-trip to the broker (profile call); marks the record VALID or
   EXPIRED and raises a TOKEN_EXPIRED notification on the latter.
-* OAuth "state" helpers for the Upstox redirect flow - a short-lived signed token binding the
-  callback (which arrives unauthenticated from the browser) to the tenant that started it.
+* OAuth "state" helpers for the redirect flows - a short-lived signed token binding the
+  callback (which arrives unauthenticated from the browser) to the tenant that started it; for
+  Zerodha and Fyers (UI2-5) also a single-use nonce whose hash waits on the credential row.
 """
+import hashlib
+import hmac
 import json
 import logging
 import re
+import secrets
 from datetime import datetime, time, timedelta, timezone
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
@@ -250,7 +254,7 @@ async def verify_token(
 # --- OAuth redirect flow (Upstox) -------------------------------------------------------------
 
 def create_oauth_state(tenant_id: int, user_id: int, broker_name: str, now: Optional[datetime] = None,
-                       account_label: str = "primary") -> str:
+                       account_label: str = "primary", nonce: Optional[str] = None) -> str:
     """A signed, short-lived state parameter. The broker echoes it back to the (unauthenticated)
     callback, which is the only way the callback can know which tenant's credentials (and which of
     its accounts at that broker) to update - and the signature means a forged callback can't point
@@ -261,6 +265,8 @@ def create_oauth_state(tenant_id: int, user_id: int, broker_name: str, now: Opti
         "account_label": account_label or "primary",
         "iat": now, "exp": now + timedelta(minutes=OAUTH_STATE_TTL_MINUTES),
     }
+    if nonce is not None:
+        payload["nonce"] = nonce
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
@@ -277,3 +283,62 @@ def parse_oauth_state(state: str) -> Dict[str, Any]:
 def build_upstox_authorization_url(api_key: str, redirect_uri: str, state: str) -> str:
     query = urlencode({"response_type": "code", "client_id": api_key, "redirect_uri": redirect_uri, "state": state})
     return f"{UPSTOX_AUTHORIZE_URL}?{query}"
+
+
+# --- OAuth callbacks for Zerodha (Kite) and Fyers (UI2-5) --------------------------------------
+#
+# Both brokers send the browser to the redirect URL registered on their developer console. With ATP's callback
+# registered there, nothing is pasted: the callback receives the one-time code, exchanges it with the adapter's own code
+# and stores the session as the paste-the-code login does. The `state` the broker echoes back is the signed token above
+# plus a random nonce; only the nonce's SHA-256 waits on the credential row (inside its encrypted payload), with the
+# user who started the login and a 10-minute expiry. The callback accepts a state only if it is signed, unexpired, names
+# this broker, and its nonce matches the one waiting for the same user - and it clears the nonce before exchanging the
+# code, so a state works once (a replay, a second tab or a forged link finds nothing waiting).
+
+KITE_OAUTH_CALLBACK_PATH = "/api/broker/zerodha/oauth/callback"
+FYERS_OAUTH_CALLBACK_PATH = "/api/broker/fyers/oauth/callback"
+OAUTH_CALLBACK_BROKERS: Dict[str, str] = {"zerodha": KITE_OAUTH_CALLBACK_PATH, "fyers": FYERS_OAUTH_CALLBACK_PATH}
+
+
+def _nonce_hash(nonce: str) -> str:
+    return hashlib.sha256(nonce.encode("utf-8")).hexdigest()
+
+
+def begin_oauth_login(credentials: BrokerCredentials, tenant_id: int, user_id: int, broker_name: str,
+                      account_label: str = "primary", now: Optional[datetime] = None) -> str:
+    """Records a fresh single-use nonce on `credentials` (the caller re-encrypts and stores them) and returns the signed
+    state to send to the broker. Starting again replaces the waiting nonce, so only the latest login can finish."""
+    now = now or _utcnow()
+    nonce = secrets.token_urlsafe(24)
+    credentials.oauth_pending = {
+        "broker": broker_name, "user_id": int(user_id), "nonce_sha256": _nonce_hash(nonce),
+        "expires_at": (now + timedelta(minutes=OAUTH_STATE_TTL_MINUTES)).isoformat(),
+    }
+    return create_oauth_state(tenant_id, user_id, broker_name, now=now, account_label=account_label, nonce=nonce)
+
+
+def oauth_pending_matches(credentials: BrokerCredentials, claims: Dict[str, Any], now: Optional[datetime] = None) -> bool:
+    """True when the state's nonce is the one waiting on this row, for the same broker and user, and not yet lapsed."""
+    pending = credentials.oauth_pending or {}
+    nonce = claims.get("nonce")
+    if not pending or not isinstance(nonce, str) or not nonce:
+        return False
+    if pending.get("broker") != claims.get("broker") or int(pending.get("user_id") or -1) != int(claims.get("user_id") or -2):
+        return False
+    try:
+        expires_at = _as_utc(datetime.fromisoformat(str(pending.get("expires_at"))))
+    except ValueError:
+        return False
+    if expires_at is None or expires_at <= (now or _utcnow()):
+        return False
+    return hmac.compare_digest(str(pending.get("nonce_sha256") or ""), _nonce_hash(nonce))
+
+
+def build_oauth_login_url(broker_name: str, api_key: str, redirect_uri: str, state: str) -> str:
+    """The broker's login page for the callback flow. Kite takes no redirect URL in the link (it uses the one registered
+    on the app) and hands `redirect_params` back on the redirect; Fyers takes both the redirect URL and `state`."""
+    if broker_name == "zerodha":
+        return f"{KITE_AUTHORIZE_URL}?{urlencode({'v': '3', 'api_key': api_key, 'redirect_params': urlencode({'state': state})})}"
+    if broker_name == "fyers":
+        return f"{FYERS_AUTHORIZE_URL}?{urlencode({'client_id': api_key, 'redirect_uri': redirect_uri, 'response_type': 'code', 'state': state})}"
+    raise ValueError(f"{broker_name} has no OAuth callback flow")

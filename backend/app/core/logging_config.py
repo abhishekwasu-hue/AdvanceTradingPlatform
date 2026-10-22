@@ -32,6 +32,39 @@ class CorrelationFilter(logging.Filter):
         return True
 
 
+# UI2-5: a broker's OAuth redirect carries a one-time login code (and the signed state) in its query string. The access
+# log (uvicorn) and HTTP client logs print request URLs, so on the callback paths the query values are replaced before a
+# line is written - the code never reaches a log.
+# Any path ending in /oauth/callback (with or without a trailing slash, under any prefix such as /api/v1/...): a
+# prefix or slash a proxy or a later API version adds must not let the code through.
+_CALLBACK_QUERY = re.compile(r"(/oauth/callback/?\?)([^\s\"']*)")
+_CALLBACK_MARK = "/oauth/callback"
+SECRET_QUERY_LOGGERS = ("uvicorn.access", "httpx", "httpcore")
+
+
+def _redact_callback_query(text: str) -> str:
+    return _CALLBACK_QUERY.sub(lambda m: m.group(1) + "[redacted]", text)
+
+
+class CallbackQueryRedactionFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str) and _CALLBACK_MARK in record.msg:
+            record.msg = _redact_callback_query(record.msg)
+        if record.args:
+            args = record.args if isinstance(record.args, tuple) else (record.args,)
+            if any(_CALLBACK_MARK in str(a) for a in args):
+                record.args = tuple(_redact_callback_query(str(a)) if _CALLBACK_MARK in str(a) else a for a in args)
+        return True
+
+
+def install_callback_query_redaction() -> None:
+    """Idempotent: adds the filter once to each logger that prints request URLs."""
+    for name in SECRET_QUERY_LOGGERS:
+        target = logging.getLogger(name)
+        if not any(isinstance(f, CallbackQueryRedactionFilter) for f in target.filters):
+            target.addFilter(CallbackQueryRedactionFilter())
+
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: Dict[str, Any] = {
@@ -85,6 +118,7 @@ def configure_logging(level: int = logging.INFO) -> None:
     root = logging.getLogger()
     root.handlers = [handler]
     root.setLevel(level)
+    install_callback_query_redaction()
     install_access_log_redaction()
 
 

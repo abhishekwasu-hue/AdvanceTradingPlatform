@@ -27,6 +27,9 @@ class BrokerCredentials(BaseModel):
     # `analytics_meta` is server-written only (app/brokers/upstox_analytics.py); a client-sent value is dropped.
     analytics_token: Optional[str] = Field(default=None, repr=False)
     analytics_meta: Optional[Dict[str, Any]] = None
+    # UI2-5: the OAuth login in progress for this row (Zerodha, Fyers): who started it, the SHA-256 of the one-time state
+    # nonce and when it lapses. Server-written only (app/brokers/token_lifecycle.py); a client-sent value is dropped.
+    oauth_pending: Optional[Dict[str, Any]] = Field(default=None, repr=False)
 
 
 class BrokerProfile(BaseModel):

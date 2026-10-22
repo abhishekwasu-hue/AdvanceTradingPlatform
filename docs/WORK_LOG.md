@@ -2029,6 +2029,35 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
 
+## UI2-5 Broker field map (backend only, no UI change)
+
+- Branch `claude/ui2-5-broker-field-map` (from main). No migration, no new flag.
+- `app/brokers/field_specs.py`: `BROKER_FIELD_SPECS`, one entry per registered broker (label, kind text / secret /
+  totp-secret / pin / code, who supplies it, pattern, required / required unless, help, advanced), derived from the
+  adapters; absorbs the Upstox analytics token entry (`upstox_analytics.FIELD_SPEC` removed).
+- `GET /api/broker/specs` (any member, read-only): the map plus the Redirect URL of ATP's callback, the server's
+  egress IP and the daily expiry; never a stored value.
+- `POST /api/broker/{name}/credentials` validates with the same map: unknown fields, a token ATP fills in itself where
+  nothing ever pasted it, bad formats and missing required fields are a 422 with English sentences that never repeat a
+  value. Tokens and codes the old Settings form can still paste stay accepted (`legacy_paste`) until UI2-6.
+- Zerodha (Kite) and Fyers OAuth callbacks: `GET /api/broker/{zerodha|fyers}/oauth/start` and `.../oauth/callback`.
+  The state is the signed broker-OAuth token plus a single-use nonce whose SHA-256 waits (10 minutes, per user) in the
+  credential's encrypted payload (`oauth_pending`, server-written only); the callback claims it with a conditional
+  write before exchanging the code with the adapter's own code, then stores the session as the paste flow does.
+  New setting `BROKER_OAUTH_REDIRECT_BASE_URL` (empty = the request's address). Callback query strings are redacted in
+  the access log (`app/core/logging_config.py`).
+- Shoonya's TOTP code: already fixed on main (#279, `app/brokers/totp.py`); a new test generates a made-up base32 secret.
+- Tests: `tests/test_ui2_5_broker_field_map.py` (spec coverage both ways, specs route, validation, both callbacks with
+  the real adapters against a mocked broker transport); tests that stored one-letter stand-in keys now use
+  `tests/broker_fakes.py`. Routes added to `tests/tenancy_route_table.py`.
+- Security review follow-ups: key and ID patterns now check only length and no spaces (a wrong pattern would lock a
+  real user out; PIN digits, base32 TOTP secrets, IP / MAC and the redirect URL keep their formats); the Upstox, Kite
+  and Fyers callbacks are counted per client IP (20 per 5 minutes, then a redirect with `too_many_attempts`), check
+  before the exchange that the person who started the login is still active with a trading role and `brokers:write`
+  (`not_allowed`), and audit `no_token_returned`; Upstox uses the same single-use nonce; the log redaction covers a
+  trailing slash and any path prefix; production and staging refuse a non-https `BROKER_OAUTH_REDIRECT_BASE_URL` and
+  warn loudly when it is unset (operator step in docs/OPERATIONS.md).
+
 ## WL1: default watchlists - indices, index stocks and sectors as separate read-only lists (handover item 4, 22 Oct)
 
 - Branch `claude/wl1-system-lists` (from main). Overrides OPEN_QUESTIONS UI4C-1 (marked superseded). Status before
@@ -2255,6 +2284,21 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
   note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
 - CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).
+## 2026-10-22 - UI2-5 brought up to main (P2a / P2b broker pages, D2 redirect URL, GS-1)
+
+- Merge of origin/main into `claude/ui2-5-broker-field-map`. Kept both sides:
+  - Credentials save: main's shared `save_credentials` (P2a connect uses it too) now normalises with the field map;
+    the field-map validation (422) runs only for `POST /api/broker/{name}/credentials` (`validate=True`). P2a's
+    connect keeps its own catalogue checks.
+  - Callback address: one helper, `oauth_callback_url` = `BROKER_OAUTH_REDIRECT_BASE_URL` (optional override) else
+    D2's `PUBLIC_BASE_URL` else the request address; the startup warning fires only when both are empty.
+  - Upstox OAuth start: D2's stale-URI replacement and log line, plus UI2-5's single-use nonce, saved in one
+    conditional write (409 "Your broker details changed while signing in"). The shared callback keeps D2's stale-URI
+    handling and audit entry for Upstox.
+  - Logging: GS-1's `code=` / `state=` access-log redaction and UI2-5's callback-query redaction both installed.
+  - Shoonya field spec lists the stored session token (P2a: the adapter now reads `access_token`), filled by ATP's login.
+  - D2 tests plant the single-use nonce before a callback; the Kite row in the token-status test has a key in format.
+- No migration, no flag, no UI change.
 ## 2026-10-22 - Strategy templates step 1: recipe core + indicators (owner order 13, TPL-1)
 
 - Branch `claude/tpl1-core-indicators`. No migration. Status table: `docs/design/STRATEGY_TEMPLATES_IMPL.md`.

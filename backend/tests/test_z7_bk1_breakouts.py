@@ -72,11 +72,16 @@ def test_screenql_argument_defaults_are_the_parameter_defaults():
             "RangeExpansion": {"k": "expansion_k", "v": "vol_mult"}, "VolumeBreakout": {"v": "shock_mult", "n": "range_n"},
             "RelVolume": {"n": "vol_avg_n"}, "ATRPercentile": {"n": "atr_n", "lookback": "atr_pct_lookback"}, "DowTrend": {"degree": "htf_degree"},
             # strategy templates step 2 (R2): the range breakout's level companion takes the same defaults
-            "RangeBreakoutRef": {"n": "range_n", "k": "min_break_atr", "v": "vol_mult", "mode": "range_mode", "stop_mult": "stop_atr_mult"}}
+            "RangeBreakoutRef": {"n": "range_n", "k": "min_break_atr", "v": "vol_mult", "mode": "range_mode", "stop_mult": "stop_atr_mult"},
+            # step 4 (R2 for the other families): the swing, inside / NR and volume breakouts' companions
+            "SwingBreakoutRef": {"degree": "swing_degree", "k": "min_break_atr", "stop_mult": "stop_atr_mult"},
+            "NRBreakoutRef": {"setup": "nr_setup", "v": "vol_mult", "k": "min_break_atr", "stop_mult": "stop_atr_mult"},
+            "VolumeBreakoutRef": {"v": "shock_mult", "n": "range_n", "stop_mult": "stop_atr_mult"}}
     bk2 = {"ORBreakout", "DayLevelBreak", "DayExtremeBreak", "RelVolumeTOD", "SessionVWAP"}   # tests/test_z7_bk2_intraday.py
-    bk3 = {"VCPBreakout", "VCPReady", "DonchianBreakout", "SqueezeBreakout", "MABreakout", "RegimeBreakout"}   # tests/test_z7_bk3_breakouts.py
+    bk3 = {"VCPBreakout", "VCPReady", "DonchianBreakout", "SqueezeBreakout", "MABreakout", "RegimeBreakout",
+           "DonchianBreakoutRef", "MABreakoutRef", "VCPBreakoutRef"}   # tests/test_z7_bk3_breakouts.py (the Refs: templates step 4)
     bk4 = {"TrendlineBreakout", "PatternBreakout", "GapBreakout", "GapType", "RetestEntry", "LineBreakoutRef",
-           "RetestEntryRef"}   # tests/test_z7_bk4_breakouts.py (RetestEntryRef: strategy templates step 3, R7)
+           "RetestEntryRef", "PatternBreakoutRef"}   # tests/test_z7_bk4_breakouts.py (RetestEntryRef: strategy templates step 3, R7)
     assert set(want) | bk2 | bk3 | bk4 == set(BREAKOUT_FUNCTIONS)
     for fn, args in want.items():
         spec = {a.name: a for a in FUNCTIONS[fn].args}

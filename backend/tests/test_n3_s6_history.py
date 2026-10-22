@@ -308,6 +308,14 @@ SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false 
     "RangeBreakoutRef": 'close > RangeBreakoutRef("held_level", "up", 20, 0, 0)',
     "LineBreakoutRef": 'close > LineBreakoutRef("held_level", "up", "line", 2, 0)',
     "RetestEntryRef": 'close > RetestEntryRef("held_level", "up", "range", 20, FALSE, k=0, v=0)',     # step 3 (R7)
+    # step 4 (R2 for the other breakout families): the same reading for each family's companion
+    "SwingBreakoutRef": 'close > SwingBreakoutRef("held_level", "up", 0, 0)',
+    "NRBreakoutRef": 'close > NRBreakoutRef("held_level", "up", "nr7", 0, 0)',
+    "VolumeBreakoutRef": 'close > VolumeBreakoutRef("held_level", "up", 1.5)',
+    "DonchianBreakoutRef": 'close > DonchianBreakoutRef("held_level", "up", 20, 0)',
+    "MABreakoutRef": 'close > MABreakoutRef("held_level", "up", 5, "sma", 0)',
+    "PatternBreakoutRef": 'close > PatternBreakoutRef("held_level", "up", "triangle", 0, 0)',
+    "VCPBreakoutRef": 'close > VCPBreakoutRef("held_level", "up", 2, 1, 0, 0, FALSE, FALSE)',
     "Least": "Least(open, close, low) < SMA(close, 5)",
     "NearSupport": "NearSupport(0.05, 3)",
     "NearResistance": "NearResistance(0.05, 3)",

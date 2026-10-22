@@ -1,0 +1,40 @@
+{
+  "schema": "atp.template/1",
+  "id": "B11",
+  "version": 1,
+  "name": "Volatility contraction breakout",
+  "family": "B",
+  "idea": "On the Daily chart: a signal on the first close beyond the pivot of a base whose pullbacks keep getting shallower (a volatility contraction pattern); the idea is wrong below the last contraction.",
+  "difficulty": "Advanced",
+  "style": "Swing",
+  "allowed_timeframes": ["1d"],
+  "params": [
+    {"key": "contractions", "label": "Contractions", "help": "The base needs at least this many pullbacks, each shallower than the one before.", "type": "int", "default": 2, "min": 2, "max": 8, "step": 1},
+    {"key": "ratio", "label": "Shallower by", "help": "Each pullback must be at most this share of the one before (1 means just shallower).", "type": "float", "default": 1.0, "min": 0.1, "max": 1.0, "step": 0.05},
+    {"key": "vol_mult", "label": "Volume expansion", "help": "The breakout bar's volume must be at least this many times the average (0 means no volume condition; indices have no volume).", "type": "float", "default": 1.5, "min": 0.0, "max": 20.0, "step": 0.1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the pivot the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "trend_template", "label": "Trend filter", "help": "Only when the longer-term trend template holds (rising long averages, the close well off its yearly low).", "type": "bool", "default": true},
+    {"key": "dryup", "label": "Volume dry-up", "help": "Only when volume dries up through the base (turn it off for indices, which have no volume).", "type": "bool", "default": true},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level that says the breakout failed: the low of the last contraction, or just beyond the pivot.", "type": "enum", "default": "stop_base", "choices": ["stop_base", "stop_level_atr"], "choice_labels": ["The last contraction", "Just beyond the pivot"]},
+    {"key": "stop_mult", "label": "Edge buffer", "help": "For 'just beyond the broken pivot': how many average true ranges beyond it.", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "VCPBreakout(\"up\", $contractions, $ratio, $vol_mult, $k, $trend_template, $dryup)",
+    "short": "VCPBreakout(\"down\", $contractions, $ratio, $vol_mult, $k, $trend_template, $dryup)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "VCPBreakoutRef($invalidation, \"up\", $contractions, $ratio, $vol_mult, $k, $trend_template, $dryup, $stop_mult)",
+    "short": "VCPBreakoutRef($invalidation, \"down\", $contractions, $ratio, $vol_mult, $k, $trend_template, $dryup, $stop_mult)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "contraction_base_broken_upward"}],
+    "short": [{"token": "contraction_base_broken_downward"}]
+  }
+}

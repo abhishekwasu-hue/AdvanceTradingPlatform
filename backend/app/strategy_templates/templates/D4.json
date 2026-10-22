@@ -1,0 +1,36 @@
+{
+  "schema": "atp.template/1",
+  "id": "D4",
+  "version": 1,
+  "name": "Moving-average breakout",
+  "family": "D",
+  "idea": "A signal when the close breaks beyond a flat or rising moving average after a quiet consolidation around it; the idea is wrong just beyond the average.",
+  "difficulty": "Beginner",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "ma_n", "label": "Average bars", "help": "Bars in the moving average.", "type": "int", "default": 50, "min": 2, "max": 500, "step": 1},
+    {"key": "ma_type", "label": "Average type", "help": "How the average is calculated.", "type": "enum", "default": "sma", "choices": ["sma", "ema"], "choice_labels": ["Simple", "Exponential"]},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the average the close must be, in average true ranges (0 means any close beyond).", "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "stop_mult", "label": "Average buffer", "help": "How many average true ranges beyond the average the idea is wrong.", "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "MABreakout(\"up\", $ma_n, $ma_type, $k)",
+    "short": "MABreakout(\"down\", $ma_n, $ma_type, $k)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "MABreakoutRef(\"stop_level_atr\", \"up\", $ma_n, $ma_type, $k, $stop_mult)",
+    "short": "MABreakoutRef(\"stop_level_atr\", \"down\", $ma_n, $ma_type, $k, $stop_mult)"
+  },
+  "exit_signal": null,
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "average_broken_upward"}],
+    "short": [{"token": "average_broken_downward"}]
+  }
+}

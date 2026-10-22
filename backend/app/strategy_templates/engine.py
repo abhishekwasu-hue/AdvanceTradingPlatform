@@ -42,8 +42,11 @@ from app.strategy_templates.compile import SIDES, Recipe, Side
 WAVE_SPARSE_SERIES: Tuple[str, ...] = ("WaveAlt", "WaveOrigin", "WaveEnd", "WaveInvalidation", "WaveCap", "WaveRetrace",
                                        "WaveProjection", "WaveRatio", "WaveLineLevel")
 # Strategy templates step 2 (R2): the breakout level companions are prices on their signal bars only (held_level: from the
-# first signal on), so they never hold the warm-up back either; so are the retest's (R7, RetestEntryRef).
-BREAKOUT_SPARSE_SERIES: Tuple[str, ...] = ("RangeBreakoutRef", "LineBreakoutRef", "RetestEntryRef")
+# first signal on), so they never hold the warm-up back either; so are the retest's (R7, RetestEntryRef) and, step 4, the
+# companions of the other breakout families (swing, inside / NR, volume, Donchian, moving average, pattern, VCP).
+BREAKOUT_SPARSE_SERIES: Tuple[str, ...] = ("RangeBreakoutRef", "LineBreakoutRef", "RetestEntryRef", "SwingBreakoutRef", "NRBreakoutRef",
+                                           "VolumeBreakoutRef", "DonchianBreakoutRef", "MABreakoutRef", "PatternBreakoutRef",
+                                           "VCPBreakoutRef")
 SPARSE_SERIES: frozenset = frozenset(WAVE_SPARSE_SERIES + BREAKOUT_SPARSE_SERIES)
 
 REASON_WARMUP = "warmup"

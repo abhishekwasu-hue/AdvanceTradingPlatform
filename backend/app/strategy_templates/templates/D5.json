@@ -1,0 +1,45 @@
+{
+  "schema": "atp.template/1",
+  "id": "D5",
+  "version": 1,
+  "name": "ADX / DI trend",
+  "family": "D",
+  "idea": "A signal when the directional lines show one side leading while ADX is above its threshold and rising; the idea has ended on the opposite directional cross, or when ADX falls back below the threshold.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "adx_period", "label": "ADX period", "help": "Bars behind ADX and the directional lines.", "type": "int", "default": 14, "min": 2, "max": 100, "step": 1},
+    {"key": "adx_threshold", "label": "ADX threshold", "help": "ADX must be above this level.", "type": "float", "default": 20.0, "min": 1.0, "max": 100.0, "step": 1.0},
+    {"key": "rise_bars", "label": "ADX rising over (bars)", "help": "ADX must be higher than it was this many bars before.", "type": "int", "default": 1, "min": 1, "max": 50, "step": 1},
+    {"key": "trigger_event", "label": "The signal comes when", "help": "The event that gives the signal: the directional lines cross (with ADX above its threshold and rising), or ADX rises through its threshold (with the leading line on the same side).", "type": "enum", "default": "di_cross", "choices": ["di_cross", "adx_threshold"], "choice_labels": ["The directional lines cross", "ADX rises through its threshold"]},
+    {"key": "exit_rule", "label": "The idea has ended when", "help": "The opposite directional cross, or ADX falling back below its threshold.", "type": "enum", "default": "opposite_cross", "choices": ["opposite_cross", "adx_below"], "choice_labels": ["The directional lines cross back", "ADX falls below its threshold"]},
+    {"key": "swing_degree", "label": "Swing size", "help": "Which swings count: 0 is the smallest, 3 the largest. Larger swings need more history.", "type": "int", "default": 1, "min": 0, "max": 3, "step": 1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "variants": {
+      "di_cross": {"kind": "event", "long": "CrossAbove(PlusDI($adx_period), MinusDI($adx_period)) AND ADX($adx_period) > $adx_threshold AND ADX($adx_period) > Lag(ADX($adx_period), $rise_bars)", "short": "CrossAbove(MinusDI($adx_period), PlusDI($adx_period)) AND ADX($adx_period) > $adx_threshold AND ADX($adx_period) > Lag(ADX($adx_period), $rise_bars)", "same_bar": true},
+      "adx_threshold": {"kind": "event", "long": "CrossAbove(ADX($adx_period), $adx_threshold) AND PlusDI($adx_period) > MinusDI($adx_period) AND ADX($adx_period) > Lag(ADX($adx_period), $rise_bars)", "short": "CrossAbove(ADX($adx_period), $adx_threshold) AND MinusDI($adx_period) > PlusDI($adx_period) AND ADX($adx_period) > Lag(ADX($adx_period), $rise_bars)", "same_bar": true}
+    },
+    "by": "trigger_event"
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "SwingLow($swing_degree)",
+    "short": "SwingHigh($swing_degree)"
+  },
+  "exit_signal": {
+    "variants": {
+      "opposite_cross": {"long": "CrossAbove(MinusDI($adx_period), PlusDI($adx_period))", "short": "CrossAbove(PlusDI($adx_period), MinusDI($adx_period))"},
+      "adx_below": {"long": "CrossBelow(ADX($adx_period), $adx_threshold)", "short": "CrossBelow(ADX($adx_period), $adx_threshold)"}
+    },
+    "by": "exit_rule"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "plus_di_leads_adx_rising"}],
+    "short": [{"token": "minus_di_leads_adx_rising"}]
+  }
+}

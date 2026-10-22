@@ -308,6 +308,11 @@ FEATURE_FLAGS: Dict[str, str] = {
     # newly confirmed swing. OFF: the registry hides them and a screen, study or alert rule using one is refused with the
     # reason; wave alerts fire on bar close only. Information only - places no orders.
     "screener_waves": "Wave count in screens: the running wave, its type, the alternate count and the clarity, from confirmed swings (information only)",
+    # Strategy templates step 2 (docs/design/STRATEGY_TEMPLATES_IMPL.md): the built-in signal recipes (D1, D2, B1, B3) as
+    # PAPER strategies - the template list, "Adopt as a paper strategy" (a pre-fill of the paper bot form; the user reviews
+    # and saves, nothing starts by itself) and template ids in the deployment / backtest routes and the worker. OFF: the
+    # routes answer 404 and a template id resolves to nothing. Signals only; LIVE is refused for a template.
+    "strategy_templates": "Strategy templates: ready signal recipes (Supertrend flip, moving-average cross, range and channel breakouts) adopted as paper strategies with the user's own settings",
     "screener_rankings": "Ranking systems: weighted multi-factor trees ranking a universe 0-100 with explainable components (information only)",
     "screener_backtest": "Rolling screen backtest: top N matches by a rank, rebalanced, with costs and slippage, against benchmarks, deflated (a simulation; places nothing)",
     "screener_history": "Screen history: who passed on a past date (point in time) and screen fitness - forward returns of matches vs the universe, deflated (information only)",

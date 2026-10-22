@@ -1,0 +1,44 @@
+{
+  "schema": "atp.template/1",
+  "id": "B3",
+  "version": 1,
+  "name": "Channel breakout",
+  "family": "B",
+  "idea": "A signal on the first close beyond the far edge of a channel: above the upper edge of a rising channel, or below the lower edge of a falling one. The idea has ended when the close is back inside.",
+  "difficulty": "Intermediate",
+  "style": "Both",
+  "allowed_timeframes": ["5m", "15m", "30m", "1h", "1d"],
+  "params": [
+    {"key": "touches", "label": "Line touches", "help": "How many swings must touch the channel's main line.",
+     "type": "int", "default": 2, "min": 2, "max": 10, "step": 1},
+    {"key": "k", "label": "Break distance", "help": "How far beyond the channel edge the close must be, in average true ranges (0 means any close beyond).",
+     "type": "float", "default": 0.2, "min": 0.0, "max": 5.0, "step": 0.05},
+    {"key": "invalidation", "label": "The idea is wrong beyond", "help": "The level that says the breakout failed: just beyond the broken edge, the channel's other line, or its middle.",
+     "type": "enum", "default": "stop_level_atr", "choices": ["stop_level_atr", "stop_base", "stop_midpoint"],
+     "choice_labels": ["Just beyond the broken edge", "The channel's other line", "The middle of the channel"]},
+    {"key": "stop_mult", "label": "Edge buffer", "help": "For 'just beyond the broken edge': how many average true ranges beyond the edge.",
+     "type": "float", "default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1}
+  ],
+  "constraints": [],
+  "sides_default": "both",
+  "setup": {
+    "kind": "event",
+    "long": "TrendlineBreakout(\"up\", \"channel\", $touches, $k)",
+    "short": "TrendlineBreakout(\"down\", \"channel\", $touches, $k)",
+    "same_bar": true
+  },
+  "trigger": null,
+  "invalidation": {
+    "long": "LineBreakoutRef($invalidation, \"up\", \"channel\", $touches, $k, $stop_mult)",
+    "short": "LineBreakoutRef($invalidation, \"down\", \"channel\", $touches, $k, $stop_mult)"
+  },
+  "exit_signal": {
+    "long": "close < LineBreakoutRef(\"held_level\", \"up\", \"channel\", $touches, $k)",
+    "short": "close > LineBreakoutRef(\"held_level\", \"down\", \"channel\", $touches, $k)"
+  },
+  "evidence": [],
+  "signal_text": {
+    "long": [{"token": "channel_broken_upward"}],
+    "short": [{"token": "channel_broken_downward"}]
+  }
+}

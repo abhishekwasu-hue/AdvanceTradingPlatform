@@ -112,6 +112,7 @@ FLAG_INFO: Dict[str, FlagInfo] = {
     "screener_venues": FlagInfo("Refuse fields a venue does not carry", "screens", "clearer errors", ("screener_v2",), "", "behind_the_scenes"),
     "screener_ownership": FlagInfo("Promoter / FII / DII stakes and events in screens", "screens", "fields", ("screener_v2",), "ownership data", "unfinished"),
     "screener_waves": FlagInfo("Wave count in screens (running wave, type, alternate, clarity)", "screens", "builder functions", ("screener_v2",), "", "unfinished"),
+    "strategy_templates": FlagInfo("Ready strategy templates adopted as paper strategies", "trading", "templates in the paper bot form", ("ui_v2",), "", "unfinished"),
     "screener_rankings": FlagInfo("Rank a universe 0-100", "screens", "rankings", ("screener_v2",), "", "ready"),
     "screener_backtest": FlagInfo("Back-test a screen over time", "screens", "screen backtest", ("screener_v2",), "", "ready"),
     "screener_history": FlagInfo("Who matched on a past date, and what followed", "screens", "history", ("screener_v2",), "", "ready"),

@@ -263,7 +263,8 @@ def test_the_library_validates_against_the_registry():
         for part in (t.setup, t.trigger, t.invalidation, t.exit_signal, t.context):
             if part is None:
                 continue
-            for text in (part.long, part.short):
+            sided = [v for v in part.variants.values() if v is not None] if hasattr(part, "variants") else [part]   # step 2: D2 switches
+            for text in [x for v in sided for x in (v.long, v.short)]:
                 for name in [w for w in FUNCTIONS if f"{w}(" in text]:
                     assert name not in LAST_BAR_ONLY
 

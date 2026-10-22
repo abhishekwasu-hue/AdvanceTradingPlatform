@@ -304,6 +304,9 @@ def test_refusals_holdout_timeframe_and_data(monkeypatch):
 
 SWEEP_OVERRIDES = {     # cases whose Z10-a expression is all-true or all-false on the fixture (review of S6a re-check)
     "Greatest": "Greatest(open, close) > SMA(close, 5)",
+    # strategy templates step 2 (R2): prices on signal bars only - read as "the close is above the latest breakout's level"
+    "RangeBreakoutRef": 'close > RangeBreakoutRef("held_level", "up", 20, 0, 0)',
+    "LineBreakoutRef": 'close > LineBreakoutRef("held_level", "up", "line", 2, 0)',
     "Least": "Least(open, close, low) < SMA(close, 5)",
     "NearSupport": "NearSupport(0.05, 3)",
     "NearResistance": "NearResistance(0.05, 3)",

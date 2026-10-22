@@ -52,9 +52,13 @@ class ParamSpec(_Strict):
     max: Optional[float] = None
     step: Optional[float] = None
     choices: Tuple[str, ...] = ()
+    # Step 2: the words the settings form shows for each choice (same order as `choices`; empty = the choices themselves)
+    choice_labels: Tuple[str, ...] = ()
 
     @model_validator(mode="after")
     def _shape(self) -> "ParamSpec":
+        if self.choice_labels and len(self.choice_labels) != len(self.choices):
+            raise ValueError(f"{self.key}: one label per choice")
         if self.type in ("int", "float"):
             if self.min is None or self.max is None or self.min > self.max:
                 raise ValueError(f"{self.key}: a number setting needs min <= max")

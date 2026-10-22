@@ -72,8 +72,7 @@ def _answer(signal: Signal) -> Answer:
     if not signal.is_tradeable:
         return Answer(0)
     d = 1 if signal.direction == SignalDirection.LONG else -1
-    provenance = next((r for r in reversed(signal.reasons) if r.startswith("Template ")), "")
-    setup = provenance.rsplit("setup ", 1)[1] if "setup " in provenance else None
+    setup = (signal.provenance or {}).get("setup")          # TPL-Q2: the provenance lives on the signal, not in its reasons
     return Answer(d, float(signal.stop_loss) if signal.stop_loss is not None else None, setup)
 
 

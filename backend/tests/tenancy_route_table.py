@@ -21,6 +21,9 @@ from typing import Dict, Tuple
 # Why a route needs no login (public) or may be called by any member (self).
 P_SIGN_IN = ("public: sign-up, login, token refresh, password reset, invites and e-mail verification - the token in the path or "
              "body is the credential (rate limited)")
+P_GOOGLE_SIGN_IN = ("public: Google sign-in (GS-1) - the signed state cookie and Google's verified ID token are the credential "
+                    "(rate limited; 404 until both credentials are set)")
+P_SIGN_IN_PROVIDERS = "public: which extra sign-in buttons the sign-in page shows (one boolean, no data)"
 P_PAYMENT_WEBHOOK = "public: payment provider webhook, verified by its signature"
 P_PLANS = "public: the plan catalogue"
 P_OAUTH_CALLBACK = "public: the broker's OAuth redirect; the signed state parameter names the organisation"
@@ -230,6 +233,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("DELETE", "/api/api-keys/{key_id}"): "owner",
     ("GET", "/api/audit-logs"): "member",
     ("GET", "/api/audit-logs/verify"): "admin",
+    ("GET", "/api/auth/google/callback"): P_GOOGLE_SIGN_IN,
+    ("GET", "/api/auth/google/start"): P_GOOGLE_SIGN_IN,
     ("GET", "/api/auth/invite/{token}"): P_SIGN_IN,
     ("POST", "/api/auth/invite/{token}/accept"): P_SIGN_IN,
     ("POST", "/api/auth/login"): P_SIGN_IN,
@@ -248,6 +253,7 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/auth/password/forgot"): P_SIGN_IN,
     ("GET", "/api/auth/password/reset/{token}"): P_SIGN_IN,
     ("POST", "/api/auth/password/reset/{token}"): P_SIGN_IN,
+    ("GET", "/api/auth/providers"): P_SIGN_IN_PROVIDERS,
     ("POST", "/api/auth/refresh"): P_SIGN_IN,
     ("POST", "/api/auth/register"): P_SIGN_IN,
     ("GET", "/api/auth/sign-up-open"): P_SIGN_IN,
@@ -499,6 +505,15 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/orders/{order_id}/events"): "member",
     ("GET", "/api/paper/account"): "member",
     ("GET", "/api/paper/experience"): "member",
+    ("GET", "/api/paper/fno/contract"): "member",           # FNO-1: the instrument master's contract (platform-wide data)
+    ("GET", "/api/paper/fno/held"): "member: the caller's own open PAPER option positions only (tenant and user)",
+    ("POST", "/api/paper/fno/order"): "trader",              # FNO-1: one PAPER order from the chain's ticket
+    ("POST", "/api/paper/fno/order/preview"): "trader",
+    ("POST", "/api/paper/fno/basket/evaluate"): S_COMPUTE,     # FNO-2: the basket's numbers (instrument master + the body)
+    ("GET", "/api/paper/fno/basket/settings"): "member: the caller's own options settings (their deployments) only",
+    ("POST", "/api/paper/fno/basket/preview"): "trader",
+    ("POST", "/api/paper/fno/basket/execute"): "trader",       # FNO-2: every leg one PAPER order, hedge legs first
+    ("POST", "/api/paper/fno/basket/broker-link"): S_COMPUTE,  # the legs pre-filled for the user's broker app; sends nothing
     ("POST", "/api/paper/experience/opt-out"): "trader",
     ("PUT", "/api/paper/account"): "trader",
     ("GET", "/api/paper/ladder"): "member",

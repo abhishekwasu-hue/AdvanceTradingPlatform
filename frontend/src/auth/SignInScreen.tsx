@@ -10,6 +10,8 @@ import LegalConsentField from "../legal/LegalConsentField";
 import { acceptanceFor, type LegalSummary } from "../legal/legal";
 import { ROLE_LABELS, type InviteInfo } from "../types";
 import { useAuth } from "./AuthContext";
+import GoogleSignInButton from "./GoogleSignInButton";
+import { takeGoogleReturn } from "./google";
 
 /**
  * UX1 (audit P01, problem 2): the sign-in screen a signed-out visitor gets at any address (App.tsx SignInGate) - the
@@ -19,7 +21,8 @@ import { useAuth } from "./AuthContext";
  *   login from /auth/sign-up-open; closed while that read has not answered);
  * - a team invite link (`?invite=`), a password reset link (`?reset=`) and an e-mail verification link (`?verify=`).
  * Every field has a label tied to it; a failed attempt shows one plain line above the button.
- * GS-1 (#336, Google sign-in): its button mounts under the primary button in "signin" mode, see the marker below.
+ * GS-1 (#336, Google sign-in): "Continue with Google" under the primary button in "signin" mode - it renders nothing
+ * until the server says Google sign-in is set up; back from Google, the two-factor step or the reason it did not work.
  */
 export type SignInMode = "signin" | "register" | "invite" | "forgot" | "reset" | "mfa";
 
@@ -102,6 +105,15 @@ export default function SignInScreen() {
   // The links the server e-mails land here with a token in the query. Read it once, then take it out of the address
   // through the router (so the page reached after signing in does not see it again).
   useEffect(() => {
+    // GS-1: back from Google - the authenticator step, or why it did not work, in plain words.
+    const google = takeGoogleReturn();
+    if (google?.kind === "mfa") {
+      setMfaToken(google.mfaToken);
+      setMode("mfa");
+      setNotice("Google confirmed your email. Enter your authenticator code to finish signing in.");
+    } else if (google?.kind === "error") {
+      setError(google.message);
+    }
     const params = new URLSearchParams(location.search);
     const verify = params.get("verify");
     const reset = params.get("reset");
@@ -235,8 +247,8 @@ export default function SignInScreen() {
               <Button type="submit" variant="primary" loading={busy} disabled={blocked} className="h-11 w-full text-t14">
                 {busy ? "Please wait…" : ACTIONS[mode]}
               </Button>
-              {/* GS-1 (#336): <GoogleSignInButton /> mounts here, in "signin" mode only. */}
             </form>
+            {mode === "signin" && <GoogleSignInButton />}
             <div className="mt-space-5 flex flex-wrap items-center justify-center gap-x-space-4 gap-y-space-2 border-t border-subtle pt-space-4 text-t14 text-fg-muted">
               {mode === "signin" ? (
                 signUpOpen ? (

@@ -277,6 +277,15 @@ describe("OC1 plain-word states", () => {
     expect(html).toMatch(/data-analysis-mount="option-chain" data-underlying="NIFTY" data-expiry="2026-11-03" data-refresh-key="2026-10-27T05:00:00\+00:00"/);
     expect(pageSource).toContain("<AnalysisSlotV2 symbol={symbol}");
   });
+
+  it("OC4: below the chain, the Analysis tabs, then Ask AI, then My analyses", () => {
+    const html = view();
+    const at = (label: string) => html.indexOf(`aria-label="${label}"`);
+    expect(at("Option chain analyses")).toBeGreaterThan(html.indexOf('data-block="chain"'));
+    expect(at("Ask AI about this option chain")).toBeGreaterThan(at("Option chain analyses"));
+    expect(at("My analyses")).toBeGreaterThan(at("Ask AI about this option chain"));
+    expect(text(html)).not.toMatch(/sample|lookback|manual ltp/i);
+  });
 });
 
 describe("OC1 no sample data and no developer controls", () => {

@@ -2,6 +2,7 @@ import { LogOut, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 import { api, setToken } from "../api/client";
+import { friendlyError } from "../api/errors";
 import { useAuth } from "../auth/AuthContext";
 import SignInScreen from "../auth/SignInScreen";
 import { type MfaStatus, type SessionInfo } from "../types";
@@ -32,7 +33,7 @@ export default function AccountPage() {
 
   async function revoke(id: number) {
     setError(null);
-    await api.revokeSession(id).catch((e) => setError(String(e)));
+    await api.revokeSession(id).catch((e) => setError(friendlyError(e)));
     api.listSessions().then(setSessions).catch(() => {});
   }
 
@@ -48,7 +49,7 @@ export default function AccountPage() {
     navigate({ pathname: location.pathname, search: rest ? `?${rest}` : "" }, { replace: true });
     api.verifyEmail(verify)
       .then((u) => { setVerifyMessage(`${u.email} is verified.`); void refreshUser(); })
-      .catch((e) => setVerifyMessage(String(e)));
+      .catch((e) => setVerifyMessage(friendlyError(e)));
   }, [user]);
 
   if (!user) return <SignInScreen />;
@@ -90,7 +91,7 @@ export default function AccountPage() {
             <p className="text-fg-muted">Confirm that {user.email} is yours. Open the link we emailed you, or send a fresh one. LIVE trading and broker credentials may require it.</p>
             <button
               className="rounded bg-brand hover:bg-brand-strong text-on-brand font-semibold px-3 py-1.5"
-              onClick={() => api.resendVerification().then((r) => setVerifyMessage(r.already_verified ? "Already verified." : r.sent ? "Verification email sent - check your inbox." : "No platform mailer is configured - ask the operator to verify your address or configure PLATFORM_SMTP_*.")).catch((e) => setVerifyMessage(String(e)))}
+              onClick={() => api.resendVerification().then((r) => setVerifyMessage(r.already_verified ? "Already verified." : r.sent ? "Verification email sent - check your inbox." : "We could not send the email right now. Ask support to verify your address.")).catch((e) => setVerifyMessage(friendlyError(e)))}
             >
               Resend verification email
             </button>
@@ -122,7 +123,7 @@ export default function AccountPage() {
               setPwNew("");
               api.listSessions().then(setSessions).catch(() => {});
             } catch (err) {
-              setPwMessage(String(err));
+              setPwMessage(friendlyError(err));
             }
           }}
         >
@@ -146,7 +147,7 @@ export default function AccountPage() {
                   <td className="py-1.5 pr-3 text-fg-muted">{s.ip_address ?? "-"}</td>
                   <td className="py-1.5 pr-3 text-fg-muted truncate max-w-[12rem]" title={s.user_agent ?? ""}>{s.user_agent ?? "-"}</td>
                   <td className="py-1.5 pr-3 text-fg-muted whitespace-nowrap">active {new Date(s.last_used_at).toLocaleString()}</td>
-                  <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-down hover:underline">revoke</button>}</td>
+                  <td className="py-1.5 text-right">{!s.current && <button onClick={() => revoke(s.id)} className="text-down hover:underline">Sign out</button>}</td>
                 </tr>
               ))}
             </tbody>

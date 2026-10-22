@@ -442,6 +442,10 @@ report_settings() {
   for k in R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY R2_BUCKET R2_ENDPOINT; do if env_set "$k"; then n=$((n + 1)); fi; done
   case "$n" in 0) info "history import (HB0) R2 token: not set (import stays off)";; 4) ok "history import (HB0) R2 token: set (read-only, used only by the importer)";;
     *) warn "history import (HB0): only $n of R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_BUCKET / R2_ENDPOINT set";; esac
+  n=0
+  for k in GOOGLE_OAUTH_CLIENT_ID GOOGLE_OAUTH_CLIENT_SECRET; do if env_set "$k"; then n=$((n + 1)); fi; done
+  case "$n" in 0) info "Google sign-in (GS-1): not set (optional; no Google button)";; 2) ok "Google sign-in (GS-1): both keys set (the button shows)";;
+    *) warn "Google sign-in (GS-1): only one of GOOGLE_OAUTH_CLIENT_ID / GOOGLE_OAUTH_CLIENT_SECRET set - the button stays hidden";; esac
 }
 
 lock() {
@@ -2047,7 +2051,7 @@ usage() { sed -n '2,24p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; }
 cmd_reset_password() {
   [ "$(id -u)" != "0" ] || die "run as the deploy user (atp), not root" 2
   local email="${1:-}" pw pw2 rc=0
-  [ -n "$email" ] && [ $# -eq 1 ] || die "usage: atp.sh reset-password EMAIL" 2
+  if [ -z "$email" ] || [ $# -ne 1 ]; then die "usage: atp.sh reset-password EMAIL" 2; fi
   case "$email" in *@*) ;; *) die "not an e-mail address: $email" 2 ;; esac
   [ -t 0 ] || die "run this in a terminal: the password is typed, never piped or passed" 2
   if [ "$DRY_RUN" = "1" ]; then printf 'dry-run: would ask for the new password twice and set it for %s\n' "$email"; return 0; fi

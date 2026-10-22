@@ -63,3 +63,27 @@ again AFTER every compaction, before acting. Begin each report to Abhi with: "Ru
 - Work in parallel worktrees; never sit idle; log questions with a provisional default and continue. No frequent
   "still waiting" check-ins (they cost credits); report when something real is ready.
 - Keep what is built; extend, don't rewrite.
+
+## 7. PRs, deploy and environment (folded in from #330)
+- One `claude/<name>` branch per item, one PR per item (owner, 22 Oct). Draft PRs; merge only on Abhi's "Merge".
+  With every PR: the deploy line below and whether a migration is needed.
+- The one deploy command Abhi runs on the host:
+
+  ```
+  su - atp -c "/opt/atp/deploy/atp.sh deploy && /opt/atp/deploy/atp.sh health"
+  ```
+
+  A migration: Abhi runs it after 15:30 IST (`MIGRATION_FORCE=1` only when he says so).
+- Production: https://aialgodesk.tech (Hostinger KVM 2, `/opt/atp`, user `atp`; the www redirect is live). R2 off-site
+  backup is not set up yet (owner).
+- Flags turned OFF by Abhi on 21 Oct: `self_signup`, `scan_auto_paper`, `marketplace`, `public_api`. `ui_v2` is ON. New
+  user-facing work goes behind `ui_v2`.
+- Google sign-in: the button stays hidden until Abhi adds the OAuth credentials (steps in docs/OPEN_QUESTIONS.md, GS-1).
+- Where things are:
+  - Backend `backend/` (FastAPI `app/`, tests `backend/tests`, Alembic `alembic/`). CI: `ruff check app tests evals`,
+    `mypy`, `bandit`, `pytest`, `alembic check`, `python backend/scripts/migration_rollback_safety.py lint`.
+  - Frontend `frontend/` (React + Vite + vitest + Playwright). CI: `npm test`, `npm run check:v2-colours`,
+    `npm run check:mobile`, `npm run build`, `npm run check:bundle`, `npm run test:e2e`. Text sizes only from the
+    Tailwind tokens (rem; never `text-[Npx]` below 14 px); colours only from the tokens.
+  - Guards: `scripts/check_english_only.py`, `scripts/check_public_repo.py`.
+  - Deploy: `deploy/atp.sh`; runbook `docs/deploy/HOSTINGER_RUNBOOK.md`. Working rules: `docs/WORKING_RULES.md`.

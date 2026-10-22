@@ -14,3 +14,9 @@
 | 2026-10-22 | The marketplace is the last phase (about six months out). |
 | 2026-10-22 | The idea library: method templates only, white box, honest provenance, no performance claims. "Opening range" dropped (clock-based); options construction stays in the user's settings. |
 | 2026-10-22 | The strategy template library (price action, breakout, breakout + retest, indicators) as specified in ATP_SESSION_STRATEGY_TEMPLATES.md; its section 0 corrections are binding. |
+| 2026-10-22 | The session plan (handover items 0–13, phases 0–13) is approved; work starts in the given order, several items in parallel. |
+| 2026-10-22 | One `claude/<name>` branch per item, one PR per item. |
+| 2026-10-22 | Google sign-in: the button stays hidden until the owner adds the OAuth credentials. |
+| 2026-10-22 | Broker logos: initials until official permission. |
+| 2026-10-22 | Strategy Lab runner server: sizing and monthly cost go to OPEN_QUESTIONS; Pine continues meanwhile. |
+| 2026-10-22 | Migrations are announced with the deploy line; the owner runs them after 15:30 IST. |

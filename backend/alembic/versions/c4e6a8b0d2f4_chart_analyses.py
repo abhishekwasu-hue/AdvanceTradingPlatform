@@ -2,7 +2,7 @@
 (flag chart_analyze, off by default).
 
 Revision ID: c4e6a8b0d2f4
-Revises: d9f1b3c5e7a2 (main's head)
+Revises: a7c9e1f3b5d8 (OC5 - main's head when chart_analyze merged)
 Create Date: 2026-10-20 12:00:00
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = 'c4e6a8b0d2f4'
-down_revision: Union[str, Sequence[str], None] = 'd9f1b3c5e7a2'
+down_revision: Union[str, Sequence[str], None] = 'a7c9e1f3b5d8'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 # Z11: purely additive - one new table that no earlier release reads or writes, so the previous release runs unchanged

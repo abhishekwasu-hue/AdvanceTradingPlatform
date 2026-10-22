@@ -2029,6 +2029,57 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
 - `FIELD_SPEC` (label, hint, kind secret, optional) for UI2-6; UI2-5's BROKER_FIELD_SPECS absorbs it.
 - Tests: `tests/test_upstox_analytics_token.py`; routes added to `tests/tenancy_route_table.py`.
 
+## OC5: Option chain "Charts" view + the remaining analyses (handover 2b + 2c, under ui_v2)
+
+- Branch `claude/oc5-chain-charts` (from main). **Migration: yes** (`a7c9e1f3b5d8_oc5_oi_snapshot_futures`: two nullable
+  columns `oi_snapshots.future_price` / `future_oi`, ROLLBACK_SAFE, reversible) - deploy after 15:30 IST.
+- 2b parity: every item of the order's list was already in `app/option_chain/oi_regime.py` (hysteresis OI diff,
+  rotation, walls, OI + price matrix, PCR zone label, max pain, rollover proxy, DTE, IV change, 5 / 10 / 15-minute
+  aggregation). What was not shown anywhere is now in the Charts view's facts: PCR zone (the organisation's bands), days
+  to expiry, the IV change against the last sessions' closing ATM IV (plus the Trade sideways baseline), and the
+  5 / 10 / 15-minute views of every session chart. Information only; no gate, no buy / sell wording.
+- 2c backend: `app/option_chain/charts.py` (pure) + `charts_routes.py`: `GET /api/option-chain/charts?symbol=&expiry=
+  &strikes=10&interval=5` (flag `ui_v2`, 404 off; the chains rate limit; usage metered; plain states; own-broker tier
+  reads no shared rows). Ten charts; "Builds through the session" before two readings, never sample data. The collector
+  also stores the near-month future's price / OI (`_oi_future_quote`, never blocks the slot).
+- 2c frontend: `ChartsViewV2.tsx` + `charts.ts`; "Chain | Charts" toggle on `OptionChainPageV2.tsx` (it sits in the
+  gap above the chain, so the chain baselines are unchanged); strike range ATM ± 5/10/15/20 (default 10), 5/10/15 min,
+  refresh with the chain; phone: one chart at a time (scroll snap + arrows). AnalysisSlotV2 untouched.
+- Tests: `backend/tests/test_oc5_option_chain_charts.py`, `frontend/src/optionChain/ChartsViewV2.test.tsx`, OC5 cases in
+  `e2e/option-chain-v2.e2e.ts` with 4 new baselines `option-chain-charts-v2-{1440,390}-{light,dark}.png`.
+- Questions: OC5-1..4 in OPEN_QUESTIONS.
+## Item 5 (owner's handover): the AI Copilot as a trader's brain, first slice (flag `ui_v2`, off)
+- Order: `docs/owner-orders/ATP_HANDOVER_PACK.md` section 5 (A-E), first step of E: the chat-first page + jobs 1, 2, 7, 8.
+- Backend: `app/ai/copilot_chat.py` (routing to the eight jobs, the refusal set, the rule answers, the fail-closed number
+  check, optional AI wording with the Copilot's checks), `app/ai/chat_routes.py` (`GET /api/ai/chat/home`,
+  `POST /api/ai/chat`: `ui_v2` 404 + `ai_copilot` 503, acknowledgement 428, AI rate limit, `POST chat` weighs 4),
+  `app/ai/tools/copilot.py` (four read tools over the context panel, the price-action layer, the market-zones layer and
+  the OC2 option chain analyses, each behind its own flag). Jobs 3-6 answer "coming in a later step" and link today's
+  page. Indicator regime and raw tool errors only in `diagnostics` for a SUPER_ADMIN.
+- Regime (handover 5 C): `regime_blocks` always answers None; the worker logs `regime_note` (what the old filter would
+  have said) and enters anyway. Exits were never involved. The deployment form, the interview, the briefing and the
+  concept library no longer say the regime filter keeps entries out.
+- Evals (handover 5 D): `evals/sets/copilot_jobs.jsonl` (17 cases: job, tool calls in order, facts, scripted model
+  wording shown / rejected) and `copilot_safety.jsonl` (20 cases: 15 refusals of a buy call / an order / a tip, 5
+  controls) on `evals/sets/copilot_tools.json` (synthetic, built by `evals/build_copilot_fixtures.py`); both gated in
+  `evals/baselines.json` at 1.0 and run by `tests/test_hc10_evals.py`.
+- Frontend: `src/copilot/chat/` (the page, the answer, the model), registered in `src/shell/pagesV2.ts`; `/copilot/<tab>`
+  keeps the seven-tab Copilot; `/copilot` added to `OWN_BROKER_STATES` (the chat says itself what a missing broker
+  hides). Strings in `src/copilot/locales/en.ts` (`chat`). New e2e `e2e/copilot-chat-v2.e2e.ts` with four new baselines.
+- Provisional decisions: OPEN_QUESTIONS "Item 5 Copilot" (CP5-1..CP5-5).
+## Handover 11c-1: Pine Script subset -> ScreenQL, never executed (flag `strategy_lab_pine`, off)
+
+- Branch `claude/lab1-pine-subset` (from main). No migration. Host mode (ADR-0027): no runner, nothing executed.
+- `backend/app/lab/pine/`: `tokens.py` (single-pass scanner, size / line / token limits), `parser.py` (recursive descent,
+  Pine precedence, nesting and operator limits, per-line recovery), `translate.py` (Pine tree -> ScreenQL nodes from a
+  fixed table; inputs -> `$params` with bounds; signal conditions from `strategy.entry / close` in `if` or `when=`,
+  `alertcondition`, `plotshape / plotchar`; sizing and stops reported and ignored; look-ahead refused for the whole
+  script; every condition validated by `compile_screen`), `words.py` (plain words), `templates.py` (5 templates),
+  `routes.py` (`/api/lab/pine/templates`, `/translate`, `/run` through the Screener's run path).
+- Frontend: `src/lab/pine/` (PinePanel, lazy, in a "Pine Script" dialog on the Screener when the flag is on).
+- Docs: `docs/design/PINE_SUBSET.md` (the subset); questions PINE-1..PINE-7 in `docs/OPEN_QUESTIONS.md`.
+- Tests: `tests/test_lab_pine_{translate,parity,fuzz,routes}.py`, `src/lab/pine/PinePanel.test.tsx`; routes classified in
+  `tests/tenancy_route_table.py`; `app/lab` added to the mypy gate.
 ## FNO-1: option chain trading + the one order ticket, PAPER only (owner order ATP_SESSION_FNO_WORKSPACE.md 3, 6, 8b-l, 9)
 
 - Branch `claude/fno1-chain-ticket` (from main). Behind `ui_v2` + `paper_account` (OPEN_QUESTIONS FNO-1-1). No
@@ -2156,3 +2207,31 @@ code, golden personal trades, SR V3, Elliott setups/counts/exits or vision. Ever
   in `docs/adr/README.md`); `docs/OPEN_QUESTIONS.md` LAB-9 records it. G-LAB still gates every code-mode flag. The ADR
   note also records that order 11e overrides AMW_PORT C-3 (AI may write code for every Lab mode, as untrusted code).
 - CLAUDE.md and `docs/owner-orders/` not touched (owner-orders lives on its own branch).
+## 2026-10-22 - Strategy templates step 1: recipe core + indicators (owner order 13, TPL-1)
+
+- Branch `claude/tpl1-core-indicators`. No migration. Status table: `docs/design/STRATEGY_TEMPLATES_IMPL.md`.
+- `backend/app/strategy_templates/`: the strict template schema, binding to the ScreenQL registry (LAST_BAR_ONLY
+  refused, R1), the causal setup / trigger state machine as a pure function of bars (R3, S1-S7, R8), the adapter to
+  BaseStrategy (no build_signal, no targets), the signal-text tokens and guard, the parity harness (scan = both
+  backtest engines = the worker's call on one trailing window; the fetch size, R6) and the proof template D1.
+- Indicators: SupertrendDir, MACD (line / signal / histogram), WMA, HMA, Stochastic (%K / %D), Parabolic SAR (level /
+  direction) in `app/indicators` and the ScreenQL registry / runtime / validator, with reference-implementation tests and
+  no-look-ahead cases. `determine_exit_price` accepts a missing target (R4).
+- Not in this PR: exits as settings (needs a migration + owner approval), R2 / R5 / R7 / R10. Questions TPL-Q1..Q7.
+## 2026-10-22 - MO2 parts C (page tours) and B (AI key guides), behind ui_v2
+
+- Branch `claude/mo2-tours-keyguides` (merged with main after #335 text size and the F&O baskets).
+- Part C: a welcome tour (4 cards, ends on "Connect your broker") and first-visit tips on every v2 USER page
+  (Dashboard, Broker, Charts, Option chain, Signals, Positions, Portfolio, Risk, Settings), one English content file per
+  page in `frontend/src/tours/content/`, phone-specific steps, a "?" next to the page title to replay, Settings → Help
+  "Show all tips again" / "Skip all tips". Never blocking (no modal, no focus trap; Esc or a tap outside closes).
+  State on the server: new strict prefs namespace `tours` (welcome_done_at, skip_all_at, seen per allow-listed page id),
+  compare-and-set like the others; localStorage is only a paint cache; nothing opens until the server answered.
+  The engine is a lazy chunk. Existing e2e mocks do not return `tours`, so no tip and no "?" appear in older baselines.
+- Part B: Settings → AI "Get an AI key": the explainer line, "Start with free Google Gemini", a guide per provider
+  (key page button, numbered steps with marked screenshot placeholders, what the key looks like, "Is it free?", common
+  problems, last-checked date; a vitest fails 120 days after a guide's check date), a paste helper (trim, detect,
+  wrong-provider warning with a one-tap switch) and "Save and test" on the existing BYOK save + test endpoints.
+- Tests: backend `test_tours_prefs.py` (+ the prefs allow-list), vitest `tours.test.tsx`, `aiKeys.test.tsx`; e2e
+  `tours-v2.e2e.ts` (the CI check: every step's target visible on 1440 and 390, every step played) and
+  `key-guides-v2.e2e.ts`, baselines `tour-welcome-v2-*`, `tour-step-v2-*`, `key-guide-v2-*`. No migration.

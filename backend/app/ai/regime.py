@@ -3,9 +3,12 @@
 A deterministic classifier over the base-timeframe frame the worker already holds: ADX for
 trend strength, the EMA(20)/EMA(50) relation and slope for direction, ATR as a share of price
 against its own recent median for volatility. Five regimes: TRENDING_UP, TRENDING_DOWN, RANGING,
-VOLATILE, QUIET, each with a 0-1 confidence and the numbers behind the call, so a deployment
-that skips a signal says exactly why. Regimes are a *filter* on entries - they never place or
-close anything - and a deployment with no `regime_filter` is unaffected.
+VOLATILE, QUIET, each with a 0-1 confidence and the numbers behind the call.
+
+Handover item 5 C (owner's order): the indicator regime is an ADMIN DIAGNOSTIC only. It never blocks, places, closes or
+changes anything: `regime_blocks` always answers None, and a deployment's `regime_filter` is kept only so the worker can
+log what the old filter would have said (`regime_note`). Exits were never touched by it. User-facing structure comes
+from ATP's price-action and zone layers (the Copilot's chart reader), later from the ported reader's market state.
 """
 from dataclasses import asdict, dataclass, field
 from typing import List, Optional
@@ -93,12 +96,20 @@ def validate_filter(values: List[str]) -> List[str]:
     return sorted(set(values))
 
 
-def regime_blocks(regime: Regime, allowed: List[str]) -> Optional[str]:
-    """None when the deployment may enter; otherwise the human-readable reason it may not."""
+def regime_note(regime: Regime, allowed: List[str]) -> Optional[str]:
+    """The admin diagnostic: what the old regime filter would have said about an entry (None = it would have let it
+    through). Logged by the worker; it never stops anything."""
     if not allowed:
         return None
     if regime.kind == "UNKNOWN":
         return f"Regime unknown ({'; '.join(regime.reasons)}) - entries wait for {', '.join(allowed)}"
     if regime.kind in allowed:
         return None
-    return f"Regime {regime.kind} (confidence {regime.confidence:.2f}: {'; '.join(regime.reasons[:2])}) not in {', '.join(allowed)} - entry skipped"
+    return (f"Regime {regime.kind} (confidence {regime.confidence:.2f}: {'; '.join(regime.reasons[:2])}) not in {', '.join(allowed)} "
+            "- diagnostic only, entry not blocked")
+
+
+def regime_blocks(regime: Regime, allowed: List[str]) -> Optional[str]:
+    """Handover item 5 C: the indicator regime never blocks an entry - always None (see `regime_note` for the
+    diagnostic). Kept so no caller can turn it back into a gate by accident."""
+    return None

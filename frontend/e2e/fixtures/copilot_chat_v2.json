@@ -1,0 +1,1067 @@
+{
+ "_note": "Made-up data: the backend's rule answers on backend/evals/sets/copilot_tools.json (synthetic).",
+ "home": {
+  "top_line": "Ask me anything about the market or your trades.",
+  "ai": {
+   "ready": false,
+   "title": "Add a free AI key to start",
+   "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+   "settings": "/settings#ai",
+   "reason": null
+  },
+  "market_line": {
+   "line": "NIFTY 50 last closed at 24,850.5 (2026-10-20); Dow structure daily uptrend, weekly range; India VIX 12.4 (-3.1%).",
+   "reason": null,
+   "as_of": "2026-10-21T03:30:00+00:00"
+  },
+  "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+  "jobs": [
+   {
+    "id": "brief",
+    "number": 1,
+    "title": "Pre-market brief",
+    "line": "Global cues, FII / DII, India VIX, this week's events and the NIFTY / BANKNIFTY structure.",
+    "starter": "Today's market brief",
+    "built": true,
+    "page": null
+   },
+   {
+    "id": "chart",
+    "number": 2,
+    "title": "Chart reader",
+    "line": "Reads a chart's structure per timeframe and its key areas from ATP's zone layers.",
+    "starter": "Read the NIFTY chart",
+    "built": true,
+    "page": null
+   },
+   {
+    "id": "trade_check",
+    "number": 3,
+    "title": "Pre-trade check",
+    "line": "Checks a trade idea against your own risk settings and lists what is missing.",
+    "starter": "Check my trade idea",
+    "built": false,
+    "page": {
+     "label": "Open your risk limits",
+     "to": "/risk-management"
+    }
+   },
+   {
+    "id": "positions",
+    "number": 4,
+    "title": "Position watch",
+    "line": "Warns when the risk on your open positions rises, and explains why.",
+    "starter": "How are my open positions?",
+    "built": false,
+    "page": {
+     "label": "Open My positions",
+     "to": "/positions"
+    }
+   },
+   {
+    "id": "review",
+    "number": 5,
+    "title": "Post-trade coach",
+    "line": "Reviews each trade, your repeated habits and your week.",
+    "starter": "Review my last trade",
+    "built": false,
+    "page": {
+     "label": "Open the trade coach",
+     "to": "/copilot/coach"
+    }
+   },
+   {
+    "id": "strategy",
+    "number": 6,
+    "title": "Strategy builder",
+    "line": "Turns an idea into readable rules and an honest backtest.",
+    "starter": "Turn my idea into a strategy and test it",
+    "built": false,
+    "page": {
+     "label": "Open the idea builder",
+     "to": "/copilot/idea-builder"
+    }
+   },
+   {
+    "id": "option_chain",
+    "number": 7,
+    "title": "Option chain and risk",
+    "line": "Explains the option chain and checks a size against your own risk settings.",
+    "starter": "What does the option chain show?",
+    "built": true,
+    "page": null
+   },
+   {
+    "id": "teacher",
+    "number": 8,
+    "title": "Teacher",
+    "line": "Explains a trading concept and shows it on your own chart.",
+    "starter": "Teach me: what is a demand zone?",
+    "built": true,
+    "page": null
+   }
+  ],
+  "starters": [
+   "Today's market brief",
+   "Read the NIFTY chart",
+   "Check my trade idea",
+   "How are my open positions?",
+   "Review my last trade",
+   "Turn my idea into a strategy and test it",
+   "What does the option chain show?",
+   "Teach me: what is a demand zone?"
+  ]
+ },
+ "answers": {
+  "Read the NIFTY chart": {
+   "job": "chart",
+   "job_number": 2,
+   "title": "Chart reader",
+   "summary": [
+    "NIFTY last closed at 24,850.5. On the daily chart the structure reads up, protected level 24,310."
+   ],
+   "answer": "NIFTY last closed at 24,850.5. On the daily chart the structure reads up, protected level 24,310.",
+   "sections": [
+    {
+     "title": "Structure per timeframe",
+     "lines": [
+      "Weekly: range",
+      "Daily: up, protected level 24,310, last BOS at 24,790",
+      "1-hour: down (weak), protected level 25,020, last CHoCH at 24,900.5",
+      "15-minute: up, protected level 24,730.5"
+     ]
+    },
+    {
+     "title": "Nearest swing levels",
+     "lines": [
+      "Resistance swing level 25,010.5",
+      "Support swing level 24,600.5"
+     ]
+    },
+    {
+     "title": "Key areas",
+     "lines": [
+      "Supply area 25,080 - 25,160 (supply zone, fresh)",
+      "Demand area 24,520 - 24,610 (demand zone, tested, 1 touch)"
+     ]
+    },
+    {
+     "title": "What to watch",
+     "lines": [
+      "Whether the protected level holds or breaks on a closed bar.",
+      "How the price behaves when it reaches one of the key areas above."
+     ]
+    }
+   ],
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "title": "NIFTY structure per timeframe",
+      "columns": [
+       {
+        "key": "tf",
+        "label": "Timeframe",
+        "kind": "text"
+       },
+       {
+        "key": "direction",
+        "label": "Structure",
+        "kind": "text"
+       },
+       {
+        "key": "protected",
+        "label": "Protected level",
+        "kind": "price"
+       },
+       {
+        "key": "last",
+        "label": "Last break",
+        "kind": "text"
+       }
+      ],
+      "rows": [
+       {
+        "tf": "Weekly",
+        "direction": "range",
+        "protected": null,
+        "last": "none"
+       },
+       {
+        "tf": "Daily",
+        "direction": "up",
+        "protected": 24310.0,
+        "last": "BOS 24,790"
+       },
+       {
+        "tf": "1-hour",
+        "direction": "down (weak)",
+        "protected": 25020.0,
+        "last": "CHoCH 24,900.5"
+       },
+       {
+        "tf": "15-minute",
+        "direction": "up",
+        "protected": 24730.5,
+        "last": "none"
+       }
+      ]
+     }
+    },
+    {
+     "type": "table",
+     "table": {
+      "title": "NIFTY key areas",
+      "columns": [
+       {
+        "key": "role",
+        "label": "Side",
+        "kind": "text"
+       },
+       {
+        "key": "low",
+        "label": "From",
+        "kind": "price"
+       },
+       {
+        "key": "high",
+        "label": "To",
+        "kind": "price"
+       },
+       {
+        "key": "state",
+        "label": "State",
+        "kind": "text"
+       },
+       {
+        "key": "touches",
+        "label": "Touches",
+        "kind": "number"
+       }
+      ],
+      "rows": [
+       {
+        "role": "supply",
+        "low": 25080.0,
+        "high": 25160.0,
+        "state": "fresh",
+        "touches": 0
+       },
+       {
+        "role": "demand",
+        "low": 24520.0,
+        "high": 24610.0,
+        "state": "tested",
+        "touches": 1
+       }
+      ]
+     }
+    }
+   ],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "get_chart_structure",
+     "label": "NIFTY structure per timeframe",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "price_action_layer:nse_bhav",
+     "numbers": [
+      {
+       "label": "last_close",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY",
+      "timeframe": "1d"
+     }
+    },
+    {
+     "tool": "get_market_zones",
+     "label": "NIFTY market zones",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "market_zones",
+     "numbers": [
+      {
+       "label": "price",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY",
+      "price": 24850.5
+     }
+    }
+   ],
+   "action": null,
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [
+    "Structure reading from ATP's zone layers (the full Price Action reader is not in ATP yet)."
+   ],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "tool_calls": [
+    "get_chart_structure",
+    "get_market_zones"
+   ],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings#ai",
+    "reason": null
+   }
+  },
+  "What does the option chain show?": {
+   "job": "option_chain",
+   "job_number": 7,
+   "title": "Option chain and risk",
+   "summary": [
+    "NIFTY option chain, expiry 2026-10-27, spot 24,850.5."
+   ],
+   "answer": "NIFTY option chain, expiry 2026-10-27, spot 24,850.5.",
+   "sections": [
+    {
+     "title": "Support / Resistance from OI",
+     "lines": [
+      "The highest put OI is at 24600 (1,52,000) and the highest call OI is at 25100 (1,45,000).",
+      "Spot 24,850.50 lies between them, 250.50 points above the put strike and 249.50 points below the call strike.",
+      "No earlier snapshot of this session is stored for this expiry yet, so the path through the session starts now."
+     ]
+    },
+    {
+     "title": "PCR",
+     "lines": [
+      "Overall PCR is 1.00: put OI 13,92,000 against call OI 13,95,000 across 21 strikes.",
+      "Near the money (the 11 strikes from 24600 to 25100 around ATM 24850) PCR is 1.03, so put OI is larger than call OI there.",
+      "No earlier snapshot of this session is stored for this expiry yet, so the path through the session starts now."
+     ]
+    },
+    {
+     "title": "Max Pain",
+     "lines": [
+      "Max pain is 24850: an expiry there leaves the smallest total in-the-money value of open options (22,55,00,000 OI x points) among the 21 strikes.",
+      "Max pain is 0.50 points (0.00% of spot) below spot 24,850.50."
+     ]
+    },
+    {
+     "title": "Expected move",
+     "lines": [
+      "The ATM straddle at 24850 is 230.50 (call 120.50 + put 110.00).",
+      "Taken as the move to expiry, it gives a range of 24,620.00 to 25,081.00, about 0.93% either side of spot 24,850.50, with 6 days to expiry.",
+      "No earlier snapshot of this session is stored for this expiry yet, so the path through the session starts now."
+     ]
+    },
+    {
+     "title": "Size against your own risk settings",
+     "lines": [
+      "Your own risk per trade is 2,000 (1% of your capital of 200,000).",
+      "Name a size (for example \"2 lots\") and I will check it against this."
+     ]
+    }
+   ],
+   "blocks": [
+    {
+     "type": "chart",
+     "title": "Support / Resistance from OI",
+     "chart": {
+      "marker": {
+       "label": "Spot",
+       "x": 24850.5
+      },
+      "series": [
+       {
+        "key": "put_oi",
+        "label": "Put OI",
+        "points": [
+         {
+          "x": 24600.0,
+          "y": 152000.0
+         },
+         {
+          "x": 24650.0,
+          "y": 74000.0
+         },
+         {
+          "x": 24700.0,
+          "y": 66000.0
+         },
+         {
+          "x": 24750.0,
+          "y": 58000.0
+         },
+         {
+          "x": 24800.0,
+          "y": 50000.0
+         },
+         {
+          "x": 24850.0,
+          "y": 42000.0
+         },
+         {
+          "x": 24900.0,
+          "y": 42000.0
+         },
+         {
+          "x": 24950.0,
+          "y": 42000.0
+         },
+         {
+          "x": 25000.0,
+          "y": 42000.0
+         },
+         {
+          "x": 25050.0,
+          "y": 42000.0
+         },
+         {
+          "x": 25100.0,
+          "y": 42000.0
+         }
+        ],
+        "tone": "up"
+       },
+       {
+        "key": "call_oi",
+        "label": "Call OI",
+        "points": [
+         {
+          "x": 24600.0,
+          "y": 40000.0
+         },
+         {
+          "x": 24650.0,
+          "y": 40000.0
+         },
+         {
+          "x": 24700.0,
+          "y": 40000.0
+         },
+         {
+          "x": 24750.0,
+          "y": 40000.0
+         },
+         {
+          "x": 24800.0,
+          "y": 40000.0
+         },
+         {
+          "x": 24850.0,
+          "y": 40000.0
+         },
+         {
+          "x": 24900.0,
+          "y": 49000.0
+         },
+         {
+          "x": 24950.0,
+          "y": 58000.0
+         },
+         {
+          "x": 25000.0,
+          "y": 67000.0
+         },
+         {
+          "x": 25050.0,
+          "y": 76000.0
+         },
+         {
+          "x": 25100.0,
+          "y": 145000.0
+         }
+        ],
+        "tone": "down"
+       }
+      ],
+      "type": "bar",
+      "x_kind": "strike",
+      "x_label": "Strike",
+      "y_label": "Open interest"
+     }
+    },
+    {
+     "type": "table",
+     "table": {
+      "columns": [
+       {
+        "key": "rank",
+        "kind": "number",
+        "label": "Rank"
+       },
+       {
+        "key": "put_strike",
+        "kind": "strike",
+        "label": "Put strike"
+       },
+       {
+        "key": "put_oi",
+        "kind": "oi",
+        "label": "Put OI"
+       },
+       {
+        "key": "call_strike",
+        "kind": "strike",
+        "label": "Call strike"
+       },
+       {
+        "key": "call_oi",
+        "kind": "oi",
+        "label": "Call OI"
+       }
+      ],
+      "rows": [
+       {
+        "call_oi": 145000.0,
+        "call_strike": 25100.0,
+        "put_oi": 152000.0,
+        "put_strike": 24600.0,
+        "rank": 1
+       },
+       {
+        "call_oi": 130000.0,
+        "call_strike": 25350.0,
+        "put_oi": 122000.0,
+        "put_strike": 24350.0,
+        "rank": 2
+       },
+       {
+        "call_oi": 121000.0,
+        "call_strike": 25300.0,
+        "put_oi": 114000.0,
+        "put_strike": 24400.0,
+        "rank": 3
+       }
+      ],
+      "title": "Highest OI now"
+     }
+    },
+    {
+     "type": "chart",
+     "title": "Expected move",
+     "chart": {
+      "marker": null,
+      "series": [
+       {
+        "key": "upper",
+        "label": "Upper",
+        "points": [
+         {
+          "x": "2026-10-21T03:30:00+00:00",
+          "y": 25081.0
+         }
+        ],
+        "tone": "muted"
+       },
+       {
+        "key": "spot",
+        "label": "Spot",
+        "points": [
+         {
+          "x": "2026-10-21T03:30:00+00:00",
+          "y": 24850.5
+         }
+        ],
+        "tone": "brand"
+       },
+       {
+        "key": "lower",
+        "label": "Lower",
+        "points": [
+         {
+          "x": "2026-10-21T03:30:00+00:00",
+          "y": 24620.0
+         }
+        ],
+        "tone": "muted"
+       }
+      ],
+      "type": "line",
+      "x_kind": "time",
+      "x_label": "Time",
+      "y_label": "Price"
+     }
+    },
+    {
+     "type": "table",
+     "table": {
+      "columns": [
+       {
+        "key": "atm",
+        "kind": "strike",
+        "label": "ATM strike"
+       },
+       {
+        "key": "call",
+        "kind": "price",
+        "label": "Call"
+       },
+       {
+        "key": "put",
+        "kind": "price",
+        "label": "Put"
+       },
+       {
+        "key": "straddle",
+        "kind": "price",
+        "label": "Straddle"
+       },
+       {
+        "key": "lower",
+        "kind": "price",
+        "label": "Lower"
+       },
+       {
+        "key": "upper",
+        "kind": "price",
+        "label": "Upper"
+       },
+       {
+        "key": "move_pct",
+        "kind": "pct",
+        "label": "Move %"
+       }
+      ],
+      "rows": [
+       {
+        "atm": 24850.0,
+        "call": 120.5,
+        "lower": 24620.0,
+        "move_pct": 0.93,
+        "put": 110.0,
+        "straddle": 230.5,
+        "upper": 25081.0
+       }
+      ],
+      "title": "Now"
+     }
+    }
+   ],
+   "unknowns": [],
+   "worked": [
+    {
+     "tool": "get_option_chain_analyses",
+     "label": "NIFTY option chain analyses",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "option_chain_analyses:broker:paper",
+     "numbers": [
+      {
+       "label": "spot",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY"
+     }
+    },
+    {
+     "tool": "get_risk_limits",
+     "label": "Your own risk settings",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "risk_settings",
+     "numbers": [
+      {
+       "label": "capital",
+       "value": 200000.0
+      },
+      {
+       "label": "risk_per_trade_pct",
+       "value": 1.0
+      },
+      {
+       "label": "lot_size",
+       "value": 75
+      },
+      {
+       "label": "max_daily_loss_pct",
+       "value": 3.0
+      }
+     ],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "calc:risk_budget",
+     "label": "Your risk per trade = capital x risk per trade %",
+     "ok": true,
+     "as_of": null,
+     "source": "calculation",
+     "numbers": [
+      {
+       "label": "capital",
+       "value": 200000.0
+      },
+      {
+       "label": "risk_per_trade_pct",
+       "value": 1.0
+      },
+      {
+       "label": "risk_per_trade",
+       "value": 2000.0
+      }
+     ],
+     "note": null,
+     "args": {}
+    }
+   ],
+   "action": null,
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "tool_calls": [
+    "get_option_chain_analyses",
+    "get_risk_limits"
+   ],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings#ai",
+    "reason": null
+   }
+  },
+  "Today's market brief": {
+   "job": "brief",
+   "job_number": 1,
+   "title": "Pre-market brief",
+   "summary": [
+    "NIFTY 50 last closed at 24,850.5 (2026-10-20); Dow structure daily uptrend, weekly range; India VIX 12.4 (-3.1%)."
+   ],
+   "answer": "NIFTY 50 last closed at 24,850.5 (2026-10-20); Dow structure daily uptrend, weekly range; India VIX 12.4 (-3.1%).",
+   "sections": [
+    {
+     "title": "Global cues",
+     "lines": [
+      "S&P 500: 5,800.2 (+0.42%)",
+      "Nasdaq Composite: 18,310 (+0.65%)",
+      "US 10-year yield: 4.21 (-0.5%)",
+      "US dollar index: 103.1 (+0.1%)"
+     ]
+    },
+    {
+     "title": "India VIX",
+     "lines": [
+      "India VIX 12.4 (-3.1%); higher than 18.5% of the last year's closes."
+     ]
+    },
+    {
+     "title": "This week's events",
+     "lines": [
+      "2026-10-27: NIFTY monthly expiry"
+     ]
+    },
+    {
+     "title": "NIFTY structure",
+     "lines": [
+      "Weekly: range",
+      "Daily: up, protected level 24,310, last BOS at 24,790",
+      "1-hour: down (weak), protected level 25,020, last CHoCH at 24,900.5",
+      "15-minute: up, protected level 24,730.5"
+     ]
+    },
+    {
+     "title": "BANKNIFTY structure",
+     "lines": [
+      "Weekly: range",
+      "Daily: up, protected level 51,200, last BOS at 51,950",
+      "1-hour: down (weak), protected level 52,480, last CHoCH at 52,150",
+      "15-minute: up, protected level 51,980"
+     ]
+    },
+    {
+     "title": "Today's key areas (NIFTY)",
+     "lines": [
+      "Supply area 25,080 - 25,160 (supply zone, fresh)",
+      "Demand area 24,520 - 24,610 (demand zone, tested, 1 touch)"
+     ]
+    }
+   ],
+   "blocks": [
+    {
+     "type": "table",
+     "table": {
+      "title": "Global cues (delayed)",
+      "columns": [
+       {
+        "key": "name",
+        "label": "Market",
+        "kind": "text"
+       },
+       {
+        "key": "last",
+        "label": "Last",
+        "kind": "price"
+       },
+       {
+        "key": "change_pct",
+        "label": "Change %",
+        "kind": "pct"
+       }
+      ],
+      "rows": [
+       {
+        "name": "S&P 500",
+        "last": 5800.2,
+        "change_pct": 0.42
+       },
+       {
+        "name": "Nasdaq Composite",
+        "last": 18310.0,
+        "change_pct": 0.65
+       },
+       {
+        "name": "US 10-year yield",
+        "last": 4.21,
+        "change_pct": -0.5
+       },
+       {
+        "name": "US dollar index",
+        "last": 103.1,
+        "change_pct": 0.1
+       }
+      ]
+     }
+    },
+    {
+     "type": "table",
+     "table": {
+      "title": "NIFTY structure per timeframe",
+      "columns": [
+       {
+        "key": "tf",
+        "label": "Timeframe",
+        "kind": "text"
+       },
+       {
+        "key": "direction",
+        "label": "Structure",
+        "kind": "text"
+       },
+       {
+        "key": "protected",
+        "label": "Protected level",
+        "kind": "price"
+       },
+       {
+        "key": "last",
+        "label": "Last break",
+        "kind": "text"
+       }
+      ],
+      "rows": [
+       {
+        "tf": "Weekly",
+        "direction": "range",
+        "protected": null,
+        "last": "none"
+       },
+       {
+        "tf": "Daily",
+        "direction": "up",
+        "protected": 24310.0,
+        "last": "BOS 24,790"
+       },
+       {
+        "tf": "1-hour",
+        "direction": "down (weak)",
+        "protected": 25020.0,
+        "last": "CHoCH 24,900.5"
+       },
+       {
+        "tf": "15-minute",
+        "direction": "up",
+        "protected": 24730.5,
+        "last": "none"
+       }
+      ]
+     }
+    },
+    {
+     "type": "table",
+     "table": {
+      "title": "BANKNIFTY structure per timeframe",
+      "columns": [
+       {
+        "key": "tf",
+        "label": "Timeframe",
+        "kind": "text"
+       },
+       {
+        "key": "direction",
+        "label": "Structure",
+        "kind": "text"
+       },
+       {
+        "key": "protected",
+        "label": "Protected level",
+        "kind": "price"
+       },
+       {
+        "key": "last",
+        "label": "Last break",
+        "kind": "text"
+       }
+      ],
+      "rows": [
+       {
+        "tf": "Weekly",
+        "direction": "range",
+        "protected": null,
+        "last": "none"
+       },
+       {
+        "tf": "Daily",
+        "direction": "up",
+        "protected": 51200.0,
+        "last": "BOS 51,950"
+       },
+       {
+        "tf": "1-hour",
+        "direction": "down (weak)",
+        "protected": 52480.0,
+        "last": "CHoCH 52,150"
+       },
+       {
+        "tf": "15-minute",
+        "direction": "up",
+        "protected": 51980.0,
+        "last": "none"
+       }
+      ]
+     }
+    }
+   ],
+   "unknowns": [
+    "I don't know the FII / DII flows: No FII / DII source with clear terms of use is configured yet."
+   ],
+   "worked": [
+    {
+     "tool": "get_market_context",
+     "label": "Market context: global cues, FII / DII, India VIX, events",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "context_panel",
+     "numbers": [],
+     "note": null,
+     "args": {}
+    },
+    {
+     "tool": "get_chart_structure",
+     "label": "NIFTY structure per timeframe",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "price_action_layer:nse_bhav",
+     "numbers": [
+      {
+       "label": "last_close",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY",
+      "timeframe": "1d"
+     }
+    },
+    {
+     "tool": "get_chart_structure",
+     "label": "BANKNIFTY structure per timeframe",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "price_action_layer:nse_bhav",
+     "numbers": [
+      {
+       "label": "last_close",
+       "value": 52100.0
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "BANKNIFTY",
+      "timeframe": "1d"
+     }
+    },
+    {
+     "tool": "get_market_zones",
+     "label": "NIFTY key areas (market zones)",
+     "ok": true,
+     "as_of": "2026-10-21T03:30:00+00:00",
+     "source": "market_zones",
+     "numbers": [
+      {
+       "label": "price",
+       "value": 24850.5
+      }
+     ],
+     "note": null,
+     "args": {
+      "symbol": "NIFTY"
+     }
+    }
+   ],
+   "action": null,
+   "refused": null,
+   "starters": [],
+   "concepts": [],
+   "notes": [],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "tool_calls": [
+    "get_market_context",
+    "get_chart_structure",
+    "get_chart_structure",
+    "get_market_zones"
+   ],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings#ai",
+    "reason": null
+   }
+  },
+  "Should I buy RELIANCE today?": {
+   "job": "refuse",
+   "job_number": null,
+   "title": "I can't do that",
+   "summary": [
+    "I can't tell you to buy or sell anything. That decision is always yours. I can show you what the data says right now: the structure, the key areas and the conditions to watch."
+   ],
+   "answer": "I can't tell you to buy or sell anything. That decision is always yours. I can show you what the data says right now: the structure, the key areas and the conditions to watch.",
+   "sections": [],
+   "blocks": [],
+   "unknowns": [],
+   "worked": [],
+   "action": null,
+   "refused": "advice",
+   "starters": [
+    "Read the NIFTY chart",
+    "Today's market brief",
+    "Teach me: what is a demand zone?"
+   ],
+   "concepts": [],
+   "notes": [],
+   "disclaimer": "Information and education only, not advice. Every trading decision is yours.",
+   "source": "rules",
+   "tool_calls": [],
+   "ai": {
+    "ready": false,
+    "title": "Add a free AI key to start",
+    "line": "Until then I answer from ATP's own data in short, fixed sentences.",
+    "settings": "/settings#ai",
+    "reason": null
+   }
+  }
+ }
+}

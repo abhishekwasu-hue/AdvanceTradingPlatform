@@ -155,6 +155,8 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/ai/analyze"): S_COPILOT,
     ("POST", "/api/ai/ask"): S_COPILOT,
     ("GET", "/api/ai/brief"): "member",
+    ("POST", "/api/ai/chat"): S_COPILOT,
+    ("GET", "/api/ai/chat/home"): "member",
     ("PUT", "/api/ai/byok/key"): S_OWN_AI_KEY,
     ("DELETE", "/api/ai/byok/key/{provider}"): S_OWN_AI_KEY,
     ("PUT", "/api/ai/byok/prefs"): S_OWN_AI_KEY,
@@ -484,6 +486,9 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("GET", "/api/option-chain/analyses"): ("member: the six option chain analyses from the organisation's broker session (or, with "
                                             "the own-broker tier on, the caller's own) plus shared collector snapshots; stores only the "
                                             "usage count (OC2, flag ui_v2)"),
+    ("GET", "/api/option-chain/charts"): ("member: the Option chain chart series from the organisation's broker session (or, with the "
+                                          "own-broker tier on, the caller's own) plus shared collector snapshots; stores only the usage "
+                                          "count (OC5, flag ui_v2)"),
     # OC3 (flag ui_v2): the caller's question -> an analysis spec evaluated on the option chain read through a broker session
     ("POST", "/api/option-chain/ask"): ("self: an Ask AI read for the caller - the AI writes an analysis spec, the server evaluates it on "
                                         "the option chain; stores only the metered AI call and an audit row; no order (rate limited)"),
@@ -614,6 +619,10 @@ ROUTE_TABLE: Dict[Tuple[str, str], str] = {
     ("POST", "/api/screener/validate"): S_COMPUTE,
     ("POST", "/api/screener/stages"): S_COMPUTE,
     ("GET", "/api/screener/etf"): "member",
+    # handover 11c-1 (flag strategy_lab_pine): the Pine subset - translation computes over the body; a run is a screener run
+    ("GET", "/api/lab/pine/templates"): "member",
+    ("POST", "/api/lab/pine/translate"): S_COMPUTE,
+    ("POST", "/api/lab/pine/run"): "trader",
     ("GET", "/api/signal-history"): "member",
     ("GET", "/api/signals/feed"): ("member: the caller's own signals only - their own and organisation-wide proposals, their own "
                                     "scan rules, intents, fills and generated signals (tenant and user; UI2-3)"),

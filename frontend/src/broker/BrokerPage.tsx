@@ -189,7 +189,7 @@ export default function BrokerPage() {
       )}
 
       <section aria-labelledby="connect-broker" className="space-y-space-3">
-        <div>
+        <div data-tour="broker-connect">
           <h2 id="connect-broker" className="text-t20 font-semibold text-fg">Connect your broker</h2>
           <p className="mt-space-1 text-t14 text-fg-muted">See live charts and start paper trading.</p>
           {!canChange && <p data-ask-owner className="mt-space-2 text-t14 text-fg">{ASK_OWNER}</p>}
@@ -205,7 +205,7 @@ export default function BrokerPage() {
             <button type="button" onClick={catalog.retry} className={BTN_SECONDARY}>Try again</button>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-space-3 sm:grid-cols-3 md:grid-cols-4">
+          <div data-tour="broker-tiles" className="grid grid-cols-2 gap-space-3 sm:grid-cols-3 md:grid-cols-4">
             {entries.map((e) => <BrokerTile key={e.broker} entry={e} canChange={canChange} onPick={() => openPanel(e.broker, "connect")} />)}
           </div>
         )}

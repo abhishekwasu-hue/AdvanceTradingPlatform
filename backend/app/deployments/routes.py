@@ -210,7 +210,7 @@ class DeploymentCreateRequest(ContractRulesRequest):
     route_across_brokers: bool = False
     # Phase J1: dynamic exits.
     exit_rules: Optional[ExitRulesRequest] = None
-    regime_filter: Optional[List[str]] = Field(default=None, max_length=5, description="Phase L3: enter only in these regimes (empty/None = any)")
+    regime_filter: Optional[List[str]] = Field(default=None, max_length=5, description="Phase L3: regimes noted for the admin diagnostic (handover 5 C: never blocks an entry)")
     # OI Banner O5: opt-in OI entry gates (OI_DIFF, OI_CONFIRM, PCR, IV_CHANGE, SWING_OI, OI_WALL); fail-closed; exits never gated.
     oi_gates: Optional[List[str]] = Field(default=None, max_length=6)
     # Phase AS: SWING positions are held overnight (CNC / NRML) and never squared off at the close.
@@ -337,7 +337,7 @@ def describe_deployment(record: StrategyDeploymentRecord) -> str:
         text += f"; exits: {exits.describe()}"
     regimes = parse_filter(getattr(record, "regime_filter", None))
     if regimes:
-        text += f"; only in {', '.join(r.lower().replace('_', ' ') for r in regimes)} regimes"
+        text += f"; regimes noted (diagnostic only, never blocks): {', '.join(r.lower().replace('_', ' ') for r in regimes)}"
     return text
 
 

@@ -49,7 +49,7 @@ def test_defaults_before_anything_is_saved():
     got = client.get(BASE, headers=who["headers"])
     assert got.status_code == 200, got.text
     assert got.json()["prefs"]["chart"] == CHART_DEFAULTS and got.json()["versions"]["chart"] == 0
-    assert set(got.json()["prefs"]) == set(got.json()["versions"]) == {"chart", "setup", "oc_analyses", "appearance", "tours"}      # the allow-list, exactly (OC3 added oc_analyses, item 1 appearance, MO2 tours)
+    assert set(got.json()["prefs"]) == set(got.json()["versions"]) == {"chart", "setup", "oc_analyses", "fno_baskets", "appearance", "tours"}      # the allow-list, exactly (OC3 oc_analyses, FNO-2 fno_baskets, item 1 appearance, MO2 tours)
     assert prefs.defaults("chart") == CHART_DEFAULTS                    # no grid by default; volume and RSI on
 
 

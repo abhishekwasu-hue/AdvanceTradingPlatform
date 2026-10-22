@@ -76,3 +76,19 @@ def is_entry_order(order: BrokerOrderRequest) -> bool:
 
 def refused_response() -> BrokerOrderResponse:
     return BrokerOrderResponse(order_id="", status="REJECTED", message=f"{REFUSAL}: {ENTRY_REASON} - order not sent")
+
+
+class LiveOrderRefused(RuntimeError):
+    """FNO-1: an order path asked for a LIVE order while the lock holds. Raised before anything is built or sent."""
+
+
+def assert_paper(mode: str, tenant_id: Optional[int]) -> str:
+    """FNO-1 (owner order "every order is PAPER under Phase 0"): the assertion an order path that picks its own mode
+    makes at its chokepoint - the manual order ticket (app/paper/fno_ticket.py) calls it right before the order pipeline.
+    While the lock holds for the organisation, only PAPER passes; a LIVE request raises `LiveOrderRefused` and nothing is
+    placed. Reads the state the last flag read left (`is_on` refreshes it). Entries only: no exit path calls this, and
+    exits of an existing position are never refused (ADR-0004). Returns the mode it allowed."""
+    value = str(mode or "").upper()
+    if value != "PAPER" and locked(tenant_id):
+        raise LiveOrderRefused(f"{REFUSAL}: {ENTRY_REASON} - nothing was placed")
+    return value
